@@ -166,7 +166,7 @@ fn moment_and_occur_write_the_same_entry() {
         let row: [Option<String>; 9] = rusqlite::Connection::open(&env.db)
             .unwrap()
             .query_row(
-                "SELECT slug, content_hash, state, dur, following_state, verb, data, occur_time,
+                "SELECT slug, content_hash, state, dur, following_state, verb, data, at,
                         raw_input FROM entries WHERE hid LIKE ?1 || '%'",
                 [&hid],
                 |r| {
@@ -409,7 +409,7 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
     assert_eq!(docs[1]["hid"], b);
     assert_eq!(docs[1]["changes"][0]["before"], "\"small\"");
 
-    let moved = env.docs(&["update", a, "occur_time=10:00", "--show", "json"]);
+    let moved = env.docs(&["update", a, "at=10:00", "--show", "json"]);
     let info = moved[0]["info"].as_str().unwrap();
     assert!(info.contains(":00:00") && info.contains(" → "), "{info}");
     assert_eq!(moved[0]["changes"][0]["part"], "time");

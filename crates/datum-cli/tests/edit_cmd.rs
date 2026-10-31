@@ -75,7 +75,7 @@ fn tea_time(dir: &Path) -> (String, Option<String>, i32) {
         .unwrap()
         .conn()
         .query_row(
-            "SELECT occur_time, occur_time_tz, occur_time_offset FROM entries WHERE field = 'tea'",
+            "SELECT at, at_tz, at_offset FROM entries WHERE field = 'tea'",
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )

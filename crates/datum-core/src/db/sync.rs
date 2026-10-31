@@ -618,6 +618,11 @@ fn values(op: &Op) -> BTreeMap<String, Value> {
             ("data", Value::Object(d)) => {
                 out.extend(d.iter().map(|(dk, v)| (format!("data.{dk}"), v.clone())))
             }
+            // One template by either name: a create from before v76 and one
+            // after, of one instant, disagree about nothing (da-95avu).
+            ("id_structure", Value::String(t)) => {
+                out.insert(k.clone(), t.replace("%occur_time%", "%at%").into());
+            }
             _ => {
                 out.insert(k.clone(), v.clone());
             }
@@ -677,15 +682,7 @@ impl Op {
         let v: Value = serde_json::from_str(body)?;
         let mut op = Op::deserialize(&v)?;
         op.body = canonical_json(&v);
-        // An op signed before v48 names the client `device_id` (da-lfsei):
-        // its body stays as signed, and its effect reads as today's.
-        for k in ["create", "set"] {
-            if let Some(Value::Object(m)) = op.effect.get_mut(k) {
-                if let Some(id) = m.remove("device_id") {
-                    m.insert("client_id".into(), id);
-                }
-            }
-        }
+        read_as_today(&mut op.effect);
         Ok(op)
     }
 
@@ -721,6 +718,28 @@ impl Op {
                 .deps
                 .get(&other.endpoint)
                 .is_some_and(|s| *s >= other.seq)
+    }
+}
+
+/// An effect in today's names. An op signed before v48 names the client
+/// `device_id` (da-lfsei) and one before v76 the time `occur_time` (da-95avu):
+/// its body stays as signed, and its effect reads as today's. A data key is
+/// `data.occur_time` and no column, and a create's `data` is not looked in. Only
+/// `occur_time` is an op's key: its offset, zone and uncertainty are inside it.
+fn read_as_today(effect: &mut Value) {
+    for k in ["create", "set"] {
+        if let Some(Value::Object(m)) = effect.get_mut(k) {
+            for (old, new) in [("device_id", "client_id"), ("occur_time", "at")] {
+                if let Some(v) = m.remove(old) {
+                    m.insert(new.into(), v);
+                }
+            }
+        }
+    }
+    if let Some(Value::Array(unset)) = effect.get_mut("unset") {
+        for key in unset.iter_mut().filter(|k| *k == "occur_time") {
+            *key = "at".into();
+        }
     }
 }
 
@@ -1321,7 +1340,7 @@ pub(crate) fn derive_all_conflicts(conn: &Connection) -> Result<()> {
 }
 
 /// Rows other than `e` holding an identity `e` needs: its slug, or its live
-/// state-bearing `(field, occur_time)` — the two UNIQUE indexes, both of
+/// state-bearing `(field, at)` — the two UNIQUE indexes, both of
 /// which a superseded row is outside (ported from the relay sync's apply).
 /// A kit's index is never a third: a kit may not declare one `unique`
 /// (da-9lo90).
@@ -1332,10 +1351,10 @@ pub(super) fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
         )?
         .query_map(params![e.slug, e.hid], row_to_entry)?
         .collect::<rusqlite::Result<_>>()?;
-    if let (None, true, Some(occur)) = (e.deleted_at, e.asserts_state(), e.occur_time.as_ref()) {
+    if let (None, true, Some(occur)) = (e.deleted_at, e.asserts_state(), e.at.as_ref()) {
         let rows: Vec<Entry> = conn
             .prepare_cached(
-                "SELECT * FROM entries WHERE field = ?1 AND occur_time = ?2
+                "SELECT * FROM entries WHERE field = ?1 AND at = ?2
                    AND deleted_at IS NULL AND superseded_by IS NULL
                    AND state IS NOT NULL AND hid != ?3",
             )?
@@ -1416,6 +1435,11 @@ fn content(r: &Map<String, Value>) -> Map<String, Value> {
             (k, _) if NOT_A_CONFLICT.contains(&k) => {}
             ("data", Value::Object(d)) => {
                 out.extend(d.iter().map(|(dk, v)| (format!("data.{dk}"), v.clone())))
+            }
+            // One template by either name: a create from before v76 and one
+            // after, of one instant, disagree about nothing (da-95avu).
+            ("id_structure", Value::String(t)) => {
+                out.insert(k.clone(), t.replace("%occur_time%", "%at%").into());
             }
             _ => {
                 out.insert(k.clone(), v.clone());
@@ -1667,9 +1691,14 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
             |r| r.get(0),
         )
         .optional()?;
+    // A line an older datum queued lands in today's names, as it is signed now.
     let mut ops = ops
         .iter()
-        .map(|v| serde_json::from_value::<Op>(v.clone()).map_err(Into::into))
+        .map(|v| {
+            let mut op = serde_json::from_value::<Op>(v.clone())?;
+            read_as_today(&mut op.effect);
+            Ok(op)
+        })
         .collect::<Result<Vec<_>>>()?;
     ops.retain(|op| wiped.as_deref().is_none_or(|w| op.hlc.as_str() >= w));
     if ops.is_empty() {

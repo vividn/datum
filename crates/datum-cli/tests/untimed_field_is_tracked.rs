@@ -47,7 +47,7 @@ fn now_json_calls_it_ignored(db: &Db, field: &str) -> bool {
 #[test]
 fn a_timeless_only_field_is_tracked_on_every_surface() {
     let db = fresh_db();
-    // `-T` writes the entry with no occur_time, so nothing of `idea`
+    // `-T` writes the entry with no at, so nothing of `idea`
     // participates in the state map — the shape that used to read as
     // IGNORED.
     run_cli(&["add", "idea", "-T"], &db).unwrap();

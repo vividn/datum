@@ -23,6 +23,9 @@ use datum_core::migrations::{
 };
 use rusqlite::Connection;
 
+#[path = "migration_roundtrip/v76.rs"]
+mod v76;
+
 fn fresh_at(version: u32) -> Db {
     let db = Db::open_in_memory().unwrap();
     apply_migrations_down(db.conn(), MIGRATIONS, CURRENT_SCHEMA_VERSION, version).unwrap();
@@ -77,23 +80,38 @@ fn column_not_null(conn: &Connection, table: &str, column: &str) -> bool {
     .unwrap_or(false)
 }
 
-/// Run `f`, which goes through the live `Db` API, against the client
-/// columns' live name: before v48 it was `device_id` (da-lfsei).
+/// Run `f`, which goes through the live `Db` API, against the columns' live
+/// names: the client's before v48 was `device_id` (da-lfsei), and the time's
+/// before v76 `occur_time` (da-95avu).
 fn with_live_client_column<T>(conn: &Connection, f: impl FnOnce() -> T) -> T {
-    let tables = ["entries", "entry_history"];
-    let old = column_exists(conn, "entries", "device_id");
-    let rename = |from: &str, to: &str| {
-        for t in tables {
-            conn.execute_batch(&format!("ALTER TABLE {t} RENAME COLUMN {from} TO {to}"))
-                .unwrap()
-        }
+    let rename = |table: &str, from: &str, to: &str| {
+        conn.execute_batch(&format!("ALTER TABLE {table} RENAME COLUMN {from} TO {to}"))
+            .unwrap()
     };
-    if old {
-        rename("device_id", "client_id");
+    let client = column_exists(conn, "entries", "device_id");
+    if client {
+        rename("entries", "device_id", "client_id");
+        rename("entry_history", "device_id", "client_id");
+    }
+    let times: Vec<_> = [
+        ("occur_time", "at"),
+        ("occur_time_offset", "at_offset"),
+        ("occur_time_tz", "at_tz"),
+        ("occur_time_uncertainty", "at_uncertainty"),
+    ]
+    .into_iter()
+    .filter(|(old, _)| column_exists(conn, "entries", old))
+    .collect();
+    for (old, new) in &times {
+        rename("entries", old, new);
     }
     let out = f();
-    if old {
-        rename("client_id", "device_id");
+    for (old, new) in &times {
+        rename("entries", new, old);
+    }
+    if client {
+        rename("entries", "client_id", "device_id");
+        rename("entry_history", "client_id", "device_id");
     }
     out
 }
@@ -222,6 +240,7 @@ fn every_pair_has_a_roundtrip_test() {
         (72, 73),
         (73, 74),
         (74, 75),
+        (75, 76),
     ];
     assert_eq!(
         covered.len(),
@@ -1808,7 +1827,8 @@ fn roundtrip_v32_to_v33_content_hash_rehash() {
 fn entries_at_v33(conn: &Connection) -> Vec<datum_core::entry::Entry> {
     let mut stmt = conn
         .prepare(
-            "SELECT *, occur_time_precision AS occur_time_uncertainty, \
+            "SELECT *, occur_time AS at, occur_time_offset AS at_offset, occur_time_tz AS at_tz, \
+             occur_time_precision AS at_uncertainty, \
              dur_precision AS dur_uncertainty, device_id AS client_id FROM entries",
         )
         .unwrap();
@@ -2720,7 +2740,7 @@ fn roundtrip_v62_to_v63_spec_alias_names() {
         datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
     spec.allowed_states = Some(vec!["calm".into()]);
     spec.regenerate_derived_aliases();
-    db.save_field_spec(&spec).unwrap();
+    with_live_client_column(db.conn(), || db.save_field_spec(&spec).unwrap());
     let conn = db.conn();
     apply_one_up(conn, 62);
     let names = || -> Vec<String> {
@@ -2733,11 +2753,11 @@ fn roundtrip_v62_to_v63_spec_alias_names() {
     assert_eq!(names(), ["calm", "mood", "moode"], "filled from the specs");
     let mut tea = datum_core::field_spec::FieldSpec::new("tea", datum_core::action::Action::Occur);
     tea.regenerate_derived_aliases();
-    db.save_field_spec(&tea).unwrap();
+    with_live_client_column(conn, || db.save_field_spec(&tea).unwrap());
     assert!(names().contains(&"tea".to_string()), "kept by the triggers");
     apply_one_down(conn, 63);
     assert!(!table_exists(conn, "spec_alias_names"));
-    db.save_field_spec(&spec).unwrap();
+    with_live_client_column(conn, || db.save_field_spec(&spec).unwrap());
 }
 
 /// da-ueb4p: the offline mark of a session's failure comes and goes.
@@ -2765,8 +2785,10 @@ fn roundtrip_v64_to_v65_spec_templates_index() {
         "issue__%hid:8%",
         datum_core::action::Action::Switch,
     );
-    db.save_field_spec(&template).unwrap();
-    let spec = db.load_spec("issue__2qvk0dk4").unwrap().unwrap();
+    with_live_client_column(db.conn(), || db.save_field_spec(&template).unwrap());
+    let spec = with_live_client_column(db.conn(), || db.load_spec("issue__2qvk0dk4"))
+        .unwrap()
+        .unwrap();
     assert_eq!(spec.verb, datum_core::action::Action::Switch);
 }
 
@@ -3239,7 +3261,10 @@ fn roundtrip_v58_to_v59_warning_client_id() {
     )
     .unwrap();
     // The entry as a build from before v48 stored it.
-    let mut old = serde_json::to_value(db.get_entry("h1").unwrap()).unwrap();
+    let mut old = serde_json::to_value(with_live_client_column(db.conn(), || {
+        db.get_entry("h1").unwrap()
+    }))
+    .unwrap();
     let id = old.as_object_mut().unwrap().remove("client_id").unwrap();
     old["device_id"] = id;
     conn.execute(

@@ -126,12 +126,12 @@ impl Env {
         p.into()
     }
 
-    /// `(field, occur_time, deleted, data)` of each entry not a spec, by hid.
+    /// `(field, at, deleted, data)` of each entry not a spec, by hid.
     fn rows(&self) -> Vec<(String, String, String, bool, Option<String>)> {
         let c = Connection::open(&self.db).unwrap();
         let mut s = c
             .prepare(
-                "SELECT hid, field, occur_time, deleted_at IS NOT NULL, data FROM entries
+                "SELECT hid, field, at, deleted_at IS NOT NULL, data FROM entries
                  WHERE field != 'spec' ORDER BY rowid",
             )
             .unwrap();

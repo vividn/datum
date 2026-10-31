@@ -346,7 +346,7 @@ impl StateRow {
             id: e.hid.to_string(),
             verb: e.verb,
             state: e.state.clone(),
-            occur: e.occur_time.as_ref().map(|t| t.utc),
+            occur: e.at.as_ref().map(|t| t.utc),
             dur: e.dur.clone(),
             following_state: e.following_state.clone(),
         }
@@ -638,12 +638,9 @@ impl FieldStateRows {
     /// field's live rows in any order; timeless rows are skipped, as the
     /// SQL loaders skip them.
     pub fn from_entries<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Self {
-        let mut timed: Vec<&Entry> = entries
-            .into_iter()
-            .filter(|e| e.occur_time.is_some())
-            .collect();
+        let mut timed: Vec<&Entry> = entries.into_iter().filter(|e| e.at.is_some()).collect();
         timed.sort_by_cached_key(|e| {
-            std::cmp::Reverse((e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string()))
+            std::cmp::Reverse((e.at.as_ref().map(|t| t.utc), e.slug.to_string()))
         });
         Self::new(timed.into_iter().map(StateRow::from_entry).collect())
     }
@@ -757,14 +754,14 @@ impl FieldStateRows {
         let (lo, hi) = (from.to_rfc3339(), until.to_rfc3339());
 
         // Blocks, as `window` reads them: a MOMENT is not one.
-        let after = format!("AND occur_time > ?2 AND dur IS NOT NULL AND {DECIDES_STATE_SQL}");
+        let after = format!("AND at > ?2 AND dur IS NOT NULL AND {DECIDES_STATE_SQL}");
         let mut rows = read(&after, &first(SPAN_LOOKAHEAD), &[&hi])?;
         rows.reverse();
-        let within = "AND occur_time >= ?2 AND occur_time <= ?3";
+        let within = "AND at >= ?2 AND at <= ?3";
         rows.extend(read(within, newest, &[&lo, &hi])?);
         // As deep as the SQL read goes: one row, or RESUME_LOOKBACK when
         // the row a probe lands on can be a block handing the field back.
-        let before = format!("AND occur_time < ?2 AND {DECIDES_STATE_SQL}");
+        let before = format!("AND at < ?2 AND {DECIDES_STATE_SQL}");
         let mut depth = 1;
         let mut older = read(&before, &last(depth), &[&lo])?;
         let deep = |r: &StateRow| r.hands_field_back(DateTime::<Utc>::MAX_UTC);
@@ -790,11 +787,11 @@ impl FieldStateRows {
             .fold(from, DateTime::min)
             .to_rfc3339();
         if dotted {
-            let dots = format!("AND occur_time < ?2 AND occur_time >= ?3 AND {OCCUR_DOT_SQL}");
+            let dots = format!("AND at < ?2 AND at >= ?3 AND {OCCUR_DOT_SQL}");
             rows.extend(read(&dots, newest, &[&lo, &earliest])?);
         }
         if whole {
-            let first_dot = format!("AND occur_time < ?2 AND {OCCUR_DOT_SQL}");
+            let first_dot = format!("AND at < ?2 AND {OCCUR_DOT_SQL}");
             rows.extend(read(&first_dot, &first(1), &[&earliest])?);
         }
         Ok(Self::new(rows))
@@ -803,7 +800,7 @@ impl FieldStateRows {
     /// A field's state-participating rows, narrowed by `and`, in `order`.
     fn select(and: &str, order: &str) -> String {
         format!(
-            "SELECT field, state, verb, occur_time, dur, following_state, hid
+            "SELECT field, state, verb, at, dur, following_state, hid
                FROM entries
               WHERE field = ?1
                 AND {participation}

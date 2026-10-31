@@ -63,8 +63,8 @@ async function seed({ page, run }, n) {
 						hid: i.toString(16).padStart(12, '0'),
 						slug: `coffee:${utc}`,
 						content_hash: i.toString(16).padStart(64, '0'),
-						occur_time: {
-							...row.occur_time,
+						at: {
+							...row.at,
 							utc,
 							timezone: zones[Math.floor((i * zones.length) / n)]
 						}

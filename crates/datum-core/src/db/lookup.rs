@@ -141,7 +141,7 @@ impl Db {
              WHERE field = ?1
                AND {LIVE_SQL}
                AND verb IN ('start', 'switch', 'block', 'block-switch')
-               AND occur_time <= ?2
+               AND at <= ?2
              ORDER BY {STATE_ORDER_NEWEST_FIRST}
              LIMIT 1"
         );
@@ -159,14 +159,14 @@ impl Db {
     ///
     /// Match semantics: `None` matches NULL state; `Some(v)` matches by
     /// exact JSON serialization (so `2` and `2.0` are distinct, just as
-    /// they are at insert). Ordering: `occur_time` DESC, `create_time`
+    /// they are at insert). Ordering: `at` DESC, `create_time`
     /// DESC — newest match wins.
     ///
     /// Deliberate OPT-OUT from the canonical state ordering
     /// ([`super::types::STATE_ORDER_NEWEST_FIRST`], da-ylet): undo targets
     /// the literal previous *insert*, not the state-timeline winner, so
     /// same-instant ties break on `create_time` (latest write) rather
-    /// than slug. Timeless rows (occur_time NULL) are also fair game — `-u` must
+    /// than slug. Timeless rows (at NULL) are also fair game — `-u` must
     /// be able to reverse a `-T` note.
     pub fn find_latest_for_undo(
         &self,
@@ -179,7 +179,7 @@ impl Db {
                WHERE field = ?1
                  AND {LIVE_SQL}
                  AND ((?2 IS NULL AND state IS NULL) OR state = ?2)
-               ORDER BY occur_time DESC, create_time DESC
+               ORDER BY at DESC, create_time DESC
                LIMIT 1"#
         ))?;
         let row = stmt
@@ -190,10 +190,10 @@ impl Db {
 
     /// Latest state-participating entry for a field, for use in the now
     /// view. Participation and ordering follow the canonical rule
-    /// ([`STATE_PARTICIPATION_SQL`]): timeless rows (occur_time NULL, free-form
+    /// ([`STATE_PARTICIPATION_SQL`]): timeless rows (at NULL, free-form
     /// `-T` notes with no state effect) are skipped, and the unbounded
     /// arm is exactly where that predicate matters — timeless rows store
-    /// NULL `occur_time`, so the bounded arm excludes them implicitly.
+    /// NULL `at`, so the bounded arm excludes them implicitly.
     ///
     /// `snapshot_time = Some(t)` (da-tx8j) bounds the query to entries
     /// whose effective time is `<= t` — used by `datum now -t` to render
@@ -282,7 +282,7 @@ impl Db {
     }
 
     /// Dur-bearing rows stored AFTER `t` whose span still covers it.
-    /// da-zwct: a block's `occur_time` is its END, so the row that holds
+    /// da-zwct: a block's `at` is its END, so the row that holds
     /// the field at `t` can sit in `t`'s future — the bounded readers
     /// would miss it entirely. Only the nearest
     /// [`crate::state::SPAN_LOOKAHEAD`] forward blocks are considered; the
@@ -331,7 +331,7 @@ pub(super) fn first_dot_sql(columns: &str) -> String {
         "SELECT {columns} FROM entries
          WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
            AND {dot}
-           AND occur_time > ?2 AND occur_time <= ?3
+           AND at > ?2 AND at <= ?3
          ORDER BY {STATE_ORDER_OLDEST_FIRST}
          LIMIT 1",
         dot = crate::state::OCCUR_DOT_SQL,

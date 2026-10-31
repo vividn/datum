@@ -461,9 +461,7 @@ pub fn tail_entries_with_default_count(
     let place = |id: &String| -> Result<_> {
         let row = resolve_prefix_or_tombstone(db, id)?;
         let time = match params.metric {
-            TimeMetric::Hybrid | TimeMetric::Occur => {
-                row.occur_time.map_or(row.create_time, |t| t.utc)
-            }
+            TimeMetric::Hybrid | TimeMetric::Occur => row.at.map_or(row.create_time, |t| t.utc),
             TimeMetric::Create => row.create_time,
             TimeMetric::Modify => row.modify_time,
         };

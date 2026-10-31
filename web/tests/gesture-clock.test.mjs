@@ -17,7 +17,7 @@ const FROZEN_AT = 'DATUM_WEB_FROZEN_AT=';
 /** `field`'s newest entry: its time and its create time, as epoch ms. */
 const stamped = async (app, field) => {
 	const row = (await app.entries()).find((e) => e.field === field);
-	return { occur: Date.parse(row.occur_time.utc), create: Date.parse(row.create_time) };
+	return { occur: Date.parse(row.at.utc), create: Date.parse(row.create_time) };
 };
 
 /**

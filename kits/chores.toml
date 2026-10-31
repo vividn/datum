@@ -15,7 +15,7 @@ where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.ne
 # One row per chore field, as v2's `chores` map/reduce reduced it
 # (reference: datum-v2 projects/datum/views/chores.ts):
 #   · due        — `next` from the LATEST entry by time, where time is
-#                  occur_time, or create_time for a shirk (no occur_time).
+#                  at, or create_time for a shirk (no at).
 #                  A JSON null next (v2's cleared nextDate, as v2import
 #                  keeps it, or `next_date=null`) hides the chore.
 #   · last_occur — the latest occurrence; a shirk never counts as done.
@@ -42,8 +42,8 @@ where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.ne
 name = "chores"
 sql = """
 WITH chore AS (
-  SELECT field, occur_time, occur_time_offset,
-         COALESCE(occur_time, create_time) AS t,
+  SELECT field, at, at_offset,
+         COALESCE(at, create_time) AS t,
          COALESCE(json_extract(data, '$.next_time.utc'),
                   json_extract(data, '$.next_time'),
                   json_extract(data, '$.nextTime.utc'),
@@ -79,25 +79,25 @@ latest AS (
   FROM chore
 ),
 occ AS (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY occur_time DESC) AS rn
-  FROM chore WHERE occur_time IS NOT NULL
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY at DESC) AS rn
+  FROM chore WHERE at IS NOT NULL
 ),
 row AS (
   SELECT l.field                                                   AS field,
          l.next                                                    AS due,
          l.full_day                                                AS full_day,
-         o.occur_time                                              AS last_occur,
+         o.at                                              AS last_occur,
          COALESCE(sp.iti, CASE
            WHEN o.next IS NULL THEN NULL
            WHEN o.full_day = 1 THEN
-             julianday(o.next) - julianday(local_day(o.occur_time, o.occur_time_offset))
-           ELSE julianday(o.next) - julianday(o.occur_time)
+             julianday(o.next) - julianday(local_day(o.at, o.at_offset))
+           ELSE julianday(o.next) - julianday(o.at)
          END)                                                      AS iti,
-         CASE WHEN o.occur_time IS NOT NULL
-               AND local_day(o.occur_time, o.occur_time_offset) = local_today()
+         CASE WHEN o.at IS NOT NULL
+               AND local_day(o.at, o.at_offset) = local_today()
               THEN 1 ELSE 0 END                                    AS done_today,
-         COALESCE(l.next_offset, l.occur_time_offset,
-                  o.occur_time_offset, 0)                          AS due_offset
+         COALESCE(l.next_offset, l.at_offset,
+                  o.at_offset, 0)                          AS due_offset
   FROM latest l LEFT JOIN occ o ON o.field = l.field AND o.rn = 1
                  LEFT JOIN spec sp ON sp.field = l.field
   WHERE l.rn = 1 AND l.next IS NOT NULL

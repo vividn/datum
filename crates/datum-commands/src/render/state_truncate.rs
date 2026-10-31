@@ -66,7 +66,7 @@ pub(crate) fn truncate_state_cell(
     // Timeless / non-state-bearing rows: these never need truncation
     // (1-2 visible chars). Delegate to the corresponding path so the
     // caller doesn't have to special-case them.
-    if entry.occur_time.is_none() && !has_state_badge(entry.verb, entry.dur.as_ref()) {
+    if entry.at.is_none() && !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR);
     }
     if !has_state_badge(entry.verb, entry.dur.as_ref()) {

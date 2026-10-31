@@ -1,7 +1,7 @@
 //! `datum db v2import` integration tests (da-a8u, rewritten under da-5ns.6).
 //!
 //! Verifies the v=20 mapping from legacy datum CouchDB-shaped JSON into
-//! the new schema: occur_time / state / dur / following_state / verb.
+//! the new schema: at / state / dur / following_state / verb.
 //! Asserts on the new columns directly; the old `entry_shape`/`value`/
 //! `start_time`/`end_time` compat shims are intentionally avoided so
 //! these tests don't decay when sub-bead 8 sweeps them out.
@@ -73,7 +73,7 @@ fn occur_only_doc_maps_to_state_null() {
     assert!(e.state.is_none(), "no state in source → state stays null");
     assert!(e.dur.is_none(), "no legacy dur key → dur column NULL");
     assert!(e.following_state.is_none());
-    assert!(e.occur_time.is_some());
+    assert!(e.at.is_some());
     // Re-derived verb: state=None + dur=None + fs=None → Point.
     assert_eq!(verb_of(e), Verb::Point);
 }
@@ -256,14 +256,14 @@ fn v2_same_state_moment_is_not_a_repeat() {
     assert!(hits.is_empty(), "v2 moment flagged as a repeat: {hits:?}");
 }
 
-// ─── 5. missing occurTime → Point with occur_time NULL ───────────────
+// ─── 5. missing occurTime → Point with at NULL ───────────────
 // state=undefined + dur=undefined → derive_verb: Verb::Point with
-// state=null (promotion dropped in da-ju71.2). occur_time stays NULL —
+// state=null (promotion dropped in da-ju71.2). at stays NULL —
 // the column is nominally NOT NULL but the insert path falls back to
 // create_time when missing (datum-core/src/db/insert.rs).
 
 #[test]
-fn doc_without_occur_time_maps_to_point() {
+fn doc_without_at_maps_to_point() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
         "_id": "journal:abc",
@@ -400,7 +400,7 @@ fn import_3day_fixture_produces_blocks_and_points() {
     );
 
     for e in &blocks {
-        assert!(e.occur_time.is_some(), "block missing occur_time");
+        assert!(e.at.is_some(), "block missing at");
         // derive_verb on a block must succeed and classify as Block (or
         // BlockSwitch — but legacy entries never carry following_state so
         // it's always plain Block here).
@@ -557,7 +557,7 @@ fn import_falls_back_to_create_time_when_modify_time_missing() {
     );
 }
 
-// ─── 12. occurTime.precisionUnit → occur_time_uncertainty (da-5ns.6) ───
+// ─── 12. occurTime.precisionUnit → at_uncertainty (da-5ns.6) ───
 
 #[test]
 fn year_precision_maps_to_iso_p1y() {
@@ -581,11 +581,7 @@ fn year_precision_maps_to_iso_p1y() {
 
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &datum_core::test_util::logged_all(&db)[0];
-    assert_eq!(
-        e.occur_uncertainty(),
-        Some("P1Y"),
-        "precisionUnit=year → P1Y",
-    );
+    assert_eq!(e.at_uncertainty(), Some("P1Y"), "precisionUnit=year → P1Y",);
 }
 
 #[test]
@@ -610,7 +606,7 @@ fn week_precision_maps_to_iso_p1w() {
 
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &datum_core::test_util::logged_all(&db)[0];
-    assert_eq!(e.occur_uncertainty(), Some("P1W"));
+    assert_eq!(e.at_uncertainty(), Some("P1W"));
 }
 
 #[test]
@@ -642,7 +638,7 @@ fn precision_unit_canon_table_round_trips_all_units() {
         run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
         let e = &datum_core::test_util::logged_all(&db)[0];
         assert_eq!(
-            e.occur_uncertainty(),
+            e.at_uncertainty(),
             Some(iso),
             "precisionUnit={} should map to {}",
             unit,
@@ -665,7 +661,7 @@ fn missing_precision_unit_leaves_column_null() {
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &datum_core::test_util::logged_all(&db)[0];
     assert!(
-        e.occur_uncertainty().is_none(),
+        e.at_uncertainty().is_none(),
         "no precisionUnit → column NULL (treated as exact)",
     );
 }
@@ -1199,7 +1195,7 @@ fn import_offset_without_tz_leaves_the_zone_unset() {
 
     let entries = datum_core::test_util::logged_all(&db);
     assert_eq!(entries.len(), 1);
-    let occur = entries[0].occur_time.as_ref().expect("occur_time");
+    let occur = entries[0].at.as_ref().expect("at");
     assert_eq!(occur.offset_minutes, 60, "the offset the backup did carry");
     assert_eq!(
         occur.timezone, None,
@@ -1243,7 +1239,7 @@ fn import_keeps_a_utc_offset_zone_and_check_reads_it() {
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = datum_core::test_util::logged_all(&db);
-    let occur = entries[0].occur_time.as_ref().expect("occur_time");
+    let occur = entries[0].at.as_ref().expect("at");
     assert_eq!(
         occur.timezone.as_deref(),
         Some("UTC+2"),
@@ -1296,7 +1292,7 @@ fn import_preserves_a_half_hour_offset() {
         entries
             .iter()
             .find(|e| e.field == field)
-            .and_then(|e| e.occur_time.clone())
+            .and_then(|e| e.at.clone())
             .unwrap_or_else(|| panic!("{field} imported"))
     };
     let chai = occur_of("chai");
@@ -1352,13 +1348,8 @@ fn date_only_docs_import_as_whole_days() {
         ]
     );
     for e in datum_core::test_util::logged_all(&db) {
-        assert_eq!(
-            e.occur_uncertainty(),
-            Some("P1D"),
-            "{} is a whole day",
-            e.slug
-        );
-        let t = e.occur_time.as_ref().unwrap();
+        assert_eq!(e.at_uncertainty(), Some("P1D"), "{} is a whole day", e.slug);
+        let t = e.at.as_ref().unwrap();
         assert_eq!(t.offset_minutes, 60, "midnight in the createTime's zone");
         assert_eq!(t.local_time().format("%H:%M").to_string(), "00:00");
     }
@@ -1412,7 +1403,7 @@ fn skipped_by(f: &tempfile::NamedTempFile, db: &datum_core::db::Db, dry: bool) -
 }
 
 #[test]
-fn an_unreadable_occur_time_is_listed_and_not_moved_to_the_create_time() {
+fn an_unreadable_at_is_listed_and_not_moved_to_the_create_time() {
     let unreadable = [
         ("a-word", serde_json::json!("yesterdayish")),
         ("empty", serde_json::json!("")),
@@ -1448,12 +1439,12 @@ fn an_unreadable_occur_time_is_listed_and_not_moved_to_the_create_time() {
         }
         // Only the two that named no time are in, at their create time.
         assert_eq!(rows.len(), 2, "{rows:?}");
-        assert!(rows.iter().all(|e| e.occur_time.is_none()), "{rows:?}");
+        assert!(rows.iter().all(|e| e.at.is_none()), "{rows:?}");
     }
 }
 
 #[test]
-fn a_plain_string_occur_time_is_the_instant_v2_wrote() {
+fn a_plain_string_at_is_the_instant_v2_wrote() {
     let mut offset_in_meta = doc_occurring(
         "offset-in-meta",
         serde_json::json!({"occurTime": "2025-01-04T07:00:00.000Z"}),
@@ -1484,7 +1475,7 @@ fn a_plain_string_occur_time_is_the_instant_v2_wrote() {
             .find(|e| e.hid.as_str() == hid)
             .unwrap_or_else(|| panic!("{hid} in {rows:?}"))
     };
-    let at = |hid: &str| row(hid).occur_time.clone().expect("an occur time");
+    let at = |hid: &str| row(hid).at.clone().expect("an occur time");
 
     let t = at("offset-beside");
     assert_eq!(t.utc.to_rfc3339(), "2025-01-01T07:00:00+00:00");
@@ -1500,7 +1491,7 @@ fn a_plain_string_occur_time_is_the_instant_v2_wrote() {
     assert_eq!(t.utc.to_rfc3339(), "2025-01-02T07:00:00+00:00");
     assert_eq!(t.offset_minutes, 0);
 
-    assert_eq!(row("a-date").occur_uncertainty(), Some("P1D"));
+    assert_eq!(row("a-date").at_uncertainty(), Some("P1D"));
     assert_eq!(
         at("a-date").local_time().format("%F %H:%M").to_string(),
         "2025-01-03 00:00"
@@ -1565,10 +1556,10 @@ fn plain_string_create_and_modify_times_are_what_v2_wrote() {
     assert_eq!(n.create_time.to_rfc3339(), "2021-03-03T10:00:00+00:00");
     assert_eq!(n.modify_time, n.create_time);
 
-    let d = row("a-date").occur_time.clone().expect("an occur time");
+    let d = row("a-date").at.clone().expect("an occur time");
     assert_eq!(d.offset_minutes, -300);
     assert_eq!(d.utc.to_rfc3339(), "2021-03-05T05:00:00+00:00");
-    assert_eq!(row("a-date").occur_uncertainty(), Some("P1D"));
+    assert_eq!(row("a-date").at_uncertainty(), Some("P1D"));
 }
 
 #[test]
@@ -1645,7 +1636,7 @@ fn an_offset_not_read_stays_in_data() {
     let db = fresh_db();
     assert_eq!(skipped_by(&f, &db, false), Vec::<String>::new());
     let rows = datum_core::test_util::logged_all(&db);
-    assert_eq!(rows[0].occur_time.as_ref().unwrap().offset_minutes, 0);
+    assert_eq!(rows[0].at.as_ref().unwrap().offset_minutes, 0);
     assert_eq!(
         rows[0].data.as_ref().unwrap()["occurUtcOffset"],
         "5.5",
@@ -1691,8 +1682,8 @@ fn a_date_only_doc_stays_on_the_offset_it_states() {
     let rows = datum_core::test_util::logged_all(&db);
     let at = |hid: &str| {
         let e = rows.iter().find(|e| e.hid.as_str() == hid).unwrap();
-        assert_eq!(e.occur_uncertainty(), Some("P1D"), "{hid}");
-        e.occur_time.clone().unwrap()
+        assert_eq!(e.at_uncertainty(), Some("P1D"), "{hid}");
+        e.at.clone().unwrap()
     };
     let local = |t: &datum_parse::time::DatumTime| t.local_time().format("%F %H:%M").to_string();
 
@@ -1749,7 +1740,7 @@ fn timeless_docs_slug_on_their_own_create_time() {
         ]
     );
     for e in datum_core::test_util::logged_all(&db) {
-        assert!(e.occur_time.is_none());
+        assert!(e.at.is_none());
         assert!(
             e.data.as_ref().unwrap()["nextDate"].is_string(),
             "{} keeps nextDate",
@@ -1848,7 +1839,7 @@ fn a_date_only_doc_keeps_the_offset_of_an_unknown_zone() {
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &datum_core::test_util::logged_all(&db)[0];
     assert_eq!(e.slug.to_string(), "3goals:2025-01-08");
-    let t = e.occur_time.as_ref().unwrap();
+    let t = e.at.as_ref().unwrap();
     assert_eq!(t.offset_minutes, 540);
     assert_eq!(t.local_time().to_rfc3339(), "2025-01-08T00:00:00+09:00");
     assert_eq!(t.timezone, None, "a name that does not parse is not kept");
@@ -2237,7 +2228,7 @@ fn a_doc_with_its_fields_at_the_top_level_imports() {
     assert_eq!(with_meta.hid.as_str(), "plainhid");
     assert_eq!(with_meta.state, Some(serde_json::json!("on")));
     assert_eq!(with_meta.dur.as_ref().unwrap().to_storage_string(), "PT30M");
-    let occur = with_meta.occur_time.as_ref().unwrap();
+    let occur = with_meta.at.as_ref().unwrap();
     assert_eq!(occur.utc.to_rfc3339(), "2025-01-08T07:00:00+00:00");
     assert_eq!(occur.timezone.as_deref(), Some("Europe/Berlin"));
     assert_eq!(
@@ -2256,7 +2247,7 @@ fn a_doc_with_its_fields_at_the_top_level_imports() {
         row("word:other").data,
         Some(serde_json::json!({"text": "b"}))
     );
-    assert!(row("word:one").occur_time.is_none());
+    assert!(row("word:one").at.is_none());
 
     let keyed = entries.iter().find(|e| e.field == "keyed").unwrap();
     assert_eq!(keyed.data, Some(serde_json::json!({"data": {"inner": 1}})));
@@ -2333,7 +2324,7 @@ fn a_negative_dur_imports_as_a_false_block_returning_to_the_state() {
         assert_eq!(hole.following_state.as_ref(), Some(&state));
         assert_eq!(hole.dur.unwrap().to_storage_string(), "PT10M");
         assert_eq!(
-            hole.occur_time.unwrap().utc.to_rfc3339(),
+            hole.at.unwrap().utc.to_rfc3339(),
             "2025-01-08T08:00:00+00:00"
         );
 

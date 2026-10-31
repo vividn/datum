@@ -7,7 +7,7 @@
 //! `datum-core::ids::resolve`.
 //!
 //! Every fixture below is stamped at an explicit minute so the recency
-//! ordering (`ORDER BY occur_time DESC`) — and therefore each row's
+//! ordering (`ORDER BY at DESC`) — and therefore each row's
 //! ordinal — is deterministic.
 
 use crate::common;
@@ -127,11 +127,11 @@ fn range_retime_shifts_every_row_in_the_run() {
 
     // hid survives a retime; the slug is re-derived from the new time.
     for ordinal in [2usize, 3] {
-        let before = rows[ordinal - 1].occur_time.as_ref().unwrap().utc;
+        let before = rows[ordinal - 1].at.as_ref().unwrap().utc;
         let after = db
             .get_entry(rows[ordinal - 1].hid.as_str())
             .unwrap()
-            .occur_time
+            .at
             .unwrap()
             .utc;
         assert_eq!(
@@ -141,11 +141,11 @@ fn range_retime_shifts_every_row_in_the_run() {
         );
     }
     for ordinal in [1usize, 4] {
-        let before = rows[ordinal - 1].occur_time.as_ref().unwrap().utc;
+        let before = rows[ordinal - 1].at.as_ref().unwrap().utc;
         let after = db
             .get_entry(rows[ordinal - 1].hid.as_str())
             .unwrap()
-            .occur_time
+            .at
             .unwrap()
             .utc;
         assert_eq!(after, before, "_{ordinal} must not have moved");

@@ -11,8 +11,8 @@ use datum_core::test_util::fresh_db;
 use serde_json::json;
 
 /// `update <slug> field=Y` moves the entry to field `Y`, re-derives the
-/// slug as `Y:<occur_time>` (the `%occur_time%` id_structure interpolated
-/// against the unchanged time), preserves hid + occur_time + create_time,
+/// slug as `Y:<at>` (the `%at%` id_structure interpolated
+/// against the unchanged time), preserves hid + at + create_time,
 /// and does NOT leak `field` into `data`.
 #[test]
 fn update_field_refields_and_reslugs_in_place() {
@@ -22,11 +22,7 @@ fn update_field_refields_and_reslugs_in_place() {
     let before = datum_core::test_util::logged_entries(&db, "gym");
     assert_eq!(before.len(), 1, "one gym row seeded");
     let before = &before[0];
-    let (hid, occur, create) = (
-        before.hid.clone(),
-        before.occur_time.clone(),
-        before.create_time,
-    );
+    let (hid, occur, create) = (before.hid.clone(), before.at.clone(), before.create_time);
 
     run_cli(&["update", before.slug.as_str(), "field=cardio"], &db)
         .unwrap_or_else(|e| panic!("re-field must succeed: {e:#}"));
@@ -53,7 +49,7 @@ fn update_field_refields_and_reslugs_in_place() {
         after.hid, hid,
         "hid preserved (in-place, not delete+recreate)"
     );
-    assert_eq!(after.occur_time, occur, "occur_time preserved");
+    assert_eq!(after.at, occur, "at preserved");
     assert_eq!(after.create_time, create, "create_time preserved");
 
     let data = after.data.as_ref().expect("data payload survives");

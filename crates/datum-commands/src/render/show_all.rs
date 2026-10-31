@@ -130,9 +130,9 @@ fn render_column(col: &str, e: &Entry) -> String {
         // da-5uph: P1D rows render as a bare local date — engineers
         // scanning the show-all dump shouldn't see a synthetic 00:00:00
         // UTC stamp for what the user logged as a date-only entry.
-        "at" => match &e.occur_time {
+        "at" => match &e.at {
             Some(t) => {
-                if e.occur_uncertainty() == Some("P1D") {
+                if e.at_uncertainty() == Some("P1D") {
                     t.local_time().format("%Y-%m-%d").to_string()
                 } else {
                     t.utc.to_rfc3339()
@@ -140,15 +140,15 @@ fn render_column(col: &str, e: &Entry) -> String {
             }
             None => null_marker(),
         },
-        "at_offset" => match &e.occur_time {
+        "at_offset" => match &e.at {
             Some(t) => format!("{} min", t.offset_minutes),
             None => null_marker(),
         },
-        "at_tz" => match &e.occur_time {
+        "at_tz" => match &e.at {
             Some(t) => render_str_opt(t.timezone.as_deref()),
             None => null_marker(),
         },
-        "at_uncertainty" => render_str_opt(e.occur_uncertainty()),
+        "at_uncertainty" => render_str_opt(e.at_uncertainty()),
         "dur_uncertainty" => render_str_opt(e.dur_uncertainty()),
         "lat" => match e.lat {
             Some(v) => v.to_string(),
@@ -229,7 +229,7 @@ mod tests {
             dur: None,
             following_state: None,
             data: None,
-            occur_time: None,
+            at: None,
             lat: None,
             lon: None,
             location: None,
@@ -314,13 +314,13 @@ mod tests {
         );
     }
 
-    /// da-5uph: a P1D row's `occur_time` renders as `YYYY-MM-DD` in the
+    /// da-5uph: a P1D row's `at` renders as `YYYY-MM-DD` in the
     /// entry's local zone — never as the synthetic `00:00:00 UTC` stamp
     /// the column would emit if it ignored uncertainty.
     #[test]
-    fn occur_time_p1d_renders_as_bare_date() {
+    fn at_p1d_renders_as_bare_date() {
         let mut e = empty_entry();
-        e.occur_time = Some(datum_core::time::DatumTime {
+        e.at = Some(datum_core::time::DatumTime {
             utc: chrono::DateTime::parse_from_rfc3339("2026-05-12T19:00:00Z")
                 .unwrap()
                 .with_timezone(&chrono::Utc),
@@ -328,21 +328,21 @@ mod tests {
             timezone: Some("Asia/Karachi".to_string()),
             uncertainty: None,
         });
-        e.set_occur_uncertainty(Some("P1D".to_string()));
+        e.set_at_uncertainty(Some("P1D".to_string()));
         let plain = strip_ansi(&format_show_all(&e));
         // Local in +5h is 2026-05-13 — the date the user logged.
         assert!(
             plain.contains("2026-05-13"),
-            "P1D occur_time should show local date:\n{plain}"
+            "P1D at should show local date:\n{plain}"
         );
         assert!(
             !plain.contains("19:00") && !plain.contains("T19:"),
-            "P1D occur_time must omit clock:\n{plain}"
+            "P1D at must omit clock:\n{plain}"
         );
     }
 
     /// da-i5vs: `dur_uncertainty` is part of the grouped "When" view so
-    /// `-A` surfaces it alongside `occur_time_uncertainty`. NULL when unset.
+    /// `-A` surfaces it alongside `at_uncertainty`. NULL when unset.
     #[test]
     fn dur_uncertainty_renders_in_when_group() {
         let mut e = empty_entry();
@@ -451,8 +451,9 @@ mod tests {
             *listed.entry(col).or_insert(0) += 1;
         }
 
-        for col in &schema_cols {
-            match listed.get(datum_core::entry::surface_name(col)) {
+        // The old names are virtual columns for stored SQL (da-95avu): `at` shows them.
+        for col in schema_cols.iter().filter(|c| !c.starts_with("occur_time")) {
+            match listed.get(col.as_str()) {
                 None => panic!(
                     "schema column `{col}` is missing from the `-A` view — \
                      add `{col}` to a show_all group (ID/WHAT/WHEN/WHERE/BOOK/INTENT_COLS) \
@@ -467,9 +468,7 @@ mod tests {
 
         for col in listed.keys() {
             assert!(
-                schema_cols
-                    .iter()
-                    .any(|c| datum_core::entry::surface_name(c) == *col),
+                schema_cols.iter().any(|c| c == *col),
                 "show_all lists `{col}` but the entries table has no such column — \
                  remove it from its group or fix the schema"
             );
@@ -479,9 +478,9 @@ mod tests {
     /// da-5uph: exact-second rows (uncertainty `None` or `PT1S`) keep
     /// rendering as RFC3339 — the change is scoped to `P1D`.
     #[test]
-    fn occur_time_non_p1d_keeps_rfc3339() {
+    fn at_non_p1d_keeps_rfc3339() {
         let mut e = empty_entry();
-        e.occur_time = Some(datum_core::time::DatumTime {
+        e.at = Some(datum_core::time::DatumTime {
             utc: chrono::DateTime::parse_from_rfc3339("2026-05-13T09:15:30Z")
                 .unwrap()
                 .with_timezone(&chrono::Utc),
@@ -492,7 +491,7 @@ mod tests {
         let plain = strip_ansi(&format_show_all(&e));
         assert!(
             plain.contains("2026-05-13T09:15:30"),
-            "non-P1D occur_time should show full datetime:\n{plain}"
+            "non-P1D at should show full datetime:\n{plain}"
         );
     }
 }

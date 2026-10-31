@@ -40,11 +40,7 @@ fn why_of(args: &WhyArgs, id: &str, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    let mut versions: Vec<_> = db
-        .versions(&current)?
-        .into_iter()
-        .map(|v| v.surface())
-        .collect();
+    let mut versions: Vec<_> = db.versions(&current)?;
     let devices = names_devices(db, &versions)?;
     versions.reverse();
     println!();

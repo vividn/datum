@@ -36,7 +36,7 @@ use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
 use crate::args::{DayviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    leading_edge_ms, name_marks, occur_time_ms, render_field_visuals, switch_regions,
+    at_ms, leading_edge_ms, name_marks, render_field_visuals, switch_regions,
 };
 use datum_core::state::FieldStateRows;
 use serde_json::Value as JsonValue;
@@ -674,8 +674,7 @@ fn build_day_fields(
     let mut by_field: std::collections::BTreeMap<String, Vec<Entry>> =
         std::collections::BTreeMap::new();
     for e in entries.into_iter().filter(|e| {
-        e.occur_time
-            .as_ref()
+        e.at.as_ref()
             .is_none_or(|t| leading_edge_ms(e, t.utc.timestamp_millis()) <= day_end_ms)
     }) {
         by_field.entry(e.field.clone()).or_default().push(e);
@@ -718,7 +717,7 @@ fn build_day_fields(
                 continue;
             }
         }
-        entries_for_field.sort_by_key(occur_time_ms);
+        entries_for_field.sort_by_key(at_ms);
         let fallback_end_ms = day_end_ms.min(now_ms);
         let window = (fetch_start, day_end_utc + buffer);
         let rows = FieldStateRows::load_between(db.conn(), &field, window.0, window.1)?;

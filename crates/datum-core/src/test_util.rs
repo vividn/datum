@@ -134,7 +134,7 @@ impl EntryBuilder {
         self
     }
 
-    /// Clear the default `start_time` → a timeless entry (occur_time NULL,
+    /// Clear the default `start_time` → a timeless entry (at NULL,
     /// slug `field:<create_time>c`).
     pub fn no_time(mut self) -> Self {
         self.start_time = None;
@@ -147,7 +147,7 @@ impl EntryBuilder {
     }
 
     pub fn build(self) -> Entry {
-        // da-5ns sub-bead 1: `time_start` maps to occur_time; the
+        // da-5ns sub-bead 1: `time_start` maps to at; the
         // historic `time_end` is now expressed via `dur` (ISO duration)
         // — for tests that haven't migrated, derive a duration when both
         // legacy times are set so block-shaped fixtures keep producing

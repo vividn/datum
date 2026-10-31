@@ -2,7 +2,7 @@
 
 use rusqlite::Connection;
 
-use super::support::{has_column, rename_json_key, table_exists};
+use super::support::{has_column, rename_json_key, table_exists, with_live_columns};
 
 use crate::db::KIT_FIELD;
 use crate::error::{DatumError, Result};
@@ -160,8 +160,7 @@ pub(super) fn m55_to_56_stats_cache(conn: &Connection) -> Result<()> {
     if !table_exists(conn, "entries")? {
         return Ok(());
     }
-    conn.execute_batch(crate::db::STATS_CACHE_SQL)?;
-    Ok(())
+    with_live_columns(conn, || Ok(conn.execute_batch(crate::db::STATS_CACHE_SQL)?))
 }
 
 /// Reverse v55→v56. Local and derived: nothing is lost that `stats` cannot
@@ -233,7 +232,7 @@ pub(super) fn m57_to_58_conflicts(conn: &Connection) -> Result<()> {
         )?;
     }
     if table_exists(conn, "ops")? {
-        crate::db::derive_all_conflicts(conn)?;
+        with_live_columns(conn, || crate::db::derive_all_conflicts(conn))?;
     }
     Ok(())
 }

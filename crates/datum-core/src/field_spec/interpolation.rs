@@ -1,7 +1,7 @@
 //! Template interpolation for entry slugs / id templates.
 //!
 //! Templates use `%key%` placeholders. `%field%`, `%hid%`, `%uid%`,
-//! `%client_id%`, and the column-bound state/dur/following_state/occur_time
+//! `%client_id%`, and the column-bound state/dur/following_state/at
 //! keys come from the [`InterpolationContext`]; everything else falls through
 //! to a dot-path lookup against `extra_data`. `\%` is a literal `%`.
 //!
@@ -60,20 +60,20 @@ pub struct InterpolationContext<'a> {
     /// da-5ns.4: column-bound `following_state`. `%following_state%` reads
     /// this directly.
     pub following_state: Option<&'a JsonValue>,
-    /// da-5ns.4: column-bound `occur_time`. `%occur_time%` formats this as
+    /// da-5ns.4: column-bound `at`. `%at%` formats this as
     /// `YYYY-MM-DDTHH:MM:SS.sssZ` (matching the default-slug builder),
-    /// or as a bare local date when [`Self::occur_time_precision`] says
+    /// or as a bare local date when [`Self::at_uncertainty`] says
     /// the row is date-only.
-    pub occur_time: Option<&'a DatumTime>,
-    /// da-4fyb: the row's `occur_time_precision`. `Some("P1D")` marks a
-    /// date-only entry (da-fc0l), whose `occur_time` was stripped to
-    /// local midnight and carries no time-of-day. `%occur_time%` then
+    pub at: Option<&'a DatumTime>,
+    /// da-4fyb: the row's `at_uncertainty`. `Some("P1D")` marks a
+    /// date-only entry (da-fc0l), whose `at` was stripped to
+    /// local midnight and carries no time-of-day. `%at%` then
     /// renders the bare local date `YYYY-MM-DD` — the same degradation the
     /// display paths apply (da-5uph) — rather than a midnight stamp that
     /// asserts a precision the data does not have. Note the *local* date:
     /// the stored UTC instant is local midnight, so east-of-UTC rows land
     /// on the previous UTC day.
-    pub occur_time_precision: Option<&'a str>,
+    pub at_uncertainty: Option<&'a str>,
     /// da-xbjy / da-r17h: `%create_time%` renders this and appends `'c'`
     /// (da-06jxa), so the slug for a timeless entry is
     /// `field:<create_time>c` and sorts beside the occur ids of its moment.
@@ -103,8 +103,8 @@ impl<'a> InterpolationContext<'a> {
             state: entry.state.as_ref(),
             dur: entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             following_state: entry.following_state.as_ref(),
-            occur_time: entry.occur_time.as_ref(),
-            occur_time_precision: entry.occur_uncertainty(),
+            at: entry.at.as_ref(),
+            at_uncertainty: entry.at_uncertainty(),
             create_time: Some(&entry.create_time),
             modify_time: Some(&entry.modify_time),
             client_id: &entry.client_id,
@@ -296,7 +296,7 @@ fn canonical_key(key: &str) -> &str {
     // working. Other camelCase keys fall through to lookup_extra_data
     // unchanged.
     match key {
-        "at" | "occurTime" => "occur_time",
+        "occur_time" | "occurTime" => "at",
         "createTime" => "create_time",
         "modifyTime" => "modify_time",
         // following_state and dur have no legacy camelCase form (they're
@@ -314,12 +314,7 @@ pub fn names_time(template: &str) -> bool {
         .iter()
         .skip(1)
         .step_by(2)
-        .any(|k| {
-            matches!(
-                canonical_key(k),
-                "occur_time" | "create_time" | "modify_time"
-            )
-        })
+        .any(|k| matches!(canonical_key(k), "at" | "create_time" | "modify_time"))
 }
 
 fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
@@ -347,16 +342,16 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
         // da-4fyb: a date-only row (`P1D`) has no time-of-day, so the slug
         // it keys on is the bare local date. Anything else keeps the full
         // UTC stamp the default-slug builder emits.
-        "occur_time" => ctx
-            .occur_time
-            .map(|t| entry_id::render_occur_token(t, ctx.occur_time_precision))
+        "at" => ctx
+            .at
+            .map(|t| entry_id::render_occur_token(t, ctx.at_uncertainty))
             .unwrap_or_default(),
         // da-xbjy / da-r17h: mark the time `c` / `m`, only when the value is
         // non-empty so missing-key delimiter collapsing still works. The `c`
         // goes after the time (da-06jxa, vividn: «the c should go after so
         // that the -T documents are in chronological order with their occur
         // counterparts»): `field:<create_time>c` sorts right after
-        // `field:<occur_time>` of the same instant.
+        // `field:<at>` of the same instant.
         "create_time" => ctx
             .create_time
             .map(|t| format!("{}c", entry_id::render_stamp(t)))
@@ -572,8 +567,8 @@ mod tests {
             state: None,
             dur: None,
             following_state: None,
-            occur_time: None,
-            occur_time_precision: None,
+            at: None,
+            at_uncertainty: None,
             create_time: None,
             modify_time: None,
             client_id: "",
@@ -731,8 +726,8 @@ mod tests {
             state: Some(&state),
             dur: None,
             following_state: None,
-            occur_time: None,
-            occur_time_precision: None,
+            at: None,
+            at_uncertainty: None,
             create_time: None,
             modify_time: None,
             client_id: "",
@@ -774,8 +769,8 @@ mod tests {
             state: None,
             dur: None,
             following_state: None,
-            occur_time: None,
-            occur_time_precision: None,
+            at: None,
+            at_uncertainty: None,
             create_time: None,
             modify_time: None,
             client_id: "",
@@ -814,8 +809,8 @@ mod tests {
             state: None,
             dur: None,
             following_state: None,
-            occur_time: None,
-            occur_time_precision: None,
+            at: None,
+            at_uncertainty: None,
             create_time: create,
             modify_time: modify,
             client_id: "",
@@ -841,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_occur_time_has_no_suffix() {
+    fn interpolate_at_has_no_suffix() {
         let dt: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let occur = DatumTime::from_utc_and_tz(dt, "UTC").unwrap();
         let ctx = InterpolationContext {
@@ -851,15 +846,15 @@ mod tests {
             state: None,
             dur: None,
             following_state: None,
-            occur_time: Some(&occur),
-            occur_time_precision: None,
+            at: Some(&occur),
+            at_uncertainty: None,
             create_time: None,
             modify_time: None,
             client_id: "",
             record: None,
             record_key: None,
         };
-        let got = interpolate("%occur_time%", &ctx, "__");
+        let got = interpolate("%at%", &ctx, "__");
         assert_eq!(got, "2026-05-13T15:00:00.000Z");
     }
 
@@ -868,31 +863,31 @@ mod tests {
     /// day is the one before — rendering `t.utc` would key the entry to the
     /// wrong calendar day, on top of asserting a midnight that isn't data.
     #[test]
-    fn interpolate_occur_time_renders_bare_local_date_for_p1d() {
+    fn interpolate_at_renders_bare_local_date_for_p1d() {
         // 2026-09-01 00:00 in Europe/Berlin == 2026-08-31T22:00:00Z.
         let dt: DateTime<Utc> = "2026-08-31T22:00:00Z".parse().unwrap();
         let occur = DatumTime::from_utc_and_tz(dt, "Europe/Berlin").unwrap();
         let ctx = InterpolationContext {
-            occur_time: Some(&occur),
-            occur_time_precision: Some("P1D"),
+            at: Some(&occur),
+            at_uncertainty: Some("P1D"),
             ..occur_ctx("coffee", None, "u")
         };
-        let got = interpolate("%field%:%occur_time%", &ctx, DEFAULT_ID_DELIMITER);
+        let got = interpolate("%field%:%at%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "coffee:2026-09-01");
     }
 
     /// A non-`P1D` precision is an `±N` uncertainty, not a date-only marker:
     /// the stamp stays full-resolution.
     #[test]
-    fn interpolate_occur_time_keeps_full_stamp_for_other_precisions() {
+    fn interpolate_at_keeps_full_stamp_for_other_precisions() {
         let dt: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let occur = DatumTime::from_utc_and_tz(dt, "UTC").unwrap();
         let ctx = InterpolationContext {
-            occur_time: Some(&occur),
-            occur_time_precision: Some("PT5M"),
+            at: Some(&occur),
+            at_uncertainty: Some("PT5M"),
             ..occur_ctx("f", None, "u")
         };
-        let got = interpolate("%occur_time%", &ctx, "__");
+        let got = interpolate("%at%", &ctx, "__");
         assert_eq!(got, "2026-05-13T15:00:00.000Z");
     }
 
@@ -907,8 +902,8 @@ mod tests {
             state: None,
             dur: None,
             following_state: None,
-            occur_time: None,
-            occur_time_precision: None,
+            at: None,
+            at_uncertainty: None,
             create_time: Some(&t),
             modify_time: None,
             client_id: "",
@@ -1065,7 +1060,7 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_camelcase_occurtime_aliases_occur_time() {
+    fn interpolate_camelcase_occurtime_aliases_at() {
         let dt: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let occur = DatumTime::from_utc_and_tz(dt, "UTC").unwrap();
         let ctx = InterpolationContext {
@@ -1075,8 +1070,8 @@ mod tests {
             state: None,
             dur: None,
             following_state: None,
-            occur_time: Some(&occur),
-            occur_time_precision: None,
+            at: Some(&occur),
+            at_uncertainty: None,
             create_time: None,
             modify_time: None,
             client_id: "",
@@ -1117,7 +1112,9 @@ mod tests {
             "%uid%",
             "%at_extra%",
             "%occur_time_extra%",
+            r"\%at\%",
             r"\%occur_time\%",
+            "a%b%at",
             "a%b%occur_time",
             "fixed",
         ] {

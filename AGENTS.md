@@ -41,7 +41,7 @@ a top-level `migrations/` folder.)
 
 ### Entry fields
 - `id` (`hid`): internal, prefix-addressable, sortable. **Primary key and the durable identity, local and cross-device** — sync merges key on it and never rewrite it.
-- `slug`: `field:2024-03-16T09:15Z` (human reference, datum-compatible). Derived from field + occur_time, so `retime` rewrites it — **mutable, not an identity**.
+- `slug`: `field:2024-03-16T09:15Z` (human reference, datum-compatible). Derived from field + at, so `retime` rewrites it — **mutable, not an identity**.
 - `content_hash`: SHA-256 dedup key
 - `field`: what is being tracked (e.g. "coffee", "mood", "project", "word")
 - `verb`: the STORED classification, derived from state + dur — `point` | `switch` | `block` | `block-switch` | `point-switch` (`crates/datum-parse/src/verb.rs`). The words a person types — `moment` (its alias `occur`), `start`, `stop`/`end`, `switch`, `note`, `add` — are the COMMANDS; they set the state and the duration the verb is derived from.
@@ -61,9 +61,9 @@ a top-level `migrations/` folder.)
   a key the record lacks refuses unless `%?::key%`.
   datum has no units anywhere, in specs, subfields or entries.
   The only planned form is a typed value (`u://`/`unit://`), not built.
-- `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.
-- the zone travels with the time (`occur_time_tz`): an IANA name, e.g. "America/Chicago"
-- What a person types and reads calls the time `at` (da-o5bww): `at=` and `at_uncertainty=` on a line (`occur_time=` still read), `%at%` in a template (`%occur_time%` and `%occurTime%` still read), `at`, `at_tz`, `at_offset` and `at_uncertainty` in `get`, `edit`, `history`, `why` and `conflicts`. The column, the Rust names, a backup's lines and the ops still say `occur_time`, and a new entry's stored `id_structure` `%occur_time%`, until da-95avu. So `at` is no data key: refused on a new write, and one already held (an import, another copy) is named by `datum check` (`reserved_data_key`) and `db v2import`, and kept.
+- `at` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.
+- the zone travels with the time (`at_tz`): an IANA name, e.g. "America/Chicago"
+- What a person types and reads calls the time `at` (da-o5bww): `at=` and `at_uncertainty=` on a line (`occur_time=` still read), `%at%` in a template (`%occur_time%` and `%occurTime%` still read), `at`, `at_tz`, `at_offset` and `at_uncertainty` in `get`, `edit`, `history`, `why` and `conflicts`. The column, the Rust names, a backup's lines and new ops say it too (da-95avu, schema 76, a sync floor): an op signed before says `occur_time`, and `Op::parse` reads it as `at`, as a spooled line and an old snapshot or backup are read. `entries` keeps `occur_time`, `occur_time_offset`, `occur_time_tz` and `occur_time_uncertainty` as untyped virtual columns, the one named exception, because a kit view's SQL is an entry in a signed op and so can never be rewritten; nothing in datum reads them. So `at` is no data key: refused on a new write, and one already held (an import, another copy) is named by `datum check` (`reserved_data_key`) and `db v2import`, and kept.
 - `create_time` / `modify_time` / `client_id`
 
 ### Time model
@@ -73,10 +73,10 @@ All four combinations are valid as INPUT:
 - `time_start` + a duration — end derived
 - `time_end` + a duration — start derived
 
-What the row actually stores is `occur_time` + `dur`, and `occur_time` is
+What the row actually stores is `at` + `dur`, and `at` is
 the block's END: the duration is the span that PRECEDES it (matching the original datum's `durationBlocks` view). So a `(start, end)`
-pair lands as `occur_time = end`, and a bare `start` with no end — an
-open block — is the one shape whose `occur_time` is its leading edge,
+pair lands as `at = end`, and a bare `start` with no end — an
+open block — is the one shape whose `at` is its leading edge,
 because it has no other instant to store.
 
 ### `stats`' per-day cache
@@ -312,7 +312,7 @@ is reported rather than read again. The owner's reads open as a write does.
   spooled. Two synced copies can each grant one (da-ovnf9). v2's `-L`
   recorded: record with `-l`
 - `start_time=` / `end_time=` on `add`/`note`/`start`/`switch`/`moment` are
-  lifted onto `occur_time`/`dur`, parsed exactly as `-t` is: the
+  lifted onto `at`/`dur`, parsed exactly as `-t` is: the
   pair is the block between them, `start_time=S` + a duration ends at
   `S + dur`, `end_time=E` alone on `start` becomes `end -t E` (on `switch
   STATE`, `end -t E -l=STATE`). Never combined with `-t`; nothing of the
@@ -1195,7 +1195,7 @@ binary.
   with the CLI widget's `tail`; nothing is asked until the box is taller than
   the header), scrolling to the top pages
   the rows above in (`tail -n <page> --above <oldest row's hid>`, the
-  CLI's bound in the listing's own order, `occur_time ?? create_time`,
+  CLI's bound in the listing's own order, `at ?? create_time`,
   so a timeless row pages in at its create time, da-mhcla, da-2vgj1;
   capped at 300 rows) with the
   reader's row anchored, and a write while scrolled up keeps the place

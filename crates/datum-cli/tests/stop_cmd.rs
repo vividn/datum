@@ -6,7 +6,7 @@
 //!     trailing positional (`stop dance 5m`) or as `dur=5m`, da-azqq having
 //!     retired the `--dur` flag. "Moment" semantics are the default for
 //!     stop (no duration ⇒ no `time_end`). `-T` (omit-timestamp) IS supported
-//!     and yields a timeless entry (`occur_time` NULL, slug `field:<create_time>c`);
+//!     and yields a timeless entry (`at` NULL, slug `field:<create_time>c`);
 //!     see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is datum-specific; daydumb's `-k` always
 //!     takes `KEY=VALUE`.
@@ -40,7 +40,7 @@ fn stop_records_false_state_at_time_start() {
     assert_count!(db, "dance", 1);
     let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
-    let ts = entry.occur_time.as_ref().expect("stop anchors occur_time");
+    let ts = entry.at.as_ref().expect("stop anchors at");
     assert!(
         entry.dur.is_none(),
         "bare stop (no duration) must not derive time_end",
@@ -82,7 +82,7 @@ fn stop_last_state_captures_prior_switch_state() {
     );
 
     // After the stop, the active state is false.
-    let ts = stop.occur_time.as_ref().unwrap().utc;
+    let ts = stop.at.as_ref().unwrap().utc;
     let after = db
         .get_active_state("activity", ts + chrono::Duration::seconds(1))
         .unwrap();
@@ -121,9 +121,9 @@ fn stop_dur_produces_closed_block_ending_at_occur() {
         .expect("stop entry present");
 
     let te = stop
-        .occur_time
+        .at
         .as_ref()
-        .expect("stop anchors occur_time at the entry's time")
+        .expect("stop anchors at at the entry's time")
         .utc;
     let ts = stop
         .computed_start_time()
@@ -167,7 +167,7 @@ fn stop_without_dur_is_moment_like() {
 
     let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
-    assert!(entry.occur_time.is_some());
+    assert!(entry.at.is_some());
     assert!(
         entry.dur.is_none(),
         "no duration ⇒ no dur (moment semantics)",

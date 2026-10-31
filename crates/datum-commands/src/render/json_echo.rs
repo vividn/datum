@@ -313,7 +313,7 @@ mod tests {
             // stamp, `09:00 → 10:00`, and an unmoved one the plain stamp.
             let before = row("mood", Verb::Switch, Some(json!("calm")));
             let mut moved = before.clone();
-            moved.occur_time = Some(at(10));
+            moved.at = Some(at(10));
             let mut restated = before.clone();
             restated.state = Some(json!("tired"));
             let update = |after: &Entry| {

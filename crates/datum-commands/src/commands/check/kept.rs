@@ -17,7 +17,7 @@ use datum_core::timezone_field::TIMEZONE_FIELD;
 
 use super::Issue;
 
-/// Rows changed since a run: `(hid, field, occur_time)`.
+/// Rows changed since a run: `(hid, field, at)`.
 pub(super) type Changed = Vec<(String, String, String)>;
 
 /// Which change this run reads through, and what it ran as. No `through`
@@ -38,7 +38,7 @@ impl Plan {
     }
 
     /// What `checker` kept, and the rows changed since, `(hid, field,
-    /// occur_time)`, an op's field and time `''`: `None` where it must read
+    /// at)`, an op's field and time `''`: `None` where it must read
     /// everything.
     pub(super) fn since(&self, db: &Db, checker: &str) -> Option<(Vec<String>, Changed)> {
         self.through?;

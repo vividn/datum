@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 pub struct Hid(pub String);
 
 /// Human-facing entry reference (`field:<ident>`). UNIQUE-indexed in `entries`.
-/// Derived from field + occur_time and rewritten in place by `retime`, so it
+/// Derived from field + at and rewritten in place by `retime`, so it
 /// is a handle, not an identity — see [`Hid`] for the stable one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(transparent)]

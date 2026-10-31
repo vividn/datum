@@ -64,7 +64,7 @@ name = "{name}"
 
 [[view]]
 name = "{name}_log"
-sql = "SELECT state FROM entries WHERE field = '{name}' AND deleted_at IS NULL ORDER BY occur_time"
+sql = "SELECT state FROM entries WHERE field = '{name}' AND deleted_at IS NULL ORDER BY at"
 
 [[command]]
 name = "{name}_up"

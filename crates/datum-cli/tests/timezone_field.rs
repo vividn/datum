@@ -75,7 +75,7 @@ impl Env {
 }
 
 fn zone_of(entry: &Entry) -> Option<&str> {
-    entry.occur_time.as_ref()?.timezone.as_deref()
+    entry.at.as_ref()?.timezone.as_deref()
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn its_own_entry_is_at_the_clock_of_the_zone_it_names() {
     let env = Env::new();
     env.ok(&["timezone", "Asia/Tokyo", "-d", "2026-06-01", "-t", "14:00"]);
     let entry = env.only();
-    let at = entry.occur_time.as_ref().unwrap();
+    let at = entry.at.as_ref().unwrap();
     assert_eq!(at.utc.to_rfc3339(), "2026-06-01T05:00:00+00:00");
     assert_eq!(at.timezone.as_deref(), Some("Asia/Tokyo"));
     assert_eq!(at.offset_minutes, 9 * 60);
@@ -158,7 +158,7 @@ fn an_offset_on_t_keeps_its_instant_in_the_zone_named() {
     let env = Env::new();
     env.ok(&["timezone", "Asia/Tokyo", "-t", "2026-06-01T12:00+02:00"]);
     let entry = env.only();
-    let at = entry.occur_time.as_ref().unwrap();
+    let at = entry.at.as_ref().unwrap();
     assert_eq!(at.utc.to_rfc3339(), "2026-06-01T10:00:00+00:00");
     assert_eq!(at.timezone.as_deref(), Some("Asia/Tokyo"));
     assert_eq!(at.offset_minutes, 9 * 60);
@@ -172,7 +172,7 @@ mod moved {
 
     /// The entry at 10:00+02:00 on 2026-06-03, in Tokyo as 17:00.
     fn assert_in_tokyo(entry: &Entry) {
-        let at = entry.occur_time.as_ref().unwrap();
+        let at = entry.at.as_ref().unwrap();
         assert_eq!(at.utc.to_rfc3339(), "2026-06-03T08:00:00+00:00");
         assert_eq!(at.timezone.as_deref(), Some("Asia/Tokyo"));
         assert_eq!(at.offset_minutes, 9 * 60);
@@ -188,11 +188,11 @@ mod moved {
     }
 
     #[test]
-    fn an_offset_on_update_occur_time() {
+    fn an_offset_on_update_at() {
         let env = Env::new();
         env.ok(LOGGED);
         let hid = env.only().hid;
-        env.ok(&["update", hid.as_str(), "occur_time=2026-06-03T10:00+02:00"]);
+        env.ok(&["update", hid.as_str(), "at=2026-06-03T10:00+02:00"]);
         assert_in_tokyo(&env.only());
     }
 
@@ -202,7 +202,7 @@ mod moved {
         let env = Env::new();
         env.ok(LOGGED);
         let hid = env.only().hid;
-        let out = env.ok(&["update", hid.as_str(), "occur_time=2026-06-02T10:00+02:00"]);
+        let out = env.ok(&["update", hid.as_str(), "at=2026-06-02T10:00+02:00"]);
         assert!(out.contains("NODIFF"), "{out}");
     }
 
@@ -243,7 +243,7 @@ mod moved {
         let hid = env.only().hid;
         env.ok(&["retime", hid.as_str(), "-t", "2026-06-03T10:00+05:00"]);
         assert_eq!(
-            env.only().occur_time.unwrap().offset_minutes,
+            env.only().at.unwrap().offset_minutes,
             5 * 60,
             "IGNORED names no zone"
         );
@@ -337,8 +337,8 @@ fn an_imported_state_that_is_no_zone_loads_as_it_is_and_check_reports_it() {
     env.ok(&["update", "syn0001", "note=old"]);
     assert_eq!(env.only().state, Some(json!("somewhere")));
     env.refused(&["update", "syn0001", "state=elsewhere"]);
-    env.ok(&["update", "syn0001", "occur_time=2025-01-02T10:00+02:00"]);
-    assert_eq!(env.only().occur_time.unwrap().offset_minutes, 2 * 60);
+    env.ok(&["update", "syn0001", "at=2025-01-02T10:00+02:00"]);
+    assert_eq!(env.only().at.unwrap().offset_minutes, 2 * 60);
     assert_eq!(env.fields_row()["zone"], Value::Null);
 }
 
@@ -351,8 +351,8 @@ fn an_update_of_its_state_moves_the_entry_to_that_zone() {
     let after = env.only();
     assert_eq!(zone_of(&after), Some("Europe/Paris"));
     assert_eq!(
-        after.occur_time.as_ref().unwrap().utc,
-        before.occur_time.as_ref().unwrap().utc
+        after.at.as_ref().unwrap().utc,
+        before.at.as_ref().unwrap().utc
     );
 }
 
@@ -534,7 +534,7 @@ fn a_field_named_by_key_is_at_the_clock_of_the_zone_it_names() {
         "-t",
         "2026-06-01T14:00",
     ]);
-    let at = env.only().occur_time.unwrap();
+    let at = env.only().at.unwrap();
     assert_eq!(at.utc.to_rfc3339(), "2026-06-01T05:00:00+00:00");
     assert_eq!(at.timezone.as_deref(), Some("Asia/Tokyo"));
     let err = env.refused(&["switch", "field=timezone", "Asia/Seoul", "-z", "Asia/Tokyo"]);
@@ -549,7 +549,7 @@ fn a_field_named_by_key_is_at_the_clock_of_the_zone_it_names() {
 fn retime_refuses_a_z_that_disagrees() {
     let env = Env::new();
     env.ok(&["timezone", "Asia/Tokyo", "-t", "2026-06-01T10:00"]);
-    let before = env.only().occur_time.unwrap();
+    let before = env.only().at.unwrap();
     for line in [
         &["retime", "_LAST", "-z", "Europe/Berlin"][..],
         &["retime", "--field", "timezone", "-z", "Europe/Berlin"],
@@ -560,10 +560,10 @@ fn retime_refuses_a_z_that_disagrees() {
             "{err}"
         );
     }
-    let after = env.only().occur_time.unwrap();
+    let after = env.only().at.unwrap();
     assert_eq!((after.utc, &after.timezone), (before.utc, &before.timezone));
     env.ok(&["retime", "_LAST", "-t", "11:00", "-z", "Asia/Tokyo"]);
-    let at = env.only().occur_time.unwrap();
+    let at = env.only().at.unwrap();
     assert_eq!(at.utc.to_rfc3339(), "2026-06-01T02:00:00+00:00");
 
     env.ok(&["timezone", "IGNORED", "-t", "2026-06-02T10:00"]);
@@ -634,7 +634,7 @@ mod follow {
     fn coffees(env: &Env) -> Vec<(String, String)> {
         sql(
             env,
-            "SELECT occur_time, IFNULL(occur_time_tz, '') FROM entries WHERE field = 'coffee' ORDER BY rowid",
+            "SELECT at, IFNULL(at_tz, '') FROM entries WHERE field = 'coffee' ORDER BY rowid",
         )
     }
 
@@ -736,7 +736,7 @@ mod follow {
         env.ok(&["occur", "coffee", "-yy", "-t", "8"]);
         let db = Db::open(env.path().to_str().unwrap()).unwrap();
         let (hid, _) = sql(&env, "SELECT hid, '' FROM entries WHERE field = 'coffee'").remove(0);
-        let at = db.get_entry(&hid).unwrap().occur_time.unwrap();
+        let at = db.get_entry(&hid).unwrap().at.unwrap();
         assert_eq!(at.timezone.as_deref(), Some(LISBON));
         let clock = at.utc + chrono::TimeDelta::minutes(at.offset_minutes.into());
         assert_eq!(clock.format("%H:%M").to_string(), "08:00", "{at:?}");
@@ -785,26 +785,26 @@ mod follow {
     }
 
     #[test]
-    fn an_occur_time_key_is_in_the_zone_held_at_its_instant() {
+    fn an_at_key_is_in_the_zone_held_at_its_instant() {
         let env = trip();
-        let inside = keyed(&env, &["occur_time=2026-03-11T08:00"]);
+        let inside = keyed(&env, &["at=2026-03-11T08:00"]);
         assert_instant(&inside, "2026-03-11T08:00:00Z", LISBON);
-        let first = keyed(&env, &["occur_time=2026-03-10T08:00"]);
+        let first = keyed(&env, &["at=2026-03-10T08:00"]);
         assert_instant(&first, "2026-03-10T08:00:00Z", LISBON);
-        let before = keyed(&env, &["occur_time=2026-03-10T07:30"]);
+        let before = keyed(&env, &["at=2026-03-10T07:30"]);
         assert_instant(&before, "2026-03-10T06:30:00Z", BERLIN);
-        let past = keyed(&env, &["occur_time=2026-03-13T08:00"]);
+        let past = keyed(&env, &["at=2026-03-13T08:00"]);
         assert_instant(&past, "2026-03-13T07:00:00Z", BERLIN);
     }
 
     #[test]
-    fn an_occur_time_key_counts_from_the_flags_and_z_and_its_offset_win() {
+    fn an_at_key_counts_from_the_flags_and_z_and_its_offset_win() {
         let env = trip();
-        let relative = keyed(&env, &["-d", "2026-03-11", "-t", "8", "occur_time=-30"]);
+        let relative = keyed(&env, &["-d", "2026-03-11", "-t", "8", "at=-30"]);
         assert_instant(&relative, "2026-03-11T07:30:00Z", LISBON);
-        let named = keyed(&env, &["-z", "Asia/Tokyo", "occur_time=2026-03-11T09:00"]);
+        let named = keyed(&env, &["-z", "Asia/Tokyo", "at=2026-03-11T09:00"]);
         assert_instant(&named, "2026-03-11T00:00:00Z", "Asia/Tokyo");
-        let offset = keyed(&env, &["occur_time=2026-03-11T10:00:00+09:00"]);
+        let offset = keyed(&env, &["at=2026-03-11T10:00:00+09:00"]);
         assert_instant(&offset, "2026-03-11T01:00:00Z", "");
     }
 
@@ -812,7 +812,7 @@ mod follow {
     #[test]
     fn a_whole_day_key_is_that_stretchs_midnight() {
         let env = trip();
-        let day = keyed(&env, &["-D", "occur_time=2026-03-11T08:00"]);
+        let day = keyed(&env, &["-D", "at=2026-03-11T08:00"]);
         assert_instant(&day, "2026-03-11T00:00:00Z", LISBON);
     }
 
@@ -820,11 +820,11 @@ mod follow {
     #[test]
     fn before_the_first_stretch_a_key_takes_nothing_from_the_field() {
         let env = trip();
-        let early = keyed(&env, &["occur_time=2026-01-11T08:00"]);
+        let early = keyed(&env, &["at=2026-01-11T08:00"]);
         assert_instant(&early, "2026-01-11T07:00:00Z", BERLIN);
         let env = Env::new();
         env.ok(&["timezone", LISBON, "-t", "-100"]);
-        let early = keyed(&env, &["occur_time=2026-01-11T08:00"]);
+        let early = keyed(&env, &["at=2026-01-11T08:00"]);
         assert_instant(&early, "2026-01-11T07:00:00Z", BERLIN);
     }
 
@@ -832,20 +832,10 @@ mod follow {
     #[test]
     fn a_key_in_the_past_does_not_ask_and_one_at_now_does() {
         let env = holding(BERLIN);
-        let past = page(
-            &env,
-            PARIS,
-            &["occur", "coffee", "occur_time=2026-01-11T08:00"],
-            "",
-        );
+        let past = page(&env, PARIS, &["occur", "coffee", "at=2026-01-11T08:00"], "");
         assert!(past.status.success(), "{past:?}");
         assert_eq!(zones_logged(&env), [BERLIN]);
-        assert!(asked(&page(
-            &env,
-            PARIS,
-            &["occur", "coffee", "occur_time=-1"],
-            ""
-        )));
+        assert!(asked(&page(&env, PARIS, &["occur", "coffee", "at=-1"], "")));
     }
 
     #[test]

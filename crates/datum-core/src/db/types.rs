@@ -31,7 +31,7 @@ pub use datum_parse::shape::IGNORED_STATE_VALUE;
 
 /// Which timestamp to sort/filter entries by in [`super::Db::list_entries`].
 ///
-/// `Hybrid` is `occur_time ?? create_time`, so a timeless row (a note)
+/// `Hybrid` is `at ?? create_time`, so a timeless row (a note)
 /// sits at its create time, as v2's hybrid did (da-2vgj1). `Occur`
 /// excludes timeless rows entirely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -123,8 +123,8 @@ pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
     // Spelled as `entries_hybrid` / `entries_live_field_hybrid` spell it,
     // or SQLite will not use them.
     match metric {
-        TimeMetric::Hybrid => "COALESCE(occur_time, create_time)",
-        TimeMetric::Occur => "occur_time",
+        TimeMetric::Hybrid => "COALESCE(at, create_time)",
+        TimeMetric::Occur => "at",
         TimeMetric::Create => "create_time",
         TimeMetric::Modify => "modify_time",
     }
@@ -132,16 +132,16 @@ pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
 
 /// Canonical state-participation predicate (da-ylet): a row contributes
 /// to a field's state timeline iff it is live AND not a deliberately
-/// timeless row (`occur_time IS NULL`, written by `add` / `note` /
+/// timeless row (`at IS NULL`, written by `add` / `note` /
 /// `-T`/`--no-timestamp`).
 ///
 /// This is the ONE place the rule lives. v3 killed the legacy `add` verb
 /// (migration v21 rewrites `add` → `point` unconditionally), so the old
 /// `verb != 'add'` / `verb IN (...)` filters select nothing — "skip
-/// timeless notes" survives via the NULL `occur_time` marker. da-r17h:
+/// timeless notes" survives via the NULL `at` marker. da-r17h:
 /// the timeless slug is now `field:<create_time>c` (was `field:unset`)
-/// so the row identifies many-per-field; `occur_time IS NULL` is the
-/// durable timeless predicate (any `occur_time <= ?` bound already
+/// so the row identifies many-per-field; `at IS NULL` is the
+/// durable timeless predicate (any `at <= ?` bound already
 /// excludes these implicitly — the predicate does real work in the
 /// unbounded readers, e.g. `latest_entry_for_now` with no snapshot time).
 ///
@@ -151,7 +151,7 @@ pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
 /// it into the timeline would put both sides of one conflict into the state
 /// the user is shown.
 pub(crate) const STATE_PARTICIPATION_SQL: &str =
-    "occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL";
+    "at IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL";
 
 /// The rows in the live stream: not deleted by the user, and not set aside
 /// by a sync merge (da-uxgv). One string so the two halves of "live" can
@@ -167,17 +167,17 @@ pub const NOT_FLAG_OR_META_SQL: &str = "json_extract(extra_metadata, '$.flag') I
      AND json_extract(extra_metadata, '$.meta') IS NOT 1";
 
 /// Canonical newest-first ordering for state reads (da-ylet): latest
-/// `occur_time` wins; ties break on `slug` DESC. Same-instant live ties
+/// `at` wins; ties break on `slug` DESC. Same-instant live ties
 /// are schema-impossible on a single device (da-ga8b's partial UNIQUE on
-/// `(field, occur_time)`), so the slug tiebreak is determinism armor for
+/// `(field, at)`), so the slug tiebreak is determinism armor for
 /// rows that bypassed the index (raw inserts, sync merges) — every state
 /// oracle must resolve such a tie to the SAME row.
-pub(crate) const STATE_ORDER_NEWEST_FIRST: &str = "occur_time DESC, slug DESC";
+pub(crate) const STATE_ORDER_NEWEST_FIRST: &str = "at DESC, slug DESC";
 
 /// Exact mirror of [`STATE_ORDER_NEWEST_FIRST`] for ascending walks
 /// (state compilation replays oldest→newest; the last event it sees must
 /// be the same row the newest-first readers pick).
-pub(crate) const STATE_ORDER_OLDEST_FIRST: &str = "occur_time ASC, slug ASC";
+pub(crate) const STATE_ORDER_OLDEST_FIRST: &str = "at ASC, slug ASC";
 
 /// Build the shared `WHERE` clause + parameter bindings used by
 /// `count_entries_filtered`, `count_entries_grouped`, and `list_entry_ids`.
@@ -196,7 +196,7 @@ pub(super) fn filtered_where(
         None => parts.push(super::spec::NOT_META_FIELD_SQL.to_string()),
     }
     if let Some(since_utc) = since {
-        // A timeless row has no occur_time to compare, and this leaves it out.
+        // A timeless row has no at to compare, and this leaves it out.
         parts.push(format!("{} >= ?", time_expr(TimeMetric::Occur)));
         bindings.push(since_utc.to_rfc3339());
     }
@@ -252,7 +252,7 @@ pub struct ListParams {
 pub struct TimelineEntry {
     pub hid: crate::ids::Hid,
     pub state: Option<serde_json::Value>,
-    pub occur_time: Option<crate::time::DatumTime>,
+    pub at: Option<crate::time::DatumTime>,
     pub client_id: String,
     /// Whether it is a TRACK document ([`crate::track::track_verb`]).
     pub declaration: bool,
@@ -271,7 +271,7 @@ pub struct RetimeFilter<'a> {
 }
 
 /// One retimed row: the entry as it stands after the move, paired with the
-/// `occur_time` it carried before. Retime's renderer prints the pair as
+/// `at` it carried before. Retime's renderer prints the pair as
 /// `before ⟶ after`, so the shift has to travel back out of the db layer
 /// rather than collapsing to a count.
 #[derive(Debug, Clone)]

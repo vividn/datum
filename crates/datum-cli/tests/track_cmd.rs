@@ -19,7 +19,7 @@ fn latest_state(db: &Db, field: &str) -> JsonValue {
     let entries = db.entries_for_field(field, None).unwrap();
     let newest = entries
         .iter()
-        .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+        .max_by_key(|e| e.at.as_ref().map(|t| t.utc))
         .unwrap();
     newest.state.clone().unwrap_or(JsonValue::Null)
 }

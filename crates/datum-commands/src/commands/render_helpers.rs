@@ -230,7 +230,7 @@ mod tests {
     }
 
     /// da-6ec2: the pure ordering and the SQL one are the same ordering.
-    /// The browser cannot run `ORDER BY occur_time DESC, slug DESC`, so it
+    /// The browser cannot run `ORDER BY at DESC, slug DESC`, so it
     /// spells that rule in Rust — and this is what holds the spelling to
     /// the query it stands in for.
     #[test]

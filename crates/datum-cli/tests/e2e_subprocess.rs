@@ -1155,7 +1155,7 @@ fn subprocess_kit_command_honours_a_leading_db() {
 }
 
 /// A kit view groups by the day an entry was logged on with
-/// `local_day(occur_time, occur_time_offset)`, where `date(occur_time)` is
+/// `local_day(at, at_offset)`, where `date(at)` is
 /// the UTC day: 00:30 in Berlin (+02:00) is the 10th locally and the 9th in
 /// UTC. A timeless entry has no day (da-tgsqs).
 #[test]
@@ -1166,11 +1166,11 @@ name = "days"
 
 [[view]]
 name = "by_local"
-sql = "SELECT local_day(occur_time, occur_time_offset) AS day, COUNT(*) AS n FROM entries WHERE field = 'water' GROUP BY day ORDER BY day"
+sql = "SELECT local_day(at, at_offset) AS day, COUNT(*) AS n FROM entries WHERE field = 'water' GROUP BY day ORDER BY day"
 
 [[view]]
 name = "by_utc"
-sql = "SELECT date(occur_time) AS day, COUNT(*) AS n FROM entries WHERE field = 'water' GROUP BY day ORDER BY day"
+sql = "SELECT date(at) AS day, COUNT(*) AS n FROM entries WHERE field = 'water' GROUP BY day ORDER BY day"
 "#;
     assert_ok(
         &env.run_with_stdin(&["kit", "install", "-"], kit),
@@ -1341,7 +1341,7 @@ fn subprocess_nowview_dash_output_is_svg_on_stdout() {
 /// da-mjwq, vividn's line through the real process boundary: `start posture
 /// start_time=4pm 15` is the block 16:00–16:15, so `tail --json` shows the
 /// row `start posture -t 16:15 15` writes — the same in every column but
-/// the hid and the write times (occur_time is the block's END; the
+/// the hid and the write times (at is the block's END; the
 /// fifteen minutes precede it).
 #[test]
 fn subprocess_start_time_key_row_equals_its_t_twin_in_tail_json() {
@@ -1495,7 +1495,7 @@ fn subprocess_unanswered_stale_retime_exits_without_retiming() {
     };
     let occur = || -> String {
         conn.query_row(
-            "SELECT occur_time FROM entries WHERE field = 'coffee'
+            "SELECT at FROM entries WHERE field = 'coffee'
                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
             [],
             |r| r.get(0),

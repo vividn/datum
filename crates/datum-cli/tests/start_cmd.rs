@@ -6,7 +6,7 @@
 //!     (da-azqq retired the `--dur` flag); `-m`/`--moment`
 //!     forces a zero-duration point (`dur=MOMENT`). A bare `start` with
 //!     neither opens an ongoing block (no `time_end`). `-T` (omit timestamp)
-//!     IS supported — it yields a timeless entry (`occur_time` NULL, slug
+//!     IS supported — it yields a timeless entry (`at` NULL, slug
 //!     `field:<create_time>c`); see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is also datum-specific; daydumb's `-k`
 //!     always takes `KEY=VALUE`.
@@ -23,7 +23,7 @@ use serde_json::json;
 
 /// TS #1: "creates an occur document with state: true"
 ///
-/// In daydumb, `start` records an open block: `occur_time` set, `dur`
+/// In daydumb, `start` records an open block: `at` set, `dur`
 /// unset, state implicitly `true`. Under v3 (da-5ns), this shape derives
 /// `Verb::Switch` (state=set, dur=null → switch).
 #[test]
@@ -35,17 +35,13 @@ fn start_creates_open_block_with_no_time_end() {
     assert_count!(db, "dance", 1);
     let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
-    assert!(entry.occur_time.is_some(), "start must set occur_time");
+    assert!(entry.at.is_some(), "start must set at");
     assert!(entry.dur.is_none(), "moment-shape must not set dur");
 
     let state = db
-        .get_active_state("dance", entry.occur_time.as_ref().unwrap().utc)
+        .get_active_state("dance", entry.at.as_ref().unwrap().utc)
         .unwrap();
-    assert_eq!(
-        state,
-        json!(true),
-        "start compiles to state=true at occur_time"
-    );
+    assert_eq!(state, json!(true), "start compiles to state=true at at");
 }
 
 /// TS #2: "can start from a different state"
@@ -79,8 +75,8 @@ fn start_after_switch_preserves_prior_state() {
         .find(|e| matches!(e.verb, Verb::Switch) && e.state.as_ref() == Some(&json!("preparing")))
         .expect("switch entry present");
 
-    let start_ts = start_entry.occur_time.as_ref().unwrap().utc;
-    let switch_ts = switch_entry.occur_time.as_ref().unwrap().utc;
+    let start_ts = start_entry.at.as_ref().unwrap().utc;
+    let switch_ts = switch_entry.at.as_ref().unwrap().utc;
 
     // A hair before the start, the switch state still governs.
     let just_before_start = start_ts - chrono::Duration::seconds(1);
@@ -102,7 +98,7 @@ fn start_after_switch_preserves_prior_state() {
 /// Datum accepts a positional duration (`start dance 5`) and so does
 /// daydumb (da-azqq retired the `--dur` flag that used to spell it). The
 /// semantic is identical: the block LASTED that long up to its
-/// `occur_time`, so `time_start = occur_time - dur` (da-zwct).
+/// `at`, so `time_start = at - dur` (da-zwct).
 #[test]
 fn trailing_duration_sets_time_end_for_closed_block() {
     let db = fresh_db();
@@ -118,7 +114,7 @@ fn trailing_duration_sets_time_end_for_closed_block() {
     // Start with a closed duration → shape=block, generated verb='block'.
     assert_entry_matches!(entry, field: "dance", verb: "block");
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
-    let te = entry.occur_time.as_ref().unwrap().utc;
+    let te = entry.at.as_ref().unwrap().utc;
     let ts = entry.computed_start_time().unwrap().utc;
     assert_eq!((te - ts).num_seconds(), 5 * 60);
 }
@@ -163,7 +159,7 @@ fn start_without_dur_is_moment_like() {
 
     let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
-    assert!(entry.occur_time.is_some());
+    assert!(entry.at.is_some());
     assert!(
         entry.dur.is_none(),
         "no duration ⇒ no dur (moment semantics)",
@@ -197,10 +193,7 @@ fn start_moment_records_point_dot() {
         "-m must set dur to MOMENT, got {:?}",
         entry.dur
     );
-    let ts = entry
-        .occur_time
-        .as_ref()
-        .expect("a moment still anchors a time");
+    let ts = entry.at.as_ref().expect("a moment still anchors a time");
     // A MOMENT has no span: no derived start time...
     assert!(
         entry.computed_start_time().is_none(),

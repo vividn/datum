@@ -138,11 +138,11 @@ test('a field with more entries in the window than one read holds is drawn whole
 						dur: 'MOMENT',
 						following_state: null,
 						data: { weight: i },
-						occur_time: { utc: at(i), offset_minutes: 0, timezone: 'UTC' },
+						at: { utc: at(i), offset_minutes: 0, timezone: 'UTC' },
 						create_time: at(i),
 						modify_time: at(i),
 						client_id: '01M281T64122KN04Z1VN626W9J',
-						id_structure: '%occur_time%',
+						id_structure: '%at%',
 						raw_input: 'occur heavy',
 						parser_version: 2
 					})

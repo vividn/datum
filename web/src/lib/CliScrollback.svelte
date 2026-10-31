@@ -18,7 +18,7 @@
 	Every command carries the instant it was run (da-9ozz), stamped here at
 	submit rather than carried back in `RunResult` — the seam is `run(argv)`
 	and the CLI's result has no such field. The stamp is dim on purpose: a
-	row's own `occur_time`, which the renderer already prints, is the fact
+	row's own `at`, which the renderer already prints, is the fact
 	that matters; when the command was typed is context. The prompt's own
 	clock is the same label, live.
 

@@ -293,7 +293,7 @@ fn every_change_is_one_op_with_its_own_line() {
 
     let op = one_op(&a, &["retime", &hid, "-q"]);
     assert_eq!(op["kind"], "retime");
-    assert!(op["effect"]["set"]["occur_time"].is_object());
+    assert!(op["effect"]["set"]["at"].is_object());
 
     let op = one_op(&a, &["delete", &hid]);
     assert_eq!(
@@ -1276,7 +1276,7 @@ fn orders<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
 fn holds(copy: &Copy, field: &str) -> String {
     let rows = copy.query(
         "SELECT group_concat(r, char(10)) FROM (
-           SELECT hid || ' ' || slug || ' ' || occur_time || ' ' || data || ' '
+           SELECT hid || ' ' || slug || ' ' || at || ' ' || data || ' '
                   || ifnull(superseded_by, '-') || ' ' || ifnull(conflicts, '-') AS r
            FROM entries WHERE field = ?1 ORDER BY hid)",
         field,
@@ -1363,7 +1363,7 @@ fn one_instant_logged_twice_and_retimed_is_one_entry_in_every_arrival_order() {
 /// Both retime the one coffee, neither having seen the other: the later
 /// clock's instant shows, and both are named, the same on both copies.
 #[test]
-fn two_retimes_of_one_instant_logged_twice_are_an_occur_time_conflict() {
+fn two_retimes_of_one_instant_logged_twice_are_an_at_conflict() {
     let (x, y) = (Copy::new(), Copy::new());
     let (first, second) = one_id_twice(&x, &y);
     x.ok(&["retime", &first, "-t", "2026-10-04 09:00"]);
@@ -1371,13 +1371,13 @@ fn two_retimes_of_one_instant_logged_twice_are_an_occur_time_conflict() {
     converged(&x, &y);
     for copy in [&x, &y] {
         assert_eq!(live(copy, "coffee"), 1);
-        assert_eq!(sides(&copy.conflicts(&first), "occur_time").len(), 2);
+        assert_eq!(sides(&copy.conflicts(&first), "at").len(), 2);
     }
     assert_eq!(x.conflicts(&first), y.conflicts(&first));
 }
 
 /// Such a conflict reads and is settled as `at`, though the column and the
-/// ops still name it `occur_time` (da-o5bww).
+/// ops still name it `at` (da-o5bww).
 #[test]
 fn a_conflict_on_the_time_says_at() {
     let (x, y) = (Copy::new(), Copy::new());
@@ -1385,7 +1385,7 @@ fn a_conflict_on_the_time_says_at() {
     x.ok(&["retime", &first, "-t", "2026-10-04 09:00"]);
     y.ok(&["retime", &second, "-t", "2026-10-04 10:00"]);
     converged(&x, &y);
-    assert_eq!(sides(&x.conflicts(&first), "occur_time").len(), 2);
+    assert_eq!(sides(&x.conflicts(&first), "at").len(), 2);
 
     let listed = x.ok(&["conflicts"]);
     assert!(listed.contains("\n    at\n"), "{listed}");
@@ -2830,7 +2830,7 @@ fn stating_the_zone_drops_the_neighbours_marker_on_every_copy() {
     let stated: [&[&str]; 3] = [
         &["retime", "-z", "Asia/Tokyo"],
         &["retime", "-z", "Pacific/Chatham"],
-        &["update", "occur_time=2024-06-15T12:00+09:00"],
+        &["update", "at=2024-06-15T12:00+09:00"],
     ];
     for (i, how) in stated.into_iter().enumerate() {
         let field = format!("tea{i}");
@@ -2951,11 +2951,11 @@ fn rename_moves_every_shape_and_the_spec_on_every_copy_and_undoes() {
     a.ok(&["rename", "mood", "feeling"]);
     converged(&a, &b);
     let at = a.query(
-        "SELECT occur_time FROM entries WHERE field = ?1 AND state = '\"happy\"'",
+        "SELECT at FROM entries WHERE field = ?1 AND state = '\"happy\"'",
         "feeling",
     );
     b.ok(&["switch", "mood", "happy", "-t", &at]);
-    let mood_at = "SELECT occur_time FROM entries WHERE field = ?1";
+    let mood_at = "SELECT at FROM entries WHERE field = ?1";
     assert_eq!(b.query(mood_at, "mood"), at, "at the renamed row's instant");
     converged(&a, &b);
     for copy in [&a, &b] {

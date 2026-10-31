@@ -31,7 +31,7 @@ fn note_auto_ids_on_create_time() {
     let db = fresh_db();
     run_cli(&["note", "coffee"], &db).expect("note coffee");
     let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
-    assert!(e.occur_time.is_none(), "note is timeless");
+    assert!(e.at.is_none(), "note is timeless");
     assert!(
         slug_is_timeless(e.slug.as_str()),
         "note slugs on create_time (field:<create_time>c), got {}",
@@ -70,7 +70,7 @@ fn note_and_occur_dash_t_do_not_collide() {
     run_cli(&["occur", "thing", "-T", "b=2"], &db).expect("occur thing -T");
     let rows = datum_core::test_util::logged_entries(&db, "thing");
     assert_eq!(rows.len(), 2, "note + occur -T both land");
-    assert!(rows.iter().all(|e| e.occur_time.is_none()));
+    assert!(rows.iter().all(|e| e.at.is_none()));
     assert!(rows.iter().all(|e| slug_is_timeless(e.slug.as_str())));
 }
 
@@ -111,11 +111,11 @@ fn add_dash_t_is_note_data_not_an_error() {
     let db = fresh_db();
     run_cli(&["add", "widget", "-T", "note=hi"], &db).expect("add -T is note-data");
     let e = &datum_core::test_util::logged_entries(&db, "widget")[0];
-    assert!(e.occur_time.is_none());
+    assert!(e.at.is_none());
     assert!(slug_is_timeless(e.slug.as_str()), "got {}", e.slug);
 }
 
-// ─── task 7: multiple --id compose; occurTime maps to occur_time ────────────
+// ─── task 7: multiple --id compose; occurTime maps to at ────────────
 
 #[test]
 fn multiple_id_flags_compose_with_occurtime_alias() {
@@ -134,7 +134,7 @@ fn multiple_id_flags_compose_with_occurtime_alias() {
     )
     .expect("occur tx --id %occurTime% --id %comment%");
     let e = &datum_core::test_util::logged_entries(&db, "tx")[0];
-    // The slug body carries BOTH the occur_time and the comment, joined by __.
+    // The slug body carries BOTH the at and the comment, joined by __.
     assert!(
         e.slug.as_str().ends_with("__txn1"),
         "comment composes into the slug, got {}",
@@ -142,34 +142,30 @@ fn multiple_id_flags_compose_with_occurtime_alias() {
     );
     assert!(
         e.slug.as_str().starts_with("tx:2"),
-        "occurTime resolves to occur_time in the slug, got {}",
+        "occurTime resolves to at in the slug, got {}",
         e.slug
     );
 }
 
-// ─── task 8/9: occur_time= overwrites the column uniformly ───────────────────
+// ─── task 8/9: at= overwrites the column uniformly ───────────────────
 
 #[test]
-fn occur_time_key_overwrites_column_across_verbs() {
+fn at_key_overwrites_column_across_verbs() {
     let db = fresh_db();
-    // add: re-anchors a would-be-timeless entry to an absolute occur_time.
-    run_cli(&["add", "ev", "occur_time=2026-05-01T10:00:00Z"], &db).expect("add occur_time=");
+    // add: re-anchors a would-be-timeless entry to an absolute at.
+    run_cli(&["add", "ev", "at=2026-05-01T10:00:00Z"], &db).expect("add at=");
     let add_e = &datum_core::test_util::logged_entries(&db, "ev")[0];
     assert_eq!(
-        add_e.occur_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        add_e.at.as_ref().map(|t| t.utc.to_rfc3339()),
         Some("2026-05-01T10:00:00+00:00".to_string()),
-        "occur_time= overwrites the column even on add (no -K needed once anchored)"
+        "at= overwrites the column even on add (no -K needed once anchored)"
     );
 
     // switch: same override, state preserved.
-    run_cli(
-        &["switch", "mood", "happy", "occur_time=2026-05-01T09:00:00Z"],
-        &db,
-    )
-    .expect("switch occur_time=");
+    run_cli(&["switch", "mood", "happy", "at=2026-05-01T09:00:00Z"], &db).expect("switch at=");
     let sw = &datum_core::test_util::logged_entries(&db, "mood")[0];
     assert_eq!(
-        sw.occur_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        sw.at.as_ref().map(|t| t.utc.to_rfc3339()),
         Some("2026-05-01T09:00:00+00:00".to_string())
     );
     assert_eq!(sw.state, Some(serde_json::json!("happy")));

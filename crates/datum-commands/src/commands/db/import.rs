@@ -134,7 +134,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
         };
         let occur = v2_occur_block(data, meta);
-        let occur_time = match DatumTime::from_v2_json(&occur) {
+        let at = match DatumTime::from_v2_json(&occur) {
             Some(mut t) => {
                 t.uncertainty = parse_datum_uncertainty(&occur);
                 Some(t)
@@ -143,7 +143,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         };
         // A doc that says when it happened and cannot be read is listed, not
         // moved to when it was recorded (da-9l0t3). Absent or null says nothing.
-        if occur_time.is_none() && !occur.is_null() {
+        if at.is_none() && !occur.is_null() {
             let e = format!("occurTime {} is not a time", data["occurTime"]);
             eprintln!("warning: skipping {}: {}", field, e);
             skipped_records.push((SkipReason::InvalidShape, doc_id, Some(e)));
@@ -306,7 +306,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // no structure is its `_id` (`assembleId`), which is stable and unique.
         let own_id = doc["_id"]
             .as_str()
-            .filter(|_| original.is_none() && occur_time.is_none() && create_time.is_none())
+            .filter(|_| original.is_none() && at.is_none() && create_time.is_none())
             .map(|id| {
                 let bare = id.strip_prefix(&format!("{field}:")).unwrap_or(id);
                 bare.to_string()
@@ -325,7 +325,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             verb,
             state,
             data_blob,
-            occur_time,
+            at,
             dur_in.clone(),
             client.clone(),
         );
@@ -334,7 +334,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         entry.modify_time = modified_at;
         // A timeless row slugs on its create time, which is the source's,
         // not the clock `Entry::new` read (da-dvyga).
-        entry.slug = build_slug(&entry.field, entry.occur_time.as_ref(), &entry.create_time);
+        entry.slug = build_slug(&entry.field, entry.at.as_ref(), &entry.create_time);
         entry.id_structure = id_structure;
         entry.field_structure = meta
             .get("fieldStructure")
@@ -796,7 +796,7 @@ fn v2_date_only(occur: &JsonValue, create: Option<&DatumTime>) -> Option<DatumTi
 }
 
 /// Map a legacy datum `occurTime` block to a single ISO-8601 uncertainty
-/// string for `DatumTime::uncertainty` (column `occur_time_uncertainty`).
+/// string for `DatumTime::uncertainty` (column `at_uncertainty`).
 ///
 /// Legacy datum stored this as a `(precision, precisionUnit)` pair on the
 /// time block. The v=20 schema collapses that into one column. Per the

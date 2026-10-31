@@ -75,7 +75,7 @@ fn a_command_over_two_entries_undoes_as_one() {
     run_cli(&["occur", "alpha", "-t", "10:00"], &db).unwrap();
     run_cli(&["occur", "beta", "-t", "11:00"], &db).unwrap();
     let (a, b) = (hid_of(&db, "alpha"), hid_of(&db, "beta"));
-    let time = |hid: &str| db.get_entry(hid).unwrap().occur_time.unwrap().utc;
+    let time = |hid: &str| db.get_entry(hid).unwrap().at.unwrap().utc;
     let before = (time(&a), time(&b));
 
     run_cli(&["retime", &format!("{a},{b}"), "-5"], &db).unwrap();
@@ -136,7 +136,7 @@ fn a_step_that_fails_part_way_moves_nothing() {
     run_cli(&["occur", "alpha", "-t", "10:00"], &db).unwrap();
     run_cli(&["occur", "beta", "-t", "11:00"], &db).unwrap();
     let (a, b) = (hid_of(&db, "alpha"), hid_of(&db, "beta"));
-    let time = |hid: &str| db.get_entry(hid).unwrap().occur_time.unwrap().utc;
+    let time = |hid: &str| db.get_entry(hid).unwrap().at.unwrap().utc;
     let before = (time(&a), time(&b));
     run_cli(&["retime", &format!("{a},{b}"), "-5"], &db).unwrap();
     let after = (time(&a), time(&b));

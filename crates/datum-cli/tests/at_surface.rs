@@ -1,6 +1,5 @@
 //! da-o5bww: what a person types and reads calls the entry's time `at`, its
-//! old names are still read, and `at` is no data key. The column and the ops
-//! keep `occur_time` until da-95avu.
+//! old names are still read, and `at` is no data key.
 
 use serde_json::{json, Value};
 use std::path::Path;
@@ -174,14 +173,14 @@ fn what_a_person_reads_says_at() {
     assert!(!ok(d, &["help", "retime"]).contains("occur_time"));
 }
 
-/// As stored, the time keeps its old name until da-95avu: a backup's lines
-/// are what a sync, a restore and datum.day read.
+/// As stored, the time is `at` too (da-95avu).
 #[test]
-fn a_backup_still_says_occur_time() {
+fn a_backup_says_at() {
     let d = dir();
     ok(d.path(), &["occur", "teapot", &format!("at={TIME}")]);
     let backup = ok(d.path(), &["db", "backup", "-"]);
-    assert!(backup.contains("\"occur_time\":"), "{backup}");
+    assert!(backup.contains("\"at\":{"), "{backup}");
+    assert!(!backup.contains("occur_time"), "{backup}");
 }
 
 #[test]

@@ -54,7 +54,7 @@ pub(crate) fn new_alias_entry(data: JsonValue, client_id: &str) -> Entry {
         Verb::Point,
         None,
         Some(data),
-        Some(super::spec::meta_occur_time()),
+        Some(super::spec::meta_at()),
         Some(Dur::moment()),
         client_id,
     );

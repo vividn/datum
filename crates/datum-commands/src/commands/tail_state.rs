@@ -153,14 +153,11 @@ pub fn compute_blocks(entries: &[Entry], filter: &JsonValue) -> Vec<StateBlock> 
 
 /// Lift a change's timestamp back into the originating entry's timezone.
 /// A trailing edge (and anything that spans nothing) lands exactly on
-/// `occur_time`; a block's leading edge lands at `occur_time - dur`
+/// `at`; a block's leading edge lands at `at - dur`
 /// (da-zwct), so re-derive the offset at that instant (DST-safe), keeping
 /// the entry's offset if the timezone name fails to parse.
 fn event_time(entry: &Entry, ts: DateTime<Utc>) -> DatumTime {
-    let occ = entry
-        .occur_time
-        .as_ref()
-        .expect("state event implies occur_time");
+    let occ = entry.at.as_ref().expect("state event implies at");
     if ts == occ.utc {
         occ.clone()
     } else {
@@ -476,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn blocks_block_switch_opens_follower_at_its_occur_time() {
+    fn blocks_block_switch_opens_follower_at_its_at() {
         // The vremya pattern from da-eybr: `switch activity end 14m , researching`
         // then a plain switch later. da-zwct: the row stores the block's
         // END, so logging it at t(14) means 'end' ran 0–14 and
@@ -499,7 +496,7 @@ mod tests {
         assert_eq!(
             end_blocks[0].end.as_ref().map(|e| e.utc),
             Some(t(14)),
-            "primary block closes at its occur_time, not at the next entry"
+            "primary block closes at its at, not at the next entry"
         );
 
         let follower = compute_blocks(&entries, &json!("researching"));
@@ -507,7 +504,7 @@ mod tests {
         assert_eq!(
             follower[0].start.utc,
             t(14),
-            "follower opens at the block's occur_time"
+            "follower opens at the block's at"
         );
         assert_eq!(follower[0].end.as_ref().map(|e| e.utc), Some(t(60)));
         // Both opener and the primary's closer are the block-switch row itself.

@@ -45,11 +45,11 @@ async function seed(app) {
 				dur: 'MOMENT',
 				following_state: null,
 				data: null,
-				occur_time: { utc: t, offset_minutes: 0, timezone: 'UTC' },
+				at: { utc: t, offset_minutes: 0, timezone: 'UTC' },
 				create_time: t,
 				modify_time: t,
 				client_id: '01M281T64122KN04Z1VN626W9J',
-				id_structure: '%occur_time%',
+				id_structure: '%at%',
 				raw_input: 'occur seed',
 				parser_version: 2
 			})

@@ -82,7 +82,7 @@ export interface TailListing {
  * the one on screen — the row they are listed above (`--above`).
  *
  * `above` is a row's hid, and the CLI's bound is that row's place in the
- * listing's own order, `occur_time ?? create_time` (da-2vgj1), so a page
+ * listing's own order, `at ?? create_time` (da-2vgj1), so a page
  * is exactly the rows above it, each of two rows at one instant once
  * (da-mhcla).
  */

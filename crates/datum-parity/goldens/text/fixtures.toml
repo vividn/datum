@@ -289,7 +289,7 @@ query = ["dayview", "-d", "2024-01-20"]
 # golden draws 12:00–12:30, and daydumb has to land the block there too.
 [[fixture]]
 name = "dayview_duration_block_svg"
-description = "`dayview` SVG for a block given as a duration — occur_time is its END and the 30m precede it (da-zwct)"
+description = "`dayview` SVG for a block given as a duration — at is its END and the 30m precede it (da-zwct)"
 surface = "dayview"
 setup = [
   ["start", "work", "30", "-d", "2024-01-15", "-t", "1230"],

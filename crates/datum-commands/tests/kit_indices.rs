@@ -65,7 +65,7 @@ verb = "occur"
 [[index]]
 name = "by_field_start"
 on = "entries"
-expression = "field, occur_time DESC"
+expression = "field, at DESC"
 where = "deleted_at IS NULL"
 "##,
     )
@@ -111,9 +111,7 @@ fn install_with_yes_creates_real_index() {
     assert_eq!(installed.len(), 1);
     assert_eq!(installed[0].index_name, "by_field_start");
     assert_eq!(installed[0].on_disk_name, "kit_chores__by_field_start");
-    assert!(installed[0]
-        .sql_text
-        .contains("ON entries(field, occur_time DESC)"));
+    assert!(installed[0].sql_text.contains("ON entries(field, at DESC)"));
 
     // list_kits sees both fields and indices.
     let kits = db.list_kits().unwrap();

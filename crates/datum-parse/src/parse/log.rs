@@ -177,7 +177,7 @@ fn state_left(flag: &str, v: &str) -> Result<String> {
 /// its closing `%` (`--id %occurTime`); complete it so the slug interpolator
 /// resolves the key. Everything else is kept verbatim: a plain literal
 /// (`rawString`, or empty) carries no leading `%`, and a value already
-/// holding balanced `%…%` placeholders (`%occur_time%`, `override-%uid%`,
+/// holding balanced `%…%` placeholders (`%at%`, `override-%uid%`,
 /// `%state%:%uid%`) is a complete template.
 fn normalize_id_segment(v: &str) -> String {
     if v.starts_with('%') && v.matches('%').count() % 2 == 1 {
@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(normalize_id_segment("rawString"), "rawString");
         assert_eq!(normalize_id_segment(""), "");
         // Complete templates are untouched.
-        assert_eq!(normalize_id_segment("%occur_time%"), "%occur_time%");
+        assert_eq!(normalize_id_segment("%at%"), "%at%");
         assert_eq!(normalize_id_segment("override-%uid%"), "override-%uid%");
         assert_eq!(normalize_id_segment("%state%:%uid%"), "%state%:%uid%");
     }

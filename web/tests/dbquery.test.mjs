@@ -347,7 +347,7 @@ describe('the seam under review', () => {
 			// with the uncertainty of a whole day over it, and slugs it
 			// without a time.
 			const [row] = await entriesIn(app, 'other');
-			assert.equal(row.occur_time?.uncertainty, 'P1D', `-D did not log a full day: ${JSON.stringify(row)}`);
+			assert.equal(row.at?.uncertainty, 'P1D', `-D did not log a full day: ${JSON.stringify(row)}`);
 			assert.match(row.slug, /^coffee:\d{4}-\d{2}-\d{2}$/, `a full day is slugged without a time: ${row.slug}`);
 		});
 	});

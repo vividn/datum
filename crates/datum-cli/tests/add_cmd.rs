@@ -223,10 +223,7 @@ fn completely_blank_with_id_skipped_no_analog() {
     run_cli(&["add", "field", "--id", "test"], &db).expect("note field --id test");
     let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     // da-ivld: --id supplies the body; slug is `<field>:<body>`.
-    assert_eq!(
-        e.slug, "field:test",
-        "explicit --id wins over default occur_time",
-    );
+    assert_eq!(e.slug, "field:test", "explicit --id wins over default at",);
 }
 
 // ─── TS #11: "calls addDoc" ───────────────────────────────────────────────────
@@ -394,7 +391,7 @@ fn keyed_record_relogs_in_place_under_update() {
 #[test]
 fn optional_time_placeholder_is_not_a_key() {
     let db = fresh_db();
-    let argv = |a: &'static str| ["occur", "tx", "-t", "09:00", "--id", "%?occur_time%", a];
+    let argv = |a: &'static str| ["occur", "tx", "-t", "09:00", "--id", "%?at%", a];
     run_cli(&argv("a=1"), &db).expect("tx");
     let err = run_cli(&argv("a=2"), &db).expect_err("same instant");
     let msg = format!("{err:#}");
@@ -489,8 +486,8 @@ fn id_structure_always_set_when_id_given() {
     );
 
     // da-ivld: every entry now carries an id_structure. With no `--id`,
-    // the default body template is `%occur_time%` when the entry has an
-    // occur_time, else `%create_time%`. da-r17h: a timeless `note` is
+    // the default body template is `%at%` when the entry has an
+    // at, else `%create_time%`. da-r17h: a timeless `note` is
     // create_time-identified, so it takes the `%create_time%` branch
     // (the slug renders `other:<create_time>c`).
     run_cli(&["note", "other"], &db).expect("note other");
@@ -501,13 +498,13 @@ fn id_structure_always_set_when_id_given() {
         "timeless default ⇒ id_structure = `%create_time%`",
     );
 
-    // A timed default add (explicit -t) takes the `%occur_time%` branch.
+    // A timed default add (explicit -t) takes the `%at%` branch.
     run_cli(&["add", "timed", "-t", "10:00"], &db).expect("note timed");
     let timed = &datum_core::test_util::logged_entries(&db, "timed")[0];
     assert_eq!(
         timed.id_structure.as_deref(),
-        Some("%occur_time%"),
-        "timed default ⇒ id_structure = `%occur_time%`",
+        Some("%at%"),
+        "timed default ⇒ id_structure = `%at%`",
     );
 }
 
@@ -520,7 +517,7 @@ fn id_structure_always_set_when_id_given() {
 fn show_all_flag_wired_through() {
     let db = fresh_db();
     // Distinct fields: a bare `add` is timeless (da-lxyw), and the
-    // content_hash keys on (field, occur_time, …) — NOT the slug/`--id` —
+    // content_hash keys on (field, at, …) — NOT the slug/`--id` —
     // so two same-field timeless adds would dedup. Different fields keep
     // the two flag-wiring checks independent.
     run_cli(&["add", "fielda", "--id", "that-id", "--show", "all"], &db).expect("--show all");

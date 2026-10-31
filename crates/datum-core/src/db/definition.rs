@@ -123,7 +123,7 @@ pub(crate) fn new_definition_entry(field: &str, data: JsonValue, client_id: &str
         Verb::Point,
         None,
         Some(data),
-        Some(super::spec::meta_occur_time()),
+        Some(super::spec::meta_at()),
         Some(Dur::moment()),
         client_id,
     );

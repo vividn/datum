@@ -372,7 +372,7 @@ fn a_moved_row_is_read_again_where_it_was() {
     let conn = rusqlite::Connection::open(&db).unwrap();
     let hid: String = conn
         .query_row(
-            "SELECT hid FROM entries WHERE occur_time LIKE '2026-03-02T13:00%'",
+            "SELECT hid FROM entries WHERE at LIKE '2026-03-02T13:00%'",
             [],
             |r| r.get(0),
         )

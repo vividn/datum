@@ -75,7 +75,7 @@ impl Env {
             db,
             &format!(
                 "SELECT hid FROM entries WHERE field = '{field}' AND deleted_at IS NULL
-                   AND occur_time = '{}'",
+                   AND at = '{}'",
                 at
             ),
         )
@@ -89,7 +89,7 @@ impl Env {
             db,
             &format!(
                 "SELECT COALESCE(state, 'null') FROM entries WHERE field = '{field}'
-                   AND deleted_at IS NULL AND superseded_by IS NULL ORDER BY occur_time"
+                   AND deleted_at IS NULL AND superseded_by IS NULL ORDER BY at"
             ),
         )
     }
@@ -347,7 +347,7 @@ fn one_undo_takes_the_whole_merge_back_and_redo_merges_again() {
             "a",
             "SELECT field || ' ' || COALESCE(json_extract(data, '$.cups'), '') FROM entries
              WHERE deleted_at IS NULL AND superseded_by IS NULL AND field != 'spec'
-             ORDER BY field, occur_time",
+             ORDER BY field, at",
         )
     };
     let before = fields();

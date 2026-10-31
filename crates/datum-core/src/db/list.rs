@@ -16,8 +16,8 @@ use super::types::{
 use super::Db;
 
 impl Db {
-    /// Query live entries for a field, newest `occur_time` first. A timeless
-    /// row (`occur_time IS NULL`) sorts last, as older than every timed row
+    /// Query live entries for a field, newest `at` first. A timeless
+    /// row (`at IS NULL`) sorts last, as older than every timed row
     /// (SQLite puts NULL last descending).
     pub fn entries_for_field(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
@@ -32,7 +32,7 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Query live entries for a field, oldest `occur_time` first. A timeless
+    /// Query live entries for a field, oldest `at` first. A timeless
     /// row sorts first, the mirror of [`Self::entries_for_field`].
     pub fn entries_for_field_asc(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
@@ -61,14 +61,14 @@ impl Db {
     /// reads of them: a row's `data` can be any size, and reading and
     /// decoding it was most of what a timeline cost (da-ypz6c).
     pub fn list_timeline(&self, params: &ListParams) -> Result<Vec<TimelineEntry>> {
-        const COLUMNS: &str = "hid, state, occur_time, occur_time_offset, occur_time_tz, \
-             occur_time_uncertainty, client_id, json_extract(extra_metadata, '$.track')";
+        const COLUMNS: &str = "hid, state, at, at_offset, at_tz, \
+             at_uncertainty, client_id, json_extract(extra_metadata, '$.track')";
         self.list_rows(COLUMNS, params, |row| {
             Ok(TimelineEntry {
                 hid: row.get(0)?,
                 state: (row.get::<_, Option<String>>(1)?)
                     .and_then(|s| serde_json::from_str(&s).ok()),
-                occur_time: build_datum_time(row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?),
+                at: build_datum_time(row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?),
                 client_id: row.get(6)?,
                 declaration: (row.get_ref(7)?.as_str())
                     .is_ok_and(|verb| verb.parse::<crate::action::Action>().is_ok()),
@@ -209,7 +209,7 @@ impl Db {
 /// The SQL + bindings for [`Db::list_entries`], split out so the plan can
 /// be asserted (da-vmjh). The window read every render surface makes —
 /// `TimeMetric::Occur`, bounded at both ends — must be served by
-/// `entries_occur_time`, the partial `(occur_time, slug) WHERE deleted_at
+/// `entries_at`, the partial `(at, slug) WHERE deleted_at
 /// IS NULL` index: it covers the range AND the whole ORDER BY, so the read
 /// touches only the rows in the window and never sorts. The listing's,
 /// `TimeMetric::Hybrid`, is served the same way by `entries_hybrid`.
@@ -256,12 +256,12 @@ fn list_filter_sql(params: &ListParams) -> (String, Vec<String>) {
     let mut bindings: Vec<String> = Vec::new();
 
     // da-5ns / da-r17h: a timeless row (bare `add`/`note`, or any
-    // `-T`/--no-timestamp insert) stores `occur_time IS NULL` (its
+    // `-T`/--no-timestamp insert) stores `at IS NULL` (its
     // slug is `field:<create_time>c`, not a stub timestamp). The Occur
     // metric (chronological "when did this happen") must skip those
     // rows; Modify / Hybrid still see them.
     if params.metric == TimeMetric::Occur {
-        sql.push_str(" AND occur_time IS NOT NULL");
+        sql.push_str(" AND at IS NOT NULL");
     }
     // da-ghlx: default-filter review markers (`extra_metadata.flag =
     // true`, da-dnnn) and protocol notes (`extra_metadata.meta =
@@ -277,7 +277,7 @@ fn list_filter_sql(params: &ListParams) -> (String, Vec<String>) {
     if !params.fields.is_empty() {
         // One name → `= ?` (equivalent, slightly tighter plan); two or
         // more → `IN (?, ?, …)` so a multi-field tail merges via the
-        // `entries_field_occur` index instead of scanning.
+        // `entries_field_at` index instead of scanning.
         if params.fields.len() == 1 {
             sql.push_str(" AND field = ?");
         } else {
@@ -321,8 +321,8 @@ mod tests {
 
     /// da-vmjh item 4: the window read every render surface makes is
     /// index-bounded. `dayview` / `nowview` fetch `TimeMetric::Occur`
-    /// between two instants with no field filter; `entries_occur_time` —
-    /// partial `(occur_time, slug) WHERE deleted_at IS NULL` — covers the
+    /// between two instants with no field filter; `entries_at` —
+    /// partial `(at, slug) WHERE deleted_at IS NULL` — covers the
     /// range and the whole ORDER BY, so the plan is one SEARCH with no sort
     /// and no scan. Recorded here so a later edit to the predicate (a
     /// metric change, a new default filter that is not sargable) cannot
@@ -340,8 +340,8 @@ mod tests {
             },
         );
         assert!(
-            plan.contains("SEARCH entries USING INDEX entries_occur_time"),
-            "expected the window to be walked on entries_occur_time, got:\n{plan}"
+            plan.contains("SEARCH entries USING INDEX entries_at"),
+            "expected the window to be walked on entries_at, got:\n{plan}"
         );
         assert!(
             !plan.contains("SCAN entries"),
@@ -353,7 +353,7 @@ mod tests {
         );
     }
 
-    /// da-2vgj1: the listing orders by `occur_time ?? create_time`, and
+    /// da-2vgj1: the listing orders by `at ?? create_time`, and
     /// every read of it walks an index in that order: `tail`, `tail -t`, a
     /// page above a cursor row (da-mhcla: a pager deep in a long history
     /// must not read from the live end down to its place), and each with a
@@ -457,7 +457,7 @@ mod tests {
         let narrowed = |e: &Entry| TimelineEntry {
             hid: e.hid.clone(),
             state: e.state.clone(),
-            occur_time: e.occur_time.clone(),
+            at: e.at.clone(),
             client_id: e.client_id.clone(),
             declaration: crate::track::track_verb(e).is_some(),
         };

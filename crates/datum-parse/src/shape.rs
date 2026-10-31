@@ -192,7 +192,7 @@ impl std::str::FromStr for EntryShape {
 /// [`is_switching_verb`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderShape {
-    /// Single-point marker rendered at occur_time. The primary visual for
+    /// Single-point marker rendered at at. The primary visual for
     /// [`Verb::Point`] (with a time) and [`Verb::PointSwitch`] (the dot;
     /// the trailing region is secondary).
     Dot,
@@ -252,7 +252,7 @@ pub fn render_shape(verb: Verb, entry_shape: EntryShape, value: &Option<JsonValu
 // would trigger compile errors here and only here — every renderer
 // consumes these predicates and never matches on `Verb` directly.
 
-/// True for verbs whose `occur_time` updates the field's prevailing state.
+/// True for verbs whose `at` updates the field's prevailing state.
 /// These are the verbs that may open a switch region.
 pub fn is_switching_verb(verb: Verb) -> bool {
     match verb {
@@ -286,7 +286,7 @@ pub fn is_block_verb(verb: Verb) -> bool {
 /// leading state would log a `true` nobody typed.
 ///
 /// It is also the verb whose *primary* visual is a switch region (a
-/// state-prevailing band from `occur_time` to the next switching event,
+/// state-prevailing band from `at` to the next switching event,
 /// coloured by `entry.state`); the compound ones draw theirs as the
 /// *secondary* element, keyed off `following_state`.
 pub fn state_is_the_switch(verb: Verb) -> bool {
@@ -297,7 +297,7 @@ pub fn state_is_the_switch(verb: Verb) -> bool {
 }
 
 /// True for verbs that open a *secondary* switch region from
-/// `following_state` at `occur_time`. These are the compound switching
+/// `following_state` at `at`. These are the compound switching
 /// verbs ([`Verb::BlockSwitch`], [`Verb::PointSwitch`]) — their primary
 /// visual (block or dot) is paired with a trailing region colored by
 /// `entry.following_state`.
@@ -314,7 +314,7 @@ pub fn opens_secondary_switch_region(verb: Verb) -> bool {
 /// `datum end work 12m` writes `following_state IS NULL`, and NULL there
 /// is a *specified default* meaning "resume whatever state preceded this
 /// block" (da-611d): a block is an INTERRUPTION, not a switch. Every
-/// reader that walks the "occur_time is the leading edge" convention —
+/// reader that walks the "at is the leading edge" convention —
 /// `now` / `state_at` (da-phoe), `stats` (da-mkqo) — asks this question,
 /// so the answer lives here with the rest of the verb dispatch.
 /// [`Verb::BlockSwitch`] / [`Verb::PointSwitch`] carry a real
@@ -329,7 +329,7 @@ pub fn hands_field_back(verb: Verb) -> bool {
 /// True for entries whose action-line rendering shows a state badge
 /// (`[LEAD][state cell][TRAIL]`). Every state-bearing verb qualifies
 /// (switching family + [`Verb::Block`]); [`Verb::Point`] is the lone
-/// exception — its action surface is a bare dot at `occur_time`.
+/// exception — its action surface is a bare dot at `at`.
 ///
 /// da-gvcen: the `dur` is asked for as well as the verb, because a
 /// MOMENT is a point whatever else it carries. The first log of an

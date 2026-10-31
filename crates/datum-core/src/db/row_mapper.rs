@@ -5,7 +5,7 @@
 //! all build their own `SELECT * FROM entries` queries and need a way to
 //! materialize a row without going through the typed `Db` API.
 //!
-//! da-5ns: rebuilt to read the new (occur_time, state, dur,
+//! da-5ns: rebuilt to read the new (at, state, dur,
 //! following_state, verb) shape. Sub-bead 1 stub — sub-bead 3 wires
 //! verb-derivation into the insert side.
 
@@ -47,11 +47,11 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         .get::<_, Option<String>>("data")?
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    let occur_time = build_datum_time(
-        row.get("occur_time")?,
-        row.get("occur_time_offset")?,
-        row.get("occur_time_tz")?,
-        row.get("occur_time_uncertainty")?,
+    let at = build_datum_time(
+        row.get("at")?,
+        row.get("at_offset")?,
+        row.get("at_tz")?,
+        row.get("at_uncertainty")?,
     );
 
     let create_time: DateTime<Utc> =
@@ -91,7 +91,7 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         dur,
         following_state,
         data,
-        occur_time,
+        at,
         lat: row.get("lat")?,
         lon: row.get("lon")?,
         location: row.get("location")?,
@@ -137,11 +137,11 @@ pub(super) fn build_datum_time(
     Some(DatumTime {
         utc,
         offset_minutes: offset.unwrap_or(0),
-        // A NULL `occur_time_tz` means the zone is unknown — never "UTC".
+        // A NULL `at_tz` means the zone is unknown — never "UTC".
         // Naming a zone the row doesn't carry contradicts the offset stored
         // beside it and lights up `datum check tz` (da-vfbq).
         timezone: tz,
-        // A NULL `occur_time_uncertainty` means the same kind of unknown:
+        // A NULL `at_uncertainty` means the same kind of unknown:
         // we were not told how precisely the time is known, which is not a
         // claim that it is exact (da-b8rs).
         uncertainty,

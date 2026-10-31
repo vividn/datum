@@ -43,7 +43,7 @@
 // `dur=30m`. One dragged across a day of the strip is two clock times
 // read off a wall — usually long, usually remembered as "nine to
 // half ten" — so it says `start_time=09:00 end_time=10:30`, which is the
-// pair the CLI lifts onto occur_time and dur (da-mjwq). The other view
+// pair the CLI lifts onto at and dur (da-mjwq). The other view
 // DRAWS the range all the same; it does not re-spell it.
 
 import { derived, get, writable } from 'svelte/store';

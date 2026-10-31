@@ -50,7 +50,7 @@ use crate::commands::log_core::{
 
 /// Parser-derivable Entry shape — what the parser alone determines from
 /// `raw_input` + `alias_chain`. Fields that depend on time / device /
-/// DB lookups (`occur_time`, `client_id`, slug derivation against the
+/// DB lookups (`at`, `client_id`, slug derivation against the
 /// spec table, etc.) are deliberately out of scope: they aren't
 /// parser-state and shouldn't drift from a parser-version bump.
 #[derive(Debug, Clone)]
@@ -146,7 +146,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     // timeless row its create time in the local zone (da-rp2rq). Never the
     // replay's "now", which would move the value every time it is asked.
     // `start_time=S` plus a duration stored S + dur and anchored at S.
-    let base = match &entry.occur_time {
+    let base = match &entry.at {
         Some(t) => match (
             &lifted.start,
             &lifted.end,
@@ -254,7 +254,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
                 read(false)
             }
         };
-        let end = entry.occur_time.as_ref().map(|t| t.utc);
+        let end = entry.at.as_ref().map(|t| t.utc);
         let start = match entry.dur.as_ref().map(|d| &d.span) {
             Some(DurSpan::Of(d)) => end.map(|e| e - *d),
             _ => None,

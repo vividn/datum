@@ -18,7 +18,7 @@ const MINUTE = 60_000;
 
 /** When `field` was logged, newest first, as epoch ms. */
 const logged = async (app, field) =>
-	(await app.entries()).filter((e) => e.field === field).map((e) => Date.parse(e.occur_time.utc));
+	(await app.entries()).filter((e) => e.field === field).map((e) => Date.parse(e.at.utc));
 
 describe('the held clock', () => {
 	test('holds the page and the CLI at one instant, and app.clock moves both', async () => {

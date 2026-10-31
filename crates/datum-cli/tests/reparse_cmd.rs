@@ -390,7 +390,7 @@ fn reparse_round_trips_every_log_verb() {
     let db = fresh_db();
     let lines: [&[&str]; 17] = [
         &["occur", "r1"],
-        &["occur", "r2", "occur_time=12:00"],
+        &["occur", "r2", "at=12:00"],
         &["start", "r3", "-y"],
         &["start", "r4", "start_time=-60", "30m"],
         &["end", "r5", "20"],

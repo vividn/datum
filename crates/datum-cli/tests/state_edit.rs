@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 fn newest_entry(db: &Db, field: &str) -> Entry {
     logged_entries(db, field)
         .into_iter()
-        .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+        .max_by_key(|e| e.at.as_ref().map(|t| t.utc))
         .expect("an entry")
 }
 
@@ -205,7 +205,7 @@ fn held(db: &std::path::Path) -> Vec<String> {
         .unwrap()
         .query_row(
             "SELECT state FROM entries WHERE field = 'x' AND deleted_at IS NULL
-              ORDER BY occur_time DESC LIMIT 1",
+              ORDER BY at DESC LIMIT 1",
             [],
             |r| r.get(0),
         )

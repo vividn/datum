@@ -113,7 +113,7 @@ impl Db {
 
         for tf in tracked {
             // da-2i8g: a block-switch / point-switch carries a
-            // `following_state` that takes effect at `occur_time`.
+            // `following_state` that takes effect at `at`.
             // da-phoe: a plain block instead HANDS THE FIELD BACK there,
             // so the row that decides the state may be behind it.
             // [`resolve_effective`] applies both rules.
@@ -226,7 +226,7 @@ impl Db {
 }
 
 fn entry_event_time(e: &Entry) -> Option<DateTime<Utc>> {
-    e.occur_time.as_ref().map(|t| t.utc)
+    e.at.as_ref().map(|t| t.utc)
 }
 
 /// Truthiness in the `datum now` sense: not inactive

@@ -140,7 +140,7 @@ fn orphan_end_creates_conflict_row() {
 fn auto_resolver_closes_older_open_after_delay() {
     // Two opens, then auto-resolver (with min_age=0 so the conflict is
     // immediately eligible). The older ongoing should get a dur covering
-    // the gap up to the newer's occur_time, and the conflict should be
+    // the gap up to the newer's at, and the conflict should be
     // marked auto_close_older.
     //
     // Under v3 verbs (da-nm5b): older was Switch state=true; after close
@@ -169,7 +169,7 @@ fn auto_resolver_closes_older_open_after_delay() {
 
     // The older ongoing is now a block (has dur). da-zwct: closing it
     // moves its stored instant to the newer's — a block stores its END —
-    // so occur_time no longer separates the two. Tell them apart by
+    // so at no longer separates the two. Tell them apart by
     // whether they carry a `dur`.
     let entries = datum_core::test_util::logged_entries(&db, "workout");
     let older = entries
@@ -192,12 +192,12 @@ fn auto_resolver_closes_older_open_after_delay() {
     assert_eq!(older.verb, Verb::Block, "older's verb re-derives to Block");
     // dur is stored at second precision under v3 (parse_iso_duration
     // returns whole-second chrono spans), so the older block's rounded
-    // span can leave its end off the sub-second newer.occur_time by < 1s.
+    // span can leave its end off the sub-second newer.at by < 1s.
     // The contract being tested is that the older block ends "at the
     // newer's start moment" — verified by bounding the gap rather than
-    // exact equality. da-zwct: the end IS the stored occur_time.
-    let older_end = older.occur_time.as_ref().unwrap().utc;
-    let newer_start = newer.occur_time.as_ref().unwrap().utc;
+    // exact equality. da-zwct: the end IS the stored at.
+    let older_end = older.at.as_ref().unwrap().utc;
+    let newer_start = newer.at.as_ref().unwrap().utc;
     let delta_ms = (older_end - newer_start).num_milliseconds().abs();
     assert!(
         delta_ms < 1000,
@@ -276,7 +276,7 @@ fn now_view_shows_overlap_warning() {
     // NowSnapshot directly — bypassing the (retired in da-adoi)
     // `render_now_view(tracked, latest_map, …)` legacy signature.
     let entry = db.latest_entry_for_now("workout", None).unwrap().unwrap();
-    let since = entry.occur_time.as_ref().map(|t| t.utc);
+    let since = entry.at.as_ref().map(|t| t.utc);
     let state = entry.state.clone().unwrap_or(JsonValue::Null);
     let snap = NowSnapshot {
         schema: NOW_SCHEMA_ID,

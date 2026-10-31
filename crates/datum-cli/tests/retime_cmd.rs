@@ -27,7 +27,7 @@ fn point_in(db: &datum_core::db::Db, field: &str, at: &str, tz: &str) -> String 
 }
 
 fn time_of(db: &datum_core::db::Db, hid: &str) -> datum_core::time::DatumTime {
-    db.get_entry(hid).unwrap().occur_time.unwrap()
+    db.get_entry(hid).unwrap().at.unwrap()
 }
 
 /// da-jix52: on an entry at 2026-10-05 09:15 (Berlin), `retime <hid> 1040`
@@ -68,12 +68,12 @@ fn retime_positional_and_t_are_read_from_the_entrys_own_time() {
     assert_eq!(after.uncertainty.as_deref(), Some("P1D"));
 }
 
-/// da-fdc7o: `update <hid> occur_time=T` reads T as `retime <hid> T` does,
+/// da-fdc7o: `update <hid> at=T` reads T as `retime <hid> T` does,
 /// which is `-t`'s grammar whole. An unsigned duration (`30m`, `90`) is
 /// refused in `-t`'s words and the entry stays put: it used to move the
 /// entry that much LATER. The rest land where they did at 38539b02.
 #[test]
-fn update_occur_time_reads_its_value_as_retime_does() {
+fn update_at_reads_its_value_as_retime_does() {
     let start = "2026-10-05T07:15:00Z";
     // 09:15 in Berlin, then `verb <hid> arg`: where it lands, or the refusal.
     let after = |verb: &str, arg: &str| {
@@ -122,7 +122,7 @@ fn update_occur_time_reads_its_value_as_retime_does() {
         // A refused `at=` says what `-t` says, and why the name is taken.
         let reason = format!(". {}", datum_core::entry::AT_RESERVED);
         let plain = |e: String| e.trim_end_matches(&reason).to_string();
-        for key in ["occur_time", "at"] {
+        for key in ["at", "at"] {
             let updated = after("update", &format!("{key}={token}")).map_err(plain);
             assert_eq!(updated, after("retime", token), "{key}={token}");
         }
@@ -265,7 +265,7 @@ fn retime_unsigned_number_is_a_clock_time_not_minutes() {
 #[test]
 fn retime_comma_underscore_shifts_all() {
     let db = fresh_db();
-    // `__` (older) and `_` (most recent) by occur_time.
+    // `__` (older) and `_` (most recent) by at.
     let older = entry_builder("coffee")
         .time_start_utc(utc("2024-01-01T08:00:00Z"))
         .state(json!(1))
@@ -277,18 +277,12 @@ fn retime_comma_underscore_shifts_all() {
 
     run_cli(&["retime", "_,__", "--offset", "1h"], &db).expect("retime '_,__' must resolve both");
 
-    // hid is stable across a retime (slug is derived from occur_time and
+    // hid is stable across a retime (slug is derived from at and
     // changes), so read each row back by hid.
     let after_newer = db.get_entry(newer.hid.as_str()).unwrap();
     let after_older = db.get_entry(older.hid.as_str()).unwrap();
-    assert_eq!(
-        after_newer.occur_time.unwrap().utc,
-        utc("2024-01-01T10:00:00Z")
-    );
-    assert_eq!(
-        after_older.occur_time.unwrap().utc,
-        utc("2024-01-01T09:00:00Z")
-    );
+    assert_eq!(after_newer.at.unwrap().utc, utc("2024-01-01T10:00:00Z"));
+    assert_eq!(after_older.at.unwrap().utc, utc("2024-01-01T09:00:00Z"));
 }
 
 /// The same unification reaches explicit hid-prefix tokens: a
@@ -310,8 +304,8 @@ fn retime_comma_hid_prefixes_shift_both() {
 
     let after_a = db.get_entry(a.hid.as_str()).unwrap();
     let after_b = db.get_entry(b.hid.as_str()).unwrap();
-    assert_eq!(after_a.occur_time.unwrap().utc, utc("2024-01-01T08:30:00Z"));
-    assert_eq!(after_b.occur_time.unwrap().utc, utc("2024-01-01T09:30:00Z"));
+    assert_eq!(after_a.at.unwrap().utc, utc("2024-01-01T08:30:00Z"));
+    assert_eq!(after_b.at.unwrap().utc, utc("2024-01-01T09:30:00Z"));
 }
 
 /// A single, unambiguous quick-id still resolves and shifts exactly one
@@ -327,7 +321,7 @@ fn retime_single_quickid_unchanged() {
     run_cli(&["retime", only.hid.as_str(), "--offset", "1h"], &db).expect("single retime");
 
     let after = db.get_entry(only.hid.as_str()).unwrap();
-    assert_eq!(after.occur_time.unwrap().utc, utc("2024-01-01T09:00:00Z"));
+    assert_eq!(after.at.unwrap().utc, utc("2024-01-01T09:00:00Z"));
 }
 
 /// A comma list naming an unresolvable token surfaces the resolution
@@ -432,7 +426,7 @@ fn retime_no_timestamp_makes_a_start_a_note() {
     run_cli(&["retime", start.hid.as_str(), "-T"], &db).expect("retime -T");
 
     let after = db.get_entry(start.hid.as_str()).unwrap();
-    assert!(after.occur_time.is_none(), "got {:?}", after.occur_time);
+    assert!(after.at.is_none(), "got {:?}", after.at);
     assert_eq!(after.verb, datum_core::entry::Verb::Point);
     assert_eq!(after.state, Some(json!(true)));
 }

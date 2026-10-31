@@ -127,7 +127,11 @@ fn rehash_all_entries(
     // extend this list or the rehash breaks on real upgrades.
     let mut select = String::from("SELECT *");
     for (old, new) in [
-        ("occur_time_precision", "occur_time_uncertainty"),
+        ("occur_time_precision", "at_uncertainty"),
+        ("occur_time_uncertainty", "at_uncertainty"),
+        ("occur_time", "at"),
+        ("occur_time_offset", "at_offset"),
+        ("occur_time_tz", "at_tz"),
         ("dur_precision", "dur_uncertainty"),
         ("device_id", "client_id"),
     ] {
@@ -288,7 +292,7 @@ pub(super) fn m34_to_35_superseded_by(conn: &Connection) -> Result<()> {
              ON entries (superseded_by)
              WHERE superseded_by IS NOT NULL;",
     )?;
-    with_live_client_column(conn, || unpark_rows(conn))?;
+    with_live_columns(conn, || unpark_rows(conn))?;
     Ok(())
 }
 
@@ -445,7 +449,7 @@ pub(super) fn m37_to_38_specs_are_entries(conn: &Connection) -> Result<()> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
-    with_live_client_column(conn, || {
+    with_live_columns(conn, || {
         for (field, spec_json, kit_id) in rows {
             let mut data: serde_json::Value = serde_json::from_str(&spec_json)?;
             if let (Some(kit), Some(obj)) = (kit_id, data.as_object_mut()) {
@@ -497,7 +501,7 @@ pub(super) fn m38_to_39_aliases_are_entries(conn: &Connection) -> Result<()> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
-    with_live_client_column(conn, || {
+    with_live_columns(conn, || {
         for (name, alias_json, kit_id) in rows {
             let mut alias: crate::field_spec::Alias = serde_json::from_str(&alias_json)?;
             // The row's key is the name the alias answered to.
@@ -632,7 +636,7 @@ pub(super) fn m39_to_40_definitions_are_entries(conn: &Connection) -> Result<()>
             defs.push((INDEX_FIELD, definition_data(&entry, Some(&kit))?));
         }
     }
-    with_live_client_column(conn, || {
+    with_live_columns(conn, || {
         for (field, data) in defs {
             let row = new_definition_entry(field, data, "migration-v40");
             // A deleted log is out of the way, unless it holds this very slug —
@@ -993,7 +997,7 @@ pub(super) fn down_33_to_32_content_hash_v33(conn: &Connection) -> Result<()> {
         for (i, part) in [
             entry.field.clone(),
             entry
-                .occur_time
+                .at
                 .as_ref()
                 .map(|t| t.utc.to_rfc3339())
                 .unwrap_or_default(),

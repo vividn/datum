@@ -81,7 +81,7 @@ pub(crate) struct UserEditableEntry {
     #[serde(default, rename = "at", alias = "occur_time")]
     /// Carries its own `"uncertainty"` key — there is no separate
     /// `at_precision` key since da-b8rs.
-    occur_time: Option<DatumTime>,
+    at: Option<DatumTime>,
     #[serde(default)]
     lat: Option<f64>,
     #[serde(default)]
@@ -103,7 +103,7 @@ impl UserEditableEntry {
             dur: e.dur.clone(),
             following_state: e.following_state.clone(),
             data: e.data.clone(),
-            occur_time: e.occur_time.clone(),
+            at: e.at.clone(),
             lat: e.lat,
             lon: e.lon,
             location: e.location.clone(),
@@ -125,7 +125,7 @@ impl UserEditableEntry {
         e.dur = self.dur;
         e.following_state = self.following_state;
         e.data = self.data;
-        e.occur_time = self.occur_time;
+        e.at = self.at;
         e.lat = self.lat;
         e.lon = self.lon;
         e.location = self.location;
@@ -228,7 +228,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 
     // da-mryo: persist via the auto-reinterp path (like retime/update/rekey)
     // so a templated slug/field re-derives against the edited values —
-    // occur_time, field, data, and id_structure/field_structure themselves
+    // at, field, data, and id_structure/field_structure themselves
     // are all editable here, and all feed the templates. The helper records
     // a UserEdit history row, recomputes content_hash, and returns the fresh
     // row under its possibly-rekeyed slug.
@@ -262,8 +262,8 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 /// stated, so no guess (da-n79py).
 #[cfg(feature = "native")]
 fn settle_edited_zone(existing: &Entry, updated: &mut Entry) -> Result<()> {
-    let was = existing.occur_time.as_ref();
-    if let Some(t) = updated.occur_time.as_mut() {
+    let was = existing.at.as_ref();
+    if let Some(t) = updated.at.as_mut() {
         if Some(&t.timezone) != was.map(|w| &w.timezone) {
             if let Some(name) = &t.timezone {
                 t.timezone = Some(datum_parse::time::resolve_timezone(name)?);
@@ -275,7 +275,7 @@ fn settle_edited_zone(existing: &Entry, updated: &mut Entry) -> Result<()> {
             t.refresh_offset().ok();
         }
     }
-    if updated.occur_time.as_ref().map(|t| &t.timezone) != was.map(|w| &w.timezone) {
+    if updated.at.as_ref().map(|t| &t.timezone) != was.map(|w| &w.timezone) {
         updated.zone_stated();
     }
     Ok(())
@@ -367,7 +367,7 @@ mod tests {
     }
 
     /// Build a minimal JSON payload for the editor tempfile that targets the
-    /// `UserEditableEntry` shape. `occur_time` is taken verbatim from `e` so
+    /// `UserEditableEntry` shape. `at` is taken verbatim from `e` so
     /// the round-trip preserves it (the deserializer lifts it back unchanged).
     fn editor_payload(e: &Entry, mutate: impl FnOnce(&mut serde_json::Value)) -> String {
         let mut doc = serde_json::json!({
@@ -377,7 +377,7 @@ mod tests {
             "dur": e.dur,
             "following_state": e.following_state,
             "data": e.data,
-            "at": serde_json::to_value(&e.occur_time).unwrap(),
+            "at": serde_json::to_value(&e.at).unwrap(),
             "lat": e.lat,
             "lon": e.lon,
             "location": e.location,
@@ -744,12 +744,12 @@ mod tests {
     }
 
     /// da-mryo: `edit` must go through slug auto-reinterpolation like
-    /// retime/update/rekey do. Editing `occur_time` on a row whose
-    /// `id_structure` references `%occur_time%` rekeys the slug in place
+    /// retime/update/rekey do. Editing `at` on a row whose
+    /// `id_structure` references `%at%` rekeys the slug in place
     /// (hid preserved), records a `UserEdit` history row, and `datum undo`
     /// restores BOTH the old time and the old slug.
     #[test]
-    fn edit_occur_time_reinterpolates_templated_slug() {
+    fn edit_at_reinterpolates_templated_slug() {
         use datum_core::history::{self, ChangeKind};
         use datum_core::ids::Slug;
 
@@ -766,7 +766,7 @@ mod tests {
         // the canonical templated form via an explicit rekey).
         let stamped_slug = Slug("mood:2024-01-01T00:00:00.000Z".to_string());
         let mut stamped = e.clone();
-        stamped.id_structure = Some("%occur_time%".to_string());
+        stamped.id_structure = Some("%at%".to_string());
         stamped.slug = stamped_slug.clone();
         db.save_existing_entry_with_rekey(&e.slug, &stamped)
             .unwrap();
@@ -796,7 +796,7 @@ mod tests {
             .unwrap();
         });
 
-        // Slug re-derived from the new occur_time; row rekeyed in place.
+        // Slug re-derived from the new at; row rekeyed in place.
         let after = db.get_entry(&e.hid).unwrap();
         assert_eq!(after.slug.as_str(), "mood:2026-05-01T10:00:00.000Z");
         assert_eq!(after.hid, e.hid);
@@ -818,7 +818,7 @@ mod tests {
         .unwrap();
         let restored = db.get_entry(&e.hid).unwrap();
         assert_eq!(restored.slug, stamped_slug);
-        assert_eq!(restored.occur_time, before.occur_time);
+        assert_eq!(restored.at, before.at);
     }
 
     /// da-4lov complement: even when the user makes no semantic change,

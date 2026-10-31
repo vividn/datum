@@ -4,7 +4,7 @@
 --
 -- Time-shape pivot 2026-05-01: the entries table reverts from the
 -- start_time/end_time/entry_shape/intent shape to the original datum
--- model — `occur_time` (when), `state` (what), `dur` (how long, ISO
+-- model — `at` (when), `state` (what), `dur` (how long, ISO
 -- duration string), `following_state` (what changed to). The verb is
 -- derived from the (state, dur, following_state) triple but stored as
 -- a plain column so it can be indexed and `dm check verbs` can detect
@@ -49,10 +49,10 @@ CREATE TABLE IF NOT EXISTS entries (
     data            TEXT,                        -- JSON (nested)
 
     -- When
-    occur_time           TEXT,                   -- ISO 8601 UTC; NULL = timeless (bare `add`), da-lxyw
-    occur_time_offset    INTEGER,                -- UTC offset in minutes
-    occur_time_tz        TEXT,                   -- IANA timezone name
-    -- How precisely `occur_time` is known: a single ISO-8601 duration
+    at              TEXT,                        -- ISO 8601 UTC; NULL = timeless (bare `add`), da-lxyw
+    at_offset       INTEGER,                     -- UTC offset in minutes
+    at_tz           TEXT,                        -- IANA timezone name
+    -- How precisely `at` is known: a single ISO-8601 duration
     -- string giving the ± radius (e.g. "PT1S", "PT1M", "PT1H", "P1W").
     -- Replaces the v3-era (precision INTEGER seconds, precision_unit
     -- TEXT) pair; named `occur_time_precision` before da-b8rs.
@@ -61,8 +61,8 @@ CREATE TABLE IF NOT EXISTS entries (
     -- local midnight — and the code branches on it by name, as
     -- `datum_parse::entry_id::DATE_ONLY_PRECISION`.
     -- NULL = unknown, which is NOT the claim "exact" — same rule
-    -- as occur_time_tz above.
-    occur_time_uncertainty TEXT,
+    -- as at_tz above.
+    at_uncertainty TEXT,
     -- How precisely `dur` is known, same ISO-8601 ± radius (e.g. "PT1M"
     -- for minute-resolution). NULL = unknown; the renderer falls back to
     -- the full `dur` value. Named `dur_precision` before da-b8rs.
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS entries (
 
     -- da-uxgv: the hid of the row that beat this one for an identity the
     -- table can only give to one row (a slug, or a live (field,
-    -- occur_time)). NULL — the overwhelmingly common case — means the row
+    -- at)). NULL — the overwhelmingly common case — means the row
     -- holds its own identity and is in the live stream. Non-NULL means the
     -- row still exists, still carries its own naturally-derived slug and is
     -- still addressable by hid, but is excluded from the live stream and
@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS entries (
     -- Deleting a winner therefore does NOT promote its loser — promotion is
     -- clearing this column, never a side effect.
     --
-    -- The pointer is ADVISORY: slug derives from occur_time, so a retime on
+    -- The pointer is ADVISORY: slug derives from at, so a retime on
     -- either row moves the slug, and hid is the only identity that outlives
     -- an edit — which is why this is an hid and not a bare boolean. It is
     -- local, derived state and does NOT cross the sync wire; every device
@@ -142,6 +142,17 @@ CREATE TABLE IF NOT EXISTS entries (
     -- copy holding the same ops holds the same; NULL when nothing is.
     conflicts       TEXT,
 
+    -- The old names, read-only and costing no storage, for the SQL of a kit
+    -- view or a person's own: that text travels in signed ops and so never
+    -- changes (da-95avu). Nothing in datum reads or writes them. Not indexed:
+    -- a query that filters on one scans where the same on `at` does not. No
+    -- declared type: SQLite counts a typed column in the width it weighs indexes
+    -- by, and four of them moved a state read off its index.
+    occur_time             GENERATED ALWAYS AS (at) VIRTUAL,
+    occur_time_offset      GENERATED ALWAYS AS (at_offset) VIRTUAL,
+    occur_time_tz          GENERATED ALWAYS AS (at_tz) VIRTUAL,
+    occur_time_uncertainty GENERATED ALWAYS AS (at_uncertainty) VIRTUAL,
+
     -- `following_state` is only meaningful when `dur` is set. The
     -- parser-level rejection in da-5ns.3 keeps malformed inserts from
     -- ever reaching this layer; the CHECK is a defence-in-depth gate
@@ -170,15 +181,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS entries_slug
 CREATE INDEX IF NOT EXISTS entries_slug_lookup
     ON entries (slug);
 
--- da-ga8b: partial UNIQUE on (field, occur_time). Slug uniqueness catches
--- the default case where occur_time appears in the slug template, but
+-- da-ga8b: partial UNIQUE on (field, at). Slug uniqueness catches
+-- the default case where at appears in the slug template, but
 -- custom ids (`-K`, `--id`, or `spec.id_template`) can produce distinct
--- slugs that still share the same (field, occur_time) — semantically two
+-- slugs that still share the same (field, at) — semantically two
 -- state-changes for the same field at the same exact instant, which is
 -- undefined. The partial filter excludes tombstones so the soft-delete +
 -- re-insert pattern still works.
 -- da-uxgv: `superseded_by IS NULL` for the same reason as `entries_slug` —
--- the (field, occur_time) contenders route through supersession too. Custom
+-- the (field, at) contenders route through supersession too. Custom
 -- ids can make two rows collide on one axis and not the other, so a fix that
 -- covered only slugs would be rediscovered here.
 -- da-2fkr: `state IS NOT NULL`, because the reason above is about STATE. Two
@@ -188,9 +199,9 @@ CREATE INDEX IF NOT EXISTS entries_slug_lookup
 -- refused by `entries_slug` — an id template is the user's declaration that
 -- the two differ. The term is the state column, not the verb: a point may
 -- carry a state, and then it is the undefined case too.
-CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime
-    ON entries (field, occur_time)
-    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+CREATE UNIQUE INDEX IF NOT EXISTS entries_field_at_unique
+    ON entries (field, at)
+    WHERE at IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND state IS NOT NULL;
 
 -- Reverse lookup for the conflict marker: "which rows lost to this one?".
@@ -214,19 +225,19 @@ CREATE INDEX IF NOT EXISTS entries_spec_templates
     WHERE field = 'spec' AND slug GLOB '*%*%*';
 
 -- Field-scoped tail queries: most reads are "last N entries for field F" so
--- a composite (field, occur_time DESC) index lets them avoid a sort.
-CREATE INDEX IF NOT EXISTS entries_field_occur
-    ON entries (field, occur_time DESC);
+-- a composite (field, at DESC) index lets them avoid a sort.
+CREATE INDEX IF NOT EXISTS entries_field_at
+    ON entries (field, at DESC);
 
 -- Live-only variant used by the SQL-backed views (R3). The views consistently
 -- filter tombstones per field; a partial index lets SQLite skip deleted rows
--- entirely rather than filter them after an index lookup. `occur_time` is
+-- entirely rather than filter them after an index lookup. `at` is
 -- nullable (timeless adds, da-lxyw); SQLite indexes the NULL rows too, which
 -- is fine — the views read them back as `None`. `slug` is the state
--- order's tie-break (`occur_time DESC, slug DESC`): without it "the newest
+-- order's tie-break (`at DESC, slug DESC`): without it "the newest
 -- row before T" sorted the field's whole history to return one (da-asgt4).
-CREATE INDEX IF NOT EXISTS entries_live_field_occur
-    ON entries (field, occur_time, slug)
+CREATE INDEX IF NOT EXISTS entries_live_field_at
+    ON entries (field, at, slug)
     WHERE deleted_at IS NULL;
 
 -- The rows that move a field's state: live, timed, and not an occur dot
@@ -235,8 +246,8 @@ CREATE INDEX IF NOT EXISTS entries_live_field_occur
 -- on the live index a field of nothing but dots walked its whole history
 -- to find there was none (da-asgt4).
 CREATE INDEX IF NOT EXISTS entries_field_state
-    ON entries (field, occur_time, slug)
-    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+    ON entries (field, at, slug)
+    WHERE at IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));
 
 -- Those without the moments: the rows that can decide a state, which a read
@@ -244,8 +255,8 @@ CREATE INDEX IF NOT EXISTS entries_field_state
 -- (`RESUME_LOOKBACK`). On the state index a run of moments took the walk's
 -- every place, and the state before it was lost (da-l6roh).
 CREATE INDEX IF NOT EXISTS entries_field_deciding
-    ON entries (field, occur_time, slug)
-    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+    ON entries (field, at, slug)
+    WHERE at IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND verb <> 'point';
 
 -- The blocks among those: the rows a state read looks ahead through for a
@@ -253,8 +264,8 @@ CREATE INDEX IF NOT EXISTS entries_field_deciding
 -- a field with no later block walked every later row to find none, so a
 -- past day cost by its distance from now (da-e853a).
 CREATE INDEX IF NOT EXISTS entries_field_blocks
-    ON entries (field, occur_time, slug)
-    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+    ON entries (field, at, slug)
+    WHERE at IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND dur IS NOT NULL
       AND verb <> 'point';
 
@@ -280,30 +291,30 @@ CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);
 CREATE INDEX IF NOT EXISTS entries_modify_time_ms
     ON entries (modify_time_ms);
 
--- Bare-time tail/head (no `--field` filter) orders by `occur_time`.
+-- Bare-time tail/head (no `--field` filter) orders by `at`.
 -- Without this index the planner falls back to a full SCAN + temp
 -- B-tree sort, which dominates at 100k+ entries (see da-7iu). Including
 -- `slug` matches the secondary tie-break so the index covers the full
 -- ORDER BY. Partial-on-live keeps it skinny.
-CREATE INDEX IF NOT EXISTS entries_occur_time
-    ON entries (occur_time, slug)
+CREATE INDEX IF NOT EXISTS entries_at
+    ON entries (at, slug)
     WHERE deleted_at IS NULL;
 
--- The listing's order, `-m hybrid`: `occur_time ?? create_time`, so a
+-- The listing's order, `-m hybrid`: `at ?? create_time`, so a
 -- timeless row sits at its create time (da-2vgj1). Spelled as `time_expr`
 -- spells it, or SQLite will not use them: bare tail/head, then a field's
 -- (v61).
 CREATE INDEX IF NOT EXISTS entries_hybrid
-    ON entries (COALESCE(occur_time, create_time), slug)
+    ON entries (COALESCE(at, create_time), slug)
     WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS entries_live_field_hybrid
-    ON entries (field, COALESCE(occur_time, create_time), slug)
+    ON entries (field, COALESCE(at, create_time), slug)
     WHERE deleted_at IS NULL;
 
 -- Drift-detection partial indexes (da-b423). Back `dm check slugs` scans
 -- that need to walk just the rows with a non-NULL template. Selectivity
 -- is asymmetric: almost every row carries `id_structure` (default
--- `%occur_time%` / `%create_time%` template), while `field_structure` is
+-- `%at%` / `%create_time%` template), while `field_structure` is
 -- set only when the user writes a templated field like
 -- `word__%srcLang%`. Splitting into two partial indexes lets the planner
 -- pick the tiny one for `field_structure` scans without paying the cost

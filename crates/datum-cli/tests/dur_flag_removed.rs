@@ -73,8 +73,8 @@ fn both_surviving_spellings_anchor_the_block_at_minus_t() {
     let reserved = &datum_core::test_util::logged_entries(&db, "reserved")[0];
 
     assert_eq!(
-        positional.occur_time.as_ref().unwrap().utc,
-        reserved.occur_time.as_ref().unwrap().utc,
+        positional.at.as_ref().unwrap().utc,
+        reserved.at.as_ref().unwrap().utc,
         "both spellings end the block at -t, not one on each side of it",
     );
     assert_eq!(positional.duration_seconds(), Some(12 * 60));
@@ -82,7 +82,7 @@ fn both_surviving_spellings_anchor_the_block_at_minus_t() {
 
     // And it is the twelve minutes BEFORE -t: the derived start precedes
     // the stored instant (da-zwct).
-    let te = positional.occur_time.as_ref().unwrap().utc;
+    let te = positional.at.as_ref().unwrap().utc;
     let ts = positional
         .computed_start_time()
         .expect("start time derived")

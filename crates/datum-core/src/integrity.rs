@@ -249,7 +249,7 @@ thread_local! {
 pub(crate) fn moved(pre: Option<&Entry>, post: Option<&Entry>) {
     fn line(e: &Entry) -> impl PartialEq + '_ {
         (
-            (&e.field, &e.occur_time, &e.dur, &e.verb),
+            (&e.field, &e.at, &e.dur, &e.verb),
             (&e.state, &e.following_state, &e.user_asserted_last_state),
             (e.deleted_at.is_some(), &e.superseded_by),
         )
@@ -294,7 +294,7 @@ pub(crate) fn detect_moved(conn: &Connection, detected_by: DetectedBy) -> Result
     }
     let mut stmt = conn.prepare_cached(
         "SELECT * FROM entries
-         WHERE field = ?1 AND occur_time >= ?2
+         WHERE field = ?1 AND at >= ?2
            AND deleted_at IS NULL AND superseded_by IS NULL
            AND user_asserted_last_state IS NOT NULL",
     )?;
@@ -356,10 +356,7 @@ impl FieldSnapshots {
     fn over(triggers: &[Entry]) -> Self {
         let mut snaps = FieldSnapshots::default();
         for t in triggers {
-            let Some(span) = t
-                .leading_edge_utc()
-                .zip(t.occur_time.as_ref().map(|o| o.utc))
-            else {
+            let Some(span) = t.leading_edge_utc().zip(t.at.as_ref().map(|o| o.utc)) else {
                 continue;
             };
             let lo = span.0 - chrono::Duration::microseconds(1);
@@ -440,7 +437,7 @@ fn detect_one(
             .map(|v| crate::state::normalize_state(v).to_json())
             .unwrap_or(serde_json::Value::Null);
 
-        let prior_at_probe = if let Some(ts) = trigger.occur_time.as_ref() {
+        let prior_at_probe = if let Some(ts) = trigger.at.as_ref() {
             let probe = ts.utc - chrono::Duration::microseconds(1);
             snaps.state_at(conn, &trigger.field, probe, trigger.hid.as_str())?
         } else {
@@ -610,7 +607,7 @@ pub fn list_repeats(conn: &Connection, fields: Option<&[String]>) -> Result<Vec<
     // Across fields, in the canonical oldest-first order.
     hits.sort_by_cached_key(|r| {
         let e = &r.entry;
-        (e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string())
+        (e.at.as_ref().map(|t| t.utc), e.slug.to_string())
     });
     Ok(hits)
 }
@@ -633,8 +630,8 @@ fn repeated(rows: &crate::state::FieldStateRows, entry: &Entry) -> Option<serde_
 }
 
 /// How far past a window [`findings_between`] reads for a block that
-/// begins in it: a block's `occur_time` is its END, its leading edge
-/// `occur_time - dur`. The dayview's own buffer, so a block longer than it
+/// begins in it: a block's `at` is its END, its leading edge
+/// `at - dur`. The dayview's own buffer, so a block longer than it
 /// is not found from a window holding only its start.
 const BLOCK_REACH: chrono::Duration = chrono::Duration::days(2);
 
@@ -642,7 +639,7 @@ const BLOCK_REACH: chrono::Duration = chrono::Duration::days(2);
 /// until)`, at the cost of the window rather than the history: each
 /// field's rows are [`crate::state::FieldStateRows::load_transitions_between`],
 /// which answers there as the whole history does. The SQL reads
-/// `occur_time`, the filter the leading edge, which is `occur_time` for
+/// `at`, the filter the leading edge, which is `at` for
 /// every shape but a block, and up to [`BLOCK_REACH`] before it for one.
 /// A span says only whether the repeat opens, not how long.
 fn repeats_between(
@@ -654,7 +651,7 @@ fn repeats_between(
         "SELECT * FROM entries
          WHERE {participation}
            AND {transitions}
-           AND occur_time >= ?1 AND occur_time <= ?2
+           AND at >= ?1 AND at <= ?2
          ORDER BY field, {order}",
         participation = crate::db::STATE_PARTICIPATION_SQL,
         transitions = crate::track::NOT_A_DECLARATION_SQL,
@@ -794,11 +791,11 @@ fn is_close_state(v: &serde_json::Value) -> bool {
 }
 
 /// Look up the most recent state-setting entry strictly before the
-/// trigger's `occur_time`. Used as the `remote_entry` snapshot on
+/// trigger's `at`. Used as the `remote_entry` snapshot on
 /// DoubleOpen / SameStateRepeat conflicts so the resolver UI can show
 /// "this conflicts with that one over there".
 fn find_recent_state_setter(conn: &Connection, trigger: &Entry) -> Result<Option<Entry>> {
-    let Some(ts) = &trigger.occur_time else {
+    let Some(ts) = &trigger.at else {
         return Ok(None);
     };
     let at_str = ts.utc.to_rfc3339();
@@ -809,8 +806,8 @@ fn find_recent_state_setter(conn: &Connection, trigger: &Entry) -> Result<Option
          WHERE field = ?1
            AND deleted_at IS NULL AND superseded_by IS NULL
            AND verb IN ('switch', 'block-switch', 'point-switch')
-           AND occur_time IS NOT NULL
-           AND occur_time < ?2
+           AND at IS NOT NULL
+           AND at < ?2
            AND hid != ?3
          ORDER BY {order}
          LIMIT 1",
@@ -836,7 +833,7 @@ fn load_blocks_for_field(conn: &Connection, field: &str) -> Result<Vec<Entry>> {
          WHERE field = ?1
            AND deleted_at IS NULL AND superseded_by IS NULL
            AND verb IN ('block', 'block-switch')
-           AND occur_time IS NOT NULL
+           AND at IS NOT NULL
            AND dur IS NOT NULL
          ORDER BY {order}",
         order = crate::db::STATE_ORDER_OLDEST_FIRST,
@@ -847,13 +844,13 @@ fn load_blocks_for_field(conn: &Connection, field: &str) -> Result<Vec<Entry>> {
 }
 
 /// Find a live Block / BlockSwitch on the same field whose
-/// `[occur-dur, occur]` interval overlaps the trigger's — `occur_time`
+/// `[occur-dur, occur]` interval overlaps the trigger's — `at`
 /// is a block's END and the duration precedes it (da-zwct). Touching
 /// boundaries (one ends exactly when the other starts) do NOT overlap —
 /// a back-to-back schedule is legitimate. Returns the first hit; the
 /// caller files exactly one Overlap row per trigger.
 fn find_overlapping_block<'a>(blocks: &'a [Entry], trigger: &Entry) -> Option<&'a Entry> {
-    let occur = trigger.occur_time.as_ref()?;
+    let occur = trigger.at.as_ref()?;
     let secs = trigger.dur.as_ref()?.as_seconds()?;
     let trig_end = occur.utc;
     let trig_start = occur.utc - chrono::Duration::seconds(secs);
@@ -862,7 +859,7 @@ fn find_overlapping_block<'a>(blocks: &'a [Entry], trigger: &Entry) -> Option<&'
         if other.hid == trigger.hid {
             return false;
         }
-        let (Some(o_occur), Some(o_dur)) = (other.occur_time.as_ref(), other.dur.as_ref()) else {
+        let (Some(o_occur), Some(o_dur)) = (other.at.as_ref(), other.dur.as_ref()) else {
             return false;
         };
         let Some(o_secs) = o_dur.as_seconds() else {
@@ -896,8 +893,8 @@ fn detect_last_state_mismatch(
          WHERE field = ?1
            AND deleted_at IS NULL AND superseded_by IS NULL
            AND verb IN ('switch', 'block', 'block-switch', 'point-switch')
-           AND occur_time IS NOT NULL
-           AND occur_time <= ?2
+           AND at IS NOT NULL
+           AND at <= ?2
            AND hid != ?3
          ORDER BY {order}
          LIMIT 1",
@@ -926,7 +923,7 @@ fn last_state_found(
     };
     // da-zwct: `-l` asserts the state the row walked in on, so the probe
     // sits just before the row's LEADING edge — a duration before
-    // `occur_time` for a block, whose stored instant is its end.
+    // `at` for a block, whose stored instant is its end.
     let Some(probe) = trigger
         .leading_edge_utc()
         .map(|t| t - chrono::Duration::microseconds(1))
@@ -969,7 +966,7 @@ pub fn ensure_last_state(conn: &Connection, entry: &Entry) -> Result<()> {
     let sql = format!(
         "SELECT state FROM entries
           WHERE field = ?1 AND {participation} AND {declaration}
-            AND NOT {dot} AND occur_time >= ?2 AND hid != ?3
+            AND NOT {dot} AND at >= ?2 AND hid != ?3
           ORDER BY {order} LIMIT 1",
         participation = crate::db::STATE_PARTICIPATION_SQL,
         declaration = crate::track::NOT_A_DECLARATION_SQL,
@@ -1233,7 +1230,7 @@ pub const AUTO_RESOLVE_MIN_AGE_SECS: i64 = 60;
 ///
 /// Rules:
 /// - `DoubleOpen`: close the older ongoing entry at the newer one's
-///   `occur_time`. Records a `user_edit` on the older entry and marks
+///   `at`. Records a `user_edit` on the older entry and marks
 ///   the conflict `auto_close_older`.
 /// - `OrphanEnd` / `Overlap` / `SameStateRepeat` / `LastStateMismatch`:
 ///   no auto-rule. The user must resolve manually — either of those
@@ -1271,7 +1268,7 @@ pub fn auto_resolve(
         let Some(older) = c.remote_entry.as_ref() else {
             continue;
         };
-        close_older_at(db, older, c.local_entry.occur_time.as_ref())?;
+        close_older_at(db, older, c.local_entry.at.as_ref())?;
         mark_resolved(conn, &c.id, Resolution::AutoCloseOlder, now)?;
         applied.push(get_by_hid_or_id(conn, &c.id)?.expect("just-resolved row"));
     }
@@ -1295,7 +1292,7 @@ fn free_end_instant(
 ) -> Result<crate::time::DatumTime> {
     let taken: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM entries \
-          WHERE field = ?1 AND occur_time = ?2 AND hid <> ?3 \
+          WHERE field = ?1 AND at = ?2 AND hid <> ?3 \
             AND deleted_at IS NULL AND superseded_by IS NULL)",
         params![field, at.utc.to_rfc3339(), exclude_hid],
         |r| r.get(0),
@@ -1308,14 +1305,14 @@ fn free_end_instant(
     Ok(stepped)
 }
 
-/// Close the open block `older` at `at`: it began at `older.occur_time`
+/// Close the open block `older` at `at`: it began at `older.at`
 /// and ends at `at`, which under da-zwct makes `at` the row's new
-/// `occur_time` — a block stores its trailing edge — and `dur` the span
-/// `at − older.occur_time` that precedes it (clamped non-negative).
+/// `at` — a block stores its trailing edge — and `dur` the span
+/// `at − older.at` that precedes it (clamped non-negative).
 /// Records the pre-update state in `entry_history` so the resolution is
-/// reversible, and rekeys a `%occur_time%` slug through the shared
+/// reversible, and rekeys a `%at%` slug through the shared
 /// auto-reinterp path, since the row's stored instant moves. Silently
-/// no-ops when `at` or `older.occur_time` is missing — the caller's
+/// no-ops when `at` or `older.at` is missing — the caller's
 /// resolver still marks the conflict resolved.
 ///
 /// Runs inside whatever transaction the caller has already opened on
@@ -1328,7 +1325,7 @@ pub(crate) fn close_older_at(
     let Some(at) = at else {
         return Ok(());
     };
-    let Some(start) = older.occur_time.as_ref() else {
+    let Some(start) = older.at.as_ref() else {
         return Ok(());
     };
     let end = free_end_instant(db.conn(), &older.field, older.hid.as_str(), at)?;
@@ -1336,7 +1333,7 @@ pub(crate) fn close_older_at(
 
     let mut updated = older.clone();
     updated.dur = Some(crate::dur::Dur::of(chrono::Duration::seconds(secs)));
-    updated.occur_time = Some(end.clone());
+    updated.at = Some(end.clone());
     updated.verb = if secs == 0 { Verb::Point } else { Verb::Block };
     updated.modify_time = Utc::now();
 

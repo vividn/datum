@@ -1822,7 +1822,7 @@ fn a_window_up_to_now_counts_an_entry_at_exactly_now() {
     let db = fresh_db();
     let ms = Duration::milliseconds(1);
     let ns = Duration::nanoseconds(1);
-    // `occur_time` keeps nanoseconds; a slug, milliseconds — so the entry a
+    // `at` keeps nanoseconds; a slug, milliseconds — so the entry a
     // nanosecond after now is another field's.
     for (field, t) in [
         ("coffee", at(NOW) - ms),

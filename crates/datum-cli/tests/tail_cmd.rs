@@ -120,7 +120,7 @@ fn tail_above_pages_the_whole_listing_timeless_rows_included() {
         ..tail_args()
     });
     assert_eq!(all.len(), 10);
-    assert!(all[7..].iter().all(|e| e.occur_time.is_none()));
+    assert!(all[7..].iter().all(|e| e.at.is_none()));
 
     let mut paged: Vec<Entry> = Vec::new();
     loop {
@@ -186,7 +186,7 @@ fn tail_since_bounds_the_listing_from_below() {
     assert_eq!(hids(&tail_entries(&since, &db).unwrap()), hids(&rows[4..]));
 }
 
-/// da-2vgj1 (vividn's B3): the listing orders by its metric, `occur_time ??
+/// da-2vgj1 (vividn's B3): the listing orders by its metric, `at ??
 /// create_time` by default, so a note created at 17:30 is listed after a
 /// walk at 07:00 by `head`, `tail` and `-t`, and `-m create` / `-m modify`
 /// order by their own stamp.
@@ -446,7 +446,7 @@ fn t05_field_filter() {
 }
 
 #[test]
-fn t05b_multi_field_filter_interleaves_by_occur_time() {
+fn t05b_multi_field_filter_interleaves_by_at() {
     // da-hrnp: comma-separated field list returns the union of entries from
     // each named field, ordered by the chosen metric (default oldest-first).
     let db = fresh_db();
@@ -463,21 +463,18 @@ fn t05b_multi_field_filter_interleaves_by_occur_time() {
         .all(|e| e.field == "stretch" || e.field == "project"));
     assert!(got.iter().any(|e| e.field == "stretch"));
     assert!(got.iter().any(|e| e.field == "project"));
-    // Interleaved by occur_time, oldest-first: stretch rows come before
+    // Interleaved by at, oldest-first: stretch rows come before
     // project rows because they all occur earlier in the morning.
-    let times: Vec<_> = got
-        .iter()
-        .map(|e| e.occur_time.as_ref().unwrap().utc)
-        .collect();
+    let times: Vec<_> = got.iter().map(|e| e.at.as_ref().unwrap().utc).collect();
     let mut sorted = times.clone();
     sorted.sort();
-    assert_eq!(times, sorted, "rows are ordered by occur_time ascending");
+    assert_eq!(times, sorted, "rows are ordered by at ascending");
 
     // -n bounds the merged result, taking the last N across both fields.
     args.count = Some(3);
     let limited = tail_entries(&args, &db).unwrap();
     assert_eq!(limited.len(), 3);
-    // Last three by occur_time across {stretch, project} = the three project rows.
+    // Last three by at across {stretch, project} = the three project rows.
     assert!(limited.iter().all(|e| e.field == "project"));
 }
 
@@ -560,7 +557,7 @@ fn t07_metric_occur_only() {
     args.metric = "occur".to_string();
     let got = tail_entries(&args, &db).unwrap();
     assert_eq!(got.len(), 3);
-    assert!(got.iter().all(|e| e.occur_time.is_some()));
+    assert!(got.iter().all(|e| e.at.is_some()));
 }
 
 #[test]
@@ -636,10 +633,10 @@ fn t10_moment_in_time_upper_bound_and_absent_future() {
         .unwrap();
     assert!(!got.is_empty());
     let last = got.last().unwrap();
-    assert!(last.occur_time.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30));
+    assert!(last.at.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30));
     assert!(got
         .iter()
-        .all(|e| e.occur_time.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30)));
+        .all(|e| e.at.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30)));
 }
 
 #[test]

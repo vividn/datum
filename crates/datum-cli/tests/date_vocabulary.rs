@@ -16,9 +16,9 @@ fn only_entry_date(db: &Db, field: &str) -> NaiveDate {
     let entries = datum_core::test_util::logged_entries(db, field);
     assert_eq!(entries.len(), 1, "expected exactly one '{field}' entry");
     entries[0]
-        .occur_time
+        .at
         .as_ref()
-        .expect("entry has an occur_time")
+        .expect("entry has an at")
         .local_time()
         .date_naive()
 }

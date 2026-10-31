@@ -237,18 +237,18 @@ pub struct FieldEntry {
 /// (`PRAGMA query_only = 1` plus statement-kind checks in
 /// `Db::execute_view`); this entry just round-trips the SQL text.
 ///
-/// `occur_time` is UTC, so `date(occur_time)` groups by the UTC day. A view
-/// groups by the day the entry was logged on with `local_day(occur_time,
-/// occur_time_offset)` → `YYYY-MM-DD`, in the entry's own offset (null for
+/// `at` is UTC, so `date(at)` groups by the UTC day. A view
+/// groups by the day the entry was logged on with `local_day(at,
+/// at_offset)` → `YYYY-MM-DD`, in the entry's own offset (null for
 /// a timeless entry):
 ///
 /// ```sql
-/// SELECT local_day(occur_time, occur_time_offset) AS day, COUNT(*) AS n
+/// SELECT local_day(at, at_offset) AS day, COUNT(*) AS n
 /// FROM entries WHERE field = 'water' AND deleted_at IS NULL GROUP BY day
 /// ```
 ///
 /// «Today» is `local_today()` → `YYYY-MM-DD`, in the zone datum stamps
-/// entries with, so `local_day(occur_time, occur_time_offset) =
+/// entries with, so `local_day(at, at_offset) =
 /// local_today()` is «logged today». SQLite's `date('now', 'localtime')` is
 /// not: on datum.day it has no zone data and answers the UTC day.
 ///

@@ -15,7 +15,9 @@ use super::*;
 fn the_fold_rule_is_fingerprinted() {
     const RECORDED: (u32, &str) = (
         3,
-        "14354a4eff02e6bd173257b165f9e83484c5002253dacd6f0e14bca7277c3ae1",
+        // da-95avu moved a name, and no row: the column, the key `Entry` writes
+        // and the ops as read say `at`, and the same ops give the same row.
+        "3aef657bfd179d8f94d9a53e1c593cd8a21a3e990c56e5ecdbd3e9a497084821",
     );
     const ITEMS: &[&str] = &[
         "fn fold_into",
@@ -464,4 +466,30 @@ fn a_refused_op_does_not_move_the_clock() {
     b.conn.execute("UPDATE ops SET applied = 2", []).unwrap();
     log_at(&b, 0, "tea");
     assert!(own_latest(&b) <= now_ms());
+}
+
+/// da-95avu: an op signed before v76 reads as one signed after, its body as
+/// signed; a data key by the old name is no column; and the one template by
+/// its two names is no disagreement.
+#[test]
+fn an_old_ops_names_read_as_todays() {
+    let mut effect = json!({
+        "set": {"occur_time": {"utc": "t"}, "data.occur_time": 1},
+        "unset": ["occur_time", "dur"],
+    });
+    read_as_today(&mut effect);
+    assert_eq!(
+        effect,
+        json!({"set": {"at": {"utc": "t"}, "data.occur_time": 1}, "unset": ["at", "dur"]})
+    );
+    let mut create = json!({"create": {"occur_time": {"utc": "t"}, "data": {"occur_time": 1}}});
+    read_as_today(&mut create);
+    assert_eq!(
+        create,
+        json!({"create": {"at": {"utc": "t"}, "data": {"occur_time": 1}}})
+    );
+
+    let row = |t: &str| json!({"id_structure": t}).as_object().unwrap().clone();
+    assert_eq!(content(&row("%occur_time%")), content(&row("%at%")));
+    assert_ne!(content(&row("%pr%:%occur_time%")), content(&row("%at%")));
 }

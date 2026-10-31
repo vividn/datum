@@ -35,9 +35,7 @@ fn log(db: &Db, field: &str, kv: &str) -> Result<Value, String> {
     match run_cli(&["occur", field, kv, "-t", &at], db) {
         Ok(()) => {
             let entries = logged_entries(db, field);
-            let latest = entries
-                .iter()
-                .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc));
+            let latest = entries.iter().max_by_key(|e| e.at.as_ref().map(|t| t.utc));
             let data = latest.unwrap().data.clone().unwrap();
             Ok(data[kv.split_once('=').unwrap().0].clone())
         }
@@ -143,9 +141,7 @@ fn a_datetime_is_the_time_keys_instant_as_a_wall_clock() {
         let (a, t) = (format!("seen={v}"), format!("wake_time={v}"));
         run_cli(&["occur", "run", &a, &t, "-t", &at], &db).unwrap();
         let entries = logged_entries(&db, "run");
-        let latest = entries
-            .iter()
-            .max_by_key(|e| e.occur_time.clone().unwrap().utc);
+        let latest = entries.iter().max_by_key(|e| e.at.clone().unwrap().utc);
         let data = latest.unwrap().data.clone().unwrap();
         let wake = DatumTime::from_v2_json(&data["wake_time"]).expect(v);
         let wall = wake.local_time().naive_local();
@@ -404,7 +400,7 @@ fn a_spec_types_no_key_called_at() {
     let [e] = &logged_entries(&db, "run")[..] else {
         panic!("one entry");
     };
-    let t = e.occur_time.as_ref().unwrap().utc.to_rfc3339();
+    let t = e.at.as_ref().unwrap().utc.to_rfc3339();
     assert_eq!(t, "2026-10-07T09:00:00+00:00");
     assert_eq!(e.data, None);
 }

@@ -13,7 +13,7 @@ use super::{
     FLAGGED_ROW,
 };
 
-/// Recompute each live entry's `occur_time` offset from its `timezone` at
+/// Recompute each live entry's `at` offset from its `timezone` at
 /// `utc` and flag any row whose stored `offset_minutes` disagrees — the
 /// `tz` checker. A `DatumTime`'s three fields are not independent
 /// (`crates/datum-parse/src/time/datum_time.rs`): `offset_minutes` must
@@ -68,7 +68,7 @@ pub(super) fn collect_tz_drift(
                 not_zones.push((e.clone(), format!("state={state}"), state.to_string()));
             }
         }
-        let Some(occur) = e.occur_time.as_ref() else {
+        let Some(occur) = e.at.as_ref() else {
             continue;
         };
         let tz = occur.timezone.as_deref().unwrap_or("—");
@@ -141,7 +141,7 @@ pub(super) fn collect_tz_drift(
     };
     let names: std::collections::BTreeSet<&str> = unknown
         .iter()
-        .filter_map(|(e, ..)| e.occur_time.as_ref()?.timezone.as_deref())
+        .filter_map(|(e, ..)| e.at.as_ref()?.timezone.as_deref())
         .collect();
     let names = names.into_iter().collect::<Vec<_>>().join(", ");
     Ok([
@@ -191,7 +191,7 @@ pub(super) fn collect_tz_drift(
 fn around_blocks(db: &Db, found: &[Entry], notes: &[&str]) -> Result<String> {
     let mut blocks = Vec::new();
     for ((e, drawn), note) in found.iter().zip(field_and_state(db, found)).zip(notes) {
-        let (mut before, after) = match e.occur_time.as_ref() {
+        let (mut before, after) = match e.at.as_ref() {
             Some(at) => db.entries_around(at.utc)?,
             None => Default::default(),
         };
@@ -222,7 +222,7 @@ fn around_blocks(db: &Db, found: &[Entry], notes: &[&str]) -> Result<String> {
 /// stored, resolvable or not, and its hid. An offset no clock has is said in
 /// minutes, beside the time in UTC.
 fn zone_columns(e: &Entry) -> [String; 4] {
-    let Some(t) = e.occur_time.as_ref() else {
+    let Some(t) = e.at.as_ref() else {
         return ["—".into(), "—".into(), "—".into(), e.short_uid()];
     };
     const AT: &str = "%Y-%m-%d %H:%M:%S";
@@ -252,7 +252,7 @@ fn off_declared(db: &Db, entries: &[Entry]) -> Result<Vec<(Entry, String, String
     let declared_zones = db.declared_zones()?;
     let mut off = Vec::new();
     for e in entries {
-        let Some(t) = e.occur_time.as_ref() else {
+        let Some(t) = e.at.as_ref() else {
             continue;
         };
         if e.deleted_at.is_some()
@@ -274,7 +274,7 @@ fn off_declared(db: &Db, entries: &[Entry]) -> Result<Vec<(Entry, String, String
             ));
         }
     }
-    off.sort_by_key(|(e, ..)| e.occur_time.as_ref().map(|t| t.utc));
+    off.sort_by_key(|(e, ..)| e.at.as_ref().map(|t| t.utc));
     Ok(off)
 }
 
@@ -324,7 +324,7 @@ fn off_zone(db: &Db, near: Option<&BTreeSet<String>>) -> Result<Vec<(Entry, Stri
             )
         })
         .collect();
-    found.sort_by_key(|(e, ..)| e.occur_time.as_ref().map(|t| t.utc));
+    found.sort_by_key(|(e, ..)| e.at.as_ref().map(|t| t.utc));
     Ok(found)
 }
 
@@ -418,7 +418,7 @@ mod tests {
             let row: String = db
                 .conn()
                 .query_row(
-                    "SELECT hid FROM entries ORDER BY occur_time LIMIT 1 OFFSET ?1",
+                    "SELECT hid FROM entries ORDER BY at LIMIT 1 OFFSET ?1",
                     [next(40)],
                     |r| r.get(0),
                 )
@@ -437,7 +437,7 @@ mod tests {
                     db.conn().execute(gone, [&row]).unwrap();
                 }
                 _ => {
-                    let moved = "UPDATE entries SET occur_time = ?2 WHERE hid = ?1";
+                    let moved = "UPDATE entries SET at = ?2 WHERE hid = ?1";
                     db.conn().execute(moved, [&row, &to]).unwrap();
                 }
             }
@@ -446,7 +446,7 @@ mod tests {
             // row's old place among them.
             let logged = db.check_changed(through).unwrap().unwrap().into_iter();
             let near: BTreeSet<String> = (found.iter())
-                .filter_map(|(e, ..)| Some(e.occur_time.as_ref()?.utc.to_rfc3339()))
+                .filter_map(|(e, ..)| Some(e.at.as_ref()?.utc.to_rfc3339()))
                 .chain(logged.map(|(.., at)| at).filter(|at| !at.is_empty()))
                 .collect();
             let whole = hids(off_zone(&db, None).unwrap());
@@ -454,8 +454,8 @@ mod tests {
         }
     }
 
-    /// A row whose stored `occur_time_offset` disagrees with the offset its
-    /// `occur_time_tz` produces at that instant is flagged by the `tz`
+    /// A row whose stored `at_offset` disagrees with the offset its
+    /// `at_tz` produces at that instant is flagged by the `tz`
     /// checker as a `tz_offset_mismatch` ERROR. v3 never writes such a row
     /// (the offset is derived at construction), so the test seeds the
     /// desync directly into the column — exactly the legacy-import /
@@ -472,10 +472,7 @@ mod tests {
         let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
         db.insert_entry(&entry).unwrap();
         db.conn()
-            .execute(
-                "UPDATE entries SET occur_time_offset = 0 WHERE field = 'work'",
-                [],
-            )
+            .execute("UPDATE entries SET at_offset = 0 WHERE field = 'work'", [])
             .unwrap();
 
         let issues = collect_tz_drift(&db, &all(&db), false, None).unwrap();
@@ -549,7 +546,7 @@ mod tests {
             .is_empty());
     }
 
-    /// An unparseable stored `occur_time_tz` can't be reconciled against the
+    /// An unparseable stored `at_tz` can't be reconciled against the
     /// offset, so the row is flagged too — `local_time` is meaningless until
     /// the name is repaired.
     #[test]
@@ -567,7 +564,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
         db.conn()
             .execute(
-                "UPDATE entries SET occur_time_tz = 'Mars/Olympus_Mons' WHERE field = 'work'",
+                "UPDATE entries SET at_tz = 'Mars/Olympus_Mons' WHERE field = 'work'",
                 [],
             )
             .unwrap();
@@ -627,11 +624,9 @@ mod tests {
 
         let stored: Option<String> = db
             .conn()
-            .query_row(
-                "SELECT occur_time_tz FROM entries WHERE field = 'work'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT at_tz FROM entries WHERE field = 'work'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(stored, None, "an absent zone stays NULL in the column");
         assert!(
@@ -654,7 +649,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
         db.conn()
             .execute(
-                "UPDATE entries SET occur_time_offset = 0, \
+                "UPDATE entries SET at_offset = 0, \
                  deleted_at = '2024-01-16T00:00:00+00:00' WHERE field = 'work'",
                 [],
             )
@@ -696,7 +691,7 @@ mod tests {
         at(&db, "2024-01-15T03:00:00+00:00", "Europe/Berlin");
         db.conn()
             .execute(
-                "UPDATE entries SET occur_time_offset = 0 WHERE occur_time_tz = 'Europe/Berlin'",
+                "UPDATE entries SET at_offset = 0 WHERE at_tz = 'Europe/Berlin'",
                 [],
             )
             .unwrap();
@@ -733,8 +728,8 @@ mod tests {
         at(&db, "2024-01-15T01:00:00+00:00", "Europe/Berlin");
         db.conn()
             .execute(
-                "UPDATE entries SET occur_time_tz = 'Mars/Base', occur_time_offset = 2000
-                  WHERE occur_time_tz = 'Europe/Berlin'",
+                "UPDATE entries SET at_tz = 'Mars/Base', at_offset = 2000
+                  WHERE at_tz = 'Europe/Berlin'",
                 [],
             )
             .unwrap();
@@ -765,7 +760,7 @@ mod tests {
         );
         db.insert_entry(&entry).unwrap();
         db.conn()
-            .execute("UPDATE entries SET occur_time_offset = 0", [])
+            .execute("UPDATE entries SET at_offset = 0", [])
             .unwrap();
         let rows = block_of(&db, "tz_offset_mismatch");
         assert_eq!(rows.len(), 1, "{rows:#?}");

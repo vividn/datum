@@ -15,16 +15,16 @@ use super::{is_meta_field, Db};
 
 impl Db {
     /// The record of `field`: its state now ([`Db::state_at`]) and the fold
-    /// of its live entries' data in the listing's order, `occur_time ??
+    /// of its live entries' data in the listing's order, `at ??
     /// create_time` then slug, so a timeless entry folds at its create time.
     /// Each key holds the latest entry carrying it, and `null` clears it:
     /// JSON Merge Patch (RFC 7396), an array replaced whole. `comment` is
     /// gathered instead, each comment with its entry's time.
     pub fn collect(&self, field: &str) -> Result<Map<String, JsonValue>> {
         let mut stmt = self.conn.prepare_cached(&format!(
-            "SELECT data, COALESCE(occur_time, create_time) FROM entries
+            "SELECT data, COALESCE(at, create_time) FROM entries
              WHERE field = ?1 AND {LIVE_SQL} AND data IS NOT NULL
-             ORDER BY COALESCE(occur_time, create_time), slug"
+             ORDER BY COALESCE(at, create_time), slug"
         ))?;
         let rows = stmt.query_map(params![field], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
@@ -112,12 +112,12 @@ impl Db {
     }
 }
 
-/// The live entries of `field` in the record's order, `occur_time ??
+/// The live entries of `field` in the record's order, `at ??
 /// create_time` then slug: each one's hid, data and `asserted_base`.
 const IN_ORDER: &str = "SELECT hid, data, json_extract(extra_metadata, '$.asserted_base')
      FROM entries WHERE field = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
        AND data IS NOT NULL";
-const ORDER: &str = "ORDER BY COALESCE(occur_time, create_time), slug";
+const ORDER: &str = "ORDER BY COALESCE(at, create_time), slug";
 
 type Row = (String, Map<String, JsonValue>, Map<String, JsonValue>);
 
@@ -140,10 +140,10 @@ fn rows(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Result<Vec
 /// to quote, and data that does not parse holds no key.
 fn key_before_sql() -> String {
     format!(
-        "{IN_ORDER} AND hid != ?2 AND (COALESCE(occur_time, create_time), slug) < (?3, ?4)
+        "{IN_ORDER} AND hid != ?2 AND (COALESCE(at, create_time), slug) < (?3, ?4)
            AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(data) THEN data END)
                        WHERE key = ?5)
-         ORDER BY COALESCE(occur_time, create_time) DESC, slug DESC LIMIT 1"
+         ORDER BY COALESCE(at, create_time) DESC, slug DESC LIMIT 1"
     )
 }
 
@@ -153,7 +153,7 @@ fn key_before_sql() -> String {
 /// transaction that writes it.
 pub fn key_before(conn: &Connection, e: &Entry, key: &str) -> Result<Option<JsonValue>> {
     // Compared as text: `to_rfc3339` is how both columns are written (`try_insert`).
-    let at = e.occur_time.as_ref().map_or(e.create_time, |t| t.utc);
+    let at = e.at.as_ref().map_or(e.create_time, |t| t.utc);
     let rows = rows(
         conn,
         &key_before_sql(),

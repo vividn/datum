@@ -39,7 +39,7 @@ impl Db {
         )?)
     }
 
-    /// The rows changed after `through`, `(hid, field, occur_time)`, an
+    /// The rows changed after `through`, `(hid, field, at)`, an
     /// op's field and time `''`. `None` where some of them are gone: the
     /// log's cap dropped them (da-4a3cv), or a prune under another stamp did,
     /// which passes this mark as a prune under its own never does (da-tuhig).

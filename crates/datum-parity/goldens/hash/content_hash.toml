@@ -106,7 +106,7 @@ content_hash = "989dab1c0a7d5f859a4260cd4108b0ef6b7ab6ddc86646c8234953a640077eef
 
 [[fixture]]
 name = "timeless"
-description = "No occur_time and no dur: both segments are empty, and the separators remain."
+description = "No at and no dur: both segments are empty, and the separators remain."
 field = "note"
 state = '"idea"'
 parts = ["note", "", "", '"idea"', "", "", ""]

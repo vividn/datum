@@ -97,7 +97,7 @@ fn fx01_add_new_occur() {
     let _g = no_color_scope();
     // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
     // adds now render as dots (matching the rest of the Point family); the
-    // `¢`/NON_OCCUR glyph is reserved for timeless entries (no `occur_time`).
+    // `¢`/NON_OCCUR glyph is reserved for timeless entries (no `at`).
     let e = entry(
         "new_occur",
         Verb::Point,
@@ -485,7 +485,7 @@ fn fx20_add_with_keys() {
     let _g = no_color_scope();
     // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
     // adds render as dots, not the NON_OCCUR (`¢`) glyph (which is now
-    // reserved for timeless entries — `occur_time = None`).
+    // reserved for timeless entries — `at = None`).
     let mut e = entry(
         "thing",
         Verb::Point,
@@ -602,7 +602,7 @@ fn future_timestamp_is_underlined() {
     );
 }
 
-/// da-5uph: an entry with `occur_time_uncertainty = P1D` is a date-only
+/// da-5uph: an entry with `at_uncertainty = P1D` is a date-only
 /// row. `format_info_line` must lead with the bare local date — no
 /// `HH:MM:SS`, no zone offset, no relative-day prefix wrapping the
 /// clock — so the user sees what they logged, not a synthetic
@@ -617,7 +617,7 @@ fn p1d_info_line_is_date_only() {
         Some(fixed_time(0, 0, 0)),
         None,
     );
-    e.set_occur_uncertainty(Some("P1D".to_string()));
+    e.set_at_uncertainty(Some("P1D".to_string()));
     let ctx = RenderContext::default();
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(
@@ -631,7 +631,7 @@ fn p1d_info_line_is_date_only() {
     assert!(out.contains(" birthday "), "field badge present: {out:?}");
 }
 
-/// da-5uph: a row without `occur_time_uncertainty` (i.e. NULL → exact-
+/// da-5uph: a row without `at_uncertainty` (i.e. NULL → exact-
 /// second) keeps the full `HH:MM:SS` + offset rendering — the new
 /// behaviour is scoped to P1D only.
 #[test]

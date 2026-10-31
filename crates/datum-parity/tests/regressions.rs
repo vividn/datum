@@ -171,7 +171,7 @@ fn coverage_lock_all_required_bugs_covered() {
 /// readable form: the half hour PRECEDES the entry's time. This test
 /// holds daydumb's own model against those two instants.
 #[test]
-fn da_zwct_a_duration_block_precedes_its_occur_time() {
+fn da_zwct_a_duration_block_precedes_its_at() {
     use datum_core::dur::Dur;
     use datum_core::entry::{Entry, Verb};
     use datum_core::time::DatumTime;
@@ -215,9 +215,9 @@ fn da_zwct_a_duration_block_precedes_its_occur_time() {
     e.dur = Some(Dur::of(chrono::Duration::minutes(30)));
 
     assert_eq!(
-        e.occur_time.as_ref().unwrap().utc,
+        e.at.as_ref().unwrap().utc,
         block_end,
-        "daydumb stores the block's END in occur_time"
+        "daydumb stores the block's END in at"
     );
     assert_eq!(
         e.computed_start_utc().unwrap(),

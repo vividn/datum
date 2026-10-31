@@ -596,7 +596,7 @@ e2e_case!(fast, time_y_yesterday: CaseSpec {
 
 // Per-side `-t` across distinct fields: each side picks its own time,
 // the multi dispatch records the rows under the leftmost side's
-// occur_time (current behavior pending da-gh0.D side-scoping). Both
+// at (current behavior pending da-gh0.D side-scoping). Both
 // rows live regardless because the fields differ.
 e2e_case!(full, time_distinct_fields_multi: CaseSpec {
     argv: "switch environment outside -t 08:00 , switch body vertical -t 09:00",
@@ -610,7 +610,7 @@ e2e_case!(full, time_distinct_fields_multi: CaseSpec {
 
 // ─── Structured / parallel state ─────────────────────────────────────
 
-// Two distinct fields with shared occur_time — atomic commit.
+// Two distinct fields with shared at — atomic commit.
 e2e_case!(fast, struct_two_fields_shared_time: CaseSpec {
     argv: "switch environment outside , switch body vertical",
     setup: no_setup,

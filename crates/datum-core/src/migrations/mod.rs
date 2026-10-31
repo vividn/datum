@@ -62,7 +62,7 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 75;
+pub const CURRENT_SCHEMA_VERSION: u32 = 76;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -72,6 +72,9 @@ pub const SYNC_FLOORS: &[u32] = &[
     // da-yc5vi: a spec's `glyph` keys are `symbol` keys, and a copy before
     // it would go on writing the old ones.
     73,
+    // da-95avu: a row's time is `at`. A copy before it would read a new op as
+    // an entry with no time, and hash every row otherwise.
+    76,
 ];
 
 /// The lowest schema a copy syncs with: a peer below it is refused, and is
@@ -622,5 +625,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries_field_deciding: the rows that can decide a state, which a state read walks back through; entries_field_blocks without the moments, so no run of moments fills a read's lookback or lookahead (da-l6roh)",
         apply: m74_to_75_field_deciding_index,
         down: down_75_to_74_field_deciding_index,
+    },
+    Migration {
+        from: 75,
+        to: 76,
+        summary: "entries: occur_time and its family are at, at_offset, at_tz and at_uncertainty, the old names kept as virtual columns for stored SQL; ops signed before read as the new names (da-95avu)",
+        apply: m75_to_76_at,
+        down: down_76_to_75_at,
     },
 ];

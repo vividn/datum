@@ -1,4 +1,4 @@
-//! `datum retime [<id_or_slug>] [time]` — move an entry's occur_time.
+//! `datum retime [<id_or_slug>] [time]` — move an entry's at.
 //!
 //! da-rorg: retime aligns with the update/merge/delete/undo defaults —
 //! a bare slug resolves to `_LAST`, and a missing time-args group means
@@ -7,9 +7,9 @@
 //! * `--offset <ISO>` — explicit duration shift (legacy).
 //! * Time-args group (`-t`/`-y`/`-q`/`-d`/...), the positional being one
 //!   more `-t` value (`retime <id> 1040`, `retime <id> -5`) — resolved
-//!   against each entry's OWN occur_time, in its own zone (da-jix52).
+//!   against each entry's OWN at, in its own zone (da-jix52).
 //! * With `-r/--relative` the same args are a pure shift of the entry's
-//!   occur_time: `-y` moves it a calendar day and keeps its clock.
+//!   at: `-y` moves it a calendar day and keeps its clock.
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -171,7 +171,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
     if args.time.omit_timestamp {
         let mut moved = Vec::new();
         for filter in &filters {
-            moved.extend(db.clear_occur_time(filter)?);
+            moved.extend(db.clear_at(filter)?);
         }
         return report(db, &moved);
     }
@@ -200,11 +200,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
         };
         let mut owns = Vec::new();
         for filter in &filters {
-            owns.extend(
-                db.retime_targets(filter)?
-                    .into_iter()
-                    .filter_map(|e| e.occur_time),
-            );
+            owns.extend(db.retime_targets(filter)?.into_iter().filter_map(|e| e.at));
         }
         let asked = owns.iter().find(|own| {
             matches!((read(own, false), read(own, true)), (Some(a), Some(b)) if a.utc != b.utc)

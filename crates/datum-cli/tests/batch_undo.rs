@@ -63,7 +63,7 @@ impl Env {
         let conn = rusqlite::Connection::open(self.db()).unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT hid, slug, field, state, dur, following_state, data, occur_time
+                "SELECT hid, slug, field, state, dur, following_state, data, at
                  FROM entries WHERE deleted_at IS NULL AND superseded_by IS NULL ORDER BY hid",
             )
             .unwrap();

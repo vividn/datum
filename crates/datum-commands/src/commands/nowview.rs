@@ -42,9 +42,9 @@ use serde_json::Value as JsonValue;
 
 use crate::args::{NowviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    block_span, canonical_verb, dot_glyph, dur_seconds, is_hole_state, leading_edge_ms,
-    occur_time_ms, punch_holes, render_field_visuals, rgb_to_hex, state_label, switch_regions,
-    title_marks, SwitchRegion,
+    at_ms, block_span, canonical_verb, dot_glyph, dur_seconds, is_hole_state, leading_edge_ms,
+    punch_holes, render_field_visuals, rgb_to_hex, state_label, switch_regions, title_marks,
+    SwitchRegion,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb};
 use crate::render::term_layout;
@@ -587,7 +587,7 @@ pub(crate) fn build_dayview_fields(
                 continue;
             }
         }
-        entries_for_field.sort_by_key(occur_time_ms);
+        entries_for_field.sort_by_key(at_ms);
         // da-ncoa: a state set before the fetch window is carried in from
         // `fetch_start`, so the band does not fall back to the field color.
         let rows = FieldStateRows::load_between(db.conn(), &field, fetch_start, end)?;
@@ -691,7 +691,7 @@ pub(crate) fn build_fields(
             }
         }
         let mut entries_for_field = by_field.remove(field).unwrap_or_default();
-        entries_for_field.sort_by_key(occur_time_ms);
+        entries_for_field.sort_by_key(at_ms);
         // da-zwct: `day_end_ms` CLIPS an open region; it does not close
         // one. A block given as a duration, on the other hand, really
         // does end at its own instant — and for a just-logged
@@ -825,7 +825,7 @@ fn render_field_visuals_terminal(
     let mut holes: Vec<(i64, i64)> = Vec::new();
 
     for entry in entries {
-        let Some(occur_dt) = entry.occur_time.as_ref() else {
+        let Some(occur_dt) = entry.at.as_ref() else {
             continue;
         };
         let occur_ms = occur_dt.utc.timestamp_millis();
@@ -1313,7 +1313,7 @@ mod tests {
     /// Terminal-shape Block emits one closed segment at [occur − dur,
     /// occur] — da-zwct: the duration precedes the stored instant.
     #[test]
-    fn terminal_block_renders_the_duration_before_its_occur_time() {
+    fn terminal_block_renders_the_duration_before_its_at() {
         use chrono::TimeZone;
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
         let entries = vec![stub_entry(

@@ -6,7 +6,7 @@
 -- is a file of its own; a file it was never laid in (one a reader opened) is
 -- checked whole.
 --
--- The rows a write touched, by hid, field and `occur_time` (`''` for none;
+-- The rows a write touched, by hid, field and `at` (`''` for none;
 -- an update that moves a row names where it was and where it is), and the
 -- hid of every op that is or was applied, or is a chain record, its field
 -- and time '': a waiting op changes no fold. Appended, not upserted, so a
@@ -44,16 +44,16 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS check_changes_insert AFTER INSERT ON entries BEGIN
     INSERT INTO check_changes (hid, field, at)
-        VALUES (new.hid, new.field, coalesce(new.occur_time, ''));
+        VALUES (new.hid, new.field, coalesce(new.at, ''));
 END;
 CREATE TRIGGER IF NOT EXISTS check_changes_update AFTER UPDATE ON entries BEGIN
     INSERT INTO check_changes (hid, field, at)
-        SELECT old.hid, old.field, coalesce(old.occur_time, '')
-        UNION SELECT new.hid, new.field, coalesce(new.occur_time, '');
+        SELECT old.hid, old.field, coalesce(old.at, '')
+        UNION SELECT new.hid, new.field, coalesce(new.at, '');
 END;
 CREATE TRIGGER IF NOT EXISTS check_changes_delete AFTER DELETE ON entries BEGIN
     INSERT INTO check_changes (hid, field, at)
-        VALUES (old.hid, old.field, coalesce(old.occur_time, ''));
+        VALUES (old.hid, old.field, coalesce(old.at, ''));
 END;
 CREATE TRIGGER IF NOT EXISTS check_changes_op_insert AFTER INSERT ON ops
     WHEN new.applied = 1 OR new.hid = '~chain' BEGIN

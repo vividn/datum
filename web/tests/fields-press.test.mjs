@@ -170,7 +170,7 @@ describe('a press', () => {
 			// before it is the span (da-zwct).
 			await app.idle();
 			const stored = (await app.entries()).find((e) => e.field === 'work');
-			assert.match(stored.occur_time.utc, /T09:00/, JSON.stringify(stored.occur_time));
+			assert.match(stored.at.utc, /T09:00/, JSON.stringify(stored.at));
 			assert.equal(stored.dur, 'PT30M', JSON.stringify(stored.dur));
 		});
 	});

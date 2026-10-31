@@ -148,11 +148,11 @@ async function seed(app, count, timeless = [], field = () => 'seed') {
 				dur: 'MOMENT',
 				following_state: null,
 				data: null,
-				occur_time: none ? null : { utc: at(i), offset_minutes: 0, timezone: 'UTC' },
+				at: none ? null : { utc: at(i), offset_minutes: 0, timezone: 'UTC' },
 				create_time: at(i),
 				modify_time: at(i),
 				client_id: '01M281T64122KN04Z1VN626W9J',
-				id_structure: none ? '%create_time%' : '%occur_time%',
+				id_structure: none ? '%create_time%' : '%at%',
 				raw_input: `occur ${field(i)}`,
 				parser_version: 2
 			})

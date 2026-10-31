@@ -37,7 +37,7 @@ use crate::time::datum_time::DatumTime;
 /// The zone a local time is to be read in: a named IANA zone (whose DST
 /// rules `chrono-tz` knows) or a bare fixed offset.
 ///
-/// A fixed offset is what remains when `occur_time_tz` is NULL: per
+/// A fixed offset is what remains when `at_tz` is NULL: per
 /// [`DatumTime::timezone`]'s contract, `None` means *unknown*, and an offset
 /// with no name is the whole of what we know. A fixed offset has no
 /// transitions, so resolution against one is always [`Resolved::Unique`].
@@ -510,7 +510,7 @@ mod tests {
     }
 
     /// A fixed offset has no rules and therefore no transitions: every local
-    /// reading resolves uniquely. This is the `occur_time_tz IS NULL` path.
+    /// reading resolves uniquely. This is the `at_tz IS NULL` path.
     #[test]
     fn fixed_offset_is_always_unique() {
         let z = Zone::Fixed(FixedOffset::east_opt(330 * 60).unwrap());

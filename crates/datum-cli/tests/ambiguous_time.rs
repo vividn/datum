@@ -41,10 +41,7 @@ fn bare(dir: &TempDir) -> Command {
 
 /// Each tea's slug and zone.
 fn teas(dir: &TempDir) -> Vec<(String, Option<String>)> {
-    rows(
-        dir,
-        "SELECT slug, occur_time_tz FROM entries WHERE field = 'tea'",
-    )
+    rows(dir, "SELECT slug, at_tz FROM entries WHERE field = 'tea'")
 }
 
 fn rows(dir: &TempDir, sql: &str) -> Vec<(String, Option<String>)> {
@@ -274,7 +271,7 @@ fn retime_is_asked_which_reading() {
     assert_eq!(teas(&dir), second_stored());
 }
 
-/// da-job98: an `occur_time=` key is a wall time as `-t` is, and unanswered
+/// da-job98: an `at=` key is a wall time as `-t` is, and unanswered
 /// where no one can be asked, naming both as the key.
 #[test]
 fn a_time_key_no_one_can_be_asked_about_is_unanswered() {
@@ -351,7 +348,7 @@ fn the_page_answers_each_time_key_in_turn() {
     );
 }
 
-/// `update`'s `occur_time=` is asked about as a log's is.
+/// `update`'s `at=` is asked about as a log's is.
 #[test]
 fn an_update_s_time_key_is_asked_about() {
     let dir = tempfile::tempdir().unwrap();

@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS stats_cache_through (
 );
 
 -- What the writes since the last `stats` touched: per field and `dur`, the
--- earliest `occur_time` written or removed. SQL cannot subtract an ISO
+-- earliest `at` written or removed. SQL cannot subtract an ISO
 -- duration, so the leading edge is derived when the cache reads this. A
 -- field of `''` is every field: the row moved where the database's zone
 -- changes, which moves every day's midnights after it. A `dur` and `at` of
@@ -49,78 +49,78 @@ CREATE TABLE IF NOT EXISTS stats_cache_dirty (
     PRIMARY KEY (field, dur)
 ) WITHOUT ROWID;
 
--- The zone a row's own `occur_time_tz` names differs from the zone before
+-- The zone a row's own `at_tz` names differs from the zone before
 -- it: the row is where `Db::zone_timeline` changes zone. The index answers
 -- "the zone before it" with one seek; without it the check cost a write
 -- ~0.2 ms on five years.
 CREATE INDEX IF NOT EXISTS entries_zoned
-    ON entries (occur_time, occur_time_tz)
-    WHERE occur_time_tz IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+    ON entries (at, at_tz)
+    WHERE at_tz IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
       AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit');
 CREATE TRIGGER IF NOT EXISTS stats_cache_insert AFTER INSERT ON entries BEGIN
     INSERT INTO stats_cache_dirty (field, dur, at)
-        SELECT new.field, coalesce(new.dur, ''), new.occur_time WHERE new.occur_time IS NOT NULL
+        SELECT new.field, coalesce(new.dur, ''), new.at WHERE new.at IS NOT NULL
         UNION ALL SELECT substr(new.slug, 6), '', '' WHERE new.field = 'spec'
-        UNION ALL SELECT '', '', new.occur_time
-            WHERE new.occur_time_tz IS NOT NULL AND new.deleted_at IS NULL
+        UNION ALL SELECT '', '', new.at
+            WHERE new.at_tz IS NOT NULL AND new.deleted_at IS NULL
               AND new.superseded_by IS NULL
               AND new.field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-              AND new.occur_time_tz IS NOT (
-                  SELECT occur_time_tz FROM entries
-                   WHERE occur_time_tz IS NOT NULL AND deleted_at IS NULL
+              AND new.at_tz IS NOT (
+                  SELECT at_tz FROM entries
+                   WHERE at_tz IS NOT NULL AND deleted_at IS NULL
                      AND superseded_by IS NULL
                      AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-                     AND occur_time < new.occur_time AND rowid <> new.rowid
-                   ORDER BY occur_time DESC LIMIT 1)
+                     AND at < new.at AND rowid <> new.rowid
+                   ORDER BY at DESC LIMIT 1)
         ON CONFLICT (field, dur) DO UPDATE SET at = excluded.at WHERE excluded.at < at;
 END;
 
 CREATE TRIGGER IF NOT EXISTS stats_cache_update AFTER UPDATE ON entries BEGIN
     INSERT INTO stats_cache_dirty (field, dur, at)
-        SELECT old.field, coalesce(old.dur, ''), old.occur_time WHERE old.occur_time IS NOT NULL
+        SELECT old.field, coalesce(old.dur, ''), old.at WHERE old.at IS NOT NULL
         UNION ALL SELECT substr(old.slug, 6), '', '' WHERE old.field = 'spec'
-        UNION ALL SELECT '', '', old.occur_time
-            WHERE old.occur_time_tz IS NOT NULL AND old.deleted_at IS NULL
+        UNION ALL SELECT '', '', old.at
+            WHERE old.at_tz IS NOT NULL AND old.deleted_at IS NULL
               AND old.superseded_by IS NULL
               AND old.field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-              AND old.occur_time_tz IS NOT (
-                  SELECT occur_time_tz FROM entries
-                   WHERE occur_time_tz IS NOT NULL AND deleted_at IS NULL
+              AND old.at_tz IS NOT (
+                  SELECT at_tz FROM entries
+                   WHERE at_tz IS NOT NULL AND deleted_at IS NULL
                      AND superseded_by IS NULL
                      AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-                     AND occur_time < old.occur_time AND rowid <> old.rowid
-                   ORDER BY occur_time DESC LIMIT 1)
+                     AND at < old.at AND rowid <> old.rowid
+                   ORDER BY at DESC LIMIT 1)
         UNION ALL
-        SELECT new.field, coalesce(new.dur, ''), new.occur_time WHERE new.occur_time IS NOT NULL
+        SELECT new.field, coalesce(new.dur, ''), new.at WHERE new.at IS NOT NULL
         UNION ALL SELECT substr(new.slug, 6), '', '' WHERE new.field = 'spec'
-        UNION ALL SELECT '', '', new.occur_time
-            WHERE new.occur_time_tz IS NOT NULL AND new.deleted_at IS NULL
+        UNION ALL SELECT '', '', new.at
+            WHERE new.at_tz IS NOT NULL AND new.deleted_at IS NULL
               AND new.superseded_by IS NULL
               AND new.field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-              AND new.occur_time_tz IS NOT (
-                  SELECT occur_time_tz FROM entries
-                   WHERE occur_time_tz IS NOT NULL AND deleted_at IS NULL
+              AND new.at_tz IS NOT (
+                  SELECT at_tz FROM entries
+                   WHERE at_tz IS NOT NULL AND deleted_at IS NULL
                      AND superseded_by IS NULL
                      AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-                     AND occur_time < new.occur_time AND rowid <> new.rowid
-                   ORDER BY occur_time DESC LIMIT 1)
+                     AND at < new.at AND rowid <> new.rowid
+                   ORDER BY at DESC LIMIT 1)
         ON CONFLICT (field, dur) DO UPDATE SET at = excluded.at WHERE excluded.at < at;
 END;
 
 CREATE TRIGGER IF NOT EXISTS stats_cache_delete AFTER DELETE ON entries BEGIN
     INSERT INTO stats_cache_dirty (field, dur, at)
-        SELECT old.field, coalesce(old.dur, ''), old.occur_time WHERE old.occur_time IS NOT NULL
+        SELECT old.field, coalesce(old.dur, ''), old.at WHERE old.at IS NOT NULL
         UNION ALL SELECT substr(old.slug, 6), '', '' WHERE old.field = 'spec'
-        UNION ALL SELECT '', '', old.occur_time
-            WHERE old.occur_time_tz IS NOT NULL AND old.deleted_at IS NULL
+        UNION ALL SELECT '', '', old.at
+            WHERE old.at_tz IS NOT NULL AND old.deleted_at IS NULL
               AND old.superseded_by IS NULL
               AND old.field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-              AND old.occur_time_tz IS NOT (
-                  SELECT occur_time_tz FROM entries
-                   WHERE occur_time_tz IS NOT NULL AND deleted_at IS NULL
+              AND old.at_tz IS NOT (
+                  SELECT at_tz FROM entries
+                   WHERE at_tz IS NOT NULL AND deleted_at IS NULL
                      AND superseded_by IS NULL
                      AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-                     AND occur_time < old.occur_time AND rowid <> old.rowid
-                   ORDER BY occur_time DESC LIMIT 1)
+                     AND at < old.at AND rowid <> old.rowid
+                   ORDER BY at DESC LIMIT 1)
         ON CONFLICT (field, dur) DO UPDATE SET at = excluded.at WHERE excluded.at < at;
 END;

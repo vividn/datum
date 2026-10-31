@@ -4,7 +4,7 @@
 //! grammar and [`UncertaintyUnit`], the granularity label that used to be
 //! called `PrecisionUnit` and live in its own module (and, before that, in
 //! `datum-core::entry`). The split name was why nobody could tell whether
-//! uncertainty reached storage: it does, as the `occur_time_uncertainty` /
+//! uncertainty reached storage: it does, as the `at_uncertainty` /
 //! `dur_uncertainty` columns (da-b8rs).
 
 use serde::{Deserialize, Serialize};
@@ -136,7 +136,7 @@ impl Uncertainty {
 
     /// Render this uncertainty as the ISO-8601 duration string carried on
     /// [`DatumTime::uncertainty`] / [`Dur::uncertainty`](crate::Dur::uncertainty) and stored in the
-    /// `occur_time_uncertainty` / `dur_uncertainty` columns. Returns `None`
+    /// `at_uncertainty` / `dur_uncertainty` columns. Returns `None`
     /// for exact (no uncertainty) so the column lands as NULL.
     ///
     /// It is written in the unit the person typed when that unit divides

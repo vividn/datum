@@ -41,7 +41,7 @@ test('an hour that happened twice is a dialog with a button each, and the second
 			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
 			const [tea] = await app.entries();
 			assert.equal(tea.slug, 'tea:2026-10-25T01:30:00.000Z');
-			assert.equal(tea.occur_time.timezone, 'Europe/Berlin');
+			assert.equal(tea.at.timezone, 'Europe/Berlin');
 			assert.deepEqual(app.errors, []);
 		},
 		{ timezone: 'Europe/Berlin' }

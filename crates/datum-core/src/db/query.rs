@@ -93,7 +93,7 @@ impl Db {
     /// List live-entry identifiers (hid or slug, per `as_slug`) in
     /// occur-time order. Accepts optional field / `--since` filters and a
     /// cap. Ties broken by slug in the same direction as the primary sort.
-    /// A timeless row (`occur_time IS NULL`) sorts as the oldest, first
+    /// A timeless row (`at IS NULL`) sorts as the oldest, first
     /// ascending and last descending, and `--since` leaves it out.
     pub fn list_entry_ids(
         &self,
@@ -154,7 +154,7 @@ impl Db {
     /// fields and are left out (da-lc26c).
     ///
     /// da-vmjh: a skip-scan, not a scan. `SELECT DISTINCT field` walked
-    /// every row of `entries_live_field_occur` to return the couple of
+    /// every row of `entries_live_field_at` to return the couple of
     /// dozen names it holds — 18 ms at 22k rows, and growing. Each step
     /// of the recursion instead seeks the index straight to the next
     /// name (`SEARCH … (field>?)`, served by SQLite's `min()`
@@ -226,7 +226,7 @@ impl Db {
 
     /// Every state `field` has been logged with — as an entry's `state` or
     /// its trailing `following_state` — with how many live entries carry it
-    /// and the latest `occur_time` among them, None when every one is
+    /// and the latest `at` among them, None when every one is
     /// timeless (da-7905t). Most used first, then by name. A concurrent
     /// array counts once for each of its states. A declaration, a flag or a
     /// meta note is no use of a state.
@@ -236,9 +236,9 @@ impl Db {
             crate::track::NOT_A_DECLARATION_SQL
         );
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT s, COUNT(DISTINCT hid), MAX(occur_time) FROM (
-               SELECT hid, state AS s, occur_time {rows}
-               UNION ALL SELECT hid, following_state, occur_time {rows})
+            "SELECT s, COUNT(DISTINCT hid), MAX(at) FROM (
+               SELECT hid, state AS s, at {rows}
+               UNION ALL SELECT hid, following_state, at {rows})
              WHERE s IS NOT NULL GROUP BY s"
         ))?;
         let mut uses: HashMap<String, (serde_json::Value, usize, Option<String>)> = HashMap::new();

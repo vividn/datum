@@ -64,13 +64,13 @@ pub const UNDO_TOKEN: &str = "_UNDO";
 const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
 
 /// The order `_`, `__`, `_4`, … count in: most recent first, by the
-/// listing's own `occur_time ?? create_time` (da-2vgj1), so a timeless row
+/// listing's own `at ?? create_time` (da-2vgj1), so a timeless row
 /// counts at its create time as `tail` lists it there. Shared by the
 /// resolvers below and by [`quick_ordinals`], so what `tail` displays and
 /// what `_N` resolves to can't drift apart. Both skip the meta fields'
 /// entries (specs, layouts, aliases, views, commands, index definitions —
 /// da-lc26c) unless the field is named.
-const NTH_ORDER: &str = "ORDER BY COALESCE(occur_time, create_time) DESC, slug DESC";
+const NTH_ORDER: &str = "ORDER BY COALESCE(at, create_time) DESC, slug DESC";
 
 /// Resolve a quickId pattern to zero or more live entries.
 ///
@@ -448,7 +448,7 @@ fn wildcard_match(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
            AND deleted_at IS NULL
            AND (superseded_by IS NULL OR hid LIKE ?1 ESCAPE '\\')
            {not_meta}
-         ORDER BY occur_time ASC,
+         ORDER BY at ASC,
                   slug ASC"
     ))?;
     let rows = stmt.query_map(params![like], row_to_entry_public)?;
@@ -463,7 +463,7 @@ mod tests {
     //! in-memory v=CURRENT SQLite store. That's deliberate — the
     //! original bug (da-luc8) was a column-rename that mocks would have
     //! masked. Hitting the migrated schema is the only way the
-    //! `start_time → occur_time` class of breakage surfaces.
+    //! `start_time → at` class of breakage surfaces.
     use super::*;
     use crate::test_util::{entry_builder, fresh_db};
     use chrono::{DateTime, TimeZone, Utc};
@@ -473,7 +473,7 @@ mod tests {
             .unwrap()
     }
 
-    /// Seed `n` entries on `field` at strictly-increasing `occur_time`s
+    /// Seed `n` entries on `field` at strictly-increasing `at`s
     /// (one per minute starting 12:00). Returns them oldest-first, so
     /// `out.last()` is the newest.
     fn seed(db: &Db, field: &str, n: u32) -> Vec<Entry> {
@@ -900,7 +900,7 @@ mod tests {
     //
     // These tests exercise exact / prefix / wildcard precedence against a
     // real v3-schema SQLite store. They were gated off when the `entries`
-    // table pivoted to (occur_time, state, dur, following_state) and never
+    // table pivoted to (at, state, dur, following_state) and never
     // re-enabled — exactly the gap that let the da-luc8 column-rename bug
     // ship. Underscore-family ports (`_`, `<field>:_`, etc.) live above;
     // those four were dropped here because da-luc8 already covers them.

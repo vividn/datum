@@ -325,12 +325,12 @@ describe('a long press and a drag selects a period', () => {
 			);
 			assert.equal(marks.lines, 2, 'a range is drawn between two lines');
 
-			// The pair is lifted onto occur_time and dur (da-mjwq): the block
+			// The pair is lifted onto at and dur (da-mjwq): the block
 			// ENDS at `end_time=` and runs back to `start_time=`.
 			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(
-				new Date(Date.parse(posture.occur_time.utc)).toISOString(),
+				new Date(Date.parse(posture.at.utc)).toISOString(),
 				new Date(toMinute(to)).toISOString()
 			);
 			assert.equal(posture.dur, isoDur((toMinute(to) - toMinute(from)) / MINUTE), JSON.stringify(posture));
@@ -390,7 +390,7 @@ describe('a long press and a drag selects a period', () => {
 			assert.match(await barRun(page, 'occur water'), /^CREATE$/);
 			const [water] = (await app.entries()).filter((e) => e.field === 'water');
 			assert.equal(
-				new Date(Date.parse(water.occur_time.utc)).toISOString(),
+				new Date(Date.parse(water.at.utc)).toISOString(),
 				new Date(NOW).toISOString(),
 				'the next entry took the spent range’s time'
 			);
@@ -420,7 +420,7 @@ describe('a range on a day that is not today', () => {
 			assert.match(await barRun(page, 'start nap'), /^CREATE$/);
 			const [nap] = (await app.entries()).filter((e) => e.field === 'nap');
 			assert.equal(
-				new Date(Date.parse(nap.occur_time.utc)).toISOString(),
+				new Date(Date.parse(nap.at.utc)).toISOString(),
 				new Date(toMinute(to)).toISOString(),
 				'the block did not land on yesterday'
 			);

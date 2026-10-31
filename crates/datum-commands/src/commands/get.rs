@@ -239,12 +239,12 @@ fn read_in(
 /// [`datum_core::entry::Entry`]) means the column, `.x.y` walks the state,
 /// and anything else walks `data`. Null or absent is "`at` has no `name`".
 fn read(entry: &datum_core::entry::Entry, name: &str, at: &str) -> Result<serde_json::Value> {
-    // `occur_time` is read as the column it was, and a row with no time and
+    // `occur_time` is read as `at`, and a row with no time and
     // a data key `at` (which `datum check` names) still reads that key.
     let name = if name == "occur_time" { "at" } else { name };
-    let mut row = datum_core::entry::surface_keys(serde_json::to_value(entry)?);
+    let mut row = serde_json::to_value(entry)?;
     row["raw_input"] = serde_json::json!(entry.raw_input);
-    match &entry.occur_time {
+    match &entry.at {
         Some(t) => row["at"] = serde_json::json!(t.utc),
         None => {
             row.as_object_mut().map(|r| r.remove("at"));

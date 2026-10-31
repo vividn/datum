@@ -455,7 +455,7 @@ fn load_timeline(
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
     // TRACK documents too (da-c8mh): declaring a field is not an
     // observation of it.
-    // timeless `add`/`note` rows (NULL occur_time) and the default meta
+    // timeless `add`/`note` rows (NULL at) and the default meta
     // filter drops `flag` / protocol-note markers — the same exclusions
     // tail / dayview / now apply, so the timeline matches what the user sees.
     let params = timeline_params(field, from, until);
@@ -481,8 +481,8 @@ fn load_timeline(
             Some(TimelineRow {
                 state: label(e.state.as_ref()),
                 class: classify(e.state.as_ref()),
-                occur: e.occur_time.as_ref()?.utc,
-                local: e.occur_time.as_ref()?.local_time(),
+                occur: e.at.as_ref()?.utc,
+                local: e.at.as_ref()?.local_time(),
                 client: e.client_id.clone(),
             })
         })
@@ -1158,7 +1158,7 @@ fn period_window(
 /// A half-open `[start, end)`.
 type Span = (DateTime<Utc>, DateTime<Utc>);
 
-/// The resolution an `occur_time` is stored at. A window that runs up to
+/// The resolution an `at` is stored at. A window that runs up to
 /// now ends a tick after it, so it holds an entry logged at exactly now and
 /// still none after it (da-wa9fh): the comparison stays half-open, which is
 /// what lets consecutive windows tile.

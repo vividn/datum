@@ -49,7 +49,7 @@ fn build_snapshot(
         if tf.ignored {
             if show_ignored {
                 let entry = latest.get(&tf.field);
-                let since = entry.and_then(|e| e.occur_time.as_ref()).map(|t| t.utc);
+                let since = entry.and_then(|e| e.at.as_ref()).map(|t| t.utc);
                 snap.ignored.push(NowFieldIgnored {
                     field: tf.field.clone(),
                     since,
@@ -68,7 +68,7 @@ fn build_snapshot(
             }),
             Some(e) => {
                 let state = e.state.clone().unwrap_or(JsonValue::Null);
-                let since = e.occur_time.as_ref().map(|t| t.utc);
+                let since = e.at.as_ref().map(|t| t.utc);
                 if is_truthy(&state) {
                     snap.active.push(NowFieldActive {
                         field: tf.field.clone(),
@@ -371,7 +371,7 @@ fn now_resumes_the_state_a_block_interrupted() {
     let block = db.entries_for_field("work", Some(1)).expect("rows")[0].clone();
     // da-zwct: the block's trailing edge IS its stored instant; the
     // twelve minutes it lasted lie before it, so no arithmetic here.
-    let resumed_at = block.occur_time.expect("block occur").utc;
+    let resumed_at = block.at.expect("block occur").utc;
     let row = snapshot(0)
         .active
         .into_iter()
@@ -414,7 +414,7 @@ fn now_passes_over_a_moment_dated_ahead() {
     };
     assert_eq!(row.field, "energy");
     assert_eq!(row.state, json!("high"));
-    assert_eq!(row.since, high.occur_time.map(|t| t.utc));
+    assert_eq!(row.since, high.at.map(|t| t.utc));
 }
 
 // ─── End-to-end: `datum now` through the shared CLI harness ──────────────────
@@ -545,7 +545,7 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
         .verb(Verb::Point)
         .time_start(day_start)
         .build();
-    e.set_occur_uncertainty(Some("P1D".to_string()));
+    e.set_at_uncertainty(Some("P1D".to_string()));
     latest.insert("birthday".to_string(), e);
 
     let snap = build_snapshot(&tf, &latest, false);
@@ -580,7 +580,7 @@ fn render_p1d_entry_keeps_its_date_past_a_dst_change() {
         .verb(Verb::Point)
         .time_start(midnight)
         .build();
-    e.set_occur_uncertainty(Some("P1D".to_string()));
+    e.set_at_uncertainty(Some("P1D".to_string()));
     latest.insert("birthday".to_string(), e);
 
     let snap = build_snapshot(&tf, &latest, false);
@@ -700,7 +700,7 @@ fn empty_snapshot() -> NowSnapshot {
 
 fn active_row(field: &str, state: &str) -> NowFieldActive {
     let e = switch_entry(field, state);
-    let since = e.occur_time.as_ref().map(|t| t.utc);
+    let since = e.at.as_ref().map(|t| t.utc);
     NowFieldActive {
         field: field.to_string(),
         state: json!(state),

@@ -262,7 +262,7 @@
 	}
 
 	/* Dimmer than the echoed command and much dimmer than the data under
-	   it: this is when you typed, and the entry's own occur_time — which
+	   it: this is when you typed, and the entry's own at — which
 	   its frame prints under its field — is what actually matters. */
 	.stamp {
 		left: 0.4em;

@@ -381,7 +381,7 @@ fn re_running_the_declaring_log_is_the_benign_no_op() {
 /// ⚠ FIRST-WRITTEN, not first-HAPPENED. `is_relog_of_a_declaring_row`
 /// asks whether the stored row is the field's first LOG, and backfill
 /// separates the two orders: a row logged later can sit earlier on the
-/// clock. Keyed on `occur_time` the re-log below stopped being
+/// clock. Keyed on `at` the re-log below stopped being
 /// recognised the moment anything was backdated in front of it
 /// (canary-kimi-k3 on #68). `create_time` is the order things were
 /// logged in, which is what the rule is about.

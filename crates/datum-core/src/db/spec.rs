@@ -116,7 +116,7 @@ fn covering<'a>(field: &str, templates: &'a [(String, String)]) -> Option<&'a (S
 /// Every meta entry's occur time: fixed, not the moment it was
 /// written, so two devices writing (or migrating) the same one make the
 /// same doc.
-pub(crate) fn meta_occur_time() -> DatumTime {
+pub(crate) fn meta_at() -> DatumTime {
     DatumTime {
         utc: DateTime::UNIX_EPOCH,
         offset_minutes: 0,
@@ -132,7 +132,7 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, client_id: &str) -> E
         Verb::Point,
         None,
         Some(data),
-        Some(meta_occur_time()),
+        Some(meta_at()),
         Some(Dur::moment()),
         client_id,
     );
@@ -930,7 +930,7 @@ mod tag_tests {
         let plain = crate::test_util::entry_builder("spec").build();
         db.conn()
             .execute(
-                "INSERT INTO entries (hid, slug, content_hash, field, occur_time, create_time,
+                "INSERT INTO entries (hid, slug, content_hash, field, at, create_time,
                                       modify_time, client_id)
                  VALUES (?1, ?2, ?1, 'spec', '2026-09-01T00:00:00+00:00',
                          '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'peer')",

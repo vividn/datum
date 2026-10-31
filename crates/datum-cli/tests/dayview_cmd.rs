@@ -344,11 +344,11 @@ fn hours(px: f64, axis: f64) -> f64 {
 }
 
 /// `occur nap dur=2h -t 1400` draws [12:00, 14:00) — the nap LASTED two
-/// hours up to 14:00. `occur_time` is the block's TRAILING edge and the
+/// hours up to 14:00. `at` is the block's TRAILING edge and the
 /// duration precedes it, the original datum's `durationBlocks` reading
 /// and the one `datum_core::state` compiles by (da-zwct).
 #[test]
-fn dur_block_draws_the_two_hours_before_its_occur_time() {
+fn dur_block_draws_the_two_hours_before_its_at() {
     let db = fresh_db();
     run_cli(&["occur", "nap", "dur=2h", "-y", "-t", "1400"], &db).expect("occur with dur");
 
@@ -357,12 +357,12 @@ fn dur_block_draws_the_two_hours_before_its_occur_time() {
     let (offset, extent) = blocks[0];
     assert!(
         (hours(offset, axis) - 12.0).abs() < 0.02,
-        "block starts at 12:00 — two hours before its occur_time — drew at {:.2}:00",
+        "block starts at 12:00 — two hours before its at — drew at {:.2}:00",
         hours(offset, axis)
     );
     assert!(
         (hours(offset + extent, axis) - 14.0).abs() < 0.02,
-        "block ends AT its occur_time 14:00, ended at {:.2}:00",
+        "block ends AT its at 14:00, ended at {:.2}:00",
         hours(offset + extent, axis)
     );
     assert!(
@@ -373,7 +373,7 @@ fn dur_block_draws_the_two_hours_before_its_occur_time() {
 }
 
 /// A block-switch's following-state band opens where the block ENDS —
-/// which under da-zwct is the stored `occur_time` itself. Logged at
+/// which under da-zwct is the stored `at` itself. Logged at
 /// 09:00 with `dur=1h`, "groggy" held [08:00, 09:00) and the "focused"
 /// band runs 09:00 → midnight; the two never overlap.
 #[test]
@@ -409,7 +409,7 @@ fn block_switch_following_band_opens_at_the_blocks_trailing_edge() {
     );
     assert!(
         (spans[1].0 - 9.0).abs() < 0.02,
-        "following band opens at 09:00 — the block's occur_time — opened at {:.2}",
+        "following band opens at 09:00 — the block's at — opened at {:.2}",
         spans[1].0
     );
     assert!(

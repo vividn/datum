@@ -222,7 +222,7 @@ fn a_bare_log_after_a_t_log_is_now() {
     let env = Env::new();
     env.repl(&["occur tea -t 9:00", "occur coffee"]);
     let off = env.query(
-        "SELECT CAST(ABS(unixepoch('now') - unixepoch(occur_time)) AS TEXT)
+        "SELECT CAST(ABS(unixepoch('now') - unixepoch(at)) AS TEXT)
          FROM entries WHERE field = 'coffee'",
     );
     assert!(

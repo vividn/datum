@@ -3,7 +3,7 @@
 //! Given N candidate entries from N sides of a multi-entry invocation
 //! (`dm switch body vertical , switch body sit`), [`Db::insert_entries_atomic`]
 //!
-//! 1. Groups by `(field, occur_time)`.
+//! 1. Groups by `(field, at)`.
 //! 2. For each group with 2+ entries, merges them into a single row:
 //!    - **state** → [`StateValue::Parallel`] (Rule 2/11); repeated states
 //!      collapse via state-equality (Rule 9).
@@ -17,7 +17,7 @@
 //!
 //! Single-row writes go through the unchanged
 //! [`super::insert::insert_entry_in_tx`] codepath. The merge step is a
-//! no-op when only one entry shares each `(field, occur_time)` key.
+//! no-op when only one entry shares each `(field, at)` key.
 
 use std::collections::HashMap;
 
@@ -95,12 +95,12 @@ pub fn merge_same_field_groups(entries: Vec<Entry>) -> Vec<Entry> {
     out
 }
 
-/// `(field, occur_time)` key used to bucket candidate rows for merging.
-/// An entry without an occur_time produces a sentinel empty string so
+/// `(field, at)` key used to bucket candidate rows for merging.
+/// An entry without an at produces a sentinel empty string so
 /// rows fall into the same bucket only when they truly share a time.
 ///
 /// da-2fkr: only entries that *assert a state* share a bucket. Folding is
-/// the same belief `entries_field_occurtime` holds — "the state of this
+/// the same belief `entries_field_at_unique` holds — "the state of this
 /// field at this instant is one fact" — so it has to be scoped the way the
 /// index now is ([`Entry::asserts_state`]). Two stateless points at one
 /// instant are two events (`occur tx amount=1 -d D , occur tx amount=2 -d D`
@@ -114,7 +114,7 @@ pub fn merge_same_field_groups(entries: Vec<Entry>) -> Vec<Entry> {
 /// silently desynchronize render pairing from merge grouping.
 pub fn merge_group_key(entry: &Entry) -> (String, String, String) {
     let occur = entry
-        .occur_time
+        .at
         .as_ref()
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_default();
@@ -136,7 +136,7 @@ pub fn merge_group_key(entry: &Entry) -> (String, String, String) {
         // da-c8mh: a declaration merges only with another declaration of
         // the same field — never into the entry it was written beside,
         // which two timeless rows would otherwise do (both have no
-        // occur_time, so field alone would key them together).
+        // at, so field alone would key them together).
         "\0track".to_string()
     } else if entry.asserts_state() {
         String::new()
@@ -147,7 +147,7 @@ pub fn merge_group_key(entry: &Entry) -> (String, String, String) {
 }
 
 /// Fold a 2+-member group into a single merged entry. The leftmost
-/// entry is the base — its hid/slug/occur_time/dur/etc. survive; the
+/// entry is the base — its hid/slug/at/dur/etc. survive; the
 /// state and data columns absorb every member.
 fn merge_group(entries: Vec<Entry>) -> Entry {
     let mut iter = entries.into_iter();
@@ -175,7 +175,7 @@ fn merge_group(entries: Vec<Entry>) -> Entry {
     acc
 }
 
-/// Merge two entries that share `(field, occur_time)`. State and data
+/// Merge two entries that share `(field, at)`. State and data
 /// columns absorb the second entry; dur takes the first non-None.
 fn merge_pair(a: Entry, b: Entry) -> Entry {
     let mut out = a;
@@ -387,8 +387,8 @@ mod tests {
     }
 
     #[test]
-    fn same_field_merge_only_when_occur_time_identical() {
-        // Different occur_time → no merge; two separate rows.
+    fn same_field_merge_only_when_at_identical() {
+        // Different at → no merge; two separate rows.
         let a = entry_at("foo", "2026-05-11T12:00:00Z", Some(json!("a")));
         let b = entry_at("foo", "2026-05-11T12:10:00Z", Some(json!("b")));
         let merged = merge_same_field_groups(vec![a, b]);
@@ -541,7 +541,7 @@ mod tests {
     // ── Section I — different-field rows ─────────────────────────────
 
     #[test]
-    fn different_field_yields_separate_rows_same_occur_time() {
+    fn different_field_yields_separate_rows_same_at() {
         let a = entry_at("body", "2026-05-11T12:00:00Z", Some(json!("vertical")));
         let b = entry_at(
             "environment",
@@ -592,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_all_sides_share_one_occur_time() {
+    fn multi_all_sides_share_one_at() {
         let db = Db::open_in_memory().unwrap();
         let a = entry_at("body", "2026-05-11T12:00:00Z", Some(json!("vertical")));
         let b = entry_at(
@@ -604,7 +604,7 @@ mod tests {
         assert_eq!(hids.len(), 2);
         let times: Vec<String> = db
             .conn()
-            .prepare("SELECT occur_time FROM entries WHERE deleted_at IS NULL")
+            .prepare("SELECT at FROM entries WHERE deleted_at IS NULL")
             .unwrap()
             .query_map([], |r| r.get::<_, String>(0))
             .unwrap()
@@ -662,12 +662,12 @@ mod tests {
         assert_eq!(surviving_slug, seed_slug.0);
     }
 
-    // ── Section O — da-ga8b: (field, occur_time) partial UNIQUE ──────
+    // ── Section O — da-ga8b: (field, at) partial UNIQUE ──────
 
     /// A custom slug that bypasses the field-occur slug template still
-    /// trips the partial UNIQUE on `(field, occur_time)` when a live row
+    /// trips the partial UNIQUE on `(field, at)` when a live row
     /// already occupies that pair. The error must name the existing hid
-    /// and the colliding field + occur_time.
+    /// and the colliding field + at.
     #[test]
     fn field_occurtime_collision_surfaces_named_diagnostic() {
         let db = Db::open_in_memory().unwrap();
@@ -676,7 +676,7 @@ mod tests {
         db.insert_entry(&seed).unwrap();
 
         // Distinct slug + distinct state → distinct content_hash, but the
-        // same (field, occur_time) as the seed. The new partial UNIQUE
+        // same (field, at) as the seed. The new partial UNIQUE
         // must fire.
         let mut intruder = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("work")));
         intruder.slug = Slug("custom-id-K".to_string());
@@ -693,7 +693,7 @@ mod tests {
         assert!(msg.contains(&seed_hid), "must name existing hid: {msg}");
         assert!(
             msg.contains("project") && msg.contains("2026-05-13T09:00:00"),
-            "must include field + occur_time: {msg}"
+            "must include field + at: {msg}"
         );
 
         // The intruder must NOT have been written.
@@ -708,7 +708,7 @@ mod tests {
         assert_eq!(live_count, 1);
     }
 
-    /// Soft-deleting a row releases the (field, occur_time) slot — a
+    /// Soft-deleting a row releases the (field, at) slot — a
     /// fresh insert at the same identity succeeds because the partial
     /// UNIQUE filters tombstones (`deleted_at IS NULL`).
     #[test]
@@ -725,7 +725,7 @@ mod tests {
             )
             .unwrap();
 
-        // Re-insert with a custom slug at the same (field, occur_time) —
+        // Re-insert with a custom slug at the same (field, at) —
         // must succeed because the tombstoned row no longer holds the
         // slot.
         let mut replay = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("work")));
@@ -805,8 +805,8 @@ mod tests {
         );
     }
 
-    /// Different fields at the same `occur_time` remain independent — the
-    /// constraint is scoped to `(field, occur_time)`, not `occur_time`.
+    /// Different fields at the same `at` remain independent — the
+    /// constraint is scoped to `(field, at)`, not `at`.
     /// This regression-guards against a future widening of the index.
     #[test]
     fn field_occurtime_constraint_does_not_block_different_fields() {
@@ -932,7 +932,7 @@ mod tests {
 
     #[test]
     fn datetime_compare_is_string_exact_not_offset_normalized() {
-        // Sanity: occur_times that look equivalent but are formatted
+        // Sanity: ats that look equivalent but are formatted
         // differently (offset-shifted) do *not* group together. The merge
         // is on raw string equality of utc.to_rfc3339(); UTC is the
         // canonical form so callers building entries from per-side argv

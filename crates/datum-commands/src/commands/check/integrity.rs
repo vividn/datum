@@ -84,7 +84,7 @@ pub(super) fn integrity_pending(db: &Db, plan: &Plan) -> Result<(Pending, Vec<St
     found.repeats.extend(kept);
     found.repeats.sort_by_cached_key(|r| {
         let e = &r.entry;
-        (e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string())
+        (e.at.as_ref().map(|t| t.utc), e.slug.to_string())
     });
     let kept = (found.repeats.iter())
         .filter_map(|r| {
@@ -204,7 +204,7 @@ pub(super) fn integrity_issues(db: &Db, found: Pending) -> Result<Vec<Issue>> {
         // formatter `datum tail` uses, so column alignment, state-cell
         // background colour, and the `!` repeated-state marker render
         // identically. Re-fetch each trigger by slug so the entry carries
-        // the canonical post-pivot columns (occur_time, dur, etc.) —
+        // the canonical post-pivot columns (at, dur, etc.) —
         // `IntegrityWarning::local_entry` was reconstructed from the
         // table-stored JSON which `#[serde(skip)]`s the compat shims
         // (`start_time`, `entry_shape`, …) the renderer's extract path

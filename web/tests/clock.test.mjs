@@ -109,7 +109,7 @@ describe('the date the web app prints', () => {
 			const [stored] = await entries(1);
 			// The zone is UTC (support/app.mjs), so the stored instant's own
 			// date is the date the reader is owed.
-			const day = stored.occur_time.utc.slice(0, 10);
+			const day = stored.at.utc.slice(0, 10);
 
 			await redraw();
 			const table = await paneTable('tail');

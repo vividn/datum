@@ -142,7 +142,7 @@ fn array_state_is_queryable_over_timeline() {
     run_cli(&["switch", "project", "datum,household"], &db).expect("switch to concurrent states");
 
     let entries = datum_core::test_util::logged_entries(&db, "project");
-    let ts = entries[0].occur_time.as_ref().unwrap().utc;
+    let ts = entries[0].at.as_ref().unwrap().utc;
     assert_eq!(
         db.get_active_state("project", ts).unwrap(),
         json!(["datum", "household"]),

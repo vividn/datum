@@ -146,12 +146,12 @@ pub(crate) fn canonical_verb(entry: &Entry) -> Verb {
 
 /// Sort key for an entry's effective time. Falls back to i64::MIN so
 /// time-less rows sink to the front (they're skipped during render anyway).
-pub(crate) fn occur_time_ms(entry: &Entry) -> i64 {
-    occur_time_ms_opt(entry).unwrap_or(i64::MIN)
+pub(crate) fn at_ms(entry: &Entry) -> i64 {
+    at_ms_opt(entry).unwrap_or(i64::MIN)
 }
 
-pub(crate) fn occur_time_ms_opt(entry: &Entry) -> Option<i64> {
-    entry.occur_time.as_ref().map(|t| t.utc.timestamp_millis())
+pub(crate) fn at_ms_opt(entry: &Entry) -> Option<i64> {
+    entry.at.as_ref().map(|t| t.utc.timestamp_millis())
 }
 
 /// Parse `entry.dur` as seconds. Returns `None` for a missing or unparseable
@@ -161,7 +161,7 @@ pub(crate) fn dur_seconds(entry: &Entry) -> Option<i64> {
 }
 
 /// The instant a row's span BEGINS: `occur − dur`, or `occur` when the
-/// row carries no duration. da-zwct: `occur_time` is a block's trailing
+/// row carries no duration. da-zwct: `at` is a block's trailing
 /// edge and the duration is the span that precedes it, so the leading
 /// edge is the derived one — the same event [`datum_core::state`]
 /// compiles at `occur − dur`. A row's trailing edge needs no helper: it
@@ -221,7 +221,7 @@ pub(crate) fn render_field_visuals(
     let mut holes: Vec<(i64, i64)> = Vec::new();
 
     for entry in entries {
-        let Some(occur_dt) = entry.occur_time.as_ref() else {
+        let Some(occur_dt) = entry.at.as_ref() else {
             continue;
         };
         let occur_ms = occur_dt.utc.timestamp_millis();
@@ -378,7 +378,7 @@ pub(crate) fn set_dayview_block_span(b: &mut DayviewBlock, start_ms: i64, end_ms
 }
 
 /// Emit a block clipped to the day window for a `[occur − dur, occur]`
-/// interval (Block / BlockSwitch). `occur_time` is the block's TRAILING
+/// interval (Block / BlockSwitch). `at` is the block's TRAILING
 /// edge and the duration is how long it lasted up to that instant — the
 /// original datum's `durationBlocks` reading, and the one
 /// `datum_core::state` compiles by (da-zwct). No-op if `dur` is missing
@@ -552,7 +552,7 @@ pub(crate) fn name_marks(
     }
 }
 
-/// Test helper: build a stub Entry with the desired (verb, occur_time, dur,
+/// Test helper: build a stub Entry with the desired (verb, at, dur,
 /// state, following_state) shape. The slug/hid/content_hash are placeholders
 /// — the renderer does not read them. Shared with the nowview tests.
 #[cfg(test)]
@@ -767,10 +767,10 @@ mod tests {
     // These construct Entry structs directly and call the pure render
     // function — no database is involved.
 
-    /// Block at [occur − dur, occur] — da-zwct: `occur_time` is the
+    /// Block at [occur − dur, occur] — da-zwct: `at` is the
     /// TRAILING edge and the duration is how long it lasted up to it.
     #[test]
-    fn block_renders_the_duration_before_its_occur_time() {
+    fn block_renders_the_duration_before_its_at() {
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
         let entries = vec![stub_entry(
             "lunch",
@@ -950,7 +950,7 @@ mod tests {
     }
 
     /// A block-switch followed later by a switch ends the following-state
-    /// region at the switch's occur_time, not at day_end.
+    /// region at the switch's at, not at day_end.
     #[test]
     fn block_switch_following_region_ends_at_next_switch() {
         let bs_occur = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
@@ -1009,7 +1009,7 @@ mod tests {
     /// dropped rather than emitted backwards.
     ///
     /// da-zwct moved the reachable case: the band now opens at the row's
-    /// own `occur_time`, so a later switching row can never squeeze it
+    /// own `at`, so a later switching row can never squeeze it
     /// (rows arrive in `occur` order). What still can is a row logged
     /// past the window's own end — a nowview strip stops at `now`, and
     /// `-t +30` puts a row beyond it.

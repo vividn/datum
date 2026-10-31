@@ -165,7 +165,7 @@ describe('the wasi CLI', () => {
 					// which is the very row this test is about.
 					const stored = (await app.allEntries())
 						.filter(({ field }) => field !== 'spec')
-						.map(({ field, occur_time: t }) => [field, Date.parse(t.utc), t.offset_minutes, t.timezone])
+						.map(({ field, at: t }) => [field, Date.parse(t.utc), t.offset_minutes, t.timezone])
 						.sort();
 					assert.deepEqual(
 						stored,

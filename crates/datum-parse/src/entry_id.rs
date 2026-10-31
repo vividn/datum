@@ -50,7 +50,7 @@ pub fn hid_from_bytes(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// The `occur_time_uncertainty` value that marks a date-only entry
+/// The `at_uncertainty` value that marks a date-only entry
 /// (da-fc0l): its instant was stripped to local midnight and carries no
 /// time-of-day.
 pub const DATE_ONLY_PRECISION: &str = "P1D";
@@ -61,7 +61,7 @@ pub fn render_stamp(t: &DateTime<Utc>) -> String {
     t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
 
-/// How `%occur_time%` renders in a slug.
+/// How `%at%` renders in a slug.
 ///
 /// da-4fyb: a date-only row (`P1D`) has no time-of-day, so it keys on the
 /// bare *local* date — the stored instant is local midnight, and rendering
@@ -75,11 +75,11 @@ pub fn render_occur_token(t: &DatumTime, precision: Option<&str>) -> String {
     }
 }
 
-/// Default slug: what `%occur_time%` / `%create_time%` interpolate to for
+/// Default slug: what `%at%` / `%create_time%` interpolate to for
 /// an entry with no `id_structure` of its own.
 ///
-/// A time-anchored entry slugs `<field>:<occur_time>`. A timeless entry
-/// (no `occur_time`) slugs `<field>:<create_time>c` (da-r17h / da-xbjy) —
+/// A time-anchored entry slugs `<field>:<at>`. A timeless entry
+/// (no `at`) slugs `<field>:<create_time>c` (da-r17h / da-xbjy) —
 /// the `c` marker goes *after* the time, so a field's ids sort in time
 /// order and a timeless entry sits right after an occur entry of its
 /// instant (da-06jxa) — and `create_time` keeps many-per-field timeless
@@ -106,9 +106,9 @@ pub fn build_slug(
 /// detection and the sync tiebreaker.
 ///
 /// vividn's ruling (da-4vyw): the hash covers **the fact asserted**, not the
-/// annotations around it. In: `field`, `occur_time` (UTC instant only),
+/// annotations around it. In: `field`, `at` (UTC instant only),
 /// `dur`, `state`, `data`, `following_state`, and whether the row is
-/// deleted. Out: `lat`/`lon`/`location`, `occur_time_offset`/`_tz` (the
+/// deleted. Out: `lat`/`lon`/`location`, `at_offset`/`_tz` (the
 /// instant is the fact, the offset is how it was rendered), the two
 /// uncertainties, `user_asserted_last_state`, `extra_metadata`, and every
 /// identity/provenance column.
@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn a_timed_entry_slugs_on_its_occur_time_to_the_millisecond() {
+    fn a_timed_entry_slugs_on_its_at_to_the_millisecond() {
         let t = DatumTime::from_utc_and_tz(at("2026-03-16T09:15:04.250Z"), "UTC").unwrap();
         let slug = build_slug("coffee", Some(&t), None, &at("2026-03-16T11:00:00Z"));
         assert_eq!(slug, "coffee:2026-03-16T09:15:04.250Z");

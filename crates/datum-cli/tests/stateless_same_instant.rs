@@ -1,6 +1,6 @@
 //! da-2fkr acceptance: two transactions on one day.
 //!
-//! `entries_field_occurtime` was built to stop two *state-changes* for one
+//! `entries_field_at_unique` was built to stop two *state-changes* for one
 //! field at one instant (da-ga8b), but its predicate never mentioned state,
 //! so it also refused two stateless points — vividn's finance `tx` field,
 //! where a recurring charge is dated to the day rather than to a moment.
@@ -71,7 +71,7 @@ fn two_transactions_on_one_day_both_land() {
     let entries = datum_core::test_util::logged_entries(&db, "tx");
     let times: Vec<String> = entries
         .iter()
-        .map(|e| e.occur_time.as_ref().unwrap().utc.to_rfc3339())
+        .map(|e| e.at.as_ref().unwrap().utc.to_rfc3339())
         .collect();
     assert_eq!(times[0], times[1], "both sit at the same instant");
     assert!(
@@ -112,13 +112,13 @@ fn two_state_changes_at_one_instant_are_still_refused() {
     let msg = format!("{err}");
     assert!(
         msg.contains("collides with") && msg.contains("field=project"),
-        "the (field, occur_time) diagnostic must survive: {msg}"
+        "the (field, at) diagnostic must survive: {msg}"
     );
     assert_eq!(live_slugs(&db, "project"), vec!["project:2026-09-03"]);
 }
 
 /// Two stateless points with no id template still collide — on the *slug*,
-/// because the default template is `%occur_time%` and they both resolve to
+/// because the default template is `%at%` and they both resolve to
 /// `tx:2026-09-02`. The message has to name the way out, since the slug is
 /// now the only thing standing between the two.
 #[test]

@@ -209,6 +209,37 @@ describe('before the CLI answers', () => {
 		);
 	});
 
+	// da-95avu: a file the v75 binary wrote, the time still `occur_time`, a kit's
+	// SQL naming it, and another tab open through the upgrade.
+	test('a file from before `at` upgrades with its times, another tab open', async () => {
+		await withApp(async (app) => {
+			const other = await app.newTab();
+			await app.run(['occur', 'coffee']);
+			await v75File(app.page);
+			await app.reload();
+			const status = await app.run(['db', 'migrate', 'status']);
+			assert.match(status.stdout, /v76/, status.stdout);
+			for (const tab of [app, other]) {
+				const zoned = await tab.run(['get', 'zoned::at']);
+				assert.equal(zoned.stdout.trim(), '2026-10-03T13:00:00Z', zoned.stdout + zoned.stderr);
+				const view = await tab.run(['view', 'oldsql']);
+				assert.match(view.stdout, /hold.*2026-10-04T10:00:00/, view.stdout + view.stderr);
+			}
+			const check = await other.run(['check', 'sync']);
+			assert.doesNotMatch(check.stdout, /sync_stale_row|sync_orphan_ops/, check.stdout);
+			const names = await app.page.evaluate(async (dir) => {
+				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+				const names = [];
+				for await (const name of files.keys()) names.push(name);
+				return names;
+			}, OPFS_DIR);
+			assert.ok(names.some((n) => /^datum\.db\.pre-v75-to-v76-/.test(n)), names.join(', '));
+			// Written in the upgraded file, read in the tab that sat through it.
+			await app.run(['occur', 'tea', '-d', '2026-10-10', '-t', '09:00']);
+			assert.equal((await other.run(['get', 'tea::at'])).stdout.trim(), '2026-10-10T09:00:00Z');
+		});
+	});
+
 	// da-hse93: the copy was a file in the process's memory, gone at its exit
 	// while the CLI's note said it was saved.
 	test('the upgrade keeps a copy of the data as it was, beside it, past a reload', async () => {
@@ -358,6 +389,20 @@ describe('the copies from the last visit', () => {
 	});
 });
 
+/** The page's database replaced by the v75 binary's own file (`v75_chain.sql`). */
+async function v75File(page) {
+	const scratch = await mkdtemp(join(tmpdir(), 'datum-v75-'));
+	try {
+		const path = join(scratch, 'datum.db');
+		const db = new DatabaseSync(path);
+		db.exec(await readFile(new URL('../../crates/datum-cli/tests/fixtures/v75_chain.sql', import.meta.url), 'utf8'));
+		db.close();
+		await replaceDb(page, [...(await readFile(path))]);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+}
+
 /**
  * The page's database moved back a schema version, under the worker's own
  * lock, so the next command that opens it upgrades it: v55's own down
@@ -375,20 +420,24 @@ async function previousSchema(page) {
 			UPDATE _meta SET value = '54' WHERE key = 'schema_version';
 		`);
 		db.close();
-		const older = [...(await readFile(path))];
-		await page.evaluate(
-			async ([dir, older]) =>
-				navigator.locks.request('datum-cli-files', async () => {
-					const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
-					const writable = await (await files.getFileHandle('datum.db')).createWritable();
-					await writable.write(Uint8Array.from(older));
-					await writable.close();
-				}),
-			[OPFS_DIR, older]
-		);
+		await replaceDb(page, [...(await readFile(path))]);
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
 	}
+}
+
+/** Put `bytes` in the page's database file, under the worker's own lock. */
+function replaceDb(page, bytes) {
+	return page.evaluate(
+		async ([dir, bytes]) =>
+			navigator.locks.request('datum-cli-files', async () => {
+				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+				const writable = await (await files.getFileHandle('datum.db')).createWritable();
+				await writable.write(Uint8Array.from(bytes));
+				await writable.close();
+			}),
+		[OPFS_DIR, bytes]
+	);
 }
 
 /** A file of the worker's in OPFS, read under its lock. */

@@ -2,7 +2,7 @@
 
 > **⚠️ Pre-pivot reference (2026-05-01).** This audit was written against
 > the v=19 schema (`start_time` + `end_time` + `value`). The **da-5ns**
-> time-shape pivot replaced that with `occur_time` + `state` + `dur` +
+> time-shape pivot replaced that with `at` + `state` + `dur` +
 > `following_state` and a stored five-verb classifier. Column names and
 > SQL fragments below refer to the pre-pivot shape; the *behavior* still
 > applies, but the SQL must be re-projected onto the v=20 columns when

@@ -164,7 +164,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     if run("tz") {
         // A zone the rows around one agree is not its own is read around what
         // changed and what the last run found, the walk's own rows (da-3zq6g).
-        let at = |e: &Entry| Some(e.occur_time.as_ref()?.utc.to_rfc3339());
+        let at = |e: &Entry| Some(e.at.as_ref()?.utc.to_rfc3339());
         let around = (plan.since(db, "tz").zip(again.as_ref())).map(|((_, changed), _)| {
             let moved = changed
                 .into_iter()
@@ -1036,7 +1036,7 @@ fn collect_pending_flags(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
         .cloned()
         .collect();
     flagged.sort_by_cached_key(|e| {
-        let at = e.occur_time.as_ref().map_or(e.create_time, |t| t.utc);
+        let at = e.at.as_ref().map_or(e.create_time, |t| t.utc);
         (at, e.slug.to_string())
     });
     if flagged.is_empty() {
@@ -2370,12 +2370,12 @@ mod tests {
             None,
             "d1",
         );
-        // Mirror the cmd.rs insert path: a row with an occur_time gets
-        // `id_structure = "%occur_time%"` and slug `field:<occur_time>`.
-        entry.id_structure = Some("%occur_time%".to_string());
+        // Mirror the cmd.rs insert path: a row with an at gets
+        // `id_structure = "%at%"` and slug `field:<at>`.
+        entry.id_structure = Some("%at%".to_string());
         entry.slug = Slug(format!("mood:{}", entry.short_uid()));
         entry.field_structure = None;
-        // The checker will recompute the body from `%occur_time%` and
+        // The checker will recompute the body from `%at%` and
         // discover it disagrees with the `short_uid` body we wrote here.
         // (The point is just to land a row whose stored slug differs from
         // its template-derived slug; the exact corruption shape doesn't
@@ -2412,10 +2412,10 @@ mod tests {
             None,
             "d1",
         );
-        entry.id_structure = Some("%occur_time%".to_string());
+        entry.id_structure = Some("%at%".to_string());
         // Hand-corrupt: the slug body is `short_uid`, but the template
-        // expects `%occur_time%`. The expected slug after fix is
-        // `mood:<formatted occur_time>`.
+        // expects `%at%`. The expected slug after fix is
+        // `mood:<formatted at>`.
         entry.slug = Slug(format!("mood:{}", entry.short_uid()));
         let hid_before = entry.hid.clone();
         db.insert_entry(&entry).unwrap();
@@ -2439,7 +2439,7 @@ mod tests {
         assert_eq!(row.hid, hid_before, "hid must survive the rekey");
         assert!(
             row.slug.as_str().starts_with("mood:2024-01-02T08"),
-            "post-fix slug body must be the rendered occur_time, got: {}",
+            "post-fix slug body must be the rendered at, got: {}",
             row.slug,
         );
     }
@@ -2458,7 +2458,7 @@ mod tests {
             None,
             "d1",
         );
-        entry.id_structure = Some("%occur_time%".to_string());
+        entry.id_structure = Some("%at%".to_string());
         entry.slug = Slug(format!("ghost:{}", entry.short_uid()));
         db.insert_entry(&entry).unwrap();
 
@@ -2492,7 +2492,7 @@ mod tests {
                 None,
                 "d1",
             );
-            entry.id_structure = Some("%field%:%occur_time%".to_string());
+            entry.id_structure = Some("%field%:%at%".to_string());
             entry.extra_metadata = marker;
             db.insert_entry(&entry).unwrap();
             collect_slug_drift(&all(&db), ":").unwrap().fixes.len()
@@ -2516,7 +2516,7 @@ mod tests {
             None,
             "d1",
         );
-        entry.id_structure = Some("%occur_time%".to_string());
+        entry.id_structure = Some("%at%".to_string());
         entry.slug = Slug(format!("mood:{}", entry.short_uid()));
         let slug = entry.slug.clone();
         db.insert_entry(&entry).unwrap();
@@ -2645,10 +2645,10 @@ mod tests {
             None,
             "d1",
         );
-        entry.id_structure = Some("%occur_time%".to_string());
+        entry.id_structure = Some("%at%".to_string());
         // Mirror cmd.rs: slug body is the interpolated id_structure.
         let ctx = InterpolationContext::from_entry(&entry);
-        let body = field_spec::interpolate("%occur_time%", &ctx, ":");
+        let body = field_spec::interpolate("%at%", &ctx, ":");
         entry.slug = Slug(format!("mood:{body}"));
         db.insert_entry(&entry).unwrap();
 
@@ -3333,9 +3333,9 @@ mod tests {
                 None,
                 "d1",
             );
-            entry.id_structure = Some("%occur_time%".to_string());
+            entry.id_structure = Some("%at%".to_string());
             // Hand-corrupt: slug body is short_uid, template expects
-            // %occur_time% — same fixture shape as the da-noz9 tests.
+            // %at% — same fixture shape as the da-noz9 tests.
             entry.slug = Slug(format!("{field}:{}", entry.short_uid()));
             let slug = entry.slug.clone();
             db.insert_entry(&entry).unwrap();

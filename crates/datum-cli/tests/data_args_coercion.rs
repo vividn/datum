@@ -273,7 +273,7 @@ fn durations_and_time_flags_keep_their_units() {
 
     let at = |field: &str| {
         datum_core::test_util::logged_entries(&db, field)[0]
-            .occur_time
+            .at
             .as_ref()
             .unwrap()
             .utc
@@ -337,28 +337,24 @@ fn relative_temporal_keys_anchor_a_timeless_entry_at_its_create_time() {
     );
 }
 
-/// da-bcdjm: `occur_time=` places the entry, so relative `*date` / `*time`
+/// da-bcdjm: `at=` places the entry, so relative `*date` / `*time`
 /// keys anchor at it, as they do at `-t` — and the key itself is resolved
 /// once, not again at the anchor it sets.
 #[test]
-fn relative_temporal_keys_anchor_at_an_occur_time_key() {
+fn relative_temporal_keys_anchor_at_an_at_key() {
     let _g = datum_core::test_util::freeze_time("2026-09-10T12:00:00");
     let db = fresh_db();
     let entry = |field: &str| datum_core::test_util::logged_entries(&db, field)[0].clone();
     let occur = |field: &str| {
-        let t = entry(field).occur_time.unwrap();
+        let t = entry(field).at.unwrap();
         t.local_time().naive_local().to_string()
     };
 
-    run_cli(
-        &["occur", "a1", "occur_time=2026-01-01T10:00", "next_date=+1"],
-        &db,
-    )
-    .unwrap();
+    run_cli(&["occur", "a1", "at=2026-01-01T10:00", "next_date=+1"], &db).unwrap();
     assert_eq!(occur("a1"), "2026-01-01 10:00:00");
     assert_eq!(entry("a1").data, Some(json!({"next_date": "2026-01-02"})));
 
-    run_cli(&["occur", "a2", "occur_time=+2h", "next_time=+30m"], &db).unwrap();
+    run_cli(&["occur", "a2", "at=+2h", "next_time=+30m"], &db).unwrap();
     assert_eq!(occur("a2"), "2026-09-10 14:00:00");
     let a2 = entry("a2").data.unwrap();
     assert_eq!(local(&a2["next_time"]), "2026-09-10 14:30:00");

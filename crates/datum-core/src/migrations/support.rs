@@ -580,21 +580,37 @@ pub(super) fn rename_json_key(
     Ok(())
 }
 
+/// Columns live code names otherwise than an older schema does: the client
+/// before v48 (da-lfsei), the time and its family before v76 (da-95avu). So
+/// `[1..]` is the family, as v76 has the client's name already.
+pub(super) const RENAMED_COLUMNS: &[(&str, &str)] = &[
+    ("device_id", "client_id"),
+    ("occur_time", "at"),
+    ("occur_time_offset", "at_offset"),
+    ("occur_time_tz", "at_tz"),
+    ("occur_time_uncertainty", "at_uncertainty"),
+];
+
 /// Run `f`, a step that reads or writes `entries` through the live row
-/// mapper or `db::try_insert`, against the client column's live name. Before
-/// v48 it was `device_id` (da-lfsei), so it is renamed for the step and back
-/// after; a failure rolls both back with the step's transaction.
-pub(super) fn with_live_client_column<T>(
-    conn: &Connection,
-    f: impl FnOnce() -> Result<T>,
-) -> Result<T> {
-    let old = has_column(conn, "entries", "device_id")?;
-    if old {
-        conn.execute_batch("ALTER TABLE entries RENAME COLUMN device_id TO client_id;")?;
+/// mapper, `db::try_insert` or a live `.sql` file, against the columns' live
+/// names. Each is renamed for the step and back after, which takes back what
+/// the step laid too, as `ALTER` rewrites triggers and indexes; a failure
+/// rolls both back with the step's transaction.
+pub(super) fn with_live_columns<T>(conn: &Connection, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    let mut renamed = Vec::new();
+    for (old, new) in RENAMED_COLUMNS {
+        if has_column(conn, "entries", old)? {
+            conn.execute_batch(&format!(
+                "ALTER TABLE entries RENAME COLUMN {old} TO {new};"
+            ))?;
+            renamed.push((old, new));
+        }
     }
     let out = f()?;
-    if old {
-        conn.execute_batch("ALTER TABLE entries RENAME COLUMN client_id TO device_id;")?;
+    for (old, new) in renamed {
+        conn.execute_batch(&format!(
+            "ALTER TABLE entries RENAME COLUMN {new} TO {old};"
+        ))?;
     }
     Ok(out)
 }

@@ -199,7 +199,7 @@ pub(crate) fn settle_timezone_edit(existing: &Entry, updated: &mut Entry) -> Res
         != (&existing.field, &existing.state, &existing.following_state)
     {
         settle_timezone_entry(updated)
-    } else if updated.occur_time != existing.occur_time {
+    } else if updated.at != existing.at {
         Ok(datum_core::timezone_field::keep_in_named_zone(updated)?)
     } else {
         Ok(())

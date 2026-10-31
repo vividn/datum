@@ -215,8 +215,8 @@ fn tail_state_cell_for_start_uses_bg_slots() {
 }
 
 #[test]
-fn tail_row_with_occur_time_has_no_c_prefix() {
-    // ITEM B (da-7jl): rows with an occur_time render their timestamp
+fn tail_row_with_at_has_no_c_prefix() {
+    // ITEM B (da-7jl): rows with an at render their timestamp
     // bare, no creation prefix.
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
@@ -238,7 +238,7 @@ fn tail_row_with_occur_time_has_no_c_prefix() {
 }
 
 #[test]
-fn tail_row_without_occur_time_uses_create_time_with_grey_c_prefix() {
+fn tail_row_without_at_uses_create_time_with_grey_c_prefix() {
     // ITEM B (da-7jl): when the row has neither start_time nor end_time,
     // hybrid mode falls back to create_time prefixed by a gray 'c' so the
     // time column is never empty. Mirrors the table renderer's
@@ -728,7 +728,7 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
         None,
         dt_off(2026, 4, 22, 19, 0, 120, "Europe/Berlin"),
     );
-    uncertain.set_occur_uncertainty(Some("PT3M".to_string()));
+    uncertain.set_at_uncertainty(Some("PT3M".to_string()));
     let off_offset = entry_at(
         "coffee",
         Verb::Point,
@@ -807,7 +807,7 @@ fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
         None,
         dt_off(2026, 4, 22, 19, 0, 120, "Europe/Berlin"),
     );
-    uncertain.set_occur_uncertainty(Some("PT3M".to_string()));
+    uncertain.set_at_uncertainty(Some("PT3M".to_string()));
     let off_offset = entry_at(
         "coffee",
         Verb::Point,

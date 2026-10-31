@@ -1,5 +1,5 @@
 //! da-w149: `-T` on a state verb is a note about a state. The row keeps the
-//! state, has no `occur_time`, and is a MOMENT point; it renders as `¢` and
+//! state, has no `at`, and is a MOMENT point; it renders as `¢` and
 //! the state label, both in the state's colour as fg, with no LEAD/TRAIL and
 //! no bg chip — and no surface compiles it into a state. A duration beside
 //! `-T` is refused (da-mec79).

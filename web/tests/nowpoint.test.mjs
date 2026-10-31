@@ -344,7 +344,7 @@ describe('a tap on a two-minute window is to the nearest five seconds', () => {
 			assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
 			const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 			assert.equal(
-				new Date(Date.parse(coffee.occur_time.utc)).toISOString(),
+				new Date(Date.parse(coffee.at.utc)).toISOString(),
 				new Date(app.clock.at() - 20_000).toISOString()
 			);
 		});
@@ -389,7 +389,7 @@ describe('a tap on a window panned off now is to the same step, said as a clock'
 		);
 		assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
 		const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
-		return { pills, logged: Date.parse(coffee.occur_time.utc) };
+		return { pills, logged: Date.parse(coffee.at.utc) };
 	}
 
 	/** A window's length as the ladder spells it, in ms. */
@@ -506,7 +506,7 @@ describe('a relative selection is measured from NOW, not from the press', () => 
 				assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
 				const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 				assert.equal(
-					new Date(Date.parse(coffee.occur_time.utc)).toISOString(),
+					new Date(Date.parse(coffee.at.utc)).toISOString(),
 					new Date(app.clock.at() - 7 * MINUTE).toISOString()
 				);
 			},
@@ -751,7 +751,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT25M', JSON.stringify(posture));
 			assert.equal(
-				new Date(Date.parse(posture.occur_time.utc)).toISOString(),
+				new Date(Date.parse(posture.at.utc)).toISOString(),
 				new Date(NOW - 5 * MINUTE).toISOString()
 			);
 		});
@@ -773,7 +773,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT15M');
 			assert.equal(
-				new Date(Date.parse(posture.occur_time.utc)).toISOString(),
+				new Date(Date.parse(posture.at.utc)).toISOString(),
 				new Date(NOW - 5 * MINUTE).toISOString()
 			);
 
@@ -791,7 +791,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
 			const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 			assert.equal(
-				new Date(Date.parse(coffee.occur_time.utc)).toISOString(),
+				new Date(Date.parse(coffee.at.utc)).toISOString(),
 				new Date(NOW).toISOString(),
 				'the next entry took the spent range’s time'
 			);
@@ -874,7 +874,7 @@ describe('the now region: a long press dragged LEFT is a duration ending NOW', (
 			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT12M', JSON.stringify(posture));
-			assert.equal(new Date(Date.parse(posture.occur_time.utc)).toISOString(), new Date(NOW).toISOString());
+			assert.equal(new Date(Date.parse(posture.at.utc)).toISOString(), new Date(NOW).toISOString());
 		});
 	});
 });

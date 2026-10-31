@@ -87,7 +87,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `end_time=` are not data — they place the block. Lifted here, before
     // the data parser's `*time` suffix rule would coerce them to clock
     // strings, and turned into the `-t` the same line would otherwise
-    // carry: `end_time=` when given (a block's occur_time is its END,
+    // carry: `end_time=` when given (a block's at is its END,
     // da-zwct), else `start_time=`. The pair and the start+duration forms
     // move that anchor below, once the `dur=` slot is filled. One time
     // parser: whatever `-t` accepts (`-20`, `4pm`, `16:15`, an ISO
@@ -216,13 +216,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // column gets below, then the line is parsed again at that anchor —
     // keeping the first pass's `at`, which a second coercion at the
     // new base would shift again (`at=+5` must not become +10).
-    let data_occur_time = |p: &ParsedLogArgs| p.extra_data.as_ref()?.get("at").cloned();
+    let data_at = |p: &ParsedLogArgs| p.extra_data.as_ref()?.get("at").cloned();
     // da-2mti0: `-D` wins over the key as it does over `-t`, the key being
     // one more `-t`. So beside `-D` it is read from the flags' time and not
     // from the midnight `-D` made of it (`-D at=-6` is today), and
     // the relative keys anchor at its day's midnight, as at `-D -t`'s.
     let full_day = args.time.full_day;
-    if full_day && data_occur_time(&parsed).is_some() {
+    if full_day && data_at(&parsed).is_some() {
         let clock = TimeArgs {
             full_day: false,
             ..args.time.clone()
@@ -234,8 +234,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         };
         parsed = again;
     }
-    if let Some(t) = data_occur_time(&parsed) {
-        let mut anchor = parse_reserved_occur_time(&t, &base.unwrap_or_else(DatumTime::now))?;
+    if let Some(t) = data_at(&parsed) {
+        let mut anchor = parse_reserved_at(&t, &base.unwrap_or_else(DatumTime::now))?;
         if full_day {
             anchor = whole_day(&anchor)?;
         }
@@ -249,8 +249,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
     // da-x34md: a side of a multi line that states its time keeps it.
-    let own_time =
-        args.time.places() || args.time.omit_timestamp || data_occur_time(&parsed).is_some();
+    let own_time = args.time.places() || args.time.omit_timestamp || data_at(&parsed).is_some();
     let ParsedLogArgs {
         field,
         value,
@@ -260,7 +259,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     } = parsed;
 
     // da-5ns.3: route reserved column-bound keys (`state=`, `dur=`,
-    // `following_state=`, `occur_time=`) out of the data blob.
+    // `following_state=`, `at=`) out of the data blob.
     // Unknown keys (including `value=`) stay in the data payload (da-53rz).
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
     let action = change_command(action, command, &mut reserved.state, &mut args.last_state);
@@ -298,7 +297,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // own state-canonicalization rules (so `switch ... -T` still preserves
     // its positional state, `start -T` still records state=true, etc.).
     // Time-specifying flags are rejected so silent discard can't mask a
-    // user misconception. A timeless entry stores `occur_time = NULL` (the
+    // user misconception. A timeless entry stores `at = NULL` (the
     // durable timeless marker) and slugs on `create_time` →
     // `field:<create_time>c` (da-r17h), so `occur f -T` becomes note-data:
     // the data lands, no occurrence is logged, and many-per-field works.
@@ -410,7 +409,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // first, so no racer's set is changed under it.
     let t = &args.time;
     let edit_at_now = (edit.is_some() || !key_edits.is_empty())
-        && reserved.occur_time.is_none()
+        && reserved.at.is_none()
         && (t.time.is_none() && t.date.is_none() && t.time_offsets.is_empty())
         && (t.yesterday == 0 && t.quick == 0 && !t.full_day && !t.omit_timestamp);
 
@@ -478,7 +477,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // Compute time_start, time_end, and (for Action::Add) a shape override.
     // Skipped entirely for -T — a timeless entry carries no times, and so no
     // uncertainty either. The time's uncertainty rides on `base_time` and
-    // flows to `entry.occur_time` with it (da-b8rs); every derived time
+    // flows to `entry.at` with it (da-b8rs); every derived time
     // below is built with `..base_time`, so it carries too.
     let (time_start, time_end) = if args.time.omit_timestamp {
         (None, None)
@@ -487,11 +486,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
         // da-mjwq: the two lifted forms that are not a plain `-t` twin.
         // `base_time` is the lifted anchor (`end_time=`, else `start_time=`):
-        //   start_time=S end_time=E   → the block S..E: occur_time = E, dur = E − S
-        //   start_time=S + a duration → the block S..S+dur: occur_time = S + dur
+        //   start_time=S end_time=E   → the block S..E: at = E, dur = E − S
+        //   start_time=S + a duration → the block S..S+dur: at = S + dur
         // `end_time=E` + a duration is `-t E <dur>`, and either key alone
         // is `-t <key>` — both already what `base_time` says. Under the
-        // reference semantics (da-zwct) the duration PRECEDES occur_time,
+        // reference semantics (da-zwct) the duration PRECEDES at,
         // so `start posture start_time=4pm 15` is the block 16:00–16:15,
         // the row `start posture -t 16:15 15` writes.
         let lifted_span = match (&lifted.start, &lifted.end) {
@@ -547,7 +546,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
         // da-lxyw: `add`/`note` are the timeless verbs. With no clock- or
         // date-modifying flag (`-t`/`-d`/`-y*`/`-q*`/`-D` — a lifted key
-        // became a `-t` above) the entry carries no `occur_time`; that
+        // became a `-t` above) the entry carries no `at`; that
         // absence is what tells `add` from `occur`. `-z` alone only
         // re-zones, and `-T` is the branch above. (da-r17h: `note` is `add`
         // with an auto id, so it shares the rule.)
@@ -651,23 +650,23 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if let Some(fs) = reserved.following_state {
         entry.following_state = Some(fs);
     }
-    // da-r17h (task 8): an explicit `occur_time=` key always overwrites the
+    // da-r17h (task 8): an explicit `at=` key always overwrites the
     // column — like `dur=` above — read as `-t` reads its value (or `now`).
     // This makes the time-anchored columns uniformly settable across every
-    // verb: `add field occur_time=+5` shifts it +5m and re-anchors what was
+    // verb: `add field at=+5` shifts it +5m and re-anchors what was
     // a timeless entry. The relative-offset base is the entry's current
-    // occur_time when present, else wall-clock now (mirrors the `dm update`
+    // at when present, else wall-clock now (mirrors the `dm update`
     // path in update_core::apply_mutation). Beside `-D` the column is the
     // key's whole day (da-2mti0).
-    if let Some(t) = reserved.occur_time {
-        let base = entry.occur_time.clone().unwrap_or_else(DatumTime::now);
-        let at = parse_reserved_occur_time(&t, &base)?;
-        entry.occur_time = Some(if full_day { whole_day(&at)? } else { at });
+    if let Some(t) = reserved.at {
+        let base = entry.at.clone().unwrap_or_else(DatumTime::now);
+        let at = parse_reserved_at(&t, &base)?;
+        entry.at = Some(if full_day { whole_day(&at)? } else { at });
     }
     // da-mec79: a timeless entry carries no duration — `dur=`, the trailing
     // positional, a `,`-chain's or its uncertainty — on any verb (vividn,
-    // 2026-10-23). An `occur_time=` key above gave it a time, so it may.
-    if entry.occur_time.is_none()
+    // 2026-10-23). An `at=` key above gave it a time, so it may.
+    if entry.at.is_none()
         && (entry.dur.is_some()
             || args.duration.duration.is_some()
             || reserved.dur_uncertainty.is_some())
@@ -676,9 +675,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
     // da-h8dvi: a zone the neighbours gave is a derivation, not something
     // said, so the entry records it as one and the log says so — where the
-    // entry kept it: an `occur_time=` key with an offset of its own did not.
+    // entry kept it: an `at=` key with an offset of its own did not.
     let kept = |t: &DatumTime| t.timezone == inferred_zone;
-    if let (Some(zone), true) = (&inferred_zone, entry.occur_time.as_ref().is_some_and(kept)) {
+    if let (Some(zone), true) = (&inferred_zone, entry.at.as_ref().is_some_and(kept)) {
         entry.extra_metadata.get_or_insert_with(|| json!({}))["tz_from"] = json!("neighbours");
         if !args.output()?.silent() {
             eprintln!("⚠ no -z given: used {zone}, the zone of the entries around it");
@@ -754,16 +753,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         edit.apply(held, &mut entry).map_err(anyhow::Error::msg)?;
     }
 
-    // An explicit `occur_time_uncertainty=` key overrides whatever the -q
+    // An explicit `at_uncertainty=` key overrides whatever the -q
     // stack or a `±N` suffix put on the time. Same rule as `dur_uncertainty=`
     // above: a timeless entry has no time to qualify.
-    if let Some(u) = reserved.occur_time_uncertainty {
-        if entry.occur_time.is_none() {
+    if let Some(u) = reserved.at_uncertainty {
+        if entry.at.is_none() {
             anyhow::bail!(
                 "at_uncertainty= needs a time: a timeless entry has no instant to qualify"
             );
         }
-        entry.set_occur_uncertainty(Some(u));
+        entry.set_at_uncertainty(Some(u));
     }
 
     if args.no_metadata {
@@ -838,7 +837,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     //   2. `-K` slug-keys → `%key1%__%key2%` (one `%key%` per -K, joined
     //      by the canonical slug separator `__`)
     //   3. spec's `id_template`
-    //   4. Default → `%occur_time%` if the entry has an occur_time, else
+    //   4. Default → `%at%` if the entry has an at, else
     //      (timeless) `%create_time%` → `field:<create_time>c`. da-r17h:
     //      this replaced the old `:unset` sentinel, which made the slug
     //      UNIQUE-collide so only one timeless entry per field could exist.
@@ -856,8 +855,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             .join("__")
     } else if let Some(tmpl) = db.load_spec(&entry.field)?.and_then(|s| s.id_template) {
         tmpl
-    } else if entry.occur_time.is_some() {
-        "%occur_time%".to_string()
+    } else if entry.at.is_some() {
+        "%at%".to_string()
     } else if matches!(action, Action::Add) && !args.time.omit_timestamp {
         // da-r17h: a bare timeless `add` with no id has no identity to slug
         // on. `note` (auto create_time id) or an explicit id is the way in.
@@ -884,10 +883,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // reads — and names the entry that set it as ISLAST. A block (a `dur`)
     // is a span, not a transition, so it writes as it always did. A dry run
     // still previews ISLAST but leaves `_` where it was.
-    if args.if_changed && entry.occur_time.is_none() {
+    if args.if_changed && entry.at.is_none() {
         anyhow::bail!("`--if-changed` needs a time: a timeless entry has no state to compare with");
     }
-    if let (true, Some(t), None) = (args.if_changed, &entry.occur_time, &entry.dur) {
+    if let (true, Some(t), None) = (args.if_changed, &entry.at, &entry.dur) {
         if let Some((state, Some(hid))) = db
             .batch_governing_at(&[&entry.field], t.utc)?
             .remove(&entry.field)
@@ -938,7 +937,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         && !crate::args::field_declared_in_window(&entry.field);
     if declares_field
         && entry.following_state.is_none()
-        && entry.occur_time.is_some()
+        && entry.at.is_some()
         && entry.field != TIMEZONE_FIELD
     {
         let declared =
@@ -1001,7 +1000,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // the question it would, and a multi window (one atomic write of every
     // side) and a timeless entry, which leaves no state, take none.
     if args.ensure_last_state {
-        if entry.occur_time.is_none() {
+        if entry.at.is_none() {
             anyhow::bail!("-L needs a time: a timeless entry leaves no state to claim");
         }
         if args.dry_run {
@@ -1040,7 +1039,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
     // da-gh0.C: when a multi-entry write window is active, hand the
     // fully prepared entry off to the dispatch-layer collector and
-    // return. The multi driver normalizes occur_time across sides,
+    // return. The multi driver normalizes at across sides,
     // applies same-field merge, and writes the batch atomically; it
     // also owns the post-write display + `_LAST` stamp. None of the
     // per-side render/insert work below applies in that case. The
@@ -1091,7 +1090,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             strategy,
             declare.as_ref(),
             Some(&|tx, e| {
-                if let (true, Some(t)) = (edit_at_now, e.occur_time.as_mut()) {
+                if let (true, Some(t)) = (edit_at_now, e.at.as_mut()) {
                     t.utc = t.utc.max(chrono::Utc::now());
                     if let Some(id) = e.id_structure.clone() {
                         let body = field_spec::interpolate(
@@ -2340,7 +2339,7 @@ pub(crate) struct LiftedTimes {
 
 impl LiftedTimes {
     /// The key that names the entry's time and its raw value: `end_time=`
-    /// when given (a block's occur_time is its END, da-zwct), else
+    /// when given (a block's at is its END, da-zwct), else
     /// `start_time=`. `None` when neither key was on the line.
     pub(crate) fn anchor(&self) -> Option<(&'static str, &str)> {
         match (&self.start, &self.end) {
@@ -2405,9 +2404,9 @@ pub(crate) struct ReservedColumns {
     /// to attach to.
     pub(crate) dur_uncertainty: Option<String>,
     /// `at_uncertainty=` — the same, for the entry's time.
-    pub(crate) occur_time_uncertainty: Option<String>,
+    pub(crate) at_uncertainty: Option<String>,
     pub(crate) following_state: Option<JsonValue>,
-    pub(crate) occur_time: Option<JsonValue>,
+    pub(crate) at: Option<JsonValue>,
 }
 
 /// da-5ns.3: route the reserved column-bound keys (`state=`, `dur=`,
@@ -2489,7 +2488,7 @@ pub(crate) fn extract_reserved_columns(
         if v.is_null() || matches!(v.as_str(), Some("null")) {
             // intentionally drop — leave the uncertainty unstated.
         } else {
-            out.occur_time_uncertainty = Some(json_to_raw_token(&v));
+            out.at_uncertainty = Some(json_to_raw_token(&v));
         }
     }
     if let Some(v) = obj.remove("following_state") {
@@ -2498,7 +2497,7 @@ pub(crate) fn extract_reserved_columns(
     }
     let old_name = obj.remove("occur_time");
     if let Some(v) = obj.remove("at").or(old_name) {
-        out.occur_time = Some(v);
+        out.at = Some(v);
     }
     // da-o5bww: `at` is the entry's time, so it is no list to add to.
     if let Some(op) = ["at+", "at-"].into_iter().find(|k| obj.contains_key(*k)) {
@@ -2539,7 +2538,7 @@ fn json_to_raw_token(v: &JsonValue) -> String {
 /// "now", or anything `-t` takes. Exposed crate-private so [`update_core::apply_mutation`]
 /// can reuse the parser. What is no time may be someone's own key (`at=home`),
 /// so a refusal says why the name is taken (da-o5bww).
-pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
+pub(crate) fn parse_reserved_at(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     parse_add_time_value(v, base)
         .map_err(|e| anyhow::anyhow!("{e}. {}", datum_core::entry::AT_RESERVED))
 }

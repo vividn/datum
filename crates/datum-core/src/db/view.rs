@@ -382,9 +382,9 @@ fn register_local_today(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     })
 }
 
-/// `local_day(occur_time, occur_time_offset)` → `YYYY-MM-DD`, the day in the
+/// `local_day(at, at_offset)` → `YYYY-MM-DD`, the day in the
 /// offset the entry was logged with (da-tgsqs), as `duration_sum` buckets it
-/// and `stats` reads it: SQLite has no zone data, so `date(occur_time)` is
+/// and `stats` reads it: SQLite has no zone data, so `date(at)` is
 /// the UTC day. A null offset is UTC; a timeless entry gives null.
 fn register_local_day(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     conn.create_scalar_function(

@@ -1,7 +1,7 @@
 //! Tests for `-T/--no-timestamp` semantics (S5 / da-u4k.5, da-5ns).
 //!
 //! Any log verb (`occur`, `start`, `stop`/`end`, `switch`, `add`/`note`) +
-//! `-T` produces a timeless entry: `occur_time` is NULL and the slug is
+//! `-T` produces a timeless entry: `at` is NULL and the slug is
 //! `field:<create_time>c` (da-r17h — was `:unset`), and the verb is whatever
 //! derive_verb returns for the action's canonical (state, dur, fs) triple. A
 //! state-bearing verb stamps `dur=MOMENT`, so it is a point naming a state,
@@ -125,23 +125,23 @@ fn add_minus_t_is_timeless_point() {
     assert!(e.dur.is_none());
 }
 
-// ─── Regression: -T entry is genuinely timeless (occur_time NULL) ────────────
+// ─── Regression: -T entry is genuinely timeless (at NULL) ────────────
 
 /// da-o7iz: `<verb> foo -T` produces a timeless, note-equivalent entry —
-/// `occur_time` reads back as `None` (not a `create_time` stub) and the slug
+/// `at` reads back as `None` (not a `create_time` stub) and the slug
 /// is `field:<create_time>c` (da-r17h), exactly like a bare `note foo`. Guards
 /// against the stale belief that "daydumb always anchors entries to
 /// `time_start`" (the comments formerly in `start_cmd.rs`/`stop_cmd.rs`
 /// claiming `-T` has no equivalent).
 #[test]
-fn minus_t_entry_is_timeless_occur_time_none() {
+fn minus_t_entry_is_timeless_at_none() {
     let db = fresh_db();
     run_cli(&["occur", "coffee", "-T"], &db).expect("occur coffee -T");
     let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert!(
-        e.occur_time.is_none(),
-        "`-T` must leave occur_time NULL (timeless), got {:?}",
-        e.occur_time
+        e.at.is_none(),
+        "`-T` must leave at NULL (timeless), got {:?}",
+        e.at
     );
     assert!(
         slug_is_timeless(e.slug.as_str()),
@@ -234,11 +234,11 @@ fn update_refuses_a_duration_on_a_timeless_entry() {
         "{err:#}"
     );
     let e = &datum_core::test_util::logged_entries(&db, "n")[0];
-    assert!(e.dur.is_none() && e.occur_time.is_none());
+    assert!(e.dur.is_none() && e.at.is_none());
 
-    run_cli(&["update", &hid, "occur_time=10:00", "dur=10m"], &db).expect("timed update");
+    run_cli(&["update", &hid, "at=10:00", "dur=10m"], &db).expect("timed update");
     let e = &datum_core::test_util::logged_entries(&db, "n")[0];
-    assert!(e.occur_time.is_some());
+    assert!(e.at.is_some());
     assert_eq!(e.dur, Some(Dur::parse("PT10M").unwrap()));
 }
 
@@ -258,7 +258,7 @@ fn timeless_durations_and_timed_ones() {
             Some(Dur::parse("PT5M").unwrap()),
         ),
         (
-            &["add", "b", "--id", "b", "occur_time=10:00", "dur=5m"][..],
+            &["add", "b", "--id", "b", "at=10:00", "dur=5m"][..],
             "b",
             Some(Dur::parse("PT5M").unwrap()),
         ),
@@ -298,10 +298,7 @@ fn without_minus_t_occur_still_timestamps() {
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).expect("plain occur");
     let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
-    assert!(
-        e.occur_time.is_some(),
-        "plain `occur` must still stamp start_time"
-    );
+    assert!(e.at.is_some(), "plain `occur` must still stamp start_time");
 }
 
 // ─── da-s9ngd: a timeless entry dedups by its slug ───────────────────────────

@@ -43,11 +43,11 @@ function backup() {
 				dur: 'MOMENT',
 				following_state: null,
 				data: { i },
-				occur_time: { utc: t, offset_minutes: 0, timezone: 'UTC' },
+				at: { utc: t, offset_minutes: 0, timezone: 'UTC' },
 				create_time: t,
 				modify_time: t,
 				client_id: '01M4BNZ0H79A4P457779B5WTJ8',
-				id_structure: '%occur_time%',
+				id_structure: '%at%',
 				parser_version: 2
 			})
 		);

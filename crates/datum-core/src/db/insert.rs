@@ -83,8 +83,8 @@ fn derive_verb_for_storage(
 /// none, and everything else the hash covers must already agree.
 ///
 /// ⚠ FIRST-WRITTEN, by `create_time`, and not first-HAPPENED by
-/// `occur_time`. Backfill separates them: `occur foo -t 0900` declares
-/// the field, `occur foo -t 0800` then sorts earlier by occur_time
+/// `at`. Backfill separates them: `occur foo -t 0900` declares
+/// the field, `occur foo -t 0800` then sorts earlier by at
 /// without being a declaration, and re-running the 0900 command would
 /// stop being recognised as the re-log it is. What "only a first log
 /// declares" is about is the order the rows were LOGGED in, which is the
@@ -166,15 +166,15 @@ fn storage_content_hash(
     })
 }
 
-/// The occur_time string used for content-hash computation. Mirrors
+/// The at string used for content-hash computation. Mirrors
 /// [`Entry::new`]'s `unwrap_or_default()`: a timeless entry (no
-/// `occur_time`, e.g. a bare `add`) hashes with an empty occur string —
+/// `at`, e.g. a bare `add`) hashes with an empty occur string —
 /// NOT `create_time`. Keeping this in lockstep with the stored value
 /// (NULL for timeless) is what makes dedup-by-content-hash see two
 /// timeless adds of the same content as one (da-lxyw / da-r569).
 fn hash_occur_str(entry: &Entry) -> String {
     entry
-        .occur_time
+        .at
         .as_ref()
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_default()
@@ -323,7 +323,7 @@ impl Db {
 
     /// The write behind `db restore --merge` (da-0v1zt):
     /// [`Self::insert_entries_batch`], except an entry whose slug or live
-    /// state-bearing `(field, occur_time)` a different live entry holds
+    /// state-bearing `(field, at)` a different live entry holds
     /// comes in as a sync from a copy frozen at the backup would bring it
     /// (`sync::restore`, da-4ldvb) — [`InsertOutcome::Merged`] — where the
     /// batch would abort. With `commit` false the transaction is rolled
@@ -623,7 +623,7 @@ impl Db {
     /// happened. The caller is responsible for any user-facing rendering.
     ///
     /// da-5ns.4: extends the da-4ud auto-rekey trigger so column mutations
-    /// (`occur_time`, `state`, `dur`, `following_state`) cascade into the
+    /// (`at`, `state`, `dur`, `following_state`) cascade into the
     /// templated slug just like data-blob mutations did. The mutator
     /// (insert.rs's update path, time.rs's retime path, …) computes the new
     /// column values on `updated`; this helper handles the re-interpolate +
@@ -646,7 +646,7 @@ impl Db {
     /// As [`Self::save_existing_entry_with_auto_reinterp`] but the caller
     /// picks the [`ChangeKind`] stamped on the pre-mutation history row.
     /// `retime` passes [`ChangeKind::Retime`] so a templated rekey driven by
-    /// an occur_time change is still surfaced as a retime in
+    /// an at change is still surfaced as a retime in
     /// `entry_history`.
     pub fn save_existing_entry_with_auto_reinterp_kind(
         &self,
@@ -842,7 +842,7 @@ fn suffixed_slug(base: &str) -> Slug {
 
 /// Which uniqueness constraint a SQLite ConstraintViolation tripped: the
 /// `entries.slug` UNIQUE index, the `entries.hid` PRIMARY KEY, or the
-/// `entries_field_occurtime` partial UNIQUE index over `(field, occur_time)`.
+/// `entries_field_at_unique` partial UNIQUE index over `(field, at)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CollisionKind {
     Slug,
@@ -853,7 +853,7 @@ enum CollisionKind {
 /// Inspect a rusqlite error and decide which collision it represents.
 /// SQLite's constraint-violation message names the offending column or
 /// index (e.g. `UNIQUE constraint failed: entries.slug` for column-level
-/// indexes, or `UNIQUE constraint failed: entries.field, entries.occur_time`
+/// indexes, or `UNIQUE constraint failed: entries.field, entries.at`
 /// for the multi-column partial index), which is the cheapest way to tell
 /// them apart without a second query.
 fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
@@ -864,10 +864,10 @@ fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
         return None;
     }
     let msg = msg.as_deref().unwrap_or("");
-    // Order matters: the (field, occur_time) message contains "entries.field"
-    // and "entries.occur_time" together — check the multi-column form first
+    // Order matters: the (field, at) message contains "entries.field"
+    // and "entries.at" together — check the multi-column form first
     // so a same-instant collision is not misclassified as a slug collision.
-    if msg.contains("entries.field") && msg.contains("entries.occur_time") {
+    if msg.contains("entries.field") && msg.contains("entries.at") {
         Some(CollisionKind::FieldOccurTime)
     } else if msg.contains("entries.slug") {
         Some(CollisionKind::Slug)
@@ -879,7 +879,7 @@ fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
 }
 
 /// Look up the `hid` of the live row that currently occupies
-/// `(field, occur_time)` for diagnostic messages on a partial-unique
+/// `(field, at)` for diagnostic messages on a partial-unique
 /// collision. Returns `None` if no live row matches (which would mean
 /// the index was tripped by a race the surrounding tx already rolled
 /// back — surface the diagnostic without a hid in that case).
@@ -887,19 +887,15 @@ fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
 /// The terms are the index predicate's, `state IS NOT NULL` included
 /// (da-2fkr): a stateless row at that instant is not the collider, because
 /// it is not what the index refused.
-fn fetch_field_occur_collider(
-    conn: &Connection,
-    field: &str,
-    occur_time: &str,
-) -> Result<Option<String>> {
+fn fetch_field_occur_collider(conn: &Connection, field: &str, at: &str) -> Result<Option<String>> {
     let hid: Option<String> = conn
         .query_row(
             "SELECT hid FROM entries \
-             WHERE field = ?1 AND occur_time = ?2 \
+             WHERE field = ?1 AND at = ?2 \
                AND deleted_at IS NULL AND superseded_by IS NULL \
                AND state IS NOT NULL \
              LIMIT 1",
-            params![field, occur_time],
+            params![field, at],
             |row| row.get(0),
         )
         .optional()?;
@@ -1010,12 +1006,12 @@ fn write_entry_in_tx(
     // da-s9ngd: a timeless row's identity is its create_time, which its
     // slug carries and its hash leaves out, so it dedups by slug: two notes
     // with the same words are two events. Equal hashes mean equal occur, so
-    // the stored row's `occur_time` says which kind both are.
+    // the stored row's `at` says which kind both are.
     let existing: Option<(Slug, Hid, Option<String>)> = conn
         .query_row(
             "SELECT slug, hid, data FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
-               AND (occur_time IS NOT NULL OR slug = ?2)
+               AND (at IS NOT NULL OR slug = ?2)
              LIMIT 1",
             params![dedup_hash, entry.slug],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -1213,7 +1209,7 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
         let mut stmt = conn.prepare_cached(
             "SELECT slug FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
-               AND (occur_time IS NOT NULL OR slug = ?2)
+               AND (at IS NOT NULL OR slug = ?2)
              LIMIT 1",
         )?;
         stmt.query_row(params![dedup_hash, entry.slug], |row| row.get::<_, Slug>(0))
@@ -1282,14 +1278,14 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                         // da-2fkr: for a stateless point the slug is now the
                         // ONLY thing standing between two events at one
                         // instant, so the message has to name the way out.
-                        // The default template is `%occur_time%`, which two
+                        // The default template is `%at%`, which two
                         // transactions dated to one day both resolve to; an
                         // id template is how the user says they differ, as
                         // it was in datum v2.
                         // da-2mn3k: an id template with no time in it made
                         // this collision on purpose — the way out is a
                         // conflict flag, not another template.
-                        let tmpl = entry.id_structure.as_deref().unwrap_or("%occur_time%");
+                        let tmpl = entry.id_structure.as_deref().unwrap_or("%at%");
                         let keyed = !crate::field_spec::names_time(tmpl);
                         let hint = if keyed {
                             "; pass --update or --merge to change that entry"
@@ -1306,14 +1302,14 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                     }
                     Some(CollisionKind::FieldOccurTime) => {
                         // da-ga8b: a different slug already occupies
-                        // (field, occur_time) for a live row. Two
+                        // (field, at) for a live row. Two
                         // state-changes at the same instant for the same
                         // field are semantically undefined, so surface a
                         // clear diagnostic naming the existing hid.
                         // da-2fkr narrowed the index to state-bearing rows,
                         // so reaching here means both sides assert a state.
                         let occur_str = entry
-                            .occur_time
+                            .at
                             .as_ref()
                             .map(|t| t.utc.to_rfc3339())
                             .unwrap_or_else(|| entry.create_time.to_rfc3339());
@@ -1343,15 +1339,15 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
 
 pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entry) -> Result<()> {
     super::spec::check_meta_entry(slug, entry, entry.data.as_ref())?;
-    // da-lxyw: a timeless entry (no `occur_time` — the defining trait of
+    // da-lxyw: a timeless entry (no `at` — the defining trait of
     // `add` with no explicit `-t`) stores NULL, NOT `create_time`. The
     // column is nullable (schema v29); the partial UNIQUE on
-    // `(field, occur_time)` excludes NULL rows, so multiple timeless adds
+    // `(field, at)` excludes NULL rows, so multiple timeless adds
     // for one field coexist. The hash uses an empty occur string to match
     // `Entry::new` / the dedup pre-check (`hash_occur_str`).
-    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
-    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
+    let occur_str: Option<String> = entry.at.as_ref().map(|t| t.utc.to_rfc3339());
+    let occur_offset = entry.at.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry.at.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         entry,
@@ -1369,7 +1365,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
                 "INSERT INTO entries (
                     hid, slug, content_hash, field,
                     verb, state, dur, following_state, data,
-                    occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
+                    at, at_offset, at_tz, at_uncertainty,
                     dur_uncertainty,
                     lat, lon, location,
                     create_time, modify_time, client_id,
@@ -1411,7 +1407,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         occur_str,
         occur_offset,
         occur_tz,
-        entry.occur_uncertainty(),
+        entry.at_uncertainty(),
         entry.dur_uncertainty(),
         entry.lat,
         entry.lon,
@@ -1488,13 +1484,13 @@ fn raw_overwrite_mutables(
     let data_json = data_value.map(|v| v.to_string());
     let now = Utc::now().to_rfc3339();
 
-    // da-lxyw: preserve a timeless entry's NULL `occur_time` across edits
+    // da-lxyw: preserve a timeless entry's NULL `at` across edits
     // rather than backfilling `create_time`. Hash with the empty occur
     // string (`hash_occur_str`) so the rewritten content_hash matches the
     // insert path.
-    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
-    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
+    let occur_str: Option<String> = entry.at.as_ref().map(|t| t.utc.to_rfc3339());
+    let occur_offset = entry.at.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry.at.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         entry,
@@ -1512,10 +1508,10 @@ fn raw_overwrite_mutables(
             dur = ?6,
             following_state = ?7,
             data = ?8,
-            occur_time = ?9,
-            occur_time_offset = ?10,
-            occur_time_tz = ?11,
-            occur_time_uncertainty = ?12,
+            at = ?9,
+            at_offset = ?10,
+            at_tz = ?11,
+            at_uncertainty = ?12,
             dur_uncertainty = ?13,
             lat = ?14,
             lon = ?15,
@@ -1542,7 +1538,7 @@ fn raw_overwrite_mutables(
         occur_str,
         occur_offset,
         occur_tz,
-        entry.occur_uncertainty(),
+        entry.at_uncertainty(),
         entry.dur_uncertainty(),
         entry.lat,
         entry.lon,
@@ -1578,11 +1574,11 @@ fn raw_overwrite_mutables(
 fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
     super::spec::check_meta_entry(&entry.slug, entry, entry.data.as_ref())?;
     let now = Utc::now().to_rfc3339();
-    // da-plcx4: a timeless entry keeps its NULL `occur_time`, as on the
+    // da-plcx4: a timeless entry keeps its NULL `at`, as on the
     // insert path (da-lxyw).
-    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
-    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
+    let occur_str: Option<String> = entry.at.as_ref().map(|t| t.utc.to_rfc3339());
+    let occur_offset = entry.at.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry.at.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         entry,
@@ -1601,10 +1597,10 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
             dur = ?7,
             following_state = ?8,
             data = ?9,
-            occur_time = ?10,
-            occur_time_offset = ?11,
-            occur_time_tz = ?12,
-            occur_time_uncertainty = ?13,
+            at = ?10,
+            at_offset = ?11,
+            at_tz = ?12,
+            at_uncertainty = ?13,
             dur_uncertainty = ?14,
             lat = ?15,
             lon = ?16,
@@ -1633,7 +1629,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         occur_str,
         occur_offset,
         occur_tz,
-        entry.occur_uncertainty(),
+        entry.at_uncertainty(),
         entry.dur_uncertainty(),
         entry.lat,
         entry.lon,
@@ -1692,11 +1688,11 @@ pub(super) fn as_stored(entry: &Entry) -> Result<Entry> {
 /// fails the revert loudly rather than silently keeping the wrong slug.
 pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
     super::spec::check_meta_entry(&entry.slug, entry, entry.data.as_ref())?;
-    // da-plcx4: a timeless entry keeps its NULL `occur_time`, as on the
+    // da-plcx4: a timeless entry keeps its NULL `at`, as on the
     // insert path (da-lxyw).
-    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
-    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
+    let occur_str: Option<String> = entry.at.as_ref().map(|t| t.utc.to_rfc3339());
+    let occur_offset = entry.at.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry.at.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         entry,
@@ -1715,10 +1711,10 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             dur = ?6,
             following_state = ?7,
             data = ?8,
-            occur_time = ?9,
-            occur_time_offset = ?10,
-            occur_time_tz = ?11,
-            occur_time_uncertainty = ?12,
+            at = ?9,
+            at_offset = ?10,
+            at_tz = ?11,
+            at_uncertainty = ?12,
             dur_uncertainty = ?13,
             lat = ?14,
             lon = ?15,
@@ -1748,7 +1744,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             occur_str,
             occur_offset,
             occur_tz,
-            entry.occur_uncertainty(),
+            entry.at_uncertainty(),
             entry.dur_uncertainty(),
             entry.lat,
             entry.lon,
@@ -1837,7 +1833,7 @@ mod tests {
     /// da-r569 regression: the dedup path inside `insert_entry_in_tx` must
     /// also use the canonical hash, otherwise a second identical-content
     /// write under `ConflictStrategy::Update` misses the dedup match and
-    /// hits the `(field, occur_time)` UNIQUE collision instead of routing
+    /// hits the `(field, at)` UNIQUE collision instead of routing
     /// through Update.
     #[test]
     fn dedup_matches_after_post_construction_mutation() {
@@ -1857,23 +1853,23 @@ mod tests {
         );
     }
 
-    /// da-lxyw (regression): an entry with no `occur_time` (a bare `add`)
+    /// da-lxyw (regression): an entry with no `at` (a bare `add`)
     /// must round-trip through the insert path as a genuine NULL — the
-    /// stored row reads back `occur_time == None`, NOT a `create_time`
+    /// stored row reads back `at == None`, NOT a `create_time`
     /// backfill. The content_hash must also agree on load (the hash uses
     /// the empty occur string, same as `Entry::new`).
     #[test]
-    fn timeless_entry_stores_null_occur_time() {
+    fn timeless_entry_stores_null_at() {
         let db = fresh_db();
         let entry = entry_builder("thing").verb(Verb::Point).no_time().build();
-        assert!(entry.occur_time.is_none(), "fixture is timeless");
+        assert!(entry.at.is_none(), "fixture is timeless");
         db.insert_entry(&entry).unwrap();
 
         let stored = db.get_entry(&entry.slug).unwrap();
         assert!(
-            stored.occur_time.is_none(),
-            "timeless entry must read back occur_time=None, got {:?}",
-            stored.occur_time
+            stored.at.is_none(),
+            "timeless entry must read back at=None, got {:?}",
+            stored.at
         );
         assert_eq!(
             stored.content_hash,
@@ -1883,9 +1879,9 @@ mod tests {
     }
 
     /// da-plcx4 (regression): an undo (`apply_entry_state`) of a timeless
-    /// row keeps `occur_time` NULL rather than writing `create_time` in.
+    /// row keeps `at` NULL rather than writing `create_time` in.
     #[test]
-    fn undo_of_timeless_entry_keeps_null_occur_time() {
+    fn undo_of_timeless_entry_keeps_null_at() {
         let db = fresh_db();
         let entry = entry_builder("thing").verb(Verb::Point).no_time().build();
         db.insert_entry(&entry).unwrap();
@@ -1894,18 +1890,14 @@ mod tests {
         db.save_existing_entry(&edited).unwrap();
 
         let restored = db.revert_entry_to(entry.hid.as_ref(), 1).unwrap();
-        assert!(
-            restored.occur_time.is_none(),
-            "got {:?}",
-            restored.occur_time
-        );
+        assert!(restored.at.is_none(), "got {:?}", restored.at);
         assert_eq!(restored.content_hash, restored.expected_content_hash());
     }
 
     /// da-plcx4 (regression): a rekey (`raw_overwrite_full_by_hid`) of a
-    /// timeless row keeps `occur_time` NULL.
+    /// timeless row keeps `at` NULL.
     #[test]
-    fn rekey_of_timeless_entry_keeps_null_occur_time() {
+    fn rekey_of_timeless_entry_keeps_null_at() {
         let db = fresh_db();
         let entry = entry_builder("thing").verb(Verb::Point).no_time().build();
         db.insert_entry(&entry).unwrap();
@@ -1915,7 +1907,7 @@ mod tests {
             .unwrap();
 
         let stored = db.get_entry("thing:other").unwrap();
-        assert!(stored.occur_time.is_none(), "got {:?}", stored.occur_time);
+        assert!(stored.at.is_none(), "got {:?}", stored.at);
         assert_eq!(stored.content_hash, stored.expected_content_hash());
     }
 

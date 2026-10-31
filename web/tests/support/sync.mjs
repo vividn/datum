@@ -250,11 +250,11 @@ export function backup(n) {
 				dur: kind === 0 ? 'MOMENT' : null,
 				following_state: kind === 0 ? 'TRACKED' : null,
 				data: i % 7 === 0 ? { note: `entry ${i}`, cups: i % 4 } : null,
-				occur_time: { utc: t, offset_minutes: 0, timezone: 'UTC' },
+				at: { utc: t, offset_minutes: 0, timezone: 'UTC' },
 				create_time: t,
 				modify_time: t,
 				client_id: '01M4BPEA25C60PADHYSC9J53NP',
-				id_structure: '%occur_time%',
+				id_structure: '%at%',
 				raw_input: `generated ${i}`,
 				parser_version: 2
 			})

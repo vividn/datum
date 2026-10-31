@@ -53,11 +53,7 @@ fn occur_creates_entry_with_time_start() {
     // the verb to Point regardless of state shape.
     assert_entry_matches!(entry, field: "field", verb: "point");
 
-    let ts = entry
-        .occur_time
-        .as_ref()
-        .expect("occur sets occur_time")
-        .utc;
+    let ts = entry.at.as_ref().expect("occur sets at").utc;
     assert!(
         ts >= before - Duration::seconds(1) && ts <= after + Duration::seconds(1),
         "time_start must be within the wall-clock window (before={before} ts={ts} after={after})",
@@ -99,7 +95,7 @@ fn date_and_time_flags_set_absolute_time() {
     let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
     assert_entry_matches!(entry, field: "event", verb: "point");
 
-    let ts = entry.occur_time.as_ref().unwrap().utc;
+    let ts = entry.at.as_ref().unwrap().utc;
     let expected_utc = Zone::host()
         .resolve(
             chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
@@ -142,7 +138,7 @@ fn no_metadata_zeros_bookkeeping_fields() {
         "modified_at must be epoch-zero",
     );
     // Domain data still lands — no-metadata only touches bookkeeping.
-    assert!(entry.occur_time.is_some(), "time_start is unaffected");
+    assert!(entry.at.is_some(), "time_start is unaffected");
     assert_eq!(entry.field, "event");
 
     // Without the flag, a normal occur records metadata as usual — the
@@ -181,7 +177,7 @@ fn numeric_offset_flag_applies() {
     .expect("occur -z+3");
 
     let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
-    let start = entry.occur_time.as_ref().unwrap();
+    let start = entry.at.as_ref().unwrap();
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
         .unwrap()
         .and_hms_opt(9, 0, 0)
@@ -216,7 +212,7 @@ fn half_hour_offset_flag_applies() {
         )
         .unwrap_or_else(|e| panic!("-z {spec}: {e:#}"));
         let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
-        let start = entry.occur_time.as_ref().unwrap();
+        let start = entry.at.as_ref().unwrap();
         assert_eq!(start.offset_minutes, minutes, "-z {spec}");
         assert_eq!(start.timezone, None, "-z {spec}");
         assert_eq!(
@@ -248,7 +244,7 @@ fn an_offset_in_t_sets_the_zone_unless_z_names_one() {
         argv.extend(z.iter().flat_map(|z| ["-z", *z]));
         run_cli(&argv, &db).unwrap_or_else(|e| panic!("-z {z:?}: {e:#}"));
         let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
-        let start = entry.occur_time.as_ref().unwrap();
+        let start = entry.at.as_ref().unwrap();
         assert_eq!(
             start.utc.to_rfc3339(),
             "2024-06-18T17:42:00+00:00",
@@ -286,7 +282,7 @@ fn iana_timezone_flag_applies() {
     .expect("occur -z Europe/Berlin");
 
     let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
-    let start = entry.occur_time.as_ref().unwrap();
+    let start = entry.at.as_ref().unwrap();
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2023, 12, 4)
         .unwrap()
         .and_hms_opt(11, 0, 0)
@@ -319,7 +315,7 @@ fn a_zone_typed_in_any_case_is_stored_canonically() {
         let zones = |db| {
             datum_core::test_util::logged_entries(db, "event")
                 .iter()
-                .map(|e| e.occur_time.as_ref().unwrap().timezone.clone())
+                .map(|e| e.at.as_ref().unwrap().timezone.clone())
                 .collect::<Vec<_>>()
         };
         assert_eq!(
@@ -354,7 +350,7 @@ fn flag_reads_the_timezone_flag_as_occur_does() {
         run_cli(&[&["flag", "f"], &flags[..]].concat(), &db).expect("flag");
         let at = |field| {
             let e = datum_core::test_util::logged_entries(&db, field).remove(0);
-            e.occur_time.unwrap()
+            e.at.unwrap()
         };
         let (occur, flag) = (at("o"), at("f"));
         assert_eq!(flag.utc, occur.utc, "-z {zone}");
@@ -457,7 +453,7 @@ fn stacked_negative_offsets_subtract_correctly() {
 
     let entries = datum_core::test_util::logged_entries(&db, "event");
     assert_eq!(entries.len(), 1);
-    let ts2 = entries[0].occur_time.as_ref().unwrap().utc;
+    let ts2 = entries[0].at.as_ref().unwrap().utc;
     let lo2 = before2 - Duration::minutes(20) - Duration::seconds(2);
     let hi2 = after2 - Duration::minutes(20) + Duration::seconds(2);
     assert!(
@@ -468,7 +464,7 @@ fn stacked_negative_offsets_subtract_correctly() {
 
 /// da-iyv3: live insert wires `args.time.full_day` through `TimeBuilder`,
 /// which puts the resulting uncertainty on the `DatumTime` itself
-/// (column `occur_time_uncertainty`).
+/// (column `at_uncertainty`).
 ///   * `-D` → P1D + today 00:00 local
 ///   * `-d -1` (no time) → P1D + yesterday 00:00 local
 ///   * `-d -1 -t 14:00` → uncertainty NULL + yesterday 14:00 local
@@ -482,11 +478,11 @@ fn full_day_writes_uncertainty_and_strips_clock() {
     // -D alone → P1D, today 00:00 local.
     run_cli(&["occur", "today_full", "-D"], &db).expect("occur -D");
     let e = &datum_core::test_util::logged_entries(&db, "today_full")[0];
-    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    let local = e.at.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
-        e.occur_uncertainty(),
+        e.at_uncertainty(),
         Some("P1D"),
-        "-D stamps occur_time_uncertainty=P1D",
+        "-D stamps at_uncertainty=P1D",
     );
     assert_eq!(
         local.time(),
@@ -502,9 +498,9 @@ fn full_day_writes_uncertainty_and_strips_clock() {
     // -d -1 (no time, no quick) → P1D, yesterday 00:00 local.
     run_cli(&["occur", "yest_full", "-d", "-1"], &db).expect("occur -d -1");
     let e = &datum_core::test_util::logged_entries(&db, "yest_full")[0];
-    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    let local = e.at.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
-        e.occur_uncertainty(),
+        e.at_uncertainty(),
         Some("P1D"),
         "-d -1 (no clock input) is a date-only event",
     );
@@ -514,9 +510,9 @@ fn full_day_writes_uncertainty_and_strips_clock() {
     run_cli(&["occur", "yest_clock", "-d", "-1", "-t", "14:00"], &db)
         .expect("occur -d -1 -t 14:00");
     let e = &datum_core::test_util::logged_entries(&db, "yest_clock")[0];
-    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    let local = e.at.as_ref().unwrap().utc.with_timezone(&Local);
     assert!(
-        e.occur_uncertainty().is_none(),
+        e.at_uncertainty().is_none(),
         "explicit -t states no uncertainty (NULL)",
     );
     assert_eq!(local.time(), NaiveTime::from_hms_opt(14, 0, 0).unwrap());
@@ -525,30 +521,27 @@ fn full_day_writes_uncertainty_and_strips_clock() {
     run_cli(&["occur", "full_overrides_clock", "-D", "-t", "14:00"], &db)
         .expect("occur -D -t 14:00");
     let e = &datum_core::test_util::logged_entries(&db, "full_overrides_clock")[0];
-    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    let local = e.at.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
-        e.occur_uncertainty(),
+        e.at_uncertainty(),
         Some("P1D"),
         "-D wins over clock per builder rule",
     );
     assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
 }
 
-/// da-2mti0: `-D` wins over an `occur_time=` key as it does over `-t`, the
+/// da-2mti0: `-D` wins over an `at=` key as it does over `-t`, the
 /// key being one more `-t`: each line logs the whole day its flag twin does.
 /// The key overwrote what `-D` had stripped, read from that midnight, so
-/// `-D occur_time=-6` was 23:54 the day before, exact.
+/// `-D at=-6` was 23:54 the day before, exact.
 #[test]
-fn full_day_wins_over_an_occur_time_key() {
+fn full_day_wins_over_an_at_key() {
     for (key, flags) in [
-        (&["occur_time=-6"][..], &["-t", "-6"][..]),
-        (&["occur_time=18:30"], &["-t", "18:30"]),
+        (&["at=-6"][..], &["-t", "-6"][..]),
+        (&["at=18:30"], &["-t", "18:30"]),
+        (&["-t", "18:30", "at=-6"], &["-t", "18:30", "-t", "-6"]),
         (
-            &["-t", "18:30", "occur_time=-6"],
-            &["-t", "18:30", "-t", "-6"],
-        ),
-        (
-            &["occur_time=18:30", "wake_time=+30"],
+            &["at=18:30", "wake_time=+30"],
             &["-t", "18:30", "wake_time=+30"],
         ),
     ] {
@@ -556,7 +549,7 @@ fn full_day_wins_over_an_occur_time_key() {
         let logged = |field: &str, rest: &[&str]| {
             run_cli(&[&["occur", field, "-D"], rest].concat(), &db).expect("occur -D");
             let e = datum_core::test_util::logged_entries(&db, field).remove(0);
-            (e.occur_time.unwrap(), e.data)
+            (e.at.unwrap(), e.data)
         };
         let twin = logged("flags", flags);
         assert_eq!(twin.0.uncertainty.as_deref(), Some("P1D"), "{flags:?}");
@@ -565,7 +558,7 @@ fn full_day_wins_over_an_occur_time_key() {
 }
 
 /// da-4fyb: a date-only entry slugs on the bare local date, not on the
-/// midnight timestamp its `occur_time` happens to store. `%occur_time%`
+/// midnight timestamp its `at` happens to store. `%at%`
 /// interpolation is what builds the default slug, and a `T00:00:00.000Z`
 /// suffix there reads as a real time-of-day the entry does not have — and,
 /// east of UTC, names the wrong calendar day.
@@ -600,11 +593,7 @@ fn full_day_slugs_on_bare_date() {
         e.slug.as_str(),
         format!(
             "timed_slug:{}",
-            e.occur_time
-                .as_ref()
-                .unwrap()
-                .utc
-                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            e.at.as_ref().unwrap().utc.format("%Y-%m-%dT%H:%M:%S%.3fZ")
         ),
     );
 }
@@ -629,13 +618,12 @@ fn full_day_flag_accepted() {
     // off-by-one near midnight).
     run_cli(&["occur", "event", "-d", "2024-04-23"], &db).expect("occur -d DATE");
     let e = &datum_core::test_util::logged_entries(&db, "event")[0];
-    let local_date = e
-        .occur_time
-        .as_ref()
-        .unwrap()
-        .utc
-        .with_timezone(&chrono::Local)
-        .date_naive();
+    let local_date =
+        e.at.as_ref()
+            .unwrap()
+            .utc
+            .with_timezone(&chrono::Local)
+            .date_naive();
     assert_eq!(
         local_date,
         chrono::NaiveDate::from_ymd_opt(2024, 4, 23).unwrap(),
@@ -872,7 +860,7 @@ fn relative_time_beside_a_named_day_needs_a_clock() {
         run_cli(&[&["occur", "x"], flags].concat(), &db).expect("a clock, or no day");
     }
     let at = |e: &datum_core::entry::Entry| {
-        let t = e.occur_time.as_ref().unwrap().local_time();
+        let t = e.at.as_ref().unwrap().local_time();
         t.format("%F %R").to_string()
     };
     assert_eq!(logged().len(), 4);
@@ -884,23 +872,23 @@ fn relative_time_beside_a_named_day_needs_a_clock() {
     assert!(logged().iter().any(|e| at(e).starts_with("2026-09-30")));
 }
 
-/// da-johpu: a relative `occur_time=` is one more `-t ±N` to the flags beside
-/// it. It shifted the midnight a day alone is stored as, so `-y occur_time=-6`
+/// da-johpu: a relative `at=` is one more `-t ±N` to the flags beside
+/// it. It shifted the midnight a day alone is stored as, so `-y at=-6`
 /// logged 23:54 two days back; it is refused where that `-t` is, by whichever
 /// way the key gets its value. `-D` names no day, and `update`'s anchor is
 /// the entry's own time, a clock.
 #[test]
-fn relative_occur_time_key_beside_a_named_day_needs_a_clock() {
+fn relative_at_key_beside_a_named_day_needs_a_clock() {
     let db = fresh_db();
     let logged = || datum_core::test_util::logged_entries(&db, "x");
 
     for args in [
-        &["-y", "occur_time=-6"][..],
-        &["-d", "2026-10-05", "occur_time=-6"],
-        &["-t", "yesterday", "occur_time=+90"],
-        &["-y", "-k", "occur_time=-6"],
-        &["-y", "-k", "occur_time", "--", "-6"],
-        &["-y", r#"occur_time="-6""#],
+        &["-y", "at=-6"][..],
+        &["-d", "2026-10-05", "at=-6"],
+        &["-t", "yesterday", "at=+90"],
+        &["-y", "-k", "at=-6"],
+        &["-y", "-k", "at", "--", "-6"],
+        &["-y", r#"at="-6""#],
     ] {
         let argv = [&["occur", "x"], args].concat();
         let err = run_cli(&argv, &db).expect_err(&argv.join(" "));
@@ -912,15 +900,15 @@ fn relative_occur_time_key_beside_a_named_day_needs_a_clock() {
     assert_eq!(logged().len(), 0);
 
     for args in [
-        &["-d", "2026-10-05", "-t", "18:30", "occur_time=-6"][..],
-        &["-d", "2026-10-06", "occur_time=18:30"],
-        &["occur_time=-6"],
-        &["-D", "occur_time=-90"],
+        &["-d", "2026-10-05", "-t", "18:30", "at=-6"][..],
+        &["-d", "2026-10-06", "at=18:30"],
+        &["at=-6"],
+        &["-D", "at=-90"],
     ] {
         run_cli(&[&["occur", "x"], args].concat(), &db).expect("a clock, or no day");
     }
     let at = |e: &datum_core::entry::Entry| {
-        let t = e.occur_time.as_ref().unwrap().local_time();
+        let t = e.at.as_ref().unwrap().local_time();
         t.format("%F %R").to_string()
     };
     assert_eq!(logged().len(), 4);
@@ -929,7 +917,7 @@ fn relative_occur_time_key_beside_a_named_day_needs_a_clock() {
     }
 
     let hid = |want| logged().into_iter().find(|e| at(e) == want).unwrap().hid;
-    run_cli(&["update", &hid("2026-10-05 18:24"), "occur_time=-6"], &db).expect("update");
+    run_cli(&["update", &hid("2026-10-05 18:24"), "at=-6"], &db).expect("update");
     assert!(logged().iter().any(|e| at(e) == "2026-10-05 18:18"));
 }
 
@@ -949,7 +937,7 @@ fn flag_and_tail_compose_their_time_flags_as_occur_does() {
         run_cli(&[&["flag", "f"], flags].concat(), &db).expect("flag");
         let at = |field| {
             let e = datum_core::test_util::logged_entries(&db, field).remove(0);
-            e.occur_time.unwrap()
+            e.at.unwrap()
         };
         let argv = [&["datum", "tail"], flags].concat();
         let argv = argv.iter().map(|s| s.to_string()).collect();
@@ -1288,7 +1276,7 @@ fn dur_takes_plus_minus_wherever_time_does() {
         let db = fresh_db();
         run_cli(&["occur", "run", "-t", t], &db).unwrap_or_else(|e| panic!("-t {t}: {e}"));
         let entry = &datum_core::test_util::logged_entries(&db, "run")[0];
-        let at = entry.occur_time.as_ref().expect("-t places the entry");
+        let at = entry.at.as_ref().expect("-t places the entry");
         assert_eq!(at.uncertainty.as_deref(), Some("PT5M"), "-t {t}");
     }
     for argv in [
@@ -1330,10 +1318,10 @@ fn dur_uncertainty_without_a_duration_is_rejected() {
 /// The same rule on the occur side: `-T` makes a timeless entry, which has
 /// no instant for an uncertainty to qualify.
 #[test]
-fn occur_time_uncertainty_without_a_time_is_rejected() {
+fn at_uncertainty_without_a_time_is_rejected() {
     let db = fresh_db();
-    let err = run_cli(&["add", "foo", "-T", "occur_time_uncertainty=PT5M"], &db)
-        .expect_err("occur_time_uncertainty= on a timeless entry must fail");
+    let err = run_cli(&["add", "foo", "-T", "at_uncertainty=PT5M"], &db)
+        .expect_err("at_uncertainty= on a timeless entry must fail");
     assert!(
         err.to_string().contains("needs a time"),
         "unhelpful error: {err}"

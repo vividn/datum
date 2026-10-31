@@ -2,7 +2,7 @@
 //
 // `occur coffee -y` printed `00:00 coffee`. The entry never claimed to
 // have happened at midnight: midnight is the anchor a date-only entry is
-// stored at, and the row says so in `occur_time_uncertainty` — `P1D`, an
+// stored at, and the row says so in `at_uncertainty` — `P1D`, an
 // ISO-8601 duration meaning "precise to one day". The CLI reads that field
 // and prints the bare date; the browser formatted a clock unconditionally
 // and invented a time of day for every entry logged into the past (da-kb8p).
@@ -43,13 +43,13 @@ describe('the time an entry is rendered with', () => {
 			// honouring this column, so a test that did not read it would be
 			// asserting against a guess.
 			const [water, tea, coffee] = await entries(3);
-			assert.equal(coffee.occur_time.uncertainty, 'P1D', 'the -y entry lost its day-precision');
-			assert.equal(tea.occur_time.uncertainty, undefined, 'the -t entry gained an uncertainty');
-			assert.equal(water.occur_time.uncertainty, 'PT5M', 'the ±5m entry lost its uncertainty');
+			assert.equal(coffee.at.uncertainty, 'P1D', 'the -y entry lost its day-precision');
+			assert.equal(tea.at.uncertainty, undefined, 'the -t entry gained an uncertainty');
+			assert.equal(water.at.uncertainty, 'PT5M', 'the ±5m entry lost its uncertainty');
 
 			// The zone is UTC (support/app.mjs), so the stored instant's date
 			// is the date the entry names.
-			const yesterday = coffee.occur_time.utc.slice(0, 10);
+			const yesterday = coffee.at.utc.slice(0, 10);
 
 			const tail = await run(['tail']);
 			assert.equal(tail.code, 0, tail.stderr);

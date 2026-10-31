@@ -15,7 +15,7 @@ fn live_rows(db: &datum_core::db::Db) -> Vec<(String, String, Option<String>, Op
         .prepare(
             // The rows a command LOGGED: a field's TRACK document
             // (da-c8mh) declares it and is not one of them.
-            "SELECT field, occur_time, state, data \
+            "SELECT field, at, state, data \
              FROM entries WHERE deleted_at IS NULL \
                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias') \
              ORDER BY rowid",
@@ -36,7 +36,7 @@ fn live_rows(db: &datum_core::db::Db) -> Vec<(String, String, Option<String>, Op
 
 /// Section O — `oov` round-trip:
 /// `dm switch environment outside , switch body vertical` writes two
-/// rows with the same `occur_time`, distinct fields, distinct states.
+/// rows with the same `at`, distinct fields, distinct states.
 #[test]
 fn oov_full_invocation_writes_two_rows_atomically() {
     let db = fresh_db();
@@ -57,7 +57,7 @@ fn oov_full_invocation_writes_two_rows_atomically() {
 
     let rows = live_rows(&db);
     assert_eq!(rows.len(), 2, "expected two rows from comma-split multi");
-    // Shared occur_time.
+    // Shared at.
     assert_eq!(rows[0].1, rows[1].1);
     let fields: Vec<&str> = rows.iter().map(|r| r.0.as_str()).collect();
     assert!(fields.contains(&"environment"));

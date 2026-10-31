@@ -150,7 +150,7 @@ fn install_creates_the_index_and_uninstall_drops_everything() {
 /// v2 reduces by TIME (occur time), not by when the entry was typed: a
 /// backdated occurrence logged afterwards does not take over `due`.
 #[test]
-fn the_latest_occurrence_by_occur_time_sets_due() {
+fn the_latest_occurrence_by_at_sets_due() {
     let db = fresh_db();
     install_chores(&db);
     run(

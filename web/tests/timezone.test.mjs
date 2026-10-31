@@ -152,7 +152,7 @@ test('a load in another zone asks once: no keeps the stored zone and is not aske
 		await input.fill('occur coffee');
 		await input.press('Enter');
 		const coffee = await until(() => app.entries(), (rows) => rows.some((e) => e.field === 'coffee'));
-		assert.equal(coffee.find((e) => e.field === 'coffee').occur_time.timezone, 'Asia/Tokyo');
+		assert.equal(coffee.find((e) => e.field === 'coffee').at.timezone, 'Asia/Tokyo');
 		assert.equal(await dialog.count(), 0, 'not asked again');
 		assert.deepEqual(app.errors, []);
 	}, BERLIN);
@@ -176,7 +176,7 @@ test('yes on a load logs the device zone, and a log asked then follows it', asyn
 		await input.press('Enter');
 		await dialog.getByRole('button', YES).click();
 		const rows = await until(() => app.entries(), (es) => es.some((e) => e.field === 'coffee'));
-		assert.equal(rows.find((e) => e.field === 'coffee').occur_time.timezone, 'Europe/Berlin');
+		assert.equal(rows.find((e) => e.field === 'coffee').at.timezone, 'Europe/Berlin');
 		assert.equal((await stored(app))[0], 'Europe/Berlin');
 		assert.deepEqual(app.errors, []);
 	}, BERLIN);

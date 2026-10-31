@@ -37,7 +37,7 @@ fn live_rows(db: &PathBuf) -> Vec<(String, String, Option<String>, Option<String
         .prepare(
             // The rows a command LOGGED: a field's TRACK document (da-c8mh)
             // declares it and is not one of them.
-            "SELECT field, occur_time, state, data \
+            "SELECT field, at, state, data \
              FROM entries WHERE deleted_at IS NULL \
                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias') \
              ORDER BY rowid",
@@ -90,7 +90,7 @@ fn binary_same_field_two_switches_merges_to_parallel_state() {
 }
 
 /// Acceptance #2: `dm occur foo , occur bar` writes two rows with the
-/// same `occur_time` and distinct fields.
+/// same `at` and distinct fields.
 #[test]
 fn binary_two_occurs_different_fields_yields_two_rows() {
     let db = tmp_db();
@@ -100,7 +100,7 @@ fn binary_two_occurs_different_fields_yields_two_rows() {
 
     let rows = live_rows(&db);
     assert_eq!(rows.len(), 2, "expected two rows, got {rows:?}");
-    assert_eq!(rows[0].1, rows[1].1, "shared occur_time");
+    assert_eq!(rows[0].1, rows[1].1, "shared at");
     let fields: Vec<&str> = rows.iter().map(|r| r.0.as_str()).collect();
     assert!(fields.contains(&"foo") && fields.contains(&"bar"));
 }
@@ -294,7 +294,7 @@ fn binary_per_side_show_flags_attach_to_own_row() {
 }
 
 /// da-wie4 companion: when two sides merge into one row (same field +
-/// occur_time), the *leftmost* contributing side's flags drive the
+/// at), the *leftmost* contributing side's flags drive the
 /// merged row's render — `--show none` on the left silences the whole
 /// merged row even though the right side asked for `--show all`.
 ///
@@ -434,7 +434,7 @@ fn minute(db: &PathBuf, field: &str) -> i64 {
     Connection::open(db)
         .expect("open db")
         .query_row(
-            "SELECT strftime('%s', occur_time) / 60 FROM entries \
+            "SELECT strftime('%s', at) / 60 FROM entries \
              WHERE deleted_at IS NULL AND field = ?1 ORDER BY rowid DESC LIMIT 1",
             [field],
             |r| r.get(0),

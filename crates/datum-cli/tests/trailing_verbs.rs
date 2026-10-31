@@ -13,7 +13,7 @@ use serde_json::json;
 
 fn newest(db: &Db, field: &str) -> Entry {
     let mut rows = logged_entries(db, field);
-    rows.sort_by_key(|e| e.occur_time.as_ref().map(|t| t.utc));
+    rows.sort_by_key(|e| e.at.as_ref().map(|t| t.utc));
     rows.pop().unwrap_or_else(|| panic!("no {field} entry"))
 }
 

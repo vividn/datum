@@ -5,7 +5,7 @@
 
 use rusqlite::Connection;
 
-use super::support::{has_column, table_exists};
+use super::support::{has_column, table_exists, with_live_columns, RENAMED_COLUMNS};
 
 use crate::db::SETTING_FIELD;
 use crate::error::{DatumError, Result};
@@ -95,8 +95,7 @@ pub(super) fn m73_to_74_check_kept(conn: &Connection) -> Result<()> {
     if !table_exists(conn, "entries")? || !table_exists(conn, "ops")? {
         return Ok(());
     }
-    conn.execute_batch(crate::db::CHECK_KEPT_SQL)?;
-    Ok(())
+    with_live_columns(conn, || Ok(conn.execute_batch(crate::db::CHECK_KEPT_SQL)?))
 }
 
 /// Reverse v73→v74. Local and derived: the next `check` reads everything.
@@ -148,4 +147,138 @@ pub(super) fn down_75_to_74_field_deciding_index(conn: &Connection) -> Result<()
                AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));",
     )?;
     Ok(())
+}
+
+/// The index names that said the old name, with what each indexes. The column
+/// rename carries an index's definition along, and not its name.
+const AT_INDEXES: &[(&str, &str, &str)] = &[
+    (
+        "entries_field_occurtime",
+        "entries_field_at_unique",
+        "UNIQUE INDEX NAME
+    ON entries (field, TIME)
+    WHERE TIME IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+      AND state IS NOT NULL",
+    ),
+    (
+        "entries_field_occur",
+        "entries_field_at",
+        "INDEX NAME
+    ON entries (field, TIME DESC)",
+    ),
+    (
+        "entries_live_field_occur",
+        "entries_live_field_at",
+        "INDEX NAME
+    ON entries (field, TIME, slug)
+    WHERE deleted_at IS NULL",
+    ),
+    (
+        "entries_occur_time",
+        "entries_at",
+        "INDEX NAME
+    ON entries (TIME, slug)
+    WHERE deleted_at IS NULL",
+    ),
+];
+
+/// Give each of `AT_INDEXES` the name a schema uses for it, on its `time` column.
+fn rename_at_indexes(conn: &Connection, up: bool) -> Result<()> {
+    for (old, new, shape) in AT_INDEXES {
+        let (gone, name, time) = match up {
+            true => (old, new, "at"),
+            false => (new, old, "occur_time"),
+        };
+        let shape = shape.replace("NAME", name).replace("TIME", time);
+        conn.execute_batch(&format!("DROP INDEX IF EXISTS {gone}; CREATE {shape};"))?;
+    }
+    Ok(())
+}
+
+/// Each `conflicts` that names `from` as a key names `to` instead. The column
+/// is every copy's derivation from the ops, which now read as `at`, and `datum
+/// check sync` compares the two.
+fn rename_conflict_key(conn: &Connection, from: &str, to: &str) -> Result<()> {
+    let rows: Vec<(String, String)> = conn
+        .prepare("SELECT hid, conflicts FROM entries WHERE conflicts IS NOT NULL")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    for (hid, conflicts) in rows {
+        let mut v: serde_json::Value = serde_json::from_str(&conflicts)?;
+        let Some(sides) = v.as_object_mut().and_then(|m| m.remove(from)) else {
+            continue;
+        };
+        v[to] = sides;
+        conn.execute(
+            "UPDATE entries SET conflicts = ?2 WHERE hid = ?1",
+            rusqlite::params![hid, crate::db::canonical_json(&v)],
+        )?;
+    }
+    Ok(())
+}
+
+/// What was read through a row's old names, kept beside it: each is read again.
+fn forget_row_hashes(conn: &Connection) -> Result<()> {
+    for sql in [
+        "DELETE FROM sync_row_hashes",
+        "DELETE FROM sync_rows_changed",
+        "DELETE FROM sync_state_sums",
+        "DELETE FROM sync_state_hashes",
+        "DELETE FROM check_kept",
+    ] {
+        if table_exists(conn, sql.rsplit(' ').next().unwrap_or_default())? {
+            conn.execute(sql, [])?;
+        }
+    }
+    conn.execute("DELETE FROM _meta WHERE key = 'sync_row_hashes'", [])?;
+    Ok(())
+}
+
+/// da-95avu: the entry's time is `at`, and its family with it. Renaming a
+/// column reads no row: `ALTER` rewrites the schema's text, the triggers and
+/// indexes among it. Four indexes are built again for their names, and the old
+/// names stay readable as virtual columns for SQL no migration can reach (see
+/// `schema.sql`). Rows are unchanged but for the key in `conflicts`.
+pub(super) fn m75_to_76_at(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? || !has_column(conn, "entries", "occur_time")? {
+        return Ok(());
+    }
+    for (old, new) in &RENAMED_COLUMNS[1..] {
+        conn.execute_batch(&format!(
+            "ALTER TABLE entries RENAME COLUMN {old} TO {new};
+             ALTER TABLE entries ADD COLUMN {old} GENERATED ALWAYS AS ({new}) VIRTUAL;"
+        ))?;
+    }
+    rename_at_indexes(conn, true)?;
+    rename_conflict_key(conn, "occur_time", "at")?;
+    forget_row_hashes(conn)
+}
+
+/// Reverse v75→v76. No command runs this: the tests walk down to stage an old
+/// file. An op signed since keeps saying `at`, which a v75 binary would read as
+/// an entry with no time, so for a person the way back is the `.pre-v75` copy.
+pub(super) fn down_76_to_75_at(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? || !has_column(conn, "entries", "at")? {
+        return Ok(());
+    }
+    // A kit's index on an old name is on its virtual column, and derived.
+    let on_old: Vec<String> = conn
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'entries'
+               AND sql LIKE '%occur_time%'",
+        )?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for index in on_old {
+        conn.execute_batch(&format!("DROP INDEX \"{index}\";"))?;
+    }
+    for (old, new) in &RENAMED_COLUMNS[1..] {
+        conn.execute_batch(&format!(
+            "ALTER TABLE entries DROP COLUMN {old};
+             ALTER TABLE entries RENAME COLUMN {new} TO {old};"
+        ))?;
+    }
+    rename_at_indexes(conn, false)?;
+    rename_conflict_key(conn, "at", "occur_time")?;
+    forget_row_hashes(conn)
 }

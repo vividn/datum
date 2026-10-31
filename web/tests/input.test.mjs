@@ -222,9 +222,9 @@ describe('the widget and the bar are two views of one command line', () => {
 			// on the line is 14:30 in what was stored.
 			const [entry] = await app.entries();
 			assert.match(
-				entry.occur_time.utc,
+				entry.at.utc,
 				/T14:30/,
-				`the pill did not reach a line run from the widget: ${JSON.stringify(entry.occur_time)}`
+				`the pill did not reach a line run from the widget: ${JSON.stringify(entry.at)}`
 			);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
@@ -325,7 +325,7 @@ describe('reversed', () => {
 			await page.locator(WIDGET).press('Enter');
 			await until(app.entries, (es) => es.some((e) => e.field === 'coffee'));
 			const entry = (await app.entries()).find((e) => e.field === 'coffee');
-			assert.match(entry.occur_time.utc, /T14:30/);
+			assert.match(entry.at.utc, /T14:30/);
 			assert.equal(await valueOf(page, WIDGET), '');
 			assert.deepEqual(app.errors, []);
 		});

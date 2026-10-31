@@ -388,7 +388,7 @@ mod tests {
     fn a_moved_time_is_old_to_new_on_the_info_line() {
         let before = coffee(json!({"shop": "corner"}));
         let mut after = before.clone();
-        after.occur_time = Some(at("09:30"));
+        after.at = Some(at("09:30"));
         let lines = echo(&before, &after, false);
         assert_eq!(lines.info, "09:00:00+0 → 09:30:00+0  coffee  ●");
         assert_eq!(lines.info_time, "09:00:00+0 → 09:30:00+0");
@@ -417,7 +417,7 @@ mod tests {
         );
         let mut after = before.clone();
         after.state = Some(json!("tired"));
-        after.occur_time = Some(at("09:30"));
+        after.at = Some(at("09:30"));
         after.data = Some(json!({"size": "small", "milk": "oat"}));
         // `undo` of that update: from `after` back to `before`.
         let lines = undone(&after, &before);
@@ -482,7 +482,7 @@ mod tests {
         let before = coffee(json!({"shop": "corner", "size": "large"}));
         let mut after = before.clone();
         after.data = Some(json!({"shop": "corner", "size": "small", "milk": "oat"}));
-        after.occur_time = Some(at("09:30"));
+        after.at = Some(at("09:30"));
         let lines = echo(&before, &after, true);
         let cyan = Outcome::Update.ansi_color();
         assert_eq!(

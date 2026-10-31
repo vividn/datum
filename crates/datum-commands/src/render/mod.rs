@@ -310,11 +310,11 @@ pub(crate) fn extract_with_context_at(
         &short_hid(&entry.hid),
     ));
 
-    let occur_uncertainty = entry.occur_uncertainty();
+    let at_uncertainty = entry.at_uncertainty();
     let occur = entry
-        .occur_time
+        .at
         .as_ref()
-        .map(|t| self::action::format_timestamp_ref(t, now, occur_uncertainty, reference_offset));
+        .map(|t| self::action::format_timestamp_ref(t, now, at_uncertainty, reference_offset));
     let create = Some(self::action::format_timestamp_ref(
         &self::action::synthesize_local_datumtime(entry.create_time),
         now,
@@ -480,7 +480,7 @@ pub struct Undid {
 /// `ON/OFF` by a state of `true` or `false`, `SWITCH` by any other; and `MOMENT`
 /// a point, with a state or none.
 pub fn shape(entry: &Entry) -> &'static str {
-    if entry.occur_time.is_none() {
+    if entry.at.is_none() {
         return "RECORD";
     }
     if entry
@@ -831,9 +831,9 @@ fn format_retime_line(
     let code = Outcome::Retime.ansi_color();
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     let after = entry
-        .occur_time
+        .at
         .as_ref()
-        .map(|t| self::action::format_timestamp(t, now, entry.occur_uncertainty()))
+        .map(|t| self::action::format_timestamp(t, now, entry.at_uncertainty()))
         .unwrap_or_else(|| "timeless".into()); // `retime -T`
     format!(
         "{} {} {} {} ⟶ {}",
@@ -1014,11 +1014,10 @@ fn build_rows(
             // P1D rows render a bare date (no clock, no offset) and
             // entries without the metric's stamp render nothing — neither
             // votes for the reference.
-            let occur_vote = e
-                .occur_time
-                .as_ref()
-                .filter(|_| e.occur_uncertainty() != Some("P1D"))
-                .map(|t| (t.offset_minutes, t.utc));
+            let occur_vote =
+                e.at.as_ref()
+                    .filter(|_| e.at_uncertainty() != Some("P1D"))
+                    .map(|t| (t.offset_minutes, t.utc));
             let host_vote = |utc: chrono::DateTime<chrono::Utc>| {
                 let t = self::action::synthesize_local_datumtime(utc);
                 (t.offset_minutes, t.utc)
@@ -1026,7 +1025,7 @@ fn build_rows(
             let vote = match args.metric {
                 TimeMetricCol::Occur => occur_vote,
                 TimeMetricCol::Hybrid => {
-                    if e.occur_time.is_some() {
+                    if e.at.is_some() {
                         occur_vote
                     } else {
                         Some(host_vote(e.create_time))
@@ -1109,7 +1108,7 @@ pub(super) fn declared_key_values(e: &Entry, registry: Option<&SpecRegistry>) ->
     let Some(spec) = registry.and_then(|r| r.fields.get(&e.field)) else {
         return String::new();
     };
-    if e.occur_time.is_none() || datum_core::shape::has_state_badge(e.verb, e.dur.as_ref()) {
+    if e.at.is_none() || datum_core::shape::has_state_badge(e.verb, e.dur.as_ref()) {
         return String::new();
     }
     let mut keys = spec.declared_keys(None);
@@ -1592,7 +1591,7 @@ fn push_cell(buf: &mut String, body: &str, width: usize, right_align: bool) {
 
 /// Pretty JSON output for `datum get --pretty`.
 pub fn print_entry_pretty(entry: &Entry) -> serde_json::Result<()> {
-    println!("{}", datum_core::entry::surface_pretty(entry)?);
+    println!("{}", serde_json::to_string_pretty(entry)?);
     Ok(())
 }
 
@@ -1888,7 +1887,7 @@ pub fn render_snapshot(
         let fansi = colors::resolve_rgb(tf_color.as_deref(), &a.field).fg();
         let (state_rendered, state_vw) =
             render_now_state(Some(&a.state), &a.field, &tf_color, state_colors);
-        let entry_time = a.entry.occur_time.as_ref();
+        let entry_time = a.entry.at.as_ref();
         let time_str = match entry_time {
             None => String::new(),
             Some(t) => format_now_time(
@@ -1897,7 +1896,7 @@ pub fn render_snapshot(
                 now,
                 true,
                 &a.entry.verb,
-                a.entry.occur_uncertainty(),
+                a.entry.at_uncertainty(),
             ),
         };
         active.push(NowRow {
@@ -1931,14 +1930,7 @@ pub fn render_snapshot(
                 // render_now_view applied to its `stopped` bucket.
                 Some(e) => {
                     let local_t = in_now_zone(t, &now_dt);
-                    format_now_time(
-                        &local_t,
-                        &now_dt,
-                        now,
-                        false,
-                        &e.verb,
-                        e.occur_uncertainty(),
-                    )
+                    format_now_time(&local_t, &now_dt, now, false, &e.verb, e.at_uncertainty())
                 }
                 None => format_now_time_utc(t, &now_dt, now),
             },
@@ -2145,7 +2137,7 @@ fn format_now_time(
         return format!("{prefix} {}", local.format("%H:%M"));
     }
     // da-8y2q.2: legacy `Verb::Point` rows are now `Verb::Point` with
-    // an `occur_time` set (timeless legacy `add` rows have no time and
+    // an `at` set (timeless legacy `add` rows have no time and
     // never reach here). Same display rule.
     if !is_active && *verb == Verb::Point {
         t.local_time().format("@%H:%M").to_string()
@@ -2376,7 +2368,7 @@ mod tests {
             uncertainty: None,
         };
         let mut entry = sample_entry("coffee", Verb::Point, None);
-        entry.occur_time = Some(DatumTime {
+        entry.at = Some(DatumTime {
             utc: "2024-01-01T09:00:00Z".parse().unwrap(),
             ..before.clone()
         });
@@ -2694,7 +2686,7 @@ mod tests {
             assert_eq!(got, want, "{what}");
         }
         let mut timeless = sample_entry("f", Verb::Point, named.clone());
-        timeless.occur_time = None;
+        timeless.at = None;
         assert_eq!(shape(&timeless), "RECORD");
     }
 
@@ -2706,7 +2698,7 @@ mod tests {
         let _color = colors::ColorOverride::set(true);
         let state = serde_json::json!("outside");
         let mut entry = sample_entry("environment", Verb::Point, Some(state.clone()));
-        entry.occur_time = None;
+        entry.at = None;
         entry.dur = Some(datum_core::dur::Dur::moment());
         let columns = table_columns_with(
             std::slice::from_ref(&entry),

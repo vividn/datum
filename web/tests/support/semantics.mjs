@@ -65,7 +65,7 @@ export function semantics(raw) {
 /**
  * A slug with any timestamp in it replaced by `<t>`.
  *
- * The default id template is `%occur_time%`, so most slugs are a clock —
+ * The default id template is `%at%`, so most slugs are a clock —
  * `coffee:2026-03-16T09:15:00.000Z`, or the bare local date for a
  * whole-day row. Neither is comparable across two writes, and the case's
  * `time` block already checks the instant. What the mask leaves behind is
@@ -86,7 +86,7 @@ export function fromBackupRow(row) {
 		slug: row.slug,
 		rawInput: row.raw_input,
 		aliasChain: row.alias_chain,
-		occurUtc: row.occur_time.utc,
+		occurUtc: row.at.utc,
 		createUtc: row.create_time
 	});
 }

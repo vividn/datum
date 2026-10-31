@@ -1,15 +1,15 @@
 //! Bulk retime paths.
 //!
-//! Post-pivot the entry's time-shape is just `occur_time` + `dur` — no
-//! end_time to slide. These methods retime `occur_time` and leave `dur`
-//! untouched — except `clear_occur_time` (`retime -T`), which makes a note.
+//! Post-pivot the entry's time-shape is just `at` + `dur` — no
+//! end_time to slide. These methods retime `at` and leave `dur`
+//! untouched — except `clear_at` (`retime -T`), which makes a note.
 //!
-//! da-5ns.4: when the row's `id_structure` references `%occur_time%`, a
+//! da-5ns.4: when the row's `id_structure` references `%at%`, a
 //! retime cascades into the slug. Each row goes through
 //! [`Db::save_existing_entry_with_auto_reinterp`] so a templated slug is
-//! re-derived against the new occur_time and the row is rekeyed in place.
+//! re-derived against the new at and the row is rekeyed in place.
 //! Rows without a templated slug (or whose template doesn't reference
-//! occur_time) stay put — the helper's slug-changed check is the gate.
+//! at) stay put — the helper's slug-changed check is the gate.
 
 use chrono::Duration;
 
@@ -23,7 +23,7 @@ use super::types::{RetimeFilter, Retimed};
 use super::Db;
 
 impl Db {
-    /// Retime matching rows to a fresh absolute `occur_time`, which
+    /// Retime matching rows to a fresh absolute `at`, which
     /// `new_start` makes from the time each row has now (da-jix52: `retime
     /// -t 1040` is 10:40 on the row's own day). Returns one
     /// [`Retimed`] per moved row — the entry plus the time it came from, so
@@ -47,7 +47,7 @@ impl Db {
         mut new_start: impl FnMut(&crate::time::DatumTime) -> Result<crate::time::DatumTime>,
     ) -> Result<Vec<Retimed>> {
         self.retime_with(filter, |e| {
-            if let Some(t) = e.occur_time.as_mut() {
+            if let Some(t) = e.at.as_mut() {
                 *t = new_start(t)?;
             }
             crate::timezone_field::keep_in_named_zone(e)?;
@@ -65,15 +65,15 @@ impl Db {
         select_retime_targets(self, filter)
     }
 
-    /// Shift matching rows' `occur_time` by `offset`. Atomic over the
+    /// Shift matching rows' `at` by `offset`. Atomic over the
     /// batch, same as [`Self::set_start_time`] (da-sunq).
     pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<Vec<Retimed>> {
         self.retime_with(filter, |e| {
-            if let Some(t) = e.occur_time.as_mut() {
+            if let Some(t) = e.at.as_mut() {
                 t.utc += offset;
                 // A raw `utc` mutation desyncs `offset_minutes` (see the
                 // DatumTime doc-comment); re-derive it so a cross-DST shift
-                // renders the intended wall-clock and rekeys %occur_time%
+                // renders the intended wall-clock and rekeys %at%
                 // slugs correctly. Propagates on unknown-tz.
                 t.refresh_offset()?;
             }
@@ -81,15 +81,15 @@ impl Db {
         })
     }
 
-    /// `retime -T` (da-1d0v2): take matching rows' `occur_time` away, making
+    /// `retime -T` (da-1d0v2): take matching rows' `at` away, making
     /// each the note `-T` logs. A state or a duration leaves a point
     /// (`Dur::moment()`), as `start -T` / `occur -T` store; the span and the
-    /// following state, which only a time can place, go. The default `%occur_time%` id becomes
+    /// following state, which only a time can place, go. The default `%at%` id becomes
     /// `%create_time%`, so the slug is `field:<create_time>c` as a timeless
     /// insert's is. Atomic over the batch, same as [`Self::set_start_time`].
-    pub fn clear_occur_time(&self, filter: &RetimeFilter) -> Result<Vec<Retimed>> {
+    pub fn clear_at(&self, filter: &RetimeFilter) -> Result<Vec<Retimed>> {
         self.retime_with(filter, |e| {
-            e.occur_time = None;
+            e.at = None;
             e.following_state = None;
             e.dur = (e.state.is_some() || e.dur.is_some()).then(crate::dur::Dur::moment);
             if matches!(e.id_structure.as_deref(), Some("%occur_time%" | "%at%")) {
@@ -112,10 +112,10 @@ impl Db {
             |_| {
                 let (mut rows, mut befores) = (Vec::new(), Vec::new());
                 for mut e in select_retime_targets(self, filter)? {
-                    // Targets always carry an occur_time (the selector
+                    // Targets always carry an at (the selector
                     // excludes timeless rows), so the `before` half of the
                     // pair is always there to render.
-                    befores.push(e.occur_time.clone());
+                    befores.push(e.at.clone());
                     let old_slug = e.slug.clone();
                     change(&mut e)?;
                     rows.push((old_slug, e));
@@ -182,13 +182,12 @@ impl Db {
 /// absolute (`set_start_time`) and offset (`update_times`)
 /// paths so the SQL surface stays in one place.
 ///
-/// Timeless rows (`occur_time IS NULL`, slug `field:<create_time>c`) are
+/// Timeless rows (`at IS NULL`, slug `field:<create_time>c`) are
 /// excluded: retime moves an existing time, and giving a timeless row one
-/// would contradict the `occur_time IS NULL` marker the state/timeline views
+/// would contradict the `at IS NULL` marker the state/timeline views
 /// key on (da-r17h). Use `datum update` to attach a time to a timeless entry.
 fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
-    let mut sql =
-        String::from("SELECT * FROM entries WHERE deleted_at IS NULL AND occur_time IS NOT NULL");
+    let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL AND at IS NOT NULL");
     let mut bindings: Vec<String> = Vec::new();
 
     if let Some(needle) = filter.slug_or_hid {
@@ -209,11 +208,11 @@ fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
         bindings.push(field.to_string());
     }
     if let Some(after) = filter.after_utc {
-        sql.push_str(" AND occur_time >= ?");
+        sql.push_str(" AND at >= ?");
         bindings.push(after.to_rfc3339());
     }
     if let Some(before) = filter.before_utc {
-        sql.push_str(" AND occur_time <= ?");
+        sql.push_str(" AND at <= ?");
         bindings.push(before.to_rfc3339());
     }
 
@@ -243,11 +242,11 @@ mod tests {
         }
     }
 
-    /// da-5ns.4: when `id_structure` references `%occur_time%`, retiming
+    /// da-5ns.4: when `id_structure` references `%at%`, retiming
     /// the entry must rekey the row in place (hid preserved, slug
     /// updated to track the new timestamp).
     #[test]
-    fn retime_rekeys_when_id_structure_references_occur_time() {
+    fn retime_rekeys_when_id_structure_references_at() {
         let db = Db::open_in_memory().unwrap();
         let mut e = Entry::new(
             "nap",
@@ -258,7 +257,7 @@ mod tests {
             None,
             "d1",
         );
-        e.id_structure = Some("%occur_time%".to_string());
+        e.id_structure = Some("%at%".to_string());
         let hid = e.hid.clone();
         db.insert_entry(&e).unwrap();
         // Stamp the templated slug post-insert so we start from the
@@ -285,7 +284,7 @@ mod tests {
     /// `set_start_time` (the `--time` retime path) must
     /// also trigger slug re-interpolation against the templated id.
     #[test]
-    fn set_start_time_rekeys_when_template_references_occur_time() {
+    fn set_start_time_rekeys_when_template_references_at() {
         let db = Db::open_in_memory().unwrap();
         let mut e = Entry::new(
             "coffee",
@@ -296,7 +295,7 @@ mod tests {
             None,
             "d1",
         );
-        e.id_structure = Some("%occur_time%".to_string());
+        e.id_structure = Some("%at%".to_string());
         let hid = e.hid.clone();
         db.insert_entry(&e).unwrap();
         let stamped_slug = Slug("coffee:2024-01-01T10:00:00.000Z".to_string());
@@ -387,7 +386,7 @@ mod tests {
             "the relationship must survive the retime",
         );
         assert_eq!(
-            after.occur_time.as_ref().unwrap().utc,
+            after.at.as_ref().unwrap().utc,
             seed_dt("2024-01-01T09:30:00Z").utc,
             "the retime itself must still apply",
         );
@@ -415,7 +414,7 @@ mod tests {
         // moves its slug off the contested one.
         db.conn()
             .execute(
-                "UPDATE entries SET id_structure = '%occur_time%' WHERE hid = ?1",
+                "UPDATE entries SET id_structure = '%at%' WHERE hid = ?1",
                 rusqlite::params![winner.hid],
             )
             .unwrap();
@@ -438,7 +437,7 @@ mod tests {
     }
 
     /// da-bgq2: the retime paths report the move, not a count — each
-    /// moved row comes back paired with the `occur_time` it left, which
+    /// moved row comes back paired with the `at` it left, which
     /// is what the RETIME line renders as `before ⟶ after`.
     #[test]
     fn retime_reports_before_and_after_per_row() {
@@ -463,7 +462,7 @@ mod tests {
         assert_eq!(moved[0].entry.hid, e.hid);
         assert_eq!(moved[0].before.utc, seed_dt("2024-01-01T08:00:00Z").utc);
         assert_eq!(
-            moved[0].entry.occur_time.as_ref().unwrap().utc,
+            moved[0].entry.at.as_ref().unwrap().utc,
             seed_dt("2024-01-01T09:00:00Z").utc,
         );
 
@@ -477,19 +476,19 @@ mod tests {
             seed_dt("2024-01-01T09:00:00Z").utc,
             "the absolute path reports where the row came from too",
         );
-        assert_eq!(moved[0].entry.occur_time.as_ref().unwrap().utc, target.utc);
+        assert_eq!(moved[0].entry.at.as_ref().unwrap().utc, target.utc);
     }
 
     /// da-sunq: a mid-batch failure must roll back the whole batch.
     /// Two rows of one field retimed to the same absolute instant — the
-    /// second row trips the partial UNIQUE index on (field, occur_time),
+    /// second row trips the partial UNIQUE index on (field, at),
     /// and the row that was already shifted must come back untouched.
     #[test]
     fn retime_batch_rolls_back_on_midbatch_failure() {
         let db = Db::open_in_memory().unwrap();
         let t1 = seed_dt("2024-01-01T10:00:00Z");
         let t2 = seed_dt("2024-01-01T11:00:00Z");
-        // State-bearing (da-2fkr): `(field, occur_time)` is a single fact
+        // State-bearing (da-2fkr): `(field, at)` is a single fact
         // only for rows that assert a state, so a switch is what the
         // batch's second row can still collide against. Two stateless
         // points retimed onto one instant are two events and both land —
@@ -521,22 +520,19 @@ mod tests {
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
         let err = db.set_start_time(&filter, false, |_| Ok(new_start.clone()));
-        assert!(
-            err.is_err(),
-            "second row must collide on (field, occur_time)"
-        );
+        assert!(err.is_err(), "second row must collide on (field, at)");
 
         // Neither row may carry the new time — including the one that
         // was successfully shifted before the failure.
         let a_after = db.get_entry(&a.hid).unwrap();
         let b_after = db.get_entry(&b.hid).unwrap();
-        assert_eq!(a_after.occur_time.as_ref().unwrap().utc, t1.utc);
-        assert_eq!(b_after.occur_time.as_ref().unwrap().utc, t2.utc);
+        assert_eq!(a_after.at.as_ref().unwrap().utc, t1.utc);
+        assert_eq!(b_after.at.as_ref().unwrap().utc, t2.utc);
     }
 
     /// da-2fkr: the same batch, stateless. Two transactions retimed onto one
     /// day are two events — both move, nothing rolls back, and the rows stay
-    /// distinguishable by hid (their slugs are `%occur_time%`-free here, so
+    /// distinguishable by hid (their slugs are `%at%`-free here, so
     /// neither is rewritten).
     #[test]
     fn retime_batch_lands_two_stateless_points_on_one_instant() {
@@ -560,15 +556,15 @@ mod tests {
 
         for hid in [&a.hid, &b.hid] {
             let after = db.get_entry(hid).unwrap();
-            assert_eq!(after.occur_time.as_ref().unwrap().utc, new_start.utc);
+            assert_eq!(after.at.as_ref().unwrap().utc, new_start.utc);
             assert!(after.deleted_at.is_none());
             assert_eq!(after.superseded_by, None);
         }
     }
 
-    /// da-sunq item 3 / da-r17h: timeless rows (occur_time NULL, slug
+    /// da-sunq item 3 / da-r17h: timeless rows (at NULL, slug
     /// `note:<create_time>c`) are not retime targets — an absolute retime
-    /// over the field must not hand them an occur_time, since `occur_time
+    /// over the field must not hand them an at, since `at
     /// IS NULL` is what the state/timeline views key the timeless row on.
     #[test]
     fn retime_skips_timeless_rows() {
@@ -602,16 +598,16 @@ mod tests {
         assert_eq!(moved.len(), 1, "only the timed row is a retime target");
 
         let unset_after = db.get_entry(timeless_slug.as_str()).unwrap();
-        assert!(unset_after.occur_time.is_none());
+        assert!(unset_after.at.is_none());
         let timed_after = db.get_entry(&timed.hid).unwrap();
-        assert_eq!(timed_after.occur_time.unwrap().utc, new_start.utc);
+        assert_eq!(timed_after.at.unwrap().utc, new_start.utc);
     }
 
     /// da-1d0v2: `retime -T` makes a block-switch a timeless point about its
     /// state — the span and the following state go, the default id moves to
     /// `%create_time%`, and the hid stays.
     #[test]
-    fn clear_occur_time_makes_a_note() {
+    fn clear_at_makes_a_note() {
         let db = Db::open_in_memory().unwrap();
         let mut e = Entry::new(
             "mood",
@@ -623,19 +619,19 @@ mod tests {
             "d1",
         );
         e.following_state = Some(serde_json::json!("sad"));
-        e.id_structure = Some("%occur_time%".to_string());
+        e.id_structure = Some("%at%".to_string());
         db.insert_entry(&e).unwrap();
 
         let filter = RetimeFilter {
             slug_or_hid: Some(&e.hid.0),
             ..Default::default()
         };
-        let moved = db.clear_occur_time(&filter).unwrap();
+        let moved = db.clear_at(&filter).unwrap();
         assert_eq!(moved.len(), 1);
         assert_eq!(moved[0].before.utc, seed_dt("2024-01-01T10:00:00Z").utc);
 
         let after = db.get_entry(&e.hid.0).unwrap();
-        assert!(after.occur_time.is_none());
+        assert!(after.at.is_none());
         assert_eq!(after.verb, Verb::Point);
         assert_eq!(after.state, Some(serde_json::json!("happy")));
         assert!(after.dur.as_ref().is_some_and(crate::dur::Dur::is_moment));
@@ -648,11 +644,11 @@ mod tests {
     }
 
     /// Retime on a row whose `id_structure` does NOT reference
-    /// occur_time must leave the slug untouched (the slug-changed gate
+    /// at must leave the slug untouched (the slug-changed gate
     /// in [`Db::save_existing_entry_with_auto_reinterp_kind`] suppresses
     /// the rekey).
     #[test]
-    fn retime_leaves_slug_alone_when_template_does_not_reference_occur_time() {
+    fn retime_leaves_slug_alone_when_template_does_not_reference_at() {
         let db = Db::open_in_memory().unwrap();
         let e = Entry::new(
             "nap",
@@ -677,7 +673,7 @@ mod tests {
         assert_eq!(after.hid, hid);
     }
 
-    /// da-2nik: the SHIFT path (`update_times`) mutates `occur_time.utc`
+    /// da-2nik: the SHIFT path (`update_times`) mutates `at.utc`
     /// directly. When the shift crosses a DST boundary the stored
     /// `offset_minutes` desyncs unless `refresh_offset` re-derives it —
     /// leaving `local_time()` rendering the wrong wall-clock (off by the
@@ -708,7 +704,7 @@ mod tests {
         db.update_times(&filter, Duration::hours(2)).unwrap();
 
         let after = db.get_entry(&hid).unwrap();
-        let t = after.occur_time.unwrap();
+        let t = after.at.unwrap();
         assert_eq!(
             t.offset_minutes, 120,
             "offset must re-derive to CEST (UTC+2) after crossing DST"
@@ -721,8 +717,8 @@ mod tests {
         );
     }
 
-    /// da-2nik companion: `Entry::computed_start_time` walks `occur_time.utc`
-    /// BACK by the duration to derive the start (da-zwct: `occur_time` is a
+    /// da-2nik companion: `Entry::computed_start_time` walks `at.utc`
+    /// BACK by the duration to derive the start (da-zwct: `at` is a
     /// block's end). A block whose start crosses a DST boundary must render
     /// with the start's offset, not the end's stale one.
     #[test]

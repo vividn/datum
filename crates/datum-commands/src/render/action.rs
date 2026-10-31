@@ -329,7 +329,7 @@ pub fn probed_state_rows<'a>(
 ) -> FieldStateRows {
     let span = entries
         .into_iter()
-        .filter_map(|e| Some((e.leading_edge_utc()?, e.occur_time.as_ref()?.utc)))
+        .filter_map(|e| Some((e.leading_edge_utc()?, e.at.as_ref()?.utc)))
         .reduce(|(lo, hi), (l, h)| (lo.min(l), hi.max(h)));
     let Some((lo, hi)) = span else {
         return FieldStateRows::default();
@@ -344,7 +344,7 @@ fn compute_lead_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<Js
     if !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
-    // da-zwct: a block's duration PRECEDES `occur_time`, so the state
+    // da-zwct: a block's duration PRECEDES `at`, so the state
     // it walked in on sits just before `occur - dur`. `leading_edge_utc`
     // is `occur` for every shape that spans nothing.
     let at = entry.leading_edge_utc()?;
@@ -360,10 +360,10 @@ fn compute_trail_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<J
         return Some(to);
     }
     if matches!(entry.shape(), EntryShape::Block) {
-        // da-zwct: the block's END is the stored `occur_time` itself —
+        // da-zwct: the block's END is the stored `at` itself —
         // the duration ran up to it — so the trail probe needs no
         // arithmetic and no zone table at all.
-        let end = entry.occur_time.as_ref()?.utc;
+        let end = entry.at.as_ref()?.utc;
         return rows?.at(end, Some(&entry.hid));
     }
     entry_self_trail_state(entry)
@@ -387,7 +387,7 @@ fn compute_ongoing_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option
     if has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
-    let at = entry.occur_time.as_ref()?.utc;
+    let at = entry.at.as_ref()?.utc;
     rows?.at(at, Some(&entry.hid))
 }
 
@@ -403,11 +403,11 @@ pub fn format_state_group(
     spec: Option<&FieldSpec>,
     ctx: &RenderContext,
 ) -> Option<String> {
-    // Timeless rows (legacy `add` rows with no occur_time) keep the
+    // Timeless rows (legacy `add` rows with no at) keep the
     // NON_OCCUR glyph. The dispatch table in `datum_core::shape` doesn't
     // distinguish timeless points; we gate it here before consulting the
     // verb-keyed renderer split.
-    if entry.occur_time.is_none() && !has_state_badge(entry.verb, entry.dur.as_ref()) {
+    if entry.at.is_none() && !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return Some(render_timeless(entry, spec));
     }
     // State-bearing verbs render the `[LEAD][cell][TRAIL]` group; the
@@ -482,7 +482,7 @@ fn render_occur_body(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContex
 /// words it can show — rather than from a one-character coloured space
 /// that reads as padding.
 pub fn format_state_body(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
-    if entry.occur_time.is_none() && !draws_state_badge(entry) {
+    if entry.at.is_none() && !draws_state_badge(entry) {
         return render_timeless(entry, spec);
     }
     if draws_state_badge(entry) {
@@ -512,7 +512,7 @@ pub fn format_state_body(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderCo
 /// `lead + `[`format_state_body`]` + trail` is `format_state_group`,
 /// byte for byte, for every verb.
 pub fn format_lead_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
-    if entry.occur_time.is_none() && !draws_state_badge(entry) {
+    if entry.at.is_none() && !draws_state_badge(entry) {
         return String::new();
     }
     if draws_state_badge(entry) {
@@ -910,7 +910,7 @@ pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> Strin
 /// `2026-04-15`, etc.) is prepended so day-axis context isn't lost when
 /// scanning across rows.
 ///
-/// `uncertainty` is the row's `occur_time_uncertainty`. When it is `Some("P1D")`
+/// `uncertainty` is the row's `at_uncertainty`. When it is `Some("P1D")`
 /// the row is a date-only entry (per da-fc0l) and the stamp degrades to the
 /// bare local date `YYYY-MM-DD` — no clock, no offset, no relative-day
 /// prefix. Any other value is a `±N` uncertainty (da-lkji): the seconds,
@@ -1103,9 +1103,9 @@ pub(crate) fn info_parts(
 /// `--show json` carries it as `info_time`, so a surface can put the time on a
 /// line of its own without looking for where it ends in `info` (da-7xp82).
 pub fn format_info_time_at(entry: &Entry, now: &DatumTime) -> String {
-    match &entry.occur_time {
-        Some(t) => format_timestamp(t, now, entry.occur_uncertainty()),
-        // Hybrid fallback: row has no occur_time, so render create_time
+    match &entry.at {
+        Some(t) => format_timestamp(t, now, entry.at_uncertainty()),
+        // Hybrid fallback: row has no at, so render create_time
         // prefixed by a gray 'c' — same convention the table renderer
         // applies via `format_grey_prefix("c", ...)` in the
         // `time_hybrid` extractor (render/mod.rs). create_time is a

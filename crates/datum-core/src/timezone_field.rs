@@ -91,7 +91,7 @@ pub fn zone_it_names(entry: &Entry) -> Option<String> {
 /// Put an entry of this field in the zone it names. The instant stands, so an
 /// offset is believed as to when and the field as to where.
 pub fn keep_in_named_zone(entry: &mut Entry) -> Result<()> {
-    if let (Some(zone), Some(t)) = (zone_it_names(entry), entry.occur_time.as_mut()) {
+    if let (Some(zone), Some(t)) = (zone_it_names(entry), entry.at.as_mut()) {
         if t.timezone.as_ref() != Some(&zone) {
             *t = DatumTime {
                 uncertainty: t.uncertainty.take(),

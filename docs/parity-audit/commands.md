@@ -86,10 +86,10 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Original datum:** time args (`-d/-y/-t/-q/-z/-D/-T`), data args,
   newDocArgs. Point-in-time entry (`occurTime` only).
 - **Daydumb today:** `log_entry(Action::Occur, ...)` using `LogArgs`.
-  Stores `occur_time` only (no `dur`). State is left null; `derive_verb`
+  Stores `at` only (no `dur`). State is left null; `derive_verb`
   classifies (state=None, dur=None, fs=None) → `Verb::Point`. `DatumTime
   { utc, offset, tz, uncertainty }` captures uncertainty (d2). The v=20
-  schema's `occur_time_uncertainty` column carries an ISO-8601 duration
+  schema's `at_uncertainty` column carries an ISO-8601 duration
   (e.g. `PT5M` for ±5 minutes), replacing the v=19 (seconds, unit) pair.
 - **Missing in daydumb:** `--no-timestamp` (`-T`) flag has no surface
   equivalent — omitting a time always produces `now()` in daydumb.
@@ -147,7 +147,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Original datum:** field positional, state positional, `-L/--last-state`,
   `--moment`, duration/time/data args.
 - **Daydumb today:** `log_entry(Action::Switch, ...)`. `-m/--moment`
-  produces a zero-duration entry (`occur_time == computed_end_time`,
+  produces a zero-duration entry (`at == computed_end_time`,
   storage verb `Verb::Point`). `--last-state` dedupes when new state ==
   current (errors on redundant transitions). State normalization via
   `datum_core::state::normalize_state`. Without a duration derives to

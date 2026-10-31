@@ -23,7 +23,7 @@ use crate::time::datum_time::DatumTime;
 ///
 /// Honors `TZ` first (so per-invocation overrides like
 /// `TZ=America/Los_Angeles dm occur sleep` produce a matching
-/// `occur_time_tz`, paralleling chrono::Local's offset behavior), then
+/// `at_tz`, paralleling chrono::Local's offset behavior), then
 /// [`iana_time_zone::get_timezone`], then `/etc/localtime` resolved through
 /// its whole symlink chain.
 ///

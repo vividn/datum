@@ -7,7 +7,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
-const KIT: &str = "[kit]\nname = \"habits\"\n\n[[field]]\nname = \"did\"\nverb = \"occur\"\nid_template = \"%occur_time%_%habit%\"\n";
+const KIT: &str = "[kit]\nname = \"habits\"\n\n[[field]]\nname = \"did\"\nverb = \"occur\"\nid_template = \"%at%_%habit%\"\n";
 
 fn ok(dir: &TempDir, args: &[&str]) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_datum"))
@@ -38,18 +38,13 @@ fn a_reinstall_names_what_setup_changed_and_nothing_else() {
 
     ok(
         &dir,
-        &[
-            "setup",
-            "did",
-            "--id-template",
-            "%occur_time%_%habit%_edited",
-        ],
+        &["setup", "did", "--id-template", "%at%_%habit%_edited"],
     );
     let edited = install(&dir, KIT);
     assert!(
         edited.contains(
             "  - did: your id_template differs from the kit's \
-             (yours: \"%occur_time%_%habit%_edited\", kit's: \"%occur_time%_%habit%\"); \
+             (yours: \"%at%_%habit%_edited\", kit's: \"%at%_%habit%\"); \
              kept yours, --force takes the kit's\n"
         ),
         "{edited}"

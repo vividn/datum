@@ -56,11 +56,7 @@ fn switch_creates_entry_with_state() {
     assert_count!(db, "field", 1);
     let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", state: "newState");
-    let ts = entry
-        .occur_time
-        .as_ref()
-        .expect("switch anchors time_start")
-        .utc;
+    let ts = entry.at.as_ref().expect("switch anchors time_start").utc;
     assert!(
         entry.dur.is_none(),
         "bare switch (no duration, no --moment) does not derive time_end",
@@ -93,7 +89,7 @@ fn switch_prior_state_queryable_via_compilation() {
         .iter()
         .find(|e| e.state.as_ref() == Some(&json!("inside")))
         .expect("inside entry present");
-    let inside_ts = inside.occur_time.as_ref().unwrap().utc;
+    let inside_ts = inside.at.as_ref().unwrap().utc;
     let just_before_inside = inside_ts - chrono::Duration::seconds(1);
 
     assert_eq!(
@@ -162,7 +158,7 @@ fn switch_always_anchors_time_no_omit_timestamp_flag() {
         .find(|e| e.state.as_ref() == Some(&json!(false)))
         .expect("false entry present");
     assert!(
-        falsy.occur_time.is_some(),
+        falsy.at.is_some(),
         "daydumb always anchors time_start (no --omit-timestamp flag)",
     );
     assert_entry_matches!(falsy, field: "vacuum", verb: "switch", state: false);
@@ -193,7 +189,7 @@ fn switch_with_last_state_still_anchors_time() {
         .find(|e| e.state.as_ref() == Some(&json!("backend")))
         .expect("backend entry present");
     assert!(
-        backend.occur_time.is_some(),
+        backend.at.is_some(),
         "switch always anchors time_start; --last-state does not strip it",
     );
 }
@@ -211,7 +207,7 @@ fn switch_state_null_is_ignored() {
     let vacuum = &datum_core::test_util::logged_entries(&db, "vacuum")[0];
     assert_entry_matches!(vacuum, verb: "switch", state: "IGNORED");
 
-    let vacuum_ts = vacuum.occur_time.as_ref().unwrap().utc;
+    let vacuum_ts = vacuum.at.as_ref().unwrap().utc;
     assert_eq!(
         db.get_active_state("vacuum", vacuum_ts).unwrap(),
         json!("IGNORED")
@@ -238,7 +234,7 @@ fn switch_without_state_promotes_to_true() {
         Some(json!(true)),
         "null→true promotion fires for switch verbs without explicit state",
     );
-    let ts = entry.occur_time.as_ref().unwrap().utc;
+    let ts = entry.at.as_ref().unwrap().utc;
     assert_eq!(
         db.get_active_state("eat", ts).unwrap(),
         json!(true),
@@ -249,7 +245,7 @@ fn switch_without_state_promotes_to_true() {
 /// TS #8: "records a block of state when specifying duration".
 ///
 /// `switch ... 10m` emits a closed block that LASTED ten minutes up to
-/// the entry's time: `time_end = occur_time`, `time_start = occur - 10m`
+/// the entry's time: `time_end = at`, `time_start = occur - 10m`
 /// (da-zwct). During the block, state is the switched-to value.
 #[test]
 fn switch_dur_creates_block_ending_at_occur() {
@@ -266,7 +262,7 @@ fn switch_dur_creates_block_ending_at_occur() {
     assert_entry_matches!(entry, field: "project", verb: "block", state: "household");
     assert_eq!(entry.duration_seconds(), Some(10 * 60));
 
-    let te = entry.occur_time.as_ref().unwrap().utc;
+    let te = entry.at.as_ref().unwrap().utc;
     let ts = entry.computed_start_time().unwrap().utc;
     assert_eq!((te - ts).num_seconds(), 10 * 60);
 
@@ -346,7 +342,7 @@ fn switch_moment_produces_point_in_time_entry() {
         "-m must set dur to MOMENT, got {:?}",
         entry.dur
     );
-    entry.occur_time.as_ref().expect("occur_time set");
+    entry.at.as_ref().expect("at set");
     assert!(
         entry.computed_start_time().is_none(),
         "MOMENT carries no span to walk back over",
@@ -947,7 +943,7 @@ fn any_keys_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
 /// following_state="researching", verb=block-switch.
 ///
 /// Previously: side 0 promoted to `Stop`, side 1 dispatched as `Switch`,
-/// the two merged on shared occur_time = now − 14m into a Block row with
+/// the two merged on shared at = now − 14m into a Block row with
 /// `state=[false, "researching"]` and `following_state=NULL`.
 #[test]
 fn switch_chain_with_end_keyword_lands_block_switch_at_now() {
@@ -988,10 +984,10 @@ fn switch_chain_with_end_keyword_lands_block_switch_at_now() {
         "follow-on state set"
     );
     assert_eq!(e.duration_seconds(), Some(14 * 60), "dur=14m");
-    let occur = e.occur_time.as_ref().expect("occur_time set").utc;
+    let occur = e.at.as_ref().expect("at set").utc;
     assert!(
         occur >= before && occur <= after,
-        "occur_time is now (not back-dated): occur={occur}, window=[{before}, {after}]"
+        "at is now (not back-dated): occur={occur}, window=[{before}, {after}]"
     );
 }
 
@@ -1061,7 +1057,7 @@ fn switch_off_is_false_and_the_literal_is_quoted_or_str_marked() {
         let entries = datum_core::test_util::logged_entries(&db, "light");
         let off = entries
             .iter()
-            .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+            .max_by_key(|e| e.at.as_ref().map(|t| t.utc))
             .unwrap();
         assert_eq!(off.state, Some(json!(false)), "{words:?}");
         let now = chrono::Utc::now();
@@ -1088,7 +1084,7 @@ fn switch_on_is_true_and_the_literal_is_quoted_str_marked_or_string_state() {
         let entries = datum_core::test_util::logged_entries(&db, "work");
         let on = entries
             .iter()
-            .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+            .max_by_key(|e| e.at.as_ref().map(|t| t.utc))
             .unwrap();
         assert_eq!(on.state, Some(json!(true)), "{words:?}");
         assert_eq!(on.verb, Verb::Switch, "{words:?}");
@@ -1130,7 +1126,7 @@ fn switch_off_and_on_after_an_alias_for_switch_f_store_false_and_true() {
         let entries = datum_core::test_util::logged_entries(&db, "project");
         let last = entries
             .iter()
-            .max_by_key(|e| e.occur_time.as_ref().map(|t| t.utc))
+            .max_by_key(|e| e.at.as_ref().map(|t| t.utc))
             .unwrap();
         assert_eq!(last.state, Some(want), "{words:?}");
     }

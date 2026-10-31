@@ -220,11 +220,17 @@ fn lands_before(conn: &Connection, (_, line): &Line, field: &str, at: DateTime<U
             if !effect["dur"].is_null() {
                 return true;
             }
-            times.extend(effect["occur_time"]["utc"].as_str().map(str::to_string));
+            // A line an older datum queued says `occur_time`.
+            let time = [&effect["at"], &effect["occur_time"]];
+            times.extend(
+                time.iter()
+                    .find_map(|t| t["utc"].as_str())
+                    .map(str::to_string),
+            );
         }
         let row = conn
             .query_row(
-                "SELECT occur_time, dur FROM entries WHERE hid = ?1",
+                "SELECT at, dur FROM entries WHERE hid = ?1",
                 [op["hid"].as_str()],
                 |r| {
                     Ok((

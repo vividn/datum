@@ -78,13 +78,13 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     // A side that states its time keeps it, as its flags are scoped to it
     // (da-gh0 Rule 4, da-x34md); every other side takes the leftmost
     // side's time. We rebuild slug and content_hash for any side whose
-    // occur_time changed so the identity columns reflect the shared time.
+    // at changed so the identity columns reflect the shared time.
     let own_time: Vec<bool> = collected.iter().map(|(_, _, own)| *own).collect();
     let (entries, outputs): (Vec<_>, Vec<_>) =
         collected.into_iter().map(|(e, o, _)| (e, o)).unzip();
-    let normalized = normalize_shared_occur_time(entries, &own_time);
+    let normalized = normalize_shared_at(entries, &own_time);
 
-    // da-dayk: bucket per-side `OutputArgs` by `(field, occur_time)`
+    // da-dayk: bucket per-side `OutputArgs` by `(field, at)`
     // in first-appearance order — exactly how `merge_same_field_groups`
     // groups entries before insert. The leftmost contributing side's
     // flags drive the resulting merged row's render. The hid order
@@ -192,9 +192,9 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
 }
 
 /// Give every entry whose side stated no time of its own (`own_time`)
-/// the leftmost entry's `occur_time`; a side that stated one keeps it
+/// the leftmost entry's `at`; a side that stated one keeps it
 /// (da-gh0 Rule 4, da-x34md). Slug and content_hash both depend on
-/// occur_time, so they are rebuilt whenever we change the time. Entries with a non-templated
+/// at, so they are rebuilt whenever we change the time. Entries with a non-templated
 /// slug get the default `<field>:<timestamp>` rebuild; entries
 /// carrying an `id_structure` template are re-interpolated against
 /// the post-mutation state via [`datum_core::field_spec::interpolate`].
@@ -203,18 +203,18 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
 /// hand the collector a second, TRACK row to place a millisecond ahead of
 /// the shared instant; it now declares its field in its own
 /// `following_state`, so there is one kind of row to move.
-fn normalize_shared_occur_time(
+fn normalize_shared_at(
     mut entries: Vec<datum_core::entry::Entry>,
     own_time: &[bool],
 ) -> Vec<datum_core::entry::Entry> {
-    let Some(shared) = entries.iter().find_map(|e| e.occur_time.clone()) else {
+    let Some(shared) = entries.iter().find_map(|e| e.at.clone()) else {
         return entries;
     };
     for (entry, &own) in entries.iter_mut().zip(own_time) {
-        if own || entry.occur_time.as_ref().map(|t| &t.utc) == Some(&shared.utc) {
+        if own || entry.at.as_ref().map(|t| &t.utc) == Some(&shared.utc) {
             continue;
         }
-        entry.occur_time = Some(shared.clone());
+        entry.at = Some(shared.clone());
         // da-ivld: every entry now carries an id_structure; rebuild the
         // slug as `<field>:<body>` where body = interpolate(id_structure).
         if let Some(tmpl) = entry.id_structure.clone() {
@@ -586,7 +586,7 @@ mod tests {
         // v3 (da-5ns): bare positional under the Add/Note family is rejected
         // (the v=20 schema dropped the implicit `value` column). Stage the
         // note as a kv pair. da-r17h: `Action::Note` is inherently timeless
-        // (auto create_time id, no occur_time) — without an `occur_time`
+        // (auto create_time id, no at) — without an `at`
         // event the state compiler emits nothing for a Point row, which is
         // what the original "add-only ⇒ ignored" semantic relied on.
         args.rest = vec!["text=some text".to_string()];
@@ -798,8 +798,8 @@ mod tests {
         let entries = datum_core::test_util::logged_entries(&db, "coffee");
         let e = &entries[0];
         // da-ivld: no --id and no spec template ⇒ default-populate id_structure
-        // from the entry's occur_time. Slug stays `<field>:<formatted occur_time>`.
-        assert_eq!(e.id_structure.as_deref(), Some("%occur_time%"));
+        // from the entry's at. Slug stays `<field>:<formatted at>`.
+        assert_eq!(e.id_structure.as_deref(), Some("%at%"));
         assert!(e.slug.starts_with("coffee:"));
     }
 
@@ -823,7 +823,7 @@ mod tests {
     }
 
     // da-es84: end-to-end fixture. `occur field --id %occurTime --id %comment
-    // comment=abcdefg` must slug on BOTH id-keys — the occur_time ISO and the
+    // comment=abcdefg` must slug on BOTH id-keys — the at ISO and the
     // interpolated `comment` value — joined by `__`. Regression guard for the
     // multi-`--id`-collapse + un-interpolated-`%key` double bug.
     #[test]
@@ -848,14 +848,13 @@ mod tests {
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.id_structure.as_deref(), Some("%occurTime%__%comment%"));
-        // Slug body = <occur_time-iso>__abcdefg (both keys interpolated).
-        let occur_iso = e
-            .occur_time
-            .as_ref()
-            .unwrap()
-            .utc
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string();
+        // Slug body = <at-iso>__abcdefg (both keys interpolated).
+        let occur_iso =
+            e.at.as_ref()
+                .unwrap()
+                .utc
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string();
         assert_eq!(e.slug, format!("field:{occur_iso}__abcdefg"));
     }
 
@@ -1643,9 +1642,9 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_block("sleep", 0, 3600, "d1");
         let id = e.slug.clone();
-        // da-zwct: `occur_time` is the block's END; the hour it lasted
+        // da-zwct: `at` is the block's END; the hour it lasted
         // precedes it, so `computed_start_time` is the derived edge.
-        let t0_end = e.occur_time.as_ref().unwrap().utc;
+        let t0_end = e.at.as_ref().unwrap().utc;
         let t0_start = e.computed_start_time().unwrap().utc;
         let hash_before = e.content_hash.clone();
         db.insert_entry(&e).unwrap();
@@ -1654,7 +1653,7 @@ mod tests {
 
         let after = db.get_entry(&id).unwrap();
         let shift = chrono::Duration::minutes(-5);
-        assert_eq!(after.occur_time.as_ref().unwrap().utc, t0_end + shift);
+        assert_eq!(after.at.as_ref().unwrap().utc, t0_end + shift);
         assert_eq!(after.computed_start_time().unwrap().utc, t0_start + shift);
         // content_hash follows the new timestamps; modified_at moves too.
         assert_ne!(after.content_hash, hash_before);
@@ -1673,11 +1672,11 @@ mod tests {
         // interpretation doesn't muddle the test across timezones.
         let cutoff: chrono::DateTime<chrono::Utc> = "2026-04-01T00:00:00Z".parse().unwrap();
         let early = make_entry_at_utc("coffee", cutoff - chrono::Duration::days(2), "d1");
-        let early_start = early.occur_time.as_ref().unwrap().utc;
+        let early_start = early.at.as_ref().unwrap().utc;
         let late = make_entry_at_utc("coffee", cutoff + chrono::Duration::days(2), "d1");
-        let late_start = late.occur_time.as_ref().unwrap().utc;
+        let late_start = late.at.as_ref().unwrap().utc;
         let other = make_entry_at_utc("water", cutoff + chrono::Duration::days(3), "d1");
-        let other_start = other.occur_time.as_ref().unwrap().utc;
+        let other_start = other.at.as_ref().unwrap().utc;
         db.insert_entry(&early).unwrap();
         db.insert_entry(&late).unwrap();
         db.insert_entry(&other).unwrap();
@@ -1694,17 +1693,17 @@ mod tests {
         let late_after = db.get_entry(&late.slug).unwrap();
         let other_after = db.get_entry(&other.slug).unwrap();
         assert_eq!(
-            early_after.occur_time.as_ref().unwrap().utc,
+            early_after.at.as_ref().unwrap().utc,
             early_start,
             "pre-cutoff row must not shift"
         );
         assert_eq!(
-            late_after.occur_time.as_ref().unwrap().utc,
+            late_after.at.as_ref().unwrap().utc,
             late_start + chrono::Duration::hours(1),
             "post-cutoff row shifts +1h"
         );
         assert_eq!(
-            other_after.occur_time.as_ref().unwrap().utc,
+            other_after.at.as_ref().unwrap().utc,
             other_start,
             "other field must not shift"
         );
@@ -1724,9 +1723,9 @@ mod tests {
         // is after it, whatever the local hour — no midnight flake.
         let now = chrono::Utc::now();
         let old = make_entry_at_utc("coffee", now - chrono::Duration::days(5), "d1");
-        let old_start = old.occur_time.as_ref().unwrap().utc;
+        let old_start = old.at.as_ref().unwrap().utc;
         let recent = make_entry_at_utc("coffee", now, "d1");
-        let recent_start = recent.occur_time.as_ref().unwrap().utc;
+        let recent_start = recent.at.as_ref().unwrap().utc;
         db.insert_entry(&old).unwrap();
         db.insert_entry(&recent).unwrap();
 
@@ -1739,12 +1738,12 @@ mod tests {
         crate::commands::retime::retime(args, &db).unwrap();
 
         assert_eq!(
-            db.get_entry(&old.slug).unwrap().occur_time.unwrap().utc,
+            db.get_entry(&old.slug).unwrap().at.unwrap().utc,
             old_start,
             "five days back is before yesterday's midnight"
         );
         assert_eq!(
-            db.get_entry(&recent.slug).unwrap().occur_time.unwrap().utc,
+            db.get_entry(&recent.slug).unwrap().at.unwrap().utc,
             recent_start + chrono::Duration::hours(1),
             "today's row is after yesterday's midnight"
         );
@@ -1756,14 +1755,14 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("focus", 10_000, "d1");
         let id = e.slug.clone();
-        let t0 = e.occur_time.as_ref().unwrap().utc;
+        let t0 = e.at.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
         crate::commands::retime::retime(retime_args(Some(&id), "-30m"), &db).unwrap();
 
         let after = db.get_entry(&id).unwrap();
         assert_eq!(
-            after.occur_time.as_ref().unwrap().utc,
+            after.at.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(30)
         );
     }
@@ -1777,7 +1776,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("coffee", 10_000, "d1");
         let id = e.slug.clone();
-        let t0 = e.occur_time.as_ref().unwrap().utc;
+        let t0 = e.at.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
         let args = RetimeArgs {
@@ -1792,7 +1791,7 @@ mod tests {
 
         let after = db.get_entry(&e.hid).unwrap();
         assert_eq!(
-            after.occur_time.as_ref().unwrap().utc,
+            after.at.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(5)
         );
     }
@@ -1821,13 +1820,13 @@ mod tests {
         crate::commands::retime::retime(args, &db).unwrap();
         let after = chrono::Utc::now();
 
-        // da-ivld: occur_time template re-derives the slug; the stable
+        // da-ivld: at template re-derives the slug; the stable
         // hid is the only safe lookup after a retime.
         let row = db.get_entry(&e.hid).unwrap();
-        let t = row.occur_time.as_ref().unwrap().utc;
+        let t = row.at.as_ref().unwrap().utc;
         assert!(
             t >= before && t <= after,
-            "occur_time {t} not in [{before}, {after}]"
+            "at {t} not in [{before}, {after}]"
         );
     }
 
@@ -1855,7 +1854,7 @@ mod tests {
         let after = chrono::Utc::now();
 
         let row = db.get_entry(&hid).unwrap();
-        let t = row.occur_time.as_ref().unwrap().utc;
+        let t = row.at.as_ref().unwrap().utc;
         assert!(
             t >= before && t <= after,
             "bare retime should have stamped _LAST to now; got {t}"
@@ -1864,7 +1863,7 @@ mod tests {
 
     /// da-rorg: `-r` flag flips a `-t -N` time-arg into a relative shift.
     /// `retime <id> -r -t -5` is equivalent to `retime <id> -5` —
-    /// the entry's occur_time moves by -5 min from its current value,
+    /// the entry's at moves by -5 min from its current value,
     /// not from "now".
     #[test]
     fn retime_relative_flag_shifts_by_delta_from_now() {
@@ -1873,7 +1872,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("project", 50_000, "d1");
         let id = e.slug.clone();
-        let t0 = e.occur_time.as_ref().unwrap().utc;
+        let t0 = e.at.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
         let args = RetimeArgs {
@@ -1889,7 +1888,7 @@ mod tests {
 
         let after = db.get_entry(&id).unwrap();
         assert_eq!(
-            after.occur_time.as_ref().unwrap().utc,
+            after.at.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(5),
             "-r -t -5 should match `<id> -5`: shift by -5 min from current"
         );

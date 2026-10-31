@@ -229,7 +229,7 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
 
     let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert_eq!(e.shape(), EntryShape::Block);
-    assert!(e.occur_time.is_some());
+    assert!(e.at.is_some());
     assert!(e.dur.is_some());
     // Temporal keys get consumed — they don't survive into extra_data.
     assert!(
@@ -240,7 +240,7 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
         e.data
     );
 
-    // start_time only → ongoing semantic (occur_time set, no dur). Under
+    // start_time only → ongoing semantic (at set, no dur). Under
     // v3 (da-5ns) the storage layer collapses "ongoing" and "point" into
     // the same dur=None shape, so the row_mapper compat shim reads back
     // as EntryShape::Point. The observable invariant — start anchored,
@@ -248,7 +248,7 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     let db2 = fresh_db();
     run_cli(&["add", "nap", "start_time=13:55"], &db2).expect("add ongoing");
     let e2 = &datum_core::test_util::logged_entries(&db2, "nap")[0];
-    assert!(e2.occur_time.is_some(), "ongoing add anchors occur_time");
+    assert!(e2.at.is_some(), "ongoing add anchors at");
     assert!(e2.dur.is_none(), "ongoing add has no dur");
 
     // no temporal hints → point
@@ -256,30 +256,27 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     run_cli(&["add", "ping", "-t", "10:00"], &db3).expect("add point");
     let e3 = &datum_core::test_util::logged_entries(&db3, "ping")[0];
     assert_eq!(e3.shape(), EntryShape::Point);
-    // Explicit `-t` opts the add back into carrying an occur_time.
-    assert!(
-        e3.occur_time.is_some(),
-        "add with explicit -t must anchor occur_time"
-    );
+    // Explicit `-t` opts the add back into carrying an at.
+    assert!(e3.at.is_some(), "add with explicit -t must anchor at");
 }
 
 /// da-lxyw (regression, broke twice): a bare `datum add` with NO explicit
-/// time flag must be TIMELESS — `occur_time == None`. The absence of a time
+/// time flag must be TIMELESS — `at == None`. The absence of a time
 /// is the defining difference between `add` and `occur`; defaulting it to
 /// `now` (or `create_time` at the insert layer) silently turns every add
 /// into an occur.
 #[test]
-fn bare_note_has_no_occur_time() {
+fn bare_note_has_no_at() {
     let db = fresh_db();
     // da-r17h: the timeless freeform logger is now `note` (`add` requires an
-    // explicit id). A bare `note` (no -t) must be TIMELESS — `occur_time`
+    // explicit id). A bare `note` (no -t) must be TIMELESS — `at`
     // None — and slug on create_time.
     run_cli(&["note", "thing", "foo=bar"], &db).expect("bare note");
     let e = &datum_core::test_util::logged_entries(&db, "thing")[0];
     assert!(
-        e.occur_time.is_none(),
-        "bare `note` (no -t) must be timeless, got occur_time={:?}",
-        e.occur_time
+        e.at.is_none(),
+        "bare `note` (no -t) must be timeless, got at={:?}",
+        e.at
     );
     // The user payload still lands.
     assert_eq!(

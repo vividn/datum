@@ -2428,8 +2428,8 @@ mod tests {
             .filter(|e| e.field == "notes")
             .collect();
         assert_eq!(live.len(), 1);
-        let retimed = notes.occur_time.as_ref().unwrap().utc + chrono::Duration::hours(1);
-        assert_eq!(live[0].occur_time.as_ref().unwrap().utc, retimed);
+        let retimed = notes.at.as_ref().unwrap().utc + chrono::Duration::hours(1);
+        assert_eq!(live[0].at.as_ref().unwrap().utc, retimed);
         std::fs::remove_file(&path).ok();
     }
 

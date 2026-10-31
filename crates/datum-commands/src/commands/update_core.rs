@@ -247,7 +247,7 @@ pub fn update_batch_from_args(
                 spec.map(|s| s.key_types()).unwrap_or_default(),
             );
         }
-        let base = e.occur_time.clone().unwrap_or_else(|| {
+        let base = e.at.clone().unwrap_or_else(|| {
             let mut created = DatumTime {
                 utc: e.create_time,
                 ..DatumTime::now()
@@ -526,19 +526,17 @@ fn apply_mutation(
     if let Some(fs) = reserved.following_state {
         updated.following_state = Some(fs);
     }
-    if let Some(t) = reserved.occur_time {
+    if let Some(t) = reserved.at {
         // Base any relative offset (`-5m`, `now`) against the existing
-        // occur_time when present, falling back to wall-clock now.
-        let base = updated.occur_time.clone().unwrap_or_else(DatumTime::now);
-        updated.occur_time = Some(crate::commands::log_core::parse_reserved_occur_time(
-            &t, &base,
-        )?);
+        // at when present, falling back to wall-clock now.
+        let base = updated.at.clone().unwrap_or_else(DatumTime::now);
+        updated.at = Some(crate::commands::log_core::parse_reserved_at(&t, &base)?);
         // A time in another zone states it (da-n79py).
-        if updated.occur_time.as_ref().map(|t| &t.timezone) != Some(&base.timezone) {
+        if updated.at.as_ref().map(|t| &t.timezone) != Some(&base.timezone) {
             updated.zone_stated();
         }
     }
-    if sets_dur && updated.occur_time.is_none() {
+    if sets_dur && updated.at.is_none() {
         anyhow::bail!(crate::commands::log_core::TIMELESS_DUR);
     }
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
@@ -571,7 +569,7 @@ fn apply_data_key_rename(
                     anyhow::bail!("rekey mapping value for '{old_key}' must be a non-empty string")
                 }
             };
-            // The parser read a typed `occur_time` as `at`; a row may hold
+            // The parser read a typed `at` as `at`; a row may hold
             // a data key by that old name.
             let value = data_map.remove(&old_key).or_else(|| {
                 (old_key == "at")
@@ -603,7 +601,7 @@ fn apply_data_key_rename(
 /// da-5ns.4: implementation moved to
 /// [`Db::save_existing_entry_with_auto_reinterp`] so non-update mutators
 /// (e.g. `retime`) can reuse the same auto-rekey trigger when they mutate
-/// templated columns (`occur_time`, `state`, `dur`, …).
+/// templated columns (`at`, `state`, `dur`, …).
 fn persist_with_auto_reinterp(
     existing: Entry,
     mut updated: Entry,
@@ -630,7 +628,7 @@ fn persist_with_auto_reinterp(
             e.dur.clone(),
             e.following_state.clone(),
             e.data.clone(),
-            e.occur_time.clone(),
+            e.at.clone(),
             e.id_structure.clone(),
             e.field_structure.clone(),
         )
@@ -883,8 +881,8 @@ fn fill_entry_template(
         state,
         dur: None,
         following_state: None,
-        occur_time: None,
-        occur_time_precision: None,
+        at: None,
+        at_uncertainty: None,
         create_time: None,
         modify_time: None,
         client_id: "",
@@ -1558,13 +1556,13 @@ mod tests {
     }
 
     #[test]
-    fn update_occur_time_rekeys_when_template_references_occur_time() {
-        // da-5ns.4: occur_time= on `dm update` mutates the column AND
+    fn update_at_rekeys_when_template_references_at() {
+        // da-5ns.4: at= on `dm update` mutates the column AND
         // cascades into a templated slug.
         use datum_core::time::DatumTime;
         let db = Db::open_in_memory().unwrap();
         let mut e = seed_entry(&db, "coffee", Verb::Point, None, None);
-        e.id_structure = Some("%occur_time%".to_string());
+        e.id_structure = Some("%at%".to_string());
         e.slug = datum_core::ids::Slug("coffee:2024-01-01T00:00:00.000Z".to_string());
         db.save_existing_entry_with_rekey(&seed_slug_for("coffee"), &e)
             .unwrap();
@@ -1574,7 +1572,7 @@ mod tests {
                 id_or_slug: &e.slug,
                 payload_value: None,
                 payload_extra: Some(serde_json::json!({
-                    "occur_time": "2026-05-01T10:00:00Z"
+                    "at": "2026-05-01T10:00:00Z"
                 })),
                 strategy: UpdateStrategy::Replace,
                 slug_delimiter: ":",
@@ -1587,7 +1585,7 @@ mod tests {
         assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
         assert_eq!(outcome.entry.slug, "coffee:2026-05-01T10:00:00.000Z");
         let want_utc: chrono::DateTime<chrono::Utc> = "2026-05-01T10:00:00Z".parse().unwrap();
-        assert_eq!(outcome.entry.occur_time.as_ref().unwrap().utc, want_utc,);
+        assert_eq!(outcome.entry.at.as_ref().unwrap().utc, want_utc,);
         let _ = DatumTime::now;
     }
 

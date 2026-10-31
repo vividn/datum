@@ -20,7 +20,7 @@ sibling beads cover `conflicts.rs` (da-nm5b) and `ids/resolve.rs`
 
 | Legacy `Verb` | v3 equivalent | How to express via `entry_builder` |
 |---|---|---|
-| `Verb::Add` (no time) | gone | OBSOLETE — `occur_time` is now `NOT NULL` |
+| `Verb::Add` (no time) | gone | OBSOLETE — `at` is now `NOT NULL` |
 | `Verb::Occur` | `Verb::Point` | default; `entry_builder("foo").time_start_utc(t)` |
 | `Verb::Start` (with end) | `Verb::Block` (derived from `dur`) | `entry_builder("foo").time_start_utc(t).time_end_utc(t+d)` |
 | `Verb::Stop` | `Verb::Switch` with `state=false` | `entry_builder("foo").verb(Verb::Switch).value(json!(false)).time_start_utc(t)` |
@@ -39,12 +39,12 @@ Source: `git show fdb2851^:crates/datum-core/src/views/timing.rs`
 
 | Test | Classification | Notes |
 |---|---|---|
-| `timing_view_emits_entries_with_durations` | REWRITE | Ported. Adapted `Verb::Start` → block via dur derivation; dropped `Verb::Add no_time()` arm because `occur_time NOT NULL` now rejects it. |
+| `timing_view_emits_entries_with_durations` | REWRITE | Ported. Adapted `Verb::Start` → block via dur derivation; dropped `Verb::Add no_time()` arm because `at NOT NULL` now rejects it. |
 | `timing_view_reduce_counts_entries` | REWRITE | Ported with default verb (Point). |
 | `timing_view_pushes_field_filter_to_sql` | REWRITE | Ported. |
 | `timing_view_respects_limit` | REWRITE | Ported. |
 
-The view code itself was already on the v3 schema (`occur_time`, `dur`)
+The view code itself was already on the v3 schema (`at`, `dur`)
 so no production-code fix was needed.
 
 ## views/duration_sum.rs (2 tests, 2 REWRITE)
@@ -60,7 +60,7 @@ Source: `git show fdb2851^:crates/datum-core/src/views/duration_sum.rs`
 `start_time, start_time_offset, end_time` — columns dropped in v=20. The
 view was silently broken because nothing exercised it (the cold tests
 were the only callers). Fixed in this commit: the SQL now reads
-`occur_time, occur_time_offset, dur` and computes `dur_ms` from the ISO
+`at, at_offset, dur` and computes `dur_ms` from the ISO
 duration string via `crate::entry::compat_dur_secs`.
 
 ## views/state_change.rs (3 tests, 3 REWRITE)
@@ -74,11 +74,11 @@ Source: `git show fdb2851^:crates/datum-core/src/views/state_change.rs`
 | `state_change_pushes_field_filter` | REWRITE | Ported. |
 
 **View bug discovered:** the production query SELECTed `verb, state,
-occur_time, create_time` but never `dur` — yet the Rust event-derivation
+at, create_time` but never `dur` — yet the Rust event-derivation
 code branched on a `Block` arm that emits a closing event when
 `end_time > start_time`. Without `dur` the `end` was always `None`, so
 Block close events never fired. Fixed: the SQL now selects `dur`, and
-the row mapper derives `end_time = occur_time + dur` via
+the row mapper derives `end_time = at + dur` via
 `compat_dur_secs`.
 
 The verb filter in SQL was also outdated (`'switch','start','stop',
@@ -126,7 +126,7 @@ particular the diff in `fdb2851`).
 |---|---|---|
 | `m8_to_9_writes_ignored_switch_for_each_ignored_spec` | REWRITE-DEFERRED | The v8→v9 migration still runs in `MIGRATIONS`. Test depends on `Db::state_at` working post-v20, which it does. Deferred because: schema.sql now creates v=21 tables, so seeding "v8 specs" requires either rolling the schema back column-wise or adapting the test to insert against v21 `field_specs` (kit_id+tags+render_json columns are NOT NULL with defaults — should still accept just `field, spec_json`). Sized as ~30 minutes of work; filed separately to keep this bead's scope honest. |
 | `m11_to_12_relocates_import_marker_and_recomputes_hash` | OBSOLETE | The test seeds `entries` rows with v11 columns (`start_time`, `end_time`, `value`, `intent`, `entry_shape`, etc.). All of those columns were dropped in v19→v20. The schema.sql/`Db::open` path now creates v=21 entries; there is no longer any way to populate a v11-shape row through the public surface. The migration logic itself still exists in `MIGRATIONS` and is exercised end-to-end by `tests/migration_roundtrip.rs`. |
-| `legacy_db_without_meta_self_heals_to_current` | OBSOLETE | I attempted the port and it fails: schema.sql's first run on a hand-built v12 `entries` table errors with `no such column: occur_time` while creating the v=21 `entries_field_occur` index. With pre-v1 rip-and-replace (per CLAUDE.local.md / project policy), legacy DB self-healing is no longer a supported path — there is no production data to preserve. The original bug it regresses (2026-04-30 kit_id incident) cannot recur for the same reason. |
+| `legacy_db_without_meta_self_heals_to_current` | OBSOLETE | I attempted the port and it fails: schema.sql's first run on a hand-built v12 `entries` table errors with `no such column: at` while creating the v=21 `entries_field_at` index. With pre-v1 rip-and-replace (per CLAUDE.local.md / project policy), legacy DB self-healing is no longer a supported path — there is no production data to preserve. The original bug it regresses (2026-04-30 kit_id incident) cannot recur for the same reason. |
 
 The migration *logic* for these versions still exists in `MIGRATIONS`
 and runs idempotently for any DB at `from < CURRENT_SCHEMA_VERSION`;
@@ -193,9 +193,9 @@ statement. Nothing to port. **OBSOLETE.**
 ## Production-code fixes shipped with this audit
 
 1. `crates/datum-core/src/views/duration_sum.rs` — query now reads
-   `occur_time, occur_time_offset, dur` (was reading dropped
+   `at, at_offset, dur` (was reading dropped
    `start_time, start_time_offset, end_time`).
 2. `crates/datum-core/src/views/state_change.rs` — query now reads
-   `dur` and derives `end_time = occur_time + dur` so Block close events
+   `dur` and derives `end_time = at + dur` so Block close events
    actually fire; verb filter narrowed to the v3 verbs that are stored
    (`switch, block, point, block-switch, point-switch`).

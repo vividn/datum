@@ -27,13 +27,13 @@ impl Db {
 
     /// Return the field's most recent state-bearing value at or before time
     /// `t`. Row participation and ordering follow the canonical rule
-    /// ([`super::types::STATE_PARTICIPATION_SQL`]): live, occur_time-bearing
-    /// rows, newest `occur_time` first with a slug tiebreak. Delegates to
+    /// ([`super::types::STATE_PARTICIPATION_SQL`]): live, at-bearing
+    /// rows, newest `at` first with a slug tiebreak. Delegates to
     /// [`Db::batch_state_at`], and through it to the one oracle
     /// ([`crate::state::resolve_effective`], da-u5l1o).
     ///
     /// da-2i8g: when the winning row is a block-switch / point-switch
-    /// whose trailing edge (`occur_time + dur`) is at or before `t`, the
+    /// whose trailing edge (`at + dur`) is at or before `t`, the
     /// row's `following_state` is the effective value — same rule as
     /// `now`.
     ///
@@ -138,9 +138,7 @@ impl Db {
         let columns = self
             .conn
             .query_row(
-                &super::lookup::first_dot_sql(
-                    "field, state, verb, occur_time, dur, following_state, hid",
-                ),
+                &super::lookup::first_dot_sql("field, state, verb, at, dur, following_state, hid"),
                 rusqlite::params![field, after, at.to_rfc3339()],
                 read_state_columns,
             )
@@ -165,8 +163,8 @@ impl Db {
     /// beginning of history just to keep one per field, and the cost of
     /// reading "what is the state right now" grew with the length of the
     /// record (77 ms at 22k rows, 0.9 ms this way). Per field the
-    /// planner walks `entries_live_field_occur` — the partial
-    /// `(field, occur_time) WHERE deleted_at IS NULL` index, whose
+    /// planner walks `entries_live_field_at` — the partial
+    /// `(field, at) WHERE deleted_at IS NULL` index, whose
     /// predicate [`STATE_PARTICIPATION_SQL`] implies — backwards from
     /// the cutoff and stops after `depth` rows.
     fn state_rows_at(
@@ -194,9 +192,9 @@ impl Db {
     }
 
     /// Append, per field, the dur-bearing rows stored AFTER `t` whose
-    /// span still covers it. da-zwct: a block's `occur_time` is its END,
+    /// span still covers it. da-zwct: a block's `at` is its END,
     /// so the row holding a field at `t` can sit in `t`'s future and the
-    /// `occur_time <= t` window above would never see it. Mirrors
+    /// `at <= t` window above would never see it. Mirrors
     /// [`Db::blocks_spanning`] for the column-level reader; the leading
     /// edge is re-derived in Rust because `dur` is an ISO-8601 string
     /// SQL cannot subtract from a time. [`crate::state::resolve_effective`]
@@ -360,7 +358,7 @@ impl Db {
     }
 
     /// Which of `fields` had any live row of their own at or before `at`.
-    /// A timeless row (no `occur_time`) enters the world when it is
+    /// A timeless row (no `at`) enters the world when it is
     /// written, so `create_time` stands in for it.
     fn fields_seen_by(
         &self,
@@ -377,7 +375,7 @@ impl Db {
         let sql = format!(
             "SELECT DISTINCT field FROM entries \
              WHERE field IN ({placeholders}) AND {live} \
-               AND COALESCE(occur_time, create_time) <= ?{n}",
+               AND COALESCE(at, create_time) <= ?{n}",
             live = super::types::LIVE_SQL,
             n = fields.len() + 1
         );
@@ -433,15 +431,15 @@ fn dedup_fields<'a>(fields: &[&'a str]) -> Vec<&'a str> {
 /// (da-l6roh), newest first. Bound `?1` = field, `?2` = the RFC-3339 cutoff.
 ///
 /// The shape is the point: an equality on `field` plus a range on
-/// `occur_time`, ordered the way `entries_live_field_occur` already
+/// `at`, ordered the way `entries_live_field_at` already
 /// stores them, so the planner SEARCHes that index and stops at
 /// `LIMIT` — `USE TEMP B-TREE FOR LAST TERM OF ORDER BY` is only the
-/// slug tiebreak sorting within one `occur_time`, which still lets the
+/// slug tiebreak sorting within one `at`, which still lets the
 /// scan terminate early. A plan that SCANs a subquery instead has read
 /// the whole history.
 pub(super) fn state_rows_sql(deep: bool) -> String {
     use crate::state::{DECIDES_STATE_SQL, OCCUR_DOT_SQL, RESUME_LOOKBACK};
-    // da-2i8g: each row's verb / occur_time / dur / following_state come
+    // da-2i8g: each row's verb / at / dur / following_state come
     // along so the trailing-edge rules can be applied in Rust — `dur` is
     // an ISO-8601 string, which SQL cannot add to a time.
     let occur = time_expr(TimeMetric::Occur);
@@ -450,7 +448,7 @@ pub(super) fn state_rows_sql(deep: bool) -> String {
         false => (format!("NOT {OCCUR_DOT_SQL}"), 1),
     };
     format!(
-        "SELECT field, state, verb, occur_time, dur, following_state, hid
+        "SELECT field, state, verb, at, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
@@ -468,7 +466,7 @@ pub(super) fn spanning_blocks_sql(limit: usize) -> String {
     use crate::state::DECIDES_STATE_SQL;
     let occur = time_expr(TimeMetric::Occur);
     format!(
-        "SELECT field, state, verb, occur_time, dur, following_state, hid
+        "SELECT field, state, verb, at, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
@@ -635,8 +633,8 @@ mod tests {
     /// row per field was kept. Neither may reappear.
     ///
     /// No temp b-tree at all (da-asgt4): the index carries `slug`, the
-    /// tiebreak. `entries_live_field_occur`, which these reads used before
-    /// it, sorted each equal-`occur_time` block, and on a field of occur
+    /// tiebreak. `entries_live_field_at`, which these reads used before
+    /// it, sorted each equal-`at` block, and on a field of occur
     /// dots alone walked to the field's first row looking for a state.
     ///
     /// The lookahead seeks `entries_field_blocks`, the blocks among them
@@ -836,12 +834,12 @@ mod tests {
         assert_eq!(db.resolve_state_back("mood", 3, probe()).unwrap(), None);
     }
 
-    /// Timeless row (`note`/`-T`): occur_time NULL, slug `field:<create_time>c`.
+    /// Timeless row (`note`/`-T`): at NULL, slug `field:<create_time>c`.
     fn push_timeless_note(db: &Db, field: &str) {
         let entry = Entry::new(field, Verb::Point, None, None, None, None, "d1");
         assert!(
-            entry.occur_time.is_none() && entry.slug.as_str().ends_with('c'),
-            "timeless row: occur_time NULL + create_time-keyed slug, got {}",
+            entry.at.is_none() && entry.slug.as_str().ends_with('c'),
+            "timeless row: at NULL + create_time-keyed slug, got {}",
             entry.slug
         );
         db.insert_entry(&entry).unwrap();
@@ -849,7 +847,7 @@ mod tests {
 
     /// da-ylet oracle-equality property: for any field and probe time,
     /// `state_at(f, t)` must equal `batch_state_at([f], t).get(f)` —
-    /// including fields whose history contains timeless (occur_time NULL) rows,
+    /// including fields whose history contains timeless (at NULL) rows,
     /// fields with ONLY a timeless row, and fields with no rows at all.
     #[test]
     fn state_at_equals_batch_state_at_for_every_field_and_probe() {
@@ -882,7 +880,7 @@ mod tests {
         }
     }
 
-    /// da-ylet axis 1: a timeless (occur_time NULL) row must not participate in
+    /// da-ylet axis 1: a timeless (at NULL) row must not participate in
     /// state through ANY door. Before the fix, `state_at`'s dead
     /// `verb != 'add'` filter let the timeless row through (resolving to
     /// `Some(Null)`) while `batch_state_at` excluded it.
@@ -902,8 +900,8 @@ mod tests {
         assert!(!batch.contains_key("solo"));
 
         // latest_entry_for_now — the unbounded arm is exactly where the
-        // predicate does real work (timeless rows have NULL occur_time,
-        // so any `occur_time <= ?` bound excludes them implicitly).
+        // predicate does real work (timeless rows have NULL at,
+        // so any `at <= ?` bound excludes them implicitly).
         let latest = db.latest_entry_for_now("mood", None).unwrap().unwrap();
         assert_eq!(latest.state, Some(json!("happy")));
         assert!(db.latest_entry_for_now("solo", None).unwrap().is_none());
@@ -1090,7 +1088,7 @@ mod tests {
             for e in &written {
                 let hid = Some(e.hid.as_str());
                 let lo = e.leading_edge_utc().unwrap() - chrono::Duration::microseconds(1);
-                let hi = e.occur_time.as_ref().unwrap().utc;
+                let hi = e.at.as_ref().unwrap().utc;
                 let span =
                     crate::state::FieldStateRows::load_between(&db.conn, field, lo, hi).unwrap();
                 for probe in [lo, hi] {
@@ -1147,13 +1145,13 @@ mod tests {
     /// da-ylet axis 3: same-instant ties resolve deterministically to the
     /// slug-DESC winner in every reader. Live same-instant rows are
     /// schema-impossible on one device (da-ga8b's partial UNIQUE on
-    /// `(field, occur_time)`), so drop the index to simulate rows that
+    /// `(field, at)`), so drop the index to simulate rows that
     /// bypassed it (raw inserts, sync merges).
     #[test]
     fn same_instant_tie_resolves_to_slug_desc_winner_in_every_reader() {
         let db = Db::open_in_memory().unwrap();
         db.conn
-            .execute("DROP INDEX entries_field_occurtime", [])
+            .execute("DROP INDEX entries_field_at_unique", [])
             .unwrap();
         let t = at(100);
         // Insert the slug-DESC winner FIRST so a (wrong) create_time
@@ -1230,7 +1228,7 @@ mod tests {
     /// re-derived on insert from the (state, dur, following_state) triple —
     /// positive dur → block-switch, zero dur → point-switch.
     /// da-zwct: `end_offset` is the block's TRAILING edge — the row's
-    /// stored `occur_time` — and `dur_secs` the span before it.
+    /// stored `at` — and `dur_secs` the span before it.
     fn push_compound_switch(
         db: &Db,
         field: &str,
@@ -1309,7 +1307,7 @@ mod tests {
     /// Mirror `datum end work 12m`: a positive `dur` with a state and no
     /// `following_state` re-derives as [`Verb::Block`] on insert.
     /// da-zwct: `end_offset` is where the block ENDS — its stored
-    /// `occur_time` — and the `dur_secs` it lasted precede that instant.
+    /// `at` — and the `dur_secs` it lasted precede that instant.
     fn push_block(db: &Db, field: &str, state: serde_json::Value, dur_secs: i64, end_offset: i64) {
         let entry = Entry::new(
             field,

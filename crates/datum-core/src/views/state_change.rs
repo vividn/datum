@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(workout.len(), 2);
         assert_eq!(workout[0].value, json!({"from": null, "to": true}));
         assert_eq!(workout[1].value, json!({"from": true, "to": null}));
-        // The builder stores `time_start` as the block's END (occur_time).
+        // The builder stores `time_start` as the block's END (at).
         assert_eq!(workout[1].key[1], json!(t1.to_rfc3339()));
     }
 

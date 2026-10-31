@@ -35,7 +35,7 @@ pub fn states(args: StatesArgs, db: &Db) -> Result<()> {
 /// `{"field", "states": [{"state", "declared", "count", "last_used",
 /// "color", "description"}]}`: the declared states in the spec's order, then
 /// the undeclared ones most used first. `last_used` is the latest
-/// `occur_time` (RFC 3339, UTC), null when never used or used only timeless;
+/// `at` (RFC 3339, UTC), null when never used or used only timeless;
 /// `color` is the resolved colour the CLI paints the state with.
 pub fn compute_states(db: &Db, field: &str) -> Result<JsonValue> {
     let spec = db.load_spec(field)?;

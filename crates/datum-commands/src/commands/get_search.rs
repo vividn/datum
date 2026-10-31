@@ -79,10 +79,10 @@ fn resolve_key(entry: &Entry, key: &str) -> Option<JsonValue> {
         // `start_time` is the one that needs the arithmetic.
         "start_time" => entry
             .computed_start_time()
-            .or_else(|| entry.occur_time.clone())
+            .or_else(|| entry.at.clone())
             .map(|t| JsonValue::String(t.utc.to_rfc3339())),
         "at" | "occur_time" | "end_time" => entry
-            .occur_time
+            .at
             .as_ref()
             .map(|t| JsonValue::String(t.utc.to_rfc3339())),
         path => entry.data.as_ref().and_then(|d| lookup_path(d, path)),

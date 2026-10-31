@@ -9,7 +9,7 @@
 //   backdated `-t` can be typed against something rather than guessed at.
 //
 //   A stamp per command is when you typed it, dim on purpose: the row's
-//   own `occur_time` under its field is the fact that matters. Past
+//   own `at` under its field is the fact that matters. Past
 //   midnight the stamp grows a day, as `datum tail` frames one (da-hxjrk),
 //   through the tail's own `dateLabel` past three days rather than a
 //   second date formatter (the shape of da-6eou).

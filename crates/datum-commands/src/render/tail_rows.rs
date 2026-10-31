@@ -194,7 +194,7 @@ pub fn tail_rows(
             // glyph and no slots at all (`format_state_group`), and the
             // row says the same by reporting no transition rather than an
             // IGNORED one a renderer would draw a null sign for.
-            let timeless = e.occur_time.is_none() && !draws_state_badge(e);
+            let timeless = e.at.is_none() && !draws_state_badge(e);
             let (previous, following) = if timeless {
                 (None, None)
             } else {
@@ -210,7 +210,7 @@ pub fn tail_rows(
                 verb: e.verb.to_string(),
                 time,
                 time_metric,
-                time_uncertainty: e.occur_uncertainty().map(str::to_string),
+                time_uncertainty: e.at_uncertainty().map(str::to_string),
                 previous_state_label: previous.as_ref().map(state_label),
                 previous_state_color: previous
                     .as_ref()
@@ -264,8 +264,7 @@ fn ignored_when_absent(state: Option<JsonValue>) -> Option<JsonValue> {
 /// create stamp when a row has no occur time.
 fn row_time(e: &Entry, metric: TimeMetricCol) -> (Option<String>, Option<&'static str>) {
     let occur = || {
-        e.occur_time
-            .as_ref()
+        e.at.as_ref()
             .map(|t| (Some(t.local_time().to_rfc3339()), Some("occur")))
     };
     match metric {
@@ -434,7 +433,7 @@ mod tests {
         assert_eq!(modify.time.as_deref(), Some(&*e.modify_time.to_rfc3339()));
 
         let mut timeless = e.clone();
-        timeless.occur_time = None;
+        timeless.at = None;
         let hybrid = &tail_rows(
             std::slice::from_ref(&timeless),
             None,
@@ -582,7 +581,7 @@ mod tests {
         use crate::render::action::format_state_group;
         let _g = datum_test_util::no_color_scope();
         let mut timeless = entry(Verb::Point, None, None);
-        timeless.occur_time = None;
+        timeless.at = None;
         let ignored_dot = entry(Verb::Point, None, None);
         for (e, ctx, what) in [
             (timeless, RenderContext::default(), "timeless"),
@@ -627,7 +626,7 @@ mod tests {
     fn a_compound_switch_reports_the_state_it_switches_to() {
         use crate::render::action::StateTransition;
         let mut writing = entry(Verb::Switch, Some(json!("writing")), None);
-        writing.occur_time = Some(t_at("2024-03-16T14:15:00Z"));
+        writing.at = Some(t_at("2024-03-16T14:15:00Z"));
         for e in [
             compound(
                 Some(json!(false)),
@@ -819,7 +818,7 @@ mod tests {
     #[test]
     fn a_timeless_row_has_no_transition() {
         let mut e = entry(Verb::Point, None, None);
-        e.occur_time = None;
+        e.at = None;
         let rows = tail_rows(
             std::slice::from_ref(&e),
             Some(&[RenderContext {

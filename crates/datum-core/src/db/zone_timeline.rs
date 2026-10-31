@@ -32,15 +32,15 @@ const NOT_ZONED_META_SQL: &str =
 /// a safety net, so an older SQLite that ignored the window function would
 /// still yield a correct (merely larger) timeline.
 ///
-/// Rows with a NULL `occur_time_tz` are skipped rather than treated as a
+/// Rows with a NULL `at_tz` are skipped rather than treated as a
 /// zone: a missing name means the zone is *unknown* (da-vfbq), and the bare
 /// offset stored beside it changes at every DST transition — reading those
 /// as relocations would invent a move twice a year, which is precisely the
 /// error a cache keyed on offset changes makes.
 ///
-/// **No outer `ORDER BY occur_time`** — do not add one back (da-uhur). The
-/// inner scan already walks `entries_occur_time`, so the handful of rows
-/// that survive the filter come out in occur_time order for free, and
+/// **No outer `ORDER BY at`** — do not add one back (da-uhur). The
+/// inner scan already walks `entries_at`, so the handful of rows
+/// that survive the filter come out in at order for free, and
 /// `ZoneTimeline::new` sorts its observations regardless: the timeline does
 /// not depend on this order in the first place. All the outer sort bought
 /// was a temp B-tree in the query plan.
@@ -56,29 +56,29 @@ const NOT_ZONED_META_SQL: &str =
 /// further, so a reader of a past day does not read on to now (da-e853a);
 /// `'~'`, after every timestamp, reaches the newest.
 const ZONE_CHANGES_SQL: &str = "\
-    SELECT occur_time, occur_time_tz FROM (
-        SELECT occur_time,
-               occur_time_tz,
-               LAG(occur_time_tz) OVER (ORDER BY occur_time) AS prev_tz
+    SELECT at, at_tz FROM (
+        SELECT at,
+               at_tz,
+               LAG(at_tz) OVER (ORDER BY at) AS prev_tz
           FROM entries
          WHERE deleted_at IS NULL
            AND superseded_by IS NULL
-           AND occur_time >= ?1
-           AND occur_time <= ?2
-           AND occur_time_tz IS NOT NULL
+           AND at >= ?1
+           AND at <= ?2
+           AND at_tz IS NOT NULL
            AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
     )
-    WHERE prev_tz IS NULL OR prev_tz <> occur_time_tz
+    WHERE prev_tz IS NULL OR prev_tz <> at_tz
     UNION ALL
     SELECT * FROM (
-        SELECT occur_time, occur_time_tz
+        SELECT at, at_tz
           FROM entries
          WHERE deleted_at IS NULL
            AND superseded_by IS NULL
-           AND occur_time < ?1
-           AND occur_time_tz IS NOT NULL
+           AND at < ?1
+           AND at_tz IS NOT NULL
            AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
-         ORDER BY occur_time DESC
+         ORDER BY at DESC
          LIMIT 1
     )";
 
@@ -179,13 +179,13 @@ impl Db {
     pub fn zones_around(&self, at: DateTime<Utc>) -> Result<(Vec<String>, Vec<String>)> {
         let side = |cmp: &str, order: &str| -> Result<Vec<String>> {
             let sql = format!(
-                "SELECT occur_time_tz FROM entries
+                "SELECT at_tz FROM entries
                   WHERE deleted_at IS NULL
                     AND superseded_by IS NULL
-                    AND occur_time {cmp} ?1
-                    AND occur_time_tz IS NOT NULL
+                    AND at {cmp} ?1
+                    AND at_tz IS NOT NULL
                     AND {NOT_ZONED_META_SQL}
-                  ORDER BY occur_time {order}
+                  ORDER BY at {order}
                   LIMIT {NEIGHBOURS}"
             );
             let mut stmt = self.conn.prepare_cached(&sql)?;
@@ -203,10 +203,10 @@ impl Db {
                 "SELECT * FROM entries
                   WHERE deleted_at IS NULL
                     AND superseded_by IS NULL
-                    AND occur_time {cmp} ?1
-                    AND occur_time_tz IS NOT NULL
+                    AND at {cmp} ?1
+                    AND at_tz IS NOT NULL
                     AND {NOT_ZONED_META_SQL}
-                  ORDER BY occur_time {order}
+                  ORDER BY at {order}
                   LIMIT {NEIGHBOURS}"
             );
             let mut stmt = self.conn.prepare_cached(&sql)?;
@@ -221,12 +221,12 @@ impl Db {
     /// for a zone the rows around one agree is not its own (da-3zq6g).
     pub fn zone_sequence(&self) -> Result<Vec<(i64, String)>> {
         let sql = format!(
-            "SELECT rowid, occur_time_tz FROM entries
+            "SELECT rowid, at_tz FROM entries
               WHERE deleted_at IS NULL
                 AND superseded_by IS NULL
-                AND occur_time_tz IS NOT NULL
+                AND at_tz IS NOT NULL
                 AND {NOT_ZONED_META_SQL}
-              ORDER BY occur_time"
+              ORDER BY at"
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
@@ -239,13 +239,13 @@ impl Db {
     pub fn zone_window(&self, at: &str, reach: usize) -> Result<(Vec<(i64, String)>, usize)> {
         let side = |cmp: &str, order: &str| -> Result<Vec<(i64, String)>> {
             let sql = format!(
-                "SELECT rowid, occur_time_tz FROM entries
+                "SELECT rowid, at_tz FROM entries
                   WHERE deleted_at IS NULL
                     AND superseded_by IS NULL
-                    AND occur_time {cmp} ?1
-                    AND occur_time_tz IS NOT NULL
+                    AND at {cmp} ?1
+                    AND at_tz IS NOT NULL
                     AND {NOT_ZONED_META_SQL}
-                  ORDER BY occur_time {order}
+                  ORDER BY at {order}
                   LIMIT ?2"
             );
             let mut stmt = self.conn.prepare_cached(&sql)?;
@@ -467,11 +467,11 @@ mod tests {
     }
 
     /// What the comment on `ZONE_CHANGES_SQL` claims: the rows arrive in
-    /// occur_time order because of the index, not because of a sort — and
+    /// at order because of the index, not because of a sort — and
     /// not because of the order they were written in, which here is the
     /// reverse.
     #[test]
-    fn the_rows_arrive_in_occur_time_order_unsorted() {
+    fn the_rows_arrive_in_at_order_unsorted() {
         let db = fresh_db();
         for (at, tz) in [
             ("2024-09-05T18:00:00Z", "Asia/Tokyo"),

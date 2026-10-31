@@ -38,7 +38,7 @@ pub struct DatumTime {
     /// How precisely this instant is known, as the ISO-8601 duration of the
     /// ± radius (`"PT5M"` for `±5m`, `"P1D"` for a date-only entry). Written
     /// by `TimeBuilder::build_with_uncertainty` from a `-q` stack or an
-    /// explicit `±N`, and stored in `entries.occur_time_uncertainty`.
+    /// explicit `±N`, and stored in `entries.at_uncertainty`.
     ///
     /// `None` means *unknown* — we were not told how precisely the time is
     /// known — which is **not** the claim "this time is exact". Same rule as

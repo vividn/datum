@@ -17,7 +17,7 @@ use super::RenderContext;
 
 /// hid → `_N` for the [`QUICK_ORDINAL_CAP`] newest of `entries`.
 ///
-/// The order is `quick_ordinals`' `ORDER BY COALESCE(occur_time,
+/// The order is `quick_ordinals`' `ORDER BY COALESCE(at,
 /// create_time) DESC, slug DESC`, spelled in Rust: the listing's time
 /// newest first — a timeless row's is its create time (da-2vgj1) — ties
 /// broken by the slug descending. `entries` may arrive in any order; a
@@ -30,7 +30,7 @@ pub fn quick_ordinal_map(entries: &[Entry]) -> HashMap<Hid, usize> {
     let mut order: Vec<&Entry> = entries.iter().collect();
     order.sort_by(|a, b| {
         let key = |e: &Entry| {
-            let time = e.occur_time.as_ref().map_or(e.create_time, |t| t.utc);
+            let time = e.at.as_ref().map_or(e.create_time, |t| t.utc);
             (time, e.slug.0.clone())
         };
         key(b).cmp(&key(a))
@@ -96,7 +96,7 @@ mod tests {
     fn a_timeless_row_counts_at_its_create_time() {
         let dated = row("a", "2026-05-01T10:00:00Z");
         let mut timeless = row("b", "2026-05-01T09:00:00Z");
-        timeless.occur_time = None;
+        timeless.at = None;
         timeless.create_time = "2026-05-01T11:00:00Z".parse().unwrap();
         let map = quick_ordinal_map(&[timeless.clone(), dated.clone()]);
         assert_eq!(map.get(&timeless.hid), Some(&1));
@@ -112,7 +112,7 @@ mod tests {
         let rows: Vec<Entry> = (0..QUICK_ORDINAL_CAP + 3)
             .map(|i| {
                 let mut e = row("f", "2026-05-01T00:00:00Z");
-                e.occur_time = Some(
+                e.at = Some(
                     DatumTime::from_utc_and_tz(base + chrono::Duration::minutes(i as i64), "UTC")
                         .unwrap(),
                 );

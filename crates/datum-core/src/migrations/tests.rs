@@ -94,21 +94,21 @@ fn fresh_db_matches_schema_sql_shape() {
     indexes.sort();
     let expected_indexes = vec![
         "entries_asserted_base",
+        "entries_at",
         "entries_conflicts",
         "entries_content_hash",
+        "entries_field_at",
+        "entries_field_at_unique",
         "entries_field_blocks",
         "entries_field_deciding",
-        "entries_field_occur",
-        "entries_field_occurtime",
         "entries_field_state",
         "entries_field_states",
         "entries_field_structure",
         "entries_hybrid",
         "entries_id_structure",
+        "entries_live_field_at",
         "entries_live_field_hybrid",
-        "entries_live_field_occur",
         "entries_modify_time_ms",
-        "entries_occur_time",
         "entries_slug",
         "entries_slug_lookup",
         "entries_spec_templates",
@@ -591,7 +591,7 @@ fn m24_to_25_creates_partial_unique_on_clean_db() {
         .conn()
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master \
-             WHERE type='index' AND name='entries_field_occurtime'",
+             WHERE type='index' AND name='entries_field_at_unique'",
             [],
             |r| r.get(0),
         )
@@ -628,7 +628,7 @@ fn migrated_and_fresh_field_occurtime_index_agree() {
 
 fn field_occurtime_sql(conn: &rusqlite::Connection) -> String {
     conn.query_row(
-        "SELECT sql FROM sqlite_master WHERE type='index' AND name='entries_field_occurtime'",
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='entries_field_at_unique'",
         [],
         |r| r.get::<_, String>(0),
     )
@@ -685,7 +685,7 @@ fn m24_to_25_aborts_with_diagnostic_on_dirty_db() {
     let n: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master \
-             WHERE type='index' AND name='entries_field_occurtime'",
+             WHERE type='index' AND name='entries_field_at_unique'",
             [],
             |r| r.get(0),
         )
@@ -897,7 +897,8 @@ fn entries_pre_v34(db: &Db) -> Vec<crate::entry::Entry> {
     let conn = db.conn();
     let mut stmt = conn
         .prepare(
-            "SELECT *, occur_time_precision AS occur_time_uncertainty, \
+            "SELECT *, occur_time AS at, occur_time_offset AS at_offset, occur_time_tz AS at_tz, \
+             occur_time_precision AS at_uncertainty, \
              dur_precision AS dur_uncertainty, device_id AS client_id FROM entries",
         )
         .unwrap();

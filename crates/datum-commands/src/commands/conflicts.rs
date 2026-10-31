@@ -17,7 +17,6 @@
 
 use anyhow::{anyhow, bail, Result};
 use datum_core::db::Db;
-use datum_core::entry::{surface_keys, surface_name};
 use datum_parse::combine::combine;
 use datum_parse::input::infer_type;
 use serde_json::{json, Map, Value};
@@ -41,7 +40,7 @@ fn list(db: &Db, json: bool) -> Result<()> {
                 json!({
                     "hid": e.hid, "slug": e.slug,
                     "deleted": e.deleted_at.is_some(),
-                    "conflicts": e.conflicts.clone().map(surface_keys),
+                    "conflicts": e.conflicts.clone(),
                 })
             })
             .collect();
@@ -65,7 +64,7 @@ fn list(db: &Db, json: bool) -> Result<()> {
         );
         let conflicts = e.conflicts.as_ref().and_then(Value::as_object);
         for (key, sides) in conflicts.into_iter().flatten() {
-            println!("    {}", surface_name(key));
+            println!("    {key}");
             for (side, letter) in sides.as_array().into_iter().flatten().zip('A'..) {
                 let device = side["device"].as_str().unwrap_or("?");
                 let at = datum_core::db::chain::hlc_time(side["hlc"].as_str().unwrap_or(""));
@@ -98,8 +97,7 @@ fn resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
     // A data key is picked as it is typed, `cups` for `data.cups`.
     let mut picks = Map::new();
     for (k, v) in args.picks {
-        let column = if k == "at" { "occur_time" } else { k.as_str() };
-        let (key, sides) = [column.to_string(), format!("data.{k}")]
+        let (key, sides) = [k.clone(), format!("data.{k}")]
             .into_iter()
             .find_map(|key| {
                 let sides = conflicts.get(&key)?.as_array()?;
@@ -149,7 +147,7 @@ fn resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
         match (key.as_str(), value.as_bool()) {
             ("deleted", Some(true)) => println!("    deleted"),
             ("deleted", Some(false)) => println!("    kept"),
-            _ => println!("    {}  {value}", surface_name(key)),
+            _ => println!("    {key}  {value}"),
         }
     }
     println!("Resolved {} ({})", post.slug, post.short_uid());

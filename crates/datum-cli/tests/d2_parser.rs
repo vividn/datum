@@ -116,26 +116,24 @@ fn retime_overwrites_uncertainty_from_new_input() {
     let seeded = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     // v3 (da-5ns): the uncertainty is a single ISO-8601 duration string
     // (NULL == not stated), replacing the v=19 (seconds, unit) pair. Since
-    // da-b8rs it lives on `occur_time` itself, column
-    // `occur_time_uncertainty`.
+    // da-b8rs it lives on `at` itself, column
+    // `at_uncertainty`.
     assert!(
-        seeded.occur_uncertainty().is_none(),
+        seeded.at_uncertainty().is_none(),
         "an exact time states no uncertainty; got {:?}",
-        seeded.occur_uncertainty(),
+        seeded.at_uncertainty(),
     );
     let slug = seeded.slug.clone();
     let hid = seeded.hid.clone();
 
     // Retime with a ±5m uncertainty on the fresh input — it replaces, not
-    // merges. da-ivld: id_structure defaults to `%occur_time%`, so the
+    // merges. da-ivld: id_structure defaults to `%at%`, so the
     // retime auto-rekeys the slug; look the row back up by stable hid.
     run_cli(&["retime", &slug, "-t", "13:00±5m"], &db).expect("retime -t");
 
     let after = db.get_entry(&hid).unwrap();
     let _ = UncertaintyUnit::Exact; // keep the import live for the reference below.
-    let uncertainty = after
-        .occur_uncertainty()
-        .expect("retime sets occur_time_uncertainty");
+    let uncertainty = after.at_uncertainty().expect("retime sets at_uncertainty");
     assert_eq!(
         uncertainty, "PT5M",
         "5-minute uncertainty serializes as ISO-8601 PT5M",
@@ -155,7 +153,7 @@ fn a_fractional_uncertainty_is_stored_whole() {
     ] {
         run_cli(&["occur", field, "-t", t], &db).expect(t);
         let e = &datum_core::test_util::logged_entries(&db, field)[0];
-        assert_eq!(e.occur_uncertainty(), Some(iso), "-t {t}");
+        assert_eq!(e.at_uncertainty(), Some(iso), "-t {t}");
     }
 }
 

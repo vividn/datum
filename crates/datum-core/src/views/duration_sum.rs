@@ -27,7 +27,7 @@ impl View for DurationSumView {
         let field_filter = field_filter_from_params(params);
 
         let mut sql = String::from(
-            "SELECT slug, field, occur_time, occur_time_offset, dur
+            "SELECT slug, field, at, at_offset, dur
              FROM entries
              WHERE deleted_at IS NULL AND superseded_by IS NULL
                AND dur IS NOT NULL",
@@ -46,8 +46,8 @@ impl View for DurationSumView {
                 Ok((
                     row.get("slug")?,
                     row.get("field")?,
-                    row.get("occur_time")?,
-                    row.get("occur_time_offset")?,
+                    row.get("at")?,
+                    row.get("at_offset")?,
                     row.get("dur")?,
                 ))
             },
@@ -55,7 +55,7 @@ impl View for DurationSumView {
         for r in mapped {
             let (slug, field, start_iso, start_offset, dur_iso) = r.map_err(DatumError::Db)?;
             let start: DateTime<Utc> = start_iso.parse().map_err(|e: chrono::ParseError| {
-                DatumError::Other(format!("bad occur_time in entries row: {e}"))
+                DatumError::Other(format!("bad at in entries row: {e}"))
             })?;
             let Some(secs) = crate::entry::compat_dur_secs(&dur_iso) else {
                 continue;

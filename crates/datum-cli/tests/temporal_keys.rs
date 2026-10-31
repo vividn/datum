@@ -1,12 +1,12 @@
 //! da-mjwq: `start_time=` / `end_time=` on a log line are lifted onto the
-//! row — `occur_time` and `dur` — through the parser `-t` uses, on every
+//! row — `at` and `dur` — through the parser `-t` uses, on every
 //! verb that can carry a duration (`add`, `note`, `start`, `switch`,
 //! `occur`). Nothing of the keys stays in `data`.
 //!
-//! Under the reference semantics (da-zwct) a block's `occur_time` is its
+//! Under the reference semantics (da-zwct) a block's `at` is its
 //! END and the duration precedes it, so `start posture start_time=4pm 15`
 //! is the block 16:00–16:15: the row `start posture -t 16:15 15` writes.
-//! Every assertion here is on `occur_time` / `dur` values, never on "a
+//! Every assertion here is on `at` / `dur` values, never on "a
 //! block exists".
 
 use crate::common;
@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 /// The rows of `field`, oldest first.
 fn rows(db: &Db, field: &str) -> Vec<Entry> {
     let mut rows = datum_core::test_util::logged_entries(db, field);
-    rows.sort_by_key(|e| e.occur_time.as_ref().map(|t| t.utc));
+    rows.sort_by_key(|e| e.at.as_ref().map(|t| t.utc));
     rows
 }
 
@@ -35,8 +35,8 @@ fn only(db: &Db, field: &str) -> Entry {
 /// the state and the data — everything but the hid and the write times.
 fn shape(e: &Entry) -> Value {
     json!({
-        "occur_time": e.occur_time.as_ref().map(|t| t.utc.to_rfc3339()),
-        "occur_uncertainty": e.occur_uncertainty(),
+        "at": e.at.as_ref().map(|t| t.utc.to_rfc3339()),
+        "at_uncertainty": e.at_uncertainty(),
         "dur": e.dur.as_ref().map(|d| d.to_storage_string()),
         "state": e.state,
         "data": e.data,
@@ -45,11 +45,7 @@ fn shape(e: &Entry) -> Value {
 }
 
 fn occur_utc(e: &Entry) -> String {
-    e.occur_time
-        .as_ref()
-        .expect("row has a time")
-        .utc
-        .to_rfc3339()
+    e.at.as_ref().expect("row has a time").utc.to_rfc3339()
 }
 
 fn dur(e: &Entry) -> Option<String> {
@@ -58,7 +54,7 @@ fn dur(e: &Entry) -> Option<String> {
 
 /// vividn's line: `start field start_time=4pm 15` "essentially equivalent
 /// to `start field -t 16:15 15`". The block is 16:00–16:15, so its twin
-/// is the `-t 16:15` row (occur_time is the END) — equal in every column
+/// is the `-t 16:15` row (at is the END) — equal in every column
 /// but the hid and the write times.
 #[test]
 fn start_time_with_a_duration_is_the_row_its_t_twin_writes() {
@@ -73,12 +69,7 @@ fn start_time_with_a_duration_is_the_row_its_t_twin_writes() {
     assert_eq!(shape(&keyed), shape(&flagged));
     assert_eq!(dur(&keyed).as_deref(), Some("PT15M"));
     assert_eq!(
-        keyed
-            .occur_time
-            .as_ref()
-            .unwrap()
-            .local_time()
-            .naive_local(),
+        keyed.at.as_ref().unwrap().local_time().naive_local(),
         "2026-09-10T16:15:00".parse().unwrap(),
         "the block ENDS at 16:15; the fifteen minutes precede it"
     );
@@ -124,7 +115,7 @@ fn end_time_alone_on_start_is_end_at_that_time() {
 
     let want = shape(&rows(&flagged, "posture")[1]);
     assert_eq!(want["state"], json!(false), "an end row");
-    assert_eq!(want["occur_time"], json!("2026-09-10T11:55:00+00:00"));
+    assert_eq!(want["at"], json!("2026-09-10T11:55:00+00:00"));
     assert_eq!(shape(&rows(&keyed, "posture")[1]), want);
     assert_eq!(shape(&rows(&aliased, "posture")[1]), want);
 }
@@ -237,7 +228,7 @@ fn end_time_alone_on_switch_is_end_asserting_the_state() {
     run_cli(&["end", "mood", "-t", "-5", "-l=happy"], &flagged).expect("end -l=happy");
 
     let want = shape(&rows(&flagged, "mood")[1]);
-    assert_eq!(want["occur_time"], json!("2026-09-10T11:55:00+00:00"));
+    assert_eq!(want["at"], json!("2026-09-10T11:55:00+00:00"));
     assert_eq!(want["state"], json!(false));
     assert_eq!(want["data"], json!({"last_state": "happy"}));
     assert_eq!(want["user_asserted_last_state"], json!("happy"));
@@ -345,11 +336,7 @@ fn key_values_parse_as_t_does() {
         let keyed = only(&db, "keyed");
         let flagged = only(&db, "flagged");
         assert_eq!(occur_utc(&keyed), occur_utc(&flagged), "{raw}");
-        assert_eq!(
-            keyed.occur_uncertainty(),
-            flagged.occur_uncertainty(),
-            "{raw}"
-        );
+        assert_eq!(keyed.at_uncertainty(), flagged.at_uncertainty(), "{raw}");
         assert_eq!(dur(&keyed), dur(&flagged), "{raw}");
     }
 }

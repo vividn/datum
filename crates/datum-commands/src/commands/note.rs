@@ -1,7 +1,7 @@
 //! `datum note <field>` — timeless jot, identified by *when* (da-r17h).
 //!
 //! `note` is the auto-id sibling of [`add`](super::add). Both are timeless
-//! (no `occur_time`); the split is on identity:
+//! (no `at`); the split is on identity:
 //!   * `note` auto-ids on its `create_time` → slug `field:<create_time>c`.
 //!     "Record this moment, won't look it up." Many notes per field coexist
 //!     because each create_time is distinct.

@@ -201,7 +201,7 @@ describe('the time cursor', () => {
 			// pill clears on success — and the cursor everywhere with it.
 			assert.match(await barRun(page, 'occur tea'), /^CREATE$/);
 			const [tea] = (await app.entries()).filter((e) => e.field === 'tea');
-			assert.equal(Date.parse(tea.occur_time.utc), cursor, JSON.stringify(tea.occur_time));
+			assert.equal(Date.parse(tea.at.utc), cursor, JSON.stringify(tea.at));
 			// Waited for: the pane's refresh runs behind every other command
 			// (da-icmo1), the read above included.
 			const tail = await until(() => app.paneTable('tail'), (t) => t.rows.some((r) => r.includes('tea')));
@@ -272,7 +272,7 @@ describe('the time cursor', () => {
 
 			assert.match(await barRun(page, 'occur x'), /^CREATE$/);
 			const [x] = (await app.entries()).filter((e) => e.field === 'x');
-			assert.equal(Date.parse(x.occur_time.utc), pillInstant(text));
+			assert.equal(Date.parse(x.at.utc), pillInstant(text));
 		});
 	});
 
@@ -489,7 +489,7 @@ describe('a clock time the day reads twice', () => {
 					assert.equal(await pillText(page), argv);
 					assert.match(await barRun(page, `occur ${field}`), /^CREATE$/);
 					const [entry] = (await app.entries()).filter((e) => e.field === field);
-					assert.equal(new Date(entry.occur_time.utc).toISOString(), iso, JSON.stringify(entry.occur_time));
+					assert.equal(new Date(entry.at.utc).toISOString(), iso, JSON.stringify(entry.at));
 				}
 			},
 			{ clock: Date.UTC(2026, 9, 25, 11, 0, 0), timezone: 'Europe/Berlin' }

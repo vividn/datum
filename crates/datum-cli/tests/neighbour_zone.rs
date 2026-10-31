@@ -36,7 +36,7 @@ fn around_the_15th(before: &str, after: &str) -> Db {
 fn tea(db: &Db) -> (Option<String>, i64, Option<String>) {
     db.conn()
         .query_row(
-            "SELECT occur_time_tz, occur_time_offset, extra_metadata FROM entries WHERE field = 'tea'",
+            "SELECT at_tz, at_offset, extra_metadata FROM entries WHERE field = 'tea'",
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -52,11 +52,9 @@ fn a_backfill_takes_the_zone_around_it_and_records_it() {
     // 12:00 on Chatham's clock, +12:45 in its June.
     let occur: String = db
         .conn()
-        .query_row(
-            "SELECT occur_time FROM entries WHERE field = 'tea'",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT at FROM entries WHERE field = 'tea'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!((occur.as_str(), offset), ("2024-06-14T23:15:00+00:00", 765));
     assert_eq!(meta.as_deref(), Some(r#"{"tz_from":"neighbours"}"#));
@@ -136,12 +134,12 @@ fn the_zone_must_hold_where_the_entry_lands() {
     assert_eq!(meta, None);
 }
 
-/// An `occur_time=` key with an offset of its own places the entry, so
+/// An `at=` key with an offset of its own places the entry, so
 /// nothing is recorded as the neighbours' doing.
 #[test]
-fn an_occur_time_key_with_its_own_offset_is_not_recorded_as_inferred() {
+fn an_at_key_with_its_own_offset_is_not_recorded_as_inferred() {
     let db = around_the_15th(CHATHAM, CHATHAM);
-    let key = "occur_time=2024-06-15T12:00+09:00";
+    let key = "at=2024-06-15T12:00+09:00";
     run_cli(
         &["occur", "tea", "-d", "2024-06-15", "-t", "12:00", key],
         &db,

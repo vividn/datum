@@ -15,7 +15,7 @@ use std::io::IsTerminal;
 use crate::args::LogArgs;
 use crate::commands::log_core::{
     build_time_from_flags, compound_field, extract_reserved_columns, log_entry, parse_log_args,
-    parse_reserved_occur_time, resolve_underscore_state, whole_day, written_field, zone_is_settled,
+    parse_reserved_at, resolve_underscore_state, whole_day, written_field, zone_is_settled,
 };
 use crate::commands::question::{is_yes, page, Question};
 
@@ -110,7 +110,7 @@ fn read_in(
         .ok()
         .and_then(|parsed| parsed.extra_data?.get("at").cloned());
     let at = match key {
-        Some(key) => parse_reserved_occur_time(&key, &base).ok()?,
+        Some(key) => parse_reserved_at(&key, &base).ok()?,
         None => return Some(build_time_from_flags(&time, now).ok()?.utc),
     };
     Some(

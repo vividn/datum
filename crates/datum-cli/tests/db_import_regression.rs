@@ -2,7 +2,7 @@
 //! fixture (da-zio, rewritten for v=20 schema under da-5ns.6).
 //!
 //! Locks the **structural correctness** of legacy-data ingestion against
-//! the new (occur_time, state, dur, following_state, verb) schema so
+//! the new (at, state, dur, following_state, verb) schema so
 //! future refactors cannot silently break it. Doesn't assert rendered
 //! output — golden-file diffs from the in-flux renderer would be noise.
 //!
@@ -85,11 +85,7 @@ fn db_import_synthetic_locks_db_shape() {
     // Every entry with positive dur stores it in the `dur` column alone —
     // its literal no longer rides along in `data` (da-w94vu, vividn 10-08).
     for e in entries.iter().filter(|e| is_block_dur(&e.dur)) {
-        assert!(
-            e.occur_time.is_some(),
-            "block {} missing occur_time",
-            e.slug
-        );
+        assert!(e.at.is_some(), "block {} missing at", e.slug);
         assert!(
             e.data.as_ref().and_then(|d| d.get("dur")).is_none(),
             "block {} kept its dur in data",
@@ -223,11 +219,8 @@ fn db_import_synthetic_locks_db_shape() {
         Some("PT1M")
     );
     assert_eq!(test.verb, Verb::Block, "doc 6: stored verb");
-    assert_eq!(test.occur_time.as_ref().unwrap().offset_minutes, 0);
-    assert_eq!(
-        test.occur_time.as_ref().unwrap().timezone.as_deref(),
-        Some("UTC")
-    );
+    assert_eq!(test.at.as_ref().unwrap().offset_minutes, 0);
+    assert_eq!(test.at.as_ref().unwrap().timezone.as_deref(), Some("UTC"));
 
     // Doc 7 (consume): extras `id`, `medium` go into `data` and don't
     // collide with Entry.hid. da-7sr: also must store verb='point'.

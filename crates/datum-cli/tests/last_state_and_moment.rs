@@ -252,7 +252,7 @@ fn switch_moment_records_point_in_time() {
 
     // da-64yd: `switch foo -m` records a MOMENT (mirrors `start -m`), not a
     // zero-span PT0S. A moment anchors a time but spans nothing.
-    e.occur_time.as_ref().expect("occur_time set");
+    e.at.as_ref().expect("at set");
     assert!(
         e.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment),
         "--moment must set dur to MOMENT, got {:?}",

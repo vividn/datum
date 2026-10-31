@@ -32,7 +32,7 @@ impl Db {
     ///
     /// Side-effect matrix:
     /// - `CloseOlder` / `AutoCloseOlder`: end the older ongoing entry at
-    ///   `local_entry.occur_time` (no-op if no `remote_entry`).
+    ///   `local_entry.at` (no-op if no `remote_entry`).
     /// - `TakeLocal`: rewrite the row in `entries` matching
     ///   `local_entry.slug` to the local snapshot. For sync-pull rows
     ///   where the local entry was overwritten by a pulled remote, this
@@ -62,7 +62,7 @@ impl Db {
                             crate::integrity::close_older_at(
                                 self,
                                 older,
-                                warning.local_entry.occur_time.as_ref(),
+                                warning.local_entry.at.as_ref(),
                             )?;
                         }
                     }

@@ -400,7 +400,7 @@ describe('the visual views', () => {
 	test('a block runs back from its occur time rather than forward from it', async () => {
 		await onSeam(async ({ run }) => {
 			// `start`/`stop` brackets a block by its two instants; a
-			// duration declares one — and occur_time is the block's
+			// duration declares one — and at is the block's
 			// TRAILING edge, so the span PRECEDES it (da-zwct, reversing
 			// da-a8rs). Both land 20m–5m ago. Read forward, `read` would
 			// run from 5m ago to 10m from now instead, so the direction is

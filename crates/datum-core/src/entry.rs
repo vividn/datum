@@ -1,7 +1,7 @@
 //! Core entry type — the fundamental unit of data in datum.
 //!
 //! da-5ns time-shape pivot (2026-05-01): the entry's time/state shape is
-//! `occur_time` + `state` + `dur` + `following_state`, with `verb` stored
+//! `at` + `state` + `dur` + `following_state`, with `verb` stored
 //! (not derived) as a classifier. Sub-bead 1 lands the schema and the
 //! Rust struct; sub-beads 2/3 add derive_verb() and the strict CLI
 //! parsing that fills these columns from user input. Until sub-bead 3
@@ -74,7 +74,7 @@ pub fn shown_data_value<'a>(key: &str, v: &'a JsonValue) -> &'a JsonValue {
 /// An entry is the core data unit. All user-logged data becomes an Entry.
 ///
 /// Time-shape pivot (da-5ns): replaces start_time/end_time/entry_shape
-/// /intent/value with occur_time/state/dur/following_state plus a stored
+/// /intent/value with at/state/dur/following_state plus a stored
 /// `verb` classifier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
@@ -90,7 +90,7 @@ pub struct Entry {
     /// UNIQUE-indexed, derived at write time from field + id-keys.
     ///
     /// Human-facing, and **mutable**: it is derived from `field` +
-    /// `occur_time`, so `retime` rewrites it in place. Do not treat it as an
+    /// `at`, so `retime` rewrites it in place. Do not treat it as an
     /// identity — a sync merge sets it from the LWW winner. Two distinct
     /// entries may hold one slug, and that is not corruption: the loser of
     /// the contest keeps its own derived slug and steps out of the UNIQUE
@@ -130,12 +130,16 @@ pub struct Entry {
     pub data: Option<JsonValue>,
 
     // --- When ---
-    /// When the event occurred. Required at the schema level (occur_time
+    /// When the event occurred. Required at the schema level (at
     /// is NOT NULL). Optional in Rust to keep the construction surface
     /// uniform — the insert path errors on None. The time's uncertainty
     /// rides inside it (`DatumTime::uncertainty`), not in a sibling field
-    /// here — see [`Entry::occur_uncertainty`].
-    pub occur_time: Option<DatumTime>,
+    /// here — see [`Entry::at_uncertainty`].
+    ///
+    /// `occur_time` is the name it had before v76, read here from whatever was
+    /// written then and kept: a history snapshot, a backup line, a signed op.
+    #[serde(alias = "occur_time")]
+    pub at: Option<DatumTime>,
 
     // --- Where ---
     pub lat: Option<f64>,
@@ -162,7 +166,7 @@ pub struct Entry {
 
     /// da-uxgv: the hid of the row that beat this one for an identity the
     /// table can only give to one row — a `slug`, or a live `(field,
-    /// occur_time)`. `None` (the normal case) means this row holds its own
+    /// at)`. `None` (the normal case) means this row holds its own
     /// identity and is in the live stream.
     ///
     /// A superseded row is not deleted: it keeps its own naturally-derived
@@ -227,36 +231,6 @@ pub const CURRENT_PARSER_VERSION: u32 = 2;
 pub const AT_RESERVED: &str =
     "`at` is the entry's time, so no key of your own can be named at; call it something else";
 
-/// A column as a person reads it: the time is `at`, its family with it. The
-/// column, the row as stored and the ops keep `occur_time` (da-o5bww).
-pub fn surface_name(column: &str) -> &str {
-    match column {
-        "occur_time" => "at",
-        "occur_time_offset" => "at_offset",
-        "occur_time_tz" => "at_tz",
-        "occur_time_uncertainty" => "at_uncertainty",
-        other => other,
-    }
-}
-
-/// `row`'s keys as [`surface_name`] says them, its own object's and no deeper.
-pub fn surface_keys(row: JsonValue) -> JsonValue {
-    match row {
-        JsonValue::Object(map) => map
-            .into_iter()
-            .map(|(k, v)| (surface_name(&k).to_string(), v))
-            .collect(),
-        other => other,
-    }
-}
-
-/// An entry as pretty JSON, in its columns' order, its time named `at`. Only a
-/// top-level key starts a line at two spaces: a string's newline is escaped.
-pub fn surface_pretty(entry: &Entry) -> serde_json::Result<String> {
-    let pretty = serde_json::to_string_pretty(entry)?;
-    Ok(pretty.replacen("\n  \"occur_time\":", "\n  \"at\":", 1))
-}
-
 /// Whether an edit gives `after` a data key `at` that `before` lacks, which it
 /// refuses: a row already holding one, which `datum check` names, stays editable.
 pub fn gains_at_key(before: &Entry, after: &Entry) -> bool {
@@ -284,7 +258,7 @@ impl Entry {
         verb: Verb,
         state: Option<JsonValue>,
         data: Option<JsonValue>,
-        occur_time: Option<DatumTime>,
+        at: Option<DatumTime>,
         dur: Option<Dur>,
         client_id: impl Into<String>,
     ) -> Self {
@@ -294,10 +268,7 @@ impl Entry {
 
         let hid = new_hid();
 
-        let occur_str = occur_time
-            .as_ref()
-            .map(|t| t.utc.to_rfc3339())
-            .unwrap_or_default();
+        let occur_str = at.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
         let dur_str = dur.as_ref().map(Dur::to_storage_string).unwrap_or_default();
         let data_str = data.as_ref().map(|v| v.to_string()).unwrap_or_default();
         let state_str = state.as_ref().map(|v| v.to_string()).unwrap_or_default();
@@ -315,7 +286,7 @@ impl Entry {
             deleted: false,
         });
 
-        let slug = build_slug(&field, occur_time.as_ref(), &now);
+        let slug = build_slug(&field, at.as_ref(), &now);
 
         Entry {
             hid,
@@ -327,7 +298,7 @@ impl Entry {
             dur,
             following_state: None,
             data,
-            occur_time,
+            at,
             lat: None,
             lon: None,
             location: None,
@@ -353,10 +324,10 @@ impl Entry {
     /// Sub-bead 8 sweeps remaining call sites onto the v=20
     /// signature; until then this keeps `datum-commands` compiling.
     ///
-    /// da-zwct: a v=20 block stores its TRAILING edge in `occur_time`
+    /// da-zwct: a v=20 block stores its TRAILING edge in `at`
     /// (the duration precedes it), so a `(start, end)` pair lands as
-    /// `occur_time = end`. With no end — an open block, or a point —
-    /// `start_time` is the row's only instant and becomes `occur_time`.
+    /// `at = end`. With no end — an open block, or a point —
+    /// `start_time` is the row's only instant and becomes `at`.
     #[allow(clippy::too_many_arguments)]
     pub fn new_legacy(
         field: impl Into<String>,
@@ -374,25 +345,25 @@ impl Entry {
             }
             _ => None,
         };
-        let occur_time = end_time.or(start_time);
-        Self::new(field, verb, value, data, occur_time, dur, client_id)
+        let at = end_time.or(start_time);
+        Self::new(field, verb, value, data, at, dur, client_id)
     }
 
-    /// How precisely `occur_time` is known, as an ISO-8601 ± radius.
+    /// How precisely `at` is known, as an ISO-8601 ± radius.
     ///
     /// `None` when the entry is timeless *or* when the uncertainty is
     /// unknown — the two are not distinguished here because a time that
     /// does not exist cannot be known to any precision. Reads the value off
     /// [`DatumTime::uncertainty`], which is where it lives since da-b8rs;
-    /// the row column is `entries.occur_time_uncertainty`.
-    pub fn occur_uncertainty(&self) -> Option<&str> {
-        self.occur_time.as_ref()?.uncertainty.as_deref()
+    /// the row column is `entries.at_uncertainty`.
+    pub fn at_uncertainty(&self) -> Option<&str> {
+        self.at.as_ref()?.uncertainty.as_deref()
     }
 
-    /// Set (or clear) the uncertainty of `occur_time`. A no-op on a
+    /// Set (or clear) the uncertainty of `at`. A no-op on a
     /// timeless entry: there is no time for it to qualify.
-    pub fn set_occur_uncertainty(&mut self, iso: Option<String>) {
-        if let Some(t) = self.occur_time.as_mut() {
+    pub fn set_at_uncertainty(&mut self, iso: Option<String>) {
+        if let Some(t) = self.at.as_mut() {
             t.uncertainty = iso;
         }
     }
@@ -459,15 +430,15 @@ impl Entry {
         self.dur.as_ref()?.as_seconds()
     }
 
-    /// The instant a block BEGINS: `occur_time - dur`, in UTC, and nothing
+    /// The instant a block BEGINS: `at - dur`, in UTC, and nothing
     /// else. `None` when either is unset (point/switch shapes have no span).
     ///
-    /// `occur_time` is the block's trailing edge and the duration is the
+    /// `at` is the block's trailing edge and the duration is the
     /// span that PRECEDES it — the original datum's `durationBlocks` view
     /// (`blockBegin = occurTime - dur; blockEnd = occurTime`), and what
     /// `start posture 4` means: posture was happening for the past four
     /// minutes (da-zwct). Anything that needs a block's END wants
-    /// `occur_time` itself and no arithmetic at all.
+    /// `at` itself and no arithmetic at all.
     ///
     /// This is the door for anything that only needs the moment — a state
     /// probe, an overlap test. [`Self::computed_start_time`] is the door for
@@ -476,27 +447,27 @@ impl Entry {
     /// can fail on a zone name the table does not know. A duration is a
     /// fixed span of seconds, so the instant needs no zone at all.
     pub fn computed_start_utc(&self) -> Option<DateTime<Utc>> {
-        let occur = self.occur_time.as_ref()?;
+        let occur = self.at.as_ref()?;
         let secs = self.dur.as_ref()?.as_seconds()?;
         Some(occur.utc - chrono::Duration::seconds(secs))
     }
 
     /// The instant this row's influence begins: [`Self::computed_start_utc`]
-    /// for a row that spans a duration, `occur_time` for one that does not.
+    /// for a row that spans a duration, `at` for one that does not.
     /// Unlike `computed_start_utc` this answers for EVERY timed row, which
     /// is what the leading-edge probes and the switch-region walk need — a
     /// point's leading edge is its own instant.
     pub fn leading_edge_utc(&self) -> Option<DateTime<Utc>> {
-        let occur = self.occur_time.as_ref()?;
+        let occur = self.at.as_ref()?;
         let secs = self.dur.as_ref().and_then(|d| d.as_seconds()).unwrap_or(0);
         Some(occur.utc - chrono::Duration::seconds(secs))
     }
 
-    /// Leading-edge timestamp derived from `occur_time - dur`. `None`
+    /// Leading-edge timestamp derived from `at - dur`. `None`
     /// when either is unset (point/switch shapes have no span). Replaces
     /// the v=19 `start_time` column-as-field access in tests / render code.
     pub fn computed_start_time(&self) -> Option<DatumTime> {
-        let occur = self.occur_time.as_ref()?;
+        let occur = self.at.as_ref()?;
         let secs = self.dur.as_ref()?.as_seconds()?;
         let mut e = occur.clone();
         e.utc -= chrono::Duration::seconds(secs);
@@ -520,10 +491,10 @@ impl Entry {
     /// Does this entry assert a state for its field?
     ///
     /// da-2fkr: the answer decides whether the entry has an *identity* at
-    /// `(field, occur_time)` — "the state of `field` at instant T" is a
+    /// `(field, at)` — "the state of `field` at instant T" is a
     /// single fact, so two rows asserting it are undefined (da-ga8b), while
     /// two stateless points at one instant are simply two events (two
-    /// transactions on one day) and both belong. The `entries_field_occurtime`
+    /// transactions on one day) and both belong. The `entries_field_at_unique`
     /// UNIQUE index, the same-invocation merge and the sync apply are three
     /// spellings of that one rule; this is the pre-storage spelling.
     ///
@@ -539,7 +510,7 @@ impl Entry {
     /// Recompute the content_hash from the entry's current fields.
     pub fn expected_content_hash(&self) -> String {
         let occur_str = self
-            .occur_time
+            .at
             .as_ref()
             .map(|t| t.utc.to_rfc3339())
             .unwrap_or_default();
@@ -919,32 +890,5 @@ mod tests {
             })
         };
         assert_eq!(inputs(&built), inputs(&parsed));
-    }
-
-    /// da-o5bww: only the column is renamed: a data key by the old name, at
-    /// any depth or in a string's text, stays, and the columns keep their order.
-    #[test]
-    fn surface_pretty_renames_the_column_and_nothing_else() {
-        let t = DatumTime::from_utc_and_tz("2026-05-01T10:00:00Z".parse().unwrap(), "UTC").unwrap();
-        let data = serde_json::json!({"occur_time": 1, "text": "\n  \"occur_time\": 2"});
-        let e = Entry::new(
-            "f",
-            Verb::Point,
-            None,
-            Some(data.clone()),
-            Some(t),
-            None,
-            "c",
-        );
-        let pretty = surface_pretty(&e).unwrap();
-        let row: JsonValue = serde_json::from_str(&pretty).unwrap();
-        assert_eq!(row["at"]["utc"], "2026-05-01T10:00:00Z");
-        assert_eq!(row["data"], data);
-        assert!(row.get("occur_time").is_none(), "{pretty}");
-        assert!(
-            pretty.find("\n  \"data\":") < pretty.find("\n  \"at\":"),
-            "{pretty}"
-        );
-        assert_eq!(row, surface_keys(serde_json::to_value(&e).unwrap()));
     }
 }

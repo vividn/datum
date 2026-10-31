@@ -25,7 +25,7 @@ export interface StoredEntry {
 	state?: unknown;
 	dur?: string | null;
 	data?: unknown;
-	occur_time?: { utc: string } | null;
+	at?: { utc: string } | null;
 	create_time: string;
 	[key: string]: unknown;
 }
@@ -34,7 +34,7 @@ export interface StoredEntry {
 export async function storedEntries(limit = 50, db?: string): Promise<StoredEntry[]> {
 	const [, ...lines] = (await backup(db)).split('\n').filter(Boolean);
 	// A timeless entry has no occur time and sorts last, as SQLite's NULL does.
-	const at = (e: StoredEntry) => (e.occur_time ? Date.parse(e.occur_time.utc) : -Infinity);
+	const at = (e: StoredEntry) => (e.at ? Date.parse(e.at.utc) : -Infinity);
 	return lines
 		.map((line) => JSON.parse(line) as StoredEntry)
 		.sort((a, b) => at(b) - at(a))

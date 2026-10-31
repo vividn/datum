@@ -73,7 +73,8 @@
 //!   be both bumps the ALPN, and two copies that speak different ones are
 //!   told so in words, [`Failure::Protocol`]. A change to what the ops
 //!   carry raises the sync floor instead, a copy below it refused both ways
-//!   as [`Why::Upgrade`] (da-ryhmi). `tests/frames.json` holds one
+//!   as [`Why::Upgrade`], in words that say no data is at risk (da-ryhmi,
+//!   da-95avu). `tests/frames.json` holds one
 //!   frame of each kind as the previous version wrote it: this version must
 //!   read each, and write back every field it carried, or the test fails
 //!   until the ALPN is bumped on purpose. A kind or a field this version
@@ -486,16 +487,21 @@ pub struct Version {
     pub floor: Option<u32>,
 }
 
+/// Said of every floor's refusal: nothing moved, and nothing will until both
+/// are updated (da-95avu). A refusal from a copy before this has no such
+/// sentence, so a refused dialer adds it to their words ([`refused`]).
+const NO_RISK: &str = "Nothing was sent or written, and no data is at risk.";
+
 /// Why `mine`, this copy's, and `theirs` can't sync (da-ryhmi): one runs a
 /// schema below the other's floor. The words this copy says, then those for
 /// the other: each names the other copy, and the one below is told to
 /// update.
 fn below_floor(mine: (&Version, &str), theirs: (&Version, &str)) -> Option<(String, String)> {
     let upgrade = |with: &str, needs: u32, runs: u32| {
-        format!("update datum to sync with {with}: it needs schema {needs}, this copy runs {runs}")
+        format!("update datum to sync with {with}: it needs schema {needs}, this copy runs {runs}. {NO_RISK}")
     };
     let behind = |who: &str, runs: u32, needs: u32| {
-        format!("{who} runs schema {runs}, below this copy's sync floor {needs}: it must update datum to sync")
+        format!("{who} runs schema {runs}, below this copy's sync floor {needs}: it must update datum to sync. {NO_RISK}")
     };
     let floor = |v: &Version| v.floor.unwrap_or(0);
     let ((m, me), (t, them)) = (mine, theirs);
@@ -649,7 +655,8 @@ fn refused(why: String, kind: Option<Why>) -> anyhow::Error {
     });
     // Its words say what to do, naming the copy that refused.
     let why = match kind {
-        Why::Upgrade => why,
+        Why::Upgrade if why.ends_with(NO_RISK) => why,
+        Why::Upgrade => format!("{why}. {NO_RISK}"),
         _ => format!("refused: {why}"),
     };
     Failed(Failure::Refused(kind), why).into()
@@ -2640,19 +2647,31 @@ mod tests {
             schema,
             floor,
         };
-        let upgrade = "update datum to sync with new: it needs schema 80, this copy runs 79";
-        let behind =
-            "old runs schema 79, below this copy's sync floor 80: it must update datum to sync";
+        let upgrade = format!(
+            "update datum to sync with new: it needs schema 80, this copy runs 79. {NO_RISK}"
+        );
+        let behind = format!(
+            "old runs schema 79, below this copy's sync floor 80: it must update datum to sync. {NO_RISK}"
+        );
         let (old, new) = ((&v(79, Some(70)), "old"), (&v(80, Some(80)), "new"));
-        assert_eq!(below_floor(old, new), Some((upgrade.into(), behind.into())));
-        assert_eq!(below_floor(new, old), Some((behind.into(), upgrade.into())));
+        assert_eq!(
+            below_floor(old, new),
+            Some((upgrade.clone(), behind.clone()))
+        );
+        assert_eq!(
+            below_floor(new, old),
+            Some((behind.clone(), upgrade.clone()))
+        );
         for at in [v(80, Some(70)), v(81, None)] {
             assert_eq!(below_floor((&at, "at"), new), None);
             assert_eq!(below_floor(new, (&at, "at")), None);
         }
         // The refusal reads in its words alone: they name the other copy.
-        let e = refused(upgrade.into(), Some(Why::Upgrade));
+        let e = refused(upgrade.clone(), Some(Why::Upgrade));
         assert_eq!(e.to_string(), upgrade);
+        // A copy before da-95avu says nothing of the risk, and it is added.
+        let e = refused("old runs schema 79".into(), Some(Why::Upgrade));
+        assert_eq!(e.to_string(), format!("old runs schema 79. {NO_RISK}"));
     }
 
     /// A verify between copies that hold different ops is no verdict, and

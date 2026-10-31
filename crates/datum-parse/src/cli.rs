@@ -492,7 +492,7 @@ pub enum UpdateStrategyArg {
 pub struct TailArgs {
     /// Zero, one, or many field names. Comma-separated on the CLI:
     /// `datum tail mood,project` parses to `["mood", "project"]`. Empty = no
-    /// filter. Multi-field rows interleave by occur_time in render.
+    /// filter. Multi-field rows interleave by at in render.
     pub fields: Vec<String>,
     pub count: Option<usize>,
     pub metric: String,
@@ -641,19 +641,19 @@ pub struct RetimeArgs {
     /// Optional. When omitted, the command resolves against `_LAST`
     /// (matching the update/merge/delete/undo default).
     pub slug: Option<String>,
-    /// ISO-8601 duration shift relative to the current occur_time.
+    /// ISO-8601 duration shift relative to the current at.
     /// Mutually exclusive with `time` / `relative` (the parser enforces).
     pub offset: Option<String>,
     /// Time-arg group (`-t`/`-y`/`-q`/`-d`/`-z`/`-D`/`-T`), with the
     /// positional time in the `-t` slot (da-jix52). Each entry's own
-    /// occur_time is what these resolve against; when no flag in the group
+    /// at is what these resolve against; when no flag in the group
     /// is set, the command treats the request as "set to now".
     pub time: TimeArgs,
     pub field: Option<String>,
     pub after: Option<String>,
     pub before: Option<String>,
     /// `-r`/`--relative`: read `time` as a pure shift of the entry's
-    /// occur_time — `-y` moves it a day and keeps its clock.
+    /// at — `-y` moves it a day and keeps its clock.
     pub relative: bool,
 }
 
@@ -1458,7 +1458,7 @@ pub enum StatsWindowFlag {
 /// positional — a year (`2026`), a month (`2026-06`), or a day
 /// (`2026-06-15`); it is exactly equivalent to the matching
 /// `--since`/`--until` pair. Block durations are reconstructed from
-/// consecutive `occur_time`s per field (switch-block semantics); a
+/// consecutive `at`s per field (switch-block semantics); a
 /// stored `dur` on a block entry is used verbatim instead of the
 /// gap-to-next.
 #[derive(Debug, Default)]

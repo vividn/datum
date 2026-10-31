@@ -1,7 +1,7 @@
 //! `datum flag` — manual review-later marker on a field at a time
 //! point (da-dnnn, Option A).
 //!
-//! Stored as a `Verb::Point` entry on `field` with `occur_time` taken
+//! Stored as a `Verb::Point` entry on `field` with `at` taken
 //! from the standard timing flags (so back-dated flags land where the
 //! user said), its words in `state` and `extra_metadata = { flag: true }`.
 //! `datum meta` marks its rows the same way, with `meta: true` for
@@ -34,13 +34,13 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         time,
     } = args;
 
-    // Resolve occur_time from the standard timing flags so back-dated
+    // Resolve at from the standard timing flags so back-dated
     // markers land where the user pointed. Default is "now" — a bare
     // `datum flag <field>` stamps the moment of the command, same as
     // every other logging verb, in the zone `-z` names (da-rsa54). A day
     // alone (`-y`) keeps now's clock: a flag marks a moment, never a
     // whole day.
-    let occur_time = time
+    let at = time
         .builder(TimeCtx::now())?
         .with_timezone(zone_name(&time)?)
         .build();
@@ -62,7 +62,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         Verb::Point,
         state,
         None,
-        Some(occur_time.clone()),
+        Some(at.clone()),
         Some(Dur::moment()),
         client_id()?,
     );
