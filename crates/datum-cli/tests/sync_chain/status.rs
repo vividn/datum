@@ -115,3 +115,175 @@ fn a_departure_is_named_on_the_readers_clock() {
         "{clock} in {line}"
     );
 }
+
+#[test]
+fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
+    let (a, b) = chained();
+    // b heard of a over the pipe, never in a session.
+    let row = status_of(&b, &a);
+    assert_eq!(row["state"], "never", "{row}");
+    assert!(row["last_seen"].is_null() && row["last_verify"].is_null());
+    let all = json(&a.ok(&["sync", "status", "--json"]));
+    assert_eq!(all["this"]["endpoint"], a.id().as_str());
+    assert_eq!(all["this"]["client"], client_of(&a).as_str());
+    assert!(all["chain"].is_string(), "{all}");
+
+    session(&a, &b);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["to_send"].as_i64()),
+        (Some("synced"), Some(0)),
+        "{row}"
+    );
+    assert_eq!(row["last_verify"]["match"], true);
+    assert_eq!(
+        row["kind"],
+        serde_json::Value::Null,
+        "b never described itself"
+    );
+
+    a.ok(&["occur", "later"]);
+    let row = status_of(&a, &b);
+    // What a holds past what b last had: the entry, and its field's spec.
+    let (mine, theirs) = (
+        json(&a.ok(&["sync", "pipe", "vector"])),
+        json(&b.ok(&["sync", "pipe", "vector"])),
+    );
+    let waiting = mine[a.id()].as_i64().unwrap() - theirs[a.id()].as_i64().unwrap();
+    assert!(waiting > 0);
+    assert_eq!(
+        (row["state"].as_str(), row["to_send"].as_i64()),
+        (Some("pending"), Some(waiting)),
+        "{row}"
+    );
+    session(&a, &b);
+    assert_eq!(status_of(&a, &b)["state"], "synced");
+
+    // A mismatch stands through a write made since; a session clears it.
+    a.ok(&["sync", "record-session", &b.id(), "--verify", "mismatch"]);
+    a.ok(&["occur", "since"]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["error"].as_str()),
+        (Some("error"), Some("verify MISMATCH")),
+        "{row}"
+    );
+    session(&a, &b);
+    assert_eq!(status_of(&a, &b)["state"], "synced");
+
+    // So does a session that ended with no verify to give, one copy ahead
+    // of the other (da-t3ey2); one that failed keeps it.
+    a.ok(&["sync", "record-session", &b.id(), "--verify", "mismatch"]);
+    a.ok(&["sync", "record-session", &b.id(), "--error", "cut"]);
+    assert_eq!(status_of(&a, &b)["last_verify"]["match"], false);
+    // b being down since is no session either: the mismatch stands (da-ueb4p).
+    a.ok(&[
+        "sync",
+        "record-session",
+        &b.id(),
+        "--error",
+        "gone",
+        "--offline",
+    ]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["error"].as_str()),
+        (Some("error"), Some("verify MISMATCH")),
+        "{row}"
+    );
+    a.ok(&["sync", "record-session", &b.id()]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["last_verify"].is_null()),
+        (Some("pending"), true),
+        "{row}"
+    );
+    session(&a, &b);
+
+    // One that never reached b, as datum.day's transport says it: offline,
+    // its words in the JSON alone (da-ueb4p).
+    let why = "could not reach b: timed out";
+    a.ok(&[
+        "sync",
+        "record-session",
+        &b.id(),
+        "--error",
+        why,
+        "--offline",
+    ]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["error"].as_str()),
+        (Some("offline"), Some(why)),
+        "{row}"
+    );
+    let table = a.ok(&["sync", "status"]);
+    assert!(
+        table.contains(" offline ") && !table.contains(why),
+        "{table}"
+    );
+    session(&a, &b);
+
+    // b revoked, what it makes is refused, and the transport says so.
+    a.ok(&["sync", "chain", "expel", "b"]);
+    b.ok(&["occur", "after"]);
+    let (ok, why) = b.send(&a);
+    assert!(!ok, "{why}");
+    let why = why.lines().find(|l| l.starts_with("refused:")).unwrap();
+    a.ok(&["sync", "record-session", &b.id(), "--error", why]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["revoked"].as_bool()),
+        (Some("error"), Some(true)),
+        "{row}"
+    );
+    assert!(
+        row["error"]
+            .as_str()
+            .unwrap()
+            .contains("made after its endpoint was expelled"),
+        "{row}"
+    );
+    let table = a.ok(&["sync", "status", "--show-revoked"]);
+    assert!(
+        table.contains("error") && table.contains("EXPELLED"),
+        "{table}"
+    );
+}
+
+#[test]
+fn status_of_a_copy_in_no_chain_is_empty() {
+    let a = Copy::new();
+    // A read creates no database (da-ov6x5): `db migrate` makes it.
+    a.ok(&["db", "migrate"]);
+    let all = json(&a.ok(&["sync", "status", "--json"]));
+    assert!(all["chain"].is_null(), "{all}");
+    assert_eq!(all["members"], serde_json::json!([]));
+    assert_eq!(all["this"]["endpoint"], a.id().as_str());
+    assert!(a.ok(&["sync", "status"]).contains("no sync chain"));
+    // A session with a copy that is no member has nowhere to go.
+    let stranger = Copy::new().id();
+    let out = a.fails(
+        &["sync", "record-session", &stranger, "--verify", "match"],
+        "",
+    );
+    assert!(
+        out.contains("not a member of this copy's sync chain"),
+        "{out}"
+    );
+}
+
+/// An open chain says so beside its members, quietly; a locked one does not.
+#[test]
+fn status_says_a_chain_is_open() {
+    let (a, b) = chained();
+    let open = "no admin: any device can add devices — `datum sync admin add` to protect the chain";
+    assert!(a.ok(&["sync", "status"]).contains(open));
+    assert_eq!(json(&a.ok(&["sync", "status", "--json"]))["open"], true);
+    a.ok(&["sync", "admin", "add", &a.key("admin.key")]);
+    assert!(a.send(&b).0);
+    for copy in [&a, &b] {
+        assert!(!copy.ok(&["sync", "status"]).contains(open));
+        assert_eq!(json(&copy.ok(&["sync", "status", "--json"]))["open"], false);
+    }
+}

@@ -3,6 +3,9 @@
 //! before da-95y4o, never from a command run today. `sync_ops`'
 //! `check_names_the_entries_whose_ops_have_no_row` is the control: the
 //! check names a row dropped under its ops.
+//!
+//! Beside it, what `check sync` says of a row no op covers, and of an edit
+//! a purge left with no create (da-n0ruf).
 
 use super::*;
 
@@ -117,4 +120,67 @@ fn no_command_takes_a_row_away_and_keeps_its_ops() {
     takes(&c, &[], &["db", "purge", "--yes"]);
     a.ok(&["occur", "last"]);
     takes(&a, &[], &["db", "purge", "--leave", "--force", "--yes"]);
+}
+
+/// A row no op covers, on a copy in a chain (da-n0ruf) — a bulk import's,
+/// or an entry older than its ops: `check sync` names it as not yet sent,
+/// which is no error, and the next sync signs it as it stands.
+#[test]
+fn check_names_the_rows_no_op_covers_until_a_sync_signs_them() {
+    let (a, b) = chained();
+    // b's notice is a sync finding too: known, so the one left is the row's.
+    a.ok(&["sync", "chain", "ack", "b"]);
+    a.ok(&["occur", "tea"]);
+    // The entry and the spec its log declared: a's last two ops.
+    a.exec("DELETE FROM ops WHERE hid IN (SELECT hid FROM entries WHERE slug LIKE '%tea%')");
+    let said = a.ok(&["check", "sync"]);
+    assert!(
+        said.contains("[WARN ] sync_no_op (x2): 2 entries have no sync op"),
+        "{said}"
+    );
+    assert!(
+        said.contains("this copy's next sync signs each as it stands"),
+        "{said}"
+    );
+    for named in ["\n  tea:", "\n  spec:tea ("] {
+        assert!(said.contains(named), "{named:?} in {said}");
+    }
+    assert!(said.contains("Summary: 0 errors, 1 warning."), "{said}");
+    // For a program, each by its field, as the other findings name theirs.
+    let found = json(&a.ok(&["check", "sync", "--json"]));
+    let mut fields: Vec<&str> = found["issues"][0]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["field"].as_str().unwrap())
+        .collect();
+    fields.sort();
+    assert_eq!(fields, ["spec", "tea"], "{found}");
+
+    assert!(a.send(&b).0);
+    assert!(b.has("tea"));
+    let said = a.ok(&["check", "sync"]);
+    assert!(said.contains("No consistency issues found"), "{said}");
+    assert_eq!(a.hash(), b.hash());
+}
+
+/// An entry a purged device made and another device edited (da-n0ruf): the
+/// purge sets its create aside and the edit stays applied, for a hid with no
+/// row. Edits with no create fold to nothing, so this is no orphan: there is
+/// no row their fold says this copy should hold.
+#[test]
+fn an_edit_a_purge_left_without_its_create_is_no_orphan() {
+    let (a, b) = chained();
+    a.ok(&["sync", "chain", "ack", "b"]);
+    b.ok(&["occur", "coffee", "cups=1"]);
+    assert!(b.send(&a).0);
+    let coffee = a.query("SELECT hid FROM entries WHERE field = 'coffee'");
+    a.ok(&["update", &coffee, "cups=3"]);
+    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    assert!(!a.has("coffee"));
+    let applied = format!("SELECT kind FROM ops WHERE hid = '{coffee}' AND applied = 1");
+    assert_eq!(a.query(&applied), "update");
+
+    let said = a.ok(&["check", "sync"]);
+    assert!(said.contains("No consistency issues found"), "{said}");
 }

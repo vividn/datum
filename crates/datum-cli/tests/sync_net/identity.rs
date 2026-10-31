@@ -44,8 +44,8 @@ fn a_label_the_chain_refuses_is_refused_at_the_flag() {
 
 /// Unnamed, a copy's label is assembled from what it runs on (da-xijlw),
 /// alike on every copy: beside a second user on its host, `user@` before
-/// it and the database's name after it (`sync_chain.rs` has a copy alone,
-/// its host); ann's second
+/// it and the database's name after it (`sync_chain/labels.rs` has a copy
+/// alone, its host); ann's second
 /// database tells her two copies apart by that name. Every copy here runs
 /// on this one host; members on different hosts (a laptop and a phone) are
 /// tested in chain.rs, `a_label_is_the_least_that_tells_the_chains_members_apart`.

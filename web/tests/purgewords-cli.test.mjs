@@ -1,6 +1,6 @@
 // The unjoin confirm’s joint (da-tyj2t): datum.day hands `sync chain unjoin
 // <who> --json` straight to `unjoinWords`, and each side is tested alone —
-// the CLI's keys in sync_chain.rs, the words on objects built by hand in
+// the CLI's keys in sync_chain/unjoin.rs, the words on objects built by hand in
 // purgewords-pure. Here the real CLI's output meets the real function, so a
 // key renamed on one side fails here instead of falling back to «this only
 // expels it» for a device whose definitions go.
