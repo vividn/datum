@@ -200,6 +200,39 @@ describe('one document', () => {
 		});
 	});
 
+	// da-te4id: `track` and `ignore` answered in raw lines, which take the whole
+	// section; as entries they stand as wide as a `switch` does, and no taller.
+	test('track and ignore draw as entries, as wide as a switch, with the section its height', async () => {
+		await desktop(async (app) => {
+			const { page } = app;
+			const box = (selector) =>
+				page.locator(selector).first().evaluate((el) => {
+					const { width, height } = el.getBoundingClientRect();
+					return { width, height };
+				});
+			const answer = async (line, action) => {
+				await app.clock.forward(1000);
+				await app.submit(line);
+				await page.locator(`${DOC} .action[title="${action}"]`).waitFor();
+				return { group: await box(OUT), section: await box(`${BAR} .section.output`) };
+			};
+			const switched = await answer('switch mood happy', 'CREATE');
+			assert.ok(switched.group.width < switched.section.width / 2, 'a switch took the section: nothing to compare with');
+			for (const [line, action] of [
+				['ignore mood', 'IGNORE'],
+				['track mood', 'TRACK▞'],
+				['ignore tea', 'IGNORE'],
+				['track tea --verb occur', 'TRACK●']
+			]) {
+				const drawn = await answer(line, action);
+				assert.equal(drawn.section.height, switched.section.height, `${line}: the section moved`);
+				assert.ok(drawn.group.width < drawn.section.width, `${line} took the whole section`);
+				if (line !== 'track tea --verb occur') assert.equal(drawn.group.width, switched.group.width, `${line} is not an entry's width`);
+			}
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	test('past four keys: the band cuts them on one line, the log has every one, one to a row', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
@@ -930,6 +963,34 @@ describe('the output is a strip of commands, the newest at the right', () => {
 	// undo button if future writes bury the change … "cannot undo. more recent
 	// changes" more recent changes is a link, which takes you to the latest
 	// entry that buries it» (da-25q3k).
+	test('a track and an ignore wrote, so each has an undo that takes its rows back; a get of a TRACK row wrote nothing', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const group = (line) => page.locator(`${BAR} .group`).filter({ has: page.locator('.echo', { hasText: line }) });
+			const held = async () => (await app.run(['tail', 'tea', '--json'])).stdout;
+
+			await app.submit('ignore tea');
+			await group('ignore tea').getByRole('button', { name: 'undo' }).waitFor();
+			await app.clock.forward(1000);
+			await app.submit('track tea --verb occur');
+			const undo = group('track tea').getByRole('button', { name: 'undo' });
+			await undo.waitFor();
+			await app.clock.forward(1000);
+			await app.submit('get tea');
+			await group('get tea').locator('.doc').first().waitFor();
+			const got = JSON.parse((await page.evaluate(() => window.datum.bar.last().result.stdout)).trim().split('\n').at(-1)).docs;
+			assert.equal(got.at(-1).action, 'TRACK●', 'nothing here tells a get of a TRACK row from its track');
+			assert.equal(await group('get tea').locator('.step').count(), 0, 'a get of a TRACK row has an undo button');
+
+			assert.match(await held(), /TRACKED/);
+			await undo.click();
+			await group('track tea').locator('.head.struck').waitFor();
+			assert.doesNotMatch(await held(), /TRACKED/, 'undone, the TRACK row is still there');
+			assert.doesNotMatch((await app.run(['setup', 'tea', '--json'])).stdout, /"verb"/, 'undone, the spec is still there');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	test('undo hashes a command out where it stands and redo puts it back; a buried one says why and goes to what buried it; a reload keeps the marks', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

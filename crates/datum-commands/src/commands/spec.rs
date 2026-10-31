@@ -463,6 +463,9 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         let now = Block::of(&saved, ignored(db, &saved.field)?);
         print!("{}", now.render(was.as_ref()));
     }
+    if let Some(row) = &status {
+        super::track::echo_status(db, row, args.show)?;
+    }
     warn_alias_conflicts(&report);
     // da-kba2e: a state's alias a command takes the name of never fires.
     for state in states_named(&args) {

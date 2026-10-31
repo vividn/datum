@@ -143,8 +143,6 @@ const NO_ECHO = new Set([
 	'sync',
 	'kit',
 	// Writers with no echo of their own.
-	'track',
-	'ignore',
 	'retime',
 	'reparse',
 	// Words the CLI answers but does not list in `datum help`.
@@ -225,8 +223,8 @@ const learnedNoEcho = new Set<string>();
  * nothing, and the second answer is the table the person asked for.
  *
  * (An alias is named by the database too, and one that expands to a writer
- * with no echo — the chores kit's `newchore`, a `track` — refused the flag
- * (da-tckse). It ignores the env, so there is nothing to ask again.)
+ * with no echo refused the flag (da-tckse). It ignores the env, so there is
+ * nothing to ask again.)
  *
  * A one-side line's word is then remembered for the session,
  * so it is asked twice once and not every time; a word remembered wrongly

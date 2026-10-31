@@ -233,8 +233,6 @@ const READERS = [
 	['alias', 'list'],
 	['sync'],
 	['kit', 'list'],
-	['track', 'coffee'],
-	['ignore', 'coffee'],
 	['reparse'],
 	['help'],
 	['help', 'occur'],
@@ -252,6 +250,9 @@ const WRITERS = [
 	['stop', 'work'],
 	['switch', 'mood', 'happy'],
 	['get', 'coffee'],
+	// da-te4id: each echoes the row it writes.
+	['ignore', 'coffee'],
+	['track', 'coffee'],
 	// `_LAST`, not `mood`: a field names its entry AND the TRACK document
 	// that declared it (da-c8mh), which is two rows, not one.
 	['delete', '_LAST'],
@@ -332,7 +333,7 @@ describe('a kit command answers with its table', () => {
  * json` appended to argv). Two ways that broke:
  * the alias walk took `json` for a positional, so `feel 3` stored
  * `feel=3` under `--show`; and an alias expanding to `track` (the chores
- * kit's `newchore`) refused the flag outright.
+ * kit's `newchore`) refused the flag, which it takes since da-te4id.
  */
 describe('a kit alias logs in the bar', () => {
 	const chores = readFileSync(new URL('../../kits/chores.toml', import.meta.url), 'utf8');
@@ -356,8 +357,11 @@ describe('a kit alias logs in the bar', () => {
 			const tracked = async () =>
 				(await app.run(['grep', '-f', 'vacuum', 'TRACKED'])).stdout.match(/TRACKED/g)?.length ?? 0;
 			await app.submit('newchore vacuum 4');
-			// `track F …` is `setup F … --track` (da-ijf3p): it echoes the spec.
-			assert.match((await app.stdouts()).at(-1) ?? '', /spec:vacuum/);
+			// `track F …` is `setup F … --track` (da-ijf3p): it echoes the spec,
+			// then the row it wrote (da-te4id).
+			const answered = async () =>
+				parseEcho(await app.page.evaluate(() => window.datum.bar.last().result.stdout))?.map((d) => d.action);
+			assert.deepEqual(await answered(), ['CREATE', 'TRACK●']);
 			assert.equal(await tracked(), 1);
 			const spec = await app.run(['setup', 'vacuum', '--json']);
 			assert.match(spec.stdout, /next_date=\+4/, spec.stdout || spec.stderr);
@@ -367,7 +371,7 @@ describe('a kit alias logs in the bar', () => {
 			// (da-6fvys).
 			await app.clock.forward(1000);
 			await app.submit('newchore vacuum 4');
-			assert.match((await app.stdouts()).at(-1) ?? '', /no change/);
+			assert.deepEqual(await answered(), ['NODIFF']);
 			assert.equal(await tracked(), 1);
 		});
 	});

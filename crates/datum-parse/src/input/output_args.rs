@@ -197,8 +197,9 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         "fields" | "stats" => &[Show::Default, Show::None, Show::Json, Show::All],
         // `setup F --json` is its document, and a change's or a delete's
         // echo (da-ez40f); there is no silent mode to offer, and the
-        // listing refuses it.
-        "setup" => &[Show::Default, Show::Json],
+        // listing refuses it. `track F` and `ignore F` are `setup F --track`
+        // and `--ignore`, echoing the row they write (da-te4id).
+        "setup" | "track" | "ignore" => &[Show::Default, Show::Json],
         // `help --json` is the command table itself (da-r13j).
         "help" => &[Show::Default, Show::Json],
         // A group: `sync status`, `sync chain list`, `sync admin list`,
@@ -336,8 +337,8 @@ mod tests {
             "{msg}"
         );
         assert!(check_show(Show::Json, "fields").is_ok());
-        assert!(check_show(Show::Json, "track").is_err());
-        assert!(check_show(Show::Default, "track").is_ok());
+        assert!(check_show(Show::Json, "retime").is_err());
+        assert!(check_show(Show::Default, "retime").is_ok());
         // An unknown value is loud too, rather than degrading to default.
         assert!(take_show(&["--show", "banana"]).is_err());
     }

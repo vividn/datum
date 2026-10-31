@@ -117,6 +117,9 @@ pub enum Outcome {
     Failed,
     /// What an `undo` took back (da-3mryj).
     Undone,
+    /// The row `datum ignore` wrote (da-te4id). `track`'s is a `Create`, which
+    /// [`datum_core::track::track_action_label`] names.
+    Ignore,
 }
 
 thread_local! {
@@ -158,6 +161,7 @@ impl Outcome {
             Outcome::IsLast => "ISLAST",
             Outcome::Failed => "FAILED",
             Outcome::Undone => "UNDONE",
+            Outcome::Ignore => "IGNORE",
         }
     }
 
@@ -181,7 +185,7 @@ impl Outcome {
             return "#c061cb"; // magenta
         }
         match self {
-            Outcome::Create => "#26a269",                   // green
+            Outcome::Create | Outcome::Ignore => "#26a269", // green
             Outcome::Delete | Outcome::Failed => "#e01b24", // red
             Outcome::Exists => "#e5a50a",                   // yellow
             Outcome::Update | Outcome::Rename | Outcome::Retime => "#2aa1b3", // cyan
@@ -199,7 +203,7 @@ impl Outcome {
             return "\x1b[35m"; // magenta
         }
         match self {
-            Outcome::Create => "\x1b[32m",                   // green
+            Outcome::Create | Outcome::Ignore => "\x1b[32m", // green
             Outcome::Delete | Outcome::Failed => "\x1b[31m", // red
             Outcome::Exists => "\x1b[33m",                   // yellow
             Outcome::Update | Outcome::Rename | Outcome::Retime => "\x1b[36m", // cyan

@@ -148,7 +148,7 @@ fn json_still_carries_every_field_and_prints_no_header() {
 fn ignoring_a_never_seen_field_notes_it_and_writes_the_row() {
     let env = Env::new();
     let (out, err) = env.run_both(&["ignore", "moood"]);
-    assert_eq!(out, "✓ Ignoring 'moood'\n");
+    assert!(out.starts_with("IGNORE "), "{out}");
     assert_eq!(
         err,
         "note: no field 'moood' yet (no entries, no spec); ignoring it anyway\n"
@@ -171,7 +171,7 @@ fn ignoring_a_known_field_prints_no_note() {
     env.run(&["setup", "declared", "--verb", "occur"]);
     for field in ["work", "declared"] {
         let (out, err) = env.run_both(&["ignore", field]);
-        assert_eq!(out, format!("✓ Ignoring '{field}'\n"));
+        assert!(out.starts_with("IGNORE "), "{out}");
         assert_eq!(err, "", "{field} is known");
     }
 }
@@ -297,11 +297,19 @@ fn a_list_echoes_each_field() {
     let env = Env::new();
     env.run(&["setup", "declared", "--verb", "occur"]);
     let (out, err) = env.run_both(&["ignore", "work,declared"]);
-    assert_eq!(out, "✓ Ignoring 'work'\n✓ Ignoring 'declared'\n");
+    assert_eq!(heads(&out), [("IGNORE", "work"), ("IGNORE", "declared")]);
     assert_eq!(err, "");
     let out = env.run(&["track", "work,declared"]);
-    assert_eq!(
-        out,
-        "✓ Tracking 'work' (start)\n✓ Tracking 'declared' (occur)\n"
-    );
+    assert_eq!(heads(&out), [("TRACK█", "work"), ("TRACK●", "declared")]);
+}
+
+/// Each echo's action and field, from its header line.
+fn heads(out: &str) -> Vec<(&str, &str)> {
+    out.lines()
+        .step_by(2)
+        .map(|header| {
+            let words: Vec<&str> = header.split(' ').collect();
+            (words[0], words[2].split_once(':').unwrap().0)
+        })
+        .collect()
 }

@@ -505,7 +505,9 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Spec(SpecCommand::Show { show: s, .. } | SpecCommand::Delete { show: s, .. }) => {
             *s = show
         }
-        Command::Spec(SpecCommand::Set(a)) => a.show = show,
+        Command::Spec(SpecCommand::Set(a)) | Command::Track(a) | Command::Ignore(a) => {
+            a.show = show
+        }
         Command::Alias(AliasCommand::List {
             show: s,
             names: false,

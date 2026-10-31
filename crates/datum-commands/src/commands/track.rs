@@ -16,6 +16,12 @@ use datum_core::{
 
 use crate::args::{SpecCommand, SpecSetArgs};
 use crate::config::client_id;
+use crate::render::{
+    self,
+    action::{RenderContext, Surface},
+    show_action_with_context, Outcome, OutputArgs,
+};
+use datum_parse::input::Show;
 
 /// `--verb V` read, or refused naming the four and where they are explained.
 pub(crate) fn parse_verb(raw: &str) -> Result<Action> {
@@ -133,36 +139,66 @@ fn status_one(args: SpecSetArgs, db: &Db) -> Result<()> {
     let spec = db.load_spec(&args.field)?;
     let field = &args.field;
     let now = DatumTime::now();
-    let (entry, said) = match spec {
-        Some(spec) if bare && args.track => (
-            begins_tracking(db, field, &now)?
-                .then(|| client_id().map(|c| track_entry(field, spec.verb, now, &c)))
-                .transpose()?,
-            format!("Tracking '{field}' ({})", spec.verb),
-        ),
+    let entry = match spec {
+        Some(spec) if bare && args.track => begins_tracking(db, field, &now)?
+            .then(|| client_id().map(|c| track_entry(field, spec.verb, now, &c)))
+            .transpose()?,
         _ if bare && args.ignore => {
             // da-t3quu: a typo's IGNORED row is hidden from `fields`.
             super::helpers::note_unseen_field(db, field, "ignoring")?;
             let ignored = db
                 .state_at(field, now.utc)?
                 .is_some_and(|s| is_ignored_state(&s));
-            (
-                (!ignored)
-                    .then(|| client_id().map(|c| ignored_entry(field, c)))
-                    .transpose()?,
-                format!("Ignoring '{field}'"),
-            )
+            (!ignored)
+                .then(|| client_id().map(|c| ignored_entry(field, c)))
+                .transpose()?
         }
         _ => return super::spec::spec(SpecCommand::Set(Box::new(args)), db),
     };
     // Nothing if it's already in that status, as `setup --track` (da-2pbvd).
     let Some(entry) = entry else {
-        println!("no change");
+        let held = match db.entries_for_field(field, Some(1))?.pop() {
+            Some(row) => Some(row),
+            None => db.spec_entry(field)?,
+        };
+        match held.filter(|_| args.show == Show::Json) {
+            Some(row) => echo(db, &row, Outcome::NoDiff, args.show)?,
+            None => println!("no change"),
+        }
         return Ok(());
     };
     db.insert_entry(&entry)?;
     let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
-    println!("✓ {said}");
+    echo_status(db, &entry, args.show)
+}
+
+/// A status row's echo, as any log's (da-te4id): `TRACK` and the verb's glyph,
+/// or `IGNORE`, over the state change into TRACKED or IGNORED.
+pub(crate) fn echo_status(db: &Db, row: &Entry, show: Show) -> Result<()> {
+    let ignoring = row.state.as_ref().is_some_and(is_ignored_state);
+    let action = if ignoring {
+        Outcome::Ignore
+    } else {
+        Outcome::Create
+    };
+    echo(db, row, action, show)
+}
+
+fn echo(db: &Db, row: &Entry, action: Outcome, show: Show) -> Result<()> {
+    let ctx = RenderContext::for_entry(db, row, Surface::Action, None)?;
+    show_action_with_context(
+        row,
+        action,
+        super::helpers::registry_for(db, &[&row.field]).as_ref(),
+        Some(&ctx),
+        &OutputArgs {
+            show: match show {
+                Show::Json => render::Show::Json,
+                _ => render::Show::Default,
+            },
+            format_string: None,
+        },
+    );
     Ok(())
 }
 
