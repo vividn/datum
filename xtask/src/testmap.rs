@@ -57,8 +57,7 @@ struct Map {
     /// Per file, each function as `[first line, last line, set]`.
     files: BTreeMap<String, Vec<[u32; 3]>>,
     /// Tests that read the source tree as data, which coverage cannot see:
-    /// those reaching a `read_dir(` in a test file that names
-    /// `CARGO_MANIFEST_DIR`. Every selection runs them.
+    /// those reaching a line [`tree_walks`] names. Every selection runs them.
     always: Vec<u32>,
 }
 
@@ -201,15 +200,7 @@ fn index(prof: &Path, bin_dir: &Path, out: &Path) -> Result<()> {
     let mut always = BTreeSet::new();
     for (file, fns) in &map.files {
         let text = fs::read_to_string(root.join(file)).unwrap_or_default();
-        if !file.contains("/tests/") || !text.contains("CARGO_MANIFEST_DIR") {
-            continue;
-        }
-        for (i, _) in text
-            .lines()
-            .enumerate()
-            .filter(|(_, l)| l.contains("read_dir("))
-        {
-            let line = i as u32 + 1;
+        for line in tree_walks(file, &text) {
             for f in fns.iter().filter(|f| f[0] <= line && line <= f[1]) {
                 let n = always.len();
                 always.extend(&map.sets[f[2] as usize]);
@@ -241,6 +232,22 @@ fn index(prof: &Path, bin_dir: &Path, out: &Path) -> Result<()> {
         map.commit,
     );
     Ok(())
+}
+
+/// The lines of `file` holding a `read_dir(` in test code, in a file that
+/// names `CARGO_MANIFEST_DIR`: a test file, or a source file past its first
+/// `#[cfg(test)]`, as `db::write`'s guards are (da-o2vna).
+fn tree_walks(file: &str, text: &str) -> Vec<u32> {
+    if !text.contains("CARGO_MANIFEST_DIR") {
+        return Vec::new();
+    }
+    let test_file = file.contains("/tests/") || file.ends_with("/tests.rs");
+    let lines = text.lines().enumerate();
+    lines
+        .skip_while(|(_, l)| !test_file && !l.trim_start().starts_with("#[cfg(test)]"))
+        .filter(|(_, l)| l.contains("read_dir("))
+        .map(|(i, _)| i as u32 + 1)
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -864,6 +871,24 @@ mod tests {
         let long =
             "#[test]\n#[should_panic]\n/// a\n/// b\n/// c\n/// d\n/// e\n/// f\nfn far<T>() {}\n";
         assert_eq!(tests_touched(long, &[9]), ["far"]);
+    }
+
+    #[test]
+    fn a_walk_of_the_tree_is_found_in_test_code_wherever_it_sits() {
+        let walk = "const R: &str = env!(\"CARGO_MANIFEST_DIR\");\nfn f() { read_dir(R); }\n";
+        assert_eq!(tree_walks("crates/a/tests/t.rs", walk), [2]);
+        assert_eq!(tree_walks("crates/a/src/db/tests.rs", walk), [2]);
+        assert!(tree_walks("crates/a/src/lib.rs", walk).is_empty());
+
+        let module =
+            format!("fn prod() {{ read_dir(x); }}\n#[cfg(test)]\nmod tests {{\n{walk}}}\n");
+        assert_eq!(tree_walks("crates/a/src/lib.rs", &module), [5]);
+
+        let quoted = format!("const A: &str = \"#[cfg(test)]\";\n{walk}");
+        assert!(tree_walks("crates/a/src/lib.rs", &quoted).is_empty());
+
+        let tempdir = "#[cfg(test)]\nfn f() { read_dir(tmp); }\n";
+        assert!(tree_walks("crates/a/src/lib.rs", tempdir).is_empty());
     }
 
     #[test]

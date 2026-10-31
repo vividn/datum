@@ -200,6 +200,35 @@ fn a_selection_runs_what_the_map_picks_though_the_map_is_newer_than_the_fork() {
     assert!(plan.contains("(e2e-full): no test reaches"), "{plan}");
 }
 
+/// `reads_the_tree` reaches no function of the change, as a guard reading the
+/// tree as text reaches none but its own (da-o2vna).
+#[test]
+fn a_change_under_crates_reaching_no_test_still_runs_what_reads_the_tree() {
+    let repo = Repo::new("tree-reader", 0);
+    repo.git(&["checkout", "-q", "maps"]);
+    repo.write(
+        "testmap.json",
+        &serde_json::json!({
+            "commit": repo.moved,
+            "tests": [["workspace", "a", "reads_the_tree"]],
+            "sets": [[]],
+            "files": {"crates/a/src/lib.rs": [[1, 3, 0]]},
+            "always": [0],
+        })
+        .to_string(),
+    );
+    let maps = repo.commit("a map with a reader of the tree");
+    repo.git(&["update-ref", "refs/remotes/origin/testmap", &maps]);
+    repo.git(&["checkout", "-q", "pr"]);
+    repo.write("crates/a/src/lib.rs", "pub fn a() -> u8 {\n    2\n}\n");
+    repo.commit("the change");
+    let plan = repo.can_plan();
+    assert!(
+        plan.contains("--no-fail-fast --no-tests=pass -- --exact reads_the_tree"),
+        "{plan}"
+    );
+}
+
 #[test]
 fn the_whole_suite_answer_runs_the_prs_own_tests_and_says_why() {
     let repo = Repo::new("whole", 0);
