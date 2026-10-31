@@ -1022,12 +1022,10 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
         return ended(failed, synced, of);
     }
     runtime()?.block_on(async {
-        // No wait for the relay before dialing: only a session that connects
-        // needs it (`Asked`), and with no network it never comes.
-        let net = net()?;
-        let ep = datum_sync_wire::bind_now(db.sync_endpoint_secret()?, &net).await?;
+        // No wait for the relay: with no network it never comes, and a peer
+        // told no relay keeps the one it held (da-d750q).
+        let ep = datum_sync_wire::bind_now(db.sync_endpoint_secret()?, &net()?).await?;
         let ep = &bound(db, ep);
-        let settle = !matches!(net, Net::Local(_));
         let store = &DbStore::new(db);
         // Each said as its session ends, not after the slowest (da-a4fxr).
         let mut dials: FuturesUnordered<_> = peers
@@ -1035,7 +1033,7 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
             .map(|p| async move {
                 // The whole dial, connecting included.
                 let start = Instant::now();
-                let asked = Asked::now(settle);
+                let asked = Asked::now();
                 let rep = async { dial(store, ep, addr(p)?, None, Some(&asked)).await }.await;
                 (p, rep, start.elapsed())
             })
@@ -1114,7 +1112,7 @@ fn push<'a>(
                 tokio::time::sleep(late).await;
             }
             // A person is waiting on an ask's dial, and on no round's.
-            let reach = asked.as_ref().map(|_| Asked::now(false));
+            let reach = asked.as_ref().map(|_| Asked::now());
             let rep = async { dial(store, ep, addr(&p)?, None, reach.as_ref()).await }.await;
             // Asked, a dial given way to a session between the two copies
             // (da-vj3ly, da-mghh3) waits that session out and dials again,
@@ -1478,6 +1476,36 @@ mod tests {
             let wire = e.downcast_ref::<Refusal>().unwrap().0;
             assert_eq!(serde_json::json!(kind), serde_json::json!(wire));
         }
+    }
+
+    /// A handshake naming no relay keeps the one the peer's row held, and one
+    /// naming a relay replaces it, in the JSON iroh writes (da-d750q).
+    #[test]
+    fn a_peer_told_no_relay_keeps_the_one_it_held() {
+        let db = Db::open_in_memory().unwrap();
+        let peer = iroh::SecretKey::from_bytes(&[1; 32]).public();
+        let told = |sent: EndpointAddr| {
+            let json = serde_json::to_string(&sent).unwrap();
+            let id = peer.to_string();
+            db.sync_handshake(&id, "peer", &json, None, None, 0, None, true)
+                .unwrap();
+            let stored = addr(&db.sync_peers().unwrap()[0]).unwrap();
+            stored.addrs.into_iter().collect::<Vec<_>>()
+        };
+        let relay = |url: &str| iroh::TransportAddr::Relay(url.parse().unwrap());
+        let ip = |at: &str| iroh::TransportAddr::Ip(at.parse().unwrap());
+        let bare = EndpointAddr::new(peer);
+
+        let first = bare
+            .clone()
+            .with_relay_url("https://one.example/".parse().unwrap());
+        assert_eq!(vec![relay("https://one.example/")], told(first));
+        let moved = bare.clone().with_ip_addr("192.0.2.1:1".parse().unwrap());
+        let kept = told(moved);
+        assert!(kept.contains(&relay("https://one.example/")), "{kept:?}");
+        assert!(kept.contains(&ip("192.0.2.1:1")), "{kept:?}");
+        let another = bare.with_relay_url("https://two.example/".parse().unwrap());
+        assert_eq!(vec![relay("https://two.example/")], told(another));
     }
 
     /// A push that fails waits a minute, then twice as long after each

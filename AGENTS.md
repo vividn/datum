@@ -486,9 +486,11 @@ once and the traffic is not doubled; with no run listening it dials as before
 
 A person waits on that bare `sync`, so either way its dial reaches a member in
 5 s or calls it offline (`Asked` in the wire crate, da-75rbi), counting from
-when it dials: it waits for no relay first, only a session that connected waits
-for one with what is left, since the address it tells the peer replaces the one
-the peer held. A kept connection's first reply takes half of the 5 s. A session
+when it dials, and it waits for no relay, before the dial or after: its Hello
+says the address as far as it has got, and a peer told one naming no relay keeps
+the relay it held (`keeping_relay`, da-d750q). A copy before that keeps none
+until a dial of a `sync run` tells it again. A kept connection's first reply
+takes half of the 5 s. A session
 once connected keeps the idle limit's whole minute, and a `sync run`'s own
 rounds, `connect` and a grant's join keep the minute for the dial too.
 

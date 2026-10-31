@@ -7,7 +7,8 @@
 //! through the CLI (`datum sync handshake`, da-6kpj5).
 
 use chrono::{SecondsFormat, Utc};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
+use serde_json::Value;
 
 use super::chain::{self, Chain, Role};
 use super::endpoint;
@@ -45,6 +46,25 @@ pub fn invite_secret(expires: std::time::Duration) -> (String, String) {
         .map(|b| format!("{b:02x}"))
         .collect();
     (secret, expires_at)
+}
+
+/// The address a peer told, and what `held` knew of its relay where it named
+/// none: a `datum sync` tells it before its relay has answered, which says
+/// nothing of the relay, and a browser reaches the peer by no other way
+/// (da-d750q). Either not an address, what it told as it is.
+fn keeping_relay(told: &str, held: &str) -> String {
+    let is_relay = |t: &Value| t.get("Relay").is_some();
+    let Ok(mut addr) = serde_json::from_str::<Value>(told) else {
+        return told.into();
+    };
+    let held = serde_json::from_str::<Value>(held).unwrap_or_default();
+    let kept = held["addrs"].as_array().into_iter().flatten();
+    let kept: Vec<Value> = kept.filter(|t| is_relay(t)).cloned().collect();
+    match addr.get_mut("addrs").and_then(Value::as_array_mut) {
+        Some(addrs) if !kept.is_empty() && !addrs.iter().any(is_relay) => addrs.extend(kept),
+        _ => return told.into(),
+    }
+    addr.to_string()
 }
 
 impl Db {
@@ -120,6 +140,15 @@ impl Db {
 
     /// Record `id` as a peer, or refresh its label, address and last seen.
     fn sync_record_peer(&self, id: &str, label: &str, addrs: &str) -> Result<()> {
+        let held: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT addrs FROM sync_peers WHERE endpoint_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let addrs = keeping_relay(addrs, held.as_deref().unwrap_or(""));
         self.conn.execute(
             "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at, last_seen)
              VALUES (?1, ?2, ?3, ?4, ?4)

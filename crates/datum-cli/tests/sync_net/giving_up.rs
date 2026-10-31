@@ -127,3 +127,37 @@ fn a_session_past_the_short_limit_is_not_cut() {
     );
     assert!(a.has("walk"));
 }
+
+/// A relay that never answers, as one not yet up, costs a live member's
+/// session no wait (a limit it would wait all of), and the member keeps the
+/// relay it held for this copy, which the Hello could not name (da-d750q).
+#[test]
+fn a_sync_waits_for_no_relay_and_its_member_keeps_the_one_it_held() {
+    let (a, b) = paired();
+    let row = format!("sync_peers WHERE endpoint_id = '{}'", a.id());
+    let db = rusqlite::Connection::open(b.db()).unwrap();
+    let held = serde_json::json!({"id": a.id(), "addrs": [{"Relay": "https://held.example/"}]});
+    db.execute(
+        "UPDATE sync_peers SET addrs = ?1 WHERE endpoint_id = ?2",
+        (held.to_string(), a.id()),
+    )
+    .unwrap();
+    drop(db);
+    let _b_runs = b.serve(&["sync", "run"]);
+
+    let start = Instant::now();
+    let out = a
+        .cmd(&["sync"])
+        .env_remove("DATUM_SYNC_BIND")
+        .env("DATUM_SYNC_RELAY", "http://127.0.0.1:9")
+        .env("DATUM_SYNC_DIAL_TIMEOUT_S", "60")
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("verify ok"), "{said}");
+    assert!(start.elapsed() < Duration::from_secs(20), "{said}");
+
+    let addr = b.query(&format!("SELECT addrs FROM {row}"));
+    assert!(addr.contains("https://held.example/"), "{addr}");
+    assert!(addr.contains("\"Ip\""), "told where it is now: {addr}");
+}

@@ -387,18 +387,14 @@ fn asked_limit_of(set: Option<u64>) -> Duration {
 pub struct Asked {
     limit: Duration,
     at: Instant,
-    settle: bool,
 }
 
 impl Asked {
-    /// Started now. `settle`: its endpoint came of [`bind_now`], so a session
-    /// that connects waits for the relay with what is left, and says the
-    /// address that names it.
-    pub fn now(settle: bool) -> Self {
+    /// Started now.
+    pub fn now() -> Self {
         Asked {
             limit: asked_limit_of(env("DATUM_SYNC_DIAL_TIMEOUT_S")),
             at: Instant::now(),
-            settle,
         }
     }
 
@@ -1378,12 +1374,9 @@ async fn session(
             None => {
                 let limit = asked.map_or_else(dial_limit, Asked::left);
                 let conn = connect(ep, addr.clone(), ALPN, limit).await?;
-                // The peer keeps the address it is told in place of the one
-                // it held, so it should name the relay.
-                if let Some(asked) = asked.filter(|a| a.settle) {
-                    let _ = timeout(asked.left(), ep.online()).await;
-                    hello.addr = ep.addr();
-                }
+                // As far as it has got: one of [`bind_now`] may name no relay
+                // yet, and the peer then keeps the one it held (da-d750q).
+                hello.addr = ep.addr();
                 // A connect can take seconds, and a session the peer dialed
                 // meanwhile may have left one kept: this session runs on
                 // that, and this closes as busy (da-qv0do).
