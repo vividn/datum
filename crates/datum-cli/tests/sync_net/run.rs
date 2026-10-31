@@ -297,6 +297,40 @@ fn a_peer_held_by_a_write_comes_back_for_the_change_itself() {
     eventually("a's walk reaching b", || b.has("walk"));
 }
 
+/// A push a copy applying refused waits a minute for the session that copy
+/// starts once done. That session ends the wait: the write after it is pushed
+/// as it is made, where it waited out the rest of the minute.
+#[test]
+fn a_session_with_a_peer_that_was_busy_ends_the_wait_for_it() {
+    let (a, b) = paired();
+    let _a_runs = a.serve(&["sync", "run"]);
+    let mut b_runs = b.serve(&["sync", "run"]);
+    b_runs.lines_until(" got ");
+
+    // b applying, as any process reads its gate: a's push is refused.
+    let mut at = b.db().into_os_string();
+    at.push(".applying");
+    let gate = std::fs::File::options()
+        .create(true)
+        .append(true)
+        .open(at)
+        .unwrap();
+    gate.lock().unwrap();
+    a.ok(&["occur", "walk"]);
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(!b.has("walk"));
+    drop(gate);
+
+    b.ok(&["occur", "swim"]);
+    eventually("b's swim reaching a", || a.has("swim"));
+    eventually("a's walk reaching b", || b.has("walk"));
+
+    // b's push of the walk it just got has ended, or it would carry this too.
+    std::thread::sleep(Duration::from_secs(3));
+    a.ok(&["occur", "run"]);
+    eventually("a's run reaching b inside the minute", || b.has("run"));
+}
+
 /// A write that takes `sync run`'s file in the middle of a session it
 /// serves ends the session as one given way to, as at its handshake
 /// (da-2l0ha): the dialer is told it was busy and records no failure.

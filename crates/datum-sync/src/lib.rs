@@ -1288,6 +1288,7 @@ pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Resul
                         (Ok(rep), _) => {
                             // A peer that reached us, or we it, is up again.
                             retry.remove(&rep.id);
+                            busy.remove(&rep.id);
                             let kept = if rep.kept { " (on the connection kept)" } else { "" };
                             println!("{} {rep}{kept}", now());
                         }
@@ -1311,7 +1312,7 @@ pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Resul
                         // A copy applying refused it, here or there: no failure.
                         // The one applying pushes once done; a push is tried
                         // again after the first gap, which does not grow
-                        // (da-h31wt).
+                        // (da-h31wt), or at once after any session with it.
                         (Err(e), peer) if failure(&e) == Some(BUSY) => {
                             if let Some((id, _)) = peer {
                                 pushed.remove(&id);
