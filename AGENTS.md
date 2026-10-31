@@ -1306,7 +1306,8 @@ generally applicable in the future, not just for this tutorial development».
   1. A PR into a listed branch runs the shared light job: the CLI's build, the wasm module, fmt, clippy,
      svelte-check, the Rust tests its diff reaches (the test map), and the web tests its entry lists. Minutes, not
      the web suite's forty.
-  2. A push to the branch (the crane's staging sync, a merge) runs the same job on the merged tree.
+  2. A sync (the crane's merge of green staging, on `sync/integration/<branch>-<sha>`) runs the same job on the merged
+     tree before it lands, with no Rust tests; a push to the branch, the sync landing too, runs it with them.
   3. Each night `integration-nightly.yml` (05:20 UTC) dispatches ci.yml's full job at every listed branch's tip,
      holding nothing; vremya reads the runs and files a red as a bead under the epic.
   4. The final PR into staging runs staging's CI as any PR does.
@@ -1330,7 +1331,8 @@ generally applicable in the future, not just for this tutorial development».
   hole); style, naming, wording and «a better way to do it» are nits.
 - Two beads that change the same files get a dependency between them, so their PRs don't collide.
 - The crane merges green staging into the branch, a merge commit pushed with no PR, so the final merge has little
-  to reconcile. The branch's CI runs on that push; a red is fixed forward, and a conflict goes to a can as a bead.
+  to reconcile. It lands once the light job is green on it; a red is fixed on the branch first, and a conflict goes to
+  a can as a bead.
   Until the crane's sync is confirmed live, a sync is by hand: a PR from `sync/staging-into-<branch>-<sha>`,
   carrying a bead under the epic, of green staging only (the last commit whose push CI passed), merged as a merge
   commit, never a squash.

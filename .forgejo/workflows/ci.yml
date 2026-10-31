@@ -62,6 +62,9 @@ on:
   # because nothing could have told it to skip a step. The integration nightly
   # dispatches it at each integration branch's tip (da-4g6zm), the full job on
   # ubuntu-latest; promotion reads staging's runs alone, so it promotes nothing.
+  # A dispatch on `sync/integration/<branch>-<sha>`, the crane's sync before it
+  # lands, is the one that is not a push run: the `integration` job alone
+  # (da-4i8ib).
   workflow_dispatch:
 
 # One run per ref at a time. On a PR ref a newer push cancels the run of the
@@ -99,8 +102,9 @@ env:
 jobs:
   ci:
     name: CI (cargo + web)
-    # A push to an integration branch is the `integration` job's alone.
-    if: github.event_name != 'push' || !startsWith(github.ref_name, 'integration/')
+    # A push to an integration branch, and a sync of one, are the `integration`
+    # job's alone.
+    if: (github.event_name != 'push' || !startsWith(github.ref_name, 'integration/')) && (github.event_name != 'workflow_dispatch' || !startsWith(github.ref_name, 'sync/integration/'))
     # A staging run, pushed or dispatched, runs on its own runner, labelled ONLY
     # `staging` so it never takes a PR job (da-laema). On the shared one it
     # queued behind every PR run and, started after the tip had moved,
@@ -662,10 +666,13 @@ jobs:
   # svelte-check, the Rust tests the change reaches when it changes crates/ or
   # a Cargo manifest, and the entry's `web_tests`. The full Rust and web
   # suites run once, on the epic's PR into staging. A branch under
-  # `integration/` the file does not list ends at the first step.
+  # `integration/` the file does not list ends at the first step. So does a
+  # sync of one, the crane's dispatch on `sync/integration/<branch>-<sha>`
+  # (da-4i8ib, vividn, 2026-10-30: «it should just run the tutorial CI»), but
+  # red: the crane lands a green sync, and nothing would have been tested.
   integration:
     name: CI (integration)
-    if: (github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) || (github.event_name == 'push' && startsWith(github.ref_name, 'integration/'))
+    if: (github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) || (github.event_name == 'push' && startsWith(github.ref_name, 'integration/')) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'sync/integration/'))
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -675,8 +682,9 @@ jobs:
 
       # The branch's entry: LISTED=1 runs every later step. DIFF is what the
       # change is read against: a PR's base, a push's previous tip (staging's
-      # tip for a new branch). Not staging for every push: a sync squashes
-      # staging into the branch, so `staging...HEAD` holds staging's changes.
+      # tip for a new branch), a sync's its first parent, the branch's tip. Not
+      # staging for every push: a sync squashes staging into the branch, so
+      # `staging...HEAD` holds staging's changes.
       - name: Is this branch in the integration permit?
         env:
           BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
@@ -684,12 +692,17 @@ jobs:
           BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          python3 scripts/integration-permit.py "$BRANCH" "$RUNNER_TEMP/web.tests" "$RUNNER_TEMP/web.glob" || exit 0
+          sync=; if [ "${{ github.event_name }}" = workflow_dispatch ]; then sync=1 BRANCH=${BRANCH#sync/} BRANCH=${BRANCH%-*}; fi
+          if ! python3 scripts/integration-permit.py "$BRANCH" "$RUNNER_TEMP/web.tests" "$RUNNER_TEMP/web.glob"; then
+            [ -n "$sync" ] || exit 0
+            echo "::error::a sync of $BRANCH, which the permit file does not list: nothing was tested"; exit 1
+          fi
           echo "LISTED=1" >> "$GITHUB_ENV"
           git fetch -q --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
           echo "BASE=$BASE" >> "$GITHUB_ENV"
           diff=origin/$BASE
           [ "${{ github.event_name }}" = pull_request ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null || diff=$BEFORE
+          [ -z "$sync" ] || diff=HEAD^1
           echo "DIFF=$diff" >> "$GITHUB_ENV"
           echo "the change: $diff...HEAD, $(git diff --name-only "$diff...HEAD" | wc -l) files"
 
@@ -751,8 +764,13 @@ jobs:
       # build, the wasm module and clippy catch a break there (vremya,
       # 2026-10-22). One inside runs the tests it reaches, as the full job's
       # selection picks them, and the whole suite when that says so.
+      # A sync runs none: it brings staging's changes, whose tests passed there,
+      # and the selection says the whole suite (the map is newer than the branch's
+      # last sync; 36da61c4 against either parent), which is 19 minutes where the
+      # job is 8 (run 7391). The push that lands it runs them, and a red there is
+      # fixed forward.
       - name: The Rust tests this change reaches
-        if: env.LISTED == '1'
+        if: env.LISTED == '1' && github.event_name != 'workflow_dispatch'
         run: |
           set -euo pipefail
           if ! git diff --name-only "$DIFF...HEAD" | grep -qE '^crates/|^Cargo\.(toml|lock)$'; then
