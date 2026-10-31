@@ -625,6 +625,9 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 out.push_str(&strip);
                 out.push_str("</g>");
             }
+            if !span.lane.is_empty() {
+                out.push_str(&lane_edges(layout, &geom, day, span));
+            }
             out.push_str("</g>");
         }
 
@@ -1082,6 +1085,9 @@ fn block_rect(
 /// page stacks share it.
 const DEAD_ZONE_ID: &str = "dead-zone";
 
+/// How bright a lane's inner edge is at its fullest: a major hour line.
+const LANE_EDGE_OPACITY: f64 = 0.4;
+
 /// `from`, the lane's knots strictly between, `to`: where an edge drawn
 /// across that stretch of a forked band bends.
 fn bends(span: &RenderedSpan, from: f64, to: f64) -> Vec<f64> {
@@ -1143,6 +1149,67 @@ fn block_shape(
     ("path", format!(r#"d="{d}Z""#))
 }
 
+/// Along the axis, from where a stretch's lane leaves the whole band, or
+/// the stretch's start if it is a lane there, to where it rejoins it, or
+/// the stretch's end.
+fn lane_reach(span: &RenderedSpan) -> (f64, f64) {
+    let (first, last) = (span.lane[0], span.lane[span.lane.len() - 1]);
+    let whole = |k: [f64; 3]| k[1..] == [0.0, 1.0];
+    (
+        if whole(first) {
+            first[0]
+        } else {
+            span.time_offset
+        },
+        if whole(last) {
+            last[0]
+        } else {
+            span.time_offset + span.time_extent
+        },
+    )
+}
+
+/// The edges of a stretch's lane that face another lane (da-zh83r), so the
+/// S and the margin between lanes show. An edge is a piece per bend, each as
+/// bright as the band has narrowed there: none where it leaves the day's own
+/// edge, which draws nothing, so past the S nothing shows. The side that
+/// stays on the day's edge is not drawn.
+fn lane_edges(
+    layout: &DayviewLayout,
+    geom: &PlotGeom,
+    day: &RenderedDay,
+    span: &RenderedSpan,
+) -> String {
+    let (from, to) = lane_reach(span);
+    let xs = bends(span, from, to);
+    let mut out =
+        String::from(r#"<g class="lane-edge" fill="none" stroke="white" pointer-events="none">"#);
+    for whole in [0.0, 1.0] {
+        let at = |x: f64| {
+            let (near, far) = span.lane_at(x);
+            if whole == 0.0 {
+                near
+            } else {
+                far
+            }
+        };
+        let inset = |x: f64| (at(x) - whole).abs();
+        let inner = xs.iter().map(|x| inset(*x)).fold(0.0, f64::max);
+        if inner == 0.0 {
+            continue;
+        }
+        for piece in xs.windows(2) {
+            let _ = write!(
+                out,
+                r#"<path d="{d}" stroke-opacity="{o}" vector-effect="non-scaling-stroke"/>"#,
+                d = path_d(layout, geom, day, piece.iter().map(|x| (*x, at(*x)))),
+                o = LANE_EDGE_OPACITY * inset(piece[0]).min(inset(piece[1])) / inner,
+            );
+        }
+    }
+    out + "</g>"
+}
+
 /// The bounds of a stretch's lane where the band is forked (da-1v9gp):
 /// its two edges from where the band narrows to where it widens again, and
 /// a cap across each end the stretch has there. Drawn with no stroke
@@ -1155,12 +1222,7 @@ fn lane_path(
 ) -> String {
     let (first, last) = (span.lane[0], span.lane[span.lane.len() - 1]);
     let (cap_lo, cap_hi) = (first[1..] != [0.0, 1.0], last[1..] != [0.0, 1.0]);
-    let from = if cap_lo { span.time_offset } else { first[0] };
-    let to = if cap_hi {
-        span.time_offset + span.time_extent
-    } else {
-        last[0]
-    };
+    let (from, to) = lane_reach(span);
     let mut xs = bends(span, from, to);
     // One path: out along an edge, across the cap, back along the other.
     if cap_lo && !cap_hi {
@@ -2159,5 +2221,54 @@ mod tests {
         // An hour after the jump is 07:00 again, in the far lane.
         assert!(groups[1].contains(r#"<circle class="point-bg" cx="700" cy="60.8125" r="1.9""#));
         assert!(!svg.contains("dead-zone"));
+    }
+
+    /// da-zh83r: each lane draws the edge facing the other, S included, as
+    /// one straight piece a bend, out of nothing at the day's own edge.
+    #[test]
+    fn a_lane_draws_its_inner_edge_fading_into_the_days_own() {
+        let svg = jumped(&[(0, 0, 7, "UTC+2"), (7, 6, 24, "UTC+1")]);
+        type Point = (f64, f64);
+        let pieces = |group: &str| -> Vec<(Point, Point, f64)> {
+            let edge = group.split(r#"<g class="lane-edge""#).nth(1).unwrap();
+            let edge = edge.split("</g>").next().unwrap();
+            (edge.split(r#"<path d=""#).skip(1))
+                .map(|p| {
+                    let (d, rest) = p.split_once('"').unwrap();
+                    let (a, b) = d[1..].split_once('L').unwrap();
+                    let at = |p: &str| {
+                        let (x, y) = p.split_once(',').unwrap();
+                        (x.parse::<f64>().unwrap(), y.parse::<f64>().unwrap())
+                    };
+                    let o = rest.split('"').nth(1).unwrap().parse().unwrap();
+                    (at(a), at(b), o)
+                })
+                .collect()
+        };
+        let groups: Vec<&str> = svg.split(r#"<g class="day-data""#).skip(1).collect();
+        let (near, far) = (pieces(groups[0]), pieces(groups[1]));
+        // The S's 8 pieces and the straight run, the facing edge alone: the
+        // near lane's from the band's far edge to 47.5%, the far lane's from
+        // 52.5% to the band's near edge.
+        assert_eq!((near.len(), far.len()), (9, 9));
+        let round = |v: f64| (v * 100.0).round() / 100.0;
+        assert_eq!((round(near[0].0 .0), near[0].0 .1), (545.92, 100.0));
+        assert_eq!((round(near[8].0 .0), near[8].1), ((579.25), (700.0, 47.5)));
+        assert_eq!(far[0].0, (600.0, 52.5));
+        assert_eq!((round(far[8].1 .0), far[8].1 .1), (754.08, 0.0));
+        // Brightness: none where the edge meets the day's, which draws
+        // nothing, some on the curve, climbing, a major hour line's between
+        // the lanes.
+        let up = near.iter().map(|p| p.2);
+        let down = far.iter().rev().map(|p| p.2);
+        for side in [up.collect::<Vec<_>>(), down.collect()] {
+            assert_eq!(side[0], 0.0);
+            assert!(side[4] > 0.0 && side[4] < LANE_EDGE_OPACITY);
+            assert!(side.windows(2).all(|w| w[0] <= w[1]), "{side:?}");
+            assert_eq!(side[8], LANE_EDGE_OPACITY);
+        }
+        // An ordinary day and a clock moved forward fork nothing.
+        assert!(!jumped(&[(0, 0, 24, "UTC")]).contains("lane-edge"));
+        assert!(!jumped(&[(0, 0, 7, "UTC+1"), (7, 8, 24, "UTC+2")]).contains("lane-edge"));
     }
 }

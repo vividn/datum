@@ -117,6 +117,9 @@ test('an hour that happened twice is a lane each, and a press reads the lane it 
 		assert.ok(first.dots[0].bottom <= mid + 0.5, `the first 02:20 is in the top lane: ${JSON.stringify(first.dots[0])}`);
 		assert.ok(second.dots[0].top >= mid - 0.5, `the second 02:15 is in the bottom lane: ${JSON.stringify(second.dots[0])}`);
 		assert.ok(first.lane && second.lane, 'each stretch has its lane\'s path');
+		// Each draws its inner edge, whose stroke keeps its weight as the strip stretches the band (da-zh83r).
+		const edges = await page.locator(`${TODAY} svg.svg .day-data > .lane-edge path`).evaluateAll((all) => all.map((p) => getComputedStyle(p).vectorEffect));
+		assert.deepEqual(edges, Array(18).fill('non-scaling-stroke'), 'nine pieces a lane, the S and the run between the lanes');
 
 		// 02:30 is one place across the band and two instants an hour
 		// apart: which one a press means is which lane it is in.
