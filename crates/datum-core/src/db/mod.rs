@@ -105,6 +105,7 @@ pub use zone_timeline::{agreed_zone, NEIGHBOURS};
 // `crate::migrations`.
 pub(crate) use alias::new_alias_entry;
 pub(crate) use definition::{definition_data, new_definition_entry};
+pub use insert::check_bulk_entry;
 pub(crate) use insert::try_insert;
 pub(crate) use spec::{new_spec_entry, NOT_META_FIELD_SQL};
 // The state-row column reader, shared by the SQL window behind `state_at`

@@ -1188,9 +1188,18 @@ fn insert_entries_bulk_in_tx(
     Ok(outcomes)
 }
 
-fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
+/// What the bulk path refuses of an entry by the entry alone, whatever the
+/// table holds: its field's name, its slug, a reserved field's shape. So
+/// `db v2import` tries each doc as it reads it and lists the one refused,
+/// where an insert's refusal would stop the whole run (da-5m4i1).
+pub fn check_bulk_entry(entry: &Entry) -> Result<()> {
     crate::slug::validate_field_name(&entry.field)?;
     crate::slug::validate_slug(&entry.slug.0)?;
+    super::spec::check_meta_entry(&entry.slug, entry, entry.data.as_ref())
+}
+
+fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
+    check_bulk_entry(entry)?;
     // da-r569: dedup against the canonical storage hash, matching the value
     // `try_insert` will persist (see `insert_entry_in_tx` for the rationale).
     let (_, _, canonical_state) = derive_verb_for_storage(entry)?;

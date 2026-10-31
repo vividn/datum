@@ -2392,3 +2392,86 @@ fn a_negative_dur_with_no_state_returns_to_true() {
     assert_eq!(e.state, Some(serde_json::json!(false)));
     assert_eq!(e.following_state, Some(serde_json::json!(true)));
 }
+
+// ─── A name storage refuses is one doc's, not the run's (da-5m4i1) ───
+
+#[test]
+fn a_field_name_storage_refuses_is_listed_and_the_rest_import() {
+    let good = |n: u32| {
+        serde_json::json!({
+            "_id": format!("good:{n}"),
+            "data": {"field": "good", "occurTime": {"utc": format!("2025-01-01T1{n}:00:00.000Z")}},
+            "meta": {},
+        })
+    };
+    // (name, the reason it is listed under, what the listing says of it).
+    for (name, reason, why) in [
+        ("", "no-field", ""),
+        ("a:b", "invalid-shape", "cannot contain ':'"),
+        (":x", "invalid-shape", "cannot contain ':'"),
+        ("%a::b%", "invalid-shape", "cannot contain '::'"),
+        ("a,b", "invalid-shape", "cannot contain ','"),
+        ("a\nb", "invalid-shape", "a newline"),
+        ("a\tb", "invalid-shape", "a tab"),
+        ("a\u{7f}b", "invalid-shape", "a control character"),
+        ("spec", "invalid-shape", "not a valid field spec"),
+        ("alias", "invalid-shape", "`alias:2025"),
+        ("view", "invalid-shape", "`view:2025"),
+        ("command", "invalid-shape", "`command:2025"),
+        ("index", "invalid-shape", "`index:2025"),
+        ("kit", "invalid-shape", "`kit:2025"),
+        ("setting", "invalid-shape", "`setting:2025"),
+    ] {
+        let odd = serde_json::json!({
+            "_id": "odd",
+            // A dur and a state that would be counted, were the doc stored.
+            "data": {"field": name, "occurTime": {"utc": "2025-01-01T09:00:00.000Z"},
+                     "dur": "nonsense", "state": {"id": "x"}},
+            "meta": {},
+        });
+        let f = write_backup(serde_json::json!([good(0), odd, good(1)]));
+        let backup = f.path().to_str().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v2.db");
+        let datum = |args: &[&str]| {
+            let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+                .env("DATUM_DB", &path)
+                .env("NO_COLOR", "1")
+                .args(args)
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(out.status.success(), "{name:?} {args:?}: {stderr}");
+            stdout
+        };
+
+        let listed = format!("1 skipped (1 {reason})");
+        let line = format!("  {reason}  odd");
+        let check = |out: &str, sum: &str| {
+            assert!(
+                out.contains(&format!("{sum} (2 point, 0 block), {listed}")),
+                "{name:?}: {out}"
+            );
+            let got = out.lines().find(|l| l.starts_with(&line));
+            assert!(got.is_some_and(|l| l.contains(why)), "{name:?}: {out}");
+            // Nothing of the doc is counted: it was not stored.
+            assert!(!out.contains("dur values"), "{name:?}: {out}");
+            assert!(!out.contains("states normalized"), "{name:?}: {out}");
+        };
+        check(
+            &datum(&["db", "v2import", "--dry-run", backup]),
+            "2 would import",
+        );
+        check(&datum(&["db", "v2import", backup]), "2 imported");
+
+        let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+        let fields: Vec<_> = datum_core::test_util::logged_all(&db)
+            .into_iter()
+            .map(|e| e.field)
+            .collect();
+        assert_eq!(fields, ["good", "good"], "{name:?}");
+        // The run finished, so what it does after the rows is done too.
+        assert!(db.load_spec("good").unwrap().is_some(), "{name:?}");
+    }
+}

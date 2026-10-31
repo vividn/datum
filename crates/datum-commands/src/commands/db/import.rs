@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 use datum_core::{
-    db::{ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
+    db::{check_bulk_entry, ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
     derive_verb,
     dur::{Dur, DurSpan},
     entry::{build_slug, Entry, Verb, V2_IMPORT_SOURCE},
@@ -19,7 +19,7 @@ use datum_core::{
         interpolate, strip_create_time_literal, strip_field_prefix, InterpolationContext,
     },
     ids::{Hid, Slug},
-    slug::validate_slug,
+    slug::{validate_new_field_name, validate_slug},
     time::{DatumTime, Zone},
 };
 use datum_parse::entry_id::DATE_ONLY_PRECISION;
@@ -69,7 +69,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     let delim = crate::config::resolve_id_delimiter(None);
     // (reason, id, detail) — id is the source `_id` (or a synthetic
     // <missing-_id at #N> if absent). detail is an optional explanation
-    // (the derive_verb error message for `invalid-shape`).
+    // (why it was refused, for `invalid-shape`).
     let mut skipped_records: Vec<(SkipReason, String, Option<String>)> = Vec::new();
     // CouchDB design docs (`_design/…`) are views, not entries: neither
     // imported nor skipped, only counted, so the total still adds up.
@@ -84,6 +84,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     let mut reading = Progress::new("v2import: reading", Some(docs.len()));
     for (doc_idx, doc) in docs.iter().enumerate() {
         reading.tick(doc_idx);
+        let counted = (dur_parse_warnings, states_normalized);
         let flat = data_only_fields(doc);
         let data = flat.as_ref().unwrap_or(&doc["data"]);
         let meta = &doc["meta"];
@@ -94,8 +95,8 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         }
 
         let field = match data["field"].as_str() {
-            Some(f) => f.to_string(),
-            None => {
+            Some(f) if !f.is_empty() => f.to_string(),
+            _ => {
                 skipped_records.push((SkipReason::NoField, doc_id, None));
                 continue;
             }
@@ -382,6 +383,18 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // (hid is not part of content_hash; recompute remains correct.)
         entry.content_hash = entry.expected_content_hash();
 
+        // A name or shape storage refuses, or `write_track_specs` would after
+        // the rows are in, is this doc's alone (da-5m4i1). Its `dur` and state
+        // were counted above as if it were stored.
+        if let Err(e) =
+            validate_new_field_name(&entry.field).and_then(|()| check_bulk_entry(&entry))
+        {
+            eprintln!("warning: skipping {doc_id}: {e}");
+            skipped_records.push((SkipReason::InvalidShape, doc_id, Some(e.to_string())));
+            (dur_parse_warnings, states_normalized) = counted;
+            continue;
+        }
+
         // Tally based on dur shape (matches user-facing summary semantics:
         // dur=None or dur=zero → point, otherwise → block).
         let is_block = match entry.dur.as_ref() {
@@ -602,9 +615,11 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SkipReason {
-    /// Source doc had no `field`, in `data` or at its top level — can't be imported.
+    /// Source doc had no `field`, or an empty one, in `data` or at its top
+    /// level — can't be imported.
     NoField,
-    /// `derive_verb` rejected the (state, dur) shape.
+    /// A time that does not read, a (state, dur) `derive_verb` rejected, or a
+    /// field name or reserved field's shape storage refuses.
     InvalidShape,
     /// Already present in the target DB (content_hash dedup).
     Duplicate,
