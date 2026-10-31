@@ -133,9 +133,12 @@ export function sourceAt(lines, starts, offset) {
 	return (segments.findLast(([c]) => c <= column) ?? segments[0])?.[1];
 }
 
-/** A source map's path for one of `web/src/`, as `src/…`; undefined for anything else. */
+/**
+ * A source map's path for one of `web/src/`, as `src/…`; undefined for anything
+ * else. A worker's map names it under `.svelte-kit/output/`, a page's does not.
+ */
 export const ours = (source) => {
-	const p = source.split('?')[0].replace(/^(\.\.\/)+/, '');
+	const p = source.split('?')[0].replace(/^(\.\.\/)+(\.svelte-kit\/output\/)?/, '');
 	return p.startsWith('src/') ? p : undefined;
 };
 

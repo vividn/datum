@@ -97,6 +97,10 @@ test('a function start reads back to the source it was compiled from', () => {
 	assert.deepEqual(decodeMappings('wCAAA,C'), [[[40, 0]]]);
 	assert.equal(ours('../../../../../../src/lib/x.ts'), 'src/lib/x.ts');
 	assert.equal(ours('../../../src/lib/wasm/datum-cli.wasm?url'), 'src/lib/wasm/datum-cli.wasm');
+	// A worker's map, which `index` leaves out of every set by these names.
+	assert.equal(ours('../../../../.svelte-kit/output/src/lib/calls.ts'), 'src/lib/calls.ts');
+	assert.equal(ours('../../../../.svelte-kit/output/src/lib/wasm/datum-cli.wasm?url'), 'src/lib/wasm/datum-cli.wasm');
+	assert.equal(ours('../.svelte-kit/generated/client/app.js'), undefined);
 	assert.equal(ours('../../node_modules/.pnpm/svelte@4/node_modules/svelte/src/runtime/x.js'), undefined);
 });
 
