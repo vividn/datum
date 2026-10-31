@@ -1025,8 +1025,8 @@ pub enum SyncCommand {
     },
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
-    /// `datum sync chain expel <WHO>`, `datum sync chain unjoin <WHO>
-    /// [--yes]`, `datum sync chain wipe <WHO> [--yes]`, `datum sync chain role <WHO> member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
+    /// `datum sync chain expel <WHO> [--unjoin] [--wipe] [--yes]`,
+    /// `datum sync chain role <WHO> member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
     /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,
     /// each `[--admin-key <FILE>]` — a signed act on the chain.
     Admin {
@@ -1223,18 +1223,15 @@ pub enum SyncFilter {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncAdminAct {
-    /// Writes the chain's `revoke` record: the stored type keeps its name.
-    Expel,
-    /// `unjoin <WHO>` previews (`--json` for a program); `--yes` does it,
-    /// writing a `purge` record.
-    Unjoin {
+    /// `expel <WHO>` writes the chain's `revoke` record, `--unjoin` a `purge`
+    /// and `--wipe` an `erase` (da-n0uj1.6), both a `purge` then an `erase`:
+    /// the stored types keep their names. Either flag says what it does and
+    /// `--yes` does it; `--unjoin --json` is the preview for a program.
+    Expel {
+        unjoin: bool,
+        wipe: bool,
         yes: bool,
         show: Show,
-    },
-    /// `wipe <WHO>` says what it does and its limit; `--yes` does it,
-    /// writing an `erase` record (da-n0uj1.6).
-    Wipe {
-        yes: bool,
     },
     Role {
         reader: bool,

@@ -96,10 +96,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     );
     assert_eq!(
         complete(&["chain"]),
-        [
-            "invite", "join", "leave", "list", "rename", "expel", "unjoin", "wipe", "purge",
-            "role", "ack", "rekey"
-        ]
+        ["invite", "join", "leave", "list", "rename", "expel", "purge", "role", "ack", "rekey"]
     );
     // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut
     // (da-n0uj1.1): each is unknown, naming the verbs there are.
@@ -115,17 +112,19 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
         connect.contains("unknown sync chain subcommand"),
         "{connect}"
     );
-    for gone in ["revoke", "revert"] {
+    // `unjoin` and `wipe` are `expel --unjoin` and `--wipe`, and cut too (da-zfss8).
+    for gone in ["revoke", "revert", "unjoin", "wipe"] {
         let out = a.fails(&["sync", "chain", gone, "x"], "");
         assert!(
-            out.contains("unknown sync chain subcommand")
-                && out.contains("expel")
-                && out.contains("unjoin"),
+            out.contains("unknown sync chain subcommand") && out.contains("expel"),
             "{gone}: {out}"
         );
     }
     let purge = a.fails(&["sync", "chain", "purge", "x"], "");
-    assert!(purge.contains("`sync chain unjoin <WHO>`"), "{purge}");
+    assert!(
+        purge.contains("`sync chain expel <WHO> --unjoin`"),
+        "{purge}"
+    );
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
     assert_eq!(complete(&["daemon"]), ["install", "uninstall", "status"]);
     // `datum sync help` is the page.

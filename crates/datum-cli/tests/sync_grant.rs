@@ -793,6 +793,63 @@ fn a_passkey_approves_a_grant_like_of_three_devices_once() {
     }
 }
 
+/// `expel --unjoin --wipe` in a passkey-locked chain (da-zfss8): one link and
+/// one code approve both records, the purge first.
+#[test]
+fn a_passkey_approves_an_expel_with_both_flags_once() {
+    use std::io::{Read, Write};
+    let g = Install::new("gina");
+    let o = Install::new("olga");
+    let _home = home_chain(&g, &[&o]);
+    g.ok(
+        "home",
+        &["sync", "admin", "add", &crate::sync_chain::passkey_json()],
+    );
+    o.ok("home", &["occur", "mate"]);
+    o.ok("home", &["sync"]);
+    eventually("gina holding mate", || g.has("home", "mate"));
+
+    let who = o.device();
+    let args = [
+        "sync",
+        "chain",
+        "expel",
+        &who[..12],
+        "--unjoin",
+        "--wipe",
+        "--yes",
+    ];
+    let mut expelling = g.cmd("home", &args).stdin(Stdio::piped()).spawn().unwrap();
+    let mut err = BufReader::new(expelling.stderr.take().unwrap());
+    let (mut asked, mut line) = (String::new(), String::new());
+    while !line.contains("/sync/approve#") {
+        asked.push_str(&line);
+        line.clear();
+        assert!(err.read_line(&mut line).unwrap() > 0, "no link: {asked}");
+    }
+    assert!(
+        asked.contains("these 2, at once: an unjoin; an order to delete its copy"),
+        "{asked}"
+    );
+    let (texts, challenge) = batch_challenge(&line);
+    let kinds: Vec<String> = texts
+        .iter()
+        .map(|t| serde_json::from_str::<Value>(t).unwrap()["type"].to_string())
+        .collect();
+    assert_eq!(kinds, ["\"purge\"", "\"erase\""]);
+    let code = crate::sync_chain::approval_code(&challenge);
+    writeln!(expelling.stdin.take().unwrap(), "{code}").unwrap();
+    let mut rest = String::new();
+    err.read_to_string(&mut rest).unwrap();
+    assert!(expelling.wait().unwrap().success(), "{rest}");
+    assert!(!g.has("home", "mate"));
+
+    let back = o.cmd("home", &["sync"]).output().unwrap();
+    let said = String::from_utf8_lossy(&back.stdout);
+    assert!(said.contains("deleted its copy of this database"), "{said}");
+    assert!(!o.has("home", "mate"));
+}
+
 /// Every chain record `i`'s `db` holds.
 fn records_of(i: &Install, db: &str) -> usize {
     let n = i.query(db, "SELECT COUNT(*) || '' FROM ops WHERE hid = '~chain'");
@@ -904,7 +961,7 @@ fn a_grant_takes_a_ticket_made_elsewhere_and_a_deferred_grant_like_leaves_its_gr
     assert_eq!(records(&g, "home", "grant"), 1);
 }
 
-/// `sync chain wipe` (da-n0uj1.6): a device online deletes its copy as the
+/// `sync chain expel --wipe` (da-n0uj1.6): a device online deletes its copy as the
 /// order reaches it, carried by the dial of a member's run; one offline is
 /// expelled at once, says it is asked, and deletes its copy as it next
 /// dials a member. Each then shows as wiped; this copy is never wiped.
@@ -932,7 +989,16 @@ fn a_wiped_device_deletes_its_copy_online_at_once_and_offline_once_back() {
         row.and_then(|r| r["cells"][&chain]["state"].as_str().map(String::from))
     };
     let wipe = |who: &str| {
-        let args = ["sync", "chain", "wipe", who, "--yes", "--admin-key", &admin];
+        let args = [
+            "sync",
+            "chain",
+            "expel",
+            who,
+            "--wipe",
+            "--yes",
+            "--admin-key",
+            &admin,
+        ];
         g.cmd("home", &args).output().unwrap()
     };
 
@@ -986,5 +1052,57 @@ fn a_wiped_device_deletes_its_copy_online_at_once_and_offline_once_back() {
     // What each synced stays on gina's copy; what olga had not is nowhere.
     assert!(g.has("home", "tea") && g.has("home", "mate"));
     assert!(!g.has("home", "yerba") && !o.has("home", "yerba"));
+    drop(home);
+}
+
+/// `expel --unjoin --wipe` (da-zfss8): what the device wrote goes from every
+/// other copy at once, its own copy once the order reaches it. A device still
+/// offline holds what it holds, and the admin's key signs both records.
+#[test]
+fn an_expel_with_both_flags_withdraws_what_it_wrote_and_deletes_its_copy() {
+    let g = Install::new("gina");
+    let o = Install::new("olga");
+    let home = home_chain(&g, &[&o]);
+    let admin = key(&g, "home.key");
+    g.ok("home", &["sync", "admin", "add", &admin]);
+    o.ok("home", &["occur", "mate"]);
+    o.ok("home", &["sync"]);
+    eventually("gina holding mate", || g.has("home", "mate"));
+
+    let who = o.device();
+    let args = [
+        "sync",
+        "chain",
+        "expel",
+        &who[..12],
+        "--unjoin",
+        "--wipe",
+        "--yes",
+        "--admin-key",
+        &admin,
+    ];
+    let said = g.ok("home", &args);
+    assert!(said.contains("cannot be made to delete anything"), "{said}");
+    assert!(!g.has("home", "mate"), "withdrawn at once");
+    assert!(o.has("home", "mate"), "offline, it holds its copy");
+    let cell = || {
+        let chain = g.json("home", &["sync", "status", "--json"])["chain"].clone();
+        let grid = g.json("home", &["sync", "grid", "--json"]);
+        let rows = grid["devices"].as_array().unwrap().clone();
+        let row = rows.into_iter().find(|r| r["device"] == who.as_str());
+        row.and_then(|r| {
+            r["cells"][chain.as_str().unwrap()]["state"]
+                .as_str()
+                .map(String::from)
+        })
+    };
+    assert_eq!(cell().as_deref(), Some("wiping"));
+
+    let back = o.cmd("home", &["sync"]).output().unwrap();
+    let said = String::from_utf8_lossy(&back.stdout);
+    assert!(said.contains("deleted its copy of this database"), "{said}");
+    assert!(!o.has("home", "mate"));
+    eventually("olga wiped", || cell().as_deref() == Some("wiped"));
+    assert!(!g.has("home", "mate") && g.has("home", "start"));
     drop(home);
 }

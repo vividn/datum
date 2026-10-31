@@ -189,7 +189,7 @@ fn chain_list_and_status_hide_revoked_members_and_say_how_many() {
     }
 
     // A revert is hidden the same way, and the count is of both.
-    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--yes"]);
     for cmd in [&["sync", "chain", "list"][..], &["sync", "status"]] {
         let out = a.ok(cmd);
         assert!(

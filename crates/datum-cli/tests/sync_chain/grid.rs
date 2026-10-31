@@ -135,7 +135,7 @@ fn the_grid_has_a_row_a_device_and_a_column_a_chain() {
         grid()["devices"][2]["cells"][notes.as_str().unwrap()]["state"],
         "expelled"
     );
-    a.ok(&["sync", "chain", "unjoin", "cat", "--yes"]);
+    a.ok(&["sync", "chain", "expel", "cat", "--unjoin", "--yes"]);
     assert_eq!(
         grid()["devices"][2]["cells"][notes.as_str().unwrap()]["state"],
         "unjoined"

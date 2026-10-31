@@ -88,7 +88,7 @@
 //!     device that joined by a grant serves that other chain, to whoever
 //!     holds a grant of it: readable with its chain id alone.
 //!
-//!   - `erase {endpoint}` (da-n0uj1.6, `sync chain wipe`): an order that
+//!   - `erase {endpoint}` (da-n0uj1.6, `sync chain expel --wipe`): an order that
 //!     the member delete its own copy of the database, and a revoke from
 //!     its HLC on, an admin act as a revoke is; no copy orders itself. Each
 //!     member that writes carries the order to it ([`Db::sync_wipe_order`]),

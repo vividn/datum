@@ -32,17 +32,17 @@ fn a_purge_preview_of_a_device_that_only_made_specs_says_they_go() {
     assert!(b.send(&a).0);
     let spec = || a.ok(&["setup", "coffee", "--json"]);
     assert!(!spec().contains("No spec defined"), "{}", spec());
-    let preview = a.ok(&["sync", "chain", "unjoin", "b"]);
+    let preview = a.ok(&["sync", "chain", "expel", "b", "--unjoin"]);
     assert!(
         preview.contains("signed no change to an entry, only 1 definition: unjoining it expels it and sets that aside"),
         "{preview}"
     );
-    let p = json(&a.ok(&["sync", "chain", "unjoin", "b", "--json"]));
+    let p = json(&a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--json"]));
     assert!(
         p["first"].is_null() && p["last"].is_null() && p["defined"] == 1,
         "{p}"
     );
-    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--yes"]);
     assert!(spec().contains("No spec defined"), "{}", spec());
 }
 
@@ -70,17 +70,17 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
 
     // The old spelling is refused, naming the new (da-c9fiy).
     let old = a.fails(&["sync", "chain", "purge", "b", "--yes"], "");
-    assert!(old.contains("`sync chain unjoin <WHO>`"), "{old}");
+    assert!(old.contains("`sync chain expel <WHO> --unjoin`"), "{old}");
     // The preview names what goes, and changes nothing.
-    let preview = a.ok(&["sync", "chain", "unjoin", "b"]);
+    let preview = a.ok(&["sync", "chain", "expel", "b", "--unjoin"]);
     assert!(
         preview.contains("b (")
             && preview.contains("1 entry it created goes,")
             && preview.contains("1 it edited and 1 it deleted")
-            && preview.contains("nothing changed: `datum sync chain unjoin b --yes`"),
+            && preview.contains("nothing changed: `datum sync chain expel b --unjoin --yes`"),
         "{preview}"
     );
-    let p = json(&a.ok(&["sync", "chain", "unjoin", "b", "--json"]));
+    let p = json(&a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--json"]));
     assert_eq!(
         (&p["created"], &p["edited"], &p["deleted"], &p["purged"]),
         (&1.into(), &1.into(), &1.into(), &serde_json::Value::Null),
@@ -89,11 +89,11 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     assert!(p["first"].is_string() && p["last"].is_string(), "{p}");
     assert_eq!(purge_view(&a), poisoned);
 
-    let purged = a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    let purged = a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--yes"]);
     assert!(purged.starts_with("unjoined: b ("), "{purged}");
     let clean = (false, "1".to_string(), false);
     assert_eq!(purge_view(&a), clean);
-    let again = a.fails(&["sync", "chain", "unjoin", "b", "--yes"], "");
+    let again = a.fails(&["sync", "chain", "expel", "b", "--unjoin", "--yes"], "");
     assert!(again.contains("unjoined already"), "{again}");
     assert!(a
         .ok(&["sync", "chain", "list", "--show-revoked"])
@@ -115,7 +115,10 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     check_clean(&c, &[&a, &b]);
 
     // A copy does not unjoin itself.
-    let own = a.fails(&["sync", "chain", "unjoin", &a.id()[..10], "--yes"], "");
+    let own = a.fails(
+        &["sync", "chain", "expel", &a.id()[..10], "--unjoin", "--yes"],
+        "",
+    );
     assert!(own.contains("does not unjoin itself"), "{own}");
 }
 
@@ -135,7 +138,7 @@ fn a_purged_device_that_rejoins_brings_all_its_ops_back() {
     b.ok(&["occur", "coffee"]);
     b.ok(&["update", &tea, "cups=3"]);
     assert!(b.send(&a).0 && a.send(&c).0);
-    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--yes"]);
     a.send(&b);
     a.send(&c);
     let cups = "SELECT json_extract(data, '$.cups') FROM entries WHERE field = 'tea'";
@@ -183,7 +186,7 @@ fn a_purge_frees_the_rows_merged_into_the_purged_devices_row() {
     let b_row = b.query("SELECT hid FROM entries WHERE field = 'coffee'");
     let shown_hid = "SELECT hid FROM entries WHERE field = 'coffee' AND superseded_by IS NULL";
     assert_eq!(a.query(shown_hid), b_row);
-    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--yes"]);
     assert_eq!(a.query(shown), "1");
     assert_eq!(
         a.query("SELECT COUNT(*) FROM entries WHERE field = 'coffee'"),
@@ -214,7 +217,7 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
         a.query(shown),
         b.query("SELECT hid FROM entries WHERE field = 'coffee'")
     );
-    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--yes"]);
     assert_eq!(a.query(rows), "2");
     assert_eq!(a.query(shown), a.query("SELECT hid FROM entries WHERE field = 'coffee' AND client_id = (SELECT client_id FROM sync_local)"));
     let live = "SELECT COUNT(*) FROM entries WHERE field = 'coffee'
@@ -228,4 +231,80 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
     assert_eq!(a.hash(), c.hash());
     check_clean(&a, &[&b, &c]);
     check_clean(&c, &[&a, &b]);
+}
+
+/// `expel` goes as far as its flags say, and each flag asks first (da-zfss8):
+/// off a TTY with no --yes nothing changes, with the line that does it; a
+/// refusal of either flag writes neither record; and --json draws only
+/// --unjoin's preview.
+#[test]
+fn an_expel_with_both_flags_says_both_and_refuses_before_it_writes_either() {
+    let (a, b) = chained();
+    b.ok(&["occur", "coffee"]);
+    assert!(b.send(&a).0);
+    let records = || a.query("SELECT COUNT(*) FROM ops WHERE hid = '~chain'");
+    let before = records();
+
+    for (flags, line) in [
+        (&["--wipe"][..], "datum sync chain expel b --wipe --yes"),
+        (
+            &["--unjoin", "--wipe"],
+            "datum sync chain expel b --unjoin --wipe --yes",
+        ),
+    ] {
+        let said = a.ok(&[&["sync", "chain", "expel", "b"], flags].concat());
+        assert!(said.contains("cannot be made to delete anything"), "{said}");
+        assert!(
+            said.contains(&format!("nothing changed: `{line}`")),
+            "{said}"
+        );
+    }
+    let both = a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--wipe"]);
+    assert!(both.contains("1 entry it created goes"), "{both}");
+    assert!(!both.contains("What it synced stays"), "{both}");
+
+    // --json is the unjoin's preview, and refused where there is none.
+    let p = json(&a.ok(&[
+        "sync", "chain", "expel", "b", "--unjoin", "--wipe", "--json",
+    ]));
+    assert_eq!(p["created"], 1, "{p}");
+    for flags in [&[][..], &["--wipe"]] {
+        let out = a.fails(
+            &[&["sync", "chain", "expel", "b", "--json"], flags].concat(),
+            "",
+        );
+        assert!(out.contains("json"), "{flags:?}: {out}");
+    }
+
+    // This copy can be neither, and the refusal comes before the first record.
+    let own = a.id();
+    let args = [
+        "sync",
+        "chain",
+        "expel",
+        &own[..10],
+        "--unjoin",
+        "--wipe",
+        "--yes",
+    ];
+    assert!(a.fails(&args, "").contains("is this copy"));
+    assert_eq!(records(), before);
+    assert!(a.has("coffee"));
+
+    let args = ["sync", "chain", "expel", "b", "--unjoin", "--wipe", "--yes"];
+    let did = a.ok(&args);
+    assert!(did.starts_with("unjoined: b ("), "{did}");
+    assert!(did.contains("asked b to delete its copy"), "{did}");
+    assert!(!a.has("coffee"));
+    let list = a.ok(&["sync", "chain", "list", "--show-revoked"]);
+    assert!(list.contains("UNJOINED"), "{list}");
+
+    // Done once: each flag says so, and neither writes again.
+    let after = records();
+    assert!(a.fails(&args, "").contains("unjoined already"));
+    let wipe = ["sync", "chain", "expel", "b", "--wipe", "--yes"];
+    assert!(a
+        .fails(&wipe, "")
+        .contains("ordered to delete its copy already"));
+    assert_eq!(records(), after);
 }

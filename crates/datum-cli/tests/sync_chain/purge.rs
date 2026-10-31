@@ -480,8 +480,8 @@ fn a_chain_purge_and_a_revert_ask_on_a_tty_and_name_the_command_as_typed() {
             "datum sync chain purge --all --yes",
         ),
         (
-            &["sync", "chain", "unjoin", "b"],
-            "datum sync chain unjoin b --yes",
+            &["sync", "chain", "expel", "b", "--unjoin"],
+            "datum sync chain expel b --unjoin --yes",
         ),
     ] {
         let said = a.ok(argv);
@@ -517,7 +517,7 @@ fn a_chain_purge_and_a_revert_ask_on_a_tty_and_name_the_command_as_typed() {
         )
     };
     for words in [
-        &["sync", "chain", "unjoin", "b"][..],
+        &["sync", "chain", "expel", "b", "--unjoin"][..],
         &["db", "purge", "--chain"],
     ] {
         let e = on_a_tty(words, "nope\n").unwrap_err();
@@ -536,21 +536,35 @@ fn a_chain_purge_and_a_revert_ask_on_a_tty_and_name_the_command_as_typed() {
         )),
         "{said}"
     );
-    let raw_argv: Vec<String> = ["--db", "p", "--color=never", "sync", "chain", "unjoin", "b"]
-        .map(Into::into)
-        .into();
+    let raw_argv: Vec<String> = [
+        "--db",
+        "p",
+        "--color=never",
+        "sync",
+        "chain",
+        "expel",
+        "b",
+        "--unjoin",
+    ]
+    .map(Into::into)
+    .into();
     datum_commands::args::set_intent_context(datum_commands::args::IntentContext {
         raw_input: raw_argv.join(" "),
         raw_argv,
         alias_chain: Vec::new(),
     });
-    let e = on_a_tty(&["sync", "chain", "unjoin", "b"], "nope\n").unwrap_err();
+    let e = on_a_tty(&["sync", "chain", "expel", "b", "--unjoin"], "nope\n").unwrap_err();
     assert!(
-        e.to_string().starts_with("sync chain unjoin b: aborted"),
+        e.to_string()
+            .starts_with("sync chain expel b --unjoin: aborted"),
         "{e}"
     );
     datum_commands::args::take_intent_context();
-    on_a_tty(&["sync", "chain", "unjoin", "b"], &format!("{path}\n")).unwrap();
+    on_a_tty(
+        &["sync", "chain", "expel", "b", "--unjoin"],
+        &format!("{path}\n"),
+    )
+    .unwrap();
     assert!(a.has("tea") && !a.has("coffee"));
     on_a_tty(&["db", "purge", "--chain"], &format!("{path}\n")).unwrap();
     assert_eq!(data_of(&a), EMPTY);
@@ -563,14 +577,14 @@ fn a_revert_preview_names_its_span_on_the_readers_clock() {
     let (a, b) = chained();
     b.ok(&["occur", "coffee"]);
     assert!(b.send(&a).0);
-    let p = json(&a.ok(&["sync", "chain", "unjoin", "b", "--json"]));
+    let p = json(&a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--json"]));
     let kathmandu = |at: &serde_json::Value| {
         let at = chrono::DateTime::parse_from_rfc3339(at.as_str().unwrap()).unwrap();
         let east = chrono::FixedOffset::east_opt(5 * 3600 + 45 * 60).unwrap();
         at.with_timezone(&east).format("%H:%M").to_string()
     };
     let out = a
-        .cmd(&["sync", "chain", "unjoin", "b"])
+        .cmd(&["sync", "chain", "expel", "b", "--unjoin"])
         .env("TZ", "Asia/Kathmandu")
         .output()
         .unwrap();

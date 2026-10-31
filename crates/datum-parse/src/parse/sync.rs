@@ -173,7 +173,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|join|leave|list|rename|expel|unjoin|wipe|purge|role|ack|rekey";
+    const SET: &str = "invite|join|leave|list|rename|expel|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = [
@@ -291,13 +291,27 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 check: o.on("check"),
             }
         }
-        Some("expel") => act(rest, SyncAdminAct::Expel, &[], &[])?,
-        // One device's purge is `unjoin <WHO>` (da-c9fiy, da-n0uj1.1).
+        Some("expel") => {
+            let mut o = opts(rest, &["admin-key"], &["unjoin", "wipe", "yes"], 1..=1)?;
+            SyncCommand::Admin {
+                act: SyncAdminAct::Expel {
+                    unjoin: o.on("unjoin"),
+                    wipe: o.on("wipe"),
+                    yes: o.on("yes"),
+                    show: Show::Default,
+                },
+                who: o.positional.remove(0),
+                label: None,
+                admin_key: o.get("admin-key"),
+                allow_unlock: false,
+            }
+        }
+        // One device's purge is `expel <WHO> --unjoin` (da-c9fiy, da-zfss8).
         Some("purge") => {
             let o = opts(rest, &["admin-key"], &["data", "all", "yes"], 0..=1)?;
             if !o.positional.is_empty() {
                 return Err(ParseError::InvalidArg(
-                    "`sync chain purge <WHO>` is now `sync chain unjoin <WHO>`".into(),
+                    "`sync chain purge <WHO>` is now `sync chain expel <WHO> --unjoin`".into(),
                 ));
             }
             if o.on("data") == o.on("all") {
@@ -311,29 +325,6 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 all: o.on("all"),
                 yes: o.on("yes"),
                 admin_key: o.get("admin-key"),
-            }
-        }
-        Some("unjoin") => {
-            let mut o = opts(rest, &["admin-key"], &["yes"], 1..=1)?;
-            SyncCommand::Admin {
-                act: SyncAdminAct::Unjoin {
-                    yes: o.on("yes"),
-                    show: Show::Default,
-                },
-                who: o.positional.remove(0),
-                label: None,
-                admin_key: o.get("admin-key"),
-                allow_unlock: false,
-            }
-        }
-        Some("wipe") => {
-            let mut o = opts(rest, &["admin-key"], &["yes"], 1..=1)?;
-            SyncCommand::Admin {
-                act: SyncAdminAct::Wipe { yes: o.on("yes") },
-                who: o.positional.remove(0),
-                label: None,
-                admin_key: o.get("admin-key"),
-                allow_unlock: false,
             }
         }
         Some("role") => {
@@ -797,41 +788,59 @@ mod tests {
         assert_eq!(
             p(&["chain", "expel", "b"]),
             SyncCommand::Admin {
-                act: SyncAdminAct::Expel,
-                who: "b".into(),
-                label: None,
-                admin_key: None,
-                allow_unlock: false
-            }
-        );
-        assert_eq!(
-            p(&["chain", "unjoin", "b", "--yes", "--admin-key", "k"]),
-            SyncCommand::Admin {
-                act: SyncAdminAct::Unjoin {
-                    yes: true,
-                    show: Show::Default
+                act: SyncAdminAct::Expel {
+                    unjoin: false,
+                    wipe: false,
+                    yes: false,
+                    show: Show::Default,
                 },
                 who: "b".into(),
                 label: None,
-                admin_key: Some("k".into()),
-                allow_unlock: false
-            }
-        );
-        assert!(parse_sync_cmd(&["chain", "unjoin"]).is_err());
-        assert_eq!(
-            p(&["chain", "wipe", "b", "--yes"]),
-            SyncCommand::Admin {
-                act: SyncAdminAct::Wipe { yes: true },
-                who: "b".into(),
-                label: None,
                 admin_key: None,
                 allow_unlock: false
             }
         );
-        assert!(parse_sync_cmd(&["chain", "wipe"]).is_err());
+        let expel = |unjoin, wipe, yes, admin_key: Option<&str>| SyncCommand::Admin {
+            act: SyncAdminAct::Expel {
+                unjoin,
+                wipe,
+                yes,
+                show: Show::Default,
+            },
+            who: "b".into(),
+            label: None,
+            admin_key: admin_key.map(Into::into),
+            allow_unlock: false,
+        };
+        assert_eq!(
+            p(&[
+                "chain",
+                "expel",
+                "b",
+                "--unjoin",
+                "--yes",
+                "--admin-key",
+                "k"
+            ]),
+            expel(true, false, true, Some("k"))
+        );
+        assert_eq!(
+            p(&["chain", "expel", "b", "--wipe", "--yes"]),
+            expel(false, true, true, None)
+        );
+        assert_eq!(
+            p(&["chain", "expel", "--wipe", "b", "--unjoin"]),
+            expel(true, true, false, None)
+        );
+        assert!(parse_sync_cmd(&["chain", "expel", "--unjoin"]).is_err());
+        for gone in ["unjoin", "wipe"] {
+            let old = parse_sync_cmd(&["chain", gone, "b", "--yes"]).unwrap_err();
+            assert!(old.to_string().contains("unknown sync chain"), "{old}");
+        }
         let old = parse_sync_cmd(&["chain", "purge", "b", "--yes"]).unwrap_err();
         assert!(
-            old.to_string().contains("`sync chain unjoin <WHO>`"),
+            old.to_string()
+                .contains("`sync chain expel <WHO> --unjoin`"),
             "{old}"
         );
         assert_eq!(

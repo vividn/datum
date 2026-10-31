@@ -170,7 +170,7 @@ export function roleArgv(endpoint: string, role: 'member' | 'reader'): string[] 
 
 /** The device expelled, and asked to delete its copy (da-n0uj1.6). */
 export function wipeArgv(endpoint: string): string[] {
-	return ['sync', 'chain', 'wipe', endpoint, '--yes'];
+	return ['sync', 'chain', 'expel', endpoint, '--wipe', '--yes'];
 }
 
 /** This chain takes `like`'s devices: it starts one with `like`'s admins if in none, and leaves each grant to the page (da-n0uj1.7, da-pvax0). */
@@ -220,7 +220,7 @@ export function expelArgv(endpoint: string): string[] {
 
 /** The preview, or with `yes` the unjoin itself: everything it wrote withdrawn (da-ry11c). */
 export function unjoinArgv(endpoint: string, yes = false): string[] {
-	return ['sync', 'chain', 'unjoin', endpoint, yes ? '--yes' : '--json'];
+	return ['sync', 'chain', 'expel', endpoint, '--unjoin', yes ? '--yes' : '--json'];
 }
 
 export function ackArgv(subject: string): string[] {

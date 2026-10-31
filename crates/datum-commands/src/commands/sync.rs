@@ -291,70 +291,93 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         } => {
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
-            let (mut record, said) = match act {
-                SyncAdminAct::Expel => {
+            // `expel --unjoin --wipe` writes two, under one approval: what it
+            // wrote withdrawn, then its copy ordered deleted.
+            let mut first = None;
+            let (record, said) = match act {
+                SyncAdminAct::Expel {
+                    unjoin,
+                    wipe,
+                    yes,
+                    show,
+                } => {
                     let m = member(&chain, &who)?;
-                    (
-                        json!({"type": "revoke", "endpoint": m}),
-                        format!("expelled {who}: it syncs no more and keeps its copy; what it wrote stays"),
-                    )
-                }
-                SyncAdminAct::Unjoin { yes, show } => {
-                    let m = member(&chain, &who)?;
-                    let purged = chain.member(&m).and_then(|m| m.purged.as_deref());
-                    let p = db.sync_purge_preview(&m)?;
-                    if show == ShowFlag::Json && !yes {
-                        let label = chain.member(&m).map(|m| m.label.as_str());
-                        let out = json!({
-                            "endpoint": m, "label": label, "created": p.created,
-                            "edited": p.edited, "deleted": p.deleted, "defined": p.defined, "first": p.first,
-                            "last": p.last, "purged": purged.map(chain::hlc_time),
-                        });
-                        println!("{out}");
-                        return Ok(());
-                    }
-                    ensure!(
-                        purged.is_none(),
-                        "{who} is unjoined already: a fresh invite brings it back, its ops with it"
-                    );
-                    let what = unjoin_words(&who, &m, &p);
-                    if !yes {
-                        println!("{what}");
-                        if !ask(&format!("sync chain unjoin {who}"))? {
-                            return Ok(());
-                        }
-                    }
-                    (
-                        json!({"type": "purge", "endpoint": m}),
-                        format!("unjoined: {what}\na fresh invite brings it back, its ops with it"),
-                    )
-                }
-                SyncAdminAct::Wipe { yes } => {
-                    let m = member(&chain, &who)?;
-                    ensure!(
-                        m != db.sync_endpoint_id()?,
-                        "{who} is this copy: `datum sync chain leave` takes it out of the chain, \
-                         and `datum db purge --leave` deletes it too"
-                    );
                     let it = chain.member(&m);
-                    ensure!(
-                        it.is_some_and(|m| m.left.is_none()),
-                        "{who} left this chain: it is no copy of it any more"
-                    );
-                    ensure!(
-                        it.is_some_and(|m| m.erase.is_none()),
-                        "{who} is ordered to delete its copy already"
-                    );
-                    if !yes {
-                        println!("{who} is expelled, and asked to delete its copy of this database: {WIPE_LIMIT}");
-                        if !ask(&format!("sync chain wipe {who}"))? {
+                    let mut taken = None;
+                    if unjoin {
+                        let purged = it.and_then(|m| m.purged.as_deref());
+                        let p = db.sync_purge_preview(&m)?;
+                        if show == ShowFlag::Json && !yes {
+                            let out = json!({
+                                "endpoint": m, "label": it.map(|m| m.label.as_str()), "created": p.created,
+                                "edited": p.edited, "deleted": p.deleted, "defined": p.defined, "first": p.first,
+                                "last": p.last, "purged": purged.map(chain::hlc_time),
+                            });
+                            println!("{out}");
+                            return Ok(());
+                        }
+                        ensure!(
+                            purged.is_none(),
+                            "{who} is unjoined already: a fresh invite brings it back, its ops with it"
+                        );
+                        taken = Some(unjoin_words(&who, &m, &p));
+                    }
+                    if wipe {
+                        ensure!(
+                            m != db.sync_endpoint_id()?,
+                            "{who} is this copy: `datum sync chain leave` takes it out of the chain, \
+                             and `datum db purge --leave` deletes it too"
+                        );
+                        ensure!(
+                            it.is_some_and(|m| m.left.is_none()),
+                            "{who} left this chain: it is no copy of it any more"
+                        );
+                        ensure!(
+                            it.is_some_and(|m| m.erase.is_none()),
+                            "{who} is ordered to delete its copy already"
+                        );
+                    }
+                    let limit = wipe_limit(unjoin);
+                    let (preview, done) = match (&taken, wipe) {
+                        (None, false) => (
+                            String::new(),
+                            format!("expelled {who}: it syncs no more and keeps its copy; what it wrote stays"),
+                        ),
+                        (Some(what), false) => (
+                            what.clone(),
+                            format!("unjoined: {what}\na fresh invite brings it back, its ops with it"),
+                        ),
+                        (None, true) => (
+                            format!("{who} is expelled, and asked to delete its copy of this database: {limit}"),
+                            format!("expelled {who}, and asked it to delete its copy of this database: {limit}"),
+                        ),
+                        (Some(what), true) => (
+                            format!("{what}\n{who} is asked to delete its copy of this database: {limit}"),
+                            format!(
+                                "unjoined: {what}\nasked {who} to delete its copy of this database: {limit}\n\
+                                 a fresh invite brings it back, its ops with it"
+                            ),
+                        ),
+                    };
+                    if !yes && (unjoin || wipe) {
+                        println!("{preview}");
+                        let flags = [(unjoin, " --unjoin"), (wipe, " --wipe")]
+                            .map(|(on, flag)| if on { flag } else { "" })
+                            .concat();
+                        if !ask(&format!("sync chain expel {who}{flags}"))? {
                             return Ok(());
                         }
                     }
-                    (
-                        json!({"type": "erase", "endpoint": m}),
-                        format!("expelled {who}, and asked it to delete its copy of this database: {WIPE_LIMIT}"),
-                    )
+                    let record = match (unjoin, wipe) {
+                        (false, false) => "revoke",
+                        (true, false) => "purge",
+                        (false, true) => "erase",
+                        (true, true) => {
+                            first = Some(json!({"type": "purge", "endpoint": m}));
+                            "erase"
+                        }
+                    };
+                    (json!({"type": record, "endpoint": m}), done)
                 }
                 SyncAdminAct::Role { reader, filter } => {
                     let m = member(&chain, &who)?;
@@ -421,9 +444,15 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     }
                 }
             };
-            record["chain"] = chain.id.clone().into();
-            record["created"] = chrono::Utc::now().to_rfc3339().into();
-            sign(db, record, &chain, admin_key.as_deref())?;
+            let created = chrono::Utc::now().to_rfc3339();
+            let records = Iterator::chain(first.into_iter(), [record])
+                .map(|mut r: Value| {
+                    r["chain"] = chain.id.clone().into();
+                    r["created"] = created.clone().into();
+                    r
+                })
+                .collect();
+            sign_all(db, records, &chain, admin_key.as_deref())?;
             println!("{said}");
         }
         SyncCommand::Purge {
@@ -1127,11 +1156,22 @@ fn backup_words(backup: Option<std::path::PathBuf>) -> String {
     })
 }
 
-/// What `sync chain wipe` does, and the limit of it (da-n0uj1.6).
-const WIPE_LIMIT: &str = "it does when it next reaches a member of this chain, or one \
-reaches it. A device that never comes back online cannot be made to delete anything: until \
-it obeys, this is an expel, and it keeps what it holds. What it synced stays on every other \
-copy; what it wrote since it last synced goes with its copy.";
+/// What `sync chain expel --wipe` does, and the limit of it (da-n0uj1.6);
+/// with `--unjoin`, what it synced does not stay.
+fn wipe_limit(unjoin: bool) -> String {
+    let until = match unjoin {
+        true => "it keeps what it holds, and no other copy takes any of it. What it wrote",
+        false => {
+            "this is an expel, and it keeps what it holds. What it synced stays on every other \
+             copy; what it wrote"
+        }
+    };
+    format!(
+        "it does when it next reaches a member of this chain, or one reaches it. A device that \
+         never comes back online cannot be made to delete anything: until it obeys, {until} \
+         since it last synced goes with its copy."
+    )
+}
 
 /// What unjoining `who` sets aside, in words (da-ry11c): a verb agrees with
 /// its count, and a count of zero says nothing (da-sivjb).
@@ -1325,6 +1365,8 @@ fn approving(r: &Value) -> String {
             "a new sync chain {}",
             r["chain"].as_str().unwrap_or_default()
         ),
+        "purge" => "an unjoin".into(),
+        "erase" => "an order to delete its copy".into(),
         kind => format!("a {kind}"),
     }
 }

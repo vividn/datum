@@ -88,7 +88,11 @@ fn no_command_takes_a_row_away_and_keeps_its_ops() {
     // A reverted member's entries go from every copy.
     b.ok(&["occur", "bread"]);
     assert!(b.send(&a).0 && a.send(&c).0);
-    takes(&a, &[&c], &["sync", "chain", "unjoin", &b.id(), "--yes"]);
+    takes(
+        &a,
+        &[&c],
+        &["sync", "chain", "expel", &b.id(), "--unjoin", "--yes"],
+    );
 
     // A filtered reader drops an entry that moved out of its fields.
     let r = Copy::new();
@@ -176,7 +180,7 @@ fn an_edit_a_purge_left_without_its_create_is_no_orphan() {
     assert!(b.send(&a).0);
     let coffee = a.query("SELECT hid FROM entries WHERE field = 'coffee'");
     a.ok(&["update", &coffee, "cups=3"]);
-    a.ok(&["sync", "chain", "unjoin", "b", "--yes"]);
+    a.ok(&["sync", "chain", "expel", "b", "--unjoin", "--yes"]);
     assert!(!a.has("coffee"));
     let applied = format!("SELECT kind FROM ops WHERE hid = '{coffee}' AND applied = 1");
     assert_eq!(a.query(&applied), "update");

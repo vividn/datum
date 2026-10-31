@@ -526,7 +526,12 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
                 | SyncCommand::Diff { show: s, .. }
                 | SyncCommand::Refold { show: s, .. }
                 | SyncCommand::Admin {
-                    act: SyncAdminAct::Unjoin { show: s, .. },
+                    act:
+                        SyncAdminAct::Expel {
+                            unjoin: true,
+                            show: s,
+                            ..
+                        },
                     ..
                 } => *s = show,
                 _ => return false,
@@ -1382,7 +1387,7 @@ mod tests {
         for (name, args) in [
             ("sync status", ""),
             ("sync chain list", ""),
-            ("sync chain unjoin", "bob"),
+            ("sync chain expel", "bob --unjoin"),
             ("sync admin list", ""),
             ("sync pipe apply", ""),
             ("sync diff", "bob"),

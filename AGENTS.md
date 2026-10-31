@@ -639,18 +639,18 @@ no gap wait, drops what falls outside, and its vector is its marks
 
 ### Expel, unjoin and purge
 
-The commands are `expel` and `unjoin`; the chain records they write keep their
-types, `revoke` and `purge`, on every copy and on the wire (da-n0uj1.1, which
-cut the old verbs `revoke` and `revert` with no alias). `sync chain expel <WHO>`
-writes a `revoke`: the device stops syncing, keeping its copy, and what it wrote
-stays. `sync chain unjoin <WHO>` (da-ry11c; `chain purge <WHO>` is refused
-naming it) previews, and with `--yes` writes a `purge` record:
+The command is `expel`, and its flags say how far it goes (da-zfss8, which cut
+`sync chain unjoin` and `wipe`, as da-n0uj1.1 did `revoke` and `revert`, with no
+alias); the chain records keep their types, `revoke`, `purge` and `erase`, on every
+copy and on the wire. `sync chain expel <WHO>` writes a `revoke`: the device stops
+syncing, keeping its copy, and what it wrote stays. `--unjoin` (da-ry11c; `chain
+purge <WHO>` is refused naming it) previews, and with `--yes` writes a `purge` record:
 every copy refuses every op that endpoint signed and folds its entries again
 without them — what it made goes, its edits and deletes are undone — and expels
 it. There is no unpurge: a fresh invite brings it back (below), though an old
 chain's `unpurge` record still folds as it did.
 
-`sync chain wipe <WHO>` (da-n0uj1.6) asks the device to delete its own copy,
+`sync chain expel <WHO> --wipe` (da-n0uj1.6) asks the device to delete its own copy,
 then expels it: with `--yes` an `erase` record, an admin act that revokes it at
 its HLC (no copy wipes itself: `leave`). Each member that writes dials it while
 it is `wiping` (`Db::sync_wiping`), its `Hello` carrying the chain's records,
@@ -663,6 +663,9 @@ heard it writes `erased`, a member's message as a grant is, and the grid shows
 back is never made to delete anything, and until it obeys it is an expel. It
 obeys at the handshake, before any op moves, so what it wrote since it last
 synced goes with its copy, and the command says so.
+`--unjoin --wipe` is both, a `purge` then an `erase` under one approval (`sign_all`),
+every check before the first: what it wrote goes from every other copy, and its own
+copy goes when it obeys.
 datum.day neither carries an order nor obeys one yet (its store keeps the
 wire's defaults).
 
@@ -788,7 +791,7 @@ again), and runs `chain join` in a
 process of its own, the link on stdin, into `--as` or the granter's database
 name; where that name holds data or another chain, `<name>-2` and on, never
 touching it. An expired grant is said and joins nothing: invite again. `expel`
-and `unjoin` take a member's device key prefix too.
+takes a member's device key prefix too.
 A ticket lists the members its maker knew, and `--like` makes each before any
 device has joined, so it names the granter alone. So a member admitted by a
 grant, once its `sync run` serves that chain, writes its address once in the
@@ -825,7 +828,7 @@ link's records, a genesis first into a database in no chain.
 The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
 `pause | resume`, `diff <WHO>`, `refold`, `chain
-invite [<DEVICE> | --like <DB>]` (below) `| join | leave | list | rename | expel | unjoin | wipe | ack | rekey`,
+invite [<DEVICE> | --like <DB>]` (below) `| join | leave | list | rename | expel [--unjoin] [--wipe] | ack | rekey`,
 `admin list | add | remove`, `daemon install | uninstall | status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /

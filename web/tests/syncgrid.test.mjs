@@ -1,7 +1,7 @@
 // The Sync widget's grid (da-n0uj1.7): every device against every database,
 // a dropdown per cell and «invite like…» per column, each act a CLI command —
-// `sync chain invite` with the sync worker's ticket, `sync chain expel | unjoin |
-// wipe | role`, `sync chain invite --like --defer` — and every expel, unjoin and wipe
+// `sync chain invite` with the sync worker's ticket, `sync chain expel [--unjoin] [--wipe] |
+// role`, `sync chain invite --like --defer` — and every expel, unjoin and wipe
 // confirmed in a dialog saying what happens to whose data.
 //
 // A device in the grid is a native copy paired with the page's `datum` (so

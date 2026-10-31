@@ -1,5 +1,5 @@
-// The unjoin confirm’s joint (da-tyj2t): datum.day hands `sync chain unjoin
-// <who> --json` straight to `unjoinWords`, and each side is tested alone —
+// The unjoin confirm’s joint (da-tyj2t): datum.day hands `sync chain expel
+// <who> --unjoin --json` straight to `unjoinWords`, and each side is tested alone —
 // the CLI's keys in sync_chain/unjoin.rs, the words on objects built by hand in
 // purgewords-pure. Here the real CLI's output meets the real function, so a
 // key renamed on one side fails here instead of falling back to «this only
@@ -28,7 +28,7 @@ async function purgeOf(writes) {
 		const joined = await b.run(['sync', 'chain', 'join', ticket]);
 		assert.equal(joined.code, 0, joined.stderr);
 		const { endpoint } = JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).this;
-		const preview = await a.run(['sync', 'chain', 'unjoin', endpoint, '--json']);
+		const preview = await a.run(['sync', 'chain', 'expel', endpoint, '--unjoin', '--json']);
 		assert.equal(preview.code, 0, preview.stderr);
 		return unjoinWords('phone', 'home', JSON.parse(preview.stdout));
 	} finally {

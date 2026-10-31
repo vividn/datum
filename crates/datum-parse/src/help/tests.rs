@@ -1247,6 +1247,13 @@ fn subcommand_help_is_its_own_page() {
     assert!(chain.contains("`datum db purge --chain`"), "{chain}");
     assert!(!chain.contains("  unjoin"), "{chain}");
 
+    // `expel`'s page says how far each form goes, and the old verbs have none (da-zfss8).
+    let expel = parse("sync chain expel --help");
+    for form in ["--unjoin  Also", "--wipe    Also", "Both flags together"] {
+        assert!(expel.contains(form), "{form}: {expel}");
+    }
+    assert!(!parse("sync --help").contains("  wipe  "));
+
     // `invite`'s page is all three forms, each usage and how they differ
     // (da-pvax0, da-p76eu); `chain copy` and `sync grant` are gone from every page.
     let invite = parse("sync chain invite --like home --help");

@@ -391,7 +391,7 @@ export function cellActs(s: Standing | undefined, bound: boolean): string[] {
 export const wipeWords = (label: string, db: string): string =>
 	`Wipe ${label}’s copy of ${db}? It is expelled now, and asked to delete its own copy of ${db} when it next reaches a device of this chain. A device that never comes back online cannot be made to delete anything: until it obeys, this is only an expel, and it keeps what it holds. What it synced stays on every other device; what it wrote since it last synced goes with its copy.`;
 
-/** What `sync chain unjoin <who> --json` says an unjoin would withdraw (da-ry11c). */
+/** What `sync chain expel <who> --unjoin --json` says an unjoin would withdraw (da-ry11c). */
 export interface PurgePreview {
 	created: number;
 	edited: number;
