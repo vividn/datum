@@ -596,3 +596,60 @@ fn the_spec_help_keys_examples_run() {
     // newest first: happy, then sad
     assert_eq!(data, [None, Some(json!({"reason": "because"}))]);
 }
+
+/// `--show` is every command's, so it leaves the words a field's keys take
+/// bound as they were, wherever on the line (da-qpzr0).
+#[test]
+fn the_output_flag_leaves_the_keys_bound() {
+    let plain = both_ways(&["2"]);
+    for line in [
+        &["2", "--show", "json"][..],
+        &["2", "--show", "none"],
+        &["2", "--show=json"],
+        &["2", "--json"],
+        &["--show", "json", "2"],
+    ] {
+        assert_eq!(both_ways(line), plain, "{line:?}");
+    }
+
+    // A bad one is refused as itself, and not as the words left unbound.
+    let db = juice_db();
+    for line in [
+        &["juice", "2", "--show", "bogus"][..],
+        &["juice", "2", "--show"],
+    ] {
+        let plain = format!(
+            "{:#}",
+            run_cli(&[&["occur"], line].concat(), &db).unwrap_err()
+        );
+        let aliased = format!("{:#}", run_cli(line, &db).unwrap_err());
+        assert_eq!(aliased, plain, "{line:?}");
+        assert!(
+            aliased.contains("--show") || aliased.contains("bogus"),
+            "{aliased}"
+        );
+    }
+
+    // A remainder (`-R`) and a switch's state's keys read the same line.
+    for (setup, line, field) in [
+        (
+            &["setup", "jot", "--verb", "occur", "-R", "text"][..],
+            &["jot", "a", "b"][..],
+            "jot",
+        ),
+        (
+            &["setup", "mood", "--verb", "switch", "--data-key", "reason"],
+            &["mood", "sad", "tired"],
+            "mood",
+        ),
+    ] {
+        let data = [&[][..], &["--show", "json"]].map(|flag| {
+            let db = fresh_db();
+            run_cli(setup, &db).unwrap();
+            run_cli(&[line, flag].concat(), &db).unwrap();
+            logged_entries(&db, field)[0].clone()
+        });
+        assert_eq!(data[0].data, data[1].data, "{line:?}");
+        assert_eq!(data[0].state, data[1].state, "{line:?}");
+    }
+}

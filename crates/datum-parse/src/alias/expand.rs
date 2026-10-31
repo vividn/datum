@@ -344,7 +344,7 @@ pub fn try_expand_alias(
                     })
                     .unwrap_or(remaining.len());
                 let (own_trailing, rest) = remaining.split_at(split);
-                let injected = add_spec_keys(&mut substituted, own_trailing, resolver);
+                let injected = add_spec_keys(&mut substituted, own_trailing, resolver)?;
                 let expansion = if max_n == 0 && !injected {
                     alias.expands_to.clone()
                 } else {
@@ -415,7 +415,11 @@ pub fn try_expand_alias(
 /// body, or a side that does not parse as a log line, gets none here; the
 /// log path still adds the keys then, though the call site's positionals
 /// do not bind to them. True when anything was added.
-fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Resolver) -> bool {
+fn add_spec_keys(
+    body: &mut Vec<String>,
+    trailing: &[String],
+    resolver: &dyn Resolver,
+) -> Result<bool, crate::error::ParseError> {
     spec_keys_on_sides(body, trailing, resolver, false)
 }
 
@@ -424,7 +428,8 @@ fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Res
 /// the spec of each field the body logs to and no other.
 pub fn spelled_with_spec_keys(body: &[String], resolver: &dyn Resolver) -> Vec<String> {
     let mut spelled = body.to_vec();
-    spec_keys_on_sides(&mut spelled, &[], resolver, true);
+    // A body naming a bad `--show` is left as stored: help refuses nothing.
+    let _ = spec_keys_on_sides(&mut spelled, &[], resolver, true);
     spelled
 }
 
@@ -435,7 +440,7 @@ fn spec_keys_on_sides(
     trailing: &[String],
     resolver: &dyn Resolver,
     spell: bool,
-) -> bool {
+) -> Result<bool, crate::error::ParseError> {
     use crate::spec_keys::{spec_key_words, takes_spec_keys, typed_state};
     let grouped = |t: &String| {
         t == super::regions::BOUNDARY
@@ -443,7 +448,7 @@ fn spec_keys_on_sides(
             || t == super::regions::GROUP_OPEN
     };
     if body.iter().any(grouped) {
-        return false;
+        return Ok(false);
     }
     let mut out: Vec<String> = Vec::with_capacity(body.len());
     let mut added = false;
@@ -464,6 +469,10 @@ fn spec_keys_on_sides(
             .chain(trailing)
             .map(String::as_str)
             .collect();
+        // `--show` is every command's, read before the line's own flags
+        // (`parse_tail`), so this parse must not see it either, and a bad
+        // one is refused as that sweep would (da-qpzr0).
+        let (_, tail) = crate::input::take_show(&tail)?;
         let Ok(line) = crate::parse::log::parse_log_args(&tail) else {
             continue;
         };
@@ -489,7 +498,7 @@ fn spec_keys_on_sides(
         }
     }
     *body = out;
-    added
+    Ok(added)
 }
 
 /// Highest `$N` (or `${N}`) placeholder index referenced across the
