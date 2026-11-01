@@ -534,30 +534,6 @@ impl Db {
         Ok(fields)
     }
 
-    /// The field `name` names when its rows may all be tombstones: itself, or
-    /// the one field starting it. Where [`Db::fields_starting`], which reads live
-    /// rows, finds none, the name of a field whose entries or spec were all taken
-    /// back (da-il29m).
-    pub fn tombstoned_field_starting(&self, name: &str) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare_cached(&format!(
-            "SELECT field FROM entries
-              WHERE field >= ?1 AND field < ?2 AND {NOT_META_FIELD_SQL}
-             UNION
-             SELECT substr(slug, 6) FROM entries
-              WHERE slug >= 'spec:' || ?1 AND slug < 'spec:' || ?2 AND field = 'spec'
-             ORDER BY 1 LIMIT 16"
-        ))?;
-        let end = format!("{name}\u{10FFFF}");
-        let rows = stmt.query_map(params![name, end], |row| row.get::<_, String>(0))?;
-        let mut fields = rows.collect::<rusqlite::Result<Vec<String>>>()?;
-        fields.retain(|f| !is_template(f));
-        Ok(match fields.as_slice() {
-            [first, ..] if first == name => Some(first.clone()),
-            [one] => Some(one.clone()),
-            _ => None,
-        })
-    }
-
     /// True when some entry, live or not, holds `hid` (da-tldkb): no field
     /// may be named as one.
     pub fn hid_exists(&self, hid: &str) -> Result<bool> {

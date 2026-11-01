@@ -1742,15 +1742,36 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
         }
         Ok::<_, DatumError>(())
     })?;
-    // The stack moves as it did on the snapshot.
-    let of = |kind: &str| -> Vec<&str> {
-        ops.iter()
+    // The action an undo took back is the newest on the stack that wrote
+    // one of its entries; a redo's, the oldest undone one.
+    for (kind, pick) in [
+        ("undo", "a.undone = 0 ORDER BY a.id DESC"),
+        ("redo", "a.undone = 1 ORDER BY a.id ASC"),
+    ] {
+        let hids: Vec<&str> = ops
+            .iter()
             .filter(|o| o.kind == kind)
             .map(|o| o.hid.as_str())
-            .collect()
-    };
-    crate::undo_log::took_back(conn, &of("undo"))?;
-    crate::undo_log::put_back(conn, &of("redo"))?;
+            .collect();
+        if hids.is_empty() {
+            continue;
+        }
+        let action: Option<i64> = conn
+            .query_row(
+                &format!(
+                    "SELECT a.id FROM undo_actions a JOIN entry_history h ON h.action_id = a.id
+                     WHERE h.entry_hid IN (SELECT value FROM json_each(?1)) AND {pick} LIMIT 1"
+                ),
+                params![serde_json::to_string(&hids)?],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match (kind, action) {
+            ("undo", Some(id)) => crate::undo_log::set_undone(conn, id, &[])?,
+            (_, Some(id)) => crate::undo_log::set_redone(conn, id)?,
+            _ => {}
+        }
+    }
     Ok(true)
 }
 

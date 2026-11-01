@@ -224,41 +224,6 @@ pub(super) fn move_aside(conn: &Connection, held: &Entry, kind: ChangeKind) -> R
     super::sync::emit(conn, Some(held), &held.hid, kind)
 }
 
-/// Put each member of an undo step back as it was before its action, returning
-/// each entry it moved, before and after.
-pub fn take_back_in_tx(
-    conn: &Connection,
-    members: Vec<(crate::undo_log::Member, Entry)>,
-) -> Result<Vec<(Entry, Entry)>> {
-    let mut steps = Vec::new();
-    // A row refused its slug because another took it in this command
-    // goes back once that one has left it, by the end (da-icna7).
-    let mut held = Vec::new();
-    for (member, current) in members {
-        let after = if member.first > 1 {
-            match revert_in_tx(conn, &member.hid, member.first - 1, ChangeKind::Undo) {
-                Err(DatumError::Duplicate(_)) => {
-                    held.push((member, current));
-                    continue;
-                }
-                after => after?,
-            }
-        } else if current.deleted_at.is_none() {
-            // The action created it: before it, there was nothing.
-            soft_delete_in_tx(conn, &member.hid, ChangeKind::Undo, None)?;
-            fetch_entry_any(conn, &member.hid)?
-        } else {
-            continue;
-        };
-        steps.push((current, after));
-    }
-    for (member, current) in held {
-        let after = revert_in_tx(conn, &member.hid, member.first - 1, ChangeKind::Undo)?;
-        steps.push((current, after));
-    }
-    Ok(steps)
-}
-
 /// Transaction-free body of [`Db::soft_delete_entry_as`]: tombstones inside
 /// whatever transaction `conn` already has open, so a replace restore
 /// (`Db::replace_entries`) deletes in the same commit as it writes, and a

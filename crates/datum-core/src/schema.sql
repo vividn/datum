@@ -368,8 +368,7 @@ CREATE INDEX IF NOT EXISTS entry_history_action
 -- The undo stack (da-z0zh3; `undo_log.rs`): one row per command that changed
 -- entries on THIS copy, its writes the `entry_history` rows naming it, plus
 -- `untracked`, a JSON array of hids it wrote with no history (v2import's bulk
--- rows). `undone` is 0, or the number of the undo step that took it back
--- (v77). The cursor is the newest row not `undone`; a new action drops every
+-- rows). The cursor is the newest row not `undone`; a new action drops every
 -- undone one. `skipped`, a JSON array, is the hids an `undo --skip-changed`
 -- left as they are, which its redo leaves too (v60). Local: nothing here syncs.
 CREATE TABLE IF NOT EXISTS undo_actions (
@@ -383,17 +382,7 @@ CREATE TABLE IF NOT EXISTS undo_actions (
 -- The redo tail, which a new action drops: undone rows alone, so dropping it
 -- costs the tail and not every action this copy made (v62, da-qctsr).
 CREATE INDEX IF NOT EXISTS undo_actions_undone
-    ON undo_actions(id) WHERE undone <> 0;
-
--- The entries of an action an `undo <field>` took back while the rest of it
--- stands (v77, da-il29m). `step` is that undo's number, -1 once a new action
--- has dropped its redo. Local: nothing here syncs.
-CREATE TABLE IF NOT EXISTS undo_taken (
-    action_id INTEGER NOT NULL,
-    hid       TEXT NOT NULL,
-    step      INTEGER NOT NULL,
-    PRIMARY KEY (action_id, hid)
-) WITHOUT ROWID;
+    ON undo_actions(id) WHERE undone = 1;
 
 -- Easy Sync (da-k329q). Every change to an entry is a signed op, made here
 -- or received from another copy. Append-only: an op is never edited. `body`

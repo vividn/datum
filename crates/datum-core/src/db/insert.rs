@@ -516,7 +516,7 @@ impl Db {
         };
         let write = |tx: &Connection, counts: HardReplaceCounts| {
             tx.execute_batch(
-                "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions; DELETE FROM undo_taken;
+                "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions;
              DELETE FROM integrity_warnings; DELETE FROM last_docs;",
             )?;
             super::sync::chain::leave(tx)?;
