@@ -32,8 +32,20 @@ function desk(orientation = 'horizontal') {
 
 const dot = (field) => `${NOWVIEW} svg.svg circle.point-bg[data-field="${field}"]`;
 
-/** Log `line` as a person does, on the bar, and wait for `field`'s dot and the picture it came in. */
+/**
+ * Log `line` as a person does, on the bar, and wait for `field`'s dot and the picture it came in.
+ * Each slide it starts stands still from its first frame: it runs in real time, so a loaded box
+ * ended it before `frame`, which pauses it, could read it (da-tsb63).
+ */
 async function log(app, line, field) {
+	await app.page.evaluate(() => {
+		const animate = Element.prototype.animate;
+		Element.prototype.animate = function (...args) {
+			const run = animate.apply(this, args);
+			if (this.matches('circle.point-bg, circle.point-bg + *')) run.pause();
+			return run;
+		};
+	});
 	const input = app.page.locator('.prompt-bar input');
 	await input.fill(line);
 	await input.press('Enter');
