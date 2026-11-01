@@ -12,7 +12,6 @@
 
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::is_off_state;
-use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
 use std::cell::Cell;
 use std::io::IsTerminal;
@@ -125,7 +124,7 @@ pub(crate) fn parse_hex(s: &str) -> Option<Rgb> {
 /// Derive a stable RGB color from `md5(name)` — §1. No re-rolling; every MD5
 /// output is a valid background.
 pub(crate) fn md5_rgb(name: &str) -> Rgb {
-    let hash = Md5::digest(name.as_bytes());
+    let hash = datum_core::md5::digest(name.as_bytes());
     Rgb {
         r: hash[0],
         g: hash[1],

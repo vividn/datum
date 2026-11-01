@@ -446,10 +446,7 @@ fn get_o_at_default_show_keeps_info_lines_plus_format() {
 /// renderer crate's internals. Duplicated from `render_state_group.rs`
 /// because tests files don't share a common util module.
 fn bg_escape(name: &str) -> String {
-    use md5::Digest;
-    let mut h = md5::Md5::new();
-    h.update(name.as_bytes());
-    let out = h.finalize();
+    let out = datum_core::md5::digest(name.as_bytes());
     format!("\x1b[48;2;{};{};{}m", out[0], out[1], out[2])
 }
 

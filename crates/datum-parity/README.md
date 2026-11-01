@@ -21,7 +21,7 @@ This crate exists to be that reference.
 | `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `content_hash` preimage | `goldens/hash/content_hash.toml` (6 fixtures) | no |
 | Bug regressions (da-438y, etc.) | `tests/regressions.rs` (5 tests + lock) | no |
-| Algorithm fuzz (proptest) | `tests/fuzz_color.rs` (10 props × 500 cases) | no |
+| Algorithm fuzz (a seeded loop) | `tests/fuzz_color.rs` (10 props × 500 cases) | no |
 
 ## Running
 
@@ -218,7 +218,7 @@ crates/datum-parity/
 └── tests/
     ├── approvals.rs        # goldens vs APPROVED; the signature check
     ├── colors.rs           # color goldens TSV → algorithm assertion
-    ├── fuzz_color.rs       # proptest harness over the color algebra
+    ├── fuzz_color.rs       # seeded properties over the color algebra
     ├── hash_goldens.rs     # content_hash preimage goldens (da-yira)
     ├── regressions.rs      # da-438y / da-ffp6 / da-luc8 / da-aw2o / da-jp0b locks
     └── text_goldens.rs     # text + SVG fixtures: daydumb vs. the snapshots; v2 vs. them (gated)

@@ -892,7 +892,7 @@ pub(super) fn invite(
     };
     if starts {
         let genesis = json!({
-            "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
+            "type": "genesis", "chain": datum_core::ids::new_ulid().to_lowercase(),
             "admins": [], "label": name, "created": chrono::Utc::now().to_rfc3339(),
         });
         db.sync_chain_write(genesis, true)?;
@@ -928,7 +928,7 @@ pub(super) fn invite_record(
 ) -> (String, String, String, Value) {
     let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
     // The id names the invite in its redeemer's `via` (da-2bvxq).
-    let id = ulid::Ulid::new().to_string().to_lowercase();
+    let id = datum_core::ids::new_ulid().to_lowercase();
     let record = json!({
         "type": "invite", "chain": chain,
         "invite_id": id,

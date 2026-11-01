@@ -42,16 +42,12 @@ rusqlite = { version = "0.32", features = ["backup", "bundled", "functions", "ho
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 chrono-tz = { version = "0.10", features = ["serde"] }
 
-# IDs
-ulid = { version = "1", features = ["serde"] }
-
 # Error handling
 thiserror = "2"
 anyhow = "1"
 
 # Crypto
 sha2 = "0.10"
-md-5 = "0.10"
 rand = "0.8"
 # Easy Sync: each database copy signs its ops with an Ed25519 endpoint key —
 # the curve iroh uses, so the same key becomes the iroh endpoint (da-k329q).

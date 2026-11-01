@@ -33,7 +33,6 @@ use datum_parse::time::clock::{install, uninstall, MockClock};
 use datum_parse::time::{
     count_stacked_flag, parse_date, parse_time, DatumTime, Direction, TimeCtx,
 };
-use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
 
 // ─── Fixture loading ─────────────────────────────────────────────────────────
@@ -81,9 +80,7 @@ fn md5_color_goldens_match_canonical_md5() {
     assert!(!in_lines.is_empty(), "md5_colors fixture is empty");
 
     for (i, (input, want)) in in_lines.iter().zip(exp_lines.iter()).enumerate() {
-        let mut hasher = Md5::new();
-        hasher.update(input.as_bytes());
-        let digest = hasher.finalize();
+        let digest = datum_core::md5::digest(input.as_bytes());
         let got = format!("#{:02x}{:02x}{:02x}", digest[0], digest[1], digest[2]);
         assert_eq!(
             got,
@@ -621,9 +618,7 @@ fn dayview_fill_colors_match_md5_for_unspecced_fields() {
 }
 
 fn md5_hex_color(name: &str) -> String {
-    let mut h = Md5::new();
-    h.update(name.as_bytes());
-    let d = h.finalize();
+    let d = datum_core::md5::digest(name.as_bytes());
     format!("#{:02x}{:02x}{:02x}", d[0], d[1], d[2])
 }
 

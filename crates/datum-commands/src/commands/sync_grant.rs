@@ -302,7 +302,7 @@ pub fn grant_like(
                 .map(|a| json!({"key": a.key, "label": a.label}))
                 .collect();
             let genesis = json!({
-                "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
+                "type": "genesis", "chain": datum_core::ids::new_ulid().to_lowercase(),
                 "admins": admins, "label": super::sync::copy_label(),
                 "created": Utc::now().to_rfc3339(),
             });

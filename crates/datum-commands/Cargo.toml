@@ -50,8 +50,6 @@ minisign-verify = "0.3.0"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-ulid = { workspace = true }
-md-5 = { workspace = true }
 regex-lite = { workspace = true }
 unicode-width = { workspace = true }
 # Vets a field's custom SVG icon (da-45wgz) before it is stored.

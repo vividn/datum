@@ -19,8 +19,6 @@
 //! md5(field_name) (4 bytes per component) so resolution is stable across
 //! runs/platforms.
 
-use md5::{Digest, Md5};
-
 use crate::error::{DatumError, Result};
 
 /// 12 base hues at 30° intervals, named by their visible-spectrum landmark.
@@ -128,7 +126,7 @@ pub fn resolve_changed(
 /// 30°-wide band starting at `base_hue`. Used for the daydumb-extension
 /// named-hue path (`color = "blue"` etc.).
 fn hsl_from_md5(field_name: &str, base_hue: f64) -> String {
-    let digest = Md5::digest(field_name.as_bytes());
+    let digest = crate::md5::digest(field_name.as_bytes());
     // 4 bytes per component → u32 each, divide by 2^32 to get [0, 1).
     let h_raw = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
     let s_raw = u32::from_be_bytes([digest[4], digest[5], digest[6], digest[7]]);

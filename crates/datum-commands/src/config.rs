@@ -298,7 +298,7 @@ fn file_client_id() -> Result<String> {
             .with_context(|| format!("Reading client_id from {path:?}"))?;
         return Ok(id.trim().to_string());
     }
-    let id = ulid::Ulid::new().to_string();
+    let id = datum_core::ids::new_ulid();
     std::fs::write(&path, &id).with_context(|| format!("Writing client_id to {path:?}"))?;
     Ok(id)
 }

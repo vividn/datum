@@ -17,20 +17,15 @@ parity-runtime = []
 [dependencies]
 # For `src/bin/daydumb.rs`, the binary the text goldens run (da-ma5pr).
 datum-cli = { path = "../datum-cli" }
-md-5 = { workspace = true }
+datum-core = { path = "../datum-core" }
 serde = { workspace = true }
 toml = { workspace = true }
 
 [dev-dependencies]
-proptest = "1"
 tempfile = "3"
 chrono = { workspace = true }
 regex-lite = { workspace = true }
 # Reads both runtimes' dayview SVG as a drawing, not as bytes (da-ma5pr).
 roxmltree = "0.21"
-# `tests/hash_goldens.rs` checks the pinned content_hash preimages against
-# what datum-core actually computes — the goldens are only worth anything
-# if they're bound to the implementation.
-datum-core = { path = "../datum-core" }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

@@ -241,8 +241,7 @@ const TIMEZONE_BAND: ResolvedPosition = ResolvedPosition {
 /// 4 bytes of md5(field) as a big-endian u32 and divides by 2^32 to get a
 /// value in `[0.0, 1.0)`.
 pub(super) fn hash_y(field: &str) -> f64 {
-    use md5::{Digest, Md5};
-    let digest = Md5::digest(field.as_bytes());
+    let digest = crate::md5::digest(field.as_bytes());
     let n = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
     f64::from(n) / (f64::from(u32::MAX) + 1.0)
 }

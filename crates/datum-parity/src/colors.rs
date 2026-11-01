@@ -5,12 +5,9 @@
 //! * `utils/colorUtils.ts` — `getContrastTextColor` (YIQ brightness, > 128 → black)
 //! * `field/fieldColor.ts` — `getFieldColor`, `getStateColor`, `stateChalk`
 //!
-//! These are reimplementations, not bindings. Property tests in
-//! `tests/colors_proptest.rs` cover the fact that "datum's md5" is RFC-1321
-//! md5 (so npm's `md5` package and Rust's `md-5` crate produce identical
-//! bytes for any input); we don't shell out per-comparison.
-
-use md5::{Digest, Md5};
+//! These are reimplementations, not bindings. "datum's md5" is RFC-1321 md5,
+//! so npm's `md5` package and `datum_core::md5`, held to the RFC's test suite,
+//! produce identical bytes for any input; we don't shell out per-comparison.
 
 /// Datum's `md5Color`: `"#" + md5(str).substring(0, 6)`.
 ///
@@ -18,7 +15,7 @@ use md5::{Digest, Md5};
 /// for any input. da-438y was a routing bug that bypassed this exact path
 /// in daydumb; the parity goldens for `colors/` lock the algorithm.
 pub fn md5_color(input: &str) -> String {
-    let digest = Md5::digest(input.as_bytes());
+    let digest = datum_core::md5::digest(input.as_bytes());
     format!("#{:02x}{:02x}{:02x}", digest[0], digest[1], digest[2])
 }
 

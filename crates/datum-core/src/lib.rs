@@ -13,6 +13,7 @@ pub mod kit;
 pub mod kit_color;
 pub mod kit_color_rule;
 pub mod last_docs;
+pub mod md5;
 pub mod migrations;
 pub mod slug;
 pub mod state;

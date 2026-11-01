@@ -56,10 +56,7 @@ fn run(db: &PathBuf, args: &[&str], color: bool) -> String {
 /// Hard-coded here so the test asserts on absolute byte values without
 /// depending on the renderer crate's internals.
 fn md5_rgb(name: &str) -> [u8; 3] {
-    use md5::Digest;
-    let mut h = md5::Md5::new();
-    h.update(name.as_bytes());
-    let out = h.finalize();
+    let out = datum_core::md5::digest(name.as_bytes());
     [out[0], out[1], out[2]]
 }
 

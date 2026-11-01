@@ -45,8 +45,7 @@ fn json_of(db: &Path, args: &[&str]) -> Value {
 
 /// The fg SGR for a name's MD5 colour (no spec), as `render::colors` paints it.
 fn fg(name: &str) -> String {
-    use md5::Digest;
-    let h = md5::Md5::digest(name.as_bytes());
+    let h = datum_core::md5::digest(name.as_bytes());
     format!("\x1b[38;2;{};{};{}m", h[0], h[1], h[2])
 }
 
@@ -140,8 +139,7 @@ fn a_dash_t_note_leaves_the_state_it_names_untouched() {
     );
     let svg = std::fs::read_to_string(&nowview).unwrap();
     let hex = |name: &str| {
-        use md5::Digest;
-        let h = md5::Md5::digest(name.as_bytes());
+        let h = datum_core::md5::digest(name.as_bytes());
         format!("#{:02x}{:02x}{:02x}", h[0], h[1], h[2])
     };
     assert!(svg.contains(&hex("inside")), "nowview draws inside");
