@@ -157,6 +157,7 @@ fn the_cost_of_a_normal_read_does_not_grow_with_the_history() {
                     include_tracked_false: true,
                     include_ignored: true,
                     snapshot_time: Some(at),
+                    fields: Vec::new(),
                 })
                 .unwrap();
             }),

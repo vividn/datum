@@ -29,7 +29,7 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
         .map(|p| Regex::new(p).with_context(|| format!("Invalid regex pattern: {p}")))
         .collect::<Result<_>>()?;
 
-    let matches = grep_entries(db, &regexes, args.field.as_deref())?;
+    let matches = grep_entries(db, &regexes, &args.fields)?;
 
     let registry = registry_of(db, &matches);
     let tbl = TableArgs {
@@ -53,11 +53,12 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
 /// `include_meta: true` is deliberate: meta/flagged rows (da-ghlx) are
 /// searchable here by design — a grep should search everything, even rows
 /// the live tail/dayview surfaces hide by default.
-fn grep_entries(db: &Db, regexes: &[Regex], field: Option<&str>) -> Result<Vec<Entry>> {
-    let candidates = if let Some(field) = field {
+fn grep_entries(db: &Db, regexes: &[Regex], fields: &[String]) -> Result<Vec<Entry>> {
+    let candidates = if let [field] = fields {
         db.entries_for_field(field, None)?
     } else {
         db.list_entries(&ListParams {
+            fields: fields.to_vec(),
             include_meta: true,
             ..Default::default()
         })?
@@ -109,7 +110,8 @@ mod tests {
 
     fn run_grep(db: &datum_core::db::Db, patterns: &[&str], field: Option<&str>) -> Vec<Entry> {
         let regexes: Vec<Regex> = patterns.iter().map(|p| Regex::new(p).unwrap()).collect();
-        grep_entries(db, &regexes, field).unwrap()
+        let fields: Vec<String> = field.into_iter().map(str::to_string).collect();
+        grep_entries(db, &regexes, &fields).unwrap()
     }
 
     #[test]
@@ -150,7 +152,7 @@ mod tests {
         grep(
             GrepArgs {
                 patterns: vec!["happy".to_string()],
-                field: None,
+                fields: Vec::new(),
                 output: Default::default(),
             },
             &db,
@@ -251,7 +253,7 @@ mod tests {
         grep(
             GrepArgs {
                 patterns: vec!["rust".to_string()],
-                field: Some("mood".to_string()),
+                fields: vec!["mood".to_string()],
                 output: Default::default(),
             },
             &db,
@@ -290,7 +292,7 @@ mod tests {
         grep(
             GrepArgs {
                 patterns: vec!["decaf".to_string()],
-                field: Some("coffee".to_string()),
+                fields: vec!["coffee".to_string()],
                 output: Default::default(),
             },
             &db,

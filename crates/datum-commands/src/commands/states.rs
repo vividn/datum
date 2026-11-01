@@ -18,15 +18,23 @@ use crate::render::format_grid;
 use crate::render::state_truncate::state_label;
 
 pub fn states(args: StatesArgs, db: &Db) -> Result<()> {
-    let listing = compute_states(db, &args.field)?;
-    match args.show {
-        ShowFlag::None => {}
-        ShowFlag::Json => println!("{}", serde_json::to_string_pretty(&listing)?),
-        _ => {
-            let start = db
-                .load_spec(&args.field)?
-                .is_some_and(|s| s.verb == Action::Start);
-            print!("{}", format_states(&listing, start));
+    let listings = (args.fields.iter())
+        .map(|f| compute_states(db, f))
+        .collect::<Result<Vec<_>>>()?;
+    match (args.show, listings.as_slice()) {
+        (ShowFlag::None, _) => {}
+        (ShowFlag::Json, [one]) => println!("{}", serde_json::to_string_pretty(one)?),
+        (ShowFlag::Json, many) => println!("{}", serde_json::to_string_pretty(many)?),
+        (_, listings) => {
+            for (field, listing) in args.fields.iter().zip(listings) {
+                if listings.len() > 1 {
+                    println!("{field}");
+                }
+                let start = db
+                    .load_spec(field)?
+                    .is_some_and(|s| s.verb == Action::Start);
+                print!("{}", format_states(listing, start));
+            }
         }
     }
     Ok(())

@@ -40,10 +40,10 @@ impl Db {
     /// (da-lkh1j).
     pub fn count_entries_filtered(
         &self,
-        field: Option<&str>,
+        fields: &[String],
         since: Option<DateTime<Utc>>,
     ) -> Result<usize> {
-        let (where_clause, bindings) = filtered_where(field, since);
+        let (where_clause, bindings) = filtered_where(fields, since);
         let sql =
             format!("SELECT COUNT(*) FROM entries WHERE {where_clause} AND {NOT_FLAG_OR_META_SQL}");
         let n: i64 =
@@ -70,12 +70,12 @@ impl Db {
     /// are [`Self::count_entries_filtered`]'s.
     pub fn count_entries_grouped(
         &self,
-        field: Option<&str>,
+        fields: &[String],
         group_col: GroupColumn,
         since: Option<DateTime<Utc>>,
     ) -> Result<Vec<(String, usize)>> {
         let col = group_col.as_sql();
-        let (where_clause, bindings) = filtered_where(field, since);
+        let (where_clause, bindings) = filtered_where(fields, since);
         let sql = format!(
             "SELECT {col} AS g, COUNT(*) AS n FROM entries \
              WHERE {where_clause} AND {NOT_FLAG_OR_META_SQL} \
@@ -97,7 +97,7 @@ impl Db {
     /// ascending and last descending, and `--since` leaves it out.
     pub fn list_entry_ids(
         &self,
-        field: Option<&str>,
+        fields: &[String],
         since: Option<DateTime<Utc>>,
         limit: Option<usize>,
         oldest_first: bool,
@@ -105,7 +105,7 @@ impl Db {
     ) -> Result<Vec<String>> {
         let select_col = if as_slug { "slug" } else { "hid" };
         let dir = if oldest_first { "ASC" } else { "DESC" };
-        let (where_clause, bindings) = filtered_where(field, since);
+        let (where_clause, bindings) = filtered_where(fields, since);
         let mut sql = format!(
             "SELECT {select_col} FROM entries WHERE {where_clause} \
              ORDER BY {expr} {dir}, slug {dir}",

@@ -867,7 +867,7 @@ const EXPECTED_HEAD: &str = "\
 datum head — show oldest entries
 
 USAGE:
-  datum head [FIELD]
+  datum head [FIELD,...]
 
 OPTIONS:
   -n, --limit <N>   Number of entries (default 10)
@@ -940,7 +940,7 @@ const EXPECTED_COUNT: &str = "\
 datum count — count entries (optionally filtered/grouped/since-bounded)
 
 USAGE:
-  datum count [FIELD] [--group-by KEY] [--since TIME]
+  datum count [FIELD,...] [--group-by KEY] [--since TIME]
 
 OPTIONS:
       --group-by <KEY>  state|verb|field|client
@@ -960,7 +960,7 @@ const EXPECTED_IDS: &str = "\
 datum ids — list entry ids (newest-first by default)
 
 USAGE:
-  datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug]
+  datum ids [FIELD,...] [-n N] [--oldest-first] [--since TIME] [--slug]
 
 OPTIONS:
   -n, --limit <N>     Cap the number of ids returned

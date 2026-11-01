@@ -697,6 +697,7 @@ mod tests {
         let now = db
             .current_now(&crate::db::NowFilter {
                 snapshot_time: Some(at),
+                fields: Vec::new(),
                 ..Default::default()
             })
             .unwrap();

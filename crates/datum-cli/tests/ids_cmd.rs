@@ -88,7 +88,7 @@ fn ids_field_filter_restricts_to_that_field() {
 
     let ids = compute_ids(
         &IdsArgs {
-            field: Some("coffee".to_string()),
+            fields: vec!["coffee".to_string()],
             ..IdsArgs::default()
         },
         &db,

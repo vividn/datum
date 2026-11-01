@@ -188,10 +188,14 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.context = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Positional(_) => {
-                return Err(ParseError::InvalidArg(
-                    "dayview takes no positional arguments".into(),
-                ));
+            FlagSplit::Positional(s) => {
+                if !out.fields.is_empty() {
+                    return Err(ParseError::InvalidArg(format!(
+                        "dayview takes one list of fields, a,b: got extra '{s}'"
+                    )));
+                }
+                out.fields = super::tail::field_list(s);
+                i += 1;
             }
             f => return Err(unknown_flag(f)),
         }
@@ -391,10 +395,14 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.no_color = true;
                 i += 1;
             }
-            FlagSplit::Positional(_) => {
-                return Err(ParseError::InvalidArg(
-                    "nowview takes no positional arguments".into(),
-                ));
+            FlagSplit::Positional(s) => {
+                if !out.fields.is_empty() {
+                    return Err(ParseError::InvalidArg(format!(
+                        "nowview takes one list of fields, a,b: got extra '{s}'"
+                    )));
+                }
+                out.fields = super::tail::field_list(s);
+                i += 1;
             }
             f => return Err(unknown_flag(f)),
         }

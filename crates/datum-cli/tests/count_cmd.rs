@@ -37,7 +37,7 @@ fn count_with_field_filters_to_that_field() {
 
     let result = compute_count(
         &CountArgs {
-            field: Some("coffee".to_string()),
+            fields: vec!["coffee".to_string()],
             ..CountArgs::default()
         },
         &db,
@@ -64,7 +64,7 @@ fn count_group_by_state_aggregates_per_value() {
 
     let result = compute_count(
         &CountArgs {
-            field: Some("mood".to_string()),
+            fields: vec!["mood".to_string()],
             group_by: Some("state".to_string()),
             ..CountArgs::default()
         },
@@ -244,15 +244,15 @@ fn count_leaves_flag_markers_and_meta_notes_out() {
     run_cli(&["meta", "mood", "rate it"], &flagged).unwrap();
 
     for db in [&plain, &flagged] {
-        for field in [None, Some("mood".to_string())] {
+        for fields in [vec![], vec!["mood".to_string()]] {
             let args = CountArgs {
-                field,
+                fields,
                 ..CountArgs::default()
             };
             assert_eq!(compute_count(&args, db).unwrap(), CountResult::Total(2));
         }
         let by_state = CountArgs {
-            field: Some("mood".to_string()),
+            fields: vec!["mood".to_string()],
             group_by: Some("state".to_string()),
             ..CountArgs::default()
         };

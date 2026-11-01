@@ -1,4 +1,5 @@
 use super::core::*;
+use super::tail::field_list;
 use crate::cli::*;
 use crate::error::Result;
 use crate::input::{self, lift, local_switch, local_value, LiftedSpec, Show};
@@ -46,10 +47,11 @@ pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
 
     let mut composed = NowParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
-    if let Some(extra) = pos.first() {
-        return Err(unknown_flag(FlagSplit::Positional(extra)));
-    }
     Ok(NowArgs {
+        fields: optional_pos(&pos)?
+            .as_deref()
+            .map(field_list)
+            .unwrap_or_default(),
         show_all: composed.show_all,
         show_tracked: composed.show_tracked,
         show: Show::default(),

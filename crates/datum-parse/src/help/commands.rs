@@ -1069,6 +1069,7 @@ then the last hour drawn as a band below it.
   datum now                           the states, then the band
   datum now --bare                    the states alone
   datum now -A                        ignored fields too, dimmed
+  datum now mood,work                 these two, whatever they hold
 
 A switch field shows its state, a started field «on». An
 moment field holds no state, so it shows in the band alone. With nothing to
@@ -1076,7 +1077,7 @@ list, now says which emptiness it is: no tracked field, every field
 ignored, or no tracked field holding a state now.
 ";
 
-const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N]\n\n  -A           Show ignored fields too (dim)\n      --bare   Suppress the terminal nowview band; only show the state list\n      --no-color   Disable ANSI color in the nowview band\n      --cols N Override terminal width in cells (auto-detected from $COLUMNS)\n";
+const NOW_BODY: &str = "USAGE:\n  datum now [FIELD,...] [-A] [--bare] [--no-color] [--cols N]\n\n  -A           Show ignored fields too (dim)\n      --bare   Suppress the terminal nowview band; only show the state list\n      --no-color   Disable ANSI color in the nowview band\n      --cols N Override terminal width in cells (auto-detected from $COLUMNS)\n";
 
 const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG[,ID_OR_SLUG]...> [--pretty]\n  datum get <ID_OR_SLUG>::<NAME>[,<ID_OR_SLUG>::<NAME>]...\n  datum get <ID_OR_SLUG>::<REF>[::<REF>]...::<NAME>\n  datum get <FIELD>::[<KEY>]\n  datum get <FIELD> --backlinks\n\nA comma list prints each entry in the order given (`--pretty` and `--show json`\ntoo). An id that does not resolve is named on stderr after the documents that\ndid, and the command exits 1.\n\n`<id>::<name>` prints one value of the entry alone on stdout, for scripts:\n  datum get di91z::hid       the full 12-char hid\n  datum get di91z::state     the whole state\n  datum get di91z::.title    state.title (the `.key` shorthand of data entry)\n  datum get di91z::priority  a data key\nA name is resolved in this order: an entry column (hid, slug, field, verb,\nstate, dur, following_state, data, at, create_time, modify_time, …)\nalways means the column; `.x.y` walks the state; anything else walks data.\nA string prints bare, an object or array as compact JSON. A missing or null\nvalue exits 1 with a message on stderr; an empty string prints an empty line\nand exits 0. A path splits on `.` as data entry does. `::name` alone reads\nthe last entry. A comma list prints one value per line and takes only\n`<id>::<name>` pieces; `--show` and `--pretty` do not apply.\n\n`::state::<name>` follows the state (or following_state) to the entry it\nrefers to and reads <name> there, in the same order: di91z::state::class\nreads class from issue_state:queued. A state holding `:` is that slug; a\nbare one refers through the spec's state lookup field. Hops chain\n(`::state::state::x`, at most 8). A data key hops too, when its value is a\nreference: `ref://<slug>`, or a bare slug on a key the spec types `ref` —\ndi91z::needs::title. A value that refers to nothing, an array, a missing\nentry or a loop exits 1 naming it.\n\n`<field>::` prints the field's RECORD as compact JSON: `state`, its state now\n(`datum now`'s, not its newest entry's), and each data key from the latest\nof its entries carrying it, in time order (a timeless entry at its create\ntime). A key set to null is cleared. That is JSON Merge Patch (RFC 7396): a\nlist is replaced whole. `comment` gathers every comment with its entry's\ntime instead, and a null one clears none. `<field>::<key>` prints one key\nof the record, and a name it lacks (hid, at, …) the newest entry's.\nA reference to a record, `ref://<field>::`, hops to that record.\n\n`<field> --backlinks` prints each record that refers to the field's, one a\nline: its field, then the keys holding the reference, comma-separated.\n\nStructured states (objects with `id` and other fields) render as an `{id}`\nchip on the main info line, with sub-fields broken out on a state second\nline below. Parallel states wrap in `[ … ]` with one inner state per line.\nThe per-entry data block follows the same alignment convention — keys are\nright-aligned so their trailing `:` shares a column when the block goes\nmultiline.\n";
 
@@ -1111,13 +1112,13 @@ const TRACK_BODY: &str = "USAGE:\n  datum track <FIELD>[,<FIELD>...] [SETUP CHAN
 
 const IGNORE_BODY: &str = "USAGE:\n  datum ignore <FIELD>[,<FIELD>...] [SETUP CHANGES]\n\n`ignore F …` is `datum setup F … --ignore`, as `track` is `setup … --track`\n(`datum help track`): `setup`'s flags, one write and one `undo`. `ignore F`\nalone changes no spec: it writes the row, and on a field with no spec it\ndeclares none.\n\nA list, `ignore coffee,tea`, is an `ignore` of each in that order, each\nechoed as alone; a name refused alone refuses the list, and nothing of it\nis written. A field name has no comma, so `a,b` is never one field.\n\nIgnoring is the other half of `datum track`, and it is one row: a switch\nentry carrying the IGNORED sentinel, written at now. A field is ignored\nwhen its NEWEST state-bearing row is that sentinel — ignored-ness is\nread off the log, never off a flag — so the next `moment`/`start`/\n`switch` on the field un-ignores it, as `datum track` does. A field\nignored already gets no second row: «no change». The row is echoed as any\nlog is, its action `IGNORE`.\n\nWhat that hides is the field's place in the views that ask what exists:\n`datum now` drops it from the list (`now -A` shows it again, dimmed,\nbelow a rule), `datum fields` stops listing it, and `datum info` counts\nit under `ignored` instead of `tracked`. Nothing else moves — the\nentries stay, and `tail` / `get` / `grep` still find them.\n\n`ignore` takes no time flags; the row lands at now. And it needs no\nfield to ignore: naming one that was never logged INVENTS it, with the\nsentinel as the only row it has.\n";
 
-const GREP_BODY: &str = "USAGE:\n  datum grep <PATTERN>... [-f FIELD] [-A | -o FMT]\n\nARGS:\n  <PATTERN>...    One or more regex patterns; rows must match EVERY one\n                  (AND semantics). Each pattern is matched against the\n                  entry's serialized JSON representation, so slug, value,\n                  extra_data, and metadata are all in scope.\n\nOPTIONS:\n  -f, --field <F>      Restrict the search to entries on field F.\n  -A, --show-all       Show the full entry document (verbose form).\n  -o, --format-string <FMT>\n                       Render each hit through datum's format-string mini-DSL.\n\nEXAMPLES:\n  datum grep coffee                      # any entry mentioning 'coffee'\n  datum grep -f mood happy               # mood rows with state/value matching 'happy'\n  datum grep -A 'kg' caffeine            # caffeine rows whose JSON mentions 'kg'\n";
+const GREP_BODY: &str = "USAGE:\n  datum grep <PATTERN>... [-f FIELD,...] [-A | -o FMT]\n\nARGS:\n  <PATTERN>...    One or more regex patterns; rows must match EVERY one\n                  (AND semantics). Each pattern is matched against the\n                  entry's serialized JSON representation, so slug, value,\n                  extra_data, and metadata are all in scope.\n\nOPTIONS:\n  -f, --field <F,...>  Restrict the search to entries on these fields.\n  -A, --show-all       Show the full entry document (verbose form).\n  -o, --format-string <FMT>\n                       Render each hit through datum's format-string mini-DSL.\n\nEXAMPLES:\n  datum grep coffee                      # any entry mentioning 'coffee'\n  datum grep -f mood happy               # mood rows with state/value matching 'happy'\n  datum grep -A 'kg' caffeine            # caffeine rows whose JSON mentions 'kg'\n";
 
 const CHECK_BODY: &str = "USAGE:\n  datum check [CHECKER]... [--fix]\n  datum check --list\n\nARGS:\n  [CHECKER]...   Run only the named checker(s). With no positionals, the\n                 full default battery runs, and a line per checker says how\n                 many problems it found: each, where five or fewer, and\n                 otherwise the first five. Named, a checker lists every\n                 one, `tz` with the entries around each. A second run reads\n                 again only what the last found and what changed since.\n                 Known names:\n                   entries    Content hashes, unknown fields, undeclared or\n                              mistyped data keys, unbuilt kit indices\n                   verbs      Drift between stored verb and derive_verb\n                   aliases    Spec/user alias divergence + state collisions\n                   slugs      Drift between stored slug and re-derived slug\n                   integrity  Timeline warnings: a second open, a close with no\n                              open, overlapping blocks, a --last-state that\n                              disagrees\n                   flags      Pending review markers from `datum flag`\n                   tz         Stored UTC offset vs timezone at that instant\n                   refs       State and data references naming no live entry\n                   stats      A sample of stats' cached days against the entries\n                   sync       Sync ops with no row, rows their ops don't fold to,\n                              and what waits on sync: notices (a new device, a\n                              device's ops refused), a newer schema, unsent\n                              changes\n                   install    What `datum install` set up: tab completion, the\n                              sync daemon running this binary; with\n                              `update_check = true`, a newer release\n                   keys       A key `+=` / `-=` changed whose record the merged\n                              history now gives otherwise\n\nOPTIONS:\n  --fix          Rewrite drifted `verb` / `slug` columns to match what\n                 the live deriver would produce; annotate alias state\n                 collisions with the explicit first-saved-wins\n                 resolution; rewrite legacy `content_hash` columns\n                 that disagree with `expected_content_hash`; drop\n                 cached stats days that differ from the entries;\n                 delete each entry whose sync ops this copy has no\n                 row for, as `datum delete` does: the delete syncs,\n                 so every copy holding the entry deletes it too (one\n                 whose identity a live entry holds is written again\n                 from its ops, merged with it as on every copy);\n                 write each drifted key's value as the history gives\n                 it, as a note on its field.\n  --list         Print the set of known checker names and exit.\n\nEXAMPLES:\n  datum check                  # full default battery\n  datum check verbs            # only verb-drift\n  datum check aliases --fix    # only alias divergence, annotate collisions\n  datum check integrity flags  # only the queue + review-marker views\n  datum check slugs --fix      # rewrite drifted slug columns in place\n";
 
-const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --days <N>, -n           Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --label-width <N>        Date-label column width (default: from the label font).\n                           0 draws no date labels — the bands start at the margin\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n                           PNG needs rsvg-convert on PATH (librsvg)\n  -w, --watch              Redraw on a 5-minute poll loop\n  --orientation <O>        horizontal (default): time runs left to right and the\n                           days stack as rows. vertical: time runs top to bottom\n                           and the days stand side by side as columns, the way\n                           most calendars draw a week, and perhaps the better fit\n                           on a phone. Pivoted, the size flags pivot with it:\n                           --width spreads the days, --height is the day's\n                           length, --day-height a column's width, the time axis\n                           runs down the left and the date labels across the top\n  --horizontal, --vertical Shorthand for --orientation\n\nA day is drawn on the clock it was lived by: the zone its entries were\nlogged in, whatever zone this machine is in now. Where that clock jumped\nforward (summer time beginning, a flight east) the times it skipped are\nhatched gray. Where it jumped back, the times it repeated fork the day into\na lane for each time they happened, and an entry is drawn in the lane of\nthe offset it was logged at. Each end is labelled with its offset: UTC+2.\n";
+const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [FIELD,...] [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --days <N>, -n           Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --label-width <N>        Date-label column width (default: from the label font).\n                           0 draws no date labels — the bands start at the margin\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n                           PNG needs rsvg-convert on PATH (librsvg)\n  -w, --watch              Redraw on a 5-minute poll loop\n  --orientation <O>        horizontal (default): time runs left to right and the\n                           days stack as rows. vertical: time runs top to bottom\n                           and the days stand side by side as columns, the way\n                           most calendars draw a week, and perhaps the better fit\n                           on a phone. Pivoted, the size flags pivot with it:\n                           --width spreads the days, --height is the day's\n                           length, --day-height a column's width, the time axis\n                           runs down the left and the date labels across the top\n  --horizontal, --vertical Shorthand for --orientation\n\nA day is drawn on the clock it was lived by: the zone its entries were\nlogged in, whatever zone this machine is in now. Where that clock jumped\nforward (summer time beginning, a flight east) the times it skipped are\nhatched gray. Where it jumped back, the times it repeated fork the day into\na lane for each time they happened, and an entry is drawn in the lane of\nthe offset it was logged at. Each end is labelled with its offset: UTC+2.\n";
 
-const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --context <DUR>          Context before the instant (e.g. 15m, 1h). Default: 0 —\n                           the snapshot: each field's state, no time band\n  --history <DUR>          The same flag, under its older name\n  --labels                 Name each field's state in its color, in a gutter right\n                           of the picture, or below it when vertical, and key the\n                           moment dots in the window there, the gutter taken from\n                           --width (--height when vertical) when given (SVG only;\n                           off by default)\n  --surround <DUR>         Also draw this much time either side of the window,\n                           outside the SVG's box, for a viewer to pan or zoom\n                           into (before it only when it ends at now; SVG only)\n  --ahead <DUR>            Also draw this much past now, behind the now line, for a\n                           viewer that slides the picture along with the clock;\n                           with whole-minute marks in a window of 5m or less\n                           (a window ending at now; SVG only)\n  -t, --time <TIME>        The instant the now section is about instead of now,\n  -d, --date <DATE>        with the window centered on it and its time written\n                           under the section; the time flags as the verbs take them\n  -q, --quick              (-q = 5 min back, stackable)\n  -y, --yesterday          (a day back, stackable)\n  -z, --timezone <TZ>      The zone -t and -d are read in\n  --center <TIME>          Center the window here instead, any -t value: the\n                           section stands at its instant, or at the edge the\n                           instant lies beyond (SVG only)\n  --width <N>              SVG width in pixels (auto-scales with --context when unset;\n                           300 when vertical)\n  --height <N>             SVG height in pixels (default 300; auto-scales with\n                           --context when vertical)\n  --orientation <O>        horizontal (default), or vertical: time runs down the page\n                           as a calendar's does, and each field is a column. SVG\n                           only; --horizontal / --vertical for short\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html, or - for the SVG on stdout\n                           (default: the terminal band)\n                           PNG needs rsvg-convert on PATH (librsvg)\n  -w, --watch              Redraw on DB change (60s idle refresh)\n  --window <DUR>           The terminal band's older name for --context; unlike it,\n                           refuses a zero rather than reading it as the snapshot\n";
+const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [FIELD,...] [OPTIONS]\n\nOPTIONS:\n  --context <DUR>          Context before the instant (e.g. 15m, 1h). Default: 0 —\n                           the snapshot: each field's state, no time band\n  --history <DUR>          The same flag, under its older name\n  --labels                 Name each field's state in its color, in a gutter right\n                           of the picture, or below it when vertical, and key the\n                           moment dots in the window there, the gutter taken from\n                           --width (--height when vertical) when given (SVG only;\n                           off by default)\n  --surround <DUR>         Also draw this much time either side of the window,\n                           outside the SVG's box, for a viewer to pan or zoom\n                           into (before it only when it ends at now; SVG only)\n  --ahead <DUR>            Also draw this much past now, behind the now line, for a\n                           viewer that slides the picture along with the clock;\n                           with whole-minute marks in a window of 5m or less\n                           (a window ending at now; SVG only)\n  -t, --time <TIME>        The instant the now section is about instead of now,\n  -d, --date <DATE>        with the window centered on it and its time written\n                           under the section; the time flags as the verbs take them\n  -q, --quick              (-q = 5 min back, stackable)\n  -y, --yesterday          (a day back, stackable)\n  -z, --timezone <TZ>      The zone -t and -d are read in\n  --center <TIME>          Center the window here instead, any -t value: the\n                           section stands at its instant, or at the edge the\n                           instant lies beyond (SVG only)\n  --width <N>              SVG width in pixels (auto-scales with --context when unset;\n                           300 when vertical)\n  --height <N>             SVG height in pixels (default 300; auto-scales with\n                           --context when vertical)\n  --orientation <O>        horizontal (default), or vertical: time runs down the page\n                           as a calendar's does, and each field is a column. SVG\n                           only; --horizontal / --vertical for short\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html, or - for the SVG on stdout\n                           (default: the terminal band)\n                           PNG needs rsvg-convert on PATH (librsvg)\n  -w, --watch              Redraw on DB change (60s idle refresh)\n  --window <DUR>           The terminal band's older name for --context; unlike it,\n                           refuses a zero rather than reading it as the snapshot\n";
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n\nARGS:\n  [TARGET]   A registered DB name, or a path — anything containing `/`,\n             starting with `.`, or ending in `.db` is read as a path.\n             Omitted, the active DB is used (`--db`, else `$DATUM_DB`,\n             else the default).\n\nOPTIONS:\n  --all      Every database instead of one: the names in the registry\n             (`<config>/datum/dbs.toml`) plus every `*.db` in the data\n             directory (`$DATUM_HOME`, else `$XDG_DATA_HOME/datum`), one\n             block each, the registry's path winning a name collision.\n\nOne block per database: where the file is, its schema version, live and\ndeleted entry counts, the tracked/ignored tally that `datum fields`\nreports one field at a time, the last write, and the size on disk. The\nschema row reads the version the file holds: `v<N> ✓ (current)`, `⚠\n(older than current v<N>)`, or `✗ (newer than binary (v<N>))`. One\nthat will not open says `✗` and why, and one that is not there says `✗\n(missing)`. None of those fails the command.\n\nA TARGET, and every database `--all` lists, is only READ: `info` does\nnot migrate it, so an older one stays as it is until a command opens it\nwith `--db`. The active database is the exception — every command,\n`info` included, brings it to this binary's schema before it runs.\n`info` also creates a missing parent directory for a TARGET path.\nWhat it never does is create the database file itself, or add an\nunknown name to the registry.\n\n`last write` is the newest live entry's modify time in the host's zone,\nand `(none)` when there is no live entry. A row whose read fails prints\n`QUERY ERROR` (red when color is on) and says why on stderr, the rows\nthat did read still print, and the command exits non-zero.\n";
 
@@ -1467,6 +1468,10 @@ pub const TOPICS: &[TopicSpec] = &[
                 \n\
                 A read takes the field a name starts always: `datum tail envi`, and\n\
                 `stats`, `states`, `grep`, `count`, `ids` and `get envi state=home`.\n\
+                \n\
+                They take a comma list too, each name read so: `datum tail envi,coffee`,\n\
+                and `now`, `dayview` and `nowview`. A name from before commas were\n\
+                refused, `a,b`, is read whole unless `a` and `b` are both fields.\n\
                 \n\
                 A write takes it only where it could not create the name anyway: a\n\
                 template whose `auto_setup` is false covers the name, or the name\n\
@@ -2120,6 +2125,20 @@ what share of its time each state took, over a slice of time.
   datum stats                         every field, ranked by time
   datum stats work --week             work this week
   datum stats mood:happy --month      how much of the month was happy
+  datum stats work,study --week       a row each, then the two together
+
+Fields run in parallel, so two can add up to more than the clock. The
+pooled rows give each combination that ran together, the time all of it
+ran whatever else did too, so `a & b` holds the time of `a & b & c`; then
+the clock time at least one ran, «any of these», with the sum beside it.
+They add the counts and take no share of a state: one field's `happy` is
+not another's.
+
+  1h30m   60.0%  1×  study
+     1h   40.0%  1×  work
+
+    30m       —      study & work
+     2h       —  2×  any of these  (2h30m summed)
 
 -t is where the slice STARTS, as --since is; -d names one whole day, as
 does a bare date to --since or --until: `--since 2026-10-14 --until
@@ -2350,7 +2369,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "show oldest entries",
         intro: "",
         long_description: None,
-        usage: &["datum head [FIELD]"],
+        usage: &["datum head [FIELD,...]"],
         args: NO_ARGS,
         flags: HEAD_FLAGS,
         shared_flags: None,
@@ -2384,7 +2403,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "regex search over entry JSON content",
         intro: "",
         long_description: None,
-        usage: &["datum grep <PATTERN>... [-f FIELD]"],
+        usage: &["datum grep <PATTERN>... [-f FIELD,...]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,
@@ -2401,7 +2420,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "render a multi-day timeline as SVG/PNG/HTML",
         intro: "",
         long_description: None,
-        usage: &["datum dayview [OPTIONS]"],
+        usage: &["datum dayview [FIELD,...] [OPTIONS]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,
@@ -2418,7 +2437,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "paint each field's state now as a terminal band (-o writes a file)",
         intro: "",
         long_description: None,
-        usage: &["datum nowview [OPTIONS]"],
+        usage: &["datum nowview [FIELD,...] [OPTIONS]"],
         args: NO_ARGS,
         flags: NOWVIEW_FLAGS,
         shared_flags: None,
@@ -2435,7 +2454,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "show the current state of tracked fields + terminal nowview band",
         intro: NOW_INTRO,
         long_description: None,
-        usage: &["datum now [-A] [--bare]"],
+        usage: &["datum now [FIELD,...] [-A] [--bare]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,
@@ -2927,7 +2946,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "count entries (optionally filtered/grouped/since-bounded)",
         intro: "",
         long_description: None,
-        usage: &["datum count [FIELD] [--group-by KEY] [--since TIME]"],
+        usage: &["datum count [FIELD,...] [--group-by KEY] [--since TIME]"],
         args: NO_ARGS,
         flags: COUNT_FLAGS,
         shared_flags: None,
@@ -2950,6 +2969,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             "datum stats <FIELD[:STATE]> [--today | --week | --last-week | --month | --last-month | --all-time]",
             "datum stats <FIELD[:STATE]> [-d DATE | -y* | -t TIME | -q*] [--until TIME]",
             "datum stats <FIELD[:STATE]> [--include-false] [--include-untracked]",
+            "datum stats <FIELD,FIELD,...> [the same slices]  (a row each, and a pooled row)",
             "datum stats <FIELD> --group-by client",
             "datum stats [FIELD] --show all  (the table, then its --json line)",
         ],
@@ -2969,7 +2989,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "list entry ids (newest-first by default)",
         intro: "",
         long_description: None,
-        usage: &["datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug]"],
+        usage: &["datum ids [FIELD,...] [-n N] [--oldest-first] [--since TIME] [--slug]"],
         args: NO_ARGS,
         flags: IDS_FLAGS,
         shared_flags: None,
@@ -2986,7 +3006,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "list every field: its spec and the states it was logged with",
         intro: "",
         long_description: None,
-        usage: &["datum fields [<FIELD>...] [--include-ignored | -A] [--sort frecency]"],
+        usage: &["datum fields [<FIELD,...>...] [--include-ignored | -A] [--sort frecency]"],
         args: FIELDS_ARGS,
         flags: FIELDS_FLAGS,
         shared_flags: None,
@@ -3003,7 +3023,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "a field's declared and logged states, with counts and last use",
         intro: "",
         long_description: None,
-        usage: &["datum states <FIELD> [--json]"],
+        usage: &["datum states <FIELD,...> [--json]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,

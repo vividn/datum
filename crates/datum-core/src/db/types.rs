@@ -182,18 +182,18 @@ pub(crate) const STATE_ORDER_OLDEST_FIRST: &str = "at ASC, slug ASC";
 /// Build the shared `WHERE` clause + parameter bindings used by
 /// `count_entries_filtered`, `count_entries_grouped`, and `list_entry_ids`.
 pub(super) fn filtered_where(
-    field: Option<&str>,
+    fields: &[String],
     since: Option<DateTime<Utc>>,
 ) -> (String, Vec<String>) {
     let mut parts: Vec<String> = vec![LIVE_SQL.to_string()];
     let mut bindings: Vec<String> = Vec::new();
-    match field {
-        Some(f) => {
-            parts.push("field = ?".to_string());
-            bindings.push(f.to_string());
-        }
+    if fields.is_empty() {
         // Specs, layouts and aliases are not life data (da-lc26c); naming one counts it.
-        None => parts.push(super::spec::NOT_META_FIELD_SQL.to_string()),
+        parts.push(super::spec::NOT_META_FIELD_SQL.to_string());
+    } else {
+        let marks = vec!["?"; fields.len()].join(", ");
+        parts.push(format!("field IN ({marks})"));
+        bindings.extend_from_slice(fields);
     }
     if let Some(since_utc) = since {
         // A timeless row has no at to compare, and this leaves it out.

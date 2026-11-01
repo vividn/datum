@@ -235,6 +235,140 @@ pub struct AllFieldsStats {
     /// [`StatsResult::earliest`] / [`StatsResult::latest`] across every field.
     pub earliest: Option<DateTime<FixedOffset>>,
     pub latest: Option<DateTime<FixedOffset>>,
+    /// `Some` for `stats a,b`, whose rows include a field with no entries.
+    pub pooled: Option<Pooled>,
+}
+
+/// The row under `stats a,b` (da-oqpsp). No per-state ratio: `happy` of one
+/// field and `happy` of another are not one state to take a share of.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pooled {
+    /// As typed.
+    pub fields: Vec<String>,
+    pub count: usize,
+    /// Each field's tracked time added up, a stretch counted once per field.
+    pub sum_seconds: i64,
+    /// The clock time at least one was tracked: «how long was I doing any of these».
+    pub union_seconds: i64,
+    /// Every combination of two or more that ran together, fewest fields
+    /// first, in the order typed. None that never did.
+    pub intersections: Vec<Intersection>,
+    /// [`StatsResult::rate`], of the union, or of the count where no field took time.
+    pub rate: Option<Rate>,
+}
+
+/// A row of [`Pooled::intersections`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Intersection {
+    pub fields: Vec<String>,
+    pub seconds: i64,
+}
+
+/// `stats a,b`: a row per field and the pooled rows. Each field's history is
+/// read whole, past the per-day cache, which holds totals and no spans to
+/// take a union of.
+pub fn compute_pooled(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
+    let (start, end, _) = resolve_window(args, db, Duration::zero())?;
+    let names: Vec<&str> = args.pool.iter().map(String::as_str).collect();
+    let specs = db.load_registry_for(&names)?.fields;
+    let color = |field: &String| field_hex(field, specs.get(field));
+    let mut rows = Vec::new();
+    let mut spans = Vec::new();
+    for (i, field) in args.pool.iter().enumerate() {
+        let timeline = load_timeline(field, db, start, end)?;
+        let counted = timeline.counted_spans(args, start, end);
+        spans.extend(counted.into_iter().map(|(from, to)| (i, from, to)));
+        let r = rollup(field, None, args, &timeline, start, end);
+        rows.push((field.clone(), None, color(field), r));
+    }
+    let mut all = ranked(None, rows);
+    for field in &args.pool {
+        if !all.fields.iter().any(|f| f.field == *field) {
+            all.fields.push(FieldStat {
+                field: field.clone(),
+                client: None,
+                color: color(field),
+                count: 0,
+                duration_seconds: 0,
+                ratio: None,
+                frequency: None,
+                rate: None,
+            });
+        }
+    }
+    let (union_seconds, sets) = stretches(&spans);
+    let from = all.earliest.map(|first| start.unwrap_or(first.to_utc()));
+    let span = from.map(|from| (end.min(DatumTime::now().utc) - from).num_seconds());
+    all.pooled = Some(Pooled {
+        fields: args.pool.clone(),
+        count: all.total_count,
+        sum_seconds: all.tracked_duration_seconds,
+        union_seconds,
+        intersections: intersections(&sets, &args.pool)?,
+        rate: span.map(|s| match union_seconds > 0 {
+            true => Rate::new(union_seconds as f64, s, true),
+            false => Rate::new(all.total_count as f64, s, false),
+        }),
+    });
+    Ok(all)
+}
+
+/// The union of `spans`, each `(field, from, to)`, and the seconds each set of
+/// fields was exactly what ran.
+fn stretches(spans: &[(usize, i64, i64)]) -> (i64, BTreeMap<Vec<usize>, i64>) {
+    let mut edges: Vec<(i64, i32, usize)> = (spans.iter())
+        .flat_map(|(field, from, to)| [(*from, 1, *field), (*to, -1, *field)])
+        .collect();
+    edges.sort_unstable();
+    let mut running = std::collections::BTreeSet::new();
+    let (mut union, mut sets, mut last) = (0, BTreeMap::new(), 0);
+    for (at, change, field) in edges {
+        if at > last && !running.is_empty() {
+            union += at - last;
+            let set: Vec<usize> = running.iter().copied().collect();
+            *sets.entry(set).or_insert(0) += at - last;
+        }
+        match change > 0 {
+            true => running.insert(field),
+            false => running.remove(&field),
+        };
+        last = at;
+    }
+    (union, sets)
+}
+
+/// How many fields [`intersections`] takes running at once: its rows double
+/// with each.
+const MOST_AT_ONCE: usize = 16;
+
+/// Each combination of two or more, the plain intersection: the time all of it
+/// ran, whatever else did too, so `a & b` holds the time of `a & b & c`. Only
+/// the subsets of a set that ran cost anything.
+fn intersections(sets: &BTreeMap<Vec<usize>, i64>, pool: &[String]) -> Result<Vec<Intersection>> {
+    let mut combos: BTreeMap<(usize, Vec<usize>), i64> = BTreeMap::new();
+    for (set, seconds) in sets.iter().filter(|(set, _)| set.len() > 1) {
+        if set.len() > MOST_AT_ONCE {
+            bail!(
+                "stats: {} of these ran at once, and it draws the combinations of {MOST_AT_ONCE} at most",
+                set.len()
+            );
+        }
+        for mask in 1u32..1 << set.len() {
+            let combo: Vec<usize> = (set.iter().enumerate())
+                .filter(|(bit, _)| mask >> bit & 1 == 1)
+                .map(|(_, field)| *field)
+                .collect();
+            if combo.len() > 1 {
+                *combos.entry((combo.len(), combo)).or_insert(0) += seconds;
+            }
+        }
+    }
+    Ok((combos.into_iter())
+        .map(|((_, combo), seconds)| Intersection {
+            fields: combo.into_iter().map(|f| pool[f].clone()).collect(),
+            seconds,
+        })
+        .collect())
 }
 
 /// Every field the database has logged, ranked by tracked duration.
@@ -342,6 +476,7 @@ fn ranked(
         tracked_duration_seconds,
         earliest,
         latest,
+        pooled: None,
     }
 }
 
@@ -666,16 +801,7 @@ impl Tally {
         // named outright by the selector is always its own subject, so it stays
         // in the denominator whatever its class.
         let counted = |state: &str| {
-            selected_state.as_deref() == Some(state)
-                || match class_by_state
-                    .get(state)
-                    .copied()
-                    .unwrap_or(StateClass::Tracked)
-                {
-                    StateClass::Tracked => true,
-                    StateClass::Closed => args.include_false,
-                    StateClass::Untracked => args.include_untracked,
-                }
+            selected_state.as_deref() == Some(state) || class_counts(&class_by_state, state, args)
         };
 
         let total_duration_seconds: i64 = dur_by_state.values().sum();
@@ -762,6 +888,39 @@ impl Tally {
     }
 }
 
+/// Whether a state's time is in the denominator: tracked, or let in by a flag.
+fn class_counts(class: &BTreeMap<String, StateClass>, state: &str, args: &StatsArgs) -> bool {
+    match class.get(state).copied().unwrap_or(StateClass::Tracked) {
+        StateClass::Tracked => true,
+        StateClass::Closed => args.include_false,
+        StateClass::Untracked => args.include_untracked,
+    }
+}
+
+impl Timeline {
+    /// The stretches a rollup over `[start, end)` counts as tracked, so they
+    /// add up to its `tracked_duration_seconds`.
+    fn counted_spans(
+        &self,
+        args: &StatsArgs,
+        start: Option<DateTime<Utc>>,
+        end: DateTime<Utc>,
+    ) -> Vec<(i64, i64)> {
+        let now = DatumTime::now().utc;
+        let mut tally = Tally::default();
+        tally.add(self, start, end);
+        (self.spans.iter().enumerate())
+            .filter(|(_, s)| {
+                (s.state.as_deref()).is_some_and(|s| class_counts(&tally.class, s, args))
+            })
+            .filter_map(|(i, s)| {
+                let to = self.spans.get(i + 1).map_or(now, |next| next.from);
+                clipped(s.from, to, start, end)
+            })
+            .collect()
+    }
+}
+
 /// `--show all` is the text and then the `--json` line under it, from ONE
 /// computation: datum.day's stats pane shows the one and reads its head off
 /// the other, and two runs cost it the computation twice (da-cddng).
@@ -769,8 +928,12 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
     // No selector: every field, ranked (da-ptuwr). Bare `stats` was an
     // error until now, which is what the web widget's own default settings
     // already called the model (`DEFAULT_STATS`, web/src/lib/stats.ts).
-    if args.selector.is_none() || args.group_by.is_some() {
+    if !args.pool.is_empty() && args.group_by.is_some() {
+        bail!("stats --group-by client takes one field");
+    }
+    if args.selector.is_none() || args.group_by.is_some() || !args.pool.is_empty() {
         let all = match &args.group_by {
+            None if !args.pool.is_empty() => compute_pooled(&args, db)?,
             None => compute_all_fields(&args, db)?,
             Some(key) => match key.parse::<GroupColumn>().map_err(anyhow::Error::msg)? {
                 GroupColumn::Client if args.selector.is_some() => compute_by_client(&args, db)?,
@@ -1354,6 +1517,18 @@ fn add_overlap(
     start: Option<DateTime<Utc>>,
     end: DateTime<Utc>,
 ) {
+    if let Some((lo, hi)) = clipped(block_start, block_end, start, end) {
+        *map.entry(state.to_string()).or_default() += hi - lo;
+    }
+}
+
+/// A span cut to `[start, end)`, in whole seconds, `None` when none is left.
+fn clipped(
+    block_start: DateTime<Utc>,
+    block_end: DateTime<Utc>,
+    start: Option<DateTime<Utc>>,
+    end: DateTime<Utc>,
+) -> Option<(i64, i64)> {
     let lo = match start {
         Some(s) => block_start.max(s),
         None => block_start,
@@ -1363,10 +1538,8 @@ fn add_overlap(
     // elapsed time truncated: the instants carry nanoseconds, and only the
     // first adds up exactly when a span is cut at midnights — the cache's
     // days (da-n7tp2). The two differ by a second at most.
-    let secs = hi.timestamp() - lo.timestamp();
-    if secs > 0 {
-        *map.entry(state.to_string()).or_default() += secs;
-    }
+    let (lo, hi) = (lo.timestamp(), hi.timestamp());
+    (hi > lo).then_some((lo, hi))
 }
 
 fn within(t: DateTime<Utc>, start: Option<DateTime<Utc>>, end: DateTime<Utc>) -> bool {
@@ -1482,18 +1655,31 @@ fn render_all_text(r: &AllFieldsStats) -> String {
     // was logged, with no share of the time beside it.
     let cell = |f: &FieldStat| match f.rate.filter(|q| !q.timed) {
         Some(q) => (q.to_string(), percent(None)),
+        None if f.count == 0 && f.duration_seconds == 0 => (percent(None), percent(None)),
         None => (format_dur(f.duration_seconds), percent(f.ratio)),
     };
-    let dur_w = r
-        .fields
-        .iter()
-        .map(|f| cell(f).0.chars().count())
+    let pooled_amount = r
+        .pooled
+        .as_ref()
+        .map(|p| match p.rate.filter(|q| !q.timed) {
+            Some(q) => q.to_string(),
+            None => format_dur(p.union_seconds),
+        });
+    let combos = r.pooled.iter().flat_map(|p| &p.intersections);
+    let dur_w = (r.fields.iter().map(|f| cell(f).0.chars().count()))
+        .chain(pooled_amount.iter().map(|a| a.chars().count()))
+        .chain(
+            combos
+                .clone()
+                .map(|c| format_dur(c.seconds).chars().count()),
+        )
         .max()
         .unwrap_or(0);
     let cnt_w = r
         .fields
         .iter()
         .map(|f| f.count.to_string().len())
+        .chain(r.pooled.iter().map(|p| p.count.to_string().len()))
         .max()
         .unwrap_or(0);
 
@@ -1508,19 +1694,52 @@ fn render_all_text(r: &AllFieldsStats) -> String {
     } else {
         "entries"
     };
-    let mut out = format!(
-        "{heading}  ·  {} tracked over {} {entries}\n\n",
-        format_dur(r.tracked_duration_seconds),
-        r.total_count,
-    );
+    // A pooled table says its time in its last row: the sum here would be
+    // the one number it exists to take apart.
+    let mut out = match &r.pooled {
+        Some(p) => format!("{}  ·  {} {entries}\n\n", p.fields.join(","), r.total_count),
+        None => format!(
+            "{heading}  ·  {} tracked over {} {entries}\n\n",
+            format_dur(r.tracked_duration_seconds),
+            r.total_count,
+        ),
+    };
     for f in &r.fields {
         let (amount, share) = cell(f);
+        let none = if f.count == 0 && f.duration_seconds == 0 {
+            "  no entries"
+        } else {
+            ""
+        };
         out.push_str(&format!(
-            "  {:>dur_w$}  {:>6}  {:>cnt_w$}×  {}\n",
+            "  {:>dur_w$}  {:>6}  {:>cnt_w$}×  {}{none}\n",
             amount,
             share,
             f.count,
             paint(&ink(&f.color), &f.field),
+        ));
+    }
+    if let (Some(p), Some(amount)) = (&r.pooled, pooled_amount) {
+        let note = match p.intersections.is_empty() {
+            _ if p.sum_seconds == 0 => String::new(),
+            true => "  (no overlap)".to_string(),
+            false => format!("  ({} summed)", format_dur(p.sum_seconds)),
+        };
+        out.push('\n');
+        for c in combos {
+            out.push_str(&format!(
+                "  {:>dur_w$}  {:>6}  {:>cnt_w$}   {}\n",
+                format_dur(c.seconds),
+                percent(None),
+                "",
+                c.fields.join(" & "),
+            ));
+        }
+        out.push_str(&format!(
+            "  {:>dur_w$}  {:>6}  {:>cnt_w$}×  any of these{note}\n",
+            amount,
+            percent(None),
+            p.count,
         ));
     }
     out
@@ -1567,6 +1786,18 @@ fn render_all_json(r: &AllFieldsStats) -> String {
             out["clients"] = fields.into();
         }
         None => out["fields"] = fields.into(),
+    }
+    if let Some(p) = &r.pooled {
+        out["pooled"] = serde_json::json!({
+            "fields": p.fields,
+            "count": p.count,
+            "sum_seconds": p.sum_seconds,
+            "union_seconds": p.union_seconds,
+            "intersections": (p.intersections.iter())
+                .map(|c| serde_json::json!({ "fields": c.fields, "seconds": c.seconds }))
+                .collect::<Vec<_>>(),
+            "rate": p.rate.as_ref().map(rate_json),
+        });
     }
     format!("{out}\n")
 }
@@ -2061,6 +2292,7 @@ mod tests {
             tracked_duration_seconds: 0,
             earliest: None,
             latest: None,
+            pooled: None,
         };
         let json: JsonValue = serde_json::from_str(&render_all_json(&none)).unwrap();
         // null, not left out: the widget reads the key either way.

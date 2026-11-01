@@ -1,4 +1,5 @@
 use super::core::*;
+use super::tail::field_list;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
 use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs, Show, TimeArgs};
@@ -41,7 +42,11 @@ pub(crate) fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
     }
     Ok(GrepArgs {
         patterns: pos.into_iter().map(|s| s.to_string()).collect(),
-        field: composed.field,
+        fields: composed
+            .field
+            .as_deref()
+            .map(field_list)
+            .unwrap_or_default(),
         output: composed.output,
     })
 }
@@ -99,7 +104,10 @@ pub(crate) fn parse_count_args(tail: &[&str]) -> Result<CountArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    out.field = optional_pos(&pos)?;
+    out.fields = optional_pos(&pos)?
+        .as_deref()
+        .map(field_list)
+        .unwrap_or_default();
     Ok(out)
 }
 
@@ -258,13 +266,13 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
         show: Show::default(),
         include_ignored: composed.include_ignored || composed.output.show_all,
         by_frecency: composed.by_frecency,
-        fields: fields.into_iter().map(str::to_string).collect(),
+        fields: fields.into_iter().flat_map(field_list).collect(),
     })
 }
 
 pub(crate) fn parse_states_args(tail: &[&str]) -> Result<StatesArgs> {
     Ok(StatesArgs {
-        field: require_pos(&positionals(tail)?, "FIELD")?,
+        fields: field_list(&require_pos(&positionals(tail)?, "FIELD")?),
         show: Show::default(),
     })
 }
@@ -309,6 +317,9 @@ pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    out.field = optional_pos(&pos)?;
+    out.fields = optional_pos(&pos)?
+        .as_deref()
+        .map(field_list)
+        .unwrap_or_default();
     Ok(out)
 }

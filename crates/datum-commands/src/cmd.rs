@@ -325,33 +325,52 @@ fn writes_a_batch(command: &Command) -> bool {
 /// da-tldkb: a read resolves each field it names by unique prefix
 /// ([`read_field`](crate::commands::helpers::read_field)), after alias
 /// expansion: `tail envi` is `tail environment` when no other field starts
-/// `envi`. `get`'s plain names are `get`'s own to resolve.
+/// `envi`, and each of a comma list (da-oqpsp). `get`'s names are `get`'s own
+/// to resolve.
 fn resolve_read_fields(command: &mut Command, db: &Db) -> Result<()> {
-    use crate::commands::helpers::read_field;
-    let field = match command {
+    use crate::commands::helpers::{read_as_one_field, read_fields};
+    match command {
         Command::Tail(a) | Command::Head(a) => {
-            return a.fields.iter_mut().try_for_each(|f| read_field(db, f));
+            if let (Some(_), [list]) = (&a.state_filter, a.fields.as_slice()) {
+                if list.contains(',') && !db.field_exists(list)? {
+                    anyhow::bail!("a state filter takes one field, and {list} is several");
+                }
+            }
+            read_fields(db, &mut a.fields)
         }
-        Command::States(a) => Some(&mut a.field),
-        Command::Grep(a) => a.field.as_mut(),
-        Command::Count(a) => a.field.as_mut(),
-        Command::Ids(a) => a.field.as_mut(),
-        Command::Get(a) if !a.matchers.is_empty() => a.id_or_slug.as_mut(),
+        Command::States(a) => read_fields(db, &mut a.fields),
+        Command::Grep(a) => read_fields(db, &mut a.fields),
+        Command::Count(a) => read_fields(db, &mut a.fields),
+        Command::Ids(a) => read_fields(db, &mut a.fields),
+        Command::Now(a) => read_fields(db, &mut a.fields),
+        Command::Dayview(a) => read_fields(db, &mut a.fields),
+        Command::Nowview(a) => read_fields(db, &mut a.fields),
+        // `fields` lists a name nothing has logged, so it starts no other.
+        Command::Fields(a) => read_as_one_field(db, &mut a.fields),
         Command::Stats(a) => {
             let Some(selector) = a.selector.as_mut() else {
                 return Ok(());
             };
-            let (mut field, state) = match selector.split_once(':') {
+            let (list, state) = match selector.split_once(':') {
                 Some((f, s)) => (f.to_string(), Some(s.to_string())),
                 None => (selector.clone(), None),
             };
-            read_field(db, &mut field)?;
-            *selector = state.map_or(field.clone(), |s| format!("{field}:{s}"));
-            return Ok(());
+            let mut fields: Vec<String> = list.split(',').map(|f| f.trim().to_string()).collect();
+            fields.retain(|f| !f.is_empty());
+            read_fields(db, &mut fields)?;
+            match (fields.as_slice(), state) {
+                ([], _) => {}
+                ([field], None) => *selector = field.clone(),
+                ([field], Some(s)) => *selector = format!("{field}:{s}"),
+                (_, Some(_)) => anyhow::bail!(
+                    "stats {selector}: a state filter takes one field, and {list} is several"
+                ),
+                (_, None) => a.pool = fields,
+            }
+            Ok(())
         }
-        _ => None,
-    };
-    field.map_or(Ok(()), |f| read_field(db, f))
+        _ => Ok(()),
+    }
 }
 
 fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {

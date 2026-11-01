@@ -1313,6 +1313,8 @@ pub enum DebugCommand {
 
 #[derive(Debug, Default)]
 pub struct NowArgs {
+    /// `now a,b`: only these fields, whatever state they hold. Empty = all.
+    pub fields: Vec<String>,
     /// `-A` / `--all` — include ignored fields. Layer 3 in the
     /// disclosure ladder (da-84cg): everything that exists. Implies
     /// `--tracked` (the ladder is concentric).
@@ -1400,7 +1402,8 @@ pub struct FieldsArgs {
 
 #[derive(Debug, Default)]
 pub struct StatesArgs {
-    pub field: String,
+    /// `a,b`: one listing a field.
+    pub fields: Vec<String>,
     /// The output level the shared layer swept out of argv (da-qt6z).
     pub show: Show,
 }
@@ -1408,14 +1411,16 @@ pub struct StatesArgs {
 #[derive(Debug)]
 pub struct GrepArgs {
     pub patterns: Vec<String>,
-    pub field: Option<String>,
+    /// `-f a,b`. Empty = every field.
+    pub fields: Vec<String>,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
 
 #[derive(Debug, Default)]
 pub struct CountArgs {
-    pub field: Option<String>,
+    /// `a,b`. Empty = every field.
+    pub fields: Vec<String>,
     pub group_by: Option<String>,
     pub since: Option<String>,
     /// The output level the shared layer swept out of argv (da-qt6z).
@@ -1490,6 +1495,9 @@ pub struct StatsArgs {
     /// `field` or `field:state`. None is the whole database: every field,
     /// ranked by tracked time (da-ptuwr).
     pub selector: Option<String>,
+    /// The fields of a selector `a,b`, once read against the database: a row
+    /// each and a pooled row (da-oqpsp). Empty for one field or none.
+    pub pool: Vec<String>,
     /// Shorthand whole-period slice: `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`.
     pub slice: Option<String>,
     /// Inclusive lower bound: an unsigned duration read as "that long
@@ -1532,7 +1540,8 @@ pub struct StatsArgs {
 
 #[derive(Debug, Default)]
 pub struct IdsArgs {
-    pub field: Option<String>,
+    /// `a,b`. Empty = every field.
+    pub fields: Vec<String>,
     pub limit: Option<usize>,
     pub oldest_first: bool,
     pub since: Option<String>,
@@ -1685,6 +1694,8 @@ pub enum DayviewOrientation {
 /// time (see `dayview.ts` lines 38–78).
 #[derive(Debug, Clone)]
 pub struct DayviewArgs {
+    /// `dayview a,b`: draw only these fields. Empty = all.
+    pub fields: Vec<String>,
     /// `--start-date` — inclusive start (ISO `YYYY-MM-DD` or relative
     /// offset like `-3` or `0`). Resolved via `parse_date`.
     pub start_date: Option<String>,
@@ -1759,6 +1770,7 @@ pub struct DayviewArgs {
 impl Default for DayviewArgs {
     fn default() -> Self {
         Self {
+            fields: Vec::new(),
             start_date: None,
             end_date: None,
             n_days: None,
@@ -1786,6 +1798,8 @@ impl Default for DayviewArgs {
 /// "now panel" anymore so `--now-width` was dropped.
 #[derive(Debug)]
 pub struct NowviewArgs {
+    /// `nowview a,b`: draw only these fields. Empty = all.
+    pub fields: Vec<String>,
     /// Context duration string ("15m", "1h", "2h") — `--context`, and
     /// `--history` for the same thing. None is the snapshot (da-7q8r):
     /// each field's state, no time band, as `0` spells explicitly.
@@ -1871,6 +1885,7 @@ pub struct NowviewArgs {
 impl Default for NowviewArgs {
     fn default() -> Self {
         Self {
+            fields: Vec::new(),
             history: None,
             labels: false,
             overlay: false,

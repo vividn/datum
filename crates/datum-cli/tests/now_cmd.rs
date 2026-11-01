@@ -329,6 +329,7 @@ fn now_resumes_the_state_a_block_interrupted() {
             include_tracked_false: true,
             include_ignored: true,
             snapshot_time: Some(now + Duration::minutes(mins)),
+            fields: Vec::new(),
         })
         .expect("current_now")
     };
@@ -406,6 +407,7 @@ fn now_passes_over_a_moment_dated_ahead() {
             include_tracked_false: true,
             include_ignored: true,
             snapshot_time: None,
+            fields: Vec::new(),
         })
         .expect("current_now");
     assert!(snapshot.tracked_false.iter().any(|r| r.field == "mood"));
@@ -884,6 +886,7 @@ fn now_time_travel_returns_past_state_not_present() {
     let past = db
         .current_now(&NowFilter {
             snapshot_time: Some(now - Duration::hours(1)),
+            fields: Vec::new(),
             ..NowFilter::default()
         })
         .unwrap();
@@ -966,6 +969,7 @@ fn now_time_travel_combines_with_tracked_false_layer() {
         .current_now(&NowFilter {
             include_tracked_false: true,
             snapshot_time: Some(now - Duration::hours(1)),
+            fields: Vec::new(),
             ..NowFilter::default()
         })
         .unwrap();
@@ -1033,6 +1037,7 @@ fn now_time_travel_classifies_ignored_at_anchor_not_wall_clock() {
         .current_now(&NowFilter {
             include_ignored: true,
             snapshot_time: Some(now - Duration::hours(2)),
+            fields: Vec::new(),
             ..NowFilter::default()
         })
         .unwrap();
@@ -1072,6 +1077,7 @@ fn now_time_travel_excludes_fields_born_after_anchor() {
         .current_now(&NowFilter {
             include_tracked_false: true,
             snapshot_time: Some(now - Duration::hours(2)),
+            fields: Vec::new(),
             ..NowFilter::default()
         })
         .unwrap();

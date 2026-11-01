@@ -273,9 +273,16 @@ fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
     // Reject malformed matchers (bad regex) up front — a user error must
     // not masquerade as "no entries matching" (da-65fd).
     super::get_search::validate(&args.matchers)?;
-    let candidates = db
-        .entries_for_field(field, None)
-        .map_err(anyhow::Error::from)?;
+    let mut fields: Vec<String> = field.split(',').map(|f| f.trim().to_string()).collect();
+    fields.retain(|f| !f.is_empty());
+    crate::commands::helpers::read_fields(db, &mut fields)?;
+    let mut candidates = Vec::new();
+    for field in &fields {
+        candidates.extend(db.entries_for_field(field, None)?);
+    }
+    if fields.len() > 1 {
+        candidates.sort_by_key(|e| std::cmp::Reverse(e.at.as_ref().map(|t| t.utc)));
+    }
     let entries = super::get_search::filter(candidates, &args.matchers);
 
     if entries.is_empty() {

@@ -21,11 +21,19 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     // disclosure is encoded in the `NowFilter` passed to
     // `db.current_now` — the JSON branch and the terminal branch
     // share the same construction so the two surfaces never drift.
+    // Naming a field asks what it holds, off or ignored too.
+    let named = !args.fields.is_empty();
     let filter = NowFilter {
-        include_tracked_false: args.show_tracked || args.show_all,
-        include_ignored: args.show_all,
+        include_tracked_false: args.show_tracked || args.show_all || named,
+        include_ignored: args.show_all || named,
         snapshot_time,
+        fields: args.fields.clone(),
     };
+    for field in &args.fields {
+        if !db.field_exists(field)? {
+            eprintln!("note: no field '{field}'");
+        }
+    }
 
     if args.show == ShowFlag::None {
         return Ok(());
@@ -52,7 +60,8 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
 
     let snapshot = db.current_now(&filter)?;
     let mut all_ignored = false;
-    if snapshot.active.is_empty()
+    if !named
+        && snapshot.active.is_empty()
         && snapshot.tracked_false.is_empty()
         && snapshot.ignored.is_empty()
     {
@@ -160,10 +169,13 @@ fn print_now_band(args: &NowArgs, db: &Db, cols: u16, at: Option<chrono::DateTim
         None => (now, HISTORY_MINUTES, 0.0),
     };
     let end = pivot + chrono::Duration::milliseconds((after * 60_000.0) as i64);
-    let fields = match build_fields(db, end, HISTORY_MINUTES, false) {
+    let mut fields = match build_fields(db, end, HISTORY_MINUTES, false) {
         Ok(f) => f,
         Err(_) => return, // never block the state list on a band-render error
     };
+    if !args.fields.is_empty() {
+        fields.retain(|f| args.fields.contains(&f.field));
+    }
     // da-tpny: the canonical color gate (NO_COLOR → FORCE_COLOR → TTY),
     // so the band colors exactly like the state list above it.
     let use_color = !args.no_color && colors::color_enabled();

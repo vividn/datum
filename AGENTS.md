@@ -96,6 +96,15 @@ and after `schema.sql` at every open; a later migration that drops or
 rebuilds an `entries` column they name must drop them first. A span's seconds are `floor(end) − floor(start)`, which adds up
 exactly across midnights. `datum check stats` recomputes a sample of days and says how many.
 
+`stats a,b` is a row per field and the pooled rows (`compute_pooled`, da-oqpsp,
+vividn, 2026-11-01: «each of the intersections independently, plus the union»):
+a row for each combination that ran together, the time all of it ran whatever else
+did too, so `a & b` holds `a & b & c`'s, then the union, «any of these», with the
+sum beside it and the counts added. No per-state ratio, since one field's state is
+not another's. It reads each named field's history whole: the cache holds totals,
+with no spans to cut. A sweep gives the set running in each stretch, so only the
+subsets of a set that ran cost anything, up to 16 fields at once (`MOST_AT_ONCE`).
+
 ### `check` keeps what it found
 `datum check` keeps each checker's findings and the change it read through
 (`check_kept`), and triggers on `entries` and `ops` name every row a write

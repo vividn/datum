@@ -16,11 +16,10 @@ pub enum CountResult {
 
 pub fn compute_count(args: &CountArgs, db: &Db) -> Result<CountResult> {
     let since_utc = args.since.as_deref().map(parse_since).transpose()?;
-    let field = args.field.as_deref();
 
     if let Some(raw) = &args.group_by {
         let col: GroupColumn = raw.parse().map_err(|e: String| anyhow::anyhow!(e))?;
-        let mut rows = db.count_entries_grouped(field, col, since_utc)?;
+        let mut rows = db.count_entries_grouped(&args.fields, col, since_utc)?;
         if col == GroupColumn::Client {
             let label = crate::commands::sync::client_labeller(db)?;
             rows.iter_mut().for_each(|(k, _)| *k = label(k));
@@ -28,7 +27,7 @@ pub fn compute_count(args: &CountArgs, db: &Db) -> Result<CountResult> {
         return Ok(CountResult::Grouped(rows));
     }
 
-    let n = db.count_entries_filtered(field, since_utc)?;
+    let n = db.count_entries_filtered(&args.fields, since_utc)?;
     Ok(CountResult::Total(n))
 }
 

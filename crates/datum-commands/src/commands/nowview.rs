@@ -156,7 +156,10 @@ fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         1.0
     };
 
-    let fields = build_fields(db, end, lookback, /* include_empty = */ true)?;
+    let mut fields = build_fields(db, end, lookback, /* include_empty = */ true)?;
+    if !args.fields.is_empty() {
+        fields.retain(|f| args.fields.contains(&f.field));
+    }
 
     // da-q0xe5: a one-shot render sizes to what it was GIVEN — `--cols`,
     // then `$COLUMNS`, then the terminal (the rule da-coi0m set for `now`);
@@ -331,6 +334,9 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let lookback = (day.end_ms - day.start_ms) as f64 / 60_000.0;
     let day_end = Utc.timestamp_millis_opt(day.end_ms).single().unwrap_or(now);
     day.fields = build_dayview_fields(db, day_end, lookback.max(1.0), ahead > 0.0)?;
+    if !args.fields.is_empty() {
+        day.fields.retain(|f| args.fields.contains(&f.field));
+    }
     let window = (
         middle.timestamp_millis() - minutes(history_minutes - after).num_milliseconds(),
         middle.timestamp_millis() + minutes(after).num_milliseconds(),

@@ -68,6 +68,7 @@ mod ensure_last_state;
 mod env_table_coverage;
 mod field_arrays;
 mod field_key_slot;
+mod field_lists;
 mod field_name_commas;
 mod field_name_controls;
 mod field_prefix;

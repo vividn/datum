@@ -21,7 +21,7 @@ pub const SCHEMA_ID: &str = "datum_now_v1";
 
 /// Concentric scopes a [`NowSnapshot`] can include. Active fields are
 /// always present; the flags extend outward.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct NowFilter {
     /// Include tracked fields whose current state is falsy.
     pub include_tracked_false: bool,
@@ -33,6 +33,8 @@ pub struct NowFilter {
     /// `now` field carries the anchor so renderers and `--json`
     /// consumers see a single stable timestamp.
     pub snapshot_time: Option<DateTime<Utc>>,
+    /// Only these fields. Empty = every field.
+    pub fields: Vec<String>,
 }
 
 /// Active row: the field is currently in a truthy state.
@@ -105,7 +107,10 @@ impl Db {
         // ignored classification matches the per-field states at `now`
         // rather than mixing epochs with wall-clock membership.
         let now = filter.snapshot_time.unwrap_or_else(Utc::now);
-        let tracked = self.get_tracked_fields(now)?;
+        let mut tracked = self.get_tracked_fields(now)?;
+        if !filter.fields.is_empty() {
+            tracked.retain(|tf| filter.fields.contains(&tf.field));
+        }
 
         let mut active = Vec::new();
         let mut tracked_false = Vec::new();

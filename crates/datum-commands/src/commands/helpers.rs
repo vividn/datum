@@ -936,6 +936,33 @@ pub(crate) fn read_field(db: &Db, name: &mut String) -> Result<()> {
     Ok(())
 }
 
+/// A list read literally when it is an old field's name: new names cannot
+/// hold a comma, but one from before the rule can (da-oqpsp). `a,b` is that
+/// field unless `a` and `b` are both fields.
+pub(crate) fn read_as_one_field(db: &Db, names: &mut Vec<String>) -> Result<()> {
+    let whole = names.join(",");
+    if names.len() < 2 || !db.field_exists(&whole)? {
+        return Ok(());
+    }
+    for name in names.iter() {
+        if !db.field_exists(name)? {
+            *names = vec![whole];
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// A read's comma list of fields, each read as [`read_field`], one named
+/// twice once (da-oqpsp).
+pub(crate) fn read_fields(db: &Db, names: &mut Vec<String>) -> Result<()> {
+    read_as_one_field(db, names)?;
+    names.iter_mut().try_for_each(|f| read_field(db, f))?;
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|f| seen.insert(f.clone()));
+    Ok(())
+}
+
 /// da-t3quu, da-mekab: a name datum has never seen — no live entry, no
 /// spec — is most often a typo, and `ignore`, `end`, `flag` and `meta`
 /// cannot sensibly begin a field. Each has a use ahead of a field's first

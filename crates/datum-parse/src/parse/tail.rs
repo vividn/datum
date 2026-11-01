@@ -157,6 +157,15 @@ pub(crate) fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
     })
 }
 
+/// The names of a comma list of fields, `a,b`, as every reading command takes
+/// one (da-oqpsp).
+pub(crate) fn field_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|f| f.trim().to_string())
+        .filter(|f| !f.is_empty())
+        .collect()
+}
+
 /// Split a tail positional into `(fields, state_filter)`.
 ///
 /// * Plain `field` or `f1,f2` → comma-split list of fields, no state filter.
@@ -165,14 +174,7 @@ pub(crate) fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
 /// * `field:` (trailing colon, empty state) → bare field, no filter.
 pub(crate) fn split_field_state(raw: &str) -> (Vec<String>, Option<Vec<String>>) {
     match raw.split_once(':') {
-        None => {
-            let fields = raw
-                .split(',')
-                .map(|f| f.trim().to_string())
-                .filter(|f| !f.is_empty())
-                .collect::<Vec<_>>();
-            (fields, None)
-        }
+        None => (field_list(raw), None),
         Some((field, "")) => {
             let f = field.trim().to_string();
             let fields = if f.is_empty() { Vec::new() } else { vec![f] };

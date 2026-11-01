@@ -298,6 +298,12 @@ fn layout_of(
         }
         None => None,
     };
+    // `dayview a,b`: the fields named, and a sample's, which is asked for too.
+    let drawn = |field: &str| {
+        args.fields.is_empty()
+            || args.fields.iter().any(|f| f == field)
+            || sample.as_ref().is_some_and(|s| s.field == field)
+    };
     // With no sample, the context alone: a field not yet named (da-y72v8).
     let context = args.context.as_deref().map(parse_context).transpose()?;
     let window_ms = context.map(Around::window_ms);
@@ -334,6 +340,7 @@ fn layout_of(
                 .as_ref()
                 .map(|s| (s, !matches!(context, Some(Around::Window(_))))),
         )?;
+        fields.retain(|f| drawn(&f.field));
         // `none`: the sample's field and nothing else.
         if context == Some(Around::None) {
             fields.retain(|f| sample.as_ref().is_some_and(|s| s.field == f.field));
@@ -385,7 +392,7 @@ fn layout_of(
 
         let errors = (findings.iter())
             .map(|f| (f, f.at.timestamp_millis()))
-            .filter(|(_, t)| (day_start_ms..day_end_ms).contains(t))
+            .filter(|(f, t)| (day_start_ms..day_end_ms).contains(t) && drawn(&f.field))
             .map(|(f, time_ms)| DayviewError {
                 time_ms,
                 field: f.field.clone(),
@@ -393,7 +400,7 @@ fn layout_of(
             })
             .collect();
 
-        let fields = build_day_fields(
+        let mut fields = build_day_fields(
             db,
             day_start_ms,
             day_end_ms,
@@ -403,6 +410,7 @@ fn layout_of(
             // No `--context` here: a sample only where the field has nothing (da-srrqd).
             sample.as_ref().map(|s| (s, false)),
         )?;
+        fields.retain(|f| drawn(&f.field));
 
         days_input.push(DayviewDayInput {
             date: Some(date.to_string()),
@@ -984,6 +992,7 @@ mod tests {
         n_days: Option<u32>,
     ) -> DayviewArgs {
         DayviewArgs {
+            fields: Vec::new(),
             start_date: start_date.map(str::to_string),
             end_date: end_date.map(str::to_string),
             n_days,
