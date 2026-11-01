@@ -1,6 +1,6 @@
 //! Render-output goldens for canonical fixtures (da-8qwy).
 //!
-//! Three surfaces are pinned:
+//! Two surfaces are pinned:
 //!
 //! 1. **Terminal** — color-on output of [`format_info_line`] for the 20
 //!    canonical fixtures from `docs/visual-parity-analysis.md` §11. The
@@ -16,12 +16,8 @@
 //!    comparison; the layout pipeline is pure so identical inputs yield
 //!    identical SVG forever.
 //!
-//! 3. **PNG** — the same SVG scenes rasterized via resvg + tiny-skia. PNG
-//!    bytes are not byte-compared (anti-aliasing rounding varies with
-//!    rounding mode and the available font set); instead, the comparator
-//!    decodes both pixmaps and computes the average L1 distance per RGBA
-//!    channel. A small tolerance covers anti-aliasing variance without
-//!    masking actual visual regressions.
+//! PNG goes through `rsvg-convert`, which is no part of this repo: what datum
+//! hands it is pinned by `datum-cli/tests/png_output.rs`.
 //!
 //! ## Update mode
 //!
@@ -417,163 +413,6 @@ fn assert_text_golden(path: &Path, actual: &str) {
     }
 }
 
-/// Same as [`assert_text_golden`] but for raw bytes (PNG, etc.) with a
-/// caller-supplied comparator.
-#[cfg(feature = "png")]
-fn assert_bytes_golden(
-    path: &Path,
-    actual: &[u8],
-    compare: impl FnOnce(&[u8], &[u8]) -> Result<(), String>,
-) {
-    if update_mode() {
-        write_golden(path, actual);
-        return;
-    }
-    let expected = std::fs::read(path).unwrap_or_else(|e| {
-        panic!("missing golden {path:?}: {e}. Run with DATUM_UPDATE_GOLDENS=1 to regenerate.")
-    });
-    if let Err(msg) = compare(&expected, actual) {
-        panic!(
-            "golden mismatch at {path:?}: {msg}\n\nRun with DATUM_UPDATE_GOLDENS=1 to regenerate."
-        );
-    }
-}
-
-/// Decode a PNG into a tiny-skia [`Pixmap`] (RGBA premul). Used by the PNG
-/// comparator.
-#[cfg(feature = "png")]
-fn decode_png(bytes: &[u8]) -> Result<resvg::tiny_skia::Pixmap, String> {
-    resvg::tiny_skia::Pixmap::decode_png(bytes).map_err(|e| format!("decode PNG: {e}"))
-}
-
-/// Compare two PNGs at the pixel level, with tolerance for anti-aliasing
-/// variance. Returns `Ok` when:
-/// - dimensions match exactly, AND
-/// - the average L1 distance per RGBA channel is ≤ `avg_channel_tolerance`,
-///   AND no individual pixel exceeds `max_pixel_tolerance` in summed L1.
-///
-/// `avg_channel_tolerance = 1.0` means an average channel deviation of 1
-/// (out of 255) — comfortably absorbs sub-pixel rasterizer rounding while
-/// still flagging large color or layout shifts.
-#[cfg(feature = "png")]
-fn compare_png_with_tolerance(
-    expected: &[u8],
-    actual: &[u8],
-    avg_channel_tolerance: f64,
-    max_pixel_tolerance: u32,
-) -> Result<(), String> {
-    let exp = decode_png(expected)?;
-    let act = decode_png(actual)?;
-    if exp.width() != act.width() || exp.height() != act.height() {
-        return Err(format!(
-            "dimensions differ: expected {}x{}, actual {}x{}",
-            exp.width(),
-            exp.height(),
-            act.width(),
-            act.height(),
-        ));
-    }
-    let exp_data = exp.data();
-    let act_data = act.data();
-    if exp_data.len() != act_data.len() {
-        return Err(format!(
-            "byte length mismatch: {} vs {}",
-            exp_data.len(),
-            act_data.len()
-        ));
-    }
-    let mut total_abs_diff: u64 = 0;
-    let mut worst_pixel: u32 = 0;
-    let mut worst_idx: usize = 0;
-    let pixels = (exp.width() as usize) * (exp.height() as usize);
-    for px in 0..pixels {
-        let i = px * 4;
-        let mut pixel_diff: u32 = 0;
-        for k in 0..4 {
-            let d = (exp_data[i + k] as i32 - act_data[i + k] as i32).unsigned_abs();
-            total_abs_diff += d as u64;
-            pixel_diff += d;
-        }
-        if pixel_diff > worst_pixel {
-            worst_pixel = pixel_diff;
-            worst_idx = px;
-        }
-    }
-    let avg_channel = total_abs_diff as f64 / (pixels as f64 * 4.0);
-    if avg_channel > avg_channel_tolerance {
-        return Err(format!(
-            "average channel diff {avg_channel:.3} exceeds tolerance {avg_channel_tolerance:.3} ({} pixels)",
-            pixels
-        ));
-    }
-    if worst_pixel > max_pixel_tolerance {
-        let x = worst_idx % exp.width() as usize;
-        let y = worst_idx / exp.width() as usize;
-        return Err(format!(
-            "worst-pixel L1 sum {worst_pixel} at ({x}, {y}) exceeds max-pixel tolerance {max_pixel_tolerance} (avg {avg_channel:.3})"
-        ));
-    }
-    Ok(())
-}
-
-// ─── Pure-Rust SVG → PNG (deterministic, bundled-font flavor) ────────────────
-
-/// Bundled font asset used for **all** PNG goldens in this file.
-///
-/// The production renderer (`commands::render_helpers::rasterize_to_png`)
-/// still loads the host's system fonts — users get whatever ships on their
-/// machine. The test harness deliberately diverges: it uses an empty fontdb
-/// populated only with this single .ttf so `<text>` rasterization is
-/// byte-stable across any machine on the same crate versions.
-///
-/// **Swapping the font is a one-line change.** Drop a new .ttf next to this
-/// constant, update the path and family name, run
-/// `DATUM_UPDATE_GOLDENS=1 cargo test -p datum-commands --test render_goldens`,
-/// eyeball the diff, commit.
-#[cfg(feature = "png")]
-const BUNDLED_FONT_TTF: &[u8] = include_bytes!("fixtures/fonts/HackNerdFont-Regular.ttf");
-
-#[cfg(feature = "png")]
-const BUNDLED_FONT_FAMILY: &str = "Hack Nerd Font";
-
-/// Rasterize an SVG string to a deterministic PNG byte buffer.
-///
-/// Builds a fresh `fontdb::Database` populated with **only** the bundled
-/// font — `load_system_fonts()` is deliberately not called, since system
-/// font drift was the entire source of pre-bundle PNG-golden flakiness
-/// (da-ky99 → da-c6hk). It is otherwise the same as the production
-/// `render_helpers::rasterize_to_png`, which loads the system fonts.
-#[cfg(feature = "png")]
-fn rasterize_to_png(svg_xml: &str) -> Vec<u8> {
-    let mut opts = resvg::usvg::Options {
-        font_family: BUNDLED_FONT_FAMILY.to_string(),
-        ..Default::default()
-    };
-    {
-        let fontdb = opts.fontdb_mut();
-        fontdb.load_font_data(BUNDLED_FONT_TTF.to_vec());
-        fontdb.set_serif_family(BUNDLED_FONT_FAMILY);
-        fontdb.set_sans_serif_family(BUNDLED_FONT_FAMILY);
-        fontdb.set_monospace_family(BUNDLED_FONT_FAMILY);
-        fontdb.set_cursive_family(BUNDLED_FONT_FAMILY);
-        fontdb.set_fantasy_family(BUNDLED_FONT_FAMILY);
-        assert!(
-            fontdb.faces().next().is_some(),
-            "bundled font {BUNDLED_FONT_FAMILY} failed to load",
-        );
-    }
-    let tree = resvg::usvg::Tree::from_str(svg_xml, &opts).expect("parse SVG");
-    let size = tree.size().to_int_size();
-    let mut pixmap =
-        resvg::tiny_skia::Pixmap::new(size.width(), size.height()).expect("allocate pixmap");
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::default(),
-        &mut pixmap.as_mut(),
-    );
-    pixmap.encode_png().expect("encode PNG")
-}
-
 // ─── Terminal goldens ────────────────────────────────────────────────────────
 
 /// Pin the colored ANSI output of every canonical fixture. Failure means
@@ -604,9 +443,9 @@ fn terminal_goldens_per_fixture() {
     }
 }
 
-// ─── Canonical SVG / PNG scenes ──────────────────────────────────────────────
+// ─── Canonical SVG scenes ──────────────────────────────────────────────
 
-/// Pinned epoch-ms anchors so SVG/PNG goldens are reproducible. Midnight
+/// Pinned epoch-ms anchors so SVG goldens are reproducible. Midnight
 /// 2026-04-22 UTC is `1745280000000`. Hour-aligned for convenient pixel
 /// math in any future debug output.
 const DAY_START_MS: i64 = 1_745_280_000_000;
@@ -1059,74 +898,4 @@ fn svg_goldens_per_scene() {
         let path = dir.join(format!("{name}.svg"));
         assert_text_golden(&path, &res.svg);
     }
-}
-
-#[cfg(feature = "png")]
-#[test]
-fn png_goldens_per_scene() {
-    // Deterministic: rasterizes against the bundled Hack Nerd Font with an
-    // empty fontdb (no system fonts). Anti-aliasing tolerance below still
-    // absorbs sub-pixel rounding variance between resvg releases.
-    let dir = goldens_root().join("png");
-    // Anti-aliasing tolerance: average channel difference per RGBA channel.
-    // 1.0/255 = ~0.4% per channel — generous enough for resvg's sub-pixel
-    // rounding, tight enough to flag actual color shifts.
-    let avg_tol = 1.0;
-    // Worst-case single-pixel: 4 channels × 32 = 128. Catches isolated
-    // off-by-one rasterizer pixels at edges without flagging them as
-    // regressions.
-    let max_pixel_tol = 128;
-    for (name, res) in svg_scenes() {
-        let png = rasterize_to_png(&res.svg);
-        let path = dir.join(format!("{name}.png"));
-        assert_bytes_golden(&path, &png, |expected, actual| {
-            compare_png_with_tolerance(expected, actual, avg_tol, max_pixel_tol)
-        });
-    }
-}
-
-// ─── Sanity: the comparator itself ───────────────────────────────────────────
-
-#[cfg(feature = "png")]
-#[test]
-fn png_comparator_accepts_identical_input() {
-    let scene = dayview_scene_single_block();
-    let a = rasterize_to_png(&scene.svg);
-    let b = rasterize_to_png(&scene.svg);
-    assert!(
-        compare_png_with_tolerance(&a, &b, 0.0, 0).is_ok(),
-        "identical PNGs must compare equal under any tolerance"
-    );
-}
-
-#[cfg(feature = "png")]
-#[test]
-fn png_comparator_rejects_size_mismatch() {
-    use resvg::tiny_skia::Pixmap;
-    let mut a = Pixmap::new(10, 10).unwrap();
-    a.fill(resvg::tiny_skia::Color::WHITE);
-    let mut b = Pixmap::new(20, 10).unwrap();
-    b.fill(resvg::tiny_skia::Color::WHITE);
-    let result = compare_png_with_tolerance(
-        &a.encode_png().unwrap(),
-        &b.encode_png().unwrap(),
-        100.0,
-        u32::MAX,
-    );
-    assert!(matches!(result, Err(ref msg) if msg.contains("dimensions")));
-}
-
-#[cfg(feature = "png")]
-#[test]
-fn png_comparator_rejects_color_shift_above_tolerance() {
-    use resvg::tiny_skia::{Color, Pixmap};
-    let mut a = Pixmap::new(8, 8).unwrap();
-    a.fill(Color::from_rgba8(0, 0, 0, 255));
-    let mut b = Pixmap::new(8, 8).unwrap();
-    // Solid 100/100/100 vs 0/0/0 → average channel diff = 75 (only RGB; A
-    // matches) — well above tolerance 1.0.
-    b.fill(Color::from_rgba8(100, 100, 100, 255));
-    let result =
-        compare_png_with_tolerance(&a.encode_png().unwrap(), &b.encode_png().unwrap(), 1.0, 128);
-    assert!(result.is_err(), "100-unit color shift must fail tolerance");
 }

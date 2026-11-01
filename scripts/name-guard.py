@@ -46,7 +46,7 @@ def main(argv, guard):
     base = argv[1]
     path, line, header = "", 0, True
     for row in git("-c", "core.quotePath=false", "diff", "-U0", "--text", "--no-color", "--no-ext-diff",
-                   "--no-renames", f"{base}...HEAD").splitlines():
+                   "--no-renames", f"{base}...HEAD").split("\n"):
         if row.startswith("diff --git "):
             header = True
         elif header and row.startswith("+++ "):

@@ -205,44 +205,6 @@ fn nowview_html_output_wraps_svg_in_document() {
 }
 
 #[test]
-fn nowview_png_output_is_valid_png() {
-    let db = fresh_db();
-    let now = Utc::now();
-    entry_builder("workout")
-        .verb(Verb::Switch)
-        .time_start_utc(now - Duration::minutes(20))
-        .insert(&db);
-
-    let tmp = tempfile::NamedTempFile::with_suffix(".png").unwrap();
-    let path = tmp.path().to_str().unwrap().to_string();
-
-    run_cli(
-        &[
-            "nowview",
-            "--history",
-            "30m",
-            "--width",
-            "300",
-            "--height",
-            "150",
-            "--output-file",
-            &path,
-        ],
-        &db,
-    )
-    .expect("nowview dispatch (png)");
-
-    let bytes = std::fs::read(&path).expect("read png");
-    // PNG magic: 89 50 4E 47 0D 0A 1A 0A
-    let magic = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-    assert!(
-        bytes.len() > magic.len() && bytes[..magic.len()] == magic,
-        "expected PNG magic header, got {:02x?}",
-        &bytes[..magic.len().min(bytes.len())]
-    );
-}
-
-#[test]
 fn nowview_rejects_unknown_extension() {
     let db = fresh_db();
     let tmp = tempfile::NamedTempFile::with_suffix(".jpg").unwrap();

@@ -479,19 +479,10 @@ fn write_output(path: &str, svg: &str) -> Result<()> {
             std::fs::write(path, body).with_context(|| format!("write {path}"))?;
         }
         Some("png") => {
-            #[cfg(feature = "png")]
-            {
-                let body = with_xml_declaration(svg);
-                let png = super::render_helpers::rasterize_to_png(&body)
-                    .with_context(|| format!("rasterize SVG to PNG for {path}"))?;
-                std::fs::write(path, png).with_context(|| format!("write {path}"))?;
-            }
-            #[cfg(not(feature = "png"))]
-            anyhow::bail!(
-                "PNG output requires the `png` cargo feature; rebuild with \
-                 `--features png`, or pick a .svg / .html output path \
-                 instead (got: {path})"
-            );
+            let body = with_xml_declaration(svg);
+            let png = super::render_helpers::rasterize_to_png(&body)
+                .with_context(|| format!("rasterize SVG to PNG for {path}"))?;
+            std::fs::write(path, png).with_context(|| format!("write {path}"))?;
         }
         _ => anyhow::bail!("output file must end in .svg, .png, or .html: {path}"),
     }
@@ -1090,18 +1081,6 @@ mod tests {
         let got: Vec<i64> = clock_marks(&layout).iter().map(|m| m.ms).collect();
         assert_eq!(got, want);
         assert_eq!(got.first(), Some(&day.start_ms), "step {step}");
-    }
-
-    /// Without the `png` feature, requesting a `.png` output path must
-    /// return a friendly error pointing at the missing feature, not panic.
-    #[cfg(not(feature = "png"))]
-    #[test]
-    fn png_output_without_feature_returns_friendly_error() {
-        let err = write_output("/tmp/datum-feature-gate-check.png", "<svg/>")
-            .expect_err("expected friendly error when png feature is off");
-        let msg = err.to_string();
-        assert!(msg.contains("png"), "missing 'png' in error: {msg}");
-        assert!(msg.contains("feature"), "missing 'feature' in error: {msg}");
     }
 
     #[test]

@@ -523,21 +523,12 @@ fn write_payload(path: Option<&str>, body: &str, kind: OutputKind) -> Result<()>
             std::fs::write(path, html).with_context(|| format!("write {path}"))?;
         }
         (Some("png"), OutputKind::Svg) => {
-            #[cfg(feature = "png")]
-            {
-                let mut svg_xml = String::with_capacity(body.len() + 64);
-                svg_xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-                svg_xml.push_str(body);
-                let png = super::render_helpers::rasterize_to_png(&svg_xml)
-                    .with_context(|| format!("rasterize SVG to PNG for {path}"))?;
-                std::fs::write(path, png).with_context(|| format!("write {path}"))?;
-            }
-            #[cfg(not(feature = "png"))]
-            anyhow::bail!(
-                "PNG output requires the `png` cargo feature; rebuild with \
-                 `--features png`, or pick a .svg / .html / .json output \
-                 path instead (got: {path})"
-            );
+            let mut svg_xml = String::with_capacity(body.len() + 64);
+            svg_xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+            svg_xml.push_str(body);
+            let png = super::render_helpers::rasterize_to_png(&svg_xml)
+                .with_context(|| format!("rasterize SVG to PNG for {path}"))?;
+            std::fs::write(path, png).with_context(|| format!("write {path}"))?;
         }
         _ => anyhow::bail!("output file must end in .svg, .png, .html, or .json: {path}"),
     }
@@ -1069,23 +1060,6 @@ mod tests {
         assert!(dayview_periodic_refresh(true, true, true).is_some());
         // Pipe: downstream tool wants the updates.
         assert!(dayview_periodic_refresh(true, false, false).is_some());
-    }
-
-    /// Without the `png` feature, requesting a `.png` output path must
-    /// return a friendly error pointing at the missing feature, not panic
-    /// or fall through to the generic "must end in" branch.
-    #[cfg(not(feature = "png"))]
-    #[test]
-    fn png_output_without_feature_returns_friendly_error() {
-        let err = write_payload(
-            Some("/tmp/datum-feature-gate-check.png"),
-            "<svg/>",
-            OutputKind::Svg,
-        )
-        .expect_err("expected friendly error when png feature is off");
-        let msg = err.to_string();
-        assert!(msg.contains("png"), "missing 'png' in error: {msg}");
-        assert!(msg.contains("feature"), "missing 'feature' in error: {msg}");
     }
 
     #[test]

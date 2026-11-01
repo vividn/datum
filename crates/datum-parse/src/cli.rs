@@ -1710,7 +1710,7 @@ pub struct DayviewArgs {
     /// `--margin` — outer margin. Default: 2.
     pub margin: f64,
     /// `-o`/`--output-file` — output path; extension picks format
-    /// (.svg / .png / .html). None → SVG to stdout.
+    /// (.svg / .html / .png, which needs `rsvg-convert`). None → SVG to stdout.
     pub output_file: Option<String>,
     /// The swept `--show` (da-qt6z). `--show json` — the old `--json` —
     /// emits the layout JSON instead of SVG (test-only / debug hook; not
@@ -1838,7 +1838,8 @@ pub struct NowviewArgs {
     /// `--orientation horizontal|vertical` (or `--horizontal` /
     /// `--vertical`), as dayview's (da-78evn). The SVG path's alone.
     pub orientation: DayviewOrientation,
-    /// Output file. Extension picks format: .svg / .png / .html. None →
+    /// Output file. Extension picks format: .svg / .html / .png, which needs
+    /// `rsvg-convert`. None →
     /// terminal output (per da-57dj), routed through the
     /// `nowview_terminal` visual band-stack renderer.
     pub output_file: Option<String>,

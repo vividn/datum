@@ -214,3 +214,25 @@ fn an_entry_that_does_not_compile_fails_by_its_number() {
         "the guard printed its entry:\n{text}"
     );
 }
+
+/// da-jeve9: `--text` prints a binary file's bytes as lines, and only `\n` ends
+/// one. A form feed followed by `@@`, as a deleted font held, is no hunk header.
+#[test]
+fn a_form_feed_before_at_signs_is_no_hunk_header() {
+    let repo = Repo::new("form-feed-hunk");
+    repo.write("new.txt", "clean\x0c@@ not a hunk\n");
+    repo.commit("ann@example.com", "cy@example.com", "adds a file");
+    let (ok, text) = repo.guard(GUARD, None);
+    assert!(ok, "{text}");
+}
+
+/// And what follows a form feed on an added line is on that line, read as added.
+#[test]
+fn a_word_after_a_form_feed_or_a_carriage_return_fails() {
+    for (case, end) in [("form-feed", "\x0c"), ("return", "\r")] {
+        let repo = Repo::new(case);
+        repo.write("new.txt", &format!("a{end}said {WORD} hi\n"));
+        repo.commit("ann@example.com", "cy@example.com", "adds a file");
+        fails_with(&repo, None, "entry #2 at new.txt:1");
+    }
+}

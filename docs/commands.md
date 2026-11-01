@@ -104,6 +104,11 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `-V, --version` — Show version
 <!-- END AUTOGEN: COMMANDS -->
 
+## PNG output
+
+`-o x.png` on `dayview` and `nowview` needs `rsvg-convert` on PATH (the librsvg package). `-o x.svg` and `-o x.html` need
+nothing.
+
 ## Man pages
 
 `datum --man` prints the top-level man page to stdout in roff format;

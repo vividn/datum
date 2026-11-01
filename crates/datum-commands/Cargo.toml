@@ -29,12 +29,6 @@ test-util = []
 # this feature is enabled. Polecat pre-submit / refinery skip the full
 # cohort; CI runs it in a dedicated job.
 e2e-full = []
-# Pulls in resvg + tiny-skia for SVG → PNG rasterization. The dayview/nowview
-# `--output *.png` paths require this; SVG/HTML/JSON output stays available
-# without it. ~50 transitive crates and ~1.5 MiB of `.text` come with this
-# feature, so size-conscious downstream builds (WASM, embedded CI) drop it
-# via `--no-default-features`.
-png = ["dep:resvg"]
 
 [dependencies]
 datum-core = { path = "../datum-core" }
@@ -63,12 +57,6 @@ toml = { workspace = true }
 libc = { workspace = true }
 # Alt-screen TUI for `datum tail -w` (da-3l6m): key/mouse events + raw mode.
 crossterm = { workspace = true, optional = true }
-# Pure-Rust SVG → PNG rasterization for `datum {dayview,nowview} --output
-# foo.png`. Optional via the `png` feature: ~50 transitive crates + ~1.5 MiB
-# of `.text` drop out under `--no-default-features`. Pulled at the CLI
-# boundary so `datum-layout` stays WASM-clean (browsers render SVG natively;
-# PNG is only a CLI-side convenience).
-resvg = { version = "0.47", default-features = false, features = ["text", "system-fonts", "memmap-fonts"], optional = true }
 
 [dev-dependencies]
 # Tests reach for tempfile directly (isolated XDG homes, kit round-trips), and

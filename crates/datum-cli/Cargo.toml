@@ -10,7 +10,7 @@ name = "datum_cli"
 path = "src/lib.rs"
 
 [features]
-default = ["png", "native"]
+default = ["native"]
 # Everything that cannot exist under WASI, forwarded to `datum-commands/native`
 # plus the CLI's own: the REPL's line editor (rustyline -> home, which has no
 # wasi arm). `--no-default-features` is the wasm32-wasip1 build the browser
@@ -18,12 +18,6 @@ default = ["png", "native"]
 native = ["datum-commands/native", "dep:rustyline"]
 # Shared test fixtures (TestPrompter, etc.) for use by integration tests.
 test-util = []
-# Forwards to `datum-commands/png`. Default-on so distributed `datum`
-# binaries keep `dayview --output foo.png` and `nowview --output foo.png`
-# working out of the box. Drop with `--no-default-features` for size-
-# constrained builds (the dayview/nowview commands then reject `*.png` with
-# a friendly error and continue to support svg/html/json output).
-png = ["datum-commands/png"]
 
 [[bin]]
 name = "datum"
