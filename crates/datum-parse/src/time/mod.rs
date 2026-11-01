@@ -50,8 +50,8 @@ pub use self::resolve::on_readers_clock;
 pub use self::resolve::{fixed_offset_minutes, Resolved, Zone, ZoneSegment, ZoneTimeline};
 pub use self::time::{count_stacked_flag, parse_time, TimeArg};
 pub use self::uncertainty::{
-    parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
-    UncertaintyUnit,
+    parse_uncertainty, split_direction_suffix, split_uncertainty, uncertainty_iso, Direction,
+    Uncertainty, UncertaintyUnit,
 };
 
 pub use crate::input::time_args::{iana_zone, resolve_timezone};

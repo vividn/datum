@@ -104,7 +104,7 @@ fn at_and_occur_time_write_the_same_entry() {
         ],
     );
     let (ea, eb) = (pretty(a.path(), "teapot"), pretty(b.path(), "teapot"));
-    assert_eq!(ea["at"]["uncertainty"], "5m");
+    assert_eq!(ea["at"]["uncertainty"], "PT5M");
     assert_eq!(ea["at"], eb["at"]);
 }
 
@@ -399,5 +399,116 @@ fn collect(v: &Value, hits: &mut Vec<Value>) {
         }
         Value::Array(a) => a.iter().for_each(|c| collect(c, hits)),
         _ => {}
+    }
+}
+
+/// da-guv99: a key named with no value clears on `update`, where `null` said
+/// NODIFF and an empty `dur_uncertainty=` stored an empty string.
+#[test]
+fn update_clears_the_duration_and_both_uncertainties() {
+    let d = dir();
+    let d = d.path();
+    let row = |id| pretty(d, id);
+    let start = |n: &str| {
+        ok(
+            d,
+            &[
+                "start",
+                n,
+                "30m",
+                &format!("at={TIME}"),
+                "dur_uncertainty=PT5M",
+                "at_uncertainty=PT7M",
+            ],
+        )
+    };
+    start("teapot");
+    for none in ["null", ""] {
+        ok(d, &["update", "teapot", &format!("dur_uncertainty={none}")]);
+        assert_eq!(row("teapot")["dur"], "PT30M");
+        ok(d, &["update", "teapot", "dur_uncertainty=PT5M"]);
+        assert_eq!(row("teapot")["dur"], "PT30M±PT5M");
+        ok(d, &["update", "teapot", &format!("at_uncertainty={none}")]);
+        assert_eq!(row("teapot")["at"]["uncertainty"], Value::Null);
+        ok(d, &["update", "teapot", "at_uncertainty=PT7M"]);
+    }
+    assert!(ok(d, &["check", "sync"]).contains(" 0 differ"));
+
+    // The duration goes with its uncertainty and its trailing edge, leaving
+    // what the state logged with no duration is; undo brings all three back.
+    let before = row("teapot");
+    assert!(!before["following_state"].is_null(), "{before}");
+    for (n, none) in [("null", "null"), ("empty", "")] {
+        ok(d, &["update", "teapot", &format!("dur={none}")]);
+        let e = row("teapot");
+        assert_eq!(e["verb"], "switch", "{n}");
+        assert_eq!(e["dur"], Value::Null, "{n}");
+        assert_eq!(e["following_state"], Value::Null, "{n}");
+        assert_eq!(e["at"], before["at"], "{n}");
+        assert!(ok(d, &["check", "sync"]).contains(" 0 differ"), "{n}");
+        ok(d, &["undo"]);
+        assert_eq!(row("teapot"), before, "{n}");
+    }
+
+    // Clearing what is not there writes nothing, on a timeless entry too; a
+    // value still needs what it qualifies, and a trailing state its duration.
+    ok(d, &["add", "kettle", "-T"]);
+    for key in ["dur=null", "dur_uncertainty=null", "at_uncertainty="] {
+        assert!(
+            ok(d, &["update", "kettle", key]).contains("NODIFF"),
+            "{key}"
+        );
+    }
+    refused(d, &["update", "teapot", "dur=null", "dur_uncertainty=PT5M"]);
+    refused(d, &["update", "teapot", "dur=null", "following_state=x"]);
+
+    // A log has nothing to clear, so `-q`'s stays.
+    ok(d, &["moment", "pot", "-q", "at_uncertainty=null"]);
+    assert_eq!(row("pot")["at"]["uncertainty"], "PT150S");
+}
+
+/// da-guv99: stored as `±` stores it, or the amount reads as unparsable; a
+/// value that is no amount is refused, on a log and on an update alike.
+#[test]
+fn an_uncertainty_key_is_stored_in_the_columns_form() {
+    let d = dir();
+    let d = d.path();
+    ok(d, &["start", "teapot", "30m", &format!("at={TIME}")]);
+    for (typed, held) in [
+        ("5m", "PT5M"),
+        ("5", "PT5M"),
+        ("1.5h", "PT90M"),
+        ("90s", "PT90S"),
+        ("PT5M", "PT5M"),
+        ("P1M", "P1M"),
+    ] {
+        ok(
+            d,
+            &["update", "teapot", &format!("dur_uncertainty={typed}")],
+        );
+        assert_eq!(
+            pretty(d, "teapot")["dur"],
+            format!("PT30M±{held}"),
+            "{typed}"
+        );
+        ok(d, &["update", "teapot", &format!("at_uncertainty={typed}")]);
+        assert_eq!(pretty(d, "teapot")["at"]["uncertainty"], held, "{typed}");
+    }
+    ok(d, &["update", "teapot", "dur_uncertainty=5m"]);
+    assert!(ok(d, &["tail", "teapot"]).contains("30m±5m"));
+
+    // No amount is none at all, in either form.
+    for zero in ["0", "PT0S", "P0D"] {
+        ok(d, &["update", "teapot", "dur_uncertainty=5m"]);
+        ok(d, &["update", "teapot", &format!("dur_uncertainty={zero}")]);
+        assert_eq!(pretty(d, "teapot")["dur"], "PT30M", "{zero}");
+    }
+
+    for bad in ["banana", "-5", "-PT5M", "PT"] {
+        for key in ["dur_uncertainty", "at_uncertainty"] {
+            let line = format!("{key}={bad}");
+            refused(d, &["update", "teapot", &line]);
+            refused(d, &["start", "kettle", "30m", &line]);
+        }
     }
 }

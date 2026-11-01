@@ -514,6 +514,15 @@ fn apply_mutation(
         });
     }
     let sets_dur = reserved.dur.is_some() || reserved.dur_uncertainty.is_some();
+    if reserved.clears_dur {
+        // A trailing edge is the end of the span, and goes with it: the row
+        // is then the one its state logged with no duration (da-guv99).
+        updated.dur = None;
+        updated.following_state = None;
+    }
+    if reserved.clears_dur_uncertainty {
+        updated.set_dur_uncertainty(None);
+    }
     if let Some(d) = reserved.dur {
         updated.dur = Some(d);
     }
@@ -536,15 +545,17 @@ fn apply_mutation(
             updated.zone_stated();
         }
     }
-    // After `at=`, which replaces the time this lives inside (da-vl8sz). An
-    // empty value drops it, as `key=` drops a data key.
+    // After `at=`, which replaces the time this lives inside (da-vl8sz).
+    if reserved.clears_at_uncertainty {
+        updated.set_at_uncertainty(None);
+    }
     if let Some(u) = reserved.at_uncertainty {
         if updated.at.is_none() {
             anyhow::bail!(
                 "at_uncertainty= needs a time: a timeless entry has no instant to qualify"
             );
         }
-        updated.set_at_uncertainty(Some(u).filter(|u| !u.is_empty()));
+        updated.set_at_uncertainty(Some(u));
     }
     if sets_dur && updated.at.is_none() {
         anyhow::bail!(crate::commands::log_core::TIMELESS_DUR);

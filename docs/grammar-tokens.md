@@ -560,8 +560,9 @@ instant, in a column of its own, as `--json` carries it:
   at_uncertainty            PT15M
 ```
 
-`datum update coffee at_uncertainty=PT5M` sets it on an entry already logged,
-and `at_uncertainty=` drops it.
+`datum update coffee at_uncertainty=5m` sets it on an entry already logged,
+stored as `PT5M` whichever form it is typed in, and `at_uncertainty=` or
+`at_uncertainty=null` drops it.
 
 `14:00+-15m` is the same input — the ASCII form only splits when
 something precedes it, so a leading-sign offset like `-t +5` is still an
@@ -581,6 +582,10 @@ precisely it is known are separate columns:
   dur                       PT1H30M
   dur_uncertainty           PT5M
 ```
+
+`update` takes the same `dur_uncertainty=`, and `dur_uncertainty=` or
+`dur_uncertainty=null` drops it. `dur=` or `dur=null` drops the duration, and
+the trailing state that ended it: `start task 30m`, so updated, is `start task`.
 
 Wherever the duration is printed — the echo, `get`, `tail`'s dur column —
 a gray `±` and its amount follow it:

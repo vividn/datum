@@ -2441,6 +2441,12 @@ pub(crate) struct ReservedColumns {
     pub(crate) dur_uncertainty: Option<String>,
     /// `at_uncertainty=` — the same, for the entry's time.
     pub(crate) at_uncertainty: Option<String>,
+    /// `dur=`, `dur=null`, and the same of the two uncertainties (or one of
+    /// no amount, `=0`): the key named with no value. A log has nothing to
+    /// clear, so it leaves the key unstated; `update` clears it (da-guv99).
+    pub(crate) clears_dur: bool,
+    pub(crate) clears_dur_uncertainty: bool,
+    pub(crate) clears_at_uncertainty: bool,
     pub(crate) following_state: Option<JsonValue>,
     pub(crate) at: Option<JsonValue>,
 }
@@ -2496,11 +2502,8 @@ pub(crate) fn extract_reserved_columns(
         out.state = Some(normalize_state(v));
     }
     if let Some(v) = obj.remove("dur") {
-        // `dur=null` (or string `"null"`) is a sentinel for "no
-        // duration" — leave entry.dur as None rather than writing the
-        // string "null" which derive_verb would reject.
-        if v.is_null() || matches!(v.as_str(), Some("null")) {
-            // intentionally drop — None signals point shape.
+        if has_no_value(&v) {
+            out.clears_dur = true;
         } else {
             let s = json_to_dur_string(&v)?;
             out.dur = Some(
@@ -2510,22 +2513,15 @@ pub(crate) fn extract_reserved_columns(
         }
     }
     if let Some(v) = obj.remove("dur_uncertainty") {
-        // `dur_uncertainty=null` is a sentinel for "not stated".
-        if v.is_null() || matches!(v.as_str(), Some("null")) {
-            // intentionally drop — leave the uncertainty unstated.
-        } else {
-            out.dur_uncertainty = Some(json_to_raw_token(&v));
-        }
+        out.dur_uncertainty = uncertainty_column("dur_uncertainty", &v)?;
+        out.clears_dur_uncertainty = out.dur_uncertainty.is_none();
     }
     // The parser reads the old names as `at`; a payload that did not come
     // through it may still say them.
     let uncertainty = obj.remove("occur_time_uncertainty");
     if let Some(v) = obj.remove("at_uncertainty").or(uncertainty) {
-        if v.is_null() || matches!(v.as_str(), Some("null")) {
-            // intentionally drop — leave the uncertainty unstated.
-        } else {
-            out.at_uncertainty = Some(json_to_raw_token(&v));
-        }
+        out.at_uncertainty = uncertainty_column("at_uncertainty", &v)?;
+        out.clears_at_uncertainty = out.at_uncertainty.is_none();
     }
     if let Some(v) = obj.remove("following_state") {
         // da-lvyt0: a trailing-edge state takes the same `{id: x}` rule.
@@ -2543,6 +2539,22 @@ pub(crate) fn extract_reserved_columns(
         *extra_data = None;
     }
     Ok(out)
+}
+
+/// `null`, the word `null` and nothing at all: a reserved key said to hold no value.
+fn has_no_value(v: &JsonValue) -> bool {
+    v.is_null() || matches!(v.as_str(), Some("null" | ""))
+}
+
+/// An uncertainty key's value as the column holds it, the forms `±` takes:
+/// `5m` is `PT5M`, an ISO body as typed. `None` where it says no amount.
+fn uncertainty_column(key: &str, v: &JsonValue) -> Result<Option<String>> {
+    if has_no_value(v) {
+        return Ok(None);
+    }
+    let raw = json_to_raw_token(v);
+    datum_parse::time::uncertainty_iso(&raw)
+        .map_err(|_| anyhow::anyhow!("invalid {key} value: {raw:?}"))
 }
 
 /// Coerce a parsed JSON value back to an ISO-8601 duration string. The

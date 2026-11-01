@@ -212,6 +212,11 @@ pub fn parse_uncertainty(body: &str) -> Result<Uncertainty> {
     let n: f64 = num_str
         .parse()
         .map_err(|_| ParseError::InvalidTime(format!("Cannot parse uncertainty: '{body}'")))?;
+    if !n.is_finite() || n < 0.0 {
+        return Err(ParseError::InvalidTime(format!(
+            "Cannot parse uncertainty: '{body}'"
+        )));
+    }
     let (secs, unit) = match unit_str {
         "s" | "sec" | "second" | "seconds" => (n as u32, UncertaintyUnit::Second),
         "m" | "min" | "minute" | "minutes" => ((n * 60.0) as u32, UncertaintyUnit::Minute),
@@ -228,6 +233,16 @@ pub fn parse_uncertainty(body: &str) -> Result<Uncertainty> {
         seconds: secs,
         unit,
     })
+}
+
+/// An uncertainty key's value as the columns hold it: an ISO body as typed,
+/// any other through [`Uncertainty::to_iso`], `None` where it has no amount.
+pub fn uncertainty_iso(body: &str) -> Result<Option<String>> {
+    if body.starts_with('P') {
+        let amount = parse_iso_duration(body)?;
+        return Ok((!amount.is_zero()).then(|| body.to_string()));
+    }
+    Ok(parse_uncertainty(body)?.to_iso())
 }
 
 #[cfg(test)]
