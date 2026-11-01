@@ -398,13 +398,18 @@ const HOLD_MS = 250;
  */
 const countOpens = `
 	const real = FileSystemFileHandle.prototype.createSyncAccessHandle;
-	let opens = 0, acquired = 0, pending = 0;
+	let opens = 0, acquired = 0, pending = 0, arrived = 0;
 	FileSystemFileHandle.prototype.createSyncAccessHandle = function (...args) {
 		opens++;
 		return real.apply(this, args);
 	};
 	// Trusted only: \`inWorker\` dispatches again what arrived before the module.
-	self.addEventListener('message', (e) => e.isTrusted && pending++);
+	self.addEventListener('message', (e) => {
+		if (!e.isTrusted) return;
+		pending++;
+		// A burst's commands alone, which no pane of the page ever sends.
+		if (e.data?.argv?.[0] === '--version' || e.data?.argv?.[1] === 'ping') arrived++;
+	});
 	const post = self.postMessage.bind(self);
 	self.postMessage = (message, ...rest) => {
 		if (message?.notice === undefined) {
@@ -414,7 +419,7 @@ const countOpens = `
 		return post(message, ...rest);
 	};
 	const channel = new BroadcastChannel('datum-test-opens');
-	channel.onmessage = (e) => e.data === 'how many?' && channel.postMessage({ opens, acquired, pending });
+	channel.onmessage = (e) => e.data === 'how many?' && channel.postMessage({ opens, acquired, pending, arrived });
 `;
 
 /**
@@ -446,15 +451,25 @@ async function counts(page) {
 const since = (a, b) => ({ opens: b.opens - a.opens, acquired: b.acquired - a.acquired });
 
 /**
- * Every `argvs` fired at once, so the queue behind the first is never empty.
- * Returns each outcome — with what it paid to acquire — and the span of all,
- * on the wall clock: the page's `Date` is held (da-ydao).
+ * Every `argvs` queued in the worker before the first runs. Sent in one task
+ * they still cross to the worker one at a time, and a command that ends before
+ * the next lands drains the queue, which rightly gives the files back (da-r9snu).
+ * So the page holds the files' lock until all have arrived, the first of them
+ * waiting on it. Returns each outcome — with what it paid to acquire — and the
+ * span from letting go, on the wall clock: the page's `Date` is held (da-ydao).
  */
 const fireAtOnce = (page, argvs) =>
 	page.evaluate(async (argvs) => {
-		const started = performance.timeOrigin + performance.now();
-		const runs = await Promise.all(
-			argvs.map((argv) =>
+		const channel = new BroadcastChannel('datum-test-opens');
+		const arrived = () =>
+			new Promise((resolve) => {
+				channel.onmessage = (e) => typeof e.data?.arrived === 'number' && resolve(e.data.arrived);
+				channel.postMessage('how many?');
+			});
+		const before = await arrived();
+		let pending, started;
+		await navigator.locks.request('datum-cli-files', async () => {
+			pending = argvs.map((argv) =>
 				window.datum.runQuiet(argv).then((r) => ({
 					code: r.code,
 					stderr: r.stderr,
@@ -462,8 +477,12 @@ const fireAtOnce = (page, argvs) =>
 					acquire: r.ms.acquire,
 					at: performance.timeOrigin + performance.now()
 				}))
-			)
-		);
+			);
+			while ((await arrived()) < before + argvs.length);
+			started = performance.timeOrigin + performance.now();
+		});
+		const runs = await Promise.all(pending);
+		channel.close();
 		return { runs, spanMs: (performance.timeOrigin + performance.now()) - started, startedAt: started };
 	}, argvs);
 
