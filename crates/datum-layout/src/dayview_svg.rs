@@ -1088,6 +1088,12 @@ const DEAD_ZONE_ID: &str = "dead-zone";
 /// How bright a lane's inner edge is at its fullest: a major hour line.
 const LANE_EDGE_OPACITY: f64 = 0.4;
 
+/// How far the band has narrowed, a share of the lane's inset, where a
+/// lane's inner edge reaches its full brightness: the S's final rounding
+/// (vividn, 2026-10-31: «fade out a bit faster and closer to the final
+/// rounding at full height»).
+const LANE_EDGE_FADE: f64 = 0.25;
+
 /// `from`, the lane's knots strictly between, `to`: where an edge drawn
 /// across that stretch of a forked band bends.
 fn bends(span: &RenderedSpan, from: f64, to: f64) -> Vec<f64> {
@@ -1170,10 +1176,12 @@ fn lane_reach(span: &RenderedSpan) -> (f64, f64) {
 }
 
 /// The edges of a stretch's lane that face another lane (da-zh83r), so the
-/// S and the margin between lanes show. An edge is a piece per bend, each as
-/// bright as the band has narrowed there: none where it leaves the day's own
-/// edge, which draws nothing, so past the S nothing shows. The side that
-/// stays on the day's edge is not drawn.
+/// S and the margin between lanes show. An edge is a piece per bend, at full
+/// brightness until the S's final rounding, fading there to none where it
+/// leaves the day's own edge, which draws nothing, so past the S nothing
+/// shows. The side that stays on the day's edge is not drawn. A line at the
+/// same brightness crosses the lane at each end the stretch has inside the
+/// day, under that end's label, so the lane visibly ends (da-cyxem).
 fn lane_edges(
     layout: &DayviewLayout,
     geom: &PlotGeom,
@@ -1199,13 +1207,29 @@ fn lane_edges(
             continue;
         }
         for piece in xs.windows(2) {
+            let narrowed = inset(piece[0]).min(inset(piece[1])) / inner;
             let _ = write!(
                 out,
                 r#"<path d="{d}" stroke-opacity="{o}" vector-effect="non-scaling-stroke"/>"#,
                 d = path_d(layout, geom, day, piece.iter().map(|x| (*x, at(*x)))),
-                o = LANE_EDGE_OPACITY * inset(piece[0]).min(inset(piece[1])) / inner,
+                o = LANE_EDGE_OPACITY * (narrowed / LANE_EDGE_FADE).min(1.0),
             );
         }
+    }
+    const EPS: f64 = 1e-6;
+    let end = span.time_offset + span.time_extent;
+    let caps = [
+        (span.lane[0][1..] != [0.0, 1.0] && span.time_offset > EPS).then_some(span.time_offset),
+        (span.lane[span.lane.len() - 1][1..] != [0.0, 1.0] && end < layout.time_axis_extent - EPS)
+            .then_some(end),
+    ];
+    for x in caps.into_iter().flatten() {
+        let (near, far) = span.lane_at(x);
+        let _ = write!(
+            out,
+            r#"<path d="{d}" stroke-opacity="{LANE_EDGE_OPACITY}" vector-effect="non-scaling-stroke"/>"#,
+            d = path_d(layout, geom, day, [(x, near), (x, far)].into_iter()),
+        );
     }
     out + "</g>"
 }
@@ -2255,24 +2279,49 @@ mod tests {
         let (near, far) = (pieces(groups[0]), pieces(groups[1]));
         // The S's 8 pieces and the straight run, the facing edge alone: the
         // near lane's from the band's far edge to 47.5%, the far lane's from
-        // 52.5% to the band's near edge.
-        assert_eq!((near.len(), far.len()), (9, 9));
+        // 52.5% to the band's near edge. Then the cap.
+        assert_eq!((near.len(), far.len()), (10, 10));
         let round = |v: f64| (v * 100.0).round() / 100.0;
         assert_eq!((round(near[0].0 .0), near[0].0 .1), (545.92, 100.0));
         assert_eq!((round(near[8].0 .0), near[8].1), ((579.25), (700.0, 47.5)));
         assert_eq!(far[0].0, (600.0, 52.5));
         assert_eq!((round(far[8].1 .0), far[8].1 .1), (754.08, 0.0));
+        // The cap crosses the lane where the hour that happened twice ends,
+        // as bright as the run: 07:00 on the near lane, 06:00 on the far.
+        let cap = (near[9].0, near[9].1, near[9].2);
+        assert_eq!(cap, ((700.0, 0.0), (700.0, 47.5), LANE_EDGE_OPACITY));
+        let cap = (far[9].0, far[9].1, far[9].2);
+        assert_eq!(cap, ((600.0, 52.5), (600.0, 100.0), LANE_EDGE_OPACITY));
         // Brightness: none where the edge meets the day's, which draws
-        // nothing, some on the curve, climbing, a major hour line's between
-        // the lanes.
-        let up = near.iter().map(|p| p.2);
-        let down = far.iter().rev().map(|p| p.2);
+        // nothing, full by the S's middle, a major hour line's between the
+        // lanes.
+        let up = near[..9].iter().map(|p| p.2);
+        let down = far[..9].iter().rev().map(|p| p.2);
         for side in [up.collect::<Vec<_>>(), down.collect()] {
             assert_eq!(side[0], 0.0);
-            assert!(side[4] > 0.0 && side[4] < LANE_EDGE_OPACITY);
+            assert!(side[1] > 0.0 && side[1] < LANE_EDGE_OPACITY);
+            assert_eq!(side[4], LANE_EDGE_OPACITY);
             assert!(side.windows(2).all(|w| w[0] <= w[1]), "{side:?}");
             assert_eq!(side[8], LANE_EDGE_OPACITY);
         }
+        // An end at the axis's own edge has no label and no cap: an hour
+        // repeated from midnight forks the band from there.
+        let midnight = jumped(&[(0, 0, 1, "UTC+2"), (1, 0, 24, "UTC+1")]);
+        let groups: Vec<&str> = midnight.split(r#"<g class="day-data""#).skip(1).collect();
+        assert_eq!(
+            pieces(groups[0])
+                .iter()
+                .filter(|p| p.0 .0 == p.1 .0)
+                .count(),
+            1
+        );
+        assert_eq!(
+            pieces(groups[1])
+                .iter()
+                .filter(|p| p.0 .0 == p.1 .0)
+                .count(),
+            0
+        );
         // An ordinary day and a clock moved forward fork nothing.
         assert!(!jumped(&[(0, 0, 24, "UTC")]).contains("lane-edge"));
         assert!(!jumped(&[(0, 0, 7, "UTC+1"), (7, 8, 24, "UTC+2")]).contains("lane-edge"));
