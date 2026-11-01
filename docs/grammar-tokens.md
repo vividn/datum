@@ -560,6 +560,9 @@ instant, in a column of its own, as `--json` carries it:
   at_uncertainty            PT15M
 ```
 
+`datum update coffee at_uncertainty=PT5M` sets it on an entry already logged,
+and `at_uncertainty=` drops it.
+
 `14:00+-15m` is the same input — the ASCII form only splits when
 something precedes it, so a leading-sign offset like `-t +5` is still an
 offset. A bare number defaults to minutes; `s`/`m`/`h`/`d` and ISO

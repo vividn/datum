@@ -108,6 +108,57 @@ fn at_and_occur_time_write_the_same_entry() {
     assert_eq!(ea["at"], eb["at"]);
 }
 
+/// da-vl8sz: `update` stored nothing of it, exit 0, as a log does store it.
+#[test]
+fn update_sets_and_drops_the_uncertainty() {
+    let d = dir();
+    let d = d.path();
+    let held = |id| pretty(d, id)["at"]["uncertainty"].clone();
+    ok(d, &["occur", "teapot", &format!("at={TIME}")]);
+
+    ok(d, &["update", "teapot", "at_uncertainty=PT5M"]);
+    assert_eq!(held("teapot"), "PT5M");
+    ok(d, &["update", "teapot", "occur_time_uncertainty=PT7M"]);
+    assert_eq!(held("teapot"), "PT7M");
+    // The op carries it: the row is what the ops fold to.
+    assert!(ok(d, &["check", "sync"]).contains(" 0 differ"));
+    ok(d, &["undo"]);
+    assert_eq!(held("teapot"), "PT5M");
+
+    // Beside `at=`, whichever comes first, it qualifies the new time.
+    ok(
+        d,
+        &[
+            "update",
+            "teapot",
+            "at_uncertainty=PT9M",
+            "at=2026-05-01T11:00:00Z",
+        ],
+    );
+    assert_eq!(pretty(d, "teapot")["at"]["utc"], "2026-05-01T11:00:00Z");
+    assert_eq!(held("teapot"), "PT9M");
+
+    // Dropped is no uncertainty at all, which an empty one would not be: the
+    // time still prints its `±`.
+    ok(d, &["update", "teapot", "at_uncertainty="]);
+    assert_eq!(held("teapot"), Value::Null);
+    assert!(!ok(d, &["tail", "teapot"]).contains('±'));
+
+    // A timeless entry has no instant to qualify, unless this update gives it one.
+    ok(d, &["add", "kettle", "-T"]);
+    refused(d, &["update", "kettle", "at_uncertainty=PT5M"]);
+    ok(
+        d,
+        &[
+            "update",
+            "kettle",
+            "at_uncertainty=PT5M",
+            &format!("at={TIME}"),
+        ],
+    );
+    assert_eq!(held("kettle"), "PT5M");
+}
+
 /// `at=` makes `add`'s first bare word no id, as `occur_time=` does.
 #[test]
 fn at_is_a_time_to_add_as_the_old_name_is() {

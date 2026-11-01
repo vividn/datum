@@ -536,6 +536,16 @@ fn apply_mutation(
             updated.zone_stated();
         }
     }
+    // After `at=`, which replaces the time this lives inside (da-vl8sz). An
+    // empty value drops it, as `key=` drops a data key.
+    if let Some(u) = reserved.at_uncertainty {
+        if updated.at.is_none() {
+            anyhow::bail!(
+                "at_uncertainty= needs a time: a timeless entry has no instant to qualify"
+            );
+        }
+        updated.set_at_uncertainty(Some(u).filter(|u| !u.is_empty()));
+    }
     if sets_dur && updated.at.is_none() {
         anyhow::bail!(crate::commands::log_core::TIMELESS_DUR);
     }
