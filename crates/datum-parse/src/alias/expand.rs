@@ -205,8 +205,8 @@ pub fn expand_argv(
 ) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
     let (argv, chain) = try_expand_alias(argv, resolver)?;
     // Spec v2: consume `,,` trailing regions on the flat path too (this
-    // wrapper survives for the kit-command recovery + `reparse`
-    // re-expansion paths) so no boundary token ever reaches a parser.
+    // wrapper survives for the kit-command recovery path) so no boundary
+    // token ever reaches a parser.
     // Multi flows re-flatten with their commas preserved.
     let mut iter = argv.into_iter();
     let bin = iter.next().unwrap_or_default();
@@ -214,8 +214,7 @@ pub fn expand_argv(
     let sides = split_argv_at_commas(rest)?;
     let sides = super::regions::apply_regions(sides)?;
     let (sides, _) = super::array::expand_field_arrays(sides, resolver)?;
-    // A switch chain is one command here too: `reparse` replays `switch
-    // f sit 5 , switch f stand` as the one point-switch it wrote.
+    // A switch chain is one command here too.
     let sides = maybe_collapse_switch_chain(sides);
     let mut argv = vec![bin];
     for (i, side) in sides.into_iter().enumerate() {

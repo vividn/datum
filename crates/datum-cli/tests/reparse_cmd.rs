@@ -641,3 +641,88 @@ fn reparse_reads_an_old_id_key_as_the_identity_it_was() {
     let card = db.get_entry("card:dune").unwrap();
     assert_eq!(card.data, Some(serde_json::json!({"id": "dune"})));
 }
+
+/// da-ylkq8: a line of several sides stamps its `raw_input` on the first
+/// row, which replays its own side and those the insert merged into it, no
+/// other: a row that stopped parsing would pass a `--fix` untouched, so each
+/// is broken by hand first and must come back as it was written.
+#[test]
+fn reparse_replays_the_first_row_of_a_line_of_several_sides() {
+    let lines: [(&[&str], &str); 11] = [
+        (&["occur", "a", ",", "occur", "b"], "a"),
+        (&["moment", "a,b"], "a"),
+        (&["switch", "a,b", "x,y"], "a"),
+        // The rest of a `note` is its comment, up to the side's end.
+        (&["note", "a", "hello", ",", "occur", "b"], "a"),
+        // Sides of one field at one instant are one row; their data merges.
+        (&["switch", "f", "x", ",", "switch", "f", "y"], "f"),
+        (
+            &["switch", "f", "x", "k=1", ",", "switch", "f", "y", "k=2"],
+            "f",
+        ),
+        (
+            &[
+                "switch", "f", "x", "-t", "10:00", ",", "switch", "f", "y", "-t", "10:00",
+            ],
+            "f",
+        ),
+        // A side that states another time is a row of its own.
+        (
+            &[
+                "switch", "f", "x", "-t", "10:00", ",", "switch", "f", "y", "-t", "11:00",
+            ],
+            "f",
+        ),
+        // A moment states nothing, so two of one field are two events.
+        (
+            &[
+                "occur", "f", "n=1", "--id", "one", ",", "occur", "f", "n=2", "--id", "two",
+            ],
+            "f",
+        ),
+        // A command that writes nothing is no row's side.
+        (&["tail", "-n", "1", ",", "occur", "a"], "a"),
+        // A chain with a duration is one row, one side.
+        (
+            &["switch", "f", "sit", "5", ",", "switch", "f", "stand"],
+            "f",
+        ),
+    ];
+    for (line, field) in lines {
+        let db = fresh_db();
+        run_cli(line, &db).unwrap();
+        let before = datum_core::test_util::logged_entries(&db, field)
+            .into_iter()
+            .find(|e| e.raw_input.as_deref().is_some_and(|r| !r.is_empty()))
+            .unwrap_or_else(|| panic!("{line:?} stamped no row of {field}"));
+        let hid = before.hid.to_string();
+
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+        let clean = db.get_entry(&hid).unwrap();
+        assert_eq!(clean.modify_time, before.modify_time, "{line:?} is clean");
+
+        db.conn()
+            .execute(
+                "UPDATE entries SET state = '\"broken\"', data = '{\"broken\":1}' WHERE hid = ?1",
+                params![hid.as_str()],
+            )
+            .unwrap();
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+        let fixed = db.get_entry(&hid).unwrap();
+        assert_eq!(
+            (
+                &fixed.state,
+                &fixed.following_state,
+                &fixed.dur,
+                &fixed.data
+            ),
+            (
+                &before.state,
+                &before.following_state,
+                &before.dur,
+                &before.data
+            ),
+            "{line:?}"
+        );
+    }
+}

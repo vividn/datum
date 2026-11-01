@@ -22,6 +22,11 @@
 //! `following_state`, `data`) for the log verbs (Occur/Start/Stop/
 //! Switch/Add). Other verbs don't write rows, so they have nothing to
 //! diff against.
+//!
+//! A line of several sides (`occur a , occur b`, `moment a,b`, da-ylkq8)
+//! stamps its `raw_input` on one row alone, the first side's that logs, so
+//! that row replays that side and any side the insert merged into it. The
+//! line's other rows hold no `raw_input`, and are skipped.
 
 use std::collections::BTreeMap;
 
@@ -34,7 +39,7 @@ use datum_core::{
     ids::resolve_quickid_single,
     time::DatumTime,
 };
-use datum_parse::alias::expand_argv;
+use datum_parse::alias::expand_into_sides;
 use datum_parse::input::TimeArgs;
 use datum_parse::{parse_argv, ParseError};
 use serde_json::Value as JsonValue;
@@ -60,6 +65,9 @@ struct ReparsedShape {
     dur: Option<Dur>,
     following_state: Option<JsonValue>,
     data: Option<JsonValue>,
+    /// The time the side's own line states (`None` within: timeless), which
+    /// it keeps; `None` where it states none and takes the line's first.
+    own_at: Option<Option<DatumTime>>,
 }
 
 /// Replay one entry's `raw_input` through the current parser and project
@@ -81,32 +89,97 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     let (argv, _db_flag) = crate::config::split_off_global_db_flag(argv);
 
     let resolver = build_resolver_from_chain(entry.alias_chain.as_ref());
-    let (expanded, _chain) =
-        expand_argv(argv, &resolver).map_err(|e| anyhow::anyhow!("expand_argv failed: {e}"))?;
-    let cli = parse_argv(&expanded).map_err(|e| anyhow::anyhow!("parse_argv failed: {e}"))?;
+    let expanded = expand_into_sides(argv, &resolver)
+        .map_err(|e| anyhow::anyhow!("expand_into_sides failed: {e}"))?;
 
-    let (mut action, mut log_args) = match cli.command {
-        Command::Occur(a) => (Action::Occur, a),
-        Command::Start(a) => (Action::Start, a),
-        Command::Stop(a) => (Action::Stop, a),
-        Command::Switch(a) => (Action::Switch, a),
-        Command::Add(a) => (Action::Add, a),
-        Command::Note(a) => (Action::Note, a),
-        // Non-log verbs don't produce entries — their replay has nothing
-        // to compare against.
-        _ => return Ok(None),
-    };
-
-    // The keys the field's spec bound at log time, as the entry recorded
-    // them (da-zv2jr) — never the spec as it stands now.
     let bound = entry.alias_chain.as_ref().and_then(JsonValue::as_array);
-    if let Some(words) = bound.and_then(|steps| steps.iter().find_map(|s| s.get("spec_keys"))) {
-        bind_spec_words(&mut log_args, serde_json::from_value(words.clone())?);
-    }
-    if let Some(types) = bound.and_then(|steps| steps.iter().find_map(|s| s.get("key_types"))) {
-        log_args.key_types = serde_json::from_value(types.clone())?;
+    let mut rows: Vec<Entry> = Vec::new();
+    for side in expanded.sides {
+        let side: Vec<String> = std::iter::once("datum".to_string()).chain(side).collect();
+        let cli = parse_argv(&side).map_err(|e| anyhow::anyhow!("parse_argv failed: {e}"))?;
+        let (action, mut log_args) = match cli.command {
+            Command::Occur(a) => (Action::Occur, a),
+            Command::Start(a) => (Action::Start, a),
+            Command::Stop(a) => (Action::Stop, a),
+            Command::Switch(a) => (Action::Switch, a),
+            Command::Add(a) => (Action::Add, a),
+            Command::Note(a) => (Action::Note, a),
+            // Non-log verbs don't produce entries — their replay has nothing
+            // to compare against.
+            _ => continue,
+        };
+        let first = rows.is_empty();
+
+        // The keys the field's spec bound at log time, as the entry recorded
+        // them (da-zv2jr) — never the spec as it stands now. They are this
+        // row's field's: another side's positionals bound to its own spec,
+        // which no row here recorded, so its failing to replay says nothing.
+        let ours = first || log_args.field_or_verb == entry.field;
+        if ours {
+            if let Some(words) =
+                bound.and_then(|steps| steps.iter().find_map(|s| s.get("spec_keys")))
+            {
+                bind_spec_words(&mut log_args, serde_json::from_value(words.clone())?);
+            }
+            if let Some(types) =
+                bound.and_then(|steps| steps.iter().find_map(|s| s.get("key_types")))
+            {
+                log_args.key_types = serde_json::from_value(types.clone())?;
+            }
+        }
+        let shape = match replay_side(entry, action, log_args, first) {
+            Ok(shape) => shape,
+            Err(_) if !ours => continue,
+            Err(e) => return Err(e),
+        };
+
+        // As `normalize_shared_at` and `merge_same_field_groups` read the
+        // line's sides: a side that states no time takes the first's.
+        let mut row = entry.clone();
+        row.hid = datum_core::entry::new_hid();
+        row.at = match shape.own_at {
+            Some(at) => at,
+            None => rows
+                .first()
+                .map_or(entry.at.clone(), |r: &Entry| r.at.clone()),
+        };
+        row.field = shape.field;
+        row.state = shape.state;
+        row.dur = shape.dur;
+        row.following_state = shape.following_state;
+        row.data = shape.data;
+        if let Ok((verb, _)) = datum_core::derive_verb(
+            row.state.clone(),
+            row.dur.as_ref(),
+            row.following_state.clone(),
+        ) {
+            row.verb = verb;
+        }
+        rows.push(row);
     }
 
+    // The first side's group is the row holding the line.
+    Ok(datum_core::db::merge_same_field_groups(rows)
+        .into_iter()
+        .next()
+        .map(|row| ReparsedShape {
+            field: row.field,
+            state: row.state,
+            dur: row.dur,
+            following_state: row.following_state,
+            data: row.data,
+            own_at: None,
+        }))
+}
+
+/// One side of a line, as `log_entry` reads it. `first` is the side that
+/// wrote the row, which alone carries the field's declaration (da-gvcen).
+fn replay_side(
+    entry: &Entry,
+    mut action: Action,
+    mut log_args: datum_parse::cli::LogArgs,
+    first: bool,
+) -> Result<ReparsedShape> {
     // An add's id word was its id when that is the id it stored (da-znksm).
     if positional_id(action, &log_args).map(|i| &log_args.rest[i]) == entry.id_structure.as_ref() {
         take_positional_id(action, &mut log_args)?;
@@ -186,6 +259,21 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
             .and_then(|d| d.pointer(&format!("/{}", key.replace('.', "/"))))
             .and_then(DatumTime::from_v2_json);
         later.insert(key, held.is_some_and(|t| t.utc == readings.second));
+    };
+    let stated = (parsed.extra_data.as_ref())
+        .and_then(|d| d.get("at"))
+        .and_then(DatumTime::from_v2_json);
+    let own_at = if log_args.time.omit_timestamp {
+        Some(None)
+    } else if stated.is_some() {
+        Some(stated)
+    } else if log_args.time.places() {
+        Some(Some(build_time_from_flags(
+            &log_args.time,
+            entry.create_time,
+        )?))
+    } else {
+        None
     };
     let mut extra_data = parsed.extra_data;
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
@@ -302,7 +390,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         extra_data = None;
     }
 
-    Ok(Some(ReparsedShape {
+    Ok(ReparsedShape {
         // The flex-field verbs land the field in `reserved.field`, as
         // `log_entry` reads it (da-5t94), and an `-F` value builds on it.
         field: compound_field(
@@ -321,10 +409,14 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         following_state: reserved.following_state.or_else(|| {
             let declared =
                 datum_core::track::declared_state(datum_core::track::verb_for_action(action));
-            entry.following_state.clone().filter(|fs| *fs == declared)
+            entry
+                .following_state
+                .clone()
+                .filter(|fs| first && *fs == declared)
         }),
         data: extra_data,
-    }))
+        own_at,
+    })
 }
 
 /// One field-level drift between the replayed shape and the stored row.

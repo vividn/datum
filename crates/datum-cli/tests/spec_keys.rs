@@ -653,3 +653,64 @@ fn the_output_flag_leaves_the_keys_bound() {
         assert_eq!(data[0].state, data[1].state, "{line:?}");
     }
 }
+
+/// da-ylkq8: the row a line of several sides stamps records its own field's
+/// keys, and a side of another field bound to that field's, so replay reads
+/// them for the first and neither fails nor borrows them for the second.
+#[test]
+fn reparse_replays_the_keys_of_the_first_side_only() {
+    let db = juice_db();
+    run_cli(
+        &["setup", "tea", "--verb", "occur", "--data-key", "kind"],
+        &db,
+    )
+    .unwrap();
+    run_cli(
+        &["occur", "juice", "2", "large", ",", "occur", "tea", "green"],
+        &db,
+    )
+    .unwrap();
+    let logged = logged_entries(&db, "juice")[0].clone();
+    assert_eq!(
+        logged_entries(&db, "tea")[0].data,
+        Some(serde_json::json!({"kind": "green"}))
+    );
+
+    db.conn()
+        .execute(
+            "UPDATE entries SET data = '{}' WHERE hid = ?1",
+            [&logged.hid.0],
+        )
+        .unwrap();
+    run_cli(&["reparse", &logged.hid.0, "--fix"], &db).unwrap();
+    assert_eq!(db.get_entry(&logged.hid.0).unwrap().data, logged.data);
+}
+
+/// da-ylkq8: a side of another field whose word bound to its own spec cannot
+/// replay, its keys recorded on no row here, and that says nothing of this
+/// row. The first side has no keys to lend it, so only passing over it keeps
+/// the row clean.
+#[test]
+fn reparse_passes_over_a_side_only_its_own_spec_could_bind() {
+    let db = fresh_db();
+    run_cli(
+        &["setup", "tea", "--verb", "occur", "--data-key", "kind"],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["occur", "a", "n=1", ",", "occur", "tea", "green"], &db).unwrap();
+    let logged = logged_entries(&db, "a")[0].clone();
+    assert_eq!(
+        logged_entries(&db, "tea")[0].data,
+        Some(serde_json::json!({"kind": "green"}))
+    );
+
+    db.conn()
+        .execute(
+            "UPDATE entries SET data = '{}' WHERE hid = ?1",
+            [&logged.hid.0],
+        )
+        .unwrap();
+    run_cli(&["reparse", &logged.hid.0, "--fix"], &db).unwrap();
+    assert_eq!(db.get_entry(&logged.hid.0).unwrap().data, logged.data);
+}
