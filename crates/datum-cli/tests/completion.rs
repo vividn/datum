@@ -305,7 +305,7 @@ fn an_entry_position_offers_last_and_recent_hids() {
     assert!(has(&found, hid), "{hid} missing from {found:?}");
     assert_eq!(env.complete(&format!("delete {}", &hid[..5])), [hid]);
     assert!(
-        has(&env.complete("undo _"), "_1"),
+        has(&env.complete("revert _"), "_1"),
         "the quick ids once `_` is typed"
     );
     let columns = env.complete(&format!("get {hid}::"));

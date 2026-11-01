@@ -440,7 +440,7 @@ fn an_undone_update_is_the_change_taken_back() {
 
     let docs = env.docs(&["undo", "--show", "json"]);
     assert_eq!(docs.len(), 1, "{docs:?}");
-    assert_eq!(docs[0]["action"], "UNDONE");
+    assert_eq!(docs[0]["action"], "REVERT");
     assert_eq!(docs[0]["action_color"], "#9a8cff");
     assert_eq!(docs[0]["hid"], hid);
     assert_eq!(
@@ -456,7 +456,7 @@ fn an_undone_update_is_the_change_taken_back() {
     let printed = strip_ansi(&env.run(&["undo"]));
     let header = printed.lines().next().unwrap();
     assert!(
-        header.starts_with(&format!("UNDONE {hid} tea:")) && header.contains("(the UPDATE of "),
+        header.starts_with(&format!("REVERT {hid} tea:")) && header.contains("(the UPDATE of "),
         "{printed}"
     );
     assert!(printed.contains("size: \"large\" ← \"small\""), "{printed}");
@@ -603,7 +603,7 @@ fn a_bare_undo_of_a_list_echoes_each_entry_and_redo_the_update() {
     let hids: Vec<_> = docs.iter().map(|d| d["hid"].as_str().unwrap()).collect();
     assert!(hids.contains(&a) && hids.contains(&b), "{hids:?}");
     for doc in &docs {
-        assert_eq!(doc["action"], "UNDONE");
+        assert_eq!(doc["action"], "REVERT");
         assert_eq!(doc["undid"], docs[0]["undid"], "one command undone");
         assert_eq!(doc["undid"]["action"], "UPDATE");
         assert_eq!(doc["changes"][0]["before"], "5");

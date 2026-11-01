@@ -50,7 +50,8 @@ const GRAMMAR = grammarOf([
 	]),
 	entry('history', ['datum history <ID_OR_SLUG> [--version N | --diff A B]']),
 	entry('delete', ['datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run] [--all-or-nothing]'], [], ['del']),
-	entry('undo', ['datum undo [ID_OR_SLUG] [--to-version N]']),
+	entry('undo', ['datum undo [--skip-changed]']),
+	entry('revert', ['datum revert <ID_OR_SLUG[,ID_OR_SLUG]...> [--to-version N]', 'datum revert <FIELD[,FIELD]...>']),
 	entry('flag', ['datum flag <FIELD> [COMMENT...]']),
 	entry('reparse', ['datum reparse <HID>... [--fix]']),
 	entry('conflicts', ['datum conflicts resolve <HID> [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]']),
@@ -75,8 +76,8 @@ describe('what the grammar says a command takes', () => {
 	test('an id right after the name — one, or a comma list', () => {
 		const id = (name) => GRAMMAR.get(name).id;
 		assert.deepEqual(
-			['get', 'undo', 'history', 'reparse', 'update', 'retime', 'delete', 'del'].map(id),
-			['one', 'one', 'one', 'one', 'list', 'list', 'list', 'list']
+			['get', 'history', 'reparse', 'revert', 'update', 'retime', 'delete', 'del'].map(id),
+			['one', 'one', 'one', 'list', 'list', 'list', 'list', 'list']
 		);
 		// A FIELD is not an id, and neither is an id behind a subcommand.
 		assert.deepEqual(['moment', 'flag', 'now', 'conflicts'].map(id), [false, false, false, false]);
@@ -123,7 +124,7 @@ describe('what a tap runs rather than fills', () => {
 	test('the word after the id is read as a word, a flag group is not', () => {
 		const more = (name) => GRAMMAR.get(name).more;
 		assert.deepEqual(['update', 'retime'].map(more), [true, true]);
-		assert.deepEqual(['get', 'history', 'delete', 'undo', 'reparse'].map(more), [false, false, false, false, false]);
+		assert.deepEqual(['get', 'history', 'delete', 'revert', 'reparse'].map(more), [false, false, false, false, false]);
 	});
 
 	// Review 6642/6673: a stray closer must not take the depth below zero,
@@ -133,9 +134,9 @@ describe('what a tap runs rather than fills', () => {
 		assert.equal(takesOf(entry('x', ['datum x <HID> [--fix]] VALUE'])).more, true);
 	});
 
-	test('one hid: delete, get, history, undo run; update and retime fill', () => {
-		assert.deepEqual(firing([one]), ['undo', 'delete', 'get', 'history']);
-		assert.deepEqual(firing([two]), ['delete'], 'only a comma list takes two');
+	test('one hid: delete, revert, get, history run; update and retime fill', () => {
+		assert.deepEqual(firing([one]), ['delete', 'revert', 'get', 'history']);
+		assert.deepEqual(firing([two]), ['delete', 'revert'], 'only a comma list takes two');
 	});
 
 	test('a time beside the hid completes retime, and only a command that takes -t', () => {
@@ -281,18 +282,18 @@ describe('which commands are active under the pills', () => {
 	});
 
 	test('one hid: the id commands, the rest hidden', () => {
-		assert.deepEqual(active([one]), ['undo', 'delete', 'update', 'retime', 'get', 'history']);
+		assert.deepEqual(active([one]), ['delete', 'update', 'retime', 'revert', 'get', 'history']);
 		assert.equal(active([one]).includes('moment'), false);
 	});
 
 	test('two hids: what takes a comma list', () => {
-		assert.deepEqual(active([two]), ['delete', 'update', 'retime']);
+		assert.deepEqual(active([two]), ['delete', 'update', 'retime', 'revert']);
 	});
 
 	test('a -t pill: what takes -t', () => {
 		const names = active([time]);
 		for (const n of ['moment', 'end', 'retime', 'tail']) assert.ok(names.includes(n), n);
-		for (const n of ['now', 'get', 'delete', 'undo']) assert.ok(!names.includes(n), n);
+		for (const n of ['now', 'get', 'delete', 'undo', 'revert']) assert.ok(!names.includes(n), n);
 	});
 
 	// da-8810n, and the trap the bead names: `fits` FAILS OPEN, so a kind it
@@ -336,10 +337,11 @@ describe('a pill’s role: argument or context', () => {
 	});
 
 	test('with a context field, the hid’s commands come back', () => {
-		// The positive arm: without roles a field and an hid leave Help alone.
+		// The positive arm: without roles a field and an hid leave Help alone, and
+		// `revert`, whose grammar has a place for either.
 		assert.deepEqual(
 			[...GRAMMAR.keys()].filter((name) => [mood, one].every((p) => fits(GRAMMAR.get(name), p))),
-			[]
+			['revert']
 		);
 		const names = active([mood, one]);
 		assert.deepEqual(names, active([one]));

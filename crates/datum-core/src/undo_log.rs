@@ -15,15 +15,11 @@
 //! back as they were before it and marks it undone, `redo` re-applies the
 //! oldest undone one, and a new action drops every undone one. An undo that
 //! left some entries as another copy left them (`--skip-changed`) records
-//! which, and its redo leaves them too (da-2ahs4).
-//!
-//! `undo <field>` takes back part of an action (da-il29m): the field's entries
-//! in it, which `undo_taken` holds while the rest of the action stands, so a
-//! bare `undo` takes back the rest next. Every undo is a STEP, numbered in the
-//! order they ran: `undone` is the step that took back the action's standing
-//! entries, `undo_taken.step` the one that took a part, and `redo` re-applies
-//! the newest step whole, so `undo a,b` is one redo. The tables are
-//! this copy's alone: nothing here syncs, and an entry a sync changed after
+//! which, and its redo leaves them too (da-2ahs4). `revert` is a command like
+//! any other (da-k5vg1): its rows are an action of their own, which `undo`
+//! takes back; `revert <field>` finds what it takes with [`last_on`], and says
+//! what it took on its own row (`took`), so the next goes on past it. The table
+//! is this copy's alone: nothing here syncs, and an entry a sync changed after
 //! an action is refused rather than reverted ([`blocker`]).
 
 use std::cell::Cell;
@@ -31,6 +27,7 @@ use std::cell::Cell;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 
+use crate::entry::Entry;
 use crate::error::Result;
 use crate::history::ChangeKind;
 use crate::ids::Hid;
@@ -64,7 +61,7 @@ pub fn scope<T>(f: impl FnOnce() -> T) -> T {
 pub(crate) fn current(conn: &Connection, kind: ChangeKind) -> Result<Option<i64>> {
     if !matches!(
         kind,
-        ChangeKind::Create | ChangeKind::UserEdit | ChangeKind::Retime
+        ChangeKind::Create | ChangeKind::UserEdit | ChangeKind::Retime | ChangeKind::Revert
     ) {
         return Ok(None);
     }
@@ -83,11 +80,7 @@ pub(crate) fn current(conn: &Connection, kind: ChangeKind) -> Result<Option<i64>
     }
     // A new action drops the redo tail: what was undone can no longer be
     // redone over it, as in an editor.
-    conn.execute_batch(
-        "DELETE FROM undo_taken WHERE action_id IN (SELECT id FROM undo_actions WHERE undone <> 0);
-         UPDATE undo_taken SET step = -1 WHERE step > 0;
-         DELETE FROM undo_actions WHERE undone <> 0;",
-    )?;
+    conn.execute("DELETE FROM undo_actions WHERE undone = 1", [])?;
     conn.execute(
         "INSERT INTO undo_actions (time) VALUES (?1)",
         [Utc::now().to_rfc3339()],
@@ -134,10 +127,8 @@ pub struct Member {
     pub last: u32,
 }
 
-/// An action on the stack, with the entries of it in question (those standing,
-/// or for a redo those its step took back), and those its undo left as they
-/// are. A redo's step is one Action, whatever actions it reached: `id` is then
-/// the step's number.
+/// An action on the stack, with every entry it wrote, and those of them its
+/// undo left as they are.
 #[derive(Debug, Clone)]
 pub struct Action {
     pub id: i64,
@@ -146,37 +137,49 @@ pub struct Action {
     pub skipped: Vec<Hid>,
 }
 
-/// The action a bare `undo` reverts next: the newest one not undone.
+/// The action a bare `undo` reverts next: the newest one not undone, without
+/// the entries a partial undo from schema 77 already took (`skipped`).
 pub fn cursor(conn: &Connection) -> Result<Option<Action>> {
-    load(conn, "undone = 0 ORDER BY id DESC")
+    let mut action = load(conn, "undone = 0 ORDER BY id DESC")?;
+    if let Some(a) = &mut action {
+        let skipped = &a.skipped;
+        a.members.retain(|m| !skipped.contains(&m.hid));
+    }
+    Ok(action)
 }
 
-/// The newest action with an entry of `field` standing, older than `below`,
-/// holding only those entries: the field's rows, and its spec's.
+/// The newest action older than `below` that wrote `field` or its spec, is no
+/// `revert` and no live revert took back there ([`set_took`]), holding only those
+/// entries: what `revert <field>` takes back.
 pub fn last_on(conn: &Connection, field: &str, below: i64) -> Result<Option<Action>> {
     let spec = format!("spec:{field}");
     let id: Option<i64> = conn.query_row(
-        "SELECT MAX(id) FROM (
-             SELECT a.id FROM entries e
-               JOIN entry_history h ON h.entry_hid = e.hid
-               JOIN undo_actions a ON a.id = h.action_id
-              WHERE (e.field = ?1 OR e.slug = ?2) AND a.undone = 0 AND a.id < ?3
-                AND NOT EXISTS (SELECT 1 FROM undo_taken t
-                                 WHERE t.action_id = a.id AND t.hid = e.hid)
-             UNION ALL
-             SELECT a.id FROM undo_actions a, json_each(a.untracked) j
-               JOIN entries e ON e.hid = j.value
-              WHERE a.untracked IS NOT NULL AND (e.field = ?1 OR e.slug = ?2)
-                AND a.undone = 0 AND a.id < ?3
-                AND NOT EXISTS (SELECT 1 FROM undo_taken t
-                                 WHERE t.action_id = a.id AND t.hid = e.hid))",
+        &format!(
+            "SELECT MAX(id) FROM (
+                 SELECT a.id FROM entries e
+                   JOIN entry_history h ON h.entry_hid = e.hid
+                   JOIN undo_actions a ON a.id = h.action_id
+                  WHERE (e.field = ?1 OR e.slug = ?2) AND a.undone = 0 AND a.id < ?3
+                    AND h.change_kind <> '{revert}' AND NOT {took}
+                 UNION ALL
+                 SELECT a.id FROM undo_actions a, json_each(a.untracked) j
+                   JOIN entries e ON e.hid = j.value
+                  WHERE a.untracked IS NOT NULL AND (e.field = ?1 OR e.slug = ?2)
+                    AND a.undone = 0 AND a.id < ?3 AND NOT {took})",
+            revert = ChangeKind::Revert.as_str(),
+            took = "EXISTS (SELECT 1 FROM undo_actions r, json_each(r.took) t
+                             WHERE r.took IS NOT NULL AND r.undone = 0
+                               AND t.value ->> 0 = a.id AND t.value ->> 1 = ?1)",
+        ),
         params![field, spec, below],
         |r| r.get(0),
     )?;
     let Some(id) = id else {
         return Ok(None);
     };
-    let mut action = action_at(conn, id, 0)?;
+    let Some(mut action) = load(conn, &format!("id = {id}"))? else {
+        return Ok(None);
+    };
     let mut on_field =
         conn.prepare_cached("SELECT 1 FROM entries WHERE hid = ?1 AND (field = ?2 OR slug = ?3)")?;
     let mut members = Vec::new();
@@ -189,50 +192,32 @@ pub fn last_on(conn: &Connection, field: &str, below: i64) -> Result<Option<Acti
     Ok(Some(action))
 }
 
-/// What a bare `redo` re-applies next: the newest undo step, as one action.
-pub fn next_redo(conn: &Connection) -> Result<Option<Action>> {
-    let step: Option<i64> = conn.query_row(
-        "SELECT MAX(step) FROM (
-             SELECT undone AS step FROM undo_actions a
-              WHERE undone <> 0 AND (untracked IS NOT NULL
-                    OR EXISTS (SELECT 1 FROM entry_history WHERE action_id = a.id))
-             UNION ALL SELECT step FROM undo_taken WHERE step > 0)",
-        [],
-        |r| r.get(0),
-    )?;
-    let Some(step) = step else {
-        return Ok(None);
-    };
-    let mut stmt = conn.prepare(
-        "SELECT id FROM undo_actions WHERE undone = ?1
-         UNION SELECT action_id FROM undo_taken WHERE step = ?1 ORDER BY 1",
-    )?;
-    let ids = stmt
-        .query_map([step], |r| r.get::<_, i64>(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let mut merged: Option<Action> = None;
-    for id in ids {
-        let action = action_at(conn, id, step)?;
-        match &mut merged {
-            None => merged = Some(Action { id: step, ..action }),
-            Some(all) => {
-                all.time = all.time.max(action.time);
-                all.members.extend(action.members);
-                all.skipped.extend(action.skipped);
-            }
-        }
+/// Record on the running action, a `revert <field>`, which action it took back
+/// on each field. It lasts as long as the revert stands: undone, it says nothing.
+pub fn set_took(conn: &Connection, took: &[(i64, String)]) -> Result<()> {
+    if let Some(id) = current(conn, ChangeKind::Revert)? {
+        conn.execute(
+            "UPDATE undo_actions SET took = ?2 WHERE id = ?1",
+            params![id, serde_json::to_string(took)?],
+        )?;
     }
-    Ok(merged)
+    Ok(())
 }
 
-/// The number the next undo step takes.
-fn next_step(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT 1 + MAX(COALESCE((SELECT MAX(undone) FROM undo_actions WHERE undone <> 0), 0),
-                        COALESCE((SELECT MAX(step) FROM undo_taken), 0))",
-        [],
-        |r| r.get(0),
-    )?)
+/// Whether taking `member` back would change `current`: an entry already as it
+/// was before its action (reverted since) has nothing left to move.
+pub fn would_move(conn: &Connection, member: &Member, current: &Entry) -> Result<bool> {
+    if member.first <= 1 {
+        return Ok(current.deleted_at.is_none());
+    }
+    let before =
+        crate::history::state_at_version(conn, &member.hid, member.first - 1, Some(current))?;
+    Ok(before.is_none_or(|b| b.content_hash != current.content_hash))
+}
+
+/// The action a bare `redo` re-applies next: the oldest one undone.
+pub fn next_redo(conn: &Connection) -> Result<Option<Action>> {
+    load(conn, "undone = 1 ORDER BY id ASC")
 }
 
 /// Mark an action undone, leaving `skipped` as they are.
@@ -241,74 +226,18 @@ pub fn set_undone(conn: &Connection, id: i64, skipped: &[Hid]) -> Result<()> {
         .then(|| serde_json::to_string(skipped))
         .transpose()?;
     conn.execute(
-        "UPDATE undo_actions SET undone = ?3, skipped = ?2 WHERE id = ?1",
-        params![id, skipped, next_step(conn)?],
+        "UPDATE undo_actions SET undone = 1, skipped = ?2 WHERE id = ?1",
+        params![id, skipped],
     )?;
     Ok(())
 }
 
-/// One undo step taking these entries of these actions. An action left with
-/// nothing standing is undone; otherwise the rest of it stands.
-pub fn take(conn: &Connection, parts: &[(i64, Hid)]) -> Result<()> {
-    let step = next_step(conn)?;
-    let mut actions: Vec<i64> = parts.iter().map(|(id, _)| *id).collect();
-    actions.sort_unstable();
-    actions.dedup();
-    for id in actions {
-        let named = |hid: &Hid| parts.iter().any(|(i, h)| *i == id && h == hid);
-        let members = action_at(conn, id, 0)?.members;
-        if members.iter().all(|m| named(&m.hid)) {
-            conn.execute(
-                "UPDATE undo_actions SET undone = ?2 WHERE id = ?1",
-                params![id, step],
-            )?;
-            continue;
-        }
-        for member in members.iter().filter(|m| named(&m.hid)) {
-            conn.execute(
-                "INSERT INTO undo_taken (action_id, hid, step) VALUES (?1, ?2, ?3)",
-                params![id, member.hid.as_str(), step],
-            )?;
-        }
-    }
-    Ok(())
-}
-
-/// Mark a step redone: what it took back stands again, nothing left out.
-pub fn set_redone(conn: &Connection, step: i64) -> Result<()> {
+/// Mark an action redone: whole again, nothing left out.
+pub fn set_redone(conn: &Connection, id: i64) -> Result<()> {
     conn.execute(
-        "UPDATE undo_actions SET undone = 0, skipped = NULL WHERE undone = ?1",
-        [step],
+        "UPDATE undo_actions SET undone = 0, skipped = NULL WHERE id = ?1",
+        [id],
     )?;
-    conn.execute("DELETE FROM undo_taken WHERE step = ?1", [step])?;
-    Ok(())
-}
-
-/// A spooled undo landing: its ops name what it took back, each from the
-/// newest action where that entry stands.
-pub fn took_back(conn: &Connection, hids: &[&str]) -> Result<()> {
-    let mut parts = Vec::new();
-    for hid in hids {
-        let id: Option<i64> = conn.query_row(
-            "SELECT MAX(a.id) FROM undo_actions a JOIN entry_history h ON h.action_id = a.id
-              WHERE h.entry_hid = ?1 AND a.undone = 0
-                AND NOT EXISTS (SELECT 1 FROM undo_taken t
-                                 WHERE t.action_id = a.id AND t.hid = ?1)",
-            [hid],
-            |r| r.get(0),
-        )?;
-        parts.extend(id.map(|id| (id, Hid::from(hid.to_string()))));
-    }
-    take(conn, &parts)
-}
-
-/// A spooled redo landing: the newest step, when its ops are of it.
-pub fn put_back(conn: &Connection, hids: &[&str]) -> Result<()> {
-    if let Some(step) = next_redo(conn)? {
-        if step.members.iter().any(|m| hids.contains(&m.hid.as_str())) {
-            set_redone(conn, step.id)?;
-        }
-    }
     Ok(())
 }
 
@@ -343,34 +272,24 @@ pub fn blocker(conn: &Connection, member: &Member) -> Result<Option<(u32, Change
     Ok(row.and_then(|(v, kind)| kind.parse().ok().map(|k| (v, k))))
 }
 
-/// The first action matching `filter` that still names an entry, as it stands:
-/// one whose rows are gone (a `restore --hard`, a forgotten entry) has nothing
-/// to move.
+/// The first action matching `filter` that still names an entry: one whose
+/// rows are gone (a `restore --hard`, a forgotten entry) has nothing to move.
 fn load(conn: &Connection, filter: &str) -> Result<Option<Action>> {
-    let id: Option<i64> = conn
+    let row: Option<(i64, String, Option<String>, Option<String>)> = conn
         .query_row(
             &format!(
-                "SELECT id FROM undo_actions a
+                "SELECT id, time, untracked, skipped FROM undo_actions a
                  WHERE (untracked IS NOT NULL
                         OR EXISTS (SELECT 1 FROM entry_history WHERE action_id = a.id))
                    AND {filter} LIMIT 1"
             ),
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    id.map(|id| action_at(conn, id, 0)).transpose()
-}
-
-/// Action `id` with the members a step took back: an entry's step is its
-/// `undo_taken` row's, else the action's `undone`, and 0 is standing.
-fn action_at(conn: &Connection, id: i64, step: i64) -> Result<Action> {
-    let (time, undone, untracked, skipped): (String, i64, Option<String>, Option<String>) = conn
-        .query_row(
-            "SELECT time, undone, untracked, skipped FROM undo_actions WHERE id = ?1",
-            [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )?;
+    let Some((id, time, untracked, skipped)) = row else {
+        return Ok(None);
+    };
     let mut stmt = conn.prepare(
         "SELECT entry_hid, MIN(version), MAX(version) FROM entry_history
          WHERE action_id = ?1 GROUP BY entry_hid ORDER BY MIN(rowid)",
@@ -396,24 +315,13 @@ fn action_at(conn: &Connection, id: i64, step: i64) -> Result<Action> {
         first: 1,
         last: 0,
     }));
-    let mut taken =
-        conn.prepare_cached("SELECT step FROM undo_taken WHERE action_id = ?1 AND hid = ?2")?;
-    let mut held = Vec::new();
-    for member in members {
-        let of: Option<i64> = taken
-            .query_row(params![id, member.hid.as_str()], |r| r.get(0))
-            .optional()?;
-        if of.unwrap_or(undone) == step {
-            held.push(member);
-        }
-    }
     let time = DateTime::parse_from_rfc3339(&time)
         .map(|t| t.with_timezone(&Utc))
         .unwrap_or_else(|_| Utc::now());
-    Ok(Action {
+    Ok(Some(Action {
         id,
         time,
-        members: held,
+        members,
         skipped,
-    })
+    }))
 }

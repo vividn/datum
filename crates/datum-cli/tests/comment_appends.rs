@@ -80,7 +80,7 @@ fn undo_of_delete_c_restores_the_row_exactly() {
         }
         let before = logged_entries(&db, "x")[0].data.clone();
         run_cli(&["delete", e.hid.as_str(), "-c", "why"], &db).unwrap();
-        run_cli(&["undo", e.hid.as_str()], &db).unwrap();
+        run_cli(&["revert", e.hid.as_str()], &db).unwrap();
         let live = logged_entries(&db, "x");
         (
             live.len() == 1 && live[0].data == before,

@@ -301,17 +301,17 @@ fn every_change_is_one_op_with_its_own_line() {
         (Some("delete"), Some(true))
     );
 
-    let op = one_op(&a, &["undo", &hid]);
+    let op = one_op(&a, &["revert", &hid]);
     assert_eq!(
         (op["kind"].as_str(), op["effect"]["deleted"].as_bool()),
-        (Some("undo"), Some(false))
+        (Some("revert"), Some(false))
     );
 
-    let op = one_op(&a, &["redo", &hid]);
-    assert_eq!(op["kind"], "redo");
-
-    let op = one_op(&a, &["undo", &hid]);
+    let op = one_op(&a, &["undo"]);
     assert_eq!(op["kind"], "undo");
+
+    let op = one_op(&a, &["redo"]);
+    assert_eq!(op["kind"], "redo");
 
     one_op(&a, &["rekey", &hid, "size=small"]);
 }
@@ -498,17 +498,15 @@ fn undo_skip_changed_with_every_entry_changed_moves_only_the_cursor() {
     assert_eq!(a.data(&coffee)["n"], 3, "the other copy's change stays");
 }
 
-/// `--skip-changed` is the bare undo's: beside a named entry, which steps
-/// alone already, it is refused and moves nothing.
+/// `--skip-changed` is the bare undo's: `revert` has no such flag, and moves
+/// nothing.
 #[test]
-fn undo_skip_changed_with_a_named_entry_is_refused() {
+fn revert_refuses_skip_changed() {
     let a = Copy::new();
     a.ok(&["occur", "coffee", "n=1"]);
     let coffee = a.hid("coffee");
-    let out = a.run(&["undo", &coffee, "--skip-changed"], "");
-    assert!(!out.status.success(), "a named undo must refuse the flag");
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("--skip-changed is for a bare `undo`"), "{err}");
+    let out = a.run(&["revert", &coffee, "--skip-changed"], "");
+    assert!(!out.status.success(), "revert must refuse the flag");
     assert!(!a.deleted(&coffee), "nothing moved");
 }
 
@@ -1056,7 +1054,7 @@ fn a_delete_against_an_undelete_shows_on_both_whichever_stands() {
     let hid = a.hid("coffee");
     a.ok(&["delete", &hid]);
     b.ok(&["delete", &hid]);
-    b.ok(&["undo", &hid]);
+    b.ok(&["revert", &hid]);
     converged(&a, &b);
     assert_eq!(a.conflicts(&hid), b.conflicts(&hid));
     assert_eq!(sides(&a.conflicts(&hid), "deleted"), [true, false]);
@@ -2294,16 +2292,16 @@ fn a_database_that_never_synced_shows_a_version_per_command() {
         .status
         .success());
 
-    a.ok(&["undo", &hid, "--to-version", "1"]);
+    a.ok(&["revert", &hid, "--to-version", "1"]);
     assert_eq!(a.data(&hid), serde_json::json!({ "cups": 2 }));
     let (text, json) = history(&a, &hid);
-    assert_eq!(json[0]["kind"], "undo", "{text}");
+    assert_eq!(json[0]["kind"], "revert", "{text}");
     assert_eq!(json[0]["version"], 4);
     assert!(
         text.contains("        set data.cups=2, unset data.with"),
         "{text}"
     );
-    let refused = a.run(&["undo", &hid, "--to-version", "9"], "");
+    let refused = a.run(&["revert", &hid, "--to-version", "9"], "");
     assert!(String::from_utf8_lossy(&refused.stderr).contains("entry has 4 version(s)"));
 }
 
@@ -2318,7 +2316,7 @@ fn an_entry_older_than_its_ops_opens_its_history_with_a_baseline() {
     let hid = a.hid("coffee");
     assert!(a.ok(&["history", &hid]).contains("(no history recorded)"));
     assert!(!a
-        .run(&["undo", &hid, "--to-version", "1"], "")
+        .run(&["revert", &hid, "--to-version", "1"], "")
         .status
         .success());
     a.ok(&["update", &hid, "cups=3"]);
@@ -2326,7 +2324,7 @@ fn an_entry_older_than_its_ops_opens_its_history_with_a_baseline() {
     assert_eq!(json[1]["kind"], "baseline", "{text}");
     assert_eq!(json[1]["raw"], "occur coffee cups=2", "{text}");
     assert_eq!(json[0]["raw"], format!("update {hid} cups=3"), "{text}");
-    a.ok(&["undo", &hid, "--to-version", "1"]);
+    a.ok(&["revert", &hid, "--to-version", "1"]);
     assert_eq!(a.data(&hid)["cups"], 2);
 }
 
@@ -2989,7 +2987,7 @@ fn undoing_a_move_onto_a_reused_old_slug_refuses_a_live_row_and_moves_a_deleted_
         assert_ne!(calm, happy, "{args:?}");
         converged(&a, &b);
         // Live: the calm entry holds the slug.
-        let out = a.run(&["undo", &happy], "");
+        let out = a.run(&["revert", &happy], "");
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{args:?}: {err}");
         assert!(err.contains(&format!("entry {calm} holds it now")), "{err}");

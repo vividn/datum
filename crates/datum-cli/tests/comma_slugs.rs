@@ -78,11 +78,10 @@ fn a_slug_with_commas_is_one_id() {
             ok(&["history", slug]),
             ok(&["why", slug]),
             ok(&["update", slug, "n=1"]),
-            ok(&["undo", slug]),
-            ok(&["redo", slug]),
+            ok(&["revert", slug]),
             ok(&["delete", slug]),
         ],
-        [true; 8],
+        [true; 7],
     );
     assert!(
         logged_entries(&db, "tx").is_empty(),

@@ -4,7 +4,7 @@
 //! with its stdout on a pipe whose read end is already closed, then an
 //! `undo`: it must revert what that command touched. A write is what a bare
 //! `undo` reverts; a `get` moves only `_LAST`, so after one it is
-//! `undo _LAST` (da-z0zh3).
+//! `revert _LAST` (da-z0zh3).
 //! A closed read end is the strict form of `| head`: the first write fails.
 
 use std::path::PathBuf;
@@ -91,23 +91,23 @@ fn a_cut_off_log_is_what_a_bare_undo_reverts() {
 }
 
 #[test]
-fn a_cut_off_get_is_what_undo_last_reverts() {
+fn a_cut_off_get_is_what_revert_last_reverts() {
     let env = Env::new();
     let tea = env.occur("tea", "0900");
     let coffee = env.occur("coffee", "0910");
     env.occur("water", "0920");
     env.cut_off(&["get", &format!("{tea},{coffee}")]);
-    env.ok(&["undo", "_LAST"]);
+    env.ok(&["revert", "_LAST"]);
     assert_eq!(env.live(), ["water=null"]);
 }
 
 #[test]
-fn a_cut_off_get_search_is_what_undo_last_reverts() {
+fn a_cut_off_get_search_is_what_revert_last_reverts() {
     let env = Env::new();
     env.occur("tea", "0900");
     env.occur("water", "0920");
     env.cut_off(&["get", "tea", "field=tea"]);
-    env.ok(&["undo", "_LAST"]);
+    env.ok(&["revert", "_LAST"]);
     assert_eq!(env.live(), ["water=null"]);
 }
 
@@ -162,42 +162,42 @@ fn a_cut_off_kit_install_is_what_a_bare_undo_reverts() {
     assert!(coffee().contains("No spec defined"), "{}", coffee());
 }
 
-// `undo <hid>` takes the step a bare `undo` takes (da-ksxkx): a create is
-// deleted, spec and all, and the next `undo` brings it back.
+// `revert <hid>` takes the step a bare `undo` takes (da-ksxkx): a create is
+// deleted, spec and all, and the next `revert` brings it back.
 #[test]
-fn a_named_undo_of_a_create_deletes_it() {
+fn a_revert_of_a_create_deletes_it() {
     let env = Env::new();
     let tea = env.occur("tea", "0900");
-    env.ok(&["undo", &tea]);
+    env.ok(&["revert", &tea]);
     assert_eq!(env.live(), Vec::<String>::new());
     let spec = || String::from_utf8(env.ok(&["setup", "tea", "--json"]).stdout).unwrap();
     assert!(spec().contains("No spec defined"), "{}", spec());
-    env.ok(&["undo", &tea]);
+    env.ok(&["revert", &tea]);
     assert_eq!(env.live(), ["tea=null"]);
     let coffee = env.occur("coffee", "0910");
     let water = env.occur("water", "0920");
-    env.ok(&["undo", &format!("{coffee},{water}")]);
+    env.ok(&["revert", &format!("{coffee},{water}")]);
     assert_eq!(env.live(), ["tea=null"]);
 }
 
 #[test]
-fn a_named_undo_steps_an_edit_back_and_a_delete_back() {
+fn a_revert_steps_an_edit_back_and_a_delete_back() {
     let env = Env::new();
     let tea = env.occur("tea", "0900");
     let coffee = env.occur("coffee", "0910");
     env.ok(&["update", &tea, "state=green"]);
     env.ok(&["delete", &coffee]);
-    env.ok(&["undo", &format!("{tea},{coffee}")]);
+    env.ok(&["revert", &format!("{tea},{coffee}")]);
     assert_eq!(env.live(), ["tea=null", "coffee=null"]);
 }
 
 // A list records every step before it echoes any (da-ki5j3).
 #[test]
-fn a_cut_off_named_undo_list_undoes_every_entry() {
+fn a_cut_off_revert_list_reverts_every_entry() {
     let env = Env::new();
     let tea = env.occur("tea", "0900");
     let coffee = env.occur("coffee", "0910");
     env.ok(&["update", &format!("{tea},{coffee}"), "state=green"]);
-    env.cut_off(&["undo", &format!("{tea},{coffee}")]);
+    env.cut_off(&["revert", &format!("{tea},{coffee}")]);
     assert_eq!(env.live(), ["tea=null", "coffee=null"]);
 }

@@ -75,7 +75,7 @@ async function run(app, name) {
 	assert.equal(await app.page.locator('.prompt-bar input').inputValue(), '', 'the tap put something on the line');
 }
 
-const ID_COMMANDS = ['undo', 'redo', 'help', 'delete', 'update', 'retime', 'get', 'history'];
+const ID_COMMANDS = ['help', 'delete', 'update', 'retime', 'revert', 'get', 'history'];
 
 describe('a tap on a tail row', () => {
 	test('loads its hid as a pill; only the id commands are drawn; get runs on it', async () => {

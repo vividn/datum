@@ -807,10 +807,10 @@ mod tests {
         assert_eq!(hist[0].change_kind, ChangeKind::UserEdit);
         assert_eq!(hist[0].snapshot.slug, stamped_slug);
 
-        // Undo restores the old time AND the old slug.
-        crate::commands::undo::undo(
-            crate::args::UndoArgs {
-                id_or_slug: Some(after.slug.to_string()),
+        // Revert restores the old time AND the old slug.
+        crate::commands::undo::revert(
+            crate::args::RevertArgs {
+                id_or_slug: after.slug.to_string(),
                 ..Default::default()
             },
             &db,

@@ -6,7 +6,7 @@
 // a layout is an ordinary entry of field `layout` in a second datum database,
 // slug `layout:<name>`, the whole `Layout` as its data, and it syncs the way
 // any database does. Saving in place is `update`, which leaves the old tree
-// in the entry's history; restoring an older one is `undo`. Everything goes
+// in the entry's history; restoring an older one is `revert`. Everything goes
 // through `run(argv)`, and what comes back is read from the CLI's own JSON.
 //
 // TWO STORES, ONE NAME SPACE (da-gg0v). vividn, 2026-09-15 18:53: "layouts
@@ -33,7 +33,7 @@ import {
 	kitsArgv,
 	layoutHistoryArgv,
 	layoutsArgv,
-	layoutUndoArgv,
+	layoutRevertArgv,
 	newLayoutArgv,
 	updateLayoutArgv
 } from '../calls.js';
@@ -274,7 +274,7 @@ export async function versions(name: string): Promise<{ version: number; modifyT
  * nothing is lost by restoring. Resolves with the tree now saved.
  */
 export async function restore(name: string, version?: number): Promise<Layout> {
-	await datum(...layoutUndoArgv(name, version));
+	await datum(...layoutRevertArgv(name, version));
 	return loadLayout(name);
 }
 

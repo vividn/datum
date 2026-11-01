@@ -547,7 +547,7 @@ fn subprocess_redo_restores_the_undone_state_exactly_once() {
     let before = env.run(&["get", &hid, "--show", "json"]);
     assert_ok(&before, "get before undo");
 
-    assert_ok(&env.run(&["undo", &hid]), "undo");
+    assert_ok(&env.run(&["undo"]), "undo");
     let undone = env.run(&["get", &hid, "--show", "json"]);
     assert_ne!(
         String::from_utf8_lossy(&undone.stdout),
@@ -555,7 +555,7 @@ fn subprocess_redo_restores_the_undone_state_exactly_once() {
         "the undo must actually move the entry"
     );
 
-    assert_ok(&env.run(&["redo", &hid]), "redo");
+    assert_ok(&env.run(&["redo"]), "redo");
     let after = env.run(&["get", &hid, "--show", "json"]);
     assert_eq!(
         String::from_utf8_lossy(&after.stdout),
@@ -563,7 +563,7 @@ fn subprocess_redo_restores_the_undone_state_exactly_once() {
         "redo must restore the pre-undo state byte for byte"
     );
 
-    let again = env.run(&["redo", &hid]);
+    let again = env.run(&["redo"]);
     assert_eq!(
         again.status.code(),
         Some(1),

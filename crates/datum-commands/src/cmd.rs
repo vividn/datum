@@ -408,6 +408,7 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         Command::Rename(args) => commands::rename::rename(args, db),
         Command::Undo(args) => commands::undo::undo(args, db),
         Command::Redo(args) => commands::undo::redo(args, db),
+        Command::Revert(args) => commands::undo::revert(args, db),
         Command::History(args) => commands::history::history(args, db),
         Command::Why(args) => commands::why::why(args, db),
         Command::Spec(sub) => commands::spec::spec(sub, db),
@@ -1537,13 +1538,6 @@ mod tests {
 
     // ─── B7: undo via soft-delete tombstone ─────────────────────────────────
 
-    fn undo_args(slug: Option<&str>) -> UndoArgs {
-        UndoArgs {
-            id_or_slug: slug.map(str::to_string),
-            ..Default::default()
-        }
-    }
-
     #[test]
     fn undo_restores_most_recent_delete() {
         use datum_core::db::Db;
@@ -1560,7 +1554,7 @@ mod tests {
         datum_core::undo_log::scope(|| db.soft_delete_entry(&doomed_id)).unwrap();
         assert_eq!(datum_core::test_util::logged_entries(&db, "mood").len(), 2);
 
-        crate::commands::undo::undo(undo_args(None), &db).unwrap();
+        crate::commands::undo::undo(UndoArgs::default(), &db).unwrap();
 
         let live = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(live.len(), 3);
@@ -1589,14 +1583,14 @@ mod tests {
             )
             .unwrap();
 
-        crate::commands::undo::undo(undo_args(None), &db).unwrap();
+        crate::commands::undo::undo(UndoArgs::default(), &db).unwrap();
         let live = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].slug, id);
     }
 
     #[test]
-    fn undo_specific_slug_targets_that_row() {
+    fn revert_of_a_slug_targets_that_row() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
@@ -1612,7 +1606,14 @@ mod tests {
         db.soft_delete_entry(&a_id).unwrap();
         db.soft_delete_entry(&b_id).unwrap();
 
-        crate::commands::undo::undo(undo_args(Some(&a_slug)), &db).unwrap();
+        crate::commands::undo::revert(
+            crate::args::RevertArgs {
+                id_or_slug: a_slug.to_string(),
+                ..Default::default()
+            },
+            &db,
+        )
+        .unwrap();
 
         // A is back, B is still tombstoned.
         let live: Vec<_> = datum_core::test_util::logged_entries(&db, "mood");
@@ -1962,7 +1963,7 @@ mod tests {
             )
         })
         .unwrap();
-        crate::commands::undo::undo(undo_args(None), &db).unwrap();
+        crate::commands::undo::undo(UndoArgs::default(), &db).unwrap();
 
         // Row is back, identical to the original insertion (including content_hash).
         let restored = db.get_entry(&id).unwrap();

@@ -121,12 +121,11 @@ pub(crate) fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
 /// meant something, so a script still passing one is told what replaced it
 /// rather than just refused. (`--force` carried no value and is accepted as a
 /// no-op — see [`undo_args_registry`].)
-pub const UNDO_GATE_REMOVED: &str = "`--window` was removed from `undo` (da-s6no): it no longer refuses on age. It acts on `_LAST`, or on the most recent tombstone when nothing has been touched, warning on stderr when the change is over ten minutes old — and `datum redo` takes the step back.";
+pub const UNDO_GATE_REMOVED: &str = "`--window` was removed from `undo` (da-s6no): it no longer refuses on age. It warns on stderr when the change is over ten minutes old, and `datum redo` takes the step back.";
 
 #[derive(Default)]
 pub(crate) struct UndoParsing {
     output: OutputArgs,
-    to_version: Option<u32>,
     skip_changed: bool,
 }
 
@@ -135,9 +134,10 @@ pub(crate) fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
     for spec in input::output_args::FLAG_SPECS {
         r.push(lift(|p: &mut UndoParsing| &mut p.output, spec));
     }
-    r.push(local_value(None, Some("to-version"), |p, v| {
-        p.to_version = Some(parse_u32(v, "--to-version")?);
-        Ok(())
+    r.push(local_value(None, Some("to-version"), |_p, _v| {
+        Err(ParseError::InvalidArg(
+            "undo takes no name and no version: `datum revert <ID> --to-version N` moves an entry to a version".into(),
+        ))
     }));
     r.push(local_switch(None, Some("skip-changed"), |p| {
         p.skip_changed = true;
@@ -167,10 +167,47 @@ pub(crate) fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
     let registry = undo_args_registry();
     let mut composed = UndoParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
+    if let Some(name) = pos.first() {
+        return Err(ParseError::InvalidArg(format!(
+            "undo takes no name, it is always the whole last command: `datum revert {name}` steps an entry back, or takes back a field's last command"
+        )));
+    }
     Ok(UndoArgs {
-        id_or_slug: optional_pos(&pos)?,
-        to_version: composed.to_version,
         skip_changed: composed.skip_changed,
+        output: composed.output,
+    })
+}
+
+#[derive(Default)]
+pub(crate) struct RevertParsing {
+    output: OutputArgs,
+    to_version: Option<u32>,
+}
+
+pub(crate) fn revert_args_registry() -> Vec<LiftedSpec<RevertParsing>> {
+    let mut r: Vec<LiftedSpec<RevertParsing>> = input::output_args::FLAG_SPECS
+        .iter()
+        .map(|spec| lift(|p: &mut RevertParsing| &mut p.output, spec))
+        .collect();
+    r.push(local_value(None, Some("to-version"), |p, v| {
+        p.to_version = Some(parse_u32(v, "--to-version")?);
+        Ok(())
+    }));
+    r
+}
+
+pub(crate) fn parse_revert_args(tail: &[&str]) -> Result<RevertArgs> {
+    let registry = revert_args_registry();
+    let mut composed = RevertParsing::default();
+    let pos = fold_args(tail, &mut composed, &registry)?;
+    let Some(id_or_slug) = optional_pos(&pos)? else {
+        return Err(ParseError::InvalidArg(
+            "revert takes an entry's id or a field: a bare `datum undo` takes back the last command".into(),
+        ));
+    };
+    Ok(RevertArgs {
+        id_or_slug,
+        to_version: composed.to_version,
         output: composed.output,
     })
 }
@@ -198,8 +235,12 @@ pub(crate) fn parse_redo_args(tail: &[&str]) -> Result<RedoArgs> {
     let registry = redo_args_registry();
     let mut composed = RedoParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
+    if !pos.is_empty() {
+        return Err(ParseError::InvalidArg(
+            "redo takes no name: a bare `datum redo` puts back the last undo".into(),
+        ));
+    }
     Ok(RedoArgs {
-        id_or_slug: optional_pos(&pos)?,
         dry_run: composed.dry_run,
         output: composed.output,
     })

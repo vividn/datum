@@ -142,18 +142,18 @@ fn a_data_purge_empties_every_copy_as_it_connects_and_the_chain_syncs_on() {
     assert!(fresh.has("tea") && fresh.has("coffee") && !fresh.has("juice"));
 }
 
-/// A part of a batch `undo <field>` took back goes with its action, or `redo`
-/// reads a step whose action is gone and fails on it (da-zhnst).
+/// What a chain purge wipes takes the stack with it: no undo is left to redo,
+/// and no revert is left on the stack (da-zhnst, da-k5vg1).
 #[test]
-fn a_chain_purge_leaves_no_step_of_a_field_undo_to_redo() {
+fn a_chain_purge_leaves_nothing_to_redo_or_undo() {
     let (a, _c) = chained();
     a.ok(&["moment", "x,y"]);
-    a.ok(&["undo", "x"]);
-    assert_ne!(a.query("SELECT COUNT(*) FROM undo_taken"), "0");
+    a.ok(&["revert", "x"]);
+    a.ok(&["undo"]);
 
     a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
 
-    assert_eq!(a.query("SELECT COUNT(*) FROM undo_taken"), "0");
+    assert_eq!(a.query("SELECT COUNT(*) FROM undo_actions"), "0");
     let redo = a.run(&["redo"], "");
     let said = String::from_utf8_lossy(&redo.stderr);
     assert!(said.contains("Nothing to redo"), "{said}");

@@ -318,3 +318,47 @@ pub(super) fn down_77_to_76_undo_taken(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
+
+/// da-k5vg1: `undo` takes no part of a command any more, so the partial undo's
+/// table and step numbers go. An entry already taken back stays out of what the
+/// action's undo moves, and its redo, as `skipped`: where the rest of its action
+/// stands, and where a new command dropped that entry's redo. An undone action
+/// with a part's redo still held is redone whole, that part with it. `took` is what a
+/// `revert <field>` took back, for the next to go on past. Local.
+pub(super) fn m77_to_78_no_undo_taken(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "undo_actions")? {
+        conn.execute_batch(
+            "UPDATE undo_actions SET skipped = (
+                 SELECT json_group_array(hid) FROM (
+                     SELECT value AS hid FROM json_each(COALESCE(undo_actions.skipped, '[]'))
+                     UNION
+                     SELECT t.hid FROM undo_taken t
+                      WHERE t.action_id = undo_actions.id
+                        AND (undo_actions.undone = 0 OR t.step = -1)))
+              WHERE EXISTS (SELECT 1 FROM undo_taken t
+                             WHERE t.action_id = undo_actions.id
+                               AND (undo_actions.undone = 0 OR t.step = -1));
+             UPDATE undo_actions SET undone = 1 WHERE undone <> 0;
+             DROP TABLE IF EXISTS undo_taken;
+             DROP INDEX IF EXISTS undo_actions_undone;
+             CREATE INDEX undo_actions_undone ON undo_actions(id) WHERE undone = 1;",
+        )?;
+        if !has_column(conn, "undo_actions", "took")? {
+            conn.execute_batch("ALTER TABLE undo_actions ADD COLUMN took TEXT;")?;
+        }
+    }
+    Ok(())
+}
+
+/// Reverse v77→v78: the table back, empty, and each undone action its number.
+pub(super) fn down_78_to_77_no_undo_taken(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "undo_actions")? {
+        if has_column(conn, "undo_actions", "took")? {
+            conn.execute_batch("ALTER TABLE undo_actions DROP COLUMN took;")?;
+        }
+        conn.execute_batch(
+            "UPDATE entry_history SET change_kind = 'user_edit' WHERE change_kind = 'revert';",
+        )?;
+    }
+    m76_to_77_undo_taken(conn)
+}

@@ -41,10 +41,10 @@
 	undoing that revert??)», and how far back: «whole saved history». So going
 	to another field, renaming, or the widget closing runs the edits' one
 	`setup F`; Save runs it and stays, at a save point. Revert with edits drops
-	them; at a save point it is `undo SPEC --to-version N`, the version before
+	them; at a save point it is `revert SPEC --to-version N`, the version before
 	the one it is at as `datum history` numbers them, every copy's and kit's
 	included, and Redo the one after, back up to where the walk began. The
-	walk is this widget's: `redo SPEC` steps forward once, and a save drops it.
+	walk is this widget's, and a save drops it.
 
 	What Save and Cancel do depends on how the person came (da-wz84y),
 	vividn, 2026-10-26: «maybe it should depend on how you got there?».
@@ -64,7 +64,7 @@
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
 	import { fieldPill } from '#lib/bar.ts';
-	import { renameFieldArgv, specHistoryArgv, specShowArgv, undoToVersionArgv, type SpecVersion } from '#lib/calls.ts';
+	import { renameFieldArgv, specHistoryArgv, specShowArgv, revertToVersionArgv, type SpecVersion } from '#lib/calls.ts';
 	import { stripAnsi } from '#lib/ansi.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
 	import type { FieldButton } from '#lib/fields.ts';
@@ -169,7 +169,7 @@
 	async function step(to: number): Promise<void> {
 		const [asked, from] = [$editing, walk];
 		if (!from) return;
-		const result = await press(undoToVersionArgv(from.hid, to));
+		const result = await press(revertToVersionArgv(from.hid, to));
 		if (asked === $editing) void load(asked, result.code === 0 ? { ...from, at: to } : null);
 	}
 

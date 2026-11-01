@@ -46,6 +46,7 @@ pub enum Command {
     Delete(DeleteArgs),
     Undo(UndoArgs),
     Redo(RedoArgs),
+    Revert(RevertArgs),
 
     History(HistoryArgs),
     Why(WhyArgs),
@@ -724,25 +725,31 @@ pub struct DeleteArgs {
 /// what replaced it.
 #[derive(Debug, Default)]
 pub struct UndoArgs {
-    pub id_or_slug: Option<String>,
-    pub to_version: Option<u32>,
-    /// `--skip-changed`: a bare undo leaves the entries another copy changed
+    /// `--skip-changed`: undo leaves the entries another copy changed
     /// since as they are and takes back the rest (da-e3be3).
     pub skip_changed: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
 
-/// `datum redo [ID_OR_SLUG[,ID_OR_SLUG]...]` — one step FORWARD along the trail, undoing the
-/// last `undo`. No `--to-version`: an explicit version number is what `undo`
-/// is for, and `redo` is the word for the step a hand already took back.
+/// `datum redo`: what the last `undo` took back, put back. It takes no name.
 #[derive(Debug, Default)]
 pub struct RedoArgs {
-    pub id_or_slug: Option<String>,
     /// `--dry-run`: step nothing, print nothing, and exit as the redo would —
     /// 0 when something lies ahead, 1 when there is nothing to redo. What the
     /// web's redo button asks before it lights (da-zq91a).
     pub dry_run: bool,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
+}
+
+/// `datum revert <HID|FIELD>[,…] [--to-version N]`: each entry stepped back to
+/// its previous state, or each field's last command taken back, as one command
+/// on the undo stack (da-k5vg1).
+#[derive(Debug, Default)]
+pub struct RevertArgs {
+    pub id_or_slug: String,
+    pub to_version: Option<u32>,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }

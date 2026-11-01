@@ -182,35 +182,15 @@ fn redo_on_a_multi_entry_last_steps_every_row() {
     // Point `_LAST` at both, the way a TRACK pair would (da-c8mh).
     datum_core::last_docs::set_last_docs(&db, &[coffee.clone().into(), tea.clone()]).unwrap();
 
-    run_cli(&["undo", "_LAST"], &db).expect("undo the group");
+    run_cli(&["revert", "_LAST"], &db).expect("revert the group");
     for hid in [coffee.as_str(), tea.as_str()] {
         assert_eq!(db.get_entry(hid).unwrap().data.as_ref().unwrap()["cups"], 2);
     }
 
-    run_cli(&["redo", "_LAST"], &db).expect("redo the group");
+    run_cli(&["revert", "_LAST"], &db).expect("revert it again");
     for hid in [coffee.as_str(), tea.as_str()] {
         assert_eq!(db.get_entry(hid).unwrap().data.as_ref().unwrap()["cups"], 3);
     }
-}
-
-/// `redo <ID>` names its own target, so it works on an entry the pointer has
-/// since moved away from.
-#[test]
-fn redo_accepts_an_explicit_target() {
-    let db = fresh_db();
-    run_cli(&["occur", "coffee", "cups=2"], &db).expect("create coffee");
-    let coffee = only_hid(&db);
-    run_cli(&["update", &coffee, "cups=3"], &db).expect("update coffee");
-    run_cli(&["undo", &coffee], &db).expect("undo coffee");
-
-    // Something else becomes `_LAST`.
-    run_cli(&["occur", "tea"], &db).expect("create tea");
-
-    run_cli(&["redo", &coffee], &db).expect("redo coffee by name");
-    assert_eq!(
-        db.get_entry(&coffee).unwrap().data.as_ref().unwrap()["cups"],
-        3
-    );
 }
 
 /// da-zq91a: `redo --dry-run` is the question the web's redo button asks —
@@ -228,7 +208,6 @@ fn redo_dry_run_answers_without_moving_anything() {
 
     run_cli(&["undo"], &db).expect("undo");
     run_cli(&["redo", "--dry-run"], &db).expect("an undo lies behind: something to redo");
-    run_cli(&["redo", "--dry-run", &hid], &db).expect("and by name");
     assert_eq!(
         db.get_entry(&hid).unwrap().data.as_ref().unwrap()["cups"],
         2,

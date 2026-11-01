@@ -202,7 +202,7 @@ describe('the bar of commands', () => {
 	// da-0mepr. vividn, 2026-09-26: «let's divide the command widget into
 	// sections. I think that will visually differentiate different kinds of
 	// actions» — undo and help, logging, setup, edits, analysis, db.
-	test('the commands stand in sections, in order, a rule between each; a pill that hides the edits takes their section and its rule', async () => {
+	test('the commands stand in sections, in order, a rule between each; a pill that hides a section’s commands takes the section and its rule', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
@@ -212,10 +212,10 @@ describe('the bar of commands', () => {
 				whole.map((s) => s.name),
 				['undo', 'log', 'setup', 'edit', 'analysis', 'db']
 			);
-			assert.deepEqual(whole.find((s) => s.name === 'edit').commands.sort(), ['delete', 'retime', 'update']);
+			assert.deepEqual(whole.find((s) => s.name === 'edit').commands.sort(), ['delete', 'retime', 'revert', 'update']);
 			ruled(whole);
 
-			// A field pill: coffee names no edit (fieldpill.test.mjs), so the whole section goes.
+			// A field pill: coffee names no edit but `revert` (fieldpill.test.mjs), and a section with nothing left goes.
 			await fieldsBar(page).locator('[data-field="coffee"]').click({ button: 'right' });
 			await page.waitForFunction(() => !document.querySelector('[data-command="delete"]'));
 			const under = await sectionsOf(page);
@@ -223,7 +223,8 @@ describe('the bar of commands', () => {
 				under.map((s) => s.name),
 				whole.map((s) => s.name).filter((name) => under.some((s) => s.name === name))
 			);
-			assert.equal(under.some((s) => s.name === 'edit'), false, 'the edit section outlived its commands');
+			assert.deepEqual(under.find((s) => s.name === 'edit').commands, ['revert']);
+			assert.ok(under.length < whole.length, 'a section outlived its commands');
 			ruled(under);
 		});
 	});

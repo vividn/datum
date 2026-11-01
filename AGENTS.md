@@ -373,14 +373,20 @@ different key on each field, or to none on a moment, is refused naming them. In
 an array, a `stop` with no duration of a field not running is a failure, though
 alone it writes. `-u` is refused; `note`, `add` and `setup` take one field.
 
-### `undo <field>`
-`undo a` takes back the last command on `a`, as far as it wrote `a` and `a`'s spec
-(da-il29m, `commands/undo.rs`); `undo a,b` does each, as one step, so one `redo`
-restores both, and a field with nothing to take back is named and nothing changes.
-After `moment a,b`, `undo a` leaves `b`'s side standing (`undo_taken`) for a bare
-`undo` to take next. A whole hid is its entry; a field wins over a hid or slug it
-only starts, as in `get`. Every undo is a numbered step (`undo_actions.undone`,
-`undo_taken.step`), and `redo` re-applies the newest whole.
+### `undo` and `revert`
+`undo` is the whole last command, always, and `redo` puts it back: an editor's
+stack, neither taking a name (da-k5vg1, `commands/undo.rs`, vividn, 2026-11-01). The
+naming is `revert`'s, a command like any other: it goes on the stack, so a bare
+`undo` takes it back, and it drops what was undone. `revert <hid>[,…]` steps each
+entry back to its previous state (`--to-version N` to one of `datum history`'s), so a
+second revert puts back what the first took. `revert <field>[,…]` takes back the last
+command on the field that is no revert, as far as it wrote the field and its spec, so
+a second goes on to the one before (each says what it took on its own action,
+`undo_actions.took`, read only while that revert stands); a field with nothing to take
+back is named and nothing changes. A whole hid is its entry; a field wins over a hid or slug it only
+starts, as in `get`. The action word says what happened, not which command ran: UNDONE
+where the document is deleted outright, REVERT for any other change, a restored delete
+among them.
 
 ### A field name may be the start of one
 A name that is no field but starts exactly one names that one, after alias
@@ -467,7 +473,7 @@ could not be undone out. Its side's device reads `backup`.
 
 An entry's history is read from the same ops (`db/sync/versions.rs`, da-s4erq):
 a version per op in fold order, a `fork` where a key became contested and a
-`join` where an edit settled it, so `datum history`, `why --full` and `undo
+`join` where an edit settled it, so `datum history`, `why --full` and `revert
 --to-version` number the same versions on every copy; `entry_history` is this
 copy's undo journal alone. A copy's HLC passes only the ops it has applied, and
 a received op more than five minutes ahead of its clock (`MAX_CLOCK_AHEAD`) is

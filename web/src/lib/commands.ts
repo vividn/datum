@@ -81,7 +81,7 @@ export type Section = 'undo' | 'log' | 'setup' | 'edit' | 'analysis' | 'db';
 export const COLUMNS: Record<Section, number> = { undo: 1, log: 3, setup: 2, edit: 1, analysis: 2, db: 1 };
 
 /** The fillers a tap completes: an id or a time pill is what comes next. */
-const TAPPED = ['retime', 'delete', 'get', 'history'];
+const TAPPED = ['retime', 'delete', 'revert', 'get', 'history'];
 
 /** A section's commands that fill the line: `name `, then a tap or the keyboard. */
 const fills = (section: Section, names: string[]): CommandButton[] =>
@@ -116,7 +116,7 @@ export const COMMANDS: CommandButton[] = [
 	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap', section: 'log' })),
 	...fills('log', ['note', 'flag']),
 	...fills('setup', ['track', 'ignore', 'setup', 'alias', 'kit', 'view', 'config']),
-	...fills('edit', ['delete', 'update', 'retime']),
+	...fills('edit', ['delete', 'update', 'retime', 'revert']),
 	...fills('analysis', [
 		'tail',
 		'now',
@@ -522,7 +522,7 @@ export function commandsUnder(grammar: Grammar | null, pills: Pill[], fields: Fi
  * vividn, 09-22: «if I select a document, and then hit delete, it should be
  * deleted. Same with all the commands except for update». Derived rather
  * than listed: a selected hid completes an id command that waits for
- * nothing after the id (`delete`, `get`, `history`, `undo`, `redo`), and
+ * nothing after the id (`delete`, `get`, `history`, `revert`), and
  * a command that does wait (`more`) is completed by a loaded time only
  * when `-t` is what it takes instead — `retime`, whose `[T]` and
  * `-t T` are two lines of one grammar (vividn, 09-17: «retime should just

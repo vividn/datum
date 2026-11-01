@@ -1057,12 +1057,12 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 			assert.equal((await app.echoes()).length, before, 'dropping the edits ran something');
 			assert.equal(await described(app, 'tea'), 'two');
 
-			// At a save point: back a version a press, to the first, as `undo SPEC --to-version N`.
+			// At a save point: back a version a press, to the first, as `revert SPEC --to-version N`.
 			const { hid } = JSON.parse((await app.run(['history', 'spec:tea', '--json'])).stdout)[0];
 			for (const [shown, version] of [['one', 2], ['', 1]]) {
 				await button(page, 'revert').click();
 				await until(() => description(page).inputValue(), (v) => v === shown);
-				assert.equal((await app.echoes()).at(-1), `undo ${hid} --to-version ${version}`);
+				assert.equal((await app.echoes()).at(-1), `revert ${hid} --to-version ${version}`);
 				assert.equal(await described(app, 'tea'), shown || null);
 			}
 			assert.deepEqual(await enabled(page), { revert: false, commit: false, redo: true }, 'at the first version');
@@ -1071,7 +1071,7 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 			for (const [shown, version] of [['one', 2], ['two', 3]]) {
 				await button(page, 'redo').click();
 				await until(() => description(page).inputValue(), (v) => v === shown);
-				assert.equal((await app.echoes()).at(-1), `undo ${hid} --to-version ${version}`);
+				assert.equal((await app.echoes()).at(-1), `revert ${hid} --to-version ${version}`);
 				assert.equal(await described(app, 'tea'), shown);
 			}
 			assert.deepEqual(await enabled(page), { revert: true, commit: false, redo: false }, 'back where the walk began');

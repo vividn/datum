@@ -101,7 +101,7 @@
 		if (refused) told = (event as PointerEvent).pointerType === 'mouse' || !told;
 		else if (mark && !busy) {
 			busy = true;
-			elsewhere = !(await step(entry, verb).finally(() => (busy = false)));
+			elsewhere = !(await step(entry).finally(() => (busy = false)));
 			told = elsewhere;
 		}
 	}

@@ -118,6 +118,8 @@ pub enum Outcome {
     Failed,
     /// What an `undo` took back (da-3mryj).
     Undone,
+    /// `revert`, or `undo`, changing an entry short of deleting it.
+    Revert,
     /// The row `datum ignore` wrote (da-te4id). `track`'s is a `Create`, which
     /// [`datum_core::track::track_action_label`] names.
     Ignore,
@@ -162,6 +164,7 @@ impl Outcome {
             Outcome::IsLast => "ISLAST",
             Outcome::Failed => "FAILED",
             Outcome::Undone => "UNDONE",
+            Outcome::Revert => "REVERT",
             Outcome::Ignore => "IGNORE",
         }
     }
@@ -174,7 +177,7 @@ impl Outcome {
     /// own theme decides what its green looks like, and nothing outside one
     /// has a green until somebody names it. These are legible on a dark
     /// ground, which is every surface that asks for them. `NoDiff`, `IsLast`
-    /// and `Undone` (lavender) are not choices — they are already truecolor
+    /// and `Undone` / `Revert` (lavender) are not choices — they are already truecolor
     /// in the escape.
     ///
     /// Published as `action_color` by `--show json` (da-ckw3, vividn:
@@ -193,7 +196,7 @@ impl Outcome {
             Outcome::OWrite => "#3584e4",                   // blue
             Outcome::NoDiff => "#ffa500",                   // orange, as emitted
             Outcome::IsLast => "#b8860b",                   // dark amber, as emitted
-            Outcome::Undone => "#9a8cff",                   // lavender, as emitted
+            Outcome::Undone | Outcome::Revert => "#9a8cff", // lavender, as emitted
         }
     }
 
@@ -211,7 +214,7 @@ impl Outcome {
             Outcome::OWrite => "\x1b[34m",                   // blue
             Outcome::NoDiff => "\x1b[38;2;255;165;0m",       // orange
             Outcome::IsLast => "\x1b[38;2;184;134;11m",      // dark amber
-            Outcome::Undone => "\x1b[38;2;154;140;255m",     // lavender
+            Outcome::Undone | Outcome::Revert => "\x1b[38;2;154;140;255m", // lavender
         }
     }
 }
@@ -455,11 +458,11 @@ pub struct ActionLines {
     /// `None` for every other echo. [`Self::info`] and [`Self::data`] then
     /// draw the change itself.
     pub changes: Option<Vec<diff::Change>>,
-    /// What an `UNDONE` took back (da-3mryj); `None` for every other echo.
+    /// What an `UNDONE` or `REVERT` took back (da-3mryj); `None` for every other echo.
     pub undid: Option<Undid>,
 }
 
-/// The change an `undo` took back: the action it was and when it was made.
+/// The change an `undo` or `revert` took back: the action it was and when it was made.
 pub struct Undid {
     /// `UPDATE`, `CREATE` or `DELETE`.
     pub action: &'static str,
@@ -620,8 +623,10 @@ pub fn update_lines_at(
     lines
 }
 
-/// `UNDONE`: what an `undo` took back from `before` to leave `after`
-/// (da-3mryj), the change made at `time`. A taken-back update is drawn as
+/// What an `undo` or `revert` took back from `before` to leave `after`
+/// (da-3mryj), the change made at `time`: by what happened, UNDONE where the
+/// entry is deleted outright, REVERT for any other change (da-k5vg1, a restored
+/// delete among them). A taken-back update is drawn as
 /// UPDATE's diff with its arrows reversed, after the undo ← before it; a
 /// create taken back is the entry struck through and `−`, «gone»; a delete
 /// taken back is the entry and `+`, «back» (da-nafql).
@@ -645,7 +650,11 @@ pub fn undone_lines_at(
     registry: Option<&SpecRegistry>,
     now: &DatumTime,
 ) -> ActionLines {
-    let mut lines = action_lines_at(after, Outcome::Undone, registry, None, now);
+    let outcome = match before.deleted_at.is_none() && after.deleted_at.is_some() {
+        true => Outcome::Undone,
+        false => Outcome::Revert,
+    };
+    let mut lines = action_lines_at(after, outcome, registry, None, now);
     let (action, end) = match (before.deleted_at.is_some(), after.deleted_at.is_some()) {
         (false, true) => {
             self::diff::whole(&mut lines, true);
@@ -656,7 +665,7 @@ pub fn undone_lines_at(
             ("DELETE", ", back")
         }
         _ => {
-            self::diff::apply(&mut lines, before, after, registry, now, Outcome::Undone);
+            self::diff::apply(&mut lines, before, after, registry, now, outcome);
             ("UPDATE", "")
         }
     };

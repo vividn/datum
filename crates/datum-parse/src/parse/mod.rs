@@ -276,6 +276,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "delete" | "del" => Command::Delete(parse_delete_args(rest)?),
         "undo" => Command::Undo(parse_undo_args(rest)?),
         "redo" => Command::Redo(parse_redo_args(rest)?),
+        "revert" => Command::Revert(parse_revert_args(rest)?),
 
         "history" => Command::History(parse_history_args(rest)?),
         "why" => Command::Why(parse_why_args(rest)?),
@@ -481,6 +482,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Delete(a) => a.output.show = Some(named),
         Command::Undo(a) => a.output.show = Some(named),
         Command::Redo(a) => a.output.show = Some(named),
+        Command::Revert(a) => a.output.show = Some(named),
         Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => a.output.show = Some(named),
         Command::Edit(a) => a.output.show = Some(named),
         Command::Grep(a) => a.output.show = Some(named),
@@ -1490,6 +1492,7 @@ mod tests {
             "db backup --plan --every 1h --span 1d",
             "undo",
             "redo",
+            "revert a",
         ] {
             let typed = debug(parse(&format!("{carried} --json")));
             assert_ne!(typed, debug(parse(carried)), "{carried}");

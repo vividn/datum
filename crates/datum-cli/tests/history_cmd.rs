@@ -85,17 +85,17 @@ fn undo_restores_entry_state() {
     assert_eq!(current.state, Some(serde_json::json!("sad")));
 
     // `datum undo <hid>` reverts to v1 (value=happy).
-    run_cli(&["undo", &v1.hid], &db).expect("undo dispatch");
+    run_cli(&["revert", &v1.hid], &db).expect("undo dispatch");
 
     let restored = db.get_entry(&v1.slug).unwrap();
     assert_eq!(restored.state, Some(serde_json::json!("happy")));
 
-    // And the undo itself is recorded as a new version with change_kind='undo'.
+    // And the revert itself is recorded as a new version with change_kind='revert'.
     let versions = datum_core::history::list(db.conn(), &v1.hid, false).unwrap();
     assert_eq!(versions.len(), 3);
     assert_eq!(
         versions[2].change_kind,
-        datum_core::history::ChangeKind::Undo
+        datum_core::history::ChangeKind::Revert
     );
 }
 
@@ -122,7 +122,7 @@ fn bare_undo_of_just_created_entry_deletes_it() {
     let tomb = tombstone(&db).expect("entry is tombstoned after undo");
 
     // Symmetry: a second `undo` on the same hid restores it.
-    run_cli(&["undo", &tomb.hid], &db).expect("re-undo restores");
+    run_cli(&["revert", &tomb.hid], &db).expect("re-undo restores");
     let restored = db.get_entry(&tomb.slug).unwrap();
     assert!(
         restored.deleted_at.is_none(),
@@ -178,7 +178,7 @@ fn undo_to_version_out_of_range_errors_and_leaves_entry_untouched() {
     assert_eq!(live_before.state, Some(serde_json::json!("sad")));
 
     // v > latest: used to silently no-op. Must error now.
-    let err = run_cli(&["undo", &v1.hid, "--to-version", "99"], &db)
+    let err = run_cli(&["revert", &v1.hid, "--to-version", "99"], &db)
         .expect_err("--to-version above latest must error");
     assert!(
         err.to_string().contains("doesn't exist"),
@@ -186,7 +186,7 @@ fn undo_to_version_out_of_range_errors_and_leaves_entry_untouched() {
     );
 
     // v = 0: used to silently revert to the create-state. Must error now.
-    let err0 = run_cli(&["undo", &v1.hid, "--to-version", "0"], &db)
+    let err0 = run_cli(&["revert", &v1.hid, "--to-version", "0"], &db)
         .expect_err("--to-version 0 must error");
     assert!(
         err0.to_string().contains("doesn't exist"),
@@ -222,11 +222,11 @@ fn undo_to_version_at_latest_is_in_range() {
     db.save_existing_entry(&v2).expect("v2 user_edit");
 
     // latest == 2 is in range and must dispatch without error.
-    run_cli(&["undo", &v1.hid, "--to-version", "2"], &db)
+    run_cli(&["revert", &v1.hid, "--to-version", "2"], &db)
         .expect("--to-version at latest must succeed");
 
     // Reverting to v1 must still work too.
-    run_cli(&["undo", &v1.hid, "--to-version", "1"], &db).expect("--to-version 1 must succeed");
+    run_cli(&["revert", &v1.hid, "--to-version", "1"], &db).expect("--to-version 1 must succeed");
     let restored = db.get_entry(&v1.slug).unwrap();
     assert_eq!(restored.state, Some(serde_json::json!("happy")));
 }

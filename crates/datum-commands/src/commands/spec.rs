@@ -577,7 +577,7 @@ pub(crate) fn check_state_name(field: &str, name: &str) -> Result<()> {
     anyhow::bail!("'{name}' is a status, not a state; `datum {does} {field}` does that")
 }
 
-/// Point `_LAST` at the spec entry a command just wrote, so `undo _LAST`
+/// Point `_LAST` at the spec entry a command just wrote, so `revert _LAST`
 /// steps it back like any doc's edit.
 fn remember(db: &Db, hid: datum_core::ids::Hid) {
     let _ = datum_core::last_docs::set_last_docs(db, &[hid]);

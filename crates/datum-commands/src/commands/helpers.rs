@@ -310,7 +310,7 @@ pub(crate) fn id_list<'a>(db: &Db, list: &'a str) -> Vec<&'a str> {
 }
 
 /// Run `each` on every id of a comma list (da-9p3o) — the verbs that act on
-/// one entry at a time (`history`, `why`, `undo`, `redo`). A single id is
+/// one entry at a time (`history`, `why`, `revert`). A single id is
 /// passed through untouched, so its error reads as it always has. In a list
 /// a failing id does not stop the rest: it is named on stderr and the
 /// command exits non-zero, `delete`'s precedent for a partly-bad list. The
@@ -346,7 +346,7 @@ pub(crate) fn for_each_id(
 }
 
 /// Is `list` more than one id? The flags that name one entry's versions
-/// (`history --version`, `undo --to-version`) refuse a list.
+/// (`history --version`, `revert --to-version`) refuse a list.
 pub(crate) fn is_id_list(db: &Db, list: &str) -> bool {
     id_list(db, list).len() > 1
 }

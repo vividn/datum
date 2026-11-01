@@ -1115,7 +1115,7 @@ export async function save(tabId: NodeId): Promise<void> {
 
 /**
  * Back to the save: the last one, or `version` of it (a new version, as
- * `undo` makes one — the way forward again is `restore(tabId)` with none).
+ * `revert` makes one — the way forward again is `restore(tabId)` with none).
  * Every copy of the layout goes back with it; the name is what is being
  * restored.
  */

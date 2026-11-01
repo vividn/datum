@@ -149,7 +149,7 @@ fn parts(
     action: Outcome,
 ) -> (Vec<Part>, Vec<Part>) {
     let color = action.ansi_color();
-    let undoing = matches!(action, Outcome::Undone);
+    let undoing = matches!(action, Outcome::Undone | Outcome::Revert);
     let spec = |e: &Entry| registry.and_then(|r| r.fields.get(&e.field));
     let ctx = RenderContext::default();
     let [b, a] = [before, after].map(|e| info_parts(e, spec(e), &ctx, now));

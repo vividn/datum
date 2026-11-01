@@ -504,7 +504,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 	// da-nafql. vividn, 2026-10-30: «For other actions besides CREATE, keep using
 	// the output actions that were there before», and «Let's have UNDONE actually
 	// show what is changing». Each undo kind by what it draws, none like another.
-	test('only a CREATE is labelled with its shape, and each UNDONE draws what it changes', async () => {
+	test('only a CREATE is labelled with its shape, and each UNDONE and REVERT draws what it changes', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
 			const run = async (line) => {
@@ -535,7 +535,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.match(got.data, /^cups: 2 → 3/);
 
 			got = await run('undo');
-			assert.deepEqual([got.word, got.struck], ['UNDONE', plain]);
+			assert.deepEqual([got.word, got.struck], ['REVERT', plain]);
 			assert.match(got.data, /^cups: 2 ← 3/);
 
 			await app.submit('redo');
@@ -543,7 +543,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.deepEqual([got.word, got.struck], ['DELETE', plain]);
 
 			got = await run('undo');
-			assert.deepEqual([got.word, got.struck], ['UNDONE', plain]);
+			assert.deepEqual([got.word, got.struck], ['REVERT', plain]);
 			assert.match(got.time, /^\+ /);
 			assert.equal(got.data, '+ cups: 3, + shop: "corner"');
 
@@ -1028,7 +1028,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.equal(await listed(coffee), false, 'undone, the entry is still in the database');
 			assert.equal(await page.locator(`${BAR} .group`).count(), groups, 'the undo is a command of its own in the strip');
 			// The CLI widget is the log's own component: there, the undo is what the CLI printed, and the command it undid is struck too.
-			await page.locator('.host.cli .echo', { hasText: `❯ undo ${coffee}` }).waitFor();
+			await page.locator('.host.cli .echo', { hasText: `❯ revert ${coffee}` }).waitFor();
 			// What it did (da-nafql).
 			await page.locator('.host.cli .doc .action[title="UNDONE"]').first().waitFor();
 			assert.equal(await page.locator('.host.cli .head.struck').count(), 1);

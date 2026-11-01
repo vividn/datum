@@ -36,9 +36,9 @@ pub use pcli::{
     CountArgs, DayviewArgs, DbCommand, DbConfigArgs, DbImportArgs, DbPurgeArgs, DebugCommand,
     DeleteArgs, EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, InfoArgs,
     KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs,
-    NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SpecCommand,
-    SpecSetArgs, StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct, SyncFilter,
-    TailArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
+    NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RevertArgs, RotationAction,
+    SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, SyncAdminAct, SyncCommand, SyncDaemonAct,
+    SyncFilter, TailArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 // Apart from the list above, which every added name reflows.
 pub use pcli::RenameArgs;
@@ -742,6 +742,7 @@ impl_output_args_ext!(EditArgs);
 impl_output_args_ext!(DeleteArgs);
 impl_output_args_ext!(UndoArgs);
 impl_output_args_ext!(RedoArgs);
+impl_output_args_ext!(RevertArgs);
 
 /// `.resolved_path()` on [`DbImportArgs`].
 pub trait DbImportArgsExt {

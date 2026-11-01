@@ -574,8 +574,7 @@ fn an_extra_word_is_refused_by_name_and_nothing_is_deleted() {
     let (hid, file) = (&entry.hid.to_string(), path.to_str().unwrap());
     for args in [
         ["del", hid, "nope9"].as_slice(),
-        &["undo", hid, "nope9"],
-        &["redo", hid, "nope9"],
+        &["revert", hid, "nope9"],
         &["history", hid, "nope9"],
         &["info", file, "nope9"],
         &["count", "coffee", "nope9"],

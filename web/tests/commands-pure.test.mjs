@@ -44,7 +44,7 @@ const SECTIONS = [
 	['undo', ['undo', 'help']],
 	['log', ['moment', 'start', 'end', 'switch', 'add', 'note', 'flag']],
 	['setup', ['track', 'ignore', 'setup', 'alias', 'kit', 'view', 'config']],
-	['edit', ['delete', 'update', 'retime']],
+	['edit', ['delete', 'update', 'retime', 'revert']],
 	[
 		'analysis',
 		['tail', 'now', 'stats', 'get', 'check', 'info', 'fields', 'count', 'ids', 'history', 'grep', 'dayview', 'nowview']

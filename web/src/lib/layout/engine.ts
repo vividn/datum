@@ -411,17 +411,17 @@ export async function followZone(): Promise<void> {
 
 /**
  * A command's undo or redo button (da-25q3k): every entry it wrote stepped
- * back, or forward again, by hid — `redo <hid>` still puts back an undo a
- * later write has followed. Recorded as OF that command, so the strip marks
+ * back, or forward again, by a `revert` of the hids, each a step along its
+ * trail (da-k5vg1). Recorded as OF that command, so the strip marks
  * it there instead of showing a command of its own; the log shows what the
  * CLI printed.
  *
  * Null, running nothing, when an entry's newest change is not this page's.
  */
-export async function step(entry: Command, verb: 'undo' | 'redo'): Promise<RunResult | null> {
+export async function step(entry: Command): Promise<RunResult | null> {
 	const hids = wroteBy(entry);
 	if (!(await ours(entry, hids))) return null;
-	const argv = stepArgv(verb, hids);
+	const argv = stepArgv(hids);
 	const ranAt = Date.now();
 	const result = await runEchoed(run, argv);
 	record(shellJoin(argv), ranAt, result, entry.ranAt);
@@ -433,7 +433,7 @@ export async function step(entry: Command, verb: 'undo' | 'redo'): Promise<RunRe
  * Whether each entry's newest change is still the one this page made: the
  * command, or its button's last step (vremya on #1362). A second tab, the
  * terminal or a synced device may have changed one since, which no command
- * here buries and `undo <hid>` would step back instead. Read off the
+ * here buries and `revert <hid>` would step back instead. Read off the
  * trail's newest version by the words of the line that wrote it, which the
  * CLI quotes in its own way: two writes of the same words, here and elsewhere,
  * are not told apart. An entry gone (`history` exits 1) went elsewhere too.

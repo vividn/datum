@@ -98,8 +98,8 @@ export function specHistoryArgv(field: string): string[] {
 }
 
 /** One entry put back as version `version` of its history. */
-export function undoToVersionArgv(hid: string, version: number): string[] {
-	return ['undo', hid, '--to-version', String(version)];
+export function revertToVersionArgv(hid: string, version: number): string[] {
+	return ['revert', hid, '--to-version', String(version)];
 }
 
 /** The field renamed, or with `dry` what it would move (da-qimwi); with `merge`, into a field that exists (da-icna7). */
@@ -107,9 +107,9 @@ export function renameFieldArgv(old: string, to: string, dry = false, merge = fa
 	return ['rename', old, to, ...(merge ? ['--merge'] : []), ...(dry ? ['--dry-run'] : [])];
 }
 
-/** A command's entries stepped back, or forward again, by its button (da-25q3k). */
-export function stepArgv(verb: 'undo' | 'redo', hids: string[]): string[] {
-	return [verb, hids.join(',')];
+/** A command's entries stepped back by its button, or forward again by a second press (da-25q3k, da-k5vg1). */
+export function stepArgv(hids: string[]): string[] {
+	return ['revert', hids.join(',')];
 }
 
 /** The entries' trails, newest version first: one hid's alone, or each under its own hid. */
@@ -347,8 +347,8 @@ export function layoutHistoryArgv(name: string): string[] {
 	return ['history', layoutSlug(name), '--json'];
 }
 
-export function layoutUndoArgv(name: string, version?: number): string[] {
-	return ['undo', layoutSlug(name), ...(version === undefined ? [] : ['--to-version', String(version)])];
+export function layoutRevertArgv(name: string, version?: number): string[] {
+	return ['revert', layoutSlug(name), ...(version === undefined ? [] : ['--to-version', String(version)])];
 }
 
 /** By hid, since `del` splits its argument at commas and a name may have one. */
@@ -410,7 +410,7 @@ export interface EntryVersion {
 	raw: string | null;
 }
 
-/** One version of a spec's history (da-hda4j): the entry, and the number `undo --to-version` takes. */
+/** One version of a spec's history (da-hda4j): the entry, and the number `revert --to-version` takes. */
 export interface SpecVersion {
 	hid: string;
 	version: number;

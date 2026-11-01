@@ -123,7 +123,7 @@ fn undo_last_after_a_get_reverts_what_it_showed() {
     run_cli(&["occur", "b"], &db).unwrap();
     run_cli(&["get", &hid_of(&db, "a")], &db).unwrap();
 
-    run_cli(&["undo", "_LAST"], &db).unwrap();
+    run_cli(&["revert", "_LAST"], &db).unwrap();
     assert_eq!(live(&db), ["b"]);
 }
 

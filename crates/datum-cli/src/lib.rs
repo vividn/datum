@@ -220,6 +220,7 @@ fn spools(command: &Command) -> bool {
                 | Command::Delete(_)
                 | Command::Undo(_)
                 | Command::Redo(_)
+                | Command::Revert(_)
                 | Command::Edit(_)
                 | Command::Update(_)
                 | Command::Merge(_)

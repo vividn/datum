@@ -1,27 +1,24 @@
-//! `datum undo` and `datum redo` — the two directions along an entry's
-//! EntryHistory trail.
+//! `datum undo`, `datum redo` and `datum revert` (da-k5vg1).
 //!
-//! The trail keeps every version, so neither direction loses anything: `undo`
-//! steps back, `redo` steps forward again, and the row each one writes records
-//! which way it went. That label is the whole of redo's bookkeeping — `redo`
-//! is offered only when the newest step was an `undo`, which is what makes
-//! `undo; redo; redo` move once instead of oscillating (da-s6no).
+//! `undo` and `redo` are an editor's: they walk the UNDO STACK
+//! (da-z0zh3, `datum_core::undo_log`) and take no names. `undo` reverts the
+//! newest command not yet undone, every entry it wrote at once, and the next
+//! `undo` the one before it; `redo` re-applies the oldest undone one. Neither is
+//! a command on the stack itself, which is what lets a second `undo` keep walking
+//! back instead of undoing the first. The stack moves only by writes, so `get
+//! foo; undo` reverts the last write, not foo.
 //!
-//! Bare, they walk the UNDO STACK instead (da-z0zh3, `datum_core::undo_log`):
-//! `undo` reverts the newest command not yet undone, every entry it wrote at
-//! once, and the next `undo` the one before it; `redo` re-applies the oldest
-//! undone one. Neither is a command on the stack itself, which is what lets a
-//! second `undo` keep walking back instead of undoing the first. The stack
-//! moves only by writes, so `get foo; undo` reverts the last write, not foo.
+//! `revert` is the one that takes names, and an ordinary command that writes: it
+//! goes on the stack, so a bare `undo` takes it back and `redo` restores it.
+//! `revert <hid>` steps each entry back to its previous state, or `--to-version`
+//! to one of `datum history`'s. `revert <field>` takes back the last command on
+//! that field that is no revert, as far as it wrote the field and its spec, so a
+//! second one goes on to the command before it.
 //!
-//! `undo <field>` takes back the last command on that field, as far as it wrote
-//! the field and its spec; the rest of that command stands for a bare `undo`
-//! to take next, and `undo a,b` is one step, for one `redo` (da-il29m).
-//!
-//! Neither command refuses on age. Undo used to guard bare `_LAST` behind a
-//! fifteen-minute window (a prompt on a tty, a refusal without one); with a
-//! way forward that guard cost more than it saved, so what is left of it is a
-//! warning past ten minutes naming how old the change is.
+//! Nothing refuses on age. Undo used to guard bare `_LAST` behind a fifteen-minute
+//! window (a prompt on a tty, a refusal without one); with a way forward that
+//! guard cost more than it saved, so what is left of it is a warning past ten
+//! minutes naming how old the change is.
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -35,7 +32,7 @@ use datum_core::{
 };
 
 use crate::{
-    args::{OutputFlagsExt, RedoArgs, UndoArgs},
+    args::{OutputFlagsExt, RedoArgs, RevertArgs, UndoArgs},
     commands::helpers::{
         drop_orphaned_bare_specs, for_each_id, id_field_named, id_list, is_id_list,
         load_registry_opt, resolve_prefix_or_tombstone, warn_if_stale,
@@ -46,104 +43,120 @@ use crate::{
 pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
     let output = args.output()?;
-
-    // Slug-targeted undo. Prefer the history-based revert (D4): back off to
-    // the prior recorded version. Fall back to the legacy undelete path when
-    // no history exists for the entry (e.g. a pre-D4 tombstone imported from
-    // a backup) so the command remains useful for those rows.
-    // A list steps each entry back along its OWN trail (da-9p3o); a version
-    // number belongs to one trail, so `--to-version` with a list is refused.
-    // `_UNDO` IS the bare undo, so it takes the stack; with `--to-version`
-    // it names entries like any other id.
-    let named = args
-        .id_or_slug
-        .as_deref()
-        .filter(|id| *id != datum_core::ids::resolve::UNDO_TOKEN || args.to_version.is_some());
-    if let Some(list) = named.map(|list| every_last(db, list)) {
-        let list = list.as_str();
-        if args.skip_changed {
-            anyhow::bail!("--skip-changed is for a bare `undo`: a named entry already steps alone");
-        }
-        if let Some(fields) = named_fields(db, list)? {
-            if args.to_version.is_some() {
-                anyhow::bail!(
-                    "--to-version names a version of ONE entry's history, and '{list}' is a field; \
-                     give an entry's id"
-                );
-            }
-            return undo_stack(db, &fields, false, &registry, &output);
-        }
-        if args.to_version.is_some() && is_id_list(db, list) {
-            anyhow::bail!(
-                "--to-version names a version of ONE entry's history; give one id, not the list '{list}'"
-            );
-        }
-        // Every step lands before any echo: a reader closing the pipe ends
-        // the process at the print (da-ki5j3).
-        let mut steps: Vec<(Entry, Entry)> = Vec::new();
-        let resolved = for_each_id(db, list, |id| {
-            let current = resolve_prefix_or_tombstone(db, id)?;
-            let after = match args.to_version {
-                Some(v) => undo_to_version(db, &current, v)?,
-                None => step_back(db, &current)?,
-            };
-            steps.push((current, after));
-            Ok(())
-        });
-        // Undoing a first log takes the spec it wrote with it (da-elv6d).
-        let (specs, dropped) =
-            drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Undo);
-        show_steps(&steps, &specs, Echo::Undo(None), registry.as_ref(), &output);
-        dropped?;
-        resolved
-    } else {
-        if args.to_version.is_some() {
-            anyhow::bail!("--to-version requires an <id_or_slug> to target");
-        }
-        undo_stack(db, &[], args.skip_changed, &registry, &output)
-    }
+    undo_stack(db, args.skip_changed, &registry, &output)
 }
 
-/// What an undo step reads before it takes the lock.
+pub fn revert(args: RevertArgs, db: &Db) -> Result<()> {
+    let registry = load_registry_opt(db);
+    let output = args.output()?;
+    let list = every_last(db, &args.id_or_slug);
+    let list = list.as_str();
+    if let Some(fields) = named_fields(db, list)? {
+        if args.to_version.is_some() {
+            anyhow::bail!(
+                "--to-version names a version of ONE entry's history, and '{list}' is a field; \
+                 give an entry's id"
+            );
+        }
+        return revert_fields(db, &fields, &registry, &output);
+    }
+    // A list steps each entry back along its OWN trail (da-9p3o); a version
+    // number belongs to one trail, so `--to-version` with a list is refused.
+    if args.to_version.is_some() && is_id_list(db, list) {
+        anyhow::bail!(
+            "--to-version names a version of ONE entry's history; give one id, not the list '{list}'"
+        );
+    }
+    // Every step lands before any echo: a reader closing the pipe ends
+    // the process at the print (da-ki5j3).
+    let mut steps: Vec<(Entry, Entry)> = Vec::new();
+    let resolved = for_each_id(db, list, |id| {
+        let current = resolve_prefix_or_tombstone(db, id)?;
+        let after = match args.to_version {
+            Some(v) => to_version(db, &current, v)?,
+            None => step_back(db, &current)?,
+        };
+        steps.push((current, after));
+        Ok(())
+    });
+    // Reverting a first log takes the spec it wrote with it (da-elv6d).
+    let (specs, dropped) = drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Revert);
+    let moved = moved_hids(&steps, &specs);
+    if !moved.is_empty() {
+        let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved));
+    }
+    show_steps(&steps, &specs, Echo::Undo(None), registry.as_ref(), &output);
+    dropped?;
+    resolved
+}
+
+/// What a step reads before it takes the lock.
 struct Step {
-    /// The action it takes back whole, or the entries of actions it takes.
-    took: Result<i64, Vec<(i64, Hid)>>,
+    /// The action an undo marks undone.
+    action: Option<i64>,
+    /// What a `revert <field>` took back, on which field.
+    took: Vec<(i64, String)>,
     time: chrono::DateTime<chrono::Utc>,
     skipped: Vec<Hid>,
     report: String,
     members: Vec<(undo_log::Member, Entry)>,
 }
 
-/// Bare `undo` (no `fields`): put every entry the action at the cursor wrote
-/// back as it was before it, and move the cursor back one. `skip_changed` leaves
-/// the entries another copy changed since as they are instead of refusing. With
-/// `fields`, the same for the last action on each ([`step_on_fields`]).
+/// Bare `undo`: put every entry the action at the cursor wrote back as it was
+/// before it, and move the cursor back one. `skip_changed` leaves the entries
+/// another copy changed since as they are instead of refusing.
 fn undo_stack(
     db: &Db,
-    fields: &[String],
     skip_changed: bool,
     registry: &Option<SpecRegistry>,
     output: &OutputArgs,
+) -> Result<()> {
+    take_back(db, ChangeKind::Undo, registry, output, || {
+        step_at_cursor(db, skip_changed)
+    })
+}
+
+/// `revert <field>[,<field>…]`: the last command on each.
+fn revert_fields(
+    db: &Db,
+    fields: &[String],
+    registry: &Option<SpecRegistry>,
+    output: &OutputArgs,
+) -> Result<()> {
+    take_back(db, ChangeKind::Revert, registry, output, || {
+        last_on_fields(db, fields)
+    })
+}
+
+fn take_back(
+    db: &Db,
+    kind: ChangeKind,
+    registry: &Option<SpecRegistry>,
+    output: &OutputArgs,
+    read: impl Fn() -> Result<Step>,
 ) -> Result<()> {
     // One step, one transaction (da-pxsa8): every member moves and the
     // cursor with them, or a failure part-way rolls all of it back. What it
     // moves is read before the lock, and moved on the database it was read
     // from (da-8i7f0).
     let (time, skipped, report, steps) = db.compute_then_write_with(
-        |_| match fields {
-            [] => step_at_cursor(db, skip_changed),
-            fields => step_on_fields(db, fields),
-        },
+        |_| read(),
         |tx, step: Step| {
-            let steps = take_back_in_tx(tx, step.members)?;
-            match &step.took {
-                Ok(id) => undo_log::set_undone(tx, *id, &step.skipped)?,
-                Err(parts) => undo_log::take(tx, parts)?,
+            let steps = take_back_in_tx(tx, step.members, kind)?;
+            if let Some(id) = step.action {
+                undo_log::set_undone(tx, id, &step.skipped)?;
+            }
+            if !step.took.is_empty() {
+                undo_log::set_took(tx, &step.took)?;
             }
             Ok((step.time, step.skipped, step.report, steps))
         },
     )?;
-    warn_if_stale("undoing a change from", time);
+    let doing = match kind {
+        ChangeKind::Revert => "reverting a change from",
+        _ => "undoing a change from",
+    };
+    warn_if_stale(doing, time);
     // Said once it is true: a failure above rolls the step back.
     if !report.is_empty() {
         eprintln!("{report}");
@@ -166,9 +179,10 @@ fn step_at_cursor(db: &Db, skip_changed: bool) -> Result<Step> {
         }
     }
     Ok(Step {
-        took: Ok(action.id),
+        action: Some(action.id),
+        took: Vec::new(),
         time: action.time,
-        skipped,
+        skipped: [action.skipped, skipped].concat(),
         report,
         members,
     })
@@ -177,30 +191,30 @@ fn step_at_cursor(db: &Db, skip_changed: bool) -> Result<Step> {
 /// The last command on each field, as far as it wrote that field. A field with
 /// nothing to take back, or an entry another copy changed since, refuses the
 /// whole step.
-fn step_on_fields(db: &Db, fields: &[String]) -> Result<Step> {
+fn last_on_fields(db: &Db, fields: &[String]) -> Result<Step> {
     let mut time = None;
-    let mut parts = Vec::new();
+    let mut took = Vec::new();
     let mut all: Vec<(undo_log::Member, Entry)> = Vec::new();
     for field in fields {
         let mut below = i64::MAX;
-        // An entry `undo <ID>` already took back has nothing left to move, so
+        // An entry a revert already took back has nothing left to move, so
         // the field's last action is the one before it.
         let (action, members) = loop {
             let Some(action) = undo_log::last_on(db.conn(), field, below)? else {
                 let so = if fields.len() > 1 {
-                    ", so nothing was undone"
+                    ", so nothing was reverted"
                 } else {
                     ""
                 };
                 anyhow::bail!(
-                    "Nothing to undo on field '{field}': no command here has changed it{so}"
+                    "Nothing to revert on field '{field}': no command here has changed it{so}"
                 );
             };
             below = action.id;
             let mut members = Vec::new();
             for member in &action.members {
                 if let Some(current) = still_there(db, &member.hid)? {
-                    if member.first > 1 || current.deleted_at.is_none() {
+                    if undo_log::would_move(db.conn(), member, &current)? {
                         members.push((member.clone(), current));
                     }
                 }
@@ -209,17 +223,18 @@ fn step_on_fields(db: &Db, fields: &[String]) -> Result<Step> {
                 break (action, members);
             }
         };
-        refuse_if_moved(db, &action, "undo that field", false)?;
+        refuse_if_moved(db, &action, "revert", false)?;
         time = time.max(Some(action.time));
+        took.push((action.id, field.clone()));
         for (member, current) in members {
             if !all.iter().any(|(m, _)| m.hid == member.hid) {
-                parts.push((action.id, member.hid.clone()));
                 all.push((member, current));
             }
         }
     }
     Ok(Step {
-        took: Err(parts),
+        action: None,
+        took,
         time: time.unwrap_or_else(chrono::Utc::now),
         skipped: Vec::new(),
         report: String::new(),
@@ -229,8 +244,8 @@ fn step_on_fields(db: &Db, fields: &[String]) -> Result<Step> {
 
 /// The fields a list names, or `None` when it names entries. A whole hid is its
 /// entry. Past that a field wins, as in `get`, over a hid or slug it merely
-/// starts, or `undo a` would turn on what hids happen to begin with; a field
-/// whose every row is tombstoned is still named, so a second `undo a` says
+/// starts, or `revert a` would turn on what hids happen to begin with; a field
+/// whose every row is tombstoned is still named, so a second `revert a` says
 /// there is nothing left and does not bring the first back.
 fn named_fields(db: &Db, list: &str) -> Result<Option<Vec<String>>> {
     let mut fields: Vec<String> = Vec::new();
@@ -260,7 +275,7 @@ fn named_fields(db: &Db, list: &str) -> Result<Option<Vec<String>>> {
         .iter()
         .find(|id| resolve_prefix_or_tombstone(db, id).is_err())
     {
-        anyhow::bail!("No field or entry '{id}', so nothing was undone");
+        anyhow::bail!("No field or entry '{id}', so nothing was reverted");
     }
     anyhow::bail!(
         "'{list}' names fields ({}) and entries ({}): give one or the other",
@@ -394,12 +409,13 @@ fn refuse_if_moved(
         _ => String::new(),
     };
     let whole = match verb {
-        "redo" => "redo re-applies",
-        _ => "undo takes back",
+        "redo" => "redo re-applies the whole command",
+        "revert" => "revert takes back all it wrote of the field",
+        _ => "undo takes back the whole command",
     };
     anyhow::bail!(
         "Cannot {verb}: {n} of the {of} entries that command wrote changed since:\n{lines}\n\
-         {whole} the whole command or nothing, and this would throw \
+         {whole} or nothing, and this would throw \
          those changes away, so nothing was changed.{rest}"
     )
 }
@@ -444,7 +460,7 @@ fn every_last(db: &Db, list: &str) -> String {
 
 /// Move a named entry back to `version` of its history — the number `datum
 /// history` prints, a version per op (da-s4erq).
-fn undo_to_version(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
+fn to_version(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
     // An out-of-range version must point at the problem, not quietly do the
     // wrong thing (da-96yy).
     let Some(target) = db.entry_at_version(current, version)? else {
@@ -454,91 +470,33 @@ fn undo_to_version(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
     Ok(db.revert_entry_to_state(current, &target)?)
 }
 
-/// One step back along one entry's trail — the one rule every undo path
-/// takes (da-ksxkx), returning what the entry became. With a prior version
-/// it reverts to it; with none, a tombstone comes back (a legacy one, say,
-/// imported without history) and a live entry that is only its create is
-/// deleted — tagged `Undo`, so `redo` brings it back under the same hid and
-/// a second `undo` restores it through the revert. Every step addresses the
-/// row by hid: a keep-both leaves two rows on one slug (da-4ptyy).
+/// One step back along one entry's trail, returning what the entry became.
+/// With a prior version it reverts to it, which a second revert steps back from
+/// in turn; with none, a tombstone comes back (a legacy one, say, imported without
+/// history) and a live entry that is only its create is deleted. Every step
+/// addresses the row by hid: a keep-both leaves two rows on one slug (da-4ptyy).
 fn step_back(db: &Db, current: &Entry) -> Result<Entry> {
     match history::latest_version(db.conn(), &current.hid)? {
-        Some(n) if n >= 2 => Ok(db.revert_entry_to_as(&current.hid, n - 1, ChangeKind::Undo)?),
+        Some(n) if n >= 2 => Ok(db.revert_entry_to_as(&current.hid, n - 1, ChangeKind::Revert)?),
         _ if current.deleted_at.is_some() => {
             db.undelete(&current.hid)?;
             Ok(db.get_entry(&current.hid)?)
         }
         _ => {
-            db.soft_delete_entry_as(&current.hid, ChangeKind::Undo)?;
+            db.soft_delete_entry_as(&current.hid, ChangeKind::Revert)?;
             Ok(db.get_entry_including_deleted(&current.hid)?)
         }
     }
 }
 
-/// `datum redo [ID_OR_SLUG]` — the step back that `undo` just took, taken
-/// forward again.
-///
-/// The trail after an undo ends with an `Undo` row whose snapshot IS the state
-/// the undo stepped away from, so going forward is the same revert machinery
-/// aimed one version later: `state_at_version(latest - 1)` is exactly that
-/// snapshot. The new row is tagged `Redo`, so the next `redo` sees that the
-/// newest step was not an undo and says there is nothing ahead.
+/// `datum redo` — the step back that `undo` just took, taken forward again.
 pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
     let output = args.output()?;
-
-    let Some(list) = args.id_or_slug.as_deref().map(|list| every_last(db, list)) else {
-        return redo_stack(db, args.dry_run, &registry, &output);
-    };
-    let list = list.as_str();
-    if named_fields(db, list)?.is_some() {
-        anyhow::bail!(
-            "redo takes an entry's id, not a field: a bare `datum redo` puts back the last undo"
-        );
-    }
-    // A list's ids that do not resolve are named and make the command fail,
-    // after the ones that do have moved — `delete`'s precedent (da-9p3o).
-    let mut targets: Vec<Hid> = Vec::new();
-    let resolved = for_each_id(db, list, |id| {
-        targets.push(resolve_prefix_or_tombstone(db, id)?.hid);
-        Ok(())
-    });
-
-    let mut steps: Vec<(Entry, Entry)> = Vec::new();
-    for hid in &targets {
-        let current = match resolve_prefix_or_tombstone(db, hid) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("redo {hid}: {e}");
-                continue;
-            }
-        };
-        match redo_target_version(db, &current.hid)? {
-            // `--dry-run` asks only whether this would move anything, and
-            // one row that would is the answer: exit 0, nothing written.
-            Some(_) if args.dry_run => return resolved,
-            Some(version) => {
-                let after = db.revert_entry_to_as(&current.hid, version, ChangeKind::Redo)?;
-                steps.push((current, after));
-            }
-            None => continue,
-        }
-    }
-
-    if steps.is_empty() {
-        resolved?;
-        anyhow::bail!("Nothing to redo — the last change here was not an undo");
-    }
-    let (specs, dropped) = drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Redo);
-    // `_LAST` follows the entries that moved, the way undo's does, so a
-    // second `undo` after a `redo` lands on the same rows.
-    let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved_hids(&steps, &specs)));
-    show_steps(&steps, &specs, Echo::Redo, registry.as_ref(), &output);
-    dropped?;
-    resolved
+    redo_stack(db, args.dry_run, &registry, &output)
 }
 
-/// What `_LAST` names after an `undo` or `redo`: the rows it moved, less a
+/// What `_LAST` names after an `undo`, `redo` or `revert`: the rows it moved, less a
 /// spec live again beside a live entry of its field (da-elv6d). While the
 /// pair is tombstoned the spec rides in `_LAST`, so the next step brings it
 /// back with the entry; live, it would make a bare `get` ambiguous and a
@@ -564,30 +522,11 @@ fn pointer_after_step(db: &Db, hids: Vec<Hid>) -> Vec<Hid> {
         .collect()
 }
 
-/// The version `redo` must revert to, or `None` when nothing lies ahead.
-///
-/// Something lies ahead exactly when the newest row on the trail is an `Undo`:
-/// that row's snapshot is the pre-undo state, reachable as the state at the
-/// version one below it.
-fn redo_target_version(db: &Db, hid: &str) -> Result<Option<u32>> {
-    let Some(latest) = history::latest_version(db.conn(), hid)? else {
-        return Ok(None);
-    };
-    if latest < 2 {
-        return Ok(None);
-    }
-    let newest = history::get(db.conn(), hid, latest)?;
-    Ok(match newest.map(|row| row.change_kind) {
-        Some(ChangeKind::Undo) => Some(latest - 1),
-        _ => None,
-    })
-}
-
 /// How a batch of steps is echoed.
 #[derive(Clone, Copy)]
 enum Echo {
-    /// UNDONE, naming the change taken back (da-3mryj): made at the stack
-    /// action's time, or for a named entry at its own last change's.
+    /// UNDONE or REVERT, naming the change taken back (da-3mryj): made at the
+    /// stack action's time, or for a named entry at its own last change's.
     Undo(Option<chrono::DateTime<chrono::Utc>>),
     /// The change put back, as the forward action it was: bringing a
     /// tombstone back is a CREATE, tombstoning is a DELETE, and anything

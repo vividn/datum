@@ -8,7 +8,7 @@
 	A tap that RUNS — `Undo`, its redo icon, and whatever the loaded pills
 	complete (`fires` in #lib/commands.ts, da-3lxol: `delete` with an hid
 	selected) — goes through `pressWithPills`, which hands the command only
-	the pills its grammar takes: a selected hid (`undo <hid>`), a time for
+	the pills its grammar takes: a selected hid (`revert <hid>`), a time for
 	`retime`. Everything else only writes a line into the bottom bar's
 	prompt, unrun, for a person to finish. The loaded pills decide which
 	buttons are active and in what order (da-r13j). A line whose next step

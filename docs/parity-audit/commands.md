@@ -475,10 +475,10 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 ### undo (daydumb only, D4)
 
-- **Purpose:** revert an entry to a prior version (or undo a delete).
-- **Flags:** optional `id_or_slug`, `--to-version`, `--skip-changed`.
-- **Notes:** an entry another copy changed since is never reverted: a bare
-  undo refuses, naming every one, and `--skip-changed` takes back the rest
+- **Purpose:** take back the last command, all of it (da-k5vg1).
+- **Flags:** `--skip-changed`. A name or `--to-version` is refused, naming `revert`.
+- **Notes:** an entry another copy changed since is never reverted: undo
+  refuses, naming every one, and `--skip-changed` takes back the rest
   of the command and leaves those as they are (da-e3be3). No safety window. The fifteen-minute gate went (da-s6no) —
   undo is reversible now that `redo` exists, so age earns a stderr warning
   past ten minutes, not a refusal. `--force` is still accepted and does
@@ -487,11 +487,16 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 ### redo (daydumb only, da-s6no)
 
-- **Purpose:** the inverse of `undo` — re-apply the version the last undo
-  stepped back from.
-- **Flags:** optional `id_or_slug`.
-- **Notes:** offered only when the entry's newest history row is an `undo`,
-  so `undo; redo; redo` moves once. Exits 1 with "Nothing to redo" otherwise.
+- **Purpose:** the inverse of `undo` — re-apply the command it took back.
+- **Flags:** `--dry-run`. A name is refused.
+- **Notes:** exits 1 with "Nothing to redo" when nothing lies ahead, so
+  `undo; redo; redo` moves once.
+
+### revert (daydumb only, da-k5vg1)
+
+- **Purpose:** step entries back to their previous state, or take back a
+  field's last command, as one command on the undo stack.
+- **Flags:** `id_or_slug` or field, comma-listed; `--to-version` for one entry.
 
 ### why (daydumb only, D3)
 

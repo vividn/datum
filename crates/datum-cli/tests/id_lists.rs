@@ -162,26 +162,26 @@ fn history_refuses_a_version_or_diff_with_a_list() {
 }
 
 #[test]
-fn undo_and_redo_step_every_entry_of_a_list() {
+fn revert_steps_every_entry_of_a_list() {
     let env = Env::new();
     let (a, b) = (env.entry("mood", "happy"), env.entry("proj", "code"));
     let list = format!("{a},{b}");
     let notes = |env: &Env| stdout(&env.run(&["get", &list])).matches("note").count();
 
     assert_eq!(notes(&env), 2);
-    let out = env.run(&["undo", &list]);
+    let out = env.run(&["revert", &list]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(notes(&env), 0, "both entries stepped back");
 
-    let out = env.run(&["redo", &format!("{list},{BAD_ID}")]);
+    let out = env.run(&["revert", &format!("{list},{BAD_ID}")]);
     assert_eq!(out.status.code(), Some(1), "a bad id fails the command");
     assert!(stderr(&out).contains(BAD_ID), "{}", stderr(&out));
     assert_eq!(notes(&env), 2, "the ids that resolved still moved");
 
-    let out = env.run(&["undo", &list, "--to-version", "1"]);
+    let out = env.run(&["revert", &list, "--to-version", "1"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("ONE entry's history"));
-    assert_eq!(notes(&env), 2, "a refused undo writes nothing");
+    assert_eq!(notes(&env), 2, "a refused revert writes nothing");
 }
 
 /// The LAST stderr line of a partly-bad list carries each failed id's reason
@@ -193,7 +193,7 @@ fn a_partly_bad_list_ends_on_each_failed_id_with_its_reason() {
     let a = env.entry("mood", "happy");
     // CI sets RUST_BACKTRACE, which puts a stack trace under the error line.
     let out = env
-        .cmd(&["undo", &format!("{a},{BAD_ID}")])
+        .cmd(&["revert", &format!("{a},{BAD_ID}")])
         .env_remove("RUST_BACKTRACE")
         .env_remove("RUST_LIB_BACKTRACE")
         .output()
@@ -215,7 +215,7 @@ fn help_json_declares_which_verbs_take_a_list() {
         cmd["usage"][0].as_str().unwrap().to_string()
     };
     for verb in [
-        "get", "history", "why", "update", "merge", "rekey", "delete", "undo", "redo", "reparse",
+        "get", "history", "why", "update", "merge", "rekey", "delete", "revert", "reparse",
         "retime",
     ] {
         assert!(

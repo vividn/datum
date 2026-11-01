@@ -27,6 +27,8 @@ use rusqlite::Connection;
 mod v76;
 #[path = "migration_roundtrip/v77.rs"]
 mod v77;
+#[path = "migration_roundtrip/v78.rs"]
+mod v78;
 
 fn fresh_at(version: u32) -> Db {
     let db = Db::open_in_memory().unwrap();
@@ -40,6 +42,11 @@ fn step(from: u32) -> &'static Migration {
         .iter()
         .find(|m| m.from == from)
         .unwrap_or_else(|| panic!("no migration step starting at v{from}"))
+}
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+    conn.prepare(&format!("SELECT {column} FROM {table}"))
+        .is_ok()
 }
 
 fn table_exists(conn: &Connection, name: &str) -> bool {
@@ -244,6 +251,7 @@ fn every_pair_has_a_roundtrip_test() {
         (74, 75),
         (75, 76),
         (76, 77),
+        (77, 78),
     ];
     assert_eq!(
         covered.len(),

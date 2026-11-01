@@ -123,7 +123,7 @@ export function clearScrollback(): void {
  * A TRACK row names itself in that word (`TRACK●`), a `track`'s and a `get`'s
  * of one alike; only `action_color`, EXISTS's yellow on a `get`, parts them.
  */
-const WRITES = new Set(['CREATE', 'UPDATE', 'DELETE', 'OWRITE', 'RENAME', 'RETIME', 'UNDONE', 'IGNORE']);
+const WRITES = new Set(['CREATE', 'UPDATE', 'DELETE', 'OWRITE', 'RENAME', 'RETIME', 'UNDONE', 'REVERT', 'IGNORE']);
 const EXISTS_COLOR = '#e5a50a';
 const wroteDoc = (d: EchoDoc): boolean =>
 	WRITES.has(d.action) || (d.action.startsWith('TRACK') && d.action_color !== EXISTS_COLOR);
@@ -145,7 +145,7 @@ export const stepped = (entry: Command): boolean => entry.of !== undefined && wr
 /**
  * Where the undo button of a command that wrote stands (da-25q3k): `undone`
  * when its button last stepped it back, and `buried` by the newest later
- * command that wrote one of its entries — `undo <hid>` steps an entry back
+ * command that wrote one of its entries — `revert <hid>` steps an entry back
  * its LAST change, which is then that one's, so the button is refused.
  */
 export interface Mark {
@@ -162,7 +162,8 @@ export const marks = derived(cli, ({ scrollback }) => {
 		const mark: Mark = { undone: false };
 		for (const later of scrollback.slice(i + 1)) {
 			if (later.of === entry.ranAt) {
-				if (stepped(later)) mark.undone = later.line.startsWith('undo');
+				// A button's step is always a `revert`, which each press turns back the other way.
+				if (stepped(later)) mark.undone = !mark.undone;
 			} else if (wroteBy(later).some((hid) => hids.includes(hid))) mark.buried = later;
 		}
 		out.set(entry, mark);

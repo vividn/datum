@@ -47,8 +47,9 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `retime` — Move an entry's time, its `at` (alias: rt)
 - `rename` — Give a field another name, its entries and spec with it
 - `delete` — Delete an entry (alias: del)
-- `undo` — Undo the last command, or one entry's last change
-- `redo` — Redo the last undone change (the inverse of undo)
+- `undo` — Undo the last command, all of it
+- `redo` — Redo the last undone command (the inverse of undo)
+- `revert` — Step entries back, or take back a field's last command
 
 ## READ
 

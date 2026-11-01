@@ -132,10 +132,10 @@ impl Db {
     }
 
     /// Revert `current` to `target`, the entry at a version of the history
-    /// its ops make ([`Db::versions`]) — `undo --to-version`, whose number
+    /// its ops make ([`Db::versions`]) — `revert --to-version`, whose number
     /// is the one `datum history` prints (da-s4erq).
     pub fn revert_entry_to_state(&self, current: &Entry, target: &Entry) -> Result<Entry> {
-        self.write_with(|tx| revert_to(tx, current, target, ChangeKind::Undo))
+        self.write_with(|tx| revert_to(tx, current, target, ChangeKind::Revert))
     }
 }
 
@@ -224,11 +224,12 @@ pub(super) fn move_aside(conn: &Connection, held: &Entry, kind: ChangeKind) -> R
     super::sync::emit(conn, Some(held), &held.hid, kind)
 }
 
-/// Put each member of an undo step back as it was before its action, returning
-/// each entry it moved, before and after.
+/// Put each member of a step back as it was before its action, as `kind` rows,
+/// returning each entry it moved, before and after.
 pub fn take_back_in_tx(
     conn: &Connection,
     members: Vec<(crate::undo_log::Member, Entry)>,
+    kind: ChangeKind,
 ) -> Result<Vec<(Entry, Entry)>> {
     let mut steps = Vec::new();
     // A row refused its slug because another took it in this command
@@ -236,7 +237,7 @@ pub fn take_back_in_tx(
     let mut held = Vec::new();
     for (member, current) in members {
         let after = if member.first > 1 {
-            match revert_in_tx(conn, &member.hid, member.first - 1, ChangeKind::Undo) {
+            match revert_in_tx(conn, &member.hid, member.first - 1, kind) {
                 Err(DatumError::Duplicate(_)) => {
                     held.push((member, current));
                     continue;
@@ -245,7 +246,7 @@ pub fn take_back_in_tx(
             }
         } else if current.deleted_at.is_none() {
             // The action created it: before it, there was nothing.
-            soft_delete_in_tx(conn, &member.hid, ChangeKind::Undo, None)?;
+            soft_delete_in_tx(conn, &member.hid, kind, None)?;
             fetch_entry_any(conn, &member.hid)?
         } else {
             continue;
@@ -253,7 +254,7 @@ pub fn take_back_in_tx(
         steps.push((current, after));
     }
     for (member, current) in held {
-        let after = revert_in_tx(conn, &member.hid, member.first - 1, ChangeKind::Undo)?;
+        let after = revert_in_tx(conn, &member.hid, member.first - 1, kind)?;
         steps.push((current, after));
     }
     Ok(steps)
