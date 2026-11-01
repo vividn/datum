@@ -16,7 +16,7 @@
 
 import { tick } from 'svelte';
 import { get, writable } from 'svelte/store';
-import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost } from '#lib/bar.ts';
+import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost, text } from '#lib/bar.ts';
 import { openOutput } from '#lib/log.ts';
 import { grammarOf, type Grammar, type GrammarEntry } from '#lib/commands.ts';
 import { withPills } from '#lib/selection.ts';
@@ -164,8 +164,11 @@ export async function boot(): Promise<void> {
 	// The line takes the typing once it can (da-wnjkf): after the flush that
 	// enables it, once, and only where nothing has the focus yet and the
 	// pointer is fine — on a phone a focused box is a keyboard over the page.
+	// A line a pull kept takes the caret there too, with no keyboard (da-3ok3j).
 	setTimeout(() => {
-		if (matchMedia('(pointer: fine)').matches && document.activeElement === document.body) focusLine();
+		if (document.activeElement !== document.body) return;
+		const fine = matchMedia('(pointer: fine)').matches;
+		if (fine || get(text)) focusLine(fine);
 	});
 	await Promise.all([refresh(), resort()]);
 	document.addEventListener('visibilitychange', () => {

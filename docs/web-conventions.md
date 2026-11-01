@@ -51,7 +51,8 @@ writing it down.
    is a thing a person does to THIS screen, and the pill it holds is an argument, never an entry.
    `layout/current.ts`, `layout/shell.ts` and `layout/registry.ts` name it in prose only.
    `+layout.svelte` keeps one flag in `sessionStorage` — the same rule one scope tighter: a
-   tab's, not a device's.
+   tab's, not a device's — and a pull to refresh leaves the unsent line there for the load after
+   it (`keepLine`, `bar.ts`, da-3ok3j).
    ⚠ *A closed list rots at BOTH ends, and this one had done both by the time it was read again.
    `log.ts` and `tuning.ts` were missing, and they are the rule's best statements of itself. And
    “the widget picker's last choice” was never real: no key for it exists today, and none existed

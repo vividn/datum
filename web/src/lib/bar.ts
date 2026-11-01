@@ -122,6 +122,9 @@ export const sectionsOf = (pill: Pill): PillSection[] => pill.sections ?? [{ tex
 /** Where the locked pills are kept (never synced: they are a screen's). */
 export const PILLS_KEY = 'datum.bar.pills.v1';
 
+/** Where a pull to refresh leaves the unsent line, in `sessionStorage` (`keepLine`). */
+const KEPT_LINE_KEY = 'datum.bar.line.v1';
+
 /** What is written: the lock is implied — only locked pills are stored. */
 type KeptPill = Pick<Pill, 'id' | 'kind' | 'text' | 'color'>;
 
@@ -436,7 +439,33 @@ pills.subscribe((all) => {
  * What is typed at the command line, wherever it is drawn. THE buffer:
  * every `Prompt.svelte` binds its box straight to this store.
  */
-export const text = writable('');
+export const text = writable(takeKeptLine());
+
+/**
+ * A pull to refresh keeps the line typed and not sent (da-3ok3j): `keepLine`
+ * just before its reload, and the load after takes it once, so the next
+ * reload finds an empty box. The pull's alone, so a plain reload still starts
+ * empty. A tab's and not a device's, and the reload keeps the tab's `?db=`.
+ */
+export function keepLine(): void {
+	const line = get(text);
+	try {
+		if (line) sessionStorage.setItem(KEPT_LINE_KEY, line);
+	} catch {
+		// Unkept is what any other reload does.
+	}
+}
+
+function takeKeptLine(): string {
+	try {
+		const line = sessionStorage.getItem(KEPT_LINE_KEY);
+		sessionStorage.removeItem(KEPT_LINE_KEY);
+		return line ?? '';
+	} catch {
+		// Blocked, or absent (the prerender).
+		return '';
+	}
+}
 
 /**
  * Run a line the reader typed — the one submit path, for the bar and for

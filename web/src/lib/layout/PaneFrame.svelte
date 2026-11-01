@@ -192,6 +192,7 @@
 	import { setContext, tick, untrack, type Snippet } from 'svelte';
 	import { on } from 'svelte/events';
 	import { act } from '#lib/act.ts';
+	import { keepLine } from '#lib/bar.ts';
 	import { ask } from '#lib/confirm.ts';
 	import { holds } from '#lib/hold.ts';
 	import { settled } from '#lib/run.ts';
@@ -809,7 +810,11 @@
 		gripped = false;
 		if (was?.state === 'pull') {
 			// A reload kills the process under a write, so what is running or queued answers first.
-			if (pulled >= pullAt) void settled().then(() => location.reload());
+			if (pulled >= pullAt)
+				void settled().then(() => {
+					keepLine();
+					location.reload();
+				});
 			else pulled = 0;
 			return;
 		}

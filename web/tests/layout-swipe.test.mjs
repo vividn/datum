@@ -354,6 +354,60 @@ describe('the swipe strip', () => {
 		);
 	});
 
+	test('a pull keeps the line not yet sent, the caret at its end, and only until the next reload (da-3ok3j)', async () => {
+		await withApp(
+			async ({ page, entries }) => {
+				const input = page.locator('.prompt-bar input');
+				const enabled = () => page.locator('.prompt-bar input:enabled').waitFor();
+				const kept = async () => (await entries()).filter((e) => e.field === 'kept_line');
+				const line = `note kept_line ${'a long half-typed line '.repeat(4)}`;
+				await input.fill(line);
+				await closeBar(page);
+				await mark(page);
+				await onStrip(page, [[0, 30], [0, 50]]);
+				await reloaded(page);
+				await enabled();
+				assert.equal(await input.inputValue(), line);
+				await until(() => input.evaluate((el) => document.activeElement === el), Boolean);
+				const caret = await input.evaluate((el) => {
+					const port = el.closest('.field');
+					return {
+						start: el.selectionStart,
+						end: el.selectionEnd,
+						keyboard: el.inputMode,
+						// The end of the line is on screen, where a terminal keeps it.
+						gap: el.getBoundingClientRect().right - port.getBoundingClientRect().right
+					};
+				});
+				assert.deepEqual(
+					{ start: caret.start, end: caret.end, keyboard: caret.keyboard },
+					{ start: line.length, end: line.length, keyboard: 'none' }
+				);
+				assert.ok(caret.gap < 2, `the line's end is ${caret.gap}px off the box`);
+				assert.deepEqual(await kept(), [], 'a kept line ran');
+
+				await input.press('Enter');
+				await until(() => kept().then((all) => all.length), (n) => n === 1);
+				await page.reload();
+				await enabled();
+				assert.equal(await input.inputValue(), '');
+
+				// Taken once: a plain reload after a pull does not bring it back.
+				await input.fill('moment half');
+				await mark(page);
+				await closeBar(page);
+				await onStrip(page, [[0, 30], [0, 50]]);
+				await reloaded(page);
+				await enabled();
+				assert.equal(await input.inputValue(), 'moment half');
+				await page.reload();
+				await enabled();
+				assert.equal(await input.inputValue(), '');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
 	// The closed bar leaves the input's height under the strip on every screen,
 	// so the lowest place to begin, and the last pixel to reach, is the least room.
 	for (const viewport of [PHONE.device.viewport, { width: 412, height: 563 }, { width: 390, height: 844 }])
