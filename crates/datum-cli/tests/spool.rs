@@ -246,6 +246,29 @@ fn an_undo_a_retime_and_an_update_under_a_held_lock_land_as_computed() {
     assert_eq!(env.rows()[0].4, None);
 }
 
+/// A field's undo under a held lock moves the stack as it does unheld: only
+/// its side of the batch is taken (da-il29m), for a bare `undo` to find the rest.
+#[test]
+fn a_queued_field_undo_takes_only_its_side_of_a_batch() {
+    let env = Env::new();
+    assert!(env.run(&["moment", "a,b"]).status.success());
+    let (a, b) = (env.hid_of("a"), env.hid_of("b"));
+    let holder = env.hold();
+    let out = env.queued(&["undo", "a"]);
+    assert!(out.contains(&a[..5]) && !out.contains(&b[..5]), "{out}");
+    drop(holder);
+
+    assert!(env.run(&["tail"]).status.success());
+    let live = |hid: &str| env.rows().iter().any(|r| r.0 == hid && !r.3);
+    assert!(!live(&a) && live(&b));
+    assert!(env.run(&["undo"]).status.success());
+    assert!(!live(&b), "the bare undo took the rest");
+    assert!(env.run(&["redo"]).status.success());
+    assert!(live(&b) && !live(&a), "its redo is its own");
+    assert!(env.run(&["redo"]).status.success());
+    assert!(live(&a), "and then the queued undo's");
+}
+
 /// A spooled edit and another copy's edit of the same key, landed between
 /// the spool and its drain, saw nothing of each other (the spooled op keeps
 /// the `deps` of the snapshot it was made on), so the fold keeps both as a

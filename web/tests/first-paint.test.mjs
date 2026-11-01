@@ -218,7 +218,9 @@ describe('before the CLI answers', () => {
 			await v75File(app.page);
 			await app.reload();
 			const status = await app.run(['db', 'migrate', 'status']);
-			assert.match(status.stdout, /v76/, status.stdout);
+			// Its first two lines: the schema version, then the binary's target.
+			const [current, target] = status.stdout.split('\n').slice(0, 2).map((line) => line.match(/v(\d+)/)?.[1]);
+			assert.ok(current !== undefined && current === target, status.stdout);
 			for (const tab of [app, other]) {
 				const zoned = await tab.run(['get', 'zoned::at']);
 				assert.equal(zoned.stdout.trim(), '2026-10-03T13:00:00Z', zoned.stdout + zoned.stderr);
@@ -233,7 +235,7 @@ describe('before the CLI answers', () => {
 				for await (const name of files.keys()) names.push(name);
 				return names;
 			}, OPFS_DIR);
-			assert.ok(names.some((n) => /^datum\.db\.pre-v75-to-v76-/.test(n)), names.join(', '));
+			assert.ok(names.some((n) => /^datum\.db\.pre-v75-to-v\d+-/.test(n)), names.join(', '));
 			// Written in the upgraded file, read in the tab that sat through it.
 			await app.run(['occur', 'tea', '-d', '2026-10-10', '-t', '09:00']);
 			assert.equal((await other.run(['get', 'tea::at'])).stdout.trim(), '2026-10-10T09:00:00Z');

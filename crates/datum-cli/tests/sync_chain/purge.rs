@@ -142,6 +142,23 @@ fn a_data_purge_empties_every_copy_as_it_connects_and_the_chain_syncs_on() {
     assert!(fresh.has("tea") && fresh.has("coffee") && !fresh.has("juice"));
 }
 
+/// A part of a batch `undo <field>` took back goes with its action, or `redo`
+/// reads a step whose action is gone and fails on it (da-zhnst).
+#[test]
+fn a_chain_purge_leaves_no_step_of_a_field_undo_to_redo() {
+    let (a, _c) = chained();
+    a.ok(&["moment", "x,y"]);
+    a.ok(&["undo", "x"]);
+    assert_ne!(a.query("SELECT COUNT(*) FROM undo_taken"), "0");
+
+    a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
+
+    assert_eq!(a.query("SELECT COUNT(*) FROM undo_taken"), "0");
+    let redo = a.run(&["redo"], "");
+    let said = String::from_utf8_lossy(&redo.stderr);
+    assert!(said.contains("Nothing to redo"), "{said}");
+}
+
 /// da-acwey, vividn: «every member keeps one». c, offline, logs before a
 /// chain purge it learns of later: what it held goes into a backup beside
 /// it, which the next command, `check` and `sync status` name, saying

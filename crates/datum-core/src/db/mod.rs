@@ -90,7 +90,7 @@ pub use sync::{
     canonical_json, chain, device_id, peers, row_diff, set_client_source, set_device_source,
     set_invocation, ApplySummary, DebugConflicts, FoldCheck, Named, Orphan, Stale, Version,
 };
-pub use tombstone::{revert_in_tx, soft_delete_in_tx};
+pub use tombstone::{revert_in_tx, soft_delete_in_tx, take_back_in_tx};
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,
     InsertOutcome, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,

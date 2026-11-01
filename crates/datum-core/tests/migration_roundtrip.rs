@@ -25,6 +25,8 @@ use rusqlite::Connection;
 
 #[path = "migration_roundtrip/v76.rs"]
 mod v76;
+#[path = "migration_roundtrip/v77.rs"]
+mod v77;
 
 fn fresh_at(version: u32) -> Db {
     let db = Db::open_in_memory().unwrap();
@@ -241,6 +243,7 @@ fn every_pair_has_a_roundtrip_test() {
         (73, 74),
         (74, 75),
         (75, 76),
+        (76, 77),
     ];
     assert_eq!(
         covered.len(),

@@ -179,7 +179,7 @@ fn an_old_chain_migrates_with_every_time_unchanged() {
     let kept = std::fs::read_dir(copy.dir())
         .unwrap()
         .filter_map(|e| Some(e.ok()?.path()))
-        .find(|p| p.to_string_lossy().contains(".pre-v75-to-v76-"))
+        .find(|p| p.to_string_lossy().contains(".pre-v75-to-"))
         .expect("a pre-migration copy");
     let conn = Connection::open(kept).unwrap();
     let rows: i64 = conn
