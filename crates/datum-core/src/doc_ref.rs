@@ -13,8 +13,8 @@
 //! (a missing target is legal — the reference is just unresolved until the
 //! document is created or synced in).
 //!
-//! A STATE is the stricter case: [`state_refs`] reads `:` inside it as a
-//! reserved token, so there it is never a guess. A DATA value refers only
+//! A STATE is the stricter case: [`state_refs`] reads a `:` that can join a
+//! field to an id as a reserved token, so there it is never a guess. A DATA value refers only
 //! through [`data_refs`]: the reserved `ref://` prefix, or a key the spec
 //! types `ref`.
 //!
@@ -70,10 +70,10 @@ pub fn record_ref(slug: &str) -> Option<&str> {
 /// The slugs a state refers to (da-f9jyv). `:` inside a state is a
 /// reserved token, not a shape to guess at:
 ///
-/// 1. a string holding `:` is a full slug `field:id`, whatever field logged
-///    it — `switch media book:great_gatsby` names `book:great_gatsby`, and
-///    `switch clock 12:30` names `12:30`, which dangles;
-/// 2. a string without one, on a field whose spec has a
+/// 1. a string [`slug_shaped`] is a full slug `field:id`, whatever field
+///    logged it — `switch media book:great_gatsby` names `book:great_gatsby`,
+///    and `switch clock 12:30` names `12:30`, which dangles;
+/// 2. any other, on a field whose spec has a
 ///    [`state_lookup_field`](FieldSpec::state_lookup_field) `F`, names
 ///    `F:<state>`;
 /// 3. anything else is a plain state and names nothing.
@@ -85,7 +85,7 @@ pub fn record_ref(slug: &str) -> Option<&str> {
 pub fn state_refs(spec: Option<&FieldSpec>, state: &JsonValue) -> Vec<String> {
     match state {
         JsonValue::Array(items) => items.iter().flat_map(|s| state_refs(spec, s)).collect(),
-        JsonValue::String(s) if s.contains(':') => vec![s.clone()],
+        JsonValue::String(s) if slug_shaped(s) => vec![s.clone()],
         JsonValue::String(s)
             if s.is_empty() || s == TRACKED_STATE_VALUE || s == IGNORED_STATE_VALUE =>
         {
@@ -97,6 +97,19 @@ pub fn state_refs(spec: Option<&FieldSpec>, state: &JsonValue) -> Vec<String> {
             .unwrap_or_default(),
         _ => vec![],
     }
+}
+
+/// Whether a state's first `:` can join a field's name to an id (da-vjbu2):
+/// neither side empty and no space touching it, nor at the field's start, so
+/// `note: a sentence` is prose. A space elsewhere stays: a field may hold one
+/// (`my coffee:x`, da-7h73h) and so may an id (`book:great gatsby`).
+fn slug_shaped(s: &str) -> bool {
+    s.split_once(':').is_some_and(|(field, id)| {
+        !field.is_empty()
+            && field.trim() == field
+            && !id.is_empty()
+            && !id.starts_with(char::is_whitespace)
+    })
 }
 
 /// The slugs the data value under `key` refers to (da-s5k2s):
@@ -315,6 +328,46 @@ mod tests {
         ] {
             assert!(state_refs(Some(&looked), &s).is_empty(), "{s}");
         }
+    }
+
+    #[test]
+    fn a_state_is_a_slug_only_where_its_colon_can_join_field_and_id() {
+        use serde_json::json;
+        let slugs = [
+            "book:goldmund",
+            "12:30",
+            "coffee:2024-03-16T09:15:00.000Z",
+            "book:series:dune",
+            "book:great gatsby",
+            "my coffee:x",
+            "issue__k7f2a9x3::",
+            "my coffee::",
+        ];
+        for s in slugs {
+            assert_eq!(state_refs(None, &json!(s)), [s]);
+        }
+        let prose = [
+            "note: a sentence",
+            "2026-07-22 dedup: removed 45",
+            "TZ CHANGE (not a data error): system",
+            "spaced :out",
+            " lead:x",
+            "note:\ttabbed",
+            "todo:",
+            ":30",
+            ":",
+            "::",
+        ];
+        for s in prose {
+            assert!(state_refs(None, &json!(s)).is_empty(), "{s}");
+        }
+        // Not a slug, so on a lookup field a state like any other.
+        let mut looked = FieldSpec::new("issue", crate::action::Action::Switch);
+        looked.state_lookup_field = Some("issue_state".into());
+        assert_eq!(
+            state_refs(Some(&looked), &json!("note: x")),
+            ["issue_state:note: x"]
+        );
     }
 
     #[test]

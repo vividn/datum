@@ -144,7 +144,7 @@ fn moved_id(e: &Entry) -> Option<String> {
 }
 
 /// Point `e`'s references to a moved id at its new one: a state's slugs
-/// ([`state_refs`]: a string holding `:`), and in its data a `ref://` value
+/// ([`state_refs`]), and in its data a `ref://` value
 /// or a bare one under a key the spec types `ref`, as
 /// [`crate::doc_ref::data_refs`] reads them. Whether anything moved.
 fn carry_refs(spec: Option<&FieldSpec>, e: &mut Entry, was: &HashMap<String, String>) -> bool {

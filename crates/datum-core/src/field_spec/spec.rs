@@ -155,8 +155,8 @@ pub struct FieldSpec {
     pub archived: Vec<String>,
     /// The field a bare state names a document of (da-f9jyv): with
     /// `issue_state`, a state `queued` refers to `issue_state:queued`. One
-    /// field name, never a template. A state holding `:` is a full slug
-    /// whatever this says — see [`crate::doc_ref::state_refs`].
+    /// field name, never a template. A state shaped `field:id` is a full
+    /// slug whatever this says — see [`crate::doc_ref::state_refs`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_lookup_field: Option<String>,
     /// Auto-derived aliases (bare-field, terminal-end, and per-state).

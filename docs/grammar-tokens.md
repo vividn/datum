@@ -770,13 +770,15 @@ book
 
 ### `:` inside a state — a reference
 
-A state holding `:` is ALWAYS a full slug `field:id`, whatever field it
-is logged on: `:` inside a state value is reserved to mean "reference",
-as `::` is reserved in an id. It is a rule of the grammar, not a guess
-from the string's shape — `12:30` is a reference too, and one that names
-nothing.
+A state whose first `:` can join a field to an id is ALWAYS a full slug
+`field:id`, whatever field it is logged on: `:` there is reserved to mean
+"reference", as `::` is reserved in an id. That means neither side empty and
+no space touching the `:`, so `note: a plain sentence` is prose and refers to
+nothing. Whether the field exists is not asked: `12:30` is a reference too, and
+one that names nothing, and so is `note:a plain sentence`, since an id may hold
+a space (`book:great gatsby`), as a field may inside its name (`my coffee:x`).
 
-A state without `:` refers to an entry only when its field's spec names a
+Any other state refers to an entry only when its field's spec names a
 lookup field: `setup issue --state-lookup-field issue_state` makes the
 state `queued` refer to `issue_state:queued`. Anything else is a plain
 state. An array state takes the rule per element; `false`, `true`, a

@@ -1,5 +1,5 @@
-//! A state refers to another entry (da-f9jyv): one holding `:` is a full
-//! slug `field:id`, a bare one on a field whose spec names a
+//! A state refers to another entry (da-f9jyv): one shaped `field:id` is a
+//! full slug (da-vjbu2), any other on a field whose spec names a
 //! `state_lookup_field` F refers to `F:<state>`, and `datum check` warns of
 //! a reference that names no live entry. Nothing is refused at write.
 
@@ -111,6 +111,43 @@ fn a_bare_state_resolves_through_the_lookup_field() {
     .unwrap();
     run_cli(&["add", "issue_state", "--id", "done"], &db).unwrap();
     run_cli(&["add", "book", "--id", "x"], &db).unwrap();
+    assert!(dangling(&db).is_empty(), "{:?}", dangling(&db));
+}
+
+/// A sentence with a colon in it is prose (da-vjbu2): a space touching the
+/// colon, or nothing on one side of it, can't be `field:id`.
+#[test]
+fn a_sentence_with_a_colon_is_no_reference() {
+    let db = fresh_db();
+    for (minutes, state) in [
+        ("-50", "note: a plain sentence with a colon"),
+        ("-40", "2026-07-22 dedup: removed 45 entries"),
+        ("-30", "TZ CHANGE (not a data error): system moved"),
+        ("-20", "spaced : out"),
+        ("-10", "todo:"),
+    ] {
+        run_cli(&["switch", "log", state, "-t", minutes], &db).unwrap();
+    }
+    assert!(dangling(&db).is_empty(), "{:?}", dangling(&db));
+
+    // Control: a real `field:id` naming nothing, in the same field.
+    run_cli(&["switch", "log", "book:missing"], &db).unwrap();
+    assert_eq!(dangling(&db), ["log → book:missing x1"]);
+}
+
+/// A slug may hold a space, in its id or inside its field (da-7h73h), and a
+/// state naming one reads through to it.
+#[test]
+fn a_slug_with_a_space_is_still_a_reference() {
+    let db = fresh_db();
+    run_cli(&["switch", "a", "book:great gatsby", "-t", "-2"], &db).unwrap();
+    run_cli(&["switch", "a", "my coffee:x", "-t", "-1"], &db).unwrap();
+    assert_eq!(
+        dangling(&db),
+        ["a → book:great gatsby x1", "a → my coffee:x x1"]
+    );
+    run_cli(&["add", "book", "--id", "great gatsby"], &db).unwrap();
+    run_cli(&["add", "my coffee", "--id", "x"], &db).unwrap();
     assert!(dangling(&db).is_empty(), "{:?}", dangling(&db));
 }
 
