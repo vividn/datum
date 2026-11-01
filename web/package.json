@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare": "svelte-kit sync",
     "predev": "node scripts/ensure-wasm.mjs",
     "dev": "vite dev",
     "prebuild": "node scripts/ensure-wasm.mjs",
@@ -25,10 +26,8 @@
     "playwright": "^1.63.0",
     "svelte": "^5.57.2",
     "svelte-check": "^4.7.7",
-    "svelte-language-server": "^0.18.5",
     "tslib": "^2.4.1",
     "typescript": "^6.0.0",
-    "typescript-svelte-plugin": "^0.3.52",
     "vite": "^8.3.5"
   },
   "dependencies": {
