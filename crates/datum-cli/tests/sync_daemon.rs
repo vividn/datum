@@ -295,6 +295,39 @@ fn a_join_killed_at_its_first_sync_left_the_daemon_which_finishes_it() {
     assert!(b.ok(&["tail", "-n", "1"]).contains("step"));
 }
 
+/// A writer opening or closing the file has a `-wal` and no `-shm` for an
+/// instant, which refuses a read-only look. A daemon starting in that instant
+/// looks again at once, where it took the copy for unchained and left it a
+/// minute (da-mtsgn).
+#[test]
+fn a_look_a_writer_refuses_costs_the_daemon_no_minute() {
+    let h = Home::new();
+    // Not the database a command opens first, which would take up the `-wal`.
+    let other = h.path("data/other.db");
+    h.datum(
+        &["sync", "chain", "invite", "--expires", "1s"],
+        &[("DATUM_DB", other.to_str().unwrap())],
+    );
+    let wal = h.path("data/other.db-wal");
+    assert!(!wal.exists());
+    std::fs::write(&wal, "").unwrap();
+    let mut daemon = h.spawn(&["sync", "daemon", "run"], &[]);
+    let err = BufReader::new(daemon.0.stderr.take().unwrap());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        err.lines()
+            .map_while(Result::ok)
+            .try_for_each(|l| tx.send(l))
+    });
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::fs::remove_file(&wal).unwrap();
+    while !rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the daemon taking the copy up within 10s")
+        .ends_with("other.db: syncing")
+    {}
+}
+
 /// An open invite holds the copy as `join` does (da-apd52): a daemon
 /// serving it too binds its endpoint key in a second process and may admit
 /// the joiner itself, and the invite, having seen nothing, waits out its

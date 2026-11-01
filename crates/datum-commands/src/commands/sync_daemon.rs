@@ -36,6 +36,8 @@ const ENV: [&str; 4] = [
 ];
 /// How often `run` looks for a database newly in a chain.
 const LOOK: Duration = Duration::from_secs(60);
+/// How soon `run` first looks again at a database that refused its look.
+const LOOK_AGAIN: Duration = Duration::from_secs(1);
 const AT_LOGIN: &str =
     "no systemd or launchd here: run `datum sync daemon run` at login to keep syncing";
 
@@ -460,28 +462,61 @@ pub fn auto_install(db: &Db) {
 /// to one and has its first sync to finish (da-qr7gz), read without touching
 /// it. Not one a `join` or an `invite` is still at work on.
 fn chained() -> Vec<(String, PathBuf)> {
-    config::known_dbs()
+    looked().0
+}
+
+/// [`chained`], and whether a database that is there refused the look: a
+/// writer opening or closing it has a `-wal` and no `-shm` for an instant,
+/// which says nothing of its chain (da-mtsgn).
+fn looked() -> (Vec<(String, PathBuf)>, bool) {
+    let mut refused = false;
+    let found = config::known_dbs()
         .into_iter()
         .filter(|(_, path)| {
-            !in_first_sync(path)
-                && Db::open_read_only(&path.to_string_lossy()).is_ok_and(|db| {
+            if in_first_sync(path) {
+                return false;
+            }
+            match Db::open_read_only(&path.to_string_lossy()) {
+                Ok(db) => {
                     db.sync_chain().is_ok_and(|c| c.exists())
                         || db.sync_joining().is_ok_and(|j| !j.is_empty())
-                })
+                }
+                Err(_) => {
+                    refused |= path.exists();
+                    false
+                }
+            }
         })
-        .collect()
+        .collect();
+    (found, refused)
+}
+
+/// How long until the next look: [`LOOK`], or while a database refuses the
+/// look [`LOOK_AGAIN`] doubling up to it, since a `-wal` a crash left alone
+/// refuses every look until something opens the file.
+fn next_look(refused: bool, again: &mut Duration) -> Duration {
+    if !refused {
+        *again = LOOK_AGAIN;
+        return LOOK;
+    }
+    let wait = *again;
+    *again = (wait * 2).min(LOOK);
+    wait
 }
 
 /// `datum sync daemon run`: `sync run` for every chained database, each
-/// on a thread of its own, looking for a newly chained one every [`LOOK`].
+/// on a thread of its own, looking for a newly chained one every [`LOOK`],
+/// or sooner while a database refuses the look ([`next_look`]).
 /// One that fails is tried again at the next look; Ctrl-C ends them all, and
 /// so does one whose file a newer datum migrated under it, with an error.
 fn run() -> Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
     let mut running = BTreeSet::new();
     let mut first = true;
+    let mut again = LOOK_AGAIN;
     loop {
-        for (_, path) in chained() {
+        let (found, refused) = looked();
+        for (_, path) in found {
             if !running.insert(path.clone()) {
                 continue;
             }
@@ -512,11 +547,12 @@ fn run() -> Result<()> {
                 let _ = tx.send((path, done));
             });
         }
-        if std::mem::take(&mut first) && running.is_empty() {
+        if std::mem::take(&mut first) && running.is_empty() && !refused {
             eprintln!("no chained database yet: looking again every minute");
         }
+        let wait = next_look(refused, &mut again);
         loop {
-            match rx.recv_timeout(LOOK) {
+            match rx.recv_timeout(wait) {
                 Ok((_, Ok(Ok(())))) => return Ok(()),
                 // A newer datum migrated its file under it (da-1tnup): this
                 // build is the wrong one, and the unit starts the installed.
@@ -532,5 +568,23 @@ fn run() -> Result<()> {
                 Err(_) => break,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A database that goes on refusing is looked at less and less often,
+    /// never less often than any other, and one look it answers starts over.
+    #[test]
+    fn a_look_refused_again_and_again_backs_off_to_the_minute() {
+        let mut again = LOOK_AGAIN;
+        let secs: Vec<u64> = (0..8)
+            .map(|_| next_look(true, &mut again).as_secs())
+            .collect();
+        assert_eq!(secs, [1, 2, 4, 8, 16, 32, 60, 60]);
+        assert_eq!(next_look(false, &mut again), LOOK);
+        assert_eq!(next_look(true, &mut again), LOOK_AGAIN);
     }
 }
