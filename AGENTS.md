@@ -815,6 +815,21 @@ wrote (hidden `--ticket`, `--invite`, refused unless the ticket's secret is
 that invite's), and `chain invite --like --defer` makes none, printing those
 left for the page to make.
 
+A grant not yet taken shows in `sync status` and `sync grid`, words and `--json`,
+as far as each copy can read it (da-pofki, `seen` in `sync_grant.rs`). The record
+carries it sealed twice, to the device and to the device that wrote it (`own_eph`,
+`own_sealed`: no ticket), and its `expires` in the clear: so the receiver and the
+granter say what of, whose, since when and until when; any other member of the
+carrier says only that a sealed grant is there until `expires`, not what of or
+whether it was taken; and none names the chain. Status shows it on the carrier's
+database and the granted one, the grid in that chain's column, one no copy here
+holds drawn for it (`held: false`), and a sealed one under the grid. The last grant
+of a chain to a device speaks for the earlier; the granter knows it taken when its
+copy holds the admission. An expired one says so until another replaces it: a
+chain record stays for good. `sync status` opens the install's other databases
+only when this chain holds a grant or an unused invite, and datum.day's reads,
+one a sync, pass the hidden `--no-grants`: its grants are the grid's.
+
 `datum --db X sync chain invite --like SRC [--devices <D>,…]` (da-n0uj1.5,
 da-pvax0; `chain copy --from`, then `sync grant --like`, until each was cut, no
 alias) is a

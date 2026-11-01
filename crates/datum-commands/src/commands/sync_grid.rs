@@ -3,6 +3,10 @@
 //! its members' `describe`s bind them to (da-n0uj1.2), or an endpoint alone
 //! where none is bound; a column is a chain, by its id, labelled with the
 //! local database's name, the one the command runs on first. Read only.
+//!
+//! A grant not yet taken shows on its device's row, as this install can read
+//! it (da-pofki): in its chain's column, which one no copy here holds has
+//! just for that (`held: false`), or, sealed, beneath the row's cells.
 
 use std::path::{Path, PathBuf};
 
@@ -94,19 +98,47 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     }
     let this = |r: &Row| r.device.is_some() && r.device == mine;
     rows.sort_by_key(|r| !this(r));
+    let grants = super::sync_grant::seen(&columns);
+    // A chain granted to this device and held nowhere here: a column of its own.
+    let mut heads: Vec<(String, String, bool)> = columns
+        .iter()
+        .map(|(name, _, c)| (name.clone(), c.id.clone(), true))
+        .collect();
+    for w in grants.iter().filter_map(|g| g.what.as_ref()) {
+        if heads.iter().all(|(_, id, _)| *id != w.chain) {
+            heads.push((w.db.clone(), w.chain.clone(), false));
+        }
+    }
+    let of = |r: &Row, chain: &str| {
+        let at = |g: &&super::sync_grant::Seen| {
+            r.device.as_deref() == Some(&g.to) && g.what.as_ref().is_some_and(|w| w.chain == chain)
+        };
+        grants.iter().find(at)
+    };
+    let sealed = |r: &Row| {
+        let of =
+            |g: &&super::sync_grant::Seen| g.what.is_none() && r.device.as_deref() == Some(&g.to);
+        grants
+            .iter()
+            .filter(of)
+            .map(|g| g.json())
+            .collect::<Vec<_>>()
+    };
     if json {
         let out = json!({
             "device": mine,
-            "chains": columns.iter().map(|(name, _, c)| json!({"chain": c.id, "db": name})).collect::<Vec<_>>(),
+            "chains": heads.iter().map(|(name, id, held)| json!({"chain": id, "db": name, "held": held})).collect::<Vec<_>>(),
             "devices": rows.iter().map(|r| json!({
                 "device": r.device,
                 "endpoint": r.device.is_none().then_some(&r.endpoint),
                 "label": r.label,
                 "this": this(r),
-                "cells": columns.iter().zip(&r.cells).map(|((_, _, c), cell)| (
-                    c.id.clone(),
-                    cell.as_ref().map_or(Value::Null, |(cell, e)| json!({"state": cell.word(), "endpoint": e})),
+                "cells": heads.iter().enumerate().map(|(j, (_, id, _))| (
+                    id.clone(),
+                    r.cells.get(j).and_then(Option::as_ref).map_or(Value::Null, |(cell, e)| json!({"state": cell.word(), "endpoint": e})),
                 )).collect::<serde_json::Map<_, _>>(),
+                "grants": heads.iter().filter_map(|(_, id, _)| Some((id.clone(), of(r, id)?.json()))).collect::<serde_json::Map<_, _>>(),
+                "sealed": sealed(r),
             })).collect::<Vec<_>>(),
         });
         println!("{out}");
@@ -133,9 +165,9 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
         .collect();
     let left = names.iter().map(|n| n.chars().count()).max().unwrap_or(0);
     // A chain id is a ULID, whose head is only its time: shown whole.
-    let widths: Vec<usize> = columns
+    let widths: Vec<usize> = heads
         .iter()
-        .map(|(name, _, c)| name.chars().count().max(c.id.chars().count()))
+        .map(|(name, id, _)| name.chars().count().max(id.chars().count()))
         .collect();
     let line = |first: &str, cells: Vec<&str>| {
         let cells: Vec<String> = cells
@@ -147,22 +179,35 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     };
     println!(
         "{}",
-        line("", columns.iter().map(|(n, _, _)| n.as_str()).collect()).trim_end()
+        line("", heads.iter().map(|(n, _, _)| n.as_str()).collect()).trim_end()
     );
     println!(
         "{}",
-        line("", columns.iter().map(|(_, _, c)| c.id.as_str()).collect()).trim_end()
+        line("", heads.iter().map(|(_, id, _)| id.as_str()).collect()).trim_end()
     );
     for (r, name) in rows.iter().zip(&names) {
-        let cells = r
-            .cells
+        let cells: Vec<String> = heads
             .iter()
-            .map(|c| c.as_ref().map_or("—", |c| c.0.word()));
-        let mut out = line(name, cells.collect()).trim_end().to_string();
+            .enumerate()
+            .map(|(j, (_, id, _))| {
+                let standing = r.cells.get(j).and_then(Option::as_ref).map(|c| c.0.word());
+                let grant = of(r, id).map(|g| g.word());
+                match (standing, grant) {
+                    (Some(s), Some(g)) => format!("{s}, {g}"),
+                    (s, g) => s.or(g).unwrap_or("—").to_string(),
+                }
+            })
+            .collect();
+        let mut out = line(name, cells.iter().map(String::as_str).collect())
+            .trim_end()
+            .to_string();
         if this(r) {
             out += "  (this device)";
         }
         println!("{out}");
+    }
+    for g in grants.iter().filter(|g| g.what.is_none()) {
+        println!("{}", g.line());
     }
     Ok(())
 }

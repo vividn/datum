@@ -360,10 +360,17 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 /** A device's standing in one chain, as `sync grid --json` has it (da-n0uj1.3). */
 export type Standing = 'member' | 'reader' | 'expelled' | 'unjoined' | 'wiping' | 'wiped';
 
-/** `sync grid --json`: devices × the chains this install holds, each column by chain id. */
+/** A grant not yet taken, as this install can read it (da-pofki): `word` its cell's, `text` the CLI's sentence. */
+export interface GridGrant {
+	state: 'waiting' | 'expired' | 'sealed';
+	word: string;
+	text: string;
+}
+
+/** `sync grid --json`: devices × the chains this install holds, each column by chain id; `held: false`, a chain granted to this device and held nowhere here. */
 export interface Grid {
 	device: string | null;
-	chains: { chain: string; db: string }[];
+	chains: { chain: string; db: string; held: boolean }[];
 	devices: {
 		/** Its device key; null for a copy bound to none, which is its `endpoint` alone. */
 		device: string | null;
@@ -371,8 +378,22 @@ export interface Grid {
 		label: string;
 		this: boolean;
 		cells: Record<string, { state: Standing; endpoint: string } | null>;
+		/**
+		 * By chain, the grant its column shows.
+		 * @shallow a grant takes a second device, which no seeded database is.
+		 */
+		grants?: Record<string, GridGrant>;
+		/**
+		 * Grants to it this install holds and cannot open: of what, it does not know.
+		 * @shallow as `grants`.
+		 */
+		sealed?: GridGrant[];
 	}[];
 }
+
+/** A grid cell's words, the CLI's: the standing, then any grant. */
+export const cellWords = (state: Standing | undefined, grant: GridGrant | undefined): string =>
+	[state, grant?.word].filter(Boolean).join(', ') || '—';
 
 /** What `sync chain invite --like --defer` leaves the page to seal (da-n0uj1.7), each with the invite it wrote, approved with the rest at once (da-7bjai). */
 export interface Deferred {

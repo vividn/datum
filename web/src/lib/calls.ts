@@ -133,7 +133,7 @@ export const DAYVIEW_VERTICAL: PaneSpec = {
 // ---- sync ------------------------------------------------------------------------
 
 export function syncStatusArgv(): string[] {
-	return ['sync', 'status', '--json'];
+	return ['sync', 'status', '--json', '--no-grants'];
 }
 
 export function chainListArgv(): string[] {

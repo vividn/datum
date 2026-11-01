@@ -21,10 +21,14 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     let mut rest = rest.iter();
     let cmd = match *sub {
         // `--json` is the swept `--show json`, set by `apply_show`.
-        "status" => SyncCommand::Status {
-            show: Show::Default,
-            show_revoked: opts(&mut rest, &[], &["show-revoked"], 0..=0)?.on("show-revoked"),
-        },
+        "status" => {
+            let flags = opts(&mut rest, &[], &["show-revoked", "no-grants"], 0..=0)?;
+            SyncCommand::Status {
+                show: Show::Default,
+                show_revoked: flags.on("show-revoked"),
+                no_grants: flags.on("no-grants"),
+            }
+        }
         "pause" => SyncCommand::Pause,
         "grid" => {
             opts(&mut rest, &[], &[], 0..=0)?;
@@ -575,14 +579,24 @@ mod tests {
             p(&["status"]),
             SyncCommand::Status {
                 show: Show::Default,
-                show_revoked: false
+                show_revoked: false,
+                no_grants: false
             }
         );
         assert_eq!(
             p(&["status", "--show-revoked"]),
             SyncCommand::Status {
                 show: Show::Default,
-                show_revoked: true
+                show_revoked: true,
+                no_grants: false
+            }
+        );
+        assert_eq!(
+            p(&["status", "--no-grants"]),
+            SyncCommand::Status {
+                show: Show::Default,
+                show_revoked: false,
+                no_grants: true
             }
         );
         assert_eq!(p(&["pause"]), SyncCommand::Pause);

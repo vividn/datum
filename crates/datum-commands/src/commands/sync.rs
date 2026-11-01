@@ -504,9 +504,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             let now = db.sync_chain()?.member(&target).map(|n| n.label.clone());
             println!("renamed {} to {}", m.label, now.unwrap_or_default());
         }
-        SyncCommand::Status { show, show_revoked } => {
-            status(db, show == ShowFlag::Json, show_revoked)?
-        }
+        SyncCommand::Status {
+            show,
+            show_revoked,
+            no_grants,
+        } => status(db, show == ShowFlag::Json, show_revoked, no_grants)?,
         // The page's network worker runs the transport outside the CLI, and
         // the iroh key IS this secret. Handing it over widens nothing: the
         // page can already read the whole db file, `sync_local` included
@@ -1614,7 +1616,7 @@ fn print_hidden(n: usize) {
 }
 
 /// `datum sync status`: per member, how this copy stands with it.
-fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
+fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()> {
     let chain = db.sync_chain()?;
     let mine = db.sync_endpoint_id()?;
     let label = chain
@@ -1627,6 +1629,17 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     let clock = db.sync_clock_waits()?;
     let upgrade = db.sync_upgrade_warnings()?;
     let unsent = db.sync_unsent()?;
+    // A grant this database carries or grants (da-pofki): only with one
+    // possible are the install's other databases opened to read them.
+    let grants = match no_grants || (chain.grants.is_empty() && !chain.has_unused_invite()) {
+        true => Vec::new(),
+        false => super::sync_grant::seen(&super::sync_grid::chains(db)?)
+            .into_iter()
+            .filter(|s| {
+                s.carrier == chain.id || s.what.as_ref().is_some_and(|w| w.chain == chain.id)
+            })
+            .collect(),
+    };
     // What `datum check spool` finds: changes queued here, not landed (da-3j6g7).
     let spool: Vec<String> = crate::commands::check::spool_issues(db, false)?
         .into_iter()
@@ -1685,6 +1698,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 "ahead_ms": w.ahead_ms, "text": w.to_string(),
             })).collect::<Vec<_>>(),
             "upgrade": upgrade, "unsent": unsent, "spool": spool,
+            "grants": grants.iter().map(|g| g.json()).collect::<Vec<_>>(),
         });
         println!("{out}");
         return Ok(());
@@ -1755,6 +1769,9 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     }
     for (n, text) in said(db, notices) {
         println!("{}", notice_line(&n, &text));
+    }
+    for g in &grants {
+        println!("{}", g.line());
     }
     let (shown, hidden): (Vec<_>, Vec<_>) = peers.iter().partition(|p| show_revoked || !p.revoked);
     let width = shown

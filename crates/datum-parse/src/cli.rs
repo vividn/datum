@@ -955,6 +955,9 @@ pub enum SyncCommand {
     Status {
         show: Show,
         show_revoked: bool,
+        /// Hidden: datum.day's reads, on every sync, draw grants from `sync
+        /// grid` and open no other database for them (da-pofki).
+        no_grants: bool,
     },
     /// `datum sync pause | resume` (da-wlbyx): this copy's, never synced.
     Pause,

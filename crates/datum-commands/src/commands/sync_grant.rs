@@ -164,13 +164,21 @@ pub fn grant(
         "from": here.member(&db.sync_endpoint_id()?).map(|m| m.label.clone()),
     });
     let (eph, sealed) = chain::seal_grant(&device, &payload).map_err(anyhow::Error::msg)?;
-    copy.sync_chain_write(
-        json!({
-            "type": "grant", "chain": carrier.id, "to": device, "eph": eph, "sealed": sealed,
-            "created": Utc::now().to_rfc3339(),
-        }),
-        true,
-    )?;
+    let mut record = json!({
+        "type": "grant", "chain": carrier.id, "to": device, "eph": eph, "sealed": sealed,
+        "expires": expires_at, "created": Utc::now().to_rfc3339(),
+    });
+    // What it grants, for `sync status` and `sync grid` here: no ticket, and
+    // this install's alone to read (da-pofki).
+    if let Some(mine) = datum_core::db::device_id() {
+        let about = json!({
+            "chain": here.id, "invite": invite, "db": db_name, "role": role, "expires": expires_at,
+        });
+        let (eph, sealed) = chain::seal_grant(&mine, &about).map_err(anyhow::Error::msg)?;
+        record["own_eph"] = json!(eph);
+        record["own_sealed"] = json!(sealed);
+    }
+    copy.sync_chain_write(record, true)?;
     println!(
         "invited {label} as a {role} of this database: the invite rides sealed to it in {via}'s sync \
          chain, and {label} joins as «{as_name}» when it next syncs {via} there, until {}",
@@ -376,6 +384,173 @@ pub fn grant_like(
         ));
     }
     Ok(())
+}
+
+/// How a grant not yet taken stands, as this install can read it (da-pofki).
+/// The last grant of a chain to a device speaks for the earlier ones.
+pub(super) struct Seen {
+    /// The device it is to.
+    pub to: String,
+    pub to_label: String,
+    /// The label of the copy that wrote it, in the chain carrying it.
+    pub by: String,
+    /// When it was written, RFC 3339.
+    pub since: String,
+    pub expires: Option<String>,
+    /// The chain carrying it, and that database's name here.
+    pub carrier: String,
+    pub carrier_db: String,
+    /// What it grants: none where this install holds neither key, so it
+    /// knows a grant exists, and not what of or whether it was taken.
+    pub what: Option<GrantOf>,
+}
+
+pub(super) struct GrantOf {
+    pub chain: String,
+    pub db: String,
+    pub role: String,
+    /// Written by this install, where it is not to it.
+    pub mine: bool,
+    /// Who granted it, as the grant says, where it is to this install.
+    pub from: Option<String>,
+    invite: String,
+}
+
+impl Seen {
+    pub fn expired(&self) -> bool {
+        self.expires
+            .as_deref()
+            .is_some_and(|e| chrono::DateTime::parse_from_rfc3339(e).is_ok_and(|t| t < Utc::now()))
+    }
+
+    pub fn state(&self) -> &'static str {
+        match (&self.what, self.expired()) {
+            (None, _) => "sealed",
+            (_, true) => "expired",
+            _ => "waiting",
+        }
+    }
+
+    /// What its cell in the grid says.
+    pub fn word(&self) -> &'static str {
+        match self.state() {
+            "sealed" => "sealed grant",
+            "expired" => "grant expired",
+            _ => "granted",
+        }
+    }
+
+    pub fn json(&self) -> Value {
+        let what = self.what.as_ref();
+        json!({
+            "state": self.state(), "word": self.word(), "text": self.line(),
+            "side": what.map_or("other", |w| if w.mine { "granter" } else { "receiver" }),
+            "to": self.to, "to_label": self.to_label, "by": self.by,
+            "since": self.since, "expires": self.expires,
+            "carrier": self.carrier, "carrier_db": self.carrier_db,
+            "chain": what.map(|w| &w.chain), "db": what.map(|w| &w.db),
+            "role": what.map(|w| &w.role), "from": what.and_then(|w| w.from.as_ref()),
+        })
+    }
+
+    /// In words, in this reader's time.
+    pub fn line(&self) -> String {
+        let at = |t: &str| datum_core::time::on_readers_clock(t, "%H:%M");
+        let since = at(&self.since);
+        let until = self.expires.as_deref().map(at).unwrap_or_default();
+        let (to, by) = (&self.to_label, &self.by);
+        match (&self.what, self.expired()) {
+            (None, _) => format!(
+                "{by} sent {to} a sealed grant at {since}, until {until}: this copy cannot see \
+                 what of, or whether it was taken"
+            ),
+            (Some(w), true) if w.mine => format!(
+                "granted {} to {to} at {since}, expired at {until} untaken: invite it again",
+                w.db
+            ),
+            (Some(w), false) if w.mine => format!(
+                "granted {} to {to} at {since}, not yet taken, until {until}",
+                w.db
+            ),
+            (Some(w), true) => format!(
+                "a grant of {} from {} expired at {until}, untaken: ask it for another",
+                w.db,
+                w.from.as_deref().unwrap_or(by)
+            ),
+            (Some(w), false) => format!(
+                "a grant of {} from {}, waiting since {since}, until {until}: `datum sync` takes it",
+                w.db,
+                w.from.as_deref().unwrap_or(by)
+            ),
+        }
+    }
+}
+
+/// Every grant not yet taken that the chains of `columns` hold, as this
+/// install can read each. A where is to no member, so is none of them. A
+/// sealed one is left once its clear `expires` passes, and one from before
+/// that field at once: nothing would ever clear it. One this install wrote of
+/// a chain it holds no more says nothing it can answer for.
+pub(super) fn seen(columns: &[(String, PathBuf, Chain)]) -> Vec<Seen> {
+    let mut all: Vec<(&chain::Grant, Seen)> = Vec::new();
+    for (name, _, c) in columns {
+        for g in &c.grants {
+            let of = |m: &&Member| m.device.as_deref() == Some(&g.to);
+            let Some(to_label) = c.members.iter().rev().find(of).map(device_label) else {
+                continue;
+            };
+            let opened = chain::open_grant(g).map(|p| (p, false));
+            let opened = opened.or_else(|| chain::open_own_grant(g).map(|p| (p, true)));
+            let expires = opened
+                .as_ref()
+                .and_then(|(p, _)| p["expires"].as_str().map(String::from))
+                .or_else(|| g.expires.clone());
+            let what = opened.map(|(p, mine)| {
+                let s = |k: &str| p[k].as_str().unwrap_or_default().to_string();
+                GrantOf {
+                    chain: s("chain"),
+                    db: s("db"),
+                    role: s("role"),
+                    mine,
+                    from: p["from"].as_str().map(String::from),
+                    invite: s("invite"),
+                }
+            });
+            let by = c.member(&g.by).map_or(g.by.clone(), |m| m.label.clone());
+            let seen = Seen {
+                to: g.to.clone(),
+                to_label,
+                by,
+                since: chain::hlc_time(&g.hlc).to_string(),
+                expires,
+                carrier: c.id.clone(),
+                carrier_db: name.clone(),
+                what,
+            };
+            if seen.what.is_some() || (seen.expires.is_some() && !seen.expired()) {
+                all.push((g, seen));
+            }
+        }
+    }
+    all.sort_by(|a, b| a.0.hlc.cmp(&b.0.hlc));
+    let mut out: Vec<Seen> = Vec::new();
+    for (_, s) in all {
+        if let Some(w) = &s.what {
+            out.retain(|o| o.to != s.to || o.what.as_ref().is_none_or(|p| p.chain != w.chain));
+        }
+        out.push(s);
+    }
+    out.retain(|s| {
+        let Some(w) = &s.what else { return true };
+        let via = format!("invite {}", w.invite);
+        match columns.iter().find(|(_, _, c)| c.id == w.chain) {
+            None => !w.mine,
+            Some((_, _, c)) => !c.members.iter().any(|m| {
+                m.via == via || (m.device.as_deref() == Some(&s.to) && m.revoked.is_none())
+            }),
+        }
+    });
+    out
 }
 
 #[cfg(feature = "net")]

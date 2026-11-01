@@ -83,7 +83,9 @@
 //!     invite to ANOTHER chain, which a device it shares this one with
 //!     joins without a ticket carried by hand. Any live member that is no
 //!     reader writes one, unsigned by an admin even in a locked chain: it
-//!     changes nothing in this one.
+//!     changes nothing in this one. Its `expires` is in the clear, and
+//!     `own_eph` and `own_sealed` seal what it grants, with no ticket, to the
+//!     device that wrote it (da-pofki), so `sync status` says what each reads.
 //!     One whose `to` is no device ([`seal_where`], da-kvp9q) says where a
 //!     device that joined by a grant serves that other chain, to whoever
 //!     holds a grant of it: readable with its chain id alone.
@@ -321,6 +323,23 @@ pub fn open_grant(g: &Grant) -> Option<Value> {
         .decrypt(&Default::default(), sealed.as_slice())
         .ok()?;
     serde_json::from_slice(&opened).ok()
+}
+
+/// What a grant this install's device wrote says of itself, by its `own`
+/// seal: none for another's, or a record from before it (da-pofki).
+pub fn open_own_grant(g: &Grant) -> Option<Value> {
+    let (eph, sealed) = g.own.clone()?;
+    open_grant(&Grant {
+        to: hex(&SigningKey::from_bytes(&device_secret()?)
+            .verifying_key()
+            .to_bytes()),
+        eph,
+        sealed,
+        hlc: String::new(),
+        by: String::new(),
+        expires: None,
+        own: None,
+    })
 }
 
 /// The `to` of a grant saying where ([`seal_where`]): hex of 32 bytes, which
@@ -754,6 +773,13 @@ pub struct Grant {
     /// Its HLC, and the endpoint that wrote it.
     pub hlc: String,
     pub by: String,
+    /// When its invite expires, which any member of the carrier reads
+    /// (da-pofki): none on a record from before it.
+    pub expires: Option<String>,
+    /// `eph` and `sealed` of what it says sealed to the device that wrote
+    /// it, which [`open_own_grant`] opens: `sealed` is its device's alone,
+    /// and the chain it grants is no other member's to read (da-pofki).
+    pub own: Option<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -793,6 +819,11 @@ pub fn hlc_time(hlc: &str) -> &str {
 }
 
 impl Chain {
+    /// Whether an invite is unused, expired or not.
+    pub fn has_unused_invite(&self) -> bool {
+        self.invites.values().any(|i| !i.used)
+    }
+
     /// The invite `id`, while it admits: unused and not expired, and only
     /// if `secret` is its own. Its role, whether it is filtered, and when it
     /// expires (da-n0uj1.7).
@@ -1183,6 +1214,11 @@ impl Chain {
                     sealed: s("sealed"),
                     hlc: op.hlc.clone(),
                     by: op.endpoint.clone(),
+                    expires: r["expires"].as_str().map(String::from),
+                    own: r["own_eph"]
+                        .as_str()
+                        .zip(r["own_sealed"].as_str())
+                        .map(|(e, s)| (e.to_string(), s.to_string())),
                 });
                 Ok(())
             }
@@ -2160,6 +2196,8 @@ mod tests {
             sealed,
             hlc: String::new(),
             by: String::new(),
+            expires: None,
+            own: None,
         };
         assert!(unhex::<32>(&g.to).is_some() && unhex::<32>(&g.eph).is_some());
         assert_eq!(open_where(&g, "c2"), Some(addr));
@@ -2219,7 +2257,11 @@ mod tests {
             .as_bytes());
         let payload = json!({"ticket": "t", "chain": "c2"});
         let (eph, sealed) = seal_grant(&to, &payload).unwrap();
-        let grant = json!({"type": "grant", "to": to, "eph": eph, "sealed": sealed});
+        let (own_eph, own_sealed) = seal_grant(&to, &json!({"chain": "c2"})).unwrap();
+        let grant = json!({
+            "type": "grant", "to": to, "eph": eph, "sealed": sealed,
+            "expires": "2030-01-01T00:00:00Z", "own_eph": own_eph, "own_sealed": own_sealed,
+        });
         let chain = add(&c, grant.clone());
         assert!(chain.rejected.is_empty(), "{:?}", chain.rejected);
         let g = &chain.grants[0];
@@ -2230,6 +2272,8 @@ mod tests {
         assert_eq!(chain.grants.len(), 1, "a reader's grant is refused");
         super::super::set_device_source(seven);
         assert_eq!(open_grant(g), Some(payload.clone()));
+        assert_eq!(g.expires.as_deref(), Some("2030-01-01T00:00:00Z"));
+        assert_eq!(open_own_grant(g), Some(json!({"chain": "c2"})));
         let mut torn = g.clone();
         torn.sealed.replace_range(
             ..2,

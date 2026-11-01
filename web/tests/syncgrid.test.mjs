@@ -116,11 +116,16 @@ describe('the sync widget’s grid', () => {
 					await said.waitFor();
 					// Invited as a member, carried by datum's chain.
 					assert.match(await said.innerText(), /^invited\b.*\bmember\b.*\bdatum\b/);
+					// Waiting on its row until it is taken (da-pofki).
+					const grantOf = () => cellOf(page, device, 'work').getAttribute('data-grant');
+					await until(grantOf, (s) => s === 'waiting');
+					assert.equal(await cellOf(page, device, 'datum').getAttribute('data-grant'), null);
 
 					assert.match((await joins(native, 'work')).stdout, /joined «work»/);
 					// Its describe, binding the endpoint to its device, reaches the page on its next sync.
 					await syncs(native, 'work');
 					await until(() => stateOf(page, device, 'work'), (s) => s === 'member');
+					await until(grantOf, (s) => s === null);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);

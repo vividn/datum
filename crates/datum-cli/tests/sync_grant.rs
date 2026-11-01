@@ -10,7 +10,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use crate::sync_net::claim_port;
@@ -428,6 +428,206 @@ fn a_grant_never_takes_a_database_of_its_name_and_an_expired_one_is_granted_agai
     assert!(t.has("work", "tea") && !t.has("work", "coffee"));
     let own = t.json("work", &["sync", "status", "--json"]);
     assert!(own["chain"].is_null(), "{own}");
+}
+
+/// What `i`'s `db` says of its grants, in `sync status --json`.
+fn grants(i: &Install, db: &'static str) -> Vec<Value> {
+    let status = i.json(db, &["sync", "status", "--json"]);
+    status["grants"].as_array().unwrap().clone()
+}
+
+/// The grant `device`'s row of `i`'s grid shows in `chain`'s column.
+fn grid_grant(i: &Install, chain: &str, device: &str) -> Value {
+    let grid = i.json("home", &["sync", "grid", "--json"]);
+    let rows = grid["devices"].as_array().unwrap();
+    let row = rows.iter().find(|r| r["device"] == device).unwrap();
+    row["grants"][chain].clone()
+}
+
+/// A grant waits, said by the granter, the receiver and a third device each
+/// as far as it can read it, in `sync status` and `sync grid`, words and
+/// `--json`; it goes once taken. The third device's words name neither the
+/// database nor the chain, which are sealed from it (da-pofki).
+#[test]
+fn a_grant_waiting_shows_on_each_side_and_goes_once_taken() {
+    let g = Install::new("gina");
+    let t = Install::new("tom");
+    let third = Install::new("zoe");
+    let _home = home_chain(&g, &[&t, &third]);
+    g.ok("finance", &["occur", "coffee"]);
+    g.ok("finance", &["sync", "new-invite"]);
+    let chain = g.json("finance", &["sync", "status", "--json"])["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(grants(&g, "finance").is_empty(), "no grant yet");
+
+    let device = t.device();
+    g.ok("finance", &["sync", "chain", "invite", &device]);
+
+    // The granter, on the database granted and on the one carrying it.
+    for db in ["finance", "home"] {
+        let said = grants(&g, db);
+        assert_eq!(said.len(), 1, "{said:?}");
+        let (state, side) = (&said[0]["state"], &said[0]["side"]);
+        assert_eq!(
+            (state.as_str(), side.as_str()),
+            (Some("waiting"), Some("granter"))
+        );
+        assert_eq!(said[0]["to"], device.as_str());
+        assert_eq!(said[0]["chain"], chain.as_str());
+    }
+    let page = g.json("finance", &["sync", "status", "--json", "--no-grants"]);
+    assert_eq!(
+        page["grants"],
+        json!([]),
+        "datum.day's read opens no other db"
+    );
+    let words = g.ok("finance", &["sync", "status"]);
+    assert!(
+        words.contains("granted finance to ") && words.contains("not yet taken"),
+        "{words}"
+    );
+    assert_eq!(grid_grant(&g, &chain, &device)["state"], "waiting");
+    let drawn = g.ok("home", &["sync", "grid"]);
+    assert!(
+        drawn
+            .lines()
+            .any(|l| l.contains(&device[..10]) && l.contains("granted")),
+        "{drawn}"
+    );
+
+    // The reader's clock adds a date itself, for a day not today: one, here.
+    let line = words.lines().find(|l| l.contains("not yet taken")).unwrap();
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    assert!(tokens.windows(2).all(|w| w[0] != w[1]), "{line}");
+
+    // The third device holds the record, and knows only that it is there.
+    third.ok("home", &["sync"]);
+    let said = grants(&third, "home");
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert_eq!(said[0]["state"], "sealed");
+    assert_eq!(said[0]["side"], "other");
+    assert!(
+        said[0]["db"].is_null() && said[0]["chain"].is_null(),
+        "{said:?}"
+    );
+    let words = third.ok("home", &["sync", "status"]);
+    assert!(words.contains("sealed grant"), "{words}");
+    assert!(
+        !words.contains("finance") && !words.contains(&chain),
+        "{words}"
+    );
+    let grid = third.json("home", &["sync", "grid", "--json"]);
+    let rows = grid["devices"].as_array().unwrap();
+    let row = rows
+        .iter()
+        .find(|r| r["device"] == device.as_str())
+        .unwrap();
+    assert_eq!(row["sealed"].as_array().unwrap().len(), 1, "{row}");
+    assert!(!grid.to_string().contains(&chain), "{grid}");
+    assert!(!third.ok("home", &["sync", "grid"]).contains(&chain));
+
+    // The receiver: the sync opens it, and its join fails with the granter's
+    // finance off, so it waits, in a column no copy here holds.
+    let synced = t.ok("home", &["sync"]);
+    assert!(!synced.contains("joined «finance»"), "{synced}");
+    let said = grants(&t, "home");
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert_eq!(said[0]["state"], "waiting");
+    assert_eq!(said[0]["side"], "receiver");
+    assert_eq!(
+        (&said[0]["db"], &said[0]["chain"]),
+        (&json!("finance"), &json!(chain))
+    );
+    let words = t.ok("home", &["sync", "status"]);
+    assert!(
+        words.contains("a grant of finance from ") && words.contains("waiting since"),
+        "{words}"
+    );
+    let grid = t.json("home", &["sync", "grid", "--json"]);
+    let column = grid["chains"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["chain"] == chain.as_str());
+    assert_eq!(column.unwrap()["held"], false, "{grid}");
+    assert_eq!(grid_grant(&t, &chain, &device)["state"], "waiting");
+    let drawn = t.ok("home", &["sync", "grid"]);
+    assert!(drawn.contains("finance"), "{drawn}");
+    assert!(
+        drawn
+            .lines()
+            .any(|l| l.contains("this device") && l.contains("granted")),
+        "{drawn}"
+    );
+
+    // Taken: gone from both sides, words and JSON.
+    let _finance = g.run("finance");
+    let synced = t.ok("home", &["sync"]);
+    assert!(synced.contains("joined «finance»"), "{synced}");
+    assert!(grants(&t, "home").is_empty());
+    assert!(grid_grant(&t, &chain, &device).is_null());
+    assert!(!t.ok("home", &["sync", "status"]).contains("a grant of"));
+    eventually("the granter sees it taken", || {
+        grants(&g, "finance").is_empty()
+    });
+    assert!(grants(&g, "home").is_empty());
+    assert!(grid_grant(&g, &chain, &device).is_null());
+    assert!(!g
+        .ok("finance", &["sync", "status"])
+        .contains("not yet taken"));
+}
+
+/// Expired, each side says so; the third device's line goes, its record's
+/// clear `expires` past; a new grant takes its place (da-pofki).
+#[test]
+fn a_grant_expired_says_so_until_another_takes_its_place() {
+    let g = Install::new("gina");
+    let t = Install::new("tom");
+    let third = Install::new("zoe");
+    let _home = home_chain(&g, &[&t, &third]);
+    g.ok("finance", &["occur", "coffee"]);
+    g.ok("finance", &["sync", "new-invite"]);
+    let chain = g.json("finance", &["sync", "status", "--json"])["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let device = t.device();
+    g.ok(
+        "finance",
+        &["sync", "chain", "invite", &device, "--expires", "1s"],
+    );
+    std::thread::sleep(Duration::from_millis(1500));
+    t.ok("home", &["sync"]);
+    third.ok("home", &["sync"]);
+
+    assert_eq!(grants(&g, "finance")[0]["state"], "expired");
+    assert_eq!(grants(&t, "home")[0]["state"], "expired");
+    assert!(grants(&third, "home").is_empty());
+    assert_eq!(grid_grant(&g, &chain, &device)["state"], "expired");
+    assert_eq!(grid_grant(&t, &chain, &device)["state"], "expired");
+    let words = g.ok("finance", &["sync", "status"]);
+    assert!(
+        words.contains("expired") && !words.contains("not yet taken"),
+        "{words}"
+    );
+    let words = t.ok("home", &["sync", "status"]);
+    assert!(
+        words.contains("expired") && !words.contains("waiting since"),
+        "{words}"
+    );
+    let drawn = g.ok("home", &["sync", "grid"]);
+    assert!(drawn.contains("grant expired"), "{drawn}");
+
+    g.ok("finance", &["sync", "chain", "invite", &device]);
+    let said = grants(&g, "finance");
+    assert_eq!(
+        said.len(),
+        1,
+        "the last grant speaks for the chain: {said:?}"
+    );
+    assert_eq!(said[0]["state"], "waiting");
 }
 
 /// A name that is no device is an error, and writes and prints no invite. A

@@ -79,6 +79,7 @@
 		type DbSync,
 		type Deferred,
 		type Grid,
+		cellWords,
 		type Mark,
 		type Notice,
 		type PurgePreview,
@@ -199,7 +200,7 @@
 	/** The grid's columns: every chain, then each database in none, which only a copy fills. */
 	const columns = $derived([
 		...(grid?.chains ?? []),
-		...dbs.filter((d) => !d.chain && !grid?.chains.some((c) => c.db === d.db)).map((d) => ({ chain: null, db: d.db }))
+		...dbs.filter((d) => !d.chain && !grid?.chains.some((c) => c.held && c.db === d.db)).map((d) => ({ chain: null, db: d.db, held: true }))
 	]);
 	const used = $derived(MARKS.filter((m) => shown.some((c) => c.mark === m)));
 
@@ -407,7 +408,7 @@
 	/** «invite like…»: `col` takes another database's devices, each with its role there, the invites left to this page: one approval for all their invites (da-7bjai). */
 	const grantLike = (col: { chain: string | null; db: string }) =>
 		doing(async () => {
-			const sources = columns.filter((c) => c.chain && c.db !== col.db).map((c) => c.db);
+			const sources = columns.filter((c) => c.chain && c.held && c.db !== col.db).map((c) => c.db);
 			const which = col.chain ? `Each of its devices ${col.db} lacks` : `${col.db} starts a sync chain with the same admins, and each of its devices`;
 			const from = await choose(`Invite to ${col.db} the devices of which database? ${which} is invited with the role it has there, and joins ${col.db} when it next syncs.`, sources);
 			if (!from) return;
@@ -640,9 +641,9 @@
 						<thead>
 							<tr>
 								<th></th>
-								{#each columns as col (col.db)}
+								{#each columns as col (col.chain ?? col.db)}
 									<th data-db={col.db}
-										><span class="name">{col.db}</span>{#if columns.some((c) => c.chain && c.db !== col.db)}<button
+										><span class="name">{col.db}</span>{#if col.held && columns.some((c) => c.chain && c.held && c.db !== col.db)}<button
 												type="button"
 												class="command like"
 												use:act={'open'}
@@ -656,11 +657,15 @@
 						<tbody>
 							{#each grid.devices as row (row.device ?? row.endpoint)}
 								<tr data-device={row.device ?? row.endpoint} class:here={row.this}>
-									<th title={row.this ? `${row.label}: this device` : row.label}>{row.label}</th>
-									{#each columns as col (col.db)}
+									<th
+										data-sealed={row.sealed?.length || undefined}
+										title={[row.this ? `${row.label}: this device` : row.label, ...(row.sealed ?? []).map((g) => g.text)].join('\n')}>{row.label}</th
+									>
+									{#each columns as col (col.chain ?? col.db)}
 										{@const cell = col.chain ? row.cells[col.chain] : null}
-										{@const acts = row.this || !col.chain ? [] : cellActs(cell?.state, !!row.device)}
-										<td data-db={col.db} data-state={cell?.state ?? 'none'}>
+										{@const grant = col.chain ? row.grants?.[col.chain] : undefined}
+										{@const acts = row.this || !col.chain || !col.held ? [] : cellActs(cell?.state, !!row.device)}
+										<td data-db={col.db} data-state={cell?.state ?? 'none'} data-grant={grant?.state} title={grant?.text}>
 											{#if acts.length}
 												<select
 													aria-label="{row.label} in {col.db}"
@@ -671,11 +676,11 @@
 														cellAct(row, col, what);
 													}}
 												>
-													<option value="" selected>{cell?.state ?? '—'}</option>
+													<option value="" selected>{cellWords(cell?.state, grant)}</option>
 													{#each acts as a (a)}<option value={a}>{a}</option>{/each}
 												</select>
 											{:else}
-												<span class="standing">{cell?.state ?? '—'}</span>
+												<span class="standing">{cellWords(cell?.state, grant)}</span>
 											{/if}
 										</td>
 									{/each}
