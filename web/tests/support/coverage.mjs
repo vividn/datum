@@ -13,9 +13,11 @@
 //   (da-icb7g).
 // - Chromium: every page of every context Playwright opens in the process,
 //   started before the page can navigate and taken before it closes. What is
-//   kept is each function's START offset in its script, which lies inside
-//   the one source file the function was compiled from; workers and the
-//   service worker are not seen, and `index` leaves their sources unmapped.
+//   kept is each function's `start-end` offsets in its script: the start lies
+//   inside the one source file the function was compiled from, and the end
+//   says which of its lines it covers, for the shadow rules (da-17v3h);
+//   workers and the service worker are not seen, and `index` leaves their
+//   sources unmapped.
 //
 // A process that is not a test file's (one a test spawns) writes under the
 // test that spawned it, by `DATUM_COVERAGE_TEST`.
@@ -39,9 +41,10 @@ if (dir && test) {
 	session.post('Profiler.enable');
 	session.post('Profiler.startPreciseCoverage', { callCount: true, detailed: false });
 
-	/** Script pathname → the start offsets of the functions that ran in it. */
+	/** Script pathname → the `start-end` offsets of the functions that ran in it. */
 	const browser = {};
 	const ran = (functions) => functions.map((f) => f.ranges[0]).filter((r) => r.count > 0 && r.startOffset > 0);
+	const offsets = (functions) => ran(functions).map((r) => `${r.startOffset}-${r.endOffset}`);
 
 	const started = new WeakSet();
 	const start = async (page) => {
@@ -58,7 +61,7 @@ if (dir && test) {
 		for (const { url, functions } of entries) {
 			if (!url.startsWith('http')) continue;
 			const at = (browser[new URL(url).pathname] ??= new Set());
-			for (const r of ran(functions)) at.add(r.startOffset);
+			for (const r of offsets(functions)) at.add(r);
 		}
 	};
 	const watch = async (context) => {
@@ -92,12 +95,13 @@ if (dir && test) {
 		// testmap-pure.test.mjs holds that, and a run where it stops says so.
 		let wrote = false;
 		session.post('Profiler.takePreciseCoverage', (_, taken) => {
-			const node = taken.result
+			const scripts = taken.result
 				.filter((s) => s.url.startsWith('file:'))
 				.map((s) => [relative(web, fileURLToPath(s.url)), s.functions])
-				.filter(([p, fns]) => (p.startsWith('src/') ? ran(fns).length : p.startsWith('tests/support/') && fns.some((f) => f.ranges[0].count > 0)))
-				.map(([p]) => p);
-			const out = { test, node, browser: Object.fromEntries(Object.entries(browser).map(([k, v]) => [k, [...v]])) };
+				.filter(([p, fns]) => (p.startsWith('src/') ? ran(fns).length : p.startsWith('tests/support/') && fns.some((f) => f.ranges[0].count > 0)));
+			const node = scripts.map(([p]) => p);
+			const nodeFns = Object.fromEntries(scripts.filter(([p]) => p.startsWith('src/')).map(([p, fns]) => [p, offsets(fns)]));
+			const out = { test, node, nodeFns, browser: Object.fromEntries(Object.entries(browser).map(([k, v]) => [k, [...v]])) };
 			writeFileSync(`${dir}/${basename(test)}.${process.pid}.json`, JSON.stringify(out));
 			wrote = true;
 		});

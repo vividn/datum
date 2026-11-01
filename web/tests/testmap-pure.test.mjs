@@ -90,11 +90,11 @@ test('a stale or missing map runs everything', () => {
 test('a function start reads back to the source it was compiled from', () => {
 	// Line 0: column 0 is a.ts, column 10 b.ts; line 1: column 0 b.ts, column 5 a.ts.
 	const lines = decodeMappings('AAAA,UCAA;AAAA,KDAA');
-	assert.deepEqual(lines, [[[0, 0], [10, 1]], [[0, 1], [5, 0]]]);
+	assert.deepEqual(lines, [[[0, 0, 0], [10, 1, 0]], [[0, 1, 0], [5, 0, 0]]]);
 	const starts = [0, 20];
 	assert.deepEqual([3, 12, 21, 26].map((o) => sourceAt(lines, starts, o)), [0, 1, 1, 0]);
 	// A multi-digit VLQ, and a segment with no source.
-	assert.deepEqual(decodeMappings('wCAAA,C'), [[[40, 0]]]);
+	assert.deepEqual(decodeMappings('wCAAA,C'), [[[40, 0, 0]]]);
 	assert.equal(ours('../../../../../../src/lib/x.ts'), 'src/lib/x.ts');
 	assert.equal(ours('../../../src/lib/wasm/datum-cli.wasm?url'), 'src/lib/wasm/datum-cli.wasm');
 	// A worker's map, which `index` leaves out of every set by these names.
@@ -136,6 +136,7 @@ test('the preload writes what a process ran when it exits, by itself or by proce
 		assert.equal(written.length, 1, `${end || 'natural exit'}: ${r.stderr}`);
 		assert.equal(out[0].test, 'tests/probe.test.mjs');
 		assert.ok(out[0].node.includes('src/lib/shellSplit.ts'), JSON.stringify(out[0].node));
+		assert.ok(out[0].nodeFns['src/lib/shellSplit.ts'].every((r) => /^\d+-\d+$/.test(r)) && out[0].nodeFns['src/lib/shellSplit.ts'].length, JSON.stringify(out[0].nodeFns));
 		// A support module counts by its top level alone: until.mjs's functions never ran.
 		assert.ok(out[0].node.includes('tests/support/until.mjs'), JSON.stringify(out[0].node));
 	}

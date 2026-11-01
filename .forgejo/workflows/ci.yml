@@ -620,6 +620,7 @@ jobs:
           fi
           n=$(( $(nproc) * 4 / 5 ))
           export DATUM_TEST_CONCURRENCY=$(( n < 4 ? n : 4 ))
+          export DATUM_TEST_RED="$RUNNER_TEMP/web-red.json"
           /usr/bin/time -v pnpm test
         env:
           # A PR skips the staging-only tests, which name the reason in its
@@ -639,6 +640,26 @@ jobs:
           # in exactly that file (da-pzq4s emptied three, da-ehpe5 and
           # da-i1ok's).
           DATUM_TEST_RETRY: ""
+
+      # Two narrower selection rules in shadow (da-17v3h, vividn 2026-10-31: «let's
+      # observe for a bit longer»): what each would have run, beside what ran and
+      # what failed, as a file on the `testmap-shadow` branch. It reads the
+      # selection above and changes nothing, and cannot fail the job.
+      # `node web/scripts/testmap-shadow.mjs report` reads the branch.
+      - name: Log what the shadow selection rules would have run
+        if: always() && env.WEBTESTS != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          BASE: ${{ github.base_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN: ${{ github.run_number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STATUS: ${{ job.status }}
+        run: |
+          node web/scripts/testmap-shadow.mjs record "$RUNNER_TEMP/testmap-web.json" "origin/$BASE" "$WEBTESTS" "$RUNNER_TEMP/web-red.json" ||
+            echo "::warning::the test map's shadow log failed; the selection is untouched"
+          exit 0
 
       # A PR's verdict names the base it was reached on (da-kz73u): the forge's
       # own status says only pass or fail, at the head. Mirrors the job's

@@ -173,11 +173,23 @@ const suite = (files, retry, extra = {}) => {
 	// The run this file is in sets its own: testmap.yml's `DATUM_TEST_BAIL=0` ran
 	// last.test.mjs past the three (da-c8ypa), and its `DATUM_TEST_RECORD=1`
 	// wrote these temp files' times over durations.json.
-	for (const k of ['DATUM_TEST_BAIL', 'DATUM_TEST_RECORD', 'DATUM_TEST_SHARD']) if (!(k in extra)) delete env[k];
+	// Its `DATUM_TEST_RED` would be overwritten by these files' verdict (da-17v3h).
+	for (const k of ['DATUM_TEST_BAIL', 'DATUM_TEST_RECORD', 'DATUM_TEST_SHARD', 'DATUM_TEST_RED']) if (!(k in extra)) delete env[k];
 	const r = spawnSync(process.execPath, [runner], { cwd: dir, env, encoding: 'utf8', timeout: 60_000 });
 	rmSync(dir, { recursive: true, force: true });
 	return { code: r.status, out: r.stdout + r.stderr };
 };
+
+test('DATUM_TEST_RED names the files that failed, for the shadow log, and none on a green run (da-17v3h)', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'datum-red-'));
+	const red = join(dir, 'red.json');
+	const body = (ok) => `import { test } from 'node:test';\ntest('t', () => { if (!${ok}) throw new Error('no'); });\n`;
+	assert.equal(suite({ 'bad.test.mjs': body(false), 'ok.test.mjs': body(true) }, '', { DATUM_TEST_RED: red }).code, 1);
+	assert.deepEqual(JSON.parse(readFileSync(red, 'utf8')), { failed: ['tests/bad.test.mjs'], not_run: [] });
+	assert.equal(suite({ 'ok.test.mjs': body(true) }, '', { DATUM_TEST_RED: red }).code, 0);
+	assert.deepEqual(JSON.parse(readFileSync(red, 'utf8')), { failed: [], not_run: [] });
+	rmSync(dir, { recursive: true, force: true });
+});
 
 // quartz's run held a can six hours (da-cvd7y): `after(stopApp)` timed out
 // with Chromium and the server open, and nothing ended the file's process.

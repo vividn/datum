@@ -346,6 +346,15 @@ out.on('end', async () => {
 		}
 		if (red.length && healed.size === red.length) process.exitCode = 0;
 	}
+	// What failed, for the test map's shadow log (da-17v3h), which only reads it.
+	if (process.env.DATUM_TEST_RED) {
+		const redFiles = [...red.filter((f) => !healed.has(f)), ...missing.filter((f) => !notRun?.includes(f))];
+		try {
+			writeFileSync(process.env.DATUM_TEST_RED, JSON.stringify({ failed: redFiles, not_run: notRun ?? [] }) + '\n');
+		} catch (e) {
+			console.log(`test: could not write DATUM_TEST_RED: ${e.message}`);
+		}
+	}
 	const ran = Object.entries(took).sort(([, a], [, b]) => b.duration_ms - a.duration_ms);
 	console.log(`test: ${ran.length} files, slowest first (✗ failed or cut, ↻ failed and then passed its retry):`);
 	for (const [f, d] of ran) console.log(`  ${(d.duration_ms / 1000).toFixed(1).padStart(6)} s ${d.passed ? ' ' : healed.has(f) ? '↻' : '✗'} ${f}`);

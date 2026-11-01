@@ -1433,6 +1433,11 @@ file under `crates/` or the map is missing or stale; the job log names each
 test or the reason. Staging runs the full workspace, and that is the safety
 net for what a scoped run cannot reach.
 
+Two narrower web selection rules run in shadow (da-17v3h): `web/scripts/testmap-shadow.mjs`, whose
+header says what each does. CI runs what `select` chose, and a step that cannot fail the job writes beside it what
+each rule would have run and what failed, one file a run on the `testmap-shadow` branch.
+`node web/scripts/testmap-shadow.mjs report` reads that branch and names what each rule would have missed.
+
 A PR's CI runs no web suite for a change under `crates/` (da-q587o): one that
 changes only `crates/`, docs and markdown runs none and only checks that the
 CLI still compiles for datum.day (`node web/scripts/build-cli-wasm.mjs

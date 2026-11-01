@@ -26,6 +26,10 @@
 // staging's full run tests what it does to the web. Everything runs for any
 // other change that can reach the web, a `web/src/` or support file no set
 // holds, or a map missing or more than MAX_BEHIND commits behind the base.
+//
+// The map also holds `functions`, each function's source lines and the tests
+// that ran it. `select` never reads it: it is for `testmap-shadow.mjs`, which
+// logs what two narrower rules would have picked (da-17v3h).
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -58,7 +62,7 @@ export const READS_TREE = /\bread(?:File|dir)(?:Sync)?\([^\n]*\b(?:src|build|bui
  * `tests` every test file this tree has (`tests/x.test.mjs`), `behind` how
  * far the map's commit is behind the base, or null when it is no ancestor.
  */
-export function choose({ map, behind, changed, tests }) {
+export function choose({ map, behind, changed, tests, narrow }) {
 	if (!map) return { full: ['no web test map'] };
 	const full = [];
 	if (behind === null) full.push(`the map's commit ${map.commit} is not an ancestor of the base`);
@@ -75,7 +79,7 @@ export function choose({ map, behind, changed, tests }) {
 		} else if (/^web\/(src|tests\/support)\//.test(path)) {
 			const by = Object.keys(map.files).filter((t) => map.files[t].includes(p));
 			if (!by.length) full.push(`${path}: no test's coverage reaches it (new, unreached, or a worker's)`);
-			for (const t of by) pick(t, path);
+			for (const t of narrow ? narrow(p, by) : by) pick(t, path);
 		} else if (path.startsWith('web/')) full.push(`${path}: the web suite reads it (fixtures, config, static, scripts)`);
 		else if (CRATE.test(path)) notes.push(`${path}: a crate; staging's full web run tests it`);
 		else if (NOT_WEB.test(path)) notes.push(`${path}: no web test reads it`);
@@ -89,9 +93,10 @@ export function choose({ map, behind, changed, tests }) {
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
-/** A source map's `mappings`, per generated line: `[column, source index]` in column order. */
+/** A source map's `mappings`, per generated line: `[column, source index, source line from 0]` in column order. */
 export function decodeMappings(mappings) {
 	let source = 0;
+	let original = 0;
 	return mappings.split(';').map((line) => {
 		let column = 0;
 		const segments = [];
@@ -109,7 +114,7 @@ export function decodeMappings(mappings) {
 				}
 			}
 			column += v[0];
-			if (v.length > 1) segments.push([column, (source += v[1])]);
+			if (v.length > 1) segments.push([column, (source += v[1]), (original += v[2])]);
 		}
 		return segments;
 	});
@@ -134,6 +139,55 @@ export function sourceAt(lines, starts, offset) {
 }
 
 /**
+ * The first and last source line, from 1, of the bytes `start` to `end` that
+ * came from `source`; null for none. `flat` is a script's `[offset, source,
+ * line from 0]` in offset order.
+ */
+export function linesOf(flat, start, end, source) {
+	let lo = 0;
+	let hi = flat.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (flat[mid][0] <= start) lo = mid + 1;
+		else hi = mid;
+	}
+	let first = Infinity;
+	let last = -1;
+	for (let i = Math.max(lo - 1, 0); i < flat.length && flat[i][0] < end; i++) {
+		if (flat[i][1] !== source) continue;
+		first = Math.min(first, flat[i][2]);
+		last = Math.max(last, flat[i][2]);
+	}
+	return last < 0 ? null : [first + 1, last + 1];
+}
+
+/**
+ * `{tests, sets, fns: {source: [[first line, last line, index into sets]]}}`
+ * from `{source, first, last, tests: Set}`s: 4890 functions share 998 sets of
+ * tests, measured in #1458.
+ */
+export function functionsOf(ran) {
+	const tests = [...new Set(ran.flatMap((f) => [...f.tests]))].sort();
+	const ids = new Map(tests.map((t, i) => [t, i]));
+	const sets = [];
+	const seen = new Map();
+	const by = new Map();
+	for (const f of ran) {
+		const key = `${f.source}:${f.first}:${f.last}`;
+		by.set(key, by.get(key) ?? { ...f, tests: new Set() });
+		for (const t of f.tests) by.get(key).tests.add(t);
+	}
+	const fns = {};
+	for (const f of [...by.values()].sort((a, b) => a.first - b.first || a.last - b.last)) {
+		const set = [...f.tests].map((t) => ids.get(t)).sort((a, b) => a - b);
+		const key = set.join();
+		if (!seen.has(key)) seen.set(key, sets.push(set) - 1);
+		(fns[f.source] ??= []).push([f.first, f.last, seen.get(key)]);
+	}
+	return { tests, sets, fns };
+}
+
+/**
  * A source map's path for one of `web/src/`, as `src/…`; undefined for anything
  * else. A worker's map names it under `.svelte-kit/output/`, a page's does not.
  */
@@ -143,7 +197,30 @@ export const ours = (source) => {
 };
 
 const web = fileURLToPath(new URL('..', import.meta.url));
-const git = (...args) => execFileSync('git', args, { cwd: web, encoding: 'utf8' });
+export const git = (...args) => execFileSync('git', args, { cwd: web, encoding: 'utf8', maxBuffer: 1 << 28 });
+
+/** `ranges` read back to source lines, leaving out what a worker shares. */
+function placed(ranges, unmapped) {
+	const starts = new Map();
+	const nodeLines = (source) => {
+		if (!starts.has(source)) {
+			const text = readFileSync(join(web, source), 'utf8');
+			const at = [0];
+			for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) at.push(i + 1);
+			starts.set(source, at.map((offset, line) => [offset, 0, line]));
+		}
+		return starts.get(source);
+	};
+	const out = [];
+	for (const { script, index: i, source: own, range, tests } of ranges.values()) {
+		const [start, end] = range.split('-').map(Number);
+		const source = own ?? script.sources[i];
+		if (!source || unmapped.has(source)) continue;
+		const lines = own ? linesOf(nodeLines(own), start, end, 0) : linesOf(script.flat, start, end, i);
+		if (lines) out.push({ source, first: lines[0], last: lines[1], tests });
+	}
+	return out;
+}
 
 function index(raw, out) {
 	const build = join(web, 'build');
@@ -156,7 +233,9 @@ function index(raw, out) {
 			const map = JSON.parse(readFileSync(`${file}.map`, 'utf8'));
 			const starts = [0];
 			for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
-			scripts.set(path, { lines: decodeMappings(map.mappings), starts, sources: map.sources.map(ours) });
+			const lines = decodeMappings(map.mappings);
+			const flat = lines.flatMap((segments, g) => segments.map(([c, source, line]) => [starts[g] + c, source, line]));
+			scripts.set(path, { lines, flat, starts, sources: map.sources.map(ours) });
 		}
 		return scripts.get(path);
 	};
@@ -168,12 +247,19 @@ function index(raw, out) {
 			.filter(Boolean)
 	);
 	const files = {};
+	/** `script:start-end` → the source a function came from and the tests that ran it, for `functions`. */
+	const ranges = new Map();
+	const ranIn = (key, where, test) => {
+		if (!ranges.has(key)) ranges.set(key, { ...where, tests: new Set() });
+		ranges.get(key).tests.add(test);
+	};
 	let lost = 0;
 	let unplaced = 0;
 	for (const f of readdirSync(raw).filter((f) => f.endsWith('.json'))) {
-		const { test, node, browser } = JSON.parse(readFileSync(join(raw, f), 'utf8'));
+		const { test, node, nodeFns = {}, browser } = JSON.parse(readFileSync(join(raw, f), 'utf8'));
 		const set = (files[test] ??= new Set());
 		for (const s of node) set.add(s);
+		for (const [source, fns] of Object.entries(nodeFns)) for (const r of fns) ranIn(`${source}:${r}`, { source, range: r }, test);
 		for (const [path, offsets] of Object.entries(browser)) {
 			// A page's inline scripts are src/app.html's, which no set holds.
 			if (!path.endsWith('.js')) continue;
@@ -182,10 +268,13 @@ function index(raw, out) {
 				lost += offsets.length;
 				continue;
 			}
-			for (const o of offsets) {
-				const i = sourceAt(s.lines, s.starts, o);
+			for (const r of offsets) {
+				const i = sourceAt(s.lines, s.starts, parseInt(r));
 				if (i === undefined) unplaced++;
-				else set.add(s.sources[i]);
+				else {
+					set.add(s.sources[i]);
+					ranIn(`${path}:${r}`, { script: s, index: i, range: r }, test);
+				}
 			}
 		}
 	}
@@ -198,7 +287,14 @@ function index(raw, out) {
 		files: Object.fromEntries(Object.entries(files).sort().map(([t, s]) => [t, [...s].sort()])),
 		always
 	};
-	writeFileSync(out, JSON.stringify(map, null, '\t') + '\n');
+	// The shadow rules' alone: losing it must not lose the map.
+	try {
+		map.functions = functionsOf(placed(ranges, unmapped));
+		console.log(`functions, for the shadow rules: ${Object.values(map.functions.fns).flat().length} in ${Object.keys(map.functions.fns).length} sources, ${map.functions.sets.length} sets of tests`);
+	} catch (e) {
+		console.log(`::warning::no functions in the web map, so the shadow rules log nothing: ${e.message}`);
+	}
+	writeFileSync(out, JSON.stringify(map) + '\n');
 	const sources = new Set(Object.values(map.files).flat());
 	console.log(`web test map of ${map.commit}: ${Object.keys(files).length} test files, ${sources.size} source files reached`);
 	console.log(`left out, a worker's: ${[...unmapped].join(' ')}`);
@@ -208,9 +304,8 @@ function index(raw, out) {
 	if (unplaced) console.log(`${unplaced} functions on a line the source map says nothing of (Vite's preload helper), not mapped`);
 }
 
-function select(mapPath, base, out) {
-	mkdirSync(out, { recursive: true });
-	for (const f of ['FULL', 'web.tests']) rmSync(join(out, f), { force: true });
+/** What `choose` reads, from a map's path and the base. */
+export function inputs(mapPath, base) {
 	const map = existsSync(mapPath) ? JSON.parse(readFileSync(mapPath, 'utf8')) : undefined;
 	const ancestor = map && spawnSync('git', ['merge-base', '--is-ancestor', map.commit, base], { cwd: web }).status === 0;
 	const behind = ancestor ? Number(git('rev-list', '--count', `${map.commit}..${base}`)) : null;
@@ -221,6 +316,13 @@ function select(mapPath, base, out) {
 		.filter((f) => f.endsWith('.test.mjs') && !(skipDebug && /^debug[^/]*\.test\.mjs$/.test(f)))
 		.map((f) => `tests/${f}`)
 		.sort();
+	return { map, behind, changed, tests };
+}
+
+function select(mapPath, base, out) {
+	mkdirSync(out, { recursive: true });
+	for (const f of ['FULL', 'web.tests']) rmSync(join(out, f), { force: true });
+	const { map, behind, changed, tests } = inputs(mapPath, base);
 	if (map) console.log(`web test map of ${map.commit}: ${Object.keys(map.files).length} test files`);
 	const { full, picked, notes } = choose({ map, behind, changed, tests });
 	if (full) {
