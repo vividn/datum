@@ -48,8 +48,13 @@ import { FIXTURE, MOOD } from './fields.mjs';
 
 const sweep = process.env.DATUM_TEST_PR === '1' && 'staging-only: the double-outline sweep runs on staging and main pushes, not on a PR (da-v7y8x)';
 
-/** Every shape of field, one of them ignored (`run`, a point). */
-const SEED = [...FIXTURE, ...MOOD, 'occur run -t 0800', 'ignore run'];
+/**
+ * Every shape of field, one of them ignored (`run`, a point). `stats
+ * --last-month` fills the stats cache back past any week this month began in:
+ * else, in a month's first days, the stats pane's month reaches back less far
+ * than its week, and the tap on «week» writes that derived cache.
+ */
+const SEED = [...FIXTURE, ...MOOD, 'occur run -t 0800', 'ignore run', 'stats --last-month'];
 
 /** Where the database's change counter stands: it moves on every write. */
 const writes = (app) => changeCounter(app.page);
