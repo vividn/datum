@@ -251,6 +251,10 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.now_label = true;
                 i += 1;
             }
+            FlagSplit::Long("axis-now") => {
+                out.axis_now = true;
+                i += 1;
+            }
             FlagSplit::Long("overlay") => {
                 out.overlay = true;
                 i += 1;

@@ -171,7 +171,7 @@ describe('a fresh phone', () => {
 			// The nowview is the default window, asked for
 			// without anything being tapped: its far handle says so. (A write
 			// asks it for its day's data alone now, not its window, da-0e06p.)
-			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-30m"]').waitFor();
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-15m"]').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});

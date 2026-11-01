@@ -534,6 +534,44 @@ export function ladderAround(minutes: number): { up: string[]; down: string[] } 
 	};
 }
 
+/** The steps a time rounds to, in seconds. */
+const ROUND_S = [1, 5, 10, 15, 30, 60, 300, 600, 900, 1800, 3600, 7200, 86400];
+/** The step a time `minutes` from its anchor rounds to: about a sixth of it, which leaves every step of the ladder as it is. */
+const roundStep = (minutes: number) => ROUND_S.findLast((s) => s <= (minutes * 60) / 6) ?? 1;
+
+/** The instant `minutes` from `anchor` (`sign`: -1 before it) rounded to a sensible clock time on that side of it (da-tglm6). */
+export function roundClock(anchor: number, minutes: number, sign = -1): number {
+	const step = roundStep(minutes);
+	const at = new Date(anchor + sign * minutes * 60_000);
+	const of = (s: number) => new Date(at).setHours(0, 0, s, 0);
+	const s = at.getHours() * 3600 + at.getMinutes() * 60 + at.getSeconds() + at.getMilliseconds() / 1000;
+	const near = Math.round(s / step) * step;
+	return (of(near) - anchor) * sign > 0 ? of(near) : of(near + sign * step);
+}
+
+/** An instant as the clock's axis says it. */
+export function clockWord(ms: number): string {
+	const at = new Date(ms);
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${pad(at.getHours())}:${pad(at.getMinutes())}${at.getSeconds() ? `:${pad(at.getSeconds())}` : ''}`;
+}
+
+/**
+ * The clock times beside a handle `minutes` from `anchor`, as `ladderAround`
+ * has the steps, the nearest first (vividn, 2026-10-30: «for the absolute
+ * time axis give sensible round absolute times that you can pick that scale
+ * in a similar fashion. does not have to be powers of two»): each step of
+ * the ladder, that far from the anchor, rounded on the clock.
+ */
+export function clockAround(anchor: number, minutes: number, sign = -1): { up: number[]; down: number[] } {
+	const times = [...new Set(NOWVIEW_STEPS.map((s) => roundClock(anchor, stepMinutes(s), sign)))];
+	const off = (t: number) => ((t - anchor) * sign) / 60_000;
+	return {
+		up: times.filter((t) => off(t) > minutes + 1e-9),
+		down: times.filter((t) => off(t) < minutes - 1e-9).reverse()
+	};
+}
+
 /**
  * NOWVIEW at a window of `history`, centred on `center` when there is one
  * (da-pcis), its now section about the instant `at` names when there is
@@ -559,7 +597,7 @@ export function ladderAround(minutes: number): { up: string[]; down: string[] } 
  */
 export const SURROUND = 8;
 
-export const nowviewSpec = (history: string, center?: string, vertical = false, at?: string, labels = false, surround = SURROUND): PaneSpec => ({
+export const nowviewSpec = (history: string, center?: string, vertical = false, at?: string, labels = false, surround = SURROUND, axisNow = false): PaneSpec => ({
 	...NOWVIEW,
 	argv: [
 		...NOWVIEW.argv,
@@ -573,6 +611,7 @@ export const nowviewSpec = (history: string, center?: string, vertical = false, 
 		...(labels ? [] : ['--surround', stepMinutes(history) > 0 ? `${Math.round(surround * stepMinutes(history) * 60)}s` : history]),
 		...(center ? ['--center', center] : []),
 		...(at ? ['-t', at] : []),
+		...(axisNow ? ['--axis-now'] : []),
 		...(center || at || history === '0' ? [] : ['--ahead', history]),
 		...(vertical ? ['--orientation', 'vertical'] : [])
 	]

@@ -1,20 +1,22 @@
 <!--
 	The nowview widget (da-pcis): datum's nowview picture through a CliPane,
-	and a HANDLE over the outermost label of each of its two time axes
-	(da-57vj4, da-b9glf), which replaced the − / + beside the far one
-	(da-ndzl). Hover a handle, or
-	press a finger on it, and a wheel of the ladder's steps opens around it
-	(down to 30s, halving past 5m through the 2m and 1m a game needs, up to
-	12h): a click or a swipe across the axis gives the handle that time in
-	the same place, so the window rescales by their ratio, and a drag along
-	the axis moves the handle's time under the finger, to a window of any
-	length. Never to the snapshot of each field's state, which is
-	`showHistory` turned off in the widget's menu (da-hklaz). The window
-	is the widget's setting, handed out with `onchange` — and since da-vhwq
-	that lands in THIS SESSION, not the tree: a step under a LOCKED layout
-	used to move `history` in the tree and light the layout's dot, which is
-	the defect that bead was written against. «Save options with layout» is
-	what hands the window to the layout, and only when the reader chooses it.
+	and a small white diamond HANDLE in the middle of each of its two time axes
+	(da-tglm6, vividn on #1445: «move them to the middle of the axis … small
+	white diamonds, 2:1 ratio»), which replaced the labels that were handles
+	(da-57vj4, da-b9glf). Tap or hold one and big numbers open off to its side,
+	scrolled by a mouse wheel: the ladder's steps on the relative axis (down to 30s, halving past 5m through
+	the 2m and 1m a game needs, up to 12h), round clock times on the clock's.
+	A tap or a swipe between them gives the handle that time in the same
+	place, so the window rescales by their ratio, and a drag along the axis
+	moves the handle's time under the finger, smoothly, the axis's labels those
+	of the window it would land on. Never to the snapshot of each
+	field's state, which is `showHistory` turned off in the widget's menu
+	(da-hklaz). The window is the widget's setting, handed out with
+	`onchange` — and since da-vhwq that lands in THIS SESSION, not the tree:
+	a step under a LOCKED layout used to move `history` in the tree and light
+	the layout's dot, which is the defect that bead was written against.
+	«Save options with layout» is what hands the window to the layout, and
+	only when the reader chooses it.
 
 	The snapshot draws no axis, so it has no handles: nothing lies over its
 	chips, and the way out of it is the menu's «show history».
@@ -42,7 +44,8 @@
 	  double tap, anywhere    → a SELECTION there; what was selected stays
 	  tap on ground           → a SELECTION where it fell; the window does not move
 	  touch a time axis       → SCRUB: the time under the finger, following it
-	    and drag                to the lift, and no pan
+	    and drag                to the lift, and no pan; on a label, that
+	                            label's time until it travels (da-tglm6)
 	  drag sideways           → PAN in time; the selection does not move,
 	                            and never past now (da-v8gzq): a finger's
 	                            flick coasts on after the lift
@@ -75,7 +78,8 @@
 	THE TWO AXES (da-b9glf). The CLI writes the clock over the band (right of
 	it when time runs down), each time a solid line through it as on the
 	dayview, at a step the zoom chooses; and the times relative to the
-	instant under it (left of it), each a dotted line. A selection is ONE
+	instant under it (left of it), each a dotted line, reading `t-5m` when
+	that instant is a selected one. A selection is ONE
 	pill, absolute (`-t 14:07`) or relative (`-t -7`), by how it was made:
 
 	  scrub the clock's axis  → absolute, stopping on a dot or a state change
@@ -102,8 +106,9 @@
 	it names (vividn: «let's show the pills in the margin of the nowview»,
 	then da-b9glf: the margin row went, «at smaller heights the pill row
 	takes up an enormous amount of room, and looks weird all empty like
-	that»). One store, two views, `Pill.svelte` for both; these are words
-	only, as a press where they stand is the axis's.
+	that»). One store, two views, `Pill.svelte` for both. Here a tap on one
+	dismisses it, and a drag from it scrubs its axis (da-tglm6), so a scrub
+	is not lost where a pill stands.
 
 	THE NOW SECTION is the CLI's strip of each field's current state, and it
 	belongs to now (da-dv45l, vividn: «it is no longer pinned on the side,
@@ -113,12 +118,13 @@
 	pill draws no section (vividn: «For selected times, don't display the
 	outset block, just have the nowview as it would be with a dashed line and
 	continuous in time around it»): the CLI is handed the pill as `-t` and
-	the window's middle as `--center`, draws a dashed line at it and counts
-	the ticks — and so the handles — from it, and the pill sits over the
-	line. A tap here moves the line and not the window: one on now stops
+	the window's middle as `--center`, draws a dashed line at it and, from an
+	absolute pill, counts the ticks — and so the handles — from it; from a
+	relative one they stay on now (`--axis-now`, da-tglm6). The pill sits over
+	the line. A tap here moves the line and not the window: one on now stops
 	where it is for as long as the pill lasts. A handle's stretch scales about
-	the pill's instant, or now, wherever the window is; a pinch, about the
-	fingers (da-3zpdx).
+	an absolute pill's instant, or now, wherever the window is; a pinch, about
+	the fingers (da-3zpdx).
 	vividn: «any time the view is panned off the default, the "now" label
 	under the now section becomes a filled in yellow button with black now
 	written on it. Clicking that button restores the default.» So off now
@@ -152,14 +158,14 @@
 	import { on } from 'svelte/events';
 	import CliPane from '#lib/CliPane.svelte';
 	import Pill from '#lib/Pill.svelte';
-	import { pills, selected } from '#lib/bar.ts';
+	import { pills, removePill, selected } from '#lib/bar.ts';
 	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
-	import { inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
+	import { DOUBLE_MS, inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
 	import { markOf, pressSpent } from '#lib/inspect.ts';
 	import { readLanes } from '#lib/lanes.ts';
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
-	import { historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
+	import { clockAround, clockWord, historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
 	import { layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
 	import { run } from '#lib/run.ts';
 
@@ -251,6 +257,13 @@
 	 * (`pointed`), and so is asked for again with it.
 	 */
 	const pillArg = $derived(pill?.at.toISOString());
+	/**
+	 * The pill the relative axis counts from: an absolute one's. vividn,
+	 * 2026-10-30: «when a relative time pill is chosen, don't update the
+	 * relative time axis to be relative to that pill, it should still stay
+	 * relative to now».
+	 */
+	const counted = $derived(pill?.rel === undefined ? pill : null);
 	/** How finely a tap here says its time, in seconds. */
 	const grain = $derived(tapStep(minutes));
 
@@ -291,7 +304,8 @@
 			vertical,
 			pillArg,
 			labels,
-			surround
+			surround,
+			!!pill && !counted
 		)
 	);
 
@@ -484,7 +498,12 @@
 	/** The instant `pos` px along the axis is, by the picture's own geometry, as it is slid now. */
 	function instantAlong(pos: number): number {
 		const a = stretchAt(pos);
-		return a ? instantOn(a, pos) + slid : NaN;
+		if (!a) return NaN;
+		const at = instantOn(a, pos);
+		// A point on a strip standing inside the window is its instant, whichever
+		// stretch it is nearer: read on from that stretch, its far half read
+		// minutes before now (da-tglm6).
+		return (stretches.length > 1 ? Math.max(a.from, Math.min(a.to, at)) : at) + slid;
 	}
 
 	/** The instant a point on screen is, by the picture's own geometry, as it is slid now. */
@@ -765,12 +784,12 @@
 	 * — its line and the ticks and labels beyond it, below the plot or, when
 	 * time runs down, left of it — or the clock's, across the bands from it.
 	 */
-	function axisAt(x: number, y: number): 'rel' | 'abs' | null {
+	function axisAt(x: number, y: number, reach = 2): 'rel' | 'abs' | null {
 		const svg = svgEl();
 		const [rel, abs] = ['path.axis', 'path.clock-axis'].map((s) => svg?.querySelector(s)?.getBoundingClientRect());
 		if (!axis) return null;
-		if (rel && (axis.y ? x <= rel.right + 2 : y >= rel.top - 2)) return 'rel';
-		if (abs && (axis.y ? x >= abs.left - 2 : y <= abs.bottom + 2)) return 'abs';
+		if (rel && (axis.y ? x <= rel.right + reach : y >= rel.top - reach)) return 'rel';
+		if (abs && (axis.y ? x >= abs.left - reach : y <= abs.bottom + reach)) return 'abs';
 		return null;
 	}
 
@@ -805,12 +824,59 @@
 
 	/** How near a scrub of the clock axis passes a dot or a state change to stop on it: a few px, not a magnet. */
 	const SCRUB_SNAP_PX = 4;
+	/** How far into the band a press takes an axis, unless it lands on a mark: its strip is only 18px, and a finger that missed it panned (da-tglm6). */
+	const AXIS_REACH_PX = 8;
 	/** Which axis the scrub in hand is of. */
 	let scrubbing: 'rel' | 'abs' = 'rel';
+	/**
+	 * What a scrub's press landed on, until it travels: a label, whose time
+	 * is selected and stays so however the finger shakes, or the id of a pill,
+	 * which a still lift dismisses and which selects nothing meanwhile.
+	 */
+	let landedOn: { pill?: string } | null = null;
+	/** The pill the press in hand is on, as `onPillDown` hands it to `begin`. */
+	let pillDown: string | undefined;
+	/** When an axis last made a selection by a press: the pill it leaves under the finger, a double tap's second is not a tap on it. */
+	let axisPressed = -Infinity;
 
-	/** The time a scrub at a point names: the clock's, stopping on what it passes, or the relative axis's. */
+	/**
+	 * The selection a label under a point of the axis `on` names, if one is
+	 * within a fingertip of it along the axis (da-tglm6, vividn: «if you tap
+	 * on an axis label it always puts a selection time right there»): a clock
+	 * label's time from its mark, a relative one's by its words from the
+	 * instant they count from, the selection or now.
+	 */
+	function labelAt(x: number, y: number, on: 'rel' | 'abs') {
+		const pos = along(x, y);
+		let near: SVGElement | null = null;
+		let off = SLOP_PX;
+		for (const l of svgEl()?.querySelectorAll<SVGElement>(on === 'abs' ? '.clock-label' : '.tick-label') ?? []) {
+			if (l.style.visibility === 'hidden' || !l.textContent) continue;
+			const r = l.getBoundingClientRect();
+			const [a, b] = axis?.y ? [r.top, r.bottom] : [r.left, r.right];
+			const d = Math.max(a - pos, pos - b, 0);
+			if (d <= off && (d < off || !near)) [near, off] = [l, d];
+		}
+		if (!near) return null;
+		if (on === 'abs') {
+			const at = Date.parse(near.previousElementSibling?.getAttribute('data-at') ?? '');
+			return Number.isNaN(at) ? null : exact(at);
+		}
+		const word = /^t?([-+])(.+)$/.exec(near.textContent ?? '');
+		const by = word ? stepMinutes(word[2]) * (word[1] === '-' ? -1 : 1) : NaN;
+		const at = instantMs() + by * 60_000;
+		return Number.isNaN(at) || at >= nowMs() ? null : { rel: (nowMs() - at) / 60_000, from: 'nowview' as const };
+	}
+
+	/**
+	 * The time a scrub at a point names: the clock's, stopping on what it
+	 * passes, or the relative axis's. From now on it names none, on either
+	 * axis, as a selection at now is none: the clock's used to run on into the
+	 * future under the finger (da-tglm6).
+	 */
 	function scrubAt(x: number, y: number) {
 		const at = instantAt(x, y);
+		if (at >= nowMs() - EDGE_MS) return null;
 		if (scrubbing === 'rel') return selection(at, undefined, 'rel');
 		const near = dataNear(along(x, y), SCRUB_SNAP_PX);
 		return near === null ? selection(at, undefined, 'abs') : exact(near);
@@ -830,12 +896,16 @@
 		// wherever it goes until the lift. The clock's is absolute and stops
 		// a few px either side of a dot or a state change; the relative one's
 		// is relative and not snapped, which is the point (da-b9glf).
-		const on = axisAt(press.x, press.y);
+		const on = pillDown ? ($pointed?.rel !== undefined ? 'rel' : 'abs') : axisAt(press.x, press.y, markOf(event.target) ? 2 : AXIS_REACH_PX);
 		if (on) {
 			mode = 'scrub';
 			scrubbing = on;
 			waiting = null;
-			return pointAt(scrubAt(press.x, press.y));
+			if (pillDown) return void (landedOn = { pill: pillDown });
+			const label = labelAt(press.x, press.y, on);
+			landedOn = label && {};
+			axisPressed = event.timeStamp;
+			return pointAt(label ?? scrubAt(press.x, press.y));
 		}
 		mode = 'press';
 		long = false;
@@ -857,6 +927,7 @@
 		press = null;
 		onMark = null;
 		waiting = null;
+		landedOn = null;
 		mode = 'press';
 		long = false;
 		panned = 0;
@@ -867,7 +938,11 @@
 	/** Run the machine to where the pointer is now, at `t` (its event's own time), and do what the mode does. */
 	function step(x: number, y: number, t = performance.now()): void {
 		if (!press || !axis) return;
-		if (mode === 'scrub') return pointAt(scrubAt(x, y));
+		if (mode === 'scrub') {
+			if (landedOn && Math.hypot(x - press.x, y - press.y) <= SLOP_PX) return;
+			landedOn = null;
+			return pointAt(scrubAt(x, y));
+		}
 		const was = mode;
 		// The machine reads «sideways» as «along time»: hand it the axes
 		// turned when time runs down.
@@ -1096,12 +1171,13 @@
 		commitPan();
 	}
 
-	/** The instant a stretch is about, in ms: the pill's, where the dashed line is, or now. */
-	const instantMs = () => (pill ? +pill.at : Date.now());
+	/** The instant a stretch is about and the relative axis counts from, in ms: an absolute pill's, where the dashed line is, or now. */
+	const instantMs = () => (counted ? +counted.at : Date.now());
 
 	function finish(event: PointerEvent): void {
 		if (!press) return;
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
+		if (landedOn?.pill && still && event.timeStamp - axisPressed > DOUBLE_MS) removePill(landedOn.pill);
 		// A flick coasts on, a finger's or a mouse's (da-w57do); one held still first stops where it is let go.
 		if (mode === 'pan') {
 			const v = speed(event.timeStamp);
@@ -1394,6 +1470,13 @@
 		[apart, middleFrom] = [spread / raw, mid];
 	}
 
+	/** A press on a pill on an axis is the band's press, with where it landed said. */
+	function onPillDown(event: PointerEvent, id: string): void {
+		pillDown = id;
+		onPointerDown(event);
+		pillDown = undefined;
+	}
+
 	function onPointerMove(event: PointerEvent): void {
 		if (fingers.has(event.pointerId)) fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		if (zoom?.held && waited && fingers.has(event.pointerId)) waitedMove(zoom, waited);
@@ -1480,8 +1563,8 @@
 
 	// ── the handles, the pills and the buttons ─────────────────────────
 
-	/** The room a handle keeps clear along the axis either side of its label. */
-	const GAP_PX = 4;
+	/** A handle's target along the axis, and how near the anchor its place may come before it takes the window's middle. */
+	const HANDLE_PX = 28;
 
 	/**
 	 * Below this width the selection's pills and `← sel` do not fit, and the
@@ -1504,36 +1587,31 @@
 	let roomy = $state(true);
 
 	/**
-	 * A HANDLE over the outermost label of each axis (da-57vj4, da-b9glf,
-	 * vividn: «Let's only have the furthest out axis label be the
-	 * handle/button, the others then are not»): its words (`-15m`, or a
-	 * clock's `14:40`), how far from the anchor they say it is in minutes,
-	 * and its box, centred at `x`, `y` across and down the widget's. The
-	 * relative axis's is its far label, the first along time, which is how
-	 * far back the window reaches; it is moved in off the window's edge,
-	 * where the surroundings put it, and a nearer label it would lie over is
-	 * not drawn. The clock's is its first label inside the window, at its
-	 * instant (`clock`), which it follows as the picture flows. None when
-	 * the picture draws no axis — the snapshot.
-	 *
-	 * `slid` is the band's slide (`rest + panned`) when it was read off the
-	 * picture: a pan slides it with its label by what it has moved since,
-	 * every frame, not once it lets go (da-aicu3).
+	 * A diamond HANDLE on each axis's line (da-tglm6): halfway from the
+	 * window's far end to the anchor, so a drag has room both ways and a
+	 * centered anchor is not under it, or the window's middle where the anchor
+	 * is off the window or next to its far end. Its words (`-15m`, or a clock's
+	 * `14:40`, none of which it draws) say the time at the diamond, its
+	 * `minutes` how far that is from the anchor, and `x`, `y` where it stands
+	 * across and down the widget's box. It belongs to the window and not to
+	 * the picture: a pan moves the picture under it, and its time changes
+	 * with the next `place`. None when the picture draws no axis — the
+	 * snapshot — or the anchor stands at the window's end, nothing to scale
+	 * about.
 	 */
-	type Handle = { text: string; minutes: number; x: number; y: number; w: number; h: number; slid: number; clock?: number };
-	/** What a wheel opens on and a press takes hold of: a handle's time and place, not its box. */
-	type Held = Pick<Handle, 'text' | 'minutes' | 'x' | 'y' | 'clock'>;
+	type Handle = { text: string; minutes: number; sign: 1 | -1; x: number; y: number; clock?: number };
 	let farHandle = $state.raw<Handle | null>(null);
 	let clockHandle = $state.raw<Handle | null>(null);
 	const handles = $derived([farHandle, clockHandle].filter((h): h is Handle => !!h));
-	/** The widget's box on screen, for the wheel, which is drawn `fixed` beside it. */
+	/** The widget's box on screen, for the numbers, which are drawn `fixed` beside it. */
 	let boxAt = $state.raw({ x: 0, y: 0 });
 
 	/**
 	 * Hide each clock time still to come, or reaching past the now-line: the
 	 * clip there hides only part of it, and the near one peeked in beside
-	 * «now» (da-xwe0h). They slide with the flow, so this runs at each slide,
-	 * and the clock's handle is read again with them.
+	 * «now» (da-xwe0h). And one the window's far end cuts in two. They slide
+	 * with the flow, so this runs at each slide, and the handles are read again
+	 * with them.
 	 */
 	function clearFar(): void {
 		const now = drawn ? drawn.now + slid : Infinity;
@@ -1543,56 +1621,59 @@
 			// millisecond spares `drawn.now`'s rounding.
 			const ahead = Date.parse(l.previousElementSibling?.getAttribute('data-at') ?? '') - now > 1;
 			const r = l.getBoundingClientRect();
-			l.style.visibility = ahead || (axis?.y ? r.bottom : r.right) > line + 0.5 ? 'hidden' : '';
+			const cut = (axis?.y ? r.top : r.left) < ends()[0] && (axis?.y ? r.bottom : r.right) > ends()[0];
+			l.style.visibility = ahead || cut || (axis?.y ? r.bottom : r.right) > line + 0.5 ? 'hidden' : '';
 		}
-		readClockHandle();
+		readHandles();
 	}
 
-	/**
-	 * The clock axis's handle: over its first label along time inside the
-	 * window and before the anchor, whole, at its instant (da-b9glf). None
-	 * where no label is wholly inside before the anchor — a window shorter
-	 * than its clock's step — as the relative axis's has none on the
-	 * snapshot. Written only when it moved, being read at every slide.
-	 */
-	function readClockHandle(): void {
+	/** A time's distance from its anchor as a handle says it: to the second only under ten minutes. */
+	const sayMinutes = (m: number) => {
+		const s = Math.round(m * 60);
+		return m >= 10 || s < 60 || s % 60 === 0 ? historyArg(m < 10 ? m : Math.round(m)) : `${Math.floor(s / 60)}m${s % 60}s`;
+	};
+
+	/** The handles, where the window starts: written only when they moved, being read at every slide. */
+	let handleAt = 0;
+	let handleHalfway = false;
+	function readHandles(): void {
 		// Not before the widget is mounted: the flow's effect runs as it is
 		// set up, above where the handles are declared.
 		if (!el) return;
-		const [svg, home] = [svgEl(), el.getBoundingClientRect()];
-		const [lo, hi] = ends();
-		const y = axis?.y;
-		const anchor = instantMs();
-		const read = (l: SVGElement) => {
-			const r = l.getBoundingClientRect();
-			const at = Date.parse(l.previousElementSibling?.getAttribute('data-at') ?? '');
-			return { l, r, at, mid: y ? r.top + r.height / 2 : r.left + r.width / 2, half: (y ? r.height : r.width) / 2 };
-		};
-		const first = !svg || !home || !axis || zoom
-			? undefined
-			: [...svg.querySelectorAll<SVGElement>('.clock-label')]
-					.map(read)
-					.filter((c) => c.l.style.visibility !== 'hidden' && c.at < anchor && c.mid - c.half >= lo && c.mid + c.half <= hi)
-					.sort((a, b) => a.mid - b.mid)[0];
-		const next: Handle | null = first
+		const [svg, home, [lo, hi]] = [svgEl(), el.getBoundingClientRect(), ends()];
+		const was = middleOf(middle);
+		const far = Number.isFinite(was) ? was - minutes * 30_000 : axis ? instantAlong(lo) : NaN;
+		// Read at rest: a pan in hand moves the picture under the handles, and not them.
+		if (svg && !panned) {
+			const anchor = (axis?.y ? svg.getBoundingClientRect().y : svg.getBoundingClientRect().x) + anchorX(svg);
+			handleHalfway = anchor > lo + 2 * HANDLE_PX && anchor <= hi;
+			handleAt = (handleHalfway ? (lo + anchor) / 2 : (lo + hi) / 2) - (axis?.y ? home.y : home.x);
+		}
+		// The time at the diamond, which the handle's words and numbers name.
+		const here = handleHalfway ? (far + instantMs()) / 2 : Number.isFinite(was) ? was : axis ? instantAlong((lo + hi) / 2) : NaN;
+		// To the second: the flow's now is a few ms off the clock, and 15.0001m has 15m as a step below it.
+		const off = Math.round((instantMs() - here) / 1000) / 60;
+		const none = !svg || !axis || zoom || !(Math.abs(off) >= 1 / 60);
+		const line = (selector: string) => svg?.querySelector(selector)?.getBoundingClientRect();
+		const [rel, abs] = none ? [] : [line('path.axis'), line('path.clock-axis')];
+		const sign = off < 0 ? 1 : -1;
+		const at = (edge: number) => (axis?.y ? { x: edge - home.x, y: handleAt } : { x: handleAt, y: edge - home.y });
+		const same = (a: Handle | null, b: Handle | null) =>
+			a && b ? a.text === b.text && Math.abs(a.x - b.x) <= 0.25 && Math.abs(a.y - b.y) <= 0.25 : a === b;
+		const nextFar: Handle | null = rel
 			? {
-					text: first.l.textContent ?? '',
-					minutes: (anchor - first.at) / 60_000,
-					clock: first.at,
-					x: first.r.left + first.r.width / 2 - home!.x,
-					y: (y ? first.r.top + first.r.height / 2 : Math.min(first.r.top + first.r.height / 2, clockAbove() - HANDLE_PX / 2)) - home!.y,
-					w: first.r.width + 8,
-					h: Math.max(first.r.height + 4, HANDLE_PX),
-					slid: rest + panned
+					text: `${counted ? 't' : ''}${sign < 0 ? '-' : '+'}${sayMinutes(Math.abs(off))}`,
+					minutes: Math.abs(off),
+					sign,
+					...at(axis?.y ? rel.right : rel.top)
 				}
 			: null;
-		const was = clockHandle;
-		if (!next || !was || next.text !== was.text || Math.abs(next.x - was.x) > 0.25 || Math.abs(next.y - was.y) > 0.25 || next.slid !== was.slid)
-			clockHandle = next;
+		const nextClock: Handle | null = abs
+			? { text: clockWord(here), minutes: Math.abs(off), sign, clock: here, ...at(axis?.y ? abs.left : abs.bottom) }
+			: null;
+		if (!same(nextFar, farHandle)) farHandle = nextFar;
+		if (!same(nextClock, clockHandle)) clockHandle = nextClock;
 	}
-
-	/** Where the clock strip's line is, across the band: a handle's target stays above it, as the far one's stays under the axis. */
-	const clockAbove = () => svgEl()?.querySelector('.clock-axis')?.getBoundingClientRect().bottom ?? Infinity;
 
 	/** The instants at the window's two ends, as the picture on screen draws them. */
 	let view = $state.raw<[number, number] | null>(null);
@@ -1808,67 +1889,22 @@
 		if (word) word.style.visibility = homeward ? 'hidden' : '';
 		// A picture landing under a gesture takes its rule too.
 		if (zoom && laid?.svg !== svg) rule();
-		const far = inset();
-		readClockHandle();
-		if (!far || !axis) return void (farHandle = null);
-		const r = far.getBoundingClientRect();
-		const text = far.textContent ?? '';
-		const mid = r.top + r.height / 2;
-		// On the label's middle, but no higher than keeps a handle's target
-		// under the axis line: the strip is only as tall as its 11px digits
-		// (da-a2cxp).
-		const under = (svg?.querySelector('.axis')?.getBoundingClientRect().top ?? 0) + HANDLE_PX / 2;
-		const minutes = stepMinutes(text.replace(/^[-+]/, ''));
-		farHandle =
-			minutes > 0 && far.style.visibility !== 'hidden'
-				? {
-						text,
-						minutes,
-						x: r.left + r.width / 2 - home.x,
-						y: (axis.y ? mid : Math.max(mid, under)) - home.y,
-						w: r.width + 8,
-						h: Math.max(r.height + 4, HANDLE_PX),
-						slid: rest + panned
-					}
-				: null;
+		clearCut();
+		readHandles();
 	}
 
 	/**
-	 * The relative axis's far label: the first along time inside the window —
-	 * leftmost, or topmost when time runs down — inset clear of the window's
-	 * edge for its handle, and any it then lies over hidden. A gesture's
-	 * rule's (`graftAxis`) where it has one: as the picture of its window
-	 * will be.
+	 * Hide each relative label the window's far end cuts in two: every label
+	 * stands at its own time, so it cannot move aside. A gesture's rule's
+	 * (`graftAxis`) where it has one: as the picture of its window will be.
 	 */
-	function inset(): SVGElement | null {
+	function clearCut(): void {
 		const svg = svgEl();
-		const labels = [...(svg?.querySelectorAll<SVGElement>(svg.classList.contains('axis-live') ? '.live-axis .tick-label' : '.tick-label') ?? [])];
-		for (const l of labels) {
-			l.removeAttribute('transform');
-			l.style.visibility = '';
+		const [lo] = ends();
+		for (const l of svg?.querySelectorAll<SVGElement>(svg.classList.contains('axis-live') ? '.live-axis .tick-label' : '.tick-label') ?? []) {
+			const r = l.getBoundingClientRect();
+			l.style.visibility = (axis?.y ? r.top : r.left) < lo && (axis?.y ? r.bottom : r.right) > lo ? 'hidden' : '';
 		}
-		const ctm = svg?.getScreenCTM();
-		if (!labels.length || !axis || !ctm) return null;
-		const y = axis.y;
-		const box = (l: SVGElement) => l.getBoundingClientRect();
-		const span = (r: DOMRect) => (y ? [r.top, r.bottom] : [r.left, r.right]);
-		const [lo, hi] = ends();
-		const inside = (l: SVGElement) => {
-			const [a, b] = span(box(l));
-			return (a + b) / 2 >= lo - 1 && (a + b) / 2 <= hi + 1;
-		};
-		const shown = labels.filter(inside);
-		if (!shown.length) return null;
-		const label = shown.reduce((a, b) => (span(box(b))[0] < span(box(a))[0] ? b : a));
-		// In the label's own units, which a stretch scales back by itself (the CSS below).
-		const by = (Math.max(0, lo + GAP_PX - span(box(label))[0]) * (zoom?.scale ?? 1)) / (y ? ctm.d : ctm.a);
-		if (by) label.setAttribute('transform', y ? `translate(0 ${by})` : `translate(${by} 0)`);
-		const [from, to] = span(box(label));
-		for (const l of labels) {
-			const [a, b] = span(box(l));
-			if (l !== label && a < to + GAP_PX * 2 && b > from - GAP_PX * 2) l.style.visibility = 'hidden';
-		}
-		return label;
 	}
 
 	// ── the rule under a gesture (da-gy4xz) ────────────────────────────
@@ -1897,7 +1933,7 @@
 		const size = drewFor.lastIndexOf('--width');
 		if (next === history || !showHistory || size < 0) return null;
 		const m = stepMinutes(next);
-		const { argv } = nowviewSpec(next, to?.arg ?? (pillArg ? backArg(m / 2) : undefined), vertical, pillArg, labels, surroundOf(m));
+		const { argv } = nowviewSpec(next, to?.arg ?? (pillArg ? backArg(m / 2) : undefined), vertical, pillArg, labels, surroundOf(m), !!pill && !counted);
 		return [...argv, ...drewFor.slice(size)];
 	}
 
@@ -1926,7 +1962,7 @@
 			laid = { svg, words: show?.words ?? '' };
 			if (had && !zoom) place();
 		}
-		if (zoom) inset();
+		if (zoom) clearCut();
 		if (!zoom || zoom.held || ruling || ruleFor === 'null' || ruled?.words === ruleFor) return;
 		const words = ruleFor;
 		ruling = true;
@@ -1937,129 +1973,131 @@
 		});
 	}
 
-	// ── the handles' wheel and drag (da-57vj4) ─────────────────────────
+	// ── the handles' numbers and drag (da-57vj4, da-tglm6) ─────────────
 	//
-	// vividn: «make it clear that this is some sort of handle. When you
-	// click and hold on it or hover over it, show the prev/next time
-	// notches above and below … dragging up and down or selecting one of
-	// these times switches the range time to next step … Dragging left and
-	// right on this handle should place the handle in a different place on
-	// the x axis scaling appropriately.»
+	// vividn, on #1418: «the handles can be dragged left and right like
+	// currently or when tapped or held (without moving left and right) big
+	// numbers appear to its right showing the veritcal powers of two
+	// degredations that you can swipe between».
 	//
-	// A handle pins its time to its PLACE, with the anchor (now, or the
-	// instant a centred window is about) where it is. A step of the wheel
-	// keeps the place and changes the time, so the window is rescaled by
-	// their ratio; a drag along the axis keeps the time and moves the
-	// place, to any window at all. datum's now strip is a fixed share of
-	// the band (`NOW_STRIP_FRACTION`), so a place stays put across the
-	// redraw a step asks for.
+	// A handle pins its time to its PLACE, on the axis, with the anchor
+	// (now, or the instant a centred window is about) where it is. A step of
+	// the numbers keeps the place and changes the time, so the window is
+	// rescaled by their ratio; a drag along the axis keeps the time and moves
+	// the place. datum's now strip is a fixed share of the band
+	// (`NOW_STRIP_FRACTION`), so a place stays put across the redraw a step
+	// asks for.
 
-	/** How far apart the wheel's notches are, across the axis, in px. */
-	const NOTCH_PX = { x: 26, y: 48 };
-	/** How tall a handle's target is at least, its 11px words and all. */
-	const HANDLE_PX = 20;
+	/** How far apart the numbers are, in px: stacked when time runs across, side by side when it runs down. */
+	const NOTCH_PX = { x: 34, y: 104 };
 	/**
-	 * How clear a notch is, by how many steps it is from the one picked
+	 * How clear a number is, by how many steps it is from the one picked
 	 * (da-x9mzc): the pick and the next either way clear, the rest fading,
-	 * so a wheel turned past its third step still shows where it is.
+	 * so a turn past the third still shows where it is.
 	 */
 	const FADE = [1, 1, 0.45, 0.18];
-	/** How many of the ladder's steps the wheel shows either side of the one picked: as many as fade. */
+	/** How many of the numbers show either side of the one picked: as many as fade. */
 	const SHOWN = FADE.length - 1;
 
 	/**
-	 * The wheel open on a handle: its time, the sign it is written with,
-	 * and its place across and down the widget's box — its OWN, not a
-	 * label's, so the redraw a step asks for neither closes nor moves it.
-	 * `pick` is how many notches a drag across the axis has turned it, and
-	 * `touch` whether a finger opened it, whose notches stand clear of it.
+	 * The numbers open on a handle: its time and words, the side of the anchor
+	 * it is on, and its place across and down the widget's box — its OWN, not
+	 * a label's, so the redraw a step asks for neither closes nor moves them.
+	 * `pick` is how many a swipe has turned them.
 	 */
 	let wheel = $state.raw<{
 		minutes: number;
 		text: string;
-		sign: string;
+		sign: 1 | -1;
 		x: number;
 		y: number;
 		pick: number;
-		touch: boolean;
-		/** Open on the clock axis's handle: its notches say the clock time each step puts there. */
+		/** Open on the clock axis's handle: its numbers are the clock times it can take. */
 		onClock: boolean;
 	} | null>(null);
 	let wheelEl: HTMLDivElement | undefined = $state();
 
-	const around = $derived(wheel ? ladderAround(wheel.minutes) : { up: [], down: [] });
-	/** The wheel's notches as drawn around the pick: how many steps from the handle (up is longer), the step, how clear. */
+	/** A number: what it is called, its words, and how far from the anchor it puts the handle's time, in minutes. */
+	type Rung = { step: string; word: string; minutes: number };
+
+	const around = $derived.by((): { up: Rung[]; down: Rung[] } => {
+		if (!wheel) return { up: [], down: [] };
+		const w = wheel;
+		if (w.onClock) {
+			const anchor = instantMs();
+			const of = (t: number): Rung => ({ step: clockWord(t), word: clockWord(t), minutes: Math.abs(t - anchor) / 60_000 });
+			const { up, down } = clockAround(anchor, w.minutes, w.sign);
+			return { up: up.map(of), down: down.map(of) };
+		}
+		const prefix = /^t?[-+]/.exec(w.text)?.[0] ?? '-';
+		const of = (step: string): Rung => ({ step, word: prefix + step, minutes: stepMinutes(step) });
+		const { up, down } = ladderAround(w.minutes);
+		return { up: up.map(of), down: down.map(of) };
+	});
+	/** The rung `k` steps from the handle: up is longer. */
+	const rungAt = (k: number) => (k > 0 ? around.up[k - 1] : k < 0 ? around.down[-k - 1] : undefined);
+	/** The numbers as drawn around the pick: how many steps from the handle, the rung, how clear. */
 	const notches = $derived.by(() => {
 		const pick = wheel?.pick ?? 0;
-		const out: { k: number; step: string; fade: number }[] = [];
+		const out: { k: number; rung: Rung; fade: number }[] = [];
 		for (let k = pick - SHOWN; k <= pick + SHOWN; k++) {
-			const step = k > 0 ? around.up[k - 1] : k < 0 ? around.down[-k - 1] : undefined;
-			if (step) out.push({ k, step, fade: FADE[Math.abs(k - pick)] });
+			const rung = rungAt(k);
+			if (rung) out.push({ k, rung, fade: FADE[Math.abs(k - pick)] });
 		}
 		return out;
 	});
 
-	function open(h: Held, touch = false): void {
-		if (wheel && Math.abs(wheel.x - h.x) < 1 && Math.abs(wheel.y - h.y) < 1) {
-			// A finger on a wheel the mouse opened: its notches clear of the thumb.
-			if (touch && !wheel.touch) wheel = { ...wheel, touch };
-			return;
-		}
-		const sign = h.text.startsWith('+') ? '+' : '-';
-		wheel = { minutes: h.minutes, text: h.text, sign, x: h.x, y: h.y, pick: 0, touch, onClock: h.clock !== undefined };
-	}
+	const isOpenOn = (h: Handle) => !!wheel && wheel.onClock === (h.clock !== undefined);
 
-	/** A notch's words: the step, or on the clock's handle the clock time that far before the anchor (da-b9glf). */
-	const notchText = (step: string) => {
-		if (!wheel?.onClock) return (wheel?.sign ?? '-') + step;
-		const at = new Date(instantMs() - stepMinutes(step) * 60_000);
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${pad(at.getHours())}:${pad(at.getMinutes())}${at.getSeconds() ? `:${pad(at.getSeconds())}` : ''}`;
-	};
+	function open(h: Handle): void {
+		if (isOpenOn(h)) return;
+		turnedNumbers = 0;
+		wheel = { minutes: h.minutes, text: h.text, sign: h.sign, x: h.x, y: h.y, pick: 0, onClock: h.clock !== undefined };
+	}
 
 	function close(): void {
 		if (!grip) wheel = null;
 	}
 
-	/** The wheel's handle takes `step`: the window rescaled about the anchor, the wheel still open around it. */
-	function stepTo(step: string | undefined): void {
-		if (!wheel || !step) return;
-		const to = stepMinutes(step);
-		const next = historyArg((minutes * to) / wheel.minutes);
-		wheel = { ...wheel, minutes: to, text: notchText(step), pick: 0 };
+	/** The handle takes a rung: the window rescaled about the anchor, the numbers still open around it. */
+	function stepTo(rung: Rung | undefined): void {
+		if (!wheel || !rung) return;
+		const next = historyArg((minutes * rung.minutes) / wheel.minutes);
+		wheel = { ...wheel, minutes: rung.minutes, text: rung.word, pick: 0 };
 		rescale(next);
 	}
 
 	/**
-	 * Leaving the wheel closes it, unless the keyboard is on a handle. Heard
-	 * on the window as well as the wheel: a wheel that opened under a still
-	 * pointer was never entered, and so is never left.
+	 * Leaving the numbers closes them, unless the keyboard is on a handle. Heard
+	 * on the window as well as the numbers: ones that opened under a still
+	 * pointer were never entered, and so are never left.
 	 */
 	function leave(event: PointerEvent): void {
 		if (event.pointerType !== 'mouse' || !wheel || grip) return;
 		// Where it went: a move's target, or the element a leave went into.
 		const to = event.type === 'pointermove' ? event.target : event.relatedTarget;
-		if (onCentre(event)) return;
 		const on = to instanceof Element ? to : null;
 		if (on && (wheelEl?.contains(on) || on.closest('.nowview-handles'))) return;
 		if (!document.activeElement?.matches('.handle:focus-visible')) close();
 	}
 
-	/**
-	 * Whether a pointer is on the wheel's own handle. It takes no pointer
-	 * itself — a press there is the handle's beneath it, and a click on a
-	 * handle is not one on something laid over it — so this is read off
-	 * its box: after a step there may be no label, and no handle, under it.
-	 */
-	function onCentre(event: PointerEvent): boolean {
-		const r = wheelEl?.querySelector('.handle.held')?.getBoundingClientRect();
-		return !!r && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
-	}
-
-	/** Focus leaving a handle or the wheel closes it, unless it went into the wheel or the pointer is on it. */
+	/** Focus leaving a handle or the numbers closes them, unless it went into them or the pointer is on them. */
 	function blur(event: FocusEvent): void {
 		const to = event.relatedTarget as Node | null;
 		if (!(to && wheelEl?.contains(to)) && !wheelEl?.matches(':hover')) close();
+	}
+
+	/** What a mouse wheel has turned the open numbers short of a step. */
+	let turnedNumbers = 0;
+
+	/** A notch of a mouse wheel is a number, up the longer; a trackpad's small deltas add up to one. */
+	function onNumbersWheel(event: WheelEvent): void {
+		if (!wheel) return;
+		event.preventDefault();
+		turnedNumbers += event.deltaY;
+		const steps = Math.trunc(turnedNumbers / (NOTCH / 2));
+		turnedNumbers -= (steps * NOTCH) / 2;
+		if (steps) stepTo(rungAt(-steps));
 	}
 
 	function onWheelKey(event: KeyboardEvent): void {
@@ -2068,12 +2106,12 @@
 		stepTo(event.key === 'ArrowUp' ? around.up[0] : around.down[0]);
 	}
 
-
 	/**
-	 * A press on a handle, in hand. Undecided until it travels: along the
-	 * axis it is the fine scale, across it the wheel, and the axis it
-	 * travels first decides, once, as the pinch's does. A finger's press
-	 * opens the wheel when it lands — a hover it has none of.
+	 * A press on a handle or the numbers, in hand. Undecided until it travels:
+	 * a handle's along the axis is the drag, and across it the swipe, and the
+	 * axis it travels first decides, once, as the pinch's does; the numbers'
+	 * is the swipe either way. Still, a hold opens the numbers and a tap
+	 * turns them over.
 	 */
 	let grip: {
 		id: number;
@@ -2083,27 +2121,37 @@
 		at: number;
 		cross: number;
 		anchor: number;
-		text: string;
+		/** The handle pressed, none on the numbers. */
+		on: Handle | null;
+		/** Whether its numbers were open as it was pressed. */
+		was: boolean;
 		mode: 'press' | 'wheel' | 'scale';
 		touch: boolean;
 	} | null = $state(null);
-	/** Where a scaling handle is drawn, along the axis on screen. */
+	/** Where a dragged handle is drawn, along the axis on screen. */
 	let dragged = $state(0);
+	let holding: ReturnType<typeof setTimeout> | undefined;
 
 	const across = (dx: number, dy: number) => (vertical ? dx : -dy);
 
-	function grab(event: PointerEvent, h: Held): void {
+	function grab(event: PointerEvent, h: Handle): void {
 		const svg = svgEl();
 		if (event.button > 0 || !svg || !axis) return;
 		event.preventDefault();
 		const box = svg.getBoundingClientRect();
 		const at = vertical ? boxAt.y + h.y : boxAt.x + h.x;
 		const anchor = (vertical ? box.y : box.x) + anchorX(svg);
-		const touch = event.pointerType !== 'mouse';
-		if (touch) open(h, true);
 		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
-		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, text: h.text, mode: 'press', touch };
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, on: h, was: isOpenOn(h), mode: 'press', touch: event.pointerType !== 'mouse' };
 		dragged = at;
+		holding = setTimeout(() => open(h), LONG_MS);
+		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
+	}
+
+	/** A press on the numbers: a tap is the number's own click, and one that travels swipes them. */
+	function grabNumbers(event: PointerEvent): void {
+		if (event.button > 0 || !wheel) return;
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, on: null, was: true, mode: 'press', touch: event.pointerType !== 'mouse' };
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
 	}
 
@@ -2111,25 +2159,30 @@
 		if (!grip || event.pointerId !== grip.id) return;
 		const [dx, dy] = [event.clientX - grip.x, event.clientY - grip.y];
 		if (grip.mode === 'press' && Math.hypot(dx, dy) > SLOP_PX) {
-			grip.mode = Math.abs(vertical ? dy : dx) >= Math.abs(vertical ? dx : dy) ? 'scale' : 'wheel';
+			clearTimeout(holding);
+			grip.mode = grip.on && Math.abs(vertical ? dy : dx) >= Math.abs(vertical ? dx : dy) ? 'scale' : 'wheel';
 			if (grip.mode === 'scale') {
 				wheel = null;
 				start();
-			} else if (!wheel) {
-				const h = handles.find((h) => h.text === grip?.text);
-				if (h) open(h, grip.touch);
+			} else {
+				if (grip.on) open(grip.on);
+				// Whichever number a finger began on may go as the pick moves.
+				if (grip.touch)
+					void tick().then(() => {
+						if (grip && wheelEl?.isConnected) wheelEl.setPointerCapture(grip.id);
+					});
 			}
 		}
-		if (grip.mode === 'scale' && zoom) {
+		if (grip.mode === 'scale' && zoom && grip.on) {
 			const finger = vertical ? event.clientY : event.clientX;
 			// The picture scaled about the anchor so the handle's time is
-			// under the finger, to any window (da-wd6h5); a finger dragged
-			// onto or past the anchor (raw <= 0) holds the last.
+			// under the finger, to any window (da-wd6h5), with no jump: vividn,
+			// on #1445: «make it smooth and continuous». A finger dragged onto
+			// or past the anchor (raw <= 0) holds the last.
 			const raw = (finger - grip.anchor) / (grip.at - grip.anchor);
 			if (raw > 0) {
-				const scale = shows(raw);
-				zoom = { ...zoom, raw, scale };
-				dragged = grip.anchor + (grip.at - grip.anchor) * scale;
+				zoom = { ...zoom, raw, scale: raw };
+				dragged = finger;
 			}
 		}
 		if (grip.mode === 'wheel' && wheel) {
@@ -2145,9 +2198,12 @@
 		ungrip();
 		if (was.mode === 'scale') commit();
 		else if (was.mode === 'wheel' && wheel) {
-			const pick = wheel.pick;
-			stepTo(pick > 0 ? around.up[pick - 1] : pick < 0 ? around.down[-pick - 1] : undefined);
+			stepTo(rungAt(wheel.pick));
 			if (was.touch) wheel = null;
+		} else if (was.on && was.mode === 'press') {
+			// A tap turns the numbers over; a hold has opened them, and leaves them.
+			if (was.was) wheel = null;
+			else open(was.on);
 		}
 	}
 
@@ -2159,6 +2215,7 @@
 	}
 
 	function ungrip(): void {
+		clearTimeout(holding);
 		grip = null;
 		for (const [type, handler] of GRIP) window.removeEventListener(type, handler);
 	}
@@ -2169,13 +2226,12 @@
 		['pointercancel', onGripCancel]
 	] as [string, EventListener][];
 
-	/** A wheel a finger opened stays until a press lands somewhere else. */
+	/** Numbers a finger opened stay until a press lands somewhere else: on a handle, it is the handle's to say. */
 	function onOutside(event: PointerEvent): void {
-		if (!wheel || grip || (event.target instanceof Node && wheelEl?.contains(event.target))) return;
-		if (!onCentre(event)) return void (wheel = null);
-		// On the wheel's handle, over whatever is beneath it: the handle's.
-		event.stopPropagation();
-		grab(event, wheel);
+		if (!wheel || grip) return;
+		const on = event.target instanceof Element ? event.target : null;
+		if (on && (wheelEl?.contains(on) || on.closest('.nowview-handles'))) return;
+		wheel = null;
 	}
 
 	/** The pills the selection made: the ones drawn on the axis beside their instants. */
@@ -2275,23 +2331,26 @@
 	{/if}
 
 	<!-- The selection's pills (da-b9glf), each on its axis over the mark it
-	     names. Words only, `inert`: they stand where a finger scrubs, and a
-	     press there is the axis's — the bar's own pills are the ✕-able ones. -->
+	     names. The pill's own words are `inert`, its buttons being the bar's:
+	     a press on one is a press on the axis that may be a tap, which dismisses
+	     it (`onPillDown`, da-tglm6). -->
 	{#if roomy}
-		<div class="nowview-pills" aria-label="selection" inert>
+		<div class="nowview-pills" aria-label="selection" data-pans={pans}>
 			{#each axisPills as pill (pill.id)}
 				{@const at = pill.id === SPAN_ID ? spots.dur : spots.time}
 				{#if at}
-					<span class="axis-pill" style:left="{at.x}px" style:top="{at.y}px"><Pill {pill} /></span>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<span class="axis-pill" style:left="{at.x}px" style:top="{at.y}px" onpointerdown={(e) => onPillDown(e, pill.id)}
+						><span inert><Pill {pill} /></span></span
+					>
 				{/if}
 			{/each}
 		</div>
 	{/if}
 
-	<!-- The handles (da-57vj4, da-b9glf): one over the outermost label of each
-	     axis, its words drawn by the picture underneath. Hover or a finger
-	     opens the wheel; a drag along the axis scales the window about the
-	     anchor. -->
+	<!-- The handles (da-tglm6): one in the middle of each axis. A tap or a
+	     hold opens the numbers beside it; a drag along the axis scales the
+	     window about the anchor. -->
 	{#if handles.length && !zoom}
 		<div class="nowview-handles" data-pans={pans}>
 			<!-- Unkeyed: a step redraws the labels, and the handle the
@@ -2303,36 +2362,35 @@
 					data-at={h.text}
 					data-axis={h.clock === undefined ? 'rel' : 'abs'}
 					aria-label="window handle {h.text}"
-					title="{h.text}: hover or hold for the steps, drag along the axis to scale"
-					style:--slid="{rest + panned - h.slid}px"
+					title="{h.text}: tap or hold for other times, drag along the axis to scale"
+					{@attach (b) => on(b, 'wheel', onNumbersWheel, { passive: false })}
 					style:left="{h.x}px"
 					style:top="{h.y}px"
-					style:width="{h.w}px"
-					style:height="{h.h}px"
-					onpointerenter={(e) => e.pointerType === 'mouse' && open(h)}
 					onpointerdown={(e) => grab(e, h)}
-					onfocus={() => open(h)}
+					onfocus={(e) => e.currentTarget.matches(':focus-visible') && open(h)}
 					onblur={blur}
-					onkeydown={onWheelKey}>{h.text}</button
-				>
+					onkeydown={onWheelKey}
+				></button>
 			{/each}
 		</div>
 	{/if}
 
-	<!-- The wheel: the ladder's steps either side of the handle it is open
-	     on, longer toward the picture, the one picked and the next clear
-	     and the rest fading. `fixed`, so a pane's edge does not cut its notches off. -->
+	<!-- The numbers: big, off to the handle's side, longer up (or right when
+	     time runs down), the one picked and the next clear and the rest
+	     fading. `fixed`, so a pane's edge does not cut them off. -->
 	{#if wheel && !zoom}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="nowview-wheel"
-			class:thumb={wheel.touch}
 			data-pans={pans}
 			bind:this={wheelEl}
-			style:left="{boxAt.x + wheel.x}px"
+			style:left="{vertical ? Math.max(NOTCH_PX.y / 2, Math.min(innerWidth - NOTCH_PX.y / 2, boxAt.x + wheel.x)) : boxAt.x + wheel.x}px"
 			style:top="{boxAt.y + wheel.y}px"
 			style:--notch="{vertical ? NOTCH_PX.y : NOTCH_PX.x}px"
 			style:--turn="{wheel.pick * (vertical ? NOTCH_PX.y : NOTCH_PX.x)}px"
+			style:--beside="{HANDLE_PX / 2}px"
+			onpointerdown={grabNumbers}
+			{@attach (n) => on(n, 'wheel', onNumbersWheel, { passive: false })}
 			onpointerleave={leave}
 			onfocusout={blur}
 		>
@@ -2341,26 +2399,21 @@
 					type="button"
 					class="notch"
 					class:picked={n.k === wheel.pick}
-					data-step={n.step}
+					data-step={n.rung.step}
 					data-k={n.k}
 					tabindex="-1"
 					style:--k={n.k}
 					style:--fade={n.fade}
-					onclick={() => stepTo(n.step)}>{notchText(n.step)}</button
+					onclick={() => stepTo(n.rung)}>{n.rung.word}</button
 				>
 			{/each}
-			<span class="handle held" class:turned={wheel.pick !== 0} data-at={wheel.text} aria-hidden="true"
+			<span class="notch held" class:picked={wheel.pick === 0} data-at={wheel.text} style:--k={0} style:--fade={FADE[Math.min(Math.abs(wheel.pick), SHOWN)]} aria-hidden="true"
 				>{wheel.text}</span
 			>
 		</div>
 	{/if}
 	{#if grip?.mode === 'scale'}
-		<span
-			class="handle dragged"
-			aria-hidden="true"
-			style:left="{vertical ? grip.cross : dragged}px"
-			style:top="{vertical ? dragged : grip.cross}px">{grip.text}</span
-		>
+		<span class="handle dragged" aria-hidden="true" style:left="{vertical ? grip.cross : dragged}px" style:top="{vertical ? dragged : grip.cross}px"></span>
 	{/if}
 
 	<!-- Outside the band on purpose: a press on a button is not a press on
@@ -2539,6 +2592,11 @@
 		position: absolute;
 		transform: translate(-50%, -50%);
 		max-width: 100%;
+		pointer-events: auto;
+		touch-action: none;
+		cursor: pointer;
+		user-select: none;
+		-webkit-user-select: none;
 	}
 
 	.nowview-handles {
@@ -2548,102 +2606,96 @@
 	}
 	.nowview-handles .handle {
 		pointer-events: auto;
-		translate: var(--slid) 0;
-	}
-	.vertical .nowview-handles .handle {
-		translate: 0 var(--slid);
 	}
 
-	/* THE HANDLES (da-57vj4): a frame round each major label, the label's
-	   own words showing through, so the axis reads as something to take
-	   hold of. The target is at least a fingertip's height; a finger's
-	   drag on it is the handle's, never the page's. Outlined in `--muted`,
-	   a control at rest, and not the rules' `--rule`, so it reads as one
-	   to grab (da-9hmqg, vividn: «a bit higher contrast so that it's more
-	   clear they are clickable/draggable»). Its words are not text to
-	   select, so a drag is always the handle's (da-byzc0, vividn: «right
-	   now when trying to drag it often just selects the text»). */
+	/* THE HANDLES (da-tglm6): a white diamond on the axis's line, twice as long
+	   along it as across (`::before`), white as datum draws the axis, in a
+	   fingertip's target (the button, HANDLE_PX along) little wider than it, so
+	   a press just off the diamond still makes a pill. vividn, on #1445:
+	   «small white diamonds, 2:1 ratio … it shouldn't stick out too far». A
+	   drag on it is the handle's, never the page's (da-byzc0). */
 	.handle {
 		position: absolute;
 		box-sizing: border-box;
+		width: 28px;
+		height: 12px;
 		transform: translate(-50%, -50%);
-		padding: 0 3px;
-		border: 1px solid var(--muted);
-		border-radius: 4px;
+		padding: 0;
+		border: none;
 		background: none;
-		color: transparent;
-		font: inherit;
-		font-size: 11px;
-		line-height: 1;
-		white-space: nowrap;
 		cursor: grab;
 		touch-action: none;
 		user-select: none;
 		-webkit-user-select: none;
 		z-index: 2;
 	}
-	.handle:hover,
+	.vertical .handle {
+		width: 12px;
+		height: 28px;
+	}
+	.handle::before {
+		content: '';
+		position: absolute;
+		inset: 2px 6px;
+		background: white;
+		clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+	}
+	.vertical .handle::before {
+		inset: 6px 2px;
+	}
 	.handle:focus-visible {
-		border-color: var(--ink);
+		outline: 1px solid var(--ink);
 	}
 
-	/* The wheel, the handle it is open on in the middle of it: its words
-	   drawn here, over the picture's, and the notches stacked toward the
-	   picture (up, or right when time runs down) for the longer steps and
-	   away from it for the shorter, turned by `--turn` while a drag picks. */
+	/* The numbers, off to the handle's side and big enough to read past a
+	   thumb (vividn: «same ladder, but bigger font and off to the side»):
+	   stacked up and down it when time runs across, side by side under it
+	   when time runs down, and turned by `--turn` as a swipe picks. Each is as
+	   tall as they are apart, so the pointer crosses no gap between them. */
 	.nowview-wheel {
 		position: fixed;
 		width: 0;
 		height: 0;
 		z-index: 12;
 		touch-action: none;
-	}
-	.nowview-wheel .handle.held.turned {
-		visibility: hidden;
-	}
-	.nowview-wheel .handle.held {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		pointer-events: none;
-		color: var(--ink);
-		background: var(--ground);
-		border-color: var(--accent, var(--ink));
-		min-width: 2.6rem;
-		height: 20px;
-		left: 0;
-		top: 0;
+		user-select: none;
+		-webkit-user-select: none;
 	}
 	.notch {
 		position: absolute;
-		left: 0;
+		left: var(--beside);
 		top: 0;
 		box-sizing: border-box;
-		min-width: 2.6rem;
-		height: 22px;
-		padding: 0 4px;
-		transform: translate(-50%, calc(-50% - var(--k) * var(--notch) + var(--turn)));
+		min-width: 4.5rem;
+		height: var(--notch);
+		padding: 0 8px;
+		transform: translateY(calc(-50% - var(--k) * var(--notch) + var(--turn)));
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		border: 1px solid var(--rule);
-		border-radius: 4px;
 		background: var(--ground);
 		color: var(--ink);
 		font: inherit;
-		font-size: 13px;
+		font-size: 22px;
+		font-variant-numeric: tabular-nums;
 		line-height: 1;
 		white-space: nowrap;
 		opacity: var(--fade);
 		cursor: pointer;
 	}
 	.vertical .notch {
-		transform: translate(calc(-50% + var(--k) * var(--notch) - var(--turn)), -50%);
+		left: 0;
+		top: var(--beside);
+		min-width: 0;
+		width: var(--notch);
+		height: 34px;
+		padding: 0;
+		font-size: 18px;
+		transform: translateX(calc(-50% + var(--k) * var(--notch) - var(--turn)));
 	}
-	/* A finger's wheel stands clear of its thumb (da-x9mzc): the notches
-	   left of the handle, or over it where they run across the band. */
-	.nowview-wheel.thumb .notch {
-		transform: translate(calc(-100% - 1.6rem), calc(-50% - var(--k) * var(--notch) + var(--turn)));
-	}
-	.vertical .nowview-wheel.thumb .notch {
-		transform: translate(calc(-50% + var(--k) * var(--notch) - var(--turn)), calc(-100% - 1.2rem));
+	.notch.held {
+		cursor: default;
 	}
 	.notch:hover,
 	.notch.picked {
@@ -2651,16 +2703,10 @@
 		border-color: var(--ink);
 	}
 
-	/* A handle dragged along the axis: its words under the finger while
-	   the picture scales about the anchor beneath it. */
+	/* A handle dragged along the axis: under the finger while the picture
+	   scales about the anchor beneath it. */
 	.handle.dragged {
 		position: fixed;
-		height: 20px;
-		display: flex;
-		align-items: center;
-		color: var(--ink);
-		background: var(--ground);
-		border-color: var(--ink);
 		pointer-events: none;
 		z-index: 12;
 	}

@@ -238,12 +238,12 @@ describe('on a phone-sized screen', () => {
 		for (const touch of [false, true]) await withApp(
 			async ({ page }) => {
 				const grabbed = async (state) => {
-					// Once the pane has its new height, a handle stands within
-					// 24px of the bar, where the bar's handle stood.
+					// Once the pane has its new height, a handle stands just over
+					// the bar, where the bar's handle stood.
 					await page.waitForFunction(() => {
 						const top = document.querySelector('.prompt-bar').getBoundingClientRect().top;
 						const bottoms = [...document.querySelectorAll('.nowview-handles .handle')].map((h) => h.getBoundingClientRect().bottom);
-						return bottoms.length > 0 && bottoms.every((b) => b <= top) && bottoms.some((b) => top - b < 24);
+						return bottoms.length > 0 && bottoms.every((b) => b <= top) && bottoms.some((b) => top - b < 48);
 					});
 					const missed = await page.locator('.nowview-handles .handle').evaluateAll((all) =>
 						all.flatMap((h) => {

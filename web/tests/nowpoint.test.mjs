@@ -1094,11 +1094,11 @@ describe('on a phone', () => {
 
 				const axis = await page.locator(`${BAND} svg.svg path.axis`).boundingBox();
 				const y = axis.y + axis.height / 2;
-				// The axis between two labels: each label is a handle (da-57vj4),
-				// and the axis scrubs in the gaps between them.
+				// Clear of the handle and of a label: the far label's room (da-tglm6),
+				// where the axis scrubs.
 				const gap = await page.locator(NOWVIEW).evaluate((p) => {
 					const hs = [...p.querySelectorAll('.nowview-handles .handle')].map((h) => h.getBoundingClientRect());
-					return (hs[0].right + hs[1].left) / 2;
+					return hs[0].right + 12;
 				});
 				await page.touchscreen.tap(gap, y);
 				// The time joins the entry: the two are a `retime`.
@@ -1672,11 +1672,11 @@ describe('a selected time is a dashed line in a continuous timeline (da-dv45l)',
 			await instantDrawn(page, at);
 			const s = await until(
 				() => atInstant(page),
-				(s) => s.line !== null && s.ticks['-5m'] !== undefined && s.ticks['+5m'] !== undefined
+				(s) => s.line !== null && s.ticks['t+5m'] !== undefined && s.ticks['t+10m'] !== undefined
 			);
-			// The ticks count from 14:38: five minutes either side of the
-			// line stand as far from it.
-			near(s.line - s.ticks['-5m'], s.ticks['+5m'] - s.line, '−5m and +5m from the line');
+			// The ticks count from 14:38: t+5m stands as far from the line as
+			// t+10m from it (t-5m may be under the handle, which hides it).
+			near(s.ticks['t+5m'] - s.line, s.ticks['t+10m'] - s.ticks['t+5m'], 't+5m from the line');
 
 			// A ctrl+wheel keeps the line where it is wherever the pointer
 			// is: a window on now with a pill scales about the pill, as a

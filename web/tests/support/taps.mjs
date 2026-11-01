@@ -90,6 +90,7 @@ const survey = (page, { within, mark, layer } = {}) =>
 				// output handle says what its tap will do as the bar stands.
 				const what = (b.dataset.field ?? b.dataset.command ?? b.getAttribute('aria-label') ?? b.textContent.trim())
 					.replace(/^full id .*/, 'full id')
+					.replace(/^window handle \d.*/, 'the clock handle')
 					.replace(/^(open the output section|open the history full screen|collapse the history to one row)$/, 'the output handle');
 				const base = `${where}: ${what}`;
 				const n = (seen.get(base) ?? 0) + 1;

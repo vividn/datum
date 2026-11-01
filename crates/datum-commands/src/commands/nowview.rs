@@ -294,6 +294,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         margin: args.margin,
         time_axis_height: args.time_axis_height,
         centred: at.is_some() || center.is_some(),
+        axis_now: args.axis_now,
         orientation,
         surround_minutes: match &args.surround {
             Some(s) => duration_minutes(s).with_context(|| format!("invalid --surround: '{s}'"))?,

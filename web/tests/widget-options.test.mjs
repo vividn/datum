@@ -398,11 +398,11 @@ describe('widget options', () => {
 			});
 			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
 
-			// The 45m picture, not the 30m one still drawn: 60m from a stale
-			// -30m handle is a 90m window (da-hkkx3).
-			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-45m"]').hover({ force: true }); // the wheel opens over it
-			await page.locator('.nowview-wheel .handle.held[data-at="-45m"]').waitFor();
-			await page.locator('.nowview-wheel .notch[data-step="60m"]').click();
+			// The 45m picture, not the 30m one still drawn: -30m from a stale
+			// -15m handle is a 90m window (da-hkkx3).
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-23m"]').click(); // the wheel opens over it
+			await page.locator('.nowview-wheel .notch.held[data-at="-23m"]').waitFor();
+			await page.locator('.nowview-wheel .notch[data-step="30m"]').click();
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
 				return argv?.[argv.indexOf('--history') + 1] === '60m';
@@ -547,7 +547,7 @@ describe('widget options', () => {
 
 			// And the widget's own in-body control leaves the tree byte for
 			// byte as it found it.
-			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle').first().hover({ force: true }); // the wheel opens over it
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle').first().click(); // the wheel opens over it
 			await page.locator('.nowview-wheel .notch[data-k="-1"]').click();
 			await page.waitForFunction(
 				() => document.querySelectorAll('section.pane[data-title="nowview"] svg').length > 0

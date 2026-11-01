@@ -315,11 +315,11 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 			const from = early(mark);
 			const axis = await page.locator(`${NOWVIEW} svg.svg path.axis`).boundingBox();
 
-			// The axis between two labels: each label is a handle (da-57vj4),
-			// and the axis scrubs in the gaps between them.
+			// Clear of the handle and of a label: the far label's room (da-tglm6),
+			// where the axis scrubs.
 			const gap = await page.locator(NOWVIEW).evaluate((p) => {
 				const hs = [...p.querySelectorAll('.nowview-handles .handle')].map((h) => h.getBoundingClientRect());
-				return (hs[0].right + hs[1].left) / 2;
+				return hs[0].right + 12;
 			});
 			const on = { x: gap, y: axis.y + axis.height / 2 };
 			await page.mouse.click(on.x, on.y);

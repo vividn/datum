@@ -1782,6 +1782,9 @@ pub struct NowviewArgs {
     /// as an empty `.now-strip` — for the page to lay a crop of the
     /// dayview's data layer under. The SVG path's alone.
     pub overlay: bool,
+    /// `--axis-now`, unlisted: datum.day's nowview at a relative pill
+    /// (da-tglm6). The relative axis counts from now, not from `-t`.
+    pub axis_now: bool,
     /// `--surround <DUR>` — draw this much more time either side of the
     /// window (before it only, when it ends at now), past the SVG's own
     /// box, for a viewer that pans or zooms without asking again
@@ -1850,6 +1853,7 @@ impl Default for NowviewArgs {
             labels: false,
             now_label: false,
             overlay: false,
+            axis_now: false,
             surround: None,
             ahead: None,
             time: TimeArgs::default(),

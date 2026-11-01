@@ -879,8 +879,8 @@ fn nowview_center_moves_the_window_and_not_the_instant() {
     assert!(field_rects(&left, "mood", "now-chunk").is_empty(), "{left}");
     assert!(!left.contains("instant-line"), "{left}");
     let l = labels(&left);
-    assert!(l.iter().all(|l| l.starts_with('+')), "{l:?}");
-    assert_eq!(l.last().map(String::as_str), Some("+50m"));
+    assert!(l.iter().all(|l| l.starts_with("t+")), "{l:?}");
+    assert_eq!(l.last().map(String::as_str), Some("t+50m"));
 
     // Now, after a window in the past: no section, ticks counted back from
     // now, on through the strip's room.
@@ -1425,6 +1425,27 @@ fn every_terminal_first_probe_is_on_a_live_path() {
     ];
     allowed.sort();
     assert_eq!(found, allowed, "a terminal-first probe off a --watch path?");
+}
+
+/// da-tglm6: `-t` turns the relative axis to `t-5m`; `--axis-now` leaves it
+/// counting from now, the dashed line at the instant all the same.
+#[test]
+fn nowview_axis_now_keeps_the_axis_on_now_at_an_instant() {
+    let db = fresh_db();
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    let svg = |extra: &[&str]| {
+        let mut argv = vec!["nowview", "--history", "30m", "--width", "400", "-t", "-7"];
+        argv.extend_from_slice(extra);
+        argv.extend_from_slice(&["--output-file", &path]);
+        run_cli(&argv, &db).expect("nowview dispatch");
+        std::fs::read_to_string(&path).expect("read svg")
+    };
+    let (from_it, from_now) = (svg(&[]), svg(&["--axis-now"]));
+    assert!(from_it.contains(">t-5m<"), "{from_it}");
+    assert!(from_now.contains(">-5m<"), "{from_now}");
+    assert!(!from_now.contains(">t-"), "{from_now}");
+    assert!(from_now.contains(r#"class="instant-line""#), "{from_now}");
 }
 
 /// da-61nm8: `--surround` draws the time either side of the window outside

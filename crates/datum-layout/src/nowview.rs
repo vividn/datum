@@ -270,7 +270,7 @@ pub fn nowview_axis_ticks_around(
     let reach = before.max(after);
     let label = label_px(Orientation::Horizontal, time_axis_height, reach);
     let cfg = tick_config(reach, time_axis_extent / (before + after), label);
-    ticks_spaced_for(time_axis_extent, before, after, 0.0, cfg)
+    ticks_spaced_for(time_axis_extent, before, after, 0.0, cfg, "")
 }
 
 /// [`nowview_axis_ticks_around`] at the intervals `cfg` names, however
@@ -279,14 +279,16 @@ pub fn nowview_axis_ticks_around(
 /// `before` and `after` are measured from the window's anchor, `at_ms` in
 /// [`nowview_config`]; `zero` is how many minutes past that anchor the
 /// instant the picture is about lies (da-zccjs), and the ticks count from
-/// the instant: `-5m` is five minutes before it, wherever the window is. Its
-/// own tick, unlabelled, is drawn where the axis holds it.
+/// the instant: `-5m` is five minutes before it, wherever the window is, and
+/// `t-5m` where `from` says it is a selected one (da-tglm6). Its own tick,
+/// unlabelled, is drawn where the axis holds it.
 fn ticks_spaced_for(
     time_axis_extent: f64,
     before: f64,
     after: f64,
     zero: f64,
     cfg: TickConfig,
+    from: &str,
 ) -> Vec<DayviewAxisTick> {
     let span = before + after;
     if span <= 0.0 || time_axis_extent <= 0.0 {
@@ -311,7 +313,7 @@ fn ticks_spaced_for(
                 label: match k {
                     0 => String::new(),
                     _ => format!(
-                        "{}{}",
+                        "{from}{}{}",
                         if k < 0 { '-' } else { '+' },
                         relative_label(m.abs(), cfg.major_minutes)
                     ),
@@ -480,7 +482,7 @@ mod tests {
             let mut extent = (4.0 * label).ceil();
             while extent <= 3000.0 {
                 let cfg = tick_config(30.0, extent / 30.0, label);
-                let ticks = ticks_spaced_for(extent, 30.0, 0.0, 0.0, cfg);
+                let ticks = ticks_spaced_for(extent, 30.0, 0.0, 0.0, cfg, "");
                 for back in [5.0, 10.0, 15.0, 20.0] {
                     let at = (30.0 - back) / 30.0 * extent;
                     assert!(
@@ -698,6 +700,11 @@ pub struct NowviewGeometry {
     /// centred window or the snapshot.
     #[serde(default)]
     pub ahead_minutes: f64,
+    /// Count the relative axis from now even at a selected instant
+    /// (vividn, 2026-10-30: «when a relative time pill is chosen, don't
+    /// update the relative time axis to be relative to that pill»).
+    #[serde(default)]
+    pub axis_now: bool,
 }
 
 impl Default for NowviewGeometry {
@@ -712,6 +719,7 @@ impl Default for NowviewGeometry {
             orientation: Orientation::Horizontal,
             surround_minutes: 0.0,
             ahead_minutes: 0.0,
+            axis_now: false,
         }
     }
 }
@@ -793,7 +801,8 @@ pub fn nowview_config(
     // the line gates — ARE its instant's states: at a selected time they
     // are that time's, where they were none (da-rskp's line through them).
     let now_ms = if snapshot { at_ms } else { now_ms };
-    let instant = instant_ms.filter(|_| !snapshot).unwrap_or(now_ms);
+    let counted = instant_ms.filter(|_| !snapshot && !geom.axis_now);
+    let instant = counted.unwrap_or(now_ms);
     // Where the ticks count from, in minutes past `at_ms`: the instant, not
     // the window's middle (da-zccjs, vividn: «The time handles should be
     // relative to whatever the pill or now is»).
@@ -833,6 +842,9 @@ pub fn nowview_config(
         }];
     }
     let reach = (before + zero).abs().max((after - zero).abs());
+    // vividn, 2026-10-30: «when a time is selected label the relative axis with
+    // t+5m and t-5m to indicate that it is relative to the selection».
+    let from = if counted.is_some() { "t" } else { "" };
     let cfg = tick_config(
         reach,
         window_extent / history_minutes.max(f64::MIN_POSITIVE),
@@ -844,6 +856,7 @@ pub fn nowview_config(
         after + pad_after + more,
         zero,
         cfg,
+        from,
     );
     // The ticks past now are drawn past the strip, as the future is. The
     // ticks' axis ends where the window and its surroundings do, short of
@@ -1143,12 +1156,12 @@ mod config_tests {
         let labels: Vec<&str> = ticks.iter().map(|t| t.label.as_str()).collect();
         assert_eq!(
             labels,
-            vec!["-15m", "-10m", "-5m", "", "+5m", "+10m", "+15m", "+20m"]
+            vec!["t-15m", "t-10m", "t-5m", "", "t+5m", "t+10m", "t+15m", "t+20m"]
         );
         let at = |label: &str| ticks.iter().find(|t| t.label == label).unwrap().time_pos;
         assert!((at("") - 160.0).abs() < 1e-9);
-        assert!((at("+15m") - 320.0).abs() < 1e-9);
-        assert!((at("+20m") - 320.0 * 35.0 / 30.0).abs() < 1e-9);
+        assert!((at("t+15m") - 320.0).abs() < 1e-9);
+        assert!((at("t+20m") - 320.0 * 35.0 / 30.0).abs() < 1e-9);
     }
 
     /// da-zccjs: the ticks count from the instant, not from the window's
@@ -1180,8 +1193,24 @@ mod config_tests {
         // unlabelled, where the dashed line is.
         let cfg = nowview_config(Vec::new(), middle, middle, Some(middle + 5 * min), &geom);
         let l = labels(cfg);
-        assert_eq!((l[0].as_str(), l[l.len() - 1].as_str()), ("-20m", "+10m"));
+        assert_eq!((l[0].as_str(), l[l.len() - 1].as_str()), ("t-20m", "t+10m"));
         assert!(l.contains(&String::new()));
+        // `axis_now`: the same selected time, and the axis counts from now,
+        // an hour after the middle, as it does with none.
+        let geom = NowviewGeometry {
+            axis_now: true,
+            ..geom
+        };
+        let at = |instant| {
+            labels(nowview_config(
+                Vec::new(),
+                middle,
+                middle + 60 * min,
+                instant,
+                &geom,
+            ))
+        };
+        assert_eq!(at(Some(middle + 5 * min)), at(None));
     }
 
     /// da-hklaz: drawn ahead, a window ending at now reaches on past it as

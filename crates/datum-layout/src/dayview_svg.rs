@@ -1452,8 +1452,10 @@ fn emit_time_axis(
         .iter()
         .map(|t| LabelSlot {
             center: axis_origin + t.time_pos,
+            // A selection's `t` (da-tglm6) is a sliver of a digit's width: at a
+            // digit's, a phone's 30m window lost every label but its ends.
             extent: if horizontal {
-                text_width(&t.label, label_size)
+                text_width(t.label.trim_start_matches('t'), label_size)
             } else {
                 label_size
             },

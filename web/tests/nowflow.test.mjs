@@ -147,23 +147,14 @@ describe('the nowview flows', () => {
 		);
 	});
 
-	// The clock's labels slide with the flow, and its axis's handle with them
-	// (da-b9glf): over the first label wholly inside the window, the next one
-	// once that one has slid out. They no longer share an axis with the
-	// relative labels, which da-to5n4 hid them under.
-	test('the clock axis’s handle stays on its label as it slides, and takes the next as it leaves', async () => {
-		/** The clock handle's words and center, and the center of the label it names. */
+	// The clock's labels slide with the flow; its axis's handle stands at the
+	// window's end, and what it says moves on with the clock (da-tglm6).
+	test('the clock axis’s handle stays at the window’s end as the labels slide, its time moving on', async () => {
 		const held = (page) =>
 			page.locator(NOWVIEW).evaluate((root) => {
 				const h = root.querySelector('.nowview-handles .handle[data-axis="abs"]');
-				const mid = (el) => el.getBoundingClientRect().left + el.getBoundingClientRect().width / 2;
-				const frame = root.querySelector('.picture').getBoundingClientRect();
-				const label = [...root.querySelectorAll('svg.svg .clock-label')].find(
-					(l) => l.textContent === h?.dataset.at && l.getBoundingClientRect().left >= frame.left - 1
-				);
-				// Its instant, as `:30` names every half minute: the mark datum draws before it.
-				const at = label && Date.parse(label.previousElementSibling.getAttribute('data-at'));
-				return { at, text: h?.dataset.at, handle: h && mid(h), label: label && mid(label), left: label?.getBoundingClientRect().left - frame.left };
+				const label = [...root.querySelectorAll('svg.svg .clock-label')].find((l) => getComputedStyle(l).visibility !== 'hidden');
+				return { text: h?.dataset.at, at: h?.getBoundingClientRect().left, label: label?.getBoundingClientRect().left };
 			});
 		await withApp(
 			async (app) => {
@@ -172,21 +163,12 @@ describe('the nowview flows', () => {
 				await page.clock.runFor(SETTLE);
 				await app.idle();
 				const before = await held(page);
-				assert.ok(Math.abs(before.handle - before.label) < 1, JSON.stringify(before));
 				const seen = await app.spyOnRunner();
-				// 3 s on, it has slid, and the handle with it.
 				await app.clock.forward(3_000);
 				const slid = await held(page);
-				assert.equal(slid.at, before.at);
+				assert.ok(Math.abs(slid.at - before.at) < 0.5, `the handle moved: ${JSON.stringify([before, slid])}`);
+				assert.notEqual(slid.text, before.text);
 				assert.ok(slid.label < before.label - 1, `the label did not slide: ${JSON.stringify([before, slid])}`);
-				assert.ok(Math.abs(slid.handle - slid.label) < 1, JSON.stringify(slid));
-				// Long enough on that it has left the window, the 2m window's first
-				// label being in its first half-minute, and short of the half of
-				// what is drawn ahead that asks datum again: the handle is on the next.
-				await app.clock.forward(50_000);
-				const next = await held(page);
-				assert.notEqual(next.at, before.at);
-				assert.ok(next.left >= -1 && Math.abs(next.handle - next.label) < 1, JSON.stringify(next));
 				assert.deepEqual((await seen()).filter((a) => a[0] === 'nowview'), [], 'datum was asked for a new picture');
 				assert.deepEqual(app.errors, []);
 			},
