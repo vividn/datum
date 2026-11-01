@@ -614,8 +614,9 @@ export function ringIn(w: { end: number; states: number[] }, h: number, gap: num
  * `end` leads the row nearest the middle that lets all of them fit, so it
  * stands off center by half a row or so, and each state in rank order takes
  * the row nearest `end`'s with room for it, between the corners on a row
- * level with them. A row stands centered, its first button in the middle and
- * the rest right, left, right, outward. Null where they do not all fit.
+ * level with them. A row stands centered, its first button in the middle of
+ * an odd row and just left of it on an even one, and the rest right, left,
+ * right, outward. Null where they do not all fit.
  */
 function shelved(w: { end: number; states: number[] }, h: number, gap: number, room: Room): Ring | null {
 	const n = Math.floor((room.h + gap) / (h + gap));
