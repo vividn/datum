@@ -1209,7 +1209,7 @@ binary.
   otherwise, and no code; kept in the kit's own `kit:<name>` entry, so
   only the database it is installed in offers it (Change Widget, the `kit`
   kind, `KitWidget.svelte`). It draws the command's `--json` rows from
-  their `row_cells` in their `row_color`, and a tap runs the row action,
+  their `row_cells` in their `row_color` and `row_background`, and a tap runs the row action,
   each `{column}` that row's value.
   A NEW DEFAULT IS OFFERED, ONCE (da-cr0w2): a change to what a first
   visit opens is a sentence appended to `NEW_DEFAULTS` (`defaults.ts`), and

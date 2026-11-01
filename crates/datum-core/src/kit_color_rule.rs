@@ -26,11 +26,13 @@ use serde_json::Value as JsonValue;
 
 use crate::error::{DatumError, Result};
 
-/// One parsed `color_rules = [{ when = "...", color = "..." }]` entry.
+/// One parsed `color_rules = [{ when = "...", color = "..." }]` entry, or
+/// `background = "..."`, which `background` says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColorRule {
     pub when: Expr,
     pub color: String,
+    pub background: bool,
 }
 
 /// Top-level expression — a chain of comparison terms joined by `&&`/`||`.
@@ -108,6 +110,7 @@ impl ColorRule {
         Ok(ColorRule {
             when: expr,
             color: color.to_string(),
+            background: false,
         })
     }
 }
@@ -594,15 +597,12 @@ fn eval_term(term: &Term, row: &dyn RowLookup, now: DateTime<Utc>) -> bool {
 }
 
 /// Walk a list of rules in order; first match wins.
-pub fn pick_color<'a>(
+pub fn pick_rule<'a>(
     rules: &'a [ColorRule],
     row: &dyn RowLookup,
     now: DateTime<Utc>,
-) -> Option<&'a str> {
-    rules
-        .iter()
-        .find(|r| eval_expr(&r.when, row, now))
-        .map(|r| r.color.as_str())
+) -> Option<&'a ColorRule> {
+    rules.iter().find(|r| eval_expr(&r.when, row, now))
 }
 
 #[cfg(test)]
@@ -611,6 +611,14 @@ mod tests {
     use chrono::TimeZone;
     use serde_json::json;
     use std::collections::HashMap;
+
+    fn pick_color<'a>(
+        rules: &'a [ColorRule],
+        row: &dyn RowLookup,
+        now: DateTime<Utc>,
+    ) -> Option<&'a str> {
+        pick_rule(rules, row, now).map(|r| r.color.as_str())
+    }
 
     fn now_fixed() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 4, 30, 12, 0, 0).unwrap()

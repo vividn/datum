@@ -33,10 +33,14 @@ async function kitOffers(page) {
 	return offered;
 }
 
-/** Each drawn row's cells, and the colour it is drawn in. */
+/** Each drawn row's cells, and the colours it is drawn in. */
 const drawn = (page) =>
 	page.locator('.kit-widget[data-widget="chorelist"] .row').evaluateAll((rows) =>
-		rows.map((row) => ({ cells: [...row.children].map((c) => c.textContent), color: getComputedStyle(row).color }))
+		rows.map((row) => ({
+			cells: [...row.children].map((c) => c.textContent),
+			color: getComputedStyle(row).color,
+			background: getComputedStyle(row).backgroundColor
+		}))
 	);
 
 test('the chores kit’s chorelist: drawn as the CLI answers, a tap logs the chore, and only its database offers it', async () => {
@@ -49,11 +53,11 @@ test('the chores kit’s chorelist: drawn as the CLI answers, a tap logs the cho
 		};
 		const rows = async () => JSON.parse(await ok(['chorelist', '--json']));
 		await ok(['kit', 'install', '-', '--yes'], CHORES);
-		// A chore done every 7 days, shirked to long ago: overdue, so red.
+		// A chore done every 7 days, shirked to long ago: overdue, so on red.
 		await ok(['newchore', 'vacuum', '7']);
 		await ok(['occur', 'vacuum', '-T', 'next_date=2000-01-01']);
 		const [due] = await rows();
-		assert.deepEqual([due.field, due.due, due.status, due.row_color], ['vacuum', '2000-01-01', 'overdue', '#e01b24']);
+		assert.deepEqual([due.field, due.due, due.row_color, due.row_background], ['vacuum', '2000-01-01', '#ffffff', '#e01b24']);
 
 		// Offered here, in the open database's Change Widget.
 		assert.deepEqual(await kitOffers(page), ['kit:chores chore list']);
@@ -64,18 +68,17 @@ test('the chores kit’s chorelist: drawn as the CLI answers, a tap logs the cho
 		await chooser(page).waitFor({ state: 'detached' });
 		const row = page.locator('.kit-widget[data-widget="chorelist"] button.row', { hasText: 'vacuum' });
 		await row.waitFor();
-		assert.deepEqual(await drawn(page), [{ cells: due.row_cells, color: 'rgb(224, 27, 36)' }]);
+		assert.deepEqual(await drawn(page), [{ cells: due.row_cells, color: 'rgb(255, 255, 255)', background: 'rgb(224, 27, 36)' }]);
 
 		// A tap logs it: done today, green, and due a week on. A minute on,
 		// so its instant is not the one `newchore`'s TRACK entry holds.
 		await app.clock.forward(60_000);
 		await row.click();
-		await page.locator('.kit-widget[data-widget="chorelist"] button.row', { hasText: 'done' }).waitFor();
+		await page.waitForFunction(() => getComputedStyle(document.querySelector('.kit-widget[data-widget="chorelist"] button.row')).color === 'rgb(38, 162, 105)');
 		const [done] = await rows();
-		assert.equal(done.status, 'done');
 		assert.notEqual(done.due, due.due, 'the due date moved');
 		assert.ok(done.last_occur, 'the tap logged an occurrence');
-		assert.deepEqual(await drawn(page), [{ cells: done.row_cells, color: 'rgb(38, 162, 105)' }]);
+		assert.deepEqual(await drawn(page), [{ cells: done.row_cells, color: 'rgb(38, 162, 105)', background: 'rgba(0, 0, 0, 0)' }]);
 
 		// Another database, the same page and menu: nothing of the kit's.
 		await page.goto(`${page.url()}?db=other`);

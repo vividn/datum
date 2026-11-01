@@ -401,9 +401,9 @@ export function kitUninstallArgv(): string[] {
 /**
  * One row of a kit command's `--json` (da-gh37k): the shown columns, which
  * a `row_action`'s `{column}` reads, the cells as the table prints them,
- * and the colour its rule paints the row, where one does.
+ * and the colours its rule paints the row, where one does.
  */
-export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_color?: string };
+export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_color?: string; row_background?: string };
 
 /** One version of an entry's trail: the line that wrote it, where one did. */
 export interface EntryVersion {

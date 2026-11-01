@@ -172,10 +172,13 @@ const STAGE = seed(calls.backupToArgv(PLAN), { stage: {} }).stage;
 const FILE = Object.keys(STAGE).find((file) => file !== 'index.json');
 const BACKUP = seed(calls.backupArgv()).stdout;
 const KIT = readFileSync(join(web, '../kits/sample.toml'), 'utf8');
-// A kit with a widget, and a chore it lists, done today so its row is painted.
+// A kit with a widget, and two chores it lists: one done today so its row is
+// painted, and one long overdue so its row has a background.
 seed([...calls.kitInstallArgv(), '--yes'], { stdin: readFileSync(join(web, '../kits/chores.toml'), 'utf8') });
 seed(['newchore', 'vacuum', '7']);
 seed(['vacuum']);
+seed(['newchore', 'dishes', '7']);
+seed(['occur', 'dishes', '-T', 'next_date=2000-01-01']);
 const MEMBER = JSON.parse(seed(calls.syncStatusArgv()).stdout).members[0].endpoint;
 const HID = JSON.parse(seed(calls.layoutsArgv()).stdout).rows.find((r) => r.data?.name).hid;
 

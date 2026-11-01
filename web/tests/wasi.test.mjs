@@ -217,8 +217,8 @@ describe('the wasi CLI', () => {
 				const listed = await app.run(['chorelist', '--show', 'json']);
 				assert.equal(listed.code, 0, listed.stderr);
 				assert.deepEqual(
-					JSON.parse(listed.stdout).map(({ field, due, status }) => [field, due, status]),
-					[['vacuum', '2026-09-19', 'done']]
+					JSON.parse(listed.stdout).map(({ field, due, row_color }) => [field, due, row_color]),
+					[['vacuum', '2026-09-19', '#26a269']]
 				);
 			},
 			{ clock: Date.parse('2026-09-12T00:30:00+02:00'), timezone: 'Europe/Berlin' }

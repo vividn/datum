@@ -503,7 +503,8 @@ impl AliasEntry {
 /// - `formats`: column-name → renderer hint (`smart_date`, `duration`, …).
 /// - `sort`: column to sort by (ascending; descending sort is forward-compat).
 /// - `flags`: pass-through verbs supported by this command (e.g. `watch`).
-/// - `color_rules`: list of `{ when, color }` painters; first match wins.
+/// - `color_rules`: list of `{ when, color }` or `{ when, background }`
+///   painters; first match wins.
 /// - `empty`: text printed instead of the table when the view returns no
 ///   rows (da-x3369).
 /// - `args`: the arguments the command takes, in #263's key kinds — `key`
@@ -550,12 +551,30 @@ pub struct CommandEntry {
     pub script: Option<String>,
 }
 
-/// One color-rule TOML entry: `{ when = "...", color = "..." }`. The
-/// expression grammar is implemented in [`crate::kit_color_rule`].
+/// One color-rule TOML entry: `{ when = "...", color = "..." }`, or
+/// `background = "..."` to paint behind the row, in a foreground legible on
+/// it. The expression grammar is implemented in [`crate::kit_color_rule`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColorRuleEntry {
     pub when: String,
-    pub color: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+}
+
+impl ColorRuleEntry {
+    /// The one color the rule names, and whether it is a background.
+    pub fn paint(&self) -> std::result::Result<(&str, bool), String> {
+        match (&self.color, &self.background) {
+            (Some(c), None) => Ok((c, false)),
+            (None, Some(b)) => Ok((b, true)),
+            _ => Err(format!(
+                "color rule `when = \"{}\"` takes one of `color` and `background`",
+                self.when
+            )),
+        }
+    }
 }
 
 /// Per-state override carried inside `states.<name> = { ... }` inline tables.
@@ -1999,7 +2018,7 @@ color = "yellow"
         assert_eq!(kit.commands[1].sort.as_deref(), Some("next_due_raw"));
         assert_eq!(kit.commands[1].flags, vec!["watch".to_string()]);
         assert_eq!(kit.commands[1].color_rules.len(), 2);
-        assert_eq!(kit.commands[1].color_rules[0].color, "red");
+        assert_eq!(kit.commands[1].color_rules[0].color.as_deref(), Some("red"));
     }
 
     #[test]

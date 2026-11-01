@@ -177,6 +177,8 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
                     c.name, r.when, e
                 ))
             })?;
+            r.paint()
+                .map_err(|e| DatumError::Other(format!("kit command '{}': {e}", c.name)))?;
         }
     }
     Ok(())

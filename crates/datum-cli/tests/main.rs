@@ -90,6 +90,7 @@ mod install_cmd;
 mod integrity_cmd;
 mod key_operators;
 mod kit_command_args;
+mod kit_command_watch;
 mod kit_install;
 mod kit_layouts;
 mod kit_name_clash;

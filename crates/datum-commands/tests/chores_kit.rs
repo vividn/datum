@@ -107,9 +107,8 @@ fn the_kit_ships_its_index_views_and_commands() {
     for cmd in &kit.commands {
         assert!(cmd.flags.iter().any(|f| f == "watch"), "{}", cmd.name);
         assert_eq!(cmd.color_rules.len(), 3, "{}", cmd.name);
-        // A command's rules and sort see only the columns it shows, so the
-        // colours ride on the shown `status` column.
-        assert!(cmd.columns.iter().any(|c| c == "status"), "{}", cmd.name);
+        // A rule reads the view's columns, so `status` paints and is not shown.
+        assert!(!cmd.columns.iter().any(|c| c == "status"), "{}", cmd.name);
     }
     let cmds: Vec<_> = kit.commands.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(cmds, ["chorelist"], "one chorelist, as v2 had (da-7ramf)");
@@ -283,6 +282,32 @@ fn status_follows_v2s_colours_and_chores_due_filters() {
 
     let due = fields(&view(&db, "chores_due"));
     assert_eq!(due, ["dishes", "bins", "mop", "vacuum"], "sorted by iti");
+
+    let args = ["--json".to_string()];
+    let listed = datum_commands::commands::kit_command::output("chorelist", &args, &db).unwrap();
+    let listed: Vec<JsonValue> = serde_json::from_str(&listed).unwrap();
+    let paint: Vec<_> = listed
+        .iter()
+        .map(|r| {
+            assert!(r.get("status").is_none(), "{r}");
+            (
+                r["field"].clone(),
+                r.get("row_color"),
+                r.get("row_background"),
+            )
+        })
+        .map(|(f, c, b)| (f, c.cloned(), b.cloned()))
+        .collect();
+    let hex = |s: &str| Some(JsonValue::from(s));
+    assert_eq!(
+        paint,
+        [
+            (JsonValue::from("dishes"), hex("#ffffff"), hex("#e01b24")),
+            (JsonValue::from("bins"), hex("#000000"), hex("#e5a50a")),
+            (JsonValue::from("mop"), None, None),
+            (JsonValue::from("vacuum"), hex("#26a269"), None),
+        ]
+    );
 
     // v2's forms, through the one command (da-7ramf).
     assert_eq!(chorelist(&db, &[]), due);

@@ -9,8 +9,9 @@
 //! plus optional ANSI colour applied per row when `color_rules` matches,
 //! or is the shown rows as JSON under `--json` (or `--show json`): each an
 //! object keyed by the shown columns, plus `row_cells`, the row's cells as
-//! the table prints them, and `row_color`, the matched rule's colour as hex
-//! (da-gh37k) — what a datum.day kit widget draws.
+//! the table prints them, `row_color`, the matched rule's colour as hex
+//! (da-gh37k), and `row_background` where the rule paints the background, with
+//! `row_color` the foreground legible on it — what a datum.day kit widget draws.
 //!
 //! The words after the name fill the command's declared `args` the way an
 //! alias's slots are filled (da-7ramf) — positionals in order, `.` skips
@@ -30,34 +31,53 @@ use datum_parse::spec_keys::parse_key_decl;
 use datum_parse::time::{format_human_duration, DatumTime, DurationPrecision};
 use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
+use std::io::{IsTerminal, Write};
+use std::time::Duration;
 
 use crate::render::colors::RESET;
 use crate::render::visible_width;
 
 /// Run a Level 2 command by name. `extra_args` carries the tokens after
 /// the command name on the original argv: its arguments, `--sort`,
-/// `--show`, and `--watch`, gated by `flags = ["watch"]`.
+/// `--show`, and `--watch` / `-w`, gated by `flags = ["watch"]`.
 pub fn run(name: &str, extra_args: &[String], db: &Db) -> Result<()> {
     let (cmd, call) = prepare(name, extra_args, db)?;
     if call.watch {
-        loop {
-            print!("\x1b[2J\x1b[H");
-            // Flush so the clear is visible even if the render errors
-            // before printing anything.
-            let _ = std::io::Write::flush(&mut std::io::stdout());
+        let tty = std::io::stdout().is_terminal();
+        let mut shown = None;
+        return crate::commands::watch::watch_loop(db, Some(time_tick()), |db| {
             // A watch must be the most resilient surface, not the least
             // (da-sd25): show errors in place (transient SQLITE_BUSY, a
             // momentarily-broken view, even a deleted view the user may
-            // recreate) and retry on the next tick rather than dying.
-            match render_once(&cmd, &call, db) {
-                Ok(out) => print!("{out}"),
-                Err(e) => eprintln!("watch '{}': {e:#}", cmd.name),
+            // recreate) and retry on the next wake rather than dying.
+            let frame = render_once(&cmd, &call, db)
+                .unwrap_or_else(|e| format!("watch '{}': {e:#}\n", cmd.name));
+            // Only what differs from the screen, so an idle tick cannot flicker.
+            if shown.as_ref() != Some(&frame) {
+                let clear = if tty { "\x1b[2J\x1b[H" } else { "" };
+                print!("{clear}{frame}");
+                let _ = std::io::stdout().flush();
+                shown = Some(frame);
             }
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
+            Ok(())
+        });
     }
     print!("{}", render_once(&cmd, &call, db)?);
     Ok(())
+}
+
+/// How often a watch runs its view with no write: what a view reads of the
+/// clock (a day turning, a time falling due) shows within this. A kit's view
+/// is SQL, so nothing says when its answer next changes.
+fn time_tick() -> Duration {
+    #[cfg(feature = "test-util")]
+    if let Some(ms) = std::env::var("DATUM_TEST_WATCH_TICK_MS")
+        .ok()
+        .and_then(|ms| ms.parse().ok())
+    {
+        return Duration::from_millis(ms);
+    }
+    Duration::from_secs(60)
 }
 
 /// What `datum <name> <extra_args…>` prints, bar `--watch`'s repeats.
@@ -93,7 +113,7 @@ impl Call {
                 _ => (w.as_str(), None),
             };
             match flag {
-                "--watch" => call.watch = true,
+                "--watch" | "-w" => call.watch = true,
                 "--json" if inline.is_none() => call.json = true,
                 "--sort" | "--show" => {
                     let v = inline
@@ -242,10 +262,10 @@ fn render(
         });
     }
     let now = DatumTime::now().utc;
-    let painted: Vec<Option<(&str, &str)>> = view
+    let painted: Vec<Option<Paint>> = view
         .rows
         .iter()
-        .map(|row| row_color(&rules, &view.columns, row, now))
+        .map(|row| row_paint(&rules, &view.columns, row, now))
         .collect();
     let projected = project(&cmd.name, &view, &cmd.columns)?;
     let formatted = format_cells(&projected, &cmd.formats, now);
@@ -254,7 +274,7 @@ fn render(
     // table prints them and the colour it paints the row, so a surface that
     // is not a terminal draws the table's row without formatting it again.
     if call.json {
-        if let Some(c) = ["row_cells", "row_color"]
+        if let Some(c) = ["row_cells", "row_color", "row_background"]
             .iter()
             .find(|k| projected.columns.iter().any(|c| c == *k))
         {
@@ -272,8 +292,11 @@ fn render(
                 let mut obj: Map<String, JsonValue> =
                     projected.columns.iter().cloned().zip(row).collect();
                 obj.insert("row_cells".into(), cells.into());
-                if let Some((_, hex)) = paint {
-                    obj.insert("row_color".into(), (*hex).into());
+                if let Some(paint) = paint {
+                    obj.insert("row_color".into(), paint.color.into());
+                    if let Some(hex) = paint.background {
+                        obj.insert("row_background".into(), hex.into());
+                    }
                 }
                 obj
             })
@@ -282,7 +305,7 @@ fn render(
     }
     let colors: Vec<Option<&str>> = painted
         .iter()
-        .map(|p| p.filter(|_| color).map(|(ansi, _)| ansi))
+        .map(|p| p.as_ref().filter(|_| color).map(|p| p.ansi))
         .collect();
     // A view with no rows prints the command's `empty` text, if it has
     // one, instead of an empty table (da-x3369) — after every column the
@@ -305,7 +328,11 @@ fn col_index(cmd: &str, columns: &[String], name: &str, by: &str) -> Result<usiz
 fn parse_rules(entries: &[datum_core::kit::ColorRuleEntry]) -> Result<Vec<ColorRule>> {
     let mut out = Vec::with_capacity(entries.len());
     for e in entries {
-        out.push(ColorRule::parse(&e.when, &e.color)?);
+        let (color, background) = e.paint().map_err(anyhow::Error::msg)?;
+        out.push(ColorRule {
+            background,
+            ..ColorRule::parse(&e.when, color)?
+        });
     }
     Ok(out)
 }
@@ -449,6 +476,34 @@ fn ansi_for(color: &str) -> (&'static str, &'static str) {
     }
 }
 
+/// What a rule paints a row: the escape, and the same as hex for `--json`.
+struct Paint {
+    ansi: &'static str,
+    color: &'static str,
+    background: Option<&'static str>,
+}
+
+/// A rule's `background`: its `ansi_for` hex behind a foreground legible on it.
+fn background_for(color: &str) -> Paint {
+    const BLACK: &str = "#000000";
+    const WHITE: &str = "#ffffff";
+    let (ansi, color, background) = match color.to_ascii_lowercase().as_str() {
+        "red" => ("\x1b[97;41m", WHITE, "#e01b24"),
+        "green" => ("\x1b[30;42m", BLACK, "#26a269"),
+        "yellow" => ("\x1b[30;43m", BLACK, "#e5a50a"),
+        "blue" => ("\x1b[97;44m", WHITE, "#3584e4"),
+        "magenta" | "purple" => ("\x1b[97;45m", WHITE, "#c061cb"),
+        "cyan" => ("\x1b[30;46m", BLACK, "#2aa1b3"),
+        "gray" | "grey" => ("\x1b[97;100m", WHITE, "#888888"),
+        _ => ("\x1b[30;47m", BLACK, "#d0d0d0"),
+    };
+    Paint {
+        ansi,
+        color,
+        background: Some(background),
+    }
+}
+
 fn render_pretty(headers: &[String], cells: &[Vec<String>], colors: &[Option<&str>]) -> String {
     if headers.is_empty() {
         return "(no columns)\n".to_string();
@@ -499,19 +554,27 @@ fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) -> String 
     line
 }
 
-fn row_color(
+fn row_paint(
     rules: &[ColorRule],
     columns: &[String],
     raw: &[JsonValue],
     now: chrono::DateTime<Utc>,
-) -> Option<(&'static str, &'static str)> {
+) -> Option<Paint> {
     let mut map: HashMap<&str, &JsonValue> = HashMap::new();
     for (i, c) in columns.iter().enumerate() {
         map.insert(c.as_str(), &raw[i]);
     }
     let lookup: &dyn RowLookup = &map;
-    let color_name = kit_color_rule::pick_color(rules, lookup, now)?;
-    Some(ansi_for(color_name))
+    let rule = kit_color_rule::pick_rule(rules, lookup, now)?;
+    if rule.background {
+        return Some(background_for(&rule.color));
+    }
+    let (ansi, color) = ansi_for(&rule.color);
+    Some(Paint {
+        ansi,
+        color,
+        background: None,
+    })
 }
 
 #[cfg(test)]
@@ -545,7 +608,8 @@ mod tests {
                 .iter()
                 .map(|(when, color)| datum_core::kit::ColorRuleEntry {
                     when: when.to_string(),
-                    color: color.to_string(),
+                    color: Some(color.to_string()),
+                    background: None,
                 })
                 .collect(),
             empty: None,
@@ -619,6 +683,22 @@ mod tests {
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[2], "coffee", "{out}");
         assert_eq!(lines[3], "\x1b[31mmood  \x1b[0m", "{out}");
+    }
+
+    /// The whole row, padding too, with a foreground legible on it.
+    #[test]
+    fn a_background_rule_paints_the_whole_row() {
+        let mut cmd = mk_cmd(&["field"], None, &[("extra = 'b'", "red")]);
+        cmd.color_rules[0].background = cmd.color_rules[0].color.take();
+        let out = render(&cmd, &Call::default(), mk_view(), true).unwrap();
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[3], "\x1b[97;41mmood  \x1b[0m", "{out}");
+        cmd.color_rules[0].color = Some("red".into());
+        let err = render(&cmd, &Call::default(), mk_view(), true).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "color rule `when = \"extra = 'b'\"` takes one of `color` and `background`"
+        );
     }
 
     #[test]

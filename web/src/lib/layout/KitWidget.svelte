@@ -6,7 +6,8 @@
 
 	The command runs with `--json` on every epoch, as the custom widget's
 	line does, and each row it answers is drawn as the CLI's table prints it
-	(`row_cells`) in the colour its rule paints it (`row_color`): the page
+	(`row_cells`) in the colours its rule paints it (`row_color`,
+	`row_background`): the page
 	places what the CLI rendered and formats nothing. With no rows, the
 	command's own words for that, run without `--json` once per command and
 	kept, so an empty list costs one run an epoch as a full one does.
@@ -112,11 +113,11 @@
 			<div class="rows" style:--columns={columns}>
 				{#each rows as row, i (i)}
 					{#if def?.row_action}
-						<button type="button" class="row" style:color={row.row_color} onclick={() => void pressWithPills(actionOf(def?.row_action ?? '', row))}>
+						<button type="button" class="row" style:color={row.row_color} style:background={row.row_background} onclick={() => void pressWithPills(actionOf(def?.row_action ?? '', row))}>
 							{#each row.row_cells as c}<span>{c}</span>{/each}
 						</button>
 					{:else}
-						<div class="row" style:color={row.row_color}>
+						<div class="row" style:color={row.row_color} style:background={row.row_background}>
 							{#each row.row_cells as c}<span>{c}</span>{/each}
 						</div>
 					{/if}
