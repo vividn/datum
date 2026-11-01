@@ -73,7 +73,7 @@ impl Part {
         }
     }
 
-    /// `old → new`, `old` or `new` for a changed part; the part dim if not.
+    /// `old → new`, `− old` or `new` for a changed part; the part dim if not.
     fn draw(&self) -> String {
         let was = |s: &str| paint(STRUCK, strip_ansi(s).trim_end());
         match (self.changed(), &self.before, &self.after) {
@@ -99,7 +99,9 @@ impl Part {
                 format!("{}{to}{}", was(b), self.painted_new(a))
             }
             (_, _, Some(a)) => self.painted_new(a),
-            (_, Some(b), None) => was(b),
+            // Gone, `−` as a key gone is: struck alone it reads as still there
+            // wherever nothing paints it (da-fekgx).
+            (_, Some(b), None) => was(&format!("− {b}")),
             (_, None, None) => String::new(),
         }
     }

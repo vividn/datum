@@ -455,3 +455,27 @@ fn rekey_renames_a_data_key_in_place_and_prints_rename_then_update() {
     assert_eq!(rows[0].slug, "met:");
     assert_eq!(rows[0].data, Some(json!({"eve": "ben"})));
 }
+
+/// A duration taken away says so in the words, with no color to strike it
+/// (da-fekgx): the info line ends `− 30m`, and only the update that took it,
+/// or the undo that takes back one added, draws the mark.
+#[test]
+fn a_duration_going_away_is_marked_in_the_echo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db_path = tmp.path().join("u.db");
+    let info = |args: &[&str]| {
+        let out = run_bin(&db_path, args, "");
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        let printed = String::from_utf8(out.stdout).unwrap();
+        printed.lines().nth(1).unwrap().trim_end().to_string()
+    };
+    assert!(info(&["start", "walk", "30m"]).ends_with("walk   on   30m"));
+    assert!(info(&["update", "walk", "dur=1h"]).ends_with("on   30m → 1h"));
+    let gone = info(&["update", "walk", "dur=null"]);
+    assert!(gone.ends_with("walk   on   − 1h"), "got: {gone}");
+    // Back and away again by undo and redo, and away by the undo of an add.
+    assert!(info(&["undo"]).ends_with("walk   on   1h"));
+    assert!(info(&["redo"]).ends_with("walk   on   − 1h"));
+    assert!(info(&["update", "walk", "dur=20m"]).ends_with("walk   on   20m"));
+    assert!(info(&["undo"]).ends_with("walk   on   − 20m"));
+}
