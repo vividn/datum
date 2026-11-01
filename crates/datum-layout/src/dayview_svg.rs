@@ -355,21 +355,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             );
             let n_lines = day.label_lines.len().max(1);
             for (j, line) in day.label_lines.iter().enumerate() {
-                let (lx, ly, anchor) = match layout.orientation {
-                    Orientation::Horizontal => {
-                        // Right-aligned within the label strip; lines stacked
-                        // vertically across the row.
-                        let line_y = ((j as f64 + 0.5) * layout.day_height) / n_lines as f64;
-                        (layout.label_width - 4.0, line_y, "end")
-                    }
-                    Orientation::Vertical => {
-                        // Centered horizontally within the column; lines
-                        // stacked vertically within the top label strip.
-                        let cx = layout.day_height / 2.0;
-                        let line_y = ((j as f64 + 0.5) * layout.label_width) / n_lines as f64;
-                        (cx, line_y, "middle")
-                    }
-                };
+                let (lx, ly, anchor) = date_line_at(layout, j, n_lines);
                 let _ = write!(
                     &mut out,
                     r#"<text class="date-label" x="{lx}" y="{ly}" dy="0.35em" fill="{c}" text-anchor="{a}" font-size="{fs}" font-family="{DATE_LABEL_FONT}">{txt}</text>"#,
@@ -721,21 +707,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             out.push_str("</g>");
         }
 
-        // The day's warning icon, by its date label (da-0w8le). Drawn after
-        // the bands and lines: in a horizontal layout it reaches past the
-        // label strip, where a band at midnight covered it (da-az40e).
+        // The day's warning icon, in its date label's box and never in the
+        // band (da-0w8le, da-p8kn4).
         if day.has_error && layout.label_width > 0.0 {
-            let icon_size = (layout.day_height * 0.4).clamp(8.0, 20.0);
+            let (icon_x, icon_y, icon_size) = warning_icon_place(layout, day);
             let (icon_x, icon_y) = match layout.orientation {
-                Orientation::Horizontal => (
-                    layout.label_width - 2.0,
-                    day.day_offset + (layout.day_height - icon_size) / 2.0,
-                ),
-                // At the column's edge, clear of the centred lines.
-                Orientation::Vertical => (
-                    geom.data_x + day.day_offset + layout.day_height - icon_size,
-                    layout.label_width - 2.0 - icon_size,
-                ),
+                Orientation::Horizontal => (icon_x, day.day_offset + icon_y),
+                Orientation::Vertical => (geom.data_x + day.day_offset + icon_x, icon_y),
             };
             let _ = write!(
                 &mut out,
@@ -1604,6 +1582,66 @@ pub fn wrap_dayview_svg_in_html(svg: &str) -> String {
     out
 }
 
+/// Where date-label line `j` of `n_lines` is anchored, in its day's label box.
+fn date_line_at(layout: &DayviewLayout, j: usize, n_lines: usize) -> (f64, f64, &'static str) {
+    let slot = |extent: f64| (j as f64 + 0.5) * extent / n_lines as f64;
+    match layout.orientation {
+        // Right-aligned within the label strip; lines stacked across the row.
+        Orientation::Horizontal => (layout.label_width - 4.0, slot(layout.day_height), "end"),
+        // Centered within the column; lines stacked within the top strip.
+        Orientation::Vertical => (layout.day_height / 2.0, slot(layout.label_width), "middle"),
+    }
+}
+
+/// Where a day's warning icon goes in its label box, and its size: `(x, y, size)`.
+///
+/// datum.day's stamp, whose mark is 1 em, 2px in from the top left, clear of
+/// the right-aligned lines because the weekday on top is the shortest
+/// (`IntegrityMark.svelte`). A column too narrow for that shrinks the icon,
+/// or takes the gap between two lines. A box with no clear place for even
+/// the smallest (`--label-width` under the label's own width, which cuts the
+/// label anyway) still gets the mark, in its corner.
+fn warning_icon_place(layout: &DayviewLayout, day: &RenderedDay) -> (f64, f64, f64) {
+    const INSET: f64 = 2.0;
+    const SMALLEST: f64 = 6.0;
+    let (w, h) = match layout.orientation {
+        Orientation::Horizontal => (layout.label_width, layout.day_height),
+        Orientation::Vertical => (layout.day_height, layout.label_width),
+    };
+    let fs = layout.label_font_size;
+    let n_lines = day.label_lines.len();
+    // Each line's left edge and its top and bottom.
+    let lines: Vec<(f64, f64, f64)> = (day.label_lines.iter().enumerate())
+        .map(|(j, line)| {
+            let (x, y, anchor) = date_line_at(layout, j, n_lines);
+            let width = text_width(line, fs);
+            let left = x - if anchor == "end" { width } else { width / 2.0 };
+            (left, y - fs / 2.0, y + fs / 2.0)
+        })
+        .collect();
+    let clear = |y: f64, size: f64| {
+        INSET + size <= w
+            && y >= 0.0
+            && y + size <= h
+            && (lines.iter()).all(|&(left, top, bottom)| {
+                INSET + size + INSET <= left || y + size <= top || y >= bottom
+            })
+    };
+    let mut size = fs;
+    while size >= SMALLEST {
+        let corner = INSET.min((h - size) / 2.0);
+        let gaps = lines.windows(2).map(|l| (l[0].2 + l[1].1 - size) / 2.0);
+        if let Some(y) = std::iter::once(corner)
+            .chain(gaps)
+            .find(|&y| clear(y, size))
+        {
+            return (INSET, y, size);
+        }
+        size -= 1.0;
+    }
+    (0.0, 0.0, SMALLEST.min(w).min(h))
+}
+
 /// Push the warning icon SVG into `out` at the current scale. Ports the
 /// shape from `/tmp/datum-survey/src/dayview/symbols/warningIcon.ts` —
 /// yellow triangle + red exclamation. Kept inline so the layout crate
@@ -1895,9 +1933,8 @@ mod tests {
         }
     }
 
-    /// da-az40e: the icon is drawn after the day's bands, so one at
-    /// midnight, under the icon's corner in a horizontal layout, cannot
-    /// cover it.
+    /// da-az40e: the icon is drawn after the day's bands, so nothing of a
+    /// day can cover it.
     #[test]
     fn the_warning_icon_is_drawn_over_the_bands() {
         for orientation in [Orientation::Horizontal, Orientation::Vertical] {
@@ -1908,6 +1945,102 @@ mod tests {
                 icon.is_some() && last_band.is_some() && icon > last_band,
                 "{orientation:?}: {svg}"
             );
+        }
+    }
+
+    /// da-p8kn4: on every day of a picture, at every size that changes the
+    /// label's form (three, two or one lines, right-aligned or centered), the
+    /// icon stands outside the band, by its own day's label and over none of
+    /// its lines, and inside the image: in the top left corner as datum.day's
+    /// where that is clear.
+    #[test]
+    fn the_warning_icon_stands_outside_the_band_by_the_label() {
+        let num = |n: roxmltree::Node, a: &str| n.attribute(a).unwrap().parse::<f64>().unwrap();
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            for day_height in [200.0, 100.0, 84.0, 72.0, 60.0, 39.0, 30.0, 26.0, 20.0, 14.0] {
+                for label_width in [None, Some(30.0)] {
+                    let mut cfg = one_day_with_block(true, orientation);
+                    cfg.days.push(cfg.days[0].clone());
+                    cfg.width = 200.0;
+                    cfg.day_height = day_height;
+                    cfg.label_width = label_width;
+                    let layout = compute_dayview(&cfg);
+                    let svg = render_dayview_svg(&layout);
+                    let doc = roxmltree::Document::parse(&svg).unwrap();
+                    let of = format!("{orientation:?} {day_height} {label_width:?}");
+                    let icons: Vec<_> = (doc.descendants())
+                        .filter(|n| n.attribute("class") == Some("day-error"))
+                        .collect();
+                    assert_eq!(icons.len(), 2, "{of}");
+                    for (i, icon) in icons.into_iter().enumerate() {
+                        let at = icon.attribute("transform").unwrap();
+                        let at = at.strip_prefix("translate(").unwrap();
+                        let (x, y) = at.trim_end_matches(')').split_once(',').unwrap();
+                        let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+                        let inner = icon.first_element_child().unwrap();
+                        let size = num(inner, "width");
+                        assert!(size >= 6.0, "{of}: {size}");
+
+                        // The day's label box, which is not the band.
+                        let geom = PlotGeom::new(&layout);
+                        let offset = layout.days[i].day_offset;
+                        let (bx, by, bw, bh) = match orientation {
+                            Orientation::Horizontal => {
+                                (0.0, offset, layout.label_width, day_height)
+                            }
+                            Orientation::Vertical => {
+                                (geom.data_x + offset, 0.0, day_height, layout.label_width)
+                            }
+                        };
+                        assert!(
+                            x >= bx && x + size <= bx + bw && y >= by && y + size <= by + bh,
+                            "{of}: day {i}'s icon ({x},{y}) {size} out of its label box"
+                        );
+                        match orientation {
+                            Orientation::Horizontal => assert!(x + size <= geom.data_x, "{of}"),
+                            Orientation::Vertical => assert!(y + size <= geom.data_y, "{of}"),
+                        }
+                        assert!(x + layout.margin >= 0.0 && y + layout.margin >= 0.0, "{of}");
+
+                        // A one-line label filling a column cut to its width
+                        // leaves no room; the mark stays, in the corner.
+                        if label_width.is_some() && day_height < 30.0 {
+                            continue;
+                        }
+                        // Over none of the day's lines, each measured from the picture.
+                        let group = (doc.descendants())
+                            .find(|n| {
+                                n.attribute("class") == Some("day-label")
+                                    && n.attribute("data-day") == Some(&i.to_string())
+                            })
+                            .unwrap();
+                        let lines: Vec<_> = (group.children())
+                            .filter(|n| n.attribute("class") == Some("date-label"))
+                            .collect();
+                        assert!(!lines.is_empty(), "{of}");
+                        for line in lines {
+                            let fs = num(line, "font-size");
+                            let width = text_width(line.text().unwrap(), fs);
+                            let lx = bx + num(line, "x")
+                                - match line.attribute("text-anchor") {
+                                    Some("end") => width,
+                                    _ => width / 2.0,
+                                };
+                            let ly = by + num(line, "y") - fs / 2.0;
+                            assert!(
+                                x + size <= lx || lx + width <= x || y + size <= ly || ly + fs <= y,
+                                "{of}: day {i}'s icon ({x},{y}) {size} over {:?} at ({lx},{ly})",
+                                line.text()
+                            );
+                        }
+                        // The web's corner, at the web's 1 em, where it is clear.
+                        if label_width.is_none() && day_height >= 100.0 {
+                            assert_eq!((x - bx, y - by), (2.0, 2.0), "{of}");
+                            assert_eq!(size, layout.label_font_size, "{of}");
+                        }
+                    }
+                }
+            }
         }
     }
 
