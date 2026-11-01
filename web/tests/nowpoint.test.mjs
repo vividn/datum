@@ -1083,7 +1083,7 @@ describe('on a phone', () => {
 				// drawn past it either side. Its left end, clear of the now region.
 				const work = await page.locator(BAND).evaluate((band) => {
 					const frame = band.getBoundingClientRect();
-					const hit = [...band.querySelectorAll('svg.svg [data-id]')]
+					const hit = [...band.querySelectorAll('svg.svg rect.block[data-id]')]
 						.map((m) => ({ m, r: m.getBoundingClientRect() }))
 						.map(({ m, r }) => ({ m, r, left: Math.max(r.left, frame.left), right: Math.min(r.right, frame.right) }))
 						.find(({ left, right }) => right - left > 60);

@@ -502,7 +502,15 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 if flow_now.is_none() {
                     out.push_str(&std::mem::take(&mut strip));
                 }
+                let mut whole = String::new();
                 for p in field.points.iter().filter(|p| p.span == si) {
+                    // A mark up to now stands past the clip, whole over the
+                    // edge between the history and the now strip (da-7257d);
+                    // one still to come waits behind the clip.
+                    let sink = match flow_now {
+                        Some(now) if p.time_pos <= now => &mut whole,
+                        _ => &mut out,
+                    };
                     // A dot in a lane is the lane's size (da-1v9gp).
                     let (near, far) = span.lane_at(p.time_pos);
                     let cross = near * layout.day_height + (far - near) * p.cross_pos;
@@ -520,7 +528,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         let (x1, y1) = at(p.time_pos - MOMENT_HIT_PX / 2.0, cross - half);
                         let (x2, y2) = at(p.time_pos + MOMENT_HIT_PX / 2.0, cross + half);
                         let _ = write!(
-                            &mut out,
+                            sink,
                             r#"<rect class="point-bg" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}" fill-opacity="0"{close}"#,
                             x = x1.min(x2),
                             y = y1.min(y2),
@@ -539,7 +547,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         let (x1, y1) = at(p.time_pos, cross - half);
                         let (x2, y2) = at(p.time_pos, cross + half);
                         let _ = write!(
-                            &mut out,
+                            sink,
                             r#"<line class="point-fg moment" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{c}" stroke-width="{MOMENT_STROKE_PX}" stroke-dasharray="3 2" pointer-events="none"/>"#,
                             c = p.fg_color,
                         );
@@ -562,7 +570,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         )
                     };
                     let _ = write!(
-                        &mut out,
+                        sink,
                         r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" fill-opacity="0"{close}"#,
                         cx = cx,
                         cy = cy,
@@ -589,7 +597,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                             let _ = write!(&mut defs, r#"<svg id="{id}"{rest}"#);
                         }
                         let _ = write!(
-                            &mut out,
+                            sink,
                             r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"{stretch}/>"##,
                             x = cx - outer_r,
                             y = cy - outer_r,
@@ -603,7 +611,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     // so it reads as the mark rather than as a label on it.
                     let _ = match p.glyph.as_deref() {
                         None => write!(
-                            &mut out,
+                            sink,
                             r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"{stretch}/>"#,
                             cx = cx,
                             cy = cy,
@@ -611,7 +619,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                             c = p.fg_color,
                         ),
                         Some(g) => write!(
-                            &mut out,
+                            sink,
                             r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none"{stretch}>{g}</text>"#,
                             cx = cx,
                             cy = cy,
@@ -623,6 +631,9 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 }
                 out.push_str(flow_close);
                 out.push_str(&strip);
+                if !whole.is_empty() {
+                    let _ = write!(&mut out, r#"<g class="flow">{whole}</g>"#);
+                }
                 out.push_str("</g>");
             }
             if !span.lane.is_empty() {
@@ -1730,6 +1741,44 @@ mod tests {
             orientation,
             ..Default::default()
         }
+    }
+
+    /// da-7257d: on a flowing picture a dot up to now stands past the clip at
+    /// the now-line, drawn whole over the edge, and one still to come waits
+    /// behind it.
+    #[test]
+    fn a_flowing_pictures_dots_up_to_now_stand_past_its_clip() {
+        let mut config = one_day_with_block(false, Orientation::Horizontal);
+        let mut late = config.days[0].fields[0].points[0].clone();
+        late.time_ms = DAY_START + 14 * HOUR;
+        late.fg_color = "#00ff00".into();
+        config.days[0].fields[0].points.push(late);
+        let layout = compute_dayview(&config);
+        let svg = render_dayview_svg_with(
+            &layout,
+            DayviewSvgOpts {
+                flow: true,
+                ..Default::default()
+            },
+        );
+        let clip_end = svg.find("</g></g>").expect("the clipped group closes");
+        let dot = |c: &str| {
+            svg.find(&format!(r#"fill="{c}" pointer-events="none""#))
+                .unwrap()
+        };
+        assert!(
+            dot("#ff0000") > clip_end,
+            "a dot up to now is under the clip"
+        );
+        assert!(
+            dot("#00ff00") < clip_end,
+            "a dot still to come is out from under it"
+        );
+        let whole = svg.rfind(r#"<g class="flow">"#).unwrap();
+        assert!(
+            whole < dot("#ff0000"),
+            "the dot does not slide with the picture"
+        );
     }
 
     #[test]

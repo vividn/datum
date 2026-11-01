@@ -511,11 +511,12 @@ const dimOthers = (root: Element) => root.toggleAttribute('data-dims', !!root.qu
 /**
  * A mark's box as it is SEEN: one that flows (nowview's `--ahead`, da-hklaz)
  * is drawn on past the now-line, where its clip hides it, and its box would
- * take the outline there — so it stops at the line.
+ * take the outline there — so it stops at the line. A mark past the clip is
+ * whole (da-7257d).
  */
 function shownBox(mark: Element): DOMRect {
 	const box = mark.getBoundingClientRect();
-	const line = mark.closest('.flow') && mark.closest('svg')?.querySelector('.current-time-line')?.getBoundingClientRect();
+	const line = mark.closest('[clip-path^="url(#flow-past"]') && mark.closest('svg')?.querySelector('.current-time-line')?.getBoundingClientRect();
 	if (!line) return box;
 	if (mark.closest('[data-axis]')?.getAttribute('data-axis') === 'y')
 		return new DOMRect(box.x, box.y, box.width, Math.max(0, Math.min(box.bottom, line.top) - box.y));

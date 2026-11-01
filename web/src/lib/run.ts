@@ -126,6 +126,16 @@ export function settled(): Promise<void> {
 	return out ? new Promise((resolve) => quiet.push(resolve)) : Promise.resolve();
 }
 
+/** When this tab's latest writes ran, oldest first: a few are enough. */
+let writes: [number, number][] = [];
+
+/**
+ * Whether `ms` falls while a write of this tab ran, the second before it too,
+ * an instant being stored short of its millisecond: a dot at it was logged now,
+ * and here, and did not arrive by sync or from another tab (da-7257d).
+ */
+export const writtenHere = (ms: number): boolean => writes.some(([from, to]) => from - 1000 <= ms && ms <= to);
+
 /**
  * Run one command, with `stdin` on its standard input if it reads any, and
  * `stage`'s files in `/data/stage` if it is given one.
@@ -142,9 +152,11 @@ export async function run(
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	out++;
+	const began = Date.now();
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
 		const result = await runner(argv, stdin, onStderr, key, stage, [...dbEnv(argv), ...(env ?? [])], pane);
+		if (result.changed?.length) writes = [...writes.slice(-7), [began, Date.now()]];
 		// `sync new-invite`, a revoke, an admin…: its leader reads the setup again (da-6kpj5).
 		if (argv.includes('sync') && result.changed?.length) {
 			void import('./sync.js').then(({ syncTouched }) => syncTouched(dbOf(argv)));

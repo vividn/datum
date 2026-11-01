@@ -135,6 +135,11 @@ export function compose(overlay: string, days: Layer[], now: number): SVGSVGElem
 		}
 		let at: Element = make('g', { class: 'crop', 'clip-path': `url(#${id})` });
 		g.append(at);
+		// The marks up to now stand past both clips, over the edge between
+		// the history and the now section, whole (da-7257d). One still to
+		// come stays behind the clip at the now-line.
+		const whole = make('g', { class: flow ? 'flow' : 'marks' });
+		g.append(whole);
 		if (flow) {
 			const [clipped, moving] = [make('g', { 'clip-path': `url(#${flow})` }), make('g', { class: 'flow' })];
 			at.append(clipped);
@@ -167,6 +172,19 @@ export function compose(overlay: string, days: Layer[], now: number): SVGSVGElem
 			trim(day, unit(Math.max(into.from, from.from)), unit(Math.min(into.to, from.to)), unit(until), from.to, y);
 			layMarks(day, a, c, y);
 			at.append(day);
+			const lifted = make('g', { transform: day.getAttribute('transform')! });
+			for (const lane of day.querySelectorAll('g.field')) {
+				const marks = lane.cloneNode(false) as Element;
+				for (const mark of lane.querySelectorAll('.point-bg')) {
+					const t = Date.parse(mark.getAttribute('data-at') ?? '');
+					if (t < into.from || t > into.to || (flow && t > now)) continue;
+					const symbol = mark.nextElementSibling;
+					marks.append(mark);
+					if (symbol) marks.append(symbol);
+				}
+				if (marks.firstChild) lifted.append(marks);
+			}
+			if (lifted.firstChild) whole.append(lifted);
 		}
 	}
 
@@ -201,13 +219,15 @@ export function compose(overlay: string, days: Layer[], now: number): SVGSVGElem
 	// clock over it and the word under it — is one group, which the widget scales back about now
 	// under a stretch, as it does a mark: a stretch does not widen the strip
 	// that datum's picture of the window then draws as wide as ever (da-ygpto).
+	// Under the data, whose marks stand over it, and whose blocks are clipped
+	// short of it (da-7257d); a whole picture from the CLI has its own order.
 	const line = root.querySelector('.current-time-line[data-now]');
 	const atNow = [...(line?.parentElement?.children ?? [])].filter((el) =>
 		el.matches('.current-time-line, .current-time-line-far, .current-time-line-end, .now-clock, .now-label, .now-strip, g.field')
 	);
 	if (line && atNow.length) {
 		const group = make('g', { class: 'at-now', 'data-anchor': num(line, 'data-now') - margin });
-		atNow[0].before(group);
+		(spans.length ? stretches[0] : atNow[0]).before(group);
 		group.append(...atNow);
 	}
 	return root;

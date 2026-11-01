@@ -149,6 +149,15 @@
 	picture's: a redraw replaces the picture, never them — it only re-places
 	them against the new picture's geometry.
 
+	A DOT LOGGED NOW ARRIVES (da-7257d, vividn: «appear in the middle of the
+	now section … and then slide to the left for maybe 500ms, after which it
+	locks onto its place»). It is in the picture at its place from the first,
+	whole over the section's edge (#lib/nowcrop.ts), and `arrive` only animates
+	it from the section's middle back to there, inside the slide of the flow,
+	so it lands where the history then has it. A picture landing meanwhile
+	takes the slide up where it was. One from another tab or by sync, or with
+	a time in the past, just appears, as it does with less motion asked for.
+
 	The band carries its own `data-mode` — `press` between gestures, then
 	`hold`, `pan`, `range` or `now` — so someone driving it by hand can see
 	in devtools which gesture the machine took.
@@ -168,7 +177,7 @@
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
 	import { clockAround, clockWord, historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
 	import { layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
-	import { run } from '#lib/run.ts';
+	import { run, writtenHere } from '#lib/run.ts';
 
 	interface Props {
 		/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
@@ -716,6 +725,39 @@
 		void offNow;
 		untrack(flow);
 	});
+
+	/** How long a dot logged now takes to reach its place, in ms. */
+	const ARRIVE_MS = 500;
+	/** The dots that have slid in: each one's start on the page's timeline, and how far off its place it starts, in units. */
+	const arrived = new Map<string, { at: number; off: number }>();
+	/** The dots of the picture last read, which a redraw brings nothing new by. */
+	let known = new Set<string>();
+
+	/** Slide each dot just logged here in from the middle of the now section, as a new picture brings it. */
+	function arrive(svg: SVGSVGElement | null): void {
+		const strip = svg?.querySelector('.now-strip');
+		const dots = [...(svg?.querySelectorAll<SVGElement>('circle.point-bg[data-id]') ?? [])];
+		const now = Number(document.timeline.currentTime);
+		const scale = Math.abs((vertical ? svg?.getScreenCTM()?.d : svg?.getScreenCTM()?.a) ?? 0);
+		const centerOf = (el: Element) => {
+			const r = el.getBoundingClientRect();
+			return vertical ? r.top + r.height / 2 : r.left + r.width / 2;
+		};
+		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const offset = vertical ? (off: number) => `0 ${off}px` : (off: number) => `${off}px 0`;
+		for (const dot of dots) {
+			const id = dot.dataset.id!;
+			if (strip && scale && !arrived.has(id) && !known.has(id) && writtenHere(Date.parse(dot.dataset.at ?? '')))
+				arrived.set(id, { at: now, off: (centerOf(strip) - centerOf(dot)) / scale });
+			const slide = arrived.get(id);
+			if (!slide || now - slide.at >= ARRIVE_MS || reduced) continue;
+			for (const el of [dot, dot.nextElementSibling])
+				if (el) el.animate({ translate: [offset(slide.off), offset(0)] }, { duration: ARRIVE_MS, easing: 'ease-out' }).currentTime = now - slide.at;
+		}
+		known = new Set(dots.map((dot) => dot.dataset.id!));
+		// Far more than `writtenHere` remembers, so a dot let go of cannot qualify again.
+		for (const id of [...arrived.keys()].slice(0, -64)) arrived.delete(id);
+	}
 
 	/**
 	 * The gridlines' positions along the axis, as the CLI ruled them.
@@ -1846,6 +1888,7 @@
 		}
 		drawn = readDrawn(svg);
 		flow();
+		arrive(svg);
 		const about = middleOf(middle);
 		view = !axis
 			? null
