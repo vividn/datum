@@ -83,6 +83,47 @@ fn a_reader_refuses_a_shm_with_no_wal_as_its_writers() {
     assert!(!dir.path().join("town.db-wal").exists());
 }
 
+/// A writer closing the file leaves a `-wal` alone for an instant, and a
+/// reader in it reads on (da-tmahu). Tried five times, as a loaded box can hold
+/// the thread past the wait; with no wait every try is refused.
+#[test]
+fn a_reader_waits_out_a_writers_instant_with_a_wal_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("town.db");
+    drop(writer(&path));
+    let wal = dir.path().join("town.db-wal");
+    let read = (0..5).any(|_| {
+        std::fs::write(&wal, b"").unwrap();
+        let closing = {
+            let wal = wal.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                std::fs::remove_file(wal).unwrap();
+            })
+        };
+        let opened = Db::open_read_only(path.to_str().unwrap());
+        closing.join().unwrap();
+        opened.is_ok()
+    });
+    assert!(
+        read,
+        "refused a -wal alone that went within 20 ms, five times"
+    );
+}
+
+/// A `-wal` a crash left alone does not go: past the wait it is refused.
+#[test]
+fn a_reader_refuses_a_wal_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("town.db");
+    drop(writer(&path));
+    std::fs::write(dir.path().join("town.db-wal"), b"").unwrap();
+    let err = Db::open_read_only(path.to_str().unwrap())
+        .err()
+        .expect("read beside a lone -wal");
+    assert!(err.to_string().contains("a -wal and no -shm"), "{err}");
+}
+
 /// The look at a writer's `-wal` and `-shm` opens neither (da-fgx1e). A
 /// process drops every POSIX lock it holds on a file as it closes any
 /// descriptor of it, so a read-only open beside its own writer — a `sync

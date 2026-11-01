@@ -154,6 +154,11 @@ pub struct Db {
     read_from: Option<(u64, std::time::SystemTime)>,
 }
 
+/// How long [`Db::open_read_only`] waits for a `-wal` or `-shm` alone to be
+/// joined or gone. Measured under a `sync status` loop (da-tmahu): 0.07 ms at
+/// the median, 25 ms at most, with 48 busy loops on 24 cores.
+const WRITERS_INSTANT: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// A file's length and modification time.
 fn stamp(path: &str) -> Result<(u64, std::time::SystemTime)> {
     let m = std::fs::metadata(path)?;
@@ -323,8 +328,8 @@ impl Db {
     /// `immutable` and nothing is created beside it; SQLite then trusts the
     /// file not to change, so [`Db::changed_while_read`] says whether it
     /// did. Both there, a writer has the file open, and SQLite reads through
-    /// them; one alone, or either unreadable, is refused as the writer's
-    /// (da-uxfj3). Beside a hot journal SQLite refuses the open
+    /// them; one alone past [`WRITERS_INSTANT`], or either unreadable, is
+    /// refused as the writer's (da-uxfj3). Beside a hot journal SQLite refuses the open
     /// (`SQLITE_READONLY_ROLLBACK`), as a read-only handle cannot roll it
     /// back: an error, never a cut write.
     pub fn open_read_only(path: &str) -> Result<Self> {
@@ -347,7 +352,18 @@ impl Db {
             std::fs::File::open(file).map(drop)
         };
         let there = |f: &std::io::Result<_>| !matches!(f, Err(e) if e.kind() == std::io::ErrorKind::NotFound);
-        let (wal, shm) = (beside("wal"), beside("shm"));
+        // A writer opening or closing the file has one alone for an instant:
+        // waited out, as a refusal there says nothing about the database
+        // (da-tmahu). One it cannot read is no instant.
+        let began = std::time::Instant::now();
+        let (wal, shm) = loop {
+            let (wal, shm) = (beside("wal"), beside("shm"));
+            let alone = there(&wal) != there(&shm) && (wal.is_ok() || shm.is_ok());
+            if !alone || began.elapsed() >= WRITERS_INSTANT {
+                break (wal, shm);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
         match (there(&wal), there(&shm)) {
             (false, false) => {}
             (true, true) if wal.is_ok() && shm.is_ok() => {}
