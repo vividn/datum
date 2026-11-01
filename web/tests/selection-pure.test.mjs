@@ -41,7 +41,7 @@ const GRAMMAR = grammarOf([
 		['datum tail [FIELD]'],
 		[T, Y, { short: 'n', long: '', takes_value: true }, { short: 'w', long: 'watch', takes_value: true, value_optional: true }]
 	),
-	entry('now', ['datum now [-A] [--bare]']),
+	entry('now', ['datum now [FIELD,...] [-A] [--bare]']),
 	entry('get', ['datum get <ID_OR_SLUG> [--pretty]']),
 	entry('update', ['datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]...']),
 	entry('retime', [
@@ -105,11 +105,11 @@ describe('what the grammar says a command takes', () => {
 	// the second.
 	test('a FIELD is the positional it sits at — 1, or 2 behind a subcommand', () => {
 		const field = (name) => GRAMMAR.get(name).field;
-		assert.deepEqual(['moment', 'end', 'tail', 'flag', 'stats', 'count', 'setup'].map(field), [1, 1, 1, 1, 1, 1, 1]);
+		assert.deepEqual(['moment', 'end', 'tail', 'flag', 'stats', 'count', 'setup', 'now'].map(field), [1, 1, 1, 1, 1, 1, 1, 1]);
 		assert.equal(field('meta'), 2, 'the field is behind `show`');
 		// Not a positional at all: a bare word in `grep`'s place is a second
-		// PATTERN, and `get`/`now` name no field.
-		assert.deepEqual(['grep', 'get', 'now', 'delete'].map(field), [false, false, false, false]);
+		// PATTERN, and `get` names no field.
+		assert.deepEqual(['grep', 'get', 'delete'].map(field), [false, false, false]);
 	});
 });
 
@@ -300,9 +300,9 @@ describe('which commands are active under the pills', () => {
 	// silently does nothing. What is held here is the HIDING.
 	test('a field pill: what names a field — and `setup`, which the spec editor is reached by', () => {
 		const names = active([mood]);
-		for (const n of ['moment', 'end', 'tail', 'flag', 'stats', 'count', 'setup'])
+		for (const n of ['moment', 'end', 'tail', 'flag', 'stats', 'count', 'setup', 'now'])
 			assert.ok(names.includes(n), `${n} takes a field and was hidden`);
-		for (const n of ['get', 'now', 'delete', 'update', 'retime', 'grep', 'conflicts'])
+		for (const n of ['get', 'delete', 'update', 'retime', 'grep', 'conflicts'])
 			assert.ok(!names.includes(n), `${n} takes no field and was not hidden`);
 	});
 

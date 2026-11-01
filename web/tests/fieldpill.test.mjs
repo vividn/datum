@@ -470,15 +470,35 @@ describe('what narrows to it', () => {
 				() => !document.querySelector('[data-command="get"]')
 			);
 			const under = await commands(page);
-			for (const name of ['moment', 'tail', 'stats', 'count', 'ids', 'setup'])
+			// `now`, `dayview` and `nowview` take a field since da-oqpsp, read off their usage lines.
+			for (const name of ['moment', 'tail', 'stats', 'count', 'ids', 'setup', 'now', 'dayview', 'nowview'])
 				assert.ok(under.includes(name), `${name} names a field and was hidden`);
-			for (const name of ['get', 'now', 'delete', 'update', 'grep', 'dayview'])
+			for (const name of ['get', 'delete', 'update', 'grep'])
 				assert.ok(!under.includes(name), `${name} names no field and was not hidden`);
 			// coffee is an OCCUR field (da-57j14): the other verbs are hidden.
 			for (const name of ['start', 'end', 'switch', 'add'])
 				assert.ok(!under.includes(name), `${name} does not fit a moment field and was not hidden`);
 			// The order is the widget's usual one; the filter only removes.
 			assert.deepEqual(under, whole.filter((name) => under.includes(name)));
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// Why `now` stays under a pill (da-ik7fc): the pill lands in its field slot and narrows its answer.
+	test('now under a field pill answers for that field alone', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor();
+			await pane(page, 'cmd').locator('[data-command="now"]').click();
+			const box = page.locator('.prompt-bar input').first();
+			assert.equal((await box.inputValue()).trim(), 'now coffee');
+			await box.press('Enter');
+			await until(async () => (await app.echoes()).at(-1), (e) => e === 'now coffee');
+			assert.match((await app.run(['now'])).stdout, /mood/, 'the whole list has what the pill leaves out');
+			const { stdout } = await app.run(['now', 'coffee']);
+			assert.match(stdout, /coffee/);
+			assert.doesNotMatch(stdout, /mood/);
 			assert.deepEqual(app.errors, []);
 		});
 	});
