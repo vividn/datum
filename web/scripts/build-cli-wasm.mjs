@@ -95,7 +95,7 @@ async function tool({ url, sha256, dir }) {
 }
 
 const sdk = await tool(TOOLS.wasiSdk);
-const cli = ['-p', 'datum-cli', '--bin', 'datum', '--no-default-features', '--target', 'wasm32-wasip1', '--profile', 'wasm-release'];
+const cli = ['--locked', '-p', 'datum-cli', '--bin', 'datum', '--no-default-features', '--target', 'wasm32-wasip1', '--profile', 'wasm-release'];
 const cliEnv = {
 	CC_wasm32_wasip1: `${sdk}/bin/clang`,
 	AR_wasm32_wasip1: `${sdk}/bin/ar`,
@@ -103,7 +103,7 @@ const cliEnv = {
 	// absolute path of this machine may reach the bytes.
 	CFLAGS_wasm32_wasip1: `--sysroot=${sdk}/share/wasi-sysroot -ffile-prefix-map=${cargoHome}=/cargo`
 };
-const wire = ['-p', 'datum-sync-wire', '--lib', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm-release'];
+const wire = ['--locked', '-p', 'datum-sync-wire', '--lib', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm-release'];
 const wireEnv = {
 	CC_wasm32_unknown_unknown: `${sdk}/bin/clang`,
 	AR_wasm32_unknown_unknown: `${sdk}/bin/ar`,

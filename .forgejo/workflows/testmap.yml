@@ -165,7 +165,7 @@ jobs:
       # Without one each fails at its first line, and the map holds only
       # that much of what it reaches.
       - name: Build the native datum the sync tests pair with
-        run: /usr/bin/time -v cargo build -p datum-cli
+        run: /usr/bin/time -v cargo build --locked -p datum-cli
 
       - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:

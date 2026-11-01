@@ -1,0 +1,59 @@
+# A new or changed dependency holds a PR for vividn (da-jks33; vividn,
+# 2026-10-31: «Adding a dependency should be a carefully deliberated event»).
+#
+# scripts/lockfile-check.py names what a PR adds to or changes in the lockfiles,
+# against its merge base so that what its base gained since reads as nothing.
+# Any name puts `review/steward` on the PR, and the merge gate (`ct pr merge`)
+# then waits for vividn's APPROVED at the head, which a push voids; a PR's words
+# cannot pass it. A label, because the forge lets this token request no review.
+# A job that fails holds the PR too: the gate needs CI's success. A `git` source
+# in Cargo.lock fails it, approved or not. The label stays once the dependency
+# has gone from the PR: whoever took it out takes the label off.
+#
+# `pull_request_target`, as in approvals.yml: this file and the script are read
+# from the PR's BASE, and the PR's commits are only read by git. `unlabeled`, so
+# a label taken off with the dependency still there comes back.
+name: Dependencies
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, unlabeled]
+    branches: [staging, main]
+
+jobs:
+  lockfiles:
+    name: A new or changed dependency waits for vividn
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Name them, and hold the PR if there are any
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -uo pipefail
+          git fetch --no-tags origin "+refs/pull/$NUMBER/head:refs/remotes/pr/head" || exit 1
+          test "$(git rev-parse pr/head)" = "$HEAD" || exit 1
+          fork=$(git merge-base "$BASE" "$HEAD") || exit 1
+          names=$(python3 scripts/lockfile-check.py "$fork" "$HEAD"); verdict=$?
+          if [ -z "$names" ]; then [ "$verdict" != 0 ] || echo "no package added or changed"; exit "$verdict"; fi
+          echo "$names"
+
+          api="${SERVER%/}/api/v1/repos/${{ github.repository }}/issues/$NUMBER"
+          call() { printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - -H 'Content-Type: application/json' "$@"; }
+          # The label is the hold, so its failure is the job's; the comment only says why.
+          call -X POST -d '{"labels":["review/steward"]}' "$api/labels" >/dev/null || exit 1
+
+          body=$(printf '@vividn this PR waits for your approval: it adds or changes\n\n```\n%s\n```\n' "$names")
+          if ! call "$api/comments" | python3 -c 'import json, sys; sys.exit(not any(c["body"] == sys.argv[1] for c in json.load(sys.stdin)))' "$body"; then
+            python3 -c 'import json, sys; print(json.dumps({"body": sys.argv[1]}))' "$body" > "$RUNNER_TEMP/comment.json"
+            call -X POST --data @"$RUNNER_TEMP/comment.json" "$api/comments" >/dev/null || echo "::warning::could not comment; the label still holds the PR"
+          fi
+          exit "$verdict"

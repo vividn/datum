@@ -372,7 +372,7 @@ jobs:
           sel="$RUNNER_TEMP/tests" map="$RUNNER_TEMP/testmap.json"
           git fetch -q origin +refs/heads/testmap:refs/remotes/origin/testmap &&
             git show origin/testmap:testmap.json > "$map" || echo "no testmap branch"
-          cargo run -q -p xtask -- testmap select "$map" "origin/$BASE" "$sel" ||
+          cargo run --locked -q -p xtask -- testmap select "$map" "origin/$BASE" "$sel" ||
             { mkdir -p "$sel"; echo "the selection failed" > "$sel/FULL"; echo "::warning::the selection failed: every test runs"; }
           echo "TESTS=$sel" >> "$GITHUB_ENV"
 
@@ -383,11 +383,11 @@ jobs:
 
       - name: cargo clippy --workspace --all-targets -- -D warnings
         if: env.TRAIN != '1'
-        run: /usr/bin/time -v cargo clippy --workspace --all-targets -- -D warnings
+        run: /usr/bin/time -v cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: cargo build --workspace --all-targets
         if: env.TRAIN != '1'
-        run: /usr/bin/time -v cargo build --workspace --all-targets
+        run: /usr/bin/time -v cargo build --locked --workspace --all-targets
 
       - name: cargo nextest run --workspace
         if: env.TRAIN != '1'
@@ -402,7 +402,7 @@ jobs:
           DATUM_CARGO_RETRY: |
         run: |
           set -euo pipefail
-          run=(scripts/nextest-retry.sh /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads num-cpus --no-tests=pass)
+          run=(scripts/nextest-retry.sh /usr/bin/time -v cargo nextest run --locked --workspace --no-fail-fast --test-threads num-cpus --no-tests=pass)
           if [ -z "${TESTS:-}" ] || [ -e "$TESTS/FULL" ]; then "${run[@]}"
           elif [ -s "$TESTS/workspace.tests" ] || [ -s "$TESTS/new.tests" ]; then
             mapfile -t names < "$TESTS/workspace.tests"; mapfile -t new < "$TESTS/new.tests"
@@ -411,13 +411,13 @@ jobs:
 
       - name: cargo test --workspace --doc
         if: env.TRAIN != '1'
-        run: /usr/bin/time -v cargo test --workspace --doc
+        run: /usr/bin/time -v cargo test --locked --workspace --doc
 
       - name: cargo nextest run --features e2e-full (the full cohort, da-1wat)
         if: env.TRAIN != '1'
         run: |
           set -euo pipefail
-          run=(/usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads num-cpus --no-tests=pass)
+          run=(/usr/bin/time -v cargo nextest run --locked -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads num-cpus --no-tests=pass)
           if [ -z "${TESTS:-}" ] || [ -e "$TESTS/FULL" ]; then "${run[@]}"
           elif [ -s "$TESTS/e2e-full.tests" ] || [ -s "$TESTS/new.tests" ]; then
             mapfile -t names < "$TESTS/e2e-full.tests"; mapfile -t new < "$TESTS/new.tests"
@@ -426,7 +426,7 @@ jobs:
 
       - name: cargo xtask check lint (the honesty gates, da-8y2q.7)
         if: env.TRAIN != '1'
-        run: cargo run -q -p xtask -- check lint
+        run: cargo run --locked -q -p xtask -- check lint
 
       # A red step above SKIPS the web suite (da-9qm64). Until then the web
       # chain ran after a cargo failure (da-vnebg: skipped reads as judged, and
@@ -754,11 +754,11 @@ jobs:
 
       - name: cargo clippy --workspace --all-targets -- -D warnings
         if: env.LISTED == '1'
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: cargo build -p datum-cli
         if: env.LISTED == '1'
-        run: cargo build -p datum-cli
+        run: cargo build --locked -p datum-cli
 
       # No Rust test for a change outside crates/ and the Cargo manifests: the
       # build, the wasm module and clippy catch a break there (vremya,
@@ -779,11 +779,11 @@ jobs:
           sel="$RUNNER_TEMP/tests" map="$RUNNER_TEMP/testmap.json"
           git fetch -q origin +refs/heads/testmap:refs/remotes/origin/testmap &&
             git show origin/testmap:testmap.json > "$map" || echo "no testmap branch"
-          cargo run -q -p xtask -- testmap select "$map" "$DIFF" "$sel" ||
+          cargo run --locked -q -p xtask -- testmap select "$map" "$DIFF" "$sel" ||
             { mkdir -p "$sel"; echo "the selection failed" > "$sel/FULL"; echo "::warning::the selection failed: every test runs"; }
           for cohort in workspace e2e-full; do
-            run=(cargo nextest run --workspace --no-fail-fast --test-threads num-cpus --no-tests=pass)
-            [ "$cohort" = workspace ] || run=(cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads num-cpus --no-tests=pass)
+            run=(cargo nextest run --locked --workspace --no-fail-fast --test-threads num-cpus --no-tests=pass)
+            [ "$cohort" = workspace ] || run=(cargo nextest run --locked -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads num-cpus --no-tests=pass)
             if [ -e "$sel/FULL" ]; then "${run[@]}"
             elif [ -s "$sel/$cohort.tests" ] || [ -s "$sel/new.tests" ]; then
               mapfile -t names < "$sel/$cohort.tests"; mapfile -t new < "$sel/new.tests"

@@ -103,4 +103,4 @@ jobs:
           bash crates/datum-parity/scripts/setup_datum.sh
 
       - name: cargo test -p datum-parity --features parity-runtime
-        run: cargo test -p datum-parity --features parity-runtime -- --nocapture
+        run: cargo test --locked -p datum-parity --features parity-runtime -- --nocapture

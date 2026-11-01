@@ -23,7 +23,7 @@ done <<< "${DATUM_CARGO_RETRY:-}"
 
 # A name is nextest's, module path and all (`sync_net::…` in datum-cli's
 # `main`): one matching no test would retry nothing, silently.
-known=$(cargo nextest list --workspace --color never --message-format oneline -E "$filter") || exit
+known=$(cargo nextest list --locked --workspace --color never --message-format oneline -E "$filter") || exit
 for t in "${names[@]}"; do
     grep -q " $t\$" <<< "$known" || { echo "DATUM_CARGO_RETRY names $t, which is no test in the workspace" >&2; exit 2; }
 done

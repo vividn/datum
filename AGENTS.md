@@ -1445,6 +1445,22 @@ web test files that reach them (`DATUM_TEST_ONLY=<a file listing
 tests/<file>.test.mjs, one a line> pnpm test`), and changes the web too where
 it reads the old shape.
 
+## Dependencies
+
+A new or changed dependency waits for vividn (da-jks33; vividn, 2026-10-31: «Adding a dependency should be a
+carefully deliberated event»). `.forgejo/workflows/dependencies.yml` runs `scripts/lockfile-check.py` over
+`Cargo.lock` and `web/pnpm-lock.yaml` against the PR's merge base. Any third-party package added, or changed in
+version, source or checksum, puts `review/steward` on the PR and names them in a comment, and the merge gate then
+waits for his APPROVED at the head. A removal asks nothing. A `git` source in `Cargo.lock` is red, approved or not.
+Holding a PR through that label is the gate's, not the forge's: a merge that does not go through `ct pr merge` is
+held only by staging's own rule. A label left after the dependency has gone from the PR is taken off by hand.
+
+`minimumReleaseAge` in `web/pnpm-workspace.yaml` is a week. pnpm 11.4 refuses a version younger than that on `add`,
+picks the newest old enough for a range, and fails any install, `--frozen-lockfile` too, on a lockfile that names
+one. An urgent fix goes in `minimumReleaseAgeExclude`, which vividn approves as that file is his. The pinned cargo
+(1.97.1) has no such delay, nor has stable (1.99.1): `registry.global-min-publish-age` arrives in Rust 1.100
+(da-6wsr6). CI's cargo builds run `--locked`; `scripts/mq-check.sh` and `check.sh` are local and do not.
+
 ## Building
 
 ```bash

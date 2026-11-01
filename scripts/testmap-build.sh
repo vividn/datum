@@ -26,12 +26,12 @@ export LLVM_PROFILE_FILE="$TESTMAP_PROF/.other/%p-%m.profraw"
 
 e2e=(-p datum-commands --test e2e --features e2e-full)
 red=0
-TESTMAP_COHORT=workspace cargo nextest run --workspace --no-fail-fast "$@" || red=1
-TESTMAP_COHORT=e2e-full cargo nextest run "${e2e[@]}" --no-fail-fast "$@" || red=1
+TESTMAP_COHORT=workspace cargo nextest run --locked --workspace --no-fail-fast "$@" || red=1
+TESTMAP_COHORT=e2e-full cargo nextest run --locked "${e2e[@]}" --no-fail-fast "$@" || red=1
 [ "$red" = 0 ] || echo "::warning::tests failed in the instrumented run; they are mapped by what they ran"
 
-cargo nextest list --workspace --message-format json > "$TESTMAP_PROF/.list-workspace.json"
-cargo nextest list "${e2e[@]}" --message-format json > "$TESTMAP_PROF/.list-e2e-full.json"
+cargo nextest list --locked --workspace --message-format json > "$TESTMAP_PROF/.list-workspace.json"
+cargo nextest list --locked "${e2e[@]}" --message-format json > "$TESTMAP_PROF/.list-e2e-full.json"
 
 env -u RUSTC_WORKSPACE_WRAPPER -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER \
-  cargo run -q -p xtask -- testmap index "$TESTMAP_PROF" "$CARGO_TARGET_DIR/debug" "$out"
+  cargo run --locked -q -p xtask -- testmap index "$TESTMAP_PROF" "$CARGO_TARGET_DIR/debug" "$out"

@@ -1,3 +1,6 @@
 allowBuilds:
   esbuild: true
   svelte-preprocess: true
+# A version younger than a week does not install, a lockfile naming one included
+# (minutes; pnpm defaults to a day). vividn, 2026-10-31 (da-jks33).
+minimumReleaseAge: 10080

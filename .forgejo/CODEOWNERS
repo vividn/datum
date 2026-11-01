@@ -3,3 +3,6 @@
 # so a literal dot is \\.
 \\.forgejo/.* @vividn
 \\.github/.* @vividn
+# What the dependency hold rests on (da-jks33): the release-age delay and the check.
+web/pnpm-workspace\\.yaml @vividn
+scripts/lockfile-check\\.py @vividn
