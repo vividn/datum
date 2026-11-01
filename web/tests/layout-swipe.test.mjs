@@ -281,10 +281,10 @@ describe('the swipe strip', () => {
 	});
 
 	/** A finger on the strip off the tab: `moves` are where it goes in turn, `during` reads at each. */
-	async function onStrip(page, moves, during = async () => {}) {
+	async function onStrip(page, moves, during = async () => {}, where = (strip) => strip.y + strip.height / 2) {
 		const strip = await box(page, STRIP);
 		const x = 195;
-		const y = strip.y + strip.height / 2;
+		const y = where(strip);
 		const cdp = await page.context().newCDPSession(page);
 		const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
 		await at('touchStart', [{ x, y }]);
@@ -306,35 +306,70 @@ describe('the swipe strip', () => {
 	test('a long pull down reloads and says so on the way; a short one, or one taken back, does not', async () => {
 		await withApp(
 			async ({ page }) => {
-				// The whole pull fits under the strip with the bar at the row.
-				const strip = await box(page, STRIP);
-				assert.ok(page.viewportSize().height - strip.y - strip.height / 2 > 70, 'no room to pull');
+				await closeBar(page);
 				await mark(page);
-				await onStrip(page, [[0, 12], [0, 25]]);
+				await onStrip(page, [[0, 12], [0, 38]]);
 				await stillHere(page, 'a short pull reloaded');
 				assert.equal(await page.locator(REFRESH).count(), 0, 'a short pull left its mark');
 
 				const bright = [];
-				await onStrip(page, [[0, 30], [0, 70], [0, 30]], async () =>
+				await onStrip(page, [[0, 30], [0, 50], [0, 30]], async () =>
 					bright.push(await page.locator(REFRESH).evaluate((el) => el.classList.contains('bright')))
 				);
 				assert.deepEqual(bright, [false, true, false]);
 				await stillHere(page, 'a pull taken back reloaded');
 
 				// Begun down, gone sideways: past the line, and no longer a pull.
-				await onStrip(page, [[0, 30], [-150, 70]]);
+				await onStrip(page, [[0, 30], [-150, 50]]);
 				await stillHere(page, 'a pull that went sideways reloaded');
 				assert.equal(await page.locator(REFRESH).count(), 0, 'a pull that went sideways left its mark');
 
+				const texture = () => page.locator(STRIP).evaluate((el) => el.style.backgroundPosition);
+				const before = await texture();
 				const moved = [];
-				await onStrip(page, [[0, 30], [0, 70]], async () => moved.push(await page.locator(STRIP).evaluate((el) => el.style.backgroundPositionY)));
-				assert.deepEqual(moved, ['30px', '70px'], 'the texture did not come down with the finger');
+				await onStrip(page, [[0, 30], [0, 50]], async () => moved.push(await texture()));
+				assert.deepEqual(moved, [before, before], 'a pull moved the texture');
 				await reloaded(page);
 				await page.locator(STRIP).waitFor();
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);
 	});
+
+	test('with the output open a pull goes further: 60px refreshes nothing, 84px does', async () => {
+		await withApp(
+			async ({ page }) => {
+				await mark(page);
+				const bright = [];
+				const look = async () => bright.push(await page.locator(REFRESH).evaluate((el) => el.classList.contains('bright')));
+				await onStrip(page, [[0, 40], [0, 60]], look);
+				assert.deepEqual(bright, [false, false]);
+				await stillHere(page, 'a pull that would do with the bar closed reloaded');
+				await onStrip(page, [[0, 60], [0, 84]], look);
+				assert.deepEqual(bright.slice(2), [false, true]);
+				await reloaded(page);
+				await page.locator(STRIP).waitFor();
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	// The closed bar leaves the input's height under the strip on every screen,
+	// so the lowest place to begin, and the last pixel to reach, is the least room.
+	for (const viewport of [PHONE.device.viewport, { width: 412, height: 563 }, { width: 390, height: 844 }])
+		test(`closed at ${viewport.width}×${viewport.height}, a pull from the strip's foot to the screen's reloads`, async () => {
+			await withApp(
+				async ({ page }) => {
+					await closeBar(page);
+					await mark(page);
+					const strip = await box(page, STRIP);
+					const foot = strip.y + strip.height - 1;
+					await onStrip(page, [[0, 20], [0, viewport.height - 1 - foot]], undefined, () => foot);
+					await reloaded(page);
+				},
+				{ ...PHONE, viewport, prepare: twoLayouts }
+			);
+		});
 
 	// A reload kills the process under a write, and the journal rolls it back:
 	// the write would be gone, with no word. So it waits for what is out.
@@ -352,7 +387,7 @@ describe('the swipe strip', () => {
 				await page.locator('.prompt-bar input').press('Enter');
 				await page.waitForFunction(() => window.__letGo);
 				await mark(page);
-				await onStrip(page, [[0, 30], [0, 70]]);
+				await onStrip(page, [[0, 30], [0, 84]]);
 				await stillHere(page, 'the reload did not wait for the write');
 				await page.evaluate(() => window.__letGo());
 				await reloaded(page);
@@ -364,18 +399,47 @@ describe('the swipe strip', () => {
 		);
 	});
 
-	test('the texture follows the finger, goes back with a short swipe, and settles with the tab', async () => {
+	test('the texture is printed on the tab: it moves as far as the tab, in the glide too, and never up or down', async () => {
 		await withApp(
 			async ({ page }) => {
-				const at = () => page.locator(STRIP).evaluate((el) => parseFloat(el.style.backgroundPositionX));
+				// Both as drawn this frame, the tab's from its transform and the texture's from its position.
+				const read = () =>
+					page.locator(STRIP).evaluate((el) => {
+						const tab = el.parentElement.querySelector(':scope > .content > .tab-body:not(.beside):not(.behind)');
+						const [x, y] = getComputedStyle(el).backgroundPosition.split(', ').at(-1).split(' ').map(parseFloat);
+						return { tab: new DOMMatrix(getComputedStyle(tab).transform).m41, x, y };
+					});
 				const seen = [];
-				await onStrip(page, [[-20, 0], [-30, 0]], async () => seen.push(await at()));
-				assert.deepEqual(seen, [-20, -30], 'it did not follow from the first move, ahead of the tab');
-				await until(at, (x) => x === 0);
-				await onStrip(page, [[-60, 0], [-150, 0]]);
-				await until(() => shown(page), (name) => name === 'tail');
+				const look = async () => seen.push(await read());
+				// No tab on this side: the tab stays, and so it does.
+				await onStrip(page, [[60, 0], [150, 0]], look);
+				await onStrip(page, [[-30, 0], [-60, 0], [-150, 0], [-60, 0], [-60, 30], [-20, 0]], look);
+				assert.deepEqual(seen.map((s) => s.tab), [0, 0, 0, -20, -110, -20, -20, 0], 'the tab did not move as this test takes it to');
+				assert.deepEqual(seen.map((s) => s.x), seen.map((s) => s.tab), 'the texture left the tab');
+				assert.ok(seen.every((s) => s.y === 0), 'the texture moved up or down');
+
+				// The lift glides the tab the rest of the way, the texture on it frame by frame.
 				const main = await box(page, 'main');
-				assert.equal(await at(), -main.width, 'it did not go the whole way with the tab');
+				await onStrip(page, [[-60, 0], [-150, 0]], async (dx) => {
+					if (dx === -150)
+						await page.locator(STRIP).evaluate((el) => {
+							const tab = el.parentElement.querySelector(':scope > .content > .tab-body:not(.beside):not(.behind)');
+							const frames = (window.__frames = []);
+							const frame = () => {
+								const x = parseFloat(getComputedStyle(el).backgroundPosition.split(', ').at(-1));
+								const t = new DOMMatrix(getComputedStyle(tab).transform).m41;
+								if (t > -110 || frames.length > 600) return;
+								if (t < -110 && t > -innerWidth) frames.push({ t, gap: Math.abs(x - t) });
+								if (t > -innerWidth) requestAnimationFrame(frame);
+							};
+							frame();
+						});
+				});
+				await until(() => shown(page), (name) => name === 'tail');
+				const frames = await page.evaluate(() => window.__frames);
+				assert.ok(frames.length >= 2, `the glide was not seen: ${frames.length} frames`);
+				assert.ok(frames.every((f) => f.gap < 1), `the texture left the tab in its glide: ${JSON.stringify(frames)}`);
+				assert.equal((await read()).x, -main.width, 'it did not go the whole way with the tab');
 				assert.ok(await page.locator(STRIP).evaluate((el) => !el.classList.contains('gripped')));
 			},
 			{ ...PHONE, prepare: twoLayouts }

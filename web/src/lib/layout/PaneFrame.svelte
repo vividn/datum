@@ -258,10 +258,18 @@
 	/** How long a tap on the swipe strip keeps its words up, their fade included. */
 	const TOLD_MS = 3000;
 	/**
-	 * How far down the swipe strip a finger goes before a lift refreshes: past
-	 * any swipe, and short of the room under the strip with the bar closed.
+	 * How far down the swipe strip a finger goes before a lift refreshes, read
+	 * from the room under the strip as the pull begins (`pullLine`): 80 where
+	 * there is room, with the output open, and with the bar closed 44, what the
+	 * input's height leaves from the strip's foot on every screen, and still
+	 * past a swipe's 40. vividn, 2026-10-31: «When the output bar is open, let's
+	 * increase the distance to refresh to be more normal. When it is closed it
+	 * can be reduced out of necessity.»
 	 */
-	const PULL_PX = 64;
+	const PULL_PX = 80;
+	const PULL_LEAST_PX = 44;
+	/** What a pull keeps back from the screen's foot: a finger does not report its last pixels. */
+	const PULL_SPARE_PX = 3;
 
 	// What `Pane.svelte` looks for: it renders body-only inside a frame and
 	// reports its alarm here, so the orange reaches whichever pane holds
@@ -642,15 +650,26 @@
 	let telling: ReturnType<typeof setTimeout> | undefined;
 	/** How far down the strip the finger has pulled, and kept at that once a refresh waits to reload. */
 	let pulled = $state(0);
-	/** A finger has hold of the strip: its texture follows with no transition. */
+	/** How far this pull has to go. */
+	let pullAt = $state(PULL_PX);
+	/** A finger has hold of the tab: the strip's texture moves with it, with no transition. */
 	let gripped = $state(false);
 	/**
-	 * Where the texture is along the swipe: `grab` from where this gesture took
-	 * it, `worn` from where earlier ones left it. They swap at a landing, so
-	 * the texture does not move there as the tab's own offset goes back to 0.
+	 * Where earlier swipes left the texture, which is printed on the tab: it
+	 * stands at `worn + offset`, and only ever moves along the tab's axis.
+	 * vividn, 2026-10-31: «It should seem completely fixed to the tab. So moving
+	 * exactly with the tab as you move left and right. Dragging down or up
+	 * doesn't move the pattern at all». They swap at a landing, as the tab's own
+	 * offset goes back to 0, so the texture does not move there.
 	 */
-	let grab = $state(0);
 	let worn = $state(0);
+
+	/** The line for a pull begun on `strip`, whose room stops at the safe area's edge. */
+	function pullLine(strip: HTMLElement): number {
+		const style = getComputedStyle(strip);
+		const room = innerHeight - strip.getBoundingClientRect().bottom - parseFloat(style.getPropertyValue('--safe-foot'));
+		return Math.max(PULL_LEAST_PX, Math.min(PULL_PX, Math.floor(room) - PULL_SPARE_PX));
+	}
 
 	function tell() {
 		clearTimeout(telling);
@@ -747,7 +766,7 @@
 		const across = vertical ? dx : dy;
 		if (was.state === 'pending' && was.strip && !vertical && across >= COMMIT_PX && across > Math.abs(along)) {
 			was.state = 'pull';
-			gripped = true;
+			pullAt = pullLine(event.currentTarget as HTMLElement);
 		}
 		if (was.state === 'pull') {
 			event.preventDefault();
@@ -777,7 +796,6 @@
 		event.preventDefault();
 		if (still()) return;
 		gripped = true;
-		grab = along;
 		// The strip waits out the first SWIPE_PX, then follows from there,
 		// and never towards a side with no tab on it.
 		const way = along < 0 ? 1 : -1;
@@ -791,7 +809,7 @@
 		gripped = false;
 		if (was?.state === 'pull') {
 			// A reload kills the process under a write, so what is running or queued answers first.
-			if (pulled >= PULL_PX) void settled().then(() => location.reload());
+			if (pulled >= pullAt) void settled().then(() => location.reload());
 			else pulled = 0;
 			return;
 		}
@@ -815,7 +833,6 @@
 
 	/** Back where it started, and the neighbour put away. */
 	async function home() {
-		grab = 0;
 		await glide(0);
 		if (!touch) peek = -1;
 	}
@@ -831,13 +848,11 @@
 	async function slide(next: number, way: number) {
 		if (still()) return void activate(next);
 		const extent = (vertical ? contentEl?.clientHeight : contentEl?.clientWidth) ?? 0;
-		grab = way * extent;
 		await glide(way * extent);
 		activate(next);
+		worn += offset;
 		offset = 0;
 		peek = -1;
-		worn += grab;
-		grab = 0;
 	}
 
 	/** A slide the shell asked for is under way: the strip stands a box apart before it moves. */
@@ -1103,14 +1118,14 @@
 		<!-- THE ROUGH PATCH (da-sz4f6). vividn, 2026-10-31: «if you tap on the
 		     rough patch show that in white for a few seconds before fading
 		     away», «you should be able to drag down on the rough patch to
-		     refresh the page», «move the texture of the rough patch with the tab
-		     when you're dragging». -->
+		     refresh the page», and the texture is printed on the tab
+		     (`worn`). -->
 		{#if pulled > 0}
 			<div
 				class="refresh"
-				class:bright={pulled >= PULL_PX}
-				style:opacity={Math.min(pulled / PULL_PX, 1)}
-				style:--grown={Math.min(pulled / PULL_PX, 1)}
+				class:bright={pulled >= pullAt}
+				style:opacity={Math.min(pulled / pullAt, 1)}
+				style:--grown={Math.min(pulled / pullAt, 1)}
 			>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 1.5v3h-3" /></svg>
 				refresh
@@ -1121,7 +1136,7 @@
 			class="swipe-strip"
 			class:gripped
 			style:--slide="{SLIDE_MS}ms"
-			style:background-position={vertical ? `0 ${worn + grab}px` : `${worn + grab}px ${pulled}px`}
+			style:background-position={vertical ? `0 ${worn + offset}px` : `${worn + offset}px 0`}
 			ontouchstart={onTouchStart}
 			{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}
 			ontouchend={onTouchEnd}
@@ -1836,6 +1851,7 @@
 	/* Tiny scattered dots, the one rule that says what the strip looks like.
 	   vividn, 2026-10-30: «I like scattered the best». */
 	.swipe-strip {
+		--safe-foot: env(safe-area-inset-bottom, 0px);
 		--strip-ground: color-mix(in srgb, var(--quiet) 10%, var(--ground));
 		position: absolute;
 		left: -0.75rem;
