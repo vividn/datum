@@ -1135,7 +1135,7 @@ const SYNC_BODY: &str = "USAGE:\n  datum sync [-v | --verbose]\n  datum sync sta
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts [list] [--json]\n  datum conflicts resolve <HID> [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]\n\nA conflict is a value two copies of the database set without seeing each\nother's: one key of one entry given two values, or an entry deleted on one\ncopy and edited on another. The entry shows one of them (the later clock's;\na delete stands), and every copy that holds both lists the same sides,\nlettered in clock order: A the earlier, B the later, C a third. The letters\nare the same on every copy.\n\n  list        Every entry with conflicts, each contested key's sides: the\n              letter, the device that set it, when, and the value.\n              --json: each entry's conflicts as they are stored.\n  resolve     One edit that saw every side, so it settles them on every\n              copy it reaches. A pick names a key: KEY=a or KEY=b takes\n              that side's value, KEY=VALUE a new one, typed as any data\n              value (so the text «a» is KEY='\"a\"'); `deleted=a|b|true|false`\n              for an entry deleted on one side. The keys not picked keep\n              what the entry shows, so a bare resolve settles and changes\n              no data; or, when one is named, follow a strategy over A\n              and B, as `update --strategy` combines old and new:\n                --use-a      A's value; a key only B has is unset\n                --use-b      B's value; a key only A has is unset\n                --prefer-a   A's value; a key only one has is kept\n                --prefer-b   B's value; a key only one has is kept\n                --merge      both, as one array without duplicates\n              A strategy is over two sides: a key with more takes a pick.\n              `deleted` follows it as any key does: a delete that is A is\n              kept by --use-a or --prefer-a and undone by --use-b or\n              --prefer-b. --merge refuses it, a delete and an edit being\n              no array: pick `deleted=a` or `deleted=b`.\n\nAn ordinary edit of a contested key settles it too. Integrity findings —\ndouble opens, orphan ends, overlaps, repeated states — are reported by\n`datum check` and resolved by fixing the data.\n";
 
-const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d / -t / -z]\n\nAttaches a 'come back to this' marker to <FIELD>. Stored as a Verb::Point\nentry with the comment as its `state` and `extra_metadata = { flag: true }`.\nThe bare form `datum flag <FIELD>` records a marker at now with no comment.\n\n`datum now` and the dayview leave flags out; `datum tail` lists them as it\nlists any row, and `datum check` surfaces them as pending review markers\nuntil one is marked done with `datum update <hid> done=true`, which keeps it\nin the record, or deleted with `datum del <hid>`; editing its comment does\nnot clear it.\n`datum meta` marks its notes the same way, with `meta: true`.\n";
+const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d / -t / -z]\n\n`datum flag a,b` flags each at one instant, all or none, one `undo`.\n\nAttaches a 'come back to this' marker to <FIELD>. Stored as a Verb::Point\nentry with the comment as its `state` and `extra_metadata = { flag: true }`.\nThe bare form `datum flag <FIELD>` records a marker at now with no comment.\n\n`datum now` and the dayview leave flags out; `datum tail` lists them as it\nlists any row, and `datum check` surfaces them as pending review markers\nuntil one is marked done with `datum update <hid> done=true`, which keeps it\nin the record, or deleted with `datum del <hid>`; editing its comment does\nnot clear it.\n`datum meta` marks its notes the same way, with `meta: true`.\n";
 
 const META_BODY: &str = "USAGE:\n  datum meta <FIELD> <TEXT>...\n  datum meta show <FIELD>\n\nAttach a protocol-change note on <FIELD>. Stored as a Verb::Point entry\nwith the note as its `state` and `extra_metadata = { meta: true }`.\n\nShow lists every note attached to <FIELD> in create_time order.\n\nLike `flag`, a meta note is left out of `now` and the dayview, and `tail`\nlists it as it lists any row.\n";
 
@@ -2198,7 +2198,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Logging,
         summary: "a point in time (alias: occur)",
         intro: OCCUR_INTRO,
-        long_description: None,
+        long_description: Some(
+            "An array of fields (`datum moment a,b`, no spaces) is one moment on \
+             each: one instant, the same flags and keys, all written or none, \
+             and one `undo` takes them all back.",
+        ),
         usage: &["datum moment <FIELD> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: LOG_FLAGS,
@@ -2219,7 +2223,10 @@ pub const COMMANDS: &[CommandSpec] = &[
             "A trailing duration (`datum start work 25m`, or `dur=25m`) closes the \
              block: it ENDS at the entry's time — now, or wherever `-t`/`-d` put \
              it — and the span runs BACK from there. `datum start work 25m -t \
-             12:30` is work from 12:05 to 12:30.",
+             12:30` is work from 12:05 to 12:30.\n\n\
+             An array of fields (`datum start a,b`, no spaces) is one start on \
+             each: one instant, the same flags and keys, all written or none, \
+             and one `undo` takes them all back.",
         ),
         usage: &[
             "datum start <FIELD> [VALUE | KEY=VALUE]... [DUR]",
@@ -2243,7 +2250,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: Some(
             "A trailing duration (`datum end work 12m`, or `dur=12m`) is how long the \
              break ran: `-t` is when it ENDED, and the span runs BACK from \
-             there. `end work 12m -t 14:12` is a break from 14:00 to 14:12.",
+             there. `end work 12m -t 14:12` is a break from 14:00 to 14:12.\n\n\
+             An array of fields (`datum end a,b`, no spaces) ends each at one \
+             instant, all or none: a field in it that is not running writes \
+             nothing and is named, though alone it would write its entry. One \
+             `undo` takes them all back.",
         ),
         usage: &[
             "datum stop <FIELD> [VALUE | KEY=VALUE]... [DUR]",
@@ -2275,6 +2286,9 @@ pub const COMMANDS: &[CommandSpec] = &[
              on, as `datum start light` does; a state named off is \
              `'\"off\"'` or `str://off`, one named on `'\"on\"'` or \
              `str://on`, and `-I` keeps either word as typed.\n\n\
+             An array of fields (`datum switch a,b x`, no spaces) is one switch \
+             on each, at one instant, all or none, one `undo`: `datum switch a,b \
+             x,y` puts both in the states x and y.\n\n\
              A field can be in several states at once: `datum switch issue \
              queued,parked`. `datum switch issue +=parked` adds parked to \
              the states it is in (`+=a,b` adds both), `-=parked` takes it \

@@ -294,6 +294,22 @@ describe('several documents', () => {
 		});
 	});
 
+	test('an array of fields draws a section each', async () => {
+		await desktop(async (app) => {
+			const { page } = app;
+			await app.submit('moment coffee,tea x=1');
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .group:last-child .doc').length === 2);
+
+			const [first, second] = [await section(page, 0), await section(page, 1)];
+			assert.equal(first.did, 'CREATE');
+			assert.equal(second.did, 'CREATE');
+			assert.ok(first.info.includes('coffee'), first.info);
+			assert.ok(second.info.includes('tea'), second.info);
+			assert.equal(first.when, second.when);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	test('more than fit draws +N, and the modal lists every one', async () => {
 		await desktop(async (app) => {
 			const { page } = app;

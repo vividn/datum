@@ -39,6 +39,9 @@ use super::expand::{
 pub struct ExpandedSides {
     pub sides: Vec<Vec<String>>,
     pub chain: Vec<AliasStep>,
+    /// Each side that came from an array of fields (`moment a,b`, da-p2ro6),
+    /// by index. Empty from [`expand_wrapped`], which leaves arrays as typed.
+    pub in_array: Vec<bool>,
 }
 
 /// Steps 1–4 of the spec v2.1 pipeline: alias
@@ -95,7 +98,11 @@ pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<Expa
         }
     }
 
-    Ok(ExpandedSides { sides, chain })
+    Ok(ExpandedSides {
+        sides,
+        chain,
+        in_array: Vec::new(),
+    })
 }
 
 /// Full alias-expansion + comma-split + trailing-region pipeline
@@ -126,7 +133,7 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
     let bin = argv[0].clone();
 
     // Steps 1–4: alias expansion with wrapper groups intact.
-    let ExpandedSides { sides, chain } = expand_wrapped(argv, resolver)?;
+    let ExpandedSides { sides, chain, .. } = expand_wrapped(argv, resolver)?;
 
     // Step 5b: canonical flag shapes, then ONE region pass — a `,,`
     // binds the sides to its left within its innermost group, typed
@@ -162,6 +169,10 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
         ));
     }
 
+    // An array of fields is one side a field from here on (da-p2ro6): the
+    // chain collapse below keeps to two sides of one field, which no array is.
+    let (sides, in_array) = super::array::expand_field_arrays(sides, resolver)?;
+
     // (Step 6 retired by spec v2: `--` is plain unix end-of-flags,
     // side-scoped, handled by the downstream parser — the old top-level
     // promote-to-all behavior is gone. Trailing regions (`,,`) replaced
@@ -189,6 +200,7 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
     Ok(ExpandedSides {
         sides: final_sides,
         chain,
+        in_array,
     })
 }
 

@@ -231,7 +231,7 @@ fn entry_event_time(e: &Entry) -> Option<DateTime<Utc>> {
 
 /// Truthiness in the `datum now` sense: not inactive
 /// ([`is_inactive_state`]). Arrays are truthy iff any element is truthy.
-fn is_truthy(v: &JsonValue) -> bool {
+pub fn is_truthy(v: &JsonValue) -> bool {
     match v {
         JsonValue::Array(items) => items.iter().any(is_truthy),
         v => !is_inactive_state(Some(v)),

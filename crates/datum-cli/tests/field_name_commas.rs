@@ -1,6 +1,7 @@
-//! A field name refuses a `,` — the CLI splits `undo a,b` on it, so such a
-//! field could never be named in a list — and still allows whitespace
-//! (da-6p3du, vividn: «Allow white space, disallow commas»).
+//! A field name refuses a `,` — the CLI splits `undo a,b` and `moment a,b`
+//! on it (`field_arrays.rs`), so such a field could never be named in a list
+//! — and still allows whitespace (da-6p3du, vividn: «Allow white space,
+//! disallow commas»).
 
 use crate::common;
 
@@ -14,7 +15,7 @@ fn refusal(args: &[&str], db: &datum_core::db::Db) -> String {
 #[test]
 fn a_direct_name_with_a_comma_is_refused() {
     let db = fresh_db();
-    let err = refusal(&["occur", "a,b"], &db);
+    let err = refusal(&["note", "a,b"], &db);
     assert!(err.contains("cannot contain ','"), "{err}");
     assert!(logged_entries(&db, "a,b").is_empty());
 }
@@ -30,7 +31,7 @@ fn a_template_value_with_a_comma_is_refused() {
 #[test]
 fn an_alias_expanding_to_a_comma_is_refused() {
     let db = fresh_db();
-    run_cli(&["alias", "set", "ab", "occur a,b"], &db).unwrap();
+    run_cli(&["alias", "set", "ab", "note a,b"], &db).unwrap();
     let err = refusal(&["ab"], &db);
     assert!(err.contains("cannot contain ','"), "{err}");
 }

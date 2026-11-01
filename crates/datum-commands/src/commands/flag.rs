@@ -40,10 +40,12 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     // every other logging verb, in the zone `-z` names (da-rsa54). A day
     // alone (`-y`) keeps now's clock: a flag marks a moment, never a
     // whole day.
+    let now = crate::args::window_now().unwrap_or_else(datum_core::time::DatumTime::now);
+    let own_time = time.places();
     let at = time
         .builder(TimeCtx::now())?
         .with_timezone(zone_name(&time)?)
-        .build();
+        .build_now(now.utc);
 
     // State = comment, its one copy: `edit` and `update` reach it, and a
     // quick `datum get <hid>` shows it. Empty bare-form flags carry no
@@ -68,21 +70,35 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     );
     entry.extra_metadata = Some(serde_json::json!({ "flag": true }));
 
+    // Past a `--` a comma is in the name, which nothing could name after.
+    datum_core::slug::validate_new_field_name(&field)?;
     crate::commands::helpers::note_unseen_field(db, &field, "flagging")?;
+    // In a line of several the line's commit writes it, with the rest, and
+    // says so (`cmd.rs`).
+    if crate::args::push_to_multi_collector(entry.clone(), Default::default(), own_time) {
+        return Ok(());
+    }
     db.insert_entry(&entry)
         .with_context(|| format!("recording flag on field '{field}'"))?;
+    print_flag(&entry);
+    Ok(())
+}
 
-    let preview = if comment.is_empty() {
-        "(no comment)".to_string()
-    } else {
-        let max = 60;
-        if comment.chars().count() > max {
-            let trimmed: String = comment.chars().take(max).collect();
-            format!("{trimmed}…")
-        } else {
-            comment.clone()
-        }
+/// Whether `entry` is a `datum flag`'s.
+pub(crate) fn is_flag(entry: &Entry) -> bool {
+    entry
+        .extra_metadata
+        .as_ref()
+        .is_some_and(|m| m.get("flag") == Some(&JsonValue::Bool(true)))
+}
+
+/// What `datum flag` says of the entry it wrote.
+pub(crate) fn print_flag(entry: &Entry) {
+    let comment = entry.state.as_ref().and_then(JsonValue::as_str);
+    let preview = match comment {
+        None => "(no comment)".to_string(),
+        Some(c) if c.chars().count() > 60 => format!("{}…", c.chars().take(60).collect::<String>()),
+        Some(c) => c.to_string(),
     };
     println!("FLAG {} {} — {preview}", entry.hid, entry.slug);
-    Ok(())
 }

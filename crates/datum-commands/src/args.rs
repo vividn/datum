@@ -130,6 +130,11 @@ thread_local! {
     /// declared again — an IGNORED field would stay ignored for good.
     static PENDING_DECLARATIONS: RefCell<Vec<(String, datum_core::action::Action)>> =
         const { RefCell::new(Vec::new()) };
+    /// The two readings of a repeated wall time an array of fields was asked
+    /// about, of its first name, and which it took (da-p2ro6). Lasts the multi
+    /// window.
+    static ARRAY_READING: std::cell::Cell<Option<(Readings, bool)>> =
+        const { std::cell::Cell::new(None) };
     /// da-9sfm: set when a content-identical re-log dedups to an existing row
     /// (`InsertOutcome::Ignored`). A dedup is a *successful* no-op — rendered
     /// as `EXISTS`, not an error — so it must not travel the error channel
@@ -167,6 +172,23 @@ pub fn begin_multi_collector() {
     MULTI_COLLECTOR
         .with(|slot| *slot.borrow_mut() = Some((datum_core::time::DatumTime::now(), Vec::new())));
     PENDING_DECLARATIONS.with(|slot| slot.borrow_mut().clear());
+    ARRAY_READING.set(None);
+}
+
+/// An instant's first and second reading.
+pub type Readings = (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>);
+
+/// Which of `readings` an earlier name of this line's array took, if any.
+pub fn array_reading(readings: Readings) -> Option<bool> {
+    ARRAY_READING
+        .get()
+        .filter(|(asked, _)| *asked == readings)
+        .map(|(_, later)| later)
+}
+
+/// Keep which of `readings` a name of an array took, for the rest of its names.
+pub fn set_array_reading(readings: Readings, later: bool) {
+    ARRAY_READING.set(Some((readings, later)));
 }
 
 /// Record that a side's entry declares its field, so the spec can be
@@ -516,6 +538,14 @@ fn parse_invocation_inner(
     // detection misses it). `expanded.sides` is already collapsed when
     // applicable.
     let sides = expanded.sides;
+    let in_array = expanded.in_array;
+    let parsed = |side_argv: &Vec<String>, i: usize| -> anyhow::Result<Cli> {
+        let mut cli = datum_parse::parse_argv_showing(side_argv, show)?;
+        if let (Some(true), Some(line)) = (in_array.get(i), cli.command.log_args_mut()) {
+            line.in_array = true;
+        }
+        Ok(cli)
+    };
 
     if sides.is_empty() {
         // Shouldn't happen — split_argv_at_commas always returns >=1
@@ -530,20 +560,18 @@ fn parse_invocation_inner(
         // parser still sees it at its canonical post-argv0 position.
         side_argv.extend(db_flag_tokens.iter().cloned());
         side_argv.extend(sides.into_iter().next().unwrap());
-        let cli = datum_parse::parse_argv_showing(&side_argv, show).map_err(anyhow::Error::from)?;
-        return Ok(Invocation::Single(cli));
+        return Ok(Invocation::Single(parsed(&side_argv, 0)?));
     }
 
     let mut clis: Vec<Cli> = Vec::with_capacity(sides.len());
     let mut side_argvs: Vec<Vec<String>> = Vec::with_capacity(sides.len());
-    for side in sides {
+    for (i, side) in sides.into_iter().enumerate() {
         let mut side_argv = Vec::with_capacity(side.len() + 1 + db_flag_tokens.len());
         side_argv.push(argv0.clone());
         // da-hfi3: same re-prepend as the single-side branch above.
         side_argv.extend(db_flag_tokens.iter().cloned());
         side_argv.extend(side);
-        let cli = datum_parse::parse_argv_showing(&side_argv, show).map_err(anyhow::Error::from)?;
-        clis.push(cli);
+        clis.push(parsed(&side_argv, i)?);
         side_argvs.push(side_argv);
     }
     Ok(Invocation::Multi {

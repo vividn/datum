@@ -46,7 +46,14 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
 
     let run_sides = || -> Result<()> {
         for cli in sides {
-            dispatch(cli, db)?;
+            // A name of an array says which one failed (da-p2ro6): the rest
+            // of the line is every name's.
+            let named = cli.command.log_args().filter(|l| l.in_array);
+            let named = named.map(|l| l.field_or_verb.clone());
+            dispatch(cli, db).map_err(|e| match named {
+                Some(field) => e.context(format!("{field}: nothing was written")),
+                None => e,
+            })?;
         }
         Ok(())
     };
@@ -185,6 +192,10 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
     let registry = crate::commands::helpers::registry_of(db, &entries);
     let contexts = build_render_contexts(&entries, db);
     for (idx, entry) in entries.iter().enumerate() {
+        if crate::commands::flag::is_flag(entry) {
+            crate::commands::flag::print_flag(entry);
+            continue;
+        }
         let output = outputs.get(idx).cloned().unwrap_or_default();
         let ctx = contexts.get(idx).cloned().unwrap_or_default();
         show_create_with_context(entry, registry.as_ref(), &ctx, &output);

@@ -344,6 +344,20 @@ is reported rather than read again. The owner's reads open as a write does.
   true, a start's dur none), and `...` is a `.` for every slot left
   (`datum practice ... tail`). `datum help alias` says it.
 
+### An array of fields is one atomic command
+`moment a,b`, `start`, `stop`, `switch` and `flag` (each by any of its names) take
+an array where a field goes (da-p2ro6, `datum_parse::alias::array`). It is that
+line's batch, `moment a , moment b` with the rest of the line on each, made once
+the regions are flat, so an alias's body or fill may hold one. One instant, one
+undo and redo, all or none, a failure naming its field. A fall-back night's `-t`
+is asked once. `a,a` is one entry; `switch a,b x,y` gives both `[x,y]`; `a,` and
+`a,,b` are refused, so `moment a, b` logs nothing. A name is its alias's field
+when the alias names only a field: a bare word, its own word, or this command and
+a field; any other alias is a whole command, refused. A bare word bound to a
+different key on each field, or to none on a moment, is refused naming them. In
+an array, a `stop` with no duration of a field not running is a failure, though
+alone it writes. `-u` is refused; `note`, `add` and `setup` take one field.
+
 ### A field name may be the start of one
 A name that is no field but starts exactly one names that one, after alias
 expansion (da-tldkb, `datum help names`): `datum tail envi` reads

@@ -261,8 +261,14 @@ impl TimeBuilder {
 
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
+        self.build_now(crate::time::clock::now().utc)
+    }
+
+    /// [`build`](Self::build) against an explicit wall clock, in the host's
+    /// (or `-z`'s) zone: the sides of one line share one reading of it.
+    pub fn build_now(self, now: DateTime<Utc>) -> DatumTime {
         let (zone, name) = self.host_zone();
-        self.build_at(crate::time::clock::now().utc, zone, name)
+        self.build_at(now, zone, name)
     }
 
     /// The effective zone for a native build: `-z` when supplied, else the

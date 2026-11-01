@@ -147,6 +147,24 @@ pub enum Command {
     },
 }
 
+impl Command {
+    /// The line of a command an array of fields may name (da-p2ro6).
+    pub fn log_args(&self) -> Option<&LogArgs> {
+        match self {
+            Self::Occur(a) | Self::Start(a) | Self::Stop(a) | Self::Switch(a) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// [`log_args`](Self::log_args), to change.
+    pub fn log_args_mut(&mut self) -> Option<&mut LogArgs> {
+        match self {
+            Self::Occur(a) | Self::Start(a) | Self::Stop(a) | Self::Switch(a) => Some(a),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct InstallArgs {
     /// `--shell`: the shell to complete for; `None` reads `$SHELL`.
@@ -307,6 +325,9 @@ pub struct DbImportArgs {
 #[derive(Debug, Default)]
 pub struct LogArgs {
     pub field_or_verb: String,
+    /// This line is one name of an array of fields (`stop a,b`, da-p2ro6):
+    /// set after the parse, never by a flag.
+    pub in_array: bool,
     pub rest: Vec<String>,
     /// The words after a bare `--`: positionals as typed (da-gqy3b).
     pub verbatim: Vec<String>,

@@ -164,7 +164,7 @@ const COMMAND_SYNONYMS: &[(&str, &str)] = &[
 ];
 
 /// The command `word` names: itself, or the one a synonym stands for.
-fn command_named(word: &str) -> &str {
+pub(super) fn command_named(word: &str) -> &str {
     COMMAND_SYNONYMS
         .iter()
         .find(|(s, _)| *s == word)
@@ -213,6 +213,7 @@ pub fn expand_argv(
     let rest: Vec<String> = iter.collect();
     let sides = split_argv_at_commas(rest)?;
     let sides = super::regions::apply_regions(sides)?;
+    let (sides, _) = super::array::expand_field_arrays(sides, resolver)?;
     // A switch chain is one command here too: `reparse` replays `switch
     // f sit 5 , switch f stand` as the one point-switch it wrote.
     let sides = maybe_collapse_switch_chain(sides);
@@ -510,7 +511,7 @@ fn spec_keys_on_sides(
 
 /// Highest `$N` (or `${N}`) placeholder index referenced across the
 /// given tokens. Returns 0 when no placeholder is present.
-fn max_placeholder(tokens: &[String]) -> usize {
+pub(super) fn max_placeholder(tokens: &[String]) -> usize {
     let mut max_n = 0usize;
     for t in tokens {
         scan_placeholders(t, |n| {

@@ -187,8 +187,21 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let option = lifted
             .anchor()
             .map_or("-t ".into(), |(key, _)| format!("{key}="));
-        match which_reading(read, &option)? {
-            Some(later) => args.time.later = later,
+        // The names of an array are one line, at one instant: one question.
+        // The answer is to these two readings alone, so another array on the
+        // line, naming another hour, is asked its own.
+        let readings = read(false)
+            .zip(read(true))
+            .map(|(first, second)| (first.utc, second.utc))
+            .filter(|_| args.in_array && crate::args::in_multi_window());
+        let answered = readings.and_then(crate::args::array_reading);
+        match answered.map_or_else(|| which_reading(read, &option), |a| Ok(Some(a)))? {
+            Some(later) => {
+                args.time.later = later;
+                if let Some(readings) = readings {
+                    crate::args::set_array_reading(readings, later);
+                }
+            }
             None => {
                 println!("Aborted.");
                 return Ok(());
@@ -999,6 +1012,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // da-ovnf9: a claim is checked where it is written, so a dry run asks
     // the question it would, and a multi window (one atomic write of every
     // side) and a timeless entry, which leaves no state, take none.
+    // Alone, a stop of a field not running writes its entry and says nothing:
+    // in an array, where it would be written with the others, it is the one
+    // that fails (da-p2ro6). A duration says the whole block, so it has none
+    // to be running.
+    if args.in_array && matches!(action, Action::Stop) && entry.dur.is_none() {
+        let held = db.read(|view| datum_core::integrity::state_before(view.conn(), &entry))?;
+        if !held.is_some_and(|s| datum_core::db::is_truthy(&s)) {
+            anyhow::bail!("it is not running");
+        }
+    }
     if args.ensure_last_state {
         if entry.at.is_none() {
             anyhow::bail!("-L needs a time: a timeless entry leaves no state to claim");

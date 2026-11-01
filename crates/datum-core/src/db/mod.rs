@@ -76,7 +76,7 @@ pub use kit_command::{
 pub use kit_layout::{InstallLayoutsReport, KitLayoutOutcome, LAYOUT_FIELD, LAYOUT_KIT_KEY};
 pub use multi::{merge_group_key, merge_same_field_groups};
 pub use now::{
-    NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowFilter, NowSnapshot,
+    is_truthy, NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowFilter, NowSnapshot,
     SCHEMA_ID as NOW_SCHEMA_ID,
 };
 pub use record::{key_before, members, KeyDrift};
