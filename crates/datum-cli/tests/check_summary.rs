@@ -218,6 +218,21 @@ fn a_second_run_finds_what_a_run_from_scratch_finds() {
         &db,
         &["switch", "mood", "calm", "-t", "2026-03-02T09:30:00+00:00"],
     );
+    // Calm ends, so its span says no «→ now», which the two runs compared
+    // below would read a minute apart (da-i8t1y). In Berlin, or among the
+    // walks it would be the first spike, which the `del` below takes.
+    datum(
+        &db,
+        &[
+            "switch",
+            "mood",
+            "rested",
+            "-t",
+            "2026-03-02T11:00:00+00:00",
+            "-z",
+            "Europe/Berlin",
+        ],
+    );
     datum(&db, &["flag", "walk", "look"]);
     datum(&db, &["occur", "tea", "cups=2"]);
     let issues = |json: &str| serde_json::from_str::<Value>(json).unwrap();
@@ -251,6 +266,7 @@ fn a_second_run_finds_what_a_run_from_scratch_finds() {
 
     let again = issues(&datum(&db, &["check", "--json"]));
     assert_eq!(again["examined"]["rest_unchanged"], true, "{again}");
+    assert!(!again["issues"].to_string().contains("→ now"), "{again}");
     // What it kept forgotten, the same database checked from scratch.
     let conn = rusqlite::Connection::open(&db).unwrap();
     conn.execute("DELETE FROM check_kept", []).unwrap();
