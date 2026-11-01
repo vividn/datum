@@ -443,54 +443,15 @@ enum ExtraMergeMode {
     Combine(Combine),
 }
 
-fn apply_mutation(
-    existing: Entry,
+/// The columns an update names go onto the row. In this order, which matters:
+/// `dur_uncertainty=` reads the `dur=` just set, and `at_uncertainty=` comes
+/// after `at=`, which replaces the time it lives inside.
+fn apply_reserved(
+    updated: &mut Entry,
+    reserved: crate::commands::log_core::ReservedColumns,
     payload_value: Option<JsonValue>,
-    payload_extra: Option<JsonValue>,
-    mode: ExtraMergeMode,
-    slug_delimiter: &str,
     id: Option<&str>,
-    db: &Db,
-) -> Result<UpdateOutcome> {
-    // da-5ns.3: peel reserved column-bound keys (`state=`, `dur=`,
-    // `following_state=`, `at=`) out of the payload and route
-    // them to the entry's columns instead of `data`. Unknown keys
-    // (including `value=`) stay in `data` (da-53rz). The storage layer's
-    // `derive_verb` call recomputes the verb on the resulting (state,
-    // dur, fs) triple.
-    let mut payload_extra = payload_extra;
-    let reserved = crate::commands::log_core::extract_reserved_columns(&mut payload_extra)?;
-    // da-z9efl: refuse only what this update sets, so a row written before
-    // the refusal can still have its other keys edited.
-    for s in [&payload_value, &reserved.state, &reserved.following_state]
-        .into_iter()
-        .flatten()
-    {
-        if let Some(msg) = datum_core::shape::parallel_sentinel_error(s) {
-            anyhow::bail!(msg);
-        }
-    }
-
-    // da-ult68: a comment APPENDS — the payload's go after the row's own,
-    // and a row written before comments were arrays holds a string, which
-    // is kept as the first element rather than replaced. A strategy that
-    // joins a conflict's arrays (append, merge, …) does that itself.
-    let joins = matches!(mode, ExtraMergeMode::Combine(c)
-        if matches!(c.conflict, Conflict::Merge | Conflict::Append));
-    if let (false, Some(old), Some(JsonValue::Array(new))) = (
-        joins,
-        existing.data.as_ref().and_then(|d| d.get("comment")),
-        payload_extra.as_mut().and_then(|p| p.get_mut("comment")),
-    ) {
-        let old = match old {
-            JsonValue::Array(a) => a.clone(),
-            JsonValue::Null => vec![],
-            s => vec![s.clone()],
-        };
-        new.splice(0..0, old);
-    }
-    let mut updated = existing.clone();
-    updated.data = combine_extra(updated.data, payload_extra, mode)?;
+) -> Result<()> {
     // da-5t94: `field=` re-fields in place: `persist_with_auto_reinterp`
     // re-derives the slug as `<field>:<body>`, keeping hid + timestamps.
     // `id=` is data; `--id` re-ids (da-uf6it).
@@ -545,7 +506,7 @@ fn apply_mutation(
             updated.zone_stated();
         }
     }
-    // After `at=`, which replaces the time this lives inside (da-vl8sz).
+    // After `at=`, as above (da-vl8sz).
     if reserved.clears_at_uncertainty {
         updated.set_at_uncertainty(None);
     }
@@ -560,6 +521,58 @@ fn apply_mutation(
     if sets_dur && updated.at.is_none() {
         anyhow::bail!(crate::commands::log_core::TIMELESS_DUR);
     }
+    Ok(())
+}
+
+fn apply_mutation(
+    existing: Entry,
+    payload_value: Option<JsonValue>,
+    payload_extra: Option<JsonValue>,
+    mode: ExtraMergeMode,
+    slug_delimiter: &str,
+    id: Option<&str>,
+    db: &Db,
+) -> Result<UpdateOutcome> {
+    // da-5ns.3: peel reserved column-bound keys (`state=`, `dur=`,
+    // `following_state=`, `at=`) out of the payload and route
+    // them to the entry's columns instead of `data`. Unknown keys
+    // (including `value=`) stay in `data` (da-53rz). The storage layer's
+    // `derive_verb` call recomputes the verb on the resulting (state,
+    // dur, fs) triple.
+    let mut payload_extra = payload_extra;
+    let reserved = crate::commands::log_core::extract_reserved_columns(&mut payload_extra)?;
+    // da-z9efl: refuse only what this update sets, so a row written before
+    // the refusal can still have its other keys edited.
+    for s in [&payload_value, &reserved.state, &reserved.following_state]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(msg) = datum_core::shape::parallel_sentinel_error(s) {
+            anyhow::bail!(msg);
+        }
+    }
+
+    // da-ult68: a comment APPENDS — the payload's go after the row's own,
+    // and a row written before comments were arrays holds a string, which
+    // is kept as the first element rather than replaced. A strategy that
+    // joins a conflict's arrays (append, merge, …) does that itself.
+    let joins = matches!(mode, ExtraMergeMode::Combine(c)
+        if matches!(c.conflict, Conflict::Merge | Conflict::Append));
+    if let (false, Some(old), Some(JsonValue::Array(new))) = (
+        joins,
+        existing.data.as_ref().and_then(|d| d.get("comment")),
+        payload_extra.as_mut().and_then(|p| p.get_mut("comment")),
+    ) {
+        let old = match old {
+            JsonValue::Array(a) => a.clone(),
+            JsonValue::Null => vec![],
+            s => vec![s.clone()],
+        };
+        new.splice(0..0, old);
+    }
+    let mut updated = existing.clone();
+    updated.data = combine_extra(updated.data, payload_extra, mode)?;
+    apply_reserved(&mut updated, reserved, payload_value, id)?;
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
 }
 
