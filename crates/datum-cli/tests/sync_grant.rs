@@ -231,6 +231,9 @@ fn a_grant_joins_a_device_that_shares_a_chain_online_or_later() {
     let tom = t.run("home");
     let said = g.ok("work", &["sync", "chain", "invite", &t.device()[..12]]);
     assert!(said.contains("joins as «work»"), "{said}");
+    // Its seven days end on another day: that date once, and the clock (da-x2p2h).
+    let (_, until) = said.rsplit_once("until ").unwrap();
+    assert_eq!(until.split_whitespace().count(), 2, "{said}");
     tom.says("joined «work»");
     eventually("tom's work holding gina's coffee", || {
         t.has("work", "coffee")

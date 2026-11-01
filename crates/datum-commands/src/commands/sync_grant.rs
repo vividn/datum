@@ -182,7 +182,7 @@ pub fn grant(
     println!(
         "invited {label} as a {role} of this database: the invite rides sealed to it in {via}'s sync \
          chain, and {label} joins as «{as_name}» when it next syncs {via} there, until {}",
-        datum_core::time::on_readers_clock(&expires_at, "%Y-%m-%d %H:%M")
+        datum_core::time::on_readers_clock(&expires_at, "%H:%M")
     );
     Ok(())
 }
