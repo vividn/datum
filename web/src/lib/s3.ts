@@ -4,13 +4,13 @@
 //
 // The browser talks to the bucket itself, so the bucket must allow this
 // page's origin (CORS, `corsRules`); nothing else stands between them.
-// Requests are signed with SigV4 by aws4fetch (a small, dependency-free
-// signer), held to AWS's published S3 vectors in `tests/s3-pure.test.mjs`.
+// Requests are signed with SigV4 by `sigv4.ts`, on WebCrypto, held to AWS's
+// published S3 vectors in `tests/s3-pure.test.mjs`.
 //
 // Kept free of the app — no stores, no `run` — so node can import it.
 
-import { AwsV4Signer } from 'aws4fetch';
 import { probe, type StepResult } from './probe.js';
+import { signV4 } from './sigv4.js';
 
 export interface S3Config {
 	/** Blank for AWS: `https://s3.<region>.amazonaws.com`. */
@@ -33,21 +33,9 @@ const base = (c: S3Config) =>
 const objectUrl = (c: S3Config, file: string) =>
 	`${base(c)}/${`${c.prefix ?? ''}${file}`.split('/').map(encodeURIComponent).join('/')}`;
 
-/** A request for `url`, signed with `c`'s key — `datetime` and `allHeaders` are for the test vectors. */
-export function sign(
-	c: S3Config,
-	url: string,
-	init: { method?: string; headers?: Record<string, string>; body?: BodyInit; datetime?: string; allHeaders?: boolean } = {}
-) {
-	return new AwsV4Signer({
-		...init,
-		url,
-		accessKeyId: c.key?.trim() ?? '',
-		secretAccessKey: c.secret?.trim() ?? '',
-		service: 's3',
-		region: region(c)
-	}).sign();
-}
+/** A request for `url`, signed with `c`'s key — `headers` and `datetime` are for the test vectors. */
+export const sign = (c: S3Config, url: string, init: { method?: string; headers?: Record<string, string>; datetime?: string } = {}) =>
+	signV4({ ...init, url, key: c.key?.trim() ?? '', secret: c.secret?.trim() ?? '', region: region(c) });
 
 /** An S3 refusal, with what it most likely means. */
 export class S3Error extends Error {
@@ -73,11 +61,11 @@ function explain(c: S3Config, status: number, code: string, message: string): st
 async function send(c: S3Config, method: string, url: string, body?: Uint8Array): Promise<Response> {
 	let response: Response;
 	try {
-		const signed = await sign(c, url, { method, body: body as BodyInit | undefined });
+		const signed = await sign(c, url, { method });
 		// Never the browser's HTTP cache: S3 sends `Last-Modified` and no
 		// `Cache-Control`, so a GET is held as fresh for a tenth of the object's
 		// age, and a run's re-read of the index would not see another device's put.
-		response = await fetch(signed.url, { ...signed, cache: 'no-store' });
+		response = await fetch(signed.url, { ...signed, body: body as BodyInit | undefined, cache: 'no-store' });
 	} catch {
 		// The browser hides WHY a cross-origin request got no response.
 		throw new S3Error('', 'CORS: the bucket does not allow this page — paste the CORS rules below — or the endpoint URL is wrong, or this device is offline');

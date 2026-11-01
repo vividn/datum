@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { File as MemFile, OpenFile, WASI } from '@bjorn3/browser_wasi_shim';
+import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import ts from 'typescript';
 import { resolveLibAsSource } from './support/libhook.mjs';
 

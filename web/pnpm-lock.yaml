@@ -7,13 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@bjorn3/browser_wasi_shim':
-        specifier: 0.4.2
-        version: 0.4.2
-      aws4fetch:
-        specifier: 1.0.20
-        version: 1.0.20
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: ^4.0.0
@@ -47,9 +40,6 @@ importers:
         version: 8.3.5(@types/node@22.20.1)
 
 packages:
-
-  '@bjorn3/browser_wasi_shim@0.4.2':
-    resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -232,9 +222,6 @@ packages:
   aria-query@5.3.1:
     resolution: {integrity: sha512-Z/ZeOgVl7bcSYZ/u/rh0fOpvEpq//LZmdbkXyc7syVzjPAhfOa9ebsdTSjEBDU4vs5nC98Kfduj1uFo0qyET3g==}
     engines: {node: '>= 0.4'}
-
-  aws4fetch@1.0.20:
-    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   axobject-query@4.1.0:
     resolution: {integrity: sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==}
@@ -520,8 +507,6 @@ packages:
 
 snapshots:
 
-  '@bjorn3/browser_wasi_shim@0.4.2': {}
-
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -642,8 +627,6 @@ snapshots:
   acorn@8.19.0: {}
 
   aria-query@5.3.1: {}
-
-  aws4fetch@1.0.20: {}
 
   axobject-query@4.1.0: {}
 

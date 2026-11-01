@@ -983,7 +983,7 @@ binary.
   changed in is the CLI's own picture of its row, its lanes bent along the
   change. What TypeScript does
   hold is the transport: carrying those files to an S3-compatible bucket
-  (`#lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket
+  (`#lib/s3.ts`, SigV4 on WebCrypto, the browser straight to the bucket
   under its CORS), each device under a folder of its own,
   `client-<client id>/`, with its own index, so no two devices write one;
   restore lists every device's folder and the older backups at the top
@@ -1472,7 +1472,7 @@ pnpm run test:fixtures                 # recapture the CLI-parity fixtures
 
 The browser runs `datum-cli` itself, compiled to wasm32-wasip1 by
 `pnpm run build:cli-wasm` (pinned wasi-sdk and binaryen, fetched into
-`target/toolchains/`) and loaded through `@bjorn3/browser_wasi_shim`. What
+`target/toolchains/`) and loaded through the WASI shim vendored in `web/src/lib/vendor/`. What
 the page supplies is what a shell would: argv, stdin, `TZ`, a client id,
 `FORCE_COLOR=1` (there is no tty), and `HOME`/`DATUM_DB` inside the
 preopened `/data`. The module is NOT committed: a binary cannot

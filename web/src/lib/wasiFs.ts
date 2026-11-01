@@ -25,7 +25,7 @@
 // The process's own stdout and stderr are here too (`Sink`), for the same
 // reason the directory is: what the shim ships grows by copying itself.
 
-import { Directory, Fd, File, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from '@bjorn3/browser_wasi_shim';
+import { Directory, Fd, File, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from './vendor/browser_wasi_shim/index.js';
 import type { Stage } from './dbProtocol.js';
 
 /**

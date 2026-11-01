@@ -37,7 +37,7 @@
 // going back for the file: when it gets it, what was typed meanwhile moves
 // across through the CLI's own `db backup -` and `db restore -`.
 
-import { File as MemFile, OpenFile, WASI, wasi as defs, type Fd, type PreopenDirectory } from '@bjorn3/browser_wasi_shim';
+import { File as MemFile, OpenFile, WASI, wasi as defs, type Fd, type PreopenDirectory } from './vendor/browser_wasi_shim/index.js';
 import cliWasm from './wasm/datum-cli.wasm?url';
 import { cached, DATABASES, dbFiles, forgetCached, KEPT, MemoryHandle, opfsDirectory, Sink, staged, unkept, type Handle } from './wasiFs.js';
 import { backupArgv, mergeArgv } from './calls.js';

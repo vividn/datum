@@ -11,7 +11,7 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { File as MemFile, OpenFile, WASI } from '@bjorn3/browser_wasi_shim';
+import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import { cached, DB_FILES, forgetCached, MemoryHandle, opfsDirectory, Sink } from '../src/lib/wasiFs.ts';
 
 const module = await WebAssembly.compile(await readFile(new URL('../src/lib/wasm/datum-cli.wasm', import.meta.url)));

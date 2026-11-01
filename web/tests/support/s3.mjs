@@ -10,7 +10,7 @@
 // is what makes `AllowedHeaders: ["*"]` cover `authorization`.
 
 import { createServer } from 'node:http';
-import { AwsV4Signer } from 'aws4fetch';
+import { signV4 } from '../../src/lib/sigv4.ts';
 
 export const KEY = { key: 'AKIDFAKE', secret: 'fake-secret' };
 
@@ -42,16 +42,15 @@ export async function startS3(buckets = ['backups']) {
 		if (key !== KEY.key) return 'InvalidAccessKeyId';
 		const names = auth.match(/SignedHeaders=([^,]+)/)?.[1].split(';') ?? [];
 		const headers = Object.fromEntries(names.filter((n) => n !== 'host' && n !== 'x-amz-date').map((n) => [n, req.headers[n]]));
-		const again = await new AwsV4Signer({
+		const again = await signV4({
 			method: req.method,
 			url: url.href,
 			headers,
-			accessKeyId: KEY.key,
-			secretAccessKey: KEY.secret,
-			service: 's3',
+			key: KEY.key,
+			secret: KEY.secret,
 			region,
 			datetime: req.headers['x-amz-date']
-		}).sign();
+		});
 		return again.headers.get('authorization') === auth ? '' : 'SignatureDoesNotMatch';
 	}
 

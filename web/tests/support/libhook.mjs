@@ -9,7 +9,8 @@
 // rewriting those resolves a file that does not exist. The pure tests
 // (`lanes-pure`, `nowpoint-pure`, `selection-pure`) always had that guard;
 // the two registry importers did not, and it went unnoticed until registry
-// first reached a module that imports `svelte/store` (da-7q8r).
+// first reached a module that imports `svelte/store` (da-7q8r). `src/lib/vendor/`
+// is a package's too.
 //
 // `$app/env` is SvelteKit's, and node cannot resolve it: it becomes
 // `browser = false`, which is the honest value there. `database.ts`,
@@ -30,7 +31,8 @@ export function resolveLibAsSource() {
 		resolve(specifier, context, next) {
 			if (specifier.endsWith('.svelte')) return { url: EMPTY_MODULE, shortCircuit: true };
 			if (specifier === '$app/env') return { url: APP_ENV, shortCircuit: true };
-			const ours = specifier.startsWith('.') && context.parentURL?.includes('/src/lib/');
+			const parent = context.parentURL;
+			const ours = specifier.startsWith('.') && parent?.includes('/src/lib/') && !new URL(specifier, parent).pathname.includes('/src/lib/vendor/');
 			return next(ours ? specifier.replace(/\.js$/, '.ts') : specifier, context);
 		}
 	});
