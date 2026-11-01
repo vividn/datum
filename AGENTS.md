@@ -271,8 +271,9 @@ is reported rather than read again. The owner's reads open as a write does.
   the entries around it agree on (`agreed_zone`: most of the three nearest on
   each side, the same zone on both, so a move names nothing) where that is not
   the host's; the log says so in one line and the entry carries
-  `extra_metadata.tz_from = "neighbours"` (da-h8dvi). An offset on `-t` is
-  believed. `datum check tz` warns of the converse, `tz_off_neighbours`: a run
+  `extra_metadata.tz_from = "neighbours"` (da-h8dvi). An `at=` key is one
+  more `-t` to it, and to the `timezone` field's zone, beside `-T` too
+  (da-htxn7). An offset on `-t` is believed. `datum check tz` warns of the converse, `tz_off_neighbours`: a run
   of one or two entries whose neighbours agree on another zone — a spike,
   where a move is a step
 - a log whose flags name a wall time a fall-back night repeats (`-d

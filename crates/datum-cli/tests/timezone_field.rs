@@ -596,6 +596,7 @@ mod follow {
     const BERLIN: &str = "Europe/Berlin";
     const PARIS: &str = "Europe/Paris";
     const LISBON: &str = "Europe/Lisbon";
+    const TOKYO: &str = "Asia/Tokyo";
 
     /// The line as datum.day runs it, `answers` its stdin.
     fn page(env: &Env, tz: &str, args: &[&str], answers: &str) -> Output {
@@ -826,6 +827,109 @@ mod follow {
         env.ok(&["timezone", LISBON, "-t", "-100"]);
         let early = keyed(&env, &["at=2026-01-11T08:00"]);
         assert_instant(&early, "2026-01-11T07:00:00Z", BERLIN);
+    }
+
+    /// Five walks in Tokyo around March 1st, a host in Berlin.
+    fn walks_in_tokyo() -> Env {
+        let env = Env::new();
+        for at in [
+            "2026-03-01T08:00:00+00:00",
+            "2026-03-01T09:00:00+00:00",
+            "2026-03-01T10:00:00+00:00",
+            "2026-03-01T12:00:00+00:00",
+            "2026-03-01T22:00:00+00:00",
+        ] {
+            env.ok(&["occur", "walk", "-t", at, "-z", "Asia/Tokyo"]);
+        }
+        env
+    }
+
+    /// The neighbours read the key as they read `-t` (da-htxn7), and record it.
+    #[test]
+    fn the_neighbours_place_an_at_key_as_they_place_the_flags() {
+        let env = walks_in_tokyo();
+        let flag = placed(&env, "2026-03-01", "20:30");
+        assert_instant(&flag, "2026-03-01T11:30:00Z", TOKYO);
+        let key = keyed(&env, &["at=2026-03-01T20:40"]);
+        assert_instant(&key, "2026-03-01T11:40:00Z", TOKYO);
+        let meta = sql(
+            &env,
+            "SELECT CAST(COUNT(*) AS TEXT), CAST(COUNT(json_extract(extra_metadata, '$.tz_from')) \
+             AS TEXT) FROM entries WHERE field = 'coffee'",
+        );
+        assert_eq!(meta, [("2".to_string(), "2".to_string())]);
+    }
+
+    #[test]
+    fn beside_t_the_neighbours_read_the_key_and_a_bare_t_stays_timeless() {
+        let env = walks_in_tokyo();
+        let key = keyed(&env, &["-T", "at=2026-03-01T20:30"]);
+        assert_instant(&key, "2026-03-01T11:30:00Z", TOKYO);
+        env.ok(&["add", "x", "-T"]);
+        assert_eq!(
+            sql(
+                &env,
+                "SELECT hid, '' FROM entries WHERE field = 'x' AND at IS NULL"
+            )
+            .len(),
+            1
+        );
+    }
+
+    /// A key's clock a fall-back night repeats here, and not where the
+    /// neighbours are, is no question, as `-t`'s is not.
+    #[test]
+    fn a_key_the_host_repeats_is_placed_as_the_flags_are() {
+        let env = Env::new();
+        for day in ["23", "24", "26", "27"] {
+            let at = format!("2025-10-{day}T12:00:00+09:00");
+            env.ok(&["occur", "walk", "-t", &at, "-z", "Asia/Tokyo"]);
+        }
+        let flag = placed(&env, "2025-10-26", "02:30");
+        assert_instant(&flag, "2025-10-25T17:30:00Z", TOKYO);
+        let key = keyed(&env, &["at=2025-10-26T02:40"]);
+        assert_instant(&key, "2025-10-25T17:40:00Z", TOKYO);
+    }
+
+    /// `-T` keeps the entry from the flags and not from the key, which is read
+    /// in the zone held at its instant as any key is (da-htxn7).
+    #[test]
+    fn beside_t_a_key_is_in_the_zone_held_at_its_instant() {
+        let env = trip();
+        let inside = keyed(&env, &["-T", "at=2026-03-11T08:00"]);
+        assert_instant(&inside, "2026-03-11T08:00:00Z", LISBON);
+        let past = keyed(&env, &["-T", "at=2026-03-13T08:00"]);
+        assert_instant(&past, "2026-03-13T07:00:00Z", BERLIN);
+        let day = keyed(&env, &["-T", "-D", "at=2026-03-11T08:00"]);
+        assert_instant(&day, "2026-03-11T00:00:00Z", LISBON);
+        let offset = keyed(&env, &["-T", "at=2026-03-11T10:00:00+09:00"]);
+        assert_instant(&offset, "2026-03-11T01:00:00Z", "");
+        assert!(env
+            .refused(&["add", "x", "-T", "-z", "Asia/Tokyo", "at=2026-03-11T08:00"])
+            .contains("-z/--timezone"));
+    }
+
+    /// The field's own entry is in the zone it names, `-T` or not.
+    #[test]
+    fn beside_t_its_own_key_is_in_the_zone_it_names() {
+        let env = trip();
+        env.ok(&["timezone", TOKYO, "-T", "at=2026-03-11T08:00"]);
+        let rows = env.rows();
+        let at = rows
+            .iter()
+            .find_map(|e| (e.state == Some(json!(TOKYO))).then(|| e.at.clone().unwrap()));
+        let at = at.unwrap();
+        assert_eq!(at.timezone.as_deref(), Some(TOKYO));
+        assert_eq!(at.utc.to_rfc3339(), "2026-03-10T23:00:00+00:00");
+    }
+
+    /// `-T` beside no key has no instant, so a device elsewhere is not asked.
+    #[test]
+    fn a_bare_t_does_not_ask() {
+        let env = holding(BERLIN);
+        let out = page(&env, PARIS, &["add", "x", "-T"], "");
+        assert!(out.status.success() && !asked(&out), "{out:?}");
+        assert!(asked(&page(&env, PARIS, &["add", "x", "-T", "at=-1"], "")));
     }
 
     /// Only an entry at about now asks: the key's time decides that, as `-t`'s.

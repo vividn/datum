@@ -9,7 +9,7 @@
 use anyhow::Result;
 use datum_core::{
     action::Action,
-    db::{agreed_zone, Closer, Db, InsertOutcome, IGNORED_STATE_VALUE},
+    db::{Closer, Db, InsertOutcome, IGNORED_STATE_VALUE},
     dur::DurSpan,
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
@@ -22,7 +22,9 @@ use datum_parse::{ParseError, Readings};
 use serde_json::{json, Value as JsonValue};
 use std::collections::BTreeMap;
 
-use crate::commands::follow_zone::{declared_zone, following, may_name_timezone, timezone_line};
+use crate::commands::follow_zone::{
+    declared_zone, following, may_name_timezone, neighbours_zone, timezone_line,
+};
 use crate::commands::question::Question;
 use crate::{
     args::{LogArgs, LogArgsExt},
@@ -111,6 +113,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
         args.time.time = Some(raw.to_string());
     }
+    // -T/--no-timestamp: time-specifying flags are rejected so silent discard
+    // can't mask a user misconception. Before the line's zone is worked out
+    // below, which an `at=` key beside `-T` takes as a `-z` (da-htxn7).
+    if args.time.omit_timestamp {
+        check_no_time_flags(&args)?;
+    }
 
     // For switch, walk the bare positionals and reject interior `,,`
     // empty segments before handle_data_args runs. `infer_type` turns a
@@ -143,7 +151,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // da-yw6o2: a `timezone` entry is in the zone it names, read as `-z`
     // is, so its clock and a fall-back night's question are that zone's.
     let mut own_line = args.field_or_verb == TIMEZONE_FIELD;
-    if may_name_timezone(&args) && !args.time.omit_timestamp {
+    if may_name_timezone(&args) {
         if let Some(named) = timezone_line(&args, action, db) {
             own_line = true;
             if let Some(zone) = named {
@@ -166,7 +174,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // da-h8dvi: a past instant with no `-z` the field does not place is placed
     // as if `-z` named the zone the entries around it agree on, recorded and
     // said below.
-    let inferred_zone = neighbours_zone(db, &args.time, now.utc);
+    let inferred_zone = neighbours_zone(db, &args, action, now.utc);
     if inferred_zone.is_some() {
         args.time.timezone = inferred_zone.clone();
     }
@@ -210,7 +218,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
     let created = args.time.omit_timestamp.then(|| now.clone());
     let base = match &created {
-        Some(now) => Some(now.clone()),
+        Some(now) if args.time.timezone.is_none() => Some(now.clone()),
+        // da-htxn7: an `at=` key beside `-T` is read in the zone found for it.
+        Some(now) => build_time_from_flags(
+            &TimeArgs {
+                full_day: false,
+                ..args.time.clone()
+            },
+            now.utc,
+        )
+        .ok(),
         None => build_time_from_flags(&args.time, now.utc).ok(),
     };
     // da-job98: and so is a `*_time` key's, each time the line is read.
@@ -309,16 +326,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // -T/--no-timestamp: skip time-flag computation but keep the action's
     // own state-canonicalization rules (so `switch ... -T` still preserves
     // its positional state, `start -T` still records state=true, etc.).
-    // Time-specifying flags are rejected so silent discard can't mask a
-    // user misconception. A timeless entry stores `at = NULL` (the
+    // A timeless entry stores `at = NULL` (the
     // durable timeless marker) and slugs on `create_time` →
     // `field:<create_time>c` (da-r17h), so `occur f -T` becomes note-data:
     // the data lands, no occurrence is logged, and many-per-field works.
     // A timeless entry carries no duration: one on the line is refused once
     // the entry's time is known (`TIMELESS_DUR`, da-mec79).
-    if args.time.omit_timestamp {
-        check_no_time_flags(&args)?;
-    }
 
     // da-5t94: the resolved `field` now flows through the shared peeler.
     // For flex-field verbs the injected `field=` slot lands in
@@ -2648,43 +2661,6 @@ pub(crate) fn build_time_from_flags(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DatumTime> {
     build_time_anchored(time, now, None, false)
-}
-
-/// Whether the flags say where they are: `-z`, or an offset on `-t`, the one
-/// form the builder keeps as `iso_instant_override`, which is believed
-/// (da-kvosn). A timeless entry has no instant to place.
-pub(crate) fn zone_is_settled(time: &TimeArgs) -> bool {
-    time.timezone.is_some()
-        || time.omit_timestamp
-        || time
-            .builder(TimeCtx::now())
-            .is_ok_and(|b| b.iso_instant_override.is_some())
-}
-
-/// The zone a past instant takes when no `-z` names one (da-h8dvi): the one
-/// the entries around it agree on ([`agreed_zone`]), where it is not the
-/// host's. The host's is where datum is now, rarely where a backfilled
-/// instant was. The zone is asked around the flags read in the host's zone,
-/// then again around them read in its own, where the entry lands, so it
-/// holds only where both agree.
-fn neighbours_zone(db: &Db, time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) -> Option<String> {
-    if zone_is_settled(time) {
-        return None;
-    }
-    let around = |time: &TimeArgs| -> Option<(String, Option<String>)> {
-        let at = build_time_from_flags(time, now).ok()?;
-        if at.utc >= now {
-            return None;
-        }
-        let (before, after) = db.zones_around(at.utc).ok()?;
-        Some((agreed_zone(&before, &after)?.clone(), at.timezone))
-    };
-    let (zone, host) = around(time)?;
-    let placed = TimeArgs {
-        timezone: Some(zone.clone()),
-        ..time.clone()
-    };
-    (host.as_ref() != Some(&zone) && around(&placed)?.0 == zone).then_some(zone)
 }
 
 /// Which of the two instants the flags name the line means, where they name

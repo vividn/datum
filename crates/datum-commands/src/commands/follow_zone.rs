@@ -3,19 +3,22 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use datum_core::time::{DatumTime, TimeCtx};
 use datum_core::{
     action::Action,
-    db::{is_meta_field, Db},
+    db::{agreed_zone, is_meta_field, Db},
     timezone_field::{same_zone, state_zone, TIMEZONE_FIELD},
 };
 use datum_parse::input::TimeArgs;
+use datum_parse::ParseError;
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 use std::io::IsTerminal;
 
 use crate::args::LogArgs;
 use crate::commands::log_core::{
     build_time_from_flags, compound_field, extract_reserved_columns, log_entry, parse_log_args,
-    parse_reserved_at, resolve_underscore_state, whole_day, written_field, zone_is_settled,
+    parse_reserved_at, resolve_underscore_state, whole_day, written_field,
 };
 use crate::commands::question::{is_yes, page, Question};
 
@@ -82,21 +85,23 @@ pub(crate) fn declared_zone(
     }
     let declared = db.declared_zones()?;
     let zone = declared
-        .reading_itself(|zone| read_in(args, action, Some(zone), now))
-        .or_else(|| declared.at(read_in(args, action, None, now)?));
+        .reading_itself(|zone| Some(read_in(args, action, Some(zone), now)?.utc))
+        .or_else(|| declared.at(read_in(args, action, None, now)?.utc));
     Ok(zone.map(str::to_string))
 }
 
-/// The instant the line names, read in `zone`, or the host's: the flags', or
-/// an `at=` key's, one more `-t` on them (da-87wvg), read as the log
-/// reads it: from the flags' time and not the midnight `-D` makes of it, then
-/// made the key's whole day.
+/// The time the line names, read in `zone`, or the host's: the flags', or an
+/// `at=` key's, one more `-t` on them (da-87wvg), read as the log reads it:
+/// from the flags' time and not the midnight `-D` makes of it, then made the
+/// key's whole day. A key's repeated wall time reads as a `-t`'s does here, at
+/// its first; the log asks once the zone is known. `-T` names a time only by
+/// its key (da-htxn7).
 fn read_in(
     args: &LogArgs,
     action: Action,
     zone: Option<&str>,
     now: DateTime<Utc>,
-) -> Option<DateTime<Utc>> {
+) -> Option<DatumTime> {
     let time = TimeArgs {
         timezone: zone.map(str::to_string),
         ..args.time.clone()
@@ -106,21 +111,68 @@ fn read_in(
         ..time.clone()
     };
     let base = build_time_from_flags(&clock, now).ok()?;
-    let key = parse_log_args(args, action, Some(base.clone()), None)
-        .ok()
-        .and_then(|parsed| parsed.extra_data?.get("at").cloned());
-    let at = match key {
-        Some(key) => parse_reserved_at(&key, &base).ok()?,
-        None => return Some(build_time_from_flags(&time, now).ok()?.utc),
-    };
-    Some(
-        if time.full_day {
-            whole_day(&at).ok()?
-        } else {
-            at
+    let mut later = BTreeMap::new();
+    let parsed = loop {
+        match parse_log_args(args, action, Some(base.clone()), Some(&later)) {
+            Ok(parsed) => break parsed,
+            Err(err) => {
+                let Some(ParseError::RepeatedTime(readings)) = err.downcast_ref() else {
+                    return None;
+                };
+                later.insert(readings.option.trim_end_matches('=').to_string(), false);
+            }
         }
-        .utc,
-    )
+    };
+    let Some(key) = parsed.extra_data.and_then(|data| data.get("at").cloned()) else {
+        return if time.omit_timestamp {
+            None
+        } else {
+            build_time_from_flags(&time, now).ok()
+        };
+    };
+    let at = parse_reserved_at(&key, &base).ok()?;
+    if time.full_day {
+        whole_day(&at).ok()
+    } else {
+        Some(at)
+    }
+}
+
+/// Whether the flags say where they are: `-z`, or an offset on `-t`, the one
+/// form the builder keeps as `iso_instant_override`, which is believed
+/// (da-kvosn).
+fn zone_is_settled(time: &TimeArgs) -> bool {
+    time.timezone.is_some()
+        || time
+            .builder(TimeCtx::now())
+            .is_ok_and(|b| b.iso_instant_override.is_some())
+}
+
+/// The zone a past instant takes when no `-z` names one (da-h8dvi): the one
+/// the entries around it agree on ([`agreed_zone`]), where it is not the
+/// host's. The host's is where datum is now, rarely where a backfilled
+/// instant was. The zone is asked around the line read in the host's zone,
+/// then again around it read in its own, where the entry lands, so it holds
+/// only where both agree. An `at=` key is read as the flags are (da-htxn7).
+pub(crate) fn neighbours_zone(
+    db: &Db,
+    args: &LogArgs,
+    action: Action,
+    now: DateTime<Utc>,
+) -> Option<String> {
+    if zone_is_settled(&args.time) {
+        return None;
+    }
+    let around = |zone: Option<&str>| -> Option<(String, Option<String>)> {
+        let at = read_in(args, action, zone, now)?;
+        if at.utc >= now {
+            return None;
+        }
+        let (before, after) = db.zones_around(at.utc).ok()?;
+        Some((agreed_zone(&before, &after)?.clone(), at.timezone))
+    };
+    let (zone, host) = around(None)?;
+    (host.as_ref() != Some(&zone) && around(Some(&zone))?.0 == zone).then_some(zone)
 }
 
 /// How far from now a line's time may be and still be the place this device
@@ -145,8 +197,9 @@ pub(crate) fn following(
     let Some(device) = device_zone() else {
         return Ok(None);
     };
-    let in_device = read_in(args, action, Some(&device), now);
-    let about_now = [read_in(args, action, Some(stored), now), in_device]
+    let in_device = read_in(args, action, Some(&device), now).map(|at| at.utc);
+    let in_stored = read_in(args, action, Some(stored), now).map(|at| at.utc);
+    let about_now = [in_stored, in_device]
         .into_iter()
         .flatten()
         .any(|at| (at - now).abs() <= ABOUT_NOW);
