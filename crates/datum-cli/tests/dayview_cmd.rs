@@ -1404,8 +1404,9 @@ fn dayview_data_layer_is_the_bands_alone() {
         (Utc::now() - drawn.with_timezone(&Utc)).num_seconds().abs() < 60,
         "{drawn}"
     );
-    let yesterday = (chrono::Local::now().date_naive() - chrono::Duration::days(1)).to_string();
-    assert!(!picture(&["--data-layer", "--end-date", &yesterday]).contains("data-drawn"));
+    // The word, not a date from the host's clock: the day is cut in the zone
+    // the entry holds, UTC here, and the host's yesterday can be its today.
+    assert!(!picture(&["--data-layer", "--end-date", "yesterday"]).contains("data-drawn"));
 }
 
 /// da-m6i2a: a data layer is its day by instant, at a second a unit,
