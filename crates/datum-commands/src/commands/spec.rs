@@ -36,10 +36,15 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                     print!("{}", Block::of(&spec, ignored(db, &field)?).render(None))
                 }
             }
-            None => println!(
-                "No spec defined for field '{field}'; set one up: `datum setup {field} --verb moment` \
-                 (or start, switch, add; `datum help logging` says what each is)"
-            ),
+            None => {
+                if let Some(say) = datum_parse::field_name::several_fields("setup", &field) {
+                    anyhow::bail!(say);
+                }
+                println!(
+                    "No spec defined for field '{field}'; set one up: `datum setup {field} --verb moment` \
+                     (or start, switch, add; `datum help logging` says what each is)"
+                )
+            }
         },
         SpecCommand::Set(args) => spec_set(*args, db)?,
         SpecCommand::List { tag } => {

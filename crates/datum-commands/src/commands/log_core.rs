@@ -338,11 +338,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `reserved.field`; `block` keeps `field_or_verb`. `id` is untouched
     // here — it stays on the insert-only slug-promotion path in
     // `parse_log_args` so it can defer to an explicit `-K` slug slot.
-    let field = compound_field(
-        reserved.field.take().unwrap_or(field),
-        &args.field_keys,
-        &field_values,
-    )?;
+    let field = reserved.field.take().unwrap_or(field);
+    // On the others only a word past `--` or a `field=` gets here: refused below, as a name.
+    if matches!(action, Action::Add | Action::Note) {
+        if let Some(say) = datum_parse::field_name::several_fields(&action.word(), &field) {
+            anyhow::bail!(say);
+        }
+    }
+    let field = compound_field(field, &args.field_keys, &field_values)?;
     let field = written_field(db, &field, args.setup)?.unwrap_or(field);
 
     // da-5ns.3 strict positional gate (the timeless Add/Note family): the
@@ -2493,7 +2496,10 @@ pub(crate) fn extract_reserved_columns(
     // a slug-string here so both callers (insert + update) consume a ready
     // `String` and the conversion lives in one place.
     if let Some(v) = obj.remove("field") {
-        out.field = Some(datum_value_to_slug_string(Some(&v)));
+        out.field = Some(match &v {
+            JsonValue::Array(items) => crate::commands::helpers::comma_word(items),
+            v => datum_value_to_slug_string(Some(v)),
+        });
     }
     if let Some(v) = obj.remove("state") {
         // da-rori: normalize at the shared boundary so `update <hid>

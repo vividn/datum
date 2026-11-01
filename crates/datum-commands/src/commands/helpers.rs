@@ -949,6 +949,20 @@ pub(crate) fn note_unseen_field(db: &Db, field: &str, doing: &str) -> Result<()>
     Ok(())
 }
 
+/// A comma word `infer_type` made a list, as it was typed (da-0ggbe): a field
+/// is one name, so the name check refuses it by that and never stores the JSON.
+/// The leading comma of `,a` is all that says `["a"]` was a list.
+pub(crate) fn comma_word(items: &[JsonValue]) -> String {
+    let word: Vec<String> = items
+        .iter()
+        .map(|v| super::log_core::datum_value_to_slug_string(Some(v)))
+        .collect();
+    match word.as_slice() {
+        [one] => format!(",{one}"),
+        all => all.join(","),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

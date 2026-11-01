@@ -16,7 +16,7 @@ fn refusal(args: &[&str], db: &datum_core::db::Db) -> String {
 fn a_direct_name_with_a_comma_is_refused() {
     let db = fresh_db();
     let err = refusal(&["note", "a,b"], &db);
-    assert!(err.contains("cannot contain ','"), "{err}");
+    assert!(err.contains("takes one field, not `a,b`"), "{err}");
     assert!(logged_entries(&db, "a,b").is_empty());
 }
 
@@ -33,7 +33,7 @@ fn an_alias_expanding_to_a_comma_is_refused() {
     let db = fresh_db();
     run_cli(&["alias", "set", "ab", "note a,b"], &db).unwrap();
     let err = refusal(&["ab"], &db);
-    assert!(err.contains("cannot contain ','"), "{err}");
+    assert!(err.contains("takes one field, not `a,b`"), "{err}");
 }
 
 /// An update re-derives a template field, so it is a name being chosen too;

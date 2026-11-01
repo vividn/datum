@@ -65,6 +65,18 @@ pub fn check(name: &str) -> Result<()> {
     Err(ParseError::InvalidArg(message))
 }
 
+/// What to say of `word` on a `command` that takes one field, when `word` lists
+/// several (`add a,b`, da-0ggbe): what was typed, and what to do. An `…` stands
+/// for what each side still needs: `add` an id, `setup` what it declares.
+pub fn several_fields(command: &str, word: &str) -> Option<String> {
+    let mut names = word.split(',').filter(|n| !n.trim().is_empty());
+    let (a, b) = (names.next()?, names.next()?);
+    Some(format!(
+        "`{command}` takes one field, not `{word}`: for several, a `,` between commands, \
+         as in `{command} {a} … , {command} {b} …`"
+    ))
+}
+
 /// [`check`] for a name `setup` declares, which may be a field template
 /// (da-38obu): its placeholders are not its text, so `issue__%hid:8%` keeps
 /// the rule by its [`skeleton`](crate::field_template::skeleton).

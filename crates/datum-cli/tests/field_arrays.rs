@@ -368,14 +368,68 @@ fn past_a_double_dash_a_comma_is_no_array_and_no_field() {
     }
 }
 
-/// `-u` takes back one field's line, and these commands take one field.
+/// `-u` takes back one field's line.
 #[test]
 fn what_takes_one_field_says_so() {
     let env = Env::new();
     let said = env.refused(&["moment", "a,b", "-u"]);
     assert!(said.contains("datum undo"), "{said}");
-    for line in [&["note", "a,b"][..], &["add", "a,b", "x"]] {
+}
+
+/// What a person typed is what is refused, with what to do, and never the JSON
+/// the word was read as (da-0ggbe).
+#[test]
+fn one_field_commands_quote_the_word_and_say_what_to_do() {
+    let env = Env::new();
+    for (line, says) in [
+        (&["add", "coffee,tea"][..], "`add coffee … , add tea …`"),
+        (&["add", "coffee,tea", "x"], "`add coffee … , add tea …`"),
+        (&["note", "coffee,tea"], "`note coffee … , note tea …`"),
+        (&["add", "a,,b"], "`add a … , add b …`"),
+        (&["setup", "a,b"], "`setup a … , setup b …`"),
+        (
+            &["setup", "a,b", "--states", "on"],
+            "`setup a … , setup b …`",
+        ),
+    ] {
         let said = env.refused(line);
-        assert!(said.contains("cannot contain ','"), "{said}");
+        assert!(said.contains(says), "{line:?}: {said}");
+        assert!(said.contains("takes one field"), "{line:?}: {said}");
+        assert!(said.contains(line[1]), "{line:?}: {said}");
+        assert!(
+            !said.contains('\\') && !said.contains('['),
+            "{line:?}: {said}"
+        );
+    }
+    // What it offers runs, once each side says what it needs.
+    env.ok(&["add", "coffee", "x", ",", "add", "tea", "y"]);
+    env.ok(&["note", "coffee", ",", "note", "tea"]);
+    let line = [
+        "setup", "c", "--verb", "moment", ",", "setup", "d", "--verb", "moment",
+    ];
+    env.ok(&line);
+}
+
+/// A comma word reaching the name check by any other way is quoted as typed:
+/// no command here takes the list, and no field is made of its JSON.
+#[test]
+fn a_comma_word_is_refused_as_typed_and_never_stored_as_json() {
+    let env = Env::new();
+    for (line, word) in [
+        (&["moment", "--", "x,y"][..], "x,y"),
+        (&["start", "--", "x,y"], "x,y"),
+        (&["moment", "x", "field=a,b"], "a,b"),
+        (&["note", ",a"], ",a"),
+    ] {
+        let said = env.refused(line);
+        let quoted = format!("cannot contain ',' (got \"{word}\")");
+        assert!(said.contains(&quoted), "{line:?}: {said}");
+    }
+    env.ok(&["moment", "g"]);
+    for word in ["field=a,b", "field=,a"] {
+        let said = env.refused(&["update", "_LAST", word]);
+        let typed = word.trim_start_matches("field=");
+        let quoted = format!("cannot contain ',' (got \"{typed}\")");
+        assert!(said.contains(&quoted), "{word}: {said}");
     }
 }
