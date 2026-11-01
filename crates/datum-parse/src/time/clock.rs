@@ -9,7 +9,7 @@
 //! so each test owns its own mock without leaking into siblings.
 
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -27,33 +27,156 @@ use crate::time::datum_time::DatumTime;
 /// [`iana_time_zone::get_timezone`], then `/etc/localtime` resolved through
 /// its whole symlink chain.
 ///
-/// `TZ` values that aren't valid IANA names (POSIX forms like `EST5EDT,…`)
-/// are ignored — we only emit names that round-trip through `chrono_tz`,
-/// since the storage column documents an IANA zone.
+/// A `TZ` chrono reads but no IANA name spells (`UTC-5`, `<+22>-22`, a rule)
+/// is `None`: the storage column documents an IANA zone, and [`host_offset`]
+/// is that `TZ`'s. One nothing reads falls to the host's zone, as chrono's
+/// offset does, and says so once (da-4nsb5).
 ///
 /// `None` means *we could not find out*, and it is deliberately not spelled
 /// `"UTC"`: [`DatumTime::timezone`] documents that naming a zone we were not
 /// given invents history. Callers pair `None` with [`host_offset`], which is
 /// read from the tzfile's contents and is correct either way (da-2pgd).
 pub fn host_iana_tz_name() -> Option<String> {
-    if let Ok(raw) = std::env::var("TZ") {
-        // POSIX permits a leading ':' to hint "use the file" — strip it
-        // so `TZ=:America/Los_Angeles` resolves the same as the bare form.
-        let candidate = raw.strip_prefix(':').unwrap_or(&raw);
-        if !candidate.is_empty() && candidate.parse::<Tz>().is_ok() {
-            return Some(candidate.to_string());
-        }
+    let tz = std::env::var("TZ").ok();
+    if let Some(zone) = tz.as_deref().and_then(zone_of_tz) {
+        return zone;
     }
-    if let Ok(name) = iana_time_zone::get_timezone() {
-        if name.parse::<Tz>().is_ok() {
-            return Some(name);
-        }
-    }
-    let name = tz_name_from_localtime();
-    if name.is_none() {
-        warn_zone_unknown_once();
+    let name = iana_time_zone::get_timezone()
+        .ok()
+        .filter(|name| name.parse::<Tz>().is_ok())
+        .or_else(tz_name_from_localtime);
+    match tz {
+        Some(tz) => warn_tz_unread_once(&tz, name.as_deref()),
+        None if name.is_none() => warn_zone_unknown_once(),
+        None => {}
     }
     name
+}
+
+/// What `TZ` says, by chrono's own reading of it (`from_posix_tz`), which
+/// [`host_offset`] follows: `None` where it reads nothing and takes the host's
+/// zone without a word, `Some(None)` where it reads an offset no IANA name
+/// spells. chrono reads `TZ` only on unix, so on wasm a name is all there is.
+fn zone_of_tz(tz: &str) -> Option<Option<String>> {
+    if tz.is_empty() {
+        return Some(Some("UTC".to_string()));
+    }
+    // POSIX permits a leading ':' to hint "use the file" — strip it so
+    // `TZ=:America/Los_Angeles` resolves the same as the bare form.
+    let file = tz.strip_prefix(':');
+    let candidate = file.unwrap_or(tz);
+    if candidate.parse::<Tz>().is_ok() {
+        return Some(Some(candidate.to_string()));
+    }
+    if !cfg!(unix) {
+        return None;
+    }
+    if let Some(path) = tz_file(tz, candidate) {
+        let name = std::fs::canonicalize(path)
+            .ok()
+            .and_then(|path| tz_name_from_zoneinfo_path(&path));
+        return Some(name);
+    }
+    (file.is_none() && is_posix_tz(tz)).then_some(None)
+}
+
+/// The tzfile `TZ` names, where chrono looks for one.
+fn tz_file(tz: &str, candidate: &str) -> Option<PathBuf> {
+    let is_tzfile = |path: &Path| std::fs::read(path).is_ok_and(|b| b.starts_with(b"TZif"));
+    if tz == "localtime" {
+        return Some(PathBuf::from("/etc/localtime")).filter(|path| is_tzfile(path));
+    }
+    if Path::new(candidate).is_absolute() {
+        return Some(PathBuf::from(candidate)).filter(|path| is_tzfile(path));
+    }
+    [
+        "/usr/share/zoneinfo",
+        "/share/zoneinfo",
+        "/etc/zoneinfo",
+        "/usr/share/lib/zoneinfo",
+    ]
+    .iter()
+    .map(|dir| Path::new(dir).join(candidate))
+    .find(|path| is_tzfile(path))
+}
+
+/// Whether chrono reads `tz` as a POSIX rule, which it cannot say itself, as
+/// read off chrono 0.4.44's `from_tz_string` (check it again on an upgrade):
+/// `std offset`, or `std offset dst [offset],start[/time],end[/time]`. It wants
+/// a daylight rule's dates spelled, so `AEST-10AEDT` is no rule to it. An
+/// offset of a day or more it reads, and panics on using, so that is none.
+fn is_posix_tz(tz: &str) -> bool {
+    fn name(s: &str) -> Option<&str> {
+        let (name, rest) = match s.strip_prefix('<') {
+            Some(quoted) => quoted.split_once('>')?,
+            None => s.split_at(
+                s.find(|c: char| !c.is_ascii_alphabetic())
+                    .unwrap_or(s.len()),
+            ),
+        };
+        let allowed = |b: u8| b.is_ascii_alphanumeric() || b == b'+' || b == b'-';
+        ((3..=7).contains(&name.len()) && name.bytes().all(allowed)).then_some(rest)
+    }
+    fn int(s: &str, range: std::ops::RangeInclusive<i32>) -> Option<(i32, &str)> {
+        let digits = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+        let n = s[..digits].parse().ok().filter(|n| range.contains(n))?;
+        Some((n, &s[digits..]))
+    }
+    /// `h[:m[:s]]` in seconds.
+    fn clock(s: &str) -> Option<(i32, &str)> {
+        let (h, mut rest) = int(s, 0..=24)?;
+        let mut secs = h * 3600;
+        for unit in [60, 1] {
+            let Some(next) = rest.strip_prefix(':') else {
+                break;
+            };
+            let (n, after) = int(next, 0..=59)?;
+            (secs, rest) = (secs + n * unit, after);
+        }
+        Some((secs, rest))
+    }
+    /// A POSIX offset, west of UTC being positive.
+    fn offset(s: &str) -> Option<(i32, &str)> {
+        let (sign, s) = match s.strip_prefix('-') {
+            Some(s) => (-1, s),
+            None => (1, s.strip_prefix('+').unwrap_or(s)),
+        };
+        let (secs, rest) = clock(s)?;
+        Some((sign * secs, rest))
+    }
+    fn rule(s: &str) -> Option<&str> {
+        let rest = if let Some(s) = s.strip_prefix('M') {
+            let (_, s) = int(s, 1..=12)?;
+            let (_, s) = int(s.strip_prefix('.')?, 1..=5)?;
+            int(s.strip_prefix('.')?, 0..=6)?.1
+        } else if let Some(s) = s.strip_prefix('J') {
+            int(s, 1..=365)?.1
+        } else {
+            int(s, 0..=365)?.1
+        };
+        match rest.strip_prefix('/') {
+            Some(time) => Some(clock(time)?.1),
+            None => Some(rest),
+        }
+    }
+    fn read(tz: &str) -> Option<()> {
+        const DAY: i32 = 24 * 3600;
+        let (std, rest) = offset(name(tz)?)?;
+        (std.abs() < DAY).then_some(())?;
+        if rest.is_empty() {
+            return Some(());
+        }
+        let rest = name(rest)?;
+        let (dst, rest) = match rest.strip_prefix(',') {
+            Some(_) => (std - 3600, rest),
+            None => offset(rest)?,
+        };
+        (dst.abs() < DAY).then_some(())?;
+        rule(rule(rest.strip_prefix(',')?)?.strip_prefix(',')?)?
+            .is_empty()
+            .then_some(())
+    }
+    read(tz.trim_matches(|c: char| c.is_ascii_whitespace())).is_some()
 }
 
 /// The host's current UTC offset, read by chrono from the *contents* of the
@@ -115,10 +238,23 @@ fn warn_zone_unknown_once() {
     if !WARNED.swap(true, Ordering::Relaxed) {
         eprintln!(
             "datum: warning: could not determine this host's IANA timezone name \
-             (TZ unset or not an IANA name, iana-time-zone found none, and \
+             (TZ unset, iana-time-zone found none, and \
              /etc/localtime does not resolve into a zoneinfo directory). \
              Recording the host's UTC offset with no zone name."
         );
+    }
+}
+
+/// Say once, on stderr, that `TZ` was passed over and for what: a wrong time
+/// with no word is what da-4nsb5 removes, and refusing would lose a log for it.
+fn warn_tz_unread_once(tz: &str, used: Option<&str>) {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        let used = match used {
+            Some(name) => name.to_string(),
+            None => format!("this host's UTC offset, {}", host_offset()),
+        };
+        eprintln!("datum: warning: cannot read TZ={tz:?} as a time zone; using {used}");
     }
 }
 
@@ -260,19 +396,58 @@ mod tests {
     }
 
     #[test]
-    fn tz_env_unknown_form_falls_through() {
-        // POSIX `TZ` permits inline DST rules (`EST5EDT,M3.2.0/2,M11.1.0/2`)
-        // that chrono_tz cannot interpret — those must not leak into the
-        // storage column. The fallback is the OS zone where the host can name
-        // one and `None` where it cannot; either way, never the POSIX rule.
+    fn tz_env_posix_form_names_no_zone() {
+        // chrono reads an inline rule, and its text must not leak into the
+        // storage column: the offset stands alone.
         let _g = TzGuard::set(Some("EST5EDT,M3.2.0/2,M11.1.0/2"));
-        let got = host_iana_tz_name();
-        assert_ne!(got.as_deref(), Some("EST5EDT,M3.2.0/2,M11.1.0/2"));
-        if let Some(name) = &got {
-            assert!(
-                name.parse::<Tz>().is_ok(),
-                "fallback must be valid IANA: {name}"
-            );
+        assert_eq!(host_iana_tz_name(), None);
+    }
+
+    #[test]
+    fn tz_env_unreadable_falls_to_a_real_name_or_nothing() {
+        let _g = TzGuard::set(Some("Nonsense/Zone"));
+        if let Some(name) = host_iana_tz_name() {
+            assert!(name.parse::<Tz>().is_ok(), "fallback must be IANA: {name}");
+        }
+    }
+
+    #[test]
+    fn tz_env_empty_is_utc() {
+        let _g = TzGuard::set(Some(""));
+        assert_eq!(host_iana_tz_name().as_deref(), Some("UTC"));
+    }
+
+    #[test]
+    fn is_posix_tz_holds_its_grammar() {
+        for tz in [
+            "UTC-5",
+            "<+22>-22",
+            "<-03>3",
+            "UTC0",
+            "AAA+5:30:15",
+            " ABC5 ",
+            "CET-1CEST,M3.5.0,M10.5.0/3",
+            "EST5EDT4,J60/2,300/1:30",
+        ] {
+            assert!(is_posix_tz(tz), "{tz}");
+        }
+        for tz in [
+            "",
+            "Nonsense/Zone",
+            "Nonsense",
+            "5",
+            "AB5",
+            "ABCDEFGH5",
+            "UTC-24",
+            "UTC-25",
+            "UTC-5:60",
+            "AEST-10AEDT",
+            "CET-1CEST,M3.5.0",
+            "CET-1CEST,M13.5.0,M10.5.0",
+            "CET-1CEST,M3.5.0,M10.5.0x",
+            "AAA-23:30BBB,M1.1.0,M12.1.0",
+        ] {
+            assert!(!is_posix_tz(tz), "{tz}");
         }
     }
 

@@ -276,6 +276,10 @@ is reported rather than read again. The owner's reads open as a write does.
   (da-htxn7). An offset on `-t` is believed. `datum check tz` warns of the converse, `tz_off_neighbours`: a run
   of one or two entries whose neighbours agree on another zone — a spike,
   where a move is a step
+- `TZ` is read as chrono reads it (`host_iana_tz_name`, da-4nsb5): a tzdb name or a tzfile's path
+  is the zone; a POSIX form no name spells (`UTC-5`, POSIX's sign, so +05:00; `<+22>-22`; a rule with
+  its dates) is its offset now, fixed, with no zone name; empty is UTC. One that cannot be read
+  takes the host's zone and says so once on stderr, and the log goes on
 - a log whose flags name a wall time a fall-back night repeats (`-d
   2026-10-25 -t 02:30` in Europe/Berlin) asks which (da-6i7l1): a terminal
   lists both full spellings, `-t 2026-10-25T02:30:00+02:00` and `…+01:00`,

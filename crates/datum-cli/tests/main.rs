@@ -167,6 +167,7 @@ mod track_echo;
 mod trailing_commands;
 mod trailing_verbs;
 mod typed_keys;
+mod tz_env;
 mod undo_shared_slug;
 mod undo_stack;
 mod unit_removed;
