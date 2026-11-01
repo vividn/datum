@@ -282,3 +282,39 @@ pub(super) fn down_76_to_75_at(conn: &Connection) -> Result<()> {
     rename_conflict_key(conn, "at", "occur_time")?;
     forget_row_hashes(conn)
 }
+
+/// da-il29m: `undo <field>` takes back part of an action, and every undo is a
+/// numbered step for `redo` to take the newest of. An action already undone
+/// gets its number so the oldest is still redone first. Local: nothing here syncs.
+pub(super) fn m76_to_77_undo_taken(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "undo_actions")? {
+        conn.execute_batch(
+            "UPDATE undo_actions SET undone = (
+                 SELECT COUNT(*) FROM undo_actions b
+                  WHERE b.undone <> 0 AND b.id >= undo_actions.id)
+              WHERE undone <> 0;
+             DROP INDEX IF EXISTS undo_actions_undone;
+             CREATE INDEX undo_actions_undone ON undo_actions(id) WHERE undone <> 0;
+             CREATE TABLE IF NOT EXISTS undo_taken (
+                 action_id INTEGER NOT NULL,
+                 hid       TEXT NOT NULL,
+                 step      INTEGER NOT NULL,
+                 PRIMARY KEY (action_id, hid)
+             ) WITHOUT ROWID;",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v76→v77: an action partly taken back stands whole in the stack again.
+pub(super) fn down_77_to_76_undo_taken(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "undo_actions")? {
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS undo_taken;
+             UPDATE undo_actions SET undone = 1 WHERE undone <> 0;
+             DROP INDEX IF EXISTS undo_actions_undone;
+             CREATE INDEX undo_actions_undone ON undo_actions(id) WHERE undone = 1;",
+        )?;
+    }
+    Ok(())
+}

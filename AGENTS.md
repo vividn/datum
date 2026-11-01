@@ -364,6 +364,15 @@ different key on each field, or to none on a moment, is refused naming them. In
 an array, a `stop` with no duration of a field not running is a failure, though
 alone it writes. `-u` is refused; `note`, `add` and `setup` take one field.
 
+### `undo <field>`
+`undo a` takes back the last command on `a`, as far as it wrote `a` and `a`'s spec
+(da-il29m, `commands/undo.rs`); `undo a,b` does each, as one step, so one `redo`
+restores both, and a field with nothing to take back is named and nothing changes.
+After `moment a,b`, `undo a` leaves `b`'s side standing (`undo_taken`) for a bare
+`undo` to take next. A whole hid is its entry; a field wins over a hid or slug it
+only starts, as in `get`. Every undo is a numbered step (`undo_actions.undone`,
+`undo_taken.step`), and `redo` re-applies the newest whole.
+
 ### A field name may be the start of one
 A name that is no field but starts exactly one names that one, after alias
 expansion (da-tldkb, `datum help names`): `datum tail envi` reads

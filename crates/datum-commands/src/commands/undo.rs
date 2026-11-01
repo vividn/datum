@@ -14,6 +14,10 @@
 //! second `undo` keep walking back instead of undoing the first. The stack
 //! moves only by writes, so `get foo; undo` reverts the last write, not foo.
 //!
+//! `undo <field>` takes back the last command on that field, as far as it wrote
+//! the field and its spec; the rest of that command stands for a bare `undo`
+//! to take next, and `undo a,b` is one step, for one `redo` (da-il29m).
+//!
 //! Neither command refuses on age. Undo used to guard bare `_LAST` behind a
 //! fifteen-minute window (a prompt on a tty, a refusal without one); with a
 //! way forward that guard cost more than it saved, so what is left of it is a
@@ -21,7 +25,7 @@
 
 use anyhow::{Context, Result};
 use datum_core::{
-    db::{revert_in_tx, soft_delete_in_tx, Db},
+    db::{revert_in_tx, take_back_in_tx, Db},
     entry::Entry,
     error::DatumError,
     field_spec::SpecRegistry,
@@ -33,8 +37,8 @@ use datum_core::{
 use crate::{
     args::{OutputFlagsExt, RedoArgs, UndoArgs},
     commands::helpers::{
-        drop_orphaned_bare_specs, for_each_id, is_id_list, load_registry_opt,
-        resolve_prefix_or_tombstone, warn_if_stale,
+        drop_orphaned_bare_specs, for_each_id, id_field_named, id_list, is_id_list,
+        load_registry_opt, resolve_prefix_or_tombstone, warn_if_stale,
     },
     render::{show_create, show_delete, show_undone, show_update_from, OutputArgs},
 };
@@ -59,6 +63,15 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         let list = list.as_str();
         if args.skip_changed {
             anyhow::bail!("--skip-changed is for a bare `undo`: a named entry already steps alone");
+        }
+        if let Some(fields) = named_fields(db, list)? {
+            if args.to_version.is_some() {
+                anyhow::bail!(
+                    "--to-version names a version of ONE entry's history, and '{list}' is a field; \
+                     give an entry's id"
+                );
+            }
+            return undo_stack(db, &fields, false, &registry, &output);
         }
         if args.to_version.is_some() && is_id_list(db, list) {
             anyhow::bail!(
@@ -87,15 +100,27 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         if args.to_version.is_some() {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
         }
-        undo_stack(db, args.skip_changed, &registry, &output)
+        undo_stack(db, &[], args.skip_changed, &registry, &output)
     }
 }
 
-/// Bare `undo`: put every entry the action at the cursor wrote back as it was
-/// before it, and move the cursor back one. `skip_changed` leaves the entries
-/// another copy changed since as they are instead of refusing.
+/// What an undo step reads before it takes the lock.
+struct Step {
+    /// The action it takes back whole, or the entries of actions it takes.
+    took: Result<i64, Vec<(i64, Hid)>>,
+    time: chrono::DateTime<chrono::Utc>,
+    skipped: Vec<Hid>,
+    report: String,
+    members: Vec<(undo_log::Member, Entry)>,
+}
+
+/// Bare `undo` (no `fields`): put every entry the action at the cursor wrote
+/// back as it was before it, and move the cursor back one. `skip_changed` leaves
+/// the entries another copy changed since as they are instead of refusing. With
+/// `fields`, the same for the last action on each ([`step_on_fields`]).
 fn undo_stack(
     db: &Db,
+    fields: &[String],
     skip_changed: bool,
     registry: &Option<SpecRegistry>,
     output: &OutputArgs,
@@ -105,47 +130,17 @@ fn undo_stack(
     // moves is read before the lock, and moved on the database it was read
     // from (da-8i7f0).
     let (time, skipped, report, steps) = db.compute_then_write_with(
-        |_| {
-            let action = undo_log::cursor(db.conn())?
-                .context("Nothing to undo — no command has changed anything here yet")?;
-            let (skipped, report) = refuse_if_moved(db, &action, "undo", skip_changed)?;
-            let mut members = Vec::new();
-            for member in action.members.iter().filter(|m| !skipped.contains(&m.hid)) {
-                if let Some(current) = still_there(db, &member.hid)? {
-                    members.push((member.clone(), current));
-                }
-            }
-            Ok::<_, anyhow::Error>((action.id, action.time, skipped, report, members))
+        |_| match fields {
+            [] => step_at_cursor(db, skip_changed),
+            fields => step_on_fields(db, fields),
         },
-        |tx, (id, time, skipped, report, members)| {
-            let mut steps: Vec<(Entry, Entry)> = Vec::new();
-            // A row refused its slug because another took it in this command
-            // goes back once that one has left it, by the end (da-icna7).
-            let mut held = Vec::new();
-            for (member, current) in members {
-                let after = if member.first > 1 {
-                    match revert_in_tx(tx, &member.hid, member.first - 1, ChangeKind::Undo) {
-                        Err(DatumError::Duplicate(_)) => {
-                            held.push((member, current));
-                            continue;
-                        }
-                        after => after?,
-                    }
-                } else if current.deleted_at.is_none() {
-                    // The action created it: before it, there was nothing.
-                    soft_delete_in_tx(tx, &member.hid, ChangeKind::Undo, None)?;
-                    db.get_entry_including_deleted(&member.hid)?
-                } else {
-                    continue;
-                };
-                steps.push((current, after));
+        |tx, step: Step| {
+            let steps = take_back_in_tx(tx, step.members)?;
+            match &step.took {
+                Ok(id) => undo_log::set_undone(tx, *id, &step.skipped)?,
+                Err(parts) => undo_log::take(tx, parts)?,
             }
-            for (member, current) in held {
-                let after = revert_in_tx(tx, &member.hid, member.first - 1, ChangeKind::Undo)?;
-                steps.push((current, after));
-            }
-            undo_log::set_undone(tx, id, &skipped)?;
-            Ok((time, skipped, report, steps))
+            Ok((step.time, step.skipped, step.report, steps))
         },
     )?;
     warn_if_stale("undoing a change from", time);
@@ -160,8 +155,122 @@ fn undo_stack(
     finish_stack(db, &steps, Echo::Undo(Some(time)), registry, output)
 }
 
-/// Bare `redo`: put every entry the oldest undone action wrote back as it
-/// left them, and move the cursor forward one. The entries its undo left as
+fn step_at_cursor(db: &Db, skip_changed: bool) -> Result<Step> {
+    let action = undo_log::cursor(db.conn())?
+        .context("Nothing to undo — no command has changed anything here yet")?;
+    let (skipped, report) = refuse_if_moved(db, &action, "undo", skip_changed)?;
+    let mut members = Vec::new();
+    for member in action.members.iter().filter(|m| !skipped.contains(&m.hid)) {
+        if let Some(current) = still_there(db, &member.hid)? {
+            members.push((member.clone(), current));
+        }
+    }
+    Ok(Step {
+        took: Ok(action.id),
+        time: action.time,
+        skipped,
+        report,
+        members,
+    })
+}
+
+/// The last command on each field, as far as it wrote that field. A field with
+/// nothing to take back, or an entry another copy changed since, refuses the
+/// whole step.
+fn step_on_fields(db: &Db, fields: &[String]) -> Result<Step> {
+    let mut time = None;
+    let mut parts = Vec::new();
+    let mut all: Vec<(undo_log::Member, Entry)> = Vec::new();
+    for field in fields {
+        let mut below = i64::MAX;
+        // An entry `undo <ID>` already took back has nothing left to move, so
+        // the field's last action is the one before it.
+        let (action, members) = loop {
+            let Some(action) = undo_log::last_on(db.conn(), field, below)? else {
+                let so = if fields.len() > 1 {
+                    ", so nothing was undone"
+                } else {
+                    ""
+                };
+                anyhow::bail!(
+                    "Nothing to undo on field '{field}': no command here has changed it{so}"
+                );
+            };
+            below = action.id;
+            let mut members = Vec::new();
+            for member in &action.members {
+                if let Some(current) = still_there(db, &member.hid)? {
+                    if member.first > 1 || current.deleted_at.is_none() {
+                        members.push((member.clone(), current));
+                    }
+                }
+            }
+            if !members.is_empty() {
+                break (action, members);
+            }
+        };
+        refuse_if_moved(db, &action, "undo that field", false)?;
+        time = time.max(Some(action.time));
+        for (member, current) in members {
+            if !all.iter().any(|(m, _)| m.hid == member.hid) {
+                parts.push((action.id, member.hid.clone()));
+                all.push((member, current));
+            }
+        }
+    }
+    Ok(Step {
+        took: Err(parts),
+        time: time.unwrap_or_else(chrono::Utc::now),
+        skipped: Vec::new(),
+        report: String::new(),
+        members: all,
+    })
+}
+
+/// The fields a list names, or `None` when it names entries. A whole hid is its
+/// entry. Past that a field wins, as in `get`, over a hid or slug it merely
+/// starts, or `undo a` would turn on what hids happen to begin with; a field
+/// whose every row is tombstoned is still named, so a second `undo a` says
+/// there is nothing left and does not bring the first back.
+fn named_fields(db: &Db, list: &str) -> Result<Option<Vec<String>>> {
+    let mut fields: Vec<String> = Vec::new();
+    let mut ids = Vec::new();
+    for token in id_list(db, list) {
+        let field = if db.hid_exists(token)? {
+            None
+        } else {
+            match id_field_named(db, token)? {
+                Some(field) => Some(field),
+                None => db.tombstoned_field_starting(token)?,
+            }
+        };
+        match field {
+            Some(field) if !fields.contains(&field) => fields.push(field),
+            Some(_) => {}
+            None => ids.push(token),
+        }
+    }
+    if fields.is_empty() {
+        return Ok(None);
+    }
+    if ids.is_empty() {
+        return Ok(Some(fields));
+    }
+    if let Some(id) = ids
+        .iter()
+        .find(|id| resolve_prefix_or_tombstone(db, id).is_err())
+    {
+        anyhow::bail!("No field or entry '{id}', so nothing was undone");
+    }
+    anyhow::bail!(
+        "'{list}' names fields ({}) and entries ({}): give one or the other",
+        fields.join(", "),
+        ids.join(", ")
+    )
+}
+
+/// Bare `redo`: put every entry the newest undo took back as its action left
+/// them, and move the cursor forward one. The entries its undo left as
 /// they are (`--skip-changed`) it leaves too: redo re-applies exactly what
 /// the undo took back (da-2ahs4).
 fn redo_stack(
@@ -382,6 +491,11 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
         return redo_stack(db, args.dry_run, &registry, &output);
     };
     let list = list.as_str();
+    if named_fields(db, list)?.is_some() {
+        anyhow::bail!(
+            "redo takes an entry's id, not a field: a bare `datum redo` puts back the last undo"
+        );
+    }
     // A list's ids that do not resolve are named and make the command fail,
     // after the ones that do have moved — `delete`'s precedent (da-9p3o).
     let mut targets: Vec<Hid> = Vec::new();

@@ -62,7 +62,7 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 76;
+pub const CURRENT_SCHEMA_VERSION: u32 = 77;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -632,5 +632,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: occur_time and its family are at, at_offset, at_tz and at_uncertainty, the old names kept as virtual columns for stored SQL; ops signed before read as the new names (da-95avu)",
         apply: m75_to_76_at,
         down: down_76_to_75_at,
+    },
+    Migration {
+        from: 76,
+        to: 77,
+        summary: "undo_taken, and undo_actions.undone a step's number: `undo <field>` takes back part of a command, `undo a,b` is one redo (da-il29m)",
+        apply: m76_to_77_undo_taken,
+        down: down_77_to_76_undo_taken,
     },
 ];
