@@ -38,8 +38,8 @@ fn nowview_context_window_renders_envelope() {
     // area (now_ms == day.end_ms).
     assert!(svg.contains("current-time-line"));
     assert!(svg.contains("#ffcc00"));
-    // Overlay clock label is always emitted (HH:MM never empty).
-    assert!(svg.contains("current-time-text"));
+    // The clock over the strip and «now» under it, always (da-slzde).
+    assert!(svg.contains("now-clock") && svg.contains("now-label"));
     // da-34w: date label dropped — no `<text class="date-label">` group.
     assert!(!svg.contains("date-label"));
 }
@@ -104,8 +104,23 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     // da-nk84: 60m history → 400 px, now strip included.
     assert!(svg.contains(r#"width="400""#));
 
-    // Overlay clock label injected inside the plot group.
-    assert!(svg.contains("current-time-text"));
+    // The clock's text over «now», in the SVG (da-slzde).
+    let (clock, word) = (
+        tags(&svg, r#"<text class="now-clock""#),
+        tags(&svg, r#"<text class="now-label""#),
+    );
+    assert_eq!((clock.len(), word.len()), (1, 1), "{svg}");
+    assert!(num(clock[0], "y") < 0.0, "{svg}");
+    assert!(num(word[0], "y") > 0.0, "{svg}");
+    assert_eq!(num(clock[0], "x"), num(word[0], "x"), "{svg}");
+    let time = svg.split(r#"<text class="now-clock""#).nth(1).unwrap();
+    let time = &time[time.find('>').unwrap() + 1..time.find("</text>").unwrap()];
+    assert!(
+        time.len() == 5
+            && time.as_bytes()[2] == b':'
+            && time.replace(':', "").parse::<u32>().is_ok(),
+        "{time}"
+    );
     // da-nk84: the labelled panel is gone; the state at now is a chunk
     // right of the now-line, and only for a field that is in one. `mood`
     // is mid-switch, `coffee` is an occur-only field.
@@ -552,7 +567,7 @@ fn nowview_lanes_fill_edge_to_edge_and_carry_a_now_chunk() {
     for text in svg.split(r#"<text class=""#).skip(1) {
         let class = &text[..text.find('"').expect("class close")];
         assert!(
-            ["tick-label", "clock-label", "current-time-text"].contains(&class),
+            ["tick-label", "clock-label", "now-clock", "now-label"].contains(&class),
             "unexpected <text class=\"{class}\"> — nowview labels only the axes: {svg}"
         );
     }
@@ -791,10 +806,7 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
     let instant = tags(&svg, r#"<line class="instant-line""#);
     assert_eq!(instant.len(), 2, "{svg}");
     assert!((num(instant[1], "x1") - 160.0).abs() < 1e-6, "{svg}");
-    assert!(
-        !svg.contains("instant-label") && !svg.contains("now-label"),
-        "{svg}"
-    );
+    assert!(!svg.contains("instant-label"), "{svg}");
 
     // `-qq` is an instant too: its dashed line in the middle, and now's
     // section at now, five minutes after it in the window, between two

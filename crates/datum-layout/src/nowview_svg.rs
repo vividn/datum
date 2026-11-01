@@ -6,7 +6,7 @@
 //! dayview renderer paints field bands + gridlines + the yellow now-line.
 //! This module adds the nowview-specific overlay on top: the strip right
 //! of the now-line, where each field's lane continues in the colour of the
-//! state it is in *now*, and the `HH:MM` clock label under it.
+//! state it is in *now*, the `HH:MM` clock over it and «now» under it.
 //!
 //! Pure-Rust, WASM-clean.
 
@@ -15,41 +15,26 @@ use std::fmt::Write;
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
     axis_label_size, icon_id, now_chunk, render_dayview_svg_with, text_width, ClockMark,
-    DayviewSvgOpts, RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
+    DayviewSvgOpts, RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR, TICK_LENGTH,
+    VERTICAL_AXIS_LABEL_INSET,
 };
 use crate::nowview::NowviewCurrentState;
 
 const TEXT_COLOR: &str = "white";
-/// What [`now_label_overlay`] writes.
-const NOW_LABEL: &str = "now";
-/// Below this strip width the clock can't be centred inside the strip
-/// without overflowing the canvas, so it centres on the now-line instead.
-/// Mirrors `isNowWidthSmall` in the original datum's `nowview.ts`.
-const CLOCK_CENTER_MIN_STRIP: f64 = 40.0;
 
 /// Render `layout` (a dayview layout the CLI built for the nowview window)
 /// to an SVG document string, then overlay the now strip: one chunk per
 /// field carrying the state it is in at "now", drawn from the now-line to
-/// the right edge, and the `HH:MM` `current_time_label` under them. An
-/// empty `current_time_label` skips the clock, and `now_label` draws a
-/// small «now» in its place (da-9g3bf); a field whose entry has no
-/// `state_label` — it is in no state right now — gets no chunk.
+/// the right edge, the `HH:MM` `clock_time` above them and a small «now» under
+/// them (da-slzde). An empty `clock_time` skips the clock; a field whose entry
+/// has no `state_label` — it is in no state right now — gets no chunk.
 pub fn render_nowview_svg(
     layout: &DayviewLayout,
-    current_time_label: &str,
+    clock_time: &str,
     current_states: &[NowviewCurrentState],
     labels: bool,
-    now_label: bool,
 ) -> String {
-    render_nowview_svg_with(
-        layout,
-        current_time_label,
-        current_states,
-        labels,
-        now_label,
-        false,
-        &[],
-    )
+    render_nowview_svg_with(layout, clock_time, current_states, labels, false, &[])
 }
 
 /// [`render_nowview_svg`] with `clock` written on the clock strip
@@ -57,55 +42,57 @@ pub fn render_nowview_svg(
 /// da-hklaz).
 pub fn render_nowview_svg_with(
     layout: &DayviewLayout,
-    current_time_label: &str,
+    clock_time: &str,
     current_states: &[NowviewCurrentState],
     labels: bool,
-    now_label: bool,
     flow: bool,
     clock: &[ClockMark],
 ) -> String {
-    let current_time_label = if now_label { "" } else { current_time_label };
-    let fills = now_strip_fills(current_states);
-    // The clock sits in the now strip; it only steals room from the tick
-    // labels when it is wider than the strip (da-sv8c).
-    let opts = DayviewSvgOpts {
-        axis_end_reserved: clock_reserved_px(layout, current_time_label),
-        axis_keep_out: strip_label_keep_out(layout, now_label.then_some(&NOW)),
-        right_panel_fills: &fills,
+    render(
+        layout,
+        clock_time,
+        None,
+        current_states,
+        labels,
         flow,
-        clock_marks: clock,
-        data_layer: false,
-    };
-    let (gutter, label_group) = label_gutter(layout, current_states, labels);
-    let widened = widen_for(layout, gutter);
-    let layout = widened.as_ref().unwrap_or(layout);
-    let mut svg = render_dayview_svg_with(layout, opts);
-    if !current_time_label.is_empty() {
-        let overlay = build_current_time_overlay(layout, current_time_label);
-        inject_inside_plot_group(&mut svg, &overlay);
-    }
-    if now_label {
-        inject_inside_plot_group(&mut svg, &strip_label_overlay(layout, &NOW));
-    }
-    inject_inside_plot_group(&mut svg, &label_group);
-    svg
+        clock,
+    )
 }
 
 /// Render a window placed anywhere but ending at now: centred on a selected
 /// time (a time flag, da-pcis) or on wherever its viewer moved it. Its strip
-/// is now's, at now when the window draws now, carrying `current_states`;
-/// under it, `clock` or a «now» with `now_label`. The selected time,
+/// is now's, at now when the window draws now, carrying `current_states`,
+/// with the clock above it and a «now» under it. The selected time,
 /// `instant_ms`, is a dashed line in a timeline continuous either side of
 /// it (da-dv45l, vividn: «For selected times, don't display the outset
 /// block, just have the nowview as it would be with a dashed line and
 /// continuous in time around it»).
 pub fn render_nowview_at_svg(
     layout: &DayviewLayout,
-    clock: &str,
+    clock_time: &str,
     instant_ms: Option<i64>,
     current_states: &[NowviewCurrentState],
     labels: bool,
-    now_label: bool,
+    clock: &[ClockMark],
+) -> String {
+    render(
+        layout,
+        clock_time,
+        instant_ms,
+        current_states,
+        labels,
+        false,
+        clock,
+    )
+}
+
+fn render(
+    layout: &DayviewLayout,
+    clock_time: &str,
+    instant_ms: Option<i64>,
+    current_states: &[NowviewCurrentState],
+    labels: bool,
+    flow: bool,
     clock_marks: &[ClockMark],
 ) -> String {
     // `--labels` means one thing on every nowview picture (da-7q8r): the
@@ -114,24 +101,25 @@ pub fn render_nowview_at_svg(
     let widened = widen_for(layout, gutter);
     let layout = widened.as_ref().unwrap_or(layout);
     let fills = now_strip_fills(current_states);
-    let label = if now_label {
-        NOW
-    } else {
-        StripLabel {
-            text: clock,
-            class: "now-clock",
-            fill: TEXT_COLOR,
-        }
+    let time = StripLabel {
+        text: clock_time,
+        class: "now-clock",
+        fill: TEXT_COLOR,
+        above: true,
     };
     let opts = DayviewSvgOpts {
-        axis_end_reserved: 0.0,
-        axis_keep_out: strip_label_keep_out(layout, Some(&label)),
+        axis_keep_out: strip_label_keep_out(layout, &NOW),
+        // A picture that flows waits its marks behind the now-line, clear of
+        // the strip wherever they slide to.
+        clock_keep_out: strip_label_keep_out(layout, &time).filter(|_| !flow),
         right_panel_fills: &fills,
+        flow,
         clock_marks,
         ..Default::default()
     };
     let mut svg = render_dayview_svg_with(layout, opts);
-    inject_inside_plot_group(&mut svg, &strip_label_overlay(layout, &label));
+    inject_inside_plot_group(&mut svg, &strip_label_overlay(layout, &time));
+    inject_inside_plot_group(&mut svg, &strip_label_overlay(layout, &NOW));
     if let Some(at) = instant_ms {
         inject_inside_plot_group(&mut svg, &instant_line(layout, at));
     }
@@ -174,39 +162,48 @@ fn instant_line(layout: &DayviewLayout, at: i64) -> String {
         .collect()
 }
 
-/// The text under the strip, in the time-axis strip: a «now», or the clock.
+/// The text at the now strip: the clock above it, in the clock strip, or
+/// «now» under it, in the time axis's.
 struct StripLabel<'a> {
     text: &'a str,
     class: &'static str,
     fill: &'static str,
+    above: bool,
 }
 
-/// The small yellow «now» in place of the clock (da-9g3bf).
+/// The small yellow «now» under the strip (da-9g3bf).
 const NOW: StripLabel<'static> = StripLabel {
-    text: NOW_LABEL,
+    text: "now",
     class: "now-label",
     fill: NOW_LINE_COLOR,
+    above: false,
 };
 
-/// `label` under the strip's chunk, in the time-axis strip, and sized to lie
-/// wholly between the chunk's two ends. Nothing when there is no strip, or
-/// no room in it or in the axis strip to write it legibly.
+/// `label` at the strip's chunk, in its axis's strip, and sized to lie wholly
+/// between the chunk's two ends. Nothing when there is no strip, or no room
+/// in it or in the axis's strip to write it legibly.
 fn strip_label_overlay(layout: &DayviewLayout, label: &StripLabel) -> String {
-    let Some((middle, size)) = strip_label_at(layout, label.text) else {
+    let Some((middle, size)) = strip_label_at(layout, label) else {
         return String::new();
     };
     let cross_total = layout.days.len() as f64 * layout.day_pitch - layout.interday_margin;
-    // Horizontally on the tick labels' baseline, as the clock is.
-    let (x, y, anchor) = match layout.orientation {
-        Orientation::Horizontal => (
-            layout.label_width + middle,
-            cross_total + layout.time_axis_height,
-            r#"text-anchor="middle""#,
-        ),
-        Orientation::Vertical => (
+    let along = layout.label_width + middle;
+    // Horizontally on its axis's labels' baseline.
+    let centered = r#"text-anchor="middle""#;
+    let (x, y, anchor) = match (layout.orientation, label.above) {
+        (Orientation::Horizontal, false) => {
+            (along, cross_total + layout.time_axis_height, centered)
+        }
+        (Orientation::Horizontal, true) => (along, -TICK_LENGTH - 1.0, centered),
+        (Orientation::Vertical, false) => (
             layout.time_axis_height - 1.0,
-            layout.label_width + middle,
+            along,
             r#"text-anchor="end" dominant-baseline="middle""#,
+        ),
+        (Orientation::Vertical, true) => (
+            layout.time_axis_height + cross_total + VERTICAL_AXIS_LABEL_INSET,
+            along,
+            r#"text-anchor="start" dominant-baseline="middle""#,
         ),
     };
     format!(
@@ -240,28 +237,32 @@ pub fn strip_slot(layout: &DayviewLayout) -> String {
     )
 }
 
-/// Where along the time axis [`strip_label_overlay`] centres `text`, and
+/// Where along the time axis [`strip_label_overlay`] centres `label`, and
 /// its font size: `None` when it writes none.
-fn strip_label_at(layout: &DayviewLayout, text: &str) -> Option<(f64, f64)> {
-    let c = layout.days.iter().find_map(|d| now_chunk(layout, d))?;
+fn strip_label_at(layout: &DayviewLayout, label: &StripLabel) -> Option<(f64, f64)> {
+    let c = (!label.text.is_empty())
+        .then(|| layout.days.iter().find_map(|d| now_chunk(layout, d)))??;
     let room = c.to - c.from;
-    let size = axis_label_size(layout.orientation, layout.time_axis_height);
+    let strip = if label.above {
+        layout.clock_axis_height
+    } else {
+        layout.time_axis_height
+    };
+    let size = axis_label_size(layout.orientation, strip);
     let size = match layout.orientation {
-        Orientation::Horizontal => size.min(room / text_width(text, 1.0)),
+        Orientation::Horizontal => size.min(room / text_width(label.text, 1.0)),
         Orientation::Vertical => size
             .min(room)
-            .min((layout.time_axis_height - 2.0) / text_width(text, 1.0)),
+            .min((strip - 2.0) / text_width(label.text, 1.0)),
     };
     // Smaller than any text datum draws is too small to read: none.
     (size >= 6.0).then_some(((c.from + c.to) / 2.0, size))
 }
 
-/// The stretch of the time axis the label under the strip takes, which the
-/// tick labels keep off (da-ljs7b), as they keep off the clock it stands in
-/// for.
-fn strip_label_keep_out(layout: &DayviewLayout, label: Option<&StripLabel>) -> Option<(f64, f64)> {
-    let label = label?;
-    let (middle, size) = strip_label_at(layout, label.text)?;
+/// The stretch of the time axis `label` takes, which its axis's own labels
+/// keep off (da-ljs7b).
+fn strip_label_keep_out(layout: &DayviewLayout, label: &StripLabel) -> Option<(f64, f64)> {
+    let (middle, size) = strip_label_at(layout, label)?;
     let half = match layout.orientation {
         Orientation::Horizontal => text_width(label.text, size),
         Orientation::Vertical => size,
@@ -511,124 +512,6 @@ fn now_strip_fills(current_states: &[NowviewCurrentState]) -> Vec<RightPanelFill
         .collect()
 }
 
-/// Font size of the clock overlay: its tick labels' size (da-78evn,
-/// da-a2cxp), and readable when the strip is suppressed (callers may pass
-/// `time_axis_height = 0`).
-fn clock_font_size(layout: &DayviewLayout) -> f64 {
-    match axis_label_size(layout.orientation, layout.time_axis_height) {
-        s if s > 0.0 => s,
-        _ => 12.0,
-    }
-}
-
-/// Extent the clock takes along the axis's own label direction: its text
-/// width when time runs horizontally, one line of it when time runs
-/// vertically.
-fn clock_extent_px(layout: &DayviewLayout, label: &str) -> f64 {
-    let font_size = clock_font_size(layout);
-    match layout.orientation {
-        Orientation::Horizontal => text_width(label, font_size),
-        Orientation::Vertical => font_size,
-    }
-}
-
-/// Where the clock's centre sits along the time axis: the middle of the
-/// now strip when the strip is wide enough to be worth centring in, the
-/// now-line otherwise — then pulled back so the text never runs off the
-/// plot's far edge.
-fn clock_time_pos(layout: &DayviewLayout, label: &str) -> f64 {
-    let strip = layout.right_panel_width.max(0.0);
-    let far = layout.time_axis_extent + strip;
-    let centred = if strip >= CLOCK_CENTER_MIN_STRIP {
-        layout.time_axis_extent + strip / 2.0
-    } else {
-        layout.time_axis_extent
-    };
-    let half = clock_extent_px(layout, label) / 2.0;
-    centred.min(far - half).max(half.min(centred))
-}
-
-/// Room the clock needs at the far end of the *time axis* — how far it
-/// reaches back past the now-line, which is the only part that can collide
-/// with a tick label. Centred in a roomy strip it reaches back not at all.
-fn clock_reserved_px(layout: &DayviewLayout, label: &str) -> f64 {
-    if label.is_empty() {
-        return 0.0;
-    }
-    let half = clock_extent_px(layout, label) / 2.0;
-    let overhang = half - (clock_time_pos(layout, label) - layout.time_axis_extent);
-    (AXIS_LABEL_GAP + overhang).max(0.0)
-}
-
-/// Build the `<text>` overlay placed near the now-line. Centred in the now
-/// strip when the strip is wide enough to hold it, on the now-line itself
-/// otherwise — the original datum's `isNowWidthSmall` rule. Coordinates
-/// are in plot-local space (the renderer's outer `<g class="plot">`
-/// translates by `margin`).
-fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
-    let n_days = layout.days.len();
-    if n_days == 0 || layout.time_axis_extent <= 0.0 {
-        return String::new();
-    }
-
-    // Cross-axis extent of the stacked-day data area.
-    let cross_total = n_days as f64 * layout.day_height
-        + (n_days.saturating_sub(1)) as f64 * layout.interday_margin;
-
-    // Origin of the data area within the plot group, mirroring
-    // `dayview_svg::PlotGeom::new`.
-    let (data_x, data_y) = match layout.orientation {
-        Orientation::Horizontal => (layout.label_width, 0.0),
-        Orientation::Vertical => (layout.time_axis_height, layout.label_width),
-    };
-
-    let font_size = clock_font_size(layout);
-    let time_pos = clock_time_pos(layout, label);
-
-    let mut out = String::new();
-    let _ = write!(&mut out, r#"<g class="nowview-overlay">"#,);
-    match layout.orientation {
-        Orientation::Horizontal => {
-            // On the tick labels' baseline, so it reads as the now-line's
-            // own tick label.
-            let text_x = data_x + time_pos;
-            let text_y = data_y
-                + cross_total
-                + if layout.time_axis_height > 0.0 {
-                    layout.time_axis_height
-                } else {
-                    font_size
-                };
-            let _ = write!(
-                &mut out,
-                r#"<text class="current-time-text" x="{x}" y="{y}" text-anchor="middle" fill="{c}" font-size="{fs}" font-weight="bold">{label}</text>"#,
-                x = text_x,
-                y = text_y,
-                c = TEXT_COLOR,
-                fs = font_size,
-                label = escape_xml(label),
-            );
-        }
-        Orientation::Vertical => {
-            // Against the time-axis strip on the left, at the now-line's
-            // own position along the (vertical) time axis.
-            let text_x = data_x - 2.0;
-            let text_y = data_y + time_pos + font_size / 2.0;
-            let _ = write!(
-                &mut out,
-                r#"<text class="current-time-text" x="{x}" y="{y}" text-anchor="end" fill="{c}" font-size="{fs}" font-weight="bold">{label}</text>"#,
-                x = text_x,
-                y = text_y,
-                c = TEXT_COLOR,
-                fs = font_size,
-                label = escape_xml(label),
-            );
-        }
-    }
-    out.push_str("</g>");
-    out
-}
-
 /// Insert `overlay` inside the dayview's `<g class="plot">` group so the
 /// overlay's coordinates resolve in plot-local space (mirroring how the
 /// rest of the dayview SVG is emitted). Returns the original `svg` unchanged
@@ -796,9 +679,9 @@ mod tests {
     }
 
     #[test]
-    fn renders_dayview_envelope_with_current_time() {
+    fn renders_dayview_envelope() {
         let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "15:30", &[], false, false);
+        let svg = render_nowview_svg(&layout, "15:30", &[], false);
         // Dayview envelope intact, its text not selectable (da-mu5op).
         assert!(svg.starts_with("<svg "));
         let root = &svg[..svg.find('>').unwrap()];
@@ -808,21 +691,85 @@ mod tests {
         assert!(svg.contains(r#"data-field="mood""#));
         // Now-line drawn by dayview (now_ms = day.end_ms).
         assert!(svg.contains("current-time-line"));
-        // Overlay clock label injected inside the plot group.
-        assert!(svg.contains("current-time-text"));
-        assert!(svg.contains("15:30"));
-        // Overlay must sit before the SVG's closing tags.
-        let label_idx = svg.find("current-time-text").unwrap();
-        let svg_close = svg.rfind("</svg>").unwrap();
-        assert!(label_idx < svg_close);
     }
 
+    /// da-slzde: the clock over the strip and «now» under it, each between
+    /// the chunk's ends, whichever way time runs; no mark's label beside the
+    /// clock; an empty clock writes none.
     #[test]
-    fn no_current_time_label_means_no_overlay() {
-        let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "", &[], false, false);
-        assert!(!svg.contains("current-time-text"));
-        assert!(!svg.contains("nowview-overlay"));
+    fn the_clock_stands_over_the_strip_and_now_under_it() {
+        let now_ms = 1_700_000_000_000_i64;
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let day = DayviewDayInput {
+                date: None,
+                label_lines: vec![],
+                start_ms: now_ms - 30 * 60_000,
+                end_ms: now_ms,
+                errors: Vec::new(),
+                fields: vec![],
+                spans: Vec::new(),
+            };
+            let layout = compute_dayview(&DayviewConfig {
+                days: vec![day],
+                now_ms,
+                width: 400.0,
+                height: Some(300.0),
+                day_height: 200.0,
+                time_axis_height: 40.0,
+                clock_axis_height: 40.0,
+                margin: 2.0,
+                label_width: Some(0.0),
+                orientation,
+                axis_ticks_override: Some(Vec::new()),
+                right_panel_width: 80.0,
+                ..Default::default()
+            });
+            let num = |svg: &str, class: &str, attr: &str| -> f64 {
+                let at = svg.find(&format!(r#"<text class="{class}""#)).expect(class);
+                let tag = &svg[at..at + svg[at..].find('>').unwrap()];
+                let key = format!(r#" {attr}=""#);
+                let a = tag.find(&key).expect(attr) + key.len();
+                tag[a..a + tag[a..].find('"').unwrap()].parse().unwrap()
+            };
+            // On the now-line, and long enough to reach the clock's room.
+            let beside = [ClockMark {
+                ms: now_ms,
+                label: "00:00:00:00:00:00:00:00".into(),
+            }];
+            let svg = render_nowview_at_svg(&layout, "15:30", None, &[], false, &beside);
+            assert!(svg.contains(">15:30</text>"), "{svg}");
+            assert!(svg.contains(">now</text>"), "{svg}");
+            // Vertically a label is one line tall, nowhere near the strip's middle.
+            assert_eq!(
+                svg.contains("clock-label"),
+                orientation == Orientation::Vertical,
+                "{svg}"
+            );
+            let (across, along) = match orientation {
+                Orientation::Horizontal => ("y", "x"),
+                Orientation::Vertical => ("x", "y"),
+            };
+            let (time, word) = (
+                num(&svg, "now-clock", across),
+                num(&svg, "now-label", across),
+            );
+            match orientation {
+                Orientation::Horizontal => assert!(time < 0.0 && word > 200.0, "{svg}"),
+                Orientation::Vertical => assert!(time > 200.0 && word < 40.0, "{svg}"),
+            }
+            assert_eq!(
+                num(&svg, "now-clock", along),
+                num(&svg, "now-label", along),
+                "{svg}"
+            );
+
+            let flowing = render_nowview_svg_with(&layout, "15:30", &[], false, true, &beside);
+            assert!(flowing.contains("clock-label"), "{flowing}");
+            assert!(
+                !render_nowview_svg(&layout, "", &[], false).contains("now-clock"),
+                "an empty clock"
+            );
+        }
     }
 
     #[test]
@@ -915,7 +862,7 @@ mod tests {
                 id: None,
             },
         ];
-        let svg = render_nowview_svg(&layout, "12:00", &entries, false, false);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         // The strip carries one chunk for the field that is in a state,
         // a gap past now and on to the picture's edge, at that field's band.
         let mood = field_group(&svg, "mood");
@@ -1038,7 +985,7 @@ mod tests {
                 id: None,
             },
         ];
-        let svg = render_nowview_svg(&layout, "", &entries, true, false);
+        let svg = render_nowview_svg(&layout, "", &entries, true);
         let labels: Vec<&str> = svg.split(r#"<text class="state-label" "#).skip(1).collect();
         assert_eq!(labels.len(), 1, "{svg}");
         let label = &labels[0][..labels[0].find('>').unwrap()];
@@ -1068,7 +1015,7 @@ mod tests {
         assert_eq!(coffee.contains("rotate(90)"), turned, "{coffee}");
 
         // No labels asked for, no key either.
-        let bare = render_nowview_svg(&layout, "", &entries, false, false);
+        let bare = render_nowview_svg(&layout, "", &entries, false);
         assert!(!bare.contains("occur-key"), "{bare}");
     }
 
@@ -1127,12 +1074,12 @@ mod tests {
         }];
 
         // Unasked for, no label and no gutter: the canvas is the layout's.
-        let bare = render_nowview_svg(&layout, "", &entries, false, false);
+        let bare = render_nowview_svg(&layout, "", &entries, false);
         assert!(!bare.contains("state-label"), "{bare}");
         assert!(bare.contains(r#"width="100""#), "{bare}");
 
         // Asked for, the text starts past the band and the canvas grew.
-        let svg = render_nowview_svg(&layout, "", &entries, true, false);
+        let svg = render_nowview_svg(&layout, "", &entries, true);
         assert!(svg.contains(">mood: focused</text>"), "{svg}");
         let band_end = layout.label_width + layout.time_axis_extent + layout.right_panel_width;
         let key = r#"<text class="state-label" x=""#;
@@ -1155,7 +1102,7 @@ mod tests {
             colors: vec![],
             id: None,
         }];
-        let empty = render_nowview_svg(&layout, "", &none, true, false);
+        let empty = render_nowview_svg(&layout, "", &none, true);
         assert!(!empty.contains("nowview-labels"), "{empty}");
         assert!(empty.contains(r#"width="100""#), "{empty}");
     }
@@ -1227,7 +1174,7 @@ mod tests {
             id: None,
         };
         let entries = [state("environment", "#3a2e1c"), state("project", "#adb5bd")];
-        let svg = render_nowview_svg(&layout, "", &entries, true, false);
+        let svg = render_nowview_svg(&layout, "", &entries, true);
         let attr = |tag: &str, name: &str| -> String {
             let key = format!(r#" {name}=""#);
             let a = tag.find(&key).expect(name) + key.len();
@@ -1308,7 +1255,7 @@ mod tests {
             colors: vec!["#888888".into()],
             id: None,
         }];
-        let svg = render_nowview_svg(&layout, "", &entries, false, false);
+        let svg = render_nowview_svg(&layout, "", &entries, false);
         assert!(!svg.contains(r#"data-field="ghost""#));
     }
 
@@ -1381,7 +1328,7 @@ mod tests {
             colors: vec!["#aa3333".into(), "#33aa33".into()],
             id: None,
         }];
-        let svg = render_nowview_svg(&layout, "12:00", &entries, false, false);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         // The chunk is striped the way dayview stripes a parallel-state
         // block, sharing that machinery rather than inventing a swatch.
         assert!(
@@ -1446,7 +1393,7 @@ mod tests {
             colors: vec!["#abcdef".into()],
             id: None,
         }];
-        let svg = render_nowview_svg(&layout, "12:00", &entries, false, false);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         assert!(
             field_group(&svg, "mood").contains(r##"<rect class="now-chunk" x="##),
             "single-state chunk must be a solid rect: {svg}"
@@ -1478,24 +1425,22 @@ mod tests {
     /// and an entry two to four minutes ahead of it, in a window of 30
     /// minutes over 404px. Centred 5 minutes before now, the window runs
     /// 10 minutes past it; otherwise it ends at now.
-    fn gap_picture(centred: bool, now_label: bool) -> (DayviewLayout, String) {
-        gap_picture_with(centred, now_label, |_| {})
+    fn gap_picture(centred: bool) -> (DayviewLayout, String) {
+        gap_picture_with(centred, |_| {})
     }
 
     /// [`gap_picture`], its layout changed by `edit` before it is drawn.
     fn gap_picture_with(
         centred: bool,
-        now_label: bool,
         edit: impl FnOnce(&mut DayviewLayout),
     ) -> (DayviewLayout, String) {
-        picture_at(centred.then_some(-5), now_label, edit)
+        picture_at(centred.then_some(-5), edit)
     }
 
     /// [`gap_picture`]'s entries in a window centred `at` minutes from now,
     /// or ending at now with none.
     fn picture_at(
         at: Option<i64>,
-        now_label: bool,
         edit: impl FnOnce(&mut DayviewLayout),
     ) -> (DayviewLayout, String) {
         use crate::nowview::{nowview_config, NowviewGeometry};
@@ -1536,9 +1481,9 @@ mod tests {
             id: None,
         }];
         let svg = if centred {
-            render_nowview_at_svg(&layout, "12:00", None, &states, false, now_label, &[])
+            render_nowview_at_svg(&layout, "12:00", None, &states, false, &[])
         } else {
-            render_nowview_svg(&layout, "12:00", &states, false, now_label)
+            render_nowview_svg(&layout, "12:00", &states, false)
         };
         (layout, svg)
     }
@@ -1550,7 +1495,7 @@ mod tests {
     /// the edge — and no second line, there being no future to close it off.
     #[test]
     fn the_past_stops_a_gap_short_of_a_finer_now_line() {
-        let (layout, svg) = gap_picture(false, false);
+        let (layout, svg) = gap_picture(false);
         let now = layout.time_axis_extent;
         assert_eq!(now, 400.0 * 4.0 / 5.0);
         let past = rects(&field_group(&svg, "mood"), "block");
@@ -1582,7 +1527,7 @@ mod tests {
     /// future drawn at the past's scale, a strip further on.
     #[test]
     fn a_future_drawn_past_the_chunk_between_two_lines() {
-        let (layout, svg) = gap_picture(true, false);
+        let (layout, svg) = gap_picture(true);
         let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
         assert_eq!((extent, strip), (320.0, 80.0));
         // Now is 20 of the window's 30 minutes in.
@@ -1624,7 +1569,7 @@ mod tests {
     #[test]
     fn a_window_now_is_outside_draws_time_where_the_strip_was() {
         for at in [-60, 60] {
-            let (layout, svg) = picture_at(Some(at), true, |_| {});
+            let (layout, svg) = picture_at(Some(at), |_| {});
             assert_eq!(layout.right_panel_width, 80.0);
             for absent in ["now-chunk", "now-label", "current-time-line"] {
                 assert!(!svg.contains(absent), "{absent}: {svg}");
@@ -1636,7 +1581,7 @@ mod tests {
             let ms = (s.end_ms - s.start_ms) as f64;
             assert!((ms - 37.5 * 60_000.0).abs() < 1.0, "{svg}");
         }
-        let (layout, svg) = picture_at(Some(-16), true, |_| {});
+        let (layout, svg) = picture_at(Some(-16), |_| {});
         let c = now_chunk(&layout, &layout.days[0]).expect("a strip");
         assert!((c.now - 320.0 * 31.0 / 30.0).abs() < 1e-9, "{svg}");
         assert_eq!(c.to, c.now + 80.0, "{svg}");
@@ -1667,12 +1612,12 @@ mod tests {
                 .collect()
         };
         for strip in [None, Some(40.0)] {
-            let (_, svg) = gap_picture_with(false, false, |l| {
+            let (_, svg) = gap_picture_with(false, |l| {
                 if let Some(h) = strip {
                     l.time_axis_height = h;
                 }
             });
-            let (ticks, clock) = (sizes(&svg, "tick-label"), sizes(&svg, "current-time-text"));
+            let (ticks, clock) = (sizes(&svg, "tick-label"), sizes(&svg, "now-clock"));
             assert!(!ticks.is_empty() && clock.len() == 1, "{svg}");
             for size in ticks.iter().chain(&clock) {
                 assert_eq!(*size, AXIS_LABEL_MAX, "{strip:?}: {svg}");
@@ -1681,13 +1626,11 @@ mod tests {
     }
 
     /// «a yellow now written entirely within the bounds of the yellow dotted
-    /// lines underneath» (da-9g3bf), in place of the clock.
+    /// lines underneath» (da-9g3bf).
     #[test]
     fn the_now_label_lies_under_the_chunk_between_its_lines() {
         for centred in [false, true] {
-            let (layout, svg) = gap_picture(centred, true);
-            assert!(!svg.contains("current-time-text"), "{svg}");
-            assert!(!svg.contains(">12:00<") || centred, "{svg}");
+            let (layout, svg) = gap_picture(centred);
             let lead = num(&svg, "line", "current-time-line", "x1");
             let end = if centred {
                 num(&svg, "line", "current-time-line-end", "x1")
@@ -1709,8 +1652,6 @@ mod tests {
             );
             assert!(svg.contains(">now</text>"), "{svg}");
         }
-        // Not asked for, there is none.
-        assert!(!gap_picture(false, false).1.contains("now-label"));
     }
 
     /// Each tick label's `(lo, hi, text)` along the axis, as drawn.
@@ -1779,7 +1720,6 @@ mod tests {
                 Some(at),
                 std::slice::from_ref(&state),
                 false,
-                true,
                 &[],
             );
             let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
@@ -1829,7 +1769,7 @@ mod tests {
                 });
                 ticks.sort_by(|a, b| a.time_pos.total_cmp(&b.time_pos));
             };
-            let (layout, svg) = gap_picture_with(centred, true, at_now);
+            let (layout, svg) = gap_picture_with(centred, at_now);
             let x = num(&svg, "text", "now-label", "x") - layout.label_width;
             let half = text_width("now", num(&svg, "text", "now-label", "font-size")) / 2.0;
             let (now_lo, now_hi) = (x - half, x + half);
@@ -1843,15 +1783,6 @@ mod tests {
                 );
             }
         }
-        // With the clock in its place, the clock's own reservation stands:
-        // the last tick label ends a gap short of the clock's text.
-        let (layout, svg) = gap_picture(false, false);
-        let clock_lo = clock_time_pos(&layout, "12:00") - clock_extent_px(&layout, "12:00") / 2.0;
-        let last = tick_labels(&svg).last().unwrap().1 - layout.label_width;
-        assert!(
-            last + AXIS_LABEL_GAP <= clock_lo + 1e-9,
-            "{last} {clock_lo}: {svg}"
-        );
     }
 
     /// da-hklaz: drawn ahead (`--ahead`), a lane's marks are a `.flow` group
@@ -1901,7 +1832,7 @@ mod tests {
             ms: now + 3 * min,
             label: "12:03".into(),
         }];
-        let svg = render_nowview_svg_with(&layout, "12:00", &states, false, false, true, &marks);
+        let svg = render_nowview_svg_with(&layout, "12:00", &states, false, true, &marks);
         let extent = layout.time_axis_extent;
         let per_min = extent / 30.0;
 
@@ -1960,6 +1891,6 @@ mod tests {
         assert!(svg.contains(&format!("H{}V", extent + 0.5)), "{svg}");
 
         // Not drawn ahead, nothing flows.
-        assert!(!gap_picture(false, false).1.contains("flow"));
+        assert!(!gap_picture(false).1.contains("flow"));
     }
 }

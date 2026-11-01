@@ -164,6 +164,7 @@
 	import { markOf, pressSpent } from '#lib/inspect.ts';
 	import { readLanes } from '#lib/lanes.ts';
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
+	import { clockLabel, now as clockNow } from '#lib/clock.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
 	import { clockAround, clockWord, historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
 	import { layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
@@ -323,6 +324,21 @@
 	let el: HTMLDivElement | undefined;
 
 	const svgEl = () => el?.querySelector<SVGSVGElement>('svg.svg') ?? null;
+
+	/**
+	 * The clock over the now strip, to the minute (da-slzde): a picture on now
+	 * is asked for again only once what it drew ahead is half spent, so datum's
+	 * word in it goes stale. The zone is the one the page hands datum.
+	 */
+	const clockTime = $derived(clockLabel($clockNow));
+	function tellTime(): void {
+		const time = svgEl()?.querySelector('.now-clock');
+		if (time && time.textContent !== clockTime) time.textContent = clockTime;
+	}
+	$effect(() => {
+		void clockTime;
+		untrack(tellTime);
+	});
 
 	/**
 	 * The picture on screen when another window was asked for: it stays
@@ -1787,6 +1803,7 @@
 
 	function place(): void {
 		if (!el) return;
+		tellTime();
 		// A new picture takes the slide the one before it had.
 		slideTo();
 		unstretch();

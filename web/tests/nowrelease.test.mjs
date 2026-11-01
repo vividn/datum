@@ -91,6 +91,7 @@ function record(page, labels = false) {
 				};
 				x('.current-time-line');
 				x('.now-label');
+				x('.now-clock');
 				x('.now-strip', '<');
 				x('.now-strip', '>');
 				const b = document.querySelector(band).getBoundingClientRect();

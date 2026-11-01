@@ -72,7 +72,7 @@ const AXIS_LABEL_FONT: &str = "Arial, 'Liberation Sans', Helvetica, sans-serif";
 const DIGIT_HEIGHT_RATIO: f64 = 0.72;
 /// How far a tick, and each of the axis's end hooks, reaches out of the
 /// axis line: d3's `tickSize`, as v2 drew it.
-const TICK_LENGTH: f64 = 6.0;
+pub const TICK_LENGTH: f64 = 6.0;
 
 /// Estimated rendered width (px) of `label` at `font_size`.
 pub fn text_width(label: &str, font_size: f64) -> f64 {
@@ -186,9 +186,6 @@ pub struct RightPanelFill {
 /// Knobs the nowview overlay needs the dayview renderer to honour.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DayviewSvgOpts<'a> {
-    /// Pixels at the far end of the time axis owned by an overlay drawn on
-    /// top of the axis strip (nowview's clock). Tick labels never enter it.
-    pub axis_end_reserved: f64,
     /// A stretch of the time axis, in its own coordinates, owned by text an
     /// overlay writes on the axis strip (nowview's «now», da-ljs7b). A tick
     /// label beside it is moved off it, to the side its tick is on, or gives
@@ -208,6 +205,9 @@ pub struct DayviewSvgOpts<'a> {
     /// across the bands: in a `.flow` group when the picture flows, so they
     /// move with the data.
     pub clock_marks: &'a [ClockMark],
+    /// The stretch of the time axis no clock mark's label is written on: what
+    /// the picture writes in the clock strip itself (nowview's clock, da-slzde).
+    pub clock_keep_out: Option<(f64, f64)>,
     /// The bands' data alone (`dayview --data-layer`, da-0e06p): no
     /// gridlines and no now-line, which its viewer draws over a crop of it.
     pub data_layer: bool,
@@ -1407,7 +1407,13 @@ fn emit_clock_axis(
             r#"<line class="clock-mark" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="0.35" data-at="{at}"/>"#,
             at = iso(mark.ms),
         );
-        if size >= 6.0 {
+        let half = if horizontal {
+            text_width(&mark.label, size)
+        } else {
+            size
+        } / 2.0;
+        let clear = (opts.clock_keep_out).is_none_or(|(a, b)| t + half < a || t - half > b);
+        if size >= 6.0 && clear {
             let _ = write!(
                 out,
                 r#"<text class="clock-label" x="{lx}" y="{ly}" {anchor} fill="{c}" stroke="{c}" font-size="{size}" font-family="{AXIS_LABEL_FONT}">{label}</text>"#,
@@ -1468,7 +1474,7 @@ fn emit_time_axis(
     let placed = fit_axis_labels(
         &slots,
         0.0,
-        axis_origin + axis_end(layout, opts) - opts.axis_end_reserved.max(0.0),
+        axis_origin + axis_end(layout, opts),
         opts.axis_keep_out
             .map(|(a, b)| (axis_origin + a, axis_origin + b)),
     );
@@ -2049,7 +2055,6 @@ mod tests {
         let named = render_dayview_svg_with(
             &layout,
             DayviewSvgOpts {
-                axis_end_reserved: 0.0,
                 right_panel_fills: &[RightPanelFill {
                     field: "mood".into(),
                     fill: BlockFill::Single("#abcdef".into()),
@@ -2069,7 +2074,6 @@ mod tests {
         let unnamed = render_dayview_svg_with(
             &layout,
             DayviewSvgOpts {
-                axis_end_reserved: 0.0,
                 right_panel_fills: &[RightPanelFill {
                     field: "mood".into(),
                     fill: BlockFill::Single("#abcdef".into()),

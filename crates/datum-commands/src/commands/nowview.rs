@@ -407,7 +407,6 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             c.at.map(|t| t.timestamp_millis()),
             &states,
             args.labels,
-            args.now_label,
             &c.clock,
         )
     } else {
@@ -416,7 +415,6 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             &format_local_hh_mm(c.anchor),
             &c.current_states,
             args.labels,
-            args.now_label,
             c.flow,
             &c.clock,
         )

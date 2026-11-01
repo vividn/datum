@@ -971,14 +971,28 @@ describe('the nowview draws past its box', () => {
 		}, phone);
 	});
 
-	test('no clock under the now section: an HH:MM is the clock axis’s alone', async () => {
-		await withApp(async ({ page }) => {
-			await page.locator(`${BAND} svg.svg .tick-label`).first().waitFor({ state: 'attached' });
-			const texts = await page.locator(`${BAND} svg.svg text:not(.clock-label)`).allTextContents();
-			assert.deepEqual(texts.filter((t) => /\d{1,2}:\d\d/.test(t)), []);
-			assert.ok((await page.locator(`${BAND} svg.svg .clock-label`).count()) > 0, 'no clock axis');
-			assert.equal(await page.locator(`${BAND} svg.svg .current-time-text`).count(), 0);
-		}, phone);
+	test('the clock stands over the now section, «now» under it, and the clock keeps the time', async () => {
+		await withApp(
+			async ({ page, clock }) => {
+				const clockAt = () =>
+					page.locator(BAND).evaluate((band) => {
+						const box = (selector) => band.querySelector(`svg.svg ${selector}`)?.getBoundingClientRect();
+						const [time, strip, word] = [box('.now-clock'), box('.now-strip'), box('.now-label')];
+						return {
+							text: band.querySelector('svg.svg .now-clock')?.textContent,
+							order: time && strip && word && time.bottom <= strip.top + 0.5 && strip.bottom <= word.top + 0.5,
+							within: time && strip && time.left >= strip.left - 0.5 && time.right <= strip.right + 0.5
+						};
+					});
+				const at = await until(clockAt, (c) => c.text === '14:30');
+				assert.ok(at.order, `clock, strip, «now» from the top: ${JSON.stringify(at)}`);
+				assert.ok(at.within, `the clock lies in the strip's width: ${JSON.stringify(at)}`);
+				// Well short of what the picture drew ahead being half spent.
+				await clock.forward(60_000);
+				await until(clockAt, (c) => c.text === '14:31');
+			},
+			{ ...phone, clock: todayAt(14, 30) }
+		);
 	});
 });
 

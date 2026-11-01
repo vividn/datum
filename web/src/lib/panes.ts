@@ -605,7 +605,6 @@ export const nowviewSpec = (history: string, center?: string, vertical = false, 
 		// picture it is asked for has none, and opens no database.
 		...(history === '0' || labels ? [] : ['--overlay']),
 		...(labels ? ['--labels'] : []),
-		'--now-label',
 		'--history',
 		history,
 		...(labels ? [] : ['--surround', stepMinutes(history) > 0 ? `${Math.round(surround * stepMinutes(history) * 60)}s` : history]),

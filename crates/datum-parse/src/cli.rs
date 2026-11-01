@@ -1797,9 +1797,6 @@ pub struct NowviewArgs {
     /// (da-us41f). Off by default, and the SVG path's alone: the terminal
     /// band never carries labels.
     pub labels: bool,
-    /// `--now-label` — a small yellow «now» under the now strip in place
-    /// of the `HH:MM` clock (da-9g3bf). The SVG path's alone.
-    pub now_label: bool,
     /// `--overlay`, unlisted: datum.day's nowview (da-0e06p). The picture
     /// with no data and no database opened — its axis, ticks, gridlines,
     /// now-line and the labels under its now strip, and the strip's place
@@ -1875,7 +1872,6 @@ impl Default for NowviewArgs {
         Self {
             history: None,
             labels: false,
-            now_label: false,
             overlay: false,
             axis_now: false,
             surround: None,
