@@ -89,6 +89,10 @@ pub(crate) fn purge_confirmation_token(cli_db: Option<&str>, db: &Db) -> String 
         if let Some(name) = resolved.name {
             return name;
         }
+        // The default database is the one `--db datum` names (da-3mc2r).
+        if crate::config::locate_db(Some("datum")).is_some_and(|p| p == resolved.path) {
+            return "datum".into();
+        }
     }
     // Path-resolved (or resolution itself failed) — fall back to the
     // pragma-derived path. Empty for in-memory test DBs; harmless,
@@ -250,16 +254,9 @@ pub(crate) fn confirm_by_name(
     is_tty: bool,
     confirm: &str,
 ) -> Result<()> {
-    // Branch the prompt copy on confirmation-token shape so the
-    // user sees "Type 'vremya'" instead of "Type the database
-    // path" when the resolution was name-based.
-    let looks_like_path =
-        confirm.contains('/') || confirm.starts_with('.') || confirm.ends_with(".db");
-    let prompt = if looks_like_path {
-        "Type the database path to confirm:".to_string()
-    } else {
-        format!("Type '{confirm}' to confirm {cmd}:")
-    };
+    // A name or a path, it is said: a path is SQLite's own, absolute, which
+    // `datum info`'s `~` would not match (da-3mc2r).
+    let prompt = format!("Type '{confirm}' to confirm {cmd}:");
     let action = cmd.strip_prefix("db ").unwrap_or(cmd);
     if Question::name(headline, action, confirm, prompt).ask_on(stdin, is_tty)? != confirm {
         anyhow::bail!("{cmd}: aborted (input did not match {confirm})");

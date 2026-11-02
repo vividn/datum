@@ -138,6 +138,70 @@ fn db_purge_non_tty_without_yes_aborts() {
     assert_eq!(db.count_entries().unwrap(), 1);
 }
 
+/// The confirmation names what to type (da-3mc2r): a database named by its
+/// path, that path, where it said «Type the database path» and no more.
+#[cfg(unix)]
+#[test]
+fn a_path_resolved_purge_shows_the_path_it_asks_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("t.db");
+    purged_by_typing(&dir, Some(&path), &path.display().to_string());
+}
+
+/// The default database, no `--db` and no `DATUM_DB`, is the one `--db
+/// datum` names, and is confirmed by that name (da-3mc2r).
+#[cfg(unix)]
+#[test]
+fn the_default_database_is_confirmed_by_its_name() {
+    let dir = tempfile::tempdir().unwrap();
+    purged_by_typing(&dir, None, "datum");
+}
+
+/// `db purge` on a terminal shows `token` to type, and typing it purges.
+#[cfg(unix)]
+fn purged_by_typing(dir: &tempfile::TempDir, db: Option<&std::path::Path>, token: &str) {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+
+    let datum = |args: &[&str]| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
+        cmd.args(args)
+            .env("DATUM_HOME", dir.path())
+            .env("DATUM_CONFIG_HOME", dir.path())
+            .env_remove("DATUM_DB")
+            .env_remove("DATUM_NO_DEFAULT_ANSWER")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(db) = db {
+            cmd.env("DATUM_DB", db);
+        }
+        cmd
+    };
+    assert!(datum(&["occur", "coffee"]).status().unwrap().success());
+
+    let (mut master, slave) = crate::ambiguous_time::pty();
+    let mut child = datum(&["db", "purge"]).stdin(slave).spawn().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let (mut heard, mut buf) = (String::new(), [0u8; 256]);
+    while !heard.contains("to confirm") {
+        let n = stderr.read(&mut buf).unwrap();
+        assert!(n > 0, "never asked: {heard}");
+        heard.push_str(&String::from_utf8_lossy(&buf[..n]));
+    }
+    master.write_all(format!("{token}\n").as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success(), "{heard}");
+    assert!(
+        heard.contains(&format!("Type '{token}' to confirm db purge:")),
+        "{heard}"
+    );
+    let file = db.map_or_else(|| dir.path().join("datum.db"), |p| p.to_path_buf());
+    let count: i64 = rusqlite::Connection::open(file)
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0, "typing what was shown purged it");
+}
+
 /// `datum db setup` is gone (da-a4ptr): `db migrate` applies what is
 /// pending, so «setup» means the field command alone.
 #[test]
