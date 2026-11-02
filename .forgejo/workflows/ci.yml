@@ -231,7 +231,10 @@ jobs:
       # (da-waghz, da-q587o). A crate is what the CLI module is built from, and
       # staging's full run is what tests what a crate change does to datum.day
       # (vividn, 2026-10-21: «that should speed things up»); the PR checks only
-      # that the crates still compile for it (CRATES, the wasm step below).
+      # that the crates still compile for it (CRATES, the wasm step below). A
+      # migration is the exception (da-ako1r): it reaches the browser's upgrade
+      # path, and runs the web tests that upgrade a file, UPGRADE_TESTS in
+      # web/scripts/testmap.mjs.
       # Anything else runs the web: web/, Cargo.toml, Cargo.lock,
       # rust-toolchain.toml, .forgejo/, kits/, tests/fixtures/, and
       # crates/datum-cli/tests/fixtures/, which web/tests/dbio.test.mjs reads.
@@ -251,7 +254,7 @@ jobs:
           git fetch -q --no-tags --unshallow origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
           files=$(git diff --name-only "origin/$BASE...HEAD")
           if [ -n "$files" ] && ! grep -qvE '^crates/|^docs/|\.md$|^scripts/mq-check\.sh$' <<<"$files" \
-            && ! grep -qE '^web/|^crates/datum-cli/tests/fixtures/' <<<"$files"; then
+            && ! grep -qE '^web/|^crates/datum-cli/tests/fixtures/|^crates/datum-core/src/migrations/' <<<"$files"; then
             echo "WEB=0" >> "$GITHUB_ENV"
             if grep -vE '^crates/[^/]+/tests/' <<<"$files" | grep -qE '^crates/'; then
               echo "CRATES=1" >> "$GITHUB_ENV"
@@ -463,7 +466,9 @@ jobs:
       # or support file no test reached, a map missing or over MAX_BEHIND
       # commits behind, or a selection that fails. A crate's file selects nothing
       # (da-q587o): the module the selection runs on is built from it, and
-      # staging's full run tests the rest. A push runs everything.
+      # staging's full run tests the rest. A migration selects the tests that
+      # upgrade a file (da-ako1r), and beside nothing else the web reads, only
+      # them, with no need of the map. A push runs everything.
       - name: Which web tests can this change reach?
         if: env.WEB == '1' && github.event_name == 'pull_request'
         env:

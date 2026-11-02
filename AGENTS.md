@@ -1467,8 +1467,10 @@ A PR's CI runs no web suite for a change under `crates/` (da-q587o): one that
 changes only `crates/`, docs and markdown runs none and only checks that the
 CLI still compiles for datum.day (`node web/scripts/build-cli-wasm.mjs
 --check`), and one that also changes `web/` runs the web tests its `web/`
-change selects. Staging's full run is what tests a crate change against
-datum.day. So a change under `crates/` that alters what a command prints or
+change selects. A change under `crates/datum-core/src/migrations/` also runs
+the web tests that upgrade a file (`UPGRADE_TESTS` in `web/scripts/testmap.mjs`,
+da-ako1r), as a schema bump reaches every browser's next open. Staging's full
+run is what tests any other crate change against datum.day. So a change under `crates/` that alters what a command prints or
 accepts — its `--json` shape, its text, a flag, an error — looks for that
 command's callers in `web/src` (`git grep -n '<command>' web/src`), runs the
 web test files that reach them (`DATUM_TEST_ONLY=<a file listing

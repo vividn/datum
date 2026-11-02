@@ -229,6 +229,28 @@ fn a_change_under_crates_reaching_no_test_still_runs_what_reads_the_tree() {
     );
 }
 
+/// A schema bump reaches the browser's upgrade path, and no other crate file
+/// runs a web test (da-ako1r).
+#[test]
+fn a_migration_runs_the_web_tests_that_upgrade_a_file_and_no_other_crate_file_does() {
+    let repo = Repo::new("migration", 0);
+    repo.write("web/tests/first-paint.test.mjs", "// a test\n");
+    repo.commit("the upgrade test");
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.git(&["update-ref", "refs/remotes/origin/staging", &base]);
+    repo.write("crates/a/src/lib.rs", "pub fn a() -> u8 {\n    2\n}\n");
+    repo.commit("a crate's change");
+    let plan = repo.can_plan();
+    assert!(!plan.contains("web tests:"), "{plan}");
+    repo.write(
+        "crates/datum-core/src/migrations/mod.rs",
+        "pub const CURRENT_SCHEMA_VERSION: u32 = 2;\n",
+    );
+    repo.commit("a migration");
+    let plan = repo.can_plan();
+    assert_eq!(listed(&plan), ["first-paint.test.mjs"], "{plan}");
+}
+
 #[test]
 fn the_whole_suite_answer_runs_the_prs_own_tests_and_says_why() {
     let repo = Repo::new("whole", 0);

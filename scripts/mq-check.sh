@@ -109,7 +109,8 @@ merge_base="$(git merge-base HEAD "${bases[@]}")"
 changed="$(git diff --name-only "$merge_base" HEAD)"
 
 rust="$(printf '%s\n' "$changed" | grep -E '^(crates/|xtask/|Cargo\.(toml|lock)$|rust-toolchain|scripts/check(-changed)?\.sh$)' || true)"
-web="$(printf '%s\n' "$changed" | grep -E '^web/' || true)"
+# A migration runs the web tests that upgrade a file, as CI does (da-ako1r).
+web="$(printf '%s\n' "$changed" | grep -E '^web/|^crates/datum-core/src/migrations/' || true)"
 
 sel="$(mktemp -d)"
 trap 'rm -rf "$sel"' EXIT

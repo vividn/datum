@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_BEHIND, READS_TREE, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
+import { MAX_BEHIND, READS_TREE, UPGRADE_TESTS, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
 
 const MAP = {
 	commit: 'abc123',
@@ -67,6 +67,30 @@ test("a crate's source beside a web/src change is a note, and the web change kee
 		r.notes,
 		crates.map((p) => `${p}: a crate; staging's full web run tests it`)
 	);
+});
+
+test('a migration runs the upgrade tests: alone with no map, stale or not, and beside a web change on top of its selection (da-ako1r)', () => {
+	const migration = 'crates/datum-core/src/migrations/mod.rs';
+	const tests = [...TESTS, ...UPGRADE_TESTS];
+	const known = { ...MAP, files: { ...MAP.files, [UPGRADE_TESTS[0]]: [] } };
+	const alone = [migration, 'crates/datum-core/src/schema.sql', 'docs/a.md'];
+	for (const opts of [{}, { map: null }, { behind: MAX_BEHIND + 1 }, { behind: null }, { map: { ...MAP, always: ['tests/bar.test.mjs'] } }]) {
+		assert.deepEqual(picked(run(alone, { tests, ...opts })), UPGRADE_TESTS);
+	}
+	assert.equal(run(alone, { tests }).picked.get(UPGRADE_TESTS[0]), `${migration}: a migration`);
+	assert.deepEqual(picked(run([migration, 'web/src/lib/DayStrip.svelte'], { tests, map: known })), ['tests/strip.test.mjs', ...UPGRADE_TESTS].sort());
+	// Beside what can reach the web, that decides, and any other crate file selects nothing.
+	assert.match(run([migration, 'kits/sample.toml'], { tests }).full?.join() ?? '', /can reach the web/);
+	assert.match(run([migration, 'web/src/lib/fields.ts'], { tests, map: null }).full?.join() ?? '', /no web test map/);
+	assert.deepEqual(picked(run(['web/src/lib/DayStrip.svelte', 'crates/datum-core/src/db.rs'], { tests, map: known })), ['tests/strip.test.mjs']);
+});
+
+test('every test moving a file back a schema is an upgrade test, so a migration runs it', () => {
+	const dir = new URL('.', import.meta.url);
+	const moving = readdirSync(dir, { recursive: true, encoding: 'utf8' })
+		.filter((f) => f.endsWith('.test.mjs') && /SET value = '\d+' WHERE key = 'schema_version'/.test(readFileSync(new URL(f, dir), 'utf8')))
+		.map((f) => `tests/${f}`);
+	assert.deepEqual(moving.sort(), [...UPGRADE_TESTS].sort());
 });
 
 test('a web/src file no test reached runs everything', () => {
