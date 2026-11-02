@@ -702,3 +702,53 @@ fn newchore_declares_the_interval() {
     let rows: Vec<JsonValue> = serde_json::from_str(&out).unwrap();
     assert_eq!(rows[0]["iti_days"], 5);
 }
+
+/// `newchore vacuum 4` is `setup vacuum --verb moment -k next_date=+4`
+/// (da-npjfk): the spec it writes is the one that line writes, and it logs
+/// nothing, as `track` logged a TRACK entry. A tap on the widget logs a moment.
+#[test]
+fn newchore_is_setup_with_a_moment() {
+    let db = fresh_db();
+    install_chores(&db);
+    run(&db, &["newchore", "vacuum", "4"]);
+    run(
+        &db,
+        &["setup", "mop", "--verb", "moment", "-k", "next_date=+4"],
+    );
+    let stored = |field: &str| {
+        let mut spec = serde_json::to_value(db.load_spec(field).unwrap().unwrap()).unwrap();
+        spec.as_object_mut().unwrap().remove("field");
+        spec.as_object_mut().unwrap().remove("derived_aliases");
+        spec
+    };
+    assert_eq!(stored("vacuum"), stored("mop"));
+    assert!(
+        !db.field_has_entries("vacuum").unwrap(),
+        "setup logs nothing"
+    );
+
+    let src =
+        fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(CHORES_KIT_PATH))
+            .unwrap();
+    let kit = datum_core::kit::KitToml::from_str(&src).unwrap();
+    assert_eq!(kit.widgets[0].row_action.as_deref(), Some("moment {field}"));
+}
+
+/// The repo's kits speak today's verbs (da-npjfk): `moment`, never its alias
+/// `occur`, in an alias, a widget, a field's verb, help or a script.
+#[test]
+fn the_kits_say_moment_not_occur() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../kits");
+    let mut said = Vec::new();
+    for file in fs::read_dir(&dir).unwrap() {
+        let path = file.unwrap().path();
+        let text = fs::read_to_string(&path).unwrap();
+        for (n, line) in text.lines().enumerate() {
+            let words = line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'));
+            if words.into_iter().any(|w| w == "occur") {
+                said.push(format!("{}:{}: {line}", path.display(), n + 1));
+            }
+        }
+    }
+    assert!(said.is_empty(), "`occur` in the kits:\n{}", said.join("\n"));
+}

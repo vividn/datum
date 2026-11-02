@@ -71,7 +71,7 @@ test('the chores kit’s chorelist: drawn as the CLI answers, a tap logs the cho
 		assert.deepEqual(await drawn(page), [{ cells: due.row_cells, color: 'rgb(255, 255, 255)', background: 'rgb(224, 27, 36)' }]);
 
 		// A tap logs it: done today, green, and due a week on. A minute on,
-		// so its instant is not the one `newchore`'s TRACK entry holds.
+		// so the tap is not at the instant the shirk was made, which is its time.
 		await app.clock.forward(60_000);
 		await row.click();
 		await page.waitForFunction(() => getComputedStyle(document.querySelector('.kit-widget[data-widget="chorelist"] button.row')).color === 'rgb(38, 162, 105)');

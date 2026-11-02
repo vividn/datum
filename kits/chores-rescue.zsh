@@ -2,7 +2,7 @@
 # days, at most N a day, most overdue first. A day that already holds chores
 # (future ones, or due ones left where they are) takes that many fewer.
 #
-# Each move is a shirk, `occur <chore> -T next_date=+D`, so the date moves
+# Each move is a shirk, `moment <chore> -T next_date=+D`, so the date moves
 # and the chore does not count as done. Name chores to rescue only those.
 # It prints the plan and asks before writing anything.
 #
@@ -41,6 +41,6 @@ chorerescue() {
 	read -r "ok?Shirk these? [y/N] "
 	[[ $ok == [yY]* ]] || return 1
 	while IFS=$'\t' read -r field d due; do
-		$dtm occur $field -T next_date=+$d || return
+		$dtm moment $field -T next_date=+$d || return
 	done <<< $plan
 }

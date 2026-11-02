@@ -166,10 +166,10 @@ fn kit_show_reads_out_the_sample_kit() {
     for line in [
         "kit 'sample'",
         "fields (8):",
-        "  coffee           occur   #8d5524",
+        "  coffee           moment  #8d5524",
         "  mood             switch  (auto)",
         "aliases (4):",
-        "  cof              occur coffee",
+        "  cof              moment coffee",
         "views (1):",
         "  water_by_day",
         "commands (1):",

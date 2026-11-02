@@ -58,7 +58,7 @@ size = 0.1
 
 [[field]]
 name = "coffee"
-verb = "occur"
+verb = "moment"
 color = "#8d5524"
 symbol = "☕"
 pos = 0.86
@@ -66,7 +66,7 @@ size = 0.06
 
 [[field]]
 name = "water"
-verb = "occur"
+verb = "moment"
 color = "#339af0"
 symbol = "◆"
 pos = 0.93
@@ -76,12 +76,12 @@ subfields.amount = { value_type = "number" }
 
 [[alias]]
 name = "cof"
-expands_to = "occur coffee"
+expands_to = "moment coffee"
 description = "a coffee, now"
 
 [[alias]]
 name = "h2o"
-expands_to = "occur water amount=250"
+expands_to = "moment water amount=250"
 description = "a glass of water"
 
 [[alias]]
