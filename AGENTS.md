@@ -1484,6 +1484,8 @@ version, source or checksum, puts `review/steward` on the PR and names them in a
 waits for his APPROVED at the head. A removal asks nothing. A `git` source in `Cargo.lock` is red, approved or not.
 Holding a PR through that label is the gate's, not the forge's: a merge that does not go through `ct pr merge` is
 held only by staging's own rule. A label left after the dependency has gone from the PR is taken off by hand.
+`review/steward` is not exclusive on the forge, so it and `review/hero` stand together; the job fails if that
+setting is lost (da-6125t).
 
 `minimumReleaseAge` in `web/pnpm-workspace.yaml` is a week. pnpm 11.4 refuses a version younger than that on `add`,
 picks the newest old enough for a range, and fails any install, `--frozen-lockfile` too, on a lockfile that names

@@ -10,6 +10,11 @@
 # in Cargo.lock fails it, approved or not. The label stays once the dependency
 # has gone from the PR: whoever took it out takes the label off.
 #
+# The label is not exclusive on the forge (da-6125t): another review/* going on
+# would take an exclusive one off with no `unlabeled` event, and this job's would
+# take review/hero off. So no `labeled` here: a label added takes nothing away.
+# The forge's setting is in no file, so the job reads it back and fails without it.
+#
 # `pull_request_target`, as in approvals.yml: this file and the script are read
 # from the PR's BASE, and the PR's commits are only read by git. `unlabeled`, so
 # a label taken off with the dependency still there comes back.
@@ -49,7 +54,9 @@ jobs:
           api="${SERVER%/}/api/v1/repos/${{ github.repository }}/issues/$NUMBER"
           call() { printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - -H 'Content-Type: application/json' "$@"; }
           # The label is the hold, so its failure is the job's; the comment only says why.
-          call -X POST -d '{"labels":["review/steward"]}' "$api/labels" >/dev/null || exit 1
+          on=$(call -X POST -d '{"labels":["review/steward"]}' "$api/labels") || exit 1
+          printf '%s' "$on" | python3 -c 'import json, sys; sys.exit(not any(l["name"] == "review/steward" and not l["exclusive"] for l in json.load(sys.stdin)))' \
+            || { echo "::error::review/steward is not on the PR, or is exclusive on the forge, where another review/* takes it off"; exit 1; }
 
           body=$(printf '@vividn this PR waits for your approval: it adds or changes\n\n```\n%s\n```\n' "$names")
           if ! call "$api/comments" | python3 -c 'import json, sys; sys.exit(not any(c["body"] == sys.argv[1] for c in json.load(sys.stdin)))' "$body"; then
