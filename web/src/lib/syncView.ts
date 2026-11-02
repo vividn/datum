@@ -103,6 +103,8 @@ export interface Notice {
 	who: string;
 	/** The device it is about, which an expel names. */
 	endpoint?: string | null;
+	/** When, RFC 3339: a wipe's, the order's instant (da-pvoai). */
+	at: string;
 	/** The CLI's own words: who, by label, in local time (da-o9xdd). */
 	text: string;
 }

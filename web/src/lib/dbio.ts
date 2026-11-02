@@ -42,14 +42,18 @@ import type { ChainList } from './syncView.js';
  */
 export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	const [cmd, sub, ...flags] = argv;
-	if (cmd === 'db' && sub === 'purge') {
+	// `sync chain purge` purges this copy as it orders every other (da-pvoai).
+	const chained = cmd === 'sync' && sub === 'chain' && flags[0] === 'purge';
+	if ((cmd === 'db' && sub === 'purge') || chained) {
 		// `--yes` typed by hand is the CLI's contract: straight through. So is
 		// `--chain`, `sync chain purge --data` by another name
 		// (da-2bb7z), which is `asking`'s to ask without `--yes`.
-		const straight = flags.some((f) => f === '--yes' || f === '-y' || f === '--chain');
-		// A purge that ran takes what the page kept of the data with it.
+		const whole = chained || flags.includes('--chain');
+		const straight = whole || flags.some((f) => f === '--yes' || f === '-y');
+		// A purge that ran takes what the page kept of the data with it. A
+		// chain's, declined at its question, exits 0 too, having said no `purged:`.
 		return (straight ? runEchoed(asking(run), argv) : purge(flags)).then((r) => {
-			if (r.code === 0) forgetKept(dbOf(argv));
+			if (r.code === 0 && (!whole || /^purged:/m.test(r.stdout))) forgetKept(dbOf(argv));
 			return r;
 		});
 	}

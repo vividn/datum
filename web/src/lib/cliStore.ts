@@ -17,7 +17,7 @@ import { derived, get, writable } from 'svelte/store';
 import { browser } from '$app/env';
 import type { RunResult } from './run.js';
 import { noteRun } from './bar.js';
-import { maskTicket } from './sync.js';
+import { maskTicket, syncStates } from './sync.js';
 import { currentDb, DEFAULT_DB } from './database.js';
 import { parseEcho, type EchoDoc } from './echo.js';
 
@@ -218,11 +218,52 @@ export function forget(db: string): void {
 	}
 }
 
+/** The purges ordered elsewhere that this database's scrollback was cleared for, by notice subject. */
+const PURGED_KEY = `${STORE_KEY}.purged`;
+
+/**
+ * This copy purged by another member's order (da-pvoai), `n` the notice the
+ * copy keeps of it: the commands run before it go with the data they printed,
+ * as a purge run here takes them (`forget`), and so does what was typed, the
+ * values in it the purged data's too. In their place the CLI's notice, once,
+ * which names where this copy's backup is. A command run after the order's
+ * instant stays, as the entries it wrote do. Every tab on the database does
+ * it: the first writes it to the store and marks it done, the others read it
+ * back from there.
+ */
+function purged(n: { subject: string; at: string; text: string }): void {
+	let done: string[] = [];
+	try {
+		done = JSON.parse(localStorage.getItem(PURGED_KEY) ?? '[]');
+	} catch {
+		// Unread: cleared again, which changes nothing it has not already.
+	}
+	if (done.includes(n.subject)) return;
+	const at = Date.parse(n.at) || Date.now();
+	const notice: Command = { line: 'sync chain purge', ranAt: at, result: { argv: [], code: 0, stdout: n.text, stderr: '' } };
+	cli.update(({ scrollback }) => ({ scrollback: [notice, ...scrollback.filter((c) => c.ranAt > at)], history: [] }));
+	persist();
+	try {
+		localStorage.setItem(PURGED_KEY, JSON.stringify([...done, n.subject].slice(-KEEP)));
+	} catch {
+		// Not marked: the next state heard clears it again, to the same.
+	}
+}
+
 if (browser) {
 	// A reload is the one moment a debounced write would lose: flush.
 	addEventListener('pagehide', persist);
-	// Another tab forgot, so this one does, or its next command writes it all back.
 	addEventListener('storage', (e) => {
+		// Another tab forgot, so this one does, or its next command writes it all back.
 		if (e.key === STORE_KEY && e.newValue === null) cli.set({ scrollback: [], history: [] });
+		// Another tab cleared a purge, and wrote what it left first.
+		if (e.key === PURGED_KEY) {
+			clearTimeout(pending);
+			cli.set(restore());
+		}
+	});
+	// A purge reaches this copy as a sync applies it, said by the notice its sync leader carries to every tab.
+	syncStates.subscribe((all) => {
+		for (const n of all[currentDb()]?.notices ?? []) if (n.kind === 'wipe' && n.subject.startsWith('purge:')) purged(n);
 	});
 }
