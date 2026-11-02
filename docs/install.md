@@ -26,8 +26,8 @@ takes the script's arguments: `| sh -s -- --no-completions`, say.
   restarted onto this binary; `--daemon` installs it before one does.
 - A line naming the backup daemons installed, or how to install one:
   `datum db backup daemon install --every 1h` takes a database's Tower of
-  Hanoi rotation every hour on a systemd user timer, into `backups/` in
-  datum's data directory (`--to DIR` another; one daemon per destination).
+  Hanoi rotation every hour on a systemd user timer, into `backups/<db>/` in
+  datum's data directory (`--to DIR` another, `DIR/<db>/`; one daemon per destination).
 - It ends with the line that makes your aliases and the verbs commands
   of their own in your shell, for you to add if you want it.
 

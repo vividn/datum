@@ -1433,7 +1433,8 @@ fn subprocess_backup_header_names_the_db_it_backed_up() {
 }
 
 /// da-d5cmj: `db backup --to DIR` keys the rotation in `index.json` by the
-/// db it opened, and its slot file restores like any other backup.
+/// db it opened, in its own `DIR/<db>/` (da-o6fvk), and its slot file
+/// restores like any other backup.
 #[test]
 fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
     let tmp = tempfile::tempdir().expect("create tmpdir");
@@ -1458,6 +1459,8 @@ fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
     ]);
     assert_eq!(took["slot"], 0);
     let file = took["written"][0].as_str().expect("the slot's file");
+    assert!(file.starts_with("fitness/"), "{file}");
+    assert_eq!(took["written"][1], "fitness/index.json");
 
     let listed = run(&["db", "backup", "--list", dir, "--json"]);
     assert_eq!(listed["backups"][0]["source_db"], "fitness");

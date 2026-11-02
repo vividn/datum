@@ -364,11 +364,15 @@ export interface BackupRun {
 async function backupOne(plan: Plan, db: string): Promise<void> {
 	const dest = destination(plan);
 	const at = mine();
-	const index = await dest.get(at + 'index.json');
-	const out = await json<BackupRun>(
-		['--db', db, ...backupToArgv(plan)],
-		index ? { 'index.json': index } : {}
-	);
+	// A db the stage's top index lists is rotated flat there (da-o6fvk): the
+	// stage is one folder, and the device's runs take turns (`alone`), so its
+	// dbs share the device's one index as they always have.
+	const held = await dest.get(at + 'index.json');
+	const index = held ? JSON.parse(new TextDecoder().decode(held)) : {};
+	index.dbs = { [db]: {}, ...index.dbs };
+	const out = await json<BackupRun>(['--db', db, ...backupToArgv(plan)], {
+		'index.json': new TextEncoder().encode(JSON.stringify(index))
+	});
 	if (out.slot === null) return;
 	// The order the CLI keeps: the slot file, then the index, then what it replaced.
 	for (const file of out.written) {

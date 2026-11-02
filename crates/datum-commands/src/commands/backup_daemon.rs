@@ -4,7 +4,8 @@
 //! keeps, run every D by a systemd user timer and the oneshot service it
 //! starts. A daemon is a database and a destination: several destinations
 //! are several daemons, a local rotation every 15m and a daily one to an
-//! external drive, say. DIR defaults to the data directory's `backups/`.
+//! external drive, say. DIR defaults to the data directory's `backups/`, and
+//! the rotation keeps each database in its own `DIR/<label>/`.
 //!
 //! A timer and not a long-running service, as the sync daemon is: a backup
 //! is a job that ends, so nothing stays resident between runs, and systemd

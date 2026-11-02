@@ -7,12 +7,15 @@
 //! clamped to `--slots`: a re-run in the same period replaces its own slot,
 //! and a period nobody ran is simply absent. Each slot is one gzipped JSONL
 //! file — the ordinary backup format, so `db restore` reads it — and
-//! `index.json` says what is there. The index is written after the slot
+//! `index.json` says what is there. Each db's rotation lives in a
+//! subdirectory of its own, `DIR/<label>/`, so two dbs' runs never share an
+//! index (da-o6fvk); a db the `index.json` at DIR's top lists is a rotation
+//! begun flat before that, and is rotated where it is, as no other db is. The index is written after the slot
 //! file is whole and the slot's previous file removed only after that, so a
 //! run killed anywhere leaves an index naming whole files.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -30,14 +33,17 @@ const INDEX_VERSION: u32 = 1;
 /// `index.json`: per db, the rotation's settings and the backups it holds.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Index {
+    #[serde(default)]
     dbs: BTreeMap<String, Rotation>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Rotation {
+    #[serde(default)]
     every_secs: i64,
     /// The cap, slot 0 not counted; `None` grows with time.
     slots: Option<u32>,
+    #[serde(default)]
     backups: Vec<Slot>,
 }
 
@@ -113,6 +119,12 @@ fn rotate(
     cap: Option<u32>,
     now: DateTime<Utc>,
 ) -> Result<(serde_json::Value, String)> {
+    let sub = match read_index(dir)?.dbs.contains_key(source_db) {
+        true => PathBuf::new(),
+        false => PathBuf::from(label(source_db)),
+    };
+    let named = |f: &str| sub.join(f).to_string_lossy().into_owned();
+    let dir = &dir.join(&sub);
     std::fs::create_dir_all(dir).with_context(|| format!("Creating {}", dir.display()))?;
     let mut index = read_index(dir)?;
     let rotation = index
@@ -161,7 +173,7 @@ fn rotate(
         .filter(|o| o.file != written.file)
         .map(|o| {
             let _ = std::fs::remove_file(dir.join(&o.file));
-            o.file
+            named(&o.file)
         })
         .into_iter()
         .collect();
@@ -180,7 +192,7 @@ fn rotate(
         "period": period,
         "entry_count": written.entry_count,
         "size": written.size,
-        "written": [written.file, INDEX_FILE],
+        "written": [named(&written.file), named(INDEX_FILE)],
         "removed": removed,
     });
     Ok((doc, text))
@@ -256,8 +268,33 @@ fn write_index(dir: &Path, index: &Index) -> Result<()> {
     Ok(())
 }
 
+/// Every rotation in DIR: the one begun flat at its top, if any, and each
+/// subdirectory's, its files named from DIR.
+fn read_all(dir: &Path) -> Result<Index> {
+    let mut all = read_index(dir)?;
+    let subs = match std::fs::read_dir(dir) {
+        Ok(it) => it,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(all),
+        Err(e) => return Err(e).with_context(|| format!("Reading {}", dir.display())),
+    };
+    for sub in subs {
+        let sub = sub?.path();
+        if !sub.join(INDEX_FILE).is_file() {
+            continue;
+        }
+        for (db, mut r) in read_index(&sub)?.dbs {
+            let name = sub.file_name().unwrap_or_default();
+            for b in &mut r.backups {
+                b.file = Path::new(name).join(&b.file).to_string_lossy().into_owned();
+            }
+            all.dbs.insert(db, r);
+        }
+    }
+    Ok(all)
+}
+
 fn list(dir: &Path, now: DateTime<Utc>) -> Result<(serde_json::Value, String)> {
-    let index = read_index(dir)?;
+    let index = read_all(dir)?;
     let mut all: Vec<&Slot> = index.dbs.values().flat_map(|r| &r.backups).collect();
     all.sort_by_key(|b| std::cmp::Reverse(b.backup_time));
     let age = |b: &Slot| (now - b.backup_time).num_seconds();
@@ -359,7 +396,7 @@ mod tests {
     }
 
     fn held(dir: &Path) -> Vec<(u32, u64)> {
-        let index = read_index(dir).unwrap();
+        let index = read_index(&dir.join("main")).unwrap();
         index.dbs["main"]
             .backups
             .iter()
@@ -394,20 +431,20 @@ mod tests {
     fn slot_0_is_never_rewritten_and_the_slots_are_the_plan() {
         let (db, dir) = setup();
         run_at(&db, dir.path(), 0, 0, None);
-        let first = read_index(dir.path()).unwrap().dbs["main"].backups[0].clone();
+        let first = read_index(&dir.path().join("main")).unwrap().dbs["main"].backups[0].clone();
         for p in 1..=64 {
             let out = run_at(&db, dir.path(), p, 0, None);
             assert_eq!(out["slot"], slot_for(p as u64, None), "p={p}");
-            let index = read_index(dir.path()).unwrap();
+            let index = read_index(&dir.path().join("main")).unwrap();
             let zero = &index.dbs["main"].backups[0];
             assert_eq!((zero.slot, &zero.file), (0, &first.file), "p={p}");
             assert_eq!(zero.backup_time, first.backup_time);
-            assert!(dir.path().join(&first.file).exists());
+            assert!(dir.path().join("main").join(&first.file).exists());
         }
         assert_eq!(held(dir.path()), plan(64, None));
         // One file per slot, plus the index: nothing left behind.
         assert_eq!(
-            std::fs::read_dir(dir.path()).unwrap().count(),
+            std::fs::read_dir(dir.path().join("main")).unwrap().count(),
             plan(64, None).len() + 1
         );
     }
@@ -427,17 +464,19 @@ mod tests {
         for p in 0..=2 {
             run_at(&db, dir.path(), p, 0, None);
         }
-        let before = read_index(dir.path()).unwrap().dbs.remove("main").unwrap();
+        let home = dir.path().join("main");
+        let before = read_index(&home).unwrap().dbs.remove("main").unwrap();
         let out = run_at(&db, dir.path(), 2, 1800, None);
         assert_eq!(out["slot"], 2);
-        assert_eq!(out["removed"], json!([before.backups[2].file]));
-        let after = read_index(dir.path()).unwrap().dbs.remove("main").unwrap();
+        let replaced = format!("main/{}", before.backups[2].file);
+        assert_eq!(out["removed"], json!([replaced]));
+        let after = read_index(&home).unwrap().dbs.remove("main").unwrap();
         for s in 0..2 {
             assert_eq!(after.backups[s].file, before.backups[s].file);
         }
         assert_ne!(after.backups[2].file, before.backups[2].file);
-        assert!(!dir.path().join(&before.backups[2].file).exists());
-        assert!(dir.path().join(&after.backups[2].file).exists());
+        assert!(!dir.path().join(replaced).exists());
+        assert!(home.join(&after.backups[2].file).exists());
     }
 
     #[test]
@@ -483,15 +522,16 @@ mod tests {
         for p in 0..=2 {
             run_at(&db, dir.path(), p, 0, None);
         }
-        let before = std::fs::read(dir.path().join(INDEX_FILE)).unwrap();
+        let home = dir.path().join("main");
+        let before = std::fs::read(home.join(INDEX_FILE)).unwrap();
         // Period 2 again, killed after its file and before the index.
         let now = t0() + chrono::Duration::seconds(2 * HOUR + 1800);
-        write_slot(&db, dir.path(), "main", 2, 2, now).unwrap();
-        assert_eq!(std::fs::read(dir.path().join(INDEX_FILE)).unwrap(), before);
-        for b in &read_index(dir.path()).unwrap().dbs["main"].backups {
+        write_slot(&db, &home, "main", 2, 2, now).unwrap();
+        assert_eq!(std::fs::read(home.join(INDEX_FILE)).unwrap(), before);
+        for b in &read_index(&dir.path().join("main")).unwrap().dbs["main"].backups {
             let restored = Db::open_in_memory().unwrap();
             let args = crate::args::RestoreArgs {
-                path: dir.path().join(&b.file).to_string_lossy().into_owned(),
+                path: home.join(&b.file).to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
                 merge: true,
@@ -512,5 +552,64 @@ mod tests {
                 b.file
             );
         }
+    }
+
+    /// da-o6fvk: two dbs rotated into one DIR at once each keep a rotation of
+    /// their own, `DIR/<label>/`, and `--list DIR` reads both.
+    #[test]
+    fn two_dbs_at_once_each_keep_their_own_index() {
+        for _ in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            let start = std::sync::Barrier::new(2);
+            std::thread::scope(|s| {
+                for name in ["a", "b"] {
+                    let (dir, start) = (dir.path(), &start);
+                    s.spawn(move || {
+                        let (db, _) = setup();
+                        start.wait();
+                        rotate(&db, dir, name, HOUR, None, t0()).unwrap();
+                    });
+                }
+            });
+            for name in ["a", "b"] {
+                let index = read_index(&dir.path().join(name)).unwrap();
+                assert_eq!(index.dbs.keys().collect::<Vec<_>>(), [name]);
+            }
+            let (doc, _) = list(dir.path(), t0()).unwrap();
+            let mut files: Vec<_> = (doc["backups"].as_array().unwrap().iter())
+                .map(|b| b["file"].as_str().unwrap().split('/').next().unwrap())
+                .collect();
+            files.sort();
+            assert_eq!(files, ["a", "b"]);
+        }
+    }
+
+    /// A db the top index lists, its rotation begun flat before the
+    /// subdirectories, is rotated where it is; another db beside it goes to
+    /// its own subdirectory.
+    #[test]
+    fn only_the_db_a_flat_index_lists_stays_flat() {
+        let (db, dir) = setup();
+        let flat = json!({ "version": 1, "dbs": { "a": {} } });
+        std::fs::write(dir.path().join(INDEX_FILE), flat.to_string()).unwrap();
+        let run = |name: &str, p: i64| {
+            let now = t0() + chrono::Duration::seconds(p * HOUR);
+            rotate(&db, dir.path(), name, HOUR, None, now).unwrap().0
+        };
+        let a = run("a", 0);
+        assert_eq!(a["written"][1], INDEX_FILE);
+        let b = run("b", 0);
+        assert_eq!(b["written"][1], "b/index.json");
+        assert_eq!(run("a", 1)["written"][1], INDEX_FILE);
+        let top = read_index(dir.path()).unwrap();
+        assert_eq!(top.dbs.keys().collect::<Vec<_>>(), ["a"]);
+        let (doc, _) = list(dir.path(), t0() + chrono::Duration::seconds(HOUR)).unwrap();
+        let mut files: Vec<_> = (doc["backups"].as_array().unwrap().iter())
+            .map(|b| b["file"].as_str().unwrap())
+            .collect();
+        files.sort();
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0], a["written"][0]);
+        assert!(files[2].starts_with("b/"), "{files:?}");
     }
 }

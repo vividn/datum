@@ -168,7 +168,10 @@ seed(calls.newInviteArgv(), { client: 'phone' });
 const KEYS = seed(calls.adminAddArgv('/data/stage/first.key'), { client: 'phone', stage: {} }).stage;
 seed([...calls.adminRemoveArgv('first.key', true), '--admin-key', '/data/stage/first.key'], { client: 'phone', stage: KEYS });
 seed(calls.adminAddArgv('/data/stage/admin.key'), { client: 'phone', stage: {} });
-const STAGE = seed(calls.backupToArgv(PLAN), { stage: {} }).stage;
+// The index the page stages names its database, keeping the rotation flat
+// in the one folder a stage is (`backupOne`, da-o6fvk).
+const FLAT = new TextEncoder().encode(JSON.stringify({ dbs: { '/data/datum.db': {} } }));
+const STAGE = seed(calls.backupToArgv(PLAN), { stage: { 'index.json': FLAT } }).stage;
 const FILE = Object.keys(STAGE).find((file) => file !== 'index.json');
 const BACKUP = seed(calls.backupArgv()).stdout;
 const KIT = readFileSync(join(web, '../kits/sample.toml'), 'utf8');
