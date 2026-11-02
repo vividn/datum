@@ -709,12 +709,12 @@ describe('the bottom bar', () => {
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			await input.fill('occur coffee');
 			await input.press('Enter');
-			await until(() => receipt(page).innerText(), (t) => t.startsWith('MOMENT · '));
+			await until(() => receipt(page).textContent(), (t) => t.startsWith('MOMENT · '));
 			await app.idle();
 			const { rows } = await app.tailRows();
 			assert.equal(rows.length, 1);
 			// The entry's shape and its hid, and what the command did to it (da-hxjrk).
-			const [word, hid] = (await receipt(page).innerText()).split(' · ');
+			const [word, hid] = (await receipt(page).textContent()).split(' · ');
 			assert.equal(word, 'MOMENT');
 			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');
 			assert.ok(hid.length >= 4 && rows[0].hid.startsWith(hid), `the receipt's ${hid} is not the row's ${rows[0].hid}`);
@@ -731,7 +731,7 @@ describe('the bottom bar', () => {
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).click();
 			await saw('moment coffee');
 			assert.equal(await input.inputValue(), '', 'the press became the input\'s value');
-			await until(() => receipt(page).innerText(), (t) => t.startsWith('MOMENT · ') && t !== `MOMENT · ${hid}`);
+			await until(() => receipt(page).textContent(), (t) => t.startsWith('MOMENT · ') && t !== `MOMENT · ${hid}`);
 			await app.idle();
 			assert.equal((await app.tailRows()).rows.length, 2);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
@@ -800,7 +800,7 @@ describe('the bottom bar', () => {
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			const docs = await repl.locator('.doc').count();
 			await app.submit('occur coffee');
-			await until(() => receipt(page).innerText(), (t) => /^MOMENT · \S+$/.test(t));
+			await until(() => receipt(page).textContent(), (t) => /^MOMENT · \S+$/.test(t));
 			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee']);
 			// The scrollback carries the command's DOCUMENT, not its printed
 			// lines: the web asks every command it runs for `--show json`

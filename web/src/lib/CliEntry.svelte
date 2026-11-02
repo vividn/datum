@@ -29,6 +29,19 @@
 	as well, also slightly smaller like the time text, but with a
 	sufficiently large hit box.» Each entry the command echoed is a frame of
 	its own inside this one (Doc.svelte).
+
+	THE COMMAND ON THE TOP BORDER, THE TIME AND UNDO ON THE BOTTOM ONE
+	(da-hbpkw). vividn, 2026-10-31: «move the time and the undo button to the
+	bottom, and move the cli command into the frame on the top, with a smaller
+	font size, then that gives more rooms for the entry blocks.»
+
+	UNDO IN A GUTTER ON THE LEFT, AN UNDONE COMMAND SHOWING THE UNDO'S ANSWER
+	(da-hbpkw). vividn, on #1517: «move the undo button inside the outer frame
+	on the left. Let's just make it a nice ↶ undo symbol (or similar), it can
+	overlap the frame slightly and push the entry frames slightly to the right.
+	When an entry is undone, the ACTION should switch to UNDONE and show the
+	undo cli output (so like with strikethroughs etc). The redo button should
+	then have an arrow going in the other direction».
 -->
 <script lang="ts">
 	import CliOutput from '#lib/CliOutput.svelte';
@@ -68,14 +81,17 @@
 		cap?: number;
 	} = $props();
 
+	const mark = $derived($marks.get(entry));
+	/** What the row answers: the command's own, or, undone, what its undo said. */
+	const result = $derived(mark?.undone?.result ?? entry.result);
 	/** A command's documents, when it echoed any (#lib/echo.ts). */
-	const docs = $derived(parseEcho(entry.result.stdout));
+	const docs = $derived(parseEcho(result.stdout));
 	// stdout while there is any: a warning on stderr beside a good answer is
 	// not the answer. With nothing on stdout — an error, a command that only
 	// reports progress — stderr is all the CLI said, so it is what is shown.
 	// Both are datum's; neither is rewritten.
-	const raw = $derived(entry.result.stdout.trim() ? entry.result.stdout : entry.result.stderr);
-	const failed = $derived(entry.result.code !== 0 && !!entry.result.stderr.trim());
+	const raw = $derived(result.stdout.trim() ? result.stdout : result.stderr);
+	const failed = $derived(result.code !== 0 && !!result.stderr.trim());
 
 	/**
 	 * UNDO ON A COMMAND THAT WROTE, REDO ONCE IT IS UNDONE (da-25q3k). vividn,
@@ -86,7 +102,6 @@
 	 * the button, "cannot undo. more recent changes" more recent changes is a
 	 * link, which takes you to the latest entry that buries it».
 	 */
-	const mark = $derived($marks.get(entry));
 	const verb = $derived(mark?.undone ? 'redo' : 'undo');
 	/** Found at a press, changed since by a write this page never ran (`step`). */
 	let elsewhere = $state(false);
@@ -117,42 +132,9 @@
 	}
 </script>
 
-<div class="frame" class:capped={!!cap} class:marked={!!mark} class:struck={mark?.undone}>
-	<div class="head" class:capped={!!cap} class:all class:marked={!!mark} class:struck={mark?.undone}>
-		<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
-		<!-- The stamp is a sibling of `.echo`, not a child of it: the echo's
-		     text is the command and nothing else, which is what every reader of
-		     it — a test, a copy-paste — already assumes. -->
+<div class="frame" class:marked={!!mark} class:struck={!!mark?.undone}>
+	<div class="head" class:capped={!!cap} class:all class:struck={!!mark?.undone}>
 		<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
-		{#if mark}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<span
-				class="step"
-				onpointerenter={(e) => e.pointerType === 'mouse' && (told = refused)}
-				onpointerleave={(e) => e.pointerType === 'mouse' && (told = false)}
-				onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && (told = false)}
-			>
-				<button
-					type="button"
-					class={verb}
-					aria-disabled={refused || busy}
-					aria-describedby={refused ? note : undefined}
-					onclick={press}>{verb}</button
-				>
-				<!-- In the DOM while refused, so the button is described as refused
-				     before it is pressed; drawn once it is hovered or pressed. -->
-				{#if refused}
-					<span id={note} class="buried" class:told role="status"
-						>cannot {verb}. {#if mark.buried}<button
-								type="button"
-								class="link"
-								tabindex={told ? 0 : -1}
-								onclick={follow}>more recent changes</button
-							>{:else}a change made elsewhere{/if}</span
-					>
-				{/if}
-			</span>
-		{/if}
 	</div>
 	{#if cap}
 		<!-- A surface that cannot scroll shows ONE box: four lines is not enough
@@ -165,10 +147,10 @@
 			     documents alone would read as a success, so the error's last
 			     line goes under them. -->
 			{#if failed}
-				<RawLines text={entry.result.stderr} lines={1} error />
+				<RawLines text={result.stderr} lines={1} error />
 			{/if}
 		{:else}
-			<RawLines text={raw} lines={cap} error={entry.result.code !== 0} />
+			<RawLines text={raw} lines={cap} error={result.code !== 0} />
 		{/if}
 	{:else}
 		{#if docs}
@@ -186,55 +168,100 @@
 			     render on it's own terms which is nice separation") no longer
 			     costs the colour. -->
 			<Docs {docs} {all} />
-		{:else if entry.result.stdout}
-			<CliOutput text={entry.result.stdout} />
+		{:else if result.stdout}
+			<CliOutput text={result.stdout} />
 		{/if}
 		<!-- ALONGSIDE the branch above, not instead of it. A command can both
 		     echo a document and warn on stderr — `undo` past ten minutes does
 		     exactly that — and nesting this inside that branch dropped the
 		     warning silently. -->
-		{#if entry.result.stderr}
+		{#if result.stderr}
 			<CliOutput
-				text={entry.result.stderr}
+				text={result.stderr}
 				stream="stderr"
-				error={entry.result.code !== 0}
+				error={result.code !== 0}
 			/>
 		{/if}
+	{/if}
+	<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
+	{#if mark}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<span
+			class="step"
+			onpointerenter={(e) => e.pointerType === 'mouse' && (told = refused)}
+			onpointerleave={(e) => e.pointerType === 'mouse' && (told = false)}
+			onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && (told = false)}
+		>
+			<button
+				type="button"
+				class={verb}
+				aria-label={verb}
+				title={verb}
+				aria-disabled={refused || busy}
+				aria-describedby={refused ? note : undefined}
+				onclick={press}>{verb === 'undo' ? '↶' : '↷'}</button
+			>
+			<!-- In the DOM while refused, so the button is described as refused
+			     before it is pressed; drawn once it is hovered or pressed. -->
+			{#if refused}
+				<span id={note} class="buried" class:told role="status"
+					>cannot {verb}. {#if mark.buried}<button
+							type="button"
+							class="link"
+							tabindex={told ? 0 : -1}
+							onclick={follow}>more recent changes</button
+						>{:else}a change made elsewhere{/if}</span
+				>
+			{/if}
+		</span>
 	{/if}
 </div>
 
 <style>
-	/* THE COMMAND'S FRAME: the time and the step stand on its top border as
-	   a fieldset's legend does, the half of them above it the frame's
-	   margin, so the command has the whole of the first line inside. */
+	/* THE COMMAND'S FRAME: the command stands on its top border and the time
+	   and the step on its bottom one, as a fieldset's legend does, the half
+	   of each outside the border the frame's margin and the half inside its
+	   padding, so what the command answered has every line between them. */
 	.frame {
 		position: relative;
+		/* Its z-indexes are its own: past the frame, what they raise, scrolled
+		   under a pane's titlebar, took the titlebar's presses. */
+		isolation: isolate;
 		min-width: 0;
-		margin-top: calc(var(--label) / 2);
-		padding: calc(var(--label) / 2) 0.45em 0.15em;
+		margin-block: calc(var(--label) / 2);
+		padding: 0 0.45em calc(var(--label) / 2);
 		border: 1px solid var(--quiet);
 		border-radius: 0.45em;
-		/* Named, not inherited: the step's hit box is measured in it (below). */
 		line-height: 1.35;
 		/* The label's height: its type, a step down, on one line. */
 		--label: calc(0.75em * 1.2);
-		/* The step's hit box, at least a finger's on every surface. */
-		--hit: 44px;
+		/* The gutter the step stands in, which pushes the entries right. */
+		--gutter: 2.1em;
 	}
 
+	/* Up onto the border, by the half of its first line above it. In the
+	   flow, not absolute, so a long command wrapping in the history pushes
+	   the entries down rather than lying over them. */
+	.head {
+		margin-top: calc(var(--label) / -2);
+	}
+
+	/* As wide as the command, so the border goes on past it. Its ground
+	   hides the border behind it. */
 	.echo {
+		box-sizing: border-box;
+		width: fit-content;
+		max-width: 100%;
 		min-width: 0;
+		padding: 0 0.25em;
+		font-size: 0.75em;
+		line-height: 1.2;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 		/* Not a token: the same step between `--quiet` and `--ink` the
 		   bottom bar's receipt uses (PromptBar.svelte). */
 		color: #8888aa;
-	}
-
-	/* Clear of the step's hit box, which reaches down past the border to
-	   the end of this line. */
-	.head.marked .echo {
-		padding-right: calc(var(--hit) + 0.5em);
+		background: var(--ground);
 	}
 
 	/* ONE LINE on a surface that cannot scroll. A command long enough to wrap
@@ -248,13 +275,16 @@
 		text-overflow: ellipsis;
 	}
 
-	/* ON THE BORDER, the time at its left and the step at its right, a step
-	   down from the command; their ground hides the border behind them. */
-	.stamp,
-	.step {
+	.frame.marked {
+		padding-left: var(--gutter);
+	}
+
+	/* ON THE BOTTOM BORDER at its left, the command's size; its ground hides
+	   the border behind it. */
+	.stamp {
 		position: absolute;
-		top: 0;
-		transform: translateY(-50%);
+		bottom: 0;
+		transform: translateY(50%);
 		padding: 0 0.25em;
 		font-size: 0.75em;
 		line-height: 1.2;
@@ -275,55 +305,39 @@
 		color: var(--accent);
 	}
 
+	/* THE GUTTER, between the frame's two labels, the symbol at its middle. */
 	.step {
-		right: 0.4em;
+		position: absolute;
+		top: calc(var(--label) / 2);
+		bottom: calc(var(--label) / 2);
+		left: 0;
 		z-index: 2;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: var(--gutter);
 	}
 
 	.step > button {
-		position: relative;
-		padding: 0 0.4em;
-		font: inherit;
-		line-height: inherit;
+		padding: 0;
+		font-size: 1.35em;
+		line-height: 1;
 		color: var(--accent-bright);
-		background: var(--ground);
-		/* An inset ring, not a border, which would make the line 2px taller. */
+		background: none;
 		border: none;
-		box-shadow: inset 0 0 0 1px var(--accent);
-		border-radius: 0.3em;
 		cursor: pointer;
 	}
 
-	/* THE HIT BOX, larger than the label it is behind (da-hxjrk): vividn,
-	   «slightly smaller like the time text, but with a sufficiently large
-	   hit box». It stands on the foot of the command's first line, whose
-	   text keeps clear of it (`.marked`), and reaches up out of the frame:
-	   3em of the step's type is its label (1.2) and the line (1.35 of the
-	   frame's 0.75 more). */
+	/* THE HIT BOX is the whole gutter: as tall as a finger, and over no word
+	   of the entry or the command, which both start past it. */
 	.step > button::before {
 		content: '';
 		position: absolute;
-		top: calc(3em - var(--hit));
-		right: -0.25em;
-		width: max(100% + 0.5em, var(--hit));
-		height: var(--hit);
-	}
-
-	/* The bar's band has no room above it: there the box reaches down from
-	   the band's top edge instead, over the top border of the entry under
-	   the command, whose label stands over it: a press on the hid, the full
-	   id open or not, is the hid's and never an undo. */
-	.frame.capped .step > button::before {
-		top: -4px;
-	}
-
-	.frame.capped :global(.doc > .receipt) {
-		z-index: 3;
+		inset: 0;
 	}
 
 	.step > button[aria-disabled='true'] {
 		color: var(--quiet);
-		box-shadow: inset 0 0 0 1px var(--tint);
 		cursor: default;
 	}
 
@@ -334,12 +348,15 @@
 
 	.buried {
 		position: absolute;
-		top: 100%;
-		right: 0;
+		top: 50%;
+		left: 100%;
 		z-index: 3;
+		transform: translateY(-50%);
 		width: max-content;
 		max-width: 20ch;
 		padding: 0.2em 0.4em;
+		font-size: 0.75em;
+		line-height: 1.2;
 		color: var(--ink);
 		background: var(--ground);
 		border: 1px solid var(--tint);
@@ -356,8 +373,9 @@
 		cursor: pointer;
 	}
 
-	/* AN UNDONE COMMAND, HASHED OUT WHERE IT STANDS: its frame hatched, and
-	   all of it but its redo faded. */
+	/* AN UNDONE COMMAND, HASHED OUT WHERE IT STANDS: its frame hatched, the
+	   command and its time faded. The entries stay legible: they are the
+	   undo's answer now, whose lines say what it changed. */
 	.frame.struck {
 		background-image: repeating-linear-gradient(
 			135deg,
@@ -366,9 +384,8 @@
 		);
 	}
 
-	.frame.struck > :not(.head),
-	.struck .stamp,
-	.struck .echo {
+	.frame.struck > .head,
+	.frame.struck > .stamp {
 		opacity: 0.45;
 	}
 

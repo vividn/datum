@@ -39,7 +39,7 @@ const receipt = (page) => page.locator('.prompt-bar .group:last-child .receipt')
  * command — where the old bar kept an empty span.
  */
 const receiptText = async (page) =>
-	(await receipt(page).count()) ? receipt(page).innerText() : '';
+	(await receipt(page).count()) ? receipt(page).textContent() : '';
 
 /** `window.datum[door](argv)` in the page — the console, as a hand uses it. */
 const console_ = (page, door, argv) =>
@@ -79,7 +79,7 @@ describe('window.datum.run — the loud door', () => {
 			await page.waitForFunction(() =>
 				document.querySelector('.prompt-bar .group:last-child .receipt').textContent.startsWith('MOMENT')
 			);
-			const [word, hid] = (await receipt(page).innerText()).split(' · ');
+			const [word, hid] = (await receipt(page).textContent()).split(' · ');
 			const { rows } = await app.tailRows();
 			assert.equal(word, 'MOMENT');
 			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');

@@ -1068,12 +1068,13 @@ binary.
   not, so a line too long for its column wraps (`.doc.all` in Doc.svelte);
   a command whose answer is the CLI's own printed text — a table, a drawn
   day, an error — takes a whole row at the width it was printed for. Each
-  command is a frame, the time it ran and its Undo on the frame's top
-  border, and each entry it echoed a frame inside it labelled with its hid
+  command is a frame, the command on the frame's top border and the time it
+  ran on its bottom one, its undo a `↶` in a gutter at its left (da-hbpkw), and each entry it echoed a frame inside it labelled with its hid
   and, for a CREATE, the shape it stores, for any other action that action's
-  word (da-nafql), its field and state over its time over its
+  word (da-nafql), its time over its field and state over its
   data (`CliEntry.svelte`, `Doc.svelte`, da-hxjrk), on every surface.
-  An UNDONE says what it changes (`render/diff.rs`): `−` on every line of a
+  A command stepped back by its `↶` shows the `revert`'s answer in its frame, and
+  a `↷` to step it forward. An UNDONE says what it changes (`render/diff.rs`): `−` on every line of a
   create taken back, struck through too, `+` on every line of a delete taken
   back, and an update's arrows reversed, `new ← old`.
   `tests/scrollback.test.mjs` takes both measurements again against the

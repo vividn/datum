@@ -7,7 +7,9 @@
 	2026-10-29: «for each entry, give it a smaller frame inside the cli
 	commands frame. Label this frame with the action and the hid … then put
 	field/state indicator on the first line, time on the second line, extra
-	data below that.» A CREATE is labelled with the shape it stores, the
+	data below that.» The time is the first line again, as the CLI prints it
+	(da-hbpkw), vividn, 2026-10-31: «let's have the time be above the data
+	again, just like in the CLI». A CREATE is labelled with the shape it stores, the
 	CLI's six characters (`shape`: MOMENT, PERIOD, ON/OFF, SWITCH, RECORD),
 	and every other action with its own word (da-nafql), vividn, 2026-10-30:
 	«For other actions besides CREATE, keep using the output actions that
@@ -66,7 +68,7 @@
 
 	/**
 	 * The line cut where the CLI says its time ends (`info_time`, da-7xp82),
-	 * and drawn the field and state first, the time under them (da-hxjrk).
+	 * and drawn the time first, the field and state under it (da-hbpkw).
 	 * The spaces between the two are the terminal's and go: each is a line.
 	 */
 	const parts: { part: string; runs: InfoSegment[] }[] = $derived.by(() => {
@@ -82,8 +84,8 @@
 			});
 		};
 		return [
-			{ part: 'what', runs: cut(gap, doc.info.length) },
-			{ part: 'when', runs: cut(0, time.length) }
+			{ part: 'when', runs: cut(0, time.length) },
+			{ part: 'what', runs: cut(gap, doc.info.length) }
 		];
 	});
 
@@ -165,8 +167,8 @@
 		font-size: 1rem;
 		line-height: 1.35;
 		cursor: pointer;
-		/* The label's height: its type, a step down, on one line. */
-		--label: calc(0.7em * 1.2);
+		/* The label's height: the verb's type, on one line. */
+		--label: 1.2em;
 	}
 
 	/* A selected entry (da-r13j): the accent the hid pill is filled with. */
@@ -210,7 +212,7 @@
 		white-space: pre-wrap;
 	}
 
-	/* ON THE BORDER, at its left: the shape and the hid, a step down. Its
+	/* ON THE BORDER, at its left: the shape, and the hid a step down. Its
 	   ground hides the border behind it; `max-width` keeps it inside the
 	   frame's corners, where it is cut rather than past them. */
 	.receipt {
@@ -219,9 +221,11 @@
 		left: 0.4em;
 		max-width: calc(100% - 0.8em);
 		box-sizing: border-box;
+		display: flex;
+		align-items: center;
+		gap: 0.5ch;
 		padding: 0 0.25em;
 		transform: translateY(-50%);
-		font-size: 0.7em;
 		line-height: 1.2;
 		/* Not a token: the same step between `--quiet` and `--ink` the
 		   command's echoed line uses (CliEntry.svelte). */
@@ -230,9 +234,18 @@
 	}
 
 	/* datum's own colour for what the command did (da-ckw3); the page's
-	   accent when the module carries none. */
+	   accent when the module carries none. As big as the data, and bold, to
+	   read at a glance (da-hbpkw): vividn, «The ACTION verb needs to be
+	   bigger so that it is clearly visible». */
 	.action {
+		flex: none;
 		color: var(--accent-bright);
+		font-weight: 700;
+	}
+
+	.dot {
+		flex: none;
+		font-size: 0.7em;
 	}
 
 	.hid {
@@ -240,21 +253,19 @@
 		border: none;
 		padding: 0;
 		font: inherit;
+		font-size: 0.7em;
 		color: inherit;
 		cursor: pointer;
 		text-decoration: underline dotted;
 		text-underline-offset: 2px;
 	}
 
-	/* Cut at the label's end, not past it: a button is an atomic inline, and
-	   one wider than its line is hidden whole, so the full id tapped open in
-	   a narrow frame (da-qua5g) left only the `…`. 9ch is the shape, its
-	   dot and their spaces. */
+	/* Cut at the label's end, not past it: the full id tapped open in a
+	   narrow frame (da-qua5g) gives way, and the verb beside it does not. */
 	.hid {
-		max-width: calc(100% - 9ch);
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		vertical-align: top;
 	}
 
 	.hid:hover,
@@ -266,7 +277,7 @@
 		color: var(--ink-bright);
 	}
 
-	/* The time under the field and state, as quiet as the time in a row of
+	/* The time over the field and state, as quiet as the time in a row of
 	   `tail` beside its field. */
 	.when {
 		color: var(--ink);

@@ -30,11 +30,11 @@
  * brew bean=… grind=… water=…` and a long-stated `switch` in the
  * scrollback:
  *
- * 1. **What an entry's output CUTS at: between 100 and 112px.** Narrowed
- *    a column at a time, nothing inside an entry overflows its box down
- *    to 112px and something does at 100 — the info line's longest
- *    unbreakable run, `14:59:59+0`, is 96px and the brace beside it wants
- *    the 107 that a section of two documents asks for. Above
+ * 1. **What an entry's output CUTS at: between 145 and 150px.** Narrowed
+ *    5px at a time, nothing inside an entry overflows its box down to 150px
+ *    and something does at 145 — the info line's longest unbreakable run,
+ *    `14:59:59+0`, is 96px, inside the entry's frames and the undo's gutter
+ *    (da-hbpkw). Above
  *    that floor the CLI widget loses nothing to a narrow column, because it has
  *    the vertical room to wrap where the bar's fixed band has to clip
  *    (Doc.svelte).

@@ -144,12 +144,13 @@ export const stepped = (entry: Command): boolean => entry.of !== undefined && wr
 
 /**
  * Where the undo button of a command that wrote stands (da-25q3k): `undone`
- * when its button last stepped it back, and `buried` by the newest later
+ * by the step that took it back, whose answer it then shows (da-hbpkw), and
+ * `buried` by the newest later
  * command that wrote one of its entries — `revert <hid>` steps an entry back
  * its LAST change, which is then that one's, so the button is refused.
  */
 export interface Mark {
-	undone: boolean;
+	undone?: Command;
 	buried?: Command;
 }
 
@@ -159,11 +160,11 @@ export const marks = derived(cli, ({ scrollback }) => {
 	scrollback.forEach((entry, i) => {
 		const hids = wroteBy(entry);
 		if (entry.of !== undefined || !hids.length) return;
-		const mark: Mark = { undone: false };
+		const mark: Mark = {};
 		for (const later of scrollback.slice(i + 1)) {
 			if (later.of === entry.ranAt) {
 				// A button's step is always a `revert`, which each press turns back the other way.
-				if (stepped(later)) mark.undone = !mark.undone;
+				if (stepped(later)) mark.undone = mark.undone ? undefined : later;
 			} else if (wroteBy(later).some((hid) => hids.includes(hid))) mark.buried = later;
 		}
 		out.set(entry, mark);

@@ -246,13 +246,14 @@
 		--output-font: 0.8rem;
 		--output-line: calc(var(--output-font) * 1.35);
 		--output-pad: 0.25rem;
-		/* Since da-hxjrk the entry is three lines — the command, the field and
-		   state, the time — in two frames, each with its label standing on its
-		   top border: the command's at 0.9em tall and the entry's at 0.84em,
-		   the command's 0.15em under its last line (CliEntry.svelte,
-		   Doc.svelte), and the frames' four borders. */
+		/* Since da-hbpkw the entry is two lines — the time, the field and
+		   state — in two frames: the command at 0.9em tall on the outer's top
+		   border and the time and undo at 0.9em on its bottom one, the label
+		   at 1.2em on the inner's top border (CliEntry.svelte, Doc.svelte),
+		   and the frames' four borders. The 0.24em over is what taking the
+		   command off its own line left; the entry's frame takes it. */
 		--output-entry: calc(
-			3 * var(--output-line) + 1.89 * var(--output-font) + 2 * var(--output-pad) + 4px + 1px
+			2 * var(--output-line) + 3.24 * var(--output-font) + 2 * var(--output-pad) + 4px + 1px
 		);
 		--output-height: clamp(var(--output-entry), 15cqh, calc(var(--output-entry) + var(--output-line)));
 		/* The hairline that separates the bar from the dashboard is part of

@@ -114,26 +114,27 @@ describe('the measurements the column width rests on', () => {
 		await withApp(
 			async (app) => {
 				await seed(app);
-				// A wide box, so that forcing the column count down to a
-				// given width is the only thing narrowing an entry.
+				// A wide box, so that forcing the column down to a given
+				// width is the only thing narrowing an entry.
 				await sized(app.page, { width: 1600, height: 900 });
 
 				// The narrowest column that still cuts nothing, and the
-				// widest that cuts something: walk the count up until the
-				// entries start losing text.
+				// widest that cuts something: narrow it 5px at a time until
+				// the entries start losing text. A step of a column at this
+				// box's width is 16px, wider than the room being measured.
 				let whole = null;
 				let cutAt = null;
-				for (let columns = 5; columns <= 24 && cutAt === null; columns += 1) {
+				for (let width = 200; width >= 60 && cutAt === null; width -= 5) {
 					await app.page.evaluate(
-						(n) => document.querySelector('.entries').style.setProperty('--columns', String(n)),
-						columns
+						(w) => (document.querySelector('.entries').style.gridTemplateColumns = `repeat(auto-fill, ${w}px)`),
+						width
 					);
 					const { cell, cut } = await state(app.page);
 					if (cut.length) cutAt = cell;
 					else whole = cell;
 				}
 				await app.page.evaluate(() =>
-					document.querySelector('.entries').style.removeProperty('--columns')
+					document.querySelector('.entries').style.removeProperty('grid-template-columns')
 				);
 
 				assert.ok(cutAt !== null, `nothing was cut down to ${whole}px, so nothing was measured`);

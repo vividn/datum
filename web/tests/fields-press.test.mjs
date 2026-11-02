@@ -104,7 +104,10 @@ describe('a press', () => {
 			// for one passed before the press did, and said nothing of what
 			// stood there when it did not (da-v5ote).
 			await app.idle();
-			assert.match(await page.locator('.prompt-bar .section.output').innerText(), /❯ moment coffee\nundo\nMOMENT · \w+/);
+			const row = page.locator('.prompt-bar .group:last-child');
+			assert.match(await row.locator('.echo').innerText(), /❯ moment coffee$/);
+			assert.match(await row.locator('.receipt').textContent(), /^\s*MOMENT · \w+/);
+			assert.equal(await row.locator('.step button').count(), 1);
 			assert.equal((await app.tailRows()).rows.at(-1).field, 'coffee');
 
 			await type(page, 'start work');

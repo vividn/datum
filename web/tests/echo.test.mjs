@@ -139,10 +139,10 @@ describe('the echo is painted in datum’s colours', () => {
 		);
 
 	/**
-	 * The line the CLI printed as a frame draws it (da-hxjrk): its field and
-	 * state, then its time, the spaces between them the terminal's.
+	 * The line the CLI printed as a frame draws it (da-hbpkw): its time, then
+	 * its field and state, the spaces between them the terminal's.
 	 */
-	const drawnAs = (doc) => doc.info.slice(doc.info_time.length).replace(/^ */, '') + doc.info_time;
+	const drawnAs = (doc) => doc.info_time + doc.info.slice(doc.info_time.length).replace(/^ */, '');
 
 	/** `#rrggbb` as `getComputedStyle` gives it back. */
 	const asRgb = (hex) => {

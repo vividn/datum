@@ -62,7 +62,7 @@ const apart = (earlier, later) => (seconds(later) - seconds(earlier) + 86400) % 
 const promptClock = (page) => page.locator('.prompt-bar .section.input .stamp').innerText();
 
 /** Every scrollback stamp, oldest first. */
-const stamps = (page) => page.locator('.cli .head .stamp').allInnerTexts();
+const stamps = (page) => page.locator('.cli .frame > .stamp').allInnerTexts();
 
 /** A colour's relative brightness, enough to compare two greys by. */
 const brightness = (css) => {
@@ -130,10 +130,10 @@ describe('a command in the scrollback', () => {
 			assert.deepEqual(await echoes(), ['occur coffee']);
 
 			const { stampColour, echoColour } = await page.evaluate(() => {
-				const head = document.querySelector('.cli .head');
+				const frame = document.querySelector('.cli .frame');
 				return {
-					stampColour: getComputedStyle(head.querySelector('.stamp')).color,
-					echoColour: getComputedStyle(head.querySelector('.echo')).color
+					stampColour: getComputedStyle(frame.querySelector('.stamp')).color,
+					echoColour: getComputedStyle(frame.querySelector('.echo')).color
 				};
 			});
 			assert.ok(
@@ -202,9 +202,9 @@ describe('the space between commands', () => {
 				rows: new Set(cells.map(top)).size,
 				framed: frames.filter((f) => parseFloat(getComputedStyle(f).borderTopWidth) >= 1).length,
 				ruled: cells.filter((el) => getComputedStyle(el).borderTopWidth !== '0px').length,
-				// The first row's lowest frame against the top of the next row's time.
+				// The first row's lowest frame against the top of the next row's command.
 				air: below.length
-					? Math.min(...below.map((el) => el.querySelector('.stamp').getBoundingClientRect().top)) -
+					? Math.min(...below.map((el) => el.querySelector('.echo').getBoundingClientRect().top)) -
 						Math.max(...above.map((f) => f.getBoundingClientRect().bottom))
 					: null,
 				frame: frames.length ? getComputedStyle(frames[0]).borderTopColor : null,

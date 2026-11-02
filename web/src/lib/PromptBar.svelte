@@ -776,16 +776,15 @@
 	}
 
 	/* A COLUMN, because a group is a row of the history (CliEntry.svelte):
-	   its head — the time and the command — sits ABOVE what the command
+	   its head — the command — sits ABOVE what the command
 	   answered, exactly as it does in the log, and the entry stands on its
 	   foot, as a terminal's last answer stands on the prompt. */
 	/* AS WIDE AS WHAT IT SAYS (da-7xp82): vividn, «so that it is not so wide.
 	   That way we can fit multiple entries in view more easily on mobile».
 	   A group was 21rem a document whatever it held; it is now its
 	   documents' own width, never past the row's, and never less than
-	   22ch, which leaves its head the command's first word or two after
-	   the time and the `❯` (`15:00:00 ❯ occur wa…`) and keeps two whole on
-	   a 390px phone. A longer command does not widen it: it is cut. */
+	   22ch, which leaves its head the command's first words after the `❯`
+	   and keeps two whole on a 390px phone. A longer command does not widen it: it is cut. */
 	.group {
 		display: flex;
 		flex-direction: column;
@@ -795,9 +794,8 @@
 		min-width: min(22ch, 100cqw);
 		max-width: 100cqw;
 		height: 100%;
-		/* Sideways only: the undo's hit box reaches up out of the group to the
-		   roll's edge (CliEntry.svelte), and what overflows the foot is cut by
-		   what holds it. */
+		/* Sideways only: the time and the undo stand half out of the frame's
+		   foot (CliEntry.svelte), and what overflows it is cut by what holds it. */
 		overflow-x: clip;
 	}
 
@@ -812,9 +810,9 @@
 
 	/* The command's frame is the group's whole height (CliEntry.svelte,
 	   da-hxjrk): the head at its top, what the command answered under it,
-	   and what does not fit cut at its foot by what holds it (`.docs`, and
-	   `.raw`, which keeps its last lines): not by the frame, whose time and
-	   step stand half outside it. */
+	   and what does not fit cut by what holds it (`.docs`, and `.raw`,
+	   which keeps its last lines): not by the frame, whose command, time
+	   and step stand half outside it. */
 	.group :global(.frame) {
 		display: flex;
 		flex-direction: column;
@@ -828,9 +826,12 @@
 		width: 100cqw;
 	}
 
-	/* Each document its own width, not an equal share of the group's. */
+	/* Each document its own width, not an equal share of the group's, and
+	   never less than its label's, which stands out of the flow on its border
+	   and so widens nothing: the verb, its dot and the hid (Doc.svelte). */
 	.group :global(.docs > .doc) {
 		flex: 0 1 auto;
+		min-width: 8.4em;
 	}
 
 	/* The strip's type, not the 1rem the history reads documents at; the
