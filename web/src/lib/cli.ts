@@ -200,7 +200,7 @@ interface Job {
 	key?: string;
 	/** A pane's refresh: behind every other job, cheapest first. */
 	pane: boolean;
-	/** A sync session's run: behind the panes too. */
+	/** A sync session's run: behind the panes too, and ahead of them while the page is hidden. */
 	session: boolean;
 	/** The command word, what the job's cost is measured under. */
 	word: string;
@@ -236,7 +236,28 @@ const cost = new Map<string, number>();
  * asked for dimmed until it ended. So each round lets the panes draw what it
  * brought, and what the reader asks goes before the next.
  */
-const rank = (job: Job) => (job.session ? Infinity : job.pane ? (cost.get(job.word) ?? 0) : -1);
+const rank = (job: Job) => (job.session ? (hidden ? -0.5 : Infinity) : job.pane ? (cost.get(job.word) ?? 0) : -1);
+
+/**
+ * Whether the page is hidden (da-tavhb). A phone's reader taps and leaves
+ * the app at once (vividn: «It would be amazing if that data was already
+ * broadcast before the interface is closed again»), and the browser may stop
+ * a hidden page's workers at any moment. So while hidden a pane's refresh
+ * waits for the page to show again, as nobody sees a redraw, and a sync
+ * session's run goes next after the commands typed or pressed: not ahead of
+ * them, since the tap's own write, queued before the page hid, is what the
+ * push is for (vremya on #1598).
+ */
+let hidden = false;
+
+/** Whether `job` may run now: a hidden page's panes wait. */
+const ready = (job: Job) => !(hidden && job.pane);
+
+/** Say whether the page is hidden; shown again, the panes held run. */
+export function setHidden(now: boolean): void {
+	hidden = now;
+	if (!now) void pump();
+}
 
 /**
  * `argv`'s command word: the first that is neither a flag nor `--db`'s value.
@@ -277,24 +298,28 @@ const nextTask = () =>
 
 /**
  * Run jobs, the best ranked first and the earliest among equals, until none
- * wait. A job can end in a microtask and the next start in the same one,
+ * that may run wait. A job can end in a microtask and the next start in the same one,
  * so the queue crosses a task between jobs: a line typed while one ran is
  * otherwise not queued until a burst of them yields.
  */
 async function pump(): Promise<void> {
 	if (busy) return;
 	busy = true;
-	while (jobs.length) {
-		const at = jobs.reduce((best, job, i) => (rank(job) < rank(jobs[best]) ? i : best), 0);
+	for (;;) {
+		// -1 until a job that may run is seen; then the best ranked, the earliest among equals.
+		const at = jobs.reduce((best, job, i) => (ready(job) && (best < 0 || rank(job) < rank(jobs[best])) ? i : best), -1);
+		if (at < 0) break;
 		const [job] = jobs.splice(at, 1);
 		const t0 = performance.now();
 		await job.start();
 		if (job.pane) cost.set(job.word, performance.now() - t0);
-		// Drained: nothing is behind this job, so the files go back rather
-		// than be held across an idle page.
-		if (!jobs.length) release();
+		// Drained: nothing that may run is behind this job, so the files go
+		// back rather than be held across an idle page, or a hidden one.
+		if (!jobs.some(ready)) release();
 		else await nextTask();
 	}
+	// The page may have been hidden across that task, leaving only held panes.
+	release();
 	busy = false;
 }
 
@@ -731,7 +756,8 @@ export function onBlocked(listener: (waited: number | null) => void): void {
  * Run `datum <argv>` with `env`; resolves once the process has exited, or
  * `null` if a newer command with the same `key` superseded it first.
  * `pane`: a pane's refresh, which waits behind every other command;
- * `session`: a sync session's run, which waits behind the panes too.
+ * `session`: a sync session's run, which waits behind the panes too, and
+ * ahead of them while the page is hidden (`setHidden`).
  */
 export function runCli(
 	argv: string[],

@@ -247,3 +247,64 @@ test('a refresh a newer one made stale while it waited is dropped unrun, and dra
 		{ ...DESKTOP, prepare: async (context) => Promise.all([inWorker(queue({}))(context), context.addInitScript(draft, WIDGETS)]) }
 	);
 });
+
+// A phone's reader taps and leaves the app at once (da-tavhb; vividn: «It would
+// be amazing if that data was already broadcast before the interface is closed
+// again»), and a hidden page's workers may be stopped at any moment. So while
+// the page is hidden the panes wait until it shows, as nobody sees a redraw,
+// and a sync session's run goes next after what was typed or pressed: not
+// ahead of it, since the tap's own write is what the push is for (vremya on
+// #1598). A `--version` stands in for a session's run, marked one as it
+// reaches the worker.
+const SESSION = `
+	self.addEventListener('message', (e) => {
+		if (e.data?.op === 'cli' && e.data.argv[0] === '--version') e.data.session = true;
+	});
+`;
+
+test('a hidden page runs its write, then a session, and its panes once it shows (da-tavhb)', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await app.idle();
+			const ear = await listen(page);
+			await page.evaluate(() => {
+				window.__hidden = false;
+				Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.__hidden });
+			});
+			const hide = (hidden) =>
+				page.evaluate((h) => {
+					window.__hidden = h;
+					document.dispatchEvent(new Event('visibilitychange'));
+				}, hidden);
+
+			// A write's first read after it runs until the session's run has
+			// arrived: by then every pane's refresh and a second write wait, the
+			// write queued before the page hid and the session after.
+			await ear.hold('^fields --json', '^--version', 1);
+			await page.evaluate(() => void window.datum.run(['occur', 'coffee', '-qq']));
+			await until(ear.heard, (log) => log.filter((e) => PANE.test(e.argv)).length >= 4);
+			await page.evaluate(() => void window.datum.runQuiet(['occur', 'tea', '-q']));
+			await waitFor(page, (log) => log.some((e) => e.argv === 'occur tea -q'));
+			await hide(true);
+			await page.evaluate(() => void window.datum.runQuiet(['--version']));
+			await until(ear.heard, (log) => requests(log).find((r) => r.argv === '--version')?.out !== undefined);
+			// A while more for a pane that would have run after them.
+			await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+			const reqs = requests(await ear.heard());
+			const session = reqs.find((r) => r.argv === '--version');
+			const write = reqs.find((r) => r.argv === 'occur tea -q');
+			assert.ok(write.out < session.out, `the write went ahead of the session:\n${show(reqs)}`);
+			const panes = reqs.filter((r) => PANE.test(r.argv));
+			assert.ok(panes.length >= 4, `the panes asked:\n${show(reqs)}`);
+			assert.deepEqual(panes.filter((r) => r.ran), [], `no pane ran while hidden:\n${show(reqs)}`);
+
+			await hide(false);
+			await app.idle();
+			const after = (await settled(ear)).filter((r) => PANE.test(r.argv) && r.ran);
+			assert.ok(after.length >= 3, `the panes ran once shown:\n${show(await settled(ear))}`);
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...DESKTOP, prepare: inWorker(QUEUE + SESSION) }
+	);
+});

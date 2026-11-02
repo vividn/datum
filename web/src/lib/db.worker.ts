@@ -9,7 +9,7 @@
 // #lib/cli.ts. This file is only the door: a request in, a process's
 // outcome out, and a word to the page when storage changes under it.
 
-import { onBlocked, onStorage, probe, runCli, storageNow } from './cli.js';
+import { onBlocked, onStorage, probe, runCli, setHidden, storageNow } from './cli.js';
 import { onUpgrade } from './wasiFs.js';
 import type { DbMessage, DbRequest, DbResponse } from './dbProtocol.js';
 
@@ -26,6 +26,10 @@ const ctx = self as unknown as {
 async function serve(request: DbRequest): Promise<DbResponse> {
 	try {
 		if (request.op === 'open') return { id: request.id, ok: true, storage: await probe() };
+		if (request.op === 'hidden') {
+			setHidden(request.hidden);
+			return { id: request.id, ok: true, storage: storageNow() };
+		}
 		// stderr as it is written, not only at exit: the page shows progress.
 		const cli = await runCli(
 			request.argv,

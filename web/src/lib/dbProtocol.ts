@@ -67,7 +67,9 @@ export type DbCommand =
 	 * every other command (da-icmo1). `session`: a sync session's run, which
 	 * waits behind the panes too (da-xzty6).
 	 */
-	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string; key?: string; stage?: Stage; pane?: boolean; session?: boolean };
+	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string; key?: string; stage?: Stage; pane?: boolean; session?: boolean }
+	/** The page was hidden or shown: hidden, the panes wait and a session's runs go ahead of them (da-tavhb). */
+	| { op: 'hidden'; hidden: boolean };
 
 /** A command with the tag that pairs its response to it. */
 export type DbRequest = DbCommand & { id: number };

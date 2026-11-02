@@ -4,7 +4,7 @@
 // from a dedicated worker (da-5iqw). This file is the client side of that:
 // one command out, one process's outcome back, and the storage it ran on.
 
-import type { CliResult, DbCommand, DbMessage, DbResponse, Stage, StorageKind } from './dbProtocol.js';
+import type { CliResult, DbCommand, DbMessage, DbRequest, DbResponse, Stage, StorageKind } from './dbProtocol.js';
 import { announceChange, announceMoved, renamedAway } from './changes.js';
 import { answered, blocked, upgrading } from './waiting.js';
 import { DAMAGED, damaged } from './damaged.js';
@@ -104,7 +104,23 @@ function ensureWorker(): Worker {
 		blocked.set(null);
 	};
 	worker = started;
+	if (!watchingVisibility) {
+		watchingVisibility = true;
+		document.addEventListener('visibilitychange', tellHidden);
+	}
+	if (document.hidden) tellHidden();
 	return started;
+}
+
+let watchingVisibility = false;
+
+/**
+ * Tell the worker whether the page is hidden (da-tavhb): while it is, the
+ * panes' refreshes wait until it shows, and a sync session's runs, a write's
+ * push among them, go next after the commands typed or pressed. Unanswered: nothing waits on it.
+ */
+function tellHidden(): void {
+	worker?.postMessage({ op: 'hidden', hidden: document.hidden, id: ++nextId } satisfies DbRequest);
 }
 
 /** Whether nothing is out: every request sent to the worker has answered. */
