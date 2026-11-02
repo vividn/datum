@@ -403,7 +403,7 @@ export function kitUninstallArgv(): string[] {
  * a `row_action`'s `{column}` reads, the cells as the table prints them,
  * and the colours its rule paints the row, where one does.
  */
-export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_color?: string; row_background?: string };
+export type KitWidgetRow = Record<string, unknown> & { row_cells: string[]; row_color?: string; row_background?: string; row_bold?: boolean };
 
 /** One version of an entry's trail: the line that wrote it, where one did. */
 export interface EntryVersion {

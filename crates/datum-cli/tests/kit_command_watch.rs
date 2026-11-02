@@ -185,7 +185,10 @@ fn older_kit() -> String {
             r#"columns = ["field", "iti_days", "due", "last_occur"]"#,
             r#"columns = ["field", "iti_days", "due", "last_occur", "status"]"#,
         ),
-        (r#"background = "red""#, r#"color = "red""#),
+        (
+            "background = \"red\"\ncolor = \"white\"\nbold = true",
+            r#"color = "red""#,
+        ),
         (r#"background = "yellow""#, r#"color = "yellow""#),
     ] {
         assert!(old.contains(new), "{new}");
@@ -217,5 +220,6 @@ fn an_older_install_takes_the_kit_with_force_and_keeps_its_chores() {
     assert_eq!(row["field"], "dishes");
     assert_eq!(row["row_background"], "#e01b24");
     assert_eq!(row["row_color"], "#ffffff");
+    assert_eq!(row["row_bold"], true);
     assert!(row.get("status").is_none(), "{row}");
 }

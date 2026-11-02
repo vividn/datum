@@ -1,6 +1,6 @@
 [kit]
 name = "chores"
-version = "0.11"
+version = "0.12"
 description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum moment <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum newchore vacuum 4` declares a chore done every 4 days, so every `datum vacuum` then logs it due four days on; a first due date other than that is a shirk, `datum moment vacuum -T next_date=<date>`. `datum chorelist` shows what is due or was done today, `datum chorelist <chore>` one chore, and `datum chorelist --all` every chore; `--sort due` (or `-due`) sorts by a shown column."
 
 # Every chore query scans only the entries that say when they are next due.
@@ -163,6 +163,8 @@ color = "green"
 [[command.color_rules]]
 when = "status = 'overdue'"
 background = "red"
+color = "white"
+bold = true
 
 [[command.color_rules]]
 when = "status = 'late'"

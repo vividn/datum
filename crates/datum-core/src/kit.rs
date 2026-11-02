@@ -503,7 +503,7 @@ impl AliasEntry {
 /// - `formats`: column-name → renderer hint (`smart_date`, `duration`, …).
 /// - `sort`: column to sort by (ascending; descending sort is forward-compat).
 /// - `flags`: pass-through verbs supported by this command (e.g. `watch`).
-/// - `color_rules`: list of `{ when, color }` or `{ when, background }`
+/// - `color_rules`: list of `{ when, color, background, bold }`, at least one of the three
 ///   painters; first match wins.
 /// - `empty`: text printed instead of the table when the view returns no
 ///   rows (da-x3369).
@@ -551,9 +551,10 @@ pub struct CommandEntry {
     pub script: Option<String>,
 }
 
-/// One color-rule TOML entry: `{ when = "...", color = "..." }`, or
-/// `background = "..."` to paint behind the row, in a foreground legible on
-/// it. The expression grammar is implemented in [`crate::kit_color_rule`].
+/// One color-rule TOML entry: `{ when = "...", color = "..." }` paints the
+/// text, `background = "..."` behind the row (the text legible on it unless
+/// `color` names one too), and `bold = true` sets it bold (da-9ce48). The
+/// expression grammar is implemented in [`crate::kit_color_rule`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColorRuleEntry {
     pub when: String,
@@ -561,19 +562,20 @@ pub struct ColorRuleEntry {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bold: bool,
 }
 
 impl ColorRuleEntry {
-    /// The one color the rule names, and whether it is a background.
-    pub fn paint(&self) -> std::result::Result<(&str, bool), String> {
-        match (&self.color, &self.background) {
-            (Some(c), None) => Ok((c, false)),
-            (None, Some(b)) => Ok((b, true)),
-            _ => Err(format!(
-                "color rule `when = \"{}\"` takes one of `color` and `background`",
+    /// Refuses a rule that paints nothing.
+    pub fn check(&self) -> std::result::Result<(), String> {
+        if self.color.is_none() && self.background.is_none() && !self.bold {
+            return Err(format!(
+                "color rule `when = \"{}\"` takes `color`, `background` or `bold = true`",
                 self.when
-            )),
+            ));
         }
+        Ok(())
     }
 }
 

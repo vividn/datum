@@ -26,13 +26,14 @@ use serde_json::Value as JsonValue;
 
 use crate::error::{DatumError, Result};
 
-/// One parsed `color_rules = [{ when = "...", color = "..." }]` entry, or
-/// `background = "..."`, which `background` says.
+/// One parsed `color_rules = [{ when = "...", color = "..." }]` entry, with
+/// its `background` and `bold` (da-9ce48).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColorRule {
     pub when: Expr,
-    pub color: String,
-    pub background: bool,
+    pub color: Option<String>,
+    pub background: Option<String>,
+    pub bold: bool,
 }
 
 /// Top-level expression — a chain of comparison terms joined by `&&`/`||`.
@@ -109,8 +110,9 @@ impl ColorRule {
         let expr = parse_expr(when)?;
         Ok(ColorRule {
             when: expr,
-            color: color.to_string(),
-            background: false,
+            color: Some(color.to_string()),
+            background: None,
+            bold: false,
         })
     }
 }
@@ -617,7 +619,7 @@ mod tests {
         row: &dyn RowLookup,
         now: DateTime<Utc>,
     ) -> Option<&'a str> {
-        pick_rule(rules, row, now).map(|r| r.color.as_str())
+        pick_rule(rules, row, now).and_then(|r| r.color.as_deref())
     }
 
     fn now_fixed() -> DateTime<Utc> {

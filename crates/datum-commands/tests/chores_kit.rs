@@ -294,18 +294,29 @@ fn status_follows_v2s_colours_and_chores_due_filters() {
                 r["field"].clone(),
                 r.get("row_color"),
                 r.get("row_background"),
+                r.get("row_bold"),
             )
         })
-        .map(|(f, c, b)| (f, c.cloned(), b.cloned()))
+        .map(|(f, c, b, w)| (f, c.cloned(), b.cloned(), w.cloned()))
         .collect();
     let hex = |s: &str| Some(JsonValue::from(s));
     assert_eq!(
         paint,
         [
-            (JsonValue::from("dishes"), hex("#ffffff"), hex("#e01b24")),
-            (JsonValue::from("bins"), hex("#000000"), hex("#e5a50a")),
-            (JsonValue::from("mop"), None, None),
-            (JsonValue::from("vacuum"), hex("#26a269"), None),
+            (
+                JsonValue::from("dishes"),
+                hex("#ffffff"),
+                hex("#e01b24"),
+                Some(JsonValue::from(true))
+            ),
+            (
+                JsonValue::from("bins"),
+                hex("#000000"),
+                hex("#e5a50a"),
+                None
+            ),
+            (JsonValue::from("mop"), None, None, None),
+            (JsonValue::from("vacuum"), hex("#26a269"), None, None),
         ]
     );
 

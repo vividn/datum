@@ -5,7 +5,7 @@
 // The chores kit's `chorelist` is installed through the seam, as a person
 // would (`kit install -`), and held to the bead's three claims, each read
 // off the page: its layout draws the widget with the rows `chorelist --json`
-// answers, cell for cell and in the rule's colour; a tap on a due chore logs
+// answers, cell for cell and in the rule's colour, bold where it says; a tap on a due chore logs
 // it and the row moves on to its next due date; and the widget is offered in
 // the database the kit went into, and not in another.
 
@@ -39,7 +39,8 @@ const drawn = (page) =>
 		rows.map((row) => ({
 			cells: [...row.children].map((c) => c.textContent),
 			color: getComputedStyle(row).color,
-			background: getComputedStyle(row).backgroundColor
+			background: getComputedStyle(row).backgroundColor,
+			weight: getComputedStyle(row).fontWeight
 		}))
 	);
 
@@ -57,7 +58,7 @@ test('the chores kit’s chorelist: drawn as the CLI answers, a tap logs the cho
 		await ok(['newchore', 'vacuum', '7']);
 		await ok(['occur', 'vacuum', '-T', 'next_date=2000-01-01']);
 		const [due] = await rows();
-		assert.deepEqual([due.field, due.due, due.row_color, due.row_background], ['vacuum', '2000-01-01', '#ffffff', '#e01b24']);
+		assert.deepEqual([due.field, due.due, due.row_color, due.row_background, due.row_bold], ['vacuum', '2000-01-01', '#ffffff', '#e01b24', true]);
 
 		// Offered here, in the open database's Change Widget.
 		assert.deepEqual(await kitOffers(page), ['kit:chores chore list']);
@@ -68,7 +69,7 @@ test('the chores kit’s chorelist: drawn as the CLI answers, a tap logs the cho
 		await chooser(page).waitFor({ state: 'detached' });
 		const row = page.locator('.kit-widget[data-widget="chorelist"] button.row', { hasText: 'vacuum' });
 		await row.waitFor();
-		assert.deepEqual(await drawn(page), [{ cells: due.row_cells, color: 'rgb(255, 255, 255)', background: 'rgb(224, 27, 36)' }]);
+		assert.deepEqual(await drawn(page), [{ cells: due.row_cells, color: 'rgb(255, 255, 255)', background: 'rgb(224, 27, 36)', weight: '700' }]);
 
 		// A tap logs it: done today, green, and due a week on. A minute on,
 		// so the tap is not at the instant the shirk was made, which is its time.
@@ -78,7 +79,7 @@ test('the chores kit’s chorelist: drawn as the CLI answers, a tap logs the cho
 		const [done] = await rows();
 		assert.notEqual(done.due, due.due, 'the due date moved');
 		assert.ok(done.last_occur, 'the tap logged an occurrence');
-		assert.deepEqual(await drawn(page), [{ cells: done.row_cells, color: 'rgb(38, 162, 105)', background: 'rgba(0, 0, 0, 0)' }]);
+		assert.deepEqual(await drawn(page), [{ cells: done.row_cells, color: 'rgb(38, 162, 105)', background: 'rgba(0, 0, 0, 0)', weight: '400' }]);
 
 		// Another database, the same page and menu: nothing of the kit's.
 		await page.goto(`${page.url()}?db=other`);

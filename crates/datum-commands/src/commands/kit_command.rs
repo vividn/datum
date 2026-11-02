@@ -10,8 +10,9 @@
 //! or is the shown rows as JSON under `--json` (or `--show json`): each an
 //! object keyed by the shown columns, plus `row_cells`, the row's cells as
 //! the table prints them, `row_color`, the matched rule's colour as hex
-//! (da-gh37k), and `row_background` where the rule paints the background, with
-//! `row_color` the foreground legible on it — what a datum.day kit widget draws.
+//! (da-gh37k), `row_background` where the rule paints the background, with
+//! `row_color` the foreground legible on it unless the rule names one, and
+//! `row_bold` where it sets bold (da-9ce48) — what a datum.day kit widget draws.
 //!
 //! The words after the name fill the command's declared `args` the way an
 //! alias's slots are filled (da-7ramf) — positionals in order, `.` skips
@@ -274,7 +275,7 @@ fn render(
     // table prints them and the colour it paints the row, so a surface that
     // is not a terminal draws the table's row without formatting it again.
     if call.json {
-        if let Some(c) = ["row_cells", "row_color", "row_background"]
+        if let Some(c) = ["row_cells", "row_color", "row_background", "row_bold"]
             .iter()
             .find(|k| projected.columns.iter().any(|c| c == *k))
         {
@@ -293,9 +294,14 @@ fn render(
                     projected.columns.iter().cloned().zip(row).collect();
                 obj.insert("row_cells".into(), cells.into());
                 if let Some(paint) = paint {
-                    obj.insert("row_color".into(), paint.color.into());
+                    if let Some(hex) = paint.color {
+                        obj.insert("row_color".into(), hex.into());
+                    }
                     if let Some(hex) = paint.background {
                         obj.insert("row_background".into(), hex.into());
+                    }
+                    if paint.bold {
+                        obj.insert("row_bold".into(), true.into());
                     }
                 }
                 obj
@@ -305,7 +311,7 @@ fn render(
     }
     let colors: Vec<Option<&str>> = painted
         .iter()
-        .map(|p| p.as_ref().filter(|_| color).map(|p| p.ansi))
+        .map(|p| p.as_ref().filter(|_| color).map(|p| p.ansi.as_str()))
         .collect();
     // A view with no rows prints the command's `empty` text, if it has
     // one, instead of an empty table (da-x3369) — after every column the
@@ -328,10 +334,12 @@ fn col_index(cmd: &str, columns: &[String], name: &str, by: &str) -> Result<usiz
 fn parse_rules(entries: &[datum_core::kit::ColorRuleEntry]) -> Result<Vec<ColorRule>> {
     let mut out = Vec::with_capacity(entries.len());
     for e in entries {
-        let (color, background) = e.paint().map_err(anyhow::Error::msg)?;
+        e.check().map_err(anyhow::Error::msg)?;
         out.push(ColorRule {
-            background,
-            ..ColorRule::parse(&e.when, color)?
+            when: kit_color_rule::parse_expr(&e.when)?,
+            color: e.color.clone(),
+            background: e.background.clone(),
+            bold: e.bold,
         });
     }
     Ok(out)
@@ -458,49 +466,50 @@ fn format_duration(v: &JsonValue) -> String {
     format_human_duration(secs, DurationPrecision::Seconds)
 }
 
-/// Resolve a colour name or hex into the closest ANSI sequence, and the
-/// representative hex of that ANSI colour — `Outcome::hex`'s, so `--json`
+/// Resolve a colour name or hex into the closest ANSI foreground code, and
+/// the representative hex of that ANSI colour — `Outcome::hex`'s, so `--json`
 /// carries the colour the terminal paints (da-gh37k). The colour rules
 /// round-trip the literal string in TOML so the kit author's intent
 /// survives export.
 fn ansi_for(color: &str) -> (&'static str, &'static str) {
     match color.to_ascii_lowercase().as_str() {
-        "red" => ("\x1b[31m", "#e01b24"),
-        "green" => ("\x1b[32m", "#26a269"),
-        "yellow" => ("\x1b[33m", "#e5a50a"),
-        "blue" => ("\x1b[34m", "#3584e4"),
-        "magenta" | "purple" => ("\x1b[35m", "#c061cb"),
-        "cyan" => ("\x1b[36m", "#2aa1b3"),
-        "gray" | "grey" => ("\x1b[90m", "#888888"),
-        _ => ("\x1b[37m", "#d0d0d0"),
+        "red" => ("31", "#e01b24"),
+        "green" => ("32", "#26a269"),
+        "yellow" => ("33", "#e5a50a"),
+        "blue" => ("34", "#3584e4"),
+        "magenta" | "purple" => ("35", "#c061cb"),
+        "cyan" => ("36", "#2aa1b3"),
+        "gray" | "grey" => ("90", "#888888"),
+        "white" => ("97", WHITE),
+        _ => ("37", "#d0d0d0"),
     }
 }
 
+const BLACK: &str = "#000000";
+const WHITE: &str = "#ffffff";
+
 /// What a rule paints a row: the escape, and the same as hex for `--json`.
 struct Paint {
-    ansi: &'static str,
-    color: &'static str,
+    ansi: String,
+    color: Option<&'static str>,
     background: Option<&'static str>,
+    bold: bool,
 }
 
-/// A rule's `background`: its `ansi_for` hex behind a foreground legible on it.
-fn background_for(color: &str) -> Paint {
-    const BLACK: &str = "#000000";
-    const WHITE: &str = "#ffffff";
-    let (ansi, color, background) = match color.to_ascii_lowercase().as_str() {
-        "red" => ("\x1b[97;41m", WHITE, "#e01b24"),
-        "green" => ("\x1b[30;42m", BLACK, "#26a269"),
-        "yellow" => ("\x1b[30;43m", BLACK, "#e5a50a"),
-        "blue" => ("\x1b[97;44m", WHITE, "#3584e4"),
-        "magenta" | "purple" => ("\x1b[97;45m", WHITE, "#c061cb"),
-        "cyan" => ("\x1b[30;46m", BLACK, "#2aa1b3"),
-        "gray" | "grey" => ("\x1b[97;100m", WHITE, "#888888"),
-        _ => ("\x1b[30;47m", BLACK, "#d0d0d0"),
-    };
-    Paint {
-        ansi,
-        color,
-        background: Some(background),
+/// A rule's `background`: its ANSI code and `ansi_for` hex, and the
+/// foreground legible on it, which a rule's own `color` overrides.
+fn background_for(color: &str) -> (&'static str, &'static str, (&'static str, &'static str)) {
+    let light = ("30", BLACK);
+    let dark = ("97", WHITE);
+    match color.to_ascii_lowercase().as_str() {
+        "red" => ("41", "#e01b24", dark),
+        "green" => ("42", "#26a269", light),
+        "yellow" => ("43", "#e5a50a", light),
+        "blue" => ("44", "#3584e4", dark),
+        "magenta" | "purple" => ("45", "#c061cb", dark),
+        "cyan" => ("46", "#2aa1b3", light),
+        "gray" | "grey" => ("100", "#888888", dark),
+        _ => ("47", "#d0d0d0", light),
     }
 }
 
@@ -566,14 +575,21 @@ fn row_paint(
     }
     let lookup: &dyn RowLookup = &map;
     let rule = kit_color_rule::pick_rule(rules, lookup, now)?;
-    if rule.background {
-        return Some(background_for(&rule.color));
-    }
-    let (ansi, color) = ansi_for(&rule.color);
+    let bg = rule.background.as_deref().map(background_for);
+    let fg = rule
+        .color
+        .as_deref()
+        .map(ansi_for)
+        .or(bg.map(|(_, _, legible)| legible));
+    let codes: Vec<&str> = [fg.map(|f| f.0), bg.map(|b| b.0), rule.bold.then_some("1")]
+        .into_iter()
+        .flatten()
+        .collect();
     Some(Paint {
-        ansi,
-        color,
-        background: None,
+        ansi: format!("\x1b[{}m", codes.join(";")),
+        color: fg.map(|f| f.1),
+        background: bg.map(|b| b.1),
+        bold: rule.bold,
     })
 }
 
@@ -610,6 +626,7 @@ mod tests {
                     when: when.to_string(),
                     color: Some(color.to_string()),
                     background: None,
+                    bold: false,
                 })
                 .collect(),
             empty: None,
@@ -693,11 +710,52 @@ mod tests {
         let out = render(&cmd, &Call::default(), mk_view(), true).unwrap();
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[3], "\x1b[97;41mmood  \x1b[0m", "{out}");
-        cmd.color_rules[0].color = Some("red".into());
+        cmd.color_rules[0].bold = true;
+        cmd.color_rules[0].background = None;
+        let out = render(&cmd, &Call::default(), mk_view(), true).unwrap();
+        assert_eq!(out.lines().nth(3), Some("\x1b[1mmood  \x1b[0m"), "{out}");
+        cmd.color_rules[0].bold = false;
         let err = render(&cmd, &Call::default(), mk_view(), true).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "color rule `when = \"extra = 'b'\"` takes one of `color` and `background`"
+            "color rule `when = \"extra = 'b'\"` takes `color`, `background` or `bold = true`"
+        );
+    }
+
+    /// A text color, a background and bold together, in the escape and in
+    /// `--json` alike (da-9ce48).
+    #[test]
+    fn a_rule_takes_a_color_a_background_and_bold_together() {
+        let mut cmd = mk_cmd(&["field"], None, &[("extra = 'b'", "white")]);
+        cmd.color_rules[0].background = Some("red".into());
+        cmd.color_rules[0].bold = true;
+        let out = render(&cmd, &Call::default(), mk_view(), true).unwrap();
+        assert_eq!(
+            out.lines().nth(3),
+            Some("\x1b[97;41;1mmood  \x1b[0m"),
+            "{out}"
+        );
+        let json = Call {
+            json: true,
+            ..Call::default()
+        };
+        let rows: JsonValue =
+            serde_json::from_str(&render(&cmd, &json, mk_view(), false).unwrap()).unwrap();
+        assert_eq!(rows[0].get("row_color"), None, "coffee is unpainted");
+        assert_eq!(
+            [
+                &rows[1]["row_color"],
+                &rows[1]["row_background"],
+                &rows[1]["row_bold"]
+            ],
+            [&json!("#ffffff"), &json!("#e01b24"), &json!(true)]
+        );
+        cmd.color_rules[0].color = Some("yellow".into());
+        let out = render(&cmd, &Call::default(), mk_view(), true).unwrap();
+        assert_eq!(
+            out.lines().nth(3),
+            Some("\x1b[33;41;1mmood  \x1b[0m"),
+            "{out}"
         );
     }
 
