@@ -6,6 +6,8 @@
 
 pub mod add;
 pub mod alias;
+#[cfg(feature = "net")]
+pub mod backup_daemon;
 pub mod backup_restore;
 pub mod backup_rotation;
 pub mod check;

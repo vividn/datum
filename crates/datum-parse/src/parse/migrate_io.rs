@@ -60,6 +60,56 @@ pub(crate) fn parse_db_import(tail: &[&str]) -> Result<DbImportArgs> {
 /// `db backup`: a single file (`<PATH> [--overwrite]`), or — with `--to`,
 /// `--list` or `--plan` — the Tower of Hanoi rotation (da-d5cmj).
 pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
+    // `daemon` is a word here, never a file: `./daemon` is the file.
+    if let ["daemon", rest @ ..] = tail {
+        let act = match rest {
+            ["install", flags @ ..] => {
+                // No --to: the data directory's backups/, which the command finds.
+                let given = flags.iter().any(|f| *f == "--to" || f.starts_with("--to="));
+                let flags = match given {
+                    true => flags.to_vec(),
+                    false => [&["--to", ""][..], flags].concat(),
+                };
+                match parse_backup_cmd(&flags)? {
+                    DbCommand::BackupRotation(BackupRotationArgs {
+                        action: RotationAction::To(to),
+                        every,
+                        slots,
+                        ..
+                    }) => BackupDaemonAct::Install {
+                        to: given.then_some(to),
+                        every,
+                        slots,
+                    },
+                    _ => {
+                        return Err(ParseError::InvalidArg(
+                            "db backup daemon install takes [--to DIR] --every DUR [--slots N]"
+                                .into(),
+                        ))
+                    }
+                }
+            }
+            ["uninstall"] => BackupDaemonAct::Uninstall { to: None },
+            ["uninstall", "--to", to] => BackupDaemonAct::Uninstall {
+                to: Some(to.to_string()),
+            },
+            ["uninstall", flag] if flag.starts_with("--to=") => BackupDaemonAct::Uninstall {
+                to: Some(flag["--to=".len()..].to_string()),
+            },
+            ["status"] => BackupDaemonAct::Status,
+            [act @ ("uninstall" | "status"), extra, ..] => {
+                return Err(ParseError::InvalidArg(format!(
+                    "db backup daemon {act} takes nothing more: {extra}"
+                )))
+            }
+            _ => {
+                return Err(ParseError::InvalidArg(
+                    "db backup daemon takes install, uninstall or status".into(),
+                ))
+            }
+        };
+        return Ok(DbCommand::BackupDaemon(act));
+    }
     let mut pos: Vec<&str> = Vec::new();
     let (mut overwrite, mut plan) = (false, false);
     let (mut to, mut list, mut every, mut slots, mut span) = (None, None, None, None, None);

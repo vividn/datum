@@ -24,11 +24,17 @@ takes the script's arguments: `| sh -s -- --no-completions`, say.
   upgrade never needs a reinstall.
 - The sync daemon, when a database syncs (`datum sync daemon install`),
   restarted onto this binary; `--daemon` installs it before one does.
+- A line naming the backup daemons installed, or how to install one:
+  `datum db backup daemon install --every 1h` takes a database's Tower of
+  Hanoi rotation every hour on a systemd user timer, into `backups/` in
+  datum's data directory (`--to DIR` another; one daemon per destination).
 - It ends with the line that makes your aliases and the verbs commands
   of their own in your shell, for you to add if you want it.
 
 Running it again is harmless. `datum check` then says when any of it goes
-missing, or when the daemon runs another or an older `datum`.
+missing, or when the daemon runs another or an older `datum`, and of a
+database's backup daemons, each by its destination, when its timer is not
+running or its last backup failed.
 
 ## Upgrading
 
@@ -76,7 +82,7 @@ shadows the installed binary: `type datum` says which one runs.
 datum uninstall
 ```
 
-undoes the install: the sync daemon, tab completion, the alias loop in
+undoes the install: the sync daemon, every backup daemon, tab completion, the alias loop in
 `~/.zshrc` or `~/.bashrc`, then the binary (by `cargo uninstall` when
 cargo put it there). It keeps your record, the databases and the config,
 and says where they are and how to remove them by hand. A step that

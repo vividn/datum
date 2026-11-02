@@ -16,7 +16,7 @@ use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::{alias, completions, sync_daemon};
+use super::{alias, backup_daemon, completions, sync_daemon};
 use crate::args::SyncDaemonAct;
 use crate::config;
 
@@ -77,6 +77,9 @@ pub fn install(args: InstallArgs) -> Result<()> {
         Err(e) if args.daemon => return Err(e),
         Err(e) => eprintln!("warning: the sync daemon was not installed: {e:#}"),
     }
+    if let Some(said) = backup_daemon::said() {
+        println!("{said}");
+    }
     let path = record_path()?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -113,6 +116,7 @@ pub fn uninstall() -> Result<()> {
         }
     };
     step("sync daemon", sync_daemon::daemon(SyncDaemonAct::Uninstall));
+    step("backup daemon", backup_daemon::uninstall_all());
     step(
         "tab completion",
         completions::uninstall_all().map(|s| print!("{s}")),

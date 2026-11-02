@@ -155,6 +155,19 @@ fn a_dash_offers_the_commands_flags() {
     assert!(has(&found, "--db"), "the global flags too: {found:?}");
 }
 
+/// A group's words complete at any depth: `sync chain`'s, and `db backup
+/// daemon`'s after `db backup`'s (da-gbac0).
+#[test]
+fn a_group_offers_its_next_words() {
+    let env = Env::new();
+    assert!(has(&env.complete("sync chain "), "invite"));
+    assert_eq!(
+        env.complete("db backup daemon "),
+        ["install", "uninstall", "status"]
+    );
+    assert!(has(&env.complete("db backup daemon install --"), "--every"));
+}
+
 /// A subcommand's flags are named only in its usage lines, and each one
 /// a usage line names completes after its words (da-8x1vv).
 #[test]
@@ -478,7 +491,8 @@ fn a_file_position_asks_the_shell_for_its_files() {
     for (line, want) in [
         ("db v2import ", vec!["-", file]),
         ("db v2import --from ", vec![file]),
-        ("db backup ", vec!["-", file]),
+        // A word of the group and the file (da-gbac0).
+        ("db backup ", vec!["daemon", "-", file]),
         ("db restore --if-unchanged FP ", vec!["-", file]),
         ("kit install ", vec!["-", file]),
         ("kit export starter ", vec![file]),

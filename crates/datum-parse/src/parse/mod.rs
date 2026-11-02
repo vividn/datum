@@ -700,6 +700,53 @@ mod tests {
             (a.action, a.every, a.slots),
             (RotationAction::Plan { span: 172_800 }, 1800, None)
         );
+        // da-gbac0: `daemon` is a word after `backup`, and install takes a run's flags.
+        let daemon = |words: &[&str]| match parse_argv(&argv(words)).map(|c| c.command) {
+            Ok(Command::Db(DbCommand::BackupDaemon(a))) => Ok(a),
+            other => Err(format!("{other:?}")),
+        };
+        let install = |words: &[&str]| match daemon(words) {
+            Ok(BackupDaemonAct::Install { to, every, slots }) => (to, every, slots),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            install(&["db", "backup", "daemon", "install", "--to", "bk", "--every", "15m"]),
+            (Some("bk".into()), 900, None)
+        );
+        // No --to: the data directory's backups/ (vividn, 2026-11-02).
+        assert_eq!(
+            install(&["db", "backup", "daemon", "install", "--every", "1h", "--slots", "4"]),
+            (None, 3600, Some(4))
+        );
+        let uninstall = |words: &[&str]| match daemon(words) {
+            Ok(BackupDaemonAct::Uninstall { to }) => to,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(uninstall(&["db", "backup", "daemon", "uninstall"]), None);
+        assert_eq!(
+            uninstall(&["db", "backup", "daemon", "uninstall", "--to", "bk"]),
+            Some("bk".into())
+        );
+        assert_eq!(
+            uninstall(&["db", "backup", "daemon", "uninstall", "--to=bk"]),
+            Some("bk".into())
+        );
+        assert!(matches!(
+            daemon(&["db", "backup", "daemon", "status"]),
+            Ok(BackupDaemonAct::Status)
+        ));
+        for bad in [
+            &["db", "backup", "daemon"][..],
+            &["db", "backup", "daemon", "install", "--to", "bk"],
+            &["db", "backup", "daemon", "install"],
+            &["db", "backup", "daemon", "uninstall", "--to"],
+            &["db", "backup", "daemon", "uninstall", "--every", "1h"],
+            &["db", "backup", "daemon", "install", "--list", "bk"],
+            &["db", "backup", "daemon", "status", "x"],
+            &["db", "backup", "daemon", "run"],
+        ] {
+            assert!(daemon(bad).is_err(), "{bad:?}");
+        }
         assert!(matches!(
             parse_argv(&argv(&["db", "backup", "out.jsonl.gz"]))
                 .unwrap()

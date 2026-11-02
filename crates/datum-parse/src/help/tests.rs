@@ -1033,7 +1033,7 @@ fn help_json_lists_db_subcommands() {
         names,
         ["purge", "backup", "restore", "migrate", "v2import", "config", "rename"]
     );
-    assert_eq!(db["subcommands"][1]["usage"].as_array().unwrap().len(), 4);
+    assert_eq!(db["subcommands"][1]["usage"].as_array().unwrap().len(), 7);
     assert_eq!(db["bare"], false);
     assert_eq!(entry("sync")["bare"], true);
     assert_eq!(entry("conflicts")["bare"], true);

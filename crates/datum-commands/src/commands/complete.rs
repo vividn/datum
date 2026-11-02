@@ -221,17 +221,22 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
             .collect();
     }
 
-    // A group of its own (`sync chain`): the word after it in its usage.
-    if let Some(s) = sub.filter(|_| given.is_empty()) {
-        let mut words: Vec<String> = s
-            .usage
-            .iter()
-            .filter_map(|l| group_tokens(l).into_iter().nth(3))
+    // A group of its own (`sync chain`, `db backup daemon`): the word after
+    // the words given, in its usage.
+    if sub.is_some() {
+        let mut words: Vec<String> = (usage.iter().map(|l| group_tokens(l)))
+            .filter(|t| t.iter().skip(3).zip(&given).all(|(a, b)| a == *b))
+            .filter_map(|t| t.into_iter().nth(3 + given.len()))
             .filter(|w| w.starts_with(|c: char| c.is_ascii_lowercase()))
             .filter(|w| w.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
             .collect();
         words.dedup();
         if !words.is_empty() {
+            // And the file another line takes there (`db backup <PATH>`).
+            if given.is_empty() {
+                let file = slots(usage, 3).first().and_then(|s| files(s.0));
+                words.extend(file.unwrap_or_default());
+            }
             return words;
         }
     }

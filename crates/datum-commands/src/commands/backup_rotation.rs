@@ -186,6 +186,26 @@ fn rotate(
     Ok((doc, text))
 }
 
+/// What a db's backup files are named by, and its backup daemon's units: a
+/// db without a registry name is known by its path, and labelled by the
+/// path's stem.
+pub(crate) fn label(source_db: &str) -> String {
+    let name = match source_db.contains(std::path::MAIN_SEPARATOR) {
+        true => Path::new(source_db).file_stem().and_then(|s| s.to_str()),
+        false => None,
+    };
+    let safe: String = (name.unwrap_or(source_db).chars())
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => c,
+            _ => '_',
+        })
+        .collect();
+    match safe.is_empty() {
+        true => "db".into(),
+        false => safe,
+    }
+}
+
 /// The slot's file, complete and renamed into place — the half of a run
 /// that happens before the index hears of it.
 fn write_slot(
@@ -196,23 +216,9 @@ fn write_slot(
     period: u64,
     now: DateTime<Utc>,
 ) -> Result<Slot> {
-    // A db without a registry name is known by its path; its file, by the
-    // path's stem.
-    let name = match source_db.contains(std::path::MAIN_SEPARATOR) {
-        true => Path::new(source_db).file_stem().and_then(|s| s.to_str()),
-        false => None,
-    };
-    let mut safe: String = (name.unwrap_or(source_db).chars())
-        .map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => c,
-            _ => '_',
-        })
-        .collect();
-    if safe.is_empty() {
-        safe = "db".into();
-    }
     let file = format!(
-        "{safe}.slot{slot}.{}.jsonl.gz",
+        "{}.slot{slot}.{}.jsonl.gz",
+        label(source_db),
         now.format("%Y%m%dT%H%M%S%.3fZ")
     );
     let tmp = dir.join(format!("{file}.tmp"));
@@ -320,7 +326,7 @@ fn plan_report(every: i64, cap: Option<u32>, span: i64) -> (serde_json::Value, S
 }
 
 /// Two days and more in days: a backup's age reaches back months.
-fn ago(secs: i64) -> String {
+pub(crate) fn ago(secs: i64) -> String {
     if secs >= 2 * 86_400 {
         format!("{}d", secs / 86_400)
     } else {

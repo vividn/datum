@@ -28,7 +28,7 @@ const UNIT: &str = "datum-sync.service";
 const LABEL: &str = "day.datum.sync";
 /// Where datum keeps its files, handed from the installing shell to the
 /// service, which does not inherit it.
-const ENV: [&str; 4] = [
+pub(super) const ENV: [&str; 4] = [
     "DATUM_HOME",
     "DATUM_CONFIG_HOME",
     "XDG_DATA_HOME",
@@ -146,7 +146,7 @@ impl Manager {
 }
 
 /// Run a service manager's command; its stderr is the error.
-fn ctl(program: &str, args: &[&str]) -> Result<()> {
+pub(super) fn ctl(program: &str, args: &[&str]) -> Result<()> {
     let out = Command::new(program)
         .args(args)
         .output()
@@ -162,7 +162,7 @@ fn ctl(program: &str, args: &[&str]) -> Result<()> {
 }
 
 /// A value inside a systemd unit's double quotes: `%` would be a specifier.
-fn quoted(s: &str) -> String {
+pub(super) fn quoted(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('%', "%%")
@@ -236,15 +236,23 @@ fn status(manager: Option<Manager>) -> Result<()> {
         if chained.is_empty() { "" } else { ": " },
         chained.join(", ")
     );
-    if let (Manager::Systemd, Ok(user)) = (m, std::env::var("USER")) {
-        let linger = Command::new("loginctl")
-            .args(["show-user", &user, "--property=Linger", "--value"])
-            .output();
-        if linger.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "no") {
-            println!("it stops when you log out: `loginctl enable-linger` keeps it running");
-        }
+    if let Manager::Systemd = m {
+        linger_note();
     }
     Ok(())
+}
+
+/// A user service stops at logout, unless the user lingers: say so.
+pub(super) fn linger_note() {
+    let Ok(user) = std::env::var("USER") else {
+        return;
+    };
+    let linger = Command::new("loginctl")
+        .args(["show-user", &user, "--property=Linger", "--value"])
+        .output();
+    if linger.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "no") {
+        println!("it stops when you log out: `loginctl enable-linger` keeps it running");
+    }
 }
 
 /// `datum install`'s part (da-uphgn): install the daemon again onto this

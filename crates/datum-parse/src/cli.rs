@@ -267,6 +267,9 @@ pub enum DbCommand {
     /// `datum db backup --to DIR | --list DIR | --plan` — the Tower of
     /// Hanoi rotation (da-d5cmj).
     BackupRotation(BackupRotationArgs),
+    /// `datum db backup daemon install | uninstall | status` — that
+    /// rotation on a systemd timer (da-gbac0).
+    BackupDaemon(BackupDaemonAct),
     /// `datum db restore` — replay entries from a backup file.
     Restore(RestoreArgs),
     /// `datum db migrate` — schema migration runner: bare or `run` applies
@@ -1583,6 +1586,24 @@ pub struct BackupRotationArgs {
     pub slots: Option<u32>,
     /// The output level the shared layer swept out of argv (da-qt6z).
     pub show: Show,
+}
+
+/// `datum db backup daemon …` (da-gbac0).
+#[derive(Debug)]
+pub enum BackupDaemonAct {
+    /// Run the rotation `--to DIR --every D [--slots N]` takes, every D;
+    /// `to: None` is the data directory's `backups/`. One per database and
+    /// destination.
+    Install {
+        to: Option<String>,
+        every: i64,
+        slots: Option<u32>,
+    },
+    /// Remove the active database's daemon into `to`, or with `None` all of
+    /// them.
+    Uninstall { to: Option<String> },
+    /// Every one installed, and how its last run went.
+    Status,
 }
 
 #[derive(Debug, PartialEq)]
