@@ -82,6 +82,11 @@ const DEVICE = `${PREFIX}device.v1`;
 export const loadDevice = (): string | null => get(DEVICE);
 export const saveDevice = (device: string | null) => set(DEVICE, device);
 
+/** Whether a swipe past an end of the tabs goes round to the other (`wrapTabs`, shell.ts): off until this device says. */
+const WRAP = `${PREFIX}wrap.v1`;
+export const loadWrap = (): boolean => get(WRAP) === 'on';
+export const saveWrap = (on: boolean) => set(WRAP, on ? 'on' : null);
+
 /** The root bar as this device left it: the open layouts, and which is active. */
 export interface RootState {
 	names: string[];

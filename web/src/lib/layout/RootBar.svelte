@@ -142,7 +142,7 @@
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions } from './shell.js';
+	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions, wrapTabs } from './shell.js';
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
@@ -421,6 +421,7 @@
 		zone
 			? { label: `Stop tracking timezone (${zone})`, act: 'run' as const, run: () => void press(['timezone', 'IGNORED']) }
 			: { label: `Track timezone (${deviceZone})`, act: 'run' as const, run: () => void press(['timezone', deviceZone]) },
+		{ label: 'Wrap tabs when swiping', toggled: $wrapTabs, run: () => wrapTabs.update((on) => !on) },
 		{ label: 'Reset default layouts', act: 'open' as const, run: doResetDefaults },
 		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true },
 		{ label: `datum.day is early software. ${$storageSentence}`, note: true as const }
@@ -478,7 +479,7 @@
 		look="badge"
 		label="settings"
 		title="settings"
-		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Track timezone, which logs this device's zone to the timezone field, and again stops; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
+		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Track timezone, which logs this device's zone to the timezone field, and again stops; Wrap tabs when swiping, which on this device makes a swipe past the last tab go to the first and past the first to the last; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
 		class="gear"
 		aria-label="settings"
 		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">

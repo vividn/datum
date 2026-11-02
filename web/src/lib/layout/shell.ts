@@ -108,11 +108,13 @@ import {
 	loadDraft,
 	loadRoot,
 	loadShell,
+	loadWrap,
 	saveDefaults,
 	saveDevice,
 	saveDraft,
 	saveRoot,
 	saveShell,
+	saveWrap,
 	type RootState
 } from './draft.js';
 import {
@@ -943,6 +945,14 @@ export const activate = (index: number) => {
  * close moves every index right of the place.
  */
 export const sliding = writable<NodeId | null>(null);
+
+/**
+ * Whether a swipe past the last tab goes to the first and past the first to
+ * the last (da-25qs9), the gear's «Wrap tabs when swiping»: this device's, as
+ * how its fingers expect a page to move is, and off until it says.
+ */
+export const wrapTabs = writable(loadWrap());
+wrapTabs.subscribe(saveWrap);
 
 /** Whether the root tab in front is an open place. */
 const inPlace = (): boolean => {

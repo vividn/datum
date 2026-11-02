@@ -463,12 +463,17 @@ describe('the swipe strip', () => {
 						const [x, y] = getComputedStyle(el).backgroundPosition.split(', ').at(-1).split(' ').map(parseFloat);
 						return { tab: new DOMMatrix(getComputedStyle(tab).transform).m41, x, y };
 					});
+				// No tab on this side: the tab gives, and the texture with it, and both go back.
+				const gave = [];
+				await onStrip(page, [[60, 0], [150, 0]], async () => gave.push(await read()));
+				assert.ok(gave[0].tab > 0 && gave[1].tab > gave[0].tab, `the tab did not give: ${JSON.stringify(gave)}`);
+				assert.ok(gave.every((s) => Math.abs(s.x - s.tab) < 0.01 && s.y === 0), `the texture left the tab: ${JSON.stringify(gave)}`);
+				await atRest(page.locator('section.root > .content'));
+				assert.deepEqual(await read(), { tab: 0, x: 0, y: 0 }, 'they did not go back');
 				const seen = [];
 				const look = async () => seen.push(await read());
-				// No tab on this side: the tab stays, and so it does.
-				await onStrip(page, [[60, 0], [150, 0]], look);
 				await onStrip(page, [[-30, 0], [-60, 0], [-150, 0], [-60, 0], [-60, 30], [-20, 0]], look);
-				assert.deepEqual(seen.map((s) => s.tab), [0, 0, 0, -20, -110, -20, -20, 0], 'the tab did not move as this test takes it to');
+				assert.deepEqual(seen.map((s) => s.tab), [0, -20, -110, -20, -20, 0], 'the tab did not move as this test takes it to');
 				assert.deepEqual(seen.map((s) => s.x), seen.map((s) => s.tab), 'the texture left the tab');
 				assert.ok(seen.every((s) => s.y === 0), 'the texture moved up or down');
 
@@ -1428,6 +1433,318 @@ describe('a run of swipes: the window after a switch', () => {
 				await swipeOver(page, body(), -120, 0);
 				await until(() => activeTab(page, 'side'), (t) => t === 'nowview');
 				assert.equal(await shown(page), 'main', 'the swipe after the window moved the layout');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+});
+
+// vividn, 2026-10-31: «on the first and last tab, add an elastic effect for
+// trying to swipe further», and «maybe we have wrap be an option you can
+// enable» (da-25qs9). `main` is the first layout here and `tail` the last.
+describe('past the first or last tab', () => {
+	const ROOT = 'section.root > .content';
+	const STRIP = '.swipe-strip';
+
+	/** A finger on the page: where it goes, what it reads there, and its lift. */
+	async function finger(page, x, y) {
+		const cdp = await page.context().newCDPSession(page);
+		const at = { x, y, dx0: 0, dy0: 0 };
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+		return {
+			/** Move by small steps, as a finger does, to `dx` along x, or `dy` down. */
+			async to(dx, dy = 0) {
+				for (let i = 1; i <= 6; i++)
+					await cdp.send('Input.dispatchTouchEvent', {
+						type: 'touchMove',
+						touchPoints: [{ x: at.x + at.dx0 + ((dx - at.dx0) * i) / 6, y: at.y + at.dy0 + ((dy - at.dy0) * i) / 6 }]
+					});
+				at.dx0 = dx;
+				at.dy0 = dy;
+			},
+			async lift() {
+				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+				await cdp.detach();
+			}
+		};
+	}
+
+	/** The tab in front's offset in `content`, in px: 0 with no transform. */
+	const offsetOf = (page, content = ROOT) =>
+		page.locator(content).evaluate((el) => {
+			const t = el.querySelector(':scope > .tab-body:not(.behind)')?.style.transform ?? '';
+			return Number(/translate[XY]\((-?[\d.]+)px\)/.exec(t)?.[1] ?? 0);
+		});
+	const texture = (page) => page.locator(STRIP).evaluate((el) => parseFloat(el.style.backgroundPosition));
+	const stripMiddle = async (page) => {
+		const box = await page.locator(STRIP).boundingBox();
+		return box.y + box.height / 2;
+	};
+	const wrap = async (page) => {
+		await page.locator('.root-bar button.gear').click();
+		await page.getByRole('menuitemcheckbox', { name: 'Wrap tabs when swiping' }).click();
+		await page.keyboard.press('Escape');
+	};
+
+	/** Pull past an end, and see the tab give, less for each px, and go home with no tab changed. */
+	async function gives(page, x, dir, name) {
+		const y = await stripMiddle(page);
+		// Where earlier swipes left it: the texture stands at that plus the tab's offset.
+		const worn = await texture(page);
+		const held = await finger(page, x, y);
+		await held.to(dir * 100);
+		const first = await offsetOf(page);
+		const textureFirst = await texture(page);
+		await held.to(dir * 160);
+		const second = await offsetOf(page);
+		await held.to(dir * 220);
+		const third = await offsetOf(page);
+		assert.ok(dir * first > 0 && dir * first < 60, `60px past the swipe's start moved it ${first}px: no give, or no resistance`);
+		assert.ok(third * dir > second * dir && second * dir > first * dir, `it does not follow the finger: ${first}, ${second}, ${third}`);
+		assert.ok(dir * (third - second) < dir * (second - first), `no less for each px: ${first}, ${second}, ${third}`);
+		assert.ok(Math.abs(textureFirst - worn - first) < 0.01, `the texture left the tab: ${textureFirst}, ${first}`);
+		await held.lift();
+		await atRest(page.locator(ROOT));
+		assert.equal(await offsetOf(page), 0, 'it did not go back');
+		assert.equal(await texture(page), worn, 'the texture did not go back');
+		assert.equal(await shown(page), name, 'a give changed the tab');
+	}
+
+	test('on the first tab and the last a drag gives, less the further, and goes back; the open way follows the finger whole', async () => {
+		await withApp(
+			async ({ page }) => {
+				await gives(page, 60, 1, 'main');
+				// The open way, from the first tab: with no resistance.
+				const y = await stripMiddle(page);
+				let held = await finger(page, 290, y);
+				await held.to(-140);
+				assert.equal(await offsetOf(page), -100, 'the open way has resistance');
+				await held.lift();
+				await until(() => shown(page), (name) => name === 'tail');
+				await pastTheWindow(page);
+
+				await gives(page, 290, -1, 'tail');
+				held = await finger(page, 60, y);
+				await held.to(140);
+				assert.equal(await offsetOf(page), 100, 'the open way has resistance');
+				await held.lift();
+				await until(() => shown(page), (name) => name === 'main');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('a drag past an end and back the open way goes on as a swipe, and a short one moves nothing', async () => {
+		await withApp(
+			async ({ page }) => {
+				const y = await stripMiddle(page);
+				const held = await finger(page, 200, y);
+				await held.to(30);
+				assert.equal(await offsetOf(page), 0, 'a drag short of a swipe moved the tab');
+				await held.to(100);
+				assert.ok((await offsetOf(page)) > 0);
+				await held.to(-140);
+				assert.equal(await offsetOf(page), -100);
+				await held.lift();
+				await until(() => shown(page), (name) => name === 'tail');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('over a tabbed pane on its end, the root gives, and the pane stays', async () => {
+		await withApp(
+			async ({ page }) => {
+				const body = pane(page, 'side').locator('.body:not(.behind .body)');
+				await scrollX(body, false);
+				const tab = await activeTab(page, 'side');
+				const box = await body.boundingBox();
+				const held = await finger(page, box.x + box.width * 0.2, box.y + box.height / 2);
+				await held.to(140);
+				assert.ok((await offsetOf(page)) > 0, 'the root did not give');
+				assert.equal(await offsetOf(page, '[data-pane="side"] > .content'), 0, 'the pane moved as well');
+				await held.lift();
+				await atRest(page.locator(ROOT));
+				assert.equal(await activeTab(page, 'side'), tab);
+				assert.equal(await shown(page), 'main');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	/** A column taller than the phone, so the root scrolls, with a two-tab pane barred at the left. */
+	const tall = {
+		version: 1,
+		name: 'main',
+		root: {
+			id: 'root',
+			active: 0,
+			bar,
+			tabs: [
+				{
+					id: 'root-tab',
+					content: {
+						id: 'col',
+						direction: 'column',
+						ratios: [0.25, 0.25, 0.25, 0.25],
+						children: [
+							{
+								id: 'wide',
+								active: 0,
+								bar,
+								tabs: [
+									{ id: 'wide-tail', content: { id: 'wide-tail-w', kind: 'tail', settings: {} } },
+									{ id: 'wide-custom', content: { id: 'wide-custom-w', kind: 'custom', settings: {} } }
+								]
+							},
+							{
+								id: 'upright',
+								active: 1,
+								bar: { ...bar, edge: 'left' },
+								tabs: [
+									{ id: 'up-tail', content: { id: 'up-tail-w', kind: 'custom', settings: {} } },
+									{ id: 'up-custom', content: { id: 'up-custom-w', kind: 'custom', settings: {} } }
+								]
+							},
+							widgetPane('one', 'tail'),
+							widgetPane('two', 'tail')
+						]
+					}
+				}
+			]
+		}
+	};
+
+	test('with nothing above a nested pane it gives itself; along an axis the page scrolls, the page scrolls', async () => {
+		await phone.solo(
+			async ({ page }) => {
+				const wide = pane(page, 'wide');
+				const box = await wide.locator('.body:not(.behind .body)').boundingBox();
+				const held = await finger(page, box.x + 40, box.y + box.height / 2);
+				await held.to(140);
+				const gave = await offsetOf(page, '[data-pane="wide"] > .content');
+				assert.ok(gave > 0 && gave < 100, `the only frame with tabs gave ${gave}px`);
+				await held.lift();
+				await atRest(wide.locator('> .content'));
+				assert.equal(await activeTab(page, 'wide'), 'tail');
+
+				// A pane barred at the left swipes up and down, on its last tab
+				// with no tab that way, and the page has room: it is the page's.
+				const scroller = page.locator(ROOT);
+				const room = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
+				assert.ok(room > 0, 'the root does not scroll — this case needs a taller layout');
+				const upright = pane(page, 'upright');
+				await upright.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+				await scroller.evaluate((el) => (el.scrollTop = 0));
+				const at = await upright.boundingBox();
+				await swipe(page, at.x + at.width / 2, Math.min(at.y + at.height / 2, 500), 0, -120);
+				await until(() => scroller.evaluate((el) => el.scrollTop), (top) => top > 0);
+				assert.equal(await offsetOf(page, '[data-pane="upright"] > .content'), 0, 'the pane gave where the page could scroll');
+			},
+			JSON.stringify(tall)
+		);
+	});
+
+	test('with reduced motion nothing moves and the tab stays', async () => {
+		await withApp(
+			async ({ page }) => {
+				await watch(page.locator(ROOT));
+				await swipe(page, 60, await stripMiddle(page), 220, 0);
+				await page.waitForTimeout(300);
+				assert.deepEqual(await moved(page), []);
+				assert.equal(await shown(page), 'main');
+			},
+			{ ...PHONE, reducedMotion: 'reduce', prepare: twoLayouts }
+		);
+	});
+
+	test('with «Wrap tabs when swiping» on, a swipe past each end lands on the other, coming from the way the finger went, and it survives a reload', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const item = () => page.getByRole('menuitemcheckbox', { name: 'Wrap tabs when swiping' });
+				await page.locator('.root-bar button.gear').click();
+				assert.equal(await item().getAttribute('aria-checked'), 'false', 'it starts on');
+				await page.keyboard.press('Escape');
+				await wrap(page);
+
+				// Past the first, toward the right: the last tab comes on from the left.
+				const y = await stripMiddle(page);
+				const beside = () =>
+					page.locator(ROOT).evaluate((el) => {
+						const [front, next] = [':scope > .tab-body:not(.behind)', ':scope > .tab-body.behind.beside'].map((s) => el.querySelector(s));
+						const [f, n] = [front, next].map((b) => b.getBoundingClientRect());
+						return { frontLeft: f.left, frontRight: f.right, nextLeft: n.left, nextRight: n.right };
+					});
+				let held = await finger(page, 60, y);
+				await held.to(140);
+				let at = await beside();
+				assert.equal(await offsetOf(page), 100, 'a wrap has resistance');
+				assert.ok(at.nextRight <= at.frontLeft + 2 && at.frontLeft - at.nextRight < 20, `the last tab is not on the left: ${JSON.stringify(at)}`);
+				await held.lift();
+				await until(() => shown(page), (name) => name === 'tail');
+				await pastTheWindow(page);
+
+				// Past the last, toward the left: the first comes on from the right.
+				held = await finger(page, 290, y);
+				await held.to(-140);
+				at = await beside();
+				assert.ok(at.nextLeft >= at.frontRight - 2 && at.nextLeft - at.frontRight < 20, `the first tab is not on the right: ${JSON.stringify(at)}`);
+				await held.lift();
+				await until(() => shown(page), (name) => name === 'main');
+
+				await app.reload();
+				await pastTheWindow(page);
+				await swipe(page, 60, await stripMiddle(page), 220, 0);
+				await until(() => shown(page), (name) => name === 'tail');
+
+				// Off again: the same swipe stays.
+				await pastTheWindow(page);
+				await wrap(page);
+				await swipe(page, 290, await stripMiddle(page), -220, 0);
+				await atRest(page.locator(ROOT));
+				await page.waitForTimeout(300);
+				assert.equal(await shown(page), 'tail', 'with it off a swipe past the end changed the tab');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	test('wrapping among three, each end goes to the other, not to the tab beside it', async () => {
+		await withApp(
+			async ({ page }) => {
+				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['main', 'tail', 'dayview']);
+				await wrap(page);
+				const y = await stripMiddle(page);
+				await swipe(page, 60, y, 220, 0);
+				await until(() => shown(page), (name) => name === 'dayview');
+				await pastTheWindow(page);
+				await swipe(page, 290, await stripMiddle(page), -220, 0);
+				await until(() => shown(page), (name) => name === 'main');
+			},
+			{
+				...PHONE,
+				prepare: (context) =>
+					context.addInitScript(
+						(json) => localStorage.setItem('datum.layout.root.v1', json),
+						JSON.stringify({ names: ['main', 'tail', 'dayview'], active: 0 })
+					)
+			}
+		);
+	});
+
+	test('wrapping, a swipe over a tabbed pane on its end goes round the root, and the pane stays', async () => {
+		await withApp(
+			async ({ page }) => {
+				await wrap(page);
+				const body = pane(page, 'side').locator('.body:not(.behind .body)');
+				await scrollX(body, false);
+				const tab = await activeTab(page, 'side');
+				await swipeOver(page, body, 120, 0, { x: 0.2, y: 0.5 });
+				await until(() => shown(page), (name) => name === 'tail');
+				await pastTheWindow(page);
+				await page.locator('.root-bar [role="tab"]', { hasText: 'main' }).click();
+				assert.equal(await activeTab(page, 'side'), tab, 'the pane wrapped as well as the root');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);

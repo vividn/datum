@@ -109,6 +109,14 @@
 	    its LAST tab lets it through — which is how a swipe over a tabbed
 	    pane reaches the root and moves the whole layout, the root's tabs
 	    being the page's layouts (da-0a5o).
+	  - the outermost frame along the axis, with no tab that way, takes it
+	    too, and nothing above is left to let it through to (da-25qs9). vividn,
+	    2026-10-31: «on the first and last tab, add an elastic effect for
+	    trying to swipe further»: the tab follows the finger with resistance
+	    (`give`) and goes back on release. With the gear's «Wrap tabs when
+	    swiping» on (`wrapTabs`, «maybe we have wrap be an option you can
+	    enable»), the other end's tab comes on from the side the finger is
+	    bringing it from, and lands.
 	  - a touch on the frame itself — the nested inset, the root's page
 	    margin — has nothing under it and is always the frame's: "always
 	    allow swiping when swiping in the margins or along the frame".
@@ -199,7 +207,7 @@
 	import { writable } from 'svelte/store';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
-	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding } from './shell.js';
+	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding, wrapTabs } from './shell.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
@@ -256,6 +264,8 @@
 	 * short of a reader who has looked at the tab and reached into it.
 	 */
 	const AGAIN_MS = 1000;
+	/** The most a tab gives past the end of its tabs, however far the finger goes. */
+	const GIVE_PX = 120;
 	/** How long a tap on the swipe strip keeps its words up, their fade included. */
 	const TOLD_MS = 3000;
 	/**
@@ -574,6 +584,8 @@
 		fresh: boolean;
 		/** It began on the swipe strip, where a tap and a pull down mean something too. */
 		strip: boolean;
+		/** No frame above takes along this axis what this one lets through. */
+		last: boolean;
 		state: 'pending' | 'ours' | 'theirs' | 'pull';
 	};
 	let touch: Swipe | null = null;
@@ -608,6 +620,12 @@
 	 * bringing on — or -1. Handed to the slot, so the root mounts it.
 	 */
 	let peek = $state(-1);
+	/**
+	 * Which side of the tab in front it is drawn, 1 the far side: a wrap's
+	 * neighbor stands where the finger is bringing it from, not where its
+	 * index would put it.
+	 */
+	let side = $state(1);
 	/** Whether that offset is moving on its own — the slide, or the snap back. */
 	let gliding = $state(false);
 	/**
@@ -631,7 +649,7 @@
 	const moves: Strip | null = $derived.by(() => {
 		if (offset === 0 && !gliding && !arriving) return null;
 		const axis = vertical ? 'Y' : 'X';
-		const sign = peek > pane.active ? '+' : '-';
+		const sign = side > 0 ? '+' : '-';
 		return {
 			front: `translate${axis}(${offset}px)`,
 			beside: `translate${axis}(calc(${offset}px ${sign} (100% + ${2 * shy}px)))`
@@ -644,6 +662,7 @@
 	 * asking how (`leave`, mode.ts — the root bar's tabs do).
 	 */
 	const swipes = $derived(many && (locked || !root));
+	const axis = $derived(vertical ? 'y' : 'x');
 	/** The strip at the page's foot: where a finger is, and there are tabs to swipe to. */
 	const stripped = $derived(root && swipes && $badge > ROW);
 	/** A tap on the strip, counted so another restarts the fade; 0 while its words are gone. */
@@ -679,6 +698,22 @@
 	}
 
 	const inRange = (index: number) => index >= 0 && index < pane.tabs.length;
+	/** The tab a swipe `way` brings on, or -1. Round an end, only for the frame nothing is above and with the setting on. */
+	function bringing(way: number, last: boolean): number {
+		const at = pane.active + way;
+		if (inRange(at)) return at;
+		return last && $wrapTabs ? (at + pane.tabs.length) % pane.tabs.length : -1;
+	}
+	/** How far a tab goes for `past` px beyond the end of its tabs: 0.55 of the first px, and less for each one after. */
+	const give = (past: number) => GIVE_PX * (1 - 1 / (1 + (0.55 * past) / GIVE_PX));
+	/** A frame the big pane is inside is hidden under it (da-x7xjg): a swipe on the big pane is not its. */
+	const hidden = (frame: Element) => frame.closest('.split.maximized') !== null && frame.closest('section.big') === null;
+	/** Whether a frame above this one hears a swipe along its axis. */
+	function frameAbove(): boolean {
+		for (let up = section.parentElement?.closest('section[data-swipes]'); up; up = up.parentElement?.closest('section[data-swipes]'))
+			if (up.getAttribute('data-swipes') === axis && !hidden(up)) return true;
+		return false;
+	}
 	/** The reader asked for no motion: the swap is instant, as it was. */
 	const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -722,16 +757,15 @@
 
 	function onTouchStart(event: TouchEvent) {
 		const t = event.touches[0];
-		// A frame the big pane is inside is hidden under it (da-x7xjg): a swipe on the big pane is not its.
-		const under = section.closest('.split.maximized') !== null && section.closest('section.big') === null;
 		touch = {
 			x: t.clientX,
 			y: t.clientY,
 			target: event.target,
-			panners: pannersUnder(event.target, event.currentTarget as HTMLElement, vertical ? 'y' : 'x'),
+			panners: pannersUnder(event.target, event.currentTarget as HTMLElement, axis),
 			fresh: switched?.frame === self && performance.now() < switched.until,
 			strip: event.currentTarget !== contentEl,
-			state: event.touches.length > 1 || under ? 'theirs' : 'pending'
+			last: !frameAbove(),
+			state: event.touches.length > 1 || hidden(section) ? 'theirs' : 'pending'
 		};
 	}
 
@@ -745,6 +779,8 @@
 	 * it if it has a tab that way — and stops it, so no frame above moves
 	 * too. A frame on its last tab lets it through, which is how a swipe on
 	 * the last tab of a nested pane reaches the root and moves the layout.
+	 * The last frame along the axis has nothing to let it through to, so it
+	 * keeps it there, unless a scroller above it has room to go that way.
 	 *
 	 * The listener is non-passive so that a claimed gesture can be kept
 	 * from the page's own scroller as well. `touch-action` would not do:
@@ -777,15 +813,17 @@
 		}
 		if (was.state === 'pending') {
 			if (Math.max(Math.abs(along), Math.abs(across)) < COMMIT_PX) return;
-			const axis = vertical ? 'y' : 'x';
 			// A widget that has already taken the move for a gesture of its
 			// own — a day strip's long-press range at the whole day, which is
 			// at both ends — keeps it (da-xg1vi).
-			const toward = Math.abs(along) > Math.abs(across) && inRange(pane.active + (along < 0 ? 1 : -1));
+			const lengthwise = Math.abs(along) > Math.abs(across);
+			if (lengthwise && was.last && !inRange(pane.active + (along < 0 ? 1 : -1)))
+				was.last = !pannersUnder(section.parentElement, document.documentElement, axis).some((el) => takes(el, axis, along));
+			const toward = lengthwise && bringing(along < 0 ? 1 : -1, was.last) >= 0;
 			// A swipe the window does not take is the reader working in the
 			// tab: the run is over, and the next swipe is asked as ever (da-bgve9).
 			if (windowed && !toward) return void (switched = null);
-			const mine = toward && (windowed || (!event.defaultPrevented && !was.panners.some((el) => takes(el, axis, along))));
+			const mine = windowed || (lengthwise && (toward || was.last) && !event.defaultPrevented && !was.panners.some((el) => takes(el, axis, along)));
 			was.state = mine ? 'ours' : 'theirs';
 			if (!mine) return;
 			// A widget panning by pointer had the first moves: it is told the
@@ -798,10 +836,16 @@
 		if (still()) return;
 		gripped = true;
 		// The strip waits out the first SWIPE_PX, then follows from there,
-		// and never towards a side with no tab on it.
+		// with resistance towards a side with no tab on it, where this frame
+		// is the last that could move; where it is not, not at all.
 		const way = along < 0 ? 1 : -1;
-		if (inRange(pane.active + way)) peek = pane.active + way;
-		offset = Math.abs(along) > SWIPE_PX && peek === pane.active + way ? along + way * SWIPE_PX : 0;
+		const next = bringing(way, was.last);
+		if (next >= 0) {
+			peek = next;
+			side = way;
+		}
+		const past = Math.abs(along) - SWIPE_PX;
+		offset = past <= 0 ? 0 : next >= 0 ? -way * past : was.last ? -way * give(past) : 0;
 	}
 
 	function onTouchEnd(event: TouchEvent) {
@@ -824,8 +868,8 @@
 		const t = event.changedTouches[0];
 		const along = vertical ? t.clientY - was.y : t.clientX - was.x;
 		// Pushing the content away from the bar's start is "next".
-		const next = pane.active + (along < 0 ? 1 : -1);
-		if (Math.abs(along) < SWIPE_PX || !inRange(next)) void home();
+		const next = bringing(along < 0 ? 1 : -1, was.last);
+		if (Math.abs(along) < SWIPE_PX || next < 0) void home();
 		else void slide(next, along < 0 ? -1 : 1);
 	}
 
@@ -891,6 +935,7 @@
 			return activate(index);
 		}
 		peek = index;
+		side = index > pane.active ? 1 : -1;
 		arriving = true;
 		await tick();
 		// The strip's resting place is computed before the transition goes on.
@@ -942,6 +987,7 @@
 	class:editing={!locked}
 	data-bar-drop={dropAt?.edge}
 	data-pane={pane.id}
+	data-swipes={swipes ? axis : undefined}
 	data-title={title}
 	style:--row="{ROW}px"
 	style:--badge="{$badge}px"
