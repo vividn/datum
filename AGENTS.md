@@ -290,7 +290,8 @@ is reported rather than read again. The owner's reads open as a write does.
   more `-t` to it, and to the `timezone` field's zone, beside `-T` too
   (da-htxn7). An offset on `-t` is believed. `datum check tz` warns of the converse, `tz_off_neighbours`: a run
   of one or two entries whose neighbours agree on another zone — a spike,
-  where a move is a step
+  where a move is a step — only where the `timezone` field holds no zone,
+  `tz_off_declared` saying what is off where it holds one (da-oljxo)
 - `TZ` is read as chrono reads it (`host_iana_tz_name`, da-4nsb5): a tzdb name or a tzfile's path
   is the zone; a POSIX form no name spells (`UTC-5`, POSIX's sign, so +05:00; `<+22>-22`; a rule with
   its dates) is its offset now, fixed, with no zone name; empty is UTC. One that cannot be read

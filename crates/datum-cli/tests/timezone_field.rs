@@ -582,6 +582,41 @@ mod off_declared {
         env.ok(&["undo"]);
         assert_eq!(coffees(), before);
     }
+
+    /// The states `datum check tz` gives `category`'s entries.
+    fn states(env: &Env, category: &str) -> Vec<String> {
+        let out = env.run_in("Europe/Berlin", &["check", "tz", "--json"]);
+        let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let issues = report["issues"].as_array().unwrap();
+        (issues.iter().filter(|i| i["category"] == category))
+            .flat_map(|i| i["entries"].as_array().unwrap())
+            .map(|e| e["state"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// da-oljxo: hourly `work` entries in Berlin, one in New York among them,
+    /// a spike by its neighbors. Where the field holds New York, it is the one
+    /// entry right: no neighbors finding, and the Berlin ones are off the
+    /// field's zone. With no field, a spike as before.
+    #[test]
+    fn neighbors_are_read_only_where_no_zone_is_declared() {
+        let berlin = ["Europe/Berlin"; 3];
+        let zones = berlin.iter().chain(&["America/New_York"]).chain(&berlin);
+        let logged = |env: &Env| {
+            for (h, zone) in zones.clone().enumerate() {
+                let t = format!("2026-03-02T{:02}:00:00+00:00", 10 + h);
+                env.ok(&["occur", "work", "-t", &t, "-z", zone]);
+            }
+        };
+        let env = Env::new();
+        logged(&env);
+        let spike = "America/New_York, around Europe/Berlin";
+        assert_eq!(states(&env, "tz_off_neighbours"), [spike]);
+        env.ok(&["timezone", "America/New_York", "-t", T0]);
+        assert_eq!(states(&env, "tz_off_neighbours"), Vec::<String>::new());
+        let off = states(&env, "tz_off_declared");
+        assert_eq!(off, ["declared America/New_York"; 6], "{off:?}");
+    }
 }
 
 /// da-uhpql: `_` reads the same clock `timezone X` would: the zone it names.

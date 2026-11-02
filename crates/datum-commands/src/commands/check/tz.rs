@@ -350,6 +350,13 @@ fn off_declared(db: &Db, entries: &[Entry]) -> Result<Vec<(Entry, String, String
 /// one side, is not a spike. A warning, as a short trip logged once or twice
 /// looks the same.
 ///
+/// Only where the `timezone` field holds no zone (vividn, 2026-11-02, da-oljxo):
+/// where it holds one, [`off_declared`] says what is off, and a spike there may
+/// be the one row right among neighbors labeled wrong. A switch's instant is
+/// inside the stretch it begins, as in [`off_declared`]; the rows read as
+/// neighbors are every zoned row, on either side of a stretch's edge, so a row
+/// just before the field's first switch is read against those after it.
+///
 /// Every live zoned row's zone, in time order, is read from its index, and
 /// only the rows found are read whole (da-3zq6g). With `near`, only the
 /// stretches around those instants: a row moved, gone or come there changes
@@ -379,8 +386,10 @@ fn off_zone(db: &Db, near: Option<&BTreeSet<String>>) -> Result<Vec<(Entry, Stri
         }
     }
     let ids: Vec<i64> = off.keys().copied().collect();
+    let declared = db.declared_zones()?;
     let mut found: Vec<(Entry, String, String)> = (db.entries_at_rowids(&ids)?.into_iter())
         .zip(off.into_values())
+        .filter(|(e, _)| (e.at.as_ref()).is_none_or(|t| declared.at(t.utc).is_none()))
         .map(|(e, (own, around))| {
             (
                 e,
