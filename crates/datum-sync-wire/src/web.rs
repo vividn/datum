@@ -128,14 +128,14 @@ impl Store for Cli {
         self.label.borrow().clone()
     }
 
+    /// `chain list` names no chain where `sync status` names none: in
+    /// none, joining one, or one a purge dissolved (da-tvv4j).
     async fn chain(&self) -> Result<Option<(String, usize)>> {
-        let status: serde_json::Value =
-            serde_json::from_str(&self.run(&["sync", "status", "--json"], None).await?)?;
-        let Some(id) = status["chain"].as_str() else {
-            return Ok(None);
-        };
         let all: serde_json::Value =
             serde_json::from_str(&self.run(&["sync", "chain", "list", "--json"], None).await?)?;
+        let Some(id) = all["chain"].as_str() else {
+            return Ok(None);
+        };
         let members = all["members"]
             .as_array()
             .map_or(0, |m| m.iter().filter(|m| m["revoked"].is_null()).count());
@@ -367,13 +367,13 @@ impl Store for Cli {
         self.run(&argv, None).await.map(drop)
     }
 
+    /// The native store's `known`, not `sync status`, the dearest read a
+    /// session made (da-tvv4j).
     async fn known(&self) -> Result<Vec<EndpointAddr>> {
-        let status: serde_json::Value =
-            serde_json::from_str(&self.run(&["sync", "status", "--json"], None).await?)?;
-        let members = status["members"].as_array().into_iter().flatten();
-        Ok(members
-            .filter(|m| m["revoked"] != true)
-            .filter_map(|m| serde_json::from_str(m["addr"].as_str()?).ok())
+        let out = self.run(&["sync", "pipe", "known"], None).await?;
+        Ok(out
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
             .collect())
     }
 }
