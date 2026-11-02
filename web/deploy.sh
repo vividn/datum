@@ -36,6 +36,8 @@ check_dist() {
   for page in agents.md llms.txt install.sh; do
     [ -f "$dist/$page" ] || { echo "REFUSING: no $dist/$page (from web/static/)." >&2; return 1; }
   done
+  # The repo's kits and their listing, which vite.config.ts emits (da-fj3v1).
+  [ -f "$dist/kits/index.html" ] || { echo "REFUSING: no $dist/kits/index.html (the repo's kits)." >&2; return 1; }
 }
 
 # `--check-dist <dir>`: that assertion alone, against an already-built tree.
@@ -138,6 +140,15 @@ for page in agents.md:text/markdown llms.txt:text/plain install.sh:text/plain; d
   name="${page%%:*}"
   "${AWS[@]}" cp "$DIST/$name" "$S3/$name" $DRY \
     --content-type "${page#*:}; charset=utf-8" \
+    --cache-control "no-cache,must-revalidate"
+done
+
+# A kit is TOML, which aws guesses as nothing a browser shows: as text it reads
+# in a tab and pipes to `datum kit install -` alike (da-fj3v1).
+echo "==> fixing the kits' content-type"
+for kit in "$DIST"/kits/*.toml; do
+  "${AWS[@]}" cp "$kit" "$S3/kits/${kit##*/}" $DRY \
+    --content-type "text/plain; charset=utf-8" \
     --cache-control "no-cache,must-revalidate"
 done
 

@@ -89,8 +89,9 @@ It defines `alias word='datum word'` only where the word is free, so `tail` stay
 - how you are: `datum moment mood rating=7` (a key is any word you choose)
 - what you spend time on: `datum start work`, then `datum stop work`
 - a measurement: `datum moment weight kg=75.2`
-- chores that come round again: `datum kit install kits/chores.toml`, then `datum chorelist` (a
-  [kit](kits/chores.toml) bundles fields, aliases and commands in one file)
+- chores that come round again: `curl -fsSLO https://datum.day/kits/chores.toml && datum kit install chores.toml`,
+  then `datum chorelist` (a [kit](kits/chores.toml) bundles fields, aliases and commands in one file: install asks
+  before it adds an index, and `--dry-run` says first what it brings; datum.day/kits/ lists the rest)
 
 **Make it yours.** Any word is a field the moment you log it; nothing needs setting up first. A field (the word after
 the verb: `coffee`, `sleep`, `environment`) can also declare the keys its entries hold, and an alias of your own can carry

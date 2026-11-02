@@ -11,6 +11,7 @@ import {
 	type PreviewServer
 } from 'vite';
 import { buildId } from './scripts/build-id.mjs';
+import { kitsIndex, repoKits } from './scripts/kits.mjs';
 
 /**
  * What is actually running, injected at build time: `3.0.<height>-beta` and
@@ -119,6 +120,25 @@ function workerPrecache(): Plugin {
 	};
 }
 
+/**
+ * The repo's kits as files of the site (da-fj3v1): `kits/<name>.toml`, the
+ * repo's bytes, and `kits/index.html` listing them. Emitted into the client
+ * build, whose output adapter-static copies into `build/`, so the deploy
+ * uploads them with everything else.
+ */
+function repoKitFiles(): Plugin {
+	const dir = fileURLToPath(new URL('../kits', import.meta.url));
+	return {
+		name: 'datum-repo-kits',
+		generateBundle() {
+			if (this.environment.name !== 'client') return;
+			const kits = repoKits(dir);
+			for (const { file, bytes } of kits) this.emitFile({ type: 'asset', fileName: `kits/${file}`, source: bytes });
+			this.emitFile({ type: 'asset', fileName: 'kits/index.html', source: kitsIndex(kits) });
+		}
+	};
+}
+
 export default defineConfig({
 	define: {
 		__DATUM_VERSION__: JSON.stringify(build.version),
@@ -135,7 +155,8 @@ export default defineConfig({
 			serviceWorker: { register: true, options: { updateViaCache: 'none' } }
 		}),
 		crossOriginIsolation(),
-		workerPrecache()
+		workerPrecache(),
+		repoKitFiles()
 	],
 	// The web test map's instrumented run (da-e0gtq) reads its coverage back
 	// to source files through these; nothing else builds them.
