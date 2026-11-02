@@ -127,6 +127,15 @@ pub struct SubcommandSpec {
     /// The parent's usage lines that are this subcommand's, verbatim.
     pub usage: &'static [&'static str],
     pub flags: &'static [FlagSpec],
+    /// Other words the parser takes for it (`ls` for `kit list`).
+    pub aliases: &'static [&'static str],
+}
+
+impl SubcommandSpec {
+    /// Whether `word` picks this subcommand: its name or an alias.
+    pub fn named(&self, word: &str) -> bool {
+        self.name == word || self.aliases.contains(&word)
+    }
 }
 
 /// One CLI flag.

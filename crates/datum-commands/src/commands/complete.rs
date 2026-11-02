@@ -173,7 +173,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
     let sub = spec
         .subcommands
         .iter()
-        .find(|s| rest.first().is_some_and(|w| w == s.name));
+        .find(|s| rest.first().is_some_and(|w| s.named(w)));
     if sub.is_some() {
         rest.remove(0);
     }
@@ -214,10 +214,11 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
         return found;
     }
     if sub.is_none() && !spec.subcommands.is_empty() && given.is_empty() {
-        return spec
-            .subcommands
-            .iter()
-            .map(|s| s.name.to_string())
+        // An alias once a word is begun, as a command's (`first_words`).
+        let begun = !cur.is_empty();
+        return (spec.subcommands.iter())
+            .flat_map(|s| std::iter::once(&s.name).chain(s.aliases.iter().filter(|_| begun)))
+            .map(|n| n.to_string())
             .collect();
     }
 

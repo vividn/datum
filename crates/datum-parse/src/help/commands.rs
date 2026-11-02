@@ -93,6 +93,7 @@ const fn sub(name: &'static str, usage: &'static [&'static str]) -> SubcommandSp
         name,
         usage,
         flags: NO_FLAGS,
+        aliases: &[],
     }
 }
 
@@ -256,7 +257,10 @@ const KIT_SUBCOMMANDS: &[SubcommandSpec] = &[
         &["datum kit install <PATH|-> [--force] [--yes] [--dry-run] [--set NAME=VALUE]..."],
     ),
     sub("export", &["datum kit export <NAME> [PATH]"]),
-    sub("list", &["datum kit list"]),
+    SubcommandSpec {
+        aliases: &["ls"],
+        ..sub("list", &["datum kit list"])
+    },
     sub("uninstall", &["datum kit uninstall <NAME>"]),
     sub("show", &["datum kit show <NAME>"]),
 ];
@@ -1149,7 +1153,7 @@ const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d
 
 const META_BODY: &str = "USAGE:\n  datum meta <FIELD> <TEXT>...\n  datum meta show <FIELD>\n\nAttach a protocol-change note on <FIELD>. Stored as a Verb::Point entry\nwith the note as its `state` and `extra_metadata = { meta: true }`.\n\nShow lists every note attached to <FIELD> in create_time order.\n\nLike `flag`, a meta note is left out of `now` and the dayview, and `tail`\nlists it as it lists any row.\n";
 
-const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH|-> [--force] [--yes] [--dry-run] [--set NAME=VALUE]...\n  datum kit export <NAME> [PATH]\n  datum kit list\n  datum kit uninstall <NAME>\n  datum kit show <NAME>\n\nA kit is a TOML bundle of field specs, aliases, SQL views, indices,\nlevel-1/2 commands, layouts and datum.day widgets: a [[widget]] is a\ncommand that reads, whose `--json` rows it draws, and a row_action that\nlogs, like `moment {field}`, which a tap on a row runs.\n\nInstall writes the kit's rows tagged with the kit id, keeping a field's\nown spec unless --force (the bare one a field's first log wrote is the\nkit's to replace). It reads the TOML from stdin when PATH is `-`;\n--dry-run prints what the kit brings and writes nothing; --yes approves\nits indices without asking.\n\nA kit may take parameters, each declared in its [kit.params] table with a\ndefault and a description (`prefix = { default = \"\", description = \"…\" }`),\nand named in its text outside [kit] as `%kit:prefix%`. Install fills each in with its\n--set value, else the one the last install used, else its default, and\nrefuses one with none; the values are kept with the kit.\n\nUninstall drops every row with the kit's id and gives a logged field its\nbare spec back.\n\nExport round-trips the installed rows and the kit's [kit] table back to\nTOML, to stdout when PATH is omitted.\n\nList shows every installed kit, its version, what it installed and its\nparameters' values.\n\nShow prints a single kit's version, description, parameters and installed\ncontents, and names each index that would not build on this device.\n";
+const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH|-> [--force] [--yes] [--dry-run] [--set NAME=VALUE]...\n  datum kit export <NAME> [PATH]\n  datum kit list (ls)\n  datum kit uninstall <NAME>\n  datum kit show <NAME>\n\nA kit is a TOML bundle of field specs, aliases, SQL views, indices,\nlevel-1/2 commands, layouts and datum.day widgets: a [[widget]] is a\ncommand that reads, whose `--json` rows it draws, and a row_action that\nlogs, like `moment {field}`, which a tap on a row runs.\n\nInstall writes the kit's rows tagged with the kit id, keeping a field's\nown spec unless --force (the bare one a field's first log wrote is the\nkit's to replace). It reads the TOML from stdin when PATH is `-`;\n--dry-run prints what the kit brings and writes nothing; --yes approves\nits indices without asking.\n\nA kit may take parameters, each declared in its [kit.params] table with a\ndefault and a description (`prefix = { default = \"\", description = \"…\" }`),\nand named in its text outside [kit] as `%kit:prefix%`. Install fills each in with its\n--set value, else the one the last install used, else its default, and\nrefuses one with none; the values are kept with the kit.\n\nUninstall drops every row with the kit's id and gives a logged field its\nbare spec back.\n\nExport round-trips the installed rows and the kit's [kit] table back to\nTOML, to stdout when PATH is omitted.\n\nList (`ls`) shows every installed kit, its version, what it installed and its\nparameters' values.\n\nShow prints a single kit's version, description, parameters and installed\ncontents, and names each index that would not build on this device.\n";
 
 const VIEW_BODY: &str = "USAGE:\n  datum view <NAME> [--format FMT] [--watch]\n  datum view --list\n\nARGS:\n  <NAME>           Installed view name (see `datum view --list`).\n\nOPTIONS:\n  -f, --format <FMT>   pretty | tsv | csv | json | auto (default auto).\n  -w, --watch          Re-run the query every 2s; clear-screen between\n                       redraws.\n  --list               Print installed view names and exit.\n\nViews execute under PRAGMA query_only = 1, so a malicious or buggy\nview cannot mutate the DB.\n";
 
@@ -3258,6 +3262,9 @@ pub fn page_name(cmd: &str, words: &[&str]) -> String {
     };
     let mut path = format!("datum {}", spec.name);
     for (depth, w) in words.iter().enumerate() {
+        // An alias reads as its name: `kit ls` is `kit list`'s page.
+        let alias = (depth == 0).then(|| spec.subcommands.iter().find(|s| s.named(w)));
+        let w = &alias.flatten().map_or(*w, |s| s.name);
         let deeper = format!("{path} {w}");
         let names = |s: &SubcommandSpec| {
             depth == 0 && s.name == *w || s.usage.iter().any(|u| starts_with_words(u, &deeper))

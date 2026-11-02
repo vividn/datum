@@ -219,6 +219,7 @@ pub fn render_json() -> String {
                 "flags": flags(c.flags),
                 "subcommands": c.subcommands.iter().map(|s| serde_json::json!({
                     "name": s.name,
+                    "aliases": s.aliases,
                     "usage": s.usage,
                     "flags": flags(s.flags),
                 })).collect::<Vec<_>>(),

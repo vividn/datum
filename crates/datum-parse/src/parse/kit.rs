@@ -63,7 +63,7 @@ pub(crate) fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
             let path = pos.get(1).map(|s| s.to_string());
             Ok(KitCommand::Export(KitExportArgs { name, path }))
         }
-        "list" => Ok(KitCommand::List),
+        "list" | "ls" => Ok(KitCommand::List),
         "uninstall" => {
             let name = require_pos(&positionals(rest)?, "<NAME>")?;
             Ok(KitCommand::Uninstall(KitUninstallArgs { name }))
