@@ -3,14 +3,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use datum_core::db::{agreed_zone, is_meta_field, Db, NEIGHBOURS};
 use datum_core::entry::Entry;
 use datum_core::timezone_field::{self, TIMEZONE_FIELD};
 
+use datum_core::db::RetimeFilter;
+use datum_core::time::DatumTime;
+
 use super::{
-    field_and_state, render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Severity,
-    FLAGGED_ROW,
+    field_and_state, render_flagged_block, run_fix_pass, Domain, FixReport, FlaggedEntry, Issue,
+    IssueExample, Severity, FLAGGED_ROW,
 };
 
 /// Recompute each live entry's `at` offset from its `timezone` at
@@ -33,9 +36,11 @@ use super::{
 /// is self-verifying: there is no zone claim for it to disagree with.
 /// Tombstones are skipped too — historical rows, not live data.
 ///
-/// Report-only: the "which field is authoritative — tz or offset?" call
-/// deserves a human, so there is deliberately no `--fix` re-derivation yet
-/// (a future `--fix` would trust `timezone` and re-run `refresh_offset`).
+/// `--fix` relabels `tz_off_declared` rows alone ([`fix_declared`]). A
+/// `tz_offset_mismatch` stays a human's call (which is right, the zone or the
+/// offset?), as do `unknown_timezone` and `timezone_state_not_a_zone`, whose
+/// names resolve to nothing, and `tz_off_neighbours`, which has no declared
+/// zone to trust: a short trip logged once looks the same.
 ///
 /// With `around`, each row between the entries either side of it, with their
 /// zones and offsets ([`around_blocks`]), which `datum check tz` shows
@@ -199,23 +204,83 @@ fn around_blocks(db: &Db, found: &[Entry], notes: &[&str]) -> Result<String> {
         let rows: Vec<[String; 4]> = (before.iter().chain([e]).chain(&after))
             .map(zone_columns)
             .collect();
-        let width = |c: usize| rows.iter().map(|r| r[c].chars().count()).max().unwrap_or(0);
-        let [time_w, offset_w, zone_w, hid_w] = [0, 1, 2, 3].map(width);
-        let lines: Vec<String> = (rows.iter().enumerate())
-            .map(|(i, [time, offset, zone, hid])| {
-                let row =
-                    format!("{time:<time_w$}  {offset:<offset_w$}  {zone:<zone_w$}  {hid:<hid_w$}");
-                match i == before.len() {
-                    true => format!("{FLAGGED_ROW}{row}  {drawn}  {note}")
-                        .trim_end()
-                        .to_string(),
-                    false => row.trim_end().to_string(),
-                }
+        let lines: Vec<String> = (aligned(&rows).into_iter().enumerate())
+            .map(|(i, row)| match i == before.len() {
+                true => format!("{FLAGGED_ROW}{row}  {drawn}  {note}")
+                    .trim_end()
+                    .to_string(),
+                false => row.trim_end().to_string(),
             })
             .collect();
         blocks.push(lines.join("\n") + "\n");
     }
     Ok(blocks.join("\n"))
+}
+
+/// [`zone_columns`] rows, each column as wide as its widest cell.
+fn aligned(rows: &[[String; 4]]) -> Vec<String> {
+    let width = |c: usize| rows.iter().map(|r| r[c].chars().count()).max().unwrap_or(0);
+    let [time_w, offset_w, zone_w, hid_w] = [0, 1, 2, 3].map(width);
+    (rows.iter())
+        .map(|[time, offset, zone, hid]| {
+            format!("{time:<time_w$}  {offset:<offset_w$}  {zone:<zone_w$}  {hid:<hid_w$}")
+        })
+        .collect()
+}
+
+/// `check tz --fix` (da-0phyk): each `tz_off_declared` row is relabeled to the
+/// zone the `timezone` field holds at its instant, and its offset to that
+/// zone's there. The instant stays: the UTC time is what was recorded, and only
+/// its label was wrong. Each is a retime with the zone stated, so it signs an
+/// op, and the check's one action on the undo stack holds them all. The rows
+/// changed, before and after in [`zone_columns`], go in the report.
+pub(super) fn fix_declared(db: &Db, entries: &[Entry]) -> Result<FixReport> {
+    let declared = db.declared_zones()?;
+    let off = off_declared(db, entries)?;
+    let mut changed = Vec::new();
+    let mut report = run_fix_pass(
+        "tz_off_declared",
+        "`datum check tz` names them above.",
+        &off,
+        |(e, ..)| {
+            // `off_declared` found it under a zone, so one is held there.
+            let held = e.at.as_ref().and_then(|t| declared.at(t.utc));
+            let zone = held.context("the `timezone` field holds no zone at its instant")?;
+            let hid = e.hid.to_string();
+            let filter = RetimeFilter {
+                slug_or_hid: Some(&hid),
+                ..Default::default()
+            };
+            let moved = db.set_start_time(&filter, true, |own| {
+                Ok(DatumTime {
+                    uncertainty: own.uncertainty.clone(),
+                    ..DatumTime::from_utc_and_tz(own.utc, zone)?
+                })
+            })?;
+            changed.extend(moved);
+            Ok(())
+        },
+        || {
+            let hids: Vec<String> = off.iter().map(|(e, ..)| e.hid.to_string()).collect();
+            let left = off_declared(db, &db.entries_of(&hids)?)?;
+            Ok((left.into_iter())
+                .map(|(e, detail, _)| (e.slug.to_string(), detail, String::new()))
+                .collect())
+        },
+    )?;
+    let afters: Vec<Entry> = changed.iter().map(|r| r.entry.clone()).collect();
+    let blocks: Vec<String> = (changed.into_iter().zip(field_and_state(db, &afters)))
+        .map(|(r, drawn)| {
+            let before = Entry {
+                at: Some(r.before),
+                ..r.entry.clone()
+            };
+            let rows = aligned(&[zone_columns(&before), zone_columns(&r.entry)]);
+            format!("  {}  {drawn}\n→ {}\n", rows[0], rows[1])
+        })
+        .collect();
+    report.changed = blocks.join("\n");
+    Ok(report)
 }
 
 /// An entry's date and time at its stored offset, that offset, its zone as

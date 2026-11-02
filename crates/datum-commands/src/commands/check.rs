@@ -162,6 +162,10 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         checks.push(Check::of("flags", issues));
     }
     if run("tz") {
+        if args.fix {
+            fix_reports.push(tz::fix_declared(db, &entries)?);
+            entries = load()?;
+        }
         // A zone the rows around one agree is not its own is read around what
         // changed and what the last run found, the walk's own rows (da-3zq6g).
         let at = |e: &Entry| Some(e.at.as_ref()?.utc.to_rfc3339());
@@ -263,6 +267,9 @@ struct FixReport {
     /// mismatches — enough context for a hand-debug without dumping
     /// hundreds of rows.
     leftover_samples: Vec<(String, String, String)>,
+    /// Each row changed, as its checker draws it, before and after: `tz`'s
+    /// alone, the other passes leaving it empty.
+    changed: String,
 }
 
 /// da-6xvh: shared detect → apply → verify driver for the `--fix`
@@ -286,6 +293,7 @@ fn run_fix_pass<F>(
         applied: 0,
         still_mismatched: 0,
         leftover_samples: Vec::new(),
+        changed: String::new(),
     };
     for fix in fixes {
         // Per-row tolerance: a failed apply (e.g. NotFound after a
@@ -369,6 +377,7 @@ fn truncate_for_sample(v: &str) -> String {
 fn print_fix_summary(fix: &FixReport) {
     // Always print under `--fix` (even when detected == 0) so the user
     // can distinguish "ran and found nothing" from "didn't run."
+    print!("{}", fix.changed);
     let entry_word = if fix.applied == 1 { "y" } else { "ies" };
     println!(
         "✓ {} repaired: {} entr{entry_word} ({} detected, {} still mismatched)",

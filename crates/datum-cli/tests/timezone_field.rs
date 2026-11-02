@@ -509,6 +509,79 @@ mod off_declared {
         ]);
         assert_eq!(found(&env), vec![]);
     }
+
+    /// da-0phyk: `timezone` switches recorded in v2, then imported; `check tz
+    /// --fix` relabels the coffee to the zone held at its instant, keeping
+    /// the instant, as one action `undo` takes back. A coffee before any
+    /// switch claims nothing and is left.
+    #[test]
+    fn fix_relabels_to_the_declared_zone_keeping_the_instant() {
+        let env = Env::new();
+        let doc = |field: &str, utc: &str, o: i32, tz: &str, state: Option<&str>| {
+            let at = json!({ "utc": utc, "o": o, "tz": tz });
+            let mut data = json!({ "field": field, "occurTime": at });
+            if let Some(s) = state {
+                data["state"] = json!(s);
+            }
+            json!({ "_id": format!("{field}:{utc}"), "data": data, "meta": { "createTime": at } })
+        };
+        let docs = [
+            doc("coffee", "2026-02-01T03:00:00.000Z", 9, "Asia/Tokyo", None),
+            doc(
+                "timezone",
+                "2026-03-01T12:00:00.000Z",
+                1,
+                "Europe/Berlin",
+                Some("Europe/Berlin"),
+            ),
+            doc(
+                "timezone",
+                "2026-06-01T12:00:00.000Z",
+                -4,
+                "America/New_York",
+                Some("America/New_York"),
+            ),
+            doc(
+                "coffee",
+                "2026-06-10T12:00:00.000Z",
+                2,
+                "Europe/Berlin",
+                None,
+            ),
+        ];
+        let backup = env.0.path().join("v2.json");
+        let body = json!({ "backupTime": "2026-11-02T00:00:00.000Z", "docs": docs });
+        std::fs::write(&backup, body.to_string()).unwrap();
+        env.ok(&["db", "v2import", "--from", backup.to_str().unwrap()]);
+        let coffees = || -> Vec<(String, i32, String)> {
+            let db = Db::open(env.path().to_str().unwrap()).unwrap();
+            let q = "SELECT at, at_offset, at_tz FROM entries WHERE field = 'coffee' ORDER BY at";
+            let mut stmt = db.conn().prepare(q).unwrap();
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)));
+            rows.unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        let before = coffees();
+        assert_eq!(found(&env), pair("Europe/Berlin", "America/New_York"));
+
+        let out = env.ok(&["check", "tz", "--fix"]);
+        assert!(out.contains("+02:00  Europe/Berlin"), "{out}");
+        assert!(
+            out.contains("→ 2026-06-10 08:00:00  -04:00  America/New_York"),
+            "{out}"
+        );
+        let after = coffees();
+        assert_eq!(after[0], before[0], "before any switch, untouched");
+        assert_eq!(after[1].0, before[1].0, "the instant stays");
+        assert_eq!(
+            (after[1].1, after[1].2.as_str()),
+            (-240, "America/New_York")
+        );
+        let report: Value = serde_json::from_str(&env.ok(&["check", "tz", "--json"])).unwrap();
+        assert_eq!(report["issues"], json!([]), "{report}");
+
+        env.ok(&["undo"]);
+        assert_eq!(coffees(), before);
+    }
 }
 
 /// da-uhpql: `_` reads the same clock `timezone X` would: the zone it names.

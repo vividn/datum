@@ -200,6 +200,11 @@ sections of old names for one place, so `Asia/Calcutta` is `Asia/Kolkata` while
 `Europe/Stockholm`, merged with Berlin for sharing its clock, is not Berlin).
 Where the field holds no zone it claims nothing. A changed `timezone` row makes
 `tz`'s next run read every entry, as it reaches rows that did not change.
+`--fix` relabels each to that zone, its offset the zone's at the instant, which
+stays (da-0phyk): a retime stating the zone, so it syncs and the check is one
+`undo`. It leaves `tz`'s other findings: which of an offset and its zone is
+right is a person's call, a name nothing resolves gives nothing to relabel to,
+and the neighbours declare nothing.
 
 ### The spool: a write is never lost to the lock
 A command that changes entries (every one but sync's, `db`'s, `config`'s and

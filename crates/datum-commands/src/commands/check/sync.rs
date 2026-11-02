@@ -30,6 +30,7 @@ pub(super) fn collect_sync(
             applied: detected.saturating_sub(unrepaired),
             still_mismatched: unrepaired,
             leftover_samples: Vec::new(),
+            changed: String::new(),
         }
     });
     issues.extend(crate::commands::sync::notice_issues(db)?);
