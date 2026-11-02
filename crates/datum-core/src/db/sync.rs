@@ -929,11 +929,20 @@ fn push_entry(
     push(conn, ep, (e.hid.as_str(), &e.slug.0, field), kind, effect).map(drop)
 }
 
+/// The entries no op covers, by hid: those `sync_uncovered` names that still
+/// have none (da-8hfta), so a session reads them and not every entry. CROSS
+/// JOIN holds the set as the outer loop: a plain join without the ORDER BY was
+/// planned as a scan of every entry on a 283k database.
+pub(crate) const UNCOVERED_SQL: &str = "SELECT e.* FROM sync_uncovered u
+     CROSS JOIN entries e ON e.hid = u.hid
+     WHERE NOT EXISTS (SELECT 1 FROM ops WHERE ops.hid = e.hid)
+     ORDER BY u.hid";
+
 /// Sign a `baseline` for every entry no op covers, as this copy's.
 fn sign_uncovered(conn: &Connection) -> Result<()> {
     let ep = endpoint(conn)?;
     let uncovered: Vec<Entry> = conn
-        .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid")?
+        .prepare(UNCOVERED_SQL)?
         .query_map([], row_to_entry)?
         .collect::<rusqlite::Result<_>>()?;
     for e in &uncovered {
@@ -2894,17 +2903,15 @@ impl Db {
         // The baselines are the one write a serve makes, and take the lock
         // for themselves alone; what is served is read after, on a snapshot
         // that holds none (da-8i7f0).
-        const UNCOVERED: &str =
-            "SELECT * FROM entries WHERE NOT EXISTS (SELECT 1 FROM ops WHERE ops.hid = entries.hid)
-         ORDER BY hid LIMIT ?";
+        let uncovered = format!("{UNCOVERED_SQL} LIMIT ?");
         let limit = limit.map_or(-1, |n| n as i64);
-        if !self.conn.prepare(UNCOVERED)?.exists([limit])? {
+        if !self.conn.prepare(&uncovered)?.exists([limit])? {
             return Ok(0);
         }
         self.compute_then_write_with(
             |view| {
                 view.conn()
-                    .prepare(UNCOVERED)?
+                    .prepare(&uncovered)?
                     .query_map([limit], row_to_entry)?
                     .collect::<rusqlite::Result<Vec<Entry>>>()
                     .map_err(DatumError::from)

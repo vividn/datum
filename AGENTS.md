@@ -549,7 +549,10 @@ MuHash, ECMH or LtHash. Two copies verify by it when both handshakes say
 `sums`; with a copy before it, both send the ordered hash it knows (`sync
 pipe verify --ordered`), kept until an entry changes (`sync_state_hashes`,
 da-4be5x). A round reads each endpoint's ops from its `since` on, by the
-primary key, and no other op.
+primary key, and no other op. The entries no op covers, the baselines a
+session signs and `sync status` counts as «to send», are kept by triggers in
+`sync_uncovered` (da-8hfta), so neither reads every entry; `check sync`'s
+`sync_no_op` reads them all, and is its control.
 
 A session that gives up says why as it closes (da-s9rwd): `timed out` or
 `failed`, so the other copy reads «closed by peer: timed out (code 0)» and not

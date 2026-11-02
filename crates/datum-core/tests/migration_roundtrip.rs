@@ -23,12 +23,16 @@ use datum_core::migrations::{
 };
 use rusqlite::Connection;
 
+#[path = "migration_roundtrip/v75.rs"]
+mod v75;
 #[path = "migration_roundtrip/v76.rs"]
 mod v76;
 #[path = "migration_roundtrip/v77.rs"]
 mod v77;
 #[path = "migration_roundtrip/v78.rs"]
 mod v78;
+#[path = "migration_roundtrip/v79.rs"]
+mod v79;
 
 fn fresh_at(version: u32) -> Db {
     let db = Db::open_in_memory().unwrap();
@@ -252,6 +256,7 @@ fn every_pair_has_a_roundtrip_test() {
         (75, 76),
         (76, 77),
         (77, 78),
+        (78, 79),
     ];
     assert_eq!(
         covered.len(),
@@ -3473,28 +3478,4 @@ fn roundtrip_v73_to_v74_check_kept() {
     assert_eq!(objects(), 10);
     apply_one_down(conn, 74);
     assert_eq!(objects(), 0);
-}
-
-/// da-l6roh: v75 lays `entries_field_deciding` and takes the moments out of
-/// `entries_field_blocks`; v74 puts both back.
-#[test]
-fn roundtrip_v74_to_v75_field_deciding_index() {
-    let db = fresh_at(74);
-    let conn = db.conn();
-    let blocks = || -> String {
-        conn.query_row(
-            "SELECT sql FROM sqlite_master WHERE name = 'entries_field_blocks'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap()
-    };
-    assert!(!index_exists(conn, "entries_field_deciding"));
-    assert!(blocks().contains("NOT (verb = 'point'"));
-    apply_one_up(conn, 74);
-    assert!(index_exists(conn, "entries_field_deciding"));
-    assert!(blocks().contains("verb <> 'point'"));
-    apply_one_down(conn, 75);
-    assert!(!index_exists(conn, "entries_field_deciding"));
-    assert!(blocks().contains("NOT (verb = 'point'"));
 }

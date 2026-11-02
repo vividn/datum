@@ -244,12 +244,15 @@ impl Db {
         // Entries no op covers yet go as baselines on the next session: to a
         // filtered reader, those of its fields alone. By the field each
         // belongs to.
-        let uncovered: Vec<Option<String>> = self
-            .conn
-            .prepare("SELECT * FROM entries WHERE NOT ?1 AND hid NOT IN (SELECT hid FROM ops)")?
-            .query_map([reader], row_to_entry)?
-            .map(|e| e.map(|e| belongs_to(&row(&e))))
-            .collect::<rusqlite::Result<_>>()?;
+        let uncovered: Vec<Option<String>> = match reader {
+            true => Vec::new(),
+            false => self
+                .conn
+                .prepare(super::UNCOVERED_SQL)?
+                .query_map([], row_to_entry)?
+                .map(|e| e.map(|e| belongs_to(&row(&e))))
+                .collect::<rusqlite::Result<_>>()?,
+        };
         // In no chain yet, the copies it is joining one through (da-idw54).
         let joining: Vec<Member> = self
             .sync_joining()?

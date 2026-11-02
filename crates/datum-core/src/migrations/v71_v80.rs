@@ -362,3 +362,33 @@ pub(super) fn down_78_to_77_no_undo_taken(conn: &Connection) -> Result<()> {
     }
     m76_to_77_undo_taken(conn)
 }
+
+/// da-8hfta: the entries no op covers, kept by triggers
+/// (`sync_uncovered.sql`), so a sync finds its baselines without reading every
+/// entry. Filled once here; local and derived.
+pub(super) fn m78_to_79_sync_uncovered(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? || !table_exists(conn, "ops")? {
+        return Ok(());
+    }
+    conn.execute_batch(crate::db::SYNC_UNCOVERED_SQL)?;
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO sync_uncovered (hid)
+             SELECT hid FROM entries
+              WHERE NOT EXISTS (SELECT 1 FROM ops WHERE ops.hid = entries.hid);",
+    )?;
+    Ok(())
+}
+
+/// Reverse v78→v79. Local and derived: a v78 build reads every entry.
+pub(super) fn down_79_to_78_sync_uncovered(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS sync_uncovered_insert;
+         DROP TRIGGER IF EXISTS sync_uncovered_rehid;
+         DROP TRIGGER IF EXISTS sync_uncovered_delete;
+         DROP TRIGGER IF EXISTS sync_uncovered_op_insert;
+         DROP TRIGGER IF EXISTS sync_uncovered_op_delete;
+         DROP TRIGGER IF EXISTS sync_uncovered_op_rehid;
+         DROP TABLE IF EXISTS sync_uncovered;",
+    )?;
+    Ok(())
+}

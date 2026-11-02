@@ -89,7 +89,9 @@ impl Db {
         // sync signs (a bulk import's).
         let unsent: i64 = self.conn.query_row(
             "SELECT (SELECT COUNT(*) FROM ops WHERE endpoint = ?1 AND seq > ?2)
-                  + (SELECT COUNT(*) FROM entries WHERE hid NOT IN (SELECT hid FROM ops))",
+                  + (SELECT COUNT(*) FROM sync_uncovered u
+                      WHERE EXISTS (SELECT 1 FROM entries e WHERE e.hid = u.hid)
+                        AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.hid = u.hid))",
             params![me, reached],
             |r| r.get(0),
         )?;

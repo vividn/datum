@@ -75,6 +75,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "sync_rows_changed",
         "sync_state_hashes",
         "sync_state_sums",
+        "sync_uncovered",
         "undo_actions",
     ];
     assert_eq!(tables, expected_tables);
