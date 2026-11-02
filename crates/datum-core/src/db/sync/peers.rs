@@ -95,19 +95,6 @@ impl Db {
             .collect()
     }
 
-    /// The copies this one syncs with ([`Db::sync_is_peer`]) and those it
-    /// carries an order to delete their copy to (da-n0uj1.6), which a dial
-    /// to them carries: where it last saw them is what a ticket lists, a
-    /// handshake passes on and `sync run` dials (`sync pipe known`).
-    pub fn sync_known_peers(&self) -> Result<Vec<Peer>> {
-        let wiping = self.sync_wiping()?;
-        Ok(self
-            .sync_peers()?
-            .into_iter()
-            .filter(|p| p.synced || wiping.contains(&p.id))
-            .collect())
-    }
-
     /// A copy this one syncs with: an unrevoked member of its chain as it
     /// serves it ([`Chain::served`]), or, in none yet, a copy it is joining
     /// one through ([`Db::sync_joining`]).

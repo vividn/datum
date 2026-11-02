@@ -144,20 +144,3 @@ fn a_redeemer_in_another_chain_or_not_saying_is_refused() {
     // In no chain, it is admitted.
     admit(&other, &Copy::new(), "fresh", None);
 }
-
-/// `sync pipe known` is where this copy last saw each copy it syncs with,
-/// one address a line: datum.day's `known`, with no `sync status`
-/// (da-tvv4j). An expelled member is no longer one.
-#[test]
-fn pipe_known_names_where_a_member_was_seen_and_not_once_expelled() {
-    let (a, b) = (Copy::new(), Copy::new());
-    let invite = json(&a.ok(&["sync", "new-invite"]));
-    let secret = invite["secret"].as_str().unwrap();
-    let addr = format!(r#"{{"id":"{}","addrs":[]}}"#, b.id());
-    let id = b.id();
-    let hello = ["sync", "handshake", &id, "--label", "b", "--addr", &addr];
-    a.ok(&[&hello[..], &["--invite", secret, "--chain", ""]].concat());
-    assert_eq!(a.ok(&["sync", "pipe", "known"]).trim(), addr);
-    a.ok(&["sync", "chain", "expel", "b"]);
-    assert_eq!(a.ok(&["sync", "pipe", "known"]), "");
-}

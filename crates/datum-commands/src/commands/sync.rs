@@ -180,13 +180,6 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 println!("{line}");
             }
         }
-        SyncCommand::Known => {
-            for p in db.sync_known_peers()? {
-                if !p.addrs.is_empty() {
-                    println!("{}", p.addrs);
-                }
-            }
-        }
         SyncCommand::Apply { show } => {
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input)?;

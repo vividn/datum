@@ -1108,9 +1108,6 @@ pub enum SyncCommand {
     /// Hidden: `datum sync pipe records` — the chain's records as this copy
     /// holds them, one op line each (da-2u95o).
     Records,
-    /// Hidden: `datum sync pipe known` — where this copy last saw each copy
-    /// it syncs with, one address line each: datum.day's `known` (da-tvv4j).
-    Known,
     /// Hidden: `datum sync pipe verify [--ordered] [--verbose] [--peer
     /// <ENDPOINT>]` — the state hash, summed, or ordered as a copy before
     /// da-9ln3s sends it, and per column of the ordered one; over what this
