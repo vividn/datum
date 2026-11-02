@@ -215,17 +215,12 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let mut issues: Vec<Issue> = checks.iter().flat_map(|c| c.issues.clone()).collect();
     issues.sort_by_key(|i| i.domain);
     let report = Report {
+        summary: Summary::of(&issues),
         issues,
-        summary: Summary {
-            errors: 0,
-            warnings: 0,
-            clean: false,
-        },
         examined,
         checks,
         named,
-    }
-    .with_recomputed_summary();
+    };
 
     if silent {
         // nothing printed; the exit code below still speaks.
@@ -483,9 +478,32 @@ pub struct Issue {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Summary {
+    /// The problems found, each counted (da-pp589): an issue's `count`, or
+    /// one for an issue that counts nothing.
     pub errors: usize,
     pub warnings: usize,
+    /// The issues, a kind of problem each.
+    pub categories: usize,
     pub clean: bool,
+}
+
+impl Summary {
+    fn of(issues: &[Issue]) -> Summary {
+        let sum = |severity| {
+            issues
+                .iter()
+                .filter(|i| i.severity == severity)
+                .map(|i| i.count.max(1))
+                .sum::<usize>()
+        };
+        let (errors, warnings) = (sum(Severity::Error), sum(Severity::Warning));
+        Summary {
+            errors,
+            warnings,
+            categories: issues.len(),
+            clean: issues.is_empty(),
+        }
+    }
 }
 
 /// What a run looked at, so an all-clear over nothing reads differently
@@ -559,27 +577,6 @@ pub struct Report {
 impl Report {
     pub fn has_errors(&self) -> bool {
         self.summary.errors > 0
-    }
-
-    /// Recompute the summary counts from the current `issues`. Used after
-    /// merging verb-drift issues into a previously-built report.
-    fn with_recomputed_summary(mut self) -> Self {
-        let errors = self
-            .issues
-            .iter()
-            .filter(|i| i.severity == Severity::Error)
-            .count();
-        let warnings = self
-            .issues
-            .iter()
-            .filter(|i| i.severity == Severity::Warning)
-            .count();
-        self.summary = Summary {
-            errors,
-            warnings,
-            clean: errors == 0 && warnings == 0,
-        };
-        self
     }
 }
 
@@ -1413,21 +1410,9 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         });
     }
 
-    let errors = issues
-        .iter()
-        .filter(|i| i.severity == Severity::Error)
-        .count();
-    let warnings = issues
-        .iter()
-        .filter(|i| i.severity == Severity::Warning)
-        .count();
     Ok(Report {
+        summary: Summary::of(&issues),
         issues,
-        summary: Summary {
-            errors,
-            warnings,
-            clean: errors == 0 && warnings == 0,
-        },
         examined: Examined {
             specs: registry.fields.len(),
             ..Examined::default()
@@ -1526,12 +1511,15 @@ pub fn render_human(report: &Report) -> String {
 }
 
 fn summary_line(summary: &Summary) -> String {
+    let s = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let kinds = match summary.categories {
+        n if n == summary.errors + summary.warnings => String::new(),
+        n => format!(" in {}", s(n, "category", "categories")),
+    };
     format!(
-        "\nSummary: {} error{}, {} warning{}.\n",
-        summary.errors,
-        if summary.errors == 1 { "" } else { "s" },
-        summary.warnings,
-        if summary.warnings == 1 { "" } else { "s" },
+        "\nSummary: {}, {}{kinds}.\n",
+        s(summary.errors, "error", "errors"),
+        s(summary.warnings, "warning", "warnings"),
     )
 }
 

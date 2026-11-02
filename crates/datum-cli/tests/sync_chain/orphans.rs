@@ -149,7 +149,10 @@ fn check_names_the_rows_no_op_covers_until_a_sync_signs_them() {
     for named in ["\n  tea:", "\n  spec:tea ("] {
         assert!(said.contains(named), "{named:?} in {said}");
     }
-    assert!(said.contains("Summary: 0 errors, 1 warning."), "{said}");
+    assert!(
+        said.contains("Summary: 0 errors, 2 warnings in 1 category."),
+        "{said}"
+    );
     // For a program, each by its field, as the other findings name theirs.
     let found = json(&a.ok(&["check", "sync", "--json"]));
     let mut fields: Vec<&str> = found["issues"][0]["entries"]

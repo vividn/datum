@@ -408,3 +408,38 @@ fn a_moved_row_is_read_again_where_it_was() {
         .expect("the two left behind");
     assert_eq!(off["count"], 2, "{whole}");
 }
+
+/// da-pp589: the summary counts problems, not kinds of problem: three
+/// entries off the declared zone and one flag are four warnings, in two
+/// categories, in words and in `--json`.
+#[test]
+fn the_summary_counts_each_problem() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("count.db");
+    datum(
+        &db,
+        &[
+            "switch",
+            "timezone",
+            "Europe/Berlin",
+            "-t",
+            "2026-03-01T08:00:00+00:00",
+        ],
+    );
+    for h in 10..13 {
+        let t = format!("2026-03-02T{h}:00:00+00:00");
+        datum(&db, &["occur", "walk", "-t", &t, "-z", "America/New_York"]);
+    }
+    datum(&db, &["flag", "walk", "look"]);
+
+    let report = datum(&db, &["check", "tz", "flags"]);
+    assert!(
+        report.contains("\nSummary: 0 errors, 4 warnings in 2 categories.\n"),
+        "{report}"
+    );
+    let found: Value =
+        serde_json::from_str(&datum(&db, &["check", "tz", "flags", "--json"])).unwrap();
+    assert_eq!(found["summary"]["errors"], 0, "{found}");
+    assert_eq!(found["summary"]["warnings"], 4, "{found}");
+    assert_eq!(found["summary"]["categories"], 2, "{found}");
+}
