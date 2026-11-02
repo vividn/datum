@@ -125,6 +125,30 @@ pub fn active_db_name(cli_db: Option<&str>) -> Option<String> {
         .filter(|v| !v.is_empty() && !looks_like_path(v))
 }
 
+/// The databases `--db a,b,c` names, in order (da-bw7ur): a comma always
+/// splits, so a path whose name holds one is named through `DATUM_DB`,
+/// which is never split. A value with no comma is the one database.
+pub fn db_list(cli_db: &str) -> Result<Vec<&str>> {
+    let names: Vec<&str> = cli_db.split(',').collect();
+    anyhow::ensure!(
+        names.iter().all(|n| !n.is_empty()),
+        "--db {cli_db}: a list names a database between every two commas"
+    );
+    Ok(names)
+}
+
+/// Refuse a list in `--db` for a command that takes one database: only
+/// `db backup daemon` takes a list yet.
+pub fn one_db(cli_db: Option<&str>) -> Result<()> {
+    match cli_db.map(db_list).transpose()?.as_deref() {
+        Some([_, _, ..]) => anyhow::bail!(
+            "--db {}: this command takes one database; a list is for `db backup daemon`",
+            cli_db.unwrap_or_default()
+        ),
+        _ => Ok(()),
+    }
+}
+
 /// Cheap pre-scan of argv for the global `--db <value>` / `--db=<value>`
 /// flag, without invoking the full parser: the last one on the line, which
 /// is the one the parser keeps. Used by the alias-resolution pre-pass so it

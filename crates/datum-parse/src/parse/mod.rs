@@ -706,20 +706,30 @@ mod tests {
             other => Err(format!("{other:?}")),
         };
         let install = |words: &[&str]| match daemon(words) {
-            Ok(BackupDaemonAct::Install { to, every, slots }) => (to, every, slots),
+            Ok(BackupDaemonAct::Install {
+                to,
+                every,
+                slots,
+                all,
+            }) => (to, every, slots, all),
             other => panic!("{other:?}"),
         };
         assert_eq!(
             install(&["db", "backup", "daemon", "install", "--to", "bk", "--every", "15m"]),
-            (Some("bk".into()), 900, None)
+            (Some("bk".into()), 900, None, false)
         );
         // No --to: the data directory's backups/ (vividn, 2026-11-02).
         assert_eq!(
             install(&["db", "backup", "daemon", "install", "--every", "1h", "--slots", "4"]),
-            (None, 3600, Some(4))
+            (None, 3600, Some(4), false)
+        );
+        // da-bw7ur: --all, one daemon for every database.
+        assert_eq!(
+            install(&["db", "backup", "daemon", "install", "--all", "--every", "1h"]),
+            (None, 3600, None, true)
         );
         let uninstall = |words: &[&str]| match daemon(words) {
-            Ok(BackupDaemonAct::Uninstall { to }) => to,
+            Ok(BackupDaemonAct::Uninstall { to, all: false }) => to,
             other => panic!("{other:?}"),
         };
         assert_eq!(uninstall(&["db", "backup", "daemon", "uninstall"]), None);
@@ -731,6 +741,11 @@ mod tests {
             uninstall(&["db", "backup", "daemon", "uninstall", "--to=bk"]),
             Some("bk".into())
         );
+        assert!(matches!(
+            daemon(&["db", "backup", "daemon", "uninstall", "--all", "--to=bk"]),
+            Ok(BackupDaemonAct::Uninstall { to: Some(t), all: true }) if t == "bk"
+        ));
+        assert!(rot(&["db", "backup", "--to", "bk", "--every", "1h", "--all"]).all);
         assert!(matches!(
             daemon(&["db", "backup", "daemon", "status"]),
             Ok(BackupDaemonAct::Status)
@@ -763,6 +778,8 @@ mod tests {
             ],
             &["db", "backup", "--plan", "--every", "1h"],
             &["db", "backup", "out.jsonl", "--every", "1h"],
+            &["db", "backup", "out.jsonl", "--all"],
+            &["db", "backup", "--list", "bk", "--all"],
             &["db", "backup", "out.jsonl", "--to", "bk", "--every", "1h"],
             &["db", "backup", "--list", "bk", "--slots", "8"],
             &["db", "backup", "--list", "bk", "--every", "1h"],

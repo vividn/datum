@@ -28,6 +28,8 @@ takes the script's arguments: `| sh -s -- --no-completions`, say.
   `datum db backup daemon install --every 1h` takes a database's Tower of
   Hanoi rotation every hour on a systemd user timer, into `backups/<db>/` in
   datum's data directory (`--to DIR` another, `DIR/<db>/`; one daemon per destination).
+  `--db a,b` installs one for each database, and `--all` one that backs up
+  every database datum knows at each run.
 - It ends with the line that makes your aliases and the verbs commands
   of their own in your shell, for you to add if you want it.
 

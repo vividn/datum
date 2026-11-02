@@ -81,13 +81,29 @@ impl Home {
     }
 
     fn datum(&self, args: &[&str]) -> Output {
+        self.command(env!("CARGO_BIN_EXE_datum"))
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
+    /// The service's `ExecStart=` run by a shell, as systemd would.
+    fn run_service(&self, service: &str) -> Output {
+        let line = service.lines().find_map(|l| l.strip_prefix("ExecStart="));
+        self.command("sh")
+            .args(["-c", line.unwrap()])
+            .output()
+            .unwrap()
+    }
+
+    fn command(&self, program: &str) -> Command {
         let path = format!(
             "{}:{}",
             self.path("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        Command::new(env!("CARGO_BIN_EXE_datum"))
-            .args(args)
+        let mut command = Command::new(program);
+        command
             .env("PATH", path)
             .env("HOME", self.path("home"))
             .env("XDG_CONFIG_HOME", self.path("config"))
@@ -95,9 +111,8 @@ impl Home {
             .env("DATUM_CONFIG_HOME", self.path("conf"))
             .env("DATUM_DB", self.path("data/data.db"))
             .env("NO_COLOR", "1")
-            .env("USER", "tester")
-            .output()
-            .unwrap()
+            .env("USER", "tester");
+        command
     }
 
     fn ok(&self, args: &[&str]) -> String {
@@ -139,7 +154,12 @@ fn install_writes_the_command_and_its_period() {
         "{service}"
     );
     assert!(service.contains("Type=oneshot"), "{service}");
-    assert!(timer.contains("OnUnitActiveSec=900s\n"), "{timer}");
+    // The delay a tenth of 15m, and the timer waits the period less it.
+    assert!(timer.contains("OnUnitActiveSec=810s\n"), "{timer}");
+    assert!(
+        timer.contains("RandomizedDelaySec=90s\nFixedRandomDelay=yes\n"),
+        "{timer}"
+    );
     let log = std::fs::read_to_string(h.path("ctl.log")).unwrap();
     assert!(log.contains(&format!("enable {unit}.timer")), "{log}");
     assert!(log.contains(&format!("restart {unit}.timer")), "{log}");
@@ -171,7 +191,8 @@ fn a_daemon_per_destination() {
     let (unit_here, _, _) = h.unit_into(&here);
     let (unit_drive, _, drive_timer) = h.unit_into(&drive);
     assert_ne!(unit_here, unit_drive);
-    assert!(drive_timer.contains("OnUnitActiveSec=86400s\n"));
+    // A day's delay is capped at five minutes.
+    assert!(drive_timer.contains("OnUnitActiveSec=86100s\nRandomizedDelaySec=300s\n"));
 
     // Again into one, with another period and a cap: that one changes alone.
     let (_, before_drive, _) = h.unit_into(&drive);
@@ -179,7 +200,7 @@ fn a_daemon_per_destination() {
     assert_eq!(h.units().len(), 2);
     let (again, service, timer) = h.unit_into(&here);
     assert_eq!(again, unit_here);
-    assert!(timer.contains("OnUnitActiveSec=3600s\n"), "{timer}");
+    assert!(timer.contains("OnUnitActiveSec=3300s\n"), "{timer}");
     assert!(service.contains("--every 3600s --slots 8\n"), "{service}");
     assert_eq!(h.unit_into(&drive).1, before_drive);
 
@@ -319,4 +340,227 @@ fn uninstall_finds_a_deleted_database_under_a_symlink() {
     let said = h.ok(&["--db", &db, "db", "backup", "daemon", "uninstall"]);
     assert!(said.contains("removed"), "{said}");
     assert!(h.units().is_empty());
+}
+
+/// Every timer's run lands at a fixed random offset below its period, so
+/// daemons installed together do not fire together (da-bw7ur).
+#[test]
+fn every_timer_has_a_fixed_random_delay_below_its_period() {
+    let h = Home::new();
+    for (i, every) in ["5s", "15m", "1h", "1d"].iter().enumerate() {
+        h.install(&["--to", &h.dir(&format!("d{i}")), "--every", every]);
+    }
+    h.install(&["--all", "--to", &h.dir("all"), "--every", "2h"]);
+    let units = h.units();
+    assert_eq!(units.len(), 5);
+    let secs = |text: &str, key: &str| -> i64 {
+        let line = text.lines().find_map(|l| l.strip_prefix(key)).unwrap();
+        line.trim_end_matches('s').parse().unwrap()
+    };
+    for (unit, service, timer) in &units {
+        assert!(
+            timer.contains("\nFixedRandomDelay=yes\n"),
+            "{unit}: {timer}"
+        );
+        let period = secs(
+            service
+                .lines()
+                .find(|l| l.starts_with("ExecStart="))
+                .unwrap()
+                .split(" --every ")
+                .nth(1)
+                .unwrap(),
+            "",
+        );
+        let delay = secs(timer, "RandomizedDelaySec=");
+        assert!(
+            delay < period || period < 10 && delay == 0,
+            "{unit}: {delay} of {period}"
+        );
+        // The wait and the most the delay can add are the period.
+        assert_eq!(secs(timer, "OnUnitActiveSec=") + delay, period, "{unit}");
+    }
+}
+
+/// `--db a,b` installs one daemon per database, each what its `--db` alone
+/// makes, and each runs into its own subdirectory; uninstall and status take
+/// the list too (da-bw7ur).
+#[test]
+fn a_list_installs_one_daemon_per_database() {
+    let h = Home::new();
+    let bk = h.dir("bk");
+    h.ok(&["--db", "finance", "moment", "rent"]);
+    h.ok(&["--db", "home", "moment", "plant"]);
+    let list = ["--db", "finance,home", "db", "backup", "daemon"];
+    let said = h.ok(&[&list[..], &["install", "--to", &bk, "--every", "1h"]].concat());
+    assert_eq!(
+        said.matches("installed the systemd user timer").count(),
+        2,
+        "{said}"
+    );
+    let units = h.units();
+    assert_eq!(units.len(), 2, "{units:?}");
+    for name in ["finance", "home"] {
+        let (_, service, _) = (units.iter())
+            .find(|(u, _, _)| u.starts_with(&format!("datum-backup-{name}-")))
+            .unwrap();
+        // Exactly the unit a single --db makes.
+        assert!(
+            service.contains(&format!("--db \"{name}\" db backup")),
+            "{service}"
+        );
+        let ran = h.run_service(service);
+        assert!(ran.status.success(), "{ran:?}");
+        assert!(h.path(&format!("bk/{name}/index.json")).is_file(), "{name}");
+    }
+    assert!(!h.path("bk/data").exists());
+    // Status shows the list's, and not the default database's.
+    h.install(&["--to", &bk, "--every", "1d"]);
+    let status = h.ok(&[&list[..], &["status"]].concat());
+    assert_eq!(status.matches("datum db backup of").count(), 2, "{status}");
+    assert!(!status.contains("datum-backup-data-"), "{status}");
+    let said = h.ok(&[&list[..], &["uninstall"]].concat());
+    assert_eq!(said.matches("removed").count(), 2, "{said}");
+    assert_eq!(h.units().len(), 1);
+    // An empty name in a list is refused, nothing installed.
+    let out = h.datum(&[
+        "--db", "finance,", "db", "backup", "daemon", "install", "--every", "1h",
+    ]);
+    assert!(!out.status.success(), "{out:?}");
+    assert_eq!(h.units().len(), 1);
+    // One not there refuses the list before any is installed.
+    let out = h.datum(&[
+        "--db",
+        "finance,nope",
+        "db",
+        "backup",
+        "daemon",
+        "install",
+        "--to",
+        &bk,
+        "--every",
+        "1h",
+    ]);
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no database at"),
+        "{out:?}"
+    );
+    assert_eq!(h.units().len(), 1);
+}
+
+/// Any other command given a list refuses it, and makes no database.
+#[test]
+fn a_list_on_another_command_is_refused() {
+    let h = Home::new();
+    for args in [
+        &["--db", "a,b", "moment", "x"][..],
+        &["--db", "a,b", "tail"],
+        &["--db=a,b", "db", "backup", "--to", "bk", "--every", "1h"],
+    ] {
+        let out = h.datum(args);
+        assert!(!out.status.success(), "{args:?}: {out:?}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("takes one database"), "{args:?}: {err}");
+    }
+    let made: Vec<_> = std::fs::read_dir(h.path("data"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert!(
+        !made.iter().any(|f| f.to_string_lossy().contains(',')),
+        "{made:?}"
+    );
+}
+
+/// `--all` is one daemon whose run backs up every database datum knows at
+/// that run: one made after the install is taken, one deleted drops out,
+/// and a run that fails for one names it, in status and check (da-bw7ur).
+#[test]
+fn all_backs_up_every_database_at_each_run() {
+    let h = Home::new();
+    let bk = h.dir("bk");
+    h.install(&["--all", "--to", &bk, "--every", "1h"]);
+    let units = h.units();
+    assert_eq!(units.len(), 1);
+    let (unit, service, _) = &units[0];
+    assert!(unit.starts_with("datum-backup-all-"), "{unit}");
+    assert!(service.contains(" db backup --all --to "), "{service}");
+    assert!(!service.contains("X-Datum-Db="), "{service}");
+
+    // Made after the install, and backed up by the next run.
+    h.ok(&["--db", "later", "moment", "x"]);
+    let ran = h.run_service(service);
+    assert!(ran.status.success(), "{ran:?}");
+    for name in ["data", "later"] {
+        assert!(h.path(&format!("bk/{name}/index.json")).is_file(), "{name}");
+    }
+    let status = h.ok(&["db", "backup", "daemon", "status"]);
+    assert!(status.contains("every database into"), "{status}");
+    assert!(status.contains("  later: newest backup"), "{status}");
+
+    // Deleted, it drops out: the run neither fails nor makes it again.
+    std::fs::remove_file(h.path("data/later.db")).unwrap();
+    std::fs::remove_dir_all(h.path("bk/later")).unwrap();
+    let ran = h.run_service(service);
+    assert!(ran.status.success(), "{ran:?}");
+    assert!(!h.path("data/later.db").exists());
+    assert!(!h.path("bk/later").exists());
+
+    // One that cannot be read fails the run, which names it and takes the rest.
+    std::fs::write(h.path("data/broken.db"), "not a database").unwrap();
+    let ran = h.run_service(service);
+    assert!(!ran.status.success(), "{ran:?}");
+    let err = String::from_utf8_lossy(&ran.stderr);
+    assert!(err.contains("no backup of broken ("), "{err}");
+    assert!(!err.contains("data ("), "{err}");
+    assert!(h.path("bk/data/index.json").is_file());
+    // Check names a database the failed run missed (one made since), and
+    // not one it took.
+    std::fs::remove_file(h.path("data/broken.db")).unwrap();
+    h.ok(&["--db", "since", "moment", "x"]);
+    std::fs::write(h.path("result"), "exit-code\n").unwrap();
+    let check = String::from_utf8(h.datum(&["--db", "since", "check", "install"]).stdout).unwrap();
+    assert!(check.contains("the backup of since into"), "{check}");
+    assert!(check.contains("none there yet"), "{check}");
+    assert!(!h.check().contains("backup_daemon_failed"), "{}", h.check());
+    std::fs::remove_file(h.path("result")).unwrap();
+
+    // A database named `all` does not take every database's unit.
+    h.ok(&["--db", "all", "moment", "x"]);
+    let out = h.datum(&[
+        "--db", "all", "db", "backup", "daemon", "install", "--to", &bk, "--every", "1h",
+    ]);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("every database"),
+        "{out:?}"
+    );
+
+    // --all with --db names none, and one database's daemon is refused
+    // into the DIR every database's backs up into, and the other way.
+    let out = h.datum(&[
+        "--db", "since", "db", "backup", "daemon", "install", "--all", "--every", "1h",
+    ]);
+    assert!(!out.status.success(), "{out:?}");
+    let out = h.datum(&[
+        "db", "backup", "daemon", "install", "--to", &bk, "--every", "1d",
+    ]);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("every database into"),
+        "{out:?}"
+    );
+    let other = h.dir("other");
+    h.install(&["--to", &other, "--every", "1d"]);
+    let out = h.datum(&[
+        "db", "backup", "daemon", "install", "--all", "--to", &other, "--every", "1h",
+    ]);
+    assert!(!out.status.success(), "{out:?}");
+    // Uninstall --all removes it alone.
+    let said = h.ok(&["db", "backup", "daemon", "uninstall", "--all"]);
+    assert!(said.contains(&format!("{unit}.timer")), "{said}");
+    let left = h.units();
+    assert_eq!(left.len(), 1);
+    assert!(left[0].0.starts_with("datum-backup-data-"), "{left:?}");
 }

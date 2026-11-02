@@ -95,7 +95,15 @@ pub fn plan(latest: u64, cap: Option<u32>) -> Vec<(u32, u64)> {
 
 pub fn cmd_backup_rotation(args: BackupRotationArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     let now = Utc::now();
+    let mut failed = Vec::new();
     let (doc, text) = match &args.action {
+        RotationAction::To(dir) if args.all => {
+            anyhow::ensure!(
+                cli_db.is_none(),
+                "--all or --db, not both: --all backs up every database datum knows"
+            );
+            rotate_all(Path::new(dir), args.every, args.slots, now, &mut failed)
+        }
         RotationAction::To(dir) => {
             let source_db = derive_source_db(cli_db);
             rotate(db, Path::new(dir), &source_db, args.every, args.slots, now)?
@@ -108,7 +116,41 @@ pub fn cmd_backup_rotation(args: BackupRotationArgs, cli_db: Option<&str>, db: &
         ShowFlag::Json => println!("{doc}"),
         _ => print!("{text}"),
     }
+    anyhow::ensure!(failed.is_empty(), "no backup of {}", failed.join("; "));
     Ok(())
+}
+
+/// `--all`: every database datum knows at this run, each into its own
+/// rotation in `dir`, so one made since the install is taken and one deleted
+/// drops out. One that fails is named in `failed`, the rest taken (da-bw7ur).
+fn rotate_all(
+    dir: &Path,
+    every: i64,
+    cap: Option<u32>,
+    now: DateTime<Utc>,
+    failed: &mut Vec<String>,
+) -> (serde_json::Value, String) {
+    let (mut docs, mut text) = (serde_json::Map::new(), String::new());
+    // A registry entry whose file is gone is no database, and is not made one.
+    for (name, path) in crate::config::known_dbs()
+        .into_iter()
+        .filter(|(_, p)| p.exists())
+    {
+        let opened = match Db::writable(&path) {
+            true => Db::open(&path.to_string_lossy()),
+            false => Db::open_to_read(&path.to_string_lossy()),
+        };
+        match (opened.map_err(anyhow::Error::from))
+            .and_then(|db| rotate(&db, dir, &name, every, cap, now))
+        {
+            Ok((doc, t)) => {
+                docs.insert(name.clone(), doc);
+                text += &format!("{name}: {t}");
+            }
+            Err(e) => failed.push(format!("{name} ({e:#})")),
+        }
+    }
+    (docs.into(), text)
 }
 
 fn rotate(
@@ -291,6 +333,16 @@ fn read_all(dir: &Path) -> Result<Index> {
         }
     }
     Ok(all)
+}
+
+/// When the newest backup of `source_db` in DIR was taken, and its
+/// rotation's period, by its index: what a backup daemon of every database
+/// reads of each (da-bw7ur).
+pub(crate) fn newest(dir: &Path, source_db: &str) -> Option<(DateTime<Utc>, i64)> {
+    let index = read_all(dir).ok()?;
+    let rotation = index.dbs.get(source_db)?;
+    let at = rotation.backups.iter().map(|b| b.backup_time).max()?;
+    Some((at, rotation.every_secs))
 }
 
 fn list(dir: &Path, now: DateTime<Utc>) -> Result<(serde_json::Value, String)> {

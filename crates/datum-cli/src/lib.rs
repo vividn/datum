@@ -170,6 +170,17 @@ pub fn run(argv: Vec<String>) -> Result<()> {
         }
     };
 
+    // A list in `--db` is `db backup daemon`'s alone yet (da-bw7ur).
+    let sides = match &invocation {
+        Invocation::Single(cli) => std::slice::from_ref(cli),
+        Invocation::Multi { sides, .. } => &sides[..],
+    };
+    for cli in sides {
+        if !matches!(cli.command, Command::Db(DbCommand::BackupDaemon(_))) {
+            config::one_db(cli.db.as_deref())?;
+        }
+    }
+
     let result = match invocation {
         Invocation::Single(cli) => dispatch_single(cli),
         Invocation::Multi { .. } => dispatch_multi(invocation),
@@ -553,7 +564,8 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     // do not read the entry db (the daemon opens each chained db itself, and
     // must not create the default). Nor does `nowview --overlay`, a picture
     // with no data (da-0e06p), nor `db backup --plan` and `--list DIR`, arithmetic
-    // and DIR's own index (da-bch69).
+    // and DIR's own index (da-bch69), nor `db backup --all`, which opens each
+    // database itself (da-bw7ur).
     if matches!(
         &cli.command,
         Command::Config(_)
@@ -565,6 +577,10 @@ fn dispatch_single(cli: Cli) -> Result<()> {
             | Command::Db(DbCommand::Rename(_) | DbCommand::BackupDaemon(_))
             | Command::Db(DbCommand::BackupRotation(BackupRotationArgs {
                 action: RotationAction::Plan { .. } | RotationAction::List(_),
+                ..
+            }))
+            | Command::Db(DbCommand::BackupRotation(BackupRotationArgs {
+                all: true,
                 ..
             }))
             | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })

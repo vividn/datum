@@ -75,27 +75,35 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
                         action: RotationAction::To(to),
                         every,
                         slots,
+                        all,
                         ..
                     }) => BackupDaemonAct::Install {
                         to: given.then_some(to),
                         every,
                         slots,
+                        all,
                     },
-                    _ => {
-                        return Err(ParseError::InvalidArg(
-                            "db backup daemon install takes [--to DIR] --every DUR [--slots N]"
-                                .into(),
-                        ))
-                    }
+                    _ => return Err(ParseError::InvalidArg(
+                        "db backup daemon install takes [--to DIR] --every DUR [--slots N] [--all]"
+                            .into(),
+                    )),
                 }
             }
-            ["uninstall"] => BackupDaemonAct::Uninstall { to: None },
-            ["uninstall", "--to", to] => BackupDaemonAct::Uninstall {
-                to: Some(to.to_string()),
-            },
-            ["uninstall", flag] if flag.starts_with("--to=") => BackupDaemonAct::Uninstall {
-                to: Some(flag["--to=".len()..].to_string()),
-            },
+            ["uninstall", flags @ ..] if flags.len() <= 3 => {
+                let all = flags.contains(&"--all");
+                let rest: Vec<&str> = flags.iter().copied().filter(|f| *f != "--all").collect();
+                let to = match rest[..] {
+                    [] => None,
+                    ["--to", to] => Some(to.to_string()),
+                    [flag] if flag.starts_with("--to=") => Some(flag["--to=".len()..].to_string()),
+                    [extra, ..] => {
+                        return Err(ParseError::InvalidArg(format!(
+                            "db backup daemon uninstall takes [--to DIR] [--all]: {extra}"
+                        )))
+                    }
+                };
+                BackupDaemonAct::Uninstall { to, all }
+            }
             ["status"] => BackupDaemonAct::Status,
             [act @ ("uninstall" | "status"), extra, ..] => {
                 return Err(ParseError::InvalidArg(format!(
@@ -111,7 +119,7 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
         return Ok(DbCommand::BackupDaemon(act));
     }
     let mut pos: Vec<&str> = Vec::new();
-    let (mut overwrite, mut plan) = (false, false);
+    let (mut overwrite, mut plan, mut all) = (false, false, false);
     let (mut to, mut list, mut every, mut slots, mut span) = (None, None, None, None, None);
     let secs = |v: &str| -> Result<i64> {
         match crate::time::parse_duration(v)?.num_seconds() {
@@ -140,6 +148,11 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
                 i += 1;
                 continue;
             }
+            FlagSplit::Long("all") => {
+                all = true;
+                i += 1;
+                continue;
+            }
             FlagSplit::Long(n) if VALUED.contains(&n) => (n, None),
             FlagSplit::LongAttached(n, v) if VALUED.contains(&n) => (n, Some(v)),
             f => return Err(unknown_flag(f)),
@@ -160,9 +173,9 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
     }
     let action = match (to, list, plan) {
         (None, None, false) => {
-            if every.is_some() || slots.is_some() || span.is_some() {
+            if every.is_some() || slots.is_some() || span.is_some() || all {
                 return Err(ParseError::InvalidArg(
-                    "--every, --slots and --span belong to --to or --plan".into(),
+                    "--every, --slots, --all and --span belong to --to or --plan".into(),
                 ));
             }
             let path = require_pos(&pos, "<PATH>")?;
@@ -186,13 +199,13 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
     }
     // A flag the action never reads is refused, not ignored.
     let stray = match action {
-        RotationAction::List(_) => every.is_some() || slots.is_some() || span.is_some(),
+        RotationAction::List(_) => every.is_some() || slots.is_some() || span.is_some() || all,
         RotationAction::To(_) => span.is_some(),
-        RotationAction::Plan { .. } => false,
+        RotationAction::Plan { .. } => all,
     };
     if stray {
         return Err(ParseError::InvalidArg(
-            "--list takes only DIR, and --span belongs to --plan".into(),
+            "--list takes only DIR, --span belongs to --plan, and --all belongs to --to".into(),
         ));
     }
     let every = match (&action, every) {
@@ -208,6 +221,7 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
         action,
         every,
         slots,
+        all,
         show: Show::default(),
     }))
 }

@@ -1588,6 +1588,9 @@ pub struct BackupRotationArgs {
     /// `--slots N`: the cap on the rotating slots, slot 0 not counted.
     /// `None` lets the slots grow as time passes.
     pub slots: Option<u32>,
+    /// `--all` with `--to`: every database datum knows, each into its own
+    /// `DIR/<db>/`, instead of the one `--db` names (da-bw7ur).
+    pub all: bool,
     /// The output level the shared layer swept out of argv (da-qt6z).
     pub show: Show,
 }
@@ -1597,15 +1600,17 @@ pub struct BackupRotationArgs {
 pub enum BackupDaemonAct {
     /// Run the rotation `--to DIR --every D [--slots N]` takes, every D;
     /// `to: None` is the data directory's `backups/`. One per database and
-    /// destination.
+    /// destination; `all`, one for every database datum knows at each run
+    /// (da-bw7ur).
     Install {
         to: Option<String>,
         every: i64,
         slots: Option<u32>,
+        all: bool,
     },
     /// Remove the active database's daemon into `to`, or with `None` all of
-    /// them.
-    Uninstall { to: Option<String> },
+    /// them; `all`, the daemon of every database's instead.
+    Uninstall { to: Option<String>, all: bool },
     /// Every one installed, and how its last run went.
     Status,
 }
