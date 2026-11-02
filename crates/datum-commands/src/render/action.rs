@@ -359,9 +359,7 @@ fn compute_trail_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<J
     if let Some(to) = switched_to(entry) {
         return Some(to);
     }
-    // A block of zero length (`PT0S`) is no Block shape, but still hands
-    // the field back (da-lknz3).
-    if matches!(entry.shape(), EntryShape::Block) || hands_field_back(entry.verb) {
+    if matches!(entry.shape(), EntryShape::Block) {
         // da-zwct: the block's END is the stored `at` itself —
         // the duration ran up to it — so the trail probe needs no
         // arithmetic and no zone table at all.

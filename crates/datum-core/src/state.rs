@@ -391,30 +391,19 @@ impl StateRow {
     ///
     /// A moment ([`StateRow::is_moment_state`]) hands the field back at
     /// any instant: it never decides a state, before itself or after.
-    /// Wall-clock `now` reads rows dated ahead of it (da-e47ap). So does a
-    /// zero-span block: it occupies no time, so it interrupts nothing
-    /// (da-lknz3).
+    /// Wall-clock `now` reads rows dated ahead of it (da-e47ap).
     pub fn hands_field_back(&self, at: DateTime<Utc>) -> bool {
-        if self.spans_nothing() {
+        if self.is_moment_state() {
             return true;
         }
         if !crate::shape::hands_field_back(self.verb) || self.following_state.is_some() {
             return false;
         }
         match (self.occur, self.dur.as_ref().and_then(|d| d.as_seconds())) {
-            (Some(occur), Some(_)) => at >= occur,
+            // A zero-span row occupies no time, so it interrupts nothing.
+            (Some(occur), Some(secs)) if secs > 0 => at >= occur,
             _ => false,
         }
-    }
-
-    /// A row that holds the field for no time: a moment, or a block of
-    /// zero length handing the field back (`PT0S`, as an older client or
-    /// sync may store). The state before it holds on through it.
-    fn spans_nothing(&self) -> bool {
-        self.is_moment_state()
-            || (crate::shape::hands_field_back(self.verb)
-                && self.following_state.is_none()
-                && self.dur.as_ref().and_then(|d| d.as_seconds()) == Some(0))
     }
 
     /// An occur dot: a point with no state, or the literal `true` legacy
@@ -522,9 +511,9 @@ pub fn resolve_effective<R: std::borrow::Borrow<StateRow>>(
             continue;
         }
         if r.hands_field_back(at) {
-            // A moment or a zero-span block interrupted nothing, so the state it passes over
+            // A moment interrupted nothing, so the state it passes over
             // holds from where it began.
-            if !r.spans_nothing() {
+            if !r.is_moment_state() {
                 resumed_at = resumed_at.or_else(|| r.trailing_edge());
             }
             continue;
@@ -1487,54 +1476,6 @@ mod tests {
         let eff = resolve_effective(&newest_first, t("2025-01-08T13:00:00Z"));
         assert_eq!(eff.state, json!("happy"));
         assert_eq!(eff.since, Some(t("2025-01-08T09:00:00Z")));
-    }
-
-    /// da-lknz3: a stored zero-length block holds the field for no time, so
-    /// the state it passes over holds since the switch that began it, not
-    /// since the block; and an occur that tracked an IGNORED field before it
-    /// still counts.
-    #[test]
-    fn a_zero_length_block_resumes_from_where_the_state_began() {
-        let zero = |at: &str| {
-            let mut e = row("mood", Verb::Block, None, at, None, None);
-            e.dur = Some(Dur::parse("PT0S").unwrap());
-            e
-        };
-        let good = row(
-            "mood",
-            Verb::Switch,
-            Some(json!("good")),
-            "2025-01-08T20:00:00Z",
-            None,
-            None,
-        );
-        let block = zero("2025-01-08T21:00:00Z");
-        let newest_first = [&block, &good].map(StateRow::from_entry);
-        let eff = resolve_effective(&newest_first, t("2025-01-08T22:00:00Z"));
-        assert_eq!(eff.state, json!("good"));
-        assert_eq!(eff.since, Some(t("2025-01-08T20:00:00Z")));
-
-        let ignored = row(
-            "mood",
-            Verb::Switch,
-            Some(json!("IGNORED")),
-            "2025-01-08T19:00:00Z",
-            None,
-            None,
-        );
-        let dot = row(
-            "mood",
-            Verb::Point,
-            None,
-            "2025-01-08T19:30:00Z",
-            None,
-            None,
-        );
-        let rows = FieldStateRows::from_entries([&ignored, &dot, &block]);
-        assert_eq!(
-            rows.at(t("2025-01-08T22:00:00Z"), None),
-            Some(json!("TRACKED"))
-        );
     }
 
     /// vividn, 2026-09-29: an occur leaves a state alone, unless it is
