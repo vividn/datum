@@ -172,13 +172,25 @@ fn a_piped_watch_redraws_on_a_change_of_spec() {
 #[cfg(unix)]
 #[test]
 fn the_tui_redraws_on_a_change_of_spec() {
-    use std::os::fd::FromRawFd;
-
     let dir = tempfile::tempdir().unwrap();
     ok(&dir, &["occur", "feel", "words=calm"]);
+    let (_watch, mut master, seen) = tui(&dir, &["tail", "-w", "0.1", "feel"], 24);
+    wait_for(&seen, "q quit");
+    assert!(!String::from_utf8_lossy(&seen.lock().unwrap()).contains("calm"));
+    ok(&dir, &["setup", "feel", "-k", "words="]);
+    wait_for(&seen, "calm");
+    master.write_all(b"q").unwrap();
+}
+
+/// `datum <args>` on a terminal `rows` tall: the process, the terminal's
+/// side to type into, and everything drawn on it.
+#[cfg(unix)]
+fn tui(dir: &TempDir, args: &[&str], rows: u16) -> (Watch, std::fs::File, Arc<Mutex<Vec<u8>>>) {
+    use std::os::fd::FromRawFd;
+
     let (mut master, mut slave) = (0, 0);
     let size = libc::winsize {
-        ws_row: 24,
+        ws_row: rows,
         ws_col: 100,
         ws_xpixel: 0,
         ws_ypixel: 0,
@@ -194,15 +206,15 @@ fn the_tui_redraws_on_a_change_of_spec() {
         )
     };
     assert_eq!(opened, 0, "openpty");
-    let (mut master, slave) = unsafe {
+    let (master, slave) = unsafe {
         (
             std::fs::File::from_raw_fd(master),
             std::fs::File::from_raw_fd(slave),
         )
     };
-    let _watch = Watch(
-        datum(&dir)
-            .args(["tail", "-w", "0.1", "feel"])
+    let watch = Watch(
+        datum(dir)
+            .args(args)
             .stdin(slave.try_clone().unwrap())
             .stdout(slave.try_clone().unwrap())
             .stderr(slave)
@@ -210,9 +222,41 @@ fn the_tui_redraws_on_a_change_of_spec() {
             .unwrap(),
     );
     let seen = collect(master.try_clone().unwrap());
+    (watch, master, seen)
+}
+
+/// vividn, in tmux with `mouse on` over mosh to termux: «while it is running
+/// I can no longer tap around between the other panes and scrolling stops
+/// working even in other panes» (da-6kmst). Any-motion tracking (1003) in a
+/// pane makes tmux ask the outer terminal for 1003 in place of 1002, and
+/// termux, which has no 1003, then reports no mouse at all. The TUI asks
+/// for presses and the wheel alone, and still scrolls by key and by wheel.
+#[cfg(unix)]
+#[test]
+fn the_tui_asks_for_the_wheel_and_no_motion() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 1..=30 {
+        ok(&dir, &["occur", "feel", "-t", &format!("-{i}")]);
+    }
+    let (watch, mut master, seen) = tui(&dir, &["tail", "-w", "0.1", "feel"], 12);
     wait_for(&seen, "q quit");
-    assert!(!String::from_utf8_lossy(&seen.lock().unwrap()).contains("calm"));
-    ok(&dir, &["setup", "feel", "-k", "words="]);
-    wait_for(&seen, "calm");
-    master.write_all(b"q").unwrap();
+    let drawn = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    for asked in ["\x1b[?1000h", "\x1b[?1006h"] {
+        assert!(drawn.contains(asked), "no {asked:?} in: {drawn:?}");
+    }
+    for never in ["?1002h", "?1003h"] {
+        assert!(!drawn.contains(never), "{never:?} in: {drawn:?}");
+    }
+
+    let mut press = |keys: &[u8], then: &str| {
+        seen.lock().unwrap().clear();
+        master.write_all(keys).unwrap();
+        wait_for(&seen, then);
+    };
+    press(b"\x1b[A", "browse");
+    press(b"G", "scroll · q quit");
+    // The wheel up, as SGR reports it at column 5, row 5.
+    press(b"\x1b[<64;5;5M", "browse");
+    press(b"q", "\x1b[?1000l");
+    drop(watch);
 }

@@ -30,10 +30,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use crossterm::{
     cursor,
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-        MouseEventKind,
-    },
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     queue,
     style::{Attribute, Print, ResetColor, SetAttribute},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
@@ -507,8 +504,17 @@ fn status_bar(
     truncate_visible(&text, width)
 }
 
+/// The mouse reports the TUI asks for: presses alone (1000), the wheel
+/// among them, in SGR form (1006). Never crossterm's `EnableMouseCapture`,
+/// whose any-motion mode (1003) tmux with `mouse on` passes to the outer
+/// terminal in place of its own 1002, and a terminal without 1003 (termux)
+/// then reports no mouse at all: a tap no longer picks a pane and a swipe
+/// scrolls no pane (da-6kmst).
+const MOUSE_ON: &[u8] = b"\x1b[?1000h\x1b[?1006h";
+const MOUSE_OFF: &[u8] = b"\x1b[?1006l\x1b[?1000l";
+
 /// RAII terminal restore. Entering installs raw mode + the alternate
-/// screen + mouse capture and hides the cursor; `Drop` undoes all four —
+/// screen + the wheel's reports and hides the cursor; `Drop` undoes all four —
 /// so a normal return, an early `?`, or an unwinding panic all leave the
 /// user's terminal as we found it. A chained panic hook covers the same
 /// teardown for the panic-message path (where `Drop` ordering vs. the
@@ -523,7 +529,9 @@ impl TuiGuard {
     fn enter() -> Result<Self> {
         terminal::enable_raw_mode()?;
         let mut out = io::stdout();
-        crossterm::execute!(out, EnterAlternateScreen, EnableMouseCapture, cursor::Hide)?;
+        crossterm::execute!(out, EnterAlternateScreen, cursor::Hide)?;
+        out.write_all(MOUSE_ON)?;
+        out.flush()?;
 
         // Restore the terminal before the default hook prints the panic
         // message, so the backtrace lands on the normal screen.
@@ -553,7 +561,8 @@ impl Drop for TuiGuard {
 /// nowhere useful to report to.
 fn restore_terminal() {
     let mut out = io::stdout();
-    let _ = crossterm::execute!(out, cursor::Show, DisableMouseCapture, LeaveAlternateScreen);
+    let _ = out.write_all(MOUSE_OFF);
+    let _ = crossterm::execute!(out, cursor::Show, LeaveAlternateScreen);
     let _ = terminal::disable_raw_mode();
 }
 
