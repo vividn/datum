@@ -559,6 +559,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             (Some(_), None) if has_dur => {
                 let dur = match reserved.dur.as_ref().map(|d| &d.span) {
                     Some(DurSpan::Of(d)) => *d,
+                    // A typed zero reads as a moment (da-xkx16): the block S..S.
+                    Some(DurSpan::Moment) => chrono::Duration::zero(),
                     Some(_) => anyhow::bail!(
                         "start_time= needs a duration with a length to place the block's end"
                     ),
@@ -610,8 +612,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             && reserved.following_state.is_some()
         {
             // `switch a -m , b`: a zero-span point-in-time switch with a
-            // following_state — `derive_verb` reads (state, dur=PT0S,
-            // following_state) as `Verb::PointSwitch`. The bare `switch foo -m`
+            // following_state, stored as (state, MOMENT, following_state)
+            // below (da-xkx16), which `derive_verb` reads as `Verb::PointSwitch`. The bare `switch foo -m`
             // (no chain) takes the dur=MOMENT path instead (see `moment_point`).
             (Some(base_time.clone()), Some(base_time))
         } else if let Some(dur_str) = &args.duration.duration {
@@ -727,6 +729,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         && entry.following_state.is_none()
         && (entry.state.is_some()
             || matches!(action, Action::Start | Action::Switch | Action::Stop));
+    // A zero span from any spelling (a pair, a `,`-chain, `-m , b`) is the
+    // moment it is (da-xkx16).
+    if let Some(d) = entry.dur.as_mut() {
+        d.span = d.span.clone().zero_as_moment();
+    }
     if entry.dur.is_none() && (matches!(action, Action::Occur) || moment_point || timeless_state) {
         entry.dur = Some(datum_core::dur::Dur::moment());
     }
@@ -3201,8 +3208,8 @@ mod tests {
         let e = &entries[0];
         assert_eq!(e.state, Some(serde_json::json!("vertical")));
         assert_eq!(e.following_state, Some(serde_json::json!("sit")));
-        // Moment → dur=PT0S (zero seconds).
-        assert_eq!(e.duration_seconds(), Some(0));
+        // A zero span is stored as the moment it is (da-xkx16).
+        assert!(e.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment));
     }
 
     /// da-rori: the shared `extract_reserved_columns` boundary normalizes
@@ -3420,7 +3427,7 @@ mod tests {
         let e = &entries[0];
         assert_eq!(e.state, Some(serde_json::json!("a b")));
         assert_eq!(e.following_state, Some(serde_json::json!("sit")));
-        assert_eq!(e.duration_seconds(), Some(0));
+        assert!(e.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment));
         assert_eq!(e.verb, Verb::PointSwitch);
     }
 

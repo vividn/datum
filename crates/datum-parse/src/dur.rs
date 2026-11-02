@@ -34,6 +34,18 @@ pub enum DurSpan {
     Unknown,
 }
 
+impl DurSpan {
+    /// A zero span as the moment it is (da-xkx16, vividn, 2026-11-02: «dur=0
+    /// should probably get set to MOMENT»): what typed input and a v2 import
+    /// store. A stored or synced `PT0S` is read as it is.
+    pub fn zero_as_moment(self) -> Self {
+        match self {
+            DurSpan::Of(d) if d.is_zero() => DurSpan::Moment,
+            span => span,
+        }
+    }
+}
+
 /// A duration together with how precisely it is known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dur {
@@ -120,7 +132,7 @@ impl Dur {
             "MOMENT" => DurSpan::Moment,
             "UNKNOWN" => DurSpan::Unknown,
             // A negative span (`-5m`, `-PT5M`) parses, and is refused later by name.
-            d if typed => DurSpan::Of(parse_duration(d).ok()?),
+            d if typed => DurSpan::Of(parse_duration(d).ok()?).zero_as_moment(),
             iso => DurSpan::Of(parse_iso_duration(iso).ok()?),
         };
         Some(Dur { span, uncertainty })

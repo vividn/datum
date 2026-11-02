@@ -87,7 +87,7 @@ fn switch_to_same_state_is_surfaced_live_not_stored() {
 
 /// da-0sjt8 (vividn, 2026-10-12): a moment of the state in force — «ran
 /// 10k» at the end of a run — carries data, not a repeat. Typed as a
-/// compound switch it is one PT0S point-switch; typed bare, a MOMENT
+/// compound switch it is one MOMENT point-switch (da-xkx16); typed bare, a MOMENT
 /// point. A block inside the run does not matter.
 #[test]
 fn same_state_moment_is_not_a_repeat() {
@@ -274,6 +274,60 @@ fn switch_moment_records_point_in_time() {
         e2.dur
     );
     assert!(e2.computed_start_time().is_none());
+}
+
+/// da-xkx16 (vividn, 2026-11-02: «dur=0 should probably get set to
+/// MOMENT»): a zero duration typed in any spelling, on any command, is
+/// stored as the moment it is and read as a `point`. Each is its field's
+/// second entry, so no first-log declaration rides along.
+#[test]
+fn a_zero_duration_is_stored_as_a_moment() {
+    let lines: [&[&str]; 7] = [
+        &["on", "nap", "-t", "21:30", "0"],
+        &["occur", "tea", "-t", "21:40", "dur=0"],
+        &["occur", "tea", "-t", "21:41", "dur=PT0S"],
+        &["start", "nap", "-t", "21:42", "0m"],
+        &["stop", "nap", "-t", "21:43", "0m±1m"],
+        &["occur", "tea", "start_time=21:44", "end_time=21:44"],
+        &["occur", "tea", "start_time=21:45", "dur=0"],
+    ];
+    for line in lines {
+        let db = fresh_db();
+        run_cli(&[line[0], line[1], "-t", "20:00"], &db).expect("first entry");
+        run_cli(line, &db).expect("zero duration");
+        let entries = datum_core::test_util::logged_entries(&db, line[1]);
+        let e = entries
+            .iter()
+            .max_by_key(|e| e.at.as_ref().map(|t| t.utc))
+            .unwrap();
+        assert_eq!(
+            e.dur
+                .as_ref()
+                .map(datum_core::dur::Dur::to_storage_string)
+                .as_deref(),
+            Some("MOMENT"),
+            "{line:?}"
+        );
+        assert_eq!(e.verb, Verb::Point, "{line:?}");
+    }
+    // An update to a zero duration is one too.
+    let db = fresh_db();
+    run_cli(&["occur", "tea", "-t", "20:00"], &db).expect("first entry");
+    run_cli(&["start", "tea", "-t", "21:00", "10m"], &db).expect("block");
+    let last = |db: &Db| {
+        datum_core::test_util::logged_entries(db, "tea")
+            .into_iter()
+            .max_by_key(|e| e.at.as_ref().map(|t| t.utc))
+            .unwrap()
+    };
+    let hid = last(&db).hid.to_string();
+    run_cli(&["update", &hid, "dur=0"], &db).expect("update");
+    let e = last(&db);
+    assert!(
+        e.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment),
+        "{:?}",
+        e.dur
+    );
 }
 
 #[test]

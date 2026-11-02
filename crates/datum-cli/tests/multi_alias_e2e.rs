@@ -364,7 +364,7 @@ fn s(v: &str) -> Option<String> {
 fn binary_alias_sides_merge_as_typed() {
     let point = [
         s("\"run\""),
-        s("PT0S"),
+        s("MOMENT"),
         s("\"stretch\""),
         s("point-switch"),
         s(r#"{"distanceKm":10}"#),

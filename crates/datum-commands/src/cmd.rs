@@ -2223,7 +2223,7 @@ mod tests {
                 .as_ref()
                 .map(datum_core::dur::Dur::to_storage_string)
                 .as_deref(),
-            Some("PT0S")
+            Some("MOMENT")
         );
         assert_eq!(e.following_state, Some(serde_json::json!(false)));
     }

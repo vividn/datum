@@ -156,6 +156,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         //   legacy `dur` null (explicit null)    → dur=MOMENT  (what
         //                                          `switch … dur=MOMENT` stores)
         //   legacy `dur` "<ISO>"                 → dur="<ISO>" verbatim
+        //   legacy `dur` zero ("PT0S", 0)        → dur=MOMENT (da-xkx16)
         //   legacy `dur` malformed               → dur=NULL, warn, preserve
         //                                          literal in `data` blob
         //   legacy `dur` numeric (rare)          → dur="PT<n>S" (seconds)
@@ -193,6 +194,10 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 }
             }
         };
+        // A zero `dur` is a moment, as typed input's is (da-xkx16).
+        if let Some(d) = dur_in.as_mut() {
+            d.span = d.span.clone().zero_as_moment();
+        }
 
         // ─── hole ───────────────────────────────────────────────────
         // v2's `start f -5`: `state: S, dur: "-D"` is a hole in S, what a
