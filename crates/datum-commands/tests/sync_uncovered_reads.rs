@@ -66,8 +66,9 @@ fn statements(db: &Db, argv: &[&str]) -> Vec<String> {
     ran
 }
 
-/// Each statement's plan lines that read `entries` or `ops` whole.
-fn whole_reads(db: &Db, ran: &[String]) -> Vec<String> {
+/// Each statement's plan lines that read `entries` or `ops` whole: through a
+/// covering index too unless `covering` allows it.
+fn whole_reads(db: &Db, ran: &[String], covering: bool) -> Vec<String> {
     let mut found = Vec::new();
     for sql in ran.iter().filter(|s| !s.trim_start().starts_with("--")) {
         let Ok(mut plan) = db.conn().prepare(&format!("EXPLAIN QUERY PLAN {sql}")) else {
@@ -79,7 +80,9 @@ fn whole_reads(db: &Db, ran: &[String]) -> Vec<String> {
             let table = line.strip_prefix("SCAN ").and_then(|t| t.split(' ').next());
             // `ops_held` is partial, the ops waiting on a gap alone.
             let few = line.ends_with("INDEX ops_held");
-            if matches!(table, Some("entries" | "ops")) && !line.contains("COVERING INDEX") && !few
+            if matches!(table, Some("entries" | "ops"))
+                && !(covering && line.contains("COVERING INDEX"))
+                && !few
             {
                 found.push(format!(
                     "{line}  ←  {}",
@@ -126,14 +129,19 @@ fn a_session_finds_its_baselines_without_reading_every_entry() {
     let check = statements(&db, &["datum", "check", "sync", "--show", "none"]);
 
     assert!(
-        whole_reads(&db, &check)
+        whole_reads(&db, &check, true)
             .iter()
             .any(|l| l.starts_with("SCAN entries")),
         "`check sync` reads every entry, and the reading must see it: {check:#?}"
     );
-    for (what, ran) in [("sync pipe ops --since", &ops), ("sync status", &status)] {
+    // `ops --since` finds its endpoints a seek each, not by walking the
+    // primary key's every op (da-49bj9).
+    for (what, ran, covering) in [
+        ("sync pipe ops --since", &ops, false),
+        ("sync status", &status, true),
+    ] {
         assert!(ran.len() > 3, "{what} was traced: {ran:#?}");
-        let scans = whole_reads(&db, ran);
+        let scans = whole_reads(&db, ran, covering);
         assert!(scans.is_empty(), "{what} read a table whole: {scans:#?}");
     }
 }

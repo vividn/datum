@@ -2533,6 +2533,20 @@ fn held_vector(conn: &Connection) -> Result<BTreeMap<String, i64>> {
     }
 }
 
+/// Every endpoint holding an op, in order: one seek of the primary key each,
+/// where `DISTINCT` read every op (da-49bj9).
+fn op_endpoints(conn: &Connection) -> Result<Vec<String>> {
+    let mut next = conn.prepare_cached("SELECT MIN(endpoint) FROM ops WHERE endpoint > ?1")?;
+    let mut found: Vec<String> = Vec::new();
+    loop {
+        let after = found.last().map_or("", String::as_str);
+        match next.query_row([after], |r| r.get(0))? {
+            Some(e) => found.push(e),
+            None => return Ok(found),
+        }
+    }
+}
+
 fn marked(conn: &Connection) -> Result<bool> {
     Ok(conn
         .prepare_cached("SELECT 1 FROM sync_caught_up LIMIT 1")?
@@ -2986,11 +3000,7 @@ impl Db {
             // every op at or below it, so ops that share it go together.
             // Each endpoint's ops from `since` on alone, by the primary key:
             // a small catch-up reads no other op (da-9ln3s).
-            let mut endpoints: Vec<String> = tx
-                .prepare("SELECT DISTINCT endpoint FROM ops")?
-                .query_map([], |r| r.get(0))?
-                .collect::<rusqlite::Result<_>>()?;
-            endpoints.sort();
+            let endpoints = op_endpoints(tx)?;
             let from = |e: &str| since.get(e).copied().unwrap_or(0);
             let cut = match limit {
                 Some(n) => {
