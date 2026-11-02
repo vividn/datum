@@ -1873,18 +1873,11 @@ describe('the pills ride with the text', () => {
 					while (performance.now() - window.__held < 150);
 				}).observe(document.body, { subtree: true, childList: true });
 			});
-			await pressLanded(app);
-			const clocks = await page
-				.waitForFunction(() => {
-					const pill = document.querySelector('.prompt-bar .spent');
-					const ghost = document.querySelector('.prompt-bar .ghost');
-					if (!pill || !ghost) return null;
-					// How far through, in ms: the pill takes the ghost's start
-					// time (`withGhost`), so a busy frame cannot put it behind.
-					const t = (el) => el.getAnimations()[0].effect.getComputedTiming().progress * 1000;
-					return { pill: t(pill), ghost: t(ghost) };
-				})
-				.then((h) => h.jsonValue());
+			// Read in the landing's own evaluation: a press landing near
+			// GHOST_MS leaves the two milliseconds, less than a second
+			// round trip to the page takes on a loaded runner (da-gd2yn).
+			const { clocks } = await pressLanded(app);
+			assert.ok(clocks, 'the press landed with no spent pill and ghost fading to read');
 			assert.ok(Math.abs(clocks.pill - clocks.ghost) < 50, `pill at ${clocks.pill}ms, ghost at ${clocks.ghost}ms`);
 			assert.ok(await page.evaluate(() => window.__held), 'the busy frame never came: nothing held the spent pill');
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
@@ -1934,9 +1927,10 @@ const GHOST_MS = 1000;
  * them in flight at every retry, measured — so on a loaded runner every
  * retry ran slow for the press before it (1028, 1066, 1151ms).
  *
- * Answers the bar's live and spent pill counts read in the landing's own
- * evaluation, since a press landing just under GHOST_MS leaves the spent
- * pill milliseconds to live.
+ * Answers the bar's live and spent pill counts, and how far through its
+ * fade the spent pill and its ghost each are (null with either gone), read
+ * in the landing's own evaluation, since a press landing just under
+ * GHOST_MS leaves the spent pill milliseconds to live.
  */
 const pressLanded = async (app) => {
 	const { page } = app;
@@ -1954,7 +1948,18 @@ const pressLanded = async (app) => {
 					window.datum.bar.pills().length === 0 && {
 						took: performance.now() - window.__pressedAt,
 						pills: document.querySelectorAll(`${bar} .pill`).length,
-						spent: document.querySelectorAll(`${bar} .spent`).length
+						spent: document.querySelectorAll(`${bar} .spent`).length,
+						clocks: (() => {
+							const [pill, ghost] = ['spent', 'ghost'].map(
+								(c) => document.querySelector(`${bar} .${c}`)?.getAnimations()[0]
+							);
+							if (!pill || !ghost) return null;
+							// How far through, in ms: the pill takes the ghost's
+							// start time (`withGhost`), so a busy frame cannot
+							// put it behind.
+							const t = (a) => a.effect.getComputedTiming().progress * 1000;
+							return { pill: t(pill), ghost: t(ghost) };
+						})()
 					},
 				BAR
 			)
