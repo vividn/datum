@@ -1172,7 +1172,10 @@ binary.
   the files' lock past a second (da-89kom): the one wait with no deadline,
   which a tab the phone froze mid-burst could make forever (suspected,
   not reproduced).
-- Background Sync API queues sync when offline
+- No Background Sync: the service worker caches the shell and syncs nothing.
+  A push runs in the page's workers, so a tab closed before it ends sends
+  nothing until the page opens again (da-2w0md measured it, and says what a
+  service worker could and could not do here)
 - The page is a LAYOUT TREE, not a grid (`web/src/lib/layout/`):
   panes hold widgets or splits of panes, each pane has tabs and draggable
   borders, and its bar reads maximize · title-or-tabs · `+` · `×`. Two
