@@ -536,10 +536,15 @@ fn check_lists_a_clock_time_and_its_reparse_recovers_the_day() {
     assert_eq!(listed(), None, "nothing left to list");
 }
 
-/// What plain `datum check` prints.
+/// What plain `datum check` prints of its `mistyped_data_value`: the
+/// rewritten data trips `content_hash_mismatch` too, which lists the same
+/// rows (da-80t1i).
 fn plain_check(db: &datum_core::db::Db) -> String {
     let entries = db.list_including_deleted().unwrap();
-    let report = datum_commands::commands::check::collect_issues(db, &entries).unwrap();
+    let mut report = datum_commands::commands::check::collect_issues(db, &entries).unwrap();
+    report
+        .issues
+        .retain(|i| i.category == "mistyped_data_value");
     datum_commands::commands::check::render_human(&report)
 }
 

@@ -197,11 +197,9 @@ fn more_counts_what_is_listed() {
     let report = datum(&db, &["check"]);
     assert!(report.starts_with("entries    7 problems\n"), "{report}");
     let entries = under(&report, "entries");
-    assert_eq!(
-        entries.iter().filter(|l| l.starts_with("    ")).count(),
-        1,
-        "{report}"
-    );
+    // One entry, its keys on the `↳` line under it.
+    let rows = |l: &&&str| l.starts_with("    ") && !l.trim_start().starts_with('↳');
+    assert_eq!(entries.iter().filter(rows).count(), 1, "{report}");
     assert!(!entries.iter().any(|l| l.contains("more:")), "{report}");
 }
 

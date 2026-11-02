@@ -5,7 +5,7 @@ use anyhow::Result;
 use datum_core::db::Db;
 use datum_parse::alias::{shell_split, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS};
 
-use super::{Domain, Issue, IssueExample, Severity};
+use super::{lines, Domain, Issue, IssueExample, Severity};
 
 #[derive(Debug, Default)]
 pub(super) struct AliasReport {
@@ -55,21 +55,21 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
     };
     if !collisions.is_empty() {
         let first = &collisions[0];
-        let detail = if fix {
-            format!(
+        let said = |c: &datum_core::field_spec::SpecAliasCollision| match fix {
+            true => format!(
                 "alias '{name}' kept by '{winner}' (first-saved-wins); displaced from '{loser}'",
-                name = first.name,
-                winner = first.winner,
-                loser = first.loser,
-            )
-        } else {
-            format!(
+                name = c.name,
+                winner = c.winner,
+                loser = c.loser,
+            ),
+            false => format!(
                 "alias '{name}' owned by '{winner}'; '{loser}' displaced",
-                name = first.name,
-                winner = first.winner,
-                loser = first.loser,
-            )
+                name = c.name,
+                winner = c.winner,
+                loser = c.loser,
+            ),
         };
+        let detail = said(first);
         issues.push(Issue {
             domain: Domain::Aliases,
             severity: Severity::Warning,
@@ -86,7 +86,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
                 detail: Some(detail),
             }),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: lines(collisions.iter().map(said)),
         });
     }
 
@@ -106,6 +106,9 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
             .collect();
         if !legacy.is_empty() {
             let first = &legacy[0];
+            let said = |a: &datum_core::field_spec::Alias| {
+                format!("alias '{}' → datum {}", a.name, a.expands_to)
+            };
             issues.push(Issue {
                 domain: Domain::Aliases,
                 severity: Severity::Warning,
@@ -122,13 +125,10 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
                 example: Some(IssueExample {
                     id: None,
                     field: None,
-                    detail: Some(format!(
-                        "alias '{}' → datum {}",
-                        first.name, first.expands_to
-                    )),
+                    detail: Some(said(first)),
                 }),
                 entries: Vec::new(),
-                rendered_block: String::new(),
+                rendered_block: lines(legacy.iter().map(said)),
             });
         }
     }
@@ -174,7 +174,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
                 detail: Some(found[0].clone()),
             }),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: lines(found.iter().cloned()),
         });
     }
 
@@ -212,7 +212,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
                 ),
             }),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: lines(unplain.iter().map(|n| format!("'{n}'"))),
         });
     }
 
@@ -304,40 +304,30 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
     // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
     // aliases never need this walk — their `expands_to` always begins with
     // a KNOWN_SUBCOMMAND.
-    let mut orphan_count: usize = 0;
-    let mut orphan_example: Option<IssueExample> = None;
-    let mut cycle_count: usize = 0;
-    let mut cycle_example: Option<IssueExample> = None;
+    let (mut orphans, mut cycles): (Vec<IssueExample>, Vec<IssueExample>) = Default::default();
 
     for alias in &user_aliases {
         match analyze_chain(db, &alias.name)? {
             ChainOutcome::Resolved => {}
-            ChainOutcome::Orphan { broken_at, chain } => {
-                orphan_count += 1;
-                if orphan_example.is_none() {
-                    orphan_example = Some(IssueExample {
-                        id: None,
-                        field: Some(alias.name.clone()),
-                        detail: Some(format!(
-                            "{path} → '{broken_at}' (no known alias, subcommand or kit command)",
-                            path = chain.join(" → "),
-                        )),
-                    });
-                }
-            }
-            ChainOutcome::Cycle(path) => {
-                cycle_count += 1;
-                if cycle_example.is_none() {
-                    cycle_example = Some(IssueExample {
-                        id: None,
-                        field: Some(alias.name.clone()),
-                        detail: Some(format!("cycle: {}", path.join(" → "))),
-                    });
-                }
-            }
+            ChainOutcome::Orphan { broken_at, chain } => orphans.push(IssueExample {
+                id: None,
+                field: Some(alias.name.clone()),
+                detail: Some(format!(
+                    "{path} → '{broken_at}' (no known alias, subcommand or kit command)",
+                    path = chain.join(" → "),
+                )),
+            }),
+            ChainOutcome::Cycle(path) => cycles.push(IssueExample {
+                id: None,
+                field: Some(alias.name.clone()),
+                detail: Some(format!("cycle: {}", path.join(" → "))),
+            }),
         }
     }
 
+    // Each alias's line is its detail, which names it first.
+    let said = |found: &[IssueExample]| lines(found.iter().filter_map(|x| x.detail.clone()));
+    let (orphan_count, cycle_count) = (orphans.len(), cycles.len());
     if orphan_count > 0 {
         issues.push(Issue {
             domain: Domain::Aliases,
@@ -349,9 +339,9 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
                 s = if orphan_count == 1 { "" } else { "es" },
             ),
             count: orphan_count,
-            example: orphan_example,
+            example: orphans.first().cloned(),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: said(&orphans),
         });
     }
     if cycle_count > 0 {
@@ -365,9 +355,9 @@ pub(super) fn collect_alias_drift(db: &Db, fix: bool) -> Result<AliasReport> {
                 s = if cycle_count == 1 { "" } else { "s" },
             ),
             count: cycle_count,
-            example: cycle_example,
+            example: cycles.first().cloned(),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: said(&cycles),
         });
     }
 

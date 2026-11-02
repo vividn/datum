@@ -44,6 +44,10 @@ use integrity::collect_integrity_warnings;
 use integrity::{integrity_issues, integrity_pending};
 mod kept;
 use kept::Plan;
+mod categories;
+pub use categories::CATEGORIES;
+#[cfg(test)]
+mod every_finding;
 
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
@@ -74,7 +78,25 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         }
         return Ok(());
     }
+    let (report, fix_reports) = report(&args, db)?;
+    if silent {
+        // nothing printed; the exit code below still speaks.
+    } else if json {
+        println!("{}", render_json(&report)?);
+    } else {
+        print!("{}", render_human(&report));
+        for fix in &fix_reports {
+            print_fix_summary(fix);
+        }
+    }
+    if report.has_errors() {
+        std::process::exit(1);
+    }
+    Ok(())
+}
 
+/// What the checkers `args` names found, and what its `--fix` did.
+fn report(args: &CheckArgs, db: &Db) -> Result<(Report, Vec<FixReport>)> {
     let run = |name: &str| args.checkers.is_empty() || args.checkers.iter().any(|c| c == name);
     // Named, a checker lists every finding whole, with what it can say beside
     // each; alone, `datum check` sums each up (da-3zq6g).
@@ -122,7 +144,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         checks.push(Check::of("entries", base.issues));
     }
     if run("verbs") {
-        let verb_report = collect_verb_drift(&entries)?;
+        let verb_report = collect_verb_drift(db, &entries)?;
         if args.fix {
             fix_reports.push(apply_verb_fixes(db, &verb_report.fixes)?);
             entries = load()?;
@@ -137,7 +159,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     }
     if run("slugs") {
         let delim = crate::config::resolve_id_delimiter(None);
-        let slug_report = collect_slug_drift(&entries, &delim)?;
+        let slug_report = collect_slug_drift(db, &entries, &delim)?;
         if args.fix {
             fix_reports.push(apply_slug_fixes(db, &slug_report.fixes, &delim)?);
             entries = load()?;
@@ -221,21 +243,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         checks,
         named,
     };
-
-    if silent {
-        // nothing printed; the exit code below still speaks.
-    } else if json {
-        println!("{}", render_json(&report)?);
-    } else {
-        print!("{}", render_human(&report));
-        for fix in &fix_reports {
-            print_fix_summary(fix);
-        }
-    }
-    if report.has_errors() {
-        std::process::exit(1);
-    }
-    Ok(())
+    Ok((report, fix_reports))
 }
 
 /// da-4c1c: detect/apply/verify counters for a single `--fix` run.
@@ -554,6 +562,13 @@ pub struct Check {
 
 impl Check {
     fn of(name: &'static str, issues: Vec<Issue>) -> Check {
+        for issue in &issues {
+            debug_assert!(
+                (CATEGORIES.iter()).any(|(n, of)| *n == name && of.contains(&issue.category)),
+                "`{name}` reports `{}`, which is not in CATEGORIES",
+                issue.category
+            );
+        }
         Check {
             name,
             problems: issues.iter().map(|i| i.count).sum(),
@@ -609,7 +624,7 @@ struct VerbReport {
 /// Drifted rows are accumulated into `fixes` so `--fix` can rewrite
 /// them in a single pass. Corruption-shape rows are *not* fixed —
 /// there is no derivable verb to write.
-fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
+fn collect_verb_drift(db: &Db, entries: &[Entry]) -> Result<VerbReport> {
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
     let mut corrupt_count: usize = 0;
@@ -617,6 +632,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
     let mut fixes: Vec<VerbFix> = Vec::new();
     let mut drifted: Vec<FlaggedEntry> = Vec::new();
     let mut corrupt: Vec<FlaggedEntry> = Vec::new();
+    let (mut drift_rows, mut corrupt_rows) = (Vec::new(), Vec::new());
 
     for e in entries {
         // Skip tombstones — they are historical rows, not live data;
@@ -631,6 +647,10 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
                 let expected_str = expected.to_string();
                 if stored != expected_str {
                     drift_count += 1;
+                    drift_rows.push((
+                        e.clone(),
+                        format!("stored={stored}  expected={expected_str}"),
+                    ));
                     drifted.push(FlaggedEntry {
                         hid: e.hid.to_string(),
                         field: e.field.clone(),
@@ -653,6 +673,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
             }
             Err(err) => {
                 corrupt_count += 1;
+                corrupt_rows.push((e.clone(), err.to_string()));
                 corrupt.push(FlaggedEntry {
                     hid: e.hid.to_string(),
                     field: e.field.clone(),
@@ -683,7 +704,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
             count: drift_count,
             example: drift_example,
             entries: drifted,
-            rendered_block: String::new(),
+            rendered_block: rows_under(db, &drift_rows),
         });
     }
     if corrupt_count > 0 {
@@ -700,7 +721,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
             count: corrupt_count,
             example: corrupt_example,
             entries: corrupt,
-            rendered_block: String::new(),
+            rendered_block: rows_under(db, &corrupt_rows),
         });
     }
 
@@ -722,7 +743,7 @@ fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<FixReport> {
             Ok(())
         },
         || {
-            Ok(collect_verb_drift(&db.list_including_deleted()?)?
+            Ok(collect_verb_drift(db, &db.list_including_deleted()?)?
                 .fixes
                 .into_iter()
                 .map(|f| (f.slug, f.stored_verb, f.expected_verb))
@@ -770,11 +791,12 @@ struct SlugReport {
 /// parking mechanism needed every re-deriver (`retime`, `datum edit`, this
 /// scan and its `--fix`) taught about a shape it could not recompute
 /// (da-l4uz).
-fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
+fn collect_slug_drift(db: &Db, entries: &[Entry], delim: &str) -> Result<SlugReport> {
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
     let mut fixes: Vec<SlugFix> = Vec::new();
     let mut drifted: Vec<FlaggedEntry> = Vec::new();
+    let mut rows = Vec::new();
 
     for e in entries {
         if e.deleted_at.is_some() {
@@ -812,6 +834,7 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
                         detail: Some(format!("stored={stored}  expected={expected}")),
                     });
                 }
+                rows.push((e.clone(), format!("stored={stored}  expected={expected}")));
                 drifted.push(FlaggedEntry {
                     hid: e.hid.to_string(),
                     field: e.field.clone(),
@@ -836,6 +859,7 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
                     detail: Some(format!("stored={stored}  expected={expected}")),
                 });
             }
+            rows.push((e.clone(), format!("stored={stored}  expected={expected}")));
             drifted.push(FlaggedEntry {
                 hid: e.hid.to_string(),
                 field: e.field.clone(),
@@ -862,7 +886,7 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
             count: drift_count,
             example: drift_example,
             entries: drifted,
-            rendered_block: String::new(),
+            rendered_block: rows_under(db, &rows),
         });
     }
 
@@ -894,11 +918,13 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport
             Ok(())
         },
         || {
-            Ok(collect_slug_drift(&db.list_including_deleted()?, delim)?
-                .fixes
-                .into_iter()
-                .map(|f| (f.existing.to_string(), f.existing.to_string(), f.expected))
-                .collect())
+            Ok(
+                collect_slug_drift(db, &db.list_including_deleted()?, delim)?
+                    .fixes
+                    .into_iter()
+                    .map(|f| (f.existing.to_string(), f.existing.to_string(), f.expected))
+                    .collect(),
+            )
         },
     )
 }
@@ -986,11 +1012,10 @@ fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<(usize, Option<Issue>
             severity: Severity::Error,
             category: "stats_cache_drift",
             message: format!(
-                "{} cached stats day{} differ{} from the entries: {}{}",
+                "{} cached stats day{} differ{} from the entries{}",
                 differ.len(),
                 if differ.len() == 1 { "" } else { "s" },
                 if differ.len() == 1 { "s" } else { "" },
-                days.join(", "),
                 if fix {
                     " (dropped from the cache)"
                 } else {
@@ -1004,7 +1029,7 @@ fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<(usize, Option<Issue>
                 detail: Some(day.clone()),
             }),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: lines(days),
         }),
     ))
 }
@@ -1155,6 +1180,20 @@ fn rows_with(db: &Db, entries: &[Entry], under: &[Option<String>]) -> String {
         .collect()
 }
 
+/// [`rows_with`] each entry and the line under it.
+fn rows_under(db: &Db, rows: &[(Entry, String)]) -> String {
+    let (entries, under): (Vec<Entry>, Vec<Option<String>>) = rows
+        .iter()
+        .map(|(e, u)| (e.clone(), Some(u.clone())))
+        .unzip();
+    rows_with(db, &entries, &under)
+}
+
+/// A block of findings that are not entries, one line each.
+fn lines(found: impl IntoIterator<Item = String>) -> String {
+    found.into_iter().map(|line| line + "\n").collect()
+}
+
 /// Render a state JSON value into the short string used in flagged-entry
 /// lines: scalar bool/number/string unwrapped, anything structured
 /// serialized compactly. The shape mirrors what the live renderer prints
@@ -1202,10 +1241,14 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
 
     // da-o5bww: `at` is the entry's time, so a data key by that name can only
     // have come from before that, an import or another copy.
-    let at_keyed: Vec<FlaggedEntry> = entries
+    let at_rows: Vec<Entry> = entries
         .iter()
         .filter(|e| e.deleted_at.is_none())
         .filter(|e| e.data.as_ref().is_some_and(|d| d.get("at").is_some()))
+        .cloned()
+        .collect();
+    let at_keyed: Vec<FlaggedEntry> = at_rows
+        .iter()
         .map(|e| FlaggedEntry {
             hid: e.hid.to_string(),
             field: e.field.clone(),
@@ -1229,15 +1272,23 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
             count: at_keyed.len(),
             example: None,
             entries: at_keyed,
-            rendered_block: String::new(),
+            rendered_block: render_flagged_block(db, &at_rows),
         });
     }
 
     // 2. content_hash mismatches (ERROR)
     let mut mismatches: Vec<(String, String, String, String, String)> = Vec::new();
+    let mut mismatched = Vec::new();
     for e in entries {
         let expected = e.expected_content_hash();
         if expected != e.content_hash {
+            let cut = |h: &str| h.chars().take(12).collect::<String>();
+            let said = format!(
+                "stored={}…  expected={}…",
+                cut(&e.content_hash),
+                cut(&expected)
+            );
+            mismatched.push((e.clone(), said));
             mismatches.push((
                 e.slug.to_string(),
                 e.field.clone(),
@@ -1280,7 +1331,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
                     ),
                 })
                 .collect(),
-            rendered_block: String::new(),
+            rendered_block: rows_under(db, &mismatched),
         });
     }
 
@@ -1322,7 +1373,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
                 detail: Some(unknown.join(", ")),
             }),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: lines(unknown.iter().cloned()),
         });
     }
 
@@ -1336,6 +1387,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     let mut orphan_detail: Option<(String, String, String)> = None; // (id, field, key)
     let mut orphan_count = 0usize;
     let mut orphaned: Vec<FlaggedEntry> = Vec::new();
+    let mut orphan_rows = Vec::new();
     for e in entries {
         let Some(spec) = registry.field_spec(&e.field) else {
             continue;
@@ -1349,6 +1401,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         let unlisted = spec.unlisted_keys(map, e.state.as_ref().and_then(JsonValue::as_str));
         orphan_count += unlisted.len();
         if !unlisted.is_empty() {
+            orphan_rows.push((e.clone(), format!("keys: {}", unlisted.join(", "))));
             orphaned.push(FlaggedEntry {
                 hid: e.hid.to_string(),
                 field: e.field.clone(),
@@ -1377,7 +1430,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
                 detail: Some(format!("key={key}")),
             }),
             entries: orphaned,
-            rendered_block: String::new(),
+            rendered_block: rows_under(db, &orphan_rows),
         });
     }
 
@@ -1406,7 +1459,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
                 detail: Some(err.to_string()),
             }),
             entries: Vec::new(),
-            rendered_block: String::new(),
+            rendered_block: lines(unbuilt.iter().map(|(name, err)| format!("{name}: {err}"))),
         });
     }
 
@@ -1902,7 +1955,7 @@ mod tests {
         // sub-bead 3 status.
         db.set_entry_verb(entry.hid.as_str(), "block").unwrap();
 
-        let report = collect_verb_drift(&all(&db)).unwrap();
+        let report = collect_verb_drift(&db, &all(&db)).unwrap();
         let issue = report
             .issues
             .iter()
@@ -1940,7 +1993,7 @@ mod tests {
         db.set_entry_verb(entry.hid.as_str(), "switch").unwrap();
 
         // Pre-fix: drift detected.
-        let report = collect_verb_drift(&all(&db)).unwrap();
+        let report = collect_verb_drift(&db, &all(&db)).unwrap();
         let drift = report
             .issues
             .iter()
@@ -1955,7 +2008,7 @@ mod tests {
         apply_verb_fixes(&db, &report.fixes).unwrap();
 
         // Post-fix: no drift, and the row's stored verb is now `block`.
-        let report2 = collect_verb_drift(&all(&db)).unwrap();
+        let report2 = collect_verb_drift(&db, &all(&db)).unwrap();
         assert!(
             !report2.issues.iter().any(|i| i.category == "verb_drift"),
             "post-fix drift must be zero, got issues: {:?}",
@@ -1983,7 +2036,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
         db.set_entry_verb(entry.hid.as_str(), "point").unwrap(); // force drift
 
-        let report = collect_verb_drift(&all(&db)).unwrap();
+        let report = collect_verb_drift(&db, &all(&db)).unwrap();
         // Only verb-related categories should appear.
         for issue in &report.issues {
             assert!(
@@ -2017,7 +2070,7 @@ mod tests {
         db.set_entry_verb(entry.hid.as_str(), "block").unwrap(); // drift
         db.soft_delete_entry(&slug).unwrap();
 
-        let report = collect_verb_drift(&all(&db)).unwrap();
+        let report = collect_verb_drift(&db, &all(&db)).unwrap();
         assert!(
             !report.issues.iter().any(|i| i.category == "verb_drift"),
             "tombstoned rows must not contribute to drift count, got: {:?}",
@@ -2379,7 +2432,7 @@ mod tests {
         // matter.)
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&all(&db), ":").unwrap();
+        let report = collect_slug_drift(&db, &all(&db), ":").unwrap();
         let issue = report
             .issues
             .iter()
@@ -2418,7 +2471,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
 
         // Pre-fix: drift detected.
-        let report = collect_slug_drift(&all(&db), ":").unwrap();
+        let report = collect_slug_drift(&db, &all(&db), ":").unwrap();
         assert_eq!(report.fixes.len(), 1, "pre-fix run must queue one fix");
 
         // Apply the fix.
@@ -2426,7 +2479,7 @@ mod tests {
 
         // Post-fix: no drift, row's hid preserved, slug matches the
         // template-derived value.
-        let report2 = collect_slug_drift(&all(&db), ":").unwrap();
+        let report2 = collect_slug_drift(&db, &all(&db), ":").unwrap();
         assert!(
             !report2.issues.iter().any(|i| i.category == "slug_drift"),
             "post-fix drift must be zero, got issues: {:?}",
@@ -2459,7 +2512,7 @@ mod tests {
         entry.slug = Slug(format!("ghost:{}", entry.short_uid()));
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&all(&db), ":").unwrap();
+        let report = collect_slug_drift(&db, &all(&db), ":").unwrap();
         for issue in &report.issues {
             assert_eq!(
                 issue.category, "slug_drift",
@@ -2492,7 +2545,7 @@ mod tests {
             entry.id_structure = Some("%field%:%at%".to_string());
             entry.extra_metadata = marker;
             db.insert_entry(&entry).unwrap();
-            collect_slug_drift(&all(&db), ":").unwrap().fixes.len()
+            collect_slug_drift(&db, &all(&db), ":").unwrap().fixes.len()
         };
         let v2 = serde_json::json!({"_import": {"source": "datum-v2-couchdb"}});
         assert_eq!(drift(Some(v2)), 0);
@@ -2519,7 +2572,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
         db.soft_delete_entry(&slug).unwrap();
 
-        let report = collect_slug_drift(&all(&db), ":").unwrap();
+        let report = collect_slug_drift(&db, &all(&db), ":").unwrap();
         assert!(
             !report.issues.iter().any(|i| i.category == "slug_drift"),
             "tombstoned rows must not contribute to drift count, got: {:?}",
@@ -2582,7 +2635,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let (_, superseded) = seed_superseded_pair(&db);
 
-        let report = collect_slug_drift(&all(&db), ":").unwrap();
+        let report = collect_slug_drift(&db, &all(&db), ":").unwrap();
         assert!(
             !report.issues.iter().any(|i| i.category == "slug_drift"),
             "a superseded row derives its own slug, so it cannot drift, got: {:?}",
@@ -2618,7 +2671,7 @@ mod tests {
         );
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&all(&db), ":").unwrap();
+        let report = collect_slug_drift(&db, &all(&db), ":").unwrap();
         assert!(
             report.issues.is_empty(),
             "rows without templates must produce no drift, got: {:?}",
@@ -2649,7 +2702,7 @@ mod tests {
         entry.slug = Slug(format!("mood:{body}"));
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&all(&db), ":").unwrap();
+        let report = collect_slug_drift(&db, &all(&db), ":").unwrap();
         assert!(
             report.issues.is_empty(),
             "clean db must yield no slug-drift issues, got: {:?}",
@@ -3290,7 +3343,7 @@ mod tests {
         let slug_a = mk("alpha", 10);
         let slug_b = mk("beta", 11);
 
-        let mut fixes = collect_verb_drift(&all(&db)).unwrap().fixes;
+        let mut fixes = collect_verb_drift(&db, &all(&db)).unwrap().fixes;
         assert_eq!(fixes.len(), 2, "fixture: both rows drifted");
         // Sabotage row A's fix: point it at a hid that doesn't exist so
         // its apply fails with NotFound mid-batch.
@@ -3341,7 +3394,7 @@ mod tests {
         let slug_a = mk("alpha", "2024-01-01T10:00:00+00:00");
         let slug_b = mk("beta", "2024-01-01T11:00:00+00:00");
 
-        let mut fixes = collect_slug_drift(&all(&db), ":").unwrap().fixes;
+        let mut fixes = collect_slug_drift(&db, &all(&db), ":").unwrap().fixes;
         assert_eq!(fixes.len(), 2, "fixture: both rows drifted");
         // Simulate the cascade: row A's pre-scan slug has been
         // invalidated by the time its fix runs (get_entry → NotFound).
@@ -3362,7 +3415,7 @@ mod tests {
         assert_eq!(report.leftover_samples[0].0, slug_a.to_string());
 
         // Row B is actually rekeyed: only row A remains drifted.
-        let remaining = collect_slug_drift(&all(&db), ":").unwrap().fixes;
+        let remaining = collect_slug_drift(&db, &all(&db), ":").unwrap().fixes;
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].existing.as_str(), slug_a.as_str());
         assert!(

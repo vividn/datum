@@ -8,9 +8,6 @@ use serde_json::{json, Map, Value};
 
 use crate::commands::check::{Domain, FlaggedEntry, Issue, Severity};
 
-/// How many uncovered entries a finding names before it counts the rest.
-const NAMED: usize = 10;
-
 /// A value on one line: its JSON, cut to fit, and `∅` for none.
 fn shown(v: &Value) -> String {
     let s = match v {
@@ -185,15 +182,11 @@ pub fn fold_issues(db: &Db, hids: Option<&[String]>) -> Result<(FoldCheck, Vec<I
     }
     if !found.uncovered.is_empty() {
         let count = found.uncovered.len();
-        let mut names: Vec<String> = found
+        let names: Vec<String> = found
             .uncovered
             .iter()
-            .take(NAMED)
             .map(|e| format!("  {} ({})", e.slug, short(&e.hid)))
             .collect();
-        if count > NAMED {
-            names.push(format!("  and {} more", count - NAMED));
-        }
         let of: Vec<FlaggedEntry> = found
             .uncovered
             .iter()

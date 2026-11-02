@@ -5,7 +5,7 @@ use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 
-use super::{short, Domain, FlaggedEntry, Issue, IssueExample, Severity};
+use super::{render_flagged_block, short, Domain, FlaggedEntry, Issue, IssueExample, Severity};
 
 /// da-f9jyv: state references that name no live entry — a `field:id`
 /// state, and a bare state whose `F:<state>` document is missing (the
@@ -39,7 +39,7 @@ pub(super) fn dangling_refs(db: &Db, entries: &[Entry]) -> Result<(Vec<Issue>, V
     let mut referrers = Vec::new();
     // key `None` is the state; `Some(k)` the data key `k`.
     type Missing<'a> = (&'a str, Option<&'a str>, String);
-    let mut missing: std::collections::BTreeMap<Missing, Vec<String>> = Default::default();
+    let mut missing: std::collections::BTreeMap<Missing, Vec<Entry>> = Default::default();
     for e in &live {
         let spec = registry.field_spec(&e.field);
         let state = [&e.state, &e.following_state]
@@ -69,7 +69,7 @@ pub(super) fn dangling_refs(db: &Db, entries: &[Entry]) -> Result<(Vec<Issue>, V
                 missing
                     .entry((&e.field, key, slug))
                     .or_default()
-                    .push(e.hid.to_string());
+                    .push((*e).clone());
             }
         }
     }
@@ -83,7 +83,8 @@ pub(super) fn dangling_refs(db: &Db, entries: &[Entry]) -> Result<(Vec<Issue>, V
     missing.retain(|(_, _, slug), _| !live.contains(slug));
     let issues = missing
         .into_iter()
-        .map(|((field, key, slug), hids)| {
+        .map(|((field, key, slug), found)| {
+            let hids: Vec<String> = found.iter().map(|e| e.hid.to_string()).collect();
             let count = hids.len();
             let more = if count > 3 { ", …" } else { "" };
             let y = if count == 1 { "y refers" } else { "ies refer" };
@@ -125,7 +126,7 @@ pub(super) fn dangling_refs(db: &Db, entries: &[Entry]) -> Result<(Vec<Issue>, V
                         state: format!("→ {slug}"),
                     })
                     .collect(),
-                rendered_block: String::new(),
+                rendered_block: render_flagged_block(db, &found),
             }
         })
         .collect();
