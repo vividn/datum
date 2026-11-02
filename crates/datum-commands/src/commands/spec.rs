@@ -426,7 +426,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         !(args.track && args.ignore),
         "--track and --ignore: give one"
     );
-    let now = DatumTime::now();
+    let now = super::track::status_time(&args.time)?;
     let status = if args.track && super::track::begins_tracking(db, &spec.field, &now)? {
         Some(track_entry(&spec.field, spec.verb, now, &client_id()?))
     } else if args.ignore
@@ -434,7 +434,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             .state_at(&spec.field, now.utc)?
             .is_some_and(|s| is_ignored_state(&s))
     {
-        Some(super::track::ignored_entry(&spec.field, client_id()?))
+        Some(super::track::ignored_entry(&spec.field, now, client_id()?))
     } else {
         None
     };

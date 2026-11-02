@@ -13,18 +13,20 @@ pub(crate) struct FlagParsing {
 }
 
 pub(crate) fn flag_args_registry() -> Vec<LiftedSpec<FlagParsing>> {
-    let mut r: Vec<LiftedSpec<FlagParsing>> = Vec::new();
-    // Mirror TailParsing: expose -y/-q/-d/-t/-z; suppress -T/-D
-    // (a flag without a moment loses its meaning).
-    for spec in input::time_args::FLAG_SPECS {
-        match (spec.short, spec.long) {
-            (Some('y'), _) | (Some('q'), _) | (Some('d'), _) | (Some('t'), _) | (Some('z'), _) => {
-                r.push(lift(|p: &mut FlagParsing| &mut p.time, spec));
-            }
-            _ => {}
-        }
-    }
-    r
+    moment_time_flags(|p: &mut FlagParsing| &mut p.time)
+}
+
+/// The time flags of a command that places one moment, as `flag`, `track`
+/// and `ignore` do: `-y/-q/-d/-t/-z`, without `-T/-D` (a moment with no
+/// time, or a whole day, loses its meaning).
+pub(crate) fn moment_time_flags<P: 'static>(
+    time: fn(&mut P) -> &mut TimeArgs,
+) -> Vec<LiftedSpec<P>> {
+    input::time_args::FLAG_SPECS
+        .iter()
+        .filter(|spec| matches!(spec.short, Some('y' | 'q' | 'd' | 't' | 'z')))
+        .map(|spec| lift(time, spec))
+        .collect()
 }
 
 pub(crate) fn parse_flag_cmd(tail: &[&str]) -> Result<FlagArgs> {

@@ -832,6 +832,10 @@ pub struct SpecSetArgs {
     pub description: Option<String>,
     pub track: bool,
     pub ignore: bool,
+    /// `track` / `ignore`'s time flags, `-y -q -d -t -z` (da-l0we0): when
+    /// the status row it writes says the field began being tracked or
+    /// ignored. `setup` takes none; the spec itself is timeless.
+    pub time: crate::input::TimeArgs,
     /// `-K`/`--id-key` and `-k`/`--data-key`: a slot added to its list, or
     /// given its new spelling in its place, as `track`'s (da-f9bky).
     pub id_keys: Vec<String>,

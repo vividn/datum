@@ -9,11 +9,12 @@ use datum_core::{
     entry::{Entry, Verb},
     field_spec::{verb_choice, VERB_CHOICES_TEXT, VERB_NAMES_TEXT},
     shape::is_ignored_state,
-    time::DatumTime,
+    time::{DatumTime, TimeCtx},
     timezone_field::TIMEZONE_FIELD,
     track::track_entry,
 };
 
+use super::log_core::zone_name;
 use crate::args::{SpecCommand, SpecSetArgs};
 use crate::config::client_id;
 use crate::render::{
@@ -21,7 +22,7 @@ use crate::render::{
     action::{RenderContext, Surface},
     show_action_with_context, Outcome, OutputArgs,
 };
-use datum_parse::input::Show;
+use datum_parse::input::{Show, TimeArgs};
 
 /// `--verb V` read, or refused naming the four and where they are explained.
 pub(crate) fn parse_verb(raw: &str) -> Result<Action> {
@@ -134,11 +135,12 @@ fn status_one(args: SpecSetArgs, db: &Db) -> Result<()> {
             show: args.show,
             track: args.track,
             ignore: args.ignore,
+            time: args.time.clone(),
             ..Default::default()
         } == args;
     let spec = db.load_spec(&args.field)?;
     let field = &args.field;
-    let now = DatumTime::now();
+    let now = status_time(&args.time)?;
     let entry = match spec {
         Some(spec) if bare && args.track => begins_tracking(db, field, &now)?
             .then(|| client_id().map(|c| track_entry(field, spec.verb, now, &c)))
@@ -150,7 +152,7 @@ fn status_one(args: SpecSetArgs, db: &Db) -> Result<()> {
                 .state_at(field, now.utc)?
                 .is_some_and(|s| is_ignored_state(&s));
             (!ignored)
-                .then(|| client_id().map(|c| ignored_entry(field, c)))
+                .then(|| client_id().map(|c| ignored_entry(field, now, c)))
                 .transpose()?
         }
         _ => return super::spec::spec(SpecCommand::Set(Box::new(args)), db),
@@ -202,14 +204,24 @@ fn echo(db: &Db, row: &Entry, action: Outcome, show: Show) -> Result<()> {
     Ok(())
 }
 
-/// The row that ignores `field` from now on.
-pub(crate) fn ignored_entry(field: &str, client: String) -> Entry {
+/// When a status row says the field began being tracked or ignored: now, or
+/// where the time flags place it (da-l0we0), as `flag` places its moment.
+pub(crate) fn status_time(time: &TimeArgs) -> Result<DatumTime> {
+    let now = crate::args::window_now().unwrap_or_else(DatumTime::now);
+    Ok(time
+        .builder(TimeCtx::now())?
+        .with_timezone(zone_name(time)?)
+        .build_now(now.utc))
+}
+
+/// The row that ignores `field` from `at` on.
+pub(crate) fn ignored_entry(field: &str, at: DatumTime, client: String) -> Entry {
     Entry::new_legacy(
         field,
         Verb::Switch,
         Some(serde_json::Value::String(IGNORED_STATE_VALUE.to_string())),
         None,
-        Some(DatumTime::now()),
+        Some(at),
         None,
         client,
     )

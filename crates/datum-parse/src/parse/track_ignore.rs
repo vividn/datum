@@ -4,7 +4,7 @@ use crate::error::{ParseError, Result};
 /// `track F [CHANGES]` is `setup F [CHANGES] --track`, and `ignore` the same
 /// with `--ignore` (da-ijf3p): `setup`'s flags, and none of their own.
 pub(crate) fn parse_status(tail: &[&str], track: bool) -> Result<Box<SpecSetArgs>> {
-    let (mut out, flagged, named) = super::spec::parse_spec_set(tail)?;
+    let (mut out, flagged, named) = super::spec::parse_spec_set(tail, true)?;
     if !named {
         return Err(ParseError::MissingRequiredKey("<FIELD>".to_string()));
     }

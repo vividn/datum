@@ -397,3 +397,54 @@ fn a_bad_name_is_tracked_and_ignored_but_not_changed() {
     let err = run_cli(&["track", " lead", "--color", "red"], &db).unwrap_err();
     assert!(err.to_string().contains("cannot declare"), "{err:#}");
 }
+
+/// da-l0we0 (vividn, 2026-11-02: «`track` and `ignore` should be able to take
+/// time flags»): the time flags of a log place the status row, as a
+/// backfilled `switch` is placed; the spec has no time and takes none, and
+/// `setup` takes none either.
+#[test]
+fn track_and_ignore_take_the_time_flags_of_a_log() {
+    use chrono::{Duration, NaiveTime};
+    use datum_core::time::DatumTime;
+
+    let db = fresh_db();
+    let _clock = set_time("2026-01-15T12:00:00Z");
+    let now = DatumTime::now().utc;
+    let row = |state: &str| {
+        let rows = db.entries_for_field("coffee", None).unwrap();
+        let row = rows.iter().find(|e| e.state == Some(json!(state)));
+        row.and_then(|e| e.at.clone()).unwrap().local_time()
+    };
+
+    run_cli(&["track", "coffee", "--verb", "occur", "-t", "09:00"], &db).unwrap();
+    let tracked = row(TRACKED_STATE_VALUE);
+    let today = now.with_timezone(tracked.offset()).date_naive();
+    assert_eq!(tracked.date_naive(), today);
+    assert_eq!(tracked.time(), NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+
+    run_cli(&["ignore", "coffee", "-y"], &db).unwrap();
+    let ignored = row(IGNORED_STATE_VALUE);
+    assert_eq!(ignored, now - Duration::days(1));
+
+    // Between the two the field is ignored, and from 09:00 on tracked.
+    let state_at = |t: chrono::DateTime<chrono::FixedOffset>| {
+        db.state_at("coffee", t.with_timezone(&Utc)).unwrap()
+    };
+    assert_eq!(
+        state_at(ignored + Duration::hours(1)),
+        Some(json!(IGNORED_STATE_VALUE))
+    );
+    assert_eq!(
+        state_at(tracked + Duration::minutes(1)),
+        Some(json!(TRACKED_STATE_VALUE))
+    );
+    assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 2);
+
+    // With no flag, now, as before.
+    run_cli(&["ignore", "tea"], &db).unwrap();
+    let tea = db.entries_for_field("tea", None).unwrap();
+    assert_eq!(tea[0].at.as_ref().unwrap().utc, now);
+
+    let err = run_cli(&["setup", "coffee", "-t", "09:00"], &db).unwrap_err();
+    assert!(err.to_string().contains("-t"), "{err}");
+}

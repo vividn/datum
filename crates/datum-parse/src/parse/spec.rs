@@ -12,7 +12,7 @@ pub const SETUP: &str = "setup";
 pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
     let delete = tail.contains(&"--delete");
     let tail: Vec<&str> = tail.iter().copied().filter(|t| *t != "--delete").collect();
-    let (mut out, flagged, named) = parse_spec_set(&tail)?;
+    let (mut out, flagged, named) = parse_spec_set(&tail, false)?;
     if named && !out.list_tags.is_empty() {
         return Err(gone_list("tag", "T", "--tags a,b"));
     }
@@ -82,11 +82,24 @@ fn refuse_glyph_flag(split: &FlagSplit) -> Result<()> {
 
 /// The flags of a change and the field they change, whether a flag was
 /// given, and whether a field was.
-pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)> {
+pub(crate) fn parse_spec_set(tail: &[&str], timed: bool) -> Result<(SpecSetArgs, bool, bool)> {
     let mut out = SpecSetArgs::default();
     let mut pos: Vec<&str> = Vec::new();
+    // `track` / `ignore`'s time flags (da-l0we0), which are no change to
+    // the spec, so not counted as one.
+    let times = if timed {
+        super::flag::moment_time_flags(|t: &mut crate::input::TimeArgs| t)
+    } else {
+        Vec::new()
+    };
+    let mut time_words = 0;
     let mut i = 0;
     while i < tail.len() {
+        if let Some(ni) = walk_registry(tail, i, &mut out.time, &times)? {
+            time_words += ni - i;
+            i = ni;
+            continue;
+        }
         let tok = tail[i];
         let split = split_flag(tok);
         refuse_glyph_flag(&split)?;
@@ -469,7 +482,7 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<(SpecSetArgs, bool, bool)>
         out.comment_remainder,
     )?;
     out.field = pos.first().map(|f| f.to_string()).unwrap_or_default();
-    Ok((out, tail.len() > pos.len(), !pos.is_empty()))
+    Ok((out, tail.len() > pos.len() + time_words, !pos.is_empty()))
 }
 
 /// `--state` and a field's `--tag`, which replaced the list (da-f9bky).
