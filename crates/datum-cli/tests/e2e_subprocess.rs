@@ -174,7 +174,9 @@ fn subprocess_time_uncertainty_takes_the_seconds_place() {
     let tail = String::from_utf8(out.stdout).unwrap();
     let row = |field: &str| tail.lines().find(|l| l.contains(field)).expect(field);
     assert!(row(" water ").contains(" 10:00:±   water "), "{tail}");
-    assert!(!row(" water ").contains("5m"), "{tail}");
+    // The row's last cell is its random hid, which can read `5m…` (da-fyrwk).
+    let (cells, _hid) = row(" water ").trim_end().rsplit_once(' ').unwrap();
+    assert!(!cells.contains("5m"), "{tail}");
     let col = |line: &str, word: &str| line[..line.find(word).unwrap()].chars().count();
     assert_eq!(
         col(row(" water "), "10:00"),
