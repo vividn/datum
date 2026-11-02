@@ -128,9 +128,11 @@ test('a page pushing to two members runs one session at a time (da-dwm2y)', asyn
 });
 
 /**
- * An init script: while `window.__hold.on`, the sync worker's `sync status`
- * runs wait for `window.__release()` — the first process of a page's join
- * once it holds its turn, and of a dial once it has reached its peer.
+ * An init script: while `window.__hold.on`, the sync worker's `sync chain
+ * list`, `sync pipe known` and `sync status` runs wait for
+ * `window.__release()`: the first process of a page's join once it holds its
+ * turn (`chain()`), and of a dial once it has reached its peer (`known()`),
+ * which ran `sync status` until da-tvv4j.
  */
 function holdStatus() {
 	const hold = (window.__hold = { on: false, held: [] });
@@ -138,12 +140,13 @@ function holdStatus() {
 		hold.on = false;
 		hold.held.splice(0).forEach((f) => f());
 	};
+	const held = (argv) => ['status', 'known'].some((w) => argv.includes(w)) || (argv.includes('chain') && argv.includes('list'));
 	const d = Object.getOwnPropertyDescriptor(Worker.prototype, 'onmessage');
 	Object.defineProperty(Worker.prototype, 'onmessage', {
 		...d,
 		set(fn) {
 			d.set.call(this, function (e) {
-				if (hold.on && 'run' in Object(e.data) && e.data.argv.includes('status')) hold.held.push(() => fn.call(this, e));
+				if (hold.on && 'run' in Object(e.data) && held(e.data.argv)) hold.held.push(() => fn.call(this, e));
 				else fn.call(this, e);
 			});
 		}

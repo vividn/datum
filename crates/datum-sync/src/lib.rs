@@ -610,11 +610,10 @@ fn addr(p: &Peer) -> Result<EndpointAddr> {
 /// address this copy knows; and those it carries an order to delete their
 /// copy to (da-n0uj1.6), which a dial to them carries.
 fn synced_peers(db: &Db) -> Result<Vec<Peer>> {
-    let wiping = db.sync_wiping()?;
     Ok(db
-        .sync_peers()?
+        .sync_known_peers()?
         .into_iter()
-        .filter(|p| (p.synced || wiping.contains(&p.id)) && addr(p).is_ok())
+        .filter(|p| addr(p).is_ok())
         .collect())
 }
 
