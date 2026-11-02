@@ -21,8 +21,8 @@ use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
 use crate::args::{
-    AliasCommand, Cli, Command, DbCommand, InfoArgs, Invocation, KitCommand, SpecCommand,
-    SyncCommand,
+    AliasCommand, BackupRotationArgs, Cli, Command, DbCommand, InfoArgs, Invocation, KitCommand,
+    RotationAction, SpecCommand, SyncCommand,
 };
 
 /// `datum 3.0.<height>-beta (<sha7>)`, from git at build time (da-5172a,
@@ -552,7 +552,8 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     // `install | uninstall | upgrade` and `alias install | uninstall` run against an in-memory placeholder: they
     // do not read the entry db (the daemon opens each chained db itself, and
     // must not create the default). Nor does `nowview --overlay`, a picture
-    // with no data (da-0e06p).
+    // with no data (da-0e06p), nor `db backup --plan` and `--list DIR`, arithmetic
+    // and DIR's own index (da-bch69).
     if matches!(
         &cli.command,
         Command::Config(_)
@@ -562,6 +563,10 @@ fn dispatch_single(cli: Cli) -> Result<()> {
             | Command::Upgrade { .. }
             | Command::Sync(SyncCommand::Daemon(_))
             | Command::Db(DbCommand::Rename(_) | DbCommand::BackupDaemon(_))
+            | Command::Db(DbCommand::BackupRotation(BackupRotationArgs {
+                action: RotationAction::Plan { .. } | RotationAction::List(_),
+                ..
+            }))
             | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })
     ) || matches!(&cli.command, Command::Nowview(a) if a.overlay)
     {

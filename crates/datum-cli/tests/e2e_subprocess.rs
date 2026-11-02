@@ -1669,3 +1669,47 @@ fn subprocess_purge_removes_the_snapshots_of_a_database_named_by_a_bare_file_nam
     );
     assert!(!snapshot.exists());
 }
+
+/// `db backup --plan` is arithmetic and `--list DIR` reads DIR's index, so
+/// neither opens a database: in a fresh home they leave none behind
+/// (da-bch69).
+#[test]
+fn backup_plan_and_list_open_no_database() {
+    let tmp = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env_remove("DATUM_DB")
+            .env("HOME", tmp.path())
+            .env("XDG_DATA_HOME", tmp.path().join("xdg-data"))
+            .env("XDG_CONFIG_HOME", tmp.path().join("xdg-config"))
+            .env("DATUM_HOME", tmp.path().join("home"))
+            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+            .env("NO_COLOR", "1")
+            .args(args)
+            .output()
+            .expect("spawn datum")
+    };
+    let plan = run(&["db", "backup", "--plan", "--every", "15m", "--span", "365d"]);
+    assert!(plan.status.success(), "{plan:?}");
+    assert!(!plan.stdout.is_empty(), "{plan:?}");
+    let dir = tmp.path().join("backups");
+    std::fs::create_dir(&dir).unwrap();
+    let list = run(&["db", "backup", "--list", dir.to_str().unwrap()]);
+    assert!(list.status.success(), "{list:?}");
+    let dbs: Vec<_> = walk(tmp.path())
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "db"))
+        .collect();
+    assert!(dbs.is_empty(), "a database was created: {dbs:?}");
+}
+
+fn walk(dir: &std::path::Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .flat_map(|e| match e.path() {
+            p if p.is_dir() => walk(&p),
+            p => vec![p],
+        })
+        .collect()
+}
