@@ -327,7 +327,7 @@ function recorder() {
 	const post = Base.prototype.postMessage;
 	Base.prototype.postMessage = function (m, ...rest) {
 		if (m && (m.op === 'cli' || m.op === 'dial') && m.id !== undefined && pending.has(this)) {
-			const run = { argv: m.argv ?? [m.op], pane: !!m.pane, session: !!m.session, sent: performance.now() };
+			const run = { argv: m.argv ?? [m.op], env: m.env, stdin: m.stdin, pane: !!m.pane, session: !!m.session, sent: performance.now() };
 			(m.op === 'dial' ? rec.dials : rec.runs).push(run);
 			pending.get(this).set(m.id, run);
 		}
@@ -520,7 +520,9 @@ function shapeOf({ t0, runs, dials, paints }, peerMs) {
 		sent: round(r.sent - t0),
 		settled: round(r.settled - t0),
 		ran: r.ms ? round(r.ms.acquire + r.ms.instantiate + r.ms.run + r.ms.flush) : null,
-		run: r.ms ? round(r.ms.run) : null
+		run: r.ms ? round(r.ms.run) : null,
+		// The request whole, for measure-persist.mjs to replay (da-zv6hn).
+		request: { argv: r.argv, env: r.env, stdin: r.stdin, pane: r.pane, session: r.session }
 	});
 	// A view has drawn the tap once it changes after its own command's first
 	// answer (`nowview …`, `tail …`, `dayview …`): a clock ticking in it moves

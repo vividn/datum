@@ -1,0 +1,226 @@
+diff --git a/crates/datum-cli/src/lib.rs b/crates/datum-cli/src/lib.rs
+index 039b9bc24..8f8fd76b0 100644
+--- a/crates/datum-cli/src/lib.rs
++++ b/crates/datum-cli/src/lib.rs
+@@ -129,7 +129,9 @@ pub fn run(argv: Vec<String>) -> Result<()> {
+     // Clear the dedup-no-op flag so it reflects only this invocation
+     // (da-9sfm). `main` reads it after a clean run to choose exit code 11.
+     args::reset_duplicate_noop();
+-    let invocation = match args::parse_invocation(argv.clone()) {
++    let parsed = args::parse_invocation(argv.clone());
++    datum_core::phases::mark("parsed");
++    let invocation = match parsed {
+         Ok(inv) => inv,
+         Err(e) => {
+             // Propagate `--help` / `--version` / `--man` as a clean stdout print.
+@@ -459,11 +461,74 @@ fn ready_to_write(db: &datum_core::db::Db, path: &str, spools: bool) -> Result<(
+     Ok(())
+ }
+ 
++/// MEASUREMENT ONLY (da-zv6hn): a persistent instance's loop. Each stdin line
++/// is one command's argv, tab-separated (leading `=KEY=VAL` words its env), run against ONE open `Db`; after
++/// each, stdout gets a 0x1e line and stderr `DATUM_LINE <code> <phases>`.
++pub fn lines() -> Result<()> {
++    use std::io::{BufRead, Write};
++    let _ = datum_core::BUILD.set(env!("DATUM_BUILD"));
++    datum_core::db::set_client_source(|| config::client_id().ok());
++    datum_core::db::set_device_source(|| config::device_key().ok());
++    let resolved = config::resolve_db(None)?;
++    let path = resolved.path.to_string_lossy().into_owned();
++    let db = datum_core::db::Db::open(&path)?;
++    datum_core::phases::mark("lines.opened");
++    eprintln!("DATUM_OPEN {}", datum_core::phases::take());
++    let input = std::io::stdin().lock().lines().collect::<Vec<_>>();
++    for line in input {
++        let line = line?;
++        if line.trim().is_empty() {
++            continue;
++        }
++        let words: Vec<String> = line.split('\t').map(String::from).collect();
++        // Leading `=KEY=VAL` words are this line's env, set for it alone.
++        let env: Vec<(String, String)> = words
++            .iter()
++            .map_while(|w| w.strip_prefix('=')?.split_once('='))
++            .map(|(k, v)| (k.to_string(), v.to_string()))
++            .collect();
++        let argv = words[env.len()..].to_vec();
++        datum_core::phases::mark("line.start");
++        for (k, v) in &env {
++            // SAFETY: one thread.
++            unsafe { std::env::set_var(k, v) };
++        }
++        args::reset_duplicate_noop();
++        let mut full = vec!["datum".to_string()];
++        full.extend(argv);
++        let code = match args::parse_invocation_with_db(full, &db) {
++            Ok(inv) => {
++                datum_core::phases::mark("parsed");
++                match run_on(&db, &path, inv) {
++                    Ok(()) => 0,
++                    Err(e) => {
++                        eprintln!("Error: {e:?}");
++                        1
++                    }
++                }
++            }
++            Err(e) => {
++                eprintln!("Error: {e:?}");
++                2
++            }
++        };
++        datum_core::phases::mark("ran");
++        for (k, _) in &env {
++            // SAFETY: one thread.
++            unsafe { std::env::remove_var(k) };
++        }
++        let _ = std::io::stdout().flush();
++        println!("\u{1e}");
++        let _ = std::io::stdout().flush();
++        eprintln!("DATUM_LINE {code} {}", datum_core::phases::take());
++    }
++    Ok(())
++}
++
+ /// Run `invocation` on `db`, open at `path`, as a command of its own runs
+ /// (da-3j6g7): a REPL line. What is spooled lands first, one that may ask
+ /// its person runs on a snapshot from the start, and a write the lock
+ /// refuses is [`Locked`], for the caller to [`queue`].
+-#[cfg(feature = "native")]
+ pub(crate) fn run_on(db: &datum_core::db::Db, path: &str, invocation: Invocation) -> Result<()> {
+     let (spools, color) = match &invocation {
+         Invocation::Multi { sides, .. } => (
+@@ -645,9 +710,11 @@ fn dispatch_single(cli: Cli) -> Result<()> {
+     }
+     claim_behind_queue(&db, &path, &cli.command)?;
+ 
++    datum_core::phases::mark("dispatch.opened");
+     let before = db.conn().total_changes();
+     let watching = watches(&cli.command);
+     let result = locked_out(cmd::dispatch(cli, &db), &db, before, spools, &path);
++    datum_core::phases::mark("dispatch.ran");
+     let result = if watching { result } else { whole(result, &db) };
+     name_holder(result, &resolved.path)
+ }
+diff --git a/crates/datum-cli/src/main.rs b/crates/datum-cli/src/main.rs
+index eb56b917a..9401b55ab 100644
+--- a/crates/datum-cli/src/main.rs
++++ b/crates/datum-cli/src/main.rs
+@@ -26,6 +26,14 @@ const EXIT_BROKEN_PIPE: i32 = 141;
+ const EXIT_UNANSWERED: i32 = 12;
+ 
+ fn main() {
++    datum_core::phases::mark("start");
++    if std::env::var_os("DATUM_LINES").is_some() {
++        if let Err(e) = datum_cli::lines() {
++            eprintln!("Error: {e:?}");
++            std::process::exit(1);
++        }
++        return;
++    }
+     // Rust ignores SIGPIPE, so a closed stdout makes `println!` panic and the
+     // process exits 101 with a panic message (da-9p3o). End quietly instead,
+     // the way a unix tool does. Only stdout's broken pipe: a socket's EPIPE
+@@ -41,6 +49,10 @@ fn main() {
+     }));
+     let argv: Vec<String> = std::env::args().collect();
+     let result = datum_cli::run(argv.clone());
++    datum_core::phases::mark("end");
++    if std::env::var_os("DATUM_PHASES").is_some() {
++        eprintln!("DATUM_PHASES {}", datum_core::phases::take());
++    }
+     #[cfg(not(target_family = "wasm"))]
+     completion_tip(&argv);
+     match result {
+diff --git a/crates/datum-commands/src/args.rs b/crates/datum-commands/src/args.rs
+index 75ee84b9d..aa7ad53a5 100644
+--- a/crates/datum-commands/src/args.rs
++++ b/crates/datum-commands/src/args.rs
+@@ -415,7 +415,9 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
+     // pre-scan routes the same db the dispatcher will use into the
+     // alias resolver, so the two surfaces agree on which alias table
+     // is canonical for this invocation.
+-    match open_existing_db(&argv) {
++    let opened = open_existing_db(&argv);
++    datum_core::phases::mark("parse.opened");
++    match opened {
+         Some(db) => {
+             // This open runs BEFORE any dispatch, so it is usually the one
+             // that migrates — and its `Db` dies here, taking the report with
+diff --git a/crates/datum-core/src/db/mod.rs b/crates/datum-core/src/db/mod.rs
+index fe567171c..9a2afcf0d 100644
+--- a/crates/datum-core/src/db/mod.rs
++++ b/crates/datum-core/src/db/mod.rs
+@@ -276,6 +276,7 @@ impl Db {
+         let created = !std::path::Path::new(path).exists();
+         let mut conn = Connection::open(path)?;
+         Self::configure_connection(&mut conn)?;
++        crate::phases::mark("open.conn");
+         let mut db = Db {
+             holds: holder::watch(&conn, std::path::Path::new(path)),
+             conn,
+@@ -290,6 +291,7 @@ impl Db {
+             read_from: None,
+         };
+         db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
++        crate::phases::mark("open.migrate.rest");
+         Ok(db)
+     }
+ 
+@@ -582,6 +584,7 @@ impl Db {
+         };
+ 
+         let applied = crate::migrations::migrate_to_current(&self.conn)?;
++        crate::phases::mark("open.migrate.check");
+         // schema.sql lands the final shape: any indexes / tables the
+         // migration registry doesn't create (because they were always part
+         // of schema.sql since they were introduced) are filled in here.
+@@ -592,10 +595,12 @@ impl Db {
+         self.conn.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
+         self.conn.execute_batch(CHECK_KEPT_SQL)?;
+         self.conn.execute_batch(SYNC_UNCOVERED_SQL)?;
++        crate::phases::mark("open.migrate.ddl");
+         // A kit index is this device's, derived from the definitions the
+         // file holds (da-fwwtn). One that will not build is no reason not
+         // to open: it is only an index.
+         let _ = self.derive_kit_indices();
++        crate::phases::mark("open.migrate.kits");
+         self.refold_for_rule()?;
+         self.rewrite_create_time_ids()?;
+         self.rename_symbol_keys()?;
+diff --git a/crates/datum-core/src/lib.rs b/crates/datum-core/src/lib.rs
+index 5cfacd830..5123da307 100644
+--- a/crates/datum-core/src/lib.rs
++++ b/crates/datum-core/src/lib.rs
+@@ -22,6 +22,32 @@ pub mod track;
+ pub mod undo_log;
+ pub mod views;
+ 
++/// MEASUREMENT ONLY (da-zv6hn): where a process's time goes.
++pub mod phases {
++    use std::sync::Mutex;
++    use std::time::Instant;
++    static MARKS: Mutex<Vec<(&'static str, Instant)>> = Mutex::new(Vec::new());
++    pub fn mark(name: &'static str) {
++        if let Ok(mut v) = MARKS.lock() {
++            v.push((name, Instant::now()));
++        }
++    }
++    /// The marks since the first, as `name=ms` deltas from the one before, and cleared.
++    pub fn take() -> String {
++        let mut v = MARKS.lock().unwrap();
++        let out = v
++            .windows(2)
++            .map(|w| format!("{}={:.2}", w[1].0, (w[1].1 - w[0].1).as_secs_f64() * 1e3))
++            .collect::<Vec<_>>()
++            .join(" ");
++        v.clear();
++        // The linear memory as it stands, which never shrinks: a process's peak.
++        #[cfg(target_arch = "wasm32")]
++        let out = format!("{out} mem={}", core::arch::wasm32::memory_size(0) * 64 * 1024);
++        out
++    }
++}
++
+ pub use verb::derive_verb;
+ 
+ #[cfg(any(test, feature = "test-util"))]
