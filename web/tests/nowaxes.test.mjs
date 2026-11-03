@@ -571,8 +571,8 @@ for (const vertical of [false, true]) {
 				const [ten, quarter] = [T - 10 * 60_000, T - 25 * 60_000];
 				assert.ok(clear(g, vertical ? at(quarter).y : at(quarter).x), 'a handle is in the way');
 				const lengthIs = async (want) => {
-					const said = await until(() => pillsOf(page), (p) => p.includes(`dur:dur=${want}`));
-					assert.deepEqual(said.filter((p) => /^(time|dur):/.test(p)), ['time:-t 15:00', `dur:dur=${want}`]);
+					const said = await until(() => pillsOf(page), (p) => p.includes(`dur:${want}`));
+					assert.deepEqual(said.filter((p) => /^(time|dur):/.test(p)), ['time:-t 15:00', `dur:${want}`]);
 				};
 				await finger(page, at(ten));
 				await lengthIs('10m');
