@@ -1008,21 +1008,26 @@ pub enum SyncCommand {
     /// invite any member can admit, served until redeemed; on a copy in no
     /// chain, it starts an open one (da-6177s). `--reader` admits a reader
     /// (da-9yvb6), and a filter a reader sent only those fields (da-u81u1).
-    /// `--label` names this copy (da-ey3hz).
+    /// `--label` names this copy (da-ey3hz), `--user` the person using it
+    /// (da-xza37); a first invite on a terminal asks for either not given.
     Invite {
         reader: bool,
         filter: Option<SyncFilter>,
         qr: bool,
         expires_secs: u64,
         label: Option<String>,
+        user: Option<String>,
         admin_key: Option<String>,
     },
-    /// `datum sync chain join [<TICKET>] [--label <L>]` — redeem an
-    /// invite (the ticket from stdin when not given) and sync, joining as
-    /// `--label` or with none, its label assembled by the chain (da-xijlw).
+    /// `datum sync chain join [<TICKET>] [--label <L>] [--user <U>]` — redeem
+    /// an invite (the ticket from stdin when not given) and sync, joining as
+    /// `--label` or with none, its label assembled by the chain (da-xijlw),
+    /// and as `--user`'s person (da-xza37); on a terminal it asks for either
+    /// not given.
     Join {
         ticket: Option<String>,
         label: Option<String>,
+        user: Option<String>,
     },
     /// `datum sync chain leave [--force] [--dry-run]` — leave this copy's
     /// chain, keeping every entry, under a new endpoint key (da-j8c4l), once
@@ -1053,12 +1058,16 @@ pub enum SyncCommand {
     /// `datum sync chain rename [<WHO>] (<LABEL> | --unset) [--admin-key
     /// <FILE>]` — relabel this copy (no admin needed), or another member
     /// (an admin act in a locked chain); `--unset` (no LABEL) goes back to
-    /// the label assembled from what it runs on (da-xijlw). datum.day's,
+    /// the label assembled from what it runs on (da-xijlw). `--user <U>`
+    /// (this copy only, LABEL then optional) keeps U as this install's
+    /// username and describes this copy by it (da-xza37). datum.day's,
     /// unlisted: `--check` only says whether LABEL is one a member may
     /// carry, before a join (da-uyyyg).
     Rename {
         who: Option<String>,
-        label: Option<String>,
+        /// `None` keeps the label (`--user` alone); `Some(None)` unsets it.
+        label: Option<Option<String>>,
+        user: Option<String>,
         admin_key: Option<String>,
         check: bool,
     },

@@ -24,6 +24,7 @@ after(async () => {
 async function invite(app) {
 	await app.goto('/sync');
 	await app.page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).click();
+	await app.page.locator(`${WIDGET} .start[data-db="datum"]`).getByRole('button', { name: 'Start sync' }).click();
 	const offer = app.page.locator(`${WIDGET} .offer[data-db="datum"]`);
 	await offer.locator('.qr svg').waitFor();
 	const [, link] = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').textContent());
@@ -100,8 +101,10 @@ describe('the invite panel (da-2bvxq)', () => {
 				const widget = app.page.locator(WIDGET);
 				const turnOn = widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Turn on sync' });
 				await turnOn.click();
+				const start = widget.locator('.start[data-db="datum"]').getByRole('button', { name: 'Start sync' });
+				await start.click();
 				assert.notEqual(await widget.locator('.waiting').innerText(), '');
-				assert.equal(await turnOn.isDisabled(), true);
+				assert.equal(await start.isDisabled(), true);
 				const offer = widget.locator('.offer[data-db="datum"]');
 				// The endpoint's bind waits 10 s for the relay, and the ticket 30 s more.
 				await offer.locator('.unreachable').waitFor({ timeout: 60000 });

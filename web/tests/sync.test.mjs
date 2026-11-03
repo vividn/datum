@@ -185,6 +185,29 @@ describe('the name a browser joins as (da-uyyyg)', () => {
 		return { card, name, join: card.getByRole('button', { name: 'Join', exact: true }) };
 	}
 
+	test('the username typed on the join card is the device’s describe.user, and the next join card offers it (da-xza37)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					const first = await card(app, native);
+					const user = first.card.getByLabel('Your username (optional)');
+					assert.equal(await user.inputValue(), '');
+					await user.fill('bea');
+					await first.join.click();
+					await first.card.locator('.done').waitFor();
+					const list = JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
+					assert.equal(list.members.find((m) => m.this).user, 'bea');
+					const again = await card(app, native);
+					assert.equal(await again.card.getByLabel('Your username (optional)').inputValue(), 'bea');
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('two browsers joining one chain, neither typing a name, are named apart alike on every copy: the chain assembles both (da-xijlw)', async () => {
 		const native = await nativeCopy(relay);
 		try {

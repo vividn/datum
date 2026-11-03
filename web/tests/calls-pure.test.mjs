@@ -234,6 +234,7 @@ const SAMPLES = {
 	renameArgv: [['phone'], ['phone', MEMBER]],
 	unsetRenameArgv: [[]],
 	labelCheckArgv: [['kitchen']],
+	userArgv: [['bea'], ['']],
 	expelArgv: [[MEMBER]],
 	newInviteArgv: [[], [true]],
 	grantArgv: [[MEMBER, 'member', 'ticket', 'invite'], [MEMBER, 'reader', 'ticket', 'invite', 'work']],

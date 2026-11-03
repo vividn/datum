@@ -208,6 +208,11 @@ export function unsetRenameArgv(): string[] {
 	return ['sync', 'chain', 'rename', '--unset'];
 }
 
+/** This copy described by `user`, its label kept (da-xza37): the username is this browser's. */
+export function userArgv(user: string): string[] {
+	return ['sync', 'chain', 'rename', '--user', user];
+}
+
 /** Whether `label` is one a member may carry, asked before a join: it writes nothing. */
 export function labelCheckArgv(label: string): string[] {
 	return ['sync', 'chain', 'rename', '--check', label];
