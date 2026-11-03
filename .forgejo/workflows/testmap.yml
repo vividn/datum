@@ -58,13 +58,40 @@ jobs:
   # Staging's tip, and whether the `testmap` branch maps it already (its
   # commit says `testmap for <sha>`, scripts/testmap-push.sh). An unreadable
   # tip builds the run's own commit, staging's on a schedule. A PR maps its
-  # own head and pushes nothing.
+  # own head and pushes nothing, and only where its own diff changes the
+  # map's machinery (`changes` below).
   newest:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.tip.outputs.sha }}
-      mapped: ${{ steps.tip.outputs.mapped }}
+      skip: ${{ steps.tip.outputs.skip || steps.changes.outputs.skip }}
     steps:
+      # Forgejo matches `paths` against the files changed since the payload's
+      # merge_base, which a rebase leaves at the old one (16.0.7,
+      # modules/actions/workflows.go): a PR rebased past a staging commit
+      # that touched these paths matched with none of its own, and built
+      # both maps, ~60 job-minutes (#1517, #1522 and #1547 on 11-01, past
+      # 818ebd908, da-vunor). So the PR's diff against its real merge-base
+      # decides, as ci.yml's does; keep the list in step with `paths` above.
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: github.event_name == 'pull_request'
+
+      - id: changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch -q --no-tags --unshallow origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
+          files=$(git diff --no-renames --name-only "origin/$BASE...HEAD")
+          if grep -qE <<<"$files" \
+            '^(\.forgejo/workflows/testmap\.yml|scripts/testmap-[^/]*|xtask/src/testmap\.rs|web/scripts/testmap\.mjs|web/tests/support/coverage\.mjs)$'; then
+            echo "this PR changes the map's machinery: building both maps to prove it"
+          else
+            echo "this PR changes none of the map's machinery since its merge-base with $BASE: both maps skipped"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: tip
         if: github.event_name != 'pull_request'
         env:
@@ -81,14 +108,14 @@ jobs:
           map=$(read_branch testmap message 2>/dev/null) || map=
           if [ "$map" = "testmap for $tip" ] && [ "${{ github.event_name }}" = schedule ]; then
             echo "the testmap branch maps staging's tip $tip already"
-            echo "mapped=true" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "mapping staging's tip $tip (the testmap branch: ${map:-unread})"
           fi
 
   testmap:
     needs: newest
-    if: needs.newest.outputs.mapped != 'true'
+    if: needs.newest.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -134,7 +161,7 @@ jobs:
 
   web:
     needs: newest
-    if: needs.newest.outputs.mapped != 'true'
+    if: needs.newest.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
