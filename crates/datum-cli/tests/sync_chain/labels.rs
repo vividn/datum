@@ -50,7 +50,7 @@ fn rename_unset_goes_back_to_the_assembled_label_and_check_needs_no_chain() {
     assert_eq!(me()["label"], host.as_str());
     assert!(a
         .fails(&["sync", "chain", "rename", "--unset", &b.id(), "x"], "")
-        .contains("rename takes [<WHO>] <LABEL>, [<WHO>] --unset, or"));
+        .contains("rename takes [<WHO>] <LABEL>, or [<WHO>] --unset"));
     // b never described itself: nothing to assemble, and no `auto` record written.
     let why = a.fails(&["sync", "chain", "rename", "--unset", &b.id()], "");
     assert!(why.contains("b has not said what it runs on"), "{why}");

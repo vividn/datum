@@ -186,7 +186,6 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 "fields",
                 "kit",
                 "label",
-                "user",
                 "as",
                 "like",
                 "devices",
@@ -208,7 +207,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             }
             if device.is_some() || like.is_some() {
                 let why = "goes with a bare `sync chain invite`, which prints a link";
-                refuse(&o, &["qr", "label", "user", "fields", "kit"], why)?;
+                refuse(&o, &["qr", "label", "fields", "kit"], why)?;
             }
             // The role and the expiry: a device may be off for days.
             let week = 7 * 24 * 3600;
@@ -255,16 +254,14 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 qr: o.on("qr"),
                 expires_secs: o.expires()?,
                 label: o.get("label"),
-                user: o.get("user"),
                 admin_key: o.get("admin-key"),
             }
         }
         Some("join") => {
-            let mut o = opts(rest, &["label", "user"], &[], 0..=1)?;
+            let mut o = opts(rest, &["label"], &[], 0..=1)?;
             SyncCommand::Join {
                 ticket: o.positional.pop(),
                 label: o.get("label"),
-                user: o.get("user"),
             }
         }
         Some("leave") => {
@@ -280,28 +277,19 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             show_revoked: opts(rest, &[], &["show-revoked"], 0..=0)?.on("show-revoked"),
         },
         Some("rename") => {
-            let mut o = opts(rest, &["admin-key", "user"], &["unset", "check"], 0..=2)?;
-            let (unset, user) = (o.on("unset"), o.get("user"));
-            // The username is this install's: no WHO beside it.
-            let (n, who) = (o.positional.len(), usize::from(user.is_none()));
-            let fits = match unset {
-                true => n <= who,
-                false => (who..=1 + who).contains(&n),
+            let mut o = opts(rest, &["admin-key"], &["unset", "check"], 0..=2)?;
+            let unset = o.on("unset");
+            let given = match unset {
+                true => 0..=1,
+                false => 1..=2,
             };
-            if !fits {
+            if !given.contains(&o.positional.len()) {
                 return Err(ParseError::InvalidArg(
-                    "rename takes [<WHO>] <LABEL>, [<WHO>] --unset, or [<LABEL> | --unset] --user <U>"
-                        .into(),
+                    "rename takes [<WHO>] <LABEL>, or [<WHO>] --unset".into(),
                 ));
             }
-            let label = match unset {
-                true => Some(None),
-                false if n == 0 => None,
-                false => Some(o.positional.pop()),
-            };
             SyncCommand::Rename {
-                label,
-                user,
+                label: (!unset).then(|| o.positional.pop()).flatten(),
                 who: o.positional.pop(),
                 admin_key: o.get("admin-key"),
                 check: o.on("check"),
@@ -763,7 +751,6 @@ mod tests {
                 qr: true,
                 expires_secs: 600,
                 label: Some("laptop".into()),
-                user: None,
                 admin_key: Some("k".into())
             }
         );
@@ -771,16 +758,14 @@ mod tests {
             p(&["chain", "join"]),
             SyncCommand::Join {
                 ticket: None,
-                label: None,
-                user: None
+                label: None
             }
         );
         assert_eq!(
-            p(&["chain", "join", "--label", "phone", "--user", "ann", "t"]),
+            p(&["chain", "join", "--label", "phone", "t"]),
             SyncCommand::Join {
                 ticket: Some("t".into()),
-                label: Some("phone".into()),
-                user: Some("ann".into())
+                label: Some("phone".into())
             }
         );
         assert!(parse_sync_cmd(&["chain", "join", "t", "u"]).is_err());
@@ -802,40 +787,11 @@ mod tests {
             p(&["chain", "rename", "abcd", "phone", "--admin-key", "k"]),
             SyncCommand::Rename {
                 who: Some("abcd".into()),
-                label: Some(Some("phone".into())),
-                user: None,
+                label: Some("phone".into()),
                 admin_key: Some("k".into()),
                 check: false
             }
         );
-        let rename = |argv: &[&str]| match p(argv) {
-            SyncCommand::Rename {
-                who, label, user, ..
-            } => (who, label, user),
-            other => panic!("{other:?}"),
-        };
-        let some = |s: &str| Some(s.to_string());
-        // `--user` alone keeps the label; with LABEL or `--unset` it changes it too.
-        assert_eq!(
-            rename(&["chain", "rename", "--user", "ann"]),
-            (None, None, some("ann"))
-        );
-        assert_eq!(
-            rename(&["chain", "rename", "desk", "--user", "ann"]),
-            (None, Some(some("desk")), some("ann"))
-        );
-        assert_eq!(
-            rename(&["chain", "rename", "--unset", "--user", "ann"]),
-            (None, Some(None), some("ann"))
-        );
-        assert_eq!(
-            rename(&["chain", "rename", "--unset"]),
-            (None, Some(None), None)
-        );
-        // The username is this install's, never another member's.
-        assert!(parse_sync_cmd(&["chain", "rename", "abcd", "desk", "--user", "ann"]).is_err());
-        assert!(parse_sync_cmd(&["chain", "rename", "abcd", "--unset", "--user", "ann"]).is_err());
-        assert!(parse_sync_cmd(&["chain", "rename"]).is_err());
         assert_eq!(
             p(&["refold", "--dry-run"]),
             SyncCommand::Refold {
@@ -960,7 +916,6 @@ mod tests {
                 qr: false,
                 expires_secs: 600,
                 label: None,
-                user: None,
                 admin_key: None
             }
         );
@@ -1134,14 +1089,13 @@ mod tests {
     #[test]
     fn a_bare_invite_keeps_ten_minutes_and_its_own_flags() {
         assert_eq!(
-            p(&["chain", "invite", "--qr", "--label", "x", "--user", "ann"]),
+            p(&["chain", "invite", "--qr", "--label", "x"]),
             SyncCommand::Invite {
                 reader: false,
                 filter: None,
                 qr: true,
                 expires_secs: 600,
                 label: Some("x".into()),
-                user: Some("ann".into()),
                 admin_key: None,
             }
         );

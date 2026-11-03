@@ -75,7 +75,7 @@ describe('the sync guide opens from', () => {
 			await page.locator('.root-bar button.help[data-command="help"]').click();
 			await page.locator(`${WIDGET} .actions`).getByRole('button', { name: 'Turn on sync' }).click();
 			isTheGuide(await guide(page));
-			assert.equal(await page.locator(`${WIDGET} .offer, ${WIDGET} .start`).count(), 0, 'Turn on sync ran');
+			assert.equal(await page.locator(`${WIDGET} .offer`).count(), 0, 'Turn on sync ran');
 		}, PAGE);
 	});
 
@@ -116,9 +116,6 @@ test('every control the guide names is one the widget shows, walked as a person 
 
 				// Connect a second device: the QR, and the other device redeeming it.
 				await widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Turn on sync' }).click();
-				const start = widget.locator('.start[data-db="datum"]');
-				await look(start);
-				await start.getByRole('button', { name: 'Start sync' }).click();
 				const offer = widget.locator('.offer[data-db="datum"]');
 				await offer.locator('.qr svg').waitFor();
 				await offer.locator('summary', { hasText: 'join from a terminal' }).click();

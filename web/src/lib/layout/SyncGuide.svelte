@@ -49,17 +49,16 @@
 	<h3>Connect a second device</h3>
 	<ol>
 		<li>
-			On the device that has your data, open Sync and press <b class="ui">Turn on sync</b>. Give this device a name you
-			will recognize, and your username if you like, which every device you sync names you by, then press
-			<b class="ui">Start sync</b>. Once sync is on, it is <b class="ui">Add device</b>.
+			On the device that has your data, open Sync and press <b class="ui">Turn on sync</b> — or
+			<b class="ui">Add device</b>, once sync is on.
 		</li>
 		<li>
 			A QR code appears. Scan it with the other device's camera, or press <b class="ui">Copy link</b> and open the link
 			in the other device's browser.
 		</li>
 		<li>
-			The other device asks <b class="ui">Join a sync chain?</b> Give it a name you will recognize, and your
-			username if you like, and press <b class="ui">Join</b>.
+			The other device asks <b class="ui">Join a sync chain?</b> Give it a name you will recognize and press
+			<b class="ui">Join</b>.
 		</li>
 		<li>Each device now lists the other. Press <b class="ui">Done</b> on the first to put the QR away.</li>
 	</ol>
@@ -94,8 +93,7 @@
 		</li>
 	</ul>
 	<p>
-		Give each device a name you will know it by with <b class="ui">Rename this device</b>, which asks for your username
-		too. More also holds
+		Give each device a name you will know it by with <b class="ui">Rename this device</b>. More also holds
 		<b class="ui">Pause sync</b>, and <b class="ui">Leave chain</b>, which stops this device syncing and keeps its
 		data.
 	</p>

@@ -54,11 +54,6 @@ describe('the sync widget’s actions', () => {
 					await app.goto('/sync');
 					const actions = page.locator(`${WIDGET} .actions[data-db="datum"]`);
 					await actions.getByRole('button', { name: 'Turn on sync' }).click();
-					// A first invite asks this device's name and its person's username first (da-xza37).
-					const start = page.locator(`${WIDGET} .start[data-db="datum"]`);
-					assert.equal(await start.getByLabel('This device’s name').inputValue(), 'datum.day (datum)');
-					await start.getByLabel('Your username (optional)').fill('bea');
-					await start.getByRole('button', { name: 'Start sync' }).click();
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
 					await offer.locator('summary', { hasText: 'join from a terminal' }).click();
@@ -66,7 +61,6 @@ describe('the sync widget’s actions', () => {
 					// This browser is the chain's first member, and the chain is open.
 					const chain = JSON.parse(await cli(app, ['sync', 'chain', 'list', '--json']));
 					assert.equal(chain.members.length, 1);
-					assert.equal(chain.members[0].user, 'bea');
 					assert.deepEqual(chain.admins, []);
 
 					const joined = await native.run(['sync', 'chain', 'join', ticket]);
@@ -102,7 +96,6 @@ describe('the sync widget’s actions', () => {
 					assert.equal(await page.locator(WIDGET).count(), 0);
 
 					await app.submit('sync chain invite');
-					await page.locator(`${WIDGET} .start[data-db="datum"]`).getByRole('button', { name: 'Start sync' }).click();
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
 					await offer.locator('summary', { hasText: 'join from a terminal' }).click();

@@ -39,11 +39,6 @@ enum Kind {
         #[serde(skip)]
         prompt: String,
     },
-    /// Any text, `default` where none is typed: asked on a terminal or by
-    /// the page alone, so a pipe's stdin stays the command's (da-xza37).
-    Text {
-        default: String,
-    },
 }
 
 /// A question, as the page reads it.
@@ -75,12 +70,6 @@ impl Question {
     pub fn name(text: impl Into<String>, action: &str, name: &str, prompt: String) -> Self {
         let name = name.to_string();
         Self::new(text, action, Kind::Name { name, prompt })
-    }
-
-    /// Any text, prefilled with `default`, which Enter keeps.
-    pub fn text(text: impl Into<String>, default: &str) -> Self {
-        let default = default.to_string();
-        Self::new(text, "", Kind::Text { default })
     }
 
     fn new(text: impl Into<String>, action: &str, kind: Kind) -> Self {
@@ -131,7 +120,7 @@ impl Question {
     }
 
     fn listens(&self, terminal: bool) -> bool {
-        terminal || page() || !matches!(self.kind, Kind::Name { .. } | Kind::Text { .. })
+        terminal || page() || !matches!(self.kind, Kind::Name { .. })
     }
 
     /// The prompt, unless the page will be told or has already asked.
@@ -170,8 +159,6 @@ impl Question {
                     ),
                 }
             }
-            Kind::Text { default } if default.is_empty() => format!("{text}: "),
-            Kind::Text { default } => format!("{text} [{default}]: "),
         };
         let mut stderr = std::io::stderr().lock();
         let _ = write!(stderr, "{prompt}");
@@ -180,9 +167,8 @@ impl Question {
 
     /// What `line` comes to: `None` is no answer at all.
     fn settle(&self, line: Option<String>, terminal: bool) -> Result<String> {
-        let default = match &self.kind {
+        let default = match self.kind {
             Kind::YesNo { default } => default.map(|yes| if yes { "y" } else { "n" }),
-            Kind::Text { default } => Some(default.as_str()),
             _ => None,
         };
         let line = match line {

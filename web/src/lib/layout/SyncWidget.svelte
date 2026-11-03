@@ -102,10 +102,8 @@
 		grantArgv,
 		gridArgv,
 		roleArgv,
-		userArgv,
 		wipeArgv
 	} from '#lib/calls.ts';
-	import { setUsername, username } from '#lib/clientId.ts';
 	import { act } from '#lib/act.ts';
 	import { now } from '#lib/clock.ts';
 	import { prefill } from '#lib/bar.ts';
@@ -163,15 +161,7 @@
 	 * cannot — in words, before anything is dialed — and the name it joins
 	 * as, the suggestion filled in (da-uyyyg).
 	 */
-	let join = $state<{ ticket: string; db: string; name: string; user: string; words: string[]; refused?: string; done?: string } | null>(null);
-
-	/**
-	 * A first invite, which starts the chain, asks first what this device is
-	 * named and its person's username (da-xza37), as a join does: the
-	 * suggestion and the username kept filled in.
-	 */
-	let start = $state<{ db: string; name: string; user: string } | null>(null);
-	const turnOn = (db: string): void => void (start = { db, name: suggestedLabel(db), user: username() });
+	let join = $state<{ ticket: string; db: string; name: string; words: string[]; refused?: string; done?: string } | null>(null);
 
 	$effect.pre(() => {
 		const asked = $approving;
@@ -186,7 +176,7 @@
 		const asked = $inviting;
 		if (browser && asked)
 			untrack(() => {
-				void readSync([asked]).then(([d]) => (d?.chain ? addDevice(asked) : turnOn(asked)));
+				void addDevice(asked);
 				inviting.set(null);
 			});
 	});
@@ -279,7 +269,7 @@
 			},
 			() => ({ words: [], refused: 'Not a join link: it carries no ticket.' })
 		);
-		if (ticket === $joining) join = { ticket, db, name: suggestedLabel(db), user: username(), ...said };
+		if (ticket === $joining) join = { ticket, db, name: suggestedLabel(db), ...said };
 	}
 
 	/**
@@ -298,8 +288,6 @@
 			// `--label` is.
 			const typed = j.name.trim() && j.name !== suggestedLabel(j.db) ? j.name : undefined;
 			ok(await syncAct(j.db, labelCheckArgv(typed ?? suggestedLabel(j.db))));
-			// The username is this browser's, which every chain it enters is told (da-xza37).
-			setUsername(j.user);
 			const r = await syncConnect(j.db, j.ticket, typed);
 			joining.drop();
 			join = { ...j, done: `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.` };
@@ -324,32 +312,21 @@
 	}
 
 	// A declaration, hoisted: the effect above runs as it is created, before this line.
-	function addDevice(db: string, named?: string): Promise<void> {
+	function addDevice(db: string): Promise<void> {
 		return doing(async () => {
-			if (named) ok(await syncAct(db, labelCheckArgv(named)));
 			// The ticket waits for this device to reach its relay, up to 30 s (da-kfhty).
 			waiting = 'Making the invite…';
 			try {
 				const invite = await newInvite(db);
-				// The chain it started describes this device: a name typed is its label.
-				if (named) ok(await syncAct(db, renameArgv(named)));
 				const ticket = await syncOffer(db, invite);
 				const { relay = false } = await ticketAbout(ticket);
 				const link = joinLink(ticket);
 				const expires = Date.parse(invite.expires);
 				offer = { db, link, svg: await qr(link), until: hm(expires), expires, id: invite.id, relay };
-				start = null;
 			} finally {
 				waiting = '';
 			}
 		});
-	}
-
-	/** A first invite, as `start` names this device and its person. */
-	function startHere(s: NonNullable<typeof start>): Promise<void> {
-		setUsername(s.user);
-		const typed = s.name.trim() && s.name !== suggestedLabel(s.db) ? s.name.trim() : undefined;
-		return addDevice(s.db, typed);
 	}
 
 	const share = (link: string) => navigator.share({ title: 'Join a datum sync chain', url: link }).catch(() => {});
@@ -359,14 +336,8 @@
 		doing(async () => {
 			const was = cur.this?.label ?? '';
 			const label = await ask('Rename this device to', 'rename', was);
-			if (!label) return;
-			// The username beside it, this browser's in every chain (da-xza37).
-			const user = await ask('Your username (optional)', 'save', username(), true);
-			if (user === null) return;
-			const [named, told] = [label !== was, user !== username()];
-			if (!named && !told) return;
-			setUsername(user);
-			for (const d of dbs) if (d.this) ok(await syncAct(d.db, named ? renameArgv(label) : userArgv(user)));
+			if (!label || label === was) return;
+			for (const d of dbs) if (d.this) ok(await syncAct(d.db, renameArgv(label)));
 		});
 
 	const rename = (row: Row) =>
@@ -571,7 +542,6 @@
 						<p class="failure">{join.refused}</p>
 					{:else}
 						<label class="name">This device’s name <input type="text" bind:value={join.name} spellcheck="false" autocomplete="off" /></label>
-						<label class="name user">Your username (optional) <input type="text" bind:value={join.user} spellcheck="false" autocomplete="username" /></label>
 					{/if}
 				{/if}
 				<div class="actions">
@@ -753,20 +723,10 @@
 					<button type="button" class="command" use:act={'show'} onclick={() => (offer = null)}>Done</button>
 				</div>
 			</section>
-		{:else if start}
-			<section class="card start" data-db={start.db}>
-				<p class="head">Turn on sync for {start.db}: what is this device called, and who uses it?</p>
-				<label class="name">This device’s name <input type="text" bind:value={start.name} spellcheck="false" autocomplete="off" /></label>
-				<label class="name user">Your username (optional) <input type="text" bind:value={start.user} spellcheck="false" autocomplete="username" /></label>
-				<div class="actions">
-					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => start && startHere(start)}>Start sync</button>
-					<button type="button" class="command close" use:act={'show'} onclick={() => (start = null)}>Cancel</button>
-				</div>
-			</section>
 		{:else}
 			<div class="actions" data-db={db}>
 				{#if !cur.chain}
-					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => turnOn(db)}>Turn on sync</button>
+					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db)}>Turn on sync</button>
 				{:else}
 					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db)}>Add device</button>
 					<button type="button" class="command" use:act={'open'} disabled={busy} onclick={renameHere}>Rename this device</button>
@@ -947,18 +907,13 @@
 	.card .actions {
 		margin-top: 0.5rem;
 	}
-	.join .name,
-	.start .name {
+	.join .name {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 0.2rem 0.6rem;
 	}
-	.name.user {
-		margin-top: 0.3rem;
-	}
-	.join input,
-	.start input {
+	.join input {
 		flex: 1 1 14ch;
 		min-width: 0;
 		background: var(--page);

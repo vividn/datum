@@ -51,28 +51,3 @@ export function deviceKey(): string {
 		return minted();
 	}
 }
-
-const USERNAME_KEY = 'datum-username';
-
-/**
- * The username this browser's person gave (da-xza37), offered in every sync
- * chain a database here enters and described as its `user`: the CLI reads it
- * as `DATUM_USERNAME`. Empty is none, as is a store the browser blocks.
- */
-export function username(): string {
-	try {
-		return localStorage.getItem(USERNAME_KEY) ?? '';
-	} catch {
-		return '';
-	}
-}
-
-/** Keep `name` as this browser's username; empty forgets it. */
-export function setUsername(name: string): void {
-	try {
-		if (name.trim()) localStorage.setItem(USERNAME_KEY, name.trim());
-		else localStorage.removeItem(USERNAME_KEY);
-	} catch {
-		// Blocked: a username for no later chain, as for none.
-	}
-}

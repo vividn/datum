@@ -106,7 +106,6 @@ describe('the sync widget fits its screen, legibly', () => {
 				assert.deepEqual(off.buttons.map((b) => b.label), ['?', 'ⓘ', 'Turn on sync'], 'off: the guide (da-oyvsz), the legend, and the one act');
 
 				await turnOn.click();
-				await widget.locator('.start').getByRole('button', { name: 'Start sync' }).click();
 				const offer = widget.locator('.offer');
 				await offer.locator('.qr svg').waitFor();
 				// The ticket is behind its disclosure; the panel's acts are at its bottom.
