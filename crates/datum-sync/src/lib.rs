@@ -64,16 +64,28 @@ pub fn user() -> Option<String> {
     user.ok().filter(|u| !u.is_empty())
 }
 
+/// The user a describe names: `username`, the person's own (da-xza37), else
+/// the one it runs as.
+fn named_user(username: Option<&str>) -> Option<String> {
+    username.map(String::from).or_else(user)
+}
+
 /// How this copy names itself before it describes itself (da-ey3hz):
 /// `<user>@<host>`, so two accounts on one host differ.
-pub fn label() -> String {
-    chain::assembled(user().as_deref(), &host(), None)
+pub fn label(username: Option<&str>) -> String {
+    chain::assembled(named_user(username).as_deref(), &host(), None)
 }
 
 /// Write this copy's `describe` (da-xijlw): `label`, or with none one
-/// assembled from its user, host and database's name.
-pub fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
-    Ok(db.sync_describe_self(label, kind, user().as_deref(), &host())?)
+/// assembled from its user (`username`, else the one it runs as), host and
+/// database's name.
+pub fn describe_self(
+    db: &Db,
+    label: Option<&str>,
+    kind: &str,
+    username: Option<&str>,
+) -> Result<()> {
+    Ok(db.sync_describe_self(label, kind, named_user(username).as_deref(), &host())?)
 }
 
 /// A copy applying another session's ops refused this one.
@@ -98,12 +110,12 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 /// A session's store: this copy's `Db`, on the session's own thread, where
 /// a command that says how its one session goes hears of it, what to do
 /// the first time a peer this copy dialed welcomes it, and the label a
-/// `join --label` introduces it by.
+/// `join --label` introduces it by, with the username a join names.
 struct DbStore<'a>(
     &'a Db,
     Option<&'a Mutex<Told>>,
     Cell<Option<&'a dyn Fn()>>,
-    Option<&'a str>,
+    (Option<&'a str>, Option<&'a str>),
     /// The sessions served now (da-ymgiv), and those it dialed past their
     /// handshake (da-mghh3).
     RefCell<(Open, Open)>,
@@ -111,7 +123,7 @@ struct DbStore<'a>(
 
 impl<'a> DbStore<'a> {
     fn new(db: &'a Db) -> Self {
-        DbStore(db, None, Cell::new(None), None, Default::default())
+        DbStore(db, None, Cell::new(None), (None, None), Default::default())
     }
 
     fn tell(&self, f: impl FnOnce(&mut Told)) {
@@ -292,7 +304,10 @@ impl Store for DbStore<'_> {
                     .clone(),
             )
         };
-        self.3.map(String::from).or_else(mine).unwrap_or_else(label)
+        let (name, username) = self.3;
+        name.map(String::from)
+            .or_else(mine)
+            .unwrap_or_else(|| label(username))
     }
 
     async fn chain(&self) -> Result<Option<(String, usize)>> {
@@ -715,7 +730,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
                     let ep = &ep;
                     sessions.push(async move {
                         let told = Told::new(String::new());
-                        let store = DbStore(db, Some(&told), Cell::new(None), None, Default::default());
+                        let store = DbStore(db, Some(&told), Cell::new(None), (None, None), Default::default());
                         telling(&told, serve(&store, ep, incoming)).await
                     });
                 }
@@ -802,8 +817,15 @@ const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 /// once it is answered how far the sync is; a join that fails ends saying why
 /// and what to do next (da-0tawk). `admitted` runs once it is welcomed, a
 /// member from then on, before its first sync (da-qr7gz). `name`: the label
-/// it joins as (`--label`), else [`named`].
-pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -> Result<()> {
+/// it joins as (`--label`), else [`named`]; `username`: the person's, else
+/// the user it runs as (da-xza37).
+pub fn connect(
+    db: &Db,
+    ticket: &str,
+    name: Option<&str>,
+    username: Option<&str>,
+    admitted: &dyn Fn(),
+) -> Result<()> {
     let t = Ticket::decode(ticket)?;
     let from = t.about.from.as_deref().unwrap_or("the inviting device");
     let until = t
@@ -834,7 +856,7 @@ pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -
             db,
             Some(&told),
             Cell::new(Some(admitted)),
-            name,
+            (name, username),
             Default::default(),
         );
         let rep = telling(&told, redeem(&store, &ep, &t)).await;
@@ -849,7 +871,7 @@ pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -
             .map_or_else(|e| paired_unfinished(e, joined), |_| true);
         let me = db.sync_endpoint_id()?;
         if admitted && db.sync_chain()?.member(&me).is_some() {
-            describe_self(db, name, "cli")?;
+            describe_self(db, name, "cli", username)?;
         }
         let rep = match rep {
             Err(e) if !admitted => return Err(next_step(e, from, &who)),

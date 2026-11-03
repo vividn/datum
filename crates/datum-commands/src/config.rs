@@ -373,6 +373,31 @@ pub fn device_key() -> Result<String> {
     Ok(key.into())
 }
 
+/// The username this install's person gave (da-xza37), which every chain it
+/// enters describes it by: `DATUM_USERNAME` (a browser's, kept in its own
+/// storage), else `username` in the data directory. Empty is none.
+pub fn username() -> Option<String> {
+    let given = match std::env::var("DATUM_USERNAME") {
+        Ok(v) => v,
+        Err(_) => std::fs::read_to_string(data_dir_path()?.join("username")).ok()?,
+    };
+    Some(given.trim().to_string()).filter(|u| !u.is_empty())
+}
+
+/// Keep `name` as [`username`], empty for none. A host that hands it over as
+/// `DATUM_USERNAME` keeps it itself, so nothing is written.
+pub fn set_username(name: &str) -> Result<()> {
+    if std::env::var_os("DATUM_USERNAME").is_some() {
+        return Ok(());
+    }
+    let path = data_dir()?.join("username");
+    match name.trim() {
+        "" if !path.exists() => Ok(()),
+        "" => std::fs::remove_file(&path).with_context(|| format!("Removing {path:?}")),
+        name => std::fs::write(&path, name).with_context(|| format!("Writing {path:?}")),
+    }
+}
+
 fn xdg_data_dir() -> Option<PathBuf> {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)

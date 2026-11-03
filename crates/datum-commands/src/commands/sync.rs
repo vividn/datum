@@ -474,10 +474,12 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         SyncCommand::Rename {
             who,
             label,
+            user,
             admin_key,
             check,
         } => {
-            let label = label.map(checked).transpose()?;
+            let label = label.map(|l| l.map(checked).transpose()).transpose()?;
+            let user = user.map(checked).transpose()?;
             if check {
                 return Ok(());
             }
@@ -489,6 +491,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 None => mine.clone(),
             };
             let m = chain.member(&target).context("this copy is not a member")?;
+            // `--user` alone keeps the label (da-xza37).
+            let label = label.unwrap_or_else(|| (!m.auto).then(|| m.label.clone()));
+            if let Some(user) = &user {
+                crate::config::set_username(user)?;
+            }
             // An old describe says no host: there is nothing to assemble from.
             ensure!(
                 label.is_some() || target == mine || m.host.is_some(),
@@ -497,7 +504,8 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 m.label
             );
             if target == mine {
-                describe_self(db, label.as_deref(), m.kind.as_deref().unwrap_or(kind()))?;
+                let kind = m.kind.as_deref().unwrap_or(kind());
+                describe_as(db, label.as_deref(), kind, user.as_deref())?;
             } else {
                 let record = json!({
                     "type": "describe", "chain": chain.id, "endpoint": target,
@@ -696,11 +704,22 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             qr,
             expires_secs,
             label,
+            user,
             admin_key,
         } => {
-            let label = label.map(checked).transpose()?;
-            let expires = std::time::Duration::from_secs(expires_secs);
             let starts = !db.sync_chain()?.exists();
+            // A first invite enters this device in the chain it starts (da-xza37).
+            let label = match starts {
+                true => entering(label, user)?,
+                false => {
+                    if let Some(user) = user.map(checked).transpose()? {
+                        crate::config::set_username(&user)?;
+                        bind_device(db);
+                    }
+                    label.map(checked).transpose()?
+                }
+            };
+            let expires = std::time::Duration::from_secs(expires_secs);
             // The daemon leaves the copy to the invite: a joiner it admitted
             // would never be seen here, which waits out the expiry (da-apd52).
             let _held = super::sync_daemon::first_sync(db)?;
@@ -722,8 +741,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             datum_sync::offer(db, &secret, expires, &local(&expires_at), qr)?
         }
         #[cfg(feature = "net")]
-        SyncCommand::Join { ticket, label } => {
-            let label = label.map(checked).transpose()?;
+        SyncCommand::Join {
+            ticket,
+            label,
+            user,
+        } => {
             db.sync_refuse_debug()?;
             let ticket = match ticket {
                 Some(t) => t,
@@ -733,11 +755,13 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     t
                 }
             };
+            let label = entering(label, user)?;
+            let username = crate::config::username();
             let joins = !db.sync_chain()?.exists();
             let _first = super::sync_daemon::first_sync(db)?;
             // Admitted, it is a member whether or not its first sync ends:
             // unserved, every other copy times out on it (da-shfv4, da-qr7gz).
-            datum_sync::connect(db, &ticket, label.as_deref(), &|| {
+            datum_sync::connect(db, &ticket, label.as_deref(), username.as_deref(), &|| {
                 if joins {
                     super::sync_daemon::auto_install(db);
                 }
@@ -948,19 +972,78 @@ pub(super) fn invite_record(
 
 /// Write this copy's `describe`: `label`, or one assembled from what it
 /// runs on (da-xijlw) — a browser, datum.day, has no user or host but that.
+/// Its user is this install's username (da-xza37), else natively the one it
+/// runs as; a browser with none names none.
 pub(super) fn describe_self(db: &Db, label: Option<&str>, kind: &str) -> Result<()> {
+    describe_as(db, label, kind, crate::config::username().as_deref())
+}
+
+/// [`describe_self`], its user `user` where one is given.
+fn describe_as(db: &Db, label: Option<&str>, kind: &str, user: Option<&str>) -> Result<()> {
+    let user = user
+        .filter(|u| !u.is_empty())
+        .map(String::from)
+        .or_else(crate::config::username);
     #[cfg(feature = "net")]
-    return datum_sync::describe_self(db, label, kind);
+    return datum_sync::describe_self(db, label, kind, user.as_deref());
     #[cfg(not(feature = "net"))]
-    Ok(db.sync_describe_self(label, kind, None, "datum.day")?)
+    Ok(db.sync_describe_self(label, kind, user.as_deref(), "datum.day")?)
 }
 
 /// How this copy names itself in the chain.
 pub(super) fn copy_label() -> String {
     #[cfg(feature = "net")]
-    return datum_sync::label();
+    return datum_sync::label(crate::config::username().as_deref());
     #[cfg(not(feature = "net"))]
     "datum.day".into()
+}
+
+/// What a device entering a chain is named, and whose it is (da-xza37):
+/// `label` and `user` as given, each asked on a terminal when not, Enter
+/// keeping what is offered; piped, nothing is asked. A username given or
+/// typed is kept for the install, and every later chain offers it. Returns
+/// the label, `None` for the one the chain assembles.
+#[cfg(feature = "net")]
+fn entering(label: Option<String>, user: Option<String>) -> Result<Option<String>> {
+    let stdin = std::io::stdin();
+    let terminal = stdin.is_terminal();
+    let (label, user) = who_enters(label, user, &mut stdin.lock(), terminal)?;
+    if let Some(user) = user {
+        crate::config::set_username(&user)?;
+    }
+    Ok(label)
+}
+
+/// [`entering`]'s questions, on `stdin`: the label and a username to keep,
+/// each `None` where Enter kept what was offered.
+#[cfg(feature = "net")]
+fn who_enters(
+    label: Option<String>,
+    user: Option<String>,
+    stdin: &mut dyn std::io::BufRead,
+    terminal: bool,
+) -> Result<(Option<String>, Option<String>)> {
+    use super::question::Question;
+    let (mut label, mut user) = (
+        label.map(checked).transpose()?,
+        user.map(checked).transpose()?,
+    );
+    if !terminal {
+        return Ok((label, user));
+    }
+    if label.is_none() {
+        let offered = copy_label();
+        let typed = Question::text("This device's name", &offered).ask_on(stdin, true)?;
+        label = (typed != offered).then(|| checked(typed)).transpose()?;
+    }
+    if user.is_none() {
+        let offered = crate::config::username()
+            .or_else(datum_sync::user)
+            .unwrap_or_default();
+        let typed = Question::text("Your username (optional)", &offered).ask_on(stdin, true)?;
+        user = (typed != offered).then(|| checked(typed)).transpose()?;
+    }
+    Ok((label, user))
 }
 
 /// `label`, or why no member or admin may carry it — before anything is
@@ -1022,7 +1105,21 @@ pub(super) fn bind_device(db: &Db) {
         let Some(kind) = m.kind.as_deref() else {
             return Ok(());
         };
-        if m.device.as_ref() == Some(&device) || m.revoked.is_some() {
+        // A username changed or forgotten since (`rename --user`) describes
+        // it again too: against the user a describe now names, the kept one,
+        // else natively the OS user's, else in a browser none. Natively with
+        // neither (a daemon run without `USER`) it says nothing, so two runs
+        // never undo each other's describe.
+        #[cfg(feature = "net")]
+        let same_user = {
+            let user = crate::config::username().or_else(datum_sync::user);
+            let user = user.map(|u| chain::fit(&u, chain::MAX_LABEL));
+            user.is_none() || m.user == user
+        };
+        #[cfg(not(feature = "net"))]
+        let same_user =
+            m.user == crate::config::username().map(|u| chain::fit(&u, chain::MAX_LABEL));
+        if m.device.as_ref() == Some(&device) && same_user || m.revoked.is_some() {
             return Ok(());
         }
         let label = (!m.auto).then_some(m.label.as_str());
@@ -2027,6 +2124,43 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A device entering a chain on a terminal is asked its name and its
+    /// person's username, Enter keeping what is offered; a username kept
+    /// for the install is what a later chain offers; given both, or piped,
+    /// nothing is asked (da-xza37).
+    #[cfg(feature = "net")]
+    #[test]
+    fn a_device_entering_a_chain_is_asked_its_name_and_username() {
+        use datum_test_util::{env_lock, ScopedEnv};
+        let _lock = env_lock();
+        let home = tempfile::tempdir().unwrap();
+        let _home = ScopedEnv::set("DATUM_HOME", home.path());
+        let _env = ScopedEnv::remove("DATUM_USERNAME");
+        let asked = |label: Option<&str>, user: Option<&str>, typed: &str, terminal| {
+            let (label, user) = (label.map(String::from), user.map(String::from));
+            who_enters(label, user, &mut typed.as_bytes(), terminal).unwrap()
+        };
+        let some = |s: &str| Some(s.to_string());
+        assert_eq!(
+            asked(None, None, "desk\nbea\n", true),
+            (some("desk"), some("bea"))
+        );
+        assert_eq!(asked(None, None, "\n\n", true), (None, None));
+        // Given, each is asked no more: the one line typed answers the other.
+        assert_eq!(
+            asked(some("desk").as_deref(), None, "bea\n", true),
+            (some("desk"), some("bea"))
+        );
+        assert_eq!(asked(None, None, "desk\nbea\n", false), (None, None));
+        // Kept, the username is offered again: Enter keeps it.
+        crate::config::set_username("bea").unwrap();
+        assert_eq!(crate::config::username(), some("bea"));
+        assert_eq!(asked(None, None, "\n\n", true), (None, None));
+        assert_eq!(asked(None, None, "\nbea\n", true), (None, None));
+        crate::config::set_username("").unwrap();
+        assert_eq!(crate::config::username(), None);
+    }
 
     /// A session's endpoint binds its command alone (da-otz0d): the next on
     /// this thread, a REPL's next line, gives the copy a new key.
