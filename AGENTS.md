@@ -93,7 +93,10 @@ every write path, and a row that changes the database's zone forgets every
 field from it, since it moves their midnights. The tables, triggers and the
 index they read are `db/stats_cache.sql`, laid down by the v55→v56 migration
 and after `schema.sql` at every open; a later migration that drops or
-rebuilds an `entries` column they name must drop them first. A span's seconds are `floor(end) − floor(start)`, which adds up
+rebuilds an `entries` column they name must drop them first. An open lays
+that DDL, every file in `EVERY_OPEN_SQL` (`db/mod.rs`), only where `_meta` `laid`
+does not say this build laid it on this schema with the schema objects now there,
+so a migration or a dropped trigger is laid again by the next open (da-4qq8v). A span's seconds are `floor(end) − floor(start)`, which adds up
 exactly across midnights. `datum check stats` recomputes a sample of days and says how many.
 
 `stats a,b` is a row per field and the pooled rows (`compute_pooled`, da-oqpsp,

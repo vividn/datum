@@ -27,6 +27,39 @@ pub(crate) use check_kept::CHECK_KEPT_SQL;
 pub(crate) const SYNC_UNCOVERED_SQL: &str = include_str!("sync_uncovered.sql");
 /// An entry's author, its latest change's (`entry_author.sql`, da-zpc98).
 pub(crate) const ENTRY_AUTHOR_SQL: &str = include_str!("entry_author.sql");
+/// The DDL an open lays and a purge lays again, in order: `CREATE … IF NOT
+/// EXISTS`, so laying it twice changes nothing. A file added here is in
+/// [`LAID`] too.
+const EVERY_OPEN_SQL: [&str; 6] = [
+    include_str!("../schema.sql"),
+    STATS_CACHE_SQL,
+    SPEC_ALIAS_NAMES_SQL,
+    CHECK_KEPT_SQL,
+    SYNC_UNCOVERED_SQL,
+    ENTRY_AUTHOR_SQL,
+];
+/// What `_meta` `laid` starts with once this build has laid
+/// [`EVERY_OPEN_SQL`] on [`crate::migrations::CURRENT_SCHEMA_VERSION`]
+/// (da-4qq8v): FNV-1a of both, so another build's DDL or schema reads
+/// as not laid.
+const LAID: u64 = {
+    let mut h = 0xcbf2_9ce4_8422_2325u64 ^ crate::migrations::CURRENT_SCHEMA_VERSION as u64;
+    let mut f = 0;
+    while f < EVERY_OPEN_SQL.len() {
+        let bytes = EVERY_OPEN_SQL[f].as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            h = (h ^ bytes[i] as u64).wrapping_mul(0x100_0000_01b3);
+            i += 1;
+        }
+        f += 1;
+    }
+    h
+};
+/// The schema objects a `laid` stamp counts: all but a kit's indices, which
+/// [`Db::derive_kit_indices`] keeps.
+const LAID_COUNT_SQL: &str =
+    "(SELECT count(*) FROM sqlite_master WHERE name NOT LIKE 'kit!_%' ESCAPE '!')";
 mod create_time_ids;
 mod definition;
 mod holder;
@@ -64,7 +97,7 @@ pub use write::{Seen, View, WriteBatch};
 
 use std::cell::{Cell, OnceCell, RefCell};
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use crate::error::{DatumError, Result};
 
@@ -258,7 +291,8 @@ impl Db {
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\n\
              PRAGMA journal_mode = WAL;\n\
-             PRAGMA synchronous = NORMAL;",
+             PRAGMA synchronous = NORMAL;\n\
+             PRAGMA foreign_keys = ON;",
         )?;
         #[cfg(target_family = "wasm")]
         conn.execute_batch(
@@ -579,7 +613,47 @@ impl Db {
     ///
     /// `db_path` is `None` only for in-memory databases, which are always
     /// created fresh at the current version and so never migrate.
+    ///
+    /// [`EVERY_OPEN_SQL`] is laid only where `_meta` `laid` does not hold
+    /// [`LAID`] and the count of schema objects now there (da-4qq8v): so
+    /// another build, another schema version or a dropped trigger lays it
+    /// again, and a file this build laid reads one row. The passes
+    /// after it run on every open: a kit index is derived from definitions a
+    /// sync may have brought, and the fold rule's triggers are the
+    /// connection's.
     fn migrate(&self, db_path: Option<&std::path::Path>) -> Result<Option<MigrationReport>> {
+        let laid: bool = self
+            .conn
+            .query_row(
+                &format!(
+                    "SELECT (SELECT value FROM _meta WHERE key = 'schema_version') = ?1
+                        AND (SELECT value FROM _meta WHERE key = 'laid') = ?2 || ':' || {LAID_COUNT_SQL}"
+                ),
+                params![crate::migrations::CURRENT_SCHEMA_VERSION.to_string(), format!("{LAID:016x}")],
+                |row| row.get::<_, Option<bool>>(0),
+            )
+            .ok()
+            .flatten()
+            .unwrap_or(false);
+        let mut report = if laid { None } else { self.lay(db_path)? };
+        // A kit index is this device's, derived from the definitions the
+        // file holds (da-fwwtn). One that will not build is no reason not
+        // to open: it is only an index.
+        let _ = self.derive_kit_indices();
+        self.refold_for_rule()?;
+        self.rewrite_create_time_ids()?;
+        self.rename_symbol_keys()?;
+        // Retention runs only after the migration succeeded — we never
+        // delete an old snapshot to make room for one that may be needed.
+        if let (Some(report), Some(path)) = (&mut report, db_path) {
+            report.pruned = crate::migrations::prune_pre_migration_backups(path);
+        }
+        Ok(report)
+    }
+
+    /// [`Db::migrate`]'s walk and DDL, then the `laid` stamp: what the walk
+    /// did, `None` where it did nothing.
+    fn lay(&self, db_path: Option<&std::path::Path>) -> Result<Option<MigrationReport>> {
         // Reject pre-refactor entries tables (which have an `id` column):
         // this refactor drops ULID entirely and slug is now PK. Silent
         // migration would lose or re-key data unpredictably; the user must
@@ -629,34 +703,26 @@ impl Db {
         // of schema.sql since they were introduced) are filled in here.
         // CREATE … IF NOT EXISTS keeps the pass idempotent on already-current
         // databases.
-        self.conn.execute_batch(include_str!("../schema.sql"))?;
-        self.conn.execute_batch(STATS_CACHE_SQL)?;
-        self.conn.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
-        self.conn.execute_batch(CHECK_KEPT_SQL)?;
-        self.conn.execute_batch(SYNC_UNCOVERED_SQL)?;
-        self.conn.execute_batch(ENTRY_AUTHOR_SQL)?;
-        // A kit index is this device's, derived from the definitions the
-        // file holds (da-fwwtn). One that will not build is no reason not
-        // to open: it is only an index.
-        let _ = self.derive_kit_indices();
-        self.refold_for_rule()?;
-        self.rewrite_create_time_ids()?;
-        self.rename_symbol_keys()?;
-
-        if applied.is_empty() {
-            return Ok(None);
+        for sql in EVERY_OPEN_SQL {
+            self.conn.execute_batch(sql)?;
         }
-        // Retention runs only after the migration succeeded — we never
-        // delete an old snapshot to make room for one that may be needed.
-        let pruned = db_path
-            .map(crate::migrations::prune_pre_migration_backups)
-            .unwrap_or_default();
-        Ok(Some(MigrationReport {
+        // Not waited for: with the lock another's, the next open lays and
+        // stamps again.
+        let _ = spool::waiting(&self.conn, std::time::Duration::ZERO, || {
+            self.conn.execute(
+                &format!(
+                    "INSERT INTO _meta (key, value) SELECT 'laid', ?1 || ':' || {LAID_COUNT_SQL}
+                     WHERE true ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+                ),
+                params![format!("{LAID:016x}")],
+            )
+        });
+        Ok((!applied.is_empty()).then(|| MigrationReport {
             from_version: from,
             to_version: to,
             backup_path,
             applied,
-            pruned,
+            pruned: Vec::new(),
         }))
     }
 
@@ -730,12 +796,9 @@ impl Db {
                 let t = t.replace('"', "\"\"");
                 tx.execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
             }
-            tx.execute_batch(include_str!("../schema.sql"))?;
-            tx.execute_batch(STATS_CACHE_SQL)?;
-            tx.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
-            tx.execute_batch(CHECK_KEPT_SQL)?;
-            tx.execute_batch(SYNC_UNCOVERED_SQL)?;
-            tx.execute_batch(ENTRY_AUTHOR_SQL)?;
+            for sql in EVERY_OPEN_SQL {
+                tx.execute_batch(sql)?;
+            }
             crate::migrations::set_schema_version(tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
             within(tx)?;
             Ok(tables)

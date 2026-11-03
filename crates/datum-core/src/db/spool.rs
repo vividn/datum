@@ -310,7 +310,7 @@ fn replace(path: &Path, text: impl AsRef<[u8]>) -> Result<()> {
 }
 
 /// Run `f` with `conn` waiting `wait` for a lock, and then as long as before.
-fn waiting<T>(conn: &Connection, wait: Duration, f: impl FnOnce() -> T) -> Result<T> {
+pub(super) fn waiting<T>(conn: &Connection, wait: Duration, f: impl FnOnce() -> T) -> Result<T> {
     let before: u64 = conn.query_row("PRAGMA busy_timeout", [], |r| r.get(0))?;
     conn.busy_timeout(wait)?;
     let out = f();
