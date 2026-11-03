@@ -135,14 +135,18 @@ const seen = (page) =>
 		};
 	});
 
+/** Read the states once placed: the room takes its size as the view's rows
+ * mount, and its observer places the states again, so wait out two frames. */
+async function placed(page) {
+	await page.locator(`${ROOM} [data-state="a"]`).waitFor();
+	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+	return seen(page);
+}
+
 /** Open `field` by a press where it is drawn, read the states, close them with Escape. */
 async function open(page, field) {
 	await page.locator(`${BAR} [data-field="${field}"]`).dispatchEvent('click');
-	await page.locator(`${ROOM} [data-state="a"]`).waitFor();
-	// The room takes its size as the view's rows mount, and the states are
-	// placed again by its observer: read once that has run.
-	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-	const t = await seen(page);
+	const t = await placed(page);
 	await page.keyboard.press('Escape');
 	await page.locator(VIEW).waitFor({ state: 'detached' });
 	return { ...t, find: (name) => t.buttons.find((b) => b.name === name) };
@@ -195,8 +199,7 @@ describe('a switch field’s states in collect, the first in the middle', () => 
 				// A key's press opens the same.
 				await page.locator(`${BAR} [data-field="mood"]`).focus();
 				await page.keyboard.press('Enter');
-				await page.locator(`${ROOM} [data-state="a"]`).waitFor();
-				assert.deepEqual(offsets(await seen(page)), offsets(first), 'by key: not the same picture');
+				assert.deepEqual(offsets(await placed(page)), offsets(first), 'by key: not the same picture');
 			}, options(width));
 		});
 
