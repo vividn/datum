@@ -234,7 +234,8 @@ jobs:
       # that the crates still compile for it (CRATES, the wasm step below). A
       # migration is the exception (da-ako1r): it reaches the browser's upgrade
       # path, and runs the web tests that upgrade a file, UPGRADE_TESTS in
-      # web/scripts/testmap.mjs.
+      # web/scripts/testmap.mjs. So is datum.day's sync store, which the browser
+      # runs as wasm (da-33tn8): it runs the web tests that sync, SYNC_TESTS.
       # Anything else runs the web: web/, Cargo.toml, Cargo.lock,
       # rust-toolchain.toml, .forgejo/, kits/, tests/fixtures/, and
       # crates/datum-cli/tests/fixtures/, which web/tests/dbio.test.mjs reads.
@@ -254,7 +255,7 @@ jobs:
           git fetch -q --no-tags --unshallow origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
           files=$(git diff --name-only "origin/$BASE...HEAD")
           if [ -n "$files" ] && ! grep -qvE '^crates/|^docs/|\.md$|^scripts/mq-check\.sh$' <<<"$files" \
-            && ! grep -qE '^web/|^crates/datum-cli/tests/fixtures/|^crates/datum-core/src/migrations/' <<<"$files"; then
+            && ! grep -qE '^web/|^crates/datum-cli/tests/fixtures/|^crates/datum-core/src/migrations/|^crates/datum-sync-wire/src/|^crates/datum-core/src/db/sync|^crates/datum-commands/src/commands/sync' <<<"$files"; then
             echo "WEB=0" >> "$GITHUB_ENV"
             if grep -vE '^crates/[^/]+/tests/' <<<"$files" | grep -qE '^crates/'; then
               echo "CRATES=1" >> "$GITHUB_ENV"

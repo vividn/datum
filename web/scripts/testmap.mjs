@@ -24,8 +24,9 @@
 // tests whose set has it, and a test file added or edited selects itself;
 // every test the map does not know runs. A crate's file selects nothing:
 // staging's full run tests what it does to the web. A migration selects
-// UPGRADE_TESTS, and beside nothing else the web reads, only them, with no
-// need of the map (da-ako1r). Everything runs for any
+// UPGRADE_TESTS, a change to datum.day's sync store SYNC_TESTS (da-33tn8),
+// and beside nothing else the web reads, only them, with no need of the map
+// (da-ako1r). Everything runs for any
 // other change that can reach the web, a `web/src/` or support file no set
 // holds, or a map missing or more than MAX_BEHIND commits behind the base.
 //
@@ -55,6 +56,39 @@ const CRATE = /^crates\/(?!datum-cli\/tests\/fixtures\/)/;
 const MIGRATION = /^crates\/datum-core\/src\/migrations\//;
 /** The web test files that upgrade a database file. `testmap-pure.test.mjs` holds any test moving a file's schema back to this list. */
 export const UPGRADE_TESTS = ['tests/first-paint.test.mjs'];
+/** What datum.day's sync store runs as wasm: the wire crate, core's sync, and the sync commands the store runs. ci.yml's WEB and mq-check.sh's `web` name it as well. */
+const SYNC = /^crates\/(datum-sync-wire\/src\/|datum-core\/src\/db\/sync|datum-commands\/src\/commands\/sync)/;
+/** The web test files that start a relay (`startRelay`, tests/support/sync.mjs), so sync through the store. `testmap-pure.test.mjs` holds any test starting one to this list. */
+export const SYNC_TESTS = [
+	'tests/dbrename.test.mjs',
+	'tests/purgescrollback.test.mjs',
+	'tests/purgewords-cli.test.mjs',
+	'tests/reopen.test.mjs',
+	'tests/sync-kept.test.mjs',
+	'tests/sync-legs.test.mjs',
+	'tests/sync-native.test.mjs',
+	'tests/sync-orphans.test.mjs',
+	'tests/sync-tabs-leader.test.mjs',
+	'tests/sync-tabs.test.mjs',
+	'tests/sync.test.mjs',
+	'tests/syncactions-leave.test.mjs',
+	'tests/syncactions-purge.test.mjs',
+	'tests/syncactions.test.mjs',
+	'tests/syncapplying.test.mjs',
+	'tests/syncgate.test.mjs',
+	'tests/syncgrid.test.mjs',
+	'tests/syncguide.test.mjs',
+	'tests/syncjoin.test.mjs',
+	'tests/syncoffer.test.mjs',
+	'tests/syncpause.test.mjs',
+	'tests/syncreload.test.mjs',
+	'tests/syncunsynced.test.mjs'
+];
+/** A crate's paths that reach the browser past the map, and the web tests each runs (da-ako1r, da-33tn8). */
+const REACHES = [
+	[MIGRATION, UPGRADE_TESTS, 'a migration'],
+	[SYNC, SYNC_TESTS, "datum.day's sync store"]
+];
 /**
  * A test that reads `src/` or the build as data: a `readFile`/`readdir`, sync
  * or not, naming one of them on its line. A test that reads the tree any other
@@ -69,18 +103,18 @@ export const READS_TREE = /\bread(?:File|dir)(?:Sync)?\([^\n]*\b(?:src|build|bui
  * far the map's commit is behind the base, or null when it is no ancestor.
  */
 export function choose({ map, behind, changed, tests, narrow }) {
-	const onlyMigration = changed.some((p) => MIGRATION.test(p)) && changed.every((p) => CRATE.test(p) || NOT_WEB.test(p));
-	if (!map && !onlyMigration) return { full: ['no web test map'] };
+	const onlyReaching = changed.some((p) => REACHES.some(([re]) => re.test(p))) && changed.every((p) => CRATE.test(p) || NOT_WEB.test(p));
+	if (!map && !onlyReaching) return { full: ['no web test map'] };
 	const full = [];
-	if (!onlyMigration && behind === null) full.push(`the map's commit ${map.commit} is not an ancestor of the base`);
-	else if (!onlyMigration && behind > MAX_BEHIND) full.push(`the map is ${behind} commits behind the base (more than ${MAX_BEHIND})`);
+	if (!onlyReaching && behind === null) full.push(`the map's commit ${map.commit} is not an ancestor of the base`);
+	else if (!onlyReaching && behind > MAX_BEHIND) full.push(`the map is ${behind} commits behind the base (more than ${MAX_BEHIND})`);
 	if (!changed.length) full.push('no file differs from the base');
 	const picked = new Map();
 	const pick = (test, why) => tests.includes(test) && !picked.has(test) && picked.set(test, why);
 	const notes = [];
 	for (const path of changed) {
 		const p = path.slice('web/'.length);
-		if (MIGRATION.test(path)) for (const t of UPGRADE_TESTS) pick(t, `${path}: a migration`);
+		for (const [re, these, what] of REACHES) if (re.test(path)) for (const t of these) pick(t, `${path}: ${what}`);
 		if (/^web\/tests\/.+\.test\.mjs$/.test(path)) {
 			if (tests.includes(p)) pick(p, `${path}: added or edited`);
 			else notes.push(`${path}: deleted`);
@@ -94,7 +128,7 @@ export function choose({ map, behind, changed, tests, narrow }) {
 		else full.push(`${path}: can reach the web (the CLI's build, a fixture, a kit, CI)`);
 	}
 	if (full.length) return { full };
-	if (onlyMigration) return { picked, notes };
+	if (onlyReaching) return { picked, notes };
 	for (const t of map.always) pick(t, 'reads src/ or the build as data');
 	for (const t of tests) if (!(t in map.files)) pick(t, 'not in the map');
 	return { picked, notes };

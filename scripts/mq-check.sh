@@ -109,8 +109,9 @@ merge_base="$(git merge-base HEAD "${bases[@]}")"
 changed="$(git diff --name-only "$merge_base" HEAD)"
 
 rust="$(printf '%s\n' "$changed" | grep -E '^(crates/|xtask/|Cargo\.(toml|lock)$|rust-toolchain|scripts/check(-changed)?\.sh$)' || true)"
-# A migration runs the web tests that upgrade a file, as CI does (da-ako1r).
-web="$(printf '%s\n' "$changed" | grep -E '^web/|^crates/datum-core/src/migrations/' || true)"
+# A migration runs the web tests that upgrade a file, and a change to datum.day's
+# sync store those that sync, as CI does (da-ako1r, da-33tn8).
+web="$(printf '%s\n' "$changed" | grep -E '^web/|^crates/datum-core/src/migrations/|^crates/datum-sync-wire/src/|^crates/datum-core/src/db/sync|^crates/datum-commands/src/commands/sync' || true)"
 
 sel="$(mktemp -d)"
 trap 'rm -rf "$sel"' EXIT

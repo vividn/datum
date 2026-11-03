@@ -1487,7 +1487,10 @@ CLI still compiles for datum.day (`node web/scripts/build-cli-wasm.mjs
 --check`), and one that also changes `web/` runs the web tests its `web/`
 change selects. A change under `crates/datum-core/src/migrations/` also runs
 the web tests that upgrade a file (`UPGRADE_TESTS` in `web/scripts/testmap.mjs`,
-da-ako1r), as a schema bump reaches every browser's next open. Staging's full
+da-ako1r), as a schema bump reaches every browser's next open, and one to
+datum.day's sync store (`crates/datum-sync-wire/src/`, core's `db/sync*`, the
+`sync` commands) the web tests that start a relay (`SYNC_TESTS`, a list a
+test holds to every file calling `startRelay(`, da-33tn8). Staging's full
 run is what tests any other crate change against datum.day. So a change under `crates/` that alters what a command prints or
 accepts — its `--json` shape, its text, a flag, an error — looks for that
 command's callers in `web/src` (`git grep -n '<command>' web/src`), runs the

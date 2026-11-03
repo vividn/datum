@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_BEHIND, READS_TREE, UPGRADE_TESTS, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
+import { MAX_BEHIND, READS_TREE, SYNC_TESTS, UPGRADE_TESTS, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
 
 const MAP = {
 	commit: 'abc123',
@@ -91,6 +91,31 @@ test('every test moving a file back a schema is an upgrade test, so a migration 
 		.filter((f) => f.endsWith('.test.mjs') && /SET value = '\d+' WHERE key = 'schema_version'/.test(readFileSync(new URL(f, dir), 'utf8')))
 		.map((f) => `tests/${f}`);
 	assert.deepEqual(moving.sort(), [...UPGRADE_TESTS].sort());
+});
+
+test("a change to datum.day's sync store runs the web sync tests: #1601's diff and #1600's, alone and beside a web change (da-33tn8)", () => {
+	const tests = [...TESTS, ...SYNC_TESTS];
+	const known = { ...MAP, files: { ...MAP.files, ...Object.fromEntries(SYNC_TESTS.map((t) => [t, []])) } };
+	// #1601 (8ba40167) and #1600 (fcabd5ce), neither of which ran syncgate.
+	const pr1601 = ['crates/datum-cli/tests/sync_chain/handshake.rs', 'crates/datum-commands/src/commands/sync.rs', 'crates/datum-core/src/db/sync/peers.rs', 'crates/datum-parse/src/cli.rs', 'crates/datum-parse/src/parse/sync.rs', 'crates/datum-sync-wire/src/web.rs', 'crates/datum-sync/src/lib.rs'];
+	const pr1600 = ['AGENTS.md', 'crates/datum-commands/tests/sync_uncovered_reads.rs', 'crates/datum-core/src/db/mod.rs', 'crates/datum-core/src/db/sync.rs', 'crates/datum-core/src/db/sync_uncovered.sql', 'crates/datum-core/src/db/sync/status.rs'];
+	for (const diff of [pr1601, pr1600]) for (const opts of [{ map: known }, { map: null }, { behind: null }]) {
+		const p = picked(run(diff, { tests, ...opts }));
+		assert.ok(p.includes('tests/syncgate.test.mjs'), `syncgate not run: ${p}`);
+		assert.deepEqual(p, [...SYNC_TESTS].sort());
+	}
+	assert.equal(run(['crates/datum-sync-wire/src/web.rs'], { tests }).picked.get('tests/syncgate.test.mjs'), "crates/datum-sync-wire/src/web.rs: datum.day's sync store");
+	assert.deepEqual(picked(run(['crates/datum-sync-wire/src/web.rs', 'web/src/lib/DayStrip.svelte'], { tests, map: known })), ['tests/strip.test.mjs', ...SYNC_TESTS].sort());
+	// The native transport and a crate's own tests reach no browser.
+	assert.deepEqual(picked(run(['crates/datum-sync/src/lib.rs', 'crates/datum-sync-wire/tests/a.rs'], { tests, map: known })), []);
+});
+
+test('every test that starts a relay is a sync test, so a change to the sync store runs it', () => {
+	const dir = new URL('.', import.meta.url);
+	const relaying = readdirSync(dir, { recursive: true, encoding: 'utf8' })
+		.filter((f) => f.endsWith('.test.mjs') && /\bstartRelay\(/.test(readFileSync(new URL(f, dir), 'utf8')))
+		.map((f) => `tests/${f}`);
+	assert.deepEqual(relaying.sort(), [...SYNC_TESTS].sort());
 });
 
 test('a web/src file no test reached runs everything', () => {
