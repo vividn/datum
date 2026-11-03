@@ -237,12 +237,12 @@ fn spec_values(registry: &Option<SpecRegistry>) -> BTreeMap<&str, Option<serde_j
 
 /// Per-frame fingerprint used by the watch loop to suppress idle
 /// flicker (da-d6yo). Two ticks that produce the same `(tty, cols,
-/// rows, entry_count, max_modify_time)` paint identical pixels, so
-/// the repaint is a no-op — we skip the clear+redraw and let the
-/// existing frame sit. The terminal dimensions are folded in so a
-/// SIGWINCH-driven wake (da-hsqd) that arrives in the same tick still
-/// repaints whenever the new size actually differs from the last.
-type FrameSig = (bool, usize, usize, usize, Option<chrono::DateTime<Utc>>);
+/// rows, rows read)` paint identical pixels, so the repaint is a no-op —
+/// we skip the clear+redraw and let the existing frame sit. The terminal
+/// dimensions are folded in so a SIGWINCH-driven wake (da-hsqd) that
+/// arrives in the same tick still repaints whenever the new size
+/// actually differs from the last.
+type FrameSig = (bool, usize, usize, u64);
 
 fn frame_signature(tty: bool, entries: &[Entry]) -> FrameSig {
     let (cols, rows) = if tty {
@@ -250,8 +250,19 @@ fn frame_signature(tty: bool, entries: &[Entry]) -> FrameSig {
     } else {
         (0, 0)
     };
-    let max_modify = entries.iter().map(|e| e.modify_time).max();
-    (tty, cols, rows, entries.len(), max_modify)
+    (tty, cols, rows, rows_signature(entries))
+}
+
+/// Every row a frame shows, whole (da-dysdz): a count and the newest
+/// `modify_time` missed a delete that let an older row in, and an edit
+/// synced in with an older `modify_time` than the window's newest.
+pub(crate) fn rows_signature(entries: &[Entry]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for e in entries {
+        serde_json::to_string(e).unwrap_or_default().hash(&mut h);
+    }
+    h.finish()
 }
 
 /// da-o50m: `tail --watch` re-fetches the window, recomputes the
@@ -259,7 +270,7 @@ fn frame_signature(tty: bool, entries: &[Entry]) -> FrameSig {
 /// fresh row set, clears the screen, and repaints — TTY or not.
 ///
 /// da-d6yo: repaints only fire when the frame signature changes
-/// (entry count / max modify_time / terminal dimensions). Idle ticks
+/// (the rows read / terminal dimensions). Idle ticks
 /// where nothing has changed are no-ops, so the watch surface no
 /// longer flickers between empty polls. The signature is seeded by
 /// the initial paint in [`tail`] so the first tick after entering

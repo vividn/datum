@@ -38,7 +38,7 @@ use crossterm::{
 use datum_core::{db::Db, entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 
 use super::render_helpers::build_table_contexts;
-use super::tail::{split_columns, tail_entries_with_default_count, WatchedSpecs};
+use super::tail::{rows_signature, split_columns, tail_entries_with_default_count, WatchedSpecs};
 use crate::args::OutputFlagsExt;
 use crate::render::term_layout::truncate_visible;
 use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
@@ -73,18 +73,10 @@ pub(crate) fn run(
     let mut state = ViewState::new();
     state.recompute(&slugs_of(&buffer), view_height(rows), None);
 
-    // Per-frame fingerprint: terminal dims, buffer size + freshness, and
-    // the viewport/indicator state. Equal signatures paint identical
+    // Per-frame fingerprint: terminal dims, the buffer's rows, and the
+    // viewport/indicator state. Equal signatures paint identical
     // pixels, so we skip the repaint (idle-frame suppression).
-    type FrameSig = (
-        u16,
-        u16,
-        usize,
-        Option<chrono::DateTime<chrono::Utc>>,
-        usize,
-        bool,
-        usize,
-    );
+    type FrameSig = (u16, u16, u64, usize, bool, usize);
     let mut last_sig: Option<FrameSig> = None;
     let mut next_fetch = Instant::now() + interval;
 
@@ -99,8 +91,7 @@ pub(crate) fn run(
         let sig = (
             cols,
             rows,
-            buffer.len(),
-            max_modify(&buffer),
+            rows_signature(&buffer),
             state.scroll,
             state.follow,
             new_below,
@@ -227,10 +218,6 @@ fn fetch_buffer(args: &crate::args::TailArgs, db: &Db, cap: usize) -> Result<Vec
 
 fn slugs_of(buffer: &[Entry]) -> Vec<String> {
     buffer.iter().map(|e| e.slug.as_str().to_string()).collect()
-}
-
-fn max_modify(buffer: &[Entry]) -> Option<chrono::DateTime<chrono::Utc>> {
-    buffer.iter().map(|e| e.modify_time).max()
 }
 
 /// The database's name on the status bar: its file's, without the `.db`.

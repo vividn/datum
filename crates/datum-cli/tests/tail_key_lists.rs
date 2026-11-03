@@ -1,5 +1,6 @@
 //! `tail`'s keys (da-6l1hf): a list reads as the state column writes one, a
-//! remainder is a key it shows, and `tail -w` follows a change of spec.
+//! remainder is a key it shows, and `tail -w` follows a change of spec, a
+//! delete and an edit, made here or synced in (da-dysdz).
 
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -259,4 +260,148 @@ fn the_tui_asks_for_the_wheel_and_no_motion() {
     press(b"\x1b[<64;5;5M", "browse");
     press(b"q", "\x1b[?1000l");
     drop(watch);
+}
+
+/// `mood` switched to alpha, bravo, then charlie, a minute apart.
+fn three_moods(dir: &TempDir) {
+    for (state, t) in [("alpha", "-3"), ("bravo", "-2"), ("charlie", "-1")] {
+        ok(dir, &["switch", "mood", state, "-t", t]);
+    }
+}
+
+/// The hid of the `mood` entry in `state`, in the database `db`.
+fn hid_of(dir: &TempDir, db: &str, state: &str) -> String {
+    let json: serde_json::Value =
+        serde_json::from_str(&ok(dir, &["--db", db, "tail", "mood", "--json"])).unwrap();
+    let rows = json["rows"].as_array().unwrap();
+    let row = rows.iter().find(|r| r["state"] == state);
+    row.unwrap_or_else(|| panic!("no {state} in {json}"))["hid"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// What a piped watch drew last: everything after its last clear.
+fn last_frame(seen: &Mutex<Vec<u8>>) -> String {
+    let text = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    text.rsplit("\x1b[2J").next().unwrap().to_string()
+}
+
+/// Waits for a piped watch's last frame to show every one of `shows`, and
+/// then says it shows none of `gone`.
+fn frame_shows(seen: &Mutex<Vec<u8>>, shows: &[&str], gone: &[&str]) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let frame = loop {
+        let frame = last_frame(seen);
+        if shows.iter().all(|s| frame.contains(s)) {
+            break frame;
+        }
+        assert!(Instant::now() < deadline, "no {shows:?} in: {frame:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    for g in gone {
+        assert!(!frame.contains(g), "{g:?} still in: {frame:?}");
+    }
+}
+
+/// A piped `tail -w -n 2 mood` on `db`, with what it drew.
+fn piped_watch(dir: &TempDir, db: &str) -> (Watch, Arc<Mutex<Vec<u8>>>) {
+    let mut child = Watch(
+        datum(dir)
+            .args(["--db", db, "tail", "-w", "0.1", "-n", "2", "mood"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let seen = collect(child.0.stdout.take().unwrap());
+    (child, seen)
+}
+
+/// vividn: «when I delete entries they don't disappear from `tail -w`». A
+/// delete in a full window lets an older row in, so the count stays and the
+/// newest row is the same one.
+#[test]
+fn a_piped_watch_drops_a_deleted_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("data.db").to_string_lossy().into_owned();
+    three_moods(&dir);
+    let (_watch, seen) = piped_watch(&dir, &db);
+    frame_shows(&seen, &["bravo", "charlie"], &["alpha"]);
+    ok(&dir, &["delete", &hid_of(&dir, &db, "bravo")]);
+    frame_shows(&seen, &["alpha", "charlie"], &["bravo"]);
+}
+
+/// The TUI's own loop, the same.
+#[cfg(unix)]
+#[test]
+fn the_tui_drops_a_deleted_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("data.db").to_string_lossy().into_owned();
+    three_moods(&dir);
+    let (_watch, mut master, seen) = tui(&dir, &["tail", "-w", "0.1", "-n", "2", "mood"], 24);
+    wait_for(&seen, "q quit");
+    let bravo = hid_of(&dir, &db, "bravo");
+    seen.lock().unwrap().clear();
+    ok(&dir, &["delete", &bravo]);
+    wait_for(&seen, "alpha");
+    wait_for(&seen, "q quit");
+    let drawn = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    assert!(!drawn.contains("bravo"), "bravo still in: {drawn:?}");
+    master.write_all(b"q").unwrap();
+}
+
+/// The same from datum.day: an edit and a delete made on another copy and
+/// applied by a sync, the edit older than the window's newest change.
+#[test]
+fn a_watch_follows_an_edit_and_a_delete_synced_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = |name: &str| dir.path().join(name).to_string_lossy().into_owned();
+    let (here, there) = (path("data.db"), path("there.db"));
+    let sync = |from: &str, to: &str| {
+        let vector = ok(&dir, &["--db", to, "sync", "pipe", "vector"]);
+        let ops = ok(
+            &dir,
+            &[
+                "--db",
+                from,
+                "sync",
+                "pipe",
+                "ops",
+                "--since",
+                vector.trim(),
+            ],
+        );
+        let mut apply = datum(&dir)
+            .args(["--db", to, "sync", "pipe", "apply"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        apply
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(ops.as_bytes())
+            .unwrap();
+        assert!(apply.wait().unwrap().success());
+    };
+    three_moods(&dir);
+    sync(&here, &there);
+    let bravo = hid_of(&dir, &there, "bravo");
+    ok(
+        &dir,
+        &["--db", &there, "update", &bravo, "state=bravissimo"],
+    );
+    std::thread::sleep(Duration::from_millis(5));
+    let charlie = hid_of(&dir, &here, "charlie");
+    ok(&dir, &["update", &charlie, "state=charles"]);
+
+    let (_watch, seen) = piped_watch(&dir, &here);
+    frame_shows(&seen, &["bravo", "charles"], &["alpha"]);
+    sync(&there, &here);
+    frame_shows(&seen, &["bravissimo", "charles"], &["alpha"]);
+    ok(&dir, &["--db", &there, "delete", &bravo]);
+    sync(&there, &here);
+    frame_shows(&seen, &["alpha", "charles"], &["bravissimo"]);
 }
