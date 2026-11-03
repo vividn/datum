@@ -545,9 +545,53 @@ for (const vertical of [false, true]) {
 				assert.ok(clear(g, from) && clear(g, to), 'a handle is in the way');
 				await finger(page, pt(g, from, g.absRow), pt(g, to, g.absRow));
 				await timePill(page, (t) => /^-t \d\d:\d\d$/.test(t));
+				// With none, and with a relative one: a relative time, and no length.
+				await page.locator('.prompt-bar .pill.time button.remove').click();
 				g = await read(page);
-				await finger(page, pt(g, from, g.relRow), pt(g, to, g.relRow));
-				await timePill(page, (t) => /^(-q+|-t -\d+(m\d+s|s)?)$/.test(t));
+				// The second from the relative pill, which a still press would dismiss.
+				for (const [lo, hi] of [[from, to], [to, from]]) {
+					await finger(page, pt(g, lo, g.relRow), pt(g, hi, g.relRow));
+					await timePill(page, (t) => /^(-q+|-t -\d+(m\d+s|s)?)$/.test(t));
+					assert.ok(!(await pillsOf(page)).some((p) => p.startsWith('dur:')), 'a relative press took a length');
+				}
+			});
+		});
+
+		// da-f4sto, vividn 2026-11-03: «when an absolute time is selected and
+		// you press in the relative time axis it adds a dur automatically».
+		test('with an absolute pill, a press on the relative axis before it keeps it and adds the length back to it, on the relative axis', async () => {
+			await withAxes(vertical, async (app) => {
+				const { page } = app;
+				const T = Date.UTC(2026, 8, 10, 15, 0);
+				await page.evaluate((ms) => window.datum.cursor.set(new Date(ms)), T);
+				await drewPill(app);
+				const g = await read(page);
+				const [a, b] = g.clock;
+				const at = (t) => pt(g, a.p + ((t - a.at) * (b.p - a.p)) / (b.at - a.at), g.relRow);
+				const [ten, quarter] = [T - 10 * 60_000, T - 25 * 60_000];
+				assert.ok(clear(g, vertical ? at(quarter).y : at(quarter).x), 'a handle is in the way');
+				const lengthIs = async (want) => {
+					const said = await until(() => pillsOf(page), (p) => p.includes(`dur:dur=${want}`));
+					assert.deepEqual(said.filter((p) => /^(time|dur):/.test(p)), ['time:-t 15:00', `dur:dur=${want}`]);
+				};
+				await finger(page, at(ten));
+				await lengthIs('10m');
+				await finger(page, at(ten), at(quarter));
+				await lengthIs('25m');
+				await page.locator(`${NOWVIEW} svg.svg .cursor-span`).waitFor({ state: 'attached' });
+				await app.idle();
+				// Each pill on its axis's strip: the length on the relative one.
+				const across = await page.locator(`${NOWVIEW} .axis-pill`).evaluateAll(
+					(els, y) =>
+						els.map((e) => {
+							const r = e.getBoundingClientRect();
+							return [e.querySelector('.pill').classList.contains('dur') ? 'dur' : 'time', y ? r.left + r.width / 2 : r.top + r.height / 2];
+						}),
+					vertical
+				);
+				const of = Object.fromEntries(across);
+				assert.ok(Math.abs(of.dur - g.relRow) <= 2, `the length pill is at ${of.dur}, the relative axis at ${g.relRow}`);
+				assert.ok(Math.abs(of.time - g.absRow) <= 2, `the time pill is at ${of.time}, the clock axis at ${g.absRow}`);
 			});
 		});
 

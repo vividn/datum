@@ -894,6 +894,14 @@
 	let landedOn: { pill?: string } | null = null;
 	/** The pill the press in hand is on, as `onPillDown` hands it to `begin`. */
 	let pillDown: string | undefined;
+	/**
+	 * The absolute pill a scrub of the relative axis gives a LENGTH to, in ms
+	 * (da-f4sto, vividn: «when an absolute time is selected and you press in
+	 * the relative time axis it adds a dur automatically»): set by a press
+	 * before it, and kept for the scrub, so the time stays and the span runs
+	 * from the finger to it, a duration ending at its time.
+	 */
+	let lengthTo: number | null = null;
 	/** When an axis last made a selection by a press: the pill it leaves under the finger, a double tap's second is not a tap on it. */
 	let axisPressed = -Infinity;
 
@@ -923,6 +931,8 @@
 		const word = /^t?([-+])(.+)$/.exec(near.textContent ?? '');
 		const by = word ? stepMinutes(word[2]) * (word[1] === '-' ? -1 : 1) : NaN;
 		const at = instantMs() + by * 60_000;
+		// As a scrub's: a label at the pill or past it leaves the pill and no length.
+		if (lengthTo !== null && !Number.isNaN(at)) return lengthOf(at);
 		return Number.isNaN(at) || at >= nowMs() ? null : { rel: (nowMs() - at) / 60_000, from: 'nowview' as const };
 	}
 
@@ -934,6 +944,7 @@
 	 */
 	function scrubAt(x: number, y: number) {
 		const at = instantAt(x, y);
+		if (scrubbing === 'rel' && lengthTo !== null) return lengthOf(at);
 		if (at >= nowMs() - EDGE_MS) return null;
 		if (scrubbing === 'rel') return selection(at, undefined, 'rel');
 		const near = dataNear(along(x, y), SCRUB_SNAP_PX);
@@ -954,11 +965,14 @@
 		// wherever it goes until the lift. The clock's is absolute and stops
 		// a few px either side of a dot or a state change; the relative one's
 		// is relative and not snapped, which is the point (da-b9glf).
-		const on = pillDown ? ($pointed?.rel !== undefined ? 'rel' : 'abs') : axisAt(press.x, press.y, markOf(event.target) ? 2 : AXIS_REACH_PX);
+		const on = pillDown ? (pillDown === SPAN_ID || $pointed?.rel !== undefined ? 'rel' : 'abs') : axisAt(press.x, press.y, markOf(event.target) ? 2 : AXIS_REACH_PX);
 		if (on) {
 			mode = 'scrub';
 			scrubbing = on;
 			waiting = null;
+			// A press later than the pill is not decided (asked of vividn
+			// 11-03): it makes a relative time, as with none.
+			lengthTo = on === 'rel' && counted && instantAt(press.x, press.y) < +counted.at ? +counted.at : null;
 			if (pillDown) return void (landedOn = { pill: pillDown });
 			const label = labelAt(press.x, press.y, on);
 			landedOn = label && {};
@@ -986,6 +1000,7 @@
 		onMark = null;
 		waiting = null;
 		landedOn = null;
+		lengthTo = null;
 		mode = 'press';
 		long = false;
 		panned = 0;
@@ -1032,6 +1047,13 @@
 		kind === 'abs'
 			? { at: new Date(ms), step: grain, span, from: 'nowview' as const }
 			: { rel: (Math.round((nowMs() - ms) / 1000 / grain) * grain) / 60, span, from: 'nowview' as const };
+	/** `lengthTo`'s pill, with the span back from it to `ms` in the window's step: none from it on. */
+	const lengthOf = (ms: number) => ({
+		at: new Date(lengthTo!),
+		step: 1,
+		span: (Math.max(0, Math.round((lengthTo! - ms) / 1000 / grain)) * grain) / 60,
+		from: 'nowview' as const
+	});
 	/** An instant a mark or a clock time names, absolute and to the second: what a snap lands on. */
 	const exact = (ms: number) => ({ at: new Date(ms), step: 1, from: 'nowview' as const });
 
@@ -1923,16 +1945,14 @@
 		};
 		// Across, the middle of its axis's strip: between the picture's edge and the axis's line.
 		const [frame, rel, abs] = [svg, svg?.querySelector('path.axis'), svg?.querySelector('path.clock-axis')].map((e) => e?.getBoundingClientRect());
-		const strip = !frame
-			? null
-			: $pointed?.rel !== undefined
-				? rel && (vertical ? (frame.left + rel.right) / 2 - home.x : (rel.top + frame.bottom) / 2 - home.y)
-				: abs && (vertical ? (abs.left + frame.right) / 2 - home.x : (frame.top + abs.bottom) / 2 - home.y);
-		const spot = (at: number | null): Spot =>
+		const relStrip = frame && rel && (vertical ? (frame.left + rel.right) / 2 - home.x : (rel.top + frame.bottom) / 2 - home.y);
+		const absStrip = frame && abs && (vertical ? (abs.left + frame.right) / 2 - home.x : (frame.top + abs.bottom) / 2 - home.y);
+		const spot = (at: number | null, strip: number | null | undefined): Spot =>
 			at === null || strip == null ? null : vertical ? { x: strip, y: at } : { x: at, y: strip };
+		// The length is relative, so on the relative axis whatever its time is (da-f4sto).
 		spots = {
-			time: spot(held(centreOf('svg.svg .cursor-head'), '.nowview-pills .pill.time')),
-			dur: spot(held(centreOf('svg.svg .cursor-span'), '.nowview-pills .pill.dur'))
+			time: spot(held(centreOf('svg.svg .cursor-head'), '.nowview-pills .pill.time'), $pointed?.rel !== undefined ? relStrip : absStrip),
+			dur: spot(held(centreOf('svg.svg .cursor-span'), '.nowview-pills .pill.dur'), relStrip)
 		};
 		// The «now» under the strip, or, with none drawn, the axis's row and
 		// the side of the window now lies on (da-dv45l).
