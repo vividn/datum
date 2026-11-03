@@ -266,13 +266,27 @@ fn a_reader_reads_through_its_writers_open_session() {
 /// (da-xwde8). One write is one reopen: a quiet file is not drawn again.
 #[test]
 fn a_readers_watch_draws_its_owners_writes() {
+    watch_draws_its_owners_writes(&["dayview", "-w"], "</svg>");
+}
+
+/// `tail -w` polls in loops of its own, which open the file again as the
+/// shared one does (da-cvvz7): its repaint, and its JSON lines.
+#[test]
+fn a_readers_tail_watch_draws_its_owners_writes() {
+    watch_draws_its_owners_writes(&["tail", "-w"], "\x1b[2J");
+    watch_draws_its_owners_writes(&["tail", "-w", "--json"], "\"rows\"");
+}
+
+/// `args` watching a read-only database draws two writes of its owner, each
+/// once: `frame` marks a drawing in what it prints.
+fn watch_draws_its_owners_writes(args: &[&str], frame: &str) {
     if root() {
         return;
     }
     let env = Env::new();
     let guard = env.read_only(&["town.db"]);
     let mut watch = env
-        .command(&["dayview", "-w"])
+        .command(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -311,10 +325,10 @@ fn a_readers_watch_draws_its_owners_writes() {
         guard = Some(env.read_only(&["town.db"]));
         wait_for(field, &mut watch);
     }
-    // Each render ends its SVG; three polls with no write add none.
+    // Polls with no write draw nothing.
     let renders = || {
         String::from_utf8_lossy(&drawn.lock().unwrap())
-            .matches("</svg>")
+            .matches(frame)
             .count()
     };
     std::thread::sleep(Duration::from_millis(200));

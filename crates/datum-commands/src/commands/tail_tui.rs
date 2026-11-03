@@ -79,8 +79,10 @@ pub(crate) fn run(
     type FrameSig = (u16, u16, u64, usize, bool, usize);
     let mut last_sig: Option<FrameSig> = None;
     let mut next_fetch = Instant::now() + interval;
+    let mut watched = crate::commands::watch::Watched::new(db);
 
     loop {
+        let db = watched.db();
         // ── Render (idle-frame suppression: only repaint when the frame
         //    signature actually changes, mirroring the append loop's
         //    da-d6yo behaviour). ──
@@ -195,12 +197,16 @@ pub(crate) fn run(
             if state.scroll == 0 && args.count.is_none() && buffer.len() == fetch_cap {
                 fetch_cap = (fetch_cap.saturating_mul(2)).min(MAX_BUFFER);
             }
+            next_fetch = Instant::now() + interval;
+            if !specs.poll(&mut watched)? {
+                continue;
+            }
+            let db = watched.db();
             buffer = fetch_buffer(args, db, fetch_cap)?;
             state.recompute(&slugs_of(&buffer), view_height(rows), anchor);
             if specs.changed(db) {
                 last_sig = None;
             }
-            next_fetch = Instant::now() + interval;
         }
     }
 

@@ -16,7 +16,7 @@ use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::{load_registry_opt, registry_of, resolve_prefix_or_tombstone};
 use crate::commands::render_helpers::build_table_contexts;
 use crate::commands::time_bounds::parse_since;
-use crate::commands::watch::data_version;
+use crate::commands::watch::{data_version, Poll, Watched};
 use crate::render::tail_rows::{tail_rows, TailDocument};
 use crate::render::term_layout::{
     detect_cols, detect_rows, given_rows, is_stdout_tty, row_width, width_given,
@@ -145,7 +145,7 @@ fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &
         suppress_header: false,
         max_total_width: None,
     };
-    let emit = |entries: &[Entry]| -> Result<()> {
+    let emit = |entries: &[Entry], db: &Db| -> Result<()> {
         // The same contexts the table renderer gets, so the `_n` a row
         // reports here is the `_n` a row would show there.
         let ctxs = build_table_contexts(entries, db);
@@ -166,21 +166,26 @@ fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &
     // Ahead of the first frame, so a spec written after it is a change.
     let specs = args.watch.is_some().then(|| WatchedSpecs::read(db));
     let entries = tail_entries_with_default_count(args, None, db)?;
-    emit(&entries)?;
+    emit(&entries, db)?;
     let (Some(secs), Some(mut specs)) = (args.watch, specs) else {
         return Ok(());
     };
     let interval = watch_interval(secs);
     let mut last_sig = frame_signature(false, &entries);
+    let mut watched = Watched::new(db);
     loop {
         std::thread::sleep(interval);
+        if !specs.poll(&mut watched)? {
+            continue;
+        }
+        let db = watched.db();
         let entries = tail_entries_with_default_count(args, None, db)?;
         let sig = frame_signature(false, &entries);
         if !specs.changed(db) && sig == last_sig {
             continue;
         }
         last_sig = sig;
-        emit(&entries)?;
+        emit(&entries, db)?;
     }
 }
 
@@ -209,6 +214,21 @@ impl WatchedSpecs {
             version: None,
             registry,
         }
+    }
+
+    /// Poll the watched file, opening it again where it changed under an
+    /// `immutable` open (da-cvvz7); false where this poll is to be skipped.
+    /// A new handle's `data_version` counts afresh, so its specs are read
+    /// again.
+    pub(crate) fn poll(&mut self, watched: &mut Watched) -> Result<bool> {
+        Ok(match watched.poll()? {
+            Poll::Same => true,
+            Poll::Reopened => {
+                self.version = None;
+                true
+            }
+            Poll::Wait => false,
+        })
     }
 
     /// Whether a spec changed since the last read, so the frame is stale
@@ -311,8 +331,13 @@ fn watch_repaint_loop(
     install_sigwinch_handler();
     let columns = split_columns(&args.columns);
     let mut last_sig = initial_sig;
+    let mut watched = Watched::new(db);
     loop {
         wait_with_resize_wake(interval);
+        if !specs.poll(&mut watched)? {
+            continue;
+        }
+        let db = watched.db();
         // Re-detect the terminal every tick so a live resize between
         // frames updates the layout. `detect_cols`/`detect_rows` query
         // `TIOCGWINSZ` directly on TTYs, so the post-resize repaint

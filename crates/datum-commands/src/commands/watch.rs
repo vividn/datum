@@ -52,30 +52,22 @@ where
     F: FnMut(&Db) -> Result<()>,
 {
     render(db)?;
-    let mut reopened: Option<Db> = None;
-    let mut failed = false;
+    let mut watched = Watched::new(db);
     let mut last_version = data_version(db)?;
     let mut last_render = Instant::now();
     loop {
         std::thread::sleep(POLL_INTERVAL);
-        let held = reopened.as_ref().unwrap_or(db);
-        // Only a handle opened at a path says its file changed.
-        if let Some(path) = held.path().filter(|_| held.changed_while_read()) {
-            match Db::open_to_read(&path.to_string_lossy()) {
-                Ok(fresh) => {
-                    failed = false;
-                    render(&fresh)?;
-                    last_version = data_version(&fresh)?;
-                    last_render = Instant::now();
-                    reopened = Some(fresh);
-                }
-                Err(e) if failed => {
-                    return Err(e).context("open the changed database again to read it");
-                }
-                Err(_) => failed = true,
+        match watched.poll()? {
+            Poll::Reopened => {
+                render(watched.db())?;
+                last_version = data_version(watched.db())?;
+                last_render = Instant::now();
+                continue;
             }
-            continue;
+            Poll::Wait => continue,
+            Poll::Same => {}
         }
+        let held = watched.db();
         // If the pragma read fails transiently, fall back to the
         // periodic-refresh tick rather than aborting the watch session.
         let version = data_version(held).unwrap_or(last_version);
@@ -85,6 +77,62 @@ where
             render(held)?;
             last_version = version;
             last_render = Instant::now();
+        }
+    }
+}
+
+/// What a watch's poll found of its file.
+pub enum Poll {
+    /// Read on with the handle held.
+    Same,
+    /// The file changed under an `immutable` open and was opened again:
+    /// read the new handle, whose `data_version` counts afresh.
+    Reopened,
+    /// Opening it again failed: skip this poll and try at the next.
+    Wait,
+}
+
+/// A watch's handle on its database (da-xwde8, da-cvvz7): a file opened
+/// `immutable` is never read again by SQLite, so once it changes the watch
+/// opens it again, read-only as before. A reopen that fails is tried at the
+/// next poll, and a second failure in a row ends the watch.
+pub struct Watched<'a> {
+    first: &'a Db,
+    reopened: Option<Db>,
+    failed: bool,
+}
+
+impl<'a> Watched<'a> {
+    pub fn new(db: &'a Db) -> Self {
+        Self {
+            first: db,
+            reopened: None,
+            failed: false,
+        }
+    }
+
+    /// The handle to read.
+    pub fn db(&self) -> &Db {
+        self.reopened.as_ref().unwrap_or(self.first)
+    }
+
+    pub fn poll(&mut self) -> Result<Poll> {
+        let held = self.db();
+        // Only a handle opened at a path says its file changed.
+        let Some(path) = held.path().filter(|_| held.changed_while_read()) else {
+            return Ok(Poll::Same);
+        };
+        match Db::open_to_read(&path.to_string_lossy()) {
+            Ok(fresh) => {
+                self.failed = false;
+                self.reopened = Some(fresh);
+                Ok(Poll::Reopened)
+            }
+            Err(e) if self.failed => Err(e).context("open the changed database again to read it"),
+            Err(_) => {
+                self.failed = true;
+                Ok(Poll::Wait)
+            }
         }
     }
 }
