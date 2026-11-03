@@ -93,6 +93,11 @@ impl Copy {
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port))
             // Never a service in the real home (da-vd2sn).
             .env("DATUM_SYNC_NO_DAEMON", "1")
+            // A copy's user is its env's alone, never the runner's: a test
+            // that replaces `env` runs it with none, on a can's box as in CI
+            // (da-lpvr8).
+            .env_remove("USER")
+            .env_remove("LOGNAME")
             .envs(self.env.iter().copied())
             .args(args)
             .stdin(Stdio::piped())
