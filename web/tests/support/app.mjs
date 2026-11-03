@@ -1084,10 +1084,15 @@ function app(page, errors, query, clean, internal) {
 					.then((h) => h.jsonValue());
 		},
 
-		/** Press a widget in the bar, by the field it names. */
-		async pressWidget(field) {
+		/**
+		 * Log `field` from the collect widget by `verb`: the verb pending on
+		 * the line, and a tap on the field, which then runs at once (a bare
+		 * tap only opens it, da-w6437).
+		 */
+		async pressWidget(field, verb = 'moment') {
 			const before = await page.locator('.cli .echo').count();
-			await page.locator('.bar button.widget', { hasText: field }).first().click();
+			await page.locator('.prompt-bar input').fill(`${verb} `);
+			await page.locator(`.bar button.widget[data-field="${field}"][data-act="run"]`).click();
 			await page.waitForFunction(
 				(n) => document.querySelectorAll('.cli .echo').length > n,
 				before

@@ -302,10 +302,10 @@ describe('what a press under a verb runs', () => {
 // What a tap on a field DOES, which its outline is drawn from (da-z8z40):
 // the bead's table, row by row. `run` is the double outline.
 describe('what a field tap does', () => {
-	test('with no verb: a point and a block run, a switch opens, a record fills', () => {
-		assert.equal(pressKind(point, null), 'run');
-		assert.equal(pressKind(offBlock, null), 'run');
-		assert.equal(pressKind(onBlock, null), 'run');
+	test('with no verb: a record fills, and every other field opens in collect (da-w6437)', () => {
+		assert.equal(pressKind(point, null), 'show');
+		assert.equal(pressKind(offBlock, null), 'show');
+		assert.equal(pressKind(onBlock, null), 'show');
 		assert.equal(pressKind(onSwitch, null), 'show');
 		assert.equal(pressKind(boolSwitch, null), 'show');
 		assert.equal(pressKind(record, null), 'fill');
@@ -326,15 +326,15 @@ describe('what a field tap does', () => {
 
 	// da-chml5, vividn: «moment/start/end run at once with a double outline,
 	// unless there are required keys only, in which case fill the line».
-	test('a field with a required key fills, bare or under a verb — but end still runs', () => {
+	test('a field with a required key fills under a verb — but end still runs, and a bare tap opens it', () => {
 		const tea = { ...point, field: 'tea', required: ['amount'] };
 		const shift = { ...offBlock, required: ['project'] };
 		const on = { ...onBlock, required: ['project'] };
-		assert.equal(pressKind(tea, null), 'fill');
+		assert.equal(pressKind(tea, null), 'show');
 		assert.equal(pressKind(tea, 'moment'), 'fill');
-		assert.equal(pressKind(shift, null), 'fill');
+		assert.equal(pressKind(shift, null), 'show');
 		assert.equal(pressKind(shift, 'start'), 'fill');
-		assert.equal(pressKind(on, null), 'run', 'a tap on a running block ends it');
+		assert.equal(pressKind(on, null), 'show');
 		assert.equal(pressKind(on, 'end'), 'run');
 		assert.equal(pressKind({ ...onSwitch, required: ['why'] }, null), 'show', 'the ring still opens');
 		assert.equal(typesKeys('switch', { ...onSwitch, required: ['why'] }), true, 'and its state fills');

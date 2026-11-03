@@ -145,7 +145,7 @@ describe('the swipe strip', () => {
 				assert.equal(await shown(page), 'main');
 				const [strip, bottom, main] = await Promise.all([
 					box(page, STRIP),
-					page.locator('.cell.fields .pane').first().boundingBox(),
+					page.locator('.cell.collect .pane').first().boundingBox(),
 					box(page, 'main')
 				]);
 				assert.ok(Math.abs(strip.height - 20.8) <= 0.5, `the strip is ${strip.height}px tall, it was 16`);
@@ -180,7 +180,7 @@ describe('the swipe strip', () => {
 					el.firstElementChild.style.minHeight = '';
 					el.scrollTop = 0;
 				});
-				await page.locator('.cell.fields').getByRole('button', { name: /^maximize/ }).click();
+				await page.locator('.cell.collect').getByRole('button', { name: /^maximize/ }).click();
 				const big = await page.locator('section.big').boundingBox();
 				assert.ok(Math.abs(big.y + big.height - strip.y) <= 1, `the big pane ends at ${big.y + big.height}, the strip starts at ${strip.y}`);
 				await swipe(page, 300, strip.y + strip.height / 2, -220, 0);
@@ -538,7 +538,7 @@ describe('the root swipes between layouts', () => {
 				await scrollX(back, false);
 				await swipeOver(page, back, 120, 0);
 				await until(() => shown(page), (name) => name === 'main');
-				assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
+				assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'collect']);
 
 				// And the page it came back to does not hang off its own edge:
 				// the root's content is the page's scroller, and a box moved
@@ -911,7 +911,7 @@ describe('the strip: never a blank between two tabs', () => {
 			async (app) => {
 				const { page } = app;
 				// The next layout is not mounted until a gesture brings it on.
-				assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
+				assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'collect']);
 				const body = await wideRepl(app);
 				await scrollX(body, true);
 				await unbroken(
@@ -943,7 +943,7 @@ describe('the strip: never a blank between two tabs', () => {
 							};
 						})
 					),
-					[{ clip: 'inset(50%)', hidden: 'true', focused: false, hit: false, titles: ['dayview', 'cli', 'tail', 'fields'] }],
+					[{ clip: 'inset(50%)', hidden: 'true', focused: false, hit: false, titles: ['dayview', 'cli', 'tail', 'collect'] }],
 					'the layout left behind is kept, clipped, and takes no focus or press'
 				);
 			},
@@ -1216,7 +1216,7 @@ describe('a maximize keeps every layout mounted', () => {
 				await page.locator('section[data-pane="side"] > .titlebar button.maximize[aria-pressed="true"]').waitFor();
 				assert.equal(await bodies(), 2, 'the maximize let the kept layout go');
 				await maximizeButton(page, 'side').click();
-				await until(() => titles(page), (seen) => seen.join() === 'dayview,cli,tail,fields');
+				await until(() => titles(page), (seen) => seen.join() === 'dayview,cli,tail,collect');
 				assert.equal(await bodies(), 2, 'the restore let the kept layout go');
 				assert.equal(await unkept(), 0, 'the restore mounted a pane again');
 			},

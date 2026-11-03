@@ -1,24 +1,42 @@
 <!--
-	The fields widget — every field `datum fields` lists, and the primary
-	way anything gets logged without typing (da-nz29, da-c7u8).
+	The collect widget (da-w6437), the fields widget until then (da-nz29,
+	da-c7u8): every field `datum fields` lists, and the primary way anything
+	gets logged without typing. vividn, 2026-11-03: «the primary interaction
+	widget on the collect pane … this widget really adapts to whatever
+	you're doing».
 
-	Every field that is not ignored (`ignored` in
-	`datum fields --json`, da-d08c), spec or no spec — in ROWS by how high
-	up the pictures they are drawn, top to bottom, and most used first
-	along each row (`fieldRows`, da-xtkcp), an order taken on load and on
-	coming back to the foreground and never while in use — each shaped by
-	its kind and painted by what it is
-	now (`lookOf` in fields.ts): a point is an empty pill with its occur
-	mark beside the name; a block is a
-	rectangle, filled while it is on; a switch is a rectangle filled with
-	its current state's colour; a keyed record is its name, underlined, and
-	a click prefills `add <field> ` in the bottom bar rather than running
-	anything. The pane keeps the height its layout gives it and the BAR is
-	the scroller (da-mbz2) — `ButtonRows`, every button bar's layout: as
-	many rows as fit, with no cap (da-arms4), each packed on its own and all of them
-	scrolled left and right (da-vu7pi). NOTHING HANGS OUT OF IT: the widget's only
-	floating surface was the `-t` / `dur` / `note` panel, and da-e78x6
-	removed it.
+	Every field that is not ignored (`ignored` in `datum fields --json`,
+	da-d08c), spec or no spec, each shaped by its kind and painted by what it
+	is now (`lookOf` in fields.ts): a point is an empty pill with its occur
+	mark beside the name; a block is a rectangle, filled while it is on; a
+	switch is a rectangle filled with its current state's color; a keyed
+	record is its name, underlined, and a click prefills `add <field> ` in
+	the bottom bar rather than running anything.
+
+	AT REST the fields stand in a CLUSTER (`clustered`): the most used and
+	most recent first (`rowsUnder`, the order taken on load and on coming
+	back to the foreground and never while in use), the first in the middle
+	of the widget and the rest ring by ring around it (`ringOf`), panned by a
+	drag where they run past the widget's edges. A box too short for the
+	ring holds them in the rows it has, which run past its sides (`dealt`).
+
+	A TAP OPENS a field (vividn's frames, 2026-11-03): its pill goes on the
+	bar and its view takes the widget, top to bottom with no labels —
+	‹ back and the field; its TIME, `−q` (five minutes earlier), and for a
+	field with a length `−m` (a moment) and `5m` (five minutes long), each
+	becoming a two-part pill whose left part adds another five where it
+	still can and whose × clears it, `−m` and the length one pill and never
+	both; a switch field's STATES, the first of its spec in the middle and
+	the rest ring by ring, the one it is in marked with the CLI's yellow `!`
+	and off left to the commands; and its KEYS at the bottom, a tap putting
+	`key=` on the line, with `+ data` taking the caret there. Its time is the
+	page's selection (#lib/cursor.ts), so the `-qq` and length pills are the
+	nowview's own. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
+	click); any other field runs from the commands, which take the pills.
+	A run spends them, the field's with them, and collect is back at rest.
+	Back takes the field's pill and every pill made since the tap, and puts
+	back the time and `-m` there were before it; Escape is Back.
+
 	Ignored fields get no button: the setup widget lists them under a new
 	field, and a press runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
 	without the setup widget — a switch in the menu the pane's NAME
@@ -48,69 +66,22 @@
 	A SELECTION talks to it too (da-qu16). A length pill (`25m`) on the bar leaves
 	the fields a length can be spent on — the blocks — and composes with a
 	pending verb, both filters applying. And a press on a PICTURE gives
-	the fields drawn near that height the rows to themselves, at the head
-	of them (`rowsUnder`, #lib/lanes.ts): that one only ORDERS, so
-	everything is still there, with a hairline after the promoted few to
-	say why the bar changed. Nothing moves under a finger: while a pointer
-	is over the bar the order is held until it leaves.
+	the fields drawn near that height the middle of the cluster, ahead of
+	the rest (`rowsUnder`, #lib/lanes.ts): that one only ORDERS, so
+	everything is still there. Nothing moves under a finger: while a
+	pointer is over the bar the order is held until it leaves. A field open
+	stays open whatever filters the bar: the length made in its view would.
 
 	The widget shows the fields and nothing else: a new field is made in
 	the setup widget or at the prompt (`setup <field> …`), never here — its
 	bare (+) is gone (vividn, 2026-10-22: «let's get rid of + button, it's
 	confusing and looks bad», da-myet1).
 
-	Press to log. HOLD — or right-click, or shift+click, or the menu key —
-	to put the field on the bar as a PILL (da-8810n), which is how the rest
-	of the page is narrowed to it: the stats widget and the tail show that
-	field, the commands widget keeps the commands that take one, and the
-	pictures outline that field's own marks. The pill is minted in the
-	field's own colour and cleared like any other pill, by its × — or by
-	holding the same field again.
+	HOLD — or right-click, or shift+click, or the menu key — puts the field
+	on the bar as a PILL alone (da-8810n), which narrows the rest of the
+	page to it, and held again takes it away (da-05oit).
 
-	HOLD HAS EXACTLY THAT ONE MEANING (vividn, 2026-09-22: «mint the pill,
-	let's remove that -t/dur panel»). It had two for a day — da-8810n put
-	the pill first and left the older `-t` / `dur` / `note` panel a second
-	hold away — and da-e78x6 took the panel out rather than keep a gesture
-	that means two things. So a hold on a field already pilled opens
-	nothing: it TOGGLES, taking that pill away, locked or not (da-05oit —
-	vividn: «long pressing or right clicking on a field again after a pill is
-	added should remove the pill/filter»). The panel's jobs are reached
-	elsewhere: a TIME or a DURATION comes from the time cursor as a `-t` /
-	length pill (a click or a drag on any drawn picture, #lib/cursor.ts)
-	or is typed,
-	and both ride after the field pill into the very argv a press composes
-	(`withPills` in #lib/selection.ts); a multi-state field's states are
-	the list a PLAIN press already fills the bar with (da-g635); and `note`
-	is typed — `note <field> <words>`, the CLI routing the bare words into
-	the comment (da-py5w).
-
-	A multi-state field asks WHICH, so its button reads `name:` and a press
-	puts its states IN PLACE OF the fields (da-g635, da-vg8vr) — vividn:
-	«keep the states in a consistent place inside of the fields widget …
-	arranged radially, with end in the center, but back can move to the
-	top left corner of the widget, add state can go in the top right».
-	Where each state stands is the field's alone (`ringOf` in fields.ts):
-	the spec's order is a rank, the first nearest `end`, so a state is
-	always the same place, like a pie menu (da-7q3ka), whichever button was
-	tapped and wherever it stood. `end` is at the widget's centre, or a gap
-	of its width on a field whose spec says it is never off (da-cwieh); the
-	back icon and a `+` of its size are in the top corners, out of the packing,
-	and stay there while the states pan, which a drag does in both
-	directions where they run past the box. A box too short for that ring
-	stands them in the rows it holds, between the corners on the top one,
-	before any is drawn past its edge (`ringIn`, da-q0lcx); those three are hollow, the
-	other states a light tint, the one the field is in solid and bold. The
-	fields are hidden under them, not taken out, so Back and Escape find
-	the bar as it was. A name too long for the pane is cut with an
-	ellipsis, the whole of it still the
-	button's text and title. A press on a state runs `switch <field> <state>` — plainly, the bar's own
-	pills being the only thing that adds to it — and closes it; `+` is an
-	input, and Enter on it runs the same command with a state the field has
-	never been in, which is how one is learned. The gesture still pills the
-	field.
-
-	The widget never runs anything itself: it composes an argv and
-	dispatches it, and the page runs it through `run()` and echoes the
+	Under a pending verb a press composes an argv and dispatches it, and the page runs it through `run()` and echoes the
 	result's own argv into the CLI widget. That is the teach loop, and it only
 	teaches the truth because the echoed argv IS the executed argv — there
 	is no second string built for display that could drift from it.
@@ -118,18 +89,19 @@
 <script lang="ts">
 	import { flushSync, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
+	import LengthArrow from './LengthArrow.svelte';
 	import { CLICK_SLOP } from './inspect.js';
 	import {
 		FULL,
 		aligned,
 		panned,
 		ringIn,
+		dealt,
 		lookOf,
 		yIn,
 		zoomed,
 		pressArgv,
 		stateLook,
-		type Spot,
 		type Look,
 		type SwitchLabel,
 		type FieldButton,
@@ -138,9 +110,11 @@
 		type Align,
 		type View
 	} from './fields.js';
+	import { get } from 'svelte/store';
 	import { act } from './act.js';
 	import { holds } from './hold.js';
-	import { fieldPill, setFieldPill } from './bar.js';
+	import { fieldPill, focusLine, pills, prefill, setFieldPill, text, type Pill } from './bar.js';
+	import { SPAN_ID, cursor, pointAt, type Cursor } from './cursor.js';
 	import { closer, rowsUnder, type Near } from './lanes.js';
 	import { shellJoin } from './shellSplit.js';
 	import {
@@ -234,26 +208,30 @@
 	});
 
 	/**
-	 * The field whose STATES have taken the bar over, by name (da-g635).
+	 * The field tapped open, by name (da-w6437).
 	 *
 	 * By name and not by the button, because the entries are rebuilt on
-	 * every beat: held by name, the list redraws from the field as it is
+	 * every beat: held by name, the view redraws from the field as it is
 	 * now — the state just logged marked — rather than from a copy that
 	 * went stale the moment it was picked.
 	 */
 	let picked: string | null = $state(null);
-	/** Where `end` is in the box of states, from its top left corner (`around`). */
+	/**
+	 * What the bar held as the field was tapped: its selection and whether
+	 * it said `-m`. Back puts them back, so a time pill made before the tap
+	 * stays and one made since goes (vividn, 14:49).
+	 */
+	let entered: { cursor: Cursor | null; moment: boolean } | null = null;
+	/** Where the first of the cluster stands in its box, from the box's top left corner (`around`). */
 	let anchor = $state.raw({ x: 0, y: 0 });
-	/** How far a drag has panned the states from the center, kept so they cannot leave the widget; none at rest. */
+	/** How far a drag has panned the cluster from the center, kept so it cannot leave the room; none at rest. */
 	let pan: { x: number; y: number } | null = $state.raw(null);
-	/** The size of the pane the states fill, and of the box they stand in. */
+	/** The fields' pan while a field is open, for its view to close back to. */
+	let restPan: { x: number; y: number } | null = null;
+	/** The size of the room the cluster stands in, and of the cluster's own box. */
 	let paneW = $state(0);
 	let paneH = $state(0);
-	let picker: HTMLElement | undefined = $state();
 	let extent = $state.raw({ w: 0, h: 0 });
-	/** Whether the `+` at the end of that list has become its input. */
-	let addingState = $state(false);
-	let newState = $state('');
 	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
 	let over = $state(false);
 	/**
@@ -278,53 +256,40 @@
 			verb
 		)
 	);
-	const picking = $derived(picked === null ? null : (buttons.find((b) => b.field === picked) ?? null));
-	// A picked field no longer on the bar — deleted, the database emptied or
-	// restored, another tab's write, or a verb or length pill filtering it
-	// out — is Back, not a list held in waiting to take the bar over again
-	// the moment a field of that name returns (da-mv8ng).
-	$effect.pre(() => {
-		if (picked !== null && picking === null) untrack(back);
-	});
+	// Among every field, not the bar's: a length made in its own view must
+	// not filter the field it was made for away (`fieldsWithDuration`).
+	const picking = $derived(picked === null ? null : (fields.find((b) => b.field === picked) ?? null));
 
 	/**
-	 * What the bar draws: the fields in their rows (`arrange`), and on a bar
-	 * with none the hint alone. A picked field's states float over it.
+	 * What the bar draws: in rows only the hint, on a bar with none, and the
+	 * fields aligned to the picture where that is asked; otherwise the fields
+	 * stand in the cluster (`clustered`), and a picked field's view floats
+	 * over the bar.
 	 */
 	type Entry = { kind: 'hint' } | { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
 	const entries = $derived.by((): Entry[] => {
 		if (buttons.length > 0) return [];
 		return [{ kind: 'hint' }];
 	});
-	/**
-	 * The fields' rows (da-xtkcp): by height top to bottom, most used first
-	 * along each, as they stood at the last sort — and a press's fields at
-	 * the head of them, the hairline after the last of them in each row.
-	 */
-	const arrange = $derived.by(() => {
+	const arrange = $derived.by((): ((items: Entry[], rows: number) => Entry[][]) => {
 		// Read here and not only in the functions: a new one lays the bar out again.
-		const [placed, standing, near] = [placing, standings, shown];
-		return buttons.length === 0
-				? lanesOf
-				: picture
-					? (): Entry[][] => [placed]
-					: (_: Entry[], rows: number): Entry[][] =>
-							rowsUnder(buttons, rows, standing, near).map(({ lead, rest }): Entry[] => [
-								...lead.map(
-									(button, k): Entry => ({
-										kind: 'field',
-										button,
-										promoted: true,
-										edge: k === lead.length - 1 && rest.length > 0
-									})
-								),
-								...rest.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
-							]);
+		const placed = placing;
+		return buttons.length === 0 ? lanesOf : picture ? () => [placed] : () => [];
 	});
 	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind);
 
 	/** Whether the buttons stand where their fields are drawn: the option, on a bar of fields. */
 	const picture = $derived(align === 'picture' && buttons.length > 0);
+	/**
+	 * The fields at rest, most used and most recent first, a press's fields
+	 * ahead of them (`rowsUnder`): the first stands in the middle of the
+	 * widget and the rest ring by ring around it (vividn, 2026-11-03:
+	 * «moving the frecent entries to the middle of the pane»).
+	 */
+	const under = $derived(buttons.length === 0 || picture ? [] : rowsUnder(buttons, 1, standings, shown));
+	const clustered = $derived(under.flatMap(({ lead, rest }) => [...lead, ...rest]));
+	/** The fields a press on a picture put first, marked so (da-qu16). */
+	const promoted = $derived(new Set(under.flatMap(({ lead }) => lead.map((b) => b.field))));
 	/** The fields in the order they claim their places: most used at the last sort first. */
 	const placing = $derived(
 		[...buttons]
@@ -336,8 +301,8 @@
 	let sizes = $state.raw(new Map<string, { w: number; h: number }>());
 	/** The part of the pictures shown; this session's, never the layout's. */
 	let view: View = $state.raw(FULL);
-	/** Where the states are drawn from the center: the pan, or at rest `rest`'s. */
-	const shift = $derived(pan ?? { x: 0, y: rest() });
+	/** Where the cluster is drawn from the center: the pan, or none at rest. */
+	const shift = $derived(pan ?? { x: 0, y: 0 });
 	const zoomedIn = $derived(view.to - view.from < 1);
 	const GAP = 6;
 	/** Where each slot stands. */
@@ -504,7 +469,7 @@
 	 */
 	function titleOf(button: FieldButton): string {
 		const record = button.shape.kind === 'record';
-		const press = record ? `${shellJoin(['add', button.field])} … — fills the prompt` : 'press to log';
+		const press = record ? `${shellJoin(['add', button.field])} … — fills the prompt` : 'press to collect it';
 		return [
 			...(record ? [] : [button.field]),
 			...(button.ignored ? ['ignored'] : []),
@@ -513,36 +478,135 @@
 		].join(' · ');
 	}
 
-	/** Close the field's states: the fields under them are as they were. */
-	function back() {
-		picked = null;
+	// ---- the PILLS a field's view makes (da-w6437) ----------------------
+	//
+	// Its time is the page's selection (#lib/cursor.ts), so `−q` and `5m` are
+	// the very `-qq` and length pills the nowview makes and draws, and the
+	// cursor's reconciler is what a × on the bar goes through. A state and
+	// `-m` are pills of their own.
+
+	const STATE_ID = 'state';
+	const MOMENT_ID = 'moment';
+	/** Each `−q` and each `5m` a tap adds, in minutes. */
+	const STEP = 5;
+
+	/** The state pill's state, and whether `-m` is on the bar. */
+	const chosen = $derived($pills.find((p) => p.id === STATE_ID)?.text ?? null);
+	const moment = $derived($pills.some((p) => p.id === MOMENT_ID));
+	/** The time pill and the length the bar holds. */
+	const timePill = $derived($pills.find((p) => p.kind === 'time') ?? null);
+	const span = $derived($pills.some((p) => p.id === SPAN_ID) ? ($cursor?.span ?? null) : null);
+	/** A tap adds a `q` while the time is so many fives before now, and five minutes while the length is fives: a drag leaves neither. */
+	const addsQ = $derived(!!timePill && $cursor?.rel !== undefined && $cursor.rel > 0 && $cursor.rel % STEP === 0);
+	const addsM = $derived(span !== null && span % STEP === 0);
+
+	// A picked field gone — deleted, the database emptied or restored,
+	// another tab's write — closes, not a view held in waiting to take the
+	// bar over again the moment a field of that name returns (da-mv8ng). So
+	// does one whose pill went: a run spent it, or its × was pressed.
+	$effect.pre(() => {
+		if (picked !== null && (picking === null || $fieldPill !== picked)) untrack(close);
+	});
+
+	/** Where a selection is, without its length. */
+	const where = (c: Cursor) => (c.rel !== undefined ? { rel: c.rel, from: c.from } : { at: c.at, step: 1, from: c.from });
+
+	/** `−q`: five minutes earlier. */
+	function earlier() {
+		const c = get(cursor);
+		pointAt({ ...(c ? where(c) : {}), rel: (c?.rel ?? 0) + STEP, span: c?.span });
+	}
+	/** The time pill's ×: the length, if any, ends at now again. */
+	function clearTime() {
+		const c = get(cursor);
+		pointAt(c?.span ? { rel: 0, span: c.span } : null);
+	}
+	/** `5m`: five minutes more, in place of `-m`. */
+	function longer() {
+		setMoment(false);
+		const c = get(cursor);
+		pointAt({ ...(c ? where(c) : { rel: 0 }), span: (c?.span ?? 0) + STEP });
+	}
+	/** The length's ×. */
+	function clearLength() {
+		const c = get(cursor);
+		if (c) pointAt(where(c));
+	}
+	/** `−m` is a toggle, and a moment has no length. */
+	function toggleMoment() {
+		if (!moment) clearLength();
+		setMoment(!moment);
+	}
+	function setMoment(on: boolean) {
+		pills.update((all) => [
+			...all.filter((p) => p.id !== MOMENT_ID),
+			...(on ? [{ id: MOMENT_ID, kind: 'moment', text: '-m' }] : [])
+		]);
+	}
+
+	/**
+	 * A state tapped LOGS AT ONCE (vividn, 2026-11-03 16:07: one click), with
+	 * the time pills set: its pill goes beside the field's and `switch` takes
+	 * them all, so a success spends them and collect is back at rest. A field
+	 * with keys to type has its line filled instead, the field's view closed.
+	 */
+	function choose(button: FieldButton, state: string) {
+		if (typesKeys('switch', button)) {
+			// Closed, not Back: the time pills made here stay for the line filled.
+			setFieldPill(null);
+			close();
+			return onfill(pressArgv(button, state));
+		}
+		pills.update((all) => {
+			const rest = all.filter((p) => p.id !== STATE_ID);
+			const pill: Pill = { id: STATE_ID, kind: 'state', text: shellJoin([state]), color: button.stateColors[state] ?? button.color };
+			const at = rest.findIndex((p) => p.kind === 'field') + 1;
+			return [...rest.slice(0, at), pill, ...rest.slice(at)];
+		});
+		onrun(['switch']);
+	}
+
+	/** A key's chip: `key=` on the line, the caret after it. */
+	function putKey(key: string) {
+		const line = get(text);
+		prefill.set({ line: `${line}${line && !line.endsWith(' ') ? ' ' : ''}${key}=`, keyboard: true });
+	}
+
+	/** Open `button`: its pill on the bar, and its view over the fields. */
+	function open(button: FieldButton) {
+		entered = { cursor: get(cursor), moment };
+		if ($fieldPill !== button.field) setFieldPill(button.field, button.color);
+		restPan = pan;
 		pan = null;
-		addingState = false;
-		newState = '';
+		picked = button.field;
+	}
+
+	/** Close the field's view: the fields under it are as they were. */
+	function close() {
+		picked = null;
+		pan = restPan;
+		restPan = null;
+		entered = null;
+		if (chosen !== null) pills.update((all) => all.filter((p) => p.id !== STATE_ID));
+	}
+
+	/** Back: the field's pill and the ones made since it was tapped go, and a time pill already there stays. */
+	function back() {
+		const was = entered;
+		setFieldPill(null);
+		close();
+		if (!was) return;
+		if (get(cursor) !== was.cursor) cursor.set(was.cursor);
+		setMoment(was.moment);
 	}
 
 	function emit(argv: string[]) {
-		back();
 		onrun(argv);
 	}
 
 	/** Put `argv` in the command line, unrun, for the rest to be typed. */
 	function fill(argv: string[]) {
-		back();
 		onfill(argv);
-	}
-
-	/** Run `argv`, or fill it where `button` has keys to type (da-chml5). */
-	function log(argv: string[], button: FieldButton) {
-		if (typesKeys(argv[0], button)) fill(argv);
-		else emit(argv);
-	}
-
-
-	/** Put `button`'s states in place of the fields (da-g635, da-vg8vr). */
-	function pick(button: FieldButton) {
-		pan = null;
-		picked = button.field;
 	}
 
 	/**
@@ -554,69 +618,50 @@
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
 		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
-		// A multi-state field can't be logged without saying which, so a
-		// plain press asks — the bar fills with its states.
-		if (kind === 'show') pick(button);
+		// A plain press opens the field, to collect it (da-w6437).
+		if (kind === 'show') open(button);
 		// A record, or a field with keys to type: the line goes to the prompt.
 		else if (kind === 'fill') fill(argv);
 		else emit(argv);
 	}
 
-
 	/**
-	 * Enter in the `+`'s input. A state is learned from the log, so
-	 * `switch` is the whole of adding one: it is in the list next time.
-	 * Empty cancels, as Escape does.
-	 */
-	function addState(button: FieldButton) {
-		const state = newState.trim();
-		if (state === '') {
-			addingState = false;
-			newState = '';
-			return;
-		}
-		log(pressArgv(button, state), button);
-	}
-
-	/**
-	 * Stand the states around `end` (da-vg8vr): `ringIn` gives the spots
-	 * from their measured sizes and the pane's, and the box is cropped to
-	 * them, with the pane's center in it the `anchor`. Measured again
-	 * whenever the pane or a button is resized or a button comes or goes, as a
-	 * state learned while they are open does. The corners by the back icon's
-	 * size alone, the `+` being its size and the input it opens passing over.
+	 * Stand the cluster's buttons around the first (da-vg8vr): `ringIn` gives
+	 * the spots from their measured sizes and the room's, and the box is
+	 * cropped to them, the first's center the `anchor`. Measured again
+	 * whenever the room or a button is resized or a button comes or goes, as
+	 * a state learned while it is open does.
 	 */
 	function around(box: HTMLElement) {
-		const pane = box.parentElement!;
+		const room = box.parentElement!;
 		// Unrounded: `offsetWidth` rounds down.
 		const size = (el: HTMLElement) => el.getBoundingClientRect();
 		const place = () => {
 			const spots = [...box.children] as HTMLElement[];
-			const end = spots.find((s) => s.dataset.role === 'end')!;
-			const states = spots.filter((s) => s.dataset.role === 'state');
+			if (spots.length === 0) return void ((extent = { w: 0, h: 0 }), (anchor = { x: 0, y: 0 }));
 			const h = Math.max(...spots.map((s) => size(s).height));
-			const corner = pane.querySelector<HTMLElement>(':scope > .corner')!;
-			const ring = ringIn({ end: size(end).width, states: states.map((s) => size(s).width) }, h, GAP, {
-				w: pane.clientWidth,
-				h: pane.clientHeight,
-				side: corner.offsetLeft + corner.offsetWidth + GAP,
-				lid: corner.offsetTop + corner.offsetHeight + GAP
-			});
-			const placed: [HTMLElement, Spot][] = [[end, ring.end], ...states.map((s, i): [HTMLElement, Spot] => [s, ring.states[i]])];
-			const edges = placed.map(([el, p]) => ({ el, left: p.x - size(el).width / 2, top: p.y - size(el).height / 2 }));
+			const widths = spots.map((s) => size(s).width);
+			const w = { end: widths[0], states: widths.slice(1) };
+			const ring = ringIn(w, h, GAP, { w: room.clientWidth, h: room.clientHeight, side: 0, lid: 0 });
+			const ys = [ring.end, ...ring.states].map((p) => p.y);
+			// Taller than the room, it is dealt into the room's rows instead, which run past its sides.
+			const { end, states } = Math.max(...ys) - Math.min(...ys) + h > room.clientHeight ? dealt(w, h, GAP, room.clientHeight) : ring;
+			// The first is the middle of the room, whichever way they were stood.
+			const at = [end, ...states].map((p) => ({ x: p.x - end.x, y: p.y - end.y }));
+			const edges = spots.map((el, i) => ({ el, left: at[i].x - widths[i] / 2, top: at[i].y - h / 2 }));
 			const [left, top] = [Math.min(...edges.map((e) => e.left)), Math.min(...edges.map((e) => e.top))];
 			for (const e of edges) {
 				e.el.style.left = `${e.left - left}px`;
 				e.el.style.top = `${e.top - top}px`;
 			}
 			extent = {
-				w: Math.max(...edges.map((e) => e.left + size(e.el).width)) - left,
-				h: Math.max(...edges.map((e) => e.top + size(e.el).height)) - top
+				w: Math.max(...edges.map((e, i) => e.left + widths[i])) - left,
+				h: Math.max(...edges.map((e) => e.top + h)) - top
 			};
 			anchor = { x: -left, y: -top };
 		};
 		const observer = new ResizeObserver(place);
-		observer.observe(pane);
+		observer.observe(room);
 		const watch = () => {
 			for (const spot of box.children) observer.observe(spot);
 			// Placed now as well, not a frame later: the buttons are in the
@@ -630,48 +675,22 @@
 	}
 
 	/**
-	 * `pan` kept to what the states need (da-vg8vr) — vividn: «allow panning
-	 * in 2 dimensions if states run off the sides»: along an axis the states
-	 * fit, none; along one they overrun, as far as brings their far edge to
-	 * the room's and no further, like a scroll. The room starts below the
-	 * corners, a gap past them, so a pan can always bring the top row out
-	 * from under them, where a tap would press the corner instead. States
-	 * that rest wholly in the pane have nothing to pan to.
+	 * `pan` kept to what the cluster needs (da-vg8vr) — vividn: «allow
+	 * panning in 2 dimensions if states run off the sides»: along an axis it
+	 * fits, none; along one it overruns, as far as brings its far edge to
+	 * the room's and no further, like a scroll.
 	 */
 	function kept(x: number, y: number) {
-		const axis = (at: number, from: number, to: number, start: number, size: number) =>
-			Math.min(Math.max(at, Math.min(0, to - start - size)), Math.max(0, from - start));
-		const corners = [...(picker?.querySelectorAll<HTMLElement>(':scope > .corner') ?? [])];
-		const lid = Math.max(0, ...corners.map((c) => c.offsetTop + c.offsetHeight + GAP));
-		const [top, down] = [paneH / 2 - anchor.y, rest()];
+		const axis = (at: number, to: number, start: number, size: number) =>
+			Math.min(Math.max(at, Math.min(0, to - start - size)), Math.max(0, -start));
 		return {
-			x: axis(x, 0, paneW, paneW / 2 - anchor.x, extent.w),
-			y: top + down >= 0 && top + down + extent.h <= paneH ? down : axis(y, lid, paneH, top, extent.h)
+			x: axis(x, paneW, paneW / 2 - anchor.x, extent.w),
+			y: axis(y, paneH, paneH / 2 - anchor.y, extent.h)
 		};
 	}
 
 	/**
-	 * How far down the states rest (da-amd70): none, `end` at the center,
-	 * unless a state would stand under a corner, where a tap presses the
-	 * corner instead; then just far enough that none does — never past the
-	 * room `kept` gives a pan, which starts below the corners.
-	 */
-	function rest() {
-		const ring = picker?.querySelector<HTMLElement>(':scope > .ring');
-		if (!ring) return 0;
-		const [left, top] = [paneW / 2 - anchor.x, paneH / 2 - anchor.y];
-		const corners = [...picker!.querySelectorAll<HTMLElement>(':scope > .corner')];
-		const spots = [...ring.children] as HTMLElement[];
-		const across = (s: HTMLElement, c: HTMLElement) =>
-			left + s.offsetLeft < c.offsetLeft + c.offsetWidth + GAP && left + s.offsetLeft + s.offsetWidth + GAP > c.offsetLeft;
-		return Math.max(
-			0,
-			...corners.flatMap((c) => spots.filter((s) => across(s, c)).map((s) => c.offsetTop + c.offsetHeight + GAP - top - s.offsetTop))
-		);
-	}
-
-	/**
-	 * A drag on the states pans them: a press that travels past the slop,
+	 * A drag on the cluster pans it: a press that travels past the slop,
 	 * even one that starts on a button, and its click is swallowed; one that
 	 * does not is a press of whatever it is on.
 	 */
@@ -701,13 +720,14 @@
 	/**
 	 * A reveal — a focus, a scroll into view — scrolls the room itself (da-71p3u):
 	 * taken as the pan that shows the same, so the room stays unscrolled and a
-	 * drag starts from where the states are drawn.
+	 * drag starts from where the cluster is drawn.
 	 */
-	function fold() {
-		if (!picker || !(picker.scrollLeft || picker.scrollTop)) return;
-		const [x, y] = [shift.x - picker.scrollLeft, shift.y - picker.scrollTop];
+	function fold(e: Event) {
+		const room = e.currentTarget as HTMLElement;
+		if (!(room.scrollLeft || room.scrollTop)) return;
+		const [x, y] = [shift.x - room.scrollLeft, shift.y - room.scrollTop];
 		flushSync(() => (pan = kept(x, y)));
-		picker.scrollLeft = picker.scrollTop = 0;
+		room.scrollLeft = room.scrollTop = 0;
 	}
 	function swallow(e: MouseEvent) {
 		if (!dragged) return;
@@ -716,7 +736,7 @@
 		e.stopPropagation();
 	}
 
-	/** Escape closes the states. It marks the key taken, so the command line does not ALSO peel its pills (da-al892). */
+	/** Escape is Back. It marks the key taken, so the command line does not ALSO peel its pills (da-al892). */
 	function onWindowKeyDown(e: KeyboardEvent) {
 		if (e.key !== 'Escape' || e.defaultPrevented || picked === null) return;
 		e.preventDefault();
@@ -739,6 +759,59 @@
 
 <svelte:window onkeydown={onWindowKeyDown} />
 
+<!-- One field's button, wherever it stands: in the cluster, or aligned to the picture. -->
+{#snippet fieldButton(button: FieldButton)}
+	{@const look = lookOf(button, switchLabel)}
+	{#if button.shape.kind === 'record'}
+		<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
+		     HOLD is every field's (da-8810n) — a record is a field like
+		     any other, and only what a press MEANS is its own. -->
+		<button
+			class="record"
+			use:act={pressKind(button, verb)}
+			class:ignored={button.ignored}
+			class:pilled={$fieldPill === button.field}
+			role="link"
+			data-field={button.field}
+			data-ignored={button.ignored ? '' : undefined}
+			data-pilled={$fieldPill === button.field ? '' : undefined}
+			style={vars(look) + tallOf(button)}
+			{disabled}
+			title={titleOf(button)}
+			onclick={() => press(button)}>{button.field}</button
+		>
+	{:else}
+		<button
+			class="widget {button.shape.kind}"
+			use:act={pressKind(button, verb)}
+			class:on={look.fill !== null}
+			class:ignored={button.ignored}
+			class:pilled={$fieldPill === button.field}
+			style={vars(look) + tallOf(button)}
+			{disabled}
+			data-field={button.field}
+			data-ignored={button.ignored ? '' : undefined}
+			data-pilled={$fieldPill === button.field ? '' : undefined}
+			title={titleOf(button)}
+			onclick={() => press(button)}
+		>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
+	{/if}
+{/snippet}
+
+<!-- A pill of the view's own, two parts: the left one presses `more` (none: it only says), the × clears it. -->
+{#snippet twoPart(kind: string, label: string, more: (() => void) | null, clear: () => void)}
+	<span class="part-pill" data-pill={kind}>
+		<button class="more" data-more disabled={disabled || !more} onclick={() => more?.()}
+			>{#if kind === 'length'}<LengthArrow />{/if}{label}</button
+		><button
+			class="clear"
+			{disabled}
+			aria-label="clear {label}"
+			onclick={clear}>×</button
+		>
+	</span>
+{/snippet}
+
 <div class="fields" class:picture data-align={picture ? 'picture' : 'rows'}>
 <ButtonRows
 	items={entries}
@@ -746,7 +819,7 @@
 	maxRows={Infinity}
 	center={!picture && buttons.length > 0}
 	key={keyOf}
-	class={picking ? 'picking' : ''}
+	class={picking ? 'picking' : clustered.length ? 'clustered' : ''}
 	bind:bar
 	onpointerenter={() => (over = true)}
 	onpointerleave={() => (over = false)}
@@ -764,168 +837,116 @@
 			     where it is. -->
 			<p class="hint empty">nothing tracked yet — set a field up in the setup widget, or type a command to log something</p>
 		{:else if item.kind === 'field'}
-			{@const button = item.button}
-			{@const look = lookOf(button, switchLabel)}
 			{@const stand = stands.get(keyOf(item))}
 			<div
 				class="slot"
-				class:edge={item.edge}
 				class:stand={picture}
 				class:glide={glide && !live}
 				style:left={stand ? `${stand.x}px` : null}
 				style:top={stand ? `${stand.top}px` : null}
-				data-promoted={item.promoted ? '' : undefined}
 				use:sized={keyOf(item)}
 			>
-				{#if button.shape.kind === 'record'}
-					<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
-					     HOLD is every field's (da-8810n) — a record is a field like
-					     any other, and only what a press MEANS is its own. -->
-					<button
-						class="record"
-						use:act={pressKind(button, verb)}
-						class:ignored={button.ignored}
-						class:pilled={$fieldPill === button.field}
-						role="link"
-						data-field={button.field}
-						data-ignored={button.ignored ? '' : undefined}
-						data-pilled={$fieldPill === button.field ? '' : undefined}
-						style={vars(look) + tallOf(button)}
-						{disabled}
-						title={titleOf(button)}
-						onclick={() => press(button)}>{button.field}</button
-					>
-				{:else}
-					<button
-						class="widget {button.shape.kind}"
-						use:act={pressKind(button, verb)}
-						class:on={look.fill !== null}
-						class:ignored={button.ignored}
-						class:pilled={$fieldPill === button.field}
-						style={vars(look) + tallOf(button)}
-						{disabled}
-						data-field={button.field}
-						data-ignored={button.ignored ? '' : undefined}
-						data-pilled={$fieldPill === button.field ? '' : undefined}
-						title={titleOf(button)}
-						onclick={() => press(button)}
-					>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
-				{/if}
+				{@render fieldButton(item.button)}
 			</div>
 		{/if}
 	{/snippet}
 	{#snippet overlay()}
-	{#if picking}
-		{@const chosen = picking}
-		{@const states = statesOf(chosen.shape)}
-		<!-- The fields' place, theirs hidden under it (da-vg8vr): a drag pans the
-		     states, the two corners stay. -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="picker"
-			bind:this={picker}
-			bind:clientWidth={paneW}
-			bind:clientHeight={paneH}
-			onpointerdown={down}
-			onpointermove={move}
-			onpointerup={up}
-			onpointercancel={up}
-			onscroll={fold}
-			onclickcapture={swallow}
-		>
-			<div class="corner back" data-role="back">
-				<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={back}>
-					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg>
-				</button>
-			</div>
-			<div
-				class="ring"
-				use:around
-				style:left="{paneW / 2 - anchor.x + shift.x}px"
-				style:top="{paneH / 2 - anchor.y + shift.y}px"
-				style:width="{extent.w}px"
-				style:height="{extent.h}px"
-			>
-				{#if chosen.neverFalse}
-					<!-- A field that is never off (da-cwieh) leaves a GAP at the centre:
-					     `end` drawn and hidden, so it is `end`'s own width and every
-					     other button stands where it would beside it. -->
-					<div class="spot gap" data-role="end" aria-hidden="true">
-						<!-- A line colour, or `var(--line)` voids its border and the gap is narrower than `end`. -->
-						<button class="widget states end" use:act={'run'} style="--line: transparent" tabindex="-1" disabled
-							>end</button
-						>
-					</div>
-				{:else}
-					{@const color = chosen.stateColors.false ?? chosen.color}
-					<!-- `false` is off: `end`, at the centre on every switch field
-					     (da-cwieh), and hollow like the two corners. -->
-					<div class="spot" data-role="end">
-						<button
-							class="widget states end"
-							use:act={'run'}
-							style={vars({ fill: null, line: color, text: color, label: 'end' })}
-							{disabled}
-							data-state="false"
-							title={shellJoin(['end', chosen.field])}
-							onclick={() => emit(['end', chosen.field])}
-						>
-							end
-						</button>
-					</div>
-				{/if}
-				{#each states.filter((s) => s !== 'false') as state (state)}
-					{@const look = stateLook(chosen, state)}
-					<div class="spot" data-role="state">
-						<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
-						<button
-							class="widget states"
-							use:act={typesKeys('switch', chosen) ? 'fill' : 'run'}
-							class:on={chosen.current === state}
-							style={vars(look)}
-							{disabled}
-							data-state={state}
-							title={shellJoin(pressArgv(chosen, state))}
-							onclick={() => log(pressArgv(chosen, state), chosen)}
-						>
-							{state}
-						</button>
-					</div>
-				{/each}
-			</div>
-			<div class="corner add" data-role="add">
-				{#if addingState}
-					<form
-						onsubmit={(e) => {
-							e.preventDefault();
-							addState(chosen);
-						}}
-					>
-						<!-- svelte-ignore a11y_autofocus -->
-						<input
-							class="new-state"
-							bind:value={newState}
-							placeholder="state"
-							aria-label="a new state for {chosen.field}"
-							spellcheck="false"
-							autofocus
-							onkeydown={(e) => e.key === 'Escape' && (e.preventDefault(), (addingState = false), (newState = ''))}
-						/>
-					</form>
-				{:else}
-					<button
-						class="nav add-state"
-						use:act={'show'}
-						data-add-state
-						{disabled}
-						title="add a state to {chosen.field}"
-						aria-label="add a state to {chosen.field}"
-						onclick={() => (addingState = true)}
-					>
-						+
+	{#if picking || clustered.length}
+		{@const here = picking}
+		{@const states = here ? statesOf(here.shape).filter((s) => s !== 'false') : []}
+		<!-- The fields' place (da-w6437): at rest the fields, the most used in
+		     the middle; a field tapped, its time at the top, its states in the
+		     middle and its keys at the bottom, the fields hidden under it. -->
+		<div class="collect" class:open={!!here}>
+			{#if here}
+				<div class="top">
+				<div class="head">
+					<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={back}>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg> back
 					</button>
-				{/if}
+					<span class="name" style:color={here.color} data-open-field={here.field}>{here.field}</span>
+					{#if chosen !== null}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
+				</div>
+				<div class="time" data-time-row>
+					{#if timePill}
+						{@render twoPart('time', timePill.text, addsQ ? earlier : null, clearTime)}
+					{:else}
+						<button class="nav round" data-q {disabled} title="five minutes earlier" onclick={earlier}>−q</button>
+					{/if}
+					<!-- `−m` and the length are one pill, never both (vividn: «they don't
+					     make sense in conjunction»); the other's button stays to swap. A
+					     moment field has no length to give: `−q` alone (vividn, 16:07). -->
+					{#if here.shape.kind === 'point'}
+						<!-- nothing more -->
+					{:else if moment}
+						{@render twoPart('moment', '−m', toggleMoment, toggleMoment)}
+					{:else if span !== null}
+						{@render twoPart('length', `${span}m`, addsM ? longer : null, clearLength)}
+					{/if}
+					{#if here.shape.kind !== 'point' && !moment}
+						<button class="nav round" data-m {disabled} title="a moment, no length" onclick={toggleMoment}>−m</button>
+					{/if}
+					{#if here.shape.kind !== 'point' && span === null}
+						<button class="nav round" data-five {disabled} title="five minutes long" onclick={longer}>5m</button>
+					{/if}
+				</div>
+				</div>
+			{/if}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="room"
+				bind:clientWidth={paneW}
+				bind:clientHeight={paneH}
+				onpointerdown={down}
+				onpointermove={move}
+				onpointerup={up}
+				onpointercancel={up}
+				onscroll={fold}
+				onclickcapture={swallow}
+			>
+				<div
+					class="ring"
+					use:around
+					style:left="{paneW / 2 - anchor.x + shift.x}px"
+					style:top="{paneH / 2 - anchor.y + shift.y}px"
+					style:width="{extent.w}px"
+					style:height="{extent.h}px"
+				>
+					{#if here}
+						{#each states as state (state)}
+							{@const look = stateLook(here, state)}
+							<div class="spot" data-role="state">
+								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
+								<button
+									class="widget states"
+									use:act={typesKeys('switch', here) ? 'fill' : 'run'}
+									class:on={here.current === state}
+									class:chosen={chosen === shellJoin([state])}
+									style={vars(look)}
+									{disabled}
+									data-state={state}
+									title={shellJoin(['switch', here.field, state])}
+									onclick={() => choose(here, state)}
+								>
+									{state}
+								</button>
+							</div>
+						{/each}
+					{:else}
+						{#each clustered as button (button.field)}
+							<div class="spot" data-role="field" data-promoted={promoted.has(button.field) ? '' : undefined}>{@render fieldButton(button)}</div>
+						{/each}
+					{/if}
+				</div>
 			</div>
+			{#if here}
+				<div class="data" data-data-row>
+					{#each here.keys as key (key.name)}
+						<button class="key" class:required={key.required} data-key={key.name} {disabled} onclick={() => putKey(key.name)}>{key.name}=</button>
+					{/each}
+					<button class="nav more-data" data-more-data {disabled} onclick={() => focusLine(true)}>+ data</button>
+				</div>
+			{/if}
 		</div>
 	{/if}
 	{/snippet}
@@ -1006,17 +1027,6 @@
 		transition:
 			top 0.25s ease-out,
 			height 0.25s ease-out;
-	}
-
-	/* The press's own quiet mark (da-qu16): a hairline after the fields a
-	   click promoted, so the reader can SEE why the bar changed. It says
-	   where the promotion ends and nothing else — no fill, no animation,
-	   and the buttons themselves are drawn exactly as they always are.
-	   Nothing is drawn when the press promoted them ALL: a line with
-	   nothing on the far side of it says nothing. */
-	.slot.edge {
-		padding-right: 0.4rem;
-		border-right: 1px solid var(--rule);
 	}
 
 	/* Never wider than the pane (da-hygvc): a longer name is cut, and the
@@ -1163,28 +1173,107 @@
 		color: var(--ink-bright);
 	}
 
-	.new-state {
-		width: 7rem;
-	}
-
-	/* While a field's states are up, the bar's rows are hidden under them,
-	   and the bar is no containing block, so the states fill the widget
+	/* While the cluster or a field's view is up, the bar's rows are hidden
+	   under it, and the bar is no containing block, so it fills the widget
 	   whatever the bar is scrolled to — and the scroll is kept for Back. */
-	.fields :global(.bar.picking) {
+	.fields :global(.bar.picking),
+	.fields :global(.bar.clustered) {
 		position: static;
 	}
 
-	.fields :global(.bar.picking > .section) {
+	.fields :global(.bar.picking > .section),
+	.fields :global(.bar.clustered > .section) {
 		visibility: hidden;
 	}
 
-	/* A field's states in the fields' place (da-vg8vr): the box of states
-	   placed by `around` and panned by a drag, the two corners over it. */
-	.picker {
+	/* The fields' place (da-w6437): a field's view top to bottom — back and
+	   its name, its time, its states in the room, its keys — or at rest the
+	   room alone. */
+	.collect {
 		position: absolute;
 		inset: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		container: collect / size;
+	}
+
+	.top {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	/* A pane too short for the whole view scrolls it, the room holding a
+	   few rows of states whatever the pane (the desktop's is one row). */
+	.collect.open {
+		padding: 0.25rem;
+		overflow: hidden auto;
+	}
+
+	.collect.open .room {
+		flex: 1 0 auto;
+		min-height: 7.5rem;
+	}
+
+	/* A pane a few rows tall, a phone's main tab: back, the field and its
+	   time share one row, a little smaller, so a row of states stands under
+	   them in the pane and not below it. */
+	@container collect (max-height: 140px) {
+		.top {
+			flex-direction: row;
+			align-items: center;
+			flex-wrap: wrap;
+		}
+
+		.top .time {
+			justify-content: flex-start;
+		}
+
+		.nav.round {
+			min-width: 2rem;
+			min-height: 2rem;
+		}
+
+		.collect.open .room {
+			min-height: 2rem;
+		}
+	}
+
+	.head,
+	.time,
+	.data {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.time {
+		justify-content: center;
+	}
+
+	.data {
+		justify-content: center;
+		padding-top: 0.4rem;
+		border-top: 1px dashed var(--rule);
+	}
+
+	.head .name {
+		font-weight: 600;
+	}
+
+	.head .to {
+		color: var(--muted);
+	}
+
+	/* The cluster's room: placed by `around` and panned by a drag. */
+	.room {
+		position: relative;
+		flex: 1;
+		min-height: 0;
 		overflow: hidden;
-		/* A finger's drag pans the states, never the page. */
+		/* A finger's drag pans the cluster, never the page. */
 		touch-action: none;
 	}
 
@@ -1192,31 +1281,19 @@
 		position: absolute;
 	}
 
-	.corner {
-		position: absolute;
-		top: 0.25rem;
-		z-index: 1;
-	}
-
-	.corner.back {
-		left: 0.25rem;
-	}
-
-	.corner.add {
-		right: 0.25rem;
-	}
-
-	/* The back icon and the `+`, one size: little wider than they are tall. */
-	.corner .nav {
-		display: flex;
+	.nav {
+		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		min-width: calc(1em + 1rem + 2px);
-		padding: 0.35rem 0.5rem;
+		gap: 0.25rem;
 		line-height: 1;
 	}
 
-	.back svg {
+	.nav[data-back] {
+		border-radius: 999px;
+		padding: 0.3rem 0.6rem;
+	}
+
+	.nav svg {
 		width: 1em;
 		height: 1em;
 		fill: none;
@@ -1224,15 +1301,92 @@
 		stroke-width: 2;
 	}
 
+	/* `−q`, `−m`, `5m`: round, before a tap makes them pills. */
+	.nav.round {
+		justify-content: center;
+		min-width: 2.4rem;
+		min-height: 2.4rem;
+		border-radius: 999px;
+		padding: 0;
+	}
+
+	/* A pill of the view's own, two parts (vividn, 14:25: «-q|x so that you
+	   can either add more qs or clear the pill»). */
+	.part-pill {
+		display: inline-flex;
+		border: 1.5px solid var(--accent);
+		border-radius: 999px;
+		overflow: hidden;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	}
+
+	.part-pill button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.15em;
+		background: none;
+		border: none;
+		color: var(--ink-bright);
+		font: inherit;
+		font-size: 0.95rem;
+		padding: 0.35rem 0.7rem;
+		cursor: pointer;
+	}
+
+	.part-pill .more:disabled {
+		cursor: default;
+	}
+
+	.part-pill .clear {
+		border-left: 1.5px solid var(--accent);
+		padding: 0.35rem 0.55rem;
+	}
+
+	.key {
+		background: none;
+		border: 1px dashed var(--rule);
+		border-radius: 999px;
+		padding: 0.25rem 0.6rem;
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.key.required {
+		border-style: solid;
+	}
+
+	.more-data {
+		border-radius: 999px;
+	}
+
+	/* The state whose run is pending or failed: ringed. */
+	.states.chosen {
+		box-shadow: 0 0 0 2px var(--ink-bright);
+	}
+
+	/* The state the field is in already: a switch to it is the CLI's yellow
+	   ! (vividn, 16:07). */
+	.states[data-state] {
+		position: relative;
+	}
+
+	/* Over the chip's corner, so marking a state moves none of them. */
+	.states[data-state].on::after {
+		content: '!';
+		position: absolute;
+		top: 0;
+		right: 0.25rem;
+		color: var(--warn);
+		font-weight: 700;
+	}
+
 	/* A flex box, so it is exactly its button's size and nothing of a line box. */
 	.spot {
 		position: absolute;
 		display: flex;
 		white-space: nowrap;
-	}
-
-	.spot.gap {
-		visibility: hidden;
 	}
 
 	/* The state the field is in now: solid, as the field's own chip draws
@@ -1272,16 +1426,6 @@
 
 	.track-this:hover:not(:disabled) {
 		border-color: var(--accent);
-	}
-
-	.new-state {
-		background: var(--ground);
-		border: 1px solid var(--rule);
-		border-radius: 4px;
-		padding: 0.25rem 0.4rem;
-		color: var(--ink-bright);
-		font: inherit;
-		font-size: 0.8rem;
 	}
 
 	.hint {

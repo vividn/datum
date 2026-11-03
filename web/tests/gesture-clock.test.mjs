@@ -100,7 +100,10 @@ describe('the clock frozen at the gesture', () => {
 				assert.ok(near(water.create, typed.at), `Enter at ${typed.at}, stamped ${water.create}`);
 				assert.equal(water.occur, water.create);
 
-				const box = await page.locator('.bar button.widget', { hasText: 'water' }).first().boundingBox();
+				// A widget tap that runs: under `occur` pending on the line, as a
+				// bare tap only opens the field (da-w6437).
+				await page.locator('.prompt-bar input').fill('occur ');
+				const box = await page.locator('.bar button.widget[data-field="water"][data-act="run"]').boundingBox();
 				await slowPhone(page, 'click', LATE);
 				await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 				await echoed(page, 2);
@@ -113,6 +116,8 @@ describe('the clock frozen at the gesture', () => {
 				// A key and then a tap, the tap waiting on the key's busy handler:
 				// the browser runs the tap before the keydown's timer, and the tap
 				// is its own.
+				await page.locator('.prompt-bar input').fill('occur ');
+				await page.locator('.bar button.widget[data-field="water"][data-act="run"]').waitFor();
 				await slowPhone(page, 'click', LATE, 'keydown');
 				const key = page.keyboard.press('ArrowRight');
 				await new Promise((resolve) => setTimeout(resolve, APART));
@@ -126,6 +131,8 @@ describe('the clock frozen at the gesture', () => {
 				// The key between the tap's down and up, as a loaded runner
 				// delivered them (da-j0l7r): the pointerdown went before the key
 				// was kept, and the tap is still its own.
+				await page.locator('.prompt-bar input').fill('occur ');
+				await page.locator('.bar button.widget[data-field="water"][data-act="run"]').waitFor();
 				await slowPhone(page, 'click', LATE, 'keydown');
 				await page.mouse.down();
 				const mid = page.keyboard.press('ArrowRight');
@@ -139,7 +146,9 @@ describe('the clock frozen at the gesture', () => {
 
 				// Enter on the focused button: its click is the key's, made after
 				// the busy handler, and the entry is stamped at the keydown.
-				await page.locator('.bar button.widget', { hasText: 'water' }).first().focus();
+				await page.locator('.prompt-bar input').fill('occur ');
+				await page.locator('.bar button.widget[data-field="water"][data-act="run"]').waitFor();
+				await page.locator('.bar button.widget[data-field="water"][data-act="run"]').focus();
 				await slowPhone(page, 'keydown', LATE);
 				await page.keyboard.press('Enter');
 				await echoed(page, 5);

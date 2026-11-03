@@ -46,13 +46,15 @@ describe('a state field fills the widget with its states', () => {
 	/** Every button under `selector`, in order, by the word on it, the back icon by its name. */
 	const words = (page, selector) =>
 		page.locator(selector).evaluate((el) => [...el.querySelectorAll('button')].map((b) => (b.dataset.back !== undefined ? 'back' : b.textContent.trim())));
-	/** Every button the bar is showing, the window's included. */
-	const bar = (page) => words(page, '.bar');
-	/** The buttons of a field's states. */
-	const ring = (page) => words(page, '.bar .picker');
-	const closed = (page) => page.locator('.bar .picker').waitFor({ state: 'detached' });
+	/** Every button collect is showing. */
+	const bar = (page) => words(page, 'section.pane[data-title="collect"] .bar');
+	/** The buttons of a field's view: back, its time, its states, its keys. */
+	const ring = (page) => words(page, '.bar .collect.open');
+	const closed = (page) => page.locator('.bar .collect.open').waitFor({ state: 'detached' });
 
-	test('the button reads `mood:`, a press fills the bar with its states, and one logs a switch', async () => {
+	// da-w6437: a press opens the field, and a state tapped logs at once with
+	// the pills, which the run spends, and collect is back at rest.
+	test('the button reads `mood:`, a press opens its states, and a state logs at once and closes them', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
@@ -60,16 +62,16 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', '+']);
-			assert.equal(await page.locator('.bar [data-field="mood"]').isVisible(), false, 'the field is still drawn over its states');
+			assert.deepEqual(await ring(page), ['back', '−q', '−m', '5m', 'calm', 'happy', '+ data']);
+			assert.equal(await page.locator('.bar [data-field="mood"]').count(), 0, 'the field is still drawn under its states');
 
+			// A state logs at once (vividn, 16:07: one click).
 			const before = (await app.echoes()).length;
 			await page.locator('.bar [data-state="happy"]').click();
 			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
-			// The argv the menu sent before this bead — `pressArgv`'s, so the
-			// bar's pills still reach it. (The hold panel's bubbles reached it
-			// too until da-e78x6 removed them; the pills are what is left.)
-			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
+			await app.idle();
+			assert.deepEqual((await app.tailRows()).rows.at(-1).state, 'happy');
+			// The run spent the pills, and the view closes with them.
 			await closed(page);
 			assert.deepEqual(await bar(page), ['mood:']);
 		});
@@ -86,6 +88,7 @@ describe('a state field fills the widget with its states', () => {
 
 			await closed(page);
 			assert.deepEqual(await bar(page), ['mood:']);
+			assert.equal(await page.locator('.prompt-bar .pill').count(), 0, 'Back left a pill');
 			assert.equal((await app.echoes()).length, before, 'Back logged something');
 		});
 	});
@@ -106,27 +109,6 @@ describe('a state field fills the widget with its states', () => {
 
 			await seed(app, MOOD, 'mood');
 			assert.equal(await page.locator('.bar [data-back]').count(), 0, 'the states came back with the field');
-		});
-	});
-
-	test('`+` takes a state the field has never been in, and it is in the list next time', async () => {
-		await shared.solo(async (app) => {
-			const { page } = app;
-			await seed(app, MOOD, 'mood');
-			const before = (await app.echoes()).length;
-
-			await page.locator('.bar [data-field="mood"]').click();
-			await page.locator('.bar [data-add-state]').click();
-			await page.locator('.bar input.new-state').fill('sad');
-			await page.locator('.bar input.new-state').press('Enter');
-			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
-			assert.equal((await app.echoes()).at(-1), 'switch mood sad');
-
-			await closed(page);
-			await app.idle();
-			await page.locator('.bar [data-field="mood"]').click();
-			await page.locator('.bar [data-state="sad"]').waitFor();
-			assert.deepEqual(await ring(page), ['back', 'end', 'calm', 'happy', 'sad', '+']);
 		});
 	});
 
@@ -158,7 +140,7 @@ describe('a state field fills the widget with its states', () => {
 					probe.remove();
 					return color;
 				});
-			const painted = await page.locator('.bar').evaluate((el) =>
+			const painted = await page.locator('section.pane[data-title="collect"] .bar').evaluate((el) =>
 				[...el.querySelectorAll('[data-state]')].map((b) => {
 					const cs = getComputedStyle(b);
 					return { state: b.dataset.state, bg: cs.backgroundColor, border: cs.borderTopColor, color: cs.color };
@@ -169,16 +151,15 @@ describe('a state field fills the widget with its states', () => {
 			// field's outline. `bad` is a light TINT of its own colour, a quarter
 			// of it, in its own outline and under the app's ink (da-7q3ka: the
 			// hollow back icon, the `+` and `end` stand out against it).
-			// `end` first, hollow in the field's colour, on every switch field (da-cwieh).
+			// `end` is the commands' now (da-w6437), not a state here.
 			assert.deepEqual(painted, [
-				{ state: 'false', bg: 'rgba(0, 0, 0, 0)', border: rgb('#800080'), color: rgb('#800080') },
 				{ state: 'good', bg: rgb('#008000'), border: rgb('#800080'), color: 'rgb(255, 255, 255)' },
 				{ state: 'bad', bg: 'color(srgb 1 0 0 / 0.25)', border: rgb('#ff0000'), color: await ink(page) }
 			]);
 		});
 	});
 
-	test('the states are in the Tab order in that sequence, and Escape closes them', async () => {
+	test('the view is in the Tab order top to bottom, and Escape closes it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
@@ -190,11 +171,11 @@ describe('a state field fills the widget with its states', () => {
 				page.evaluate(() => (document.activeElement?.dataset.back !== undefined ? 'back' : document.activeElement?.textContent.trim()));
 			await page.locator('.bar [data-back]').focus();
 			const order = [await focused()];
-			for (let i = 0; i < 4; i++) {
+			for (let i = 0; i < 6; i++) {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			assert.deepEqual(order, ['back', 'end', 'calm', 'happy', '+']);
+			assert.deepEqual(order, ['back', '−q', '−m', '5m', 'calm', 'happy', '+ data']);
 
 			await page.keyboard.press('Escape');
 			await closed(page);
@@ -202,38 +183,31 @@ describe('a state field fills the widget with its states', () => {
 		});
 	});
 
-	// The fields are hidden under the states, not taken out: closed, the
-	// pane is scrolled where it was.
-	test("the pane's scroll position survives Back", async () => {
+	// The fields are hidden under the view, not taken out: closed, they are
+	// panned where they were.
+	test('the fields’ pan survives Back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			for (const field of ['alfa', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel'])
 				await app.submit(`setup ${field} --verb occur`);
 			await seed(app, MOOD, 'mood');
+			const ring = page.locator('section[data-pane="bar"] .room .ring');
+			const room = await page.locator('section[data-pane="bar"] .room').boundingBox();
+			const was = await ring.boundingBox();
+			assert.ok(was.x < room.x, 'the fields fit their pane — there is nothing this test can prove');
+			const y = room.y + room.height / 2;
+			await page.mouse.move(room.x + 10, y);
+			await page.mouse.down();
+			await page.mouse.move(room.x + 30, y, { steps: 3 });
+			await page.mouse.move(room.x + 60, y, { steps: 3 });
+			await page.mouse.up();
+			const at = await ring.boundingBox();
+			assert.ok(at.x > was.x, 'the drag did not pan');
 
-			// The scroller is the BAR, and which way it goes is the scroll
-			// rule's (da-ltux): a pane this short is one row reached sideways.
-			const bar = page.locator('section[data-pane="bar"] .bar');
-			const at = await bar.evaluate((el) => {
-				el.scrollLeft = el.scrollWidth;
-				el.scrollTop = el.scrollHeight;
-				return { left: el.scrollLeft, top: el.scrollTop };
-			});
-			assert.ok(at.left > 0 || at.top > 0, 'the bar fits its pane — there is nothing this test can prove');
-
-			// Pressed where it is, unscrolled to: mood is on, so it stands at
-			// the start of the bar (da-vu7pi), and a click that scrolled to it
-			// would move the bar to where Back is meant to leave it anyway.
 			await page.locator('.bar [data-field="mood"]').dispatchEvent('click');
 			await page.locator('.bar [data-back]').dispatchEvent('click');
 			await closed(page);
-			await page.waitForFunction(
-				(was) => {
-					const el = document.querySelector('section[data-pane="bar"] .bar');
-					return el.scrollLeft === was.left && el.scrollTop === was.top;
-				},
-				at
-			);
+			assert.deepEqual(await ring.boundingBox(), at);
 		}, { clock: todayAt(15), viewport: { width: 390, height: 640 } });
 	});
 });

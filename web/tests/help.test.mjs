@@ -191,7 +191,7 @@ describe('the Help button', () => {
 			const { page } = app;
 			await seedLines(app, ['setup coffee --verb moment']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
-			const lines = await explain(page, coffee, 'fields');
+			const lines = await explain(page, coffee, 'collect');
 			assert.equal(lines.join('\n'), await kindHelp('widgetbar'));
 			assert.equal((await app.entries(5)).length, 0, 'the press logged coffee');
 		});

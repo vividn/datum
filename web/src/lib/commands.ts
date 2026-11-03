@@ -306,22 +306,23 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
 /**
  * What a tap on a field button DOES (da-z8z40): `run` — something is
  * logged at once — `fill` — a line is left in the prompt — or `show` —
- * the field's states take the bar over.
+ * the field opens in the collect widget (da-w6437).
  *
  * The fields widget's press is decided here and its outline is drawn from
  * the same answer (the `fires` pattern): a `run` is the double outline, so
  * a button cannot act without looking as if it does. A pending verb runs
- * wherever `verbPress` has an argv; otherwise a record fills, a
- * multi-state field opens (vividn's «except for switch») and the rest run —
- * but a run that has keys to type fills instead (`typesKeys`).
+ * wherever `verbPress` has an argv, but fills where it has keys to type
+ * (`typesKeys`); otherwise a record fills and every other field opens.
  */
 export type PressKind = 'run' | 'fill' | 'show';
 export function pressKind(button: FieldButton, verb: Verb | null): PressKind {
 	if (verb !== null && verbPress(verb, button)) return typesKeys(verb, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
-	if (button.shape.kind === 'states') return 'show';
-	// A bare tap logs `moment` or `start`, or ends a running block (`pressArgv`).
-	return typesKeys(button.current ? 'end' : 'moment', button) ? 'fill' : 'run';
+	// A bare tap opens the field in the collect widget, to set its time,
+	// state and data before it is logged (da-w6437) — a running block too:
+	// ending it is the commands' (vividn, 2026-11-03 16:07: «"off" be one of
+	// the commands on the bottom»), or `end` pending on the line.
+	return 'show';
 }
 
 /**

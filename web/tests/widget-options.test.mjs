@@ -633,24 +633,16 @@ describe('widget options', () => {
 			};
 			const drawn = await button.evaluate(lines);
 			assert.ok(drawn.opacity < 1, `an ignored field drawn at opacity ${drawn.opacity}`);
-			// A tap RUNS it, so its dashes are DOUBLE: a dashed border and a
-			// dashed outline inside it (da-nmna0).
-			assert.deepEqual(
-				{ border: drawn.border, outline: drawn.outline },
-				{ border: 'dashed', outline: 'dashed' },
-				'an ignored point is not drawn in two dashed lines'
-			);
-			// A state field's tap OPENS its states, so it keeps one dashed line.
-			const mood = await page.locator('.bar button[data-field="mood"]').evaluate(lines);
-			assert.deepEqual(
-				{ border: mood.border, outline: mood.outline },
-				{ border: 'dashed', outline: 'none' },
-				'an ignored state field is not drawn in one dashed line'
-			);
+			// A bare tap OPENS a field (da-w6437), so it keeps one dashed line,
+			// a point as much as a state field.
+			for (const field of ['run', 'mood']) {
+				const seen = await page.locator(`.bar button[data-field="${field}"]`).evaluate(lines);
+				assert.deepEqual({ border: seen.border, outline: seen.outline }, { border: 'dashed', outline: 'none' }, `an ignored ${field} is not drawn in one dashed line`);
+			}
 			const tracked = page.locator('.bar button[data-field="walk"]');
 			assert.equal(await tracked.getAttribute('data-ignored'), null);
-			// A tracked point RUNS on a tap, so it wears the double outline (da-z8z40).
-			assert.equal(await tracked.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
+			// A tracked point opens on a tap, so it wears the single outline (da-z8z40, da-w6437).
+			assert.equal(await tracked.evaluate((b) => getComputedStyle(b).borderTopStyle), 'solid');
 			assert.equal(await tracked.evaluate((b) => parseFloat(getComputedStyle(b).opacity)), 1);
 
 			// It is a SECOND way to see them, not a replacement for the one that

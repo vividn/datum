@@ -56,35 +56,6 @@ describe("the fields pane's box", () => {
 		});
 	});
 
-	// A phone, where the pane is short enough that a handful of fields
-	// overflows it — the shape da-d08c makes ordinary.
-	//
-	// The scroller is the BAR (da-ltux), and which way it goes is the
-	// scroll rule's — sideways today, down once a pivot asks for it
-	// (da-vu7pi's `axis`). The claim is the same either way — the last
-	// button is reachable, not clipped away — so it is made along whichever
-	// axis the bar chose.
-	test('a button past the end of the bar is scrolled to and pressed', async () => {
-		await withApp(async ({ page }) => {
-			for (const field of TEN) await type(page, `setup ${field} --verb occur`);
-			await page.locator('.bar [data-field="juliett"]').waitFor();
-
-			const bar = page.locator('section[data-pane="bar"] .bar');
-			const over = (el) =>
-				el.scrollWidth > el.clientWidth + 1 ? 'x' : el.scrollHeight > el.clientHeight + 1 ? 'y' : null;
-			const axis = await bar.evaluate(over);
-			assert.ok(axis, 'the bar fits its pane — there is nothing this test can prove');
-
-			const echoes = await page.locator('.cli .echo').count();
-			// Playwright refuses to click what is out of view or covered, and
-			// scrolls its scrollable ancestor to reach it: the press is the
-			// assertion that the button is reachable, not clipped away.
-			await page.locator('.bar button.widget').last().click();
-			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
-			assert.ok(
-				await bar.evaluate((el, a) => (a === 'x' ? el.scrollLeft : el.scrollTop) > 0, axis),
-				'the bar never scrolled to reach it'
-			);
-		}, { viewport: { width: 390, height: 640 } });
-	});
+	// What reaches a button past the pane is the cluster's drag (da-w6437),
+	// `fields-center.test.mjs`.
 });

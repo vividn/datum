@@ -792,7 +792,7 @@ describe('the Placement tab', () => {
 				assert.match((await app.run(['tail', 'walk'])).stdout, /walk/, 'still in the tail');
 				assert.ok(await lane(app, 'walk'), 'still in the fields widget');
 
-				await app.pressWidget('walk');
+				await app.pressWidget('walk', 'end');
 				assert.equal(JSON.parse((await app.run(['tail', 'walk', '--json'])).stdout).rows.length, 2, 'a tap still logs it');
 				assert.deepEqual((await pictures(app)).dayview, ['read'], 'and it stays hidden');
 

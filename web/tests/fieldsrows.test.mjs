@@ -1,32 +1,28 @@
-// The fields bar's rows (da-xtkcp). vividn, 2026-09-24 13:42: «the frecency
-// is left to right, the y spec is top to bottom», and at 13:38 a stable
-// order, re-sorted at quiet moments and not while in use.
+// The collect widget's order (da-xtkcp, da-w6437). vividn, 2026-09-24: a
+// stable order, re-sorted at quiet moments and not while in use; and
+// 2026-11-03: «moving the frecent entries to the middle of the pane».
 //
-// So: rows are equal-count bands of `y`, each most used first
-// (`fields --sort frecency`); the order is taken on load and when the app
-// comes back to the foreground; and nothing a person does while it is
-// open — a press, a field becoming active, a refresh — moves a button.
-// That last is what da-8i1kn saw go wrong: a press on `coffee` set off a
-// refresh that put `mood` (just active, so «far left») where `coffee` had
-// been, under the next tap. A field on now no longer moves at all, and
-// nothing moves until the next sort — which the second test holds to by
-// reading the rows after a real press and after writes that WOULD change
-// the order, then again after the page comes back to the foreground.
+// So: the cluster stands the most used first, the first in the middle and
+// the rest ring by ring around it (`fields --sort frecency`, ties by `y`);
+// the order is taken on load and when the app comes back to the
+// foreground; and nothing a person does while it is open — a press, a
+// field becoming active, a refresh — moves a button. That last is what
+// da-8i1kn saw go wrong: a press on `coffee` set off a refresh that put
+// `mood` (just active) where `coffee` had been, under the next tap.
 //
 // The arrangement itself is pure (`fieldRows` in fields.test.mjs,
 // `rowsUnder` in lanes-pure.test.mjs); this is the built app on a seeded
-// database, read as rows of names.
+// database, read as the cluster's order.
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines } from './support/app.mjs';
-import { rowsOf } from './support/rows.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
 
-const BAR = 'section.pane[data-title="fields"] .bar';
+const BAR = 'section.pane[data-title="collect"] .bar';
 
 /** A field with its `y` set, the way a spec sets it. */
 const at = (field, verb, y) => `setup ${field} --from-json '${JSON.stringify({ field, verb, y })}'`;
@@ -54,61 +50,48 @@ const SEED = [
 	'occur f -t 08:01'
 ];
 
-/** Top to bottom `a b c | d e f`; along each, most used first. */
-const SORTED = [
-	['b', 'c', 'a'],
-	['f', 'd', 'e']
-];
+/** Most used first; a tie by `y`, higher up first. */
+const SORTED = ['b', 'c', 'f', 'a', 'd', 'e'];
 
-const rows = (page) => rowsOf(page.locator(BAR), '[data-field]');
-const saysRows = (page, want) =>
+/** The cluster's order, first (the middle) to last. */
+const order = (page) => page.locator(`${BAR} .room .spot [data-field]`).evaluateAll((bs) => bs.map((b) => b.dataset.field));
+const saysOrder = (page, want) =>
 	until(
-		() => rows(page),
+		() => order(page),
 		(seen) => JSON.stringify(seen) === JSON.stringify(want)
 	);
 
-/** The app on that seed, loaded after it, with a two-row bar. */
-async function withRows(fn) {
-	await withApp(
-		async (app) => {
-			for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
-			await app.reload();
-			await app.page.locator(`${BAR} [data-field="e"]`).waitFor();
-			await app.idle();
-			assert.equal(
-				await app.page.$eval(BAR, (bar) => Number(bar.dataset.rows)),
-				2,
-				'this screen was chosen for a two-row bar'
-			);
-			await fn(app);
-		},
-		// Tall enough that the fields pane's share is two button-rows
-		// (fieldsorder.test.mjs measured it).
-		{ viewport: { width: 1280, height: 1100 } }
-	);
+/** The app on that seed, loaded after it. */
+async function withOrder(fn) {
+	await withApp(async (app) => {
+		for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
+		await app.reload();
+		await app.page.locator(`${BAR} [data-field="e"]`).waitFor();
+		await app.idle();
+		await fn(app);
+	});
 }
 
-test('rows are equal-count bands of y, top to bottom, and along each the most used comes first', async () => {
-	await withRows(async ({ page }) => {
-		await saysRows(page, SORTED);
+test('the most used stands first, in the middle, and the rest by use', async () => {
+	await withOrder(async ({ page }) => {
+		await saysOrder(page, SORTED);
 	});
 });
 
 test('nothing moves while the app is in use; coming back to the foreground re-sorts', async () => {
-	await withRows(async (app) => {
+	await withOrder(async (app) => {
 		const { page } = app;
-		await saysRows(page, SORTED);
+		await saysOrder(page, SORTED);
 
-		// A real press: `e` starts, and is ACTIVE — which under the 09-22
-		// rule put it at the far left of the bar (da-8i1kn's `mood`).
-		await page.locator(`${BAR} [data-field="e"]`).click();
+		// A real press: `e` starts, and is ACTIVE (da-8i1kn's `mood`).
+		await app.pressWidget('e', 'start');
 		await page.locator(`${BAR} [data-field="e"].on`).waitFor();
 		await app.idle();
-		assert.deepEqual(await rows(page), SORTED, 'the press moved a button');
+		assert.deepEqual(await order(page), SORTED, 'the press moved a button');
 
-		// Writes that WOULD reorder the bar — `d` is now the most used low
-		// field — and a field that did not exist, all through the bar's own
-		// line, so the page refreshes on them as on any command.
+		// Writes that WOULD reorder it — `d` is now the most used — and a
+		// field that did not exist, all through the bar's own line, so the
+		// page refreshes on them as on any command.
 		await seedLines(app, [
 			'occur d -t 09:00',
 			'occur d -t 09:01',
@@ -117,16 +100,16 @@ test('nothing moves while the app is in use; coming back to the foreground re-so
 			'occur g -t 09:00'
 		]);
 		await page.locator(`${BAR} [data-field="g"]`).waitFor();
-		// The new field ends the row its `y` falls in; nothing else moved.
-		assert.deepEqual(await rows(page), [SORTED[0], [...SORTED[1], 'g']], 'a refresh moved a button');
+		// The new field stands last; nothing else moved.
+		assert.deepEqual(await order(page), [...SORTED, 'g'], 'a refresh moved a button');
 
-		// The page comes back to the foreground: sorted again, from what the
-		// CLI now says. Seven fields cut 3 | 4 by y, `d` leading its row,
-		// and `g` before `e` — used as much, and higher up.
+		// The page comes back to the foreground: sorted again, from what the CLI now says.
 		await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-		await saysRows(page, [
-			['b', 'c', 'a'],
-			['d', 'f', 'g', 'e']
-		]);
+		const sorted = JSON.parse((await app.run(['fields', '--json', '--sort', 'frecency'])).stdout);
+		assert.equal(sorted.reduce((a, b) => ((b.frecency ?? 0) > (a.frecency ?? 0) ? b : a)).field, 'd');
+		await until(
+			() => order(page),
+			(seen) => seen[0] === 'd' && seen.length === 7
+		);
 	});
 });

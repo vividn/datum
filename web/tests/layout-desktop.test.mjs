@@ -81,7 +81,7 @@ describe('a fresh desktop', () => {
 			await page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout)),
 			['welcome', 'setup', 'collect', 'dayview']
 		);
-		assert.deepEqual(await titles(page), ['dayview', 'tail', 'fields', 'nowview', 'stats']);
+		assert.deepEqual(await titles(page), ['dayview', 'tail', 'collect', 'nowview', 'stats']);
 		// No `input`: the bottom bar is the command line, and one is enough.
 		assert.equal(await page.locator('main section.pane[data-title="input"]').count(), 0);
 		// Splits, not tabs: every pane is on the screen at once.

@@ -7,4 +7,6 @@ import { DESKTOP } from './support/layout.mjs';
 // The shipped tree, not the suite's DESK. It has had no commands pane since
 // da-mwp4m, so `command: undo` left the list; a sweep of the commands
 // widget on a page that holds one is act-taps-commands' (da-0o5z9).
-everyButton('desktop', { ...DESKTOP, desk: null }, ['fields: coffee', 'fields: run']);
+// At rest a field's tap opens it and acts on nothing (da-w6437): the `occur `
+// survey is where `collect: coffee` has to act.
+everyButton('desktop', { ...DESKTOP, desk: null }, []);

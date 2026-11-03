@@ -1,5 +1,6 @@
-// The fields widget's outlines (da-z8z40): a button a tap RUNS is drawn
-// in the DOUBLE outline, and one that opens or fills is not — rule 1 of
+// The collect widget's outlines (da-z8z40): a button a tap RUNS is drawn
+// in the DOUBLE outline, and one that opens or fills is not — since
+// da-w6437 a bare tap opens, so only a pending verb's tap runs — rule 1 of
 // the design language, derived from `pressKind` in #lib/commands.ts, the
 // same answer the press itself takes. The pure table is in
 // `commands-pure.test.mjs`; here is what a reader sees, and what a tap on
@@ -14,7 +15,7 @@ import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, FIXTURE, MOOD, type, untilFieldStyle } from './support/fields.mjs';
 
 /** Every button under `selector` — the bar, or the states' window — by what it is, with its top border's style. */
-const outlines = (page, selector = '.bar') =>
+const outlines = (page, selector = 'section.pane[data-title="collect"] .bar') =>
 	page.locator(selector).evaluate((el) =>
 		Object.fromEntries(
 			[...el.querySelectorAll('button')].map((b) => [
@@ -53,32 +54,29 @@ describe('the outline says what a tap does', () => {
 	after(stopApp);
 	const shared = sharedApp();
 
-	test('a point and a block are double; a switch, a record and the navigation are not', async () => {
+	// da-w6437: a bare tap opens a field in collect, so with no verb nothing
+	// is double; under a pending verb a tap runs, and is.
+	test('with no verb no field is double, and a state in its view is; under a verb a run is', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of [...FIXTURE, ...MOOD]) await type(page, line);
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			await app.idle();
 			assert.deepEqual(await outlines(page), {
-				coffee: 'double',
-				work: 'double',
-				untracked: 'double',
+				coffee: 'solid',
+				work: 'solid',
+				untracked: 'solid',
 				mood: 'solid',
 				note: 'none'
 			});
 
-			// The state list: every state runs; Back and + do not.
+			// A state logs at once (vividn, 16:07): double.
 			await page.locator('.bar [data-field="mood"]').click();
-			await page.locator('.bar [data-back]').waitFor();
-			const list = await outlines(page, '.bar .picker');
-			const states = Object.keys(list).filter((k) => k.startsWith('='));
-			assert.ok(states.length > 0, 'no state drawn');
-			assert.deepEqual(list, {
-				back: 'solid',
-				...Object.fromEntries(states.map((k) => [k, 'double'])),
-				'+': 'solid'
-			});
+			await page.locator('.bar [data-state="good"]').waitFor();
+			const states = await page.locator('.bar [data-state]').evaluateAll((bs) => bs.map((b) => getComputedStyle(b).borderTopStyle));
+			assert.ok(states.length > 0 && states.every((s) => s === 'double'), `states: ${states}`);
 			await page.locator('.bar [data-back]').click();
+			await page.locator('.bar [data-field="mood"]').waitFor();
 
 			// Under a pending verb the press is that verb: `switch` on a
 			// many-stated field still asks which, `add` on a record still fills.
@@ -96,48 +94,26 @@ describe('the outline says what a tap does', () => {
 	});
 
 	// vividn: «The double outline is obscured when the button is filled in
-	// with a color». A block that is on is filled in its own line's colour,
-	// and the state a switch is in, in the ring, in its state's; the
-	// double's gap must still show something else than the fill.
+	// with a color». A block that is on is filled in its own line's color;
+	// under `end` it runs, and the double's gap must still show something
+	// else than the fill.
 	test('a double reads on a button filled in its own colour', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			for (const line of [...FIXTURE, ...MOOD, 'switch mood good', 'start work']) await type(page, line);
+			for (const line of [...FIXTURE, ...MOOD, 'start work']) await type(page, line);
 			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
-			await app.idle();
-
+			await page.locator('.prompt-bar input').fill('end ');
 			const work = page.locator('.bar [data-field="work"]');
-			assert.equal(await work.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
+			await page.waitForFunction(() => getComputedStyle(document.querySelector('.bar [data-field="work"]')).borderTopStyle === 'double');
+			await app.idle();
 			const block = await drawn(page, work);
 			assert.ok(apart(block.gap, block.fill) > 64, `work: gap ${block.gap} on fill ${block.fill}`);
-
-			await page.locator('.bar [data-field="mood"]').click();
-			const now = page.locator('.bar .picker .states.on');
-			await now.waitFor();
-			// Panned into the pane first: around `end` at a short pane's centre
-			// it may stand past an edge (da-vg8vr), and the pixels are read off
-			// the screen.
-			const [pane, b] = [await page.locator('.bar .picker').boundingBox(), await now.boundingBox()];
-			const into = (lo, size, at, wide) => Math.max(lo + 4 - at, Math.min(0, lo + size - 4 - (at + wide)));
-			const [dx, dy] = [into(pane.x, pane.width, b.x, b.width), into(pane.y, pane.height, b.y, b.height)];
-			// Where it stands in the pane already there is no drag: a press of `end` would end it.
-			if (dx || dy) {
-				const end = await page.locator('.bar .picker [data-state="false"]').boundingBox();
-				await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
-				await page.mouse.down();
-				for (let i = 1; i <= 4; i++) await page.mouse.move(end.x + end.width / 2 + (dx * i) / 4, end.y + end.height / 2 + (dy * i) / 4);
-				await page.mouse.up();
-			}
-			assert.equal(await now.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
-			const state = await drawn(page, now);
-			assert.ok(apart(state.gap, state.fill) > 64, `mood's state: gap ${state.gap} on fill ${state.fill}`);
-			await page.locator('.bar [data-back]').click();
 		});
 	});
 
-	// The behaviour behind the look: tap every field button in turn, and a
-	// double outline is exactly the ones that wrote an entry.
-	test('a double-outlined tap writes an entry; a single-outlined one does not', async () => {
+	// The behavior behind the look: tap every field button in turn with no
+	// verb, and none writes an entry.
+	test('with no verb a tap writes nothing: a field opens, a record fills', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of [...FIXTURE, ...MOOD]) await type(page, line);
@@ -145,18 +121,14 @@ describe('the outline says what a tap does', () => {
 			await app.idle();
 
 			for (const field of ['coffee', 'work', 'untracked', 'mood', 'note']) {
-				const button = page.locator(`.bar [data-field="${field}"]`);
-				const double = (await button.evaluate((b) => getComputedStyle(b).borderTopStyle)) === 'double';
 				const had = await entries(app);
 				const echoed = (await app.echoes()).length;
-				await app.clock.forward(1000);
-				await button.click();
-				if (double) await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoed);
+				await page.locator(`.bar [data-field="${field}"]`).click();
+				if (field === 'note') await page.waitForFunction(() => document.querySelector('.prompt-bar input').value.startsWith('add note'));
+				else await page.locator('.bar [data-back]').click();
 				await app.idle();
-				assert.equal((await app.echoes()).length > echoed, double, `${field}: ran`);
-				assert.equal((await entries(app)) > had, double, `${field}: double=${double}`);
-				// A switch's list, or a record's line, is put back before the next.
-				if (field === 'mood') await page.locator('.bar [data-back]').click();
+				assert.equal((await app.echoes()).length, echoed, `${field}: ran`);
+				assert.equal(await entries(app), had, `${field}: wrote`);
 				await page.locator('.prompt-bar input').fill('');
 			}
 		});

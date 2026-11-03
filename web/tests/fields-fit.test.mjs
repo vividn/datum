@@ -128,62 +128,26 @@ describe('the widget fits its screen, legibly', () => {
 		{ width: 320, height: 664 },
 		{ width: 1280, height: 800 }
 	]) {
-		test(`at ${viewport.width}x${viewport.height} the widget obeys the scroll rule, every button ≥ 24px, a field first in the Tab order`, async () => {
+		// The cluster (da-w6437): the first field in the middle of its room,
+		// the rest around it and reached by a drag where they run past it.
+		test(`at ${viewport.width}x${viewport.height} the first field stands in the room’s middle, every button ≥ 24px, a field first in the Tab order`, async () => {
 			await withApp(async ({ page }) => {
 				for (const line of [...FIXTURE, 'occur tea', 'occur water', 'occur run']) await type(page, line);
 				await page.locator('.bar [data-field="run"]').waitFor();
-				// The rule is the pane's BOX, not the bar's content (da-ltux,
-				// da-vu7pi, vividn): as many rows as there is room for, up to
-				// three, always reached left and right. The bar says how many
-				// in `data-rows`,
-				// and the row a button is drawn on is the MIDDLE of its box —
-				// the bar centres what it lays out, and a record's underlined
-				// name is shorter than a chip.
-				const bar = await page.locator('.bar').evaluate((el) => {
-					const style = getComputedStyle(el);
-					const slots = [...el.querySelectorAll('.lane > *')];
-					const gap = parseFloat(style.rowGap) || 0;
+				const bar = await page.locator('.bar').first().evaluate((el) => {
+					const room = el.querySelector('.room').getBoundingClientRect();
+					const first = el.querySelector('.room .spot button').getBoundingClientRect();
 					return {
-						rows: Number(el.dataset.rows),
-						slots: slots.length,
-						display: style.display,
-						x: style.overflowX,
-						y: style.overflowY,
-						scrolls: el.scrollWidth > el.clientWidth,
-						// What the buttons WANT along one row, against the room
-						// there is for them: whether the rule has anything to
-						// scroll to, which is a different question from the rule.
-						crowded:
-							slots.reduce((w, c) => w + c.getBoundingClientRect().width, 0) +
-								gap * Math.max(0, slots.length - 1) >
-							el.clientWidth,
-						drawn: new Set(
-							[...el.querySelectorAll('button:not([tabindex="-1"])')].map((b) => {
-								const box = b.getBoundingClientRect();
-								return Math.round(box.top + box.height / 2);
-							})
-						).size,
+						off: [first.left + first.width / 2 - (room.left + room.width / 2), first.top + first.height / 2 - (room.top + room.height / 2)],
 						fits: el.getBoundingClientRect().width <= el.parentElement.getBoundingClientRect().width + 1,
 						heights: [...el.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height)
 					};
 				});
-				// The SHAPE of the rule holds at every width; whether there is
-				// anything to scroll to is about how many buttons there happen
-				// to be, and is asserted only where they overflow (`crowded`).
 				assert.ok(bar.fits, 'the bar is wider than the pane it is in');
-				assert.deepEqual(
-					[bar.display, bar.x, bar.y],
-					['flex', 'auto', 'hidden'],
-					`${bar.rows} rows of room: as many rows as fit, reached sideways`
-				);
-				// Every row the box has room for is drawn, unless there are
-				// fewer buttons than rows (da-vu7pi deals them by index).
-				const want = Math.min(bar.rows, bar.slots);
-				assert.equal(bar.drawn, want, `${bar.rows} rows of room, but the bar drew ${bar.drawn}`);
-				if (bar.rows === 1 && bar.crowded) assert.ok(bar.scrolls, 'the buttons overflow but the bar does not scroll');
+				assert.ok(bar.off.every((d) => Math.abs(d) <= 2), `the first field is ${bar.off} from the room's middle`);
 				for (const h of bar.heights) assert.ok(h >= 24, `a button is ${h}px tall`);
 
-				const first = await page.locator('.bar').evaluate((el) => {
+				const first = await page.locator('.bar').first().evaluate((el) => {
 					const focusable = [...el.querySelectorAll('button, input, [tabindex]')].filter((b) => !b.disabled && b.tabIndex >= 0);
 					return focusable[0]?.outerHTML;
 				});

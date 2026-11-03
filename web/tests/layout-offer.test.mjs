@@ -127,7 +127,7 @@ describe('a new default is offered', () => {
 // `collect` before it, which had seen the four sentences before its own.
 describe('the new collect and the dayview tab, to a device already here', () => {
 	const BEFORE = ['welcome', 'setup', 'collect'];
-	const COLLECT = ['dayview', 'tail', 'fields', 'nowview', 'stats'];
+	const COLLECT = ['dayview', 'tail', 'collect', 'nowview', 'stats'];
 	const THEIRS = {
 		id: 'mine',
 		tabs: [{ id: 'mine-tab', content: { id: 'mine-w', kind: 'stats', settings: {} } }],

@@ -270,6 +270,10 @@ export const ALIASES: Record<string, string> = {
 	// The CLI widget was the REPL until da-mwp4m; `/repl` and `/cli` are both it.
 	repl: 'cli',
 	daystrip: 'dayview',
+	// The collect widget alone (da-w6437; the fields widget until then).
+	// `/fields` is its old name, kept as its route for now: it will belong
+	// to the fields widget vividn plans (every field alphabetically, the
+	// ignored at the bottom) when that lands, and this one moves.
 	widgets: 'fields',
 	widgetbar: 'fields',
 	// The spec widget became the field widget (da-fu29p), the first visit's

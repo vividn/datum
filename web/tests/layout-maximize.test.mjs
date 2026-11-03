@@ -54,7 +54,7 @@ const shared = sharedApp(DESKTOP);
 const phone = sharedApp(PHONE);
 
 /** The desktop default (defaults.ts), as the panes are titled. */
-const SIX = ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields'];
+const SIX = ['dayview', 'cli', 'nowview', 'tail', 'custom', 'collect'];
 
 /** Maximize or restore `id`, and wait for the page to settle on it — in normal mode, where the badge maximizes. */
 async function press(page, id) {

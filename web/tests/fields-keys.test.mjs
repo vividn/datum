@@ -1,4 +1,5 @@
-// A field tap when the field has a REQUIRED key (da-chml5). vividn, 09-27:
+// A field tap when the field has a REQUIRED key (da-chml5); since da-w6437
+// a bare tap opens it, and the fill is a pending verb's. vividn, 09-27:
 // «moment/start/end run at once with a double outline, unless there are
 // required keys only, in which case fill the line and focus it». The rule
 // is `typesKeys` in #lib/commands.ts; the verb under a field PILL, which
@@ -30,19 +31,24 @@ describe('a field with a required key', () => {
 	after(stopApp);
 	const shared = sharedApp();
 
-	test('taps to fill: single outline, the line in its first key frame, focused, nothing written', async () => {
+	// A bare tap opens the field (da-w6437): its keys are chips at the
+	// bottom, the required one drawn solid, and nothing is written. Under a
+	// pending verb a tap still fills its line.
+	test('a bare tap opens it with its keys; under a verb a tap fills its first key frame, focused, nothing written', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of SEED) await type(page, line);
 			await app.idle();
-			assert.equal(await chip(page, 'tea').getAttribute('data-act'), 'fill');
+			assert.equal(await chip(page, 'tea').getAttribute('data-act'), 'show');
 			const counter = await changeCounter(page);
 
 			await chip(page, 'tea').click();
-			// The first key's frame, which a bare word fills (da-31d1d, da-p3hxn).
-			await lineIs(page, 'moment tea ');
-			await app.idle();
-			assert.equal(await changeCounter(page), counter, 'the tap wrote');
+			await page.locator('.bar [data-key="amount"]').waitFor();
+			assert.deepEqual(
+				await page.locator('.bar [data-key]').evaluateAll((ks) => ks.map((k) => [k.dataset.key, k.classList.contains('required')])),
+				[['amount', true], ['cups', false]]
+			);
+			await page.locator('.bar [data-back]').click();
 
 			// Under a pending verb its flags come too, after the field, so
 			// the frame is still written (canary finding on #273).
@@ -56,43 +62,31 @@ describe('a field with a required key', () => {
 		});
 	});
 
-	test('a field whose keys all have defaults still runs at once, double-outlined', async () => {
+	test('a field whose keys all have defaults still runs at once under a verb, double-outlined', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of SEED) await type(page, line);
-			assert.equal(await chip(page, 'juice').getAttribute('data-act'), 'run');
+			await page.locator('.prompt-bar input').fill('moment ');
+			await page.waitForFunction(() => document.querySelector('.bar [data-field="juice"]')?.dataset.act === 'run');
 			await app.pressWidget('juice');
 			assert.equal((await app.echoes()).at(-1), 'moment juice');
 		});
 	});
 
-	test('a block fills its start, and ends at once; a state from the ring fills', async () => {
+	test('a block fills its start under `start`, and ends at once under `end`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of SEED) await type(page, line);
-			assert.equal(await chip(page, 'shift').getAttribute('data-act'), 'fill');
+			await page.locator('.prompt-bar input').fill('start ');
+			await page.waitForFunction(() => document.querySelector('.bar [data-field="shift"]')?.dataset.act === 'fill');
 			await chip(page, 'shift').click();
 			await lineIs(page, 'start shift ');
 
 			// Not backdated: `track` wrote its TRACKED marker now, which would end it.
 			await app.clock.forward(60_000);
 			await type(page, 'start shift project=a');
-			await page.waitForFunction(() => document.querySelector('.bar [data-field="shift"]')?.dataset.act === 'run');
-			await app.pressWidget('shift');
+			await app.pressWidget('shift', 'end');
 			assert.equal((await app.echoes()).at(-1), 'end shift');
-
-			// The ring still opens; the state chosen in it is the line, unrun.
-			assert.equal(await chip(page, 'mood').getAttribute('data-act'), 'show');
-			await chip(page, 'mood').click();
-			const good = page.locator('.bar button[data-state="good"]');
-			assert.equal(await good.getAttribute('data-act'), 'fill');
-			const counter = await changeCounter(page);
-			// It may stand past a short pane's edge, where a drag pans it in
-			// (da-vg8vr): what a press does is the question here.
-			await good.dispatchEvent('click');
-			await lineIs(page, 'switch mood good ');
-			await app.idle();
-			assert.equal(await changeCounter(page), counter, 'the state wrote');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -101,13 +95,15 @@ describe('a field with a required key', () => {
 	// with a field in it quotes the field (`shellJoin`), or `my coffee`
 	// splits and the line logs to a field called `my`. Under its PILL is
 	// `commands.test.mjs`'s.
-	test('a spaced field: its fill quotes it, from the chip and under a pending verb, and Enter logs to it', async () => {
+	test('a spaced field: its fill quotes it under a pending verb, with its flags too, and Enter logs to it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await type(page, 'track "my coffee" --verb moment -k amount');
 			// The clock is held: a log at the declaration's instant would share its slug.
 			await app.clock.forward(1000);
 			await app.idle();
+			await page.locator('.prompt-bar input').fill('moment ');
+			await page.waitForFunction(() => document.querySelector('.bar [data-field="my coffee"]')?.dataset.act === 'fill');
 			await chip(page, 'my coffee').click();
 			await lineIs(page, 'moment "my coffee" ');
 			await page.keyboard.type('3');
@@ -126,7 +122,7 @@ describe('a field with a required key', () => {
 	});
 
 	// da-pqbo2: a title that names a command names one that works when typed.
-	test('a spaced field: the add chip’s title and the ring’s `end` title quote it', async () => {
+	test('a spaced field: the add chip’s title and a state’s title quote it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await type(page, 'setup "my notes" --verb add');
@@ -134,8 +130,8 @@ describe('a field with a required key', () => {
 			await app.idle();
 			assert.match(await chip(page, 'my notes').getAttribute('title'), /add "my notes"/);
 			await chip(page, 'my mood').click();
-			const end = page.locator('.bar [data-role="end"] button');
-			assert.equal(await end.getAttribute('title'), 'end "my mood"');
+			const good = page.locator('.bar [data-state="good"]');
+			assert.match(await good.getAttribute('title'), /^switch "my mood" good\b/);
 			assert.deepEqual(app.errors, []);
 		});
 	});

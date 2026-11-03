@@ -37,7 +37,7 @@ const STRIP = '.strip';
 const TODAY = '.band[data-days-ago="0"]';
 const YESTERDAY = '.band[data-days-ago="1"]';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
-const BAR = 'section.pane[data-title="fields"] .bar';
+const BAR = 'section.pane[data-title="collect"] .bar';
 /** How long `#lib/nowpoint.ts` waits before a press is a range, with room to spare. */
 const HOLD = 650;
 

@@ -433,9 +433,9 @@ describe('in the app', () => {
 	test('on a phone the empty hint is read whole inside the fields pane', async () => {
 		await withApp(
 			async ({ page }) => {
-				const hint = page.locator('section.pane[data-title="fields"] .hint.empty');
+				const hint = page.locator('section.pane[data-title="collect"] .hint.empty');
 				await hint.waitFor();
-				const [h, p] = await Promise.all([hint.boundingBox(), page.locator('section.pane[data-title="fields"] .bar').boundingBox()]);
+				const [h, p] = await Promise.all([hint.boundingBox(), page.locator('section.pane[data-title="collect"] .bar').boundingBox()]);
 				assert.ok(h.x >= p.x && h.x + h.width <= p.x + p.width + 0.5, `the hint spans ${h.x}–${h.x + h.width}, the pane ${p.x}–${p.x + p.width}`);
 				assert.ok(h.y >= p.y && h.y + h.height <= p.y + p.height + 0.5, `the hint spans ${h.y}–${h.y + h.height} down, the pane ${p.y}–${p.y + p.height}`);
 			},

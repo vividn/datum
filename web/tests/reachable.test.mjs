@@ -348,13 +348,11 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	// The fields widget has NO floating surface left: the hold panel was the
-	// only one and da-e78x6 removed it, taking this file's "a field's state
-	// bubbles are on screen" with it. A PLAIN press fills the bar with the
-	// field's states IN PLACE (da-g635), inside the same scroller under the
-	// same height rules, so the list itself is what has to be on screen —
-	// which is the test below, and now the only one there is to write.
-	test("the states a press fills the bar with are on screen", async () => {
+	// The collect widget has NO floating surface: a PLAIN press opens the
+	// field IN PLACE (da-g635, da-w6437), its view inside the widget's own
+	// box, so the view itself is what has to be on screen — back, its time
+	// and its states — which on a phone's main tab is a pane a few rows tall.
+	test("the view a press opens is on screen, its states with it", async () => {
 		await phone.room('pressed', async (app) => {
 			const { page, submit } = app;
 			// mood is the switch here, so the other four are what wrap the bar.
@@ -365,7 +363,7 @@ describe('on a phone-sized screen', () => {
 			await chip.click();
 			await assertOnScreen(page, '.bar [data-back]', 'the way back to the fields');
 			await assertOnScreen(page, '.bar [data-state="happy"]', "mood's happy");
-			await assertOnScreen(page, '.bar [data-add-state]', 'the + that adds a state');
+			await assertOnScreen(page, '.bar [data-q]', 'the time');
 		});
 	});
 

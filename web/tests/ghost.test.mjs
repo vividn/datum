@@ -58,11 +58,21 @@ async function slowRunner(page, ms) {
 	);
 }
 
-/** Track `coffee` and get its button onto the widget bar. */
-async function withCoffee(app) {
+/** Track `mood` and get its button onto collect. */
+async function withMood(app) {
 	// Typed, not quiet: a write is what refreshes the bar, a read does not (da-fprk0).
-	await seedLines(app, ['setup coffee --verb occur']);
-	await app.page.locator('.bar [data-field="coffee"]').waitFor();
+	await seedLines(app, ['setup mood --verb switch --states good,bad']);
+	await app.page.locator('.bar [data-field="mood"]').waitFor();
+}
+
+/**
+ * A press that runs nobody typed: in collect, a field and then one of its
+ * states, which logs at once (da-w6437). The run is `switch` with the pills
+ * after it, so `switch` is what the ghost says, the pills beside it.
+ */
+async function press(page, state = 'good') {
+	await page.locator('.bar [data-field="mood"]').click();
+	await page.locator(`.bar [data-state="${state}"]`).click();
 }
 
 /**
@@ -107,7 +117,8 @@ describe('the bar after Enter', () => {
 	test('a line typed while a command is in flight is not overwritten, by the command or by a press', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await withCoffee(app);
+			await seedLines(app, ['setup coffee --verb occur']);
+			await page.locator('.bar [data-field="coffee"]').waitFor();
 			await slowRunner(page, 700);
 			const input = page.locator('.prompt-bar input');
 			const echoes = await page.locator('.cli .echo').count();
@@ -116,8 +127,9 @@ describe('the bar after Enter', () => {
 			await input.press('Enter');
 			// The reader starts the next line before the last one is done.
 			await input.fill('occur half-typed');
-			// A press lands in the middle of it, too.
-			await page.locator('.bar [data-field="coffee"]').click();
+			// A press lands in the middle of it, too: `occur` is pending on
+			// the line, so a point's tap runs it at once.
+			await page.locator('.bar [data-field="coffee"][data-act="run"]').click();
 
 			await page.waitForFunction(
 				(n) => document.querySelectorAll('.cli .echo').length > n + 1,
@@ -135,11 +147,11 @@ describe('the ghost', () => {
 	test('a press shows the argv it ran without it becoming the input’s value, and fades within a second', async () => {
 		await onBar(async (app) => {
 			const { page } = app;
-			await withCoffee(app);
+			await withMood(app);
 
 			const saw = await app.watchGhosts();
-			await page.locator('.bar [data-field="coffee"]').click();
-			const { values, look } = await ghostOf(saw, 'moment coffee');
+			await press(page);
+			const { values, look } = await ghostOf(saw, 'switch');
 			assert.deepEqual(values, [''], 'the press became the input’s value');
 
 			// Dimmer than a typed line, and brighter than the placeholder it
@@ -182,22 +194,22 @@ describe('the ghost', () => {
 	test('a second press replaces the first and restarts the fade — never two at once', async () => {
 		await onBar(async (app) => {
 			const { page } = app;
-			await withCoffee(app);
+			await withMood(app);
 
 			// Each element the watch sees is numbered (`nth`), so the second
 			// is known to be another element and not the same one living on.
 			const saw = await app.watchGhosts();
-			await page.locator('.bar [data-field="coffee"]').click();
-			assert.deepEqual((await ghostOf(saw, 'moment coffee')).values, ['']);
+			await press(page);
+			assert.deepEqual((await ghostOf(saw, 'switch')).values, ['']);
 
-			await page.locator('.bar [data-field="coffee"]').click();
+			await press(page, 'bad');
 			// A fresh element AND a fade starting over: the element's own
 			// animation says how far through it is.
 			const ghosts = await page
 				.waitForFunction(() => window.__datumGhosts.some((g) => g.look.nth === 2) && window.__datumGhosts)
 				.then((h) => h.jsonValue());
 			const second = ghosts.find((g) => g.look.nth === 2);
-			assert.equal(second.line, 'moment coffee');
+			assert.equal(second.line, 'switch');
 			assert.ok(second.look.age < 400, `the second ghost's fade began ${second.look.age}ms in`);
 			assert.deepEqual([...new Set(ghosts.map((g) => g.count))], [1], 'two ghosts at once');
 		});
@@ -206,12 +218,12 @@ describe('the ghost', () => {
 	test('a keystroke takes the ghost away at once — the box is the reader’s', async () => {
 		await onBar(async (app) => {
 			const { page } = app;
-			await withCoffee(app);
+			await withMood(app);
 			const input = page.locator('.prompt-bar input');
 
 			const saw = await app.watchGhosts();
-			await page.locator('.bar [data-field="coffee"]').click();
-			assert.deepEqual((await ghostOf(saw, 'moment coffee')).values, ['']);
+			await press(page);
+			assert.deepEqual((await ghostOf(saw, 'switch')).values, ['']);
 
 			// A key that types nothing, so what clears the ghost is the
 			// keystroke itself and not the box turning non-empty. Read in the
@@ -259,11 +271,11 @@ describe('the ghost', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				await withCoffee(app);
+				await withMood(app);
 
 				const saw = await app.watchGhosts();
-				await page.locator('.bar [data-field="coffee"]').click();
-				const { values, look } = await ghostOf(saw, 'moment coffee');
+				await press(page);
+				const { values, look } = await ghostOf(saw, 'switch');
 				assert.deepEqual(values, ['']);
 				assert.equal(look.animations, 0, 'the ghost fades for a reader who asked for no motion');
 				await gone(page);

@@ -98,7 +98,7 @@ describe('the menu the title opens', () => {
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'aliases', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'aliases', 'custom', 'collect']);
 		});
 	});
 
@@ -169,7 +169,7 @@ describe('the menu the title opens', () => {
 	test('each Split arrow puts the new pane on its own side', async () => {
 		await shared.solo(async ({ page }) => {
 			await manage(page, 'tail', 'split: a new pane below');
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'empty', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'empty', 'custom', 'collect']);
 			const empty = page.locator('section.pane[data-title="empty"]');
 			const [tail, made] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(empty)]);
 			assert.equal(Math.round(made.x), Math.round(tail.x));
@@ -189,7 +189,7 @@ describe('the menu the title opens', () => {
 				'command',
 				'stats',
 				'chart',
-				'fields',
+				'collect',
 				'aliases',
 				'sync',
 				'help',
@@ -203,7 +203,7 @@ describe('the menu the title opens', () => {
 			// The new pane is titled by its kind and draws: a second nowview
 			// under the tail, at its own box's size.
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'nowview', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'nowview', 'custom', 'collect']);
 		});
 	});
 
@@ -363,7 +363,7 @@ describe('the menu the title opens', () => {
 			// Worn everywhere `labelOf` is read: the frame's title, and the
 			// button that opens its menu.
 			await titledPane(page, 'sleep tail').waitFor();
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'sleep tail', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'sleep tail', 'custom', 'collect']);
 			assert.equal(await pane(page, 'tail').locator('h2').innerText(), 'sleep tail');
 			assert.match(await menuButton(page, 'tail').getAttribute('aria-label'), /\bsleep tail\b/);
 			// It EDITS the tree, so it dirties the layout like any other edit.
@@ -474,7 +474,7 @@ describe('the menu the title opens', () => {
 			// The tab that left is a pane of its own, under the pane it left;
 			// the other stayed behind, which is that pane's whole strip now.
 			assert.equal(await pane(page, 'tail').locator('[role="tab"]').count(), 0);
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'aliases', 'tail', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'aliases', 'tail', 'custom', 'collect']);
 			const [stayed, gone] = await Promise.all([
 				boxOf(page.locator('section.pane[data-title="aliases"]')),
 				boxOf(page.locator('section.pane[data-title="tail"]'))
@@ -515,9 +515,9 @@ describe('the menu the title opens', () => {
 	test('closing panes unnests their split', async () => {
 		await shared.solo(async ({ page }) => {
 			await manage(page, 'custom', 'Close pane');
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'collect']);
 			await manage(page, 'nowview', 'Close pane');
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'collect']);
 			// The side column is gone: the pane that held it holds the tail
 			// itself now, as the row's second child.
 			assert.equal(await page.locator('section.pane[data-pane="side"]').getAttribute('data-title'), 'tail');
@@ -781,7 +781,7 @@ describe('the pane menu by pointer', () => {
 			assert.ok(boxes[0].x < boxes[1].x && boxes[1].x < boxes[2].x && boxes[2].x < boxes[3].x, 'the row is not drawn in its DOM order');
 			await buttons.nth(1).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'empty', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'empty', 'custom', 'collect']);
 			const [tail, empty] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(page.locator('section.pane[data-title="empty"]'))]);
 			assert.equal(Math.round(empty.x), Math.round(tail.x));
 			assert.equal(Math.round(empty.width), Math.round(tail.width));

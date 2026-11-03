@@ -918,16 +918,16 @@ describe('widget help', () => {
 // it through `ALIASES`, the same door a URL uses.
 describe('PICKABLE ⊆ BUILTIN', () => {
 	test('each kind the chooser offers names one, titled as its pane is', async () => {
-		const { PICKABLE, titleOf } = await import('../src/lib/layout/registry.ts');
+		const { PICKABLE } = await import('../src/lib/layout/registry.ts');
 		const { ALIASES, BUILTIN, BUILTIN_NAMES } = await import('../src/lib/layout/defaults.ts');
 		assert.ok(PICKABLE.length > 0);
 		for (const kind of PICKABLE) {
 			const name = ALIASES[kind] ?? kind;
 			assert.ok(BUILTIN_NAMES.includes(name), `${kind} has no built-in layout (${name})`);
 			assert.notEqual(name, 'main', `${kind} may not be the main layout`);
-			// The root bar's `+` reaches the same layout by the kind's TITLE
-			// and `widgetInto` by its alias: one name, or the two doors part.
-			assert.equal(name, titleOf(kind), `${kind} is titled ${titleOf(kind)} but aliased to ${name}`);
+			// The root bar's `+` and `widgetInto` both reach it by this name,
+			// not by its title: `collect`, the widget, is titled as the page
+			// it is on (da-w6437), and the alias keeps the two apart.
 			const only = BUILTIN[name](false);
 			assert.equal(only.name, name);
 			assert.deepEqual(kinds(only.root), [kind], `the ${name} built-in is the ${kind} widget alone`);

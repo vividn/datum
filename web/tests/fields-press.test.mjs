@@ -54,14 +54,10 @@ describe('a press', () => {
 			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).verb, 'start');
 
 			await untilShape(page, 'state');
-			await app.pressWidget('sleep');
-			assert.equal((await app.echoes()).at(-1), 'start sleep', 'a colour made it a point');
 
 			await type(page, 'end sleep');
 			await type(page, 'setup sleep --verb moment');
 			await untilShape(page, 'point');
-			await app.pressWidget('sleep');
-			assert.equal((await app.echoes()).at(-1), 'moment sleep', 'an explicit verb was not honoured');
 		});
 	});
 
@@ -85,7 +81,8 @@ describe('a press', () => {
 		});
 	});
 
-	test('a press runs what its shape means, with the bar’s pills after it', async () => {
+	// A bare tap opens a field (da-w6437); a tap under a pending verb runs it.
+	test('a press under a pending verb runs it, with the bar’s pills after it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
@@ -93,7 +90,8 @@ describe('a press', () => {
 			// the newest row is only the newest at an instant of its own.
 			await app.clock.forward(1000);
 			const saw = await app.watchGhosts();
-			await page.locator('.bar [data-field="coffee"]').click();
+			await page.locator('.prompt-bar input').fill('moment ');
+			await page.locator('.bar [data-field="coffee"][data-act="run"]').click();
 			// Ghosted beside the prompt, not typed into it (da-jprg) — read
 			// off a watch begun before the press, since a slow press can
 			// outlast the ghost (da-ehpe5).
@@ -113,7 +111,8 @@ describe('a press', () => {
 			await type(page, 'start work');
 			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
 			await app.clock.forward(1000);
-			await page.locator('.bar [data-field="work"]').click();
+			await page.locator('.prompt-bar input').fill('end ');
+			await page.locator('.bar [data-field="work"][data-act="run"]').click();
 			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
 			assert.equal((await app.echoes()).at(-1), 'end work');
 			await app.idle();
@@ -122,7 +121,8 @@ describe('a press', () => {
 
 			const seen = await app.spyOnRunner();
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 09:00', kind: 'time' }]));
-			await page.locator('.bar [data-field="coffee"]').click();
+			await page.locator('.prompt-bar input').fill('moment ');
+			await page.locator('.bar [data-field="coffee"][data-act="run"]').click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'moment'));
 			// No `--show json`: the echo is asked for in the env (da-vx31e).
 			assert.deepEqual((await seen()).find((a) => a[0] === 'moment'), [
@@ -160,7 +160,8 @@ describe('a press', () => {
 			);
 			// A duration leaves the fields a length can be spent on (da-qu16),
 			// and `work` is a block, so it is still there to press.
-			await page.locator('.bar [data-field="work"]').click();
+			await page.locator('.prompt-bar input').fill('start ');
+			await page.locator('.bar [data-field="work"][data-act="run"]').click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'start'));
 			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), [
 				'start',
@@ -195,7 +196,9 @@ describe('a press', () => {
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills().map((p) => [p.kind, p.text])), [['dur', 'dur=25m']]);
 
 			const seen = await app.spyOnRunner();
-			await page.locator('.bar [data-field="work"]').click();
+			// Under `start`: a bare tap only opens the field (da-w6437).
+			await page.locator('.prompt-bar input').fill('start ');
+			await page.locator('.bar [data-field="work"][data-act="run"]').click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'start'));
 			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), ['start', 'work', 'dur=25m']);
 			await app.idle();

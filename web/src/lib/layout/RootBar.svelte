@@ -141,7 +141,8 @@
 	import { offers, widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
-	import { labelOf, titleOf } from './registry.js';
+	import { ALIASES } from './defaults.js';
+	import { labelOf } from './registry.js';
 	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions, wrapTabs } from './shell.js';
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab } from './tree.js';
@@ -197,8 +198,9 @@
 
 	/**
 	 * The `+`: the chooser, and what it came back with. A layout opens as a
-	 * root tab; a widget kind opens its built-in one-widget layout, whose
-	 * name is the kind's title (defaults.ts); «New layout» is named first.
+	 * root tab; a widget kind opens its built-in one-widget layout, by the
+	 * name `widgetInto` reaches it by (`ALIASES` in defaults.ts: `collect`,
+	 * the widget, is not `collect`, the page); «New layout» is named first.
 	 * Nothing is above a root tab, so nothing is refused here.
 	 */
 	async function add(): Promise<void> {
@@ -206,7 +208,7 @@
 		const picked = await choose([], true);
 		if (!picked) return;
 		if ('blank' in picked) return named();
-		await attempt(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
+		await attempt(() => open('layout' in picked ? picked.layout : (ALIASES[picked.kind] ?? picked.kind)));
 	}
 
 	/**

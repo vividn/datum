@@ -8,5 +8,5 @@ import { DESKTOP } from './support/layout.mjs';
 everyLayer('desktop', { ...DESKTOP, desk: null }, 'menu', [
 	'nowview: menu of the nowview pane',
 	'nowview: menu of the nowview pane › page: history',
-	'fields: menu of the fields pane'
+	'collect: menu of the collect pane'
 ]);

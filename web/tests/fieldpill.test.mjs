@@ -441,7 +441,9 @@ describe('the gesture, and the pill it mints', () => {
 			await fieldPill(page).waitFor();
 
 			const seen = await app.spyOnRunner();
-			await chip(page, 'coffee').click();
+			// Under a pending verb, which runs at once (a bare tap opens, da-w6437).
+			await page.locator('.prompt-bar input').fill('moment ');
+			await page.locator('.bar [data-field="coffee"][data-act="run"]').click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'moment'));
 			assert.deepEqual((await seen()).find((a) => a[0] === 'moment'), [
 				'moment',

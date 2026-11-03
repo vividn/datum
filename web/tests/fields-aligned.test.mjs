@@ -16,7 +16,7 @@ import { DESKTOP, PHONE, pickOption } from './support/layout.mjs';
 before(startApp);
 after(stopApp);
 
-const PANE = 'section.pane[data-title="fields"]';
+const PANE = 'section.pane[data-title="collect"]';
 const BAR = `${PANE} .bar`;
 
 const at = (field, verb, y, height) =>
@@ -164,10 +164,10 @@ for (const [name, screen] of [
 			await settle(page);
 			assert.ok(Math.abs((await boxes(page)).fields.mid.top - seen.fields.mid.top) <= 1);
 
-			// And the option set back is today's rows.
-			await pickOption(page, 'bar', 'the buttons stand', 'in rows');
+			// And the option set back is the cluster, the most used in the middle (da-w6437).
+			await pickOption(page, 'bar', 'the buttons stand', 'in the middle');
 			await page.locator(`${PANE} .fields[data-align="rows"]`).waitFor();
-			assert.equal(await page.$eval(`${BAR} [data-field="mid"]`, (el) => getComputedStyle(el.parentElement).position), 'static');
+			await page.locator(`${BAR} .room .ring [data-field="mid"]`).waitFor();
 			assert.deepEqual(app.errors, []);
 		}, screen);
 	});

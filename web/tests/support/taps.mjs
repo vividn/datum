@@ -106,7 +106,12 @@ const survey = (page, { within, mark, layer } = {}) =>
 				const chevron = getComputedStyle(b, '::after').content.includes('›');
 				const plus = b.textContent.trim().endsWith('+');
 				if (key === mark) b.dataset.tap = '';
-				out.push({ key, double, chevron, plus, away: 'away' in b.dataset, kind: b.dataset.act ?? null });
+				// Past the edge of collect's room (da-w6437): clipped, and reached
+				// by a drag on the cluster, not by a scroll into view.
+				const room = b.closest('.room')?.getBoundingClientRect();
+				const [cx, cy] = [box.left + box.width / 2, box.top + box.height / 2];
+				const clipped = !!room && (cx < room.left || cx > room.right || cy < room.top || cy > room.bottom);
+				out.push({ key, double, chevron, plus, clipped, away: 'away' in b.dataset, kind: b.dataset.act ?? null });
 			}
 			return out;
 		},
@@ -206,7 +211,7 @@ async function reset(app, line, layout = false) {
 	// bar is drawn, or a bar still mounting reads as the option off.
 	await page.locator('.bar [data-field="coffee"]').waitFor();
 	if ((await page.locator('.bar [data-field="run"]').count()) === 0) {
-		const id = await page.locator('section.pane[data-title="fields"]').first().getAttribute('data-pane');
+		const id = await page.locator('section.pane[data-title="collect"]').first().getAttribute('data-pane');
 		await toggleOption(page, id, 'show ignored fields');
 		await page.locator('.bar [data-field="run"]').waitFor();
 	}
@@ -298,7 +303,10 @@ async function tap(app, key, line, within) {
 	await app.clock.forward(1000);
 	await page.evaluate(() => (window.__lastRun = window.datum.bar.last()));
 	const opened = await watchModals(page);
-	await page.locator('[data-tap]').click();
+	// A button the room clips is pressed where it is: what it does is the
+	// question here, and reaching it is `fields-center.test.mjs`'s drag.
+	if (found.clipped) await page.locator('[data-tap]').dispatchEvent('click');
+	else await page.locator('[data-tap]').click();
 	// A press dispatches, and the run starts a frame or two behind it.
 	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 	await app.idle();
@@ -347,11 +355,11 @@ export function everyButton(screen, options, must) {
 		});
 
 		test('with `occur ` on the line: the bar and the widgets it changes', { skip: sweep }, async () => {
-			const within = '.prompt-bar, section.pane[data-title="fields"], section.pane[data-title="command"]';
+			const within = '.prompt-bar, section.pane[data-title="collect"], section.pane[data-title="command"]';
 			const { keys, acted, wrong } = await tapAll(await shared(), 'occur ', within);
 			console.log(`# ${keys.length} buttons tapped, ${acted.length} acted`);
 			assert.deepEqual(wrong, []);
-			for (const key of ['bar: run the line', 'fields: coffee']) {
+			for (const key of ['bar: run the line', 'collect: coffee']) {
 				assert.ok(keys.includes(key), `${key} not surveyed; saw ${keys.join(', ')}`);
 				assert.ok(acted.includes(key), `${key} did nothing; acted: ${acted.join(', ')}`);
 			}
@@ -374,7 +382,7 @@ export function everyButton(screen, options, must) {
 			assert.notEqual(await writes(app), app.seeded, 'the undo wrote');
 			await reset(app);
 			assert.deepEqual(await app.tailRows(), seeded);
-			assert.ok((await tap(app, 'fields: coffee')).wrote, 'the tap wrote');
+			assert.ok((await tap(app, 'collect: coffee', 'occur ')).wrote, 'the tap wrote');
 			await reset(app);
 			assert.deepEqual(await app.tailRows(), seeded);
 			assert.deepEqual(await undone(), undo);
@@ -460,7 +468,10 @@ async function press(app, key, inLayer) {
 	}
 	assert.ok(found, `${key}: not there after a reset`);
 	const modal = await watchModals(page);
-	await page.locator('[data-tap]').click();
+	// A button the room clips is pressed where it is: what it does is the
+	// question here, and reaching it is `fields-center.test.mjs`'s drag.
+	if (found.clipped) await page.locator('[data-tap]').dispatchEvent('click');
+	else await page.locator('[data-tap]').click();
 	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 	await app.idle();
 	found.modal = await modal(found.kind === 'open' ? 2000 : 0);

@@ -36,9 +36,9 @@ const KEY = 'datum.tour';
  * for, since a tap in the tour only moves it on (da-q8koz).
  */
 const TAP: Record<FieldButton['shape']['kind'], (f: string) => string> = {
-	point: (f) => `A tap on ${f} logs it.`,
-	state: (f) => `A tap on ${f} turns it on, and a second tap turns it off.`,
-	states: (f) => `A tap on ${f} chooses what it is now.`,
+	point: (f) => `A tap on ${f} opens it: set its time and data, then log it.`,
+	state: (f) => `A tap on ${f} opens it: set its time and data, then start or end it.`,
+	states: (f) => `A tap on ${f} opens it: choose what it is now, its time and data.`,
 	record: (f) => `A tap on ${f} starts a ${f} entry in the bar below.`
 };
 

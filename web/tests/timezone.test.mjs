@@ -114,7 +114,9 @@ test('in the fields widget unless IGNORED', async () => {
 	}, BERLIN);
 });
 
-test('its picker offers no `end`, which the CLI refuses, and leaves the gap of a field never off', async () => {
+// Off is no state in collect (da-w6437): no field's view offers `end`,
+// which for this field the CLI refuses, and its zone is a state as any.
+test('its view in collect offers no `end`, which the CLI refuses, and the zone it holds is a state', async () => {
 	await withApp(async (app) => {
 		const { page } = app;
 		assert.equal((await app.run(['timezone', 'Asia/Tokyo'])).code, 0);
@@ -122,10 +124,10 @@ test('its picker offers no `end`, which the CLI refuses, and leaves the gap of a
 		const chip = page.locator('.bar [data-field="timezone"]');
 		await chip.waitFor();
 		await chip.dispatchEvent('click');
-		const picker = page.locator('.bar .picker');
-		await picker.locator('[data-state="Asia/Tokyo"]').waitFor();
-		assert.equal(await picker.locator('[data-role="end"].gap').count(), 1);
-		assert.equal(await picker.locator('[data-role="end"] button:not([disabled])').count(), 0);
+		const view = page.locator('.bar .collect.open');
+		await view.locator('[data-state="Asia/Tokyo"]').waitFor();
+		assert.equal(await view.locator('[data-state="false"]').count(), 0);
+		assert.equal(await view.locator('button', { hasText: /^end$/ }).count(), 0);
 	}, BERLIN);
 });
 

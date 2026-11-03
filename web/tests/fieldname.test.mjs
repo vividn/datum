@@ -116,8 +116,17 @@ async function chipIndex(app, field) {
 	return names.indexOf(field);
 }
 
-/** Press that chip, and wait for the CLI widget to echo what it ran. */
+/**
+ * Press that chip under `occur` pending on the line, which runs at once (a
+ * bare tap only opens it, da-w6437), and wait for the CLI widget to echo
+ * what it ran.
+ */
 async function pressChip(app, field) {
+	await app.page.locator('.prompt-bar input').fill('occur ');
+	await app.page.waitForFunction(
+		(name) => [...document.querySelectorAll('.bar button.widget')].some((chip) => chip.dataset.field === name && chip.dataset.act === 'run'),
+		field
+	);
 	const index = await chipIndex(app, field);
 	const echoes = await app.page.locator('.cli .echo').count();
 	await app.page.locator('.bar button.widget').nth(index).click();

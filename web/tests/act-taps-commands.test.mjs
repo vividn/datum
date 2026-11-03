@@ -8,4 +8,4 @@ import { DESKTOP, along, widgetPane } from './support/layout.mjs';
 // The CLI, the fields and the commands, as `main`'s desktop tree.
 const desk = along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar'), widgetPane('commands', 'command'));
 
-everyButton('commands-pane desktop', { ...DESKTOP, desk }, ['fields: coffee', 'fields: run', 'command: undo']);
+everyButton('commands-pane desktop', { ...DESKTOP, desk }, ['command: undo']);

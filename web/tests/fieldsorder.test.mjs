@@ -50,13 +50,13 @@ const SEED = [
 ];
 
 /**
- * The usual order, and what the bar returns to, read row by row (da-xtkcp):
- * each used once, so every row is in the order of the `y` the CLI draws
- * it at (`fields --json`) — and a field on now moves nowhere.
+ * The usual order, and what the cluster returns to (da-xtkcp, da-w6437):
+ * by use, as the CLI sorts it, and a field on now moves nowhere. Read off
+ * the page when a test starts, as `usual`.
  */
-const USUAL = ['coffee', 'run', 'sleep', 'mood'];
+const ALL = ['coffee', 'mood', 'run', 'sleep'];
 
-const BAR = 'section.pane[data-title="fields"] .bar';
+const BAR = 'section.pane[data-title="collect"] .bar';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 
 // ONE app for the tests on the default screen (sharedApp in support/app.mjs),
@@ -93,15 +93,11 @@ const saysFields = (page, want) =>
 		(seen) => seen.join() === want.join()
 	);
 
-/** The fields the bar MARKED as promoted, and the one the hairline follows. */
+/** The fields the cluster MARKED as promoted. */
 const marked = (page) =>
-	page.$$eval(`${BAR} .slot`, (slots) => {
-		const field = (s) => s.querySelector('[data-field]')?.dataset.field;
-		return {
-			promoted: slots.filter((s) => s.hasAttribute('data-promoted')).map(field),
-			rule: slots.filter((s) => getComputedStyle(s).borderRightWidth !== '0px').map(field)
-		};
-	});
+	page.$$eval(`${BAR} .room .spot`, (spots) => ({
+		promoted: spots.filter((s) => s.hasAttribute('data-promoted')).map((s) => s.querySelector('[data-field]')?.dataset.field)
+	}));
 
 /** The centre of a mark the picture drew for `field`, on screen. */
 async function markOf(page, field, kind = '[data-from]') {
@@ -143,27 +139,19 @@ describe('a click on the picture puts the fields drawn there first', () => {
 	test('the row clicked leads a two-row bar, nothing is hidden, and the ✕ gives the order back', async () => {
 		await withFields(
 			async ({ page }) => {
-				assert.deepEqual(await shownFields(page), USUAL, 'the usual order');
+				const usual = await shownFields(page);
+				assert.deepEqual([...usual].sort(), ALL, 'every field');
+				assert.notEqual(usual[0], 'run', 'run already stands first: the case is not tested');
 
 				// `run`'s own block, as the CLI drew it: its row and its time.
 				await clickAt(page, await markOf(page, 'run'));
-				await saysFields(page, ['run', ...USUAL.filter((f) => f !== 'run')]);
+				await saysFields(page, ['run', ...usual.filter((f) => f !== 'run')]);
+				assert.deepEqual((await marked(page)).promoted, ['run'], 'the promoted field says so');
 
-				const seen = await marked(page);
-				assert.deepEqual(seen.promoted, ['run'], 'the promoted field says so');
-				assert.deepEqual(seen.rule, ['run'], 'and the hairline falls after it');
-
-				// The fields a press reached head the rows, from the top
-				// (da-xtkcp), so the one promoted field is the first on the top
-				// row as DRAWN.
-				const rows = await page.$eval(BAR, (bar) => Number(bar.dataset.rows));
-				assert.equal(rows, 2, 'this screen was chosen for a two-row bar');
-				const boxes = await page.$$eval(`${BAR} [data-field]`, (els) =>
-					els.map((el) => ({ field: el.dataset.field, ...el.getBoundingClientRect().toJSON() }))
-				);
-				const top = Math.min(...boxes.map((b) => b.top));
-				const row = boxes.filter((b) => b.top <= top + 1).sort((a, b) => a.left - b.left);
-				assert.equal(row[0].field, 'run', `the top row reads ${JSON.stringify(row)}`);
+				// The fields a press reached come first, so `run` stands in the
+				// middle of the cluster as DRAWN.
+				const [room, run] = await Promise.all([page.locator(`${BAR} .room`).boundingBox(), page.locator(`${BAR} [data-field="run"]`).boundingBox()]);
+				assert.ok(Math.abs(room.x + room.width / 2 - (run.x + run.width / 2)) <= 2, 'run is not in the middle');
 
 				// The ✕ on the selection's pill — the entry's, since a tap on a
 				// mark selects it (da-xg1vi). Clearing the selection clears
@@ -173,11 +161,9 @@ describe('a click on the picture puts the fields drawn there first', () => {
 					() => pillsOf(page),
 					(seen) => seen.length === 0
 				);
-				await saysFields(page, USUAL);
+				await saysFields(page, usual);
 				assert.deepEqual((await marked(page)).promoted, [], 'and the mark goes with it');
 			},
-			// Tall enough that the fields pane's share is two button-rows
-			// (measured: 86px at 1100, one row at 720).
 			{ viewport: { width: 1280, height: 1100 } }
 		);
 	});
@@ -185,13 +171,14 @@ describe('a click on the picture puts the fields drawn there first', () => {
 	test('a dot is reached by its HEIGHT, wherever along the row the press fell', async () => {
 		await withFields(async (app) => {
 			const { page } = app;
+			const usual = await shownFields(page);
 			const dot = await markOf(page, 'coffee', '[data-at]');
 			await clickAt(page, dot);
 			await until(
 				() => marked(page),
 				(seen) => seen.promoted.join() === 'coffee'
 			);
-			assert.deepEqual(await shownFields(page), ['coffee', ...USUAL.filter((f) => f !== 'coffee')], 'a dot hides nothing');
+			assert.deepEqual(await shownFields(page), ['coffee', ...usual.filter((f) => f !== 'coffee')], 'a dot hides nothing');
 
 			// The SAME row, at another mark's x entirely — minutes away in
 			// TIME. vividn, 2026-09-21, on his phone: «it seems occur dots
@@ -207,7 +194,7 @@ describe('a click on the picture puts the fields drawn there first', () => {
 				() => marked(page),
 				(seen) => seen.promoted.join() === 'coffee'
 			);
-			assert.deepEqual(await shownFields(page), ['coffee', ...USUAL.filter((f) => f !== 'coffee')]);
+			assert.deepEqual(await shownFields(page), ['coffee', ...usual.filter((f) => f !== 'coffee')]);
 
 			// Height still gates it, so the dot is not dragged into every
 			// press: `mood`'s own block is a lane and a half below it, and
@@ -232,13 +219,14 @@ describe('a click on the picture puts the fields drawn there first', () => {
 describe('a duration on the bar leaves the fields it can be spent on', () => {
 	test('a length pill leaves the blocks, and dismissing it brings the rest back', async () => {
 		await withFields(async ({ page }) => {
+			const usual = await shownFields(page);
 			await dragARange(page);
 			// The blocks — a `start` field and a `switch`. `coffee`, a point,
 			// has no length to be given.
-			await saysFields(page, ['run', 'sleep', 'mood']);
+			await saysFields(page, usual.filter((f) => f !== 'coffee'));
 
 			await page.locator('.prompt-bar .pill.dur button.remove').last().click();
-			await saysFields(page, USUAL);
+			await saysFields(page, usual);
 		});
 	});
 
@@ -267,10 +255,11 @@ describe('the now region re-orders by height alone, on a phone', () => {
 				// `mobile` draws the snapshot (`history: '0'`) beside the tail
 				// and the fields bar under them both: chips, and no time axis
 				// for a press to select an instant on (vividn, 17:01).
+				const usual = await shownFields(page);
 				await page.locator(`${NOWVIEW} svg.svg .now-chunk`).first().waitFor();
 				await clickAt(page, await markOf(page, 'mood', '.now-chunk'));
 
-				await saysFields(page, ['mood', ...USUAL.filter((f) => f !== 'mood')]);
+				await saysFields(page, ['mood', ...usual.filter((f) => f !== 'mood')]);
 				assert.deepEqual((await marked(page)).promoted, ['mood']);
 				const pills = await pillsOf(page);
 				assert.equal(pills.length, 1, `the press made ${JSON.stringify(pills)}`);
@@ -283,12 +272,13 @@ describe('the now region re-orders by height alone, on a phone', () => {
 	test('a finger on the bar holds the order until it leaves', async () => {
 		await withFields(
 			async ({ page }) => {
+				const usual = await shownFields(page);
 				await page.locator(`${NOWVIEW} svg.svg .now-chunk`).first().waitFor();
 				const mood = await markOf(page, 'mood', '.now-chunk');
 				const sleep = await markOf(page, 'sleep', '.now-chunk');
 
 				await page.touchscreen.tap(mood.x, mood.y);
-				await saysFields(page, ['mood', ...USUAL.filter((f) => f !== 'mood')]);
+				await saysFields(page, ['mood', ...usual.filter((f) => f !== 'mood')]);
 
 				// A pointer comes to rest ON the bar, and a second press
 				// elsewhere would re-order it. No button moves out from under
@@ -308,11 +298,11 @@ describe('the now region re-orders by height alone, on a phone', () => {
 					() => assert.fail('the bar re-ordered under the pointer'),
 					() => {}
 				);
-				assert.deepEqual(await shownFields(page), ['mood', ...USUAL.filter((f) => f !== 'mood')]);
+				assert.deepEqual(await shownFields(page), ['mood', ...usual.filter((f) => f !== 'mood')]);
 
 				// And it catches up the moment the pointer leaves.
 				await page.mouse.move(box.x + box.width / 2, box.y - 200);
-				await saysFields(page, ['sleep', ...USUAL.filter((f) => f !== 'sleep')]);
+				await saysFields(page, ['sleep', ...usual.filter((f) => f !== 'sleep')]);
 			},
 			{ ...PHONE, home: 'mobile' }
 		);

@@ -635,17 +635,42 @@ function shelved(w: { end: number; states: number[] }, h: number, gap: number, r
 			return row !== undefined;
 		});
 		if (!fit) continue;
-		const spots: Spot[] = [];
-		rows.forEach((row, r) => {
-			const line: number[] = [];
-			row.forEach((i, k) => (k % 2 ? line.push(i) : line.unshift(i)));
-			let x = -(taken(r) - gap) / 2;
-			for (const i of line) {
-				spots[i] = { x: x + wide[i] / 2, y: y(r) };
-				x += wide[i] + gap;
-			}
-		});
-		return { end: spots[0], states: spots.slice(1) };
+		return inRows(rows, wide, gap, y);
 	}
 	return null;
+}
+
+/**
+ * Each row stood centered, its first button in the middle of an odd row and
+ * just left of it on an even one, and the rest right, left, right, outward.
+ */
+function inRows(rows: number[][], wide: number[], gap: number, y: (row: number) => number): Ring {
+	const spots: Spot[] = [];
+	rows.forEach((row, r) => {
+		const line: number[] = [];
+		row.forEach((i, k) => (k % 2 ? line.push(i) : line.unshift(i)));
+		let x = -(row.reduce((sum, i) => sum + wide[i] + gap, 0) - gap) / 2;
+		for (const i of line) {
+			spots[i] = { x: x + wide[i] / 2, y: y(r) };
+			x += wide[i] + gap;
+		}
+	});
+	return { end: spots[0], states: spots.slice(1) };
+}
+
+/**
+ * The buttons in the rows a box `tall` holds, however wide that makes them,
+ * for a box too short for a ring (da-w6437): the middle row first, each
+ * button in rank order to the row least full, so the rows run past the
+ * box's sides together and a sideways pan reaches them.
+ */
+export function dealt(w: { end: number; states: number[] }, h: number, gap: number, tall: number): Ring {
+	const n = Math.max(1, Math.floor((tall + gap) / (h + gap)));
+	const y = (row: number) => (row - (n - 1) / 2) * (h + gap);
+	const order = Array.from({ length: n }, (_, row) => row).sort((a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2) || a - b);
+	const wide = [w.end, ...w.states];
+	const rows: number[][] = Array.from({ length: n }, () => []);
+	const taken = (row: number) => rows[row].reduce((sum, i) => sum + wide[i] + gap, 0);
+	wide.forEach((_, i) => rows[order.reduce((best, r) => (taken(r) < taken(best) ? r : best))].push(i));
+	return inRows(rows, wide, gap, y);
 }

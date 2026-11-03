@@ -101,16 +101,16 @@ describe('an edit inside an embedded layout', () => {
 		await withApp(async (app) => { // own app: it reloads
 			const { page } = app;
 			await embed(app);
-			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
+			assert.deepEqual(await inside(copy(page)), ['nowview', 'collect']);
 
 			// An edit INSIDE `mine`: a pane split off its nowview.
 			await manage(page, 'm-a', 'split: a new pane to the right');
-			assert.deepEqual(await inside(copy(page)), ['nowview', 'empty', 'fields']);
+			assert.deepEqual(await inside(copy(page)), ['nowview', 'empty', 'collect']);
 
 			// It is kept the way a root tab's is — in `mine`'s own draft, by
 			// name — so it is still there after a reload.
 			await app.reload();
-			assert.deepEqual(await inside(copy(page)), ['nowview', 'empty', 'fields']);
+			assert.deepEqual(await inside(copy(page)), ['nowview', 'empty', 'collect']);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -188,8 +188,8 @@ describe('two copies of one layout', () => {
 			await embedTwice(app);
 			const one = copy(page, 'm-a');
 			const two = copy(page, 'm-a@mine');
-			assert.deepEqual(await inside(one), ['nowview', 'fields']);
-			assert.deepEqual(await inside(two), ['nowview', 'fields']);
+			assert.deepEqual(await inside(one), ['nowview', 'collect']);
+			assert.deepEqual(await inside(two), ['nowview', 'collect']);
 			assert.deepEqual([await dotted(one), await dotted(two)], [false, false]);
 
 			// Edit the first copy: it differs from the save, the second does not.
@@ -201,7 +201,7 @@ describe('two copies of one layout', () => {
 			await act(page, 'Save layout', one);
 			await until(() => dotted(two), (dot) => dot === true);
 			assert.equal(await dotted(one), false);
-			assert.deepEqual(await inside(two), ['nowview', 'fields'], 'the other copy is not rewritten by the save');
+			assert.deepEqual(await inside(two), ['nowview', 'collect'], 'the other copy is not rewritten by the save');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -219,8 +219,8 @@ describe('two copies of one layout', () => {
 			// Both copies drew, from the one save, with ids that did not
 			// collide — and nothing drifted, so `main` is not modified by
 			// having been loaded.
-			assert.deepEqual(await inside(copy(page, 'm-a')), ['nowview', 'fields']);
-			assert.deepEqual(await inside(copy(page, 'm-a@mine')), ['nowview', 'fields']);
+			assert.deepEqual(await inside(copy(page, 'm-a')), ['nowview', 'collect']);
+			assert.deepEqual(await inside(copy(page, 'm-a@mine')), ['nowview', 'collect']);
 			const ids = await page.locator('section.pane').evaluateAll((all) => all.map((p) => p.dataset.pane));
 			assert.equal(new Set(ids).size, ids.length, `duplicate pane ids: ${ids.join(', ')}`);
 			assert.equal(await rootDotted(page, 'main'), false, 'a reload reported day as modified');
@@ -234,7 +234,7 @@ describe('a save in another tab', () => {
 		await withApp(async (app) => { // own app: it opens a second tab
 			const { page } = app;
 			await embed(app);
-			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
+			assert.deepEqual(await inside(copy(page)), ['nowview', 'collect']);
 
 			// A second tab on the same database saves `mine` with a third pane.
 			const other = await page.context().newPage();
@@ -248,7 +248,7 @@ describe('a save in another tab', () => {
 			// The copy here follows it: nobody edited it, so it moves to the
 			// new save.
 			await until(() => inside(copy(page)), (t) => t.length === 3);
-			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields', 'tail']);
+			assert.deepEqual(await inside(copy(page)), ['nowview', 'collect', 'tail']);
 			assert.equal(await dotted(copy(page)), false);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
@@ -294,7 +294,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			await addTab(page, 'tail', 'mine');
 			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'mine' }).waitFor();
 			await settled(page);
-			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
+			assert.deepEqual(await inside(copy(page)), ['nowview', 'collect']);
 
 			// That tab’s layout-mode menu: Change Widget → the tail widget.
 			await manage(page, 'tail', 'Change Widget');

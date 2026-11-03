@@ -450,9 +450,9 @@ export const KINDS: Record<string, WidgetKind> = {
 		props: (settings) => ({ settings: chartSettings(settings) }),
 		legible: { width: 200, height: 120 }
 	},
-	// The fields widget (da-c7u8), titled `fields`. The id `widgetbar` is the
-	// saved-layout key — every stored layout and draft names it, so it stays;
-	// the widget is called `fields` everywhere else (da-850j). How a switch in
+	// The collect widget (da-w6437), the fields widget until then (da-c7u8,
+	// da-850j). The id `widgetbar` is the saved-layout key — every stored
+	// layout and draft names it, so it stays. How a switch in
 	// a state is labelled is one setting (`SwitchLabel` in fields.ts);
 	// `showIgnored` (da-xhio) is the other, and it is the SESSION's — a way
 	// to see the ignored fields the bar leaves out, alongside the setup
@@ -460,7 +460,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// device (da-ray91).
 	widgetbar: {
 		live: true,
-		meta: meta('widgetbar', 'fields', { align: 'rows', switchLabel: 'field', showIgnored: false }, [
+		meta: meta('widgetbar', 'collect', { align: 'rows', switchLabel: 'field', showIgnored: false }, [
 			// Where the buttons stand (da-omw4n): today's rows, or each at the
 			// height its field is drawn in the pictures.
 			{
@@ -468,7 +468,7 @@ export const KINDS: Record<string, WidgetKind> = {
 				label: 'the buttons stand',
 				type: 'choice',
 				choices: [
-					{ value: 'rows', label: 'in rows' },
+					{ value: 'rows', label: 'in the middle' },
 					{ value: 'picture', label: 'aligned to the picture' }
 				]
 			},
@@ -485,9 +485,9 @@ export const KINDS: Record<string, WidgetKind> = {
 		]),
 		component: FieldsPane,
 		help: [
-			'Every field you log, as a button, lit when it is on.',
-			'Tap to log it, with any pending verb and pills; hold for a field pill.',
-			'+ declares a new field.'
+			'Every field you log, as a button, lit when it is on: the most used in the middle.',
+			'Tap one to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
+			'Under a pending verb a tap logs at once; hold for a field pill alone.'
 		].join('\n'),
 		props: ({ align, switchLabel, showIgnored }) => ({
 			align: align === 'picture' ? 'picture' : 'rows',

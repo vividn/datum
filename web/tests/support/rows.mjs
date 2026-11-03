@@ -202,6 +202,8 @@ export const listed = (locator, selector) =>
 				for (let k = 0; lanes.some((lane) => k < lane.length); k += 1)
 					for (const lane of lanes) if (k < lane.length) items.push(lane[k]);
 			}
+			// The collect widget's cluster (da-w6437): its spots, first to last.
+			items.push(...bar.querySelectorAll('.room .spot'));
 			return items
 				.flatMap((item) => (item.matches(selector) ? [item] : [...item.querySelectorAll(selector)]))
 				.map((el) => ({ ...el.dataset, text: el.textContent.trim(), tag: el.tagName }));
@@ -219,7 +221,8 @@ export const rowsOf = (locator, selector, name = (el) => el.field) =>
 	locator
 		.evaluate(
 			(bar, selector) =>
-				[...bar.querySelectorAll('.lane')].map((lane) =>
+				// The collect widget's cluster is one row, first to last (da-w6437).
+				[...bar.querySelectorAll('.lane'), ...(bar.querySelector('.room .ring') ? [bar.querySelector('.room .ring')] : [])].map((lane) =>
 					[...lane.children]
 						.flatMap((item) => (item.matches(selector) ? [item] : [...item.querySelectorAll(selector)]))
 						.map((el) => ({ ...el.dataset, text: el.textContent.trim(), tag: el.tagName }))

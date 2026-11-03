@@ -54,7 +54,7 @@ const phone = sharedApp(PHONE);
 describe('the default layout', () => {
 	test('shows the strip, the CLI widget, nowview, tail and the widget bar in panes', async () => {
 		await shared.solo(async ({ page }) => {
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'collect']);
 		});
 	});
 
@@ -139,7 +139,7 @@ describe('the draft', () => {
 				// (da-u7vz8): `welcome` in front, the default behind it.
 				assert.deepEqual(await titles(app.page), ['welcome']);
 				await app.toCollect();
-				assert.deepEqual(await titles(app.page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'fields']);
+				assert.deepEqual(await titles(app.page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'collect']);
 				await addTab(app.page, 'tail', 'aliases');
 				assert.equal(await activeTab(app.page, 'tail'), 'aliases');
 				assert.deepEqual(app.errors, []);
@@ -162,7 +162,7 @@ describe('the draft', () => {
 describe('on a phone', () => {
 	test('the mobile default is one column with the bar on screen, tail, nowview and custom as tabs', async () => {
 		await phone.solo(async ({ page }) => {
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'collect']);
 			const boxes = await page.evaluate(() =>
 				[...document.querySelectorAll('section.pane')].map((p) => {
 					const b = p.getBoundingClientRect();
@@ -403,7 +403,7 @@ describe('a tab that holds a layout', () => {
 			// Its two panes are inside it, and its title is not lain on by
 			// theirs: the inset (the gap all round, the whole row on the
 			// bar's edge) is what keeps the two outlines two.
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'custom', 'collect']);
 			const [frame] = await boxes(mine);
 			const inside = await boxes(mine.locator(':scope > .content > .tab-body > .split > .cell section.pane'));
 			assert.equal(inside.length, 2);
@@ -427,7 +427,7 @@ describe('a tab that holds a layout', () => {
 			// One frame between the reader and the widget, not two: the
 			// widget's pane IS the layout's tab (shell.ts lifts it).
 			assert.equal(await one.locator('section.pane, section.holder').count(), 0, 'a second frame inside the one-widget layout');
-			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'one', 'custom', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'one', 'custom', 'collect']);
 			assert.deepEqual(app.errors, []);
 		});
 	});

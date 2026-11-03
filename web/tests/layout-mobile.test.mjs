@@ -46,8 +46,8 @@ const onDayview = (width, height) => ({ ...phone(width, height), home: { names: 
 const stripPane = (page) => page.locator('section.pane[data-title="dayview"]');
 
 /** `collect`'s two trees, by their panes' titles: the phone's, and the shipped desktop's (`desk: null`). */
-const MOBILE_TREE = ['tail', 'nowview', 'fields'];
-const DESKTOP_TREE = ['dayview', 'tail', 'fields', 'nowview', 'stats'];
+const MOBILE_TREE = ['tail', 'nowview', 'collect'];
+const DESKTOP_TREE = ['dayview', 'tail', 'collect', 'nowview', 'stats'];
 
 /** A desktop that has never opened the site. */
 const FRESH_DESKTOP = { ...DESKTOP, home: null };
@@ -298,15 +298,16 @@ describe('a fresh phone', () => {
 		});
 	}
 
-	// The commands pane's two taps were `occur` and then the field. With no
-	// commands pane, a field's own press is the log (fields-press.test.mjs),
-	// and the bar is where `undo` is typed.
-	test('a tap logs an entry, tail shows it, and `undo` at the bar takes it back', async () => {
+	// A field tapped opens in collect (da-w6437), its pill on the bar, and a
+	// pill opens the commands over the output (da-lnirx): `moment` there is
+	// the log. The bar is where `undo` is typed.
+	test('a field tapped then `moment` logs an entry, tail shows it, and `undo` at the bar takes it back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.declare('coffee');
 			await app.reload();
 			await fieldsBar(page).locator('[data-field="coffee"]').click();
+			await page.locator('#bar-commands [data-command="moment"]').click();
 			await until(() => app.entries(5), (es) => es.some((e) => e.field === 'coffee'));
 			await app.idle();
 			await page.waitForFunction(() =>
