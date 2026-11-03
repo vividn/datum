@@ -71,6 +71,13 @@
 	A selected hid leaves the id commands; a `-t` the ones that take a time;
 	a field the verbs that field can take (da-57j14).
 
+	A command the pills make READY leads the bar (da-h3jcu, `suggestionOf`
+	in commands.ts): a larger circle before the rows, filled in its field's
+	color (its state's, for a switch) and named for what it runs, «moment
+	coffee», «switch → reading». A tap runs it. While something it needs is
+	missing, a switch's state or a key to type, it is dashed and a tap writes
+	the line, the field and the pill's state on it, for the rest to be typed.
+
 	The bar is `ButtonRows` — how every button bar is laid out and
 	scrolled (da-vu7pi): as many rows as fit, up to three, each packed on
 	its own and all of them scrolled along the bar's axis.
@@ -110,10 +117,13 @@
 		fires,
 		flagsOf,
 		hasFlags,
+		ICONS,
 		iconOf,
 		MAX_ROWS,
 		MENUS,
 		subcommandsOf,
+		suggestionOf,
+		type Suggestion,
 		type Axis,
 		type CommandButton,
 		type Grammar,
@@ -148,7 +158,9 @@
 		/** A press that writes the line instead: what to write, and what it spends. */
 		online,
 		/** A flag from a held command's list (da-st2xl). */
-		onflag
+		onflag,
+		/** The ready command's tap (da-h3jcu): it runs. */
+		onsuggest
 	}: {
 		disabled?: boolean;
 		grammar?: Grammar | null;
@@ -161,7 +173,18 @@
 		onrun?: (argv: string[]) => void;
 		online?: (line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }) => void;
 		onflag?: (flag: { command: string; flag: string; keyboard: boolean }) => void;
+		onsuggest?: (suggestion: Suggestion) => void;
 	} = $props();
+
+	const suggested = $derived(suggestionOf(pills, fields));
+
+	/** The lead circle's tap: run what is ready, else write it on the line for the rest to be typed. */
+	function lead(s: Suggestion): void {
+		if (s.ready) return onsuggest?.(s);
+		const { argv, used } = withPills(grammar, s.argv, pills.filter((p) => p.kind === 'field' || p.kind === 'state'));
+		const line = [argv[0], shellJoin(argv.slice(1))].join(' ');
+		online?.({ name: s.verb, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
+	}
 
 	/** The presses whose kind is theirs whatever is loaded. */
 	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', menu: 'show' };
@@ -285,6 +308,24 @@
 {#snippet face(icon: string, name: string)}
 	{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}<span class="name">{name}</span>
 {/snippet}
+
+{#if suggested}
+	{@const s = suggested}
+	<button
+		class="lead"
+		class:ready={s.ready}
+		use:act={s.ready ? 'run' : 'fill'}
+		{disabled}
+		style:--lead={s.color}
+		data-suggested={s.verb}
+		data-ready={s.ready}
+		data-glyph={ICONS[s.verb]}
+		title={`${s.ready ? 'run ' : ''}${[s.verb, s.field, s.state].filter(Boolean).join(' ')}${s.ready ? '' : ' …'}`}
+		onclick={() => lead(s)}
+	>
+		<span class="name">{s.label}</span>
+	</button>
+{/if}
 
 <ButtonRows class="commands" items={shown} key={(command) => command.name} {axis} maxRows={lines} bind:bar>
 	{#snippet probe()}
@@ -459,6 +500,49 @@
 	.command.command.clashing {
 		border-color: var(--error);
 		color: var(--error);
+	}
+
+	/* The ready command (da-h3jcu): a larger circle before the rows, its
+	   name beneath, filled in its field's color once it can run and dashed
+	   in it while it cannot. The color is data, so it is set inline. */
+	.lead {
+		box-sizing: border-box;
+		position: relative;
+		flex: none;
+		align-self: start;
+		inline-size: 2.6rem;
+		block-size: 2.6rem;
+		margin: 0 0.9rem 0.95rem 0.5rem;
+		padding: 0;
+		border-radius: 50%;
+		border: 2px dashed var(--lead);
+		background: transparent;
+		color: var(--lead);
+		display: grid;
+		place-items: center;
+		font-size: 1.3rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	/* Ready, it runs at a tap, so it wears the double outline every such
+	   button does (#lib/act.ts): a ring of the page, then one of its color. */
+	.lead.ready {
+		border-style: solid;
+		background: var(--lead);
+		color: var(--page);
+		box-shadow:
+			0 0 0 2px var(--page),
+			0 0 0 3.5px var(--lead);
+	}
+
+	.lead[data-glyph]::before {
+		content: attr(data-glyph) / '';
+	}
+
+	.lead .name {
+		color: var(--ink-bright);
+		font-size: 0.6rem;
 	}
 
 	/* Their count, on sync's circle and on conflicts': on its rim, not above

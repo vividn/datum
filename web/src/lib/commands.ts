@@ -592,6 +592,53 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 	return { field, runs: !typesKeys(name, button) };
 }
 
+/**
+ * The command the loaded pills make ready (da-h3jcu), which leads the
+ * command pane as its suggested action. vividn, 2026-11-03: «when pills make
+ * a command ready, it's the pane's suggested action: a larger circle, dashed
+ * while something's missing, filled in its field's color once it can run».
+ *
+ * An ARGUMENT field pill of a known field names it, by the field's shape as
+ * a bare tap on it reads it: a point is `moment`, a block `start` or, while
+ * on, `end`, a switch `switch` to the state pill's state, a record `add`.
+ * `ready` is whether it runs as it stands: a switch with no state, a record
+ * and a field with a key to type (`typesKeys`) are missing something, so the
+ * circle is dashed and a tap writes the line instead. No field pill, an
+ * unknown field or a field that is context (under an hid) suggests nothing.
+ */
+export interface Suggestion {
+	verb: Verb;
+	field: string;
+	/** The switch's state, from the state pill. */
+	state?: string;
+	/** What the circle says: `moment coffee`, `switch → reading`, `switch → ?`. */
+	label: string;
+	/** Its fill: the state's color where there is one, else the field's. */
+	color: string;
+	ready: boolean;
+	/** What it runs: the verb, the field pill and a switch's state pill (collect's, right after it) joining it as a press places them. */
+	argv: string[];
+}
+
+export function suggestionOf(all: Pill[], fields: FieldButton[]): Suggestion | null {
+	const field = argumentsOf(all).find((p) => p.kind === 'field');
+	const button = fields.find((b) => b.field === field?.text);
+	if (!field || !button) return null;
+	const { shape } = button;
+	const verb: Verb =
+		shape.kind === 'point' ? 'moment' : shape.kind === 'record' ? 'add' : shape.kind === 'states' ? 'switch' : button.current ? 'end' : 'start';
+	const state = verb === 'switch' ? all.find((p) => p.kind === 'state') : undefined;
+	return {
+		verb,
+		field: field.text,
+		state: state?.text,
+		label: verb === 'switch' ? `switch → ${state?.text ?? '?'}` : `${verb} ${field.text}`,
+		color: (state && (state.color ?? button.stateColors[state.text])) || button.color,
+		ready: verb !== 'add' && (verb !== 'switch' || !!state) && !typesKeys(verb, button),
+		argv: [verb]
+	};
+}
+
 // ---- subcommands (da-803mk) ---------------------------------------------
 //
 // vividn, 2026-09-25: «for commands with subcommands, like db, clicking on

@@ -369,15 +369,16 @@ describe('a new layout', () => {
 			await until(() => rootTabs(page), (t) => t.includes('blank'));
 			assert.deepEqual(await rootTabs(page), ['main', 'blank']);
 			assert.equal(await activeRootTab(page), 'blank');
-			// Blank: one pane holding nothing, not a copy of the tab it came from.
-			assert.deepEqual(await titles(page), ['empty']);
+			// Blank: one pane holding nothing, not a copy of the tab it came
+			// from, over the command pane every tab closes on (da-h3jcu).
+			assert.deepEqual(await titles(page), ['empty', 'command']);
 			const saved = await layouts(app, 'loadLayout', 'blank');
-			assert.deepEqual(saved.root.tabs.map((t) => t.content.kind), ['empty']);
+			assert.deepEqual(saved.root.tabs[0].content.children.map((p) => p.tabs[0].content.kind), ['empty', 'command']);
 
 			await app.reload();
 			assert.deepEqual(await rootTabs(page), ['main', 'blank']);
 			assert.equal(await activeRootTab(page), 'blank');
-			assert.deepEqual(await titles(page), ['empty']);
+			assert.deepEqual(await titles(page), ['empty', 'command']);
 			assert.deepEqual(app.errors, []);
 		});
 	});

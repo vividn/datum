@@ -15,6 +15,10 @@
 	is a tap is focused without a phone's keyboard (`next` in
 	#lib/commands.ts, da-k34p).
 
+	The command the pills make READY leads it (da-h3jcu): a tap runs it
+	through `pressWithPills` too, which places and spends its field and
+	state pills as any press does.
+
 	`setup` opens the setup widget on a new field, and with a FIELD pill
 	loaded on that field at once
 	(da-ybai9, vividn: «no need for sub commands or pressing enter. It should
@@ -39,13 +43,28 @@
 	in another tab bumps too — so an undo typed anywhere lights it here,
 	and the page never re-derives what counts as something to redo.
 -->
+<script lang="ts" module>
+	import { run } from '#lib/run.ts';
+
+	/**
+	 * One `redo --dry-run` for every pane asking the same at the same epoch:
+	 * every root tab keeps its command pane mounted (TabBody.svelte), and a
+	 * write would otherwise ask once per tab (da-h3jcu).
+	 */
+	let latest: { key: string; answer: Promise<boolean> } | null = null;
+	const redoes = (argv: string[], epoch: number): Promise<boolean> => {
+		const key = `${epoch} ${JSON.stringify(argv)}`;
+		if (latest?.key !== key) latest = { key, answer: run(argv).then(({ code }) => code === 0) };
+		return latest.answer;
+	};
+</script>
+
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import CommandsWidget from '#lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, commandsOpen, pills, prefill, text, type Pill } from '#lib/bar.ts';
-	import { argumentsOf, opensField, withFlag, type Axis } from '#lib/commands.ts';
+	import { argumentsOf, opensField, withFlag, type Axis, type Suggestion } from '#lib/commands.ts';
 	import { openField } from '#lib/fieldWidget.ts';
-	import { run } from '#lib/run.ts';
 	import { redoArgv } from '#lib/calls.ts';
 	import { withPills } from '#lib/selection.ts';
 	import { conflicts, fields, grammar, pressWithPills, ready } from './engine.js';
@@ -66,10 +85,10 @@
 	let asked = 0;
 
 	/** Would a press on redo move anything? The newest question's answer wins. */
-	async function ask(argv: string[], _epoch: number): Promise<void> {
+	async function ask(argv: string[], epoch: number): Promise<void> {
 		const mine = ++asked;
-		const { code } = await run(argv);
-		if (mine === asked) redoable = code === 0;
+		const answer = await redoes(argv, epoch);
+		if (mine === asked) redoable = answer;
 	}
 
 	$effect.pre(() => {
@@ -86,6 +105,9 @@
 		if ($text === `${argv[0]} `) $text = '';
 		void pressWithPills(argv);
 	}
+
+	/** The ready command (da-h3jcu): it runs, with the pills it takes. */
+	const suggest = ({ argv }: Suggestion) => runNow(argv);
 
 	function fill({ name, line, keyboard, spend, held }: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }): void {
 		// A choice closes the widget over the output, as a run does (da-xw655);
@@ -115,6 +137,7 @@
 		conflicts={$conflicts.length}
 		{key}
 		onrun={runNow}
+		onsuggest={suggest}
 		online={fill}
 		onflag={(flag) => prefill.set({ line: withFlag($text, flag.command, flag.flag), keyboard: flag.keyboard })}
 	/>

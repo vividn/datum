@@ -34,6 +34,9 @@ import {
 	typesKeys,
 	rowsIn,
 	subcommandsOf,
+	suggestionOf,
+	roleOf,
+	argumentsOf,
 	verbPress,
 	withFlag
 } from '../src/lib/commands.ts';
@@ -496,5 +499,59 @@ describe('flags', () => {
 		assert.equal(flagLine(['stop', '-L'], stop), null);
 		assert.deepEqual(flagLine(['stop', '-L', 'done'], stop), ['stop', '-L', 'done']);
 		assert.deepEqual(flagLine(['stop', '-L=done'], stop), ['stop', '-L=done']);
+	});
+});
+
+// da-h3jcu: the command the pills make ready leads the command pane, by the
+// field's shape as a bare tap reads it, dashed while something is missing.
+describe('the ready command', () => {
+	const colored = (b, color, stateColors = {}) => ({ ...b, color, stateColors });
+	const FIELDS = [
+		colored(point, '#aa0000'),
+		colored(record, '#00aa00'),
+		colored(offBlock, '#0000aa'),
+		colored(onBlock, '#aaaa00'),
+		colored(onSwitch, '#00aaaa', { bad: '#111111', good: '#222222' }),
+		colored({ ...point, field: 'pill', required: ['dose'] }, '#aa00aa')
+	];
+	const field = (text) => ({ id: 'field', kind: 'field', text });
+	const state = (text, color) => ({ id: 'state', kind: 'state', text, ...(color ? { color } : {}) });
+	const ready = (pills) => {
+		const s = suggestionOf(pills, FIELDS);
+		return s && { label: s.label, ready: s.ready, color: s.color, argv: s.argv };
+	};
+
+	test('a moment field alone is ready, in its color', () => {
+		assert.deepEqual(ready([field('coffee')]), { label: 'moment coffee', ready: true, color: '#aa0000', argv: ['moment'] });
+	});
+
+	test('a block starts, or ends while it is on', () => {
+		assert.deepEqual(ready([field('sleep')]), { label: 'start sleep', ready: true, color: '#0000aa', argv: ['start'] });
+		assert.deepEqual(ready([field('work')]), { label: 'end work', ready: true, color: '#aaaa00', argv: ['end'] });
+	});
+
+	test('a switch waits for its state, then runs to it in the state color', () => {
+		assert.deepEqual(ready([field('mood')]), { label: 'switch → ?', ready: false, color: '#00aaaa', argv: ['switch'] });
+		assert.deepEqual(ready([field('mood'), state('bad')]), { label: 'switch → bad', ready: true, color: '#111111', argv: ['switch'] });
+		assert.equal(ready([field('mood'), state('meh', '#333333')]).color, '#333333', "the pill's own color first");
+	});
+
+	test('a record, or a key with no default, is dashed', () => {
+		assert.equal(ready([field('rec')]).ready, false);
+		assert.equal(ready([field('pill')]).ready, false);
+	});
+
+	test('no field, an unknown one, or one an hid makes context suggests nothing', () => {
+		assert.equal(ready([]), null);
+		assert.equal(ready([{ id: 't', kind: 'time', text: '-t 09:00' }]), null);
+		assert.equal(ready([field('nope')]), null);
+		assert.equal(ready([field('coffee'), { id: 'hid', kind: 'hid', text: 'abc' }]), null);
+	});
+
+	// collect's state pill (da-w6437) stands right after the field's, and a
+	// press places both: `switch` is `switch mood bad`.
+	test('a state pill is an argument, placed after the field', () => {
+		assert.equal(roleOf(state('bad'), [field('mood'), state('bad')]), 'argument');
+		assert.deepEqual(argumentsOf([field('mood'), state('bad')]).map((p) => p.kind), ['field', 'state']);
 	});
 });

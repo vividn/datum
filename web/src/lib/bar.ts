@@ -277,7 +277,8 @@ export const fieldPill = derived(pills, (all) => all.find((p) => p.kind === 'fie
  */
 export const setFieldPill = (field: string | null, color?: string): void =>
 	pills.update((all) => [
-		...all.filter((p) => p.kind !== 'field'),
+		// A state pill is its field's (da-h3jcu): another field, or none, takes it too.
+		...all.filter((p) => p.kind !== 'field' && (p.kind !== 'state' || all.some((f) => f.kind === 'field' && f.text === field))),
 		...(field ? [{ id: FIELD_ID, kind: 'field', text: field, ...(color ? { color } : {}) }] : [])
 	]);
 
