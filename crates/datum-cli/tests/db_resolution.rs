@@ -119,3 +119,48 @@ fn default_db_path_used_when_no_flag_or_env() {
     assert_eq!(resolved.path, tmp.path().join("data").join("datum.db"));
     assert!(resolved.name.is_none());
 }
+
+/// How many files `datum <args>` opened, run as `main` runs it.
+fn opens(args: &[&str]) -> usize {
+    let argv = std::iter::once("datum")
+        .chain(args.iter().copied())
+        .map(String::from)
+        .collect();
+    let before = datum_core::db::Db::files_opened();
+    datum_cli::run(argv).unwrap_or_else(|e| panic!("datum {args:?}: {e:#}"));
+    datum_core::db::Db::files_opened() - before
+}
+
+/// A process opens its database once (da-z75fs): the alias pass's `Db` is the
+/// one the dispatch runs on, where it opens the same file the same way.
+#[test]
+fn a_command_opens_its_database_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let _g = sandbox_env(tmp.path());
+    let dir = tmp.path().join("dbs");
+    std::fs::create_dir(&dir).unwrap();
+    std::env::set_var("DATUM_DB", dir.join("once.db"));
+
+    // No file yet: the alias pass opens nothing, and the write makes it.
+    assert_eq!(opens(&["moment", "coffee"]), 1, "the first write");
+    assert_eq!(opens(&["moment", "coffee"]), 1, "a write");
+    assert_eq!(opens(&["tail"]), 1, "a read by the owner");
+    assert_eq!(opens(&["alias", "set", "cf", "moment coffee"]), 1);
+    assert_eq!(opens(&["cf"]), 1, "an alias");
+    assert_eq!(
+        opens(&["moment", "tea", ",", "moment", "cake"]),
+        1,
+        "two sides"
+    );
+    let other = tmp.path().join("other.db");
+    assert_eq!(opens(&["--db", other.to_str().unwrap(), "moment", "x"]), 1);
+    assert_eq!(opens(&["--db", other.to_str().unwrap(), "tail"]), 1, "--db");
+
+    // A reader that cannot write the file opens it read-only, once.
+    let writable = std::fs::metadata(&dir).unwrap().permissions();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let read_only = opens(&["tail"]);
+    std::fs::set_permissions(&dir, writable).unwrap();
+    assert_eq!(read_only, 1, "a read-only read");
+}

@@ -831,9 +831,11 @@ fn subprocess_migration_announces_itself_and_leaves_a_backup() {
     let stderr = String::from_utf8_lossy(&out.stderr);
 
     let to = datum_core::migrations::CURRENT_SCHEMA_VERSION;
-    assert!(
-        stderr.contains(&format!("migrated v30 → v{to}")),
-        "the note must name both versions: stderr={stderr}"
+    // Once: the dispatch runs on the alias pass's open (da-z75fs).
+    assert_eq!(
+        stderr.matches(&format!("migrated v30 → v{to}")).count(),
+        1,
+        "the note must name both versions, once: stderr={stderr}"
     );
     assert!(
         stderr.contains("pre-migration backup saved to"),

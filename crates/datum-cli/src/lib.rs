@@ -18,6 +18,7 @@ pub mod repl;
 
 use anyhow::Result;
 use datum_commands::commands;
+use datum_core::db::Db;
 use datum_parse::{help, ParseError};
 
 use crate::args::{
@@ -129,8 +130,8 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     // Clear the dedup-no-op flag so it reflects only this invocation
     // (da-9sfm). `main` reads it after a clean run to choose exit code 11.
     args::reset_duplicate_noop();
-    let invocation = match args::parse_invocation(argv.clone()) {
-        Ok(inv) => inv,
+    let (invocation, opened) = match args::parse_invocation_opening(argv.clone()) {
+        Ok(parsed) => parsed,
         Err(e) => {
             // Propagate `--help` / `--version` / `--man` as a clean stdout print.
             if let Some(pe) = e.downcast_ref::<ParseError>() {
@@ -182,8 +183,8 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     }
 
     let result = match invocation {
-        Invocation::Single(cli) => dispatch_single(cli),
-        Invocation::Multi { .. } => dispatch_multi(invocation),
+        Invocation::Single(cli) => dispatch_single(cli, opened),
+        Invocation::Multi { .. } => dispatch_multi(invocation, opened),
     };
     // Parsed again: the first parse was moved into its dispatch, and `Cli`
     // is not `Clone`. Same argv, against the same file; an alias a drain
@@ -411,14 +412,37 @@ fn ask_first(path: &str, cli: Cli) -> Result<()> {
     Ok(())
 }
 
+/// The database the alias pass `opened`, where it is `path` opened as the
+/// dispatch would open it, writer or `read_only`: a process opens its file
+/// once (da-z75fs). Any other is closed here, before the dispatch's open.
+fn reuse(opened: Option<Db>, path: &str, read_only: bool) -> Option<Db> {
+    opened.filter(|db| db.path() == Some(std::path::Path::new(path)) && db.read_only() == read_only)
+}
+
+/// Open `path` for a command that only reads it, read-only.
+fn open_to_read(path: &str, opened: Option<Db>) -> Result<Db> {
+    match reuse(opened, path, true) {
+        Some(db) => Ok(db),
+        None => Ok(Db::open_to_read(path)?),
+    }
+}
+
 /// Open `path` for `run` to write, landing what is spooled beside it, or
 /// say [`Locked`] when `spools` and another holds the write lock.
-fn open_to_write(path: &str, spools: bool) -> Result<datum_core::db::Db> {
-    let db = match datum_core::db::Db::open(path) {
-        Err(e) if spools && datum_core::db::busy(&e) => return Err(Locked(path.into()).into()),
-        r => r?,
+fn open_to_write(path: &str, spools: bool, opened: Option<Db>) -> Result<Db> {
+    let db = match reuse(opened, path, false) {
+        Some(db) => db,
+        None => {
+            let db = match Db::open(path) {
+                Err(e) if spools && datum_core::db::busy(&e) => {
+                    return Err(Locked(path.into()).into())
+                }
+                r => r?,
+            };
+            datum_commands::announce_migration(&db);
+            db
+        }
     };
-    datum_commands::announce_migration(&db);
     ready_to_write(&db, path, spools)?;
     Ok(db)
 }
@@ -546,11 +570,12 @@ pub(crate) fn queue(path: &str, invocation: Invocation) -> Result<()> {
     Ok(())
 }
 
-fn dispatch_single(cli: Cli) -> Result<()> {
+fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
     // `--color always|never` outranks the environment for the whole run,
     // a REPL started under it included.
     let _color = cli.color.map(output::colors::ColorOverride::set);
     if matches!(&cli.command, Command::Repl) {
+        drop(opened);
         #[cfg(feature = "native")]
         return repl::run(cli.db.as_deref());
         // No line editor under WASI; the browser has its own REPL.
@@ -586,6 +611,7 @@ fn dispatch_single(cli: Cli) -> Result<()> {
             | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })
     ) || matches!(&cli.command, Command::Nowview(a) if a.overlay)
     {
+        drop(opened);
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }
@@ -601,6 +627,7 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         // A missing active database is reported `✗ (missing)`, as a TARGET is.
         || matches!(&cli.command, Command::Info(_)) && missing(cli.db.as_deref()).is_some()
     {
+        drop(opened);
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }
@@ -625,17 +652,19 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         if resolved.name.is_some() {
             let _ = config::ensure_registered(&resolved);
         }
+        drop(opened);
         return ask_first(&path, cli);
     }
     let db = name_holder(
         if matches!(&cli.command, Command::Db(DbCommand::Purge(_))) {
-            datum_core::db::Db::open_unmigrated(&path)
+            drop(opened);
+            Db::open_unmigrated(&path)
                 .inspect(datum_commands::announce_migration)
                 .map_err(Into::into)
         } else if reader(&path, &cli.command) {
-            datum_core::db::Db::open_to_read(&path).map_err(Into::into)
+            open_to_read(&path, opened)
         } else {
-            open_to_write(&path, spools)
+            open_to_write(&path, spools, opened)
         },
         &resolved.path,
     )?;
@@ -662,7 +691,7 @@ fn name_holder<T>(result: Result<T>, db: &std::path::Path) -> Result<T> {
     })
 }
 
-fn dispatch_multi(invocation: Invocation) -> Result<()> {
+fn dispatch_multi(invocation: Invocation, opened: Option<Db>) -> Result<()> {
     // The global flags are prepended to every side, so the first has them.
     let first = match &invocation {
         Invocation::Multi { sides, .. } => sides.first(),
@@ -695,9 +724,9 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
         Invocation::Single(c) => reader(&path, &c.command),
     };
     let db = if reads_only {
-        datum_core::db::Db::open_to_read(&path)?
+        open_to_read(&path, opened)?
     } else {
-        name_holder(open_to_write(&path, spools), &resolved.path)?
+        name_holder(open_to_write(&path, spools, opened), &resolved.path)?
     };
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);

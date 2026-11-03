@@ -367,6 +367,15 @@ impl CliExt for Cli {
 /// skips the comma-split — the multi-row feature can't be bypassed
 /// at the binary level.
 pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
+    parse_invocation_opening(argv).map(|(invocation, _)| invocation)
+}
+
+/// [`parse_invocation`], and the database its alias pass opened (and
+/// announced the migration of), for the dispatch to run on rather than open
+/// the file again (da-z75fs).
+pub fn parse_invocation_opening(
+    argv: Vec<String>,
+) -> anyhow::Result<(Invocation, Option<datum_core::db::Db>)> {
     // A help, version or man page for a command datum knows is answered
     // without the database (da-wd5ip): opening it may migrate it, and
     // snapshot it first, for a page of text. One naming no known command
@@ -434,9 +443,10 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
             if let Some(e) = unanswered.filter(names_an_alias) {
                 return Err(e);
             }
-            parse_invocation_inner(argv, &DbAliasResolver::new(&db))
+            let invocation = parse_invocation_inner(argv, &DbAliasResolver::new(&db))?;
+            Ok((invocation, Some(db)))
         }
-        None => parse_invocation_inner(argv, &ReservedWords),
+        None => Ok((parse_invocation_inner(argv, &ReservedWords)?, None)),
     }
 }
 

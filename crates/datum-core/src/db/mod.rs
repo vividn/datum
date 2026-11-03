@@ -66,6 +66,9 @@ use rusqlite::Connection;
 
 use crate::error::{DatumError, Result};
 
+#[cfg(feature = "test-util")]
+thread_local!(static FILES_OPENED: Cell<usize> = const { Cell::new(0) });
+
 pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
 
 pub use alias::{InstallAliasesReport, KitAliasOutcome, ALIAS_FIELD};
@@ -259,6 +262,8 @@ impl Db {
     /// in each process's own memory, so it never kept one process from
     /// another. The browser's OPFS handles and its Web Lock do that.
     fn choose_vfs() {
+        #[cfg(feature = "test-util")]
+        FILES_OPENED.with(|n| n.set(n.get() + 1));
         #[cfg(target_os = "wasi")]
         {
             static ONCE: std::sync::Once = std::sync::Once::new();
@@ -270,6 +275,13 @@ impl Db {
                 rusqlite::ffi::sqlite3_vfs_register(vfs, 1);
             });
         }
+    }
+
+    /// How many files this thread has opened, every open passing
+    /// [`Self::choose_vfs`]: for a test to count a command's (da-z75fs).
+    #[cfg(feature = "test-util")]
+    pub fn files_opened() -> usize {
+        FILES_OPENED.with(Cell::get)
     }
 
     /// Open (or create) the database at the given path.
