@@ -411,7 +411,7 @@
 	// at 12:00 a minute later (vremya on PR #48, da-rskp). The header above
 	// says only «now» brings a hand-moved window home, and now it is
 	// true. The guard is for the other door into the same bug: the pills
-	// reconciler re-points the cursor at the SAME instant when a `dur=`
+	// reconciler re-points the cursor at the SAME instant when a length
 	// pill is dropped, and that is not a new selection either.
 	/**
 	 * The instant `follow` last pointed the window at; `null` after a clear.

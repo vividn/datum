@@ -2,7 +2,7 @@
 	ONE pill, wherever a pill is drawn.
 
 	Lifted out of Prompt.svelte (da-rskp) so the nowview's margin can show
-	the time and `dur=` pills beside the instants they name without copying
+	the time and length pills beside the instants they name without copying
 	the markup or the CSS: there is one store of pills, two places that draw
 	them, and a press in either is the same press.
 
@@ -27,6 +27,8 @@
 -->
 <script lang="ts">
 	import { dropSection, sectionsOf, toggleLockPill, type Pill } from './bar.js';
+	import { isLength } from './commands.js';
+	import LengthArrow from './LengthArrow.svelte';
 
 	interface Props {
 		pill: Pill;
@@ -55,7 +57,7 @@
 			onclick={() => dropSection(pill.id, i)}
 			>{#if context}<svg class="glyph funnel" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
 					><path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z" /></svg
-				>{/if}<span class="label">{section.text}</span
+				>{/if}{#if isLength(pill)}<LengthArrow />{/if}<span class="label">{section.text}</span
 			>{#if !section.rest && !context}<span class="x" aria-hidden="true">×</span>{/if}</button
 		>{/each}{#if !context}<button
 		type="button"

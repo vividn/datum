@@ -18,7 +18,7 @@
 	flags the line carries between them (da-bbmpx) — and spends the verb:
 	the box empties, and the list is whole again.
 
-	The SELECTION is the other thing the widget answers (da-qu16): a `dur=`
+	The SELECTION is the other thing the widget answers (da-qu16): a length
 	pill among the bar's pills leaves the fields a length can be spent on,
 	and the lanes a press on a picture landed in bring those fields to the
 	front. Both arrive here as stores and go in as plain props, so the

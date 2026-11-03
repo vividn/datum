@@ -22,7 +22,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
 import { FIELD_FORM, declared, openField } from './support/field.mjs';
 
@@ -142,7 +142,7 @@ describe('a press', () => {
 	// this shows a LENGTH, and the two together, on the field pill's own
 	// field — because "you can still set it, just elsewhere" is a claim
 	// about a path that has to be walked, not asserted.
-	test('a `dur=` pill, and a time with it, ride into the press the widget composes', async () => {
+	test('a length pill, and a time with it, ride into the press the widget composes', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
@@ -150,11 +150,12 @@ describe('a press', () => {
 
 			const seen = await app.spyOnRunner();
 			// What a drag in the nowview leaves on the bar (nowpoint.test.mjs):
-			// an instant and the span that ENDS at it (da-zwct).
+			// an instant and the span that ENDS at it (da-zwct), the length
+			// said with its unit alone (da-g2ruk) and put on the line keyed.
 			await page.evaluate(() =>
 				window.datum.bar.setPills([
 					{ id: 'when', text: '-t 09:00', kind: 'time' },
-					{ id: 'span', text: 'dur=30m', kind: 'dur' }
+					{ id: 'span', text: '30m', kind: 'dur' }
 				])
 			);
 			// A duration leaves the fields a length can be spent on (da-qu16),
@@ -175,6 +176,30 @@ describe('a press', () => {
 			const stored = (await app.entries()).find((e) => e.field === 'work');
 			assert.match(stored.at.utc, /T09:00/, JSON.stringify(stored.at));
 			assert.equal(stored.dur, 'PT30M', JSON.stringify(stored.dur));
+		});
+	});
+
+	// A pill kept from before da-g2ruk says `dur=25m`. Locked, it comes back
+	// on a reload (da-1py00) as a length all the same: by its kind it leaves
+	// the blocks, and its text, keyed already, goes on the line once.
+	test('a locked `dur=25m` pill from an old session still reads as a length', async () => {
+		// Its own app: it reloads, and leaves a pill in this device's storage.
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of FIXTURE) await type(page, line);
+			await page.evaluate(() =>
+				localStorage.setItem('datum.bar.pills.v1', JSON.stringify([{ id: 'span', kind: 'dur', text: 'dur=25m' }]))
+			);
+			await app.reload();
+			await page.locator('.bar [data-field="coffee"]').waitFor({ state: 'detached' });
+			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills().map((p) => [p.kind, p.text])), [['dur', 'dur=25m']]);
+
+			const seen = await app.spyOnRunner();
+			await page.locator('.bar [data-field="work"]').click();
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'start'));
+			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), ['start', 'work', 'dur=25m']);
+			await app.idle();
+			assert.equal((await app.entries()).find((e) => e.field === 'work').dur, 'PT25M');
 		});
 	});
 

@@ -229,7 +229,7 @@ export const fieldsUnder = (buttons: FieldButton[], verb: Verb | null): FieldBut
  * Does the bar hold a DURATION — a length waiting to be spent (da-qu16)?
  *
  * The pill a RANGE carries, whichever view made it (`SPAN_ID` in
- * #lib/cursor.ts): `dur=25m` from the nowview, `start_time=09:00` from the
+ * #lib/cursor.ts): `25m` from the nowview, `start_time=09:00` from the
  * day strip (da-ku7y). The two spellings are one pill of one KIND, so this
  * needs no clause for the second — which is what asking the kind rather
  * than reading the text buys.
@@ -237,11 +237,26 @@ export const fieldsUnder = (buttons: FieldButton[], verb: Verb | null): FieldBut
 export const hasDuration = (all: Pill[]): boolean => all.some((p) => p.kind === 'dur');
 
 /**
+ * The word a pill puts on the command line: its text, but a bare length
+ * (`25m`, `1h30m`) goes as `dur=25m` (da-g2ruk). vividn, 11-03: «let's
+ * unify on not using dur= and rather the 12m format for duration», so the
+ * pill SAYS `25m`; the line keeps the key because a bare one is the
+ * duration only where no slot comes first — `start F 25m` on a field
+ * declaring a key fills the key, `switch F 25m` with no state is the state,
+ * and `add F 25m` is the slug. A text with its key already (`start_time=`,
+ * an old session's `dur=25m`) goes as it is.
+ */
+export const pillWord = (p: Pick<Pill, 'kind' | 'text'>): string => (isLength(p) ? `dur=${p.text}` : p.text);
+
+/** Is it a bare length, `25m`, rather than a keyed text? The pill draws its arrow then (#lib/LengthArrow.svelte). */
+export const isLength = (p: Pick<Pill, 'kind' | 'text'>): boolean => p.kind === 'dur' && !p.text.includes('=');
+
+/**
  * The fields a loaded duration leaves showing: the BLOCKS — a `start`
  * field and a `switch`, the two shapes that draw a span (vividn, 09-17: «if
  * a duration is selected, filter down to start/switch based fields»).
  *
- * A point has no length and a record is typed, so a loaded `dur=` hides
+ * A point has no length and a record is typed, so a loaded length hides
  * them and dismissing it brings them back. It COMPOSES with a pending
  * verb: this filter and `fieldsUnder` both apply, exactly as the `-t`
  * pill and the verb do.

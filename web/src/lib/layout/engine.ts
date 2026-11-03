@@ -18,7 +18,7 @@ import { tick } from 'svelte';
 import { get, writable } from 'svelte/store';
 import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost, text } from '#lib/bar.ts';
 import { openOutput } from '#lib/log.ts';
-import { grammarOf, type Grammar, type GrammarEntry } from '#lib/commands.ts';
+import { grammarOf, pillWord, type Grammar, type GrammarEntry } from '#lib/commands.ts';
 import { withPills } from '#lib/selection.ts';
 import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
 import { initDb } from '#lib/db.ts';
@@ -506,5 +506,5 @@ function echoed(line: string, used: { kind: string; text: string }[]): string {
 	const hid = used.find((p) => p.kind === 'hid');
 	const [, word, rest] = /^\s*(\S*)(.*)$/.exec(line) ?? ['', line, ''];
 	const head = hid ? `${word} ${hid.text}${rest}` : line;
-	return [head, ...used.filter((p) => p !== hid).map((p) => (p.kind === 'field' ? shellJoin([p.text]) : p.text))].join(' ');
+	return [head, ...used.filter((p) => p !== hid).map((p) => (p.kind === 'field' ? shellJoin([p.text]) : pillWord(p)))].join(' ');
 }

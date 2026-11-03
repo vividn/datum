@@ -248,7 +248,7 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 			await holdDrag(page, from, { x: from.x + 120, y: from.y });
 			await until(
 				() => pillsOf(page),
-				(seen) => seen.length === 2 && seen.some((p) => p.startsWith('dur:dur='))
+				(seen) => seen.length === 2 && seen.some((p) => /^dur:\d+m$/.test(p))
 			);
 			assert.equal(
 				(await pillsOf(page)).some((p) => p.startsWith('hid:')),

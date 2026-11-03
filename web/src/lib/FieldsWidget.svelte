@@ -45,7 +45,7 @@
 	that verb can be spent on, and a press MEANS that verb and runs at once.
 	Which fields, and what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
 
-	A SELECTION talks to it too (da-qu16). A `dur=` pill on the bar leaves
+	A SELECTION talks to it too (da-qu16). A length pill (`25m`) on the bar leaves
 	the fields a length can be spent on — the blocks — and composes with a
 	pending verb, both filters applying. And a press on a PICTURE gives
 	the fields drawn near that height the rows to themselves, at the head
@@ -76,7 +76,7 @@
 	vividn: «long pressing or right clicking on a field again after a pill is
 	added should remove the pill/filter»). The panel's jobs are reached
 	elsewhere: a TIME or a DURATION comes from the time cursor as a `-t` /
-	`dur=` pill (a click or a drag on any drawn picture, #lib/cursor.ts)
+	length pill (a click or a drag on any drawn picture, #lib/cursor.ts)
 	or is typed,
 	and both ride after the field pill into the very argv a press composes
 	(`withPills` in #lib/selection.ts); a multi-state field's states are
@@ -175,7 +175,7 @@
 		 */
 		verb = null,
 		/**
-		 * Whether the bar holds a DURATION — a `dur=` pill (da-qu16).
+		 * Whether the bar holds a DURATION — a pill of kind `dur` (da-qu16).
 		 *
 		 * It leaves the fields a length can be spent on: the blocks. It
 		 * COMPOSES with `verb` — both filters apply.
@@ -280,7 +280,7 @@
 	);
 	const picking = $derived(picked === null ? null : (buttons.find((b) => b.field === picked) ?? null));
 	// A picked field no longer on the bar — deleted, the database emptied or
-	// restored, another tab's write, or a verb or `dur=` pill filtering it
+	// restored, another tab's write, or a verb or length pill filtering it
 	// out — is Back, not a list held in waiting to take the bar over again
 	// the moment a field of that name returns (da-mv8ng).
 	$effect.pre(() => {

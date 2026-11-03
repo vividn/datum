@@ -52,7 +52,7 @@ export const GHOST_MS = 1000;
 
 export interface Pill {
 	id: string;
-	/** What goes on the command line, verbatim (`-t 14:30`). */
+	/** What goes on the command line, verbatim (`-t 14:30`); a length's key is added there (`pillWord`). */
 	text: string;
 	/** What kind of thing it is (`time`, `range`), for the bar to colour. */
 	kind: string;

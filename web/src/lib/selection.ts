@@ -10,7 +10,7 @@
 // here is pure; `select` in #lib/bar.ts applies it to the store.
 
 import type { Pill, PillSection } from './bar.js';
-import { argumentsOf, fits, type Grammar, type Takes } from './commands.js';
+import { argumentsOf, fits, pillWord, type Grammar, type Takes } from './commands.js';
 import { shellSplit } from './shellSplit.js';
 
 /** What a tap does to the selection. */
@@ -151,7 +151,7 @@ export function withPills(
 	const hid = used.find((p) => p.kind === 'hid');
 	const field = used.find((p) => p.kind === 'field');
 	const ids = hid ? [hid.text] : [];
-	const rest = used.filter((p) => p !== hid && p !== field).flatMap((p) => shellSplit(p.text));
+	const rest = used.filter((p) => p !== hid && p !== field).flatMap((p) => shellSplit(pillWord(p)));
 	return {
 		argv: [...argv.slice(0, 1), ...ids, ...argv.slice(1), ...(field ? [field.text] : []), ...rest],
 		used

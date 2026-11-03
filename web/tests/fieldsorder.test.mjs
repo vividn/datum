@@ -8,7 +8,7 @@
 // the now region should also reorder fields based on y position.»
 //
 // Two rules of different kinds, and this file keeps them apart: the
-// `dur=` pill FILTERS, the click's height ORDERS. Nothing the height does
+// length pill FILTERS, the click's height ORDERS. Nothing the height does
 // may remove a field, so every case here reads the WHOLE list back.
 //
 // Delta-blind: every row is pressed where the CLI drew its own mark
@@ -118,7 +118,7 @@ const pillsOf = (page) =>
 
 /**
  * Select a RANGE on the band — shift+drag, the desktop's long press
- * (#lib/nowpoint.ts) — and wait for the `dur=` pill it carries.
+ * (#lib/nowpoint.ts) — and wait for the length pill (`dur`) it carries.
  *
  * Backwards along `sleep`'s block, which runs the whole window across, so
  * the drag stays inside the picture whatever width the pane is given.
@@ -230,7 +230,7 @@ describe('a click on the picture puts the fields drawn there first', () => {
 // ── a duration on the bar: it FILTERS ──────────────────────────────────
 
 describe('a duration on the bar leaves the fields it can be spent on', () => {
-	test('a `dur=` pill leaves the blocks, and dismissing it brings the rest back', async () => {
+	test('a length pill leaves the blocks, and dismissing it brings the rest back', async () => {
 		await withFields(async ({ page }) => {
 			await dragARange(page);
 			// The blocks — a `start` field and a `switch`. `coffee`, a point,

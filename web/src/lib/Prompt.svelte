@@ -89,7 +89,8 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { act } from '#lib/act.ts';
 	import { clearLine, commandsOpen, ghost, pills, registerLine, spent, submitLine, text } from '#lib/bar.ts';
-	import { roleOf, valuedFlags } from '#lib/commands.ts';
+	import { isLength, roleOf, valuedFlags } from '#lib/commands.ts';
+	import LengthArrow from '#lib/LengthArrow.svelte';
 	import Pill from '#lib/Pill.svelte';
 	import { fields, grammar, ready } from '#lib/layout/engine.ts';
 	import { advance, complete, framesOf, type Frame } from '#lib/keyframes.ts';
@@ -411,7 +412,7 @@
 			     `.pill` — a test included — is never handed one. -->
 			{#each $spent as pill (pill.id)}
 				<span class="spent {pill.kind}" style:--pill={pill.color} style:animation-delay="-{pill.age}ms"
-					use:withGhost>{pill.text}</span
+					use:withGhost>{#if isLength(pill)}<LengthArrow />{/if}{pill.text}</span
 				>
 			{/each}
 		</span>
@@ -772,6 +773,7 @@
 	}
 
 	.spent {
+		gap: 0.3em;
 		padding: 0.25rem 0.55rem;
 		pointer-events: none;
 		opacity: 0.6;

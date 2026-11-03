@@ -145,7 +145,7 @@
 
 	A range made here is the page's one selection (#lib/cursor.ts), marked
 	`from: 'daystrip'`, which is how it comes to spell itself
-	`start_time=09:00 end_time=10:30` rather than `-t` and `dur=`: a range
+	`start_time=09:00 end_time=10:30` rather than `-t` and a length: a range
 	on a day is long and is read as two clock times, and the two words on
 	the bar are how a person finds out the CLI has them. It is ALWAYS one
 	day's: the day is the day the press began in and the x along the band
@@ -1887,7 +1887,7 @@
 	 * A range's two pills BRACKET it — the start pill's right edge against
 	 * the band's leading edge, the end pill's left edge against its
 	 * trailing one — rather than sitting centred over their marks as the
-	 * nowview's do. Its pills are `-qq` and `dur=25m`; these are
+	 * nowview's do. Its pills are `-qq` and `25m`; these are
 	 * `start_time=09:00` and `end_time=10:30`, three times as wide, over a
 	 * range that on a whole day's band is often a few dozen pixels: centred,
 	 * each would be drawn over the other. Bracketing, each still touches

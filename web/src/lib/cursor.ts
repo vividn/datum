@@ -40,9 +40,9 @@
 // nothing else: the two spellings are the same block to the CLI, and
 // which one a person reads is what teaches them the flag they did not
 // know. A range dragged in the nowview is minutes, so it says `-t` and
-// `dur=30m`. One dragged across a day of the strip is two clock times
-// read off a wall — usually long, usually remembered as "nine to
-// half ten" — so it says `start_time=09:00 end_time=10:30`, which is the
+// `30m` (`dur=30m` on the line, `pillWord` in #lib/commands.ts). One
+// dragged across a day of the strip is two clock times read off a wall —
+// usually long, usually remembered as "nine to half ten" — so it says `start_time=09:00 end_time=10:30`, which is the
 // pair the CLI lifts onto at and dur (da-mjwq). The other view
 // DRAWS the range all the same; it does not re-spell it.
 
@@ -65,12 +65,12 @@ export interface Cursor {
 	at: Date;
 	/** Minutes back from NOW, to the second, when the selection is relative. */
 	rel?: number;
-	/** Whole minutes of range ENDING at the selection — the `dur=` pill. */
+	/** Whole minutes of range ENDING at the selection — the length pill. */
 	span?: number;
 	/**
 	 * What made it. The nowview does not re-centre its own window on its
 	 * own click; the day strip is how a range comes to be spelled with the
-	 * CLI's two keys rather than with `dur=`.
+	 * CLI's two keys rather than with a length.
 	 */
 	from?: 'nowview' | 'daystrip';
 }
@@ -204,9 +204,16 @@ export function cursorArg(c: Cursor, now = new Date()): string | null {
 /** The LENGTH pill's id — the second half of a range, however it is spelled. */
 export const SPAN_ID = 'cursor-span';
 
-/** What the length pill says: the range's other edge, or the minutes between them. */
+/** A length as the CLI prints one: `25m`, `1h`, `1h30m` (da-g2ruk). */
+export function lengthArg(minutes: number): string {
+	const h = Math.floor(minutes / 60);
+	const m = minutes % 60;
+	return `${h ? `${h}h` : ''}${m || !h ? `${m}m` : ''}`;
+}
+
+/** What the length pill says: the range's other edge, or the length between them. */
 const spanArg = (c: Cursor, now = new Date()): string =>
-	edged(c) ? `start_time=${timeArg(startOf(c), now)}` : `dur=${c.span}m`;
+	edged(c) ? `start_time=${timeArg(startOf(c), now)}` : lengthArg(c.span ?? 0);
 
 /**
  * The pills a selection is: its time, when it has one, and its length,
@@ -297,7 +304,7 @@ selected.subscribe((hids) => {
 });
 
 // The pills are the selection's other face, and a press on one of them
-// changes the selection: the `dur=` pill's × takes the range's length away
+// changes the selection: the length pill's × takes the range's length away
 // and leaves the instant (and takes the whole selection, when the range
 // was the whole of it — a `rel: 0` one has no time pill to fall back to);
 // no time pill at all clears the selection; and a time pill that no longer

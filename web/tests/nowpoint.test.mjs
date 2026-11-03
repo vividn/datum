@@ -724,16 +724,31 @@ describe('a drag along the band pans the window', () => {
 // ── the two range gestures ─────────────────────────────────────────────
 
 describe('a range: two pills, and a block that ends where the range ends', () => {
-	test('long-press then drag → a white band, `-q` and `dur=25m`; a line logs that block', async () => {
+	test('long-press then drag → a white band, `-q` and `25m`; a line logs that block', async () => {
 		await withBand(async (app) => {
 			const { page } = app;
-			await app.spyOnRunner();
+			const seen = await app.spyOnRunner();
 			const g = await geometry(page);
 			// −5m back to −30m: twenty-five minutes inside a thirty-minute
 			// window, ending on the `-q` mark.
 			await drag(page, at(g, 5), at(g, 30), { hold: true });
 
-			await saysPills(page, ['time:-q', 'dur:dur=25m']);
+			await saysPills(page, ['time:-q', 'dur:25m']);
+			// With a drawn arrow before it, centred on the words: the length runs
+			// back from its time (vividn, 11-03: «so <-12m», «vertically centered»).
+			const arrow = await page.locator('.prompt-bar .pill.dur button.remove').evaluate((b) => {
+				const svg = b.querySelector('svg.length-arrow');
+				const label = b.querySelector('.label');
+				const mid = (el) => {
+					const r = el.getBoundingClientRect();
+					return { x: r.left, y: r.top + r.height / 2, w: r.width };
+				};
+				return svg && { arrow: mid(svg), label: mid(label), text: label.textContent };
+			});
+			assert.ok(arrow, 'the length pill draws no arrow');
+			assert.equal(arrow.text, '25m');
+			assert.ok(arrow.arrow.w > 0 && arrow.arrow.x < arrow.label.x, JSON.stringify(arrow));
+			assert.ok(Math.abs(arrow.arrow.y - arrow.label.y) <= 1, `the arrow is off centre: ${JSON.stringify(arrow)}`);
 			// Its line stands at its end (da-dv45l), the window on now.
 			await instantDrawn(page, NOW - 5 * MINUTE);
 			const marks = await until(
@@ -747,7 +762,10 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 
 			// The pills go into the argv after the verb, so the block ENDS at
 			// the selection and its duration runs back from there (da-zwct).
+			// The pill says `25m`; the line keys it, `dur=25m` (da-g2ruk): a
+			// bare length after a field's key would fill the key.
 			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
+			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), ['start', 'posture', '-q', 'dur=25m']);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT25M', JSON.stringify(posture));
 			assert.equal(
@@ -767,7 +785,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const { page } = app;
 			const g = await geometry(page);
 			await drag(page, at(g, 5), at(g, 20), { shift: true });
-			await saysPills(page, ['time:-q', 'dur:dur=15m']);
+			await saysPills(page, ['time:-q', 'dur:15m']);
 
 			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
@@ -817,7 +835,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const { page } = app;
 			const g = await geometry(page);
 			await drag(page, at(g, 5), at(g, 20), { shift: true });
-			await saysPills(page, ['time:-q', 'dur:dur=15m']);
+			await saysPills(page, ['time:-q', 'dur:15m']);
 		});
 	});
 
@@ -826,7 +844,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const { page } = app;
 			const g = await geometry(page);
 			await drag(page, at(g, 20), at(g, 5), { shift: true });
-			await saysPills(page, ['time:-q', 'dur:dur=15m']);
+			await saysPills(page, ['time:-q', 'dur:15m']);
 		});
 	});
 
@@ -835,7 +853,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const { page } = app;
 			const g = await geometry(page);
 			await drag(page, at(g, 5), at(g, 20), { shift: true });
-			await saysPills(page, ['time:-q', 'dur:dur=15m']);
+			await saysPills(page, ['time:-q', 'dur:15m']);
 
 			await page.locator('.prompt-bar .pill.dur button.remove').click();
 			await saysPills(page, ['time:-q']);
@@ -845,7 +863,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			);
 
 			await drag(page, at(g, 5), at(g, 20), { shift: true });
-			await saysPills(page, ['time:-q', 'dur:dur=15m']);
+			await saysPills(page, ['time:-q', 'dur:15m']);
 			const ten = await gridline(page, 10);
 			await page.mouse.click(ten.x, ten.y);
 			await saysPills(page, ['time:-qq']);
@@ -867,7 +885,7 @@ describe('the now region: a long press dragged LEFT is a duration ending NOW', (
 			// (vividn, da-xg1vi), so a plain drag here pans like one anywhere.
 			await drag(page, { x: g.nowLine + 2, y: g.y }, { x: g.hi - 12 * perMinute(g), y: g.y }, { hold: true });
 
-			await saysPills(page, ['dur:dur=12m']);
+			await saysPills(page, ['dur:12m']);
 			const marks = await drawn(page, NOWVIEW);
 			assert.ok(marks.span && marks.span.w > 9 * perMinute(g), `the band is ${marks.span?.w}px`);
 
@@ -1121,7 +1139,7 @@ describe('on a phone', () => {
 				await finger(page, work, { x: work.x + 80, y: work.y }, { hold: true });
 				await until(
 					() => pillsOf(page),
-					(seen) => seen.length === 2 && seen.some((p) => p.startsWith('dur:dur='))
+					(seen) => seen.length === 2 && seen.some((p) => /^dur:\d+m$/.test(p))
 				);
 			},
 			{ ...PHONE, ready: toNowviewTab }
@@ -1317,7 +1335,7 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 			// From −10m: well clear of the 24px the now region reaches back.
 			assert.ok(10 * perMinute(g) > 24 + 6, `ten minutes is ${10 * perMinute(g)}px`);
 			await drag(page, vat(g, 10), vat(g, 30), { hold: true });
-			await saysPills(page, ['time:-qq', 'dur:dur=20m']);
+			await saysPills(page, ['time:-qq', 'dur:20m']);
 		});
 	});
 
@@ -1328,7 +1346,7 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 			const g = await vgeometry(page);
 			assert.ok(12 * perMinute(g) > 24 + 12, `twelve minutes is ${12 * perMinute(g)}px`);
 			await drag(page, { x: g.x, y: g.nowLine + 2 }, { x: g.x, y: g.nowLine - 12 * perMinute(g) }, { hold: true });
-			await saysPills(page, ['dur:dur=12m']);
+			await saysPills(page, ['dur:12m']);
 		});
 	});
 

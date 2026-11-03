@@ -12,7 +12,11 @@ import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource();
-const { cursor, cursorArg, dateLabel, pillSections, pointAt, timeArg, timeArgAt } = await import('../src/lib/cursor.ts');
+const { cursor, cursorArg, dateLabel, lengthArg, pillSections, pointAt, SPAN_ID, timeArg, timeArgAt } = await import(
+	'../src/lib/cursor.ts'
+);
+const { pills } = await import('../src/lib/bar.ts');
+const { pillWord } = await import('../src/lib/commands.ts');
 const { get } = await import('svelte/store');
 
 describe('the date a pill says', () => {
@@ -49,6 +53,19 @@ describe('the argv a selection puts on the line', () => {
 	test('a range dragged on the strip says its end as end_time=', () => {
 		assert.equal(cursorArg({ at, span: 90, from: 'daystrip' }, now), 'end_time=2026-09-09T09:00');
 		assert.equal(cursorArg({ at, span: 90, from: 'nowview' }, now), '-t 2026-09-09T09:00');
+	});
+
+	// da-g2ruk, vividn: «let's unify on not using dur= and rather the 12m format for duration».
+	test('a length says its unit alone, and goes on the line keyed', () => {
+		assert.deepEqual([1, 25, 59, 60, 90, 125, 1440].map(lengthArg), ['1m', '25m', '59m', '1h', '1h30m', '2h5m', '24h']);
+		pointAt({ rel: 5, span: 90 });
+		const span = get(pills).find((p) => p.id === SPAN_ID);
+		assert.deepEqual([span.kind, span.text, pillWord(span)], ['dur', '1h30m', 'dur=1h30m']);
+		pointAt(null);
+		// Keyed already — the strip's edge, an old session's pill — it goes as it is.
+		assert.equal(pillWord({ id: 'x', kind: 'dur', text: 'start_time=09:00' }), 'start_time=09:00');
+		assert.equal(pillWord({ id: 'x', kind: 'dur', text: 'dur=25m' }), 'dur=25m');
+		assert.equal(pillWord({ id: 'x', kind: 'time', text: '-t 09:00' }), '-t 09:00');
 	});
 });
 
