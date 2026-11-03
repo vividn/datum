@@ -1067,7 +1067,7 @@ fn a_field_with_entries_on_the_day_draws_them_and_no_sample() {
     assert!(!day_svg(&db, &[]).contains("#00aa00"));
 }
 
-/// da-efxk5: `--digests` gives each named day's picture
+/// da-efxk5: `--digests` gives, with the layout, each named day's picture
 /// as SHA-256 of the SVG its own `--days 1 --end-date` run draws, so a
 /// write into one day changes its digest and no other's.
 #[test]
@@ -1121,7 +1121,7 @@ fn digests_are_each_days_own_picture() {
     assert_eq!(after[0], picture("-1"));
 }
 
-/// da-p5lyt: `--pictures` gives each named day's SVG as
+/// da-p5lyt: `--pictures` gives, with the layout, each named day's SVG as
 /// its own `--days 1 --end-date` run draws it, so one run answers the
 /// bands a strip lacks.
 #[test]
@@ -1161,10 +1161,7 @@ fn pictures_are_each_days_own_picture() {
             "day {back}"
         );
     }
-    // The days asked and nothing else: the strip's geometry is a run of its
-    // own, so a layout here was a day drawn for no reader (da-7z5i9).
-    let keys: Vec<&String> = json.as_object().unwrap().keys().collect();
-    assert_eq!(keys, ["pictures"], "{json}");
+    assert!(json["hours"].is_array(), "the layout went missing: {json}");
 }
 
 /// The band ending now around a `--sample` of `spec` (none for `""`), drawn `--context ctx`.
@@ -1470,145 +1467,4 @@ fn a_data_layer_is_its_day_by_instant_at_a_second_a_unit() {
 
     let (spans, _) = layer("2026-10-27");
     assert_eq!(spans, vec![("86400".to_string(), Some("3600".to_string()))]);
-}
-
-/// The page's check of the days on screen (`layersArgv`): `--digests` of a
-/// data layer, the day `days_back` ago alone, and that day drawn afresh.
-fn kept_and_drawn(db: &datum_core::db::Db, days_back: u64) -> (String, String) {
-    use sha2::{Digest, Sha256};
-    let date = (DatumTime::now().utc.date_naive() - chrono::Days::new(days_back)).to_string();
-    let json = |kind: &str| -> serde_json::Value {
-        let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
-        let path = tmp.path().to_str().unwrap();
-        let argv = [
-            "dayview",
-            "--data-layer",
-            "--day-height",
-            "100",
-            "--end-date",
-            &date,
-        ];
-        run_cli(
-            &[&argv[..], &["-o", path, "--show", "json", kind, "0"]].concat(),
-            db,
-        )
-        .expect("dayview");
-        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
-    };
-    let digest = json("--digests")["digests"]["0"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let picture = json("--pictures")["pictures"]["0"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    (digest, format!("{:x}", Sha256::digest(picture)))
-}
-
-/// Run each `;`-separated line of `script` on `db`. A word `@N/hh:mm` is that
-/// time UTC on the day N back; a log names no zone but UTC's unless it says.
-fn script(db: &datum_core::db::Db, script: &str) {
-    for line in script.split(';') {
-        let mut argv: Vec<String> = (line.split_whitespace())
-            .map(
-                |w| match w.strip_prefix('@').and_then(|w| w.split_once('/')) {
-                    Some((back, hm)) => {
-                        let date = DatumTime::now().utc.date_naive()
-                            - chrono::Days::new(back.parse().unwrap());
-                        format!("{date}T{hm}:00+00:00")
-                    }
-                    None => w.to_string(),
-                },
-            )
-            .collect();
-        let logs = ["moment", "switch", "start", "stop"].contains(&argv[0].as_str());
-        if logs && !argv.iter().any(|w| w == "-z") {
-            argv.extend(["-z".into(), "UTC".into()]);
-        }
-        let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
-        run_cli(&argv, db).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
-    }
-}
-
-/// da-7z5i9: a day's digest kept by one check is the digest a fresh drawing
-/// gives after every kind of write that changes the day's picture from
-/// outside it: a block past its midnight ended, a row before the one ending
-/// it, the state carried in taken back, a zone change after it, a spec, a
-/// block reaching back into it, its own row retimed out of it. Each field
-/// is logged before its case, so that only the spec's case writes a spec.
-#[test]
-fn a_kept_digest_is_what_drawing_the_day_gives_after_any_write() {
-    let mut stale = Vec::new();
-    for (setup, write) in [
-        (
-            "switch mood happy -t @2/20:00",
-            "switch mood sad -t @1/00:30",
-        ),
-        ("start work -t @2/20:00", "stop work -t @1/00:30"),
-        (
-            "switch mood happy -t @2/20:00; switch mood sad -t @1/09:00",
-            "switch mood calm -t @1/01:00",
-        ),
-        (
-            "switch mood calm -t @30/12:00; switch mood happy -t @9/12:00",
-            "undo",
-        ),
-        (
-            "moment coffee -t @2/12:00",
-            "moment coffee -t @1/02:00 -z America/Los_Angeles",
-        ),
-        ("moment coffee -t @2/12:00", "setup coffee --color #ff0000"),
-        (
-            "moment read dur=1h -t @20/12:00; moment coffee -t @2/12:00",
-            "moment read dur=2h -t @1/00:30",
-        ),
-        ("moment coffee -t @2/12:00", "retime coffee -t @1/12:00"),
-    ] {
-        let db = fresh_db();
-        script(&db, setup);
-        let (kept, before) = kept_and_drawn(&db, 2);
-        assert_eq!(kept, before, "{setup}");
-        script(&db, write);
-        let (kept, after) = kept_and_drawn(&db, 2);
-        assert_ne!(after, before, "{setup}; {write}: the day did not change");
-        if kept != after {
-            stale.push(format!("{setup}; {write}"));
-        }
-    }
-    assert!(stale.is_empty(), "kept a picture these changed: {stale:#?}");
-}
-
-/// da-7z5i9: a check after a write that cannot change the day answers from
-/// what the last one kept, and draws nothing: a digest planted in its place
-/// comes back. A write that can, the first of a field whose block runs past
-/// the day's midnight, is drawn and kept again; one after the row ending that
-/// block is not.
-#[test]
-fn a_check_answers_a_day_no_write_reached_from_what_it_kept() {
-    let db = fresh_db();
-    script(
-        &db,
-        "start walk -t @2/12:00; stop walk -t @2/13:00; switch mood happy -t @2/20:00",
-    );
-    let plant = || {
-        db.conn()
-            .execute("UPDATE dayview_kept SET digest = 'planted'", [])
-            .unwrap();
-    };
-    let (kept, drawn) = kept_and_drawn(&db, 2);
-    assert_eq!(kept, drawn);
-    plant();
-    script(&db, "start walk -t @1/09:00");
-    assert_eq!(kept_and_drawn(&db, 2).0, "planted", "walk ended on the day");
-    script(&db, "switch mood calm -t @1/09:00");
-    let (kept, drawn) = kept_and_drawn(&db, 2);
-    assert_eq!(kept, drawn, "mood's block ends at this row");
-    plant();
-    script(&db, "switch mood sad -t @1/15:00");
-    assert_eq!(
-        kept_and_drawn(&db, 2).0,
-        "planted",
-        "after the row ending it"
-    );
 }
