@@ -302,8 +302,6 @@ async function fixture() {
  */
 function recorder() {
 	const rec = (window.__log = { runs: [], dials: [], paints: [] });
-	// A sync command's word past `--db`/`--as` and their values, and `sync`.
-	window.wordAt = (argv) => argv.filter((w, i) => !['--db', '--as'].includes(w) && !['--db', '--as'].includes(argv[i - 1]))[1];
 	const pending = new WeakMap();
 	// Heard in the constructor, so before the app's own handler: its answer
 	// is stamped before the microtasks it sets off draw it.
@@ -562,9 +560,10 @@ if (DURING) {
 		await tap(page);
 		await hidOf(page);
 		await page.waitForFunction(
-			// Running, not queued: everything ranked ahead of it has answered.
+			// A session process running, not queued: everything ranked ahead of it has answered.
+			// Any of them: since da-tvv4j a session runs no `sync status`, the one this waited for.
 			() =>
-				window.__log.runs.some((r) => r.session && !r.settled && wordAt(r.argv) === 'status') &&
+				window.__log.runs.some((r) => r.session && !r.settled) &&
 				window.__log.runs.every((r) => r.session || r.settled),
 			null,
 			{ timeout: 60_000, polling: 5 }
@@ -641,7 +640,7 @@ const table = (label, list) => {
 	for (const name of ['nowview', 'tail', 'dayview']) row(`${name} drawn`, null, m((p) => p.drawn[name]));
 	row('the peer holds the entry', null, m((p) => p.peerMs));
 };
-table('a tap while a sync session runs `sync status`', report.during);
+table('a tap while a sync session runs', report.during);
 const last = P.at(-1);
 log(`  (DOM changes per region, last tap: ${JSON.stringify(last.changes)})`);
 log(`\n── tap ${P.length}: every command, ms from the tap ──`);
