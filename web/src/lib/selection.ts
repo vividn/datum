@@ -56,22 +56,30 @@ export function picked(
 	return current.length === 1 && same(current[0], hid) ? [] : [hid];
 }
 
-/** How a hid is drawn on the pill: the CLI's short form. */
-const short = (hid: string): string => hid.slice(0, 5);
+/** Each `_n` and the hid it names, as `datum ids --ref --json` says them. */
+export type Refs = Record<string, string>;
+
+/**
+ * How a hid is drawn on the pill: its ref, as the tail's `ref` column says
+ * it (da-kjikt) — its `_n` in `refs` where it has one, else the CLI's short
+ * form. Only the drawing: the pill's text stays the hid.
+ */
+const labelOf = (hid: string, refs: Refs): string =>
+	Object.keys(refs).find((n) => same(refs[n], hid)) ?? hid.slice(0, 5);
 
 /**
  * One section per hid, each dropping its own: what it leaves is the others
  * as TEXT, and `select`'s store redraws their sections (#lib/bar.ts) — a
  * `rest` carrying its own sections would nest every order of every subset.
  */
-const drawn = (hids: string[]): PillSection[] =>
+const drawn = (hids: string[], refs: Refs): PillSection[] =>
 	hids.length > 1
-		? hids.map((h) => ({ text: short(h), rest: { text: hids.filter((x) => x !== h).join(',') } }))
-		: [{ text: short(hids[0]) }];
+		? hids.map((h) => ({ text: labelOf(h, refs), rest: { text: hids.filter((x) => x !== h).join(',') } }))
+		: [{ text: labelOf(hids[0], refs) }];
 
-/** The `hid` pill holding `hids`, or null for none. */
-export const hidPill = (hids: string[], locked = false): Pill | null =>
-	hids.length ? { id: 'hid', kind: 'hid', text: hids.join(','), locked, sections: drawn(hids) } : null;
+/** The `hid` pill holding `hids`, or null for none; `refs` labels them. */
+export const hidPill = (hids: string[], locked = false, refs: Refs = {}): Pill | null =>
+	hids.length ? { id: 'hid', kind: 'hid', text: hids.join(','), locked, sections: drawn(hids, refs) } : null;
 
 /**
  * Whether `argv`'s FIELD slot is still empty, and so a field pill's word

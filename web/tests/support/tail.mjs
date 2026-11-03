@@ -25,10 +25,11 @@ const SHORT_HID = /\b[0-9a-z]{5}\b/g;
 export function comparableTail(table) {
 	return stripAnsi(table)
 		.replace(HID, '<hid>')
-		// The `hid` column prints the SHORT hid, five characters — masked
-		// after the long form so a full hid is never half-masked.
+		// A row with no `_n` leads with its SHORT hid, five characters, in the
+		// `ref` column (da-kjikt) — masked after the long form so a full hid
+		// is never half-masked.
 		.split('\n')
-		.map((line) => line.replace(/(\s)([0-9a-z]{5})(\*?)$/, (_, gap, __, star) => gap + '<hid>' + star))
+		.map((line) => line.replace(/^([0-9a-z]{5})(\*?)(\s)/, (_, __, star, gap) => '<hid>' + star + gap))
 		.join('\n')
 		.replace(/\n+$/, '');
 }

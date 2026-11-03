@@ -233,7 +233,7 @@ fn comment_refuses_an_unknown_hid_a_strategy_and_no_words() {
             "Entry not found: zzzzzz".to_string(),
             "Invalid argument: comment takes no --strategy: it is update --strategy append -C"
                 .to_string(),
-            "Invalid argument: comment takes the words of the comment: comment <hid> words…"
+            "Invalid argument: comment takes the words of the comment: comment <ref> words…"
                 .to_string(),
         )
     );

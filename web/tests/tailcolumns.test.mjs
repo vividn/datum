@@ -1,9 +1,9 @@
 // The tail pane's columns in a narrow pane (da-kk0d).
 //
 // vividn, 2026-09-17: «Sacrifice the _n and hid columns in the tail view at
-// smaller widths» — `hid` first, `_n` only if the table still does not fit
-// without it. On a phone the two took two of five columns and broke
-// `field` and `state` mid-word.
+// smaller widths». On a phone the two took two of five columns and broke
+// `field` and `state` mid-word. They are one column now, `ref` (da-kjikt):
+// a row's `_n` where it has one, else its hid.
 //
 // Too narrow is measured: the pane's hidden width probe (TailTable.svelte)
 // draws every column at its narrowest with words whole, and the widths a
@@ -54,7 +54,7 @@ const table = (page) =>
 			hids: trs.map((tr) => tr.dataset.hid),
 			tall: trs.filter((tr) => tr.getBoundingClientRect().height > line + 0.5).map((tr) => tr.textContent),
 			sideways: body.scrollWidth > body.clientWidth + 1,
-			needs: { all: needs([]), noHid: needs(['hid']), neither: needs(['hid', '_n']) }
+			needs: { all: needs([]), noRef: needs(['ref']) }
 		};
 	}, TAIL);
 
@@ -108,12 +108,11 @@ async function paneWidth(page, width) {
 	);
 }
 
-const ALL = ['_n', 'time', 'field', 'state', 'hid'];
-const NO_HID = ['_n', 'time', 'field', 'state'];
+const ALL = ['ref', 'time', 'field', 'state'];
 const THREE = ['time', 'field', 'state'];
 
 /** The columns a box `width` wide draws, by the probe's `needs`: the widest set that fits. */
-const drops = (needs, width) => (needs.all <= width ? ALL : needs.noHid <= width ? NO_HID : THREE);
+const drops = (needs, width) => (needs.all <= width ? ALL : THREE);
 
 // ONE app for the tests on the tail alone (sharedApp in support/app.mjs),
 // `main` opened as a draft of that one pane: each seeds and then REDRAWS
@@ -122,17 +121,17 @@ const drops = (needs, width) => (needs.all <= width ? ALL : needs.noHid <= width
 // The phones open apps of their own, FRESH: a touch device is the context's.
 const shared = sharedApp({ viewport: { width: 400, height: 700 } });
 const onTail = (fn) => shared.solo(fn, ONLY_TAIL);
-describe('a narrow tail gives up hid, then _n', () => {
-	test('at 250px: hid goes, no word broken, every row keeps its hid', async () => {
+describe('a narrow tail gives up ref', () => {
+	test('at 250px: ref goes, no word broken, every row keeps its hid', async () => {
 		await onTail(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			await paneWidth(page, 250);
 			const { needs } = await measured(page);
-			assert.ok(needs.all > 250, `all five fit 250px (${needs.all}px), which tests nothing`);
+			assert.ok(needs.all > 250, `all four fit 250px (${needs.all}px), which tests nothing`);
 			await drawsKeys(page, drops(needs, 250));
 			const t = await table(page);
-			assert.ok(!t.keys.includes('hid'), `hid is drawn: ${t.keys}`);
+			assert.ok(!t.keys.includes('ref'), `ref is drawn: ${t.keys}`);
 			assert.ok(t.hids.length >= SEED.length, `rows: ${t.hids}`);
 			assert.ok(t.hids.every((hid) => hid), 'a row without its data-hid');
 			assert.deepEqual(t.tall, [], 'a row taller than one line');
@@ -141,12 +140,12 @@ describe('a narrow tail gives up hid, then _n', () => {
 		});
 	});
 
-	test('narrower than _n needs: time, field, state', async () => {
+	test('narrower than ref needs: time, field, state', async () => {
 		await onTail(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const { needs } = await measured(page);
-			await paneWidth(page, Math.ceil(needs.neither) + 1);
+			await paneWidth(page, Math.ceil(needs.noRef) + 1);
 			await drawsKeys(page, THREE);
 			const t = await table(page);
 			assert.ok(t.hids.every((hid) => hid), 'a row without its data-hid');
@@ -155,7 +154,7 @@ describe('a narrow tail gives up hid, then _n', () => {
 		});
 	});
 
-	test('at 420px: all five columns', async () => {
+	test('at 420px: all four columns', async () => {
 		await onTail(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
@@ -166,19 +165,6 @@ describe('a narrow tail gives up hid, then _n', () => {
 		});
 	});
 
-	test('between the two: _n stays, hid goes', async () => {
-		await onTail(async (app) => {
-			const { page } = app;
-			await page.setViewportSize({ width: 600, height: 700 });
-			await seedLines(app, SEED);
-			const { needs } = await measured(page);
-			assert.ok(needs.all - needs.noHid > 4, `no room between the two widths: ${JSON.stringify(needs)}`);
-			await paneWidth(page, Math.ceil(needs.noHid) + 1);
-			await drawsKeys(page, NO_HID);
-			assert.deepEqual((await table(page)).tall, [], 'a row taller than one line');
-		});
-	});
-
 	test('across the boundary both ways: the columns go and come back, the reader keeps their place', async () => {
 		await onTail(async (app) => {
 			const { page } = app;
@@ -186,7 +172,7 @@ describe('a narrow tail gives up hid, then _n', () => {
 			await seedLines(app, Array.from({ length: 60 }, (_, i) => `occur coffee -t 05${String(i).padStart(2, '0')}`));
 			const { needs } = await measured(page);
 			const wide = Math.ceil(needs.all) + 20;
-			const narrow = Math.ceil(needs.neither) + 2;
+			const narrow = Math.ceil(needs.noRef) + 2;
 			await paneWidth(page, wide);
 			await drawsKeys(page, ALL);
 
@@ -243,12 +229,11 @@ describe('a narrow tail gives up hid, then _n', () => {
 	]) {
 		// What the rule is, at a phone's width: the widest set of columns
 		// whose widths the box holds. Which set that IS depends on the box
-		// AND on the type, and da-hkjp made `mobile`'s tail type smaller —
-		// so at 390×664 all five now fit where they did not, and at 360×640
-		// `hid` still goes. Both are the same rule, so the test asserts the
+		// AND on the type, and da-hkjp made `mobile`'s tail type smaller.
+		// Both sizes are the same rule, so the test asserts the
 		// rule and lets the MEASUREMENT say which side of it this size is on
 		// rather than writing the answer down per size.
-		test(`the mobile layout at ${width}x${height}: no hid, no word broken`, async () => {
+		test(`the mobile layout at ${width}x${height}: no word broken`, async () => {
 			await withApp(
 				async (app) => {
 					const { page } = app;

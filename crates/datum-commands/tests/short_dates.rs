@@ -79,17 +79,19 @@ fn iso_times_prints_an_instant_that_parses_back_offset_and_all() {
     assert!(!plain.contains("2026-11-03T"), "{plain}");
     let _iso = IsoTimes::set();
     let out = table(&[e]);
+    // After the row's `ref`, here its hid (da-kjikt).
     let cell = out
         .lines()
         .nth(1)
-        .and_then(|l| l.split_whitespace().next())
+        .and_then(|l| l.split_whitespace().nth(1))
         .unwrap();
     assert_eq!(cell, "2026-11-03T09:24:25+01:00", "{out}");
     let back = DateTime::parse_from_rfc3339(cell).unwrap();
     assert_eq!(back.with_timezone(&Utc), t.utc);
     assert_eq!(back.offset().local_minus_utc(), 3600);
-    assert!(
-        out.lines().next().unwrap().trim().starts_with("time "),
+    assert_eq!(
+        out.lines().next().unwrap().split_whitespace().nth(1),
+        Some("time"),
         "{out}"
     );
     assert!(!out.lines().next().unwrap().contains("(+1)"), "{out}");

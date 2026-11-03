@@ -516,7 +516,7 @@ fn apply_fix(entry: &Entry, shape: &ReparsedShape, db: &Db) -> Result<()> {
 pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
     if args.hids.is_empty() {
         anyhow::bail!(
-            "reparse requires at least one <hid> (or slug / quickId). \
+            "reparse requires at least one <ref> (or slug). \
              Walking all entries is intentionally not supported — reparse \
              is opt-in per row. See `datum reparse --help`."
         );

@@ -966,12 +966,14 @@ datum ids — list entry ids (newest-first by default)
 
 USAGE:
   datum ids [FIELD,...] [-n N] [--oldest-first] [--since TIME] [--slug]
+  datum ids --ref [-n N]
 
 OPTIONS:
   -n, --limit <N>     Cap the number of ids returned
       --oldest-first  Return oldest-first instead of newest-first
       --since <TIME>  Same grammar as `datum count --since`
       --slug          Print slugs instead of short hids
+      --ref           Each `_n` and the hid it names, `_1` first
 
 OUTPUT:
       --show <MODE>   default|none|json

@@ -1053,7 +1053,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			const group = (line) => page.locator(`${BAR} .group`).filter({ has: page.locator('.echo', { hasText: line }) });
 			const hidOf = async () =>
 				JSON.parse((await page.evaluate(() => window.datum.bar.last().result.stdout)).trim().split('\n').at(-1)).docs[0].hid;
-			const listed = async (hid) => (await app.run(['tail', '-n', '50'])).stdout.includes(hid);
+			const listed = async (hid) => (await app.run(['ids'])).stdout.includes(hid);
 			const struck = (line) => group(line).locator('.head.struck');
 
 			await app.submit('occur coffee');

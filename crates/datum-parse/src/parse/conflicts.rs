@@ -55,7 +55,7 @@ pub(crate) fn parse_conflicts_cmd(tail: &[&str]) -> Result<ConflictsCommand> {
                     pos[1]
                 )));
             }
-            let hid = require_pos(&pos, "<HID>")?;
+            let hid = require_pos(&pos, "<REF>")?;
             Ok(ConflictsCommand::Resolve(ConflictsResolveArgs {
                 hid,
                 strategy,

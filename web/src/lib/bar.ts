@@ -34,12 +34,16 @@
 // `ghost` is the narrower thing the prompt itself shows (da-jprg) — see
 // below.
 
+import { browser } from '$app/env';
 import { derived, get, writable } from 'svelte/store';
+import { refsArgv } from './calls.js';
+import { onAnyChange } from './changes.js';
 import { hidsOf, pendingVerb as verbOf, roleOf, type Verb } from './commands.js';
+import { currentDb } from './database.js';
 import { parseEcho } from './echo.js';
 import { pressWithPills } from './layout/engine.js';
-import type { RunResult } from './run.js';
-import { hidPill, pickOf, picked, same } from './selection.js';
+import { run, type RunResult } from './run.js';
+import { hidPill, pickOf, picked, same, type Refs } from './selection.js';
 import { shellSplit } from './shellSplit.js';
 
 /**
@@ -362,9 +366,54 @@ pills.subscribe((all) => {
 /** The last entry tapped: where a shift-click's range starts. */
 let anchor: string | null = null;
 
+/**
+ * Each `_n` and the hid it names (`ids --ref --json`), which label the `hid`
+ * pill as the tail's `ref` column labels its rows (da-kjikt). vividn,
+ * 2026-11-03: «use this _n id where it exists (but make sure it is auto
+ * updated if new data comes in)». Read while the pill is up and again on
+ * every write to the database, one read at a time; the pill's text stays
+ * the hids, so a press names the same entry however the numbers move.
+ */
+export const refs = writable<Refs>({});
+
+let readingRefs = false;
+let refsAgain = false;
+async function readRefs(): Promise<void> {
+	if (readingRefs) return void (refsAgain = true);
+	readingRefs = true;
+	do {
+		refsAgain = false;
+		const read = await run(refsArgv());
+		try {
+			refs.set(read.code === 0 ? JSON.parse(read.stdout) : {});
+		} catch {
+			// Not the map: a hid is labeled by itself, never by a `_n` gone stale.
+			refs.set({});
+		}
+	} while (refsAgain);
+	readingRefs = false;
+}
+
+let unhearRefs: (() => void) | null = null;
+if (browser) {
+	selected.subscribe((hids) => {
+		if (hids.length && !unhearRefs) {
+			unhearRefs = onAnyChange(() => void readRefs(), currentDb());
+			void readRefs();
+		} else if (!hids.length && unhearRefs) {
+			unhearRefs();
+			unhearRefs = null;
+		}
+	});
+	refs.subscribe(() => {
+		const pill = get(pills).find((p) => p.kind === 'hid');
+		if (pill) setHids(hidsOf(pill), !!pill.locked);
+	});
+}
+
 /** Put `hids` on the `hid` pill, where it was, keeping its lock; none takes it away. */
 function setHids(hids: string[], locked: boolean): void {
-	const next = hidPill(hids, locked);
+	const next = hidPill(hids, locked, get(refs));
 	pills.update((all) => {
 		if (!all.some((p) => p.kind === 'hid')) return next ? [...all, next] : all;
 		return all.flatMap((p) => (p.kind !== 'hid' ? [p] : next ? [next] : []));

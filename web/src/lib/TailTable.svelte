@@ -152,10 +152,10 @@
 	}
 
 	/** The CLI's column order, for a table merged from more than one listing. */
-	const STOCK = ['_n', 'time', 'field', 'state', 'dur', 'hid'];
+	const STOCK = ['ref', 'time', 'field', 'state', 'dur'];
 	const rank = (key: string) => (STOCK.includes(key) ? STOCK.indexOf(key) : STOCK.length);
 	/** The columns a narrow pane gives up, in the order it gives them up. */
-	const SACRIFICE = ['hid', '_n'];
+	const SACRIFICE = ['ref'];
 
 	let keys: string[] = $state([]);
 	let headers: Record<string, string> = $state({});

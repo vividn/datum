@@ -85,7 +85,7 @@ describe('the wasm a returning browser runs', () => {
 			// The CLI's own header words, whole (da-qrc6). `time (+0)`
 			// because the harness pins the reader's zone to UTC.
 			const table = await paneTable('tail');
-			assert.deepEqual(table.headers, ['_n', 'time (+0)', 'field', 'state', 'hid']);
+			assert.deepEqual(table.headers, ['ref', 'time (+0)', 'field', 'state']);
 			// One row: the entry, which declared its own field in its own
 			// `following_state` (da-gvcen).
 			assert.deepEqual(

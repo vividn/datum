@@ -114,7 +114,7 @@ pub(crate) fn parse_comment_args(tail: &[&str]) -> Result<UpdateArgs> {
     }
     if args.rest.is_empty() && args.comment.is_empty() && args.verbatim.is_empty() {
         return Err(ParseError::InvalidArg(
-            "comment takes the words of the comment: comment <hid> words…".into(),
+            "comment takes the words of the comment: comment <ref> words…".into(),
         ));
     }
     args.strategy = Some(UpdateStrategyArg::Combine(crate::combine::Combine::APPEND));

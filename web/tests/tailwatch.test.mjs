@@ -254,11 +254,11 @@ describe('rows from height', () => {
 				// The CLI shrinks `field` and `state` to `f` and `s` when no
 				// row is wide — here none is — and the pane says the whole
 				// words, as `tail -w` over a wide terminal would. The 240px
-				// pane at 768 gives up `hid` and `_n` to keep them whole
+				// pane at 768 gives up `ref` to keep them whole
 				// (da-kk0d; tailcolumns.test.mjs).
 				assert.deepEqual(
 					g.headers.map((h) => h.split(' ')[0]),
-					width > 768 ? ['_n', 'time', 'field', 'state', 'hid'] : ['time', 'field', 'state'],
+					width > 768 ? ['ref', 'time', 'field', 'state'] : ['time', 'field', 'state'],
 					'the header words are not the whole words'
 				);
 			});
@@ -378,7 +378,7 @@ describe('scrolling up', () => {
 			assert.ok(total - n - size >= 100, 'a long row is in the first listing: not the case');
 			assert.ok(total - n - 2 * size < 100, 'the page above brings no long row: not the case');
 			const c0 = await columns(page);
-			assert.deepEqual(c0.map((c) => c.key), ['_n', 'time', 'field', 'state', 'hid'], 'not every column at rest');
+			assert.deepEqual(c0.map((c) => c.key), ['ref', 'time', 'field', 'state'], 'not every column at rest');
 
 			const at = await toTop(page);
 			await waitRows(page, 'n === arg', n + 2 * size);

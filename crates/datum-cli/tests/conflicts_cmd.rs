@@ -163,11 +163,9 @@ fn resolve_refuses_an_entry_with_no_conflicts() {
 
 #[test]
 fn resolve_takes_the_short_hid_tail_prints() {
-    // da-q4x3c: an exact-hid lookup refused the hid every listing prints.
+    // da-q4x3c: an exact-hid lookup refused the short hid `conflicts` lists.
     let env = Env::new();
     let (live, _) = env.debug_conflicts();
-    let (_, tail) = env.run(&["tail"]);
-    assert!(tail.contains(&live[0]), "{tail}");
 
     let (ok, out) = env.run(&["conflicts", "resolve", &live[0]]);
     assert!(ok, "{out}");

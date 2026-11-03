@@ -149,8 +149,7 @@ fn subprocess_dur_uncertainty_is_printed_with_the_dur() {
     let tail = text(&["tail", "-A"]);
     let dur_of = |field: &str| {
         let row = tail.lines().find(|l| l.contains(field)).expect(field);
-        let mut cells = row.split_whitespace().rev();
-        cells.nth(1).unwrap().to_string()
+        row.split_whitespace().next_back().unwrap().to_string()
     };
     assert_eq!(dur_of(" run "), "30m±5m", "{tail}");
     assert_eq!(dur_of(" nap "), "72h±1d", "{tail}");
@@ -1060,7 +1059,7 @@ fn subprocess_tail_json_carries_the_table_columns() {
         columns.iter().all(|c| c["key"] != "action"),
         "no action column: {doc}"
     );
-    assert_eq!(column("hid").as_array().unwrap().len(), 2);
+    assert_eq!(column("ref"), serde_json::json!(["_2", "_1"]));
     // NO_COLOR=1: the cells are plain.
     assert!(!out.stdout.contains(&0x1b), "unpainted under NO_COLOR=1");
 }

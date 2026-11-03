@@ -26,6 +26,7 @@ import type { Invite } from './sync.js';
 import type { Admins, ChainList, Grid, PurgePreview, SyncStatus } from './syncView.js';
 import type { TailListing, TailPage } from './tail.js';
 import type { Spec } from './track.js';
+import type { Refs } from './selection.js';
 
 export { bandArgv, geometryArgv, layersArgv, nowviewSpec } from './panes.js';
 export { statsArgv } from './stats.js';
@@ -123,6 +124,11 @@ export function redoArgv(): string[] {
 
 export function conflictsArgv(): string[] {
 	return ['conflicts', '--json'];
+}
+
+/** Each `_n` and the hid it names, which label the hid pill (da-kjikt). */
+export function refsArgv(): string[] {
+	return ['ids', '--ref', '--json'];
 }
 
 export const DAYVIEW_VERTICAL: PaneSpec = {
@@ -431,6 +437,7 @@ export interface Reads {
 	firstEntryArgv: TailListing;
 	aliasesArgv: Alias[];
 	conflictsArgv: Conflicted[];
+	refsArgv: Refs;
 	tailArgv: TailListing;
 	geometryArgv: DayviewJson;
 	/** Each day's data layer, or its digest, by days back. */

@@ -69,7 +69,7 @@ fn occur_emits_two_line_create_with_hid_and_extra() {
 }
 
 #[test]
-fn tail_table_flag_emits_aligned_table_with_hid_column() {
+fn tail_table_flag_emits_aligned_table_with_ref_column() {
     let db = tmp_db();
     run(&db, &["occur", "coffee"]);
     run(&db, &["switch", "mood", "happy"]);
@@ -78,25 +78,25 @@ fn tail_table_flag_emits_aligned_table_with_hid_column() {
     // Table header mentions our columns.
     assert!(stdout.contains("time"), "{stdout}");
     assert!(stdout.contains("field"), "{stdout}");
-    assert!(stdout.contains("hid"), "{stdout}");
+    assert!(stdout.contains("ref"), "{stdout}");
     // Data rows present.
     assert!(stdout.contains("coffee"), "{stdout}");
     assert!(stdout.contains("mood"), "{stdout}");
 }
 
 /// Per da-6t0: default `datum tail` always renders through the tabular
-/// path. The header row (`time | field | state | dur | hid` — empty
+/// path. The header row (`ref | time | field | state | dur` — empty
 /// columns dropped) is on by default, columns are aligned, and the
-/// `hid` column tails every data row.
+/// `ref` column (da-kjikt) leads every data row.
 #[test]
-fn tail_default_emits_table_with_header_and_hid_column() {
+fn tail_default_emits_table_with_header_and_ref_column() {
     let db = tmp_db();
     run(&db, &["occur", "coffee"]);
     run(&db, &["switch", "mood", "happy"]);
     let (stdout, _) = run(&db, &["tail"]);
 
     let header = stdout.lines().next().unwrap_or("");
-    for tok in ["time", "field", "hid"] {
+    for tok in ["ref", "time", "field"] {
         assert!(
             header.contains(tok),
             "default tail header missing {tok:?}:\n{stdout}"

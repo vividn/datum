@@ -31,7 +31,7 @@ pub(crate) fn parse_debug_cmd(tail: &[&str]) -> Result<DebugCommand> {
                 "debug conflicts takes one count".into(),
             )),
         },
-        "ops" => Ok(DebugCommand::Ops(require_pos(&pos, "<HID>")?)),
+        "ops" => Ok(DebugCommand::Ops(require_pos(&pos, "<REF>")?)),
         other => Err(ParseError::InvalidArg(format!(
             "unknown debug subcommand: '{other}' (expected conflicts|ops)"
         ))),

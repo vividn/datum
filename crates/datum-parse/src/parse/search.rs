@@ -314,8 +314,17 @@ pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
                 out.slug = true;
                 i += 1;
             }
+            FlagSplit::Long("ref") => {
+                out.refs = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
+    }
+    if out.refs && (!pos.is_empty() || out.since.is_some() || out.slug || out.oldest_first) {
+        return Err(ParseError::InvalidArg(
+            "--ref lists every _n, newest first: it takes only -n".into(),
+        ));
     }
     out.fields = optional_pos(&pos)?
         .as_deref()

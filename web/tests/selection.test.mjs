@@ -57,6 +57,28 @@ const rowCount = (page) => page.evaluate(() => document.querySelectorAll('sectio
 const rows = (page) => page.locator('section[data-title="tail"] tbody tr[data-hid]');
 const hidPill = (page) => page.locator('.prompt-bar .pill.hid');
 const sections = (page) => hidPill(page).locator('button.remove .label').allInnerTexts();
+
+/**
+ * The pill's labels for `hids`, once they are drawn: each one's `_n` where
+ * `ids --ref` gives it one, else its short hid — the tail's `ref` column
+ * (da-kjikt). Waited for, as the pill reads the refs after it is drawn.
+ */
+async function labeled(page, hids) {
+	const read = await page.evaluate(() => window.datum.runQuiet(['ids', '--ref', '--json']));
+	const refs = JSON.parse(read.stdout);
+	const want = hids.map((h) => Object.keys(refs).find((n) => refs[n].startsWith(h) || h.startsWith(refs[n])) ?? h.slice(0, 5));
+	await page
+		.waitForFunction(
+			(want) =>
+				JSON.stringify([...document.querySelectorAll('.prompt-bar .pill.hid button.remove .label')].map((l) => l.innerText)) ===
+				JSON.stringify(want),
+			want
+		)
+		.catch(async (e) => {
+			throw new Error(`not labeled ${want}: ${await sections(page)}`, { cause: e });
+		});
+	return want;
+}
 const button = (page, name) => page.locator(`main .bar.commands button[data-command="${name}"]`);
 
 /** The command buttons drawn, in order. */
@@ -92,7 +114,8 @@ describe('a tap on a tail row', () => {
 			const hid = await row.getAttribute('data-hid');
 			await row.click();
 			await hidPill(page).waitFor();
-			assert.deepEqual(await sections(page), [hid.slice(0, 5)]);
+			const [label] = await labeled(page, [hid]);
+			assert.match(label, /^_\d+$/, 'a row with a `_n` is labeled by it');
 			assert.equal(await row.evaluate((tr) => tr.classList.contains('selected')), true);
 
 			await page.locator('main .bar.commands [data-command="get"]').waitFor();
@@ -109,6 +132,30 @@ describe('a tap on a tail row', () => {
 			await hidPill(page).waitFor({ state: 'detached' });
 			await page.locator('main .bar.commands [data-menu="write"]').waitFor();
 			assert.deepEqual(await drawn(page), whole, 'the dismiss brings the base row back');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-kjikt, vividn: «use this _n id where it exists (but make sure it is
+	// auto updated if new data comes in); it could still be using the
+	// stable hid under the hood though».
+	test('the pill says the entry’s _n, moves from _1 to _2 as an entry is logged, and still runs on its hid', async () => {
+		await solo(async (app) => {
+			const { page } = app;
+			await seedApart(app);
+			const [row] = await last(page, 1);
+			const hid = await row.getAttribute('data-hid');
+			await row.click();
+			await hidPill(page).waitFor();
+			assert.deepEqual(await labeled(page, [hid]), ['_1']);
+
+			await app.clock.forward(1000);
+			await page.evaluate(() => window.datum.runQuiet(['moment', 'b']));
+			await app.redraw();
+			assert.deepEqual(await labeled(page, [hid]), ['_2']);
+
+			await run(app, 'get');
+			assert.equal((await app.echoes()).at(-1), `get ${hid}`);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -208,7 +255,7 @@ describe('a line the grammar does not know', () => {
 			assert.notEqual(newest.hid, hid);
 			assert.equal(newest.field, 'a');
 			assert.equal(newest.state, null, 'the hid was not written as a state');
-			assert.deepEqual(await sections(page), [hid.slice(0, 5)], 'the hid pill is still loaded');
+			await labeled(page, [hid]);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -226,7 +273,7 @@ describe('selecting several', () => {
 			await third.click({ modifiers: ['ControlOrMeta'] });
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 2);
 			assert.equal(await hidPill(page).count(), 1);
-			assert.deepEqual(await sections(page), hids.map((h) => h.slice(0, 5)));
+			await labeled(page, hids);
 			// Every id command takes a comma list (da-9p3o), so two hids keep them all.
 			assert.deepEqual(await drawn(page), ID_COMMANDS);
 
@@ -364,7 +411,7 @@ describe('on a phone', () => {
 			});
 			// The lift's click is the hold's: it did not take the entry out again.
 			await app.idle();
-			assert.deepEqual(await sections(page), [held.slice(0, 5)]);
+			await labeled(page, [held]);
 			assert.equal(await marked(), 1);
 
 			await rows(page).nth(count - 2).tap();
@@ -380,7 +427,7 @@ describe('on a phone', () => {
 			const one = await rows(page).nth(count - 2).getAttribute('data-hid');
 			await rows(page).nth(count - 2).tap();
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 1);
-			assert.deepEqual(await sections(page), [one.slice(0, 5)]);
+			await labeled(page, [one]);
 			assert.equal(await marked(), 1);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);

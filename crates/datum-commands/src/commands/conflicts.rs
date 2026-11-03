@@ -82,7 +82,7 @@ fn list(db: &Db, json: bool) -> Result<()> {
         }
     }
     println!(
-        "\nResolve with: datum conflicts resolve <hid> \
+        "\nResolve with: datum conflicts resolve <ref> \
          [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]\n\
          (a key not picked keeps what the entry shows unless a strategy is named)"
     );

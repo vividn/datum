@@ -655,8 +655,9 @@ A wildcard, like `_N`, skips the meta entries (specs, aliases, views, kit
 commands) unless it names their field: `c*` is your coffee and never a
 kit's `command:hydration`, while `command:*` is every kit command.
 
-`datum tail` prints the ordinals in its `_n` column, so the number you
-read is the one you type.
+`datum tail` prints the ordinals in its `ref` column, so the number you
+read is the one you type; a row with no ordinal (a meta entry, or one past
+`_99`) shows its hid there instead.
 
 ```bash
 datum moment a
@@ -673,11 +674,11 @@ datum get 'a:*'
 `datum tail`:
 
 ```
-_n  time (+2)  f  s   hid
-_4   17:59:04  a  ∅●  wvf06
-_3   17:59:04  b  ∅●  rtzbg
-_2   17:59:04  c  ∅●  78gwx
-_1   17:59:04  d  ∅●  giwrb
+ref  time (+2)  f  s
+_4    17:59:04  a  ∅●
+_3    17:59:04  b  ∅●
+_2    17:59:04  c  ∅●
+_1    17:59:04  d  ∅●
 ```
 
 `datum get _2-_3` — a range names the whole run between two ordinals:

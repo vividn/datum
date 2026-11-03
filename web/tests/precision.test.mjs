@@ -80,9 +80,9 @@ describe('the time an entry is rendered with', () => {
 			// unfiltered makes the indistinguishability impossible instead
 			// of merely guarded against.
 			assert.deepEqual(rowTexts(tail.stdout).slice(1), [
-				`_3 ${day} coffee ∅● <hid>`,
-				'_2 09:15:00 tea ∅● <hid>',
-				'_1 10:00:± water ∅● <hid>'
+				`_3 ${day} coffee ∅●`,
+				'_2 09:15:00 tea ∅●',
+				'_1 10:00:± water ∅●'
 			]);
 
 			// And on the screen, which is where the invented midnight was

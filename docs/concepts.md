@@ -49,10 +49,10 @@ One-line summaries of the model:
   the printed text, where `tail` draws it in gray. It is not what makes
   a field tracked, and no row carrying it is ever required.
 - **Slug vs. hid** — `slug` is the human-readable id (`mood:2026-04-29T09:15Z`).
-  `hid` is the short hash you see in `datum tail`; both resolve to the
-  same entry. `datum tail` also prints an `_n` column: `_1` is the most
-  recent entry, `_2` the one before it, and so on, so `datum del _3`
-  names the row you just read. Ordinals count every live entry, so a
+  `hid` is the short hash; both resolve to the same entry. `datum tail`
+  leads each row with its `ref`: its ordinal, `_1` for the most recent
+  entry, `_2` the one before it, and so on, so `datum del _3` names the
+  row you just read, or its hid where it has none. Ordinals count every live entry, so a
   field-filtered listing shows gaps — `_3` always means the same row it
   does everywhere else. Two ordinals joined by a dash name the whole run
   between them, so `datum del _2-_10` acts on nine rows in one go

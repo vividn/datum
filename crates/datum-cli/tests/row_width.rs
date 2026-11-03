@@ -141,8 +141,7 @@ fn fits(dir: &TempDir, args: &[&str], whole: &[&str]) {
 fn tail_fits_the_terminal_and_cuts_the_field() {
     let dir = TempDir::new().unwrap();
     ok(&dir, &["moment", LONG]);
-    let hid = ok(&dir, &["ids", "-n", "1"]);
-    fits(&dir, &["tail", "-n", "2"], &[&hid.trim()[..5]]);
+    fits(&dir, &["tail", "-n", "2"], &["_1"]);
 }
 
 #[test]

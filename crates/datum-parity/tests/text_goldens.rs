@@ -344,14 +344,16 @@ mod daydumb_tests {
     fn mask_hids(f: &Fixture, lines: Vec<String>) -> Vec<String> {
         let exists = regex_lite::Regex::new(r"^(⟨fg=33⟩EXISTS⟨⟩ ⟨fg=33⟩)[a-z0-9]+").unwrap();
         // Looser than the live `normalize`'s, which also runs over SVG and
-        // there took the year label for a hid: this one reads `tail` alone.
-        let tail = regex_lite::Regex::new(r"(\s{2,})[a-z0-9]{4,}$").unwrap();
+        // there took the year label for a hid: this one reads `tail` alone,
+        // whose hid is its leading `ref` cell where a row has no `_n`
+        // (da-kjikt).
+        let tail = regex_lite::Regex::new(r"^[a-z0-9]{4,}(\s{2,})").unwrap();
         lines
             .into_iter()
             .map(|l| {
                 let l = exists.replace(&l, "${1}<HID>").into_owned();
                 match f.surface {
-                    Surface::Tail => tail.replace(&l, "${1}<HID>").into_owned(),
+                    Surface::Tail => tail.replace(&l, "<HID>${1}").into_owned(),
                     _ => l,
                 }
             })

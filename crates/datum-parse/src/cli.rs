@@ -1581,6 +1581,8 @@ pub struct IdsArgs {
     pub oldest_first: bool,
     pub since: Option<String>,
     pub slug: bool,
+    /// `--ref`: each `_n` and the hid it names, `_1` first (da-kjikt).
+    pub refs: bool,
     /// The output level the shared layer swept out of argv (da-qt6z).
     /// `--json` is the value `json`; `Show::None` prints nothing.
     pub show: Show,

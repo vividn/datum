@@ -35,10 +35,7 @@ fn after_the_dot(table: &str, field: &str) -> Vec<String> {
     table
         .lines()
         .filter(|l| l.split_whitespace().any(|w| w == field))
-        .map(|l| {
-            let tail = l.split_once('●').unwrap().1;
-            tail.rsplit_once(' ').unwrap().0.trim().to_string()
-        })
+        .map(|l| l.split_once('●').unwrap().1.trim().to_string())
         .collect()
 }
 

@@ -104,13 +104,13 @@ fn switch_switch_tail_reproducer_matches_spec() {
 
     // Per da-6t0, `datum tail myfield` now always renders through the
     // tabular path: a header row followed by aligned data rows that include
-    // the `hid` column. The data-row layout (after the timestamp prefix)
-    // pads the field column to its widest visible width before the state
-    // cell, and the hid column tails the line.
+    // the `ref` column (da-kjikt). The data-row layout (after the timestamp
+    // prefix) pads the field column to its widest visible width before the
+    // state cell, and the ref column leads the line.
     let tail = run(&db, &["tail", "myfield"]);
     let mut tail_lines = tail.lines();
     let header = tail_lines.next().unwrap_or("");
-    for tok in ["time", "field", "state", "hid"] {
+    for tok in ["ref", "time", "field", "state"] {
         assert!(header.contains(tok), "header missing {tok:?}:\n{tail}");
     }
     let data: Vec<&str> = tail_lines.collect();
@@ -146,8 +146,8 @@ fn tail_table_flag_preserves_legacy_columnar_view() {
     let stdout = run(&db, &["tail", "myfield", "--table"]);
     let first = stdout.lines().next().unwrap_or("");
     // Header tokens drop to any column that has at least one non-empty
-    // cell — at minimum "time", "field", "state", "hid" must appear.
-    for tok in ["time", "field", "state", "hid"] {
+    // cell — at minimum "ref", "time", "field", "state" must appear.
+    for tok in ["ref", "time", "field", "state"] {
         assert!(
             first.contains(tok),
             "table header missing {tok:?}:\n{stdout}"

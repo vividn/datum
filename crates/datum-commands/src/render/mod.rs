@@ -956,11 +956,9 @@ struct Row {
     /// never carries it; `--json` rows do, as `keys` (da-545c9).
     keys: String,
     dur: String,
-    /// da-8sx8: the `_N` quickId shorthand for this row, or empty when
-    /// the row is past `QUICK_ORDINAL_CAP` / the caller supplied no
-    /// ordinals. Empty for every row → the column drops out.
-    quick: String,
-    hid: String,
+    /// The word a person types for this row (da-kjikt): its `_N` quickId
+    /// (da-8sx8) where it has one, else its short hid.
+    reference: String,
     extras: Vec<String>,
 }
 
@@ -1080,17 +1078,18 @@ fn build_rows(
             .iter()
             .map(|col| dates::date_cell(extract_column(e, col), today))
             .collect();
-        let quick = ctx
-            .and_then(|c| c.quick_ordinal)
-            .map(|n| paint(GREY_FG, &format!("_{n}")))
-            .unwrap_or_default();
-        // da-uxgv: `*` after the hid means "another row lost an identity
+        // vividn, 2026-11-03: «if something has a _n id, use that,
+        // otherwise use the hid».
+        let mut reference = match ctx.and_then(|c| c.quick_ordinal) {
+            Some(n) => paint(GREY_FG, &format!("_{n}")),
+            None => ex.hid.unwrap_or_default(),
+        };
+        // da-uxgv: `*` after the ref means "another row lost an identity
         // contest to this one and is superseded behind it". vividn asked for
         // the conflict to be marked where the reader already is; `datum show
         // <hid> -A` is where the pair itself is inspected.
-        let mut hid = ex.hid.unwrap_or_default();
         if ctx.is_some_and(|c| c.has_supersedees) {
-            hid.push_str(&paint(CONFLICT_FG, "*"));
+            reference.push_str(&paint(CONFLICT_FG, "*"));
         }
         rows.push(Row {
             time,
@@ -1100,8 +1099,7 @@ fn build_rows(
             state: ex.state.unwrap_or_default(),
             keys: declared_key_values(e, registry),
             dur: ex.dur.unwrap_or_default(),
-            quick,
-            hid,
+            reference,
             extras,
         });
     }
@@ -1163,8 +1161,7 @@ struct Shown {
     field: bool,
     state: bool,
     dur: bool,
-    quick: bool,
-    hid: bool,
+    reference: bool,
 }
 
 impl Shown {
@@ -1175,8 +1172,7 @@ impl Shown {
             field: any(|r| &r.field),
             state: any(|r| &r.state),
             dur: any(|r| &r.dur),
-            quick: any(|r| &r.quick),
-            hid: any(|r| &r.hid),
+            reference: any(|r| &r.reference),
         }
     }
 }
@@ -1192,8 +1188,7 @@ struct Headers {
 
 impl Headers {
     const DUR: &'static str = "dur";
-    const QUICK: &'static str = "_n";
-    const HID: &'static str = "hid";
+    const REF: &'static str = "ref";
 
     fn of(rows: &[Row], reference_offset: Option<i32>) -> Self {
         let vw = colors::visible_width;
@@ -1264,8 +1259,7 @@ pub fn format_table_with(
         field: show_field,
         state: show_state,
         dur: show_dur,
-        quick: show_quick,
-        hid: show_hid,
+        reference: show_ref,
     } = Shown::of(&rows);
 
     // Column widths (visual, ANSI-aware).
@@ -1276,8 +1270,7 @@ pub fn format_table_with(
         state: state_header,
     } = Headers::of(&rows, reference_offset);
     let dur_header = Headers::DUR;
-    let quick_header = Headers::QUICK;
-    let hid_header = Headers::HID;
+    let ref_header = Headers::REF;
 
     // The time column right-aligns; an uncertain time's `±` stands in its
     // seconds' place (da-dj8v0), so every clock is as wide as another.
@@ -1309,12 +1302,8 @@ pub fn format_table_with(
         .chain(rows.iter().map(|r| vw(&r.dur)))
         .max()
         .unwrap_or(0);
-    let quick_w = std::iter::once(quick_header.len())
-        .chain(rows.iter().map(|r| vw(&r.quick)))
-        .max()
-        .unwrap_or(0);
-    let hid_w = std::iter::once(hid_header.len())
-        .chain(rows.iter().map(|r| vw(&r.hid)))
+    let ref_w = std::iter::once(ref_header.len())
+        .chain(rows.iter().map(|r| vw(&r.reference)))
         .max()
         .unwrap_or(0);
     let extras_w: Vec<usize> = args
@@ -1344,8 +1333,7 @@ pub fn format_table_with(
                 show_time.then_some(time_w),
                 show_field.then_some(fw),
                 show_dur.then_some(dur_w),
-                show_quick.then_some(quick_w),
-                show_hid.then_some(hid_w),
+                show_ref.then_some(ref_w),
             ]
             .into_iter()
             .flatten()
@@ -1378,8 +1366,8 @@ pub fn format_table_with(
     // Header row.
     if !args.suppress_header {
         let mut header = String::new();
-        if show_quick {
-            push_cell(&mut header, quick_header, quick_w, false);
+        if show_ref {
+            push_cell(&mut header, ref_header, ref_w, false);
         }
         if show_time {
             push_cell(&mut header, &time_header, time_w, true);
@@ -1393,9 +1381,6 @@ pub fn format_table_with(
         if show_dur {
             push_cell(&mut header, dur_header, dur_w, false);
         }
-        if show_hid {
-            push_cell(&mut header, hid_header, hid_w, false);
-        }
         for (i, col) in args.columns.iter().enumerate() {
             push_cell(&mut header, col, extras_w[i], false);
         }
@@ -1406,8 +1391,8 @@ pub fn format_table_with(
     // Data rows.
     for (i, r) in rows.iter().enumerate() {
         let mut line = String::new();
-        if show_quick {
-            push_cell(&mut line, &r.quick, quick_w, false);
+        if show_ref {
+            push_cell(&mut line, &r.reference, ref_w, false);
         }
         if show_time {
             let body = if r.time_metric_prefix.is_empty() {
@@ -1460,9 +1445,6 @@ pub fn format_table_with(
         if show_dur {
             push_cell(&mut line, &r.dur, dur_w, false);
         }
-        if show_hid {
-            push_cell(&mut line, &r.hid, hid_w, false);
-        }
         for (i, extra) in r.extras.iter().enumerate() {
             push_cell(&mut line, extra, extras_w[i], false);
         }
@@ -1504,7 +1486,7 @@ pub fn field_and_state_cells(
 /// way the table paints it — the colour is the CLI's, not the caller's.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct TableColumn {
-    /// `_n` | `time` | `field` | `state` | `dur` | `hid`, or the name of a
+    /// `ref` | `time` | `field` | `state` | `dur`, or the name of a
     /// `--column` extra. Stable across the header's own shrinking: the
     /// `field` column keys `field` even when its header word reads `f`.
     pub key: String,
@@ -1543,9 +1525,9 @@ pub fn table_columns_with(
     // it landed, what it is about, what it says, how long, what to keep.
     // The terminal table pads the same order. A column no row fills is
     // dropped here exactly as the table drops it.
-    let stock: [StockColumn; 6] = [
-        (shown.quick, "_n", Headers::QUICK.to_string(), |r| {
-            r.quick.clone()
+    let stock: [StockColumn; 5] = [
+        (shown.reference, "ref", Headers::REF.to_string(), |r| {
+            r.reference.clone()
         }),
         (shown.time, "time", headers.time, |r| {
             if r.time_metric_prefix.is_empty() {
@@ -1562,9 +1544,6 @@ pub fn table_columns_with(
         }),
         (shown.dur, "dur", Headers::DUR.to_string(), |r| {
             r.dur.clone()
-        }),
-        (shown.hid, "hid", Headers::HID.to_string(), |r| {
-            r.hid.clone()
         }),
     ];
     let mut out: Vec<TableColumn> = stock
@@ -2778,7 +2757,7 @@ mod tests {
         let _no = ScopedEnv::set("NO_COLOR", "1");
         let (e, registry) = lift(serde_json::json!({"weightKg": 25, "reps": 15, "gym": "home"}));
         let out = table(&[e], &registry, None);
-        assert!(out.contains("● 25 15  "), "{out}");
+        assert!(out.lines().nth(1).unwrap().ends_with("● 25 15"), "{out}");
         assert!(!out.contains("home"), "{out}");
     }
 

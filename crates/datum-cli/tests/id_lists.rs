@@ -220,7 +220,7 @@ fn help_json_declares_which_verbs_take_a_list() {
     ] {
         assert!(
             usage(verb).contains(",ID_OR_SLUG]...")
-                || usage(verb).contains(",HID]...")
+                || usage(verb).contains(",REF]...")
                 || usage(verb).contains(",SLUG]..."),
             "{verb} declares a list: {}",
             usage(verb)
@@ -234,7 +234,7 @@ fn help_json_declares_which_verbs_take_a_list() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|u| u == "datum conflicts resolve <HID> [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]")
+            .any(|u| u == "datum conflicts resolve <REF> [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]")
     );
 }
 

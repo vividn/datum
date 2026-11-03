@@ -7,6 +7,9 @@ use crate::args::{IdsArgs, ShowFlag};
 use crate::commands::time_bounds::parse_since;
 
 pub fn ids(args: IdsArgs, db: &Db) -> Result<()> {
+    if args.refs {
+        return refs(&args, db);
+    }
     let ids = compute_ids(&args, db)?;
     if args.show == ShowFlag::None {
         return Ok(());
@@ -34,4 +37,34 @@ pub fn compute_ids(args: &IdsArgs, db: &Db) -> Result<Vec<String>> {
         args.oldest_first,
         args.slug,
     )?)
+}
+
+/// `ids --ref`: each `_n` and the hid it names, `_1` first; `--json` is
+/// one object, `_n` → hid (da-kjikt: what datum.day's hid pill is labeled by).
+/// The ordinals are global, so its parser refuses a FIELD, `--since`,
+/// `--slug` and `--oldest-first` beside it (`parse_ids_args`); only `-n`
+/// applies.
+fn refs(args: &IdsArgs, db: &Db) -> Result<()> {
+    let mut refs: Vec<(usize, String)> = datum_core::ids::quick_ordinals(db)?
+        .into_iter()
+        .map(|(hid, n)| (n, hid.0))
+        .collect();
+    refs.sort();
+    refs.truncate(args.limit.unwrap_or(usize::MAX));
+    match args.show {
+        ShowFlag::None => {}
+        ShowFlag::Json => {
+            let map: serde_json::Map<String, serde_json::Value> = refs
+                .into_iter()
+                .map(|(n, hid)| (format!("_{n}"), hid.into()))
+                .collect();
+            println!("{}", serde_json::Value::Object(map));
+        }
+        _ => {
+            for (n, hid) in refs {
+                println!("_{n}  {hid}");
+            }
+        }
+    }
+    Ok(())
 }

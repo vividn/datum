@@ -28,7 +28,7 @@ fn conflicts(n: usize, db: &Db) -> Result<()> {
     }
     println!("  {deleted}  deleted here, edited there");
     println!(
-        "\nSee them: datum conflicts. Each entry's ops: datum debug ops <hid>.\n\
+        "\nSee them: datum conflicts. Each entry's ops: datum debug ops <ref>.\n\
          This copy holds the debug device's ops now, so it no longer syncs."
     );
     Ok(())

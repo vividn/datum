@@ -44,8 +44,8 @@ why = "daydumb draws a change's two edges as coloured cells, colour and no text 
 [[rule]]
 id = "tail-n-column"
 status = "open"
-what = "`tail` leads every row with its `_n` shorthand (grey `_3`, `_2`, `_1`) under a `_n` header"
-why = "Deliberate: da-8sx8 shows the `_N` shorthand beside every row; da-431c (#44) made it the first column."
+what = "`tail` leads every row with its ref, its `_n` shorthand (grey `_3`, `_2`, `_1`) or else its hid, under a `ref` header"
+why = "Deliberate: da-8sx8 shows the `_N` shorthand beside every row; da-431c (#44) made it the first column; da-kjikt made it and the hid one column."
 
 [[rule]]
 id = "tail-offset-in-header"
@@ -56,8 +56,8 @@ why = "Deliberate: da-lkji (bfbd030e) moved the offset to the header; a row prin
 [[rule]]
 id = "tail-column-padding"
 status = "open"
-what = "`tail` pads the `hid` column differently: v2 leaves more blanks before it"
-why = "No recorded reason found; it follows from each runtime's column widths."
+what = "v2's `tail` ends every row with a `hid` column; daydumb's has none, a row's hid being its `ref` where it has no `_n`"
+why = "Deliberate: da-kjikt (vividn, 2026-11-03: «combine the _n and hid columns»)."
 
 [[rule]]
 id = "tail-trailing-blank-line"

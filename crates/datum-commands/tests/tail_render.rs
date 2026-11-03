@@ -380,28 +380,36 @@ fn tail_table_shows_quick_ordinals() {
     let table = render_table_with_ctxs(&entries, &ctxs);
     let mut lines = table.lines();
     assert!(
-        lines.next().unwrap_or("").contains("_n"),
+        lines.next().unwrap_or("").starts_with("ref "),
         "header carries the column: {table:?}"
     );
-    assert!(lines.next().unwrap_or("").contains("_7"), "{table:?}");
-    assert!(lines.next().unwrap_or("").contains("_2"), "{table:?}");
+    assert!(lines.next().unwrap_or("").starts_with("_7 "), "{table:?}");
+    assert!(lines.next().unwrap_or("").starts_with("_2 "), "{table:?}");
+    assert!(
+        !table.contains(&entries[0].hid.0[..5]),
+        "no hid column: {table:?}"
+    );
 }
 
 #[test]
-fn tail_table_omits_quick_column_without_ordinals() {
+fn tail_table_refs_a_row_without_an_ordinal_by_its_hid() {
     // Preview surfaces (`get` / `del` / `update`) pass contexts with no
-    // ordinal — the column must disappear rather than render blank.
+    // ordinal: the ref column is the hid (da-kjikt).
     let _g = no_color_scope();
     let entries = [entry_at("mood", Verb::Point, None, dt(2026, 5, 22, 9, 15))];
     let ctxs = [RenderContext::default()];
     let table = render_table_with_ctxs(&entries, &ctxs);
-    assert!(!table.contains("_n"), "no ordinals, no column: {table:?}");
+    let mut lines = table.lines();
+    assert!(lines.next().unwrap_or("").starts_with("ref "), "{table:?}");
+    let hid = &entries[0].hid.0[..5];
+    assert!(lines.next().unwrap_or("").starts_with(hid), "{table:?}");
+    assert!(!table.contains("_n") && !table.contains("hid"), "{table:?}");
 }
 
 #[test]
-fn tail_table_leaves_gaps_for_rows_past_the_cap() {
-    // A row the map doesn't cover keeps its hid and an empty `_n` cell;
-    // the rows around it keep their own ordinals.
+fn tail_table_refs_rows_past_the_cap_by_their_hid() {
+    // A row the map doesn't cover is its hid in the ref column; the rows
+    // around it keep their own ordinals.
     let _g = no_color_scope();
     let entries = [
         entry_at("mood", Verb::Point, None, dt(2026, 5, 22, 9, 15)),
@@ -416,12 +424,13 @@ fn tail_table_leaves_gaps_for_rows_past_the_cap() {
     ];
     let table = render_table_with_ctxs(&entries, &ctxs);
     let mut lines = table.lines();
-    assert!(lines.next().unwrap_or("").contains("_n"), "{table:?}");
-    assert!(!lines.next().unwrap_or("").contains('_'), "{table:?}");
-    assert!(lines.next().unwrap_or("").contains("_1"), "{table:?}");
+    assert!(lines.next().unwrap_or("").starts_with("ref "), "{table:?}");
+    let past = lines.next().unwrap_or("");
+    assert!(past.starts_with(&entries[0].hid.0[..5]), "{table:?}");
+    assert!(lines.next().unwrap_or("").starts_with("_1 "), "{table:?}");
 }
 
-// ─── da-431c: `_n` is the first column ──────────────────────────────────────
+// ─── da-431c: the ref (`_n`) is the first column ────────────────────────────
 
 /// A switch row with a duration, and the context that numbers it `_1`.
 fn numbered_block() -> (Entry, RenderContext) {
@@ -472,21 +481,21 @@ fn quick_column_leads_the_table_with_and_without_dur() {
     let (block, ctx) = numbered_block();
     assert_eq!(
         header_words(std::slice::from_ref(&block), std::slice::from_ref(&ctx)),
-        ["_n", "time", "field", "state", "dur", "hid"]
+        ["ref", "time", "field", "state", "dur"]
     );
     assert_eq!(
         column_keys(std::slice::from_ref(&block), std::slice::from_ref(&ctx)),
-        ["_n", "time", "field", "state", "dur", "hid"]
+        ["ref", "time", "field", "state", "dur"]
     );
 
     let point = entry_at("coffee", Verb::Point, None, dt(2026, 5, 22, 9, 15));
     assert_eq!(
         header_words(std::slice::from_ref(&point), std::slice::from_ref(&ctx)),
-        ["_n", "time", "field", "s", "hid"]
+        ["ref", "time", "field", "s"]
     );
     assert_eq!(
         column_keys(std::slice::from_ref(&point), std::slice::from_ref(&ctx))[0],
-        "_n"
+        "ref"
     );
 }
 
@@ -757,8 +766,15 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
     );
 
     let uncertain_line = lines[2];
-    // The time cell alone: the row's random hid may hold "3m" (da-ovved).
-    let uncertain_time = uncertain_line.split("coffee").next().unwrap();
+    // The time cell alone: the row's random hid, its leading ref cell
+    // (da-kjikt), may hold "3m" (da-ovved).
+    let uncertain_time = uncertain_line
+        .split_once(' ')
+        .unwrap()
+        .1
+        .split("coffee")
+        .next()
+        .unwrap();
     assert!(
         uncertain_time.contains("21:00:± ") && !uncertain_time.contains("3m"),
         "uncertain row: ± in its seconds' place, no amount: {uncertain_line:?}"
