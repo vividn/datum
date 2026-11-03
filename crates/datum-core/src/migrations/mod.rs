@@ -41,6 +41,7 @@ mod v41_v50;
 mod v51_v60;
 mod v61_v70;
 mod v71_v80;
+mod v81_v90;
 
 #[cfg(test)]
 mod tests;
@@ -55,6 +56,7 @@ use v41_v50::*;
 use v51_v60::*;
 use v61_v70::*;
 use v71_v80::*;
+use v81_v90::*;
 
 /// The schema version this binary writes.
 ///
@@ -62,7 +64,7 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 80;
+pub const CURRENT_SCHEMA_VERSION: u32 = 81;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -83,6 +85,17 @@ pub const SYNC_FLOOR: u32 = match SYNC_FLOORS {
     [.., floor] => *floor,
     [] => 0,
 };
+
+/// What a copy says it runs in a sync handshake: its schema and its sync
+/// floor, or what `DATUM_SYNC_TEST_SCHEMA` and `DATUM_SYNC_TEST_FLOOR` say,
+/// a copy that says it is newer than it is (the tests).
+pub fn said_version() -> (u32, u32) {
+    let knob = |name: &str| std::env::var(name).ok().and_then(|v| v.parse().ok());
+    (
+        knob("DATUM_SYNC_TEST_SCHEMA").unwrap_or(CURRENT_SCHEMA_VERSION),
+        knob("DATUM_SYNC_TEST_FLOOR").unwrap_or(SYNC_FLOOR),
+    )
+}
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -660,5 +673,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entry_history.author and entries.author: who made each change, user@host, and an entry's latest (da-zpc98)",
         apply: m79_to_80_author,
         down: down_80_to_79_author,
+    },
+    Migration {
+        from: 80,
+        to: 81,
+        summary: "sync_peers.floor: the sync floor each peer said, so a copy says which of two across a floor must update (da-52vdj)",
+        apply: m80_to_81_peer_floor,
+        down: down_81_to_80_peer_floor,
     },
 ];

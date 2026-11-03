@@ -1,7 +1,4 @@
-//! Migration bodies for schema versions 70 → 80 — the current era.
-//!
-//! New migrations land here. When `CURRENT_SCHEMA_VERSION` crosses 80,
-//! start `v81_v90.rs` rather than growing this file.
+//! Migration bodies for schema versions 70 → 80.
 
 use rusqlite::Connection;
 

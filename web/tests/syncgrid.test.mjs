@@ -14,7 +14,7 @@ import test, { after, before, describe } from 'node:test';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
-import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
+import { countOf, nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
 import { DESKTOP, WIDGET, cli, members, openChain } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
@@ -225,6 +225,36 @@ describe('the sync widget’s grid', () => {
 					assert.match((await joins(native, 'notes')).stdout, /joined «notes»/);
 					await syncs(native, 'notes');
 					await until(() => stateOf(page, device, 'notes'), (s) => s === 'member');
+				},
+				{ prepare: relayed(relay), viewport: DESKTOP }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
+	test('a join across a sync floor joins: the grid shows the chain at once, the inviter marked for this copy to update, and no entry moves (da-52vdj)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					await app.run(['occur', 'coffee', '-t', '0900']);
+					await native.run(['occur', 'walk']);
+					// The inviter says it runs schema 999, its sync floor there: the page is below it.
+					const over = { DATUM_SYNC_TEST_SCHEMA: '999', DATUM_SYNC_TEST_FLOOR: '999' };
+					const serving = native.spawn(['sync', 'chain', 'invite'], over);
+					const said = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
+					const report = await page.evaluate((t) => window.datum.sync.connect('datum', t), said[1]);
+					assert.match(report.floor ?? '', /: it needs schema 999, this copy runs \d+/);
+					const device = JSON.parse((await native.run(['sync', 'status', '--json'])).stdout).this.device;
+					const chain = JSON.parse((await native.run(['sync', 'status', '--json'])).stdout).chain;
+					assert.equal(JSON.parse((await app.run(['sync', 'status', '--json'])).stdout).chain, chain);
+					await app.goto('/sync');
+					await until(() => cellOf(page, device, 'datum').getAttribute('data-apart'), (s) => s === 'this');
+					assert.equal(await stateOf(page, device, 'datum'), 'member');
+					assert.equal(await countOf(app, 'walk'), 0);
+					assert.equal(await native.count('coffee'), 0);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);

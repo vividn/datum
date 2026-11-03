@@ -28,7 +28,6 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
 use datum_core::error::{DatumError, Refusal as CoreRefusal};
-use datum_core::migrations::{CURRENT_SCHEMA_VERSION, SYNC_FLOOR};
 use datum_parse::time::Zone;
 use datum_sync_wire::{
     accept, dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Asked, Diffed,
@@ -512,9 +511,9 @@ impl Store for DbStore<'_> {
         }
         // A copy before da-3zqyv says nothing; recording never stops a sync.
         if version.schema > 0 {
-            let said = self
-                .0
-                .sync_record_version(peer, &version.datum, version.schema);
+            let said =
+                self.0
+                    .sync_record_version(peer, &version.datum, version.schema, version.floor);
             if let Ok(Some(w)) = said {
                 eprintln!("⚠ {w}");
             }
@@ -526,13 +525,16 @@ impl Store for DbStore<'_> {
         Ok(self.0.sync_chain_records()?)
     }
 
+    async fn hold(&self, records: &[String]) -> Result<()> {
+        Ok(self.0.sync_hold_records(&records.join("\n"))?)
+    }
+
     fn version(&self) -> Version {
+        let (schema, floor) = datum_core::migrations::said_version();
         Version {
             datum: datum_core::build().into(),
-            // Test knob: a copy that says it is newer than it is.
-            schema: env("DATUM_SYNC_TEST_SCHEMA").unwrap_or(CURRENT_SCHEMA_VERSION),
-            // And one that says its floor is higher than it is.
-            floor: Some(env("DATUM_SYNC_TEST_FLOOR").unwrap_or(SYNC_FLOOR)),
+            schema,
+            floor: Some(floor),
         }
     }
 
@@ -929,6 +931,7 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
         .as_ref()
         .is_err_and(|e| failure(e) == Some(Failure::Unreachable));
     let line = match rep {
+        // Its words name the member, and say what to do (da-52vdj).
         Ok(rep) => rep.to_string(),
         // Its words name the member, and say what to do (da-ryhmi).
         Err(e) if failure(e) == Some(Failure::Refused(Why::Upgrade)) => e.to_string(),
@@ -947,7 +950,10 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
         },
         Err(e) => format!("{}: {e:#}", p.label),
     };
-    let failed = !offline && !wiped(rep) && rep.as_ref().is_err_and(|e| failure(e) != Some(BUSY));
+    // Across a sync floor no entry synced: a failure until one updates.
+    let floor = rep.as_ref().is_ok_and(|r| r.floor.is_some());
+    let failed =
+        floor || !offline && !wiped(rep) && rep.as_ref().is_err_and(|e| failure(e) != Some(BUSY));
     // A dial that never connected (offline, or refused at the handshake)
     // has no route to say.
     let route = match rep {
@@ -966,6 +972,13 @@ fn said(p: &Peer, rep: &Result<Report>, took: Duration) -> (bool, String, String
     (failed, line, format!("  {}", more.join(" · ")))
 }
 
+/// Whether a session synced: one across a sync floor moved the chain's
+/// records alone (da-52vdj), and one that carried the order to delete a
+/// copy did what it was for.
+fn synced(rep: &Result<Report>) -> bool {
+    rep.as_ref().is_ok_and(|r| r.floor.is_none()) || wiped(rep)
+}
+
 /// Whether a dial carried the chain's order that the peer delete its copy,
 /// and the peer did (da-n0uj1.6): what the session was for, and no failure.
 fn wiped(rep: &Result<Report>) -> bool {
@@ -978,7 +991,7 @@ fn wiped(rep: &Result<Report>) -> bool {
 /// prints of it, `-v`'s line too.
 fn answer(p: &Peer, rep: &Result<Report>, took: Duration) -> String {
     let (failed, line, verbose) = said(p, rep, took);
-    let synced = rep.is_ok() || wiped(rep);
+    let synced = synced(rep);
     serde_json::json!({ "ok": !failed, "synced": synced, "line": line, "verbose": verbose })
         .to_string()
         + "\n"
@@ -1063,7 +1076,7 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
         while let Some((p, rep, took)) = dials.next().await {
             let (lost, line, more) = said(p, &rep, took);
             failed += usize::from(lost);
-            synced += usize::from(rep.is_ok() || wiped(&rep));
+            synced += usize::from(self::synced(&rep));
             println!("{line}");
             if verbose {
                 println!("{more}");
@@ -1306,6 +1319,21 @@ pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Resul
                         open.close(id);
                     }
                     match (rep, peer) {
+                        // Across a sync floor only the chain's records moved
+                        // (da-52vdj): said as a refusal was, and a member
+                        // dialed is tried again as after a failure, until
+                        // one of the two updates.
+                        (Ok(rep), peer) if rep.floor.is_some() => {
+                            match peer {
+                                Some((id, _)) => {
+                                    let wait = backoff(retry.get(&id).map(|r| r.1));
+                                    eprintln!("{} {rep}; next try in {}", now(), gap(wait));
+                                    pushed.remove(&id);
+                                    retry.insert(id, (Instant::now() + wait, wait));
+                                }
+                                None => eprintln!("{} {rep}", now()),
+                            }
+                        }
                         (Ok(rep), _) => {
                             // A peer that reached us, or we it, is up again.
                             retry.remove(&rep.id);

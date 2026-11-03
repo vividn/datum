@@ -13,7 +13,7 @@ use anyhow::{bail, ensure, Context, Result};
 use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
 use datum_core::error::DatumError;
-use datum_core::migrations::{CURRENT_SCHEMA_VERSION, SYNC_FLOOR};
+use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use datum_core::time::on_readers_clock;
 use serde_json::{json, Value};
 
@@ -179,6 +179,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             for line in db.sync_chain_records()? {
                 println!("{line}");
             }
+        }
+        SyncCommand::Hold => {
+            let mut input = String::new();
+            std::io::stdin().read_to_string(&mut input)?;
+            db.sync_hold_records(&input)?;
         }
         SyncCommand::Known => {
             for p in db.sync_known_peers()? {
@@ -569,6 +574,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             chain,
             holds,
             version,
+            floor,
             records,
             dialed,
         } => {
@@ -590,7 +596,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 })?;
             // Recording never stops a sync (da-3zqyv).
             if let Some((datum, schema)) = version {
-                if let Ok(Some(w)) = db.sync_record_version(&endpoint, &datum, schema) {
+                if let Ok(Some(w)) = db.sync_record_version(&endpoint, &datum, schema, floor) {
                     eprintln!("⚠ {w}");
                 }
             }
@@ -1535,7 +1541,7 @@ fn filter_json(f: Option<&chain::Filter>) -> Value {
 
 /// `datum sync chain list`.
 fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
-    let chain = db.sync_chain()?;
+    let chain = db.sync_chain_served()?;
     // A copy joining a chain is in none yet, and says through which copies
     // (da-idw54): datum.day reads this to resume the join.
     let through = db.sync_joining()?;
@@ -1721,7 +1727,11 @@ fn print_hidden(n: usize) {
 
 /// `datum sync status`: per member, how this copy stands with it.
 fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()> {
-    let chain = db.sync_chain()?;
+    // A copy that joined across a sync floor holds the chain's records alone,
+    // and is a member of it (da-52vdj).
+    let chain = db.sync_chain_served()?;
+    // What its handshake says it runs, a test's knobs too.
+    let runs = datum_core::migrations::said_version();
     let mine = db.sync_endpoint_id()?;
     let label = chain
         .member(&mine)
@@ -1786,7 +1796,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
                 "device": datum_core::db::device_id(),
-                "datum": datum_core::build(), "schema": CURRENT_SCHEMA_VERSION, "floor": SYNC_FLOOR,
+                "datum": datum_core::build(), "schema": runs.0, "floor": runs.1,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
                 "revoked": chain.member(&mine).and_then(|m| m.revoked.as_deref()).map(chain::hlc_time),
                 "filter": filter_json(chain.filter(&mine)),

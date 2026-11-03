@@ -301,10 +301,14 @@ impl Store for Cli {
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
         let (holds, schema) = (holds.to_string(), version.schema.to_string());
+        let floor = version.floor.map(|f| f.to_string());
         let mut argv = vec!["sync", "handshake", peer, "--label", label, "--addr", &addr];
         argv.extend(["--holds", &holds]);
         if version.schema > 0 {
             argv.extend(["--datum", &version.datum, "--schema", &schema]);
+        }
+        if let Some(floor) = &floor {
+            argv.extend(["--floor", floor]);
         }
         if let Some(secret) = invite {
             argv.extend(["--invite", secret]);
@@ -326,6 +330,12 @@ impl Store for Cli {
     async fn records(&self) -> Result<Vec<String>> {
         let out = self.run(&["sync", "pipe", "records"], None).await?;
         Ok(out.lines().map(String::from).collect())
+    }
+
+    async fn hold(&self, records: &[String]) -> Result<()> {
+        self.run(&["sync", "pipe", "hold"], Some(&records.join("\n")))
+            .await?;
+        Ok(())
     }
 
     fn version(&self) -> Version {

@@ -77,8 +77,8 @@ fn a_handshake_refusal_prints_its_kind() {
 /// what would fix it, and admitted once it shows its chain's records
 /// (da-2u95o) — as datum.day's store does it: `sync pipe records` on the
 /// one, `sync handshake --records` on the other. The admission is past an
-/// entry of the inviter's this copy lacks, and nothing shown is kept: the
-/// session brings it.
+/// entry of the inviter's this copy lacks, and what is shown is kept,
+/// waiting on that entry, which the session brings (da-52vdj).
 #[test]
 fn a_handshake_admits_a_member_it_has_not_heard_of_by_its_records() {
     let (a, b) = chained();
@@ -97,7 +97,9 @@ fn a_handshake_admits_a_member_it_has_not_heard_of_by_its_records() {
 
     let records = c.ok(&["sync", "pipe", "records"]);
     assert_eq!(b.ok_in(&hello, &records).trim(), "added");
-    assert_eq!(b.ok(&["sync", "pipe", "records"]), held);
+    let kept = b.ok(&["sync", "pipe", "records"]);
+    assert!(kept.contains(&id), "{kept}");
+    assert!(kept.starts_with(&held), "held first");
     assert!(c.send(&b).0);
     assert_eq!(member_of(&b, &id)["label"], "c");
     assert_eq!(b.ok(&hello[..7]).trim(), "known");

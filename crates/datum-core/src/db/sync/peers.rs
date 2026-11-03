@@ -10,7 +10,7 @@ use chrono::{SecondsFormat, Utc};
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
-use super::chain::{self, Chain, Role};
+use super::chain::{self, Chain};
 use super::endpoint;
 use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
@@ -194,9 +194,10 @@ impl Db {
     pub fn sync_introduce(&self, addrs: &str) -> Result<()> {
         let addrs: Vec<serde_json::Value> = serde_json::from_str(addrs)
             .map_err(|e| DatumError::Other(format!("not a list of addresses: {e}")))?;
-        // The chain is read before the lock (da-8i7f0).
+        // The chain is read before the lock (da-8i7f0): as shown, so a copy
+        // that joined across a sync floor keeps where its members are (da-52vdj).
         self.compute_then_write_with(
-            |_| self.sync_chain(),
+            |_| self.sync_chain_served(),
             |tx, chain| {
                 let mine = endpoint(tx)?.id;
                 for a in addrs {
@@ -281,8 +282,12 @@ impl Db {
                 None if known => {}
                 None => {
                     let (shown, read) = Chain::load_with(&self.conn, records.unwrap_or(""))?;
+                    // Kept, as a reader's (da-91wab) and a member's
+                    // (da-52vdj): a member that joined across a floor holds
+                    // its admission only waiting, which no session relays,
+                    // so this copy learns of it here, before any entry op.
                     match shown.member(id).filter(|m| m.revoked.is_none()) {
-                        Some(m) if m.role() == Role::Reader => {
+                        Some(_) if !read.is_empty() => {
                             self.sync_apply(&read)?;
                         }
                         Some(_) => {}
@@ -505,26 +510,31 @@ mod tests {
     /// chain records, and by nothing less (da-2u95o): not without them, not
     /// by another's, nor by another's rewritten to name it, not once the
     /// records shown revoke it, and not by a genesis of its own
-    /// for this chain, though it is the earlier. Nothing shown is kept. One
-    /// a member admitted is admitted in turn, until this copy holds that
-    /// member as revoked: then only the revoked one's clock says which came
-    /// first.
+    /// for this chain, though it is the earlier. What admits it is kept
+    /// (da-52vdj), so it is a member from then on. One a member admitted is
+    /// admitted in turn, until this copy holds that member as revoked: then
+    /// only the revoked one's clock says which came first.
     #[test]
     fn a_member_not_heard_of_is_admitted_by_its_chain_records_alone() {
-        let [a, b, c, x, y] = [(); 5].map(|()| Db::open_in_memory().unwrap());
+        let [a, b, c, d, x, y] = [(); 6].map(|()| Db::open_in_memory().unwrap());
         genesis(&x, "x");
         std::thread::sleep(std::time::Duration::from_millis(2));
         genesis(&a, "a");
         admit(&a, &b, "b", json!({}));
+        admit(&a, &d, "d", json!({}));
         admit(&a, &c, "c", json!({}));
         let records = |of: &Db| of.sync_chain_records().unwrap().join("\n");
-        let hello = |who: &Db, shown: Option<String>| {
-            b.sync_handshake(&id(who), "l", "{}", None, None, 0, shown.as_deref(), false)
+        let hello_at = |at: &Db, who: &Db, shown: Option<String>| {
+            at.sync_handshake(&id(who), "l", "{}", None, None, 0, shown.as_deref(), false)
         };
-        let refused = |what: &str, who: &Db, shown: Option<String>| match hello(who, shown) {
-            Err(DatumError::Refused(Refusal::NotMember, why)) => why,
-            other => panic!("{what}: {other:?}"),
-        };
+        let hello = |who: &Db, shown: Option<String>| hello_at(&b, who, shown);
+        let refused_at =
+            |at: &Db, what: &str, who: &Db, shown: Option<String>| match hello_at(at, who, shown) {
+                Err(DatumError::Refused(Refusal::NotMember, why)) => why,
+                other => panic!("{what}: {other:?}"),
+            };
+        let refused =
+            |what: &str, who: &Db, shown: Option<String>| refused_at(&b, what, who, shown);
         assert_eq!(
             refused("showing nothing", &c, None),
             "not a member of this sync chain as b holds it: if l has joined, sync b with the \
@@ -536,18 +546,22 @@ mod tests {
         refused("another's records naming it", &x, Some(rewritten));
         refused("a genesis of its own", &x, Some(records(&x)));
         let held = records(&b);
-        assert!(hello(&c, Some(records(&c))).unwrap());
-        assert_eq!(records(&b), held);
         assert!(b.sync_chain().unwrap().member(&id(&c)).is_none());
+        assert!(hello(&c, Some(records(&c))).unwrap());
+        // Kept, as a reader's are (da-52vdj): a member admitted across a sync
+        // floor holds its admission only waiting, which no session relays.
+        assert_ne!(records(&b), held);
+        assert!(b.sync_chain().unwrap().member(&id(&c)).is_some());
 
         admit(&c, &y, "y", json!({}));
         assert!(hello(&y, Some(records(&y))).unwrap());
+        // `d` has heard of neither.
         let revoke = json!({"type": "revoke", "chain": "c1", "endpoint": id(&c)});
         a.sync_chain_write(revoke, true).unwrap();
-        refused("revoked by the records shown", &c, Some(records(&a)));
-        b.sync_apply(&records(&a)).unwrap();
+        refused_at(&d, "revoked by the records shown", &c, Some(records(&a)));
+        d.sync_apply(&records(&a)).unwrap();
         let by = "admitted by one this copy holds as revoked";
-        refused(by, &y, Some(records(&y)));
+        refused_at(&d, by, &y, Some(records(&y)));
     }
 
     /// A reader not heard of is admitted by its chain records too, and they

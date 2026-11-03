@@ -98,6 +98,7 @@ mod versions;
 use chain::{Chain, Filter, Role, CHAIN_HID};
 pub use debug::DebugConflicts;
 pub use diagnose::{row_diff, FoldCheck, Named, Orphan, Stale};
+pub use status::Apart;
 pub use versions::Version;
 
 // ─── The invocation ─────────────────────────────────────────────────────────

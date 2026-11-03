@@ -470,7 +470,8 @@ CREATE TABLE IF NOT EXISTS sync_peers (
     redeemed_at       TEXT,
     datum             TEXT,
     schema            INTEGER,
-    last_synced       TEXT
+    last_synced       TEXT,
+    floor             INTEGER
 );
 
 -- A filtered reader's marks (da-u81u1): a member that served it sent every

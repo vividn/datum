@@ -369,6 +369,19 @@ export interface GridGrant {
 	text: string;
 }
 
+/** A device's standing in one chain, as `sync grid --json` has it. */
+export interface GridCell {
+	state: Standing;
+	endpoint: string;
+	/**
+	 * It and the column's database cannot sync: one runs a schema below the
+	 * other's sync floor, and `updates` says which must update (da-52vdj).
+	 * Membership crosses a floor; entries wait.
+	 * @shallow a floor takes a second copy on another schema, which no seeded database is.
+	 */
+	apart: { updates: 'this' | 'it'; schema: number; this_schema: number; floor: number; words: string } | null;
+}
+
 /** `sync grid --json`: devices × the chains this install holds, each column by chain id; `held: false`, a chain granted to this device and held nowhere here. */
 export interface Grid {
 	device: string | null;
@@ -379,7 +392,7 @@ export interface Grid {
 		endpoint: string | null;
 		label: string;
 		this: boolean;
-		cells: Record<string, { state: Standing; endpoint: string } | null>;
+		cells: Record<string, GridCell | null>;
 		/**
 		 * By chain, the grant its column shows.
 		 * @shallow a grant takes a second device, which no seeded database is.

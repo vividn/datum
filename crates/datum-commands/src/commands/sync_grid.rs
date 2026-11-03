@@ -7,11 +7,17 @@
 //! A grant not yet taken shows on its device's row, as this install can read
 //! it (da-pofki): in its chain's column, which one no copy here holds has
 //! just for that (`held: false`), or, sealed, beneath the row's cells.
+//!
+//! A member that the column's database cannot sync with, one of the two
+//! below the other's sync floor, is marked on its cell with which must
+//! update, and said under the grid in the floor's words (da-52vdj).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use datum_core::db::chain::{self, Chain, Member, Role};
+use datum_core::db::Apart;
 use datum_core::db::Db;
 use serde_json::{json, Value};
 
@@ -67,6 +73,26 @@ struct Row {
 
 pub fn grid(db: &Db, json: bool) -> Result<()> {
     let columns = chains(db)?;
+    // Per column, the members its database cannot sync with (da-52vdj).
+    let here = db
+        .path()
+        .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
+    let apart: Vec<BTreeMap<String, Apart>> = columns
+        .iter()
+        .map(|(_, path, _)| {
+            let read = match here.as_ref() == Some(path) {
+                true => db.sync_floors_apart(),
+                false => {
+                    Db::open_read_only(&path.to_string_lossy()).and_then(|d| d.sync_floors_apart())
+                }
+            };
+            read.unwrap_or_default()
+        })
+        .collect();
+    let apart_of = |r: &Row, j: usize| {
+        let (_, endpoint) = r.cells.get(j)?.as_ref()?;
+        apart.get(j)?.get(endpoint)
+    };
     let mine = datum_core::db::device_id();
     let mut rows: Vec<Row> = Vec::new();
     for (j, (_, _, chain)) in columns.iter().enumerate() {
@@ -135,7 +161,14 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
                 "this": this(r),
                 "cells": heads.iter().enumerate().map(|(j, (_, id, _))| (
                     id.clone(),
-                    r.cells.get(j).and_then(Option::as_ref).map_or(Value::Null, |(cell, e)| json!({"state": cell.word(), "endpoint": e})),
+                    r.cells.get(j).and_then(Option::as_ref).map_or(Value::Null, |(cell, e)| {
+                        let apart = apart_of(r, j).map(|a| json!({
+                            "updates": if a.this_updates { "this" } else { "it" },
+                            "schema": a.schema, "this_schema": a.mine, "floor": a.floor,
+                            "words": a.words(&r.label),
+                        }));
+                        json!({"state": cell.word(), "endpoint": e, "apart": apart})
+                    }),
                 )).collect::<serde_json::Map<_, _>>(),
                 "grants": heads.iter().filter_map(|(_, id, _)| Some((id.clone(), of(r, id)?.json()))).collect::<serde_json::Map<_, _>>(),
                 "sealed": sealed(r),
@@ -191,10 +224,15 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
             .enumerate()
             .map(|(j, (_, id, _))| {
                 let standing = r.cells.get(j).and_then(Option::as_ref).map(|c| c.0.word());
-                let grant = of(r, id).map(|g| g.word());
+                let standing = standing.map(|s| match apart_of(r, j) {
+                    Some(a) if a.this_updates => format!("{s} ⚠ update this"),
+                    Some(_) => format!("{s} ⚠ update it"),
+                    None => s.to_string(),
+                });
+                let grant = of(r, id).map(|g| g.word().to_string());
                 match (standing, grant) {
                     (Some(s), Some(g)) => format!("{s}, {g}"),
-                    (s, g) => s.or(g).unwrap_or("—").to_string(),
+                    (s, g) => s.or(g).unwrap_or_else(|| "—".into()),
                 }
             })
             .collect();
@@ -208,6 +246,13 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
     }
     for g in grants.iter().filter(|g| g.what.is_none()) {
         println!("{}", g.line());
+    }
+    for r in &rows {
+        for (j, (name, _, _)) in columns.iter().enumerate() {
+            if let Some(a) = apart_of(r, j) {
+                println!("⚠ {name}: {}", a.words(&r.label));
+            }
+        }
     }
     Ok(())
 }
@@ -251,8 +296,11 @@ pub(super) fn chains(db: &Db) -> Result<Vec<(String, PathBuf, Chain)>> {
             out.push((name, path, chain));
         }
     };
+    // As each copy serves it: a member admitted across a sync floor, whose
+    // admission waits on ops this copy lacks, is in it, and a copy that
+    // joined so holds the chain's records alone (da-52vdj).
     if let Some(here) = &here {
-        take(name_of(here), here.clone(), db.sync_chain()?);
+        take(name_of(here), here.clone(), db.sync_chain_served()?);
     }
     let mut seen: Vec<PathBuf> = here.into_iter().collect();
     for (_, path) in &known {
@@ -262,7 +310,7 @@ pub(super) fn chains(db: &Db) -> Result<Vec<(String, PathBuf, Chain)>> {
         }
         seen.push(path.clone());
         let name = name_of(&path);
-        match Db::open_read_only(&path.to_string_lossy()).and_then(|d| d.sync_chain()) {
+        match Db::open_read_only(&path.to_string_lossy()).and_then(|d| d.sync_chain_served()) {
             Ok(chain) => take(name, path, chain),
             Err(e) => eprintln!("⚠ {name} could not be read: {e:#}"),
         }

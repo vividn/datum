@@ -522,10 +522,29 @@ list`). A copy behind a member's schema syncs on and warns to upgrade, once per
 new version on stderr and for as long as it lasts in `sync status` and `datum
 check` (da-3zqyv). A migration that changes the shape of what syncs raises the
 SYNC FLOOR instead (`SYNC_FLOORS` in `migrations/mod.rs`, da-ryhmi): each side
-says its floor in its handshake, and a copy below the other's is refused both
-ways before either writes anything, told «update datum to sync with <member>:
-it needs schema N, this copy runs M» (`Why::Upgrade`); what it wrote waits,
-unsent, until it updates.
+says its floor in its handshake, and no entry op crosses it either way; the
+copy below is told «update datum to sync with <member>: it needs schema N, this
+copy runs M», and what it wrote waits, unsent, until it updates. Membership
+crosses (da-52vdj, vividn: «Membership can cross the floor even if ops
+cannot»): two copies whose handshakes say `crosses` run the store's handshake,
+so an invite is redeemed and the peer recorded with its schema and floor
+(`sync_peers.floor`), then swap the chain's records alone (`members` in the
+wire crate) and hold what they lack (`Db::sync_hold_records`, which drops any
+line that is no record), waiting on the entry ops before them. The session is
+no sync: its report carries the floor's words (`Report::floor`), recorded as
+its error, so `sync status` says who must update and `datum sync` fails, while a
+`join` joins. The chain a copy serves and shows (`Chain::served`: `chain list`,
+`status`, `grid`) reads those waiting records, and a copy joining reads them
+too, so a joiner is a member at once; a member shown a dialer's records keeps
+them, so a third copy hears of the joiner in its first session with it, before
+any entry op. `sync grid` marks a member across a floor on its cell (`apart`:
+which must update, the two schemas, the floor; `Db::sync_floors_apart`). A
+dialer that does not say `crosses` is still refused before the handshake; an
+acceptor that does not (a copy from before floors, which welcomes into a sync)
+is sent nothing once welcomed and closed: the joiner records where it joins
+through, and finishes there once that copy updates
+(`DATUM_SYNC_TEST_BEFORE_FLOORS` plays it in the tests). A joiner whose
+admission only waits writes no `describe` until the chain applies.
 
 A round carries at most 8,192 ops, the lowest by HLC so each applies whole, and
 applies before the next is sent; rounds go on while full, so a big catch-up

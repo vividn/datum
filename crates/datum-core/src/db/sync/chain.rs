@@ -930,8 +930,12 @@ impl Chain {
         Ok(Self::fold(Self::served_records(conn)?))
     }
 
+    /// In no chain, the records a copy holds while it joins one (da-52vdj):
+    /// a join across a sync floor brings the chain's records alone, which
+    /// wait on the inviter's entry ops, and the copy is a member meanwhile.
     fn served_records(conn: &Connection) -> Result<Vec<Op>> {
-        match Self::load(conn)?.exists() {
+        let joining = "SELECT 1 FROM sync_peers WHERE redeemed_at IS NOT NULL";
+        match Self::load(conn)?.exists() || conn.prepare_cached(joining)?.exists([])? {
             true => Self::records(conn, "applied IN (0, 1)"),
             false => Ok(Vec::new()),
         }
@@ -956,7 +960,7 @@ impl Chain {
             let out = held
                 .member(&op.endpoint)
                 .is_some_and(|m| m.revoked.is_some());
-            let read = !out && op.effect["type"] != "genesis";
+            let read = op.is_chain() && !out && op.effect["type"] != "genesis";
             (read && check_signature(line, &op).is_ok()).then_some(op)
         });
         let read: Vec<Op> = shown.collect();
@@ -1571,10 +1575,38 @@ impl Db {
     }
 
     /// The chain's records as this copy holds them, one op line each: what
-    /// it shows a member that has not heard it joined (da-2u95o).
+    /// it shows a member that has not heard it joined (da-2u95o), and what
+    /// crosses a sync floor (da-52vdj). Those waiting on an entry op this
+    /// copy lacks go too, as [`Chain::served`] reads them: a copy that
+    /// joined across a floor holds the chain's records only so.
     pub fn sync_chain_records(&self) -> Result<Vec<String>> {
-        let ops = Chain::records(&self.conn, "applied = 1")?;
+        let ops = Chain::records(&self.conn, "applied IN (0, 1)")?;
         Ok(ops.into_iter().map(|op| op.body).collect())
+    }
+
+    /// The chain as this copy serves it, and a person is shown it
+    /// ([`Chain::served`]): with the records that wait on an entry op it
+    /// lacks, a member admitted across a sync floor among them, which it
+    /// hears of before any of that member's ops can apply; and, in no chain
+    /// yet, the one a join across a floor brought the records of alone, of
+    /// which this copy is a member at once (da-52vdj).
+    pub fn sync_chain_served(&self) -> Result<Chain> {
+        Chain::served(&self.conn)
+    }
+
+    /// Hold the chain's records a peer across a sync floor sent (da-52vdj),
+    /// as any received op is held: applied once the ops before each are
+    /// here. Only chain records are held; any other line is dropped, so no
+    /// entry op crosses a floor.
+    pub fn sync_hold_records(&self, lines: &str) -> Result<()> {
+        let records: Vec<&str> = lines
+            .lines()
+            .filter(|l| Op::parse(l).is_ok_and(|op| op.is_chain()))
+            .collect();
+        if !records.is_empty() {
+            self.sync_apply(&records.join("\n"))?;
+        }
+        Ok(())
     }
 
     /// Write a chain record as an op of this copy's, and refuse it, writing

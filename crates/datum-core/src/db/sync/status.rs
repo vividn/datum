@@ -253,10 +253,12 @@ impl Db {
                 .map(|e| e.map(|e| belongs_to(&row(&e))))
                 .collect::<rusqlite::Result<_>>()?,
         };
-        // In no chain yet, the copies it is joining one through (da-idw54).
+        // In no chain yet, the copies it is joining one through (da-idw54),
+        // each once: one whose records it holds waiting (da-52vdj) is a member.
         let joining: Vec<Member> = self
             .sync_joining()?
             .into_iter()
+            .filter(|p| chain.member(&p.id).is_none())
             .map(|p| Member {
                 endpoint: p.id,
                 label: p.label,
@@ -375,14 +377,16 @@ impl Db {
 }
 
 impl Db {
-    /// Record what `endpoint` said it runs in a handshake (da-3zqyv). When
-    /// its schema is newer than this copy's, and newly so, the warning to
-    /// upgrade comes back, to print once: syncing goes on regardless.
+    /// Record what `endpoint` said it runs in a handshake (da-3zqyv), and
+    /// its sync floor (da-52vdj). When its schema is newer than this copy's,
+    /// and newly so, the warning to upgrade comes back, to print once:
+    /// syncing goes on regardless.
     pub fn sync_record_version(
         &self,
         endpoint: &str,
         datum: &str,
         schema: u32,
+        floor: Option<u32>,
     ) -> Result<Option<String>> {
         let before: Option<(String, Option<u32>)> = self
             .conn
@@ -396,8 +400,8 @@ impl Db {
             return Ok(None);
         };
         self.conn.execute(
-            "UPDATE sync_peers SET datum = ?2, schema = ?3 WHERE endpoint_id = ?1",
-            params![endpoint, datum, schema],
+            "UPDATE sync_peers SET datum = ?2, schema = ?3, floor = ?4 WHERE endpoint_id = ?1",
+            params![endpoint, datum, schema, floor],
         )?;
         let label = self
             .sync_chain()?
@@ -417,6 +421,45 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Each peer this copy cannot sync with, by endpoint: one of the two
+    /// runs a schema below the other's sync floor, as each last said it in a
+    /// handshake (da-52vdj). Membership crosses a floor, and entries wait.
+    pub fn sync_floors_apart(&self) -> Result<BTreeMap<String, Apart>> {
+        let (mine, floor) = crate::migrations::said_version();
+        let mut stmt = self.conn.prepare(
+            "SELECT endpoint_id, schema, COALESCE(floor, 0) FROM sync_peers
+             WHERE schema IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, u32>(1)?,
+                r.get::<_, u32>(2)?,
+            ))
+        })?;
+        let mut out = BTreeMap::new();
+        for row in rows {
+            let (endpoint, schema, theirs) = row?;
+            let apart = match () {
+                _ if schema < floor => Apart {
+                    schema,
+                    mine,
+                    floor,
+                    this_updates: false,
+                },
+                _ if theirs > mine => Apart {
+                    schema,
+                    mine,
+                    floor: theirs,
+                    this_updates: true,
+                },
+                _ => continue,
+            };
+            out.insert(endpoint, apart);
+        }
+        Ok(out)
+    }
+
     /// A warning for each member of the chain whose schema is newer than
     /// this copy's, for `sync status` and `datum check`.
     pub fn sync_upgrade_warnings(&self) -> Result<Vec<String>> {
@@ -431,6 +474,39 @@ impl Db {
                 (*schema > CURRENT_SCHEMA_VERSION).then(|| upgrade(&m.label, datum, *schema))
             })
             .collect())
+    }
+}
+
+/// A peer this copy cannot sync with across a sync floor (da-52vdj).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Apart {
+    /// The peer's schema, and this copy's, as each last said it.
+    pub schema: u32,
+    pub mine: u32,
+    /// The floor the lower of the two is below.
+    pub floor: u32,
+    /// This copy is the lower one, and must update; else the peer must.
+    pub this_updates: bool,
+}
+
+impl Apart {
+    /// In the words of the floor's refusal (`datum-sync-wire`), naming the
+    /// peer `label`.
+    pub fn words(&self, label: &str) -> String {
+        let Apart {
+            schema,
+            mine,
+            floor,
+            ..
+        } = self;
+        match self.this_updates {
+            true => format!(
+                "update datum to sync with {label}: it needs schema {floor}, this copy runs {mine}"
+            ),
+            false => format!(
+                "{label} runs schema {schema}, below this copy's sync floor {floor}: it must update datum to sync"
+            ),
+        }
     }
 }
 

@@ -18,6 +18,11 @@ export interface SyncReport {
 	vector: Record<string, number>;
 	/** The chain of one this copy left to redeem the invite, and the chain it joined (da-h7pnc). */
 	left?: [string, string] | null;
+	/**
+	 * The two copies are on either side of a sync floor: only the chain's
+	 * records moved, and this says which must update (da-52vdj).
+	 */
+	floor?: string | null;
 }
 
 /** What a ticket says of itself (the wire crate's `About`, da-l9kdr): never its secret. */

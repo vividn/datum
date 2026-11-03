@@ -302,7 +302,9 @@
 			setUsername(j.user);
 			const r = await syncConnect(j.db, j.ticket, typed);
 			joining.drop();
-			join = { ...j, done: `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.` };
+			// Across a sync floor it joined, and no entry moved (da-52vdj).
+			const done = r.floor ? `Joined. ${r.floor}` : `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.`;
+			join = { ...j, done };
 		});
 
 	async function doing(what: () => Promise<unknown>): Promise<void> {
@@ -695,7 +697,13 @@
 										{@const cell = col.chain ? row.cells[col.chain] : null}
 										{@const grant = col.chain ? row.grants?.[col.chain] : undefined}
 										{@const acts = row.this || !col.chain || !col.held ? [] : cellActs(cell?.state, !!row.device)}
-										<td data-db={col.db} data-state={cell?.state ?? 'none'} data-grant={grant?.state} title={grant?.text}>
+										<td
+											data-db={col.db}
+											data-state={cell?.state ?? 'none'}
+											data-grant={grant?.state}
+											data-apart={cell?.apart?.updates}
+											title={[grant?.text, cell?.apart?.words].filter(Boolean).join('\n') || undefined}
+										>
 											{#if acts.length}
 												<select
 													aria-label="{row.label} in {col.db}"
@@ -712,6 +720,8 @@
 											{:else}
 												<span class="standing">{cellWords(cell?.state, grant)}</span>
 											{/if}
+											<!-- One of the two must update before entries sync (da-52vdj); the words are its title. -->
+											{#if cell?.apart}<span class="apart">⚠ {cell.apart.updates === 'this' ? 'update this' : 'update it'}</span>{/if}
 										</td>
 									{/each}
 								</tr>

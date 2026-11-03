@@ -72,9 +72,14 @@
 //!   that said it reads it, as `typed` and `proves` say. A change that can't
 //!   be both bumps the ALPN, and two copies that speak different ones are
 //!   told so in words, [`Failure::Protocol`]. A change to what the ops
-//!   carry raises the sync floor instead, a copy below it refused both ways
-//!   as [`Why::Upgrade`], in words that say no data is at risk (da-ryhmi,
-//!   da-95avu). `tests/frames.json` holds one
+//!   carry raises the sync floor instead: no entry op crosses it either way,
+//!   and the copy below is told to update, in words that say no data is at
+//!   risk (da-ryhmi, da-95avu). Two copies that say they `crosses` swap the
+//!   chain's records alone across it ([`members`], da-52vdj), so a join
+//!   joins; with one before that, a dialer is refused as [`Why::Upgrade`],
+//!   and an acceptor, welcoming into a sync, is sent nothing and closed.
+//!   A chain record's shape crosses a floor, so a change to it stays
+//!   additive, as a frame's does. `tests/frames.json` holds one
 //!   frame of each kind as the previous version wrote it: this version must
 //!   read each, and write back every field it carried, or the test fails
 //!   until the ALPN is bumped on purpose. A kind or a field this version
@@ -296,8 +301,13 @@ pub trait Store {
         dialed: bool,
     ) -> Result<bool>;
     /// This copy's chain records, as op lines: what it shows a member that
-    /// has not heard it joined (da-2u95o).
+    /// has not heard it joined (da-2u95o), and what crosses a floor
+    /// ([`members`]). Those waiting on an entry op this copy lacks too.
     async fn records(&self) -> Result<Vec<String>>;
+    /// Hold the chain's records a peer across a sync floor sent, each until
+    /// the ops before it arrive (da-52vdj): any line that is no record is
+    /// refused, so no entry op crosses.
+    async fn hold(&self, records: &[String]) -> Result<()>;
     /// How many entries this copy holds, as `datum sync holds` counts them
     /// (life data: no spec, layout or alias): a reader invite refuses a
     /// redeemer holding any, which a reader's fold would hide (da-tti3w).
@@ -519,6 +529,17 @@ fn below_floor(mine: (&Version, &str), theirs: (&Version, &str)) -> Option<(Stri
     })
 }
 
+/// Said in place of [`NO_RISK`] of a session across a floor that moved the
+/// chain's records alone ([`members`]).
+const CROSSED: &str =
+    "Only the chain's membership crossed: no entry was sent or written, and no data is at risk.";
+
+/// A floor's words, said of a session that crossed it.
+fn crossed(why: &str) -> String {
+    let why = why.strip_suffix(NO_RISK).unwrap_or(why).trim_end();
+    format!("{why} {CROSSED}")
+}
+
 #[derive(Serialize, Deserialize)]
 struct Hello {
     label: String,
@@ -573,6 +594,10 @@ struct Hello {
     /// records, which hold it. A copy before it ignores them.
     #[serde(default)]
     wipe: Vec<String>,
+    /// The dialer takes a session across a sync floor that moves the chain's
+    /// records alone ([`members`], da-52vdj); a copy before it is refused.
+    #[serde(default)]
+    crosses: bool,
     #[serde(flatten)]
     version: Version,
 }
@@ -600,6 +625,9 @@ enum Reply {
         /// As [`Hello`]'s.
         #[serde(default)]
         keeps: bool,
+        /// As [`Hello`]'s.
+        #[serde(default)]
+        crosses: bool,
         #[serde(flatten)]
         version: Version,
     },
@@ -754,6 +782,10 @@ pub struct Report {
     pub route: Option<String>,
     /// It ran on a connection kept from an earlier session (da-3jcth).
     pub kept: bool,
+    /// The two copies are on either side of a sync floor: the session moved
+    /// the chain's records alone, and this says which must update
+    /// (da-52vdj). No sync, and no verify.
+    pub floor: Option<String>,
 }
 
 impl Report {
@@ -778,6 +810,7 @@ impl Report {
             waits: false,
             ends: false,
             sums: false,
+            floor: None,
         }
     }
 }
@@ -786,6 +819,10 @@ impl std::fmt::Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.diffed {
             return write!(f, "{}: answered its sync diff", self.label);
+        }
+        // Its words name the other copy.
+        if let Some(floor) = &self.floor {
+            return f.write_str(floor);
         }
         write!(
             f,
@@ -1146,6 +1183,35 @@ async fn exchange(
     Ok(())
 }
 
+/// A session across a sync floor between two copies that take one
+/// (da-52vdj): the dialer sends the chain's records it holds, the acceptor
+/// its own once it has read them, and each holds what it lacks of the
+/// other's ([`Store::hold`]). No vector, no entry op and no verify: the
+/// floor holds back what the ops carry, and membership is no entry. The
+/// acceptor sends only after it has read, so the dialer's close cuts no
+/// frame in flight.
+async fn members(
+    store: &impl Store,
+    s: &mut SendStream,
+    r: &mut RecvStream,
+    dialer: bool,
+) -> Result<()> {
+    let theirs: Vec<String> = match dialer {
+        true => {
+            put_json(s, &store.records().await?).await?;
+            get_json(r, MAX_RECORDS).await?
+        }
+        false => {
+            let theirs = get_json(r, MAX_RECORDS).await?;
+            put_json(s, &store.records().await?).await?;
+            theirs
+        }
+    };
+    // Nothing more moves on the wire: the gate is waited out in silence.
+    let _gate = store.apply_gate().await?;
+    store.hold(&theirs).await
+}
+
 /// How many ops `a` holds past `of`, by their vectors.
 fn ahead(a: &Vector, of: &Vector) -> i64 {
     a.iter()
@@ -1189,7 +1255,11 @@ fn verdict(
 /// that reached no one ([`Failure::Unreachable`], all [`connect`] fails
 /// with but another protocol) is offline: the peer is not up.
 async fn record(store: &impl Store, id: &str, rep: &Result<Report>) {
+    // Across a floor, what `sync status` says is the floor's words.
+    let floor = rep.as_ref().ok().and_then(|r| r.floor.as_deref());
+    let floor = floor.map(|why| anyhow!("{why}"));
     let (vector, verify, error, offline, met) = match rep {
+        Ok(r) if floor.is_some() => (None, None, floor.as_ref(), false, &r.met[..]),
         Ok(r) => (Some(&r.vector), r.verified, None, false, &r.met[..]),
         Err(e) => (
             e.downcast_ref::<Lost>().map(|Lost(r, _)| &r.vector),
@@ -1369,6 +1439,7 @@ async fn session(
         keeps: true,
         obeys: true,
         wipe: order.clone().unwrap_or_default(),
+        crosses: true,
         version: store.version(),
     };
     // The connection kept from an earlier session with the peer, while it
@@ -1461,7 +1532,7 @@ async fn session(
         .into());
     }
     let carried;
-    let (label, added, met, round, waits, ends, sums, keeps) = match reply {
+    let (label, added, met, round, waits, ends, sums, keeps, crossing) = match reply {
         Reply::Welcome {
             label,
             addr,
@@ -1471,17 +1542,18 @@ async fn session(
             ends,
             sums,
             keeps,
+            crosses,
             version,
         } => {
-            // A copy below a floor writes nothing of the session (da-ryhmi);
-            // an acceptor that reads floors refused before it welcomed. One
-            // that welcomed reads no floors, so it has no frame for its own
-            // words: it is closed with `refused`, and they are not sent.
-            if let Some((why, _)) = below_floor((&hello.version, &hello.label), (&version, &label))
-            {
-                end(&mut s, &mut r, b"refused");
-                return Err(Failed(Failure::Refused(Why::Upgrade), why).into());
-            }
+            // Across a sync floor no entry op moves either way (da-ryhmi),
+            // and membership does (da-52vdj): this copy's handshake records
+            // the peer, a redeemer as joining through it, and then the two
+            // swap the chain's records alone ([`members`]). An acceptor that
+            // does not say it `crosses` welcomed reading no floors, having
+            // admitted this copy already: it is sent nothing, and closed
+            // with `refused` once this copy has recorded it.
+            let crossing = below_floor((&hello.version, &hello.label), (&version, &label))
+                .map(|(why, _)| (why, crosses));
             // Welcomed, it holds no order that it delete itself: a datum
             // before it, or a chain that does not take this copy's records.
             // Nothing is sent to a copy the chain expelled.
@@ -1523,7 +1595,9 @@ async fn session(
                 Ok::<_, anyhow::Error>(added)
             };
             match admitted.await {
-                Ok(added) => (label, added, known, round, waits, ends, sums, keeps),
+                Ok(added) => (
+                    label, added, known, round, waits, ends, sums, keeps, crossing,
+                ),
                 Err(e) => {
                     let busy = e
                         .downcast_ref::<Refusal>()
@@ -1553,6 +1627,28 @@ async fn session(
     rep.waits = waits;
     rep.ends = ends;
     rep.sums = sums;
+    // The floor's words, and whether the acceptor takes the records alone.
+    if let Some((why, crosses)) = crossing {
+        let done = match crosses {
+            true => members(store, &mut s, &mut r, true).await,
+            false => Ok(()),
+        };
+        drop(carried);
+        match (&done, crosses) {
+            (Err(e), _) => end(&mut s, &mut r, gave_up(e)),
+            (Ok(()), false) => end(&mut s, &mut r, b"refused"),
+            (Ok(()), true) if kept => drop(s.finish()),
+            (Ok(()), true) => conn.close(0u32.into(), b"done"),
+        }
+        done?;
+        if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
+            rep.left = Some((old, new));
+        }
+        rep.route = route(&conn);
+        rep.kept = kept;
+        rep.floor = Some(crossed(&why));
+        return Ok(rep);
+    }
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
     let gave = done.as_ref().is_err_and(|e| store.gives_way(e));
     match &done {
@@ -1812,6 +1908,7 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
         keeps: false,
         obeys: false,
         wipe: Vec::new(),
+        crosses: false,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -1992,12 +2089,18 @@ async fn answer(
             return Err(Failed(Failure::Refused(Why::Wiped), why).into());
         }
     }
-    // Either copy below the other's sync floor (da-ryhmi): refused before
-    // the store's handshake, which writes, as either side.
+    // Either copy below the other's sync floor (da-ryhmi): no entry op
+    // moves. A dialer that `crosses` is admitted and swaps the chain's
+    // records alone ([`members`], da-52vdj); one before it is refused
+    // before the store's handshake, which writes, as either side: it would
+    // go on to send its ops.
     let mine = store.version();
-    if let Some((here, there)) =
-        below_floor((&mine, &store.label()), (&hello.version, &hello.label))
-    {
+    // Test knob: an acceptor from before floors (da-ryhmi), which reads none
+    // and welcomes into a sync, as datum's release at schema 68 does.
+    let before = env::<u8>("DATUM_SYNC_TEST_BEFORE_FLOORS") == Some(1);
+    let floor =
+        below_floor((&mine, &store.label()), (&hello.version, &hello.label)).filter(|_| !before);
+    if let Some((here, there)) = floor.clone().filter(|_| diff || !hello.crosses) {
         put_json(&mut s, &Reply::refusal(&hello, Why::Upgrade, there)).await?;
         if using.is_none() {
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;
@@ -2083,6 +2186,7 @@ async fn answer(
         ends: true,
         sums: true,
         keeps: true,
+        crosses: !before,
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
@@ -2102,6 +2206,22 @@ async fn answer(
         let _ = timeout(Duration::from_secs(5), conn.closed()).await;
         rep.diffed = true;
         return Ok(rep);
+    }
+    if let Some((here, _)) = floor {
+        let done = members(store, &mut s, &mut r, false).await.map(|()| {
+            rep.floor = Some(crossed(&here));
+            rep
+        });
+        // The dialer closes once it has read: on a kept connection, its stream.
+        match &done {
+            Ok(_) if using.is_some() => {
+                drop(timeout(Duration::from_secs(5), r.read_to_end(0)).await)
+            }
+            Ok(_) => drop(timeout(Duration::from_secs(5), conn.closed()).await),
+            Err(e) => end(conn, using.is_some(), &mut s, &mut r, gave_up(e)),
+        }
+        record(store, &id, &done).await;
+        return done;
     }
     let done = match exchange(store, &mut s, &mut r, false, &mut rep).await {
         Ok(()) => {
@@ -2346,6 +2466,7 @@ mod tests {
                     keeps: true,
                     obeys: true,
                     wipe: vec![line.clone()],
+                    crosses: true,
                     version: version.clone(),
                 },
             ),
@@ -2360,6 +2481,7 @@ mod tests {
                     ends: true,
                     sums: true,
                     keeps: true,
+                    crosses: true,
                     version,
                 },
             ),

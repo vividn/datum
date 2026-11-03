@@ -102,7 +102,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             let mut o = opts(
                 &mut rest,
                 &[
-                    "label", "addr", "invite", "chain", "holds", "datum", "schema",
+                    "label", "addr", "invite", "chain", "holds", "datum", "schema", "floor",
                 ],
                 &["dialed", "records"],
                 1..=1,
@@ -129,6 +129,12 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                             ParseError::InvalidArg(format!("--schema is a version, not {n}"))
                         })?,
                     )),
+                    None => None,
+                },
+                floor: match o.get("floor") {
+                    Some(n) => Some(n.parse().map_err(|_| {
+                        ParseError::InvalidArg(format!("--floor is a version, not {n}"))
+                    })?),
                     None => None,
                 },
                 records: o.on("records"),
@@ -419,10 +425,11 @@ fn act(
 
 /// Hidden: `datum sync pipe …`, ops as JSON lines on stdin and stdout.
 fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "vector|ops|apply|records|known|verify|digest|held";
+    const SET: &str = "vector|ops|apply|records|hold|known|verify|digest|held";
     Ok(match rest.next().copied() {
         Some("vector") => SyncCommand::Vector,
         Some("records") => SyncCommand::Records,
+        Some("hold") => SyncCommand::Hold,
         Some("known") => SyncCommand::Known,
         // `--json` is the swept `--show json`, set by `apply_show`.
         Some("apply") => SyncCommand::Apply {
@@ -626,6 +633,7 @@ mod tests {
         assert!(parse_sync_cmd(&["--as"]).is_err());
         assert_eq!(p(&["pipe", "records"]), SyncCommand::Records);
         assert_eq!(p(&["pipe", "known"]), SyncCommand::Known);
+        assert_eq!(p(&["pipe", "hold"]), SyncCommand::Hold);
         assert_eq!(
             p(&["pipe", "apply"]),
             SyncCommand::Apply {
@@ -693,6 +701,7 @@ mod tests {
                 chain: None,
                 holds: 0,
                 version: None,
+                floor: None,
                 records: false,
                 dialed: true
             }
@@ -710,6 +719,8 @@ mod tests {
                 "3.0.9-beta (abc1234)",
                 "--schema",
                 "57",
+                "--floor",
+                "56",
                 "--records"
             ]),
             SyncCommand::Handshake {
@@ -720,6 +731,7 @@ mod tests {
                 chain: None,
                 holds: 42,
                 version: Some(("3.0.9-beta (abc1234)".into(), 57)),
+                floor: Some(56),
                 records: true,
                 dialed: false
             }

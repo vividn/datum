@@ -1123,6 +1123,9 @@ pub enum SyncCommand {
     /// Hidden: `datum sync pipe records` — the chain's records as this copy
     /// holds them, one op line each (da-2u95o).
     Records,
+    /// Hidden: `datum sync pipe hold` — hold the chain's records on stdin, a
+    /// peer's across a sync floor, refusing any other line (da-52vdj).
+    Hold,
     /// Hidden: `datum sync pipe known` — where this copy last saw each copy
     /// it syncs with, one address line each: datum.day's `known` (da-tvv4j).
     Known,
@@ -1226,7 +1229,8 @@ pub enum SyncCommand {
     /// `--chain` is the redeemer's own chain, empty for none (da-mepav);
     /// `--holds` its entries, as `datum sync holds` counts them (da-tti3w).
     /// `--dialed` with `--invite`: this copy redeemed it there (da-38eye).
-    /// `--datum <BUILD> --schema <N>`: what the peer runs (da-3zqyv).
+    /// `--datum <BUILD> --schema <N>`: what the peer runs (da-3zqyv), and
+    /// `--floor <N>` its sync floor (da-52vdj).
     /// `--records`: the peer's chain records are on stdin, to admit it by
     /// when this copy has not heard it joined (da-2u95o).
     Handshake {
@@ -1237,6 +1241,7 @@ pub enum SyncCommand {
         chain: Option<String>,
         holds: u64,
         version: Option<(String, u32)>,
+        floor: Option<u32>,
         records: bool,
         dialed: bool,
     },
