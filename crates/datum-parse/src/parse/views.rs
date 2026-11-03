@@ -361,39 +361,14 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.watch = true;
                 i += 1;
             }
-            // ── Terminal-mode flags (only meaningful when no `--output-file`).
-            // Per da-57dj `dm nowview` defaults to a pure visual band-stack
-            // in the terminal; these knobs control that renderer.
-            FlagSplit::Long("window") => {
-                let (v, ni) = take_value(tail, i, None, "--window")?;
-                out.window = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("window", v) => {
-                out.window = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("cols") => {
-                let (v, ni) = take_value(tail, i, None, "--cols")?;
-                out.cols = Some(parse_f64(v, "--cols")? as u16);
-                i = ni;
-            }
-            FlagSplit::LongAttached("cols", v) => {
-                out.cols = Some(parse_f64(v, "--cols")? as u16);
-                i += 1;
-            }
-            FlagSplit::Long("rows") => {
-                let (v, ni) = take_value(tail, i, None, "--rows")?;
-                out.rows = Some(parse_f64(v, "--rows")? as u16);
-                i = ni;
-            }
-            FlagSplit::LongAttached("rows", v) => {
-                out.rows = Some(parse_f64(v, "--rows")? as u16);
-                i += 1;
-            }
-            FlagSplit::Long("no-color") => {
-                out.no_color = true;
-                i += 1;
+            // da-apbrm: nowview draws the SVG alone; the terminal band and
+            // its knobs are `now`'s.
+            FlagSplit::Long(n @ ("window" | "cols" | "rows" | "no-color"))
+            | FlagSplit::LongAttached(n @ ("window" | "cols" | "rows" | "no-color"), _) => {
+                return Err(ParseError::InvalidArg(format!(
+                    "nowview draws an SVG and has no --{n}: the terminal band is `datum now` \
+                     (`now --context <DUR>` for its length)"
+                )));
             }
             FlagSplit::Positional(s) => {
                 if !out.fields.is_empty() {

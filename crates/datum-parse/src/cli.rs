@@ -1356,6 +1356,13 @@ pub struct NowArgs {
     /// Force-disable color in the state list and the nowview band.
     /// Mirrors `NO_COLOR` env var behavior; useful for redirected output.
     pub no_color: bool,
+    /// `--context <DUR>` — how much time the band spans (da-apbrm): the
+    /// past at now, half either side of a pinned time. None → an hour; a
+    /// zero draws no band, as `--bare`.
+    pub context: Option<String>,
+    /// `-w` / `--watch` — draw again on every change to the database, and
+    /// each minute for the clock (da-apbrm).
+    pub watch: bool,
     /// `-t/-d/-y/-q/-z` — composed timing concern (da-tx8j). When any
     /// of these are set, `datum now` shows the state-at-that-point
     /// instead of the live wall-clock state, and centres the terminal
@@ -1847,14 +1854,13 @@ pub struct NowviewArgs {
     /// to the right of the picture (da-7q8r), in its color, with a key of
     /// the occur dots in the window (da-8oksz). The gutter comes out of a
     /// `--width` (`--height` when vertical) given, so the SVG is that size
-    /// (da-us41f). Off by default, and the SVG path's alone: the terminal
-    /// band never carries labels.
+    /// (da-us41f). Off by default.
     pub labels: bool,
     /// `--overlay`, unlisted: datum.day's nowview (da-0e06p). The picture
     /// with no data and no database opened — its axis, ticks, gridlines,
     /// now-line and the labels under its now strip, and the strip's place
     /// as an empty `.now-strip` — for the page to lay a crop of the
-    /// dayview's data layer under. The SVG path's alone.
+    /// dayview's data layer under.
     pub overlay: bool,
     /// `--axis-now`, unlisted: datum.day's nowview at a relative pill
     /// (da-tglm6). The relative axis counts from now, not from `-t`.
@@ -1862,13 +1868,13 @@ pub struct NowviewArgs {
     /// `--surround <DUR>` — draw this much more time either side of the
     /// window (before it only, when it ends at now), past the SVG's own
     /// box, for a viewer that pans or zooms without asking again
-    /// (da-61nm8). The SVG path's alone.
+    /// (da-61nm8).
     pub surround: Option<String>,
     /// `--ahead <DUR>` — draw this much time on past now as well, behind
     /// the now line, for a viewer that slides the picture along with the
     /// clock instead of asking again (da-hklaz): what is open stays open to
     /// there, and what is logged for later is drawn. A window ending at
-    /// now only; the SVG path's alone.
+    /// now only.
     pub ahead: Option<String>,
     /// `-t/-d/-q/-y`, the shared time flags, name the instant the now
     /// section is about instead of now (da-zccjs), and centre the window on
@@ -1877,7 +1883,7 @@ pub struct NowviewArgs {
     pub time: TimeArgs,
     /// `--center <TIME>` — centre the window here instead, any `-t` value,
     /// the instant's section standing where the instant is, or pinned to
-    /// the edge it lies beyond (da-zccjs). The SVG path's alone.
+    /// the edge it lies beyond (da-zccjs).
     pub center: Option<String>,
     /// SVG width in pixels. None → scale from `history` (datum behavior).
     pub width: Option<f64>,
@@ -1889,36 +1895,20 @@ pub struct NowviewArgs {
     /// Pixel height of the time-axis strip. Default 15.
     pub time_axis_height: f64,
     /// `--orientation horizontal|vertical` (or `--horizontal` /
-    /// `--vertical`), as dayview's (da-78evn). The SVG path's alone.
+    /// `--vertical`), as dayview's (da-78evn).
     pub orientation: DayviewOrientation,
     /// Output file. Extension picks format: .svg / .html / .png, which needs
-    /// `rsvg-convert`. None →
-    /// terminal output (per da-57dj), routed through the
-    /// `nowview_terminal` visual band-stack renderer.
+    /// `rsvg-convert`. None, or `-`, → the SVG on stdout (da-apbrm).
     pub output_file: Option<String>,
     /// The swept `--show` (da-qt6z). `--show json` emits the
     /// current-state panel as JSON instead of rendering; consumed by
     /// external clients (e.g. the Pebble `nowview` watchface) that want
     /// the resolved per-field state + colors without parsing SVG. It
-    /// short-circuits before terminal/SVG dispatch.
+    /// short-circuits before the SVG is drawn.
     pub show: Show,
     /// Watch mode: redraw on DB change (≈500ms) plus a 60s periodic
     /// refresh so the clock keeps advancing on an idle DB.
     pub watch: bool,
-    // Terminal-mode controls (only consulted when `output_file` is None).
-    // Per da-57dj `dm nowview` defaults to rendering a pure visual band
-    // stack in the terminal — no field/state labels, only colored bands
-    // plus an `hh:mm` footer.
-    /// Time window for terminal Flow mode. None → vertical Snapshot mode
-    /// (current state only). `Some("30m")` → horizontal flow across the
-    /// last 30 minutes with a dashed yellow now-marker at the right edge.
-    pub window: Option<String>,
-    /// Override terminal width in cells. None → auto-detect via `$COLUMNS`.
-    pub cols: Option<u16>,
-    /// Override terminal height in rows. None → auto-detect via `$LINES`.
-    pub rows: Option<u16>,
-    /// Force-disable ANSI color in the terminal render. Mirrors `NO_COLOR`.
-    pub no_color: bool,
 }
 
 impl Default for NowviewArgs {
@@ -1942,10 +1932,6 @@ impl Default for NowviewArgs {
             output_file: None,
             show: Show::Default,
             watch: false,
-            window: None,
-            cols: None,
-            rows: None,
-            no_color: false,
         }
     }
 }

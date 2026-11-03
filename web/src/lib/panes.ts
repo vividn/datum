@@ -117,16 +117,9 @@ export function dependsOnNow(argv: string[]): boolean {
 	);
 }
 
-/**
- * Whether `argv` draws a picture: `dayview` always does, and `nowview` when
- * it is asked for its SVG on stdout (`-o -`) rather than the terminal band
- * it prints bare (da-57dj).
- */
+/** Whether `argv` draws a picture: `dayview` and `nowview` do (da-apbrm). */
 function draws(argv: string[]): boolean {
-	if (!SIZED_COMMANDS.has(argv[0])) return false;
-	if (argv[0] !== 'nowview') return true;
-	return argv.some((word, i) => (word === '-o' || word === '--output-file') && argv[i + 1] === '-') ||
-		argv.includes('--output-file=-');
+	return SIZED_COMMANDS.has(argv[0]);
 }
 
 /**
@@ -654,10 +647,8 @@ export const TAIL: PaneSpec = {
  * The argv of a command typed into the custom pane (da-wb2n).
  *
  * Split as the CLI widget splits a line, so `note "hello world"` means the same in
- * both. Bare `nowview` is asked for its picture (`-o -`, as NOWVIEW is) —
- * the terminal band it prints otherwise is a worse thing to put in a pane.
+ * both.
  */
 export function commandArgv(line: string): string[] {
-	const argv = shellSplit(line);
-	return argv[0] === 'nowview' && !draws(argv) ? [...argv, '-o', '-'] : argv;
+	return shellSplit(line);
 }

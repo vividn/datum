@@ -1345,6 +1345,30 @@ fn now_band_centres_on_the_time_args() {
     assert!(axis.contains("-30m") && axis.contains("+30m"), "{out}");
 }
 
+/// da-apbrm: `--context` is how long the band is, which `nowview --window`
+/// set before nowview drew only the SVG: three hours back at now, half of
+/// it either side of a pinned instant, and a zero draws none.
+#[test]
+fn now_context_sets_the_bands_length() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("context.db");
+    run_datum(&db, &[], &["start", "work", "-t", "-100"]);
+    let axis = |args: &[&str]| {
+        let out = run_datum(&db, &[("COLUMNS", "80")], args);
+        out.lines().last().expect("axis").to_string()
+    };
+    assert!(axis(&["now"]).contains("-60m"), "an hour by default");
+    assert!(!axis(&["now"]).contains("-90m"), "an hour by default");
+    assert!(axis(&["now", "--context", "3h"]).contains("-180m"));
+    let pinned = axis(&["now", "-t", "-120", "--context", "2h"]);
+    assert!(
+        pinned.contains("-60m") && pinned.contains("+60m"),
+        "{pinned}"
+    );
+    let bare = run_datum(&db, &[], &["now", "--bare"]);
+    assert_eq!(run_datum(&db, &[], &["now", "--context", "0"]), bare);
+}
+
 /// da-sy7zl: a flag is no row of `now`'s, as `datum help flag` says. Its
 /// comment is stored as its state, so one dated ahead of now was the
 /// field's newest row and `now` read «mood come back in 3h»; one behind

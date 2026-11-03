@@ -63,7 +63,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 ## RENDER
 
 - `dayview` — Render a multi-day timeline as SVG/PNG/HTML
-- `nowview` — Paint each field's state now as a terminal band (-o writes a file)
+- `nowview` — Draw each field's state now, and the time before it, as an SVG
 - `now` — Show the current state of tracked fields + terminal nowview band
 
 ## ADMIN

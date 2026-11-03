@@ -11,9 +11,9 @@
 //! positions and colors the same way `datum dayview` does, and writes the
 //! chosen output format.
 //!
-//! Terminal rendering used to live here too. Per da-raz that role belongs
-//! to `datum now`, which renders a terminal nowview band by default.
-//! `nowview` is now SVG-only, paralleling `dayview`.
+//! It draws the picture and nothing else: with no `-o` the SVG goes to
+//! stdout, as `dayview`'s does (da-apbrm). The terminal band is `datum
+//! now`'s, which builds it from [`build_fields`] here.
 
 use std::path::Path;
 
@@ -47,7 +47,6 @@ use crate::commands::field_visuals::{
     SwitchRegion,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb};
-use crate::render::term_layout;
 
 /// The SVG's height when `--height` is not given: the band's cross extent,
 /// which is its width when time runs down the page (da-78evn).
@@ -61,23 +60,9 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
 
     // `--show json` emits the resolved current-state panel as structured
     // data for external clients (e.g. the Pebble `nowview` watchface) and
-    // short-circuits both the terminal and SVG dispatch below.
+    // short-circuits the SVG below.
     if args.show == ShowFlag::Json {
         return render_json_once(&args, db);
-    }
-
-    // Per da-57dj: no `--output-file` → render a pure visual band stack to
-    // the terminal. With a context window we emit the horizontal Flow
-    // layout, otherwise the vertical Snapshot of each tracked field's
-    // current state. SVG/PNG/HTML remain the file-output formats.
-    if args.output_file.is_none() {
-        if args.watch {
-            let periodic = nowview_terminal_periodic_refresh(stdout_is_tty());
-            return crate::commands::watch::watch_loop(db, periodic, |db| {
-                render_terminal_once(&args, db)
-            });
-        }
-        return render_terminal_once(&args, db);
     }
 
     if args.watch {
@@ -91,112 +76,6 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
     } else {
         render_once(&args, db)
     }
-}
-
-/// Periodic-refresh cadence for the terminal nowview: piped → 60s so the
-/// clock stays fresh; interactive TTY → DB-change only so we don't flood
-/// the screen with redraws.
-fn nowview_terminal_periodic_refresh(stdout_is_tty: bool) -> Option<std::time::Duration> {
-    if stdout_is_tty {
-        None
-    } else {
-        Some(std::time::Duration::from_secs(60))
-    }
-}
-
-/// Render the pure-visual terminal nowview once: vertical Snapshot by
-/// default, horizontal Flow when a context window was asked for.
-///
-/// da-7q8r: `--context`/`--history` names that window here too, so the one
-/// flag means the same thing on both render paths — a zero (or no flag) is
-/// the Snapshot, as it is in the SVG. `--window` is the older spelling and
-/// still wins when both are given; unlike `--context 0` it refuses a
-/// zero, since asking for a window of no time is a mistake, not a
-/// snapshot.
-fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
-    use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
-
-    let (mode, history_minutes) = match args.window.as_deref() {
-        Some(s) => {
-            let m = duration_minutes(s).with_context(|| format!("invalid --window: '{s}'"))?;
-            if m <= 0.0 {
-                anyhow::bail!("--window must be positive (got {m} minutes)");
-            }
-            (RenderMode::Flow, m)
-        }
-        None => match args.history.as_deref() {
-            Some(s) => {
-                let m = duration_minutes(s).with_context(|| format!("invalid --context: '{s}'"))?;
-                if m > 0.0 {
-                    (RenderMode::Flow, m)
-                } else {
-                    (RenderMode::Snapshot, 0.0)
-                }
-            }
-            None => (RenderMode::Snapshot, 0.0),
-        },
-    };
-
-    // da-5flt: a time flag centres the Flow window on its instant (the
-    // Snapshot reads the states at it); the now-line stays at now.
-    let now = DatumTime::now();
-    let built = args.time.build(&now)?;
-    let now = now.utc;
-    let end = match built.time.filter(|_| !built.unmodified) {
-        Some(t) => t.utc + chrono::Duration::milliseconds((history_minutes * 30_000.0) as i64),
-        None => now,
-    };
-
-    // Snapshot doesn't sample history, but build_fields still wants a
-    // positive window for its lookback buffer — use 1m for Snapshot so the
-    // active block (if any) lands inside the lookback.
-    let lookback = if history_minutes > 0.0 {
-        history_minutes
-    } else {
-        1.0
-    };
-
-    let mut fields = build_fields(db, end, lookback, /* include_empty = */ true)?;
-    if !args.fields.is_empty() {
-        fields.retain(|f| args.fields.contains(&f.field));
-    }
-
-    // da-q0xe5: a one-shot render sizes to what it was GIVEN — `--cols`,
-    // then `$COLUMNS`, then the terminal (the rule da-coi0m set for `now`);
-    // only `--watch` asks the live terminal first, so a resize beats a
-    // stale export. Fallbacks stay nowview's own (da-tpny): 40 cols
-    // (Snapshot's reference width ~80px / 2 cells per pixel) and 24 rows.
-    let (auto_cols, auto_rows) = if args.watch {
-        (
-            term_layout::detect_cols_or(4, 40),
-            term_layout::detect_rows_or(3, 24),
-        )
-    } else {
-        (
-            term_layout::given_cols(4).unwrap_or(40),
-            term_layout::given_rows(3).unwrap_or(24),
-        )
-    };
-    let cols = args.cols.unwrap_or(auto_cols.min(u16::MAX as usize) as u16);
-    let rows = args.rows.unwrap_or(auto_rows.min(u16::MAX as usize) as u16);
-    let use_color = !args.no_color && crate::render::colors::color_enabled();
-
-    let cfg = TerminalConfig {
-        end_ms: end.timestamp_millis(),
-        now_ms: now.timestamp_millis(),
-        history_minutes,
-        now_width_minutes: 0.0,
-        after_minutes: 0.0,
-        cols,
-        rows,
-        use_color,
-        current_time_label: format_local_hh_mm(end),
-        mode,
-    };
-
-    let out = render_nowview_terminal(&fields, &cfg);
-    println!("{out}");
-    Ok(())
 }
 
 fn stdout_is_tty() -> bool {
@@ -384,18 +263,9 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     })
 }
 
-/// Render the nowview SVG, to stdout (`-o -`) or `--output-file`.
-///
-/// Bare `nowview` is the terminal band, and `nowview()` routes it to
-/// `render_terminal_once` before this is ever reached — so `None` is not a
-/// second spelling of `-o -` here. The SVG on stdout is an explicit ask
-/// (datum.day's nowview pane, da-g8o8); a reader who saw `None` beside
-/// `Some("-")` could take bare `nowview` for an SVG printer, which the help
-/// text says it is not (review thread on #163).
+/// Render the nowview SVG, to stdout (no `-o`, or `-o -`) or `--output-file`.
 fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
-    let Some(target) = args.output_file.as_deref() else {
-        return render_terminal_once(args, db);
-    };
+    let target = args.output_file.as_deref().unwrap_or("-");
     let c = compute_now(args, db)?;
     let svg = if (c.at.is_some() || c.center.is_some()) && c.history_minutes > 0.0 {
         // Its strip is now's (da-dv45l), and a selected time a dashed line.
@@ -497,8 +367,7 @@ fn write_output(path: &str, svg: &str) -> Result<()> {
 
 /// Convert the user-supplied duration string to absolute minutes. Negative
 /// inputs are normalized to positive (the panel always extends backward
-/// from "now"). 0 minutes is allowed: `--history 0` is the snapshot, and
-/// `--window` rejects it itself.
+/// from "now"). 0 minutes is allowed: `--context 0` is the snapshot.
 fn duration_minutes(s: &str) -> Result<f64> {
     let dur = parse_duration(s).map_err(|e| anyhow::anyhow!("{e}"))?;
     let secs = dur.num_seconds().abs() as f64;
@@ -626,22 +495,13 @@ pub(crate) fn build_dayview_fields(
     Ok(out)
 }
 
-/// Build the per-field input list for the *terminal* renderer (used by
-/// `datum now`'s nowview band). Returns the simpler `NowviewField` shape
-/// since the terminal renderer divides rows evenly and sorts alphabetically.
-///
-/// Exposed crate-wide so `cmd_now` can reuse the exact same data shape.
-///
-/// `include_empty` keeps tracked fields with no blocks or points in the
-/// result — used by `dm nowview`'s visual band stack so every tracked
-/// field gets a band painted in its spec default color (per da-57dj).
-/// `datum now` passes `false` to preserve its long-standing behavior of
-/// hiding fields with no current data.
+/// Build the per-field input list for `datum now`'s terminal band: the
+/// simpler `NowviewField` shape, a row a field holding a block or a point
+/// in the window, sorted alphabetically by the renderer.
 pub(crate) fn build_fields(
     db: &Db,
     end: DateTime<Utc>,
     history_minutes: f64,
-    include_empty: bool,
 ) -> Result<Vec<NowviewField>> {
     let day_end_ms = end.timestamp_millis();
 
@@ -675,7 +535,6 @@ pub(crate) fn build_fields(
     }
     let field_names: Vec<&str> = all_fields.iter().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
-    let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
 
     let mut out: Vec<NowviewField> = Vec::with_capacity(all_fields.len());
     for field in &all_fields {
@@ -699,9 +558,8 @@ pub(crate) fn build_fields(
         let open_end_ms = day_end_ms + 1;
         // da-ncoa: a state set before the fetch window is carried in from
         // `window_start`. Without it the renderer paints the field-default
-        // color across the band, or — for `datum now`'s include_empty=false
-        // path — omits the field entirely while the state list above
-        // still shows it.
+        // color across the band, or omits the field entirely while the
+        // state list above still shows it.
         let regions = switch_regions(
             &FieldStateRows::load_between(db.conn(), field, window_start, end)?,
             (window_start, end),
@@ -710,24 +568,14 @@ pub(crate) fn build_fields(
         let (blocks, points) =
             render_field_visuals_terminal(&entries_for_field, &regions, field, spec.as_ref());
 
-        if !include_empty && blocks.is_empty() && points.is_empty() {
+        if blocks.is_empty() && points.is_empty() {
             continue;
         }
-
-        let resolved = positions[field];
-
-        // Per-field fallback color — single hex unless the field has a
-        // saved parallel-state default (rare).
-        let default_colors = vec![rgb_to_hex(field_rgb(field, spec.as_ref()))];
 
         out.push(NowviewField {
             field: field.to_string(),
             blocks,
             points,
-            y_frac: resolved.y,
-            height_frac: resolved.height,
-            z_index: resolved.z_index,
-            default_colors,
         });
     }
     Ok(out)
@@ -1290,7 +1138,7 @@ mod tests {
         ))
         .unwrap();
 
-        let fields = build_fields(&db, now, 60.0, false).unwrap();
+        let fields = build_fields(&db, now, 60.0).unwrap();
         assert!(fields.iter().all(|f| f.field != "background_telemetry"));
     }
 
@@ -1424,7 +1272,7 @@ mod tests {
     /// da-ncoa: a switch state set long before the fetch window still
     /// paints the band in its state color — `build_fields` synthesizes a
     /// leading block from `state_at` instead of falling back to the
-    /// field-default color (or dropping the field when include_empty=false).
+    /// field-default color or dropping the field.
     #[test]
     fn terminal_fields_synthesize_leading_block_for_pre_window_state() {
         use datum_core::time::DatumTime;
@@ -1446,7 +1294,7 @@ mod tests {
         .unwrap();
 
         // history 1.0 min → 4-minute fetch window; the entry is far outside.
-        let fields = build_fields(&db, now, 1.0, false).unwrap();
+        let fields = build_fields(&db, now, 1.0).unwrap();
         let mood = fields
             .iter()
             .find(|f| f.field == "mood")
@@ -1462,7 +1310,6 @@ mod tests {
         assert_eq!(block.end_ms, now.timestamp_millis() + 1);
         assert_eq!(block.state_label.as_deref(), Some("happy"));
         assert_eq!(block.colors, vec!["#112233".to_string()]);
-        assert_ne!(block.colors, mood.default_colors);
     }
 
     /// da-ncoa: the synthesized leading block ends where the first
@@ -1489,7 +1336,7 @@ mod tests {
             .unwrap();
         }
 
-        let fields = build_fields(&db, now, 1.0, false).unwrap();
+        let fields = build_fields(&db, now, 1.0).unwrap();
         let f = fields.iter().find(|f| f.field == "presence").unwrap();
         assert_eq!(f.blocks.len(), 2, "blocks = {:?}", f.blocks);
         assert_eq!(f.blocks[0].state_label.as_deref(), Some("away"));
@@ -1539,8 +1386,8 @@ mod tests {
     }
 
     /// da-ncoa: an unrendered pre-window state (switch back to `false`)
-    /// must NOT synthesize a block — with include_empty=false the field
-    /// stays hidden, same as before.
+    /// must NOT synthesize a block — the field stays hidden, as a field
+    /// with nothing in the window is.
     #[test]
     fn unrendered_pre_window_state_synthesizes_nothing() {
         use datum_core::time::DatumTime;
@@ -1559,7 +1406,7 @@ mod tests {
         ))
         .unwrap();
 
-        let fields = build_fields(&db, now, 1.0, false).unwrap();
+        let fields = build_fields(&db, now, 1.0).unwrap();
         assert!(
             fields.iter().all(|f| f.field != "screen"),
             "off-state field must stay hidden",
@@ -1571,7 +1418,7 @@ mod tests {
     /// its field's colour, as in the SVGs, and not the grey of `null`.
     #[test]
     fn an_occur_dot_in_the_band_is_its_fields_colour() {
-        use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
+        use datum_layout::nowview_terminal::{render_nowview_terminal, TerminalConfig};
 
         let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("coffee", Action::Occur);
@@ -1594,7 +1441,7 @@ mod tests {
         ))
         .unwrap();
 
-        let fields = build_fields(&db, now, 60.0, false).unwrap();
+        let fields = build_fields(&db, now, 60.0).unwrap();
         let band = render_nowview_terminal(
             &fields,
             &TerminalConfig {
@@ -1604,10 +1451,8 @@ mod tests {
                 now_width_minutes: 5.0,
                 after_minutes: 0.0,
                 cols: 80,
-                rows: 0,
                 use_color: true,
                 current_time_label: "12:00".into(),
-                mode: RenderMode::InlineBand,
             },
         );
         assert!(
@@ -1623,7 +1468,7 @@ mod tests {
     /// the whole block there.
     #[test]
     fn a_just_logged_dur_block_paints_behind_the_now_line() {
-        use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
+        use datum_layout::nowview_terminal::{render_nowview_terminal, TerminalConfig};
 
         let db = Db::open_in_memory().unwrap();
         let now = chrono::Utc::now();
@@ -1642,7 +1487,7 @@ mod tests {
 
         // The same knobs `cmd_now`'s band uses: an hour of history, a
         // five-minute now panel.
-        let fields = build_fields(&db, now, 60.0, false).unwrap();
+        let fields = build_fields(&db, now, 60.0).unwrap();
         let band = render_nowview_terminal(
             &fields,
             &TerminalConfig {
@@ -1652,10 +1497,8 @@ mod tests {
                 now_width_minutes: 5.0,
                 after_minutes: 0.0,
                 cols: 80,
-                rows: 0,
                 use_color: false,
                 current_time_label: "12:00".into(),
-                mode: RenderMode::InlineBand,
             },
         );
 

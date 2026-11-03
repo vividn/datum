@@ -1,27 +1,13 @@
-//! Terminal renderer for [`NowviewField`] data.
+//! Terminal renderer for [`NowviewField`] data: the band `datum now` draws
+//! beneath its active-states list, one labeled row a field with `└────┘`
+//! axis chrome (da-apbrm: `nowview` draws only the SVG).
 //!
-//! Three modes share this entry point, selected via [`RenderMode`]:
-//!
-//! - **`InlineBand`** — single-row labeled bands with `└────┘` axis chrome.
-//!   Used by `datum now`'s nowview band beneath the active-states list.
-//!   Visual model (per-row):
-//!
-//!   ```text
-//!   coffee  ░░░░░░░░██░░░░░░░│██
-//!   mood    █████████████████│██
-//!           └────────────────┘
-//!           -30m    -15m   now
-//!   ```
-//!
-//! - **`Snapshot`** — multi-row, pure-color band stack of each tracked
-//!   field's CURRENT state at "now". No labels of any kind. A single
-//!   centered `hh:mm` footer row. Reference: `~/tmp/nowview_ex1.png`. Used
-//!   by `dm nowview` (no time window).
-//!
-//! - **`Flow`** — multi-row, pure-color band stack spanning
-//!   `[now - history, now]`, with a dashed-yellow now-line at the right
-//!   edge and a single axis row of `-Nm` / `hh:mm` labels. Reference:
-//!   `~/tmp/nowview_ex2.png`. Used by `dm nowview --window <duration>`.
+//! ```text
+//! coffee  ░░░░░░░░██░░░░░░░│██
+//! mood    █████████████████│██
+//!         └────────────────┘
+//!         -30m    -15m   now
+//! ```
 //!
 //! Pure: no I/O, no system deps. Compiles to `wasm32-unknown-unknown`.
 //! ANSI escapes are embedded as plain UTF-8 — callers decide whether the
@@ -29,55 +15,29 @@
 
 use crate::nowview::{relative_label, NowviewField, NowviewPoint};
 
-/// Selects the layout used by [`render_nowview_terminal`]. See the module
-/// docs for the visual differences.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RenderMode {
-    /// Single-row labeled bands with axis chrome. Default for backwards
-    /// compatibility with `datum now`'s band.
-    #[default]
-    InlineBand,
-    /// Multi-row band stack, no labels, `hh:mm` footer. Vertical snapshot
-    /// of each field's current state.
-    Snapshot,
-    /// Multi-row band stack spanning the history window, dashed
-    /// now-marker at the right edge, axis-tick labels below.
-    Flow,
-}
-
 /// Inputs to [`render_nowview_terminal`].
 #[derive(Debug, Clone)]
 pub struct TerminalConfig {
     /// End of the visible window — now, unless the window is centred on
     /// another instant — in UTC epoch ms.
     pub end_ms: i64,
-    /// Now, in UTC epoch ms. Flow draws its now-line in the column now
-    /// falls in, and none when now is outside the window (da-5flt).
+    /// Now, in UTC epoch ms: a cell past it is blank, not yet known.
     pub now_ms: i64,
-    /// Total history shown in the left panel. 0 → no history panel (or no
-    /// history axis, for [`RenderMode::Snapshot`]).
+    /// Total history shown in the left panel. 0 → no history panel.
     pub history_minutes: f64,
-    /// Width of the right "now" panel in minutes. Only meaningful for
-    /// [`RenderMode::InlineBand`].
+    /// Width of the right "now" panel in minutes.
     pub now_width_minutes: f64,
-    /// [`RenderMode::InlineBand`] only: minutes of timeline drawn right of
-    /// the divider, after `end_ms` — a band CENTRED on a pinned instant
-    /// (da-coi0m, `datum now -t`), `history_minutes` either side and the
-    /// clock on the divider. Past `now_ms` a cell is blank: not yet known.
+    /// Minutes of timeline drawn right of the divider, after `end_ms` — a
+    /// band CENTRED on a pinned instant (da-coi0m, `datum now -t`),
+    /// `history_minutes` either side and the clock on the divider.
     /// 0 → the solid now panel.
     pub after_minutes: f64,
     /// Total terminal width in cells.
     pub cols: u16,
-    /// Total terminal height in rows. Used by [`RenderMode::Snapshot`] /
-    /// [`RenderMode::Flow`] to size the multi-row band stack. Ignored by
-    /// `InlineBand` (which is fixed at one row per field plus axis).
-    pub rows: u16,
     /// Emit ANSI 24-bit color escapes. False → pure shading characters.
     pub use_color: bool,
     /// "HH:MM" current-time label shown at the right of the now panel.
     pub current_time_label: String,
-    /// Layout mode. See [`RenderMode`].
-    pub mode: RenderMode,
 }
 
 impl Default for TerminalConfig {
@@ -89,10 +49,8 @@ impl Default for TerminalConfig {
             now_width_minutes: 5.0,
             after_minutes: 0.0,
             cols: 80,
-            rows: 24,
             use_color: true,
             current_time_label: String::new(),
-            mode: RenderMode::default(),
         }
     }
 }
@@ -100,16 +58,6 @@ impl Default for TerminalConfig {
 /// Render `fields` to a multi-line string. Returns the rendered text
 /// without a trailing newline (caller adds one if desired).
 pub fn render_nowview_terminal(fields: &[NowviewField], config: &TerminalConfig) -> String {
-    match config.mode {
-        RenderMode::InlineBand => render_inline_band(fields, config),
-        RenderMode::Snapshot => render_visual(fields, config, /* with_history = */ false),
-        RenderMode::Flow => render_visual(fields, config, /* with_history = */ true),
-    }
-}
-
-// ─── InlineBand (legacy `datum now` band) ──────────────────────────────────
-
-fn render_inline_band(fields: &[NowviewField], config: &TerminalConfig) -> String {
     let cols = config.cols.max(20) as usize;
 
     let mut sorted: Vec<&NowviewField> = fields.iter().collect();
@@ -201,334 +149,6 @@ fn render_inline_band(fields: &[NowviewField], config: &TerminalConfig) -> Strin
     );
 
     out
-}
-
-// ─── Snapshot / Flow (visual band stack — `dm nowview`) ───────────────────
-
-/// Hex color of the dashed yellow now-line in Flow mode. Matches the SVG
-/// nowview's `current-time-line` stroke for visual parity across surfaces.
-const NOW_LINE_HEX: &str = "#ffcc00";
-
-/// Render a multi-row band stack. When `with_history` is false the bands
-/// are painted with each field's CURRENT state across all columns (Snapshot
-/// mode); when true, each column samples the block ongoing at that point
-/// in time and the right edge gets a dashed yellow now-marker (Flow mode).
-fn render_visual(fields: &[NowviewField], config: &TerminalConfig, with_history: bool) -> String {
-    let cols = config.cols.max(4) as usize;
-    let total_rows = config.rows.max(3) as usize;
-
-    // One row reserved for the footer (hh:mm in Snapshot, axis labels in
-    // Flow). Everything else is the data area.
-    let data_rows = total_rows.saturating_sub(1).max(1);
-
-    let mut sorted: Vec<&NowviewField> = fields.iter().collect();
-    sorted.sort_by(|a, b| {
-        a.y_frac
-            .partial_cmp(&b.y_frac)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                a.z_index
-                    .partial_cmp(&b.z_index)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .then_with(|| a.field.cmp(&b.field))
-    });
-
-    let band_rows = distribute_rows(&sorted, data_rows);
-
-    let mut out = String::with_capacity(cols * total_rows * 4);
-
-    let history_minutes = config.history_minutes.max(0.0);
-    let history_start_ms = config.end_ms - (history_minutes * 60_000.0) as i64;
-
-    for (field, rows_for_field) in sorted.iter().zip(band_rows.iter()) {
-        for _ in 0..*rows_for_field {
-            if with_history && history_minutes > 0.0 {
-                push_flow_data_row(
-                    &mut out,
-                    field,
-                    history_start_ms,
-                    config.end_ms,
-                    config.now_ms,
-                    cols,
-                    config.use_color,
-                );
-            } else {
-                push_snapshot_data_row(&mut out, field, config.end_ms, cols, config.use_color);
-            }
-            out.push('\n');
-        }
-    }
-
-    // Pad any unused data rows with blanks so the footer always lands on
-    // the bottom row even when the band heights don't cover the budget.
-    let used_data_rows: usize = band_rows.iter().sum();
-    for _ in used_data_rows..data_rows {
-        for _ in 0..cols {
-            out.push(' ');
-        }
-        out.push('\n');
-    }
-
-    // Footer.
-    if with_history && history_minutes > 0.0 {
-        push_flow_axis_labels(&mut out, cols, history_minutes, &config.current_time_label);
-    } else {
-        push_snapshot_footer(&mut out, cols, &config.current_time_label);
-    }
-
-    out
-}
-
-/// Allocate `data_rows` across `fields` proportional to `height_frac`,
-/// guaranteeing each visible field at least one row when budget allows.
-/// When `height_frac` sums to zero, the rows are spread evenly.
-fn distribute_rows(fields: &[&NowviewField], data_rows: usize) -> Vec<usize> {
-    let n = fields.len();
-    if n == 0 || data_rows == 0 {
-        return vec![0; n];
-    }
-
-    let total: f64 = fields.iter().map(|f| f.height_frac.max(0.0)).sum();
-
-    if total <= 0.0 {
-        let base = data_rows / n;
-        let mut leftover = data_rows - base * n;
-        let mut out = vec![base; n];
-        for slot in out.iter_mut() {
-            if leftover == 0 {
-                break;
-            }
-            *slot += 1;
-            leftover -= 1;
-        }
-        return out;
-    }
-
-    let mut raw: Vec<f64> = fields
-        .iter()
-        .map(|f| (f.height_frac.max(0.0) / total) * data_rows as f64)
-        .collect();
-    let mut out: Vec<usize> = raw.iter().map(|x| x.floor() as usize).collect();
-    let mut assigned: usize = out.iter().sum();
-
-    // Ensure each field gets at least one row when there's any budget,
-    // pulling from the most-over-allocated fields.
-    if data_rows >= n {
-        for idx in 0..n {
-            if out[idx] == 0 {
-                let mut donor = 0usize;
-                let mut donor_excess = -1.0_f64;
-                for j in 0..n {
-                    if j == idx {
-                        continue;
-                    }
-                    let excess = raw[j] - out[j] as f64;
-                    if out[j] > 1 && excess > donor_excess {
-                        donor = j;
-                        donor_excess = excess;
-                    }
-                }
-                if donor_excess >= 0.0 {
-                    out[donor] -= 1;
-                    out[idx] = 1;
-                    raw[idx] = 1.0;
-                }
-            }
-        }
-        assigned = out.iter().sum();
-    }
-
-    // Distribute the remaining rows by the largest fractional remainder.
-    while assigned < data_rows {
-        let mut best = 0usize;
-        let mut best_rem = -1.0_f64;
-        for idx in 0..n {
-            let rem = raw[idx] - out[idx] as f64;
-            if rem > best_rem {
-                best = idx;
-                best_rem = rem;
-            }
-        }
-        out[best] += 1;
-        assigned += 1;
-    }
-
-    out
-}
-
-fn push_snapshot_data_row(
-    out: &mut String,
-    field: &NowviewField,
-    end_ms: i64,
-    cols: usize,
-    use_color: bool,
-) {
-    let colors = active_colors(field, end_ms);
-    for _ in 0..cols {
-        push_visual_cell(out, colors, use_color);
-    }
-}
-
-fn push_flow_data_row(
-    out: &mut String,
-    field: &NowviewField,
-    history_start_ms: i64,
-    end_ms: i64,
-    now_ms: i64,
-    cols: usize,
-    use_color: bool,
-) {
-    let span_ms = (end_ms - history_start_ms).max(1) as f64;
-    let cell_ms = span_ms / cols as f64;
-    let last_col = cols.saturating_sub(1);
-    // The column now falls in carries the now-line (overwriting any band
-    // fill so the user sees a continuous yellow stripe); none when now is
-    // outside the window.
-    let now_col = (history_start_ms..=end_ms)
-        .contains(&now_ms)
-        .then(|| (((now_ms - history_start_ms) as f64 / cell_ms) as usize).min(last_col));
-
-    for i in 0..cols {
-        if Some(i) == now_col {
-            push_now_line_cell(out, use_color);
-            continue;
-        }
-        // A cell's gap before the now-line, so the past does not run up to
-        // now (da-9g3bf).
-        if Some(i + 1) == now_col {
-            out.push(' ');
-            continue;
-        }
-
-        let cell_center_ms = history_start_ms + (cell_ms * (i as f64 + 0.5)) as i64;
-        let cell_start_ms = history_start_ms + (cell_ms * i as f64) as i64;
-        let cell_end_ms = history_start_ms + (cell_ms * (i + 1) as f64) as i64;
-
-        let mut block_colors: Option<&[String]> = None;
-        for b in &field.blocks {
-            if b.start_ms < cell_end_ms && b.end_ms > cell_start_ms {
-                block_colors = Some(b.colors.as_slice());
-            }
-        }
-        let colors: &[String] = block_colors.unwrap_or(field.default_colors.as_slice());
-        push_visual_cell(out, colors, use_color);
-        let _ = cell_center_ms;
-    }
-}
-
-/// Resolve the color(s) painted for one snapshot/flow cell. Returns the
-/// block-ongoing slice when one is still RUNNING at `end_ms`, else the
-/// field's spec default (already populated by the CLI). Empty → caller
-/// draws the shading fallback.
-///
-/// da-zwct: "still running" is a half-open test — a block that ends AT
-/// the instant is over, and `datum start posture 4` writes exactly that
-/// block (four minutes up to now). Regions that have not ended are given
-/// an end past the window by the caller, so they still qualify.
-fn active_colors(field: &NowviewField, end_ms: i64) -> &[String] {
-    let ongoing = field
-        .blocks
-        .iter()
-        .filter(|b| b.start_ms <= end_ms && b.end_ms > end_ms)
-        .max_by_key(|b| b.start_ms);
-    match ongoing {
-        Some(b) => b.colors.as_slice(),
-        None => field.default_colors.as_slice(),
-    }
-}
-
-fn push_visual_cell(out: &mut String, colors: &[String], use_color: bool) {
-    match colors {
-        [] => push_cell_empty(out),
-        [hex] => push_cell_filled(out, hex, use_color),
-        _ => push_cell_parallel(out, &colors[0], &colors[1], use_color),
-    }
-}
-
-/// Dashed-yellow now-line cell. ANSI mode paints a `┊` glyph in
-/// [`NOW_LINE_HEX`]; monochrome mode falls back to a bare `┊`.
-fn push_now_line_cell(out: &mut String, use_color: bool) {
-    if use_color {
-        if let Some((r, g, b)) = parse_hex(NOW_LINE_HEX) {
-            out.push_str(&format!("\x1b[38;2;{r};{g};{b}m┊\x1b[0m"));
-            return;
-        }
-    }
-    out.push('┊');
-}
-
-/// Centered `hh:mm` footer for Snapshot mode. The label is the only
-/// non-blank content on the row.
-fn push_snapshot_footer(out: &mut String, cols: usize, label: &str) {
-    let label_chars: Vec<char> = label.chars().collect();
-    let n = label_chars.len().min(cols);
-    let start = (cols.saturating_sub(n)) / 2;
-    for i in 0..cols {
-        if i >= start && i < start + n {
-            out.push(label_chars[i - start]);
-        } else {
-            out.push(' ');
-        }
-    }
-}
-
-/// Axis-tick row for Flow mode: `-Nm` labels under the appropriate
-/// fractional positions plus the `hh:mm` (or `now` fallback) anchored at
-/// the right edge.
-fn push_flow_axis_labels(out: &mut String, cols: usize, history_minutes: f64, time_label: &str) {
-    let mut row: Vec<char> = vec![' '; cols];
-    let last_col = cols.saturating_sub(1);
-
-    // Right-edge `hh:mm` (or `now` fallback). Anchor by its right edge so
-    // the colon lines up with the now-line column above.
-    let time_label = if time_label.is_empty() {
-        "now"
-    } else {
-        time_label
-    };
-    let time_chars: Vec<char> = time_label.chars().collect();
-    let time_len = time_chars.len();
-    if time_len > 0 && time_len <= cols {
-        let start = (last_col + 1).saturating_sub(time_len);
-        for (k, ch) in time_chars.iter().enumerate() {
-            row[start + k] = *ch;
-        }
-    }
-
-    // `-Nm` ticks. Place from longest-history → shortest so the leftmost
-    // (`-30m`) wins ties at the edge.
-    for m in pick_ticks(history_minutes) {
-        let frac = 1.0 - (m / history_minutes.max(1e-6));
-        let x = (frac * last_col as f64).round() as i64;
-        if x < 0 || x as usize > last_col {
-            continue;
-        }
-        let label = format!("-{}", relative_label(m, tick_major(history_minutes)));
-        // Center on `x` but bias right so the label doesn't overlap a
-        // tick further left.
-        let label_chars: Vec<char> = label.chars().collect();
-        let half = label_chars.len() / 2;
-        let start = (x as usize).saturating_sub(half);
-        place_chars_skip_filled(&mut row, start, &label_chars);
-    }
-
-    for ch in row {
-        out.push(ch);
-    }
-}
-
-fn place_chars_skip_filled(row: &mut [char], start: usize, chars: &[char]) {
-    for (i, ch) in chars.iter().enumerate() {
-        let pos = start + i;
-        if pos >= row.len() {
-            break;
-        }
-        if row[pos] != ' ' {
-            return;
-        }
-        row[pos] = *ch;
-    }
 }
 
 // ─── Shared low-level cells ────────────────────────────────────────────────
@@ -861,10 +481,6 @@ mod tests {
                 state_label: Some("happy".into()),
             }],
             points: vec![],
-            y_frac: 0.0,
-            height_frac: 0.0,
-            z_index: 0.0,
-            default_colors: vec![],
         }]
     }
 
@@ -876,10 +492,8 @@ mod tests {
             now_width_minutes: 5.0,
             after_minutes: 0.0,
             cols: 50,
-            rows: 12,
             use_color: false,
             current_time_label: "12:34".into(),
-            mode: RenderMode::InlineBand,
         }
     }
 
@@ -931,19 +545,11 @@ mod tests {
                 field: "coffee".into(),
                 blocks: vec![],
                 points: vec![],
-                y_frac: 0.0,
-                height_frac: 0.0,
-                z_index: 0.0,
-                default_colors: vec![],
             },
             NowviewField {
                 field: "mood".into(),
                 blocks: vec![],
                 points: vec![],
-                y_frac: 0.0,
-                height_frac: 0.0,
-                z_index: 0.0,
-                default_colors: vec![],
             },
         ];
         let s = render_nowview_terminal(&fields, &cfg(now));
@@ -959,19 +565,11 @@ mod tests {
                 field: "workout".into(),
                 blocks: vec![],
                 points: vec![],
-                y_frac: 0.0,
-                height_frac: 0.0,
-                z_index: 0.0,
-                default_colors: vec![],
             },
             NowviewField {
                 field: "alpha".into(),
                 blocks: vec![],
                 points: vec![],
-                y_frac: 0.0,
-                height_frac: 0.0,
-                z_index: 0.0,
-                default_colors: vec![],
             },
         ];
         let s = render_nowview_terminal(&fields, &cfg(now));
@@ -996,10 +594,6 @@ mod tests {
             field: "mood".into(),
             blocks: vec![],
             points: vec![],
-            y_frac: 0.0,
-            height_frac: 0.0,
-            z_index: 0.0,
-            default_colors: vec![],
         }];
         let s = render_nowview_terminal(&fields, &c);
         assert!(!s.contains('┴'), "did not expect history boundary in:\n{s}");
@@ -1049,10 +643,6 @@ mod tests {
                 state_label: None,
                 glyph: None,
             }],
-            y_frac: 0.0,
-            height_frac: 0.0,
-            z_index: 0.0,
-            default_colors: vec![],
         }];
         let s = render_nowview_terminal(&fields, &cfg(now));
         assert!(s.contains('●'), "expected point dot in:\n{s}");
@@ -1074,10 +664,6 @@ mod tests {
                     state_label: None,
                     glyph: glyph.map(str::to_string),
                 }],
-                y_frac: 0.0,
-                height_frac: 0.0,
-                z_index: 0.0,
-                default_colors: vec![],
             }];
             render_nowview_terminal(&fields, &cfg(now))
         };
@@ -1113,10 +699,6 @@ mod tests {
                 state_label: Some("vertical,sit".into()),
             }],
             points: vec![],
-            y_frac: 0.0,
-            height_frac: 0.0,
-            z_index: 0.0,
-            default_colors: vec![],
         }];
         let s = render_nowview_terminal(&fields, &cfg(now));
         assert!(
@@ -1143,269 +725,10 @@ mod tests {
                 state_label: None,
             }],
             points: vec![],
-            y_frac: 0.0,
-            height_frac: 0.0,
-            z_index: 0.0,
-            default_colors: vec![],
         }];
         let s = render_nowview_terminal(&fields, &c);
         assert!(s.contains("\x1b[48;2;255;0;0m"), "bg = first state: {s:?}");
         assert!(s.contains("\x1b[38;2;0;255;0m"), "fg = second state: {s:?}");
         assert!(s.contains('▞'), "checker glyph between bg+fg: {s:?}");
-    }
-
-    // ─── Snapshot ─────────────────────────────────────────────────────────
-
-    fn snap_cfg(now_ms: i64) -> TerminalConfig {
-        TerminalConfig {
-            end_ms: now_ms,
-            now_ms,
-            history_minutes: 0.0,
-            now_width_minutes: 0.0,
-            after_minutes: 0.0,
-            cols: 20,
-            rows: 11,
-            use_color: false,
-            current_time_label: "21:11".into(),
-            mode: RenderMode::Snapshot,
-        }
-    }
-
-    #[test]
-    fn snapshot_drops_field_and_state_labels() {
-        let now = 1_700_000_000_000_i64;
-        let fields = vec![
-            NowviewField {
-                field: "mood".into(),
-                blocks: vec![NowviewBlock {
-                    start_ms: now - 60_000,
-                    end_ms: now,
-                    colors: vec!["#aa00aa".into()],
-                    state_label: Some("happy".into()),
-                }],
-                points: vec![],
-                y_frac: 0.2,
-                height_frac: 0.5,
-                z_index: 0.2,
-                default_colors: vec!["#aa00aa".into()],
-            },
-            NowviewField {
-                field: "workout".into(),
-                blocks: vec![],
-                points: vec![],
-                y_frac: 0.7,
-                height_frac: 0.5,
-                z_index: 0.7,
-                default_colors: vec!["#226699".into()],
-            },
-        ];
-        let s = render_nowview_terminal(&fields, &snap_cfg(now));
-        assert!(!s.contains("mood"));
-        assert!(!s.contains("workout"));
-        assert!(!s.contains("happy"));
-    }
-
-    #[test]
-    fn snapshot_renders_hh_mm_footer() {
-        let now = 1_700_000_000_000_i64;
-        let fields = vec![NowviewField {
-            field: "mood".into(),
-            blocks: vec![],
-            points: vec![],
-            y_frac: 0.0,
-            height_frac: 1.0,
-            z_index: 0.0,
-            default_colors: vec!["#101010".into()],
-        }];
-        let s = render_nowview_terminal(&fields, &snap_cfg(now));
-        assert!(s.contains("21:11"), "expected hh:mm footer in:\n{s}");
-        // Footer is the last line and it's the only line containing the
-        // label (no other chrome echoes the clock).
-        let lines: Vec<&str> = s.split('\n').collect();
-        assert!(lines.last().unwrap().contains("21:11"));
-    }
-
-    #[test]
-    fn snapshot_uses_default_colors_when_no_block() {
-        let now = 1_700_000_000_000_i64;
-        let mut c = snap_cfg(now);
-        c.use_color = true;
-        let fields = vec![NowviewField {
-            field: "lonely".into(),
-            blocks: vec![],
-            points: vec![],
-            y_frac: 0.0,
-            height_frac: 1.0,
-            z_index: 0.0,
-            default_colors: vec!["#80c0ff".into()],
-        }];
-        let s = render_nowview_terminal(&fields, &c);
-        assert!(
-            s.contains("\x1b[48;2;128;192;255m"),
-            "expected default-color fill ANSI, got:\n{s:?}"
-        );
-    }
-
-    #[test]
-    fn snapshot_orders_bands_by_y_frac_then_z_index() {
-        let now = 1_700_000_000_000_i64;
-        let mut c = snap_cfg(now);
-        c.use_color = true;
-        let fields = vec![
-            NowviewField {
-                field: "bottom".into(),
-                blocks: vec![],
-                points: vec![],
-                y_frac: 0.8,
-                height_frac: 1.0,
-                z_index: 0.8,
-                default_colors: vec!["#0000ff".into()],
-            },
-            NowviewField {
-                field: "top".into(),
-                blocks: vec![],
-                points: vec![],
-                y_frac: 0.1,
-                height_frac: 1.0,
-                z_index: 0.1,
-                default_colors: vec!["#ff0000".into()],
-            },
-        ];
-        let s = render_nowview_terminal(&fields, &c);
-        let red = s.find("\x1b[48;2;255;0;0m").expect("red present");
-        let blue = s.find("\x1b[48;2;0;0;255m").expect("blue present");
-        assert!(
-            red < blue,
-            "top (red) must precede bottom (blue) in:\n{s:?}"
-        );
-    }
-
-    // ─── Flow ─────────────────────────────────────────────────────────────
-
-    fn flow_cfg(now_ms: i64) -> TerminalConfig {
-        TerminalConfig {
-            end_ms: now_ms,
-            now_ms,
-            history_minutes: 30.0,
-            now_width_minutes: 0.0,
-            after_minutes: 0.0,
-            cols: 40,
-            rows: 11,
-            use_color: false,
-            current_time_label: "21:12".into(),
-            mode: RenderMode::Flow,
-        }
-    }
-
-    #[test]
-    fn flow_drops_field_labels_but_keeps_axis_ticks() {
-        let now = 1_700_000_000_000_i64;
-        let fields = vec![NowviewField {
-            field: "mood".into(),
-            blocks: vec![NowviewBlock {
-                start_ms: now - 20 * 60_000,
-                end_ms: now,
-                colors: vec!["#aa00aa".into()],
-                state_label: Some("happy".into()),
-            }],
-            points: vec![],
-            y_frac: 0.0,
-            height_frac: 1.0,
-            z_index: 0.0,
-            default_colors: vec!["#aa00aa".into()],
-        }];
-        let s = render_nowview_terminal(&fields, &flow_cfg(now));
-        assert!(!s.contains("mood"));
-        assert!(!s.contains("happy"));
-        assert!(s.contains("21:12"), "expected hh:mm at right edge in:\n{s}");
-        assert!(
-            s.contains("-15m") || s.contains("-30m"),
-            "expected axis tick in:\n{s}"
-        );
-    }
-
-    #[test]
-    fn flow_paints_dashed_now_line_at_right_edge() {
-        let now = 1_700_000_000_000_i64;
-        let fields = vec![NowviewField {
-            field: "mood".into(),
-            blocks: vec![NowviewBlock {
-                start_ms: now - 20 * 60_000,
-                end_ms: now,
-                colors: vec!["#aa00aa".into()],
-                state_label: None,
-            }],
-            points: vec![],
-            y_frac: 0.0,
-            height_frac: 1.0,
-            z_index: 0.0,
-            default_colors: vec!["#aa00aa".into()],
-        }];
-        let s = render_nowview_terminal(&fields, &flow_cfg(now));
-        assert!(s.contains('┊'), "expected dashed now-line glyph in:\n{s}");
-        // da-9g3bf: the state runs up to a blank cell before the line, not
-        // into it — the past is a little discontinuous with now.
-        let row = s.lines().next().unwrap();
-        assert!(
-            row.ends_with("█ ┊"),
-            "expected a gap before the now-line in:\n{s}"
-        );
-    }
-
-    /// da-5flt: the now-line is drawn where now falls — mid-window for a
-    /// window centred on it, and not at all for one that misses it.
-    #[test]
-    fn flow_now_line_is_now_and_only_now() {
-        let now = 1_700_000_000_000_i64;
-        let line = |cfg: TerminalConfig| {
-            let fields = [NowviewField {
-                field: "mood".into(),
-                blocks: vec![],
-                points: vec![],
-                y_frac: 0.0,
-                height_frac: 1.0,
-                z_index: 0.0,
-                default_colors: vec![],
-            }];
-            let s = render_nowview_terminal(&fields, &cfg);
-            s.lines()
-                .filter_map(|l| l.chars().position(|c| c == '┊'))
-                .collect::<Vec<_>>()
-        };
-        let centred = TerminalConfig {
-            end_ms: now + 15 * 60_000,
-            ..flow_cfg(now)
-        };
-        let cols = line(centred);
-        assert!(
-            !cols.is_empty() && cols.iter().all(|&c| c == 20),
-            "{cols:?}"
-        );
-        let past = TerminalConfig {
-            end_ms: now - 60 * 60_000,
-            ..flow_cfg(now)
-        };
-        assert!(line(past).is_empty());
-    }
-
-    #[test]
-    fn flow_now_line_uses_yellow_in_color_mode() {
-        let now = 1_700_000_000_000_i64;
-        let mut c = flow_cfg(now);
-        c.use_color = true;
-        let fields = vec![NowviewField {
-            field: "mood".into(),
-            blocks: vec![],
-            points: vec![],
-            y_frac: 0.0,
-            height_frac: 1.0,
-            z_index: 0.0,
-            default_colors: vec!["#101010".into()],
-        }];
-        let s = render_nowview_terminal(&fields, &c);
-        assert!(
-            s.contains("\x1b[38;2;255;204;0m"),
-            "expected #ffcc00 now-line ANSI in:\n{s:?}"
-        );
     }
 }

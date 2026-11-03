@@ -9,12 +9,32 @@ use crate::args::{NowArgs, ShowFlag};
 use crate::render::{render_pending_integrity_warning, render_snapshot};
 
 pub fn now(args: NowArgs, db: &Db) -> Result<()> {
+    // da-apbrm: `-w` redraws on every change, and each minute for the
+    // clock, as `nowview -w` drew its terminal band before it drew the SVG
+    // alone.
+    if args.watch {
+        let minute = Some(std::time::Duration::from_secs(60));
+        return crate::commands::watch::watch_loop(db, minute, |db| now_once(&args, db));
+    }
+    now_once(&args, db)
+}
+
+fn now_once(args: &NowArgs, db: &Db) -> Result<()> {
     // da-tx8j: resolve the optional snapshot_time from time_args. When
     // ANY time arg was supplied we treat it as "the user explicitly
     // asked for a past moment" and pin the whole render to it: query
     // anchor, JSON `now`, "since" timestamps, and band suppression all
     // hang off `snapshot_time.is_some()`.
-    let snapshot_time = resolve_snapshot_time(&args)?;
+    let snapshot_time = resolve_snapshot_time(args)?;
+    // da-apbrm: an hour unless `--context` says; checked before any output.
+    let context_minutes = match args.context.as_deref() {
+        Some(s) => {
+            let d = datum_parse::time::dur::parse_duration(s)
+                .map_err(|e| anyhow::anyhow!("invalid --context: '{s}': {e}"))?;
+            d.num_seconds().abs() as f64 / 60.0
+        }
+        None => 60.0,
+    };
 
     // da-84cg + da-mpod: the snapshot is the single source of truth for
     // both the JSON wire path and the terminal renderer. Layered
@@ -118,13 +138,13 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
 
     // da-raz: `datum now` also renders a terminal nowview band beneath the
     // active-states list. `--bare` suppresses it (e.g. for piping). The
-    // band defaults to a 1-hour window, paralleling the SVG `nowview`
-    // surface but in cells instead of pixels. A pinned snapshot_time
+    // band spans `--context`, an hour by default, the terminal's view of
+    // what the SVG `nowview` draws in pixels. A pinned snapshot_time
     // centres it on that instant (da-coi0m), as nowview's is.
-    if !args.bare {
+    if !args.bare && context_minutes > 0.0 {
         let cols = cols.or_else(|| crate::render::term_layout::given_cols(20));
         let cols = cols.unwrap_or(80).min(u16::MAX as usize) as u16;
-        print_now_band(&args, db, cols, snapshot_time);
+        print_now_band(args, db, cols, snapshot_time, context_minutes);
     }
     Ok(())
 }
@@ -146,28 +166,33 @@ fn resolve_snapshot_time(args: &NowArgs) -> Result<Option<chrono::DateTime<Utc>>
     Ok(from.time.map(|dt| dt.utc))
 }
 
-/// Render the terminal nowview band beneath `datum now`. Mirrors the old
-/// `datum nowview --terminal` path that lived in commands/nowview.rs.
+/// Render the terminal nowview band beneath `datum now`, spanning
+/// `context` minutes.
 ///
 /// `at` is the pinned snapshot time: the band is then centred on it, half
 /// its window either side with the clock on the divider (da-coi0m), in
 /// place of the history-then-now-panel it draws at the wall clock.
-fn print_now_band(args: &NowArgs, db: &Db, cols: u16, at: Option<chrono::DateTime<Utc>>) {
-    use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
+fn print_now_band(
+    args: &NowArgs,
+    db: &Db,
+    cols: u16,
+    at: Option<chrono::DateTime<Utc>>,
+    context: f64,
+) {
+    use datum_layout::nowview_terminal::{render_nowview_terminal, TerminalConfig};
 
     use crate::commands::nowview::{build_fields, format_local_hh_mm};
     use crate::render::colors;
 
-    const HISTORY_MINUTES: f64 = 60.0;
     const NOW_WIDTH_MINUTES: f64 = 5.0;
 
     let now = Utc::now();
     let (pivot, history, after) = match at {
-        Some(t) => (t, HISTORY_MINUTES / 2.0, HISTORY_MINUTES / 2.0),
-        None => (now, HISTORY_MINUTES, 0.0),
+        Some(t) => (t, context / 2.0, context / 2.0),
+        None => (now, context, 0.0),
     };
     let end = pivot + chrono::Duration::milliseconds((after * 60_000.0) as i64);
-    let mut fields = match build_fields(db, end, HISTORY_MINUTES, false) {
+    let mut fields = match build_fields(db, end, context) {
         Ok(f) => f,
         Err(_) => return, // never block the state list on a band-render error
     };
@@ -184,10 +209,8 @@ fn print_now_band(args: &NowArgs, db: &Db, cols: u16, at: Option<chrono::DateTim
         now_width_minutes: NOW_WIDTH_MINUTES,
         after_minutes: after,
         cols,
-        rows: 0,
         use_color,
         current_time_label: format_local_hh_mm(pivot),
-        mode: RenderMode::InlineBand,
     };
     let band = render_nowview_terminal(&fields, &cfg);
     println!("{band}");

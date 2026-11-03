@@ -243,8 +243,7 @@ fn nowview_block_entry_renders_in_history_window() {
 #[test]
 fn nowview_rejects_terminal_flag_after_split() {
     // da-raz: `--terminal` was ripped from `nowview` and moved to `now`.
-    // The flag is now a hard parse error here. Same for `--no-color` and
-    // `--cols`, which only exist on `now`.
+    // The flag is now a hard parse error here.
     let db = fresh_db();
     let err = run_cli(&["nowview", "--terminal"], &db).unwrap_err();
     let msg = format!("{err:#}");
@@ -254,65 +253,56 @@ fn nowview_rejects_terminal_flag_after_split() {
     );
 }
 
-/// da-57dj: `dm nowview` (no `--output-file`) defaults to a pure visual
-/// terminal band stack. The dispatch path must succeed without error
-/// (rendering itself is covered by `nowview_terminal`'s unit tests). The
-/// `--cols`/`--rows`/`--no-color` knobs must parse cleanly.
+/// da-apbrm: `--cols`, `--rows`, `--window` and `--no-color` were the
+/// terminal band's, which is `now`'s: each is refused, naming `now`.
 #[test]
-fn nowview_terminal_snapshot_dispatches() {
+fn nowview_refuses_the_terminal_flags_naming_now() {
     let db = fresh_db();
-    let now = Utc::now();
-    entry_builder("mood")
-        .verb(Verb::Switch)
-        .state(serde_json::json!("focused"))
-        .time_start_utc(now - Duration::minutes(15))
-        .insert(&db);
-
-    run_cli(
-        &["nowview", "--cols", "20", "--rows", "12", "--no-color"],
-        &db,
-    )
-    .expect("nowview terminal snapshot dispatch");
+    for argv in [
+        &["nowview", "--cols", "20"][..],
+        &["nowview", "--rows=12"],
+        &["nowview", "--window", "30m"],
+        &["nowview", "--no-color"],
+    ] {
+        let msg = format!("{:#}", run_cli(argv, &db).unwrap_err());
+        assert!(
+            msg.contains(&format!("has no {}", argv[1].split('=').next().unwrap()))
+                && msg.contains("`datum now`")
+                && msg.contains("now --context"),
+            "{argv:?}: {msg}"
+        );
+    }
 }
 
-/// da-57dj: `dm nowview --window 30m` selects horizontal Flow mode (no
-/// `--output-file`). Verifies the new `--window` flag parses + dispatches.
+/// da-apbrm: with no `-o`, nowview writes the SVG to stdout, as `dayview`
+/// does — piped, and on a terminal.
 #[test]
-fn nowview_terminal_flow_dispatches() {
-    let db = fresh_db();
-    let now = Utc::now();
-    entry_builder("mood")
-        .verb(Verb::Switch)
-        .state(serde_json::json!("focused"))
-        .time_start_utc(now - Duration::minutes(10))
-        .insert(&db);
-
-    run_cli(
-        &[
-            "nowview",
-            "--window",
-            "30m",
-            "--cols",
-            "40",
-            "--rows",
-            "11",
-            "--no-color",
-        ],
-        &db,
-    )
-    .expect("nowview terminal flow dispatch");
-}
-
-/// `--window 0m` and other zero/negative durations must be rejected with
-/// a clear error (so users don't silently get a degenerate render).
-#[test]
-fn nowview_terminal_rejects_zero_window() {
-    let db = fresh_db();
-    let err = run_cli(&["nowview", "--window", "0m"], &db).unwrap_err();
-    let msg = format!("{err:#}");
+fn nowview_with_no_output_file_prints_the_svg() {
+    let dir = tempfile::tempdir().unwrap();
+    let datum = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(args)
+            .env("DATUM_DB", dir.path().join("t.db"))
+            .env("HOME", dir.path())
+            .output()
+            .unwrap()
+    };
+    assert!(datum(&["switch", "mood", "happy"]).status.success());
+    let out = datum(&["nowview", "--context", "30m"]);
+    assert!(out.status.success(), "{out:?}");
+    let piped = String::from_utf8(out.stdout).unwrap();
     assert!(
-        msg.contains("--window") || msg.contains("positive"),
-        "expected positive-window error, got: {msg}"
+        piped.starts_with("<svg") && piped.trim_end().ends_with("</svg>"),
+        "{piped}"
+    );
+
+    // `script` gives it a terminal; the SVG is one line, the echo another.
+    let lines = on_a_terminal("datum switch mood happy >/dev/null; datum nowview; echo end");
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("<svg") && l.ends_with("</svg>")),
+        "an SVG on the tty: {lines:#?}"
     );
 }
 
@@ -1059,24 +1049,6 @@ fn nowview_context_and_history_are_one_flag() {
     assert_eq!(field_rects(&context, "mood", "block").len(), 2, "{context}");
 }
 
-/// The terminal band reads the same flag (da-7q8r), so `--context` means
-/// one thing on both render paths: a window is the Flow layout, none is
-/// the Snapshot. `--window` is the older spelling and still wins.
-#[test]
-fn nowview_terminal_reads_the_context_window() {
-    let db = two_switch_db();
-    for argv in [
-        &["nowview", "--context", "30m"][..],
-        &["nowview", "--history", "30m"],
-        &["nowview", "--context", "0"],
-        &["nowview", "--context", "30m", "--window", "15m"],
-    ] {
-        run_cli(argv, &db).unwrap_or_else(|e| panic!("{argv:?}: {e:#}"));
-    }
-    // An explicit `--window 0m` is still refused; `--context 0` is not.
-    assert!(run_cli(&["nowview", "--window", "0m"], &db).is_err());
-}
-
 /// The first `name` attribute in `svg`, as a number.
 fn attr_f64(svg: &str, key: &str) -> f64 {
     let a = svg
@@ -1304,28 +1276,6 @@ fn widest(lines: &[String]) -> usize {
         .unwrap()
 }
 
-/// da-q0xe5: a ONE-SHOT terminal render sizes to what it was given —
-/// `--cols`, then `$COLUMNS`/`$LINES`, then the terminal — even when the
-/// terminal is wider; `--watch` asks the live terminal first, so a stale
-/// `$COLUMNS` loses to it. The rule da-coi0m set for `now`.
-#[test]
-fn nowview_one_shot_reads_columns_and_watch_the_live_terminal() {
-    let seed = "datum switch mood happy -t -20 >/dev/null; datum start work -t -10 >/dev/null";
-    for (cmd, cols) in [
-        ("COLUMNS=60 datum nowview", 60),
-        ("COLUMNS=60 datum nowview --context 30m", 60),
-        ("COLUMNS=60 datum nowview --cols 50", 50),
-        ("datum nowview", 100),
-        ("COLUMNS=60 timeout 2 datum nowview --watch", 100),
-    ] {
-        let lines = on_a_terminal(&format!("{seed}; {cmd}"));
-        assert_eq!(widest(&lines), cols, "{cmd}: {lines:#?}");
-        assert_eq!(lines.len(), 30, "{cmd}: {lines:#?}");
-    }
-    let lines = on_a_terminal(&format!("{seed}; LINES=10 datum nowview"));
-    assert_eq!((lines.len(), widest(&lines)), (10, 100), "{lines:#?}");
-}
-
 /// da-qsd01: `tail`'s one-shot render is the same rule — `$COLUMNS` caps the
 /// width and `$LINES` the default row count, even in a wider, taller terminal.
 #[test]
@@ -1387,11 +1337,7 @@ fn every_terminal_first_probe_is_on_a_live_path() {
     }
     found.sort();
     let tail = "datum-commands/src/commands/tail.rs";
-    let nowview = "datum-commands/src/commands/nowview.rs";
     let mut allowed = vec![
-        // `nowview --watch`.
-        format!("{nowview}: term_layout::detect_cols_or(4, 40),"),
-        format!("{nowview}: term_layout::detect_rows_or(3, 24),"),
         // `tail --watch`'s frame signature and repaint loop.
         format!("{tail}: (detect_cols(), detect_rows())"),
         format!("{tail}: Some(auto_fill_rows(detect_rows()))"),

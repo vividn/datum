@@ -277,6 +277,13 @@ fn a_readers_tail_watch_draws_its_owners_writes() {
     watch_draws_its_owners_writes(&["tail", "-w", "--json"], "\"rows\"");
 }
 
+/// `now -w` draws again on a write, the band with it (da-apbrm): the
+/// terminal band's watch, which was `nowview -w`'s.
+#[test]
+fn a_readers_now_watch_draws_its_owners_writes() {
+    watch_draws_its_owners_writes(&["now", "-w"], "└");
+}
+
 /// `args` watching a read-only database draws two writes of its owner, each
 /// once: `frame` marks a drawing in what it prints.
 fn watch_draws_its_owners_writes(args: &[&str], frame: &str) {

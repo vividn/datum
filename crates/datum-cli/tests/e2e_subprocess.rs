@@ -1323,8 +1323,9 @@ fn subprocess_fields_ignored_is_the_latest_status_not_the_spec() {
     assert_eq!(doc[0]["ignored"], false, "track un-ignores");
 }
 
-/// `nowview -o -` is the SVG on stdout; bare `nowview` stays the terminal
-/// band (da-57dj). The picture is what a caller with no terminal shows.
+/// `nowview -o -` is the SVG on stdout, and so is bare `nowview`, which
+/// draws no terminal band (da-apbrm). The picture is what a caller with no
+/// terminal shows.
 #[test]
 fn subprocess_nowview_dash_output_is_svg_on_stdout() {
     let env = Env::new();
@@ -1335,9 +1336,13 @@ fn subprocess_nowview_dash_output_is_svg_on_stdout() {
     assert!(text.trim_start().starts_with("<svg"), "not an SVG: {text}");
     assert!(text.contains("width=\"400\""), "{text}");
 
-    let band = env.run(&["nowview"]);
-    assert_ok(&band, "nowview");
-    assert!(!String::from_utf8_lossy(&band.stdout).contains("<svg"));
+    let bare = env.run(&["nowview", "--width", "400"]);
+    assert_ok(&bare, "nowview");
+    let bare = String::from_utf8(bare.stdout).unwrap();
+    assert!(
+        bare.starts_with("<svg") && bare.contains("width=\"400\""),
+        "{bare}"
+    );
 }
 
 /// da-mjwq, vividn's line through the real process boundary: `start posture
