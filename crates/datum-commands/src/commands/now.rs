@@ -11,10 +11,14 @@ use crate::render::{render_pending_integrity_warning, render_snapshot};
 pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     // da-apbrm: `-w` redraws on every change, and each minute for the
     // clock, as `nowview -w` drew its terminal band before it drew the SVG
-    // alone.
+    // alone; in place on a terminal, as `view -w` does (da-199tl).
     if args.watch {
+        use crate::commands::watch::{clear_on_terminal, watch_loop};
         let minute = Some(std::time::Duration::from_secs(60));
-        return crate::commands::watch::watch_loop(db, minute, |db| now_once(&args, db));
+        return watch_loop(db, minute, |db| {
+            print!("{}", clear_on_terminal());
+            now_once(&args, db)
+        });
     }
     now_once(&args, db)
 }

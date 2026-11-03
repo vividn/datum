@@ -1459,3 +1459,97 @@ fn now_names_a_running_start_field_on() {
         serde_json::from_str(&run_datum(&db, &[], &["now", "--show", "json"])).expect("json");
     assert_eq!(json["active"][0]["state"], json!(true), "{json}");
 }
+
+/// da-199tl, vividn: «yes now -w should redraw in place.» On a terminal each
+/// frame starts with a clear and home, as `view -w`'s does; piped, the frames
+/// follow one another with no escape.
+#[cfg(unix)]
+#[test]
+fn now_w_redraws_in_place_on_a_terminal_and_appends_piped() {
+    use std::io::Read;
+    use std::os::fd::FromRawFd;
+    use std::process::{Command, Stdio};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    const CLEAR: &str = "\x1b[2J\x1b[H";
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("w.db");
+    run_datum(&db, &[], &["start", "work"]);
+
+    // What `now -w` drew, its stdout `out` and read from `from` (the pipe's
+    // read end when `None`), until `reading` started under it showed.
+    let drawn = |out: Stdio, from: Option<std::fs::File>| -> String {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &db)
+            .env("HOME", dir.path())
+            .env("NO_COLOR", "1")
+            .env("TZ", noon_zone())
+            .args(["now", "-w"])
+            .stdout(out)
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut from: Box<dyn Read + Send> = match from {
+            Some(master) => Box::new(master),
+            None => Box::new(child.stdout.take().unwrap()),
+        };
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0; 4096];
+            while let Ok(n @ 1..) = from.read(&mut buf) {
+                sink.lock().unwrap().extend_from_slice(&buf[..n]);
+            }
+        });
+        let text = || String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+        let wait_for = |what: &str| {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while !text().contains(what) {
+                assert!(Instant::now() < deadline, "no {what:?} in {:?}", text());
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        wait_for("work");
+        run_datum(&db, &[], &["start", "reading"]);
+        wait_for("reading");
+        let _ = child.kill();
+        let _ = child.wait();
+        text()
+    };
+
+    let (mut master, mut slave) = (0, 0);
+    // SAFETY: openpty writes two fresh descriptors, each owned once below.
+    let opened = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(opened, 0, "openpty");
+    let (master, slave) = unsafe {
+        (
+            std::fs::File::from_raw_fd(master),
+            std::fs::File::from_raw_fd(slave),
+        )
+    };
+    let on_terminal = drawn(slave.into(), Some(master));
+    let frames: Vec<&str> = on_terminal.split(CLEAR).skip(1).collect();
+    assert!(
+        frames.len() >= 2,
+        "a clear before each frame: {on_terminal:?}"
+    );
+    assert!(!frames[0].contains("reading"), "{:?}", frames[0]);
+    let last = frames.last().unwrap();
+    assert!(
+        last.contains("work") && last.contains("reading"),
+        "{last:?}"
+    );
+
+    let piped = drawn(Stdio::piped(), None);
+    assert!(!piped.contains('\x1b'), "no escape piped: {piped:?}");
+    assert!(piped.matches("work").count() >= 2, "{piped:?}");
+}

@@ -32,7 +32,7 @@ use datum_parse::spec_keys::parse_key_decl;
 use datum_parse::time::{format_human_duration, DatumTime, DurationPrecision};
 use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::time::Duration;
 
 use crate::render::colors::RESET;
@@ -44,7 +44,6 @@ use crate::render::term_layout::{grid, Give};
 pub fn run(name: &str, extra_args: &[String], db: &Db) -> Result<()> {
     let (cmd, call) = prepare(name, extra_args, db)?;
     if call.watch {
-        let tty = std::io::stdout().is_terminal();
         let mut shown = None;
         return crate::commands::watch::watch_loop(db, Some(time_tick()), |db| {
             // A watch must be the most resilient surface, not the least
@@ -55,8 +54,7 @@ pub fn run(name: &str, extra_args: &[String], db: &Db) -> Result<()> {
                 .unwrap_or_else(|e| format!("watch '{}': {e:#}\n", cmd.name));
             // Only what differs from the screen, so an idle tick cannot flicker.
             if shown.as_ref() != Some(&frame) {
-                let clear = if tty { "\x1b[2J\x1b[H" } else { "" };
-                print!("{clear}{frame}");
+                print!("{}{frame}", crate::commands::watch::clear_on_terminal());
                 let _ = std::io::stdout().flush();
                 shown = Some(frame);
             }

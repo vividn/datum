@@ -1,4 +1,5 @@
-//! Shared `--watch` polling helper for `dayview` and `nowview`.
+//! Shared `--watch` polling helper for `dayview`, `nowview`, `now`, `view` and
+//! a kit command, and the clear a watch redraws in place with on a terminal.
 //!
 //! Replaces the original "sleep 5 minutes between renders" approximation
 //! with a fast poll on SQLite's `PRAGMA data_version`. data_version is
@@ -11,6 +12,7 @@
 //! still advance even when the database is idle. Callers that visualize a
 //! purely historical window pass `None` to skip the tick.
 
+use std::io::IsTerminal;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -20,6 +22,20 @@ use datum_core::db::Db;
 /// holds with margin. SELECT on `PRAGMA data_version` is a single in-WAL
 /// header read; 500ms is well below any cost concern.
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Clear and home: what a watch prints before a frame on a terminal, so it
+/// redraws in place. No alternate screen, so the scrollback stays.
+pub const CLEAR: &str = "\x1b[2J\x1b[H";
+
+/// [`CLEAR`] when stdout is a terminal, and nothing piped: there frames
+/// follow one another, and a tsv, csv or json stream holds no escapes.
+pub fn clear_on_terminal() -> &'static str {
+    if std::io::stdout().is_terminal() {
+        CLEAR
+    } else {
+        ""
+    }
+}
 
 /// Read SQLite's `data_version`. Per the SQLite docs this counter
 /// changes when *any other connection* modifies the database — exactly

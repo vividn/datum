@@ -360,7 +360,7 @@ fn watch_repaint_loop(
         // Canonical clear+home — leaves scrollback intact on Ctrl-C
         // (no alt-screen entry). Flush so the escape lands before
         // the table writes.
-        print!("\x1b[2J\x1b[H");
+        print!("{}", crate::commands::watch::CLEAR);
         let _ = std::io::stdout().flush();
         let tbl = TableArgs {
             output: args.output()?,

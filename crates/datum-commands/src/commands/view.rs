@@ -51,14 +51,8 @@ pub fn view(args: ViewArgs, db: &Db) -> Result<()> {
         // Re-render whenever an external `datum` write bumps the SQLite
         // data_version (≈500ms latency). Views are plain SELECTs with no
         // "now" indicator, so no periodic time-tick is needed.
-        let tty = std::io::stdout().is_terminal();
         crate::commands::watch::watch_loop(db, None, |db| {
-            if tty {
-                // ANSI clear-screen + cursor home so a long row count
-                // doesn't accumulate scrollback. Skipped for pipes so
-                // tsv/csv/json streams aren't polluted mid-stream.
-                print!("\x1b[2J\x1b[H");
-            }
+            print!("{}", crate::commands::watch::clear_on_terminal());
             render_once(&args, db)
         })
     } else {
