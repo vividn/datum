@@ -1,7 +1,8 @@
 //! `datum db backup daemon` (da-gbac0): the systemd user timers and services
 //! written to a throwaway home, `systemctl` faked on PATH so nothing reaches
 //! a real service manager. The fake says a timer is not loaded (exit 4)
-//! while its name is a line of the file `inactive`, cannot reach the user
+//! while its name is a line of the file `inactive`, not enabled while it is
+//! one of `disabled`, cannot reach the user
 //! bus (exit 1) while `nobus` exists, and gives every service's last result
 //! as `result`'s text and its last run's time as `ran`'s.
 #![cfg(target_os = "linux")]
@@ -23,11 +24,13 @@ impl Home {
             "#!/bin/sh\necho \"systemctl $*\" >> {log}\n\
              case \"$*\" in\n\
              *is-active*) [ -e {nobus} ] && exit 1; grep -qxF \"$4\" {inactive} 2>/dev/null && exit 4; exit 0 ;;\n\
+             *is-enabled*) grep -qxF \"$4\" {disabled} 2>/dev/null && exit 1; exit 0 ;;\n\
              *show*) echo \"Result=$(cat {result} 2>/dev/null || echo success)\"; \
                      echo \"ExecMainExitTimestamp=$(cat {ran} 2>/dev/null)\" ;;\n\
              esac\n",
             log = p("ctl.log"),
             inactive = p("inactive"),
+            disabled = p("disabled"),
             nobus = p("nobus"),
             result = p("result"),
             ran = p("ran"),
@@ -563,4 +566,111 @@ fn all_backs_up_every_database_at_each_run() {
     let left = h.units();
     assert_eq!(left.len(), 1);
     assert!(left[0].0.starts_with("datum-backup-data-"), "{left:?}");
+}
+
+/// `db rename` takes the backup daemons with it (da-a0vw0): each unit backs
+/// up the new name, its timer enabled again under its new name, and each
+/// destination's rotation, the `--all` daemon's too, goes on under NEW/.
+#[test]
+fn rename_takes_the_daemons_and_their_rotations() {
+    let h = Home::new();
+    let (here, drive, every) = (h.dir("here"), h.dir("drive"), h.dir("every"));
+    h.install(&["--to", &here, "--every", "15m"]);
+    h.install(&["--to", &drive, "--every", "1d"]);
+    h.install(&["--all", "--to", &every, "--every", "1h"]);
+    for (_, service, _) in h.units() {
+        assert!(h.run_service(&service).status.success());
+    }
+    let old: Vec<_> = h.units().into_iter().map(|(u, _, _)| u).collect();
+    // A timer someone disabled stays disabled under its new name.
+    let (off, _, _) = h.unit_into(&drive);
+    std::fs::write(h.path("disabled"), format!("{off}.timer\n")).unwrap();
+
+    let said = h.ok(&["db", "rename", "fresh"]);
+    let fresh = std::fs::canonicalize(h.path("data/fresh.db")).unwrap();
+    for to in [&here, &drive] {
+        let (unit, service, timer) = h.unit_into(to);
+        assert!(unit.starts_with("datum-backup-fresh-"), "{unit}");
+        assert!(!old.contains(&unit), "{unit}");
+        assert!(service.contains("--db \"fresh\" db backup"), "{service}");
+        assert!(
+            service.contains(&format!("X-Datum-Db={}\n", fresh.display())),
+            "{service}"
+        );
+        assert!(timer.contains("Description=datum db backup of fresh into"));
+        assert!(said.contains(&format!("{to}/data → {to}/fresh")), "{said}");
+        let log = std::fs::read_to_string(h.path("ctl.log")).unwrap();
+        let enabled = log.contains(&format!("enable {unit}.timer"));
+        assert_eq!(enabled, to == &here, "{log}");
+    }
+    assert!(
+        said.contains(&format!("{every}/data → {every}/fresh")),
+        "{said}"
+    );
+    assert_eq!(h.units().len(), 3);
+    let check =
+        || String::from_utf8(h.datum(&["--db", "fresh", "check", "install"]).stdout).unwrap();
+    assert!(!check().contains("backup_daemon"), "{}", check());
+
+    // A run backs up the renamed database, not a new empty one by the old
+    // name, and goes on with the rotation it began: slot 0 holds the period.
+    for (_, service, _) in h.units() {
+        let ran = h.run_service(&service);
+        assert!(ran.status.success(), "{ran:?}");
+        let out = String::from_utf8_lossy(&ran.stdout);
+        assert!(out.contains("Slot 0 holds this period"), "{out}");
+    }
+    assert!(!h.path("data/data.db").exists());
+    for to in ["here", "drive", "every"] {
+        assert!(!h.path(&format!("{to}/data")).exists(), "{to}");
+        let index = std::fs::read_to_string(h.path(&format!("{to}/fresh/index.json"))).unwrap();
+        let index: serde_json::Value = serde_json::from_str(&index).unwrap();
+        let rotation = &index["dbs"]["fresh"]["backups"];
+        assert_eq!(index["dbs"].as_object().unwrap().len(), 1, "{index}");
+        assert!(rotation[0]["slot"] == 0, "{index}");
+    }
+    // `check` of the new name reads its daemons as its own.
+    std::fs::write(h.path("result"), "exit-code\n").unwrap();
+    let check = check();
+    assert!(check.contains(&format!("into {here} failed")), "{check}");
+    assert!(check.contains(&format!("into {drive} failed")), "{check}");
+    std::fs::remove_file(h.path("result")).unwrap();
+    let status = h.ok(&["db", "backup", "daemon", "status"]);
+    assert!(status.contains("  fresh: newest backup"), "{status}");
+
+    // Where NEW/ is there already, nothing moves, and the echo says so.
+    std::fs::create_dir(h.path("here/again")).unwrap();
+    let said = h.ok(&["--db", "fresh", "db", "rename", "again"]);
+    assert!(
+        said.contains(&format!("kept {here}/fresh, as {here}/again is there")),
+        "{said}"
+    );
+    assert!(h.path("here/fresh/index.json").is_file());
+    assert!(h.path("drive/again/index.json").is_file());
+}
+
+/// A daemon of the new name another database holds refuses the rename's
+/// part before any daemon is touched (da-a0vw0).
+#[test]
+fn rename_onto_another_databases_unit_touches_no_daemon() {
+    let h = Home::new();
+    let (here, drive) = (h.dir("here"), h.dir("drive"));
+    h.install(&["--to", &here, "--every", "1h"]);
+    h.install(&["--to", &drive, "--every", "1h"]);
+    // A path whose stem is `fresh`, backed up into drive: its unit is the
+    // name the drive daemon of `fresh` would take.
+    let path = h.path("elsewhere/fresh.db").display().to_string();
+    h.ok(&["--db", &path, "moment", "x"]);
+    h.ok(&[
+        "--db", &path, "db", "backup", "daemon", "install", "--to", &drive, "--every", "1d",
+    ]);
+    let before = h.units();
+    let out = h.datum(&["db", "rename", "fresh"]);
+    assert!(!out.status.success(), "{out:?}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("uninstall one, then install it again"),
+        "{err}"
+    );
+    assert_eq!(h.units(), before);
 }

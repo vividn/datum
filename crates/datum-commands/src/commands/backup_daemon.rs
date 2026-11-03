@@ -24,7 +24,7 @@ use std::process::Command;
 use anyhow::{bail, ensure, Context, Result};
 use sha2::{Digest, Sha256};
 
-use super::backup_rotation::{ago, label, newest};
+use super::backup_rotation::{ago, label, newest, rename_rotation};
 use super::sync_daemon::{ctl, linger_note, quoted, ENV};
 use crate::args::BackupDaemonAct;
 use crate::config;
@@ -424,14 +424,112 @@ fn last_run(unit: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// The name datum knows the database at `db` by, as the daemon of every
+/// database backs it up under.
+pub fn known_as(db: &Path) -> Option<String> {
+    let db = canon(db);
+    (config::known_dbs().into_iter()).find_map(|(n, p)| (canon(&p) == db).then_some(n))
+}
+
+/// `db rename`'s part (da-a0vw0): each daemon of the database that was at
+/// `from` made the daemon of the one at `to`, by `new`, keeping its
+/// destination, its period and whether its timer is enabled; and at each
+/// destination it, or the daemon of every database, names, the rotation
+/// moved with it. `was` is the name it was known by. What it did, a line each.
+pub fn renamed(from: &Path, to: &Path, new: &str, was: Option<&str>) -> Result<Vec<String>> {
+    let Ok(dir) = dir() else {
+        return Ok(Vec::new());
+    };
+    let (from, to) = (canon(from), canon(to));
+    // The name an install by `new` gives, as `install` reads it.
+    let source = config::active_db_name(Some(new)).unwrap_or_else(|| to.display().to_string());
+    let (units, mut said, mut each) = (units()?, Vec::new(), Vec::new());
+    // Each of its daemons read, and every conflict found, before any is
+    // touched: a rename refused leaves every daemon as it was.
+    for (unit, body) in &units {
+        let Some(dest) = key(body, TO_KEY).filter(|_| ours(body, Some(&from))) else {
+            continue;
+        };
+        let into = format!(" into {}, every ", dest.display());
+        let old = (body.lines())
+            .find_map(|l| l.strip_prefix("Description=datum db backup of "))
+            .and_then(|d| Some(d.replace("%%", "%").split_once(&into)?.0.to_string()))
+            .with_context(|| format!("{unit} does not say which database it backs up"))?;
+        let hash = unit.rsplit_once('-').map_or("", |(_, h)| h);
+        let moved = format!("{PREFIX}{}-{hash}", label(&source));
+        // Another database's daemon into the same destination keeps its name.
+        if let Some(other) = std::fs::read_to_string(dir.join(format!("{moved}.service")))
+            .ok()
+            .filter(|b| moved != *unit && !ours(b, Some(&to)))
+        {
+            bail!(
+                "{moved} backs up {} into {} already, so every backup daemon of {old} \
+                 still backs it up: uninstall one, then install it again",
+                key(&other, DB_KEY).map_or("every database".into(), |p| p.display().to_string()),
+                dest.display()
+            );
+        }
+        each.push((unit.as_str(), body.as_str(), dest.to_path_buf(), old, moved));
+    }
+    for body in units.iter().map(|(_, b)| b).filter(|b| ours(b, None)) {
+        if let (Some(dest), Some(was), Some(now)) = (key(body, TO_KEY), was, known_as(&to)) {
+            said.extend(rename_rotation(dest, was, &now)?);
+        }
+    }
+    for (unit, body, dest, old, moved) in each {
+        let swap = |text: &str| {
+            let of = |s: &str| format!("of {} into", s.replace('%', "%%"));
+            let by = |s: &str| format!("--db \"{}\" db backup", quoted(s));
+            let at = |p: &Path| format!("\n{DB_KEY}{}\n", p.display());
+            (text.replacen(&of(&old), &of(&source), 1))
+                .replacen(&by(&old), &by(&source), 1)
+                .replacen(&at(&from), &at(&to), 1)
+        };
+        let timer = std::fs::read_to_string(dir.join(format!("{unit}.timer")))
+            .with_context(|| format!("reading {unit}.timer"))?;
+        let enabled = Command::new("systemctl")
+            .args(["--user", "is-enabled", "--quiet", &format!("{unit}.timer")])
+            .status()
+            .is_ok_and(|s| s.success());
+        if moved != unit {
+            let _ = ctl(
+                "systemctl",
+                &["--user", "disable", "--now", &format!("{unit}.timer")],
+            );
+        }
+        for (kind, text) in [("service", body), ("timer", &timer)] {
+            let path = dir.join(format!("{moved}.{kind}"));
+            std::fs::write(&path, swap(text))
+                .with_context(|| format!("writing {}", path.display()))?;
+            if moved != unit {
+                std::fs::remove_file(dir.join(format!("{unit}.{kind}")))?;
+            }
+        }
+        let _ = ctl("systemctl", &["--user", "daemon-reload"]);
+        if moved != unit {
+            let _ = ctl(
+                "systemctl",
+                &["--user", "reset-failed", &format!("{unit}.service")],
+            );
+            if enabled {
+                let timer = format!("{moved}.timer");
+                ctl("systemctl", &["--user", "enable", &timer])?;
+                ctl("systemctl", &["--user", "restart", &timer])?;
+            }
+            said.push(format!("backup daemon: {unit} → {moved}"));
+        }
+        said.extend(rename_rotation(&dest, &old, &source)?);
+    }
+    Ok(said)
+}
+
 /// `datum check`'s word on each backup daemon of the database at `db`, by
 /// its destination: its timer not running, or its last run failed.
 pub fn findings(db: &Path) -> Vec<(&'static str, String)> {
     let db = canon(db);
     let mut found = Vec::new();
     let units = units().unwrap_or_default();
-    // Its name among every database's, as the daemon of them all backs it up.
-    let name = (config::known_dbs().into_iter()).find_map(|(n, p)| (canon(&p) == db).then_some(n));
+    let name = known_as(&db);
     for (unit, body) in units
         .iter()
         .filter(|(_, b)| ours(b, Some(&db)) || name.is_some() && ours(b, None))

@@ -3,6 +3,8 @@
 //! file MOVED keeps its key (`sync::endpoint`), so it is the same member to
 //! every other copy. In datum.day the files are OPFS handles, and the
 //! worker's filesystem moves a renamed one's bytes (`web/src/lib/wasiFs.ts`).
+//! Its backup daemons are rewritten to back up the new name, and each
+//! destination's rotation moves to the new name's directory (da-a0vw0).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -59,6 +61,8 @@ pub fn rename(new: &str, cli_db: Option<&str>) -> Result<()> {
     registry
         .db
         .retain(|_, e| real(Path::new(&e.path)).map_or(true, |p| p != from));
+    #[cfg(feature = "net")]
+    let was = crate::commands::backup_daemon::known_as(&from);
     let stem = file_name(&from);
     for path in std::fs::read_dir(from.parent().context("no directory")?)? {
         let path = path?.path();
@@ -82,6 +86,10 @@ pub fn rename(new: &str, cli_db: Option<&str>) -> Result<()> {
         })?,
     }
     println!("db rename: {} → {}", from.display(), to.display());
+    #[cfg(feature = "net")]
+    for line in crate::commands::backup_daemon::renamed(&from, &to, new, was.as_deref())? {
+        println!("{line}");
+    }
     Ok(())
 }
 

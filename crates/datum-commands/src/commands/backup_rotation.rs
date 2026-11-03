@@ -291,6 +291,39 @@ fn write_slot(
     })
 }
 
+/// The rotation of `old` in DIR made `new`'s, as `db rename` leaves it
+/// (da-a0vw0): `DIR/<old>/` moved to `DIR/<new>/` and its index keyed by
+/// the new name, so the next run goes on with it and a restore by name finds
+/// all of it. One begun flat is keyed again where it is. What it did, to say;
+/// `None` where DIR holds no rotation of `old`.
+pub(crate) fn rename_rotation(dir: &Path, old: &str, new: &str) -> Result<Option<String>> {
+    let (from, to) = match read_index(dir)?.dbs.contains_key(old) {
+        true => (dir.to_path_buf(), dir.to_path_buf()),
+        false => (dir.join(label(old)), dir.join(label(new))),
+    };
+    let mut index = read_index(&from)?;
+    let Some(rotation) = index.dbs.remove(old).filter(|_| old != new) else {
+        return Ok(None);
+    };
+    if from != to && to.exists() || index.dbs.contains_key(new) {
+        return Ok(Some(format!(
+            "backups: kept {}, as {} is there already",
+            from.display(),
+            to.display()
+        )));
+    }
+    index.dbs.insert(new.into(), rotation);
+    if from != to {
+        std::fs::rename(&from, &to)
+            .with_context(|| format!("moving {} to {}", from.display(), to.display()))?;
+    }
+    write_index(&to, &index)?;
+    Ok(Some(match from == to {
+        true => format!("backups in {}: {old} → {new}", to.display()),
+        false => format!("backups: {} → {}", from.display(), to.display()),
+    }))
+}
+
 fn read_index(dir: &Path) -> Result<Index> {
     let path = dir.join(INDEX_FILE);
     match std::fs::read(&path) {
@@ -663,5 +696,22 @@ mod tests {
         assert_eq!(files.len(), 3);
         assert_eq!(files[0], a["written"][0]);
         assert!(files[2].starts_with("b/"), "{files:?}");
+    }
+
+    /// A flat rotation whose new name is keyed there already is kept as it
+    /// was, both keys on disk (da-a0vw0).
+    #[test]
+    fn a_flat_rotation_renamed_onto_a_held_name_is_kept_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let flat = json!({ "version": 1, "dbs": { "a": {}, "b": {} } });
+        std::fs::write(dir.path().join(INDEX_FILE), flat.to_string()).unwrap();
+        let said = rename_rotation(dir.path(), "a", "b").unwrap().unwrap();
+        assert!(said.starts_with("backups: kept "), "{said}");
+        let top = read_index(dir.path()).unwrap();
+        assert_eq!(top.dbs.keys().collect::<Vec<_>>(), ["a", "b"]);
+        // Without the other, it is keyed again in place.
+        rename_rotation(dir.path(), "a", "c").unwrap().unwrap();
+        let top = read_index(dir.path()).unwrap();
+        assert_eq!(top.dbs.keys().collect::<Vec<_>>(), ["b", "c"]);
     }
 }
