@@ -105,6 +105,22 @@ not another's. It reads each named field's history whole: the cache holds totals
 with no spans to cut. A sweep gives the set running in each stretch, so only the
 subsets of a set that ran cost anything, up to 16 fields at once (`MOST_AT_ONCE`).
 
+### `dayview --digests` keeps what it hashed
+datum.day's day strip checks the days on screen after every write by
+`dayview --data-layer --digests` (da-efxk5). A past day's data layer is hashed
+once and kept (`dayview_kept`, keyed by the build, the host zone and the day's
+flags), and a check answers each day no write has reached since from it,
+drawing nothing and writing nothing (da-7z5i9). Triggers on `entries` and
+`integrity_warnings` mark each write's field and earliest instant, its leading
+edge, in `dayview_kept_dirty` (`db/dayview_kept.sql`, laid at every open). A
+write reaches a day when that edge is at or before the day's end, or, for a
+field whose block runs past the day's midnight, before the row that ends it
+(`data-to`; two days on where none has yet); a zone change two days on; a spec
+every day. The check that keeps a day writes, which datum.day hears as a
+change. A `--digests` or `--pictures` run prints those keys alone: the strip's
+geometry is a run of its own. Local and derived, never synced, gone with a
+purge.
+
 ### `check` keeps what it found
 `datum check` keeps each checker's findings and the change it read through
 (`check_kept`), and triggers on `entries` and `ops` name every row a write

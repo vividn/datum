@@ -41,6 +41,7 @@ mod v41_v50;
 mod v51_v60;
 mod v61_v70;
 mod v71_v80;
+mod v81_v90;
 
 #[cfg(test)]
 mod tests;
@@ -55,6 +56,7 @@ use v41_v50::*;
 use v51_v60::*;
 use v61_v70::*;
 use v71_v80::*;
+use v81_v90::*;
 
 /// The schema version this binary writes.
 ///
@@ -62,7 +64,7 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 80;
+pub const CURRENT_SCHEMA_VERSION: u32 = 81;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -660,5 +662,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entry_history.author and entries.author: who made each change, user@host, and an entry's latest (da-zpc98)",
         apply: m79_to_80_author,
         down: down_80_to_79_author,
+    },
+    Migration {
+        from: 80,
+        to: 81,
+        summary: "dayview_kept: a past day's digest kept until a write reaches it, which triggers on entries and integrity_warnings say (da-7z5i9)",
+        apply: m80_to_81_dayview_kept,
+        down: down_81_to_80_dayview_kept,
     },
 ];

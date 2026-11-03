@@ -53,6 +53,9 @@ mod spool;
 mod state;
 mod stats_cache;
 pub(crate) use stats_cache::STATS_CACHE_SQL;
+mod dayview_kept;
+pub use dayview_kept::KeptDay;
+pub(crate) use dayview_kept::DAYVIEW_KEPT_SQL;
 mod sync;
 mod time;
 mod tombstone;
@@ -635,6 +638,7 @@ impl Db {
         self.conn.execute_batch(CHECK_KEPT_SQL)?;
         self.conn.execute_batch(SYNC_UNCOVERED_SQL)?;
         self.conn.execute_batch(ENTRY_AUTHOR_SQL)?;
+        self.conn.execute_batch(DAYVIEW_KEPT_SQL)?;
         // A kit index is this device's, derived from the definitions the
         // file holds (da-fwwtn). One that will not build is no reason not
         // to open: it is only an index.
@@ -736,6 +740,7 @@ impl Db {
             tx.execute_batch(CHECK_KEPT_SQL)?;
             tx.execute_batch(SYNC_UNCOVERED_SQL)?;
             tx.execute_batch(ENTRY_AUTHOR_SQL)?;
+            tx.execute_batch(DAYVIEW_KEPT_SQL)?;
             crate::migrations::set_schema_version(tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
             within(tx)?;
             Ok(tables)
