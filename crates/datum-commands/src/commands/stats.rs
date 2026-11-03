@@ -37,6 +37,7 @@ use crate::commands::field_visuals::state_label;
 use crate::commands::time_bounds::{bound_date, parse_since, parse_until};
 use crate::config::resolve_week_start;
 use crate::render::colors::{field_hex, paint, parse_hex, Rgb};
+use crate::render::term_layout::clip_lines;
 use datum_parse::time::{format_human_duration, DurationPrecision};
 
 mod cache;
@@ -944,8 +945,12 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
         match args.show {
             ShowFlag::None => {}
             ShowFlag::Json => print!("{}", render_all_json(&all)),
-            ShowFlag::All => print!("{}{}", render_all_text(&all), render_all_json(&all)),
-            _ => print!("{}", render_all_text(&all)),
+            ShowFlag::All => print!(
+                "{}{}",
+                clip_lines(&render_all_text(&all)),
+                render_all_json(&all)
+            ),
+            _ => print!("{}", clip_lines(&render_all_text(&all))),
         }
         return Ok(());
     }
@@ -953,8 +958,12 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
     match args.show {
         ShowFlag::None => {}
         ShowFlag::Json => print!("{}", render_json(&result)),
-        ShowFlag::All => print!("{}{}", render_text(&result), render_json(&result)),
-        _ => print!("{}", render_text(&result)),
+        ShowFlag::All => print!(
+            "{}{}",
+            clip_lines(&render_text(&result)),
+            render_json(&result)
+        ),
+        _ => print!("{}", clip_lines(&render_text(&result))),
     }
     Ok(())
 }

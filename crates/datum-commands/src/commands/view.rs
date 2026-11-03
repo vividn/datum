@@ -27,6 +27,8 @@ use datum_core::db::{Db, ViewResult};
 use serde_json::Value as JsonValue;
 
 use crate::args::{ViewArgs, ViewFormat};
+use crate::render::term_layout::{grid, Give};
+#[cfg(test)]
 use crate::render::visible_width;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
@@ -119,18 +121,6 @@ fn render_pretty(r: &ViewResult) {
         .map(|row| row.iter().map(format_cell_plain).collect())
         .collect();
 
-    // Column widths in display columns, not chars (da-dhtp) — emoji/CJK
-    // cells occupy two terminal columns each.
-    let mut widths: Vec<usize> = r.columns.iter().map(|c| visible_width(c)).collect();
-    for row in &cells {
-        for (i, c) in row.iter().enumerate() {
-            let w = visible_width(c);
-            if w > widths[i] {
-                widths[i] = w;
-            }
-        }
-    }
-
     let numeric: Vec<bool> = (0..r.columns.len())
         .map(|i| {
             cells
@@ -138,43 +128,19 @@ fn render_pretty(r: &ViewResult) {
                 .all(|row| !row[i].is_empty() && is_numeric_cell(&row[i]))
         })
         .collect();
-
-    print_row(&r.columns, &widths, &numeric);
-    let sep: Vec<String> = widths.iter().map(|w| "-".repeat(*w)).collect();
-    print_row(&sep, &widths, &vec![false; widths.len()]);
-    for row in &cells {
-        print_row(row, &widths, &numeric);
+    // Fit to the width (da-ky7m6): numbers, dates, times and ids whole.
+    let give: Vec<Give> = (r.columns.iter().enumerate())
+        .map(|(i, c)| Give::of_column(c, cells.iter().map(|row| &row[i])))
+        .collect();
+    let heads: Vec<&str> = r.columns.iter().map(String::as_str).collect();
+    for line in grid(&heads, &give, &numeric, &cells, true) {
+        println!("{line}");
     }
     println!(
         "({} row{})",
         r.rows.len(),
         if r.rows.len() == 1 { "" } else { "s" }
     );
-}
-
-fn print_row(cells: &[String], widths: &[usize], numeric: &[bool]) {
-    println!("{}", format_row(cells, widths, numeric));
-}
-
-/// Join cells into one padded line. Padding is computed from display
-/// width (da-dhtp) rather than `format!`'s char-count width spec, so an
-/// emoji/CJK cell doesn't push later columns out of alignment.
-fn format_row(cells: &[String], widths: &[usize], numeric: &[bool]) -> String {
-    let mut line = String::new();
-    for (i, c) in cells.iter().enumerate() {
-        if i > 0 {
-            line.push_str("  ");
-        }
-        let pad = widths[i].saturating_sub(visible_width(c));
-        if numeric[i] {
-            line.push_str(&" ".repeat(pad));
-            line.push_str(c);
-        } else {
-            line.push_str(c);
-            line.push_str(&" ".repeat(pad));
-        }
-    }
-    line
 }
 
 fn render_tsv(r: &ViewResult) {
@@ -292,15 +258,19 @@ mod tests {
     /// emoji cell (2 columns, 1 char) gets one fewer pad space than a
     /// same-char-count ASCII cell and the next column stays aligned.
     #[test]
-    fn format_row_pads_by_display_width() {
-        let widths = vec![4, 2];
-        let numeric = vec![false, true];
-        let ascii = format_row(&["ab".into(), "7".into()], &widths, &numeric);
-        let emoji = format_row(&["😊".into(), "7".into()], &widths, &numeric);
-        assert_eq!(ascii, "ab     7");
-        assert_eq!(emoji, "😊     7");
+    fn grid_pads_by_display_width() {
+        let rows = vec![vec!["ab".into(), "7".into()], vec!["😊".into(), "7".into()]];
+        let lines = grid(
+            &["f", "n"],
+            &[Give::Text, Give::Whole],
+            &[false, true],
+            &rows,
+            false,
+        );
+        assert_eq!(lines[1], "ab  7");
+        assert_eq!(lines[2], "😊  7");
         // Both rows place the numeric column at the same display offset.
-        assert_eq!(visible_width(&ascii), visible_width(&emoji));
+        assert_eq!(visible_width(&lines[1]), visible_width(&lines[2]));
     }
 
     #[test]

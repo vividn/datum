@@ -445,7 +445,7 @@ fn now_dispatches_end_to_end_via_run_cli() {
     // even when stdout isn't a TTY (the band still emits, just without
     // ANSI color).
     run_cli(&["now", "--bare"], &db).expect("now --bare dispatch");
-    run_cli(&["now", "--no-color", "--cols", "60"], &db).expect("now --no-color --cols dispatch");
+    run_cli(&["now", "--no-color", "--width", "60"], &db).expect("now --no-color --width dispatch");
 
     // Sanity: both writes landed — `track`'s declaration (da-c8mh marks it
     // as one) and the `switch happy` beside it.
@@ -1223,16 +1223,16 @@ fn wide_now_db(dir: &tempfile::TempDir) -> std::path::PathBuf {
     db
 }
 
-/// da-coi0m (1): `$COLUMNS` sizes the whole of `datum now` — the state list
-/// as well as the band — and `--cols` beats it. Before, only the band read
-/// it and the list ran on at its natural width.
+/// da-coi0m (1), da-ky7m6: `--width` sizes the whole of `datum now` — the
+/// state list as well as the band — and beats `$COLUMNS`. Piped, `$COLUMNS`
+/// sizes the band alone: a list of rows sent down a pipe is printed whole.
 #[test]
 fn now_sizes_list_and_band_to_columns() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db = wide_now_db(&dir);
     for (env, args, cols) in [
-        (&[("COLUMNS", "60")][..], &["now"][..], 60),
-        (&[("COLUMNS", "60")][..], &["now", "--cols", "44"][..], 44),
+        (&[][..], &["now", "--width", "60"][..], 60),
+        (&[("COLUMNS", "60")][..], &["now", "--width", "44"][..], 44),
     ] {
         let out = run_datum(&db, env, args);
         let list = out.lines().find(|l| l.contains("mood")).expect("mood row");
@@ -1243,9 +1243,16 @@ fn now_sizes_list_and_band_to_columns() {
             .expect("band row");
         assert_eq!(width(band), cols, "band at {cols}:\n{out}");
     }
-    // Piped with nothing set, the list is printed whole.
+    // Piped, the list is printed whole, `$COLUMNS` or not; the band fits it.
     let out = run_datum(&db, &[], &["now", "--bare"]);
     assert!(out.contains("happy and content with the world"), "{out}");
+    let out = run_datum(&db, &[("COLUMNS", "60")], &["now"]);
+    assert!(out.contains("happy and content with the world"), "{out}");
+    let band = out
+        .lines()
+        .find(|l| l.starts_with("coffee"))
+        .expect("band row");
+    assert_eq!(width(band), 60, "band at 60:\n{out}");
 }
 
 /// da-coi0m (2): at every width no line of `datum now` runs past it — the
@@ -1258,7 +1265,7 @@ fn now_fits_every_width_without_wrapping() {
     let db = wide_now_db(&dir);
     for cols in [25, 32, 40, 60, 100] {
         let c = cols.to_string();
-        let out = run_datum(&db, &[("COLUMNS", &c)], &["now"]);
+        let out = run_datum(&db, &[], &["now", "--width", &c]);
         for line in out.lines() {
             assert!(
                 width(line) <= cols,

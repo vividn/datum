@@ -766,7 +766,11 @@ fn try_kit_level2_dispatch() -> Result<Option<()>> {
         return Ok(None);
     }
 
-    let extra: Vec<String> = expanded.iter().skip(2).cloned().collect();
+    // A kit command prints rows, so it takes `--width N` (da-ky7m6).
+    let words: Vec<&str> = expanded.iter().skip(2).map(String::as_str).collect();
+    let (width, words) = datum_parse::input::take_width(&words)?;
+    let _width = width.map(output::term_layout::WidthOverride::set);
+    let extra: Vec<String> = words.into_iter().map(String::from).collect();
     whole(commands::kit_command::run(name, &extra, &db), &db)?;
     Ok(Some(()))
 }

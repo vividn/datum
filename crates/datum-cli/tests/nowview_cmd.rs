@@ -1395,7 +1395,6 @@ fn every_terminal_first_probe_is_on_a_live_path() {
         // `tail --watch`'s frame signature and repaint loop.
         format!("{tail}: (detect_cols(), detect_rows())"),
         format!("{tail}: Some(auto_fill_rows(detect_rows()))"),
-        format!("{tail}: let max_total_width = if tty {{ Some(detect_cols()) }} else {{ None }};"),
     ];
     allowed.sort();
     assert_eq!(found, allowed, "a terminal-first probe off a --watch path?");

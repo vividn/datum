@@ -127,6 +127,7 @@ mod restore_hard;
 mod restore_merge_collision;
 mod retime_cmd;
 mod revert_cmd;
+mod row_width;
 mod show_env;
 mod show_flag_family;
 mod show_json;

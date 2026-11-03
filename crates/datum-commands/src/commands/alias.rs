@@ -44,6 +44,13 @@ pub fn alias(sub: AliasCommand, db_name: Option<&str>, db: &Db) -> Result<()> {
         })
     };
     match effect {
+        // A listing fits the width, its expansion giving way (da-ky7m6).
+        AliasEffect::Say(text) if matches!(sub, AliasCommand::List { .. }) => {
+            print!(
+                "{}",
+                crate::render::term_layout::clip_lines(&format!("{text}\n"))
+            )
+        }
         AliasEffect::Say(text) => println!("{text}"),
         AliasEffect::Save {
             alias,

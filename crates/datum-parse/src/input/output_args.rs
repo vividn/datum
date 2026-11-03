@@ -258,6 +258,58 @@ pub fn take_show<'a>(tokens: &[&'a str]) -> ParseResult<(Option<Show>, Vec<&'a s
     Ok((show, rest))
 }
 
+/// The commands that print a list of rows and so take `--width N`
+/// (da-ky7m6): the width their lines fit, `0` unlimited. A group's is its
+/// subcommand's. A kit command takes it too, read where it runs.
+pub const ROW_LISTS: &[&str] = &[
+    "tail",
+    "head",
+    "now",
+    "grep",
+    "check",
+    "stats",
+    "fields",
+    "states",
+    "view",
+    "kit list",
+    "kit ls",
+    "alias list",
+];
+
+/// Take `--width N` / `--width=N` out of `tokens`, as [`take_show`] takes
+/// `--show`: the last one wins.
+pub fn take_width<'a>(tokens: &[&'a str]) -> ParseResult<(Option<usize>, Vec<&'a str>)> {
+    let mut width = None;
+    let mut rest = Vec::with_capacity(tokens.len());
+    let mut i = 0;
+    while i < tokens.len() {
+        let value = match tokens[i].strip_prefix("--width") {
+            Some("") => {
+                i += 1;
+                Some(
+                    *tokens
+                        .get(i)
+                        .ok_or_else(|| ParseError::InvalidArg("--width requires a value".into()))?,
+                )
+            }
+            Some(v) if v.starts_with('=') => Some(&v[1..]),
+            _ => None,
+        };
+        match value {
+            Some(v) => {
+                width = Some(v.parse::<usize>().map_err(|_| {
+                    ParseError::InvalidArg(format!(
+                        "--width takes a number of columns, 0 for unlimited, not '{v}'"
+                    ))
+                })?)
+            }
+            None => rest.push(tokens[i]),
+        }
+        i += 1;
+    }
+    Ok((width, rest))
+}
+
 /// Refuse a `--show` value the named command has no rendering for.
 ///
 /// Loud beats silently ignored: the flag is read for every command now, so

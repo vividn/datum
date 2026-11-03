@@ -745,29 +745,46 @@ fn list(db: &Db) -> Result<()> {
     }
     // The parameters' column only where a kit has any (da-netk8).
     let any_params = kits.iter().any(|k| !k.params.is_empty());
-    let params_head = if any_params { "  params" } else { "" };
-    println!(
-        "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}{params_head}",
-        "kit", "version", "fields", "views", "aliases", "indices", "cmds", "layouts"
-    );
-    for k in kits {
-        let params: Vec<String> = k.params.iter().map(|(n, v)| format!("{n}={v}")).collect();
-        let params = match any_params {
-            true => format!("  {}", params.join(" ")),
-            false => String::new(),
-        };
-        println!(
-            "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}{}",
-            k.kit_id,
-            k.version.as_deref().unwrap_or("-"),
-            k.field_count,
-            k.view_count,
-            k.alias_count,
-            k.index_count,
-            k.command_count,
-            k.layout_count,
-            params.trim_end()
-        );
+    use crate::render::term_layout::{grid, Give};
+    let mut heads = vec![
+        "kit", "version", "fields", "views", "aliases", "indices", "cmds", "layouts",
+    ];
+    let mut give = vec![Give::Field, Give::Whole];
+    give.extend([Give::Whole; 6]);
+    let mut right = vec![false, false];
+    right.extend([true; 6]);
+    if any_params {
+        heads.push("params");
+        give.push(Give::Text);
+    }
+    let rows: Vec<Vec<String>> = kits
+        .iter()
+        .map(|k| {
+            let mut row = vec![
+                k.kit_id.clone(),
+                k.version.clone().unwrap_or_else(|| "-".into()),
+            ];
+            row.extend(
+                [
+                    k.field_count,
+                    k.view_count,
+                    k.alias_count,
+                    k.index_count,
+                    k.command_count,
+                    k.layout_count,
+                ]
+                .map(|n| n.to_string()),
+            );
+            if any_params {
+                let params: Vec<String> =
+                    k.params.iter().map(|(n, v)| format!("{n}={v}")).collect();
+                row.push(params.join(" "));
+            }
+            row
+        })
+        .collect();
+    for line in grid(&heads, &give, &right, &rows, false) {
+        println!("{}", line.trim_end());
     }
     Ok(())
 }

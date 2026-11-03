@@ -19,6 +19,9 @@ pub struct Cli {
     /// flag, leaves it to `NO_COLOR`, `CLICOLOR_FORCE` / `FORCE_COLOR` and
     /// the tty.
     pub color: Option<bool>,
+    /// `--width N`, the width a list of rows fits (da-ky7m6): `Some(0)`
+    /// unlimited, `None` the terminal's when stdout is one, else unlimited.
+    pub width: Option<usize>,
     pub command: Command,
 }
 
@@ -1353,10 +1356,6 @@ pub struct NowArgs {
     /// Force-disable color in the state list and the nowview band.
     /// Mirrors `NO_COLOR` env var behavior; useful for redirected output.
     pub no_color: bool,
-    /// Width in cells for the whole view, the state list and the band
-    /// (da-coi0m). None → `$COLUMNS`, else the terminal, else the list
-    /// prints whole and the band at 80.
-    pub cols: Option<u16>,
     /// `-t/-d/-y/-q/-z` — composed timing concern (da-tx8j). When any
     /// of these are set, `datum now` shows the state-at-that-point
     /// instead of the live wall-clock state, and centres the terminal

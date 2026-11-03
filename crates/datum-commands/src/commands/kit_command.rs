@@ -36,7 +36,7 @@ use std::io::{IsTerminal, Write};
 use std::time::Duration;
 
 use crate::render::colors::RESET;
-use crate::render::visible_width;
+use crate::render::term_layout::{grid, Give};
 
 /// Run a Level 2 command by name. `extra_args` carries the tokens after
 /// the command name on the original argv: its arguments, `--sort`,
@@ -320,7 +320,15 @@ fn render(
         return Ok(format!("{text}\n"));
     }
     let headers = header_labels(&projected.columns, &cmd.labels);
-    Ok(render_pretty(&headers, &formatted, &colors))
+    // Fit to the width (da-ky7m6): a formatted column is a date or a span,
+    // whole, as numbers, dates, times and ids are.
+    let give: Vec<Give> = (projected.columns.iter().enumerate())
+        .map(|(i, c)| match cmd.formats.contains_key(c) {
+            true => Give::Whole,
+            false => Give::of_column(c, formatted.iter().map(|row| &row[i])),
+        })
+        .collect();
+    Ok(render_pretty(&headers, &give, &formatted, &colors))
 }
 
 /// Where `name` sits in the view's row, or an error naming the command,
@@ -513,27 +521,23 @@ fn background_for(color: &str) -> (&'static str, &'static str, (&'static str, &'
     }
 }
 
-fn render_pretty(headers: &[String], cells: &[Vec<String>], colors: &[Option<&str>]) -> String {
+fn render_pretty(
+    headers: &[String],
+    give: &[Give],
+    cells: &[Vec<String>],
+    colors: &[Option<&str>],
+) -> String {
     if headers.is_empty() {
         return "(no columns)\n".to_string();
     }
-    // Column widths in display columns, not chars (da-dhtp) — emoji/CJK
-    // cells occupy two terminal columns each.
-    let mut widths: Vec<usize> = headers.iter().map(|c| visible_width(c)).collect();
-    for row in cells {
-        for (i, c) in row.iter().enumerate() {
-            let w = visible_width(c);
-            if w > widths[i] {
-                widths[i] = w;
-            }
+    let heads: Vec<&str> = headers.iter().map(String::as_str).collect();
+    let lines = grid(&heads, give, &[], cells, true);
+    let mut out = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        match i.checked_sub(2).and_then(|r| colors[r]) {
+            Some(c) => out += &format!("{c}{line}{RESET}\n"),
+            None => out += &format!("{line}\n"),
         }
-    }
-
-    let mut out = print_row(headers, &widths, None);
-    let sep: Vec<String> = widths.iter().map(|w| "-".repeat(*w)).collect();
-    out += &print_row(&sep, &widths, None);
-    for (row, color) in cells.iter().zip(colors) {
-        out += &print_row(row, &widths, *color);
     }
     out += &format!(
         "({} row{})\n",
@@ -541,26 +545,6 @@ fn render_pretty(headers: &[String], cells: &[Vec<String>], colors: &[Option<&st
         if cells.len() == 1 { "" } else { "s" }
     );
     out
-}
-
-fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) -> String {
-    let mut line = String::new();
-    if let Some(c) = color {
-        line.push_str(c);
-    }
-    for (i, c) in cells.iter().enumerate() {
-        if i > 0 {
-            line.push_str("  ");
-        }
-        // Pad by display width (da-dhtp), not `format!`'s char-count spec.
-        line.push_str(c);
-        line.push_str(&" ".repeat(widths[i].saturating_sub(visible_width(c))));
-    }
-    if color.is_some() {
-        line.push_str(RESET);
-    }
-    line.push('\n');
-    line
 }
 
 fn row_paint(

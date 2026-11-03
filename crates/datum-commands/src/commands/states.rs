@@ -121,8 +121,10 @@ pub fn format_states(listing: &JsonValue, start: bool) -> String {
             ]
         })
         .collect();
+    use crate::render::term_layout::Give::{Field, Text, Whole};
     format_grid(
         &["state", "entries", "last used", "color", "description"],
+        &[Field, Whole, Whole, Whole, Text],
         &rows,
     )
 }

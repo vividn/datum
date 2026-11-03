@@ -1129,14 +1129,14 @@ fn render_flagged_block(db: &Db, entries: &[Entry]) -> String {
     format_table_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl).unwrap_or_default()
 }
 
-/// The table a checker's block is drawn with: no header, no width to fit.
+/// The table a checker's block is drawn with: no header, fit to `--width`.
 fn flagged_table() -> TableArgs {
     TableArgs {
         output: OutputArgs::default(),
         metric: TimeMetricCol::Hybrid,
         columns: Vec::new(),
         suppress_header: true,
-        max_total_width: None,
+        max_total_width: crate::render::term_layout::row_width(),
     }
 }
 

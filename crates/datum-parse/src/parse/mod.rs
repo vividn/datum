@@ -124,6 +124,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             return Ok(Cli {
                 db,
                 color,
+                width: None,
                 command: Command::Repl,
             });
         };
@@ -252,6 +253,12 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     let (before, _) = input::take_show(&tail[..sub_idx])?;
     let (after, swept) = input::take_show(&tail[sub_idx + 1..])?;
     let show = after.or(before);
+    // `--width N`, the width a list of rows fits (da-ky7m6), is read here
+    // as `--show` is; `dayview` and `nowview` keep theirs, in pixels.
+    let (width, swept) = match sub {
+        "dayview" | "nowview" => (None, swept),
+        _ => input::take_width(&swept)?,
+    };
     let rest: &[&str] = &swept;
 
     let command = match sub {
@@ -419,7 +426,22 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         }
         input::check_show(show, sub)?;
     }
-    Ok(Cli { db, color, command })
+    let named = match (sub, rest.first()) {
+        ("kit" | "alias", Some(word)) => format!("{sub} {word}"),
+        _ => sub.to_string(),
+    };
+    if width.is_some() && !input::ROW_LISTS.contains(&named.as_str()) {
+        return Err(ParseError::InvalidArg(format!(
+            "`{named}` prints no rows to fit: --width is for {}",
+            input::ROW_LISTS.join(", ")
+        )));
+    }
+    Ok(Cli {
+        db,
+        color,
+        width,
+        command,
+    })
 }
 
 /// `--color auto|always|never`, as git, cargo and ripgrep spell it.

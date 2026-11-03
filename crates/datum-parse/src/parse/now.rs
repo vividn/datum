@@ -2,7 +2,7 @@ use super::core::*;
 use super::tail::field_list;
 use crate::cli::*;
 use crate::error::Result;
-use crate::input::{self, lift, local_switch, local_value, LiftedSpec, Show};
+use crate::input::{self, lift, local_switch, LiftedSpec, Show};
 
 pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     // `now` accepts the standard time_args (`-t/-d/-y/-q/-z`) for
@@ -18,7 +18,6 @@ pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
         show_all: bool,
         bare: bool,
         no_color: bool,
-        cols: Option<u16>,
     }
     let mut registry: Vec<LiftedSpec<NowParsing>> = Vec::new();
     for spec in input::time_args::FLAG_SPECS {
@@ -40,10 +39,6 @@ pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
         p.no_color = true;
         Ok(())
     }));
-    registry.push(local_value(None, Some("cols"), |p, v| {
-        p.cols = Some(parse_f64(v, "--cols")? as u16);
-        Ok(())
-    }));
 
     let mut composed = NowParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
@@ -57,7 +52,6 @@ pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
         show: Show::default(),
         bare: composed.bare,
         no_color: composed.no_color,
-        cols: composed.cols,
         time: composed.time,
     })
 }

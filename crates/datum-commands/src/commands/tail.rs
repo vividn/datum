@@ -18,7 +18,9 @@ use crate::commands::render_helpers::build_table_contexts;
 use crate::commands::time_bounds::parse_since;
 use crate::commands::watch::data_version;
 use crate::render::tail_rows::{tail_rows, TailDocument};
-use crate::render::term_layout::{detect_cols, detect_rows, given_cols, given_rows, is_stdout_tty};
+use crate::render::term_layout::{
+    detect_cols, detect_rows, given_rows, is_stdout_tty, row_width, width_given,
+};
 use crate::render::{print_table_with, table_columns_with, TableArgs, TimeMetricCol};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
@@ -65,10 +67,11 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     // tail actually uses the screen. Piped / redirected output stays on
     // the legacy `Some(10)` so scripts get the stable behaviour they
     // expect.
-    // da-qsd01: a one-shot render sizes to what it was GIVEN — `$COLUMNS` /
-    // `$LINES`, then the terminal (da-coi0m); only `--watch` re-probes live.
+    // da-qsd01: a one-shot render sizes to what it was GIVEN — `--width`,
+    // then `$COLUMNS` / `$LINES`, then the terminal (da-coi0m, da-ky7m6);
+    // only `--watch` re-probes live.
     let tty = is_stdout_tty();
-    let max_total_width = tty.then(|| given_cols(20).unwrap_or(80));
+    let max_total_width = row_width();
     let auto_count =
         (tty && args.count.is_none()).then(|| auto_fill_rows(given_rows(5).unwrap_or(24)));
     let entries = tail_entries_with_default_count(&args, auto_count, db)?;
@@ -317,7 +320,7 @@ fn watch_repaint_loop(
         // unbounded path as the initial render: no width budget,
         // default row count.
         let tty = is_stdout_tty();
-        let max_total_width = if tty { Some(detect_cols()) } else { None };
+        let max_total_width = width_given().unwrap_or_else(|| tty.then(detect_cols));
         let auto_count = if tty && args.count.is_none() {
             Some(auto_fill_rows(detect_rows()))
         } else {

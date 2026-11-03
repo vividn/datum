@@ -242,6 +242,10 @@ fn normalize_shared_at(
 }
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
+    // `--width N` holds for this command's rows (da-ky7m6).
+    let _width = cli
+        .width
+        .map(crate::render::term_layout::WidthOverride::set);
     // An op is signed by this client's endpoint; the id is read only if one is.
     // The entries' own resolver — `DATUM_CLIENT_ID` first: in the browser the
     // `client_id` file lives and dies with each process, and a new client per

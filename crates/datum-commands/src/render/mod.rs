@@ -904,33 +904,13 @@ pub struct TableArgs {
 /// to lay out — `fields` (da-1lnf). Columns are separated by the entry
 /// table's two-space gutter and sized with the same ANSI- and
 /// unicode-aware [`visible_width`], so a field named `日本語` sits in its
-/// column rather than pushing it.
-pub fn format_grid(headers: &[&str], rows: &[Vec<String>]) -> String {
-    let widths: Vec<usize> = headers
+/// column rather than pushing it. It fits [`term_layout::row_width`], each
+/// column giving way as `give` says (da-ky7m6).
+pub fn format_grid(headers: &[&str], give: &[term_layout::Give], rows: &[Vec<String>]) -> String {
+    term_layout::grid(headers, give, &[], rows, false)
         .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            std::iter::once(colors::visible_width(h))
-                .chain(
-                    rows.iter()
-                        .filter_map(|r| r.get(i))
-                        .map(|c| colors::visible_width(c)),
-                )
-                .max()
-                .unwrap_or(0)
-        })
-        .collect();
-    let header: Vec<String> = headers.iter().map(|h| (*h).to_string()).collect();
-    let mut out = String::new();
-    for cells in std::iter::once(&header).chain(rows) {
-        let mut line = String::new();
-        for (i, cell) in cells.iter().enumerate() {
-            push_cell(&mut line, cell, widths[i], false);
-        }
-        out.push_str(line.trim_end());
-        out.push('\n');
-    }
-    out
+        .map(|l| format!("{}\n", l.trim_end()))
+        .collect()
 }
 
 /// Render entries as a table with `_n | time | field | state | dur | hid` columns
@@ -1359,8 +1339,11 @@ pub fn format_table_with(
         } else {
             natural_state
         };
-        // Shrink the field column toward FIELD_FLOOR to recover state room.
-        while show_state && sw < state_truncate::STATE_FLOOR && fw > state_truncate::FIELD_FLOOR {
+        // Shrink the field column toward FIELD_FLOOR to recover state room:
+        // only while the state has less than it needs, so a narrow state
+        // column does not cut the field where the line has room (da-ky7m6).
+        let wanted = natural_state.min(state_truncate::STATE_FLOOR);
+        while show_state && sw < wanted && fw > state_truncate::FIELD_FLOOR {
             fw -= 1;
             let remaining = budget.saturating_sub(nonstate_fixed(fw) + gap);
             sw = natural_state.min(remaining.max(state_header.len()));
@@ -1394,7 +1377,7 @@ pub fn format_table_with(
         for (i, col) in args.columns.iter().enumerate() {
             push_cell(&mut header, col, extras_w[i], false);
         }
-        out.push_str(header.trim_end());
+        out.push_str(&term_layout::clip(header.trim_end(), args.max_total_width));
         out.push('\n');
     }
 
@@ -1461,7 +1444,7 @@ pub fn format_table_with(
         for (i, extra) in r.extras.iter().enumerate() {
             push_cell(&mut line, extra, extras_w[i], false);
         }
-        out.push_str(line.trim_end());
+        out.push_str(&term_layout::clip(line.trim_end(), args.max_total_width));
         out.push('\n');
     }
     Some(out)

@@ -78,13 +78,10 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
 
     let state_colors = db.get_all_state_colors()?;
 
-    // da-coi0m: one width for the list and the band — `--cols`, else
-    // `$COLUMNS`, else the terminal. Piped with none of them the list
-    // prints whole and the band keeps its 80.
-    let cols = args
-        .cols
-        .map(usize::from)
-        .or_else(|| crate::render::term_layout::given_cols(20));
+    // da-coi0m, da-ky7m6: the list fits `--width`, else the terminal's
+    // (`$COLUMNS` first); piped it prints whole. The band, which has no
+    // whole, takes the same width, else `$COLUMNS`, else 80.
+    let cols = crate::render::term_layout::row_width();
 
     // Overlap-count map is still computed per-field outside the
     // snapshot — `current_now` doesn't carry overlap state. Compute
@@ -125,6 +122,7 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     // surface but in cells instead of pixels. A pinned snapshot_time
     // centres it on that instant (da-coi0m), as nowview's is.
     if !args.bare {
+        let cols = cols.or_else(|| crate::render::term_layout::given_cols(20));
         let cols = cols.unwrap_or(80).min(u16::MAX as usize) as u16;
         print_now_band(&args, db, cols, snapshot_time);
     }

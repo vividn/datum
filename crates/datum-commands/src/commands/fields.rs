@@ -101,7 +101,9 @@ pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
             cells
         })
         .collect();
-    format_grid(&headers, &rows)
+    use crate::render::term_layout::Give;
+    let give = [Give::Field, Give::Text, Give::Whole];
+    format_grid(&headers, &give[..headers.len()], &rows)
 }
 
 /// `[{"field", "spec", "states", "color", "state_colors", "ignored", "y",

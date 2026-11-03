@@ -37,7 +37,7 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
         suppress_header: false,
-        max_total_width: None,
+        max_total_width: crate::render::term_layout::row_width(),
     };
     let now = DatumTime::now();
     let ctxs = build_table_contexts(&matches, db);
