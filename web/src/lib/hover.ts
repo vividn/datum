@@ -25,6 +25,7 @@ import {
 	spendPress
 } from './inspect.js';
 import { readLanes } from './lanes.js';
+import { preview, type Preview } from './preview.js';
 import { inlineSvg } from './svgSafe.js';
 import { isSelected } from './selection.js';
 
@@ -329,6 +330,46 @@ function drawCursor(svg: SVGSVGElement | null, c: Cursor | null | undefined): vo
 		);
 	}
 	svg.append(...dottedLine(a, b, along, place.start, place.end), arrowHead(place.y, along, place.start));
+}
+
+/**
+ * What collect would log, on `svg` (da-axrdv): the dry run's entry in its
+ * field's lane, outlined white and dotted, as the selection is — not yet
+ * logged, and not now, whose dots are yellow. A length runs back from its
+ * time; a switch with none runs to the field's next change, or now; a
+ * moment is a ring. The lane is where the CLI drew the field's marks; a
+ * field with none in view takes the whole height, as the selection does.
+ */
+function drawPreview(svg: SVGSVGElement | null, p: Preview | null): void {
+	svg?.querySelectorAll('.preview').forEach((el) => el.remove());
+	if (!svg || !p) return;
+	const placed = (c: Cursor) => {
+		const place = placeOf(svg, c);
+		return place && place !== 'snapshot' ? place : null;
+	};
+	const end = placed({ at: new Date(p.at) });
+	if (!end) return;
+	const marks = [...svg.querySelectorAll(`:is(.block, .point-bg, .now-chunk)[data-field="${CSS.escape(p.field)}"]`)];
+	const following = marks.find((m) => Date.parse(m.getAttribute('data-from') ?? '') <= p.at && p.at < Date.parse(m.getAttribute('data-to') ?? ''));
+	const [from, to] = p.point
+		? [end.along, end.along]
+		: p.dur
+			? [placed({ at: new Date(p.at - p.dur * 1000) })?.along ?? end.lo, end.along]
+			: [end.along, (following && placed({ at: new Date(Math.min(Date.now(), Date.parse(following.getAttribute('data-to')!))) })?.along) ?? placed({ at: new Date(), rel: 0 })?.along ?? end.hi];
+	// Across, in the picture's own units: the marks' boxes on screen, read back.
+	const across = marks.flatMap((m) => {
+		const r = m.getBoundingClientRect();
+		const [a, b] = [userPoint(svg, r.left, r.top), userPoint(svg, r.right, r.bottom)];
+		return a && b ? (end.y ? [a.x, b.x] : [a.y, b.y]) : [];
+	});
+	const [lo, hi] = across.length ? [Math.min(...across), Math.max(...across)] : [end.start, end.end];
+	const outline = { class: 'preview', fill: 'rgba(255, 255, 255, 0.15)', stroke: '#ffffff', 'stroke-width': 1.5, 'stroke-dasharray': '3 3', 'vector-effect': 'non-scaling-stroke' };
+	const [a, b] = [Math.min(from, to), Math.max(from, to)];
+	svg.append(
+		p.point
+			? mark('circle', { ...outline, [end.y ? 'cy' : 'cx']: from, [end.y ? 'cx' : 'cy']: (lo + hi) / 2, r: Math.max(3, (hi - lo) / 2) })
+			: mark('rect', { ...outline, [end.y ? 'y' : 'x']: a, [end.y ? 'x' : 'y']: lo, [end.y ? 'height' : 'width']: b - a, [end.y ? 'width' : 'height']: hi - lo })
+	);
 }
 
 /**
@@ -731,6 +772,7 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 		if (!labeled) show(null);
 		drawUnsynced(svg, unsynced);
 		drawCursor(svg, sel);
+		drawPreview(svg, ahead);
 		highlight(svg, pilled);
 		bringOut(svg, chosen);
 		dimOthers(logs() ?? node);
@@ -781,6 +823,8 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	const LIFTS = ['pointerup', 'pointercancel', 'contextmenu'];
 
 	let sel: Cursor | null = null;
+	/** What collect would log, as the last dry run said. */
+	let ahead: Preview | null = null;
 	/** The field the bar's pill names, as the last change left it. */
 	let pilled: string | null = null;
 	/** The entries the bar's hid pill names, as the last change left it. */
@@ -894,6 +938,7 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 		sel = c ?? null;
 		drawCursor(node.querySelector('svg'), sel);
 	});
+	const unpreviewed = preview.subscribe((p) => drawPreview(node.querySelector('svg'), (ahead = p)));
 	// Marked on the picture already drawn, not by redrawing it: a pill is
 	// not a new command, and asking datum for the day again to outline one
 	// of its fields would be a process per gesture.
@@ -927,6 +972,7 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 			window.removeEventListener('blur', lift);
 			clearTimeout(lifting);
 			unsubscribe();
+			unpreviewed();
 			unpilled();
 			unchosen();
 		}

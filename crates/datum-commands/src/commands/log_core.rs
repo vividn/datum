@@ -1057,7 +1057,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let registry = crate::commands::helpers::registry_for(db, &[&entry.field]);
         let ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
         let output = args.output()?;
-        crate::render::print_entry(&entry, Some(&ctx), None, registry.as_ref());
+        crate::render::show_dry_run(&entry, registry.as_ref(), &ctx, &output);
         if !output.silent() {
             eprintln!("[dry-run] would {action} {}", entry.slug);
         }

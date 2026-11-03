@@ -124,6 +124,8 @@ pub enum Outcome {
     /// The row `datum ignore` wrote (da-te4id). `track`'s is a `Create`, which
     /// [`datum_core::track::track_action_label`] names.
     Ignore,
+    /// What a `--dry-run` would write, written nowhere (da-axrdv).
+    DryRun,
 }
 
 thread_local! {
@@ -167,6 +169,7 @@ impl Outcome {
             Outcome::Undone => "UNDONE",
             Outcome::Revert => "REVERT",
             Outcome::Ignore => "IGNORE",
+            Outcome::DryRun => "DRYRUN",
         }
     }
 
@@ -198,6 +201,7 @@ impl Outcome {
             Outcome::NoDiff => "#ffa500",                   // orange, as emitted
             Outcome::IsLast => "#b8860b",                   // dark amber, as emitted
             Outcome::Undone | Outcome::Revert => "#9a8cff", // lavender, as emitted
+            Outcome::DryRun => "#888888",                   // grey
         }
     }
 
@@ -216,6 +220,7 @@ impl Outcome {
             Outcome::NoDiff => "\x1b[38;2;255;165;0m",       // orange
             Outcome::IsLast => "\x1b[38;2;184;134;11m",      // dark amber
             Outcome::Undone | Outcome::Revert => "\x1b[38;2;154;140;255m", // lavender
+            Outcome::DryRun => GREY_FG,
         }
     }
 }
@@ -598,6 +603,28 @@ pub fn show_action_with_context(
     show_lines(entry, args, |now| {
         action_lines_at(entry, action, registry, ctx, now)
     });
+}
+
+/// What a `--dry-run` would write. Under `--show json` a DRYRUN document,
+/// with the time and the length the entry would take as data, which
+/// datum.day's nowview draws before it is logged (da-axrdv); otherwise the
+/// entry's row.
+pub fn show_dry_run(
+    entry: &Entry,
+    registry: Option<&SpecRegistry>,
+    ctx: &RenderContext,
+    args: &OutputArgs,
+) {
+    if args.show != Show::Json {
+        return print_entry(entry, Some(ctx), None, registry);
+    }
+    show_action_with_context(entry, Outcome::DryRun, registry, Some(ctx), args);
+    let at = entry
+        .at
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+    json_echo::annotate_last("at", serde_json::json!(at));
+    json_echo::annotate_last("dur_seconds", serde_json::json!(entry.duration_seconds()));
 }
 
 /// `UPDATE`, drawn as what changed from `before` to `after` (da-27x6p).

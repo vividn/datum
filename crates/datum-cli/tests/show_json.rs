@@ -617,3 +617,41 @@ fn a_bare_undo_of_a_list_echoes_each_entry_and_redo_the_update() {
         assert_eq!(doc["changes"][0]["after"], "5");
     }
 }
+
+/// A dry run is a DRYRUN document carrying the time and the length the entry
+/// would take, what datum.day's nowview draws before it is logged
+/// (da-axrdv) — a length the field's spec assigns included — and writes
+/// nothing.
+#[test]
+fn a_dry_run_is_a_dryrun_doc_with_its_time_and_length() {
+    let env = Env::new();
+    env.run(&["setup", "run", "--verb", "start", "--assign", "dur=20m"]);
+    let docs = env.docs(&[
+        "switch",
+        "mood",
+        "meh",
+        "-t",
+        "2026-03-16T09:15:00Z",
+        "dur=10m",
+        "--dry-run",
+        "--show",
+        "json",
+    ]);
+    assert_eq!(docs.len(), 1, "{docs:?}");
+    assert_eq!(docs[0]["action"], "DRYRUN");
+    assert_eq!(docs[0]["at"], "2026-03-16T09:15:00.000Z");
+    assert_eq!(docs[0]["dur_seconds"], 600);
+
+    let assigned = env.docs(&["start", "run", "--dry-run", "--show", "json"]);
+    assert_eq!(assigned[0]["dur_seconds"], 1200, "the spec's dur=20m");
+    let moment = env.docs(&["moment", "coffee", "--dry-run", "--show", "json"]);
+    assert_eq!(moment[0]["dur_seconds"], Value::Null);
+
+    let tail = env.run(&["tail", "--json"]);
+    let rows: Value = serde_json::from_str(&tail).unwrap();
+    assert_eq!(
+        rows["rows"].as_array().map(Vec::len),
+        Some(0),
+        "nothing written: {tail}"
+    );
+}

@@ -169,6 +169,7 @@
 	import Pill from '#lib/Pill.svelte';
 	import { pills, removePill, selected } from '#lib/bar.ts';
 	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
+	import { preview } from '#lib/preview.ts';
 	import { DOUBLE_MS, inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
 	import { markOf, pressSpent } from '#lib/inspect.ts';
 	import { readLanes } from '#lib/lanes.ts';
@@ -200,7 +201,7 @@
 	}
 
 	let {
-		history = NOWVIEW_HISTORY,
+		history: kept = NOWVIEW_HISTORY,
 		at = undefined,
 		vertical = false,
 		epoch = 0,
@@ -243,6 +244,19 @@
 	 */
 	let centre = $state.raw<{ arg: string; by: 'sel' | 'pan' } | null>(untrack(() => (at ? { arg: at, by: 'pan' } : null)));
 
+	/**
+	 * The window: the one kept, or longer while collect's preview reaches
+	 * back past it from now (da-axrdv, vividn: «The nowview could even zoom
+	 * out as necessary if duration goes beyond its scope»), with a fifth of
+	 * it to spare. A window a hand moved off now keeps its length, and the
+	 * snapshot stays one.
+	 */
+	const history = $derived.by(() => {
+		const p = $preview;
+		// A snapshot has no window to widen, and draws no preview.
+		const reach = p && !centre && showHistory && stepMinutes(kept) > 0 ? ((Date.now() - p.at + (p.dur ?? 0) * 1000) / 60_000) * 1.25 : 0;
+		return reach > stepMinutes(kept) ? historyArg(Math.ceil(reach)) : kept;
+	});
 	/** The window in minutes; a history datum would not read is the default's. */
 	const minutes = $derived(stepMinutes(history) > 0 ? stepMinutes(history) : stepMinutes(NOWVIEW_HISTORY));
 	/** `-t`'s spelling of `m` minutes before now, to the second: `-15`, `-22m30s`, `-20s`. */
@@ -1931,6 +1945,11 @@
 			const r = el?.querySelector(selector)?.getBoundingClientRect();
 			return r ? (vertical ? r.top + r.height / 2 : r.left + r.width / 2) - start : null;
 		};
+		// The length's pill stands at its far edge, where its dotted line is (da-axrdv).
+		const leadOf = (selector: string) => {
+			const r = el?.querySelector(selector)?.getBoundingClientRect();
+			return r ? (vertical ? r.top : r.left) - start : null;
+		};
 		// Kept inside the band: a pill centered on a mark at either end of it
 		// would otherwise hang half of itself off the widget. The pill's own
 		// length is read off the one on screen, so a two-section
@@ -1952,7 +1971,7 @@
 		// The length is relative, so on the relative axis whatever its time is (da-f4sto).
 		spots = {
 			time: spot(held(centreOf('svg.svg .cursor-head'), '.nowview-pills .pill.time'), $pointed?.rel !== undefined ? relStrip : absStrip),
-			dur: spot(held(centreOf('svg.svg .cursor-span'), '.nowview-pills .pill.dur'), relStrip)
+			dur: spot(held(leadOf('svg.svg .cursor-span'), '.nowview-pills .pill.dur'), relStrip)
 		};
 		// The «now» under the strip, or, with none drawn, the axis's row and
 		// the side of the window now lies on (da-dv45l).

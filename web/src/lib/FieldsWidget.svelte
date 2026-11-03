@@ -114,7 +114,10 @@
 	import { act } from './act.js';
 	import { holds } from './hold.js';
 	import { fieldPill, focusLine, pills, prefill, setFieldPill, text, type Pill } from './bar.js';
-	import { SPAN_ID, cursor, pointAt, type Cursor } from './cursor.js';
+	import { SPAN_ID, cursor, pointAt, pointed, type Cursor } from './cursor.js';
+	import { grammar } from '#lib/layout/engine.ts';
+	import { previewOf } from './preview.js';
+	import { withPills } from './selection.js';
 	import { closer, rowsUnder, type Near } from './lanes.js';
 	import { shellJoin } from './shellSplit.js';
 	import {
@@ -490,6 +493,8 @@
 	/** Each `−q` and each `5m` a tap adds, in minutes. */
 	const STEP = 5;
 
+	/** The length a collect drag left, which a tap adds no five to; a length set anywhere else adds them again. */
+	let draggedTo = $state<number | null>(null);
 	/** The state pill's state, and whether `-m` is on the bar. */
 	const chosen = $derived($pills.find((p) => p.id === STATE_ID)?.text ?? null);
 	const moment = $derived($pills.some((p) => p.id === MOMENT_ID));
@@ -498,7 +503,18 @@
 	const span = $derived($pills.some((p) => p.id === SPAN_ID) ? ($cursor?.span ?? null) : null);
 	/** A tap adds a `q` while the time is so many fives before now, and five minutes while the length is fives: a drag leaves neither. */
 	const addsQ = $derived(!!timePill && $cursor?.rel !== undefined && $cursor.rel > 0 && $cursor.rel % STEP === 0);
-	const addsM = $derived(span !== null && span % STEP === 0);
+	const addsM = $derived(span !== null && span % STEP === 0 && span !== draggedTo);
+
+	// What the open field would log, drawn on the nowview before it is
+	// (da-axrdv): its line as a state's tap or the bar would run it, the
+	// CLI's dry run of it. Asked again as a pill moves, and as the minute
+	// moves a relative time on.
+	$effect(() => {
+		const verb = picking && picking.shape.kind !== 'record' ? pressArgv(picking)[0] : null;
+		void $pointed;
+		previewOf(verb ? withPills($grammar, [verb], $pills).argv : null);
+	});
+	$effect(() => () => void previewOf(null));
 
 	// A picked field gone — deleted, the database emptied or restored,
 	// another tab's write — closes, not a view held in waiting to take the
@@ -523,15 +539,55 @@
 	}
 	/** `5m`: five minutes more, in place of `-m`. */
 	function longer() {
+		draggedTo = null;
 		setMoment(false);
 		const c = get(cursor);
 		pointAt({ ...(c ? where(c) : { rel: 0 }), span: (c?.span ?? 0) + STEP });
 	}
 	/** The length's ×. */
 	function clearLength() {
+		draggedTo = null;
 		const c = get(cursor);
 		if (c) pointAt(where(c));
 	}
+	// ---- a pill DRAGGED (da-axrdv) ------------------------------------------
+	//
+	// vividn: «you can grab and hold them and nudge them or drag them to the
+	// left and right to make quick adjustments to the relative time and
+	// duration. For precise seeking you can still use the nowview.» Sideways,
+	// a minute for every few pixels and faster the further it goes, along
+	// the nowview's time: right is later, so the length, whose far edge is
+	// to the left, grows to the left. A dragged pill goes plain and adds no
+	// more fives: `−qq` is `-t 13:41`, the length `12m`.
+
+	/** Px of drag for the first minute. */
+	const JOG_PX = 6;
+	/** How a click right after a drag is told from one: it is the drag's own. */
+	const JOG_CLICK_MS = 300;
+	let jog: { kind: string; x: number; was: Cursor; moved: boolean } | null = null;
+	let jogged = -Infinity;
+
+	function jogDown(kind: string, e: PointerEvent) {
+		const was = kind === 'time' || kind === 'length' ? get(pointed) : null;
+		if (!was || disabled) return;
+		jog = { kind, x: e.clientX, was, moved: false };
+		(e.currentTarget as Element).setPointerCapture(e.pointerId);
+	}
+	function jogMove(e: PointerEvent) {
+		if (!jog) return;
+		const dx = e.clientX - jog.x;
+		if (!jog.moved && Math.abs(dx) < CLICK_SLOP) return;
+		jog.moved = true;
+		const by = Math.sign(dx) * Math.round((Math.abs(dx) / JOG_PX) ** 1.4);
+		const c = jog.was;
+		if (jog.kind === 'time') return pointAt({ at: new Date(+c.at + by * 60_000), span: c.span, from: c.from });
+		pointAt({ ...where(c), span: (draggedTo = Math.max(1, (c.span ?? 0) - by)) });
+	}
+	function jogUp() {
+		if (jog?.moved) jogged = performance.now();
+		jog = null;
+	}
+
 	/** `−m` is a toggle, and a moment has no length. */
 	function toggleMoment() {
 		if (!moment) clearLength();
@@ -801,7 +857,17 @@
 <!-- A pill of the view's own, two parts: the left one presses `more` (none: it only says), the × clears it. -->
 {#snippet twoPart(kind: string, label: string, more: (() => void) | null, clear: () => void)}
 	<span class="part-pill" data-pill={kind}>
-		<button class="more" data-more disabled={disabled || !more} onclick={() => more?.()}
+		<!-- Not `disabled` with nothing to add: a drag goes on holding it. -->
+		<button
+			class="more"
+			data-more
+			{disabled}
+			aria-disabled={!more || undefined}
+			onpointerdown={(e) => jogDown(kind, e)}
+			onpointermove={jogMove}
+			onpointerup={jogUp}
+			onpointercancel={jogUp}
+			onclick={() => performance.now() - jogged > JOG_CLICK_MS && more?.()}
 			>{#if kind === 'length'}<LengthArrow />{/if}{label}</button
 		><button
 			class="clear"
@@ -1333,8 +1399,14 @@
 		cursor: pointer;
 	}
 
-	.part-pill .more:disabled {
+	.part-pill .more:disabled,
+	.part-pill .more[aria-disabled] {
 		cursor: default;
+	}
+
+	/* A time or a length is held and dragged sideways. */
+	.part-pill:is([data-pill='time'], [data-pill='length']) .more {
+		touch-action: none;
 	}
 
 	.part-pill .clear {

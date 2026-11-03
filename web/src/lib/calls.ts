@@ -45,6 +45,11 @@ export function fieldArgv(field: string): string[] {
 	return ['fields', field, '--json'];
 }
 
+/** `argv`, a log line, as what it would write and does not (da-axrdv): asked under `DATUM_SHOW=json`, a DRYRUN document. */
+export function dryRunArgv(argv: string[]): string[] {
+	return [...argv, '--dry-run'];
+}
+
 export function frecencyArgv(): string[] {
 	return ['fields', '--json', '--sort', 'frecency'];
 }

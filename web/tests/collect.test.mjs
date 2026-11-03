@@ -116,7 +116,7 @@ describe('collect', () => {
 			const seen = await app.spyOnRunner();
 			await page.locator(`${VIEW} [data-state="meh"]`).click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'switch'));
-			assert.deepEqual((await seen()).find((a) => a[0] === 'switch'), ['switch', 'mood', 'meh', '-q']);
+			assert.deepEqual((await seen()).find((a) => a[0] === 'switch' && !a.includes('--dry-run')), ['switch', 'mood', 'meh', '-q']);
 			await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
 			await app.idle();
