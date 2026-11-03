@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import ts from 'typescript';
 import { resolveLibAsSource } from './support/libhook.mjs';
+import { exec } from './support/process.mjs';
 
 resolveLibAsSource();
 const calls = await import('../src/lib/calls.ts');
@@ -34,7 +35,7 @@ const { DEFAULT_STATS, statsArgv } = await import('../src/lib/stats.ts');
 const web = fileURLToPath(new URL('..', import.meta.url));
 const module = await WebAssembly.compile(readFileSync(join(web, 'src/lib/wasm/datum-cli.wasm')));
 
-/** `datum <argv>` on `handles`, as `runners/wasi.ts` runs it. */
+/** `datum <argv>` on `handles`, as `runners/wasi.ts` runs it: one command on an instance of its own. */
 function datum(handles, argv, { stdin = '', stage, client = 'calls' } = {}) {
 	const stdout = new Sink();
 	const stderr = new Sink();
@@ -42,7 +43,7 @@ function datum(handles, argv, { stdin = '', stage, client = 'calls' } = {}) {
 	const fds = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, dir];
 	const vars = ['HOME=/data', 'DATUM_HOME=/data', 'DATUM_DB=/data/datum.db', 'TZ=UTC', `DATUM_CLIENT_ID=${client}`, 'FORCE_COLOR=1'];
 	const wasi = new WASI(['datum', ...argv], vars, fds, { debug: false });
-	const code = wasi.start(new WebAssembly.Instance(module, { wasi_snapshot_preview1: wasi.wasiImport }));
+	const code = exec(module, wasi);
 	return { code, stdout: stdout.text(), stderr: stderr.text(), stage: staged(dir) };
 }
 

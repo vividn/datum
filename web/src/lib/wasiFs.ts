@@ -81,9 +81,24 @@ export type Handle = ConstructorParameters<typeof SyncOPFSFile>[0];
 /**
  * `name`, preopened, with `handles` as the files SQLite creates and deletes
  * — and, given a `stage`, its files in a `stage` directory beside them.
+ *
+ * Each file is the inode `inodes` holds for it, pointed at its handle here:
+ * a descriptor an instance kept open from an earlier burst reads and writes
+ * this burst's handle (#lib/instance.ts, da-jm4sv).
  */
-export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?: Stage): PreopenDirectory & { moved: [string, string][]; left: Set<Handle> } {
-	const backed = new Map([...handles].map(([file, handle]) => [file, new SyncOPFSFile(quotaAware(handle))]));
+export function opfsDirectory(
+	name: string,
+	handles: Map<string, Handle>,
+	stage?: Stage,
+	inodes = new Map<string, SyncOPFSFile>()
+): PreopenDirectory & { moved: [string, string][]; left: Set<Handle> } {
+	const inode = (file: string, handle: Handle) => {
+		const opfs = inodes.get(file) ?? new SyncOPFSFile(handle);
+		opfs.handle = handle;
+		inodes.set(file, opfs);
+		return opfs;
+	};
+	const backed = new Map([...handles].map(([file, handle]) => [file, inode(file, quotaAware(handle))]));
 
 	class Contents extends Map<string, Inode> {
 		delete(file: string): boolean {

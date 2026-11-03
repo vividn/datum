@@ -195,6 +195,107 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     result
 }
 
+/// Exit code for a duplicate / "already have this" outcome. Matches datum v2
+/// (`reference/datum-v2/src/index.ts`, `process.exit(11)` on `DocExistsError`)
+/// so idempotent loggers can treat a re-log as a benign skip:
+///
+/// ```sh
+/// datum occur coffee ; [ $? -eq 11 ] && echo "already logged, skipping"
+/// ```
+///
+/// Fires for both flavours of duplicate:
+///   * a content-identical re-log (deduped to `EXISTS`, surfaced via the
+///     `took_duplicate_noop` side-signal — a *successful* no-op, not an error)
+///   * a slug collision with conflicting data (a `DatumError::Duplicate` error)
+///
+/// Kept to this single distinct code — exit-code sprawl is its own footgun.
+pub const EXIT_DUPLICATE: i32 = 11;
+
+/// Exit code when the reader of stdout goes away (`datum tail | head -1`):
+/// 128 + SIGPIPE, what a shell reports for any unix tool killed that way.
+pub const EXIT_BROKEN_PIPE: i32 = 141;
+
+/// Exit code when a question went unanswered (da-jytnl): no answer on stdin,
+/// and no default to take. The question is already on stderr; datum.day shows
+/// it and runs the line again with the answer on stdin (`commands::question`).
+pub const EXIT_UNANSWERED: i32 = 12;
+
+/// The exit code of a command that ended in `result`, its error printed: the
+/// binary's, and each of datum.day's commands' ([`reactor`]).
+pub fn exit_code(result: Result<()>) -> i32 {
+    match result {
+        Ok(()) if args::took_duplicate_noop() => EXIT_DUPLICATE,
+        Ok(()) => 0,
+        Err(e) if e.chain().any(|c| c.is::<commands::question::Unanswered>()) => {
+            eprintln!();
+            EXIT_UNANSWERED
+        }
+        Err(e) => {
+            // Mirror anyhow's default `main`: print the full error chain.
+            eprintln!("Error: {e:?}");
+            // A `Duplicate` (slug collision) gets the distinct, scriptable
+            // code; everything else is a generic failure. The whole source
+            // chain, so a wrapped (`.context()`'d) `Duplicate` still maps.
+            let duplicate = e.chain().any(|cause| {
+                matches!(
+                    cause.downcast_ref::<datum_core::error::DatumError>(),
+                    Some(datum_core::error::DatumError::Duplicate(_))
+                )
+            });
+            if duplicate {
+                EXIT_DUPLICATE
+            } else {
+                1
+            }
+        }
+    }
+}
+
+/// datum.day's entry (da-jm4sv): the CLI built as a WASI reactor
+/// (`web/scripts/build-cli-wasm.mjs`), one instance in the database worker
+/// that runs command after command (`web/src/lib/cli.ts`), where each was a
+/// process of its own. Each call is one: the worker sets its argv, env,
+/// stdin, stdout, stderr and wall clock before it, and this runs it as `main`
+/// does and returns its exit code.
+///
+/// What a process left behind it at exit is put down here: the env is read
+/// again, stdout flushed and stdin read to its end, so no buffered line of one
+/// command reaches the next. The database files named by `DATUM_KEEP_OPEN`
+/// (a comma-separated list of paths, removed from the env) keep their
+/// connection between calls ([`datum_core::db::keep_open`]), so a command
+/// finds SQLite's cache as the last one left it. A trap ends the instance,
+/// and the worker starts another.
+#[cfg(target_os = "wasi")]
+pub mod reactor {
+    use std::io::Write;
+
+    extern "C" {
+        /// wasi-libc's: the env is read from the host again at its next use.
+        fn __wasilibc_deinitialize_environ();
+    }
+
+    /// Run the command the worker set up; its exit code.
+    #[no_mangle]
+    pub extern "C" fn datum_line() -> i32 {
+        // SAFETY: one thread, and no reference into the env is held across it.
+        unsafe { __wasilibc_deinitialize_environ() };
+        let keep = std::env::var("DATUM_KEEP_OPEN").unwrap_or_default();
+        // SAFETY: one thread.
+        unsafe { std::env::remove_var("DATUM_KEEP_OPEN") };
+        let keep: Vec<String> = keep
+            .split(',')
+            .filter(|p| !p.is_empty())
+            .map(String::from)
+            .collect();
+        datum_core::db::keep_open(&keep);
+        datum_core::db::forget_invocation();
+        let code = super::exit_code(super::run(std::env::args().collect()));
+        let _ = std::io::stdout().flush();
+        let _ = std::io::copy(&mut std::io::stdin().lock(), &mut std::io::sink());
+        code
+    }
+}
+
 /// A command that writes, finding the database's write lock held and
 /// having written nothing (da-9q3fr): [`run`] spools it instead.
 #[derive(Debug)]

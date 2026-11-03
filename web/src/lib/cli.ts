@@ -1,12 +1,16 @@
-// The real `datum` CLI, one process per command (da-1vat, da-g8o8).
+// The real `datum` CLI, one instance answering command after command
+// (da-1vat, da-g8o8, da-jm4sv).
 //
 // Runs inside #lib/db.worker.ts, the only place OPFS sync access handles
-// exist. The module is `datum-cli` built for wasm32-wasip1
-// (scripts/build-cli-wasm.mjs): compiled once per worker, instantiated
-// afresh for every command, with argv, env, stdin, stdout and stderr
-// exactly as a shell would give them, and `/data` preopened over the
-// database files in #lib/wasiFs.ts. What it prints is what the CLI prints;
-// there is nothing here that knows what a command means.
+// exist. The module is `datum-cli` built for wasm32-wasip1 as a reactor
+// (scripts/build-cli-wasm.mjs): compiled once per worker and instantiated
+// once (#lib/instance.ts), each command given argv, env, stdin, stdout and
+// stderr exactly as a shell would give a process, and `/data` preopened over
+// the database files in #lib/wasiFs.ts. What it prints is what the CLI
+// prints; there is nothing here that knows what a command means. The
+// instance keeps each database's connection open between commands, so one
+// costs its query and not an instantiate and two opens (~10 ms, da-zv6hn);
+// one that traps or grows too big ends, and the next command starts another.
 //
 // EVERY BURST TAKES THE FILES FOR ITSELF. A sync access handle on each
 // database file is opened before a process starts, so nothing outside this
@@ -37,7 +41,8 @@
 // going back for the file: when it gets it, what was typed meanwhile moves
 // across through the CLI's own `db backup -` and `db restore -`.
 
-import { File as MemFile, OpenFile, WASI, wasi as defs, type Fd, type PreopenDirectory } from './vendor/browser_wasi_shim/index.js';
+import { File as MemFile, OpenFile, type Fd, type PreopenDirectory } from './vendor/browser_wasi_shim/index.js';
+import { Instance } from './instance.js';
 import cliWasm from './wasm/datum-cli.wasm?url';
 import { cached, DATABASES, dbFiles, forgetCached, KEPT, MemoryHandle, opfsDirectory, Sink, staged, unkept, type Handle } from './wasiFs.js';
 import { backupArgv, mergeArgv } from './calls.js';
@@ -526,7 +531,26 @@ function changeCounter(db: Handle): number {
 	return new DataView(bytes.buffer).getUint32(0);
 }
 
-/** One process against `handles`. Resolves once it has exited. */
+/**
+ * The instance that runs this worker's commands (#lib/instance.ts, da-jm4sv),
+ * once one has: started at the first, and again after one that ended it.
+ */
+let live: Instance | null = null;
+
+/**
+ * The most memory an instance is kept with after a command. wasm memory
+ * never shrinks, so one command's peak would be the instance's for its life:
+ * past this the next command starts another. Twice SQLite's page cache
+ * (`cache_size`, 64 MiB, `Db::configure_connection`), so a cache that has
+ * filled is kept, and one command that held far more than that is not.
+ */
+const KEEP_MEMORY = 128 << 20;
+
+/**
+ * One command against `handles`, on the worker's instance; `fresh`, on an
+ * instance of its own, as a process of its own was. Resolves once it has
+ * run.
+ */
 async function exec(
 	module: WebAssembly.Module,
 	handles: Map<string, Handle>,
@@ -535,7 +559,8 @@ async function exec(
 	stdin = '',
 	onStderr?: (text: string) => void,
 	stage?: Stage,
-	at?: number
+	at?: number,
+	fresh = false
 ) {
 	const stdout = new Sink();
 	const stderr = new Sink(onStderr);
@@ -548,54 +573,26 @@ async function exec(
 		.map((name) => ({ name, db: handles.get(`${name}.db`) }))
 		.filter((pair): pair is { name: string; db: Handle } => pair.db !== undefined);
 	const before = dbs.map(({ db }) => db.getSize() > 0 && changeCounter(db));
-	const data = opfsDirectory('/data', handles, stage);
-	const fds: Fd[] = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, data];
+	const cli = (!fresh && live) || (await Instance.start(module));
+	const data = opfsDirectory('/data', handles, stage, cli.inodes);
+	const fds: [Fd, Fd, Fd, Fd] = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, data];
 	// HOME inside the preopen: datum makes its config dir there, in memory
-	// for the length of the process. The database is DATUM_DB, unless `env`
+	// for the length of the command. The database is DATUM_DB, unless `env`
 	// names one (the page's, #lib/run.ts `dbEnv`) — and datum's
 	// data dir is the preopen itself, so `--db <name>` lands on
 	// `/data/<name>.db` by the CLI's own rule, and `--db _internal` is the
-	// other persisted file with nothing here parsing argv for it.
+	// other persisted file with nothing here parsing argv for it. Those
+	// files' connections are kept for the next command (`DATUM_KEEP_OPEN`):
+	// a path the CLI is given is a file of this command's alone.
 	const fallback = env.some((v) => v.startsWith('DATUM_DB=')) ? [] : ['DATUM_DB=/data/datum.db'];
-	const vars = ['HOME=/data', 'DATUM_HOME=/data', ...fallback, ...env];
-	const args = ['datum', ...argv];
-	const wasi = new WASI(args, vars, fds, { debug: false });
-	// The shim (0.4.2, the latest) sizes argv in UTF-16 units and writes it
-	// as UTF-8, so a non-ASCII argument overran its buffer into the next one:
-	// `spec 日本語 --verb occur` arrived as `occuS`. Sized in
-	// bytes here, the way it already sizes the environment.
-	const argvBytes = args.reduce((n, arg) => n + new TextEncoder().encode(arg).length + 1, 0);
-	wasi.wasiImport.args_sizes_get = (count: number, size: number) => {
-		const view = new DataView(wasi.inst.exports.memory.buffer);
-		view.setUint32(count, args.length, true);
-		view.setUint32(size, argvBytes, true);
-		return 0;
-	};
-	// The gesture's instant is the process's wall clock (`FROZEN_AT`): its
-	// entry's time and its create time are when the person acted, not when
-	// the process got to run. MONOTONIC stays real, so what times itself works.
-	if (at !== undefined) {
-		const clock = wasi.wasiImport.clock_time_get;
-		wasi.wasiImport.clock_time_get = (id: number, precision: bigint, time: number) => {
-			if (id !== defs.CLOCKID_REALTIME) return clock(id, precision, time);
-			new DataView(wasi.inst.exports.memory.buffer).setBigUint64(time, BigInt(at) * 1_000_000n, true);
-			return 0;
-		};
-	}
-	const instance = await WebAssembly.instantiate(module, {
-		wasi_snapshot_preview1: wasi.wasiImport
-	});
+	const kept = fresh ? [] : [`DATUM_KEEP_OPEN=${dbs.map(({ name }) => `/data/${name}.db`).join(',')}`];
+	const vars = ['HOME=/data', 'DATUM_HOME=/data', ...fallback, ...env, ...kept];
 	const started = performance.now();
-	let code: number;
-	try {
-		code = wasi.start(instance as Parameters<WASI['start']>[0]);
-	} catch (e) {
-		// A trap: `panic = "abort"` in the wasm profile, after the panic
-		// message reached stderr. 134 is what a shell reports for SIGABRT.
-		console.warn('datum trapped:', e);
-		code = 134;
-		forgetCached();
-	}
+	const { code, dead, trapped } = await cli.run(['datum', ...argv], vars, fds, at);
+	if (trapped) forgetCached();
+	// What a command moved or let go of in `/data` is no file a connection
+	// kept open may still point into: the next starts afresh.
+	if (!fresh) live = dead || cli.memory > KEEP_MEMORY || data.left.size > 0 || data.moved.length > 0 ? null : cli;
 	const ran = performance.now();
 	for (const handle of handles.values()) handle.flush();
 	// In memory, what OPFS would keep is kept in the map.
@@ -681,6 +678,7 @@ export function probe(): Promise<StorageKind> {
 }
 
 function fallToMemory(): void {
+	live = null;
 	memory = new Map(dbFiles(databases).map((name) => [name, new MemoryHandle()]));
 	keepTrying(RETRY_FIRST_MS);
 }
@@ -703,6 +701,9 @@ function keepTrying(delay: number): void {
 			if (!held) return;
 			try {
 				const module = await compile();
+				// Each on an instance of its own: these are two sets of files under one name.
+				const alone = (handles: Map<string, Handle>, argv: string[], stdin = '') =>
+					exec(module, handles, argv, lastEnv, stdin, undefined, undefined, undefined, true);
 				// Memory stays the database until every one has moved: half
 				// the data durable is worse than all of it in memory, because
 				// nobody can see which half. A retry after a half-done move
@@ -710,21 +711,16 @@ function keepTrying(delay: number): void {
 				const restored = await withFiles(async (handles) => {
 					const said: string[] = [];
 					for (const db of databases) {
-						const backup = await exec(module, held, ['--db', db, ...backupArgv()], lastEnv);
+						const backup = await alone(held, ['--db', db, ...backupArgv()]);
 						if (backup.code !== 0) throw new Error(backup.stderr);
-						const restore = await exec(
-							module,
-							handles,
-							['--db', db, ...mergeArgv()],
-							lastEnv,
-							backup.stdout
-						);
+						const restore = await alone(handles, ['--db', db, ...mergeArgv()], backup.stdout);
 						if (restore.code !== 0) throw new Error(restore.stderr);
 						said.push(`${db}: ${restore.stdout}`);
 					}
 					return said.join('; ');
 				});
 				memory = null;
+				live = null;
 				console.info(`durable storage recovered: ${restored}`);
 				announce('opfs');
 			} catch (e) {
@@ -753,7 +749,7 @@ export function onBlocked(listener: (waited: number | null) => void): void {
 }
 
 /**
- * Run `datum <argv>` with `env`; resolves once the process has exited, or
+ * Run `datum <argv>` with `env`; resolves once it has run, or
  * `null` if a newer command with the same `key` superseded it first.
  * `pane`: a pane's refresh, which waits behind every other command;
  * `session`: a sync session's run, which waits behind the panes too, and

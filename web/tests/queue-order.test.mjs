@@ -4,15 +4,15 @@
 // after a write, behind `stats`, and a typed `occur` 13 s after its Enter.
 //
 // The day strip's `dayview` is made slow inside the worker, where the queue
-// measures it: the process busy-waits as it reads its argv, so the time is
+// measures it: the command busy-waits as it reads its argv, so the time is
 // the run's own.
 // Every request's arrival and answer is told to the page in order.
 //
 // And the requests a test is about wait together ON PURPOSE (vremya on
-// #479): a hold keeps the one process running from an arrival `from` until
+// #479): a hold keeps the one command waiting to run from an arrival `from` until
 // `count` arrivals matching `until`, so the order they then run in is the
 // queue's choice and not how fast a loaded box sent them. Held in
-// `instantiate`, asynchronously, so the worker still hears what arrives.
+// `datum_line`, asynchronously, so the worker still hears what arrives.
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,10 +58,6 @@ const queue = (slow) => `
 	WebAssembly.instantiate = async function (module, imports) {
 		const wasi = imports?.wasi_snapshot_preview1;
 		if (!wasi) return instantiate.apply(this, arguments);
-		const held = gate;
-		gate = null;
-		// Bounded, so a hold that is never released fails the test rather than hangs it.
-		if (held) await Promise.race([held, new Promise((resolve) => setTimeout(resolve, 10000))]);
 		let instance;
 		let size = 0;
 		const sizes = wasi.args_sizes_get;
@@ -82,7 +78,17 @@ const queue = (slow) => `
 			return code;
 		};
 		instance = await instantiate.call(this, module, imports);
-		return instance;
+		// Each command is a call of the one instance's \`datum_line\` (#lib/instance.ts), which
+		// the worker awaits: held there, before it reads its argv.
+		const line = instance.exports.datum_line;
+		const datum_line = async () => {
+			const held = gate;
+			gate = null;
+			// Bounded, so a hold that is never released fails the test rather than hangs it.
+			if (held) await Promise.race([held, new Promise((resolve) => setTimeout(resolve, 10000))]);
+			return line();
+		};
+		return { exports: { ...instance.exports, datum_line } };
 	};
 `;
 const QUEUE = queue(SLOW);

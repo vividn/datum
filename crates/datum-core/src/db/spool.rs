@@ -383,7 +383,8 @@ impl Db {
         // left as the file's, the snapshot would mint a key of its own.
         let _ = conn.execute("UPDATE sync_local SET path = ''", []);
         let db = Db {
-            conn,
+            conn: std::mem::ManuallyDrop::new(conn),
+            keep: false,
             holds: None,
             spec_alias_cache: Default::default(),
             client_id: Default::default(),

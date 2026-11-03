@@ -1,8 +1,8 @@
 // Build the real `datum` CLI for wasm32-wasip1 and drop it in src/lib/wasm/.
 //
 // This is route C of da-1vat, datum.day's only runner since da-g8o8: the
-// whole CLI, run in the browser one process per command under a WASI shim
-// (#lib/cli.ts). It needs a C compiler — rusqlite's `bundled` compiles
+// whole CLI, run in the browser under a WASI shim, one instance answering
+// command after command (#lib/cli.ts). It needs a C compiler — rusqlite's `bundled` compiles
 // SQLite's C, and for wasm32-wasip1 that means clang plus a wasi sysroot —
 // and it is shrunk with wasm-opt.
 //
@@ -95,7 +95,9 @@ async function tool({ url, sha256, dir }) {
 }
 
 const sdk = await tool(TOOLS.wasiSdk);
-const cli = ['--locked', '-p', 'datum-cli', '--bin', 'datum', '--no-default-features', '--target', 'wasm32-wasip1', '--profile', 'wasm-release'];
+// The library, as a WASI reactor (da-jm4sv): `datum_line` runs one command
+// on an instance the worker keeps, where `datum`'s `_start` ran one process.
+const cli = ['--locked', '-p', 'datum-cli', '--lib', '--no-default-features', '--target', 'wasm32-wasip1', '--profile', 'wasm-release'];
 const cliEnv = {
 	CC_wasm32_wasip1: `${sdk}/bin/clang`,
 	AR_wasm32_wasip1: `${sdk}/bin/ar`,
@@ -123,7 +125,7 @@ if (process.argv.includes('--check')) {
 const binaryen = await tool(TOOLS.binaryen);
 const wasmBindgen = await tool(TOOLS.wasmBindgen);
 
-cargo(['build', ...cli], cliEnv);
+cargo(['rustc', ...cli, '--crate-type', 'cdylib'], cliEnv);
 
 mkdirSync(resolve(out, '..'), { recursive: true });
 // ensure-wasm.mjs's record of what the module was built from; it writes it
@@ -156,7 +158,7 @@ function shrink(from, to) {
 	chmodSync(to, 0o644);
 }
 
-shrink(resolve(targetDir, 'wasm32-wasip1/wasm-release/datum.wasm'), out);
+shrink(resolve(targetDir, 'wasm32-wasip1/wasm-release/datum_cli.wasm'), out);
 
 const bytes = statSync(out).size;
 const gz = gzipSync(readFileSync(out)).length;

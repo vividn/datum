@@ -128,6 +128,17 @@ pub fn set_invocation(raw: Option<String>, alias_chain: Option<Value>) {
     });
 }
 
+/// Forget the client and `origin` the last command read: in a long-lived
+/// instance the next command is another process's, with an env of its own
+/// (da-jm4sv).
+pub fn forget_invocation() {
+    INVOCATION.with(|i| {
+        let mut i = i.borrow_mut();
+        i.client = None;
+        i.origin = None;
+    });
+}
+
 /// How to learn this client's id, asked the first time an op is signed.
 /// Lazy, so a command that writes nothing reads nothing for it.
 pub fn set_client_source(source: fn() -> Option<String>) {

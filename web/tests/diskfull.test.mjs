@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import { DB_FILES, MemoryHandle, opfsDirectory, Sink } from '../src/lib/wasiFs.ts';
+import { exec } from './support/process.mjs';
 
 const module = await WebAssembly.compile(await readFile(new URL('../src/lib/wasm/datum-cli.wasm', import.meta.url)));
 
@@ -41,8 +42,7 @@ function run(handles, argv, stdin = '') {
 	const fds = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, opfsDirectory('/data', handles)];
 	const vars = ['HOME=/data', 'DATUM_HOME=/data', 'DATUM_DB=/data/datum.db', 'TZ=UTC'];
 	const wasi = new WASI(['datum', ...argv], vars, fds, { debug: false });
-	const instance = new WebAssembly.Instance(module, { wasi_snapshot_preview1: wasi.wasiImport });
-	const code = wasi.start(instance);
+	const code = exec(module, wasi);
 	return { code, stdout: stdout.text(), stderr: stderr.text() };
 }
 

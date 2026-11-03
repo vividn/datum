@@ -32,6 +32,8 @@ mod definition;
 mod holder;
 mod insert;
 mod integrity;
+mod kept;
+pub use kept::keep_open;
 mod kit;
 mod kit_command;
 mod kit_layout;
@@ -94,8 +96,9 @@ pub use spool::{busy, Drained, Spool};
 pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub(crate) use sync::derive_all_conflicts;
 pub use sync::{
-    canonical_json, chain, device_id, peers, row_diff, set_client_source, set_device_source,
-    set_invocation, ApplySummary, DebugConflicts, FoldCheck, Named, Orphan, Stale, Version,
+    canonical_json, chain, device_id, forget_invocation, peers, row_diff, set_client_source,
+    set_device_source, set_invocation, ApplySummary, DebugConflicts, FoldCheck, Named, Orphan,
+    Stale, Version,
 };
 pub use tombstone::{revert_in_tx, soft_delete_in_tx, take_back_in_tx};
 pub use types::{
@@ -127,7 +130,10 @@ pub(crate) use types::{
 };
 
 pub struct Db {
-    conn: Connection,
+    /// Closed by [`Db`]'s drop, or handed back to be kept ([`keep_open`]).
+    conn: std::mem::ManuallyDrop<Connection>,
+    /// This handle's connection is kept when it drops (da-jm4sv).
+    keep: bool,
     /// Records this handle's holds of the write lock (da-hyem1).
     holds: Option<std::sync::Arc<holder::Watch>>,
     /// Lazy cache of the spec-derived alias index, stamped with the
@@ -159,6 +165,16 @@ pub struct Db {
     /// The file's length and modification time as an `immutable` open of
     /// it began ([`Db::open_read_only`]); `None` for any other handle.
     read_from: Option<(u64, std::time::SystemTime)>,
+}
+
+impl Drop for Db {
+    fn drop(&mut self) {
+        // SAFETY: taken here, once, and never read again.
+        let conn = unsafe { std::mem::ManuallyDrop::take(&mut self.conn) };
+        if let (true, Some(path)) = (self.keep, &self.path) {
+            kept::give_back(&path.to_string_lossy(), conn);
+        }
+    }
 }
 
 /// How long [`Db::open_read_only`] waits for a `-wal` or `-shm` alone to be
@@ -284,15 +300,24 @@ impl Db {
         FILES_OPENED.with(Cell::get)
     }
 
-    /// Open (or create) the database at the given path.
+    /// Open (or create) the database at the given path: on the connection
+    /// kept for it, where one is ([`keep_open`]), migrated as a new one is.
     pub fn open(path: &str) -> Result<Self> {
         Self::choose_vfs();
         let created = !std::path::Path::new(path).exists();
-        let mut conn = Connection::open(path)?;
+        let (kept, keep) = kept::take(path);
+        // A file gone since (removed, or emptied, which datum.day's `/data`
+        // reads as gone) is no file the kept connection may go on reading:
+        // it closes, and the open makes the file anew, as a process's did.
+        let mut conn = match kept.filter(|_| !created) {
+            Some(conn) => conn,
+            None => Connection::open(path)?,
+        };
         Self::configure_connection(&mut conn)?;
         let mut db = Db {
             holds: holder::watch(&conn, std::path::Path::new(path)),
-            conn,
+            conn: std::mem::ManuallyDrop::new(conn),
+            keep,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
@@ -319,7 +344,8 @@ impl Db {
         Self::configure_connection(&mut conn)?;
         Ok(Db {
             holds: holder::watch(&conn, std::path::Path::new(path)),
-            conn,
+            conn: std::mem::ManuallyDrop::new(conn),
+            keep: false,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
@@ -418,7 +444,8 @@ impl Db {
                 | OpenFlags::SQLITE_OPEN_URI,
         )?;
         Ok(Db {
-            conn,
+            conn: std::mem::ManuallyDrop::new(conn),
+            keep: false,
             holds: None,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
@@ -500,7 +527,8 @@ impl Db {
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         let mut db = Db {
-            conn,
+            conn: std::mem::ManuallyDrop::new(conn),
+            keep: false,
             holds: None,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),

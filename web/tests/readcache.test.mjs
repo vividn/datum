@@ -11,7 +11,8 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
+import { File as MemFile, OpenFile } from '../src/lib/vendor/browser_wasi_shim/index.js';
+import { Instance } from '../src/lib/instance.ts';
 import { cached, DB_FILES, forgetCached, MemoryHandle, opfsDirectory, Sink } from '../src/lib/wasiFs.ts';
 
 const module = await WebAssembly.compile(await readFile(new URL('../src/lib/wasm/datum-cli.wasm', import.meta.url)));
@@ -47,13 +48,12 @@ const release = (held) => {
 };
 
 /** `datum <argv>` against `handles`, as #lib/cli.ts runs it. */
-function run(handles, argv) {
+async function run(handles, argv) {
 	const stdout = new Sink();
 	const stderr = new Sink();
 	const fds = [new OpenFile(new MemFile(new Uint8Array())), stdout, stderr, opfsDirectory('/data', handles)];
 	const vars = ['HOME=/data', 'DATUM_HOME=/data', 'DATUM_DB=/data/datum.db', 'TZ=UTC'];
-	const wasi = new WASI(['datum', ...argv], vars, fds, { debug: false });
-	const code = wasi.start(new WebAssembly.Instance(module, { wasi_snapshot_preview1: wasi.wasiImport }));
+	const { code } = await (await Instance.start(module)).run(['datum', ...argv], vars, fds);
 	assert.equal(code, 0, stderr.text());
 	return stdout.text();
 }
@@ -61,9 +61,9 @@ function run(handles, argv) {
 const READS = [['tail', '--json'], ['now', '--json', '-t', '2026-10-07 12:00'], ['fields', '--json'], ['nowview', '-o', '-', '-t', '2026-10-07 12:00']];
 
 /** A database of a few days, `n` entries a day. */
-function seed(handles, n = 20) {
+async function seed(handles, n = 20) {
 	for (const day of ['2026-10-05', '2026-10-06', '2026-10-07'])
-		for (let i = 0; i < n; i++) run(handles, ['occur', `f${i % 5}`, `n=${i}`, '-t', `${day} ${String(i % 24).padStart(2, '0')}:00`]);
+		for (let i = 0; i < n; i++) await run(handles, ['occur', `f${i % 5}`, `n=${i}`, '-t', `${day} ${String(i % 24).padStart(2, '0')}:00`]);
 }
 
 describe('the cache', () => {
@@ -108,14 +108,14 @@ describe('the cache', () => {
 });
 
 describe("a command's reads", () => {
-	test('take the lock once a connection: a read command reads the file tens of times, not hundreds', () => {
+	test('take the lock once a connection: a read command reads the file tens of times, not hundreds', async () => {
 		forgetCached();
 		const files = disk();
-		seed(files);
+		await seed(files);
 		const db = files.get('datum.db');
 		for (const argv of READS) {
 			db.reads.length = 0;
-			run(files, argv);
+			await run(files, argv);
 			// The header check SQLite makes on taking its lock: a read at
 			// offset 24. Two connections a process (the alias pre-pass and
 			// the command) — 150 and more when it let go per statement.
@@ -125,45 +125,45 @@ describe("a command's reads", () => {
 		}
 	});
 
-	test('through the cache: the same output, and a command again reads nothing', () => {
+	test('through the cache: the same output, and a command again reads nothing', async () => {
 		forgetCached();
 		const plain = disk();
-		seed(plain);
+		await seed(plain);
 		const warm = copy(plain);
 		const held = hold(warm);
 		for (const argv of READS) {
-			const expected = run(plain, argv);
-			assert.equal(run(held, argv), expected, argv.join(' '));
+			const expected = await run(plain, argv);
+			assert.equal(await run(held, argv), expected, argv.join(' '));
 			warm.get('datum.db').reads.length = 0;
-			assert.equal(run(held, argv), expected, argv.join(' '));
+			assert.equal(await run(held, argv), expected, argv.join(' '));
 			assert.equal(warm.get('datum.db').reads.length, 0, `${argv[0]} again read the file`);
 		}
 		// After a write through it, it reads what the file now holds.
-		run(held, ['occur', 'coffee', '-t', '2026-10-07 13:00']);
+		await run(held, ['occur', 'coffee', '-t', '2026-10-07 13:00']);
 		const truth = copy(warm);
-		for (const argv of READS) assert.equal(run(held, argv), run(truth, argv), `after a write: ${argv.join(' ')}`);
+		for (const argv of READS) assert.equal(await run(held, argv), await run(truth, argv), `after a write: ${argv.join(' ')}`);
 		release(held);
 	});
 
-	test("is kept across a release only while the file is as it was: another tab's write drops it", () => {
+	test("is kept across a release only while the file is as it was: another tab's write drops it", async () => {
 		forgetCached();
 		const files = disk();
-		seed(files);
+		await seed(files);
 		let held = hold(files);
-		const before = run(held, ['tail', '--json']);
+		const before = await run(held, ['tail', '--json']);
 		release(held);
 
 		// Nothing changed: the next hold reads nothing it read before.
 		held = hold(files);
 		files.get('datum.db').reads.length = 0;
-		assert.equal(run(held, ['tail', '--json']), before);
+		assert.equal(await run(held, ['tail', '--json']), before);
 		assert.ok(files.get('datum.db').reads.length <= 2, `${files.get('datum.db').reads.length} reads`);
 		release(held);
 
 		// Another tab writes while this one holds nothing.
-		run(files, ['occur', 'coffee', 'by=other-tab', '-t', '2026-10-07 23:00']);
+		await run(files, ['occur', 'coffee', 'by=other-tab', '-t', '2026-10-07 23:00']);
 		held = hold(files);
-		assert.match(run(held, ['tail', '--json']), /other-tab/);
+		assert.match(await run(held, ['tail', '--json']), /other-tab/);
 		release(held);
 	});
 });

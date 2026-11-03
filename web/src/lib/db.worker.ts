@@ -5,8 +5,8 @@
 // exposed to dedicated workers only. On the main thread the database could
 // never be anything but in-memory, and every entry died on reload (da-5iqw).
 //
-// What runs here is the real `datum` CLI, one process per command — see
-// #lib/cli.ts. This file is only the door: a request in, a process's
+// What runs here is the real `datum` CLI, one instance answering command
+// after command — see #lib/cli.ts. This file is only the door: a request in, a process's
 // outcome out, and a word to the page when storage changes under it.
 
 import { onBlocked, onStorage, probe, runCli, setHidden, storageNow } from './cli.js';
