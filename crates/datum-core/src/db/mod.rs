@@ -25,6 +25,8 @@ pub use check_kept::CheckKept;
 pub(crate) use check_kept::CHECK_KEPT_SQL;
 /// The entries no op covers, kept by triggers (`sync_uncovered.sql`, da-8hfta).
 pub(crate) const SYNC_UNCOVERED_SQL: &str = include_str!("sync_uncovered.sql");
+/// An entry's author, its latest change's (`entry_author.sql`, da-zpc98).
+pub(crate) const ENTRY_AUTHOR_SQL: &str = include_str!("entry_author.sql");
 mod create_time_ids;
 mod definition;
 mod holder;
@@ -592,6 +594,7 @@ impl Db {
         self.conn.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
         self.conn.execute_batch(CHECK_KEPT_SQL)?;
         self.conn.execute_batch(SYNC_UNCOVERED_SQL)?;
+        self.conn.execute_batch(ENTRY_AUTHOR_SQL)?;
         // A kit index is this device's, derived from the definitions the
         // file holds (da-fwwtn). One that will not build is no reason not
         // to open: it is only an index.
@@ -692,6 +695,7 @@ impl Db {
             tx.execute_batch(SPEC_ALIAS_NAMES_SQL)?;
             tx.execute_batch(CHECK_KEPT_SQL)?;
             tx.execute_batch(SYNC_UNCOVERED_SQL)?;
+            tx.execute_batch(ENTRY_AUTHOR_SQL)?;
             crate::migrations::set_schema_version(tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
             within(tx)?;
             Ok(tables)

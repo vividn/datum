@@ -1604,8 +1604,18 @@ fn push_cell(buf: &mut String, body: &str, width: usize, right_align: bool) {
 // ─── Single-entry helpers (for `get` / `delete` preview) ─────────────────────
 
 /// Pretty JSON output for `datum get --pretty`.
-pub fn print_entry_pretty(entry: &Entry) -> serde_json::Result<()> {
-    println!("{}", serde_json::to_string_pretty(entry)?);
+/// The entry's columns in their order, then who made its latest change.
+pub fn print_entry_pretty(entry: &Entry, author: Option<&str>) -> serde_json::Result<()> {
+    #[derive(serde::Serialize)]
+    struct Shown<'a> {
+        #[serde(flatten)]
+        entry: &'a Entry,
+        author: Option<&'a str>,
+    }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&Shown { entry, author })?
+    );
     Ok(())
 }
 

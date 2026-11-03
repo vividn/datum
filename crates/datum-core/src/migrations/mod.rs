@@ -62,7 +62,7 @@ use v71_v80::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 79;
+pub const CURRENT_SCHEMA_VERSION: u32 = 80;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -653,5 +653,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_uncovered: the entries no op covers, kept by triggers, so a sync finds its baselines without reading every entry (da-8hfta)",
         apply: m78_to_79_sync_uncovered,
         down: down_79_to_78_sync_uncovered,
+    },
+    Migration {
+        from: 79,
+        to: 80,
+        summary: "entry_history.author and entries.author: who made each change, user@host, and an entry's latest (da-zpc98)",
+        apply: m79_to_80_author,
+        down: down_80_to_79_author,
     },
 ];

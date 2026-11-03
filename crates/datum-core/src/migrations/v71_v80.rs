@@ -392,3 +392,32 @@ pub(super) fn down_79_to_78_sync_uncovered(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+/// da-zpc98: who made each change, `user@host`, on its `entry_history` row
+/// and an entry's latest on its row, kept by `entry_author.sql`'s trigger;
+/// the rows before stay NULL. Local.
+pub(super) fn m79_to_80_author(conn: &Connection) -> Result<()> {
+    for table in ["entry_history", "entries"] {
+        if table_exists(conn, table)? && !has_column(conn, table, "author")? {
+            // `entries.author` is untyped, as schema.sql has it: an entries
+            // column's declared type weighs on its index choices.
+            let typed = if table == "entries" { "" } else { " TEXT" };
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN author{typed};"))?;
+        }
+    }
+    if table_exists(conn, "entry_history")? && table_exists(conn, "entries")? {
+        conn.execute_batch(crate::db::ENTRY_AUTHOR_SQL)?;
+    }
+    Ok(())
+}
+
+/// Reverse v79→v80: the authors go.
+pub(super) fn down_80_to_79_author(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TRIGGER IF EXISTS entry_history_author;")?;
+    for table in ["entry_history", "entries"] {
+        if table_exists(conn, table)? && has_column(conn, table, "author")? {
+            conn.execute_batch(&format!("ALTER TABLE {table} DROP COLUMN author;"))?;
+        }
+    }
+    Ok(())
+}

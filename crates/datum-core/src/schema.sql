@@ -152,6 +152,10 @@ CREATE TABLE IF NOT EXISTS entries (
     occur_time_offset      GENERATED ALWAYS AS (at_offset) VIRTUAL,
     occur_time_tz          GENERATED ALWAYS AS (at_tz) VIRTUAL,
     occur_time_uncertainty GENERATED ALWAYS AS (at_uncertainty) VIRTUAL,
+    -- Who made the latest change, `user@host` (da-zpc98, v80): the author of
+    -- its newest `entry_history` row, which `entry_history_author` copies.
+    -- Untyped, as above. Local: no op, row hash or fold reads it.
+    author,
 
     -- `following_state` is only meaningful when `dur` is set. The
     -- parser-level rejection in da-5ns.3 keeps malformed inserts from
@@ -353,6 +357,7 @@ CREATE TABLE IF NOT EXISTS entry_history (
     client_id         TEXT NOT NULL,
     change_kind       TEXT NOT NULL,
     action_id         INTEGER,                   -- the `undo_actions` row that wrote it, if any (v52)
+    author            TEXT,                      -- who made the change, `user@host`, if known (v80)
     PRIMARY KEY (entry_hid, version)
 );
 

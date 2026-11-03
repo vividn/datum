@@ -440,7 +440,11 @@ The relay sync is deleted; p2p «Easy Sync» replaced it. Its core is in
 its `history::record` (endpoint key in `sync_local`, HLC, the change's own `raw`
 line, its key-level `effect`, its `origin`: user, host, installation, program,
 version and the `DATUM_SCRIPT` name, each where known, which `datum history`
-shows, da-zjc9w), and an entry's row is the FOLD of its ops in HLC order, so the
+shows, da-zjc9w), its `author` (`user@host`: `getuid()`'s passwd name and the
+host name, no env override, none in a browser; `entry_history.author` names it
+for each change, the op's on a copy applying it and NULL for an op without one,
+and `entries.author` the latest, kept by a trigger and read by no fold or row
+hash, da-zpc98), and an entry's row is the FOLD of its ops in HLC order, so the
 same ops in any order give the same row.
 
 ### Conflicts and restored rows

@@ -2258,21 +2258,30 @@ fn a_database_that_never_synced_shows_a_version_per_command() {
         .collect();
     assert_eq!(kinds, ["update", "update", "create"]);
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines.len(), 9, "{text}");
+    assert_eq!(lines.len(), 12, "{text}");
     assert_eq!(lines[0], format!("hid: {hid}"));
     assert!(
         lines[1].starts_with("  v3  ")
             && lines[1].ends_with(&format!("update    'update {hid} cups=4 with=oat'")),
         "{text}"
     );
-    // Each version says who and what signed it (da-zjc9w).
-    for at in [2, 5, 8] {
+    // Each version says who and what signed it (da-zjc9w), and who made
+    // it, `user@host`, as its op carries it (da-zpc98).
+    for (i, at) in [2, 6, 10].into_iter().enumerate() {
         assert!(lines[at].starts_with("        origin: "), "{text}");
+        let author = json[i]["author"].as_str().expect("an author");
+        assert!(author.contains('@'), "{author}");
+        assert_eq!(lines[at + 1], format!("        author: {author}"), "{text}");
     }
-    assert_eq!(lines[3], r#"        set data.cups=4 data.with="oat""#);
-    assert_eq!(lines[6], "        set data.cups=3");
+    // `get` says the latest change's, in both of its JSON forms.
+    let pretty: Value = serde_json::from_str(&a.ok(&["get", &hid, "--pretty"])).unwrap();
+    assert_eq!(pretty["author"], json[0]["author"]);
+    let echo: Value = serde_json::from_str(&a.ok(&["get", &hid, "--show", "json"])).unwrap();
+    assert_eq!(echo["docs"][0]["author"], json[0]["author"], "{echo}");
+    assert_eq!(lines[4], r#"        set data.cups=4 data.with="oat""#);
+    assert_eq!(lines[8], "        set data.cups=3");
     assert!(
-        lines[7].starts_with("  v1  ") && lines[7].ends_with("create    'occur coffee cups=2'"),
+        lines[9].starts_with("  v1  ") && lines[9].ends_with("create    'occur coffee cups=2'"),
         "{text}"
     );
     assert!(

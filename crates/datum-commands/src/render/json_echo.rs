@@ -100,6 +100,16 @@ pub(super) fn push(lines: &ActionLines) {
     ECHO.with(|slot| slot.borrow_mut().1.push(document(lines)));
 }
 
+/// Set `key` on the document recorded last: what one command alone says of
+/// an entry, as `get` its author.
+pub fn annotate_last(key: &str, value: JsonValue) {
+    ECHO.with(|slot| {
+        if let Some(doc) = slot.borrow_mut().1.last_mut() {
+            doc[key] = value;
+        }
+    });
+}
+
 /// Run `f` as a dispatch scope, printing the collected document when the
 /// OUTERMOST scope returns. Nested scopes just keep collecting.
 ///

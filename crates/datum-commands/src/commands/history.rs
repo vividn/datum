@@ -106,6 +106,8 @@ fn history_of(
         };
         let mut lines = version_lines(&v, &now, &raw, devices);
         lines.insert(1, format!("        origin: {}", origin(v.origin.as_ref())));
+        let author = v.author.as_deref().unwrap_or("not recorded");
+        lines.insert(2, format!("        author: {author}"));
         println!("{}", lines.join("\n"));
     }
     Ok(())

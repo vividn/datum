@@ -1042,6 +1042,7 @@ mod tests {
             raw: None,
             alias_chain: None,
             origin: None,
+            author: None,
             effect: json!({ "set": { "data.cups": 5 } }),
             fork: Default::default(),
             join: json!({ "data.cups": { "value": 5, "took": took } })

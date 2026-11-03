@@ -77,8 +77,11 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
 
     let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
     for (i, entry) in entries.iter().enumerate() {
+        // Who made its latest change (da-zpc98): a column, but no key of the
+        // entry's, so no op or row hash carries it. Read only where shown.
+        let author = || datum_core::history::author_of(db.conn(), entry.hid.as_str());
         if args.pretty {
-            print_entry_pretty(entry)?;
+            print_entry_pretty(entry, author()?.as_deref())?;
         } else {
             show_action_with_context(
                 entry,
@@ -87,6 +90,11 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
                 ctxs.get(i),
                 &output,
             );
+            // Under `--show json` the call above pushed this entry's
+            // document, whatever else it shows: that is the one annotated.
+            if output.show == crate::render::Show::Json {
+                crate::render::json_echo::annotate_last("author", serde_json::json!(author()?));
+            }
         }
     }
 
@@ -301,8 +309,11 @@ fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
 
     let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
     for (i, entry) in entries.iter().enumerate() {
+        // Who made its latest change (da-zpc98): a column, but no key of the
+        // entry's, so no op or row hash carries it. Read only where shown.
+        let author = || datum_core::history::author_of(db.conn(), entry.hid.as_str());
         if args.pretty {
-            print_entry_pretty(entry)?;
+            print_entry_pretty(entry, author()?.as_deref())?;
         } else {
             show_action_with_context(
                 entry,
@@ -311,6 +322,11 @@ fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
                 ctxs.get(i),
                 &output,
             );
+            // Under `--show json` the call above pushed this entry's
+            // document, whatever else it shows: that is the one annotated.
+            if output.show == crate::render::Show::Json {
+                crate::render::json_echo::annotate_last("author", serde_json::json!(author()?));
+            }
         }
     }
     Ok(())

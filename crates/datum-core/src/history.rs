@@ -10,6 +10,14 @@
 //! the newly-created entry; for later versions it holds the **pre-operation**
 //! state so a revert can restore that earlier shape without consulting the
 //! live row.
+//!
+//! `author` is who made the change, `user@host` ([`author`], da-zpc98): this
+//! process for a change made here, the op's for one a sync applied (NULL
+//! where the op carries none). A trigger keeps `entries.author` the author of
+//! the entry's latest change. An audit signal: anything that can write the
+//! file can write another name.
+
+use std::cell::RefCell;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -107,6 +115,86 @@ pub struct HistoryVersion {
     pub alias_chain: Option<JsonValue>,
     pub client_id: String,
     pub change_kind: ChangeKind,
+    /// Who made the change, `user@host`; none where nobody said.
+    pub author: Option<String>,
+}
+
+thread_local! {
+    /// This process's [`author`], read once.
+    static AUTHOR: RefCell<Option<Option<String>>> = const { RefCell::new(None) };
+    /// While [`as_author`] runs: the author of the change being applied.
+    static APPLYING: RefCell<Option<Option<String>>> = const { RefCell::new(None) };
+}
+
+/// The process making a change, `user@host`: the passwd name of `getuid()`
+/// (its number where it has none) and the host name. None where either is
+/// unknowable, as in a browser. No environment variable changes it.
+pub fn author() -> Option<String> {
+    AUTHOR.with(|a| a.borrow_mut().get_or_insert_with(read_author).clone())
+}
+
+#[cfg(unix)]
+fn read_author() -> Option<String> {
+    use std::ffi::CStr;
+    // SAFETY: getuid cannot fail; getpwuid_r writes into `pw` and `buf`,
+    // both writable for the lengths passed, and `out` points into `pw`.
+    let uid = unsafe { libc::getuid() };
+    let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut buf = vec![0 as libc::c_char; 4096];
+    let mut out = std::ptr::null_mut();
+    let rc = unsafe { libc::getpwuid_r(uid, &mut pw, buf.as_mut_ptr(), buf.len(), &mut out) };
+    let name = (rc == 0 && !out.is_null() && !pw.pw_name.is_null())
+        .then(|| {
+            unsafe { CStr::from_ptr(pw.pw_name) }
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| uid.to_string());
+    Some(format!("{name}@{}", host()?))
+}
+
+#[cfg(unix)]
+pub(crate) fn host() -> Option<String> {
+    let mut buf = [0u8; 256];
+    // SAFETY: `buf` is writable for its whole length, which is what is passed.
+    let ok = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } == 0;
+    let end = buf.iter().position(|&b| b == 0)?;
+    (ok && end > 0).then(|| String::from_utf8_lossy(&buf[..end]).into_owned())
+}
+
+#[cfg(not(unix))]
+pub(crate) fn host() -> Option<String> {
+    std::env::var("COMPUTERNAME").ok().filter(|v| !v.is_empty())
+}
+
+#[cfg(not(unix))]
+fn read_author() -> Option<String> {
+    None
+}
+
+/// Run `f` writing its changes as `who`'s: a synced op's author, which the
+/// op may not carry.
+pub(crate) fn as_author<T>(who: Option<String>, f: impl FnOnce() -> T) -> T {
+    struct Restore(Option<Option<String>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            APPLYING.with(|a| *a.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(APPLYING.with(|a| a.borrow_mut().replace(who)));
+    f()
+}
+
+/// Who the change being written is by.
+pub(crate) fn writing() -> Option<String> {
+    APPLYING.with(|a| a.borrow().clone()).unwrap_or_else(author)
+}
+
+/// Make this thread's process [`author`] `who`, as a test's second user.
+#[cfg(test)]
+pub(crate) fn stub_author(who: Option<&str>) {
+    AUTHOR.with(|a| *a.borrow_mut() = Some(who.map(Into::into)));
 }
 
 /// Smallest currently-unused version number for the given entry: `last + 1`,
@@ -138,13 +226,14 @@ pub fn next_version(conn: &Connection, entry_hid: &str) -> Result<u32> {
 pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) -> Result<u32> {
     let mut version = next_version(executor, &snapshot.hid)?;
     if version == 1 && !matches!(change_kind, ChangeKind::Create | ChangeKind::SyncMerge) {
-        insert(executor, snapshot, 1, ChangeKind::Create)?;
+        // The entry as it was before: nobody here made it.
+        insert(executor, snapshot, 1, ChangeKind::Create, None)?;
         version = 2;
     }
     // Asked first: making the action is itself an insert. Stamped apart, so
     // a write outside any action reads as it always did, on any schema.
     let action = crate::undo_log::current(executor, change_kind)?;
-    insert(executor, snapshot, version, change_kind)?;
+    insert(executor, snapshot, version, change_kind, writing())?;
     if let Some(id) = action {
         executor
             .prepare_cached(
@@ -160,30 +249,65 @@ fn insert(
     snapshot: &Entry,
     version: u32,
     change_kind: ChangeKind,
+    author: Option<String>,
 ) -> Result<()> {
     let snapshot_json = serde_json::to_string(snapshot)?;
     let alias_chain_json = snapshot.alias_chain.as_ref().map(|v| v.to_string());
-    executor
-        .prepare_cached(
+    let (mut stmt, n) = authored(
+        executor,
+        r#"INSERT INTO entry_history (
+            entry_hid, version, snapshot, modify_time,
+            raw_input, alias_chain, client_id, change_kind, author
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+        (
             r#"INSERT INTO entry_history (
             entry_hid, version, snapshot, modify_time,
             raw_input, alias_chain, client_id, change_kind
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
-        )?
-        .execute(params![
-            snapshot.hid,
-            version,
-            snapshot_json,
-            snapshot.modify_time.to_rfc3339(),
-            // §5 #11: see `db::insert` for the same bind compat note —
-            // empty-string-when-None preserves migration-walk
-            // compatibility against historical NOT NULL versions.
-            snapshot.raw_input.as_deref().unwrap_or(""),
-            alias_chain_json,
-            snapshot.client_id,
-            change_kind.as_str(),
-        ])?;
+            8,
+        ),
+        9,
+    )?;
+    let all = params![
+        snapshot.hid,
+        version,
+        snapshot_json,
+        snapshot.modify_time.to_rfc3339(),
+        // §5 #11: see `db::insert` for the same bind compat note —
+        // empty-string-when-None preserves migration-walk
+        // compatibility against historical NOT NULL versions.
+        snapshot.raw_input.as_deref().unwrap_or(""),
+        alias_chain_json,
+        snapshot.client_id,
+        change_kind.as_str(),
+        author,
+    ];
+    stmt.execute(&all[..n])?;
     Ok(())
+}
+
+/// `sql`, which writes `author` and takes `n` parameters, or where a
+/// migration walk writes at a schema from before v80 and has no `author`
+/// yet, `before`'s statement and count, the same but for it (da-zpc98).
+pub(crate) fn authored<'c>(
+    conn: &'c Connection,
+    sql: &str,
+    before: (&str, usize),
+    n: usize,
+) -> Result<(rusqlite::CachedStatement<'c>, usize)> {
+    match conn.prepare_cached(sql) {
+        Ok(stmt) => Ok((stmt, n)),
+        Err(_) => Ok((conn.prepare_cached(before.0)?, before.1)),
+    }
+}
+
+/// Who made `entry_hid`'s latest change, `user@host`, if anyone said.
+pub fn author_of(conn: &Connection, entry_hid: &str) -> Result<Option<String>> {
+    Ok(conn
+        .prepare_cached("SELECT author FROM entries WHERE hid = ?1")?
+        .query_row(params![entry_hid], |r| r.get(0))
+        .optional()?
+        .flatten())
 }
 
 /// List every history row for `entry_hid`. When `newest_first` is true the
@@ -192,13 +316,13 @@ fn insert(
 pub fn list(conn: &Connection, entry_hid: &str, newest_first: bool) -> Result<Vec<HistoryVersion>> {
     let sql = if newest_first {
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
-                alias_chain, client_id, change_kind
+                alias_chain, client_id, change_kind, author
          FROM entry_history
          WHERE entry_hid = ?1
          ORDER BY version DESC"
     } else {
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
-                alias_chain, client_id, change_kind
+                alias_chain, client_id, change_kind, author
          FROM entry_history
          WHERE entry_hid = ?1
          ORDER BY version ASC"
@@ -212,7 +336,7 @@ pub fn list(conn: &Connection, entry_hid: &str, newest_first: bool) -> Result<Ve
 pub fn get(conn: &Connection, entry_hid: &str, version: u32) -> Result<Option<HistoryVersion>> {
     conn.prepare_cached(
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
-                alias_chain, client_id, change_kind
+                alias_chain, client_id, change_kind, author
          FROM entry_history
          WHERE entry_hid = ?1 AND version = ?2",
     )?
@@ -294,12 +418,87 @@ fn row_to_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryVersion> {
         alias_chain,
         client_id: row.get("client_id")?,
         change_kind,
+        author: row.get("author")?,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ChangeKind;
+    use std::collections::BTreeMap;
+
+    use super::{stub_author, ChangeKind};
+    use crate::db::Db;
+    use crate::entry::{Entry, Verb};
+
+    /// Each `entry_history` author of `hid`, by version, and the entry's.
+    fn authors(db: &Db, hid: &str) -> (Vec<Option<String>>, Option<String>) {
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT author FROM entry_history WHERE entry_hid = ?1 ORDER BY version")
+            .unwrap();
+        let rows = stmt.query_map([hid], |r| r.get(0)).unwrap();
+        let rows = rows.collect::<rusqlite::Result<_>>().unwrap();
+        (rows, super::author_of(db.conn(), hid).unwrap())
+    }
+
+    fn some(a: &str) -> Option<String> {
+        Some(a.into())
+    }
+
+    /// A change names the process making it (da-zpc98): a create its own
+    /// author, an update its updater, not the creator its pre-change
+    /// snapshot was written by; the entry, its latest change's.
+    #[test]
+    fn each_change_names_who_made_it_and_the_entry_its_latest() {
+        let db = Db::open_in_memory().unwrap();
+        stub_author(Some("ada@one"));
+        let mut e = Entry::new("coffee", Verb::Point, None, None, None, None, "t");
+        db.insert_entry(&e).unwrap();
+        assert_eq!(
+            authors(&db, e.hid.as_str()),
+            (vec![some("ada@one")], some("ada@one"))
+        );
+        stub_author(Some("bo@two"));
+        e.data = Some(serde_json::json!({ "cups": 2 }));
+        db.save_existing_entry(&e).unwrap();
+        assert_eq!(
+            authors(&db, e.hid.as_str()),
+            (vec![some("ada@one"), some("bo@two")], some("bo@two"))
+        );
+        let ops = db.sync_ops_since(&BTreeMap::new(), false, None).unwrap();
+        let theirs =
+            |o: &String| serde_json::from_str::<serde_json::Value>(o).unwrap()["author"].clone();
+        let named: Vec<_> = ops
+            .iter()
+            .filter(|o| o.contains("coffee"))
+            .map(theirs)
+            .collect();
+        assert_eq!(
+            named,
+            ["ada@one", "bo@two"],
+            "each op signs its author: {ops:?}"
+        );
+    }
+
+    /// A synced change names the op's author on the copy applying it, and
+    /// one whose op carries none, as an older copy's, names nobody.
+    #[test]
+    fn a_synced_change_names_its_ops_author_or_nobody() {
+        let (a, b) = (Db::open_in_memory().unwrap(), Db::open_in_memory().unwrap());
+        for (made_by, named) in [(Some("ada@one"), some("ada@one")), (None, None)] {
+            stub_author(made_by);
+            let e = Entry::new("tea", Verb::Point, None, None, None, None, "t");
+            a.insert_entry(&e).unwrap();
+            let ops = a.sync_ops_since(&BTreeMap::new(), false, None).unwrap();
+            stub_author(Some("bo@two"));
+            b.sync_apply(&ops.join("\n")).unwrap();
+            assert_eq!(
+                authors(&b, e.hid.as_str()),
+                (vec![named.clone()], named),
+                "made by {made_by:?}"
+            );
+        }
+    }
 
     /// The lists the queries splice in, spelled the way the column stores them.
     #[test]

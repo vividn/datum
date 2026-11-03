@@ -40,6 +40,9 @@ pub struct Version {
     /// signed before origins, and on a baseline, which only signed a row
     /// something else wrote.
     pub origin: Option<Value>,
+    /// Who made it, `user@host` (da-zpc98): none on an op signed before
+    /// authors, and on a baseline.
+    pub author: Option<String>,
     /// What it changed: `create`, or `set` / `unset` / `deleted`.
     pub effect: Value,
     /// The keys this op left contested: per key each side as `conflicts`
@@ -140,6 +143,7 @@ fn versions(conn: &Connection, e: &Entry) -> Result<Vec<Version>> {
             raw,
             alias_chain,
             origin,
+            author: op.author.clone(),
             effect: op.effect.clone(),
             fork,
             join,

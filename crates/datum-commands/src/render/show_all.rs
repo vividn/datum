@@ -452,7 +452,10 @@ mod tests {
         }
 
         // The old names are virtual columns for stored SQL (da-95avu): `at` shows them.
-        for col in schema_cols.iter().filter(|c| !c.starts_with("occur_time")) {
+        // `author` is no key of an `Entry`, which this view draws, so that no
+        // fold or row hash reads it (da-zpc98): `get` and `history` show it.
+        let shown = |c: &&String| !c.starts_with("occur_time") && c.as_str() != "author";
+        for col in schema_cols.iter().filter(shown) {
             match listed.get(col.as_str()) {
                 None => panic!(
                     "schema column `{col}` is missing from the `-A` view — \

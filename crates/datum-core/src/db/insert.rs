@@ -1388,12 +1388,15 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
             )
         };
     }
+    // A create carries its author (da-zpc98), so its history row's trigger
+    // has nothing to write. A table with it has `superseded_by` too.
     let superseded = entry.superseded_by.is_some();
-    let mut stmt = conn.prepare_cached(if superseded {
-        insert_sql!(", superseded_by", ", ?29")
-    } else {
-        insert_sql!("", "")
-    })?;
+    let before = match superseded {
+        true => (insert_sql!(", superseded_by", ", ?29"), 29),
+        false => (insert_sql!("", ""), 28),
+    };
+    let authored = insert_sql!(", superseded_by, author", ", ?29, ?30");
+    let (mut stmt, n) = history::authored(conn, authored, before, 30)?;
     let all = params![
         hid,
         slug,
@@ -1432,8 +1435,9 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
             .map(|v| v.to_string()),
         entry.extra_metadata.as_ref().map(|v| v.to_string()),
         entry.superseded_by,
+        history::writing(),
     ];
-    stmt.execute(&all[..if superseded { 29 } else { 28 }])?;
+    stmt.execute(&all[..n])?;
     Ok(())
 }
 

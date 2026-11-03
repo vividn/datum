@@ -179,7 +179,7 @@ fn origin() -> Value {
     };
     let parts = [
         ("user", env("USER").or_else(|| env("USERNAME"))),
-        ("host", host()),
+        ("host", crate::history::host()),
         ("installation", Some(client_id()).filter(|c| !c.is_empty())),
         ("program", Some(program.into())),
         ("version", Some(crate::build().into())),
@@ -192,20 +192,6 @@ fn origin() -> Value {
     let o = Value::Object(o);
     INVOCATION.with(|i| i.borrow_mut().origin = Some(o.clone()));
     o
-}
-
-#[cfg(unix)]
-fn host() -> Option<String> {
-    let mut buf = [0u8; 256];
-    // SAFETY: `buf` is writable for its whole length, which is what is passed.
-    let ok = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } == 0;
-    let end = buf.iter().position(|&b| b == 0)?;
-    (ok && end > 0).then(|| String::from_utf8_lossy(&buf[..end]).into_owned())
-}
-
-#[cfg(not(unix))]
-fn host() -> Option<String> {
-    std::env::var("COMPUTERNAME").ok().filter(|v| !v.is_empty())
 }
 
 // ─── Canonical JSON, hex ────────────────────────────────────────────────────
@@ -664,6 +650,11 @@ struct Op {
     /// Who and what signed it ([`origin`]); none on an op signed before.
     #[serde(default)]
     origin: Option<Value>,
+    /// Who made the change, `user@host` (da-zpc98), which the history row
+    /// of a copy applying it names; none on an op signed before, on a
+    /// baseline, and where its maker could not say, as a browser cannot.
+    #[serde(default)]
+    author: Option<String>,
     effect: Value,
     #[serde(default)]
     deps: BTreeMap<String, i64>,
@@ -845,9 +836,20 @@ fn push(
     if of.is_none() {
         deps.entry(ep.id.clone()).or_insert(0);
     }
-    let made = (raw, alias_chain, Some(origin()), None);
+    let author = (kind != "baseline").then(crate::history::author).flatten();
+    let made = (raw, alias_chain, Some(origin()), author, None);
     sign(conn, ep, head, kind, effect, made, deps)
 }
+
+/// What made an op, as its body says: the line, its alias chain, its
+/// `origin`, its `author`, and when it was queued.
+type Made<'a> = (
+    Option<String>,
+    Option<Value>,
+    Option<Value>,
+    Option<String>,
+    Option<&'a str>,
+);
 
 /// Sign and store an op as this copy's next: its seq and HLC are taken
 /// now, whatever made the change and whenever.
@@ -857,12 +859,7 @@ fn sign(
     (hid, slug, field): (&str, &str, Option<String>),
     kind: &str,
     effect: Value,
-    (raw, alias_chain, origin, queued): (
-        Option<String>,
-        Option<Value>,
-        Option<Value>,
-        Option<&str>,
-    ),
+    (raw, alias_chain, origin, author, queued): Made<'_>,
     deps: BTreeMap<String, i64>,
 ) -> Result<i64> {
     let seq: i64 = conn
@@ -890,6 +887,9 @@ fn sign(
     if let Some(o) = &origin {
         v["origin"] = o.clone();
     }
+    if let Some(a) = author {
+        v["author"] = a.into();
+    }
     if let Some(q) = queued {
         v["queued"] = q.into();
     }
@@ -906,6 +906,7 @@ fn sign(
         raw: None,
         alias_chain: None,
         origin: None,
+        author: None,
         // `store` reads the head and the body; the effect is in the body.
         effect: Value::Null,
         deps: BTreeMap::new(),
@@ -1727,6 +1728,7 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
                 op.raw.clone(),
                 op.alias_chain.clone(),
                 op.origin.clone(),
+                op.author.clone(),
                 Some(op.hlc.as_str()),
             );
             sign(
@@ -1747,7 +1749,7 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
                 _ => ChangeKind::UserEdit,
             };
             let pre = fetch_by_hid(conn, &op.hid)?;
-            refold(conn, &op.hid, kind)?;
+            crate::history::as_author(op.author.clone(), || refold(conn, &op.hid, kind))?;
             crate::integrity::moved(pre.as_ref(), fetch_by_hid(conn, &op.hid)?.as_ref());
         }
         Ok::<_, DatumError>(())
@@ -1876,7 +1878,9 @@ fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
         "UPDATE ops SET applied = 1 WHERE endpoint = ?1 AND seq = ?2",
         params![x.endpoint, x.seq],
     )?;
-    refold(conn, &x.hid, ChangeKind::SyncMerge)
+    crate::history::as_author(x.author.clone(), || {
+        refold(conn, &x.hid, ChangeKind::SyncMerge)
+    })
 }
 
 /// Write the row `hid`'s applied ops fold to, as `kind`; 1 if that gave it,
@@ -3118,7 +3122,9 @@ impl Db {
             let t = Instant::now();
             // Chunked by the clock (da-2ejbs): what an op folds over is
             // its own entry's ops, read as it writes.
-            let c = self.write_with(|tx| apply_in(tx, &chunk))?;
+            // What it writes is no change of this process's (da-zpc98).
+            let c =
+                self.write_with(|tx| crate::history::as_author(None, || apply_in(tx, &chunk)))?;
             self.apply_run.set(Some((run, Instant::now())));
             s.applied += c.applied;
             s.already_had += c.already_had;
