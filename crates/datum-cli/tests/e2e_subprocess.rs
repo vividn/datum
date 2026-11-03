@@ -1253,7 +1253,9 @@ fn subprocess_hydration_groups_by_the_local_day() {
         "Europe/Berlin",
     ];
     assert_ok(&env.run(&glass), "occur water");
-    let out = env.run(&["hydration"]);
+    // ISO, so the row reads the same in any year (da-9rda8: this year's
+    // date is `Sep 10`).
+    let out = env.run(&["hydration", "--iso-times"]);
     assert_ok(&out, "hydration");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let row = |l: &str| l.split_whitespace().collect::<Vec<_>>() == ["2026-09-10", "1", "250"];

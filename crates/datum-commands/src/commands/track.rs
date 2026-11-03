@@ -9,7 +9,7 @@ use datum_core::{
     entry::{Entry, Verb},
     field_spec::{verb_choice, VERB_CHOICES_TEXT, VERB_NAMES_TEXT},
     shape::is_ignored_state,
-    time::{DatumTime, TimeCtx},
+    time::{DatumTime, DefaultDirection, TimeCtx},
     timezone_field::TIMEZONE_FIELD,
     track::track_entry,
 };
@@ -209,7 +209,7 @@ fn echo(db: &Db, row: &Entry, action: Outcome, show: Show) -> Result<()> {
 pub(crate) fn status_time(time: &TimeArgs) -> Result<DatumTime> {
     let now = crate::args::window_now().unwrap_or_else(DatumTime::now);
     Ok(time
-        .builder(TimeCtx::now())?
+        .builder(TimeCtx::now().facing(DefaultDirection::NearestDate))?
         .with_timezone(zone_name(time)?)
         .build_now(now.utc))
 }

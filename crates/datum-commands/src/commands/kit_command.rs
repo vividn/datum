@@ -36,6 +36,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use crate::render::colors::RESET;
+use crate::render::dates;
 use crate::render::term_layout::{grid, Give};
 
 /// Run a Level 2 command by name. `extra_args` carries the tokens after
@@ -402,6 +403,7 @@ fn format_cells(
     formats: &std::collections::BTreeMap<String, String>,
     now: DateTime<Utc>,
 ) -> Vec<Vec<String>> {
+    let today = dates::today();
     view.rows
         .iter()
         .map(|row| {
@@ -410,11 +412,14 @@ fn format_cells(
                 .enumerate()
                 .map(|(i, col)| {
                     let raw = &row[i];
+                    // A date is its short date, and `--iso-times` prints a
+                    // smart date in full (da-9rda8).
                     match formats.get(col).map(|s| s.as_str()) {
-                        Some("smart_date") => format_smart_date(raw, now),
+                        Some("smart_date") if dates::iso_times() => iso_smart_date(raw, today),
+                        Some("smart_date") => format_smart_date(raw, now, today),
                         Some("duration") => format_duration(raw),
                         Some(other) => format!("?{other}({})", json_to_plain(raw)),
-                        None => json_to_plain(raw),
+                        None => dates::date_cell(json_to_plain(raw), today),
                     }
                 })
                 .collect()
@@ -433,12 +438,22 @@ fn json_to_plain(v: &JsonValue) -> String {
 /// Under a minute either way is «just now», as `format_ago` reads it: a
 /// row logged a moment ago is a fraction of a second behind `now`, and
 /// `num_seconds` truncating that to 0 read it as «in 0s» (da-0xnka).
-fn format_smart_date(v: &JsonValue, now: DateTime<Utc>) -> String {
+/// A smart date under `--iso-times`: an instant to the second in its own
+/// offset, a date as it is (da-9rda8).
+fn iso_smart_date(v: &JsonValue, today: chrono::NaiveDate) -> String {
+    match v.as_str().map(chrono::DateTime::parse_from_rfc3339) {
+        Some(Ok(dt)) => dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
+        _ => dates::date_cell(json_to_plain(v), today),
+    }
+}
+
+/// A date with no time is its short date (`Nov 6`, da-9rda8).
+fn format_smart_date(v: &JsonValue, now: DateTime<Utc>, today: chrono::NaiveDate) -> String {
     let Some(s) = v.as_str() else {
         return json_to_plain(v);
     };
     let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) else {
-        return s.to_string();
+        return dates::date_cell(s.to_string(), today);
     };
     let secs = dt
         .with_timezone(&Utc)

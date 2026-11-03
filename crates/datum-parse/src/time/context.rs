@@ -20,9 +20,14 @@ use chrono::NaiveDateTime;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DefaultDirection {
     /// Most recent occurrence at or before the reference. The default for
-    /// backward-looking args — `--since`, `-t`, `-d`.
+    /// backward-looking args: a query's `-t`, `-d`, `--since`, `--until`.
     #[default]
     Past,
+    /// A weekday the most recent, as [`Past`](Self::Past), and a year-less
+    /// date the nearest, within six months either way: what a write's `-d`
+    /// and `-t` read (da-9rda8, vividn: «I might be trying to make an entry
+    /// a few days in the future»; a query bound stays [`Past`](Self::Past)).
+    NearestDate,
     /// Whichever of the past/future occurrence is closer; ties go to the
     /// past. Used for data args, where `finish_time=sunday` means the
     /// Sunday nearest the entry rather than one a week out.

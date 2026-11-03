@@ -13,7 +13,7 @@ use datum_core::{
     dur::DurSpan,
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
-    time::{parse_duration, resolve_timezone, DatumTime, TimeCtx, Zone},
+    time::{parse_duration, resolve_timezone, DatumTime, DefaultDirection, TimeCtx, Zone},
     timezone_field::TIMEZONE_FIELD,
 };
 use datum_parse::input::TimeArgs;
@@ -2789,10 +2789,12 @@ pub(crate) fn build_time_anchored(
         (Some(t), None) => Some((Zone::of(t)?, t.timezone.clone())),
         (None, _) => None,
     };
+    // A write's year-less date is the nearest one (da-9rda8).
     let ctx = match &own {
         Some((zone, _)) => TimeCtx::at(zone.local_naive(now)),
         None => TimeCtx::now(),
-    };
+    }
+    .facing(DefaultDirection::NearestDate);
 
     let builder = match own {
         Some(_) => time.builder_anchored(ctx),

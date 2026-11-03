@@ -90,3 +90,34 @@ fn time_flag_still_rejects_out_of_range_integers() {
         "-t 2500 must stay an error, not become a 2500-day offset"
     );
 }
+
+/// da-9rda8: a yearless date is the nearest one, so on Nov 3 `nov6` is
+/// three days on, not a year back; `nov 6` takes a space, and a table's
+/// localized month (`Okt 3`, German) reads back.
+#[test]
+fn a_yearless_date_is_the_nearest_and_reads_a_tables_month() {
+    let _g = datum_core::test_util::set_time("2026-11-03T12:00:00");
+    let db = fresh_db();
+    let ymd = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+    for (field, date, want) in [
+        ("nearnov", "nov6", ymd(2026, 11, 6)),
+        ("nearspace", "nov 6", ymd(2026, 11, 6)),
+        ("nearoct", "oct20", ymd(2026, 10, 20)),
+        ("nearokt", "Okt 3", ymd(2026, 10, 3)),
+        ("nearmay", "may 2", ymd(2027, 5, 2)),
+        ("farmay", "may 4", ymd(2026, 5, 4)),
+        ("neardec", "dec1", ymd(2026, 12, 1)),
+    ] {
+        run_cli(&["occur", field, "-d", date], &db).unwrap_or_else(|e| panic!("-d {date}: {e}"));
+        assert_eq!(only_entry_date(&db, field), want, "-d {date:?}");
+    }
+    // `-t` too, a day and a clock: November 6 at 22:30, the coming one.
+    run_cli(&["occur", "neartime", "-t", "nov 6 22:30"], &db).unwrap();
+    let e = &datum_core::test_util::logged_entries(&db, "neartime")[0];
+    let local = e.at.as_ref().unwrap().local_time();
+    assert_eq!(local.date_naive(), ymd(2026, 11, 6));
+    assert_eq!(local.format("%H:%M").to_string(), "22:30");
+    // A weekday stays the last one: Tuesday Nov 3's Thursday is Oct 29.
+    run_cli(&["occur", "pastthu", "-d", "thu"], &db).unwrap();
+    assert_eq!(only_entry_date(&db, "pastthu"), ymd(2026, 10, 29));
+}

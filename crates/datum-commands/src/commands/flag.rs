@@ -19,7 +19,7 @@ use datum_core::{
     db::Db,
     dur::Dur,
     entry::{Entry, Verb},
-    time::TimeCtx,
+    time::{DefaultDirection, TimeCtx},
 };
 use serde_json::Value as JsonValue;
 
@@ -43,7 +43,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     let now = crate::args::window_now().unwrap_or_else(datum_core::time::DatumTime::now);
     let own_time = time.places();
     let at = time
-        .builder(TimeCtx::now())?
+        .builder(TimeCtx::now().facing(DefaultDirection::NearestDate))?
         .with_timezone(zone_name(&time)?)
         .build_now(now.utc);
 

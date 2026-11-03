@@ -125,6 +125,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
                 db,
                 color,
                 width: None,
+                iso_times: false,
                 command: Command::Repl,
             });
         };
@@ -259,6 +260,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "dayview" | "nowview" => (None, swept),
         _ => input::take_width(&swept)?,
     };
+    let (iso_times, swept) = input::take_iso_times(&swept);
     let rest: &[&str] = &swept;
 
     let command = match sub {
@@ -436,10 +438,17 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             input::ROW_LISTS.join(", ")
         )));
     }
+    if iso_times && !input::ISO_TIME_LISTS.contains(&named.as_str()) {
+        return Err(ParseError::InvalidArg(format!(
+            "`{named}` prints no rows: --iso-times is for {}",
+            input::ISO_TIME_LISTS.join(", ")
+        )));
+    }
     Ok(Cli {
         db,
         color,
         width,
+        iso_times,
         command,
     })
 }

@@ -36,8 +36,8 @@ pub use flag_registry::{
 pub use flexible_positional::{flexible_positional, FlexibleTarget};
 pub use matcher::{parse_matcher_token, Matcher, MatcherOp};
 pub use output_args::{
-    check_show, check_show_in, shows_for, take_show, take_width, OutputArgs, OutputResolved, Show,
-    ALL_SHOWS, ROW_LISTS,
+    check_show, check_show_in, shows_for, take_iso_times, take_show, take_width, OutputArgs,
+    OutputResolved, Show, ALL_SHOWS, ISO_TIME_LISTS, ROW_LISTS,
 };
 pub use quick_id_arg::QuickIdArg;
 pub use time_args::{TimeArgs, TimeFromArgs};

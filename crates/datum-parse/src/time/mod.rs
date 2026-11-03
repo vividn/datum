@@ -29,6 +29,7 @@ pub mod datum_time;
 pub mod dur;
 pub mod get_timezone;
 pub mod human_time;
+pub mod months;
 pub mod resolve;
 // `time::time` stutters, but the module is named for its content like its
 // siblings `date` and `dur`, and `pub use` below flattens it — no caller
@@ -45,6 +46,7 @@ pub use self::dur::{
     format_human_duration, format_iso_duration, is_whole_days, parse_duration, parse_iso_duration,
     quick_uncertainty_for_count, DurationPrecision,
 };
+pub use self::months::{month_abbr, month_from_word};
 #[cfg(feature = "native")]
 pub use self::resolve::on_readers_clock;
 pub use self::resolve::{fixed_offset_minutes, Resolved, Zone, ZoneSegment, ZoneTimeline};

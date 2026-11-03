@@ -310,6 +310,21 @@ pub fn take_width<'a>(tokens: &[&'a str]) -> ParseResult<(Option<usize>, Vec<&'a
     Ok((width, rest))
 }
 
+/// The commands whose rows `--iso-times` prints in full ISO 8601 (da-9rda8),
+/// every time and date cell, for a spreadsheet or another program. A kit
+/// command takes it too, read where it runs.
+pub const ISO_TIME_LISTS: &[&str] = &["tail", "head", "grep", "check", "view"];
+
+/// Take every `--iso-times` out of `tokens`: whether there was one.
+pub fn take_iso_times<'a>(tokens: &[&'a str]) -> (bool, Vec<&'a str>) {
+    let rest: Vec<&str> = tokens
+        .iter()
+        .copied()
+        .filter(|t| *t != "--iso-times")
+        .collect();
+    (rest.len() < tokens.len(), rest)
+}
+
 /// Refuse a `--show` value the named command has no rendering for.
 ///
 /// Loud beats silently ignored: the flag is read for every command now, so

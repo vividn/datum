@@ -109,7 +109,16 @@ describe('the date the web app prints', () => {
 			const [stored] = await entries(1);
 			// The zone is UTC (support/app.mjs), so the stored instant's own
 			// date is the date the reader is owed.
-			const day = stored.at.utc.slice(0, 10);
+			const iso = stored.at.utc.slice(0, 10);
+			// datum's own date: this year's is its month and day, the month
+			// in the page's language, en-US here (da-9rda8); another year's
+			// the ISO date. Never the browser's `11/2/2026`.
+			const month = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+			const thisYear = await page.evaluate(() => String(new Date().getUTCFullYear()));
+			const day =
+				iso.slice(0, 4) === thisYear
+					? `${month[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8))}`
+					: iso;
 
 			await redraw();
 			const table = await paneTable('tail');

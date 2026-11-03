@@ -86,7 +86,7 @@ fn an_alias_a_kit_command_and_a_miss_each_answer_for_themselves() {
     assert_eq!(
         env.ok(&["help", "aches"]),
         "datum aches — every ache this week\n\n\
-         usage: datum aches <who> [since] [n=3] [--all] [--watch] [--sort [-]COLUMN] [--width N] [--json]\n\
+         usage: datum aches <who> [since] [n=3] [--all] [--watch] [--sort [-]COLUMN] [--width N] [--iso-times] [--json]\n\
          shows the view 'ones'\n\
          from the kit 'helpkit': datum kit show helpkit\n"
     );

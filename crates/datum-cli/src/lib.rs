@@ -770,6 +770,8 @@ fn try_kit_level2_dispatch() -> Result<Option<()>> {
     let words: Vec<&str> = expanded.iter().skip(2).map(String::as_str).collect();
     let (width, words) = datum_parse::input::take_width(&words)?;
     let _width = width.map(output::term_layout::WidthOverride::set);
+    let (iso, words) = datum_parse::input::take_iso_times(&words);
+    let _iso = iso.then(output::dates::IsoTimes::set);
     let extra: Vec<String> = words.into_iter().map(String::from).collect();
     whole(commands::kit_command::run(name, &extra, &db), &db)?;
     Ok(Some(()))

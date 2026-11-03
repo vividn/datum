@@ -109,10 +109,17 @@ fn render_pretty(r: &ViewResult) {
         return;
     }
 
+    // One today for the whole table, so a render across midnight does not
+    // print one date two ways.
+    let today = crate::render::dates::today();
     let cells: Vec<Vec<String>> = r
         .rows
         .iter()
-        .map(|row| row.iter().map(format_cell_plain).collect())
+        .map(|row| {
+            row.iter()
+                .map(|v| crate::render::dates::date_cell(format_cell_plain(v), today))
+                .collect()
+        })
         .collect();
 
     let numeric: Vec<bool> = (0..r.columns.len())

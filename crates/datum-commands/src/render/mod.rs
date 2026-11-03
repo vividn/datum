@@ -14,6 +14,7 @@ pub mod action;
 pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
+pub mod dates;
 pub(crate) mod diff;
 pub mod json_echo;
 pub mod ordinals;
@@ -995,7 +996,9 @@ fn build_rows(
     // rows that differ get a gray `(±off)` prefix. Only computed when the
     // header is actually printed — headerless embeds (`datum check`) keep
     // the legacy per-row trailing offsets so the offset stays visible.
-    let reference_offset: Option<i32> = if args.suppress_header {
+    // Under `--iso-times` every stamp carries its own offset, so there is
+    // none for the header (da-9rda8).
+    let reference_offset: Option<i32> = if args.suppress_header || dates::iso_times() {
         None
     } else {
         let mut votes: HashMap<i32, (usize, chrono::DateTime<chrono::Utc>)> = HashMap::new();
@@ -1036,6 +1039,7 @@ fn build_rows(
             .map(|(off, _)| off)
     };
 
+    let today = now_ref.local_time().date_naive();
     let mut rows: Vec<Row> = Vec::with_capacity(entries.len());
     for (i, e) in entries.iter().enumerate() {
         let ctx = contexts.and_then(|c| c.get(i));
@@ -1053,10 +1057,28 @@ fn build_rows(
             ),
             TimeMetricCol::None => (String::new(), ""),
         };
+        // A date-only row is its short date, and `--iso-times` any stamp in
+        // full (da-9rda8).
+        let shown = match args.metric {
+            TimeMetricCol::Occur => e.at.clone(),
+            TimeMetricCol::Hybrid => (e.at.clone())
+                .or_else(|| Some(self::action::synthesize_local_datumtime(e.create_time))),
+            TimeMetricCol::Create => Some(self::action::synthesize_local_datumtime(e.create_time)),
+            TimeMetricCol::Modify => Some(self::action::synthesize_local_datumtime(e.modify_time)),
+            TimeMetricCol::None => None,
+        };
+        let day_only = e.at.is_some()
+            && e.at_uncertainty() == Some("P1D")
+            && matches!(args.metric, TimeMetricCol::Occur | TimeMetricCol::Hybrid);
+        let time = match shown {
+            Some(t) if day_only => dates::table_date(t.local_time().date_naive(), today),
+            Some(t) if dates::iso_times() => dates::iso_instant(&t),
+            _ => time,
+        };
         let extras = args
             .columns
             .iter()
-            .map(|col| extract_column(e, col))
+            .map(|col| dates::date_cell(extract_column(e, col), today))
             .collect();
         let quick = ctx
             .and_then(|c| c.quick_ordinal)

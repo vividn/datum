@@ -177,6 +177,20 @@ mod tests {
         );
     }
 
+    /// vividn, 2026-11-03: a query bound reads a year-less date as the
+    /// last one, where a log's `-d` takes the nearest (da-9rda8). On Nov 3,
+    /// `--since dec1` is last December, and so is every bound.
+    #[test]
+    fn a_yearless_bound_is_the_last_one() {
+        let _g = datum_core::test_util::set_time("2026-11-03T12:00:00");
+        assert_eq!(parse_since("dec1").unwrap(), local_midnight(2025, 12, 1));
+        assert_eq!(parse_since("dec 1").unwrap(), local_midnight(2025, 12, 1));
+        assert_eq!(parse_until("dec1").unwrap(), local_midnight(2025, 12, 2));
+        assert_eq!(parse_after("nov6").unwrap(), local_midnight(2025, 11, 6));
+        assert_eq!(parse_before("nov6").unwrap(), local_midnight(2025, 11, 6));
+        assert_eq!(bound_date("dec1"), NaiveDate::from_ymd_opt(2025, 12, 1));
+    }
+
     #[test]
     fn iso_date_until_closes_the_named_day() {
         // `--until 2026-06-01` includes all of June 1, so the bound is

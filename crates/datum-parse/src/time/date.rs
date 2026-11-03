@@ -10,10 +10,11 @@
 //! year-less compact dates) resolve against the [`TimeCtx`] the caller
 //! passes in — see that type for the reference/direction contract.
 
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use chrono::{Datelike, Duration, Months, NaiveDate, Weekday};
 
 use crate::error::{ParseError, Result};
 use crate::time::context::{DefaultDirection, TimeCtx};
+use crate::time::months::month_from_word;
 use crate::time::uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
 };
@@ -140,20 +141,17 @@ pub(crate) fn unsigned_days_hint(s: &str) -> Option<String> {
     unsigned.then(|| format!("use {signed}a date like 2026-10-05"))
 }
 
-/// Match `<mmm><1-2 digit day>` with an optional `-YYYY` or `@YYYY` tail.
-/// Month token is case-insensitive; unknown month names return `None`.
+/// Match `<month><1-2 digit day>` with an optional `-YYYY`, `@YYYY` or
+/// `,YYYY` tail. The month is any word [`month_from_word`] reads (`nov`,
+/// `Okt`, `déc.`), case-insensitive, and one space may follow it (`nov 6`,
+/// da-9rda8); an unknown word returns `None`.
 fn parse_compact_month_day(s: &str) -> Option<(u32, u32, Option<i32>)> {
-    let bytes = s.as_bytes();
-    if bytes.len() < 4 {
-        return None;
-    }
-    if !bytes[..3].iter().all(|b| b.is_ascii_alphabetic()) {
-        return None;
-    }
-    let month = month_from_abbr(&s[..3])?;
+    let word_end = s.find(|c: char| !(c.is_alphabetic() || c == '.'))?;
+    let month = month_from_word(&s[..word_end])?;
 
     // Day digits (1-2), then optional year tail.
-    let rest = &s[3..];
+    let rest = &s[word_end..];
+    let rest = rest.strip_prefix(' ').unwrap_or(rest);
     let day_end = rest
         .as_bytes()
         .iter()
@@ -181,24 +179,6 @@ fn parse_compact_month_day(s: &str) -> Option<(u32, u32, Option<i32>)> {
     };
 
     Some((month, day, year))
-}
-
-fn month_from_abbr(s: &str) -> Option<u32> {
-    match s.to_ascii_lowercase().as_str() {
-        "jan" => Some(1),
-        "feb" => Some(2),
-        "mar" => Some(3),
-        "apr" => Some(4),
-        "may" => Some(5),
-        "jun" => Some(6),
-        "jul" => Some(7),
-        "aug" => Some(8),
-        "sep" => Some(9),
-        "oct" => Some(10),
-        "nov" => Some(11),
-        "dec" => Some(12),
-        _ => None,
-    }
 }
 
 /// Day offset for the three day words. Case-insensitive.
@@ -254,7 +234,9 @@ fn resolve_weekday(
     match (direction, default) {
         (Some(Direction::Past), _) => weekday_back(target, today, true),
         (Some(Direction::Future), _) => weekday_forward(target, today, true),
-        (None, DefaultDirection::Past) => weekday_back(target, today, false),
+        (None, DefaultDirection::Past | DefaultDirection::NearestDate) => {
+            weekday_back(target, today, false)
+        }
         (None, DefaultDirection::Future) => weekday_forward(target, today, false),
         (None, DefaultDirection::Nearest) => closer(
             weekday_back(target, today, false),
@@ -278,7 +260,8 @@ fn weekday_forward(target: Weekday, today: NaiveDate, strict: bool) -> NaiveDate
 
 /// Resolve a year-less compact date against `today`. See
 /// [`resolve_weekday`] for the strict/non-strict split between an
-/// explicit marker and a default direction.
+/// explicit marker and a default direction. `NearestDate`, a write's, and
+/// `Nearest`, a data key's, take the nearest occurrence (da-9rda8).
 fn resolve_year(
     month: u32,
     day: u32,
@@ -291,15 +274,22 @@ fn resolve_year(
         (Some(Direction::Future), _) => next_future(month, day, today, true),
         (None, DefaultDirection::Past) => most_recent_past(month, day, today, false),
         (None, DefaultDirection::Future) => next_future(month, day, today, false),
-        (None, DefaultDirection::Nearest) => {
-            match (
-                most_recent_past(month, day, today, false),
-                next_future(month, day, today, false),
-            ) {
-                (Some(p), Some(f)) => Some(closer(p, f, today)),
-                (p, f) => p.or(f),
-            }
+        (None, DefaultDirection::NearestDate | DefaultDirection::Nearest) => {
+            nearest_year(month, day, today)
         }
+    }
+}
+
+/// The occurrence of (month, day) within six months of `today` either way:
+/// the coming one while it is less than six months off, else the last one,
+/// so exactly six months is the past's, as a tie is everywhere here.
+fn nearest_year(month: u32, day: u32, today: NaiveDate) -> Option<NaiveDate> {
+    let past = most_recent_past(month, day, today, false);
+    let future = next_future(month, day, today, false);
+    let six_months_on = today.checked_add_months(Months::new(6))?;
+    match (past, future) {
+        (Some(p), Some(f)) => Some(if f < six_months_on { f } else { p }),
+        (p, f) => p.or(f),
     }
 }
 
@@ -344,6 +334,8 @@ mod tests {
     /// Every pre-existing case here predates the ctx parameter, when the
     /// no-marker default was "most recent past, today counts".
     const PAST: DefaultDirection = DefaultDirection::Past;
+    /// A write's default (da-9rda8): a year-less date the nearest.
+    const NEAREST: DefaultDirection = DefaultDirection::NearestDate;
 
     #[test]
     fn most_recent_past_uses_current_year_when_already_passed() {
@@ -361,6 +353,93 @@ mod tests {
             resolve_year(6, 7, today, None, PAST),
             Some(NaiveDate::from_ymd_opt(2025, 6, 7).unwrap())
         );
+    }
+
+    /// da-9rda8: on a write, a date this year still to come within six
+    /// months is that one, not last year's: `nov6` on Nov 3 is three days on.
+    /// A weekday stays the past one.
+    #[test]
+    fn a_yearless_date_is_the_nearest_one() {
+        let nov3 = NaiveDate::from_ymd_opt(2026, 11, 3).unwrap();
+        let ymd = |y, m, d| NaiveDate::from_ymd_opt(y, m, d);
+        assert_eq!(resolve_year(11, 6, nov3, None, NEAREST), ymd(2026, 11, 6));
+        assert_eq!(resolve_year(10, 20, nov3, None, NEAREST), ymd(2026, 10, 20));
+        assert_eq!(
+            resolve_year(6, 7, ymd(2026, 5, 5).unwrap(), None, NEAREST),
+            ymd(2026, 6, 7)
+        );
+        // A query's default keeps last year's (vividn, 2026-11-03).
+        assert_eq!(resolve_year(11, 6, nov3, None, PAST), ymd(2025, 11, 6));
+        // Tuesday Nov 3: Thursday is the last one, not the coming one.
+        assert_eq!(
+            resolve_weekday(Weekday::Thu, nov3, None, NEAREST),
+            ymd(2026, 10, 29).unwrap()
+        );
+    }
+
+    /// Six months from Nov 6 is May 6: on May 5 the coming Nov 6 is more
+    /// than six months off and last year's is nearer; on May 7 it is less.
+    /// Exactly six months either way, May 6, goes to the past.
+    #[test]
+    fn six_months_either_way_is_the_line() {
+        let ymd = |y, m, d| NaiveDate::from_ymd_opt(y, m, d);
+        let on = |d: Option<NaiveDate>| resolve_year(11, 6, d.unwrap(), None, NEAREST);
+        assert_eq!(on(ymd(2026, 5, 5)), ymd(2025, 11, 6));
+        assert_eq!(on(ymd(2026, 5, 6)), ymd(2025, 11, 6));
+        assert_eq!(on(ymd(2026, 5, 7)), ymd(2026, 11, 6));
+        let nov6 = |d| {
+            parse_date(
+                "nov6",
+                TimeCtx::at(ymd(2026, 5, d).unwrap().and_hms_opt(12, 0, 0).unwrap())
+                    .facing(NEAREST),
+            )
+        };
+        assert_eq!(nov6(5).unwrap().absolute, ymd(2025, 11, 6));
+        assert_eq!(nov6(7).unwrap().absolute, ymd(2026, 11, 6));
+    }
+
+    /// A day six months on that does not exist (Sep 31) is the month's
+    /// last: chrono's `checked_add_months` clamps, so the 31st of a month
+    /// before a short one still resolves, and on the right side.
+    #[test]
+    fn the_line_holds_on_a_months_last_days() {
+        let ymd = |y, m, d| NaiveDate::from_ymd_opt(y, m, d);
+        for (today, month, day, want) in [
+            (ymd(2026, 3, 31), 9, 29, ymd(2026, 9, 29)),
+            (ymd(2026, 3, 31), 9, 30, ymd(2025, 9, 30)),
+            (ymd(2026, 8, 31), 2, 27, ymd(2027, 2, 27)),
+            (ymd(2026, 8, 31), 2, 28, ymd(2026, 2, 28)),
+            (ymd(2026, 12, 31), 1, 5, ymd(2027, 1, 5)),
+            (ymd(2026, 10, 31), 4, 29, ymd(2027, 4, 29)),
+        ] {
+            assert_eq!(
+                resolve_year(month, day, today.unwrap(), None, NEAREST),
+                want,
+                "{month}-{day} on {today:?}"
+            );
+        }
+    }
+
+    /// vividn, 2026-11-03: «input should definitely accept 'nov 6' with a
+    /// space», and a table's localized month reads back (`Okt 3`).
+    #[test]
+    fn a_month_word_takes_a_space_and_any_language() {
+        let ctx = TimeCtx::at(
+            NaiveDate::from_ymd_opt(2026, 11, 3)
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap(),
+        )
+        .facing(NEAREST);
+        let at = |s| parse_date(s, ctx).unwrap().absolute;
+        assert_eq!(at("nov 6"), at("nov6"));
+        assert_eq!(at("Nov 6"), NaiveDate::from_ymd_opt(2026, 11, 6));
+        assert_eq!(at("okt 3"), NaiveDate::from_ymd_opt(2026, 10, 3));
+        assert_eq!(at("Mär 6"), NaiveDate::from_ymd_opt(2027, 3, 6));
+        assert_eq!(at("déc. 24"), NaiveDate::from_ymd_opt(2026, 12, 24));
+        assert_eq!(at("nov 6,2027"), NaiveDate::from_ymd_opt(2027, 11, 6));
+        assert!(parse_date("nov  6", ctx).is_err());
+        assert!(parse_date("nov", ctx).is_err());
     }
 
     #[test]

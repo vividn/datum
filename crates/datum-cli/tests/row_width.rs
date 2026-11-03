@@ -18,6 +18,9 @@ fn datum(dir: &TempDir) -> Command {
         .env("DATUM_CONFIG_HOME", dir.path().join("config"))
         .env("DATUM_SYNC_NO_DAEMON", "1")
         .env("NO_COLOR", "1")
+        .env("LANG", "C")
+        .env_remove("LC_ALL")
+        .env_remove("LC_TIME")
         .env_remove("COLUMNS");
     c
 }
@@ -150,7 +153,12 @@ fn a_kit_command_fits_its_view() {
     ok(&dir, &["moment", LONG, "next_date=+0"]);
     let today = ok(&dir, &["get", "_LAST::data"]);
     let today: serde_json::Value = serde_json::from_str(&today).unwrap();
-    let today = today["next_date"].as_str().unwrap().to_string();
+    let today = today["next_date"].as_str().unwrap();
+    // This year's date is its month and day (da-9rda8), whole.
+    let today = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d")
+        .unwrap()
+        .format("%b %-d")
+        .to_string();
     fits(&dir, &["chorelist"], &[&today]);
 }
 

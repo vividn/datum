@@ -27,6 +27,8 @@ export async function wasiRun(
 		`TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
 		`DATUM_CLIENT_ID=${clientId()}`,
 		`DATUM_DEVICE_KEY=${deviceKey()}`,
+		// The month a table names a date this year in (`Nov 6`, da-9rda8).
+		`LANG=${navigator.language}`,
 		'FORCE_COLOR=1',
 		'DATUM_NO_DEFAULT_ANSWER=1',
 		...extra

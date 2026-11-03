@@ -22,6 +22,9 @@ pub struct Cli {
     /// `--width N`, the width a list of rows fits (da-ky7m6): `Some(0)`
     /// unlimited, `None` the terminal's when stdout is one, else unlimited.
     pub width: Option<usize>,
+    /// `--iso-times`: every time and date cell of the rows in full ISO 8601
+    /// (da-9rda8).
+    pub iso_times: bool,
     pub command: Command,
 }
 

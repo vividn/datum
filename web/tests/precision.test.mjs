@@ -50,6 +50,13 @@ describe('the time an entry is rendered with', () => {
 			// The zone is UTC (support/app.mjs), so the stored instant's date
 			// is the date the entry names.
 			const yesterday = coffee.at.utc.slice(0, 10);
+			// A table prints a date this year as its month and day, the
+			// month in the browser's language, en-US here (da-9rda8).
+			const month = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+			const day =
+				yesterday.slice(0, 4) === tea.at.utc.slice(0, 4)
+					? `${month[Number(yesterday.slice(5, 7)) - 1]} ${Number(yesterday.slice(8))}`
+					: yesterday;
 
 			const tail = await run(['tail']);
 			assert.equal(tail.code, 0, tail.stderr);
@@ -73,7 +80,7 @@ describe('the time an entry is rendered with', () => {
 			// unfiltered makes the indistinguishability impossible instead
 			// of merely guarded against.
 			assert.deepEqual(rowTexts(tail.stdout).slice(1), [
-				`_3 ${yesterday} coffee ∅● <hid>`,
+				`_3 ${day} coffee ∅● <hid>`,
 				'_2 09:15:00 tea ∅● <hid>',
 				'_1 10:00:± water ∅● <hid>'
 			]);
@@ -87,7 +94,7 @@ describe('the time an entry is rendered with', () => {
 			const times = table.rows.map((cells) => cells[table.keys.indexOf('time')]);
 			// The date the coffee owns, the clocks the other two own — and
 			// no midnight invented for the day-precision row.
-			assert.deepEqual(times, [yesterday, '09:15:00', '10:00:± ']);
+			assert.deepEqual(times, [day, '09:15:00', '10:00:± ']);
 
 			// As wide as a clock with seconds, so the minutes stand in one
 			// column: the space after the ± is drawn, not collapsed away.
