@@ -376,25 +376,21 @@ export const KINDS: Record<string, WidgetKind> = {
 		].join('\n'),
 		legible: { width: 200, height: 102 }
 	},
-	// The commands widget (da-ltux): every command as a button, Undo
+	// The commands widget (da-ltux): every command as a round button, undo
 	// first. It took the id `command` back from the widget above, which
-	// da-zqop renamed to `custom` to free it. Legible at one button row
-	// (33px) plus the body's padding — the scroll rule takes it from
-	// there, and one row reached sideways is still every command.
-	// `sections` (da-u79wl) is a PROTOTYPE to compare with it: the same
-	// commands as sections that scroll (SectionPages.svelte).
+	// da-zqop renamed to `custom` to free it. Legible at one row of circles
+	// and the names under them (47px, da-fg4w4) plus the body's padding —
+	// the scroll rule takes it from there, and one row reached sideways is
+	// still every command.
 	command: {
-		meta: meta('command', 'command', { sections: false }, [
-			{ key: 'sections', label: 'scrolling sections', type: 'boolean' }
-		]),
+		meta: meta('command', 'command'),
 		component: CommandPane,
-		props: ({ sections }) => ({ sections: sections === true }),
 		help: [
-			'Every datum command as a button, in sections: Undo (↷ redoes) and Help, the verbs, setup, edits, analysis, db.',
+			'Every datum command as a round button: undo (↷ redoes), then write, read, fields and settings, each opening its commands, and kit, db and sync.',
 			'A verb goes on the command line and filters the fields; a double outline runs at once.',
 			'The pills you have loaded hide the commands that cannot take them.'
 		].join('\n'),
-		legible: { width: 160, height: 49 }
+		legible: { width: 160, height: 64 }
 	},
 	// The stats widget (da-n7r0): its settings ARE the widget's settings, and
 	// its range chips move them with an `onchange` like any other widget's own

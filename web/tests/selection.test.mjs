@@ -9,6 +9,8 @@ import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
 import { DESKTOP, along, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
+import { reach } from './support/commands.mjs';
+import { COMMANDS } from '../src/lib/commands.ts';
 
 before(startApp);
 after(stopApp);
@@ -75,7 +77,8 @@ async function run(app, name) {
 	assert.equal(await app.page.locator('.prompt-bar input').inputValue(), '', 'the tap put something on the line');
 }
 
-const ID_COMMANDS = ['help', 'delete', 'update', 'retime', 'revert', 'get', 'history'];
+/** Under an hid pill: every command that takes one, flat, in the widget's order (da-fg4w4). */
+const ID_COMMANDS = ['help', 'update', 'retime', 'delete', 'revert', 'get', 'history'];
 
 describe('a tap on a tail row', () => {
 	test('loads its hid as a pill; only the id commands are drawn; get runs on it', async () => {
@@ -83,7 +86,7 @@ describe('a tap on a tail row', () => {
 			const { page } = app;
 			await seedApart(app);
 			const whole = await drawn(page);
-			assert.ok(whole.includes('moment'), 'no pill: every command');
+			assert.ok(whole.includes('undo') && !whole.includes('get'), 'no pill: the base row');
 
 			const [row] = await last(page, 2);
 			const hid = await row.getAttribute('data-hid');
@@ -92,7 +95,7 @@ describe('a tap on a tail row', () => {
 			assert.deepEqual(await sections(page), [hid.slice(0, 5)]);
 			assert.equal(await row.evaluate((tr) => tr.classList.contains('selected')), true);
 
-			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="moment"]'));
+			await page.locator('main .bar.commands [data-command="get"]').waitFor();
 			assert.deepEqual(await drawn(page), ID_COMMANDS);
 
 			await run(app, 'get');
@@ -104,8 +107,8 @@ describe('a tap on a tail row', () => {
 			await hidPill(page).waitFor();
 			await row.click();
 			await hidPill(page).waitFor({ state: 'detached' });
-			await page.locator('main .bar.commands [data-command="moment"]').waitFor();
-			assert.deepEqual(await drawn(page), whole, 'the dismiss brings the whole list back');
+			await page.locator('main .bar.commands [data-menu="write"]').waitFor();
+			assert.deepEqual(await drawn(page), whole, 'the dismiss brings the base row back');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -122,6 +125,7 @@ describe('a tap on a tail row', () => {
 			await input.fill('');
 
 			const echoes = await echoCount(page);
+			await reach(page.locator('main .bar.commands'), 'delete');
 			assert.equal(await armed('delete'), false);
 			await button(page, 'delete').click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'delete ');
@@ -174,12 +178,11 @@ describe('a tap on a tail row', () => {
 					.filter((c) => c.usage.some((u) => /^datum \S+ [<[](ID_OR_SLUG|SLUG|HID)\b/.test(u.trim())))
 					.flatMap((c) => [c.name, ...c.aliases])
 			);
-			const whole = await drawn(page);
 			await rows(page).first().click();
 			await hidPill(page).waitFor();
-			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="moment"]'));
+			await page.locator('main .bar.commands [data-command="get"]').waitFor();
 			// Help takes no pill and explains every one, so no pill hides it (da-vjwid).
-			assert.deepEqual(await drawn(page), whole.filter((name) => takesId.has(name) || name === 'help'));
+			assert.deepEqual(await drawn(page), COMMANDS.map((c) => c.name).filter((name) => takesId.has(name) || name === 'help'));
 		});
 	});
 });
@@ -319,12 +322,12 @@ describe('a -t pill', () => {
 		await solo(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 10:00' }]));
-			await page.waitForFunction(() => !document.querySelector('main .bar.commands [data-command="now"]'));
+			await page.locator('main .bar.commands [data-command="moment"]').waitFor();
 			const names = await drawn(page);
 			for (const n of ['moment', 'start', 'end', 'switch', 'add', 'retime']) assert.ok(names.includes(n), n);
 			for (const n of ['now', 'get', 'delete', 'undo']) assert.ok(!names.includes(n), n);
 			await page.locator('.prompt-bar .pill.time button.remove').click();
-			await page.locator('main .bar.commands [data-command="now"]').waitFor();
+			await page.locator('main .bar.commands [data-menu="write"]').waitFor();
 		});
 	});
 });

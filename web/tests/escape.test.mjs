@@ -12,6 +12,7 @@ import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, along, widgetPane } from './support/layout.mjs';
 import { dragBar } from './support/bar.mjs';
 import { MOOD, seed } from './support/fields.mjs';
+import { reach } from './support/commands.mjs';
 
 before(startApp);
 after(stopApp);
@@ -115,13 +116,16 @@ describe('Escape that something else takes leaves the line alone', () => {
 			(page) => page.locator('[role="menu"][aria-label="databases"]').waitFor({ state: 'detached' })
 		));
 
-	test('Help armed', () => {
-		const help = (page) => page.locator('.bar.commands button[data-command="help"]');
-		return untouched(
-			({ page }) => help(page).click(),
-			(page) => page.waitForFunction(() => !document.querySelector('.bar.commands button[aria-pressed="true"]'))
-		);
-	});
+	// Help is in settings (da-fg4w4), and armed the bar goes back to its base
+	// row: the root bar's Help, the same store, says it is armed.
+	test('Help armed', () =>
+		untouched(
+			async ({ page }) => {
+				await (await reach(page.locator('.bar.commands'), 'help')).click();
+				await page.locator('button[data-command="help"][aria-pressed="true"]').first().waitFor();
+			},
+			(page) => page.waitForFunction(() => !document.querySelector('button[data-command="help"][aria-pressed="true"]'))
+		));
 
 	test('the log open', () =>
 		untouched(

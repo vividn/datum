@@ -13,8 +13,12 @@ import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 import { VERBS as TRACK_VERBS } from '../src/lib/track.ts';
 import {
+	BACK,
+	BASE,
 	COMMANDS,
 	ICONS,
+	MENUS,
+	iconOf,
 	VERBS,
 	commandsUnder,
 	fieldsUnder,
@@ -35,75 +39,83 @@ import {
 } from '../src/lib/commands.ts';
 
 /**
- * vividn's sections (da-0mepr), in order, each in the order he named them:
- * Undo (its redo an icon on it, da-zq91a) and Help where Redo was
- * (da-vjwid), the verbs, setup, the edits, analysis, the db. What he did
- * not name follows in its kind: `flag` logs, `config` sets up.
+ * The base row and its submenus (da-fg4w4), vividn, 2026-11-03: «undo write
+ * read setup kit db sync settings. Write and read expand into a submenu»,
+ * `setup` become a `fields` submenu (13:31), with no nowview, dayview or ids
+ * button anywhere and conflicts under sync.
  */
-const SECTIONS = [
-	['undo', ['undo', 'help']],
-	['log', ['moment', 'start', 'end', 'switch', 'add', 'note', 'flag']],
-	['setup', ['track', 'ignore', 'setup', 'alias', 'kit', 'view', 'config']],
-	['edit', ['delete', 'update', 'retime', 'revert']],
-	[
-		'analysis',
-		['tail', 'now', 'stats', 'get', 'check', 'info', 'fields', 'count', 'ids', 'history', 'grep', 'dayview', 'nowview']
-	],
-	['db', ['sync', 'db', 'conflicts']]
-];
-const ORDER = SECTIONS.flatMap(([, names]) => names);
+const ROW = ['undo', 'write', 'read', 'fields', 'kit', 'db', 'sync', 'settings'];
+const SUBMENUS = {
+	write: ['moment', 'start', 'end', 'switch', 'add', 'note', 'flag', 'update', 'retime', 'delete', 'revert'],
+	read: ['tail', 'now', 'stats', 'get', 'history', 'grep', 'fields', 'count', 'info', 'check'],
+	fields: ['setup', 'track', 'ignore', 'alias', 'rename'],
+	settings: ['config', 'help'],
+	sync: ['sync', 'conflicts']
+};
+const ORDER = [...new Set(['undo', 'help', ...SUBMENUS.write, ...SUBMENUS.fields, ...SUBMENUS.read, 'kit', 'db', 'sync', 'conflicts', 'config'])];
 
 describe('the commands, in order', () => {
-	test('Undo first, then the verbs, then the other sections', () => {
+	test('the base row is eight: undo, then the four submenus around kit, db and sync', () => {
+		assert.deepEqual(
+			BASE.map((c) => c.name),
+			ROW
+		);
+		assert.deepEqual(
+			BASE.filter((c) => c.press === 'menu').map((c) => c.name),
+			['write', 'read', 'fields', 'settings']
+		);
+	});
+
+	test('each submenu holds its commands, in order', () => {
+		assert.deepEqual(Object.fromEntries(Object.entries(MENUS).map(([name, commands]) => [name, commands.map((c) => c.name)])), SUBMENUS);
+	});
+
+	test('flat, a loaded pill sees every command once, and none of nowview, dayview, ids or view', () => {
 		assert.deepEqual(
 			COMMANDS.map((c) => c.name),
 			ORDER
 		);
-		assert.equal(COMMANDS[0].label, 'Undo');
+		for (const name of ['nowview', 'dayview', 'ids', 'view'])
+			assert.ok(![...BASE, ...COMMANDS, ...Object.values(MENUS).flat()].some((c) => c.name === name), name);
 	});
 
-	test('every command is in its section, and the sections come in order', () => {
-		assert.deepEqual(
-			COMMANDS.map((c) => [c.name, c.section]),
-			SECTIONS.flatMap(([section, names]) => names.map((name) => [name, section]))
-		);
-	});
-
-	// da-8ru0m: back on the bar, in the logging section — a tap under a
-	// field pill writes the pill into the line before the words.
-	test('note fills, in the logging section', () => {
+	// da-8ru0m: a tap under a field pill writes the pill into the line before the words.
+	test('note fills', () => {
 		assert.deepEqual(COMMANDS.find((c) => c.name === 'note'), {
 			name: 'note',
 			label: 'note',
 			press: 'fill',
-			next: 'type',
-			section: 'log'
+			next: 'type'
 		});
 	});
 
-	test('Undo runs; the five verbs pend; everything else writes a line', () => {
+	test('undo runs; the five verbs pend; everything else writes a line', () => {
 		const pressOf = (name) => COMMANDS.find((c) => c.name === name).press;
 		assert.equal(pressOf('undo'), 'run');
 		assert.equal(pressOf('help'), 'help');
 		for (const verb of VERBS) assert.equal(pressOf(verb), 'verb', verb);
-		for (const name of ['tail', 'db']) assert.equal(pressOf(name), 'fill', name);
+		for (const name of ['tail', 'db', 'kit', 'track']) assert.equal(pressOf(name), 'fill', name);
 	});
 
-	// da-6du3o: one button, Sync, opening its place rather than drilling into nineteen.
-	test('sync is one button that opens its place', () => {
-		assert.deepEqual(COMMANDS.find((c) => c.name === 'sync'), { name: 'sync', label: 'Sync', press: 'place', section: 'db' });
+	// da-6du3o: one button, sync, opening its place rather than drilling into nineteen.
+	test('sync is one button that opens its place, and so is conflicts', () => {
+		assert.deepEqual(BASE.find((c) => c.name === 'sync'), { name: 'sync', label: 'sync', press: 'place' });
+		assert.equal(COMMANDS.find((c) => c.name === 'conflicts').press, 'place');
 	});
 });
 
-// da-y6jfb. vividn, 2026-10-08: «each one needs a different icon, at least
-// for the most commonly used actions».
+// da-y6jfb, da-fg4w4: every command a circle with its own mark in it.
 describe('the icons', () => {
-	const COMMON = ['undo', 'moment', 'start', 'end', 'switch', 'add', 'note', 'track', 'delete', 'retime', 'tail', 'stats', 'sync'];
+	const drawn = [...BASE, ...COMMANDS, ...Object.values(MENUS).flat(), BACK];
 
-	test('every common command has one, and no two share it', () => {
-		assert.deepEqual(Object.keys(ICONS).sort(), [...COMMON].sort());
-		assert.deepEqual(COMMON.filter((name) => !ORDER.includes(name)), [], 'an icon for a command the bar does not draw');
-		assert.equal(new Set(Object.values(ICONS)).size, COMMON.length, 'two commands share an icon');
+	test('every button has one, and no two share it', () => {
+		const marks = new Map(drawn.map((c) => [`${c.press === 'menu' ? 'menu ' : ''}${c.name}`, iconOf(c)]));
+		assert.deepEqual([...marks].filter(([, icon]) => !icon), [], 'a button with no mark');
+		assert.equal(new Set(marks.values()).size, marks.size, 'two buttons share a mark');
+	});
+
+	test('a subcommand wears its command\'s', () => {
+		assert.equal(iconOf({ name: 'db backup', label: 'backup', press: 'backups' }), ICONS.db);
 	});
 
 	test('a verb wears the glyph the CLI prints for the row it writes', () => {
@@ -396,24 +408,20 @@ describe('subcommands', () => {
 		// Two forms, no subcommands: `add` fills as it always did.
 		{ name: 'add', aliases: [], usage: ['datum add <FIELD>', 'datum add <FIELD> <DUR>'], flags: [] }
 	]);
-	const field = { id: 'field', kind: 'field', text: 'mood' };
 
-	test('a command with subcommands drills; alternate forms do not; setup under a field opens the field widget instead, and so does track', () => {
-		assert.deepEqual(['db', 'conflicts', 'setup', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, false, false, false]);
-		assert.equal(drills(TREE, 'setup', [field]), false, 'da-ybai9: the field widget, not the subcommands');
-		assert.equal(drills(TREE, 'db', [field]), true);
+	test('a command with subcommands drills; alternate forms do not; setup opens the setup widget instead, and track does not', () => {
+		assert.deepEqual(['db', 'conflicts', 'setup', 'add', 'tail'].map((n) => drills(TREE, n)), [true, true, false, false, false]);
 		// da-hbrfg: the spec is a place, so that tap OPENS, and draws the `›`.
-		// da-ez40f: with no subcommands, `setup` opens it with no pill too.
-		assert.deepEqual([opensField('setup', [field]), opensField('setup', []), opensField('db', [field])], [true, true, false]);
-		// da-fu29p: `track` opens it with a field named or none, a new one.
-		assert.deepEqual([opensField('track', []), opensField('track', [field])], [true, true]);
+		assert.deepEqual([opensField('setup'), opensField('db')], [true, false]);
+		// da-fg4w4, vividn: «track shouldn't open the setup widget, it should just put the word track in the command line».
+		assert.equal(opensField('track'), false);
 	});
 
-	test('< Back and Help lead; a command that runs bare is offered as itself; each subcommand fills its whole line', () => {
+	test('back and Help lead; a command that runs bare is offered as itself; each subcommand fills its whole line', () => {
 		const bar = (name) => subcommandsOf(TREE, name).map((c) => [c.name, c.label, c.press]);
 		assert.deepEqual(bar('db'), [
-			['back', '< Back', 'back'],
-			['help', 'Help', 'help'],
+			['back', 'back', 'back'],
+			['help', 'help', 'help'],
 			['db migrate', 'migrate', 'fill'],
 			// da-9ow8m: it opens «Backups» rather than fill the line.
 			['db backup', 'backup', 'backups']
@@ -440,7 +448,7 @@ describe('flags', () => {
 		{ name: 'stop', aliases: ['end'], usage: ['datum stop <FIELD>'], flags: [f('t', 'time', true), f('L', 'ensure-last-state', true)] }
 	]);
 
-	test('< Back and Help lead; the curated flags first, the rest in the CLI order; a value flag is typed next', () => {
+	test('back and Help lead; the curated flags first, the rest in the CLI order; a value flag is typed next', () => {
 		assert.deepEqual(
 			flagsOf(TREE, 'moment').map((c) => [c.name, c.press, c.next ?? null]),
 			[

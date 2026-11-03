@@ -13,9 +13,11 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
-import { DESKTOP, along, draft, toggleOption, widgetPane } from './support/layout.mjs';
+import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { atRows, axes, boxes, gaps, lastReached, listed, packed } from './support/rows.mjs';
+import { reach } from './support/commands.mjs';
+import { BASE, MENUS } from '../src/lib/commands.ts';
 
 before(startApp);
 after(stopApp);
@@ -103,93 +105,146 @@ const line = (page) =>
 		return { text: input.value, focused: document.activeElement === input };
 	});
 
+/** Load these pills onto the bar, in place of whatever it held. */
+const load = (page, pills) => page.evaluate((all) => window.datum.bar.setPills(all), pills);
+
 /** Press a command button and wait for the line to say so. */
 async function tap(page, name) {
-	await commands(page).locator(`button[data-command="${name}"]`).click();
+	await (await reach(commands(page), name)).click();
 	await page.waitForFunction(
 		(n) => document.querySelector('.prompt-bar input').value === `${n} `,
 		name
 	);
 }
 
-/**
- * The commands bar's sections as drawn: each one's name, its commands, the
- * x of the rule at its left edge (null where none is drawn), and how far
- * its buttons reach either side.
- */
-const sectionsOf = (page) =>
-	commands(page).evaluate((bar) =>
-		[...bar.querySelectorAll(':scope > .section')].map((section) => {
-			const style = getComputedStyle(section);
-			const buttons = [...section.querySelectorAll('button[data-command]')];
-			const boxes = buttons.map((b) => b.getBoundingClientRect());
+/** Each of the bar's circles as drawn: what it is, the name under it, and where both stand. */
+const circles = (page) =>
+	commands(page).evaluate((bar) => {
+		// Dealt back into the widget's order: the first of every row, then the second (`listed` in support/rows.mjs).
+		const lanes = [...bar.querySelectorAll('.lane')].map((lane) => [...lane.querySelectorAll('button.round')]);
+		const dealt = [];
+		for (let k = 0; lanes.some((lane) => k < lane.length); k += 1) for (const lane of lanes) if (k < lane.length) dealt.push(lane[k]);
+		return dealt.map((b) => {
+			const box = b.getBoundingClientRect();
+			const name = b.querySelector('.name');
+			const under = name.getBoundingClientRect();
+			const style = getComputedStyle(b);
 			return {
-				name: section.dataset.section,
-				commands: buttons.map((b) => b.dataset.command),
-				rule: style.borderLeftStyle === 'solid' && parseFloat(style.borderLeftWidth) > 0 ? section.getBoundingClientRect().left : null,
-				left: Math.min(...boxes.map((b) => b.left)),
-				right: Math.max(...boxes.map((b) => b.right))
+				is: b.dataset.command ?? (b.dataset.menu ? `menu ${b.dataset.menu}` : 'back'),
+				name: name.textContent,
+				round: style.borderRadius === '50%' && Math.abs(box.width - box.height) < 0.5,
+				under: under.top >= box.bottom && Math.abs(under.left + under.width / 2 - (box.left + box.width / 2)) < 1,
+				top: Math.round(box.top),
+				right: box.right,
+				left: box.left
 			};
-		})
-	);
-
-/** No empty section; a rule before every section but the first, standing between the two sections' buttons. */
-function ruled(sections) {
-	sections.forEach((s, i) => {
-		assert.ok(s.commands.length > 0, `${s.name} is drawn empty`);
-		if (i === 0) return assert.equal(s.rule, null, `a rule before ${s.name}, the first`);
-		assert.notEqual(s.rule, null, `no rule between ${sections[i - 1].name} and ${s.name}`);
-		assert.ok(sections[i - 1].right < s.rule && s.rule < s.left, `the rule before ${s.name} is not between the sections`);
+		});
 	});
-}
+
+/** The base row as the widget lists it (`BASE`): a submenu by `menu <name>`. */
+const ROW = BASE.map((c) => (c.press === 'menu' ? `menu ${c.name}` : c.name));
 
 describe('the bar of commands', () => {
-	test('Undo leads, the verbs follow, and note after them', async () => {
-		await onPage(async ({ page }) => {
-			const buttons = await drawn(page);
-			assert.deepEqual(buttons.slice(0, 8), [
-				'Undo',
-				'↷',
-				'Help',
-				'moment',
-				'start',
-				'end',
-				'switch',
-				'add'
-			]);
-			assert.equal(buttons[8], 'note', 'note is on the bar, after the verbs (da-8ru0m)');
-			assert.ok(buttons.includes('Sync'), 'the tail of the list is drawn too');
+	// da-fg4w4. vividn, 2026-11-03: «Let's make the command buttons circular
+	// with an icon in the circle and the name of the command beneath them»,
+	// and the base: «undo write read setup kit db sync settings».
+	test('the base row is eight circles in one row, each named beneath; no nowview, dayview, ids or conflicts', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			const fits = await commands(page).evaluate((el) => Math.floor((el.clientHeight + 6.4) / (el.parentElement.querySelector('.probe').offsetHeight + 6.4)));
+			assert.ok(fits >= 3, `the box fits ${fits} rows`);
+			const row = await circles(page);
+			assert.deepEqual(
+				row.map((c) => c.is),
+				['undo', 'menu write', 'menu read', 'menu fields', 'kit', 'db', 'sync', 'menu settings']
+			);
+			assert.deepEqual(row.map((c) => c.name), ['undo', 'write', 'read', 'fields', 'kit', 'db', 'sync', 'settings']);
+			assert.deepEqual(row.filter((c) => !c.round || !c.under).map((c) => c.is), [], 'not a circle with its name under it');
+			assert.equal(new Set(row.map((c) => c.top)).size, 1, 'with room for three rows, the base row is still one row');
+			assert.equal(await commands(page).locator('button[data-command="redo"]').count(), 1, 'undo keeps its redo');
+			for (const name of ['nowview', 'dayview', 'ids', 'conflicts', 'view'])
+				assert.equal(await page.locator(`.bar.commands [data-command="${name}"]`).count(), 0, name);
+		});
+	});
+
+	// vividn: «Write and read expand into a submenu when clicked of the various commands inside of them.»
+	for (const menu of ['write', 'read', 'fields', 'settings'])
+		test(`${menu} opens its submenu in the row's place, back first, and back comes back`, async () => {
+			await onPage(async ({ page }) => {
+				await commands(page).locator(`button[data-menu="${menu}"]`).click();
+				const want = ['back', ...MENUS[menu].map((c) => c.name)];
+				await until(async () => (await circles(page)).map((c) => c.is), (is) => is.join() === want.join());
+				assert.ok((await circles(page)).every((c) => c.round && c.under));
+				await commands(page).locator('button[data-back]').click();
+				await until(async () => (await circles(page)).map((c) => c.is), (is) => is.join() === ROW.join());
+				// Escape is back too, and a command chosen there takes the bar back to the row.
+				await commands(page).locator(`button[data-menu="${menu}"]`).click();
+				await commands(page).locator('button[data-back]').waitFor();
+				await page.keyboard.press('Escape');
+				await commands(page).locator('button[data-back]').waitFor({ state: 'detached' });
+				if (menu === 'read') {
+					await tap(page, 'tail');
+					assert.deepEqual((await circles(page)).map((c) => c.is), ROW, 'a command chosen takes the bar back to the base row');
+				}
+			});
+		});
+
+	// vividn: «When a pill is loaded, there is still a filtering action which
+	// then only shows the available commands» — every one that takes it,
+	// whichever submenu it is in, with no submenu of its own.
+	test('with an hid pill, only the commands that take an hid, flat, and the row again once it goes', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			const [entry] = await app.entries(1);
+			await load(page, [{ id: 'hid', kind: 'hid', text: entry.hid }]);
+			const takes = ['help', 'update', 'retime', 'delete', 'revert', 'get', 'history'];
+			const flat = await until(async () => (await circles(page)).map((c) => c.is), (is) => is.includes('delete'));
+			assert.deepEqual(flat.filter((is) => !takes.includes(is)), [], 'a command that takes no hid');
+			assert.deepEqual(takes.filter((is) => !flat.includes(is)), [], 'a command that takes an hid is missing');
+			assert.equal(await commands(page).locator('button[data-menu]').count(), 0, 'a submenu under a pill');
+			await load(page, []);
+			await until(async () => (await circles(page)).map((c) => c.is), (is) => is.join() === ROW.join());
 		});
 	});
 
 	// da-y6jfb. The icon is DRAWN — a glyph by CSS, a drawing with ink in
-	// it — and the button's text is still its word (the test above reads
-	// it); `track` is the one command in a colour of its own.
-	test('a common command wears its icon, no two alike, and track alone is green', async () => {
+	// it — and the button's text is still its word; `track` is the one
+	// command in a color of its own.
+	test('every command wears its mark in its circle, no two alike, and track alone is green', async () => {
 		await onPage(async ({ page }) => {
-			const looks = await commands(page).evaluate((bar) =>
-				Object.fromEntries(
-					[...bar.querySelectorAll('button[data-command]')].map((b) => {
+			const looks = {};
+			const read = () =>
+				commands(page).evaluate((bar) =>
+					[...bar.querySelectorAll('button.round:not([data-back])')].map((b) => {
 						const path = b.querySelector('svg path');
 						const glyph = getComputedStyle(b, '::before').content;
 						return [
-							b.dataset.command,
+							b.dataset.command ?? `menu ${b.dataset.menu}`,
 							{
 								icon: path ? (path.getBoundingClientRect().width > 4 ? path.getAttribute('d') : 'no ink') : glyph,
+								text: b.textContent.trim(),
 								color: getComputedStyle(b).color,
 								border: getComputedStyle(b).borderTopColor
 							}
 						];
 					})
-				)
-			);
+				);
+			Object.assign(looks, Object.fromEntries(await read()));
+			for (const menu of ['write', 'read', 'fields', 'settings']) {
+				await commands(page).locator(`button[data-menu="${menu}"]`).click();
+				await commands(page).locator('button[data-back]').waitFor();
+				Object.assign(looks, Object.fromEntries(await read()));
+				await commands(page).locator('button[data-back]').click();
+			}
 			const glyphs = { undo: '↶', moment: '●', start: '█', end: '■', switch: '▞', add: '¢', note: '✎', track: '+' };
 			for (const [name, glyph] of Object.entries(glyphs)) assert.ok(looks[name].icon.startsWith(`"${glyph}"`), `${name} draws ${looks[name].icon}`);
-			for (const name of ['delete', 'retime', 'tail', 'stats', 'sync']) assert.match(looks[name].icon, /^M/, `${name} draws ${looks[name].icon}`);
-			const iconed = Object.values(looks).map((l) => l.icon).filter((icon) => icon !== 'none');
-			assert.equal(iconed.length, 13);
-			assert.equal(new Set(iconed).size, 13, 'two commands draw the same icon');
-			assert.equal(looks.flag.icon, 'none');
+			for (const name of ['delete', 'retime', 'tail', 'stats', 'sync', 'menu write']) assert.match(looks[name].icon, /^M/, `${name} draws ${looks[name].icon}`);
+			const icons = Object.values(looks).map((l) => l.icon);
+			assert.deepEqual(Object.entries(looks).filter(([, l]) => l.icon === 'none' || l.icon === 'no ink').map(([name]) => name), [], 'a circle with no mark');
+			assert.equal(new Set(icons).size, icons.length, 'two commands draw the same icon');
+			assert.equal(looks.tail.text, 'tail', 'the mark is no part of its name');
 
 			// The green the CLI paints a new row's tag (`Outcome::Create`).
 			const GREEN = 'rgb(38, 162, 105)';
@@ -199,33 +254,11 @@ describe('the bar of commands', () => {
 		});
 	});
 
-	// da-0mepr. vividn, 2026-09-26: «let's divide the command widget into
-	// sections. I think that will visually differentiate different kinds of
-	// actions» — undo and help, logging, setup, edits, analysis, db.
-	test('the commands stand in sections, in order, a rule between each; a pill that hides a section’s commands takes the section and its rule', async () => {
-		await onPage(async (app) => {
-			const { page } = app;
-			await seedLines(app, SEED);
-			await atRows(page, 'cmd', 3);
-			const whole = await sectionsOf(page);
-			assert.deepEqual(
-				whole.map((s) => s.name),
-				['undo', 'log', 'setup', 'edit', 'analysis', 'db']
-			);
-			assert.deepEqual(whole.find((s) => s.name === 'edit').commands.sort(), ['delete', 'retime', 'revert', 'update']);
-			ruled(whole);
-
-			// A field pill: coffee names no edit but `revert` (fieldpill.test.mjs), and a section with nothing left goes.
-			await fieldsBar(page).locator('[data-field="coffee"]').click({ button: 'right' });
-			await page.waitForFunction(() => !document.querySelector('[data-command="delete"]'));
-			const under = await sectionsOf(page);
-			assert.deepEqual(
-				under.map((s) => s.name),
-				whole.map((s) => s.name).filter((name) => under.some((s) => s.name === name))
-			);
-			assert.deepEqual(under.find((s) => s.name === 'edit').commands, ['revert']);
-			assert.ok(under.length < whole.length, 'a section outlived its commands');
-			ruled(under);
+	// vividn, 13:28: «track shouldn't open the setup widget, it should just put the word track in the command line.»
+	test('track writes its word on the line, and opens no setup widget', async () => {
+		await onPage(async ({ page }) => {
+			await tap(page, 'track');
+			assert.equal(await page.locator('.host[data-widget="setup"]').count(), 0, 'track opened the setup widget');
 		});
 	});
 });
@@ -237,14 +270,12 @@ describe('a command with subcommands drills into them', () => {
 	const back = (page) => commands(page).locator('button[data-back]');
 	const DB = ['purge', 'backup', 'restore', 'migrate', 'v2import', 'config', 'rename'];
 
-	test('db shows its subcommands under < Back, and migrate fills `db migrate `', async () => {
+	test('db shows its subcommands under back, and migrate fills `db migrate `', async () => {
 		await onPage(async ({ page }) => {
 			await commands(page).locator('button[data-command="db"]').click();
 			await back(page).waitFor();
-			assert.equal((await back(page).innerText()).trim(), '< Back');
-			assert.deepEqual(await drawn(page), ['Help', ...DB], 'Help stays, to explain a subcommand');
-			// A drilled bar is one run: Help's section does not set it apart (da-0mepr).
-			assert.deepEqual((await sectionsOf(page)).map((s) => s.name), [undefined]);
+			assert.equal((await back(page).innerText()).trim(), 'back');
+			assert.deepEqual(await drawn(page), ['help', ...DB], 'Help stays, to explain a subcommand');
 			assert.equal((await line(page)).text, '', '`db ` runs nothing, so a tap never writes it');
 
 			await tap(page, 'db migrate');
@@ -272,12 +303,12 @@ describe('a command with subcommands drills into them', () => {
 		});
 	}
 
-	test('< Back and Escape each return to the whole list, and Escape peels only that', async () => {
+	test('back and Escape each return to the base row, and Escape peels only that', async () => {
 		await onPage(async ({ page }) => {
 			await commands(page).locator('button[data-command="db"]').click();
 			await back(page).click();
 			await back(page).waitFor({ state: 'detached' });
-			assert.ok((await drawn(page)).includes('moment'), 'Back is the whole list');
+			assert.ok((await drawn(page)).includes('kit'), 'back is the base row');
 
 			await commands(page).locator('button[data-command="db"]').click();
 			await tap(page, 'db migrate');
@@ -306,12 +337,13 @@ describe('holding a command fills it and shows its flags', () => {
 	const flags = async (page) => (await listed(commands(page), 'button[data-flag]')).map((b) => b.text);
 
 	async function hold(page, name) {
-		const box = await commands(page).locator(`button[data-command="${name}"]`).boundingBox();
+		const box = await (await reach(commands(page), name)).boundingBox();
 		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 		await page.mouse.down();
 		// Lifted once the hold has fired, by what it drew: a lift timed on
-		// Node's clock can beat the page's own timer to it (da-mtsgy).
-		await back(page).waitFor();
+		// Node's clock can beat the page's own timer to it (da-mtsgy). Its
+		// flags, as a submenu draws back too.
+		await commands(page).locator('button[data-flag]').first().waitFor();
 		await page.mouse.up();
 	}
 
@@ -326,7 +358,7 @@ describe('holding a command fills it and shows its flags', () => {
 		await onPage(async ({ page }) => {
 			await hold(page, 'moment');
 			assert.equal((await typed(page)).text, 'moment ', 'the hold fills as the tap does');
-			assert.deepEqual(await drawn(page), ['Help'], 'Back, Help, then flags: no command beside them');
+			assert.deepEqual(await drawn(page), ['help'], 'back, Help, then flags: no command beside them');
 			assert.deepEqual((await flags(page)).slice(0, 7), ['-t', '-d', '-y', '-q', '-c', '-m', '-k']);
 			assert.ok((await flags(page)).includes('--id'), 'the rest follow, long-only ones included');
 		});
@@ -387,16 +419,18 @@ describe('holding a command fills it and shows its flags', () => {
 		});
 	});
 
-	test('< Back and Escape return to the commands, and leave the line as it is', async () => {
+	test('back and Escape return to the commands, and leave the line as it is', async () => {
 		await onPage(async ({ page }) => {
+			// Back to the submenu the command was held in (da-fg4w4), with its own back.
+			const flag = commands(page).locator('button[data-flag]').first();
 			await hold(page, 'moment');
 			await back(page).click();
-			await back(page).waitFor({ state: 'detached' });
+			await flag.waitFor({ state: 'detached' });
 			assert.ok((await drawn(page)).includes('moment'));
 
 			await hold(page, 'moment');
 			await page.keyboard.press('Escape');
-			await back(page).waitFor({ state: 'detached' });
+			await flag.waitFor({ state: 'detached' });
 			assert.ok((await drawn(page)).includes('moment'));
 			assert.equal((await typed(page)).text, 'moment ', 'the same Escape peeled the line too');
 		});
@@ -404,6 +438,7 @@ describe('holding a command fills it and shows its flags', () => {
 
 	test('a command without flags is not held', async () => {
 		await onPage(async ({ page }) => {
+			await reach(commands(page), 'moment');
 			assert.equal(await commands(page).locator('button[data-command="delete"][data-holds]').count(), 0);
 			assert.equal(await commands(page).locator('button[data-command="moment"][data-holds]').count(), 1);
 		});
@@ -469,10 +504,11 @@ describe('a verb fills the line and filters the fields', () => {
 
 			for (const field of ['work', 'sleep']) {
 				await fieldsBar(page).locator(`[data-field="${field}"]`).click({ button: 'right' });
-				await page.waitForFunction(() => !document.querySelector('[data-command="moment"]'));
+				// The pill's commands, flat (da-fg4w4), in place of the base row.
+				await page.waitForFunction(() => document.querySelector('main .bar.commands [data-command="start"]'));
 				assert.deepEqual(await verbs(), ['start', 'end'], field);
 				await page.locator('.prompt-bar .pill.field button.remove').click();
-				await page.waitForFunction(() => document.querySelector('[data-command="moment"]'));
+				await page.waitForFunction(() => document.querySelector('main .bar.commands [data-menu="write"]'));
 			}
 
 			await tap(page, 'start');
@@ -672,7 +708,6 @@ describe('a verb under a field pill', () => {
 describe('a typing command under field and hid pills', () => {
 	const input = (page) => page.locator('.prompt-bar input');
 	const pill = (page, kind) => page.locator(`.prompt-bar .pill.${kind}`);
-	const load = (page, pills) => page.evaluate((all) => window.datum.bar.setPills(all), pills);
 	/** The line, whether it has the caret, and where the caret is. */
 	const caret = (page) =>
 		input(page).evaluate((el) => ({ text: el.value, focused: document.activeElement === el, at: el.selectionStart }));
@@ -737,10 +772,14 @@ describe('the scroll rule', () => {
 	// vividn, 2026-09-22 (da-vu7pi): «we should always maintain horizontal
 	// scrolling in the commands widget, so when it is tall enough, do three
 	// rows that scroll horizontally» — and each row packs on its own.
+	// A submenu's: the base row is one row whatever the room (da-fg4w4), and
+	// at a phone's width write's twelve are crowded in one.
 	test('one, two and three rows high draw that many rows, each packed, all reached sideways; taller stays three', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
+			await page.setViewportSize({ width: 390, height: page.viewportSize().height });
+			await commands(page).locator('button[data-menu="write"]').click();
 
 			for (const want of [1, 2, 3]) {
 				await atRows(page, 'cmd', want);
@@ -753,23 +792,21 @@ describe('the scroll rule', () => {
 				});
 				const drawn = await boxes(commands(page), 'button[data-command]');
 				assert.deepEqual(drawn.filter((b) => !b.inside).map((b) => b.name), [], `${want} rows: clipped`);
-				// Packed by ITEM: Undo and its redo icon are one item, joined
-				// with no gap between them (da-zq91a).
 				packed(await gaps(commands(page), '.lane > *'), `${want} rows`);
 				if (want === 2) {
-					// Dealt by index: Undo and Help start the two rows (da-vjwid),
-					// moment follows Undo and start follows Help.
-					const at = Object.fromEntries(drawn.map((b) => [b.name, b]));
+					// Dealt by index: back and moment start the two rows, start
+					// follows back and end follows moment.
+					const at = Object.fromEntries((await boxes(commands(page), 'button.round')).map((b) => [b.name, b]));
+					const back = at['back'];
 					assert.deepEqual(
 						[
-							at.redo.line === at.undo.line && at.redo.left > at.undo.left,
-							at.undo.left === at.help.left,
-							at.undo.line < at.help.line,
-							at.moment.line === at.undo.line && at.moment.left > at.redo.left,
-							at.start.line === at.help.line && at.start.left > at.help.left
+							back.left === at.moment.left,
+							back.line < at.moment.line,
+							at.start.line === back.line && at.start.left > back.left,
+							at.end.line === at.moment.line && at.end.left > at.moment.left
 						],
-						[true, true, true, true, true],
-						'the rows are not Undo ↷ moment … over Help start …'
+						[true, true, true, true],
+						'the rows are not back start … over moment end …'
 					);
 				}
 				// And the rest really is reached by scrolling, not by spilling —
@@ -792,162 +829,12 @@ describe('the scroll rule', () => {
 			const tall = await until(
 				async () => ({
 					...(await axes(commands(page))),
-					room: await commands(page).evaluate((bar) => bar.clientHeight / bar.parentElement.querySelector('.probe button').offsetHeight)
+					room: await commands(page).evaluate((bar) => bar.clientHeight / bar.parentElement.querySelector('.probe').offsetHeight)
 				}),
 				(t) => t.room > 4.5 && t.rows === 3
 			);
 			assert.deepEqual([tall.x, tall.y, tall.display, tall.fits], ['auto', 'hidden', 'flex', true]);
 		});
-	});
-});
-
-describe('the sections that scroll (da-u79wl)', () => {
-	// The prototype of vividn's sketch, 2026-10-09: «maybe each section has
-	// vertical scroll, and then we can have a different number of columns
-	// per section and horizontal scrolling to go between the sections».
-	// It came from the red «conflicts» standing last in the one scrolling
-	// row, off a phone's screen — so that is what the old bar is caught
-	// doing here, beside the new one, on one page.
-	const BOTH = JSON.stringify(
-		along('column', widgetPane('repl', 'cli'), widgetPane('old', 'command'), widgetPane('new', 'command', { sections: true }))
-	);
-	const COLUMNS = { undo: 1, log: 3, setup: 2, edit: 1, analysis: 2, db: 1 };
-	const pages = (page) => page.locator('section[data-pane="new"] .pages.commands');
-
-	/** How the new bar is drawn: its scrollers' rules, and each section's columns, thumb and names. */
-	const read = (page) =>
-		pages(page).evaluate((bar) => {
-			const css = (el, ...keys) => keys.map((k) => getComputedStyle(el)[k]).join(' ');
-			const box = bar.getBoundingClientRect();
-			return {
-				rows: Number(bar.dataset.rows),
-				scroller: css(bar.querySelector('.scroller'), 'overflowX', 'overflowY', 'scrollSnapType'),
-				pinned: [...bar.querySelectorAll(':scope > .pinned button')].map((b) => b.dataset.command),
-				sections: [...bar.querySelectorAll('.scroller > .section')].map((section) => {
-					const grid = section.querySelector('.grid');
-					const names = [...grid.querySelectorAll('button[data-command]:not([data-command="redo"])')];
-					return {
-						name: section.dataset.section,
-						columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
-						rule: css(section, 'scrollSnapAlign') + ' / ' + css(grid, 'overflowY', 'scrollSnapType'),
-						names: names.map((b) => b.dataset.command),
-						/** The buttons wholly inside the bar, top to bottom. */
-						shown: names
-							.filter((b) => b.getBoundingClientRect().top >= box.top - 0.5 && b.getBoundingClientRect().bottom <= box.bottom + 0.5)
-							.map((b) => b.dataset.command),
-						hidden: grid.scrollHeight > grid.clientHeight + 1,
-						of: Number(getComputedStyle(section).getPropertyValue('--of')),
-						at: Number(getComputedStyle(section).getPropertyValue('--at'))
-					};
-				})
-			};
-		});
-
-	/** Is the pane's «conflicts» wholly inside its pane, and is it red? */
-	const conflictsOf = (page, id) =>
-		page.locator(`section[data-pane="${id}"]`).evaluate((pane) => {
-			const button = pane.querySelector('button[data-command="conflicts"]');
-			const [b, p] = [button.getBoundingClientRect(), pane.getBoundingClientRect()];
-			return {
-				text: button.textContent.trim(),
-				red: button.classList.contains('clashing'),
-				inView: b.left >= p.left && b.right <= p.right && b.top >= p.top && b.bottom <= p.bottom
-			};
-		});
-
-	test('each section has its columns and its own scroll, the sections page sideways, and conflicts cannot be scrolled away', async () => {
-		await shared.solo(async (app) => {
-			const { page } = app;
-
-			// One row high — a phone's box: the same box for both bars.
-			await atRows(page, 'old', 1);
-			const one = await until(() => read(page), (r) => r.rows === 1 && r.sections.every((s) => s.hidden === s.of > 0));
-			assert.equal(one.scroller, 'auto hidden x mandatory');
-			assert.deepEqual(one.pinned, [], 'no conflicts, nothing pinned');
-			assert.deepEqual(Object.fromEntries(one.sections.map((s) => [s.name, s.columns])), COLUMNS);
-			for (const s of one.sections) {
-				assert.equal(s.rule, 'start / auto y mandatory', s.name);
-				// The first row is the section's first commands, whole, and
-				// the rest is under it: marked by the thumb, never cut.
-				assert.deepEqual(s.shown, s.names.slice(0, COLUMNS[s.name]), `${s.name}: its first row`);
-				assert.equal(s.hidden, s.names.length > COLUMNS[s.name], `${s.name}: rows under the first`);
-				assert.ok(s.hidden ? s.of > 0 && s.of < 1 && s.at === 0 : s.of === 0, `${s.name}: thumb ${s.of} at ${s.at}`);
-			}
-			// The same commands as the row bar, in the same order.
-			const row = await listed(page.locator('section[data-pane="old"] .bar.commands'), 'button[data-command]');
-			assert.deepEqual(one.sections.flatMap((s) => s.names), row.map((b) => b.command).filter((name) => name !== 'redo'));
-
-			// A section scrolled to its end shows its last row, and says where it is.
-			await pages(page).locator('[data-section="log"] .grid').evaluate((grid) => grid.scrollTo(0, grid.scrollHeight));
-			const scrolled = await until(() => read(page), (r) => r.sections[1].at > 0);
-			assert.deepEqual(scrolled.sections[1].shown, ['flag']);
-
-			// Three rows high: every section draws three, and only the long ones scroll.
-			await atRows(page, 'old', 3);
-			const three = await until(() => read(page), (r) => r.rows === 3);
-			assert.deepEqual(
-				three.sections.filter((s) => s.hidden).map((s) => s.name),
-				three.sections.filter((s) => s.names.length > 3 * COLUMNS[s.name]).map((s) => s.name)
-			);
-			assert.deepEqual(three.sections[1].shown, ['moment', 'start', 'end', 'switch', 'add', 'note', 'flag']);
-
-			// Conflicts, on a screen too narrow for either bar: the row bar's
-			// button is off it, the new bar's is pinned before the scroller
-			// and stays when the sections are paged to their end.
-			await app.submit('debug conflicts 2');
-			await until(() => conflictsOf(page, 'new'), (c) => c.text === 'conflicts 3');
-			await page.setViewportSize({ width: 390, height: page.viewportSize().height });
-			await until(() => pages(page).locator('.scroller').evaluate((s) => s.scrollWidth > s.clientWidth + 1), Boolean);
-			assert.deepEqual(await conflictsOf(page, 'old'), { text: 'conflicts 3', red: true, inView: false }, 'the row bar');
-			await pages(page).locator('.scroller').evaluate((s) => s.scrollTo(s.scrollWidth, 0));
-			const pinned = await read(page);
-			assert.deepEqual(pinned.pinned, ['conflicts']);
-			assert.deepEqual(pinned.sections.at(-1).names, ['sync', 'db'], 'and it is drawn once');
-			assert.deepEqual(await conflictsOf(page, 'new'), { text: 'conflicts 3', red: true, inView: true }, 'the new bar');
-		}, BOTH);
-	});
-
-	test('it is the widget’s «scrolling sections» option, and a drilled bar is one run that wraps', async () => {
-		await shared.solo(async ({ page }) => {
-			const old = page.locator('section[data-pane="old"]');
-			await toggleOption(page, 'old', 'scrolling sections');
-			await old.locator('.pages.commands').waitFor();
-			assert.equal(await old.locator('.bar.commands').count(), 0);
-
-			await old.locator('button[data-command="db"]').click();
-			await old.locator('button[data-back]').waitFor();
-			assert.deepEqual(
-				await old.locator('.pages .section').evaluateAll((all) =>
-					all.map((s) => [s.dataset.section, getComputedStyle(s.querySelector('.grid')).display, getComputedStyle(s.querySelector('.grid')).flexWrap])
-				),
-				[[undefined, 'flex', 'wrap']]
-			);
-			// A short box, then the same box narrowed until the run wraps past
-			// it: the thumb follows the box's WIDTH, which no update or scroll
-			// of the bar's follows — the height alone would count its rows again.
-			const run = () =>
-				old.locator('.pages .section').evaluate((s) => {
-					const grid = s.querySelector('.grid');
-					return { hidden: grid.scrollHeight > grid.clientHeight + 1, of: Number(getComputedStyle(s).getPropertyValue('--of')) };
-				});
-			await page.setViewportSize({ width: 1280, height: 320 });
-			const height = () => old.locator('.pages').evaluate((bar) => bar.clientHeight);
-			const short = await until(height, (h) => h < 100);
-			assert.deepEqual(await run(), { hidden: false, of: 0 });
-			await page.setViewportSize({ width: 390, height: 320 });
-			// The thumb with the rows: `hidden` is layout, true the moment the
-			// box is narrow, and `--of` is written when the observer hears of it.
-			const narrow = await until(run, (r) => r.hidden && r.of > 0);
-			assert.equal(await height(), short, 'the box changed height too');
-			assert.ok(narrow.of > 0 && narrow.of < 1, `rows out of sight and a thumb of ${narrow.of}`);
-			await page.setViewportSize(DESKTOP.viewport);
-			await old.locator('button[data-back]').click();
-			await old.locator('[data-section="db"]').waitFor();
-
-			// Back as the layout has it, so the session holds nothing for the next test.
-			await toggleOption(page, 'old', 'scrolling sections');
-			await old.locator('.bar.commands').waitFor();
-		}, BOTH);
 	});
 });
 

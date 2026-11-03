@@ -13,6 +13,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp, seedLines } from './support/app.mjs';
+import { reach } from './support/commands.mjs';
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
 
 before(startApp);
@@ -61,7 +62,7 @@ const shellHeight = (page) =>
 
 /** Tap a command button and wait for its line to be focused in `selector`. */
 async function tapCommand(page, name, selector = BAR) {
-	await commands(page).locator(`button[data-command="${name}"]`).tap();
+	await (await reach(commands(page), name)).tap();
 	await page.waitForFunction(
 		([n, s]) => {
 			const input = document.querySelector(s);
@@ -205,7 +206,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
-			await commands(page).locator('button[data-command="moment"]').click();
+			await (await reach(commands(page), 'moment')).click();
 			await page.waitForFunction((s) => document.activeElement === document.querySelector(s), BAR);
 			await page.keyboard.type('coffee');
 			await page.keyboard.press('Enter');

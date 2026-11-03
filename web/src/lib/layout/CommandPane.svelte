@@ -15,8 +15,8 @@
 	is a tap is focused without a phone's keyboard (`next` in
 	#lib/commands.ts, da-k34p).
 
-	`track` opens the setup widget on a new field (da-fu29p), and `track`
-	or `setup` with a FIELD pill loaded opens it on that field at once
+	`setup` opens the setup widget on a new field, and with a FIELD pill
+	loaded on that field at once
 	(da-ybai9, vividn: «no need for sub commands or pressing enter. It should
 	just work»): the pill named the subject, so it is spent at the TAP — not
 	on success, as a press spends its pills — because the bead asked that it
@@ -54,14 +54,11 @@
 		epoch = 0,
 		/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
 		key = '',
-		/** The widget's «scrolling sections» option (da-u79wl). */
-		sections = false,
 		/** The axis its buttons are reached along: up and down over the bar's output (da-m9zo7). */
 		axis = 'x'
 	}: {
 		epoch?: number;
 		key?: string;
-		sections?: boolean;
 		axis?: Axis;
 	} = $props();
 
@@ -95,7 +92,7 @@
 		// a hold stays, for the flags it opens.
 		if (!held) commandsOpen.set(false);
 		const field = argumentsOf($pills).find((p) => p.kind === 'field');
-		if (!held && opensField(name, $pills)) {
+		if (!held && opensField(name)) {
 			if (field) clearUnlockedPills([field]);
 			// The widget runs its own save; what it answers is the console's.
 			// A field held, then the setup command: brought, so Save goes back (da-wz84y).
@@ -108,23 +105,19 @@
 </script>
 
 <div class="body">
-	<!-- Keyed: the bar's holds are bound to the element it mounted with. -->
-	{#key sections}
-		<CommandsWidget
-			disabled={!$ready}
-			{sections}
-			{axis}
-			grammar={$grammar}
-			pills={$pills}
-			fields={$fields}
-			{redoable}
-			conflicts={$conflicts.length}
-			{key}
-			onrun={runNow}
-			online={fill}
-			onflag={(flag) => prefill.set({ line: withFlag($text, flag.command, flag.flag), keyboard: flag.keyboard })}
-		/>
-	{/key}
+	<CommandsWidget
+		disabled={!$ready}
+		{axis}
+		grammar={$grammar}
+		pills={$pills}
+		fields={$fields}
+		{redoable}
+		conflicts={$conflicts.length}
+		{key}
+		onrun={runNow}
+		online={fill}
+		onflag={(flag) => prefill.set({ line: withFlag($text, flag.command, flag.flag), keyboard: flag.keyboard })}
+	/>
 </div>
 
 <style>

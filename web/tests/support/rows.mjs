@@ -26,7 +26,9 @@ export async function atRows(page, id, want, max = MAX_ROWS) {
 			({ id, gap, max }) => {
 				const pane = document.querySelector(`section[data-pane="${id}"]`);
 				const box = pane.querySelector('.bar').clientHeight;
-				const row = pane.querySelector('.probe button').offsetHeight;
+				// The probe's own box, as the bar measures it (`watchRows`): a
+				// round command's name hangs in the margin under its circle.
+				const row = pane.querySelector('.probe').offsetHeight;
 				const el = pane.querySelector('.bar');
 				const rows = Number(el.dataset.rows);
 				// The TALLEST button, not the probe's: a bar's rows are as tall
@@ -155,8 +157,7 @@ export const lastReached = (locator, selector) =>
  * The room between every two buttons side by side on one drawn line
  * (da-vu7pi). Each row packs on its own, so every one of these is the
  * bar's gap — a button padded out to the widest in its column, as the
- * column grid drew them, leaves more. A line is read within its SECTION
- * (da-0mepr): the room across a divider is the divider's, not a row's.
+ * column grid drew them, leaves more.
  */
 export const gaps = (locator, selector) =>
 	locator.evaluate(
@@ -188,8 +189,7 @@ export function packed(read, what) {
  * The `selector` elements of a button bar in the order the WIDGET listed
  * them (da-vu7pi). `ButtonRows` deals item `i` into row `i % rows`, so the
  * DOM reads a row at a time; this deals the items back — the first of
- * every row, then the second of every row, one section at a time, as
- * each is dealt on its own (da-0mepr) — and reads each match as its
+ * every row, then the second of every row — and reads each match as its
  * `data-*` names, its text and its tag. Not the fields bar's ORDER, which
  * is not dealt by index (da-xtkcp): read that with `rowsOf` below.
  */

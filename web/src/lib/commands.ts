@@ -34,19 +34,21 @@ export type Press =
 	| 'fill'
 	/** Arm the page: the next tap is explained, not acted on (#lib/help.ts). */
 	| 'help'
-	/** Leave a command's subcommands or flags for the whole list (da-803mk). */
+	/** Leave a submenu, or a command's subcommands or flags, for the bar before (da-803mk, da-fg4w4). */
 	| 'back'
 	/** Append the flag to the line (da-st2xl). */
 	| 'flag'
 	/** Open the «Backups» place (#lib/backups.ts, da-9ow8m, da-ea5q2): `db backup`, and `db restore` at its list. */
 	| 'backups'
 	/** Open the command's PLACE, a modal on a desktop and a tab on a phone (`openPlace`, da-6du3o, da-jozgv): `sync`, `conflicts`. */
-	| 'place';
+	| 'place'
+	/** Show one of the base row's submenus in its place (`MENUS`, da-fg4w4). */
+	| 'menu';
 
 export interface CommandButton {
-	/** The CLI word — what runs, and what goes on the line. */
+	/** The CLI word — what runs, and what goes on the line; a submenu's name for a `menu`. */
 	name: string;
-	/** What the button says. `Undo` is named, not typed. */
+	/** The name drawn beneath its circle. */
 	label: string;
 	press: Press;
 	/**
@@ -57,103 +59,88 @@ export interface CommandButton {
 	next?: 'tap' | 'type';
 	/** A flag's one line of help, from the CLI's own flag table. */
 	help?: string;
-	/** Which kind of action it is (da-0mepr): the bar sets each kind apart. Only the top list has one. */
-	section?: Section;
 }
-
-/**
- * The kinds of action, in the order the widget draws them, each set apart
- * from the next by a divider (da-0mepr). vividn, 2026-09-26: «let's divide
- * the command widget into sections … undo and help are in the first
- * section, then the logging section, then track, ignore, spec, aliases in
- * one section, then the various update type functions: delete, update,
- * retime. then perhaps the anaysis and stuff like get check etc, then
- * finally db level so sync db etc».
- */
-export type Section = 'undo' | 'log' | 'setup' | 'edit' | 'analysis' | 'db';
-
-/**
- * How many columns each section stands in where the sections scroll
- * (da-u79wl, SectionPages.svelte): a section's first row is what shows in a
- * box one row tall, so the count is how many of its commands are in reach
- * without a scroll.
- */
-export const COLUMNS: Record<Section, number> = { undo: 1, log: 3, setup: 2, edit: 1, analysis: 2, db: 1 };
 
 /** The fillers a tap completes: an id or a time pill is what comes next. */
 const TAPPED = ['retime', 'delete', 'revert', 'get', 'history'];
 
-/** A section's commands that fill the line: `name `, then a tap or the keyboard. */
-const fills = (section: Section, names: string[]): CommandButton[] =>
-	names.map((name) => ({ name, label: name, press: 'fill', next: TAPPED.includes(name) ? 'tap' : 'type', section }));
+/** Commands that fill the line: `name `, then a tap or the keyboard. */
+const fills = (names: string[]): CommandButton[] =>
+	names.map((name) => ({ name, label: name, press: 'fill', next: TAPPED.includes(name) ? 'tap' : 'type' }));
+
+const UNDO: CommandButton = { name: 'undo', label: 'undo', press: 'run' };
+/**
+ * It explains the next tap instead of running anything (da-vjwid), and
+ * `datum help` is what it is a button for. Every drilled bar carries it, so
+ * a subcommand or a flag can be explained.
+ */
+export const HELP: CommandButton = { name: 'help', label: 'help', press: 'help' };
+/** One button for sync, which opens its place (da-6du3o): its subcommands are in that widget's Advanced section. */
+const SYNC: CommandButton = { name: 'sync', label: 'sync', press: 'place' };
+/** Its place too (da-6cutb): the widget each conflict is resolved in. */
+const CONFLICTS: CommandButton = { name: 'conflicts', label: 'conflicts', press: 'place' };
 
 /**
- * The commands, in the order the widget draws them: section by section
- * (`Section`), vividn's words in the order he named them and the rest after
- * them where their kind fits — `flag` logs an entry, `config` sets up,
- * the readers are analysis.
- *
- * `redo` is not a button of its own (da-zq91a, vividn: «rather than dedicated
- * redo button, lets make the undo button … have a little redo section»):
- * the widget draws it as a small icon joined to Undo, lit only when the CLI
- * says there is an undo to redo (`redo --dry-run`, CommandPane.svelte).
+ * The submenus (da-fg4w4), vividn, 2026-11-03: «Write and read expand into a
+ * submenu when clicked of the various commands inside of them», and a
+ * `fields` one of what acts on a field's definition: «maybe we have a fields
+ * submenu? That then has setup, ignore, track, alias, rename inside of it?».
+ * Left out: `nowview` and `dayview` («don't need to have separate buttons
+ * here»), `ids` («kind of useless as a top level command»), `view`.
+ * `conflicts` is under `sync` («should not be top level»), which opens that
+ * submenu only while there are any, and its place at once otherwise.
  *
  * `note` is typed after its field — `note <field> <words>` — and a tap on
- * it under a field pill writes the pill into the line first (da-8ru0m,
- * vividn, 2026-09-27: «when the field pill or hid pills are present, the
- * cursor should go automatically to the end after all the pills when any
- * command requiring typing is clicked since these pills depend on
- * positionality»). Left loaded, the pill would lose the field slot to the
- * first word typed (`fieldSlotOpen`, #lib/selection.ts) and Enter would
- * log a field called `too`, which is why `note` was off this list.
+ * it under a field pill writes the pill into the line first (da-8ru0m).
+ */
+export const MENUS = {
+	write: [
+		...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap' })),
+		...fills(['note', 'flag', 'update', 'retime', 'delete', 'revert'])
+	],
+	read: fills(['tail', 'now', 'stats', 'get', 'history', 'grep', 'fields', 'count', 'info', 'check']),
+	fields: fills(['setup', 'track', 'ignore', 'alias', 'rename']),
+	settings: [...fills(['config']), HELP],
+	sync: [SYNC, CONFLICTS]
+};
+
+export type Menu = keyof typeof MENUS;
+
+const menu = (name: Menu): CommandButton => ({ name, label: name, press: 'menu' });
+
+/**
+ * The base row (da-fg4w4), vividn: «undo write read setup kit db sync
+ * settings», `setup` became the `fields` submenu. Eight, so a phone's width
+ * holds them without a scroll.
+ */
+const KIT_DB = fills(['kit', 'db']);
+
+export const BASE: CommandButton[] = [UNDO, menu('write'), menu('read'), menu('fields'), ...KIT_DB, SYNC, menu('settings')];
+
+/**
+ * Every command, flat, in the order a loaded pill's filter draws them
+ * (`commandsUnder`): with a pill there are no submenus, only the commands
+ * that take it. Built from the submenus, so a command added to one is here
+ * too; a `Set`, as Help leads here and is settings' too.
+ *
+ * `redo` is not a button of its own (da-zq91a): the widget draws it as a
+ * small icon joined to Undo, lit only when the CLI says there is an undo to
+ * redo (`redo --dry-run`, CommandPane.svelte).
  */
 export const COMMANDS: CommandButton[] = [
-	{ name: 'undo', label: 'Undo', press: 'run', section: 'undo' },
-	// Where Redo stood before da-zq91a (da-vjwid, vividn: «where redo button
-	// is lets add a help button»). It explains the next tap instead of
-	// running anything, and `datum help` is what it is a button for.
-	{ name: 'help', label: 'Help', press: 'help', section: 'undo' },
-	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap', section: 'log' })),
-	...fills('log', ['note', 'flag']),
-	...fills('setup', ['track', 'ignore', 'setup', 'alias', 'kit', 'view', 'config']),
-	...fills('edit', ['delete', 'update', 'retime', 'revert']),
-	...fills('analysis', [
-		'tail',
-		'now',
-		'stats',
-		'get',
-		'check',
-		'info',
-		'fields',
-		'count',
-		'ids',
-		'history',
-		'grep',
-		'dayview',
-		'nowview'
-	]),
-	// One button for sync, which opens its place (da-6du3o): its nineteen
-	// subcommands are in that widget's Advanced section.
-	{ name: 'sync', label: 'Sync', press: 'place', section: 'db' },
-	...fills('db', ['db']),
-	// Its place too (da-6cutb): the widget each conflict is resolved in. The
-	// bar draws it red, with their count, while there are any.
-	{ name: 'conflicts', label: 'conflicts', press: 'place', section: 'db' }
+	...new Set([UNDO, HELP, ...MENUS.write, ...MENUS.fields, ...MENUS.read, ...KIT_DB, ...MENUS.sync, ...MENUS.settings])
 ];
 
 /**
- * The mark a common command wears before its name (da-y6jfb), vividn,
- * 2026-10-08: «let's make the command buttons a bit easier to differentiate
- * from each other. I think each one needs a different icon, at least for
- * the most commonly used actions.»
+ * The mark in a command's circle (da-y6jfb, da-fg4w4), vividn, 2026-11-03:
+ * «make the command buttons circular with an icon in the circle and the
+ * name of the command beneath them».
  *
  * One character is a GLYPH, drawn as text: a verb's is the CLI's own, so
  * the button shows the shape the row it writes will show (`TRACK●`/`█`/
- * `▞`/`¢` in datum-core's track.rs; `■` is the end of a `█`). `note`
- * writes a `¢` too, and stands beside `add`, so it takes the pencil the
- * app already draws for «edit». No two share a mark. Anything longer is
- * the path of a 16×16 line DRAWING, for the shapes no font every device
- * carries: a clock, a bin, a list, bars, two arrows.
+ * `▞`/`¢` in datum-core's track.rs; `■` is the end of a `█`). No two share
+ * a mark; a subcommand wears its command's. Anything longer is the path of
+ * a 16×16 line DRAWING, for the shapes no font every device carries.
  */
 export const ICONS: Record<string, string> = {
 	undo: '↶',
@@ -163,13 +150,46 @@ export const ICONS: Record<string, string> = {
 	switch: '▞',
 	add: '¢',
 	note: '✎',
-	track: '+',
-	delete: 'M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.7 9h6.6l.7-9M6.7 7v4M9.3 7v4',
+	flag: '⚑',
+	update: 'Δ',
 	retime: 'M8 1.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13zM8 4.5V8l2.5 1.5',
+	delete: 'M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.7 9h6.6l.7-9M6.7 7v4M9.3 7v4',
+	revert: '↺',
 	tail: 'M2.5 4h.01M5.5 4h8M2.5 8h.01M5.5 8h8M2.5 12h.01M5.5 12h8',
+	now: '◉',
 	stats: 'M2 13.5v-4h3v4zM6.5 13.5v-11h3v11zM11 13.5v-7h3v7z',
-	sync: 'M2.5 5.5h10l-3-3M13.5 10.5h-10l3 3'
+	get: '#',
+	history: 'M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5V5H5M8 5v3l2 1.5',
+	grep: 'M7 2.5a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9zM10.3 10.3l3.2 3.2',
+	fields: '▤',
+	count: 'Σ',
+	info: 'i',
+	check: '✓',
+	setup: '⊞',
+	track: '+',
+	ignore: '⊘',
+	alias: '≈',
+	rename: '⇄',
+	kit: 'M2.5 5L8 2.5L13.5 5v6.5L8 14l-5.5-2.5zM2.5 5L8 7.5L13.5 5M8 7.5V14',
+	db: 'M3 4c0-1 2.2-1.7 5-1.7s5 .7 5 1.7v8c0 1-2.2 1.7-5 1.7s-5-.7-5-1.7zM3 4c0 1 2.2 1.7 5 1.7s5-.7 5-1.7M3 8c0 1 2.2 1.7 5 1.7s5-.7 5-1.7',
+	sync: 'M2.5 5.5h10l-3-3M13.5 10.5h-10l3 3',
+	conflicts: '!',
+	config: '⚙',
+	help: '?',
+	back: '‹'
 };
+
+/** A submenu's mark, apart from `ICONS`: `fields` the submenu is not `fields` the command. `sync`'s is the sync button's own. */
+export const MENU_ICONS: Record<string, string> = {
+	write: 'M10.5 2.5l3 3L6 13H3v-3z',
+	read: 'M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8zM8 6.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3z',
+	fields: 'M2.5 2.5h11v11h-11zM2.5 6.2h11M2.5 9.8h11M6.2 2.5v11',
+	settings: 'M2.5 4h11M2.5 8h11M2.5 12h11M5 2.5v3M11 6.5v3M7 10.5v3'
+};
+
+/** The mark `command` wears: its own, else its command's (`db backup` wears db's). */
+export const iconOf = (command: CommandButton): string =>
+	(command.press === 'menu' ? MENU_ICONS[command.name] : (ICONS[command.name] ?? ICONS[command.name.split(' ')[0]])) ?? '';
 
 /**
  * The verb the command line is pending, from what is typed in it.
@@ -575,7 +595,7 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 //
 // vividn, 2026-09-25: «for commands with subcommands, like db, clicking on
 // them should then show the subcommands in the commands widget instead.»
-// A tap on `db` DRILLS: the bar shows `< Back` and db's subcommands, and a
+// A tap on `db` DRILLS: the bar shows back and db's subcommands, and a
 // tap on one fills `db backup ` — so `db `, which runs nothing, is never
 // what a tap leaves on the line. A command that also runs bare is offered
 // among its subcommands as itself.
@@ -584,20 +604,24 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 const BACKUPS = ['db backup', 'db restore'];
 
 /**
- * Does a tap on `name` open the setup widget? `track` does, on a new field
- * or the pilled one (da-fu29p), and so does `setup` (da-ybai9, vividn: «no
- * need for sub commands or pressing enter»), which has no subcommands left
- * to drill into (da-ez40f): a field is made and edited in a place
- * (da-hbrfg), which the pane opens with the fill.
+ * Does a tap on `name` open the setup widget? `setup` does (da-ybai9,
+ * vividn: «no need for sub commands or pressing enter»), on a new field or
+ * the pilled one: a field is made and edited in a place (da-hbrfg), which
+ * the pane opens with the fill. `track` writes its word as any command does
+ * (da-fg4w4, vividn: «track shouldn't open the setup widget, it should just
+ * put the word track in the command line»).
  */
-export const opensField = (name: string, _pills: Pill[]): boolean => name === 'track' || name === 'setup';
+export const opensField = (name: string): boolean => name === 'setup';
 
 /** Does a tap on `name` drill into its subcommands? Not where it opens the setup widget instead. */
-export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): boolean =>
-	!!grammar?.get(name)?.subcommands.length && !opensField(name, pills);
+export const drills = (grammar: Grammar | null, name: string): boolean =>
+	!!grammar?.get(name)?.subcommands.length && !opensField(name);
+
+/** Back to the bar before: out of a submenu, a command's subcommands or its flags. */
+export const BACK: CommandButton = { name: 'back', label: 'back', press: 'back' };
 
 /**
- * The bar while `name` is drilled into: `< Back`, Help (which no bar is
+ * The bar while `name` is drilled into: back, Help (which no bar is
  * without, so a subcommand can be explained), `name` itself if it runs
  * bare, then its subcommands.
  *
@@ -609,8 +633,8 @@ export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): bo
 export function subcommandsOf(grammar: Grammar | null, name: string): CommandButton[] {
 	const takes = grammar?.get(name);
 	return [
-		{ name: 'back', label: '< Back', press: 'back' },
-		...COMMANDS.filter((command) => command.press === 'help'),
+		BACK,
+		HELP,
 		...(takes?.bare ? [{ name, label: name, press: 'fill' as const, next: 'type' as const }] : []),
 		...(takes?.subcommands ?? []).map(
 			(sub): CommandButton =>
@@ -644,7 +668,7 @@ export const flagWord = (flag: Flag): string => (flag.short ? `-${flag.short}` :
 export const hasFlags = (grammar: Grammar | null, name: string): boolean => !!grammar?.get(name)?.flags.length;
 
 /**
- * The bar while `name`'s flags are open: `< Back`, Help, then its flags. A
+ * The bar while `name`'s flags are open: back, Help, then its flags. A
  * flag that takes a value is typed next, so its tap opens the keyboard.
  */
 export function flagsOf(grammar: Grammar | null, name: string): CommandButton[] {
@@ -655,8 +679,8 @@ export function flagsOf(grammar: Grammar | null, name: string): CommandButton[] 
 	// A stable sort, so the rest keep the CLI's order.
 	const flags = [...(grammar?.get(name)?.flags ?? [])].sort((a, b) => rank(a) - rank(b));
 	return [
-		{ name: 'back', label: '< Back', press: 'back' },
-		...COMMANDS.filter((command) => command.press === 'help'),
+		BACK,
+		HELP,
 		...flags.map(
 			(flag): CommandButton => ({
 				name: flagWord(flag),
@@ -745,14 +769,6 @@ export function lanesOf<T>(items: T[], rows: number): T[][] {
 	items.forEach((item, i) => lanes[i % lanes.length].push(item));
 	return lanes;
 }
-
-/** Consecutive items of one section, as runs (da-0mepr): a bar draws each run on its own. */
-export const runsOf = <T>(items: T[], section: (item: T) => unknown): T[][] =>
-	items.reduce<T[][]>((runs, item, i) => {
-		if (i && section(item) === section(items[i - 1])) runs.at(-1)!.push(item);
-		else runs.push([item]);
-		return runs;
-	}, []);
 
 /**
  * The axis a bar is reached along: `x`, rows reached left and right, is

@@ -1,16 +1,20 @@
 <!--
 	The commands widget — every command datum has, as a button (da-ltux).
 
-	vividn: «Commands widget, which lists all commands. First one is Undo.
-	Then let's have occur, start, end, switch, add, then other commands.»
+	vividn: «Commands widget, which lists all commands. First one is Undo.»
 	The order and what each press means are `#lib/commands.ts`; this is
 	the bar that draws them.
 
-	Three kinds of press, and the widget itself runs none of them — it
-	composes and dispatches, and the page runs it through `run()` and
-	echoes the executed argv, exactly as the fields widget does:
+	THE BASE ROW is eight (da-fg4w4, `BASE` in commands.ts): undo, write,
+	read, fields, kit, db, sync, settings. Write, read, fields and settings
+	are SUBMENUS (`MENUS`): a tap shows the submenu in the row's place, back
+	first, and a command pressed there takes the bar back to the base row.
 
-	- `Undo` RUNS, at once. Undo never refuses on age any more (da-s6no:
+	The widget itself runs none of its presses — it composes and dispatches,
+	and the page runs it through `run()` and echoes the executed argv,
+	exactly as the fields widget does:
+
+	- `undo` RUNS, at once. Undo never refuses on age any more (da-s6no:
 	  with a way forward the fifteen-minute gate cost more than it saved),
 	  so there is no second clock here — the widget runs `undo` and the
 	  CLI's own warning past ten minutes is shown with the echo. Its REDO
@@ -21,76 +25,72 @@
 	  `delete` with an hid selected deletes it. `fires` in commands.ts
 	  decides, and the same answer (`kindOf`) draws the button with a DOUBLE
 	  outline (`use:act`, #lib/act.ts), so what looks as if it fires is
-	  what fires. So does `occur`, `start` or `end` under a FIELD pill
+	  what fires. So does `moment`, `start` or `end` under a FIELD pill
 	  (da-lxqqz, `fieldVerb`) — unless the field has a key with no
-	  default and the verb is not `end` (da-o4jaa), when the tap writes `occur <field> ` with the first key's
+	  default and the verb is not `end` (da-o4jaa), when the tap writes `moment <field> ` with the first key's
 	  `key=` (da-31d1d) and opens the keyboard for the keys, and the pill
 	  is spent onto the line.
-	- `Help` (da-vjwid) ARMS the page — `#lib/help.ts`: the next tap on a
-	  command, a widget or a pill is explained instead of acted on, and a
-	  second press on Help is `datum help`, and the answer opens in a modal.
-	  Armed, its label says so — `? on what`, over how to get the general
-	  help — in the same width, which is small: on a phone's one row of
-	  commands a wider Help pushes the verbs off the screen. It is drawn
-	  in a SINGLE outline of the
-	  accent: it does something, but not at once.
+	- `help`, in settings (da-vjwid), ARMS the page — `#lib/help.ts`: the
+	  next tap on a command, a widget or a pill is explained instead of
+	  acted on, and a second press on Help is `datum help`, and the answer
+	  opens in a modal. Armed, it is filled and its name asks «on what?».
 	- a VERB puts `<verb> ` on the command line and leaves the caret in
 	  it. That is the whole of pending a verb: the fields widget reads the
-	  line's first word, so tapping `occur` and typing `occur` reach the
+	  line's first word, so tapping `moment` and typing `moment` reach the
 	  same state through the same buffer.
 	- anything else puts `<name> ` on the line too — a command with an
 	  argument to finish, and nothing to filter. A field or hid pill it
 	  takes goes into the line with it, in its slot, and is spent, when
 	  words are TYPED next (da-8ru0m): `note coffee `, `update <hid> `,
-	  the caret after them.
-	- a command with SUBCOMMANDS (`db`, `sync`, …) opens them
-	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
-	  tap on one fills `db migrate `. `< Back` and Escape return to the list.
+	  the caret after them. `track` too (da-fg4w4): it writes its word, and
+	  only `setup` opens the setup widget.
+	- a command with SUBCOMMANDS (`db`, `kit`, …) opens them
+	  instead (da-803mk): the bar is back and the subcommands, and a
+	  tap on one fills `db migrate `. Back and Escape return a layer.
 	  `db backup` and `db restore` open the «Backups» place instead
-	  (da-9ow8m, da-ea5q2, #lib/backups.ts) — drawn, as Help is, in a
-	  SINGLE outline of the accent: they open something, and run nothing.
-	- `Sync` opens the sync PLACE (da-6du3o, `openPlace`): a modal on a
-	  desktop, a tab beside this one on a phone (da-jozgv), rather than drilling into its nineteen subcommands,
-	  which live in that widget's Advanced section. Outlined once, too.
-	- `conflicts` opens its place the same way (da-6cutb), and is RED, with
-	  their count, while `datum conflicts --json` lists any (`conflicts`,
-	  from the pane): it blocks nothing, and goes plain with the last one.
+	  (da-9ow8m, da-ea5q2, #lib/backups.ts).
+	- `sync` opens the sync PLACE (da-6du3o, `openPlace`): a modal on a
+	  desktop, a tab beside this one on a phone (da-jozgv), rather than
+	  drilling into its subcommands, which live in that widget's Advanced
+	  section. While `datum conflicts --json` lists any (`conflicts`, from
+	  the pane), it wears their count as a red badge and opens a submenu
+	  instead: itself and `conflicts` (vividn: «The conflicts command should
+	  not be top level, it should be under sync»), which opens its place
+	  (da-6cutb) and is red with the badge. It blocks nothing, and goes
+	  plain with the last one.
 	- HOLDING a command with flags (da-st2xl, `#lib/hold.ts`) fills it as a
-	  tap does, and the bar becomes `< Back`, Help and its flags
+	  tap does, and the bar becomes back, Help and its flags
 	  (`flagsOf`). A flag's tap appends it to the line; one that takes a
 	  value (`-t`) opens the keyboard for it, one that does not (`-q`)
 	  keeps it shut. Armed Help on a flag shows its help line.
 
-	The loaded PILLS filter it (da-r13j): a command whose grammar — `datum
-	help --json` — cannot take every pill on the bar is not drawn
-	(`commandsUnder`). A selected hid leaves the id commands; a `-t` the
-	ones that take a time; a field the verbs that field can take
-	(da-57j14: an occur field hides start, end and switch).
+	The loaded PILLS filter it (da-r13j): with any, the bar is every command
+	whose grammar — `datum help --json` — takes every pill on it, flat, with
+	no submenus (`commandsUnder`, vividn: «When a pill is loaded, there is
+	still a filtering action which then only shows the available commands»).
+	A selected hid leaves the id commands; a `-t` the ones that take a time;
+	a field the verbs that field can take (da-57j14).
 
 	The bar is `ButtonRows` — how every button bar is laid out and
 	scrolled (da-vu7pi): as many rows as fit, up to three, each packed on
-	its own and all of them scrolled left and right.
-	The commands stand in SECTIONS (da-0mepr, `Section`): undo and help,
-	logging, setup, edits, analysis, db — a divider between each, and a
-	section the pills empty is not drawn at all. A drilled bar is drawn
-	without them — its Help carries a section — so it is the one run it
-	always was.
+	its own and all of them scrolled along the bar's axis.
 
-	A common command wears an ICON before its name (da-y6jfb, `ICONS` in
-	commands.ts), no two alike, and `track` is drawn in a colour of its own
-	— vividn: «I wouldn't put track first in the commands widget, it can stay
-	more or less where it is, maybe if it has a nice color, it would be
-	easy to find.» The icon is paid for out of the button's own padding, so
-	a button is as wide as its word alone made it, and a glyph is drawn by
-	CSS, so the button's text is still its word.
+	Every command is a CIRCLE with its mark inside and its name beneath
+	(da-fg4w4, vividn: «to visually distinguish them from other types of
+	buttons»; `iconOf` in commands.ts). The circle IS the button, so its
+	outline is the one that says what a tap does (#lib/act.ts), and the name
+	hangs under it in room the button keeps below itself. A glyph is drawn by
+	CSS, so the button's text is still its name. `track` keeps a color of
+	its own (da-y6jfb). A flag is not a command, and stays a plain button.
 
-	What the bar is SHOWING — the command drilled into, the one held for its
-	flags — outlives the widget (da-ria1a): on a phone a place opens as a
-	root tab and unmounts the tab it left, and coming back must find the bar
-	where the reader left it. So it is kept by `key`, the widget's own, in
-	the session's `inProgress` (#lib/layout/session.ts), which goes with the
-	tab or the widget as a session setting does; Back, Escape and pills that
-	hide the command clear it as they always did, and a reload starts afresh.
+	What the bar is SHOWING — the submenu, the command drilled into, the one
+	held for its flags — outlives the widget (da-ria1a): on a phone a place
+	opens as a root tab and unmounts the tab it left, and coming back must
+	find the bar where the reader left it. So it is kept by `key`, the
+	widget's own, in the session's `inProgress` (#lib/layout/session.ts),
+	which goes with the tab or the widget as a session setting does; Back,
+	Escape and pills that hide the command clear it as they always did, and
+	a reload starts afresh.
 -->
 
 <script lang="ts">
@@ -98,10 +98,11 @@
 	import type { Pill } from './bar.js';
 	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
-	import SectionPages from './SectionPages.svelte';
 	import { advance } from '#lib/keyframes.ts';
 	import {
-		COLUMNS,
+		argumentsOf,
+		BACK,
+		BASE,
 		commandsUnder,
 		drills,
 		opensField,
@@ -109,11 +110,14 @@
 		fires,
 		flagsOf,
 		hasFlags,
-		ICONS,
+		iconOf,
+		MAX_ROWS,
+		MENUS,
 		subcommandsOf,
 		type Axis,
 		type CommandButton,
 		type Grammar,
+		type Menu,
 		type Press
 	} from './commands.js';
 	import { act, type ActKind } from './act.js';
@@ -137,8 +141,6 @@
 		conflicts = 0,
 		/** Whose bar this is: what it was showing is kept under it across a remount. */
 		key = '',
-		/** The prototype (da-u79wl): sections that scroll, and «conflicts» pinned while there are any. */
-		sections = false,
 		/** The axis the bar is reached along (ButtonRows). */
 		axis = 'x',
 		/** A press that runs: the argv. */
@@ -155,7 +157,6 @@
 		redoable?: boolean;
 		conflicts?: number;
 		key?: string;
-		sections?: boolean;
 		axis?: Axis;
 		onrun?: (argv: string[]) => void;
 		online?: (line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }) => void;
@@ -163,21 +164,19 @@
 	} = $props();
 
 	/** The presses whose kind is theirs whatever is loaded. */
-	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', place: 'open' };
+	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', menu: 'show' };
 
-	/** The command whose subcommands the bar shows, if any. Gone with the command, if its pills hide it. */
 	const kept = untrack(() => inProgress.get(key));
+	/** The submenu the bar shows in the base row's place, if any. */
+	let menu = $state((kept?.menu as Menu | undefined) ?? null);
+	/** The command whose subcommands the bar shows, if any. Gone with the command, if its pills hide it. */
 	let open = $state((kept?.open as string | undefined) ?? null);
 	/** The command whose flags the bar shows, if any (da-st2xl). The same. */
 	let flagged = $state((kept?.flagged as string | undefined) ?? null);
 	$effect.pre(() => {
-		inProgress.set(key, { open, flagged });
+		inProgress.set(key, { menu, open, flagged });
 	});
 	let bar: HTMLElement | undefined = $state();
-	/** Either bar: SectionPages takes ButtonRows' items, key, section and snippets. */
-	const Bar = $derived((sections ? SectionPages : ButtonRows) as typeof ButtonRows<CommandButton>);
-	/** What SectionPages takes beyond them: its columns, and «conflicts» kept in sight while there are any. */
-	const paged = $derived(sections ? { columns: COLUMNS, pinned: (command: CommandButton) => conflicts > 0 && command.name === 'conflicts' } : {});
 	const listed = $derived(commandsUnder(grammar, pills, fields));
 	$effect.pre(() => {
 		if (open && !listed.some((command) => command.name === open)) open = null;
@@ -185,17 +184,38 @@
 	$effect.pre(() => {
 		if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
 	});
-	const shown = $derived(flagged ? flagsOf(grammar, flagged) : open ? subcommandsOf(grammar, open) : listed);
+	const shown = $derived(
+		flagged
+			? flagsOf(grammar, flagged)
+			: open
+				? subcommandsOf(grammar, open)
+				: argumentsOf(pills).length
+					? listed
+					: menu
+						? [BACK, ...MENUS[menu]]
+						: BASE
+	);
+	/**
+	 * The lines the bar is dealt into, at most: the base row is ONE row in a
+	 * pane, and over the bottom bar's output, where a line is a column,
+	 * every column that fits; a flag is no circle, and keeps the three
+	 * columns wide enough for it.
+	 */
+	const lines = $derived(flagged ? MAX_ROWS : axis === 'y' ? Infinity : shown === BASE ? 1 : MAX_ROWS);
+	/** The base row's sync while there are conflicts: it opens the submenu that holds them. */
+	const syncMenu = (command: CommandButton) => command.name === 'sync' && conflicts > 0 && shown === BASE;
 	/** What a tap on `command` does: the press below and the outline are both this. */
 	const kindOf = $derived((command: CommandButton): ActKind =>
 		FIXED[command.press] ??
-		(opensField(command.name, pills)
-			? 'open'
-			: !open && drills(grammar, command.name, pills)
-				? 'show'
-				: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
-					? 'run'
-					: 'fill'));
+		(syncMenu(command)
+			? 'show'
+			: command.press === 'place' || opensField(command.name)
+				? 'open'
+				: !open && drills(grammar, command.name)
+					? 'show'
+					: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
+						? 'run'
+						: 'fill'));
 
 	/**
 	 * A hold fills the bare command and opens its flags — even where a tap
@@ -210,18 +230,28 @@
 
 	onMount(() => holds(bar!, { within: 'button[data-holds]', run: hold }).destroy);
 
-	/** Back and Escape peel one layer: the flags, else the subcommands. */
+	/** Back and Escape peel one layer: the flags, else the subcommands, else the submenu. */
 	function back(): void {
 		if (flagged) flagged = null;
-		else open = null;
+		else if (open) open = null;
+		else menu = null;
 	}
 
 	function press(command: CommandButton): void {
-		if (command.press === 'back') back();
+		if (command.press === 'back') return back();
+		if (command.press === 'menu') return void (menu = command.name as Menu);
+		if (syncMenu(command)) return void (menu = 'sync');
+		if (command.press === 'flag') return onflag?.({ command: flagged!, flag: command.name, keyboard: command.next === 'type' });
+		if (kindOf(command) === 'show') return void (open = command.name);
+		// A command chosen from a submenu takes the bar back to the base row, as a menu closes:
+		// kept at once, since the choice can close the widget (the ❯'s commands) before an effect runs.
+		if (!open && menu) {
+			menu = null;
+			inProgress.set(key, { menu, open, flagged });
+		}
+		if (command.press === 'help') arm();
 		else if (command.press === 'backups') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
 		else if (command.press === 'place') void openPlace(command.name);
-		else if (command.press === 'flag') onflag?.({ command: flagged!, flag: command.name, keyboard: command.next === 'type' });
-		else if (kindOf(command) === 'show') open = command.name;
 		else if (kindOf(command) === 'run') onrun?.([command.name]);
 		else {
 			// Words TYPED next go after the field and hid pills, so those are
@@ -242,7 +272,7 @@
 
 	/** Escape is Back, and marks the key taken so the line does not peel as well. */
 	function onKeyDown(event: KeyboardEvent): void {
-		if (event.key !== 'Escape' || !(open || flagged) || event.defaultPrevented || document.querySelector('dialog[open]'))
+		if (event.key !== 'Escape' || !(menu || open || flagged) || event.defaultPrevented || document.querySelector('dialog[open]'))
 			return;
 		back();
 		event.preventDefault();
@@ -251,23 +281,22 @@
 
 <svelte:window onkeydown={onKeyDown} />
 
-<Bar
-	class="commands"
-	items={shown}
-	key={(command) => command.name}
-	section={open || flagged ? undefined : (command) => command.section}
-	{axis}
-	{...paged}
-	bind:bar
->
+<!-- What a circle holds: its line drawing, if its mark is one (a glyph is the button's `data-glyph`), and its name. -->
+{#snippet face(icon: string, name: string)}
+	{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}<span class="name">{name}</span>
+{/snippet}
+
+<ButtonRows class="commands" items={shown} key={(command) => command.name} {axis} maxRows={lines} bind:bar>
 	{#snippet probe()}
-		<button class="command" tabindex="-1">probe</button>
+		<button class="command round" tabindex="-1">{@render face('', 'probe')}</button>
 	{/snippet}
 	{#snippet children({ item: command }: { item: CommandButton })}
+		{@const icon = iconOf(command)}
+		{@const glyph = icon.length === 1 ? icon : undefined}
 		{#if command.name === 'undo'}
 			<span class="undo">
-				<button class="command" use:act={'run'} {disabled} data-command="undo" data-glyph={ICONS.undo} aria-label="undo" title="run undo" onclick={() => press(command)}>
-					{command.label}
+				<button class="command round" use:act={'run'} {disabled} data-command="undo" data-glyph={glyph} aria-label="undo" title="run undo" onclick={() => press(command)}>
+					{@render face(icon, command.label)}
 				</button>
 				<button
 					class="command redo"
@@ -284,23 +313,32 @@
 		{:else if command.press === 'help'}
 			<!-- Never disabled: it runs nothing until it is asked about something. -->
 			<button
-				class="command help"
+				class="command round help"
 				use:act={'arm'}
 				class:armed={$helping}
 				data-command="help"
+				data-glyph={glyph}
 				aria-pressed={$helping}
 				title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
-				onclick={arm}
+				onclick={() => press(command)}
 			>
-				<!-- `Help` alone sizes the button; armed, it is hidden and the
-				     armed label is drawn over the same box, so arming it moves
-				     nothing on the bar. -->
-				<span class="label" class:hidden={$helping}>{command.label}</span>
-				{#if $helping}<span class="label armed">? on what<small>(tap: all)</small></span>{/if}
+				{@render face(icon, $helping ? 'on what?' : command.label)}
 			</button>
 		{:else if command.press === 'back'}
-			<button class="command" use:act={'show'} {disabled} data-back title="back to every command" onclick={() => press(command)}>
-				{command.label}
+			<button class="command round" use:act={'show'} {disabled} data-back data-passes data-glyph={glyph} title="back" onclick={() => press(command)}>
+				{@render face(icon, command.label)}
+			</button>
+		{:else if command.press === 'menu'}
+			<button
+				class="command round"
+				use:act={'show'}
+				{disabled}
+				data-menu={command.name}
+				data-passes
+				title={`open ${command.name}`}
+				onclick={() => press(command)}
+			>
+				{@render face(icon, command.label)}
 			</button>
 		{:else if command.press === 'flag'}
 			<button
@@ -315,30 +353,99 @@
 				{command.label}
 			</button>
 		{:else}
-			{@const icon = ICONS[command.name] ?? ''}
 			{@const clashing = command.name === 'conflicts' ? conflicts : 0}
+			{@const badge = clashing || (syncMenu(command) ? conflicts : 0)}
 			<button
-				class="command"
+				class="command round"
 				use:act={kindOf(command)}
 				class:opens={kindOf(command) === 'open'}
-				class:drawn={icon.length > 1}
 				class:clashing
 				{disabled}
 				data-command={command.name}
-				data-glyph={icon.length === 1 ? icon : undefined}
+				data-glyph={glyph}
 				data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
-				title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
+				title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : kindOf(command) === 'open' ? `open ${command.label}` : `${command.name} …`}
 				onclick={() => press(command)}
 			>
-				{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}{command.label}{clashing ? ` ${clashing}` : ''}
+				{@render face(icon, command.label)}{#if badge}<span class="badge">{badge}</span>{/if}
 			</button>
 		{/if}
 	{/snippet}
-</Bar>
+</ButtonRows>
 
 <style>
-	/* The look itself is `button.command`, shared with the Sync widget
-	   (da-yoef7): app.css. What is the bar's own stays here. */
+	/* The look of a plain one is `button.command`, shared with the Sync
+	   widget (da-yoef7): app.css. The circle is the bar's own.
+
+	   The button IS the circle (da-fg4w4), so its border is the outline
+	   `use:act` decides, and its name hangs beneath it in the margin it
+	   keeps below itself, which is what the rows are counted by (the
+	   probe's margin box). Eight, with the gap between them, fit a 360px
+	   phone's row; a long name spills into the gap rather than widen it. */
+	.command.round {
+		box-sizing: border-box;
+		position: relative;
+		inline-size: 2.1rem;
+		block-size: 2.1rem;
+		margin-block-end: 0.85rem;
+		padding: 0;
+		border-radius: 50%;
+		display: grid;
+		place-items: center;
+		font-size: 0.95rem;
+		line-height: 1;
+	}
+
+	/* Room at either end for a name wider than its circle (`conflicts`), so
+	   one at an end spills into the bar's padding and nothing scrolls. */
+	:global(.bar.commands) {
+		padding-inline: 0.5rem;
+	}
+
+	/* In a pane the rows stand from the top, so a submenu takes the base
+	   row's place rather than the one row sitting in the middle of the box. */
+	:global(.bar.commands.x > .section) {
+		align-self: start;
+	}
+
+	.command.round[data-glyph]::before {
+		content: attr(data-glyph) / '';
+	}
+
+	.name {
+		position: absolute;
+		inset-block-start: calc(100% + 0.15rem);
+		inset-inline-start: 50%;
+		transform: translateX(-50%);
+		font-size: 0.55rem;
+		white-space: nowrap;
+	}
+
+	/* Placed from the padding box, which a 3px border starts 2px lower than a 1px one. */
+	.command.round:global([data-act='run']) .name {
+		inset-block-start: calc(100% + 0.15rem + 2px);
+	}
+
+	/* A tap that opens a modal wears its `›` (app.css) beside the circle,
+	   in the gap, so the circle's mark stays alone in it. */
+	.command.round::after {
+		position: absolute;
+		inset-inline-start: 100%;
+		inset-block-start: 50%;
+		transform: translateY(-50%);
+		margin: 0;
+		font-size: 0.6rem;
+	}
+
+	.command svg {
+		inline-size: 1.05rem;
+		block-size: 1.05rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
 
 	/* Opens a place: once outlined, as Help is (below). */
 	.command.opens {
@@ -354,29 +461,20 @@
 		color: var(--error);
 	}
 
-	/* An icon'd button gives the icon's width back out of its padding
-	   (`--pad`, app.css): the phone's one row holds the verbs it held
-	   (da-shzs). `/ ''` keeps a glyph out of the button's name. */
-	.command[data-glyph],
-	.command.drawn {
-		--pad: 0.45rem;
-	}
-
-	.command[data-glyph]::before {
-		content: attr(data-glyph) / '';
-		margin-right: 0.3em;
-	}
-
-	.command svg {
-		inline-size: 1em;
-		block-size: 1em;
-		margin-right: 0.3em;
-		vertical-align: -0.125em;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-		stroke-linejoin: round;
+	/* Their count, on sync's circle and on conflicts': on its rim, not above
+	   it, where a bar's top edge would cut it. */
+	.badge {
+		position: absolute;
+		inset-block-start: -0.1rem;
+		inset-inline-end: -0.35rem;
+		min-inline-size: 0.85rem;
+		padding: 0.1rem 0.15rem;
+		box-sizing: border-box;
+		border-radius: 0.5rem;
+		background: var(--error);
+		color: var(--page);
+		font-size: 0.55rem;
+		line-height: 1;
 	}
 
 	/* Track is where a field begins, so it is the one command in a colour
@@ -388,66 +486,46 @@
 
 	/* Help is outlined as Undo is but once, not twice (da-35f23): the
 	   double outline says a press runs something at once, and this one
-	   only waits for the next tap. Its padding is its idle label's, so the
-	   armed label — no width of its own — has the whole box to be drawn
-	   in, and the button is exactly as big as `Help` makes it. */
+	   only waits for the next tap. */
 	.command.help {
 		border-color: var(--accent);
 		color: var(--ink-bright);
-		display: inline-grid;
-		padding: 0 2px;
-	}
-
-	.help .label {
-		grid-area: 1 / 1;
-		padding: 0.35rem calc(0.85rem - 2px);
-	}
-
-	.help .label.hidden {
-		visibility: hidden;
-	}
-
-	.help .armed {
-		width: 0;
-		min-width: 100%;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		font-size: 0.62rem;
-		line-height: 1.1;
-	}
-
-	.help small {
-		font-size: 0.5rem;
-		opacity: 0.85;
 	}
 
 	/* Armed, Help is the one lit thing on the bar: filled with the accent,
-	   so the page plainly is in a different state. */
+	   so the page plainly is in a different state. Its name stays legible
+	   under it, on the page. */
 	.command.help.armed {
 		background: var(--accent);
 		border-color: var(--accent);
 		color: var(--page);
 	}
 
-	/* Undo and its redo are one control of two buttons: they share the
-	   seam between them, and the redo half is only as wide as its icon. */
+	.command.help.armed .name {
+		color: var(--accent);
+	}
+
+	/* Undo's redo is a small circle on undo's shoulder, so undo takes no
+	   more of the row than any other command, and nothing above it. */
 	.undo {
+		position: relative;
 		display: flex;
 	}
 
-	.undo > .command:first-child {
-		border-top-right-radius: 0;
-		border-bottom-right-radius: 0;
-	}
-
-	.undo > .redo {
-		border-left: none;
-		border-top-left-radius: 0;
-		border-bottom-left-radius: 0;
-		padding-left: calc(0.45rem - 2px);
-		padding-right: calc(0.45rem - 2px);
+	.command.redo {
+		position: absolute;
+		inset-block-start: -0.1rem;
+		inset-inline-end: -0.45rem;
+		box-sizing: border-box;
+		inline-size: 1.15rem;
+		block-size: 1.15rem;
+		min-height: 0;
+		padding: 0;
+		border-radius: 50%;
+		display: grid;
+		place-items: center;
+		font-size: 0.65rem;
+		line-height: 1;
+		z-index: 1;
 	}
 </style>

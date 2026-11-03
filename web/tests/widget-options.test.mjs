@@ -99,14 +99,12 @@ describe('widget options', () => {
 			// `tail` since da-hkjp: its type size is a declared option of the
 			// KIND rather than a number written into a layout, so it is here
 			// and its default must be one of its choices like any other.
-			// `command` since da-u79wl: its «scrolling sections» prototype.
 			// `chart` since da-xv7ti: its fields and key are OFFERED, read off
 			// the widget as the menu is built, so only their defaults' shape is
 			// the registry's to hold.
 			assert.deepEqual(declared.map((k) => k.kind).sort(), [
 				'chart',
 				'cli',
-				'command',
 				'daystrip',
 				'input',
 				'nowview',

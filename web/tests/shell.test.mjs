@@ -490,7 +490,7 @@ describe('a URL', () => {
 			await pick(page, 'a-command');
 			await until(() => activeRootTab(page), (t) => t === 'a-command');
 			assert.deepEqual(await titles(page), ['command']);
-			await page.locator('section.pane[data-title="command"] button[data-command="moment"]').waitFor();
+			await page.locator('section.pane[data-title="command"] button[data-command="db"]').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});

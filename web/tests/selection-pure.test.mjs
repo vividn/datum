@@ -281,13 +281,14 @@ describe('which commands are active under the pills', () => {
 			assert.ok(commandsUnder(GRAMMAR, pills).some((c) => c.name === 'help'), JSON.stringify(pills));
 	});
 
+	// In the flat order (da-fg4w4): write's edits as vividn named them, then read's.
 	test('one hid: the id commands, the rest hidden', () => {
-		assert.deepEqual(active([one]), ['delete', 'update', 'retime', 'revert', 'get', 'history']);
+		assert.deepEqual(active([one]), ['update', 'retime', 'delete', 'revert', 'get', 'history']);
 		assert.equal(active([one]).includes('moment'), false);
 	});
 
 	test('two hids: what takes a comma list', () => {
-		assert.deepEqual(active([two]), ['delete', 'update', 'retime', 'revert']);
+		assert.deepEqual(active([two]), ['update', 'retime', 'delete', 'revert']);
 	});
 
 	test('a -t pill: what takes -t', () => {

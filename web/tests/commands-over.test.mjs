@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { dragOn } from './support/bar.mjs';
 import { swipe, withBar } from './support/layout.mjs';
+import { reach } from './support/commands.mjs';
 
 before(startApp);
 after(stopApp);
@@ -85,7 +86,7 @@ describe('the ❯ opens the commands over the output', () => {
 			assert.ok(shut.size >= 24, `the ❯ is ${shut.size}px`);
 
 			await page.locator(CHEVRON).click();
-			await page.locator(`${OVER} .bar.commands button[data-command="moment"]`).waitFor();
+			await page.locator(`${OVER} .bar.commands button[data-command="undo"]`).waitFor();
 			await slid(page);
 			await page.locator(CHEVRON).evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
 			const open = await chevron(page);
@@ -158,7 +159,8 @@ describe('the ❯ opens the commands over the output', () => {
 	test('choosing a command fills the line and closes them', async () => {
 		await onPage(async ({ page, errors }) => {
 			await page.locator(CHEVRON).click();
-			await page.locator(`${OVER} button[data-command="moment"]`).click();
+			// Opening write is no choice: they stay up for it (da-fg4w4).
+			await (await reach(page.locator(`${OVER} .bar.commands`), 'moment')).click();
 			await page.locator(OVER).waitFor({ state: 'detached' });
 			assert.equal(await page.locator(`${BAR} input`).inputValue(), 'moment ');
 			assert.deepEqual(errors, []);
@@ -172,12 +174,12 @@ describe('the ❯ opens the commands over the output', () => {
 		await onPage(async ({ page, errors }) => {
 			await page.locator(CHEVRON).click();
 			// Where it comes to rest: a press on a button still sliding under it is no hold.
-			await page.locator(`${OVER} button[data-command="moment"]`).waitFor();
+			await page.locator(`${OVER} button[data-command="undo"]`).waitFor();
 			await slid(page);
-			const box = await page.locator(`${OVER} button[data-command="moment"]`).boundingBox();
+			const box = await (await reach(page.locator(`${OVER} .bar.commands`), 'moment')).boundingBox();
 			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 			await page.mouse.down();
-			await page.locator(`${OVER} button[data-back]`).waitFor();
+			await page.locator(`${OVER} button[data-flag]`).first().waitFor();
 			await page.mouse.up();
 			await page.locator(`${OVER} button[data-flag="moment -q"]`).click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q ');
@@ -287,11 +289,41 @@ describe('a swipe on the commands is theirs', () => {
 		}
 	};
 
+	/**
+	 * Up, with every command in them: a pill only a few commands refuse
+	 * leaves them flat and long enough to scroll (da-fg4w4), and opens them
+	 * itself (da-lnirx).
+	 */
 	const open = async (page) => {
-		await page.locator(CHEVRON).click();
+		await page.evaluate(() => window.datum.bar.setPills([{ id: 'c', kind: 'note', text: '-c two' }]));
 		await page.locator(`${LIST} button[data-command="moment"]`).waitFor();
 		await slid(page);
 	};
+
+	// da-fg4w4: «a phone width still fits the base row without scrolling», at the narrowest phone the tests hold.
+	for (const width of [360, 390])
+		test(`on a ${width}px phone, the base row is eight circles in one row, each wholly in sight, with nothing to scroll`, async () => {
+			await withApp(
+				async ({ page, errors }) => {
+					await page.locator(CHEVRON).click();
+					await page.locator(`${LIST} button[data-command="undo"]`).waitFor();
+					await slid(page);
+					const row = await page.locator(LIST).evaluate((bar) => {
+						const box = bar.getBoundingClientRect();
+						const all = [...bar.querySelectorAll('button.round')].map((b) => b.getBoundingClientRect());
+						return {
+							circles: all.length,
+							lines: new Set(all.map((b) => Math.round(b.top))).size,
+							inside: all.every((b) => b.left >= box.left - 0.5 && b.right <= box.right + 0.5 && b.bottom <= box.bottom + 0.5),
+							scrolls: bar.scrollHeight > bar.clientHeight + 1 || bar.scrollWidth > bar.clientWidth + 1
+						};
+					});
+					assert.deepEqual(row, { circles: 8, lines: 1, inside: true, scrolls: false });
+					assert.deepEqual(errors, []);
+				},
+				{ ...PHONE, viewport: { width, height: 664 } }
+			);
+		});
 
 	test('on a phone, up and down scroll them and the bar stays; a swipe on the input row still moves it', async () => {
 		await withApp(async ({ page, errors }) => {
@@ -339,7 +371,8 @@ describe('a swipe on the commands is theirs', () => {
 			const after = await still(page);
 			assert.ok(after.scrolled > before.scrolled, `a wheel left the commands at ${after.scrolled}px`);
 			assert.deepEqual([after.shown, after.log], [before.shown, before.log], 'a wheel on the commands moved the bar');
-			await page.locator(CHEVRON).click();
+			// Clearing the last pill takes them away.
+			await page.evaluate(() => window.datum.bar.setPills([]));
 			await page.locator(OVER).waitFor({ state: 'detached' });
 			assert.deepEqual(errors, []);
 		});

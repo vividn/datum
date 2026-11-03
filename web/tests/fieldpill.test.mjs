@@ -24,6 +24,8 @@ import assert from 'node:assert/strict';
 import { changeCounter, seedLines, sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
+import { reach } from './support/commands.mjs';
+import { COMMANDS } from '../src/lib/commands.ts';
 import { FIELD_FORM } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
@@ -462,24 +464,20 @@ describe('what narrows to it', () => {
 	test('the commands widget keeps the commands that name a field, and hides the rest', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
-			const whole = await commands(page);
-			for (const name of ['get', 'now', 'delete', 'grep']) assert.ok(whole.includes(name), name);
-
 			await hold(page, 'coffee');
-			await page.waitForFunction(
-				() => !document.querySelector('[data-command="get"]')
-			);
+			// Under a pill the commands are flat, every one that takes it (da-fg4w4).
+			await pane(page, 'cmd').locator('[data-command="moment"]').waitFor();
 			const under = await commands(page);
-			// `now`, `dayview` and `nowview` take a field since da-oqpsp, read off their usage lines.
-			for (const name of ['moment', 'tail', 'stats', 'count', 'ids', 'setup', 'now', 'dayview', 'nowview'])
+			// `now` takes a field since da-oqpsp, read off its usage lines.
+			for (const name of ['moment', 'tail', 'stats', 'count', 'setup', 'now'])
 				assert.ok(under.includes(name), `${name} names a field and was hidden`);
 			for (const name of ['get', 'delete', 'update', 'grep'])
 				assert.ok(!under.includes(name), `${name} names no field and was not hidden`);
 			// coffee is an OCCUR field (da-57j14): the other verbs are hidden.
 			for (const name of ['start', 'end', 'switch', 'add'])
 				assert.ok(!under.includes(name), `${name} does not fit a moment field and was not hidden`);
-			// The order is the widget's usual one; the filter only removes.
-			assert.deepEqual(under, whole.filter((name) => under.includes(name)));
+			// The order is the widget's flat one; the filter only removes.
+			assert.deepEqual(under, COMMANDS.map((c) => c.name).filter((name) => under.includes(name)));
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -514,11 +512,11 @@ describe('what narrows to it', () => {
 				(await commands(page)).filter((name) => ['moment', 'start', 'end', 'switch', 'add'].includes(name));
 
 			await hold(page, 'mood');
-			await page.waitForFunction(() => !document.querySelector('[data-command="moment"]'));
+			await pane(page, 'cmd').locator('[data-command="switch"]').waitFor();
 			assert.deepEqual(await verbs(), ['end', 'switch']);
 
 			await fieldPill(page).locator('button.remove').click();
-			await page.waitForFunction(() => document.querySelector('[data-command="moment"]'));
+			await reach(pane(page, 'cmd').locator('.bar'), 'moment');
 			assert.deepEqual(await verbs(), ['moment', 'start', 'end', 'switch', 'add']);
 			assert.deepEqual(app.errors, []);
 		});
@@ -921,7 +919,7 @@ describe('`setup` under the pill', () => {
 	test('with no pill, `setup` opens the field widget on a new field', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
-			await specButton(page).click();
+			await (await reach(pane(page, 'cmd').locator('.bar'), 'setup')).click();
 			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), '');
 			assert.deepEqual(app.errors, []);

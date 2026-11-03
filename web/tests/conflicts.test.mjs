@@ -1,12 +1,14 @@
 // Sync conflicts on the page (da-6cutb): the commands widget's «conflicts»
 // button, red with their count while `datum conflicts --json` lists any,
-// and the conflicts widget a typed `conflicts` opens, where each is
-// resolved by one `datum conflicts resolve` line run through the bar.
+// and the conflicts widget it opens, where each is resolved by one `datum
+// conflicts resolve` line run through the bar.
 //
 // vividn, 2026-10-08: «there should be a button "conflicts" in the commands
 // menu. If there are any conflicts, it should become red for the user to
 // then directly deal with» and «yes there should be a conflicts widget that
-// get opened by the conflicts command».
+// get opened by the conflicts command». And 2026-11-03 (da-fg4w4): «The
+// conflicts command should not be top level, it should be under sync», so
+// sync wears their count, and opens a submenu that holds conflicts.
 //
 // ONE flow on one app: `debug conflicts 2` (da-4dvk7) makes three — two
 // entries whose state two devices edited, and one deleted here and edited
@@ -28,9 +30,13 @@ test('the button counts them in red, the widget resolves them, and the last one 
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			const button = page.locator('button[data-command="conflicts"]');
-			/** The button's words, and whether it is drawn in the palette's error red. */
-			const drawn = () =>
+			const bar = page.locator('.bar.commands');
+			const sync = bar.locator('button[data-command="sync"]');
+			const button = bar.locator('button[data-command="conflicts"]');
+			/** The base row's sync: its badge, and what a tap on it does. */
+			const drawn = () => sync.evaluate((el) => ({ badge: el.querySelector('.badge')?.textContent ?? null, act: el.dataset.act }));
+			/** The conflicts button's name and badge, and whether it is drawn in the palette's error red. */
+			const red = () =>
 				button.evaluate((el) => {
 					const probe = document.body.appendChild(document.createElement('i'));
 					probe.style.color = 'var(--error)';
@@ -51,13 +57,17 @@ test('the button counts them in red, the widget resolves them, and the last one 
 				return last();
 			};
 
-			assert.deepEqual(await drawn(), { text: 'conflicts', red: false }, 'no conflicts: plain');
+			assert.deepEqual(await drawn(), { badge: null, act: 'open' }, 'no conflicts: sync opens its place');
+			assert.equal(await button.count(), 0, 'conflicts in the base row');
 
 			await app.submit('debug conflicts 2');
-			await until(drawn, (b) => b.text === 'conflicts 3');
-			assert.equal((await drawn()).red, true, 'three conflicts: red');
+			await until(drawn, (b) => b.badge === '3');
+			assert.equal((await drawn()).act, 'show', 'with conflicts, sync opens its submenu');
+			await sync.click();
+			assert.deepEqual(await red(), { text: 'conflicts3', red: true }, 'three conflicts: red, under sync');
+			assert.equal(await sync.getAttribute('data-act'), 'open', 'the submenu\'s sync opens its place');
 
-			await app.submit('conflicts');
+			await button.click();
 			await widget.waitFor();
 			await until(() => entries.count(), (n) => n === 3);
 
@@ -79,7 +89,7 @@ test('the button counts them in red, the widget resolves them, and the last one 
 			let ran = await resolve(one);
 			assert.equal(ran.line, `conflicts resolve ${first.hid} --merge`);
 			assert.equal(ran.result.code, 0, ran.result.stderr);
-			await until(drawn, (b) => b.text === 'conflicts 2');
+			await until(drawn, (b) => b.badge === '2');
 			assert.deepEqual(await stateOf(first.hid), ['edited here', 'edited there']);
 
 			// One by a pick: a tap on side A writes its letter into the key's box.
@@ -89,9 +99,9 @@ test('the button counts them in red, the widget resolves them, and the last one 
 			ran = await resolve(two);
 			assert.equal(ran.line, `conflicts resolve ${second.hid} state=a`);
 			assert.equal(ran.result.code, 0, ran.result.stderr);
-			await until(drawn, (b) => b.text === 'conflicts 1');
+			await until(drawn, (b) => b.badge === '1');
 			assert.equal(await stateOf(second.hid), second.conflicts.state[0].value);
-			assert.equal((await drawn()).red, true, 'one left: still red');
+			assert.equal((await drawn()).act, 'show', 'one left: still a badge');
 
 			// A delete against an edit: `--merge` is the CLI's to refuse, in its words.
 			const three = widget.locator(`section[data-hid="${gone.hid}"]`);
@@ -108,8 +118,8 @@ test('the button counts them in red, the widget resolves them, and the last one 
 			ran = await resolve(three);
 			assert.equal(ran.line, `conflicts resolve ${gone.hid}`);
 			assert.equal(ran.result.code, 0, ran.result.stderr);
-			await until(drawn, (b) => b.text === 'conflicts');
-			assert.equal((await drawn()).red, false, 'none left: plain');
+			await until(drawn, (b) => b.badge === null);
+			assert.equal((await drawn()).act, 'open', 'none left: sync opens its place again');
 			await widget.getByText('No sync conflicts.').waitFor();
 			assert.equal((await app.run(['conflicts', '--json'])).stdout.trim(), '[]');
 			assert.equal((await app.run(['get', gone.hid])).code, 1, 'the deleted entry stays deleted');

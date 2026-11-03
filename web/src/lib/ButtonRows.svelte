@@ -21,11 +21,6 @@
 	instead — the fields widget's rows are bands of height (da-xtkcp). TAB
 	ORDER follows the drawing — along the first row, then the second.
 
-	SECTIONS (da-0mepr): a widget that passes `section` has its items cut
-	into runs of one section each, every run dealt into rows of its own
-	and set apart from the next by a divider — the commands widget's kinds
-	of action. The runs share the one scroll and the one count of rows.
-
 	CENTERED (da-syu4f, vividn, 2026-10-27: «fields should appear more in
 	the center of the fields widget when there are few, to give space
 	around them»): a widget that passes `center` has a bar its buttons do
@@ -39,7 +34,7 @@
 -->
 <script lang="ts" generics="T">
 	import { onMount, type Snippet } from 'svelte';
-	import { MAX_ROWS, lanesOf, runsOf, watchRows, type Axis } from './commands.js';
+	import { MAX_ROWS, lanesOf, watchRows, type Axis } from './commands.js';
 
 	interface Props {
 		items: T[];
@@ -47,8 +42,6 @@
 		axis?: Axis;
 		/** How `items` are laid into so many rows; dealt by index unless the widget says otherwise. */
 		arrange?: (items: T[], rows: number) => T[][];
-		/** Which section an item is in; consecutive items of one section are drawn together. */
-		section?: (item: T) => unknown;
 		/** The most rows drawn, whatever the box fits; `Infinity` for every row it fits. */
 		maxRows?: number;
 		/** Hold buttons that do not fill the box in its middle. */
@@ -70,7 +63,6 @@
 		key,
 		axis = 'x',
 		arrange = lanesOf,
-		section = undefined,
 		maxRows = MAX_ROWS,
 		center = false,
 		bar = $bindable(),
@@ -89,14 +81,8 @@
 
 	onMount(() => watchRows(bar!, stick, (n) => (fit = n), axis));
 
-	const groups = $derived(
-		(section ? runsOf(items, section) : [items]).map((run) => ({
-			name: section?.(run[0]),
-			lanes: arrange(run, rows)
-		}))
-	);
-	/** Every group is as many lines as the fullest, so a line runs straight across them. */
-	const lines = $derived(Math.max(1, ...groups.map(({ lanes }) => lanes.length)));
+	const lanes = $derived(arrange(items, rows));
+	const lines = $derived(Math.max(1, lanes.length));
 </script>
 
 <!-- The measuring stick: the widget's own button, laid out and invisible,
@@ -115,17 +101,15 @@
 	{onpointerenter}
 	{onpointerleave}
 >
-	{#each groups as { name, lanes }}
-		<div class="section" data-section={name} style:--lines={lines}>
-			{#each lanes as lane}
-				<div class="lane">
-					{#each lane as item (key(item))}
-						{@render children?.({ item })}
-					{/each}
-				</div>
-			{/each}
-		</div>
-	{/each}
+	<div class="section" style:--lines={lines}>
+		{#each lanes as lane}
+			<div class="lane">
+				{#each lane as item (key(item))}
+					{@render children?.({ item })}
+				{/each}
+			</div>
+		{/each}
+	</div>
 	{@render overlay?.()}
 </div>
 
@@ -180,8 +164,7 @@
 		align-items: center;
 	}
 
-	/* A section's lines each take an equal share of the box, however few it
-	   fills, so every section's first line is the others' first line. */
+	/* The lines each take an equal share of the box, however few it fills. */
 	.section {
 		flex: none;
 		display: grid;
@@ -194,21 +177,6 @@
 
 	.y > .section {
 		grid-template-columns: repeat(var(--lines), minmax(0, 1fr));
-	}
-
-	/* The divider between two sections: a rule in the middle of the gap the
-	   bar leaves anyway, so it costs no room. One that added its own width
-	   put `end` off a 412px phone's one row (5.5px over, da-0mepr). */
-	.x > .section + .section {
-		border-left: 1px solid var(--rule);
-		margin-left: calc(-0.2rem - 0.5px);
-		padding-left: calc(0.2rem - 0.5px);
-	}
-
-	.y > .section + .section {
-		border-top: 1px solid var(--rule);
-		margin-top: calc(-0.2rem - 0.5px);
-		padding-top: calc(0.2rem - 0.5px);
 	}
 
 	/* Each line centres its buttons, so a button taller than the probe

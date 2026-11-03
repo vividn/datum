@@ -32,7 +32,9 @@
 //   own control, before its widget's help.
 //
 // Anything else is general help too: the tap asked for help, so it gets
-// some.
+// some. A tap that only moves through a menu (`data-passes`) is no question,
+// and passes: so a command in one of the commands widget's submenus can be
+// reached, armed, and explained.
 
 import { get, writable } from 'svelte/store';
 import { pills, spent, type Pill } from './bar.js';
@@ -165,7 +167,15 @@ async function helpOf(name?: string): Promise<Explanation> {
 /** Every event a tap is made of — none of them reaches the page while armed. */
 const SWALLOWED = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'dblclick', 'contextmenu'];
 
+/**
+ * A tap on a control that only moves through a menu (`data-passes`: the
+ * commands widget's submenus and back, da-fg4w4) is no question: it reaches
+ * the page, and Help stays armed for the command it leads to.
+ */
+const passes = (event: Event): boolean => event.target instanceof Element && !!event.target.closest('[data-passes]');
+
 function swallow(event: Event): void {
+	if (passes(event)) return;
 	event.stopImmediatePropagation();
 	// Not a touch's: that would cancel the click this is waiting for. A
 	// mousedown's keeps the focus, and with it a phone's keyboard, where it is.
@@ -173,6 +183,7 @@ function swallow(event: Event): void {
 }
 
 function onClick(event: MouseEvent): void {
+	if (passes(event)) return;
 	swallow(event);
 	event.preventDefault();
 	disarm();

@@ -21,6 +21,7 @@ import { DESKTOP, PHONE } from './support/layout.mjs';
 import { FIELD_FORM, PANEL, leaveField, declared, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 import { shellJoin } from '../src/lib/shellSplit.ts';
+import { reach as reachCommand } from './support/commands.mjs';
 
 before(startApp);
 after(stopApp);
@@ -756,12 +757,13 @@ describe('the field widget', () => {
 		});
 	});
 
-	test('`track` in the commands widget opens it on a new field, and writes no line', async () => {
+	// `setup`, in the fields submenu (da-fg4w4): `track` writes its word on the line now, as any command does.
+	test('`setup` in the commands widget opens it on a new field, and writes no line', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const track = (await put(page, 'command')).locator('[data-command="track"]');
-			assert.equal(await track.getAttribute('data-act'), 'open');
-			await track.click();
+			const setup = await reachCommand((await put(page, 'command')).locator('.bar.commands'), 'setup');
+			assert.equal(await setup.getAttribute('data-act'), 'open');
+			await setup.click();
 			await page.locator(`${FIELD_FORM} input.field`).waitFor();
 			assert.equal(await page.locator('.prompt-bar input').first().inputValue(), '', 'the tap wrote a line as well');
 			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');

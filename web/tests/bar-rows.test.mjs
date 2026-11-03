@@ -92,8 +92,11 @@ describe('the fields bar takes every row its box fits', () => {
 				assert.equal((await axes(bar(page))).rows, 6, 'the fields bar draws six rows');
 				assert.deepEqual(await drawnRows(page), banded(6), 'six bands of y, three each');
 				const cmd = page.locator('section[data-pane="cmd"] .bar');
+				// A submenu: the base row is one row however tall its box (da-fg4w4).
+				await cmd.locator('button[data-menu="write"]').click();
+				await cmd.locator('button[data-back]').waitFor();
 				const fits = await cmd.evaluate((el) => {
-					const probe = el.closest('section').querySelector('.probe button').offsetHeight;
+					const probe = el.closest('section').querySelector('.probe').offsetHeight;
 					return Math.floor((el.clientHeight + 6.4) / (probe + 6.4));
 				});
 				assert.ok(fits > MAX_ROWS, `the commands box fits ${fits} rows, so its cap is what holds it`);

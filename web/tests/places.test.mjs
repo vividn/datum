@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, along, atRest, chooseRoot, swipeOver, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
+import { reach } from './support/commands.mjs';
 
 before(startApp);
 after(stopApp);
@@ -88,7 +89,7 @@ describe('a place on a desktop', () => {
 	test('the Sync button opens it in a modal, not a tab, and the browser’s back closes it', async () => {
 		await onDesktop(async ({ page, errors }) => {
 			const sync = page.locator('.bar.commands [data-command="sync"]');
-			assert.equal((await sync.innerText()).trim(), 'Sync');
+			assert.equal((await sync.innerText()).trim(), 'sync');
 			assert.equal(await sync.getAttribute('data-act'), 'open');
 			await sync.click();
 			await modal(page).locator('.sync header').waitFor();
@@ -445,10 +446,10 @@ describe('a place on a phone', () => {
 	test('a held command comes back with its flags, and the line with the ones tapped', async () => {
 		await withApp(
 			async ({ page, errors }) => {
-				const box = await commands(page).locator('button[data-command="moment"]').boundingBox();
+				const box = await (await reach(commands(page), 'moment')).boundingBox();
 				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 				await page.mouse.down();
-				await back(page).waitFor();
+				await commands(page).locator('button[data-flag]').first().waitFor();
 				await page.mouse.up();
 				await commands(page).locator('button[data-flag="moment -q"]').click();
 				await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment -q ');
@@ -456,10 +457,12 @@ describe('a place on a phone', () => {
 				assert.equal(await commands(page).locator('button[data-flag="moment -t"]').count(), 1, 'the flags are gone');
 				assert.equal(await page.locator('.prompt-bar input').inputValue(), 'moment -q ');
 
+				// Escape peels the flags to the submenu they were held in, which is kept too.
 				await page.keyboard.press('Escape');
-				await back(page).waitFor({ state: 'detached' });
+				await commands(page).locator('button[data-flag]').first().waitFor({ state: 'detached' });
 				await roundTrip(page);
-				assert.equal(await back(page).count(), 0, 'Escape was undone by the round trip');
+				assert.equal(await commands(page).locator('button[data-flag]').count(), 0, 'Escape was undone by the round trip');
+				assert.equal(await commands(page).locator('button[data-command="moment"]').count(), 1, 'the submenu was not kept');
 				assert.deepEqual(errors, []);
 			},
 			{ ...PHONE, reducedMotion: 'reduce', ...alone('command') }

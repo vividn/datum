@@ -9,7 +9,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
 import { DESKTOP, PHONE, along, atRest, widgetPane } from './support/layout.mjs';
-import { listed } from './support/rows.mjs';
+import { reach } from './support/commands.mjs';
 import { until } from './support/until.mjs';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
@@ -31,7 +31,15 @@ const onPage = (fn, page = PAGE) =>
 		return fn(app);
 	}, page);
 
-const help = (page) => page.locator('.host[data-widget="command"] .bar.commands button[data-command="help"]');
+const commands = (page) => page.locator('.host[data-widget="command"] .bar.commands');
+const help = (page) => commands(page).locator('button[data-command="help"]');
+/** Press the widget's Help, in settings (da-fg4w4) where the bar is not showing one. */
+const armHelp = async (page) => (await reach(commands(page), 'help')).click();
+/**
+ * `name`'s button, reached through its submenu: armed, the tap that opens
+ * one passes (`data-passes`, #lib/help.ts) and the bar stays armed.
+ */
+const command = (page, name) => () => reach(commands(page), name);
 
 const rootTabs = (page) =>
 	page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));
@@ -48,11 +56,12 @@ async function read(page, title) {
 }
 
 /**
- * Press Help (`button`), then `target`: the answer in the Help place, a transient tab
+ * Press Help (`button`, the widget's own where none is given), then `target`
+ * (a locator, or what gives one once Help is armed): the answer in the Help place, a transient tab
  * right of this one and in front. Back (the browser's, or a tap on the tab it
  * left) returns and closes it; then, nothing was run, echoed or output.
  */
-async function explain(page, target, title, back = () => page.goBack(), button = help(page)) {
+async function explain(page, target, title, back = () => page.goBack(), button) {
 	const output = () => page.locator('.prompt-bar .roll').allInnerTexts();
 	const [echoes, said, tabs, from] = [
 		await page.locator('.cli .echo').count(),
@@ -60,8 +69,8 @@ async function explain(page, target, title, back = () => page.goBack(), button =
 		await rootTabs(page),
 		await shown(page)
 	];
-	await button.click();
-	await target.click();
+	await (button ? button.click() : armHelp(page));
+	await (typeof target === 'function' ? await target() : target).click();
 	await until(() => shown(page), (t) => t === 'help');
 	const at = tabs.indexOf(from) + 1;
 	assert.deepEqual(await rootTabs(page), [...tabs.slice(0, at), 'help', ...tabs.slice(at)]);
@@ -104,51 +113,45 @@ async function kindHelp(kind) {
 	return kinds[kind].help;
 }
 
-const label = async (page) => (await help(page).locator('.label:not(.hidden)').innerText()).trim();
+const label = async (page) => (await help(page).locator('.name').innerText()).trim();
 
 describe('the Help button', () => {
-	test('is second, after Undo, single-outlined; armed it asks "? on what" in the same width; Escape disarms', async () => {
+	test('is in settings, single-outlined where undo is double; armed, its name asks «on what?», and Escape disarms', async () => {
 		await onPage(async ({ page }) => {
-			const names = (await listed(page.locator('.bar.commands'), 'button[data-command]')).map((b) => b.command);
-			assert.deepEqual(names.slice(0, 3), ['undo', 'redo', 'help']);
-
 			// Undo runs at once and wears the double outline; Help waits, and wears one.
-			const undo = page.locator('.bar.commands button[data-command="undo"]');
+			const undo = commands(page).locator('button[data-command="undo"]');
 			assert.equal(await undo.getAttribute('data-act'), 'run');
-			assert.equal(await help(page).getAttribute('data-act'), 'arm');
 			const style = (el) => el.evaluate((b) => getComputedStyle(b).borderTopStyle);
 			assert.equal(await style(undo), 'double');
+			await commands(page).locator('button[data-menu="settings"]').click();
+			assert.equal(await help(page).getAttribute('data-act'), 'arm');
 			assert.equal(await style(help(page)), 'solid');
+			assert.equal(await label(page), 'help');
 
-			assert.equal(await label(page), 'Help');
-			const before = (await help(page).boundingBox()).width;
+			// Armed, the bar is its base row again, for the next tap to find.
 			await help(page).click();
-			assert.notEqual(await label(page), 'Help', 'armed, the armed label is the one shown');
+			await commands(page).locator('button[data-menu="settings"]').waitFor();
+			assert.equal(await page.locator('.root-bar button.help[aria-pressed="true"]').count(), 1, 'Help is not armed');
+			// A submenu opened while armed is no question: the tap passes, and Help stays armed.
+			await commands(page).locator('button[data-menu="settings"]').click();
 			assert.equal(await help(page).getAttribute('aria-pressed'), 'true');
-			const armed = (await help(page).boundingBox()).width;
-			assert.ok(Math.abs(armed - before) <= 3, `the width moved: ${before} -> ${armed}`);
-			// And the armed words fit inside it: the box holds by not growing, not by spilling.
-			const spill = await help(page).locator('.armed').evaluate((l) => {
-				const words = document.createRange();
-				words.selectNodeContents(l);
-				return words.getBoundingClientRect().width - l.clientWidth;
-			});
-			assert.ok(spill <= 1, `the armed label spills out of the button by ${spill}px`);
+			assert.equal(await label(page), 'on what?');
 			await page.keyboard.press('Escape');
-			assert.equal(await label(page), 'Help');
+			assert.equal(await label(page), 'help');
+			assert.equal(await help(page).getAttribute('aria-pressed'), 'false');
 		});
 	});
 
 	test('then a command: the CLI\'s own help for it in the Help place, and the command does not run', async () => {
 		await onPage(async ({ page }) => {
-			const moment = page.locator('.bar.commands button[data-command="moment"]');
-			const lines = await explain(page, moment, 'datum help moment');
+			// Reached through write, which the armed tap passes through.
+			const lines = await explain(page, command(page, 'moment'), 'datum help moment');
 			assert.equal(lines[0], (await cliHelp(page, 'moment')).title);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'moment filled the line');
-			assert.equal(await label(page), 'Help', 'one-shot: it disarms');
+			assert.equal(await page.locator('button[data-command="help"][aria-pressed="true"]').count(), 0, 'one-shot: it disarms');
 
 			// The next tap acts as it always did.
-			await moment.click();
+			await (await reach(commands(page), 'moment')).click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'moment ');
 		});
 	});
@@ -172,7 +175,7 @@ describe('the Help button', () => {
 	// flag table, and the tap appends nothing. A right click is the hold.
 	test('then a flag of a held command: its help line, and the line is left alone', async () => {
 		await onPage(async ({ page }) => {
-			await page.locator('.bar.commands button[data-command="moment"]').click({ button: 'right' });
+			await (await reach(commands(page), 'moment')).click({ button: 'right' });
 			const t = page.locator('.bar.commands button[data-flag="moment -t"]');
 			await t.waitFor();
 			const lines = await explain(page, t, 'datum moment -t');
@@ -220,9 +223,9 @@ describe('the Help button', () => {
 		await onPage(async ({ page }) => {
 			const from = await shown(page);
 			const tap = () => page.locator('.root-bar [role="tab"]', { hasText: from }).click();
-			const lines = await explain(page, help(page), 'datum help', tap);
+			const lines = await explain(page, command(page, 'help'), 'datum help', tap);
 			assert.equal(lines[0], (await cliHelp(page)).split('\n')[0]);
-			assert.equal(await label(page), 'Help');
+			assert.equal(await label(page), 'help');
 		});
 	});
 
@@ -253,8 +256,8 @@ describe('the Help button', () => {
 		await onPage(async ({ page }) => {
 			await page.locator('section.pane[data-title="help"]').waitFor();
 			const tabs = await rootTabs(page);
-			await help(page).click();
-			await page.locator('.bar.commands button[data-command="moment"]').click();
+			await armHelp(page);
+			await (await reach(commands(page), 'moment')).click();
 			const lines = await read(page, 'datum help moment');
 			assert.equal(lines[0], (await cliHelp(page, 'moment')).title);
 			// The pane shows it at once; a tab `openPlace` opened would land a
@@ -284,8 +287,7 @@ describe('the Help button', () => {
 		);
 		await onPage(async ({ page }) => {
 			await page.locator('.tab-body.behind .host[data-widget="help"]').waitFor({ state: 'attached' });
-			const moment = page.locator('.bar.commands button[data-command="moment"]');
-			const lines = await explain(page, moment, 'datum help moment');
+			const lines = await explain(page, command(page, 'moment'), 'datum help moment');
 			assert.equal(lines[0], (await cliHelp(page, 'moment')).title);
 		}, behind);
 	});
@@ -293,8 +295,8 @@ describe('the Help button', () => {
 		await desktop.solo(async ({ page }) => {
 			const modal = page.locator('dialog.sheet[open][data-place="help"]');
 			const tabs = await rootTabs(page);
-			await help(page).click();
-			await page.locator('.bar.commands button[data-command="moment"]').click();
+			await armHelp(page);
+			await (await reach(commands(page), 'moment')).click();
 			await until(() => modal.locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === 'datum help moment');
 			assert.equal((await modal.locator('pre.help').innerText()).split('\n')[0], (await cliHelp(page, 'moment')).title);
 			assert.deepEqual(await rootTabs(page), tabs, 'a tab opened');
