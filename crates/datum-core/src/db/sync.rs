@@ -3276,8 +3276,8 @@ impl Db {
 
 /// The summed state hash of the rows passing `filters`, and what keeps
 /// it ([`Db::sync_state_hash`]). The rows read are those a write touched
-/// since the parts were kept, or every one under another build's parts: a
-/// build may serialize a row differently.
+/// since the parts were kept, or every one under parts another
+/// [`row_hash_rule`] wrote, one row at a time (da-vpwkw).
 fn summed(
     conn: &Connection,
     seen: Seen,
@@ -3297,12 +3297,6 @@ fn summed(
             })
             .collect()
     };
-    let rows = |sql: &str| -> Result<Vec<Map<String, Value>>> {
-        Ok(conn
-            .prepare(sql)?
-            .query_map([], state_row)?
-            .collect::<rusqlite::Result<_>>()?)
-    };
     let stamp: Option<String> = conn
         .query_row(
             "SELECT value FROM _meta WHERE key = 'sync_row_hashes'",
@@ -3310,8 +3304,10 @@ fn summed(
             |r| r.get(0),
         )
         .optional()?;
-    let fresh = stamp.as_deref() == Some(crate::build());
+    let rule = row_hash_rule(conn)?;
+    let fresh = stamp.as_deref() == Some(rule.as_str());
     let mut keep = WriteBatch::on(seen);
+    let touched = "IN (SELECT hid FROM sync_rows_changed)";
     let (mut sum, gone, now) = match fresh {
         true => {
             let kept: Option<String> = conn
@@ -3333,48 +3329,120 @@ fn summed(
                 "DELETE FROM sync_row_hashes WHERE hid IN (SELECT hid FROM sync_rows_changed)",
                 vec![],
             );
-            let touched = "IN (SELECT hid FROM sync_rows_changed)";
             (
                 sum,
                 parts(&format!(
                     "SELECT hash, belongs FROM sync_row_hashes WHERE hid {touched}"
                 ))?,
-                rows(&format!("SELECT * FROM entries WHERE hid {touched}"))?,
+                format!("SELECT * FROM entries WHERE hid {touched}"),
             )
         }
         false => {
             keep.push("DELETE FROM sync_row_hashes", vec![]);
             keep.push(
                 "INSERT OR REPLACE INTO _meta (key, value) VALUES ('sync_row_hashes', ?1)",
-                vec![crate::build().to_string().into()],
+                vec![rule.into()],
             );
-            ([0; 32], Vec::new(), rows("SELECT * FROM entries")?)
+            ([0; 32], Vec::new(), "SELECT * FROM entries".to_string())
         }
     };
-    // Another filter's sum is kept only while no part moves under it.
-    if !fresh || !gone.is_empty() || !now.is_empty() {
-        keep.push("DELETE FROM sync_state_sums", vec![]);
-    }
     for (h, _) in gone.iter().filter(|(_, b)| passes(b)) {
         add(&mut sum, h, -1);
     }
-    for r in now {
-        let (hid, belongs) = (r["hid"].as_str().map(String::from), belongs_to(&r));
-        let h: [u8; 32] = Sha256::digest(canonical_json(&Value::Object(r))).into();
+    // Each row hashed as it is read, and its part kept as one JSON array:
+    // every row of a database at once, read first, was a GiB (da-vpwkw).
+    let mut kept = String::from("[");
+    let mut stmt = conn.prepare(&now)?;
+    let mut rows = stmt.query([])?;
+    while let Some(r) = rows.next()? {
+        let (h, hid, belongs) = row_part(state_row(r)?);
         if passes(&belongs) {
             add(&mut sum, &h, 1);
         }
-        keep.push(
-            "INSERT INTO sync_row_hashes (hid, hash, belongs) VALUES (?1, ?2, ?3)",
-            vec![hid.into(), hex(&h).into(), belongs.into()],
-        );
+        if kept.len() > 1 {
+            kept.push(',');
+        }
+        kept.push_str(&json!([hid, hex(&h), belongs]).to_string());
     }
+    kept.push(']');
+    // Another filter's sum is kept only while no part moves under it.
+    if !fresh || !gone.is_empty() || kept.len() > 2 {
+        keep.push("DELETE FROM sync_state_sums", vec![]);
+    }
+    keep.push(
+        "INSERT INTO sync_row_hashes (hid, hash, belongs)
+         SELECT value ->> 0, value ->> 1, value ->> 2 FROM json_each(?1)",
+        vec![kept.into()],
+    );
     keep.push("DELETE FROM sync_rows_changed", vec![]);
     keep.push(
         "INSERT OR REPLACE INTO sync_state_sums (key, sum) VALUES (?1, ?2)",
         vec![key.to_string().into(), hex(&sum).into()],
     );
     Ok((sum, keep))
+}
+
+/// A row's part of the summed state hash: the SHA-256 of its canonical
+/// JSON, its hid, and the field it belongs to.
+fn row_part(r: Map<String, Value>) -> ([u8; 32], Option<String>, Option<String>) {
+    let (hid, belongs) = (r["hid"].as_str().map(String::from), belongs_to(&r));
+    (
+        Sha256::digest(canonical_json(&Value::Object(r))).into(),
+        hid,
+        belongs,
+    )
+}
+
+/// The rows [`row_hash_rule`] hashes: between them every column of
+/// `entries` a row's hash reads, and every key it writes, set
+/// (`the_row_hash_probe_sets_every_column_and_key`).
+const ROW_HASH_PROBE: &str = r#"SELECT 'probe0000001' AS hid, 'pröbe:2026-01-02T03:04:05.678Z' AS slug,
+           'c0' AS content_hash, 'pröbe' AS field, '"on"' AS state,
+           'PT30M' AS dur, '"off"' AS following_state, 'block-switch' AS verb,
+           '{"b":[1,2.5,-0.0,1e300,{"z":null,"a":"ü\n"}],"a":true}' AS data,
+           '2026-01-02T03:04:05.678+00:00' AS at, 60 AS at_offset,
+           'Europe/Berlin' AS at_tz, '5m' AS at_uncertainty, '2m' AS dur_uncertainty,
+           52.52 AS lat, -13.405 AS lon, 'here' AS location,
+           '2026-01-02T03:04:05.678901234+00:00' AS create_time,
+           '2026-01-02T04:04:05+01:00' AS modify_time, 'd0' AS client_id,
+           NULL AS deleted_at, 'probe0000002' AS superseded_by,
+           '%at%' AS id_structure, '%f%' AS field_structure,
+           'switch pröbe on' AS raw_input, '[{"alias":"p"}]' AS alias_chain,
+           2 AS parser_version, '"off"' AS user_asserted_last_state,
+           '{"m":1}' AS extra_metadata,
+           '{"state":[{"device":"x","hlc":"h","op":"o/1","value":"on"}]}' AS conflicts
+    UNION ALL
+    SELECT 'probe0000002', 'spec:q', 'c1', 'spec', NULL, 'UNKNOWN', NULL, 'point',
+           '{"field":"q"}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+           '2026-01-02T03:04:05Z', '2026-01-02T03:04:05Z', 'd1',
+           '2026-01-03T00:00:00Z', NULL, NULL, NULL, '', NULL, 1, NULL, NULL, NULL
+    UNION ALL
+    SELECT 'probe0000003', 'm:x', 'c2', 'm', '7', 'MOMENT', NULL, 'point',
+           'null', '2026-01-02T03:04:05Z', -330, NULL, NULL, NULL, 0, 0, NULL,
+           '2026-01-02T03:04:05Z', '2026-01-02T03:04:05Z', 'd2',
+           NULL, NULL, NULL, NULL, NULL, 'null', 2, NULL, NULL, '{}'"#;
+
+/// What the kept parts of the summed state hash were computed by, as
+/// `_meta` `sync_row_hashes` stamps them (da-vpwkw): the schema, and the
+/// parts this build computes for rows that set every column `state_row`
+/// reads, one way and the other. A build that reads or writes a row
+/// differently computes other parts for them and so reads every row
+/// again; a deploy that does not, the most of them, reads none. Stamped
+/// by the whole build before, every deploy of datum.day hashed every row
+/// at its first verify: 14 s and a GiB of wasm memory at 290k rows.
+fn row_hash_rule(conn: &Connection) -> Result<String> {
+    let probe = conn
+        .prepare(ROW_HASH_PROBE)?
+        .query_map([], state_row)?
+        .map(|r| {
+            let (h, _, belongs) = row_part(r?);
+            Ok(format!("{} {}", hex(&h), belongs.unwrap_or_default()))
+        })
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(format!(
+        "v{CURRENT_SCHEMA_VERSION} {}",
+        sha256_hex(&probe.join("\n"))
+    ))
 }
 
 /// `sum` plus `sign` times `part`, as 256-bit little-endian numbers that wrap.

@@ -278,8 +278,8 @@ fn the_ordered_state_hash_is_kept_until_an_entry_changes() {
 
 /// The summed state hash kept as rows change is the one hashed from every
 /// row (da-9ln3s): after an apply that creates, edits, deletes and
-/// contests, after a write a hash never saw, and once the build's parts
-/// are another's, it is the sum of every row's digest; and a verify reads
+/// contests, after a write a hash never saw, and once the parts
+/// are another rule's, it is the sum of every row's digest; and a verify reads
 /// again only the rows a write touched.
 #[test]
 fn the_summed_state_hash_kept_is_the_one_hashed_from_every_row() {
@@ -339,7 +339,7 @@ fn the_summed_state_hash_kept_is_the_one_hashed_from_every_row() {
     );
 
     // A write no hash saw, by another build's raw SQL, and a hash under
-    // another build's parts.
+    // another rule's parts.
     b.conn
         .execute(
             "UPDATE entries SET state = '\"z\"' WHERE field = 'water'",
@@ -363,6 +363,76 @@ fn the_summed_state_hash_kept_is_the_one_hashed_from_every_row() {
         .execute("UPDATE sync_state_sums SET sum = ?1", [hex(&[9; 32])])
         .unwrap();
     assert_eq!(b.sync_state_hash(None).unwrap(), hex(&[9; 32]));
+}
+
+/// The kept parts are stamped by what a row's hash is computed by, and not
+/// by the build (da-vpwkw): a deploy that hashes a row as the last did
+/// reads no row again.
+#[test]
+fn the_row_hashes_are_stamped_by_their_rule_and_not_the_build() {
+    let db = Db::open_in_memory().unwrap();
+    log_at(&db, 0, "coffee");
+    db.sync_state_hash(None).unwrap();
+    let stamp: String = db
+        .conn
+        .query_row(
+            "SELECT value FROM _meta WHERE key = 'sync_row_hashes'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamp, row_hash_rule(&db.conn).unwrap());
+    assert!(!stamp.contains(crate::build()), "{stamp}");
+}
+
+/// [`ROW_HASH_PROBE`] sets every stored column of `entries` but those no
+/// row's hash reads, every key a row's hash writes, and each JSON column
+/// it sets parses: a column or key it leaves out is one a build could
+/// serialize differently without [`row_hash_rule`] seeing it (da-vpwkw).
+#[test]
+fn the_row_hash_probe_sets_every_column_and_key() {
+    const UNREAD: &[&str] = &["author"];
+    let db = Db::open_in_memory().unwrap();
+    let stored: BTreeSet<String> = db
+        .conn
+        .prepare("SELECT name FROM pragma_table_xinfo('entries') WHERE hidden = 0")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    let mut probe = db.conn.prepare(ROW_HASH_PROBE).unwrap();
+    let probed: BTreeSet<String> = probe.column_names().into_iter().map(Into::into).collect();
+    let read: BTreeSet<String> = stored
+        .into_iter()
+        .filter(|c| !UNREAD.contains(&c.as_str()))
+        .collect();
+    assert_eq!(probed, read);
+
+    let mut rows = probe.query([]).unwrap();
+    let (mut keys, mut set) = (BTreeSet::new(), BTreeSet::new());
+    while let Some(r) = rows.next().unwrap() {
+        for c in [
+            "state",
+            "following_state",
+            "data",
+            "alias_chain",
+            "user_asserted_last_state",
+            "extra_metadata",
+            "conflicts",
+        ] {
+            if let Some(text) = r.get::<_, Option<String>>(c).unwrap() {
+                serde_json::from_str::<Value>(&text).unwrap_or_else(|e| panic!("{c}: {e}"));
+            }
+        }
+        for (k, v) in state_row(r).unwrap() {
+            if !v.is_null() {
+                set.insert(k.clone());
+            }
+            keys.insert(k);
+        }
+    }
+    assert_eq!(set, keys, "a key no probe row sets");
 }
 
 #[test]

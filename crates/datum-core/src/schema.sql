@@ -583,8 +583,8 @@ CREATE TRIGGER IF NOT EXISTS sync_state_hashes_delete AFTER DELETE ON entries BE
 END;
 
 -- da-9ln3s: the summed state hash (`Db::sync_state_hash`), kept as rows
--- change: each row's part as last read (`sync_row_hashes`, by the build in
--- `_meta` `sync_row_hashes`), the rows a write touched since
+-- change: each row's part as last read (`sync_row_hashes`, by the rule in
+-- `_meta` `sync_row_hashes`, da-vpwkw), the rows a write touched since
 -- (`sync_rows_changed`, named by the triggers, whichever path and build
 -- writes), and the sum per filter (`sync_state_sums`). A verify reads again
 -- the rows touched and no others. LOCAL and derived, never synced.
