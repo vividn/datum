@@ -334,6 +334,33 @@ describe('in the app', () => {
 			await type(page, 'setup coffee --symbol ☕');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="coffee"] .glyph')?.textContent === '☕');
 			assert.equal((await look(page, 'coffee')).text, '☕coffee', "the spec's glyph, in place of the dot");
+
+			// da-qmb9w: ☕ is U+2615 alone, whose Unicode default is emoji, but a
+			// monospace font that carries it as text (DejaVu Sans Mono) drew it
+			// as a monochrome cup. The page asks for each character's default.
+			const glyph = '.bar [data-field="coffee"] .glyph';
+			assert.equal(await page.locator(glyph).evaluate((g) => getComputedStyle(g).fontVariantEmoji), 'unicode');
+			// What that draws, where this machine can show it: the glyph's font
+			// beside two copies of it, one with the rule off and one that asks for
+			// emoji with U+FE0F. Where those two are drawn in one font, nothing
+			// here carries U+2615 as text, and the glyph's font says nothing.
+			await page.locator(glyph).evaluate((g) => {
+				const off = Object.assign(g.cloneNode(true), { id: 'emoji-off' });
+				off.style.fontVariantEmoji = 'normal';
+				const asked = Object.assign(off.cloneNode(true), { id: 'emoji-asked', textContent: '\u2615\ufe0f' });
+				g.after(off, asked);
+			});
+			const cdp = await page.context().newCDPSession(page);
+			const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+			await cdp.send('CSS.enable');
+			const drawnIn = async (selector) => {
+				const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+				return (await cdp.send('CSS.getPlatformFontsForNode', { nodeId })).fonts.map((f) => f.familyName).join();
+			};
+			const [on, off, asked] = [await drawnIn(glyph), await drawnIn('#emoji-off'), await drawnIn('#emoji-asked')];
+			await cdp.detach();
+			if (off === asked) console.log(`no text font here carries U+2615 ahead of the emoji font (${off}): only the rule is asserted`);
+			else assert.equal(on, asked, `☕ draws in ${on}: as text, ${off}; as emoji, ${asked}`);
 		});
 	});
 

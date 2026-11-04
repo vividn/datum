@@ -132,6 +132,10 @@
 body {
 	margin: 0;
 	font-family: monospace;
+	/* Each character in its Unicode default presentation (da-qmb9w): ☕ is
+	   emoji by default, but DejaVu Sans Mono carries it as text, so it drew a
+	   monochrome cup there; ♥ and ↗ stay text, and U+FE0E still asks for it. */
+	font-variant-emoji: unicode;
 	background: var(--page);
 	color: var(--ink);
 }
