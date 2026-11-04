@@ -106,7 +106,7 @@
 	import { clockSecondsLabel, now } from '#lib/clock.ts';
 	import { closeLog, inLog, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
 	import { layout } from '#lib/layout/current.ts';
-	import { isWidget } from '#lib/layout/types.ts';
+	import { soleWidgetOf } from '#lib/layout/tree.ts';
 	import { grip } from '#lib/grip.ts';
 	import { tabWord } from '#lib/tabWord.ts';
 	import Prompt from '#lib/Prompt.svelte';
@@ -139,7 +139,7 @@
 	 */
 	$effect.pre(() => {
 		const tab = $layout.root.tabs[$layout.root.active];
-		outputless.set(!!tab && isWidget(tab.content) && tab.content.kind === 'cli');
+		outputless.set(soleWidgetOf(tab)?.widget.kind === 'cli');
 	});
 
 	/**

@@ -14,7 +14,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
-import { chooseRoot, widgetPane } from './support/layout.mjs';
+import { pickFrom, titledMenuButton, widgetPane } from './support/layout.mjs';
 import { fold as foldBar } from './support/bar.mjs';
 
 before(startApp);
@@ -350,9 +350,9 @@ describe('/stats', () => {
 			await expectStats(app, ['stats', '--week']);
 			assert.equal(await app.page.locator('.root-bar [role="tab"].modified').count(), 0, 'a kept window dirtied the layout');
 
-			// `/stats` is one widget, so the acts are on the ROOT tab's menu
-			// (da-ze1x).
-			await chooseRoot(app.page, 'Save options with layout');
+			// `/stats` is one widget, in a pane of its own whose menu has its
+			// acts (da-7nh4l).
+			await pickFrom(app.page, titledMenuButton(app.page, 'stats'), 'Save options with layout');
 			await app.page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 			await reloaded();
 			await expectStats(app, ['stats', '--week']);
@@ -430,7 +430,10 @@ describe('/stats', () => {
 
 				const fit = await app.page.evaluate(() => {
 					const widget = document.querySelector('section.pane .stats');
-					const box = widget.closest('.content');
+					// What scrolls it: the pane's body, a one-widget tab's widget
+					// being in a pane of its own (da-7nh4l).
+					let box = widget.parentElement;
+					while (box && !['auto', 'scroll'].includes(getComputedStyle(box).overflowY)) box = box.parentElement;
 					const r = (el) => el.getBoundingClientRect();
 					const share = r(widget.querySelector('.share'));
 					const body = r(widget.querySelector('.body'));
@@ -465,7 +468,10 @@ describe('/stats', () => {
 				assert.ok(fit.headRows <= 2, `the head is ${fit.headRows} lines`);
 				assert.deepEqual(app.errors, []);
 			},
-			{ viewport: { width: 390, height: 300 } }
+			// 300px, and the 18px the pane's frame takes since a tab of one
+			// widget draws it in a pane of its own (da-7nh4l): the claim is the
+			// widget's, in the box it is given.
+			{ viewport: { width: 390, height: 318 } }
 		);
 	});
 });

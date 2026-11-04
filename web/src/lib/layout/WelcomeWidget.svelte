@@ -16,8 +16,9 @@
 	that closes the widget too … I am imagining that the welcome widget will
 	have some scrolling and reading rather than all fitting on one page».
 	So the button stands after the text, where the reading ends. It is the
-	frame's own close (PaneFrame.svelte's `close`), which at the root is in
-	either mode: not on the page's last tab, not in a place's modal.
+	frame's own close (PaneFrame.svelte's `close`), which on a root tab's one
+	pane is the root tab's, in either mode: not on the page's last tab, not
+	in a place's modal.
 -->
 <script lang="ts">
 	import { getContext } from 'svelte';

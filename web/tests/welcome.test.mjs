@@ -48,11 +48,13 @@ const FRESH_PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile:
 const rootNames = (page) =>
 	page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout));
 
-/** The widget kind the root tab in front shows, if it shows one. */
+/** The widget kind the root tab in front shows, if it shows one: in a pane of its own (da-7nh4l). */
 const front = (page) =>
 	page.evaluate(() => {
 		const { tabs, active } = window.datum.layout.current().root;
-		return [tabs[active].layout, tabs[active].content.kind];
+		const { content } = tabs[active];
+		const [only] = content.children?.length === 1 ? content.children[0].tabs : [];
+		return [tabs[active].layout, content.kind ?? only?.content.kind];
 	});
 
 /** The welcome widget's own text. */

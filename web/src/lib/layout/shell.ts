@@ -41,10 +41,10 @@
 // `strip` and the rest, which is how a test and a reader name them.
 //
 // Modified, per tab, is the tab's `extract` against the save's own
-// canonical form (`baselineOf`), never the save as stored: inlining drops
-// the root pane's own id and bar — the root bar draws the tab, not the
-// pane's frame — and comparing to the raw save would report that drop as
-// an edit forever. The per-device lock older trees carry is stripped by
+// canonical form (`baselineOf`), never the save as stored: a nested copy
+// of one widget drops the root pane's own id and bar — its tab's frame is
+// that pane's — and comparing it to the raw save would report that drop
+// as an edit forever (`differs`). The per-device lock older trees carry is stripped by
 // `inline` and `extract` alike; layout mode replaced it (da-vvcxc).
 //
 // A layout is held BY REFERENCE wherever it is nested: the outer save
@@ -136,7 +136,7 @@ import {
 	saveLayout,
 	versions
 } from './store.js';
-import { EMPTY_KIND, allIds, closeTab, findTab, newId, newPane, newWidget, normalize, setActive, setWidget, shedLayout } from './tree.js';
+import { EMPTY_KIND, allIds, closeTab, findTab, newId, newPane, newWidget, normalize, setActive, setWidget, shedLayout, soleWidgetOf } from './tree.js';
 import { unmaximize } from './maximize.js';
 import { KINDS, defaultsOfKind } from './registry.js';
 import { clearSession, keyOf } from './session.js';
@@ -379,11 +379,18 @@ const migrated = (tab: Tab): Tab => {
 /**
  * The tab that holds `saved`, its ids re-minted where `taken` already has
  * them (and the new ones added to `taken`). A root pane with one tab is
- * lifted — the tab's content becomes the root tab's, under the pane's id
- * — and one with several is kept whole under a one-child split, which
- * the canon allows only under a layout tab (tree.ts).
+ * lifted — the tab's content becomes the tab's, under the pane's id — and
+ * one with several is kept whole under a one-child split, which the canon
+ * allows only under a layout tab (tree.ts). So is a pane of ONE WIDGET at
+ * the root, unless `lift` (a nested copy, whose own frame is that pane's):
+ * a root tab of one widget holds a pane of its own, framed and titled, whose
+ * menu has the widget's options while the root bar's has the layout's
+ * (da-7nh4l, vividn: «root tabs seperate ideas from widget tabs in the
+ * layouts»). Its pane keeps the save's ids, and the tab and split around it
+ * take ids made from the pane's, which `extract` drops: so a layout reopened
+ * has them all again.
  */
-export function inline(saved: Layout, taken: Set<NodeId>): Tab {
+export function inline(saved: Layout, taken: Set<NodeId>, lift = false): Tab {
 	const name = saved.name;
 	const mint = (id: NodeId): NodeId => {
 		let next = taken.has(id) ? `${id}@${name}` : id;
@@ -395,11 +402,13 @@ export function inline(saved: Layout, taken: Set<NodeId>): Tab {
 		mapTabs(saved.root, (tab) => migrated(without(tab, 'locked'))),
 		mint
 	);
-	if (root.tabs.length === 1) {
-		const only = root.tabs[0];
+	const only = root.tabs.length === 1 ? root.tabs[0] : undefined;
+	if (only && (lift || isSplit(only.content)))
 		return { id: root.id, ...(only.title === undefined ? {} : { title: only.title }), content: only.content, layout: name };
-	}
-	return { id: mint(newId()), content: { id: mint(newId()), direction: 'column', ratios: [1], children: [root] }, layout: name };
+	const [tab, split] = only ? [`${saved.root.id}-layout`, `${saved.root.id}-split`] : [newId(), newId()];
+	// Drawn now, the pane needs the bar an older save may not carry.
+	const pane = { ...root, bar: root.bar ?? BAR };
+	return { id: mint(tab), content: { id: mint(split), direction: 'column', ratios: [1], children: [pane] }, layout: name };
 }
 
 /**
@@ -451,6 +460,14 @@ export function extract(tab: Tab): Layout {
 /** The form a save is compared against: what it looks like once inlined and taken back out. */
 const baselineOf = (saved: Layout): Layout => extract(inline(normalize(saved), new Set()));
 
+/**
+ * Whether a copy differs from its save's `baselineOf`. A copy that was
+ * LIFTED (nested, of one widget: `inline`) kept neither its pane's id nor
+ * its bar, so it is held to the save lifted the same way.
+ */
+const differs = (tab: Tab, base: Layout): boolean =>
+	isModified(extract(tab), isSplit(tab.content) ? base : extract(inline(base, new Set(), true)));
+
 // ---- expanding nested layouts ------------------------------------------
 
 const notice = (text: string): Widget => ({ id: newId(), kind: NOTICE_KIND, settings: { text } });
@@ -469,10 +486,11 @@ async function expandContent(content: Widget | Split, path: string[], taken: Set
 /**
  * The tab holding layout `name` with `source` as its tree — its save, its
  * draft, a version restored — its own nested layouts expanded under it.
- * `path` is the names open above it, `name` included.
+ * `path` is the names open above it, `name` included: `name` alone is a
+ * root tab, which keeps its one widget in a pane (`inline`).
  */
 async function tabHolding(name: string, source: Layout, path: string[], taken: Set<NodeId>): Promise<Tab> {
-	const inlined = inline(normalize({ ...source, name }), taken);
+	const inlined = inline(normalize({ ...source, name }), taken, path.length > 1);
 	return { ...inlined, content: await expandContent(inlined.content, path, taken) };
 }
 
@@ -547,7 +565,7 @@ export const modified = derived([layout, baselines], ([$layout, $baselines]) => 
 	const ids = new Set<NodeId>();
 	for (const tab of layoutTabs($layout)) {
 		const base = $baselines[tab.layout as string];
-		if (base && isModified(extract(tab), base)) ids.add(tab.id);
+		if (base && differs(tab, base)) ids.add(tab.id);
 	}
 	return ids;
 });
@@ -829,10 +847,9 @@ function settle(): void {
 		const name = tab.layout as string;
 		const base = bases[name];
 		if (!base || drafted.has(name) || shown.has(name)) continue;
-		const tree = extract(tab);
-		if (isModified(tree, base)) {
+		if (differs(tab, base)) {
 			drafted.add(name);
-			saveDraft(tree);
+			saveDraft(extract(tab));
 		} else clean.add(name);
 	}
 	for (const name of clean) if (!drafted.has(name)) clearDraft(name);
@@ -887,7 +904,7 @@ async function followSaves(): Promise<void> {
 		if (!next) continue;
 		const before = get(baselines)[name];
 		baselines.update((b) => ({ ...b, [name]: baselineOf(next) }));
-		const edited = (t: Tab) => !!before && isModified(extract(t), before);
+		const edited = (t: Tab) => !!before && differs(t, before);
 		if (layoutTabs(get(layout)).filter((t) => t.layout === name).every(edited)) continue;
 		await replaceCopies(name, next, edited);
 	}
@@ -1066,7 +1083,7 @@ export async function openPlace(kind: string, asTab = false): Promise<void> {
 	unmaximize();
 	const name = canonicalName(kind);
 	const tabs = rootTabs(get(layout));
-	const at = tabs.findIndex((t) => t.layout === name || (isWidget(t.content) && t.content.kind === kind));
+	const at = tabs.findIndex((t) => t.layout === name || soleWidgetOf(t)?.widget.kind === kind);
 	if (at >= 0) {
 		closeModalPlace();
 		return activate(at);
@@ -1433,10 +1450,10 @@ const UPDATE_ALL = 'Update all tabs';
  * the defaults are written down (`defaultsOfKind`); the menu asks, and never
  * keeps a copy.
  *
- * SHAPE, not name (da-ze1x): a tab that HOLDS a layout of exactly one
- * widget holds that widget too, because `inline` lifts a one-tab root pane
- * into the tab — so `/repl` and `/nowview` answer here, and a layout of
- * several widgets, which arrives under a split, does not.
+ * SHAPE, not name (da-ze1x): a NESTED tab that holds a layout of exactly
+ * one widget holds that widget too, because `inline` lifts a one-tab root
+ * pane into it. A root tab holds a pane instead (da-7nh4l), whose tab is
+ * the one asked about, from that pane's menu.
  *
  * A DRAFT change, down the same `setWidget` path the widget's own `change`
  * takes (Layout.svelte): the layout holding the tab shows its dot, and Save

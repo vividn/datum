@@ -358,7 +358,8 @@ describe('a widget chosen for a tab that holds a layout', () => {
 
 			const tab = await activeTabOf(page, 'shell');
 			assert.equal(tab.layout, 'tail', JSON.stringify(tab));
-			assert.equal(tab.content.kind, 'tail');
+			// The widget in a pane of its own (da-7nh4l).
+			assert.equal(tab.content.children[0].tabs[0].content.kind, 'tail');
 			assert.deepEqual(await titles(page), ['tail']);
 			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['main', 'tail']);
 			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'the built-in came up modified');

@@ -851,7 +851,7 @@ test('a hard restore’s name drops what its confirm counted; another tab’s wr
 		await name.press('Enter');
 		await page.waitForFunction(() => !document.querySelector('dialog.confirm[open]'));
 		await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
-		assert.match(await page.locator('.cli').textContent(), /cannot be undone/);
+		assert.match(await page.locator('.host.cli').textContent(), /cannot be undone/);
 		assert.equal(await count(other), 3);
 		await other.page.close();
 		assert.deepEqual(app.errors, []);

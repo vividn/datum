@@ -241,10 +241,10 @@ describe('a fresh phone', () => {
 			assert.equal(b.today.of, TAB_DAY, `a ${b.today.of}px today in a ${b.inner}px box`);
 			assert.equal(await lineOnToday(page), true, 'the day line is not on today');
 
-			// The freeze is the widget's option, in the root tab's menu on a tab
-			// of one widget, and pinned the same holds: yesterday over today, the
-			// day line the seam between them.
-			await toggleOption(page, null, FREEZE);
+			// The freeze is the widget's option, in its own pane's menu on a tab
+			// of one widget (da-7nh4l), and pinned the same holds: yesterday over
+			// today, the day line the seam between them.
+			await toggleOption(page, await strip.getAttribute('data-pane'), FREEZE);
 			await strip.locator('.row.pinned').waitFor();
 			await page.waitForFunction(() => {
 				const stack = document.querySelector('.stack');

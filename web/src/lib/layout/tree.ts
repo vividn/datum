@@ -153,6 +153,19 @@ export function findTab(layout: Layout, tabId: NodeId): Tab | undefined {
 	return undefined;
 }
 
+/**
+ * The one widget a tab shows, if it shows one alone: its own content, or
+ * that of a lone pane of one tab, which is how a root tab holds a layout
+ * of one widget (`inline`, shell.ts, da-7nh4l).
+ */
+export function soleWidgetOf(tab: Tab | undefined): { tab: Tab; widget: Widget } | undefined {
+	if (!tab) return undefined;
+	const c = tab.content;
+	if (!isSplit(c)) return { tab, widget: c };
+	const only = c.children.length === 1 && c.children[0].tabs.length === 1 ? c.children[0].tabs[0] : undefined;
+	return only && !isSplit(only.content) ? { tab: only, widget: only.content } : undefined;
+}
+
 // ---- the canon -------------------------------------------------------
 
 /**

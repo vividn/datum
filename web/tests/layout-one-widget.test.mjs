@@ -1,42 +1,39 @@
-// A root tab whose layout is ONE WIDGET offers that widget's acts (da-ze1x).
+// A root tab whose layout is ONE WIDGET draws it in a pane of its own
+// (da-7nh4l), framed and titled as a pane of a split is, and that pane's
+// menu has the widget's acts; the root tab's menu has the layout's.
 //
-// `datum.day/repl`, `/nowview`, `/dayview`, `/tail` … each open a root tab
-// holding the one-widget built-in (`only()` in `defaults.ts`). Until now
-// the root bar's menu for such a tab was the layout's acts alone — the rule
-// asked whether the tab NAMED a layout — so someone who opened
-// `datum.day/repl` could not reverse it and someone at `/nowview` could not
-// set its window, and on a phone that tab is the whole page and the root
-// bar's menu the only door to it.
+// vividn, 2026-11-04: «single widget layouts should actually draw the
+// widget box inside of it. Let's keep the root tabs seperate ideas from
+// widget tabs in the layouts so if you select dayview as a tab, within the
+// tab there is just a single dayview widget with it's own pane (and the
+// dayview label on it's frame) the widget options then go inside that
+// dayview's widget menu rather than in the root menu as before», and of
+// the elastic drag past an end: «the elastic effect doesn't bring the tabs
+// boundary line with it and it should».
 //
-// vividn, 2026-09-17 17:18, on the question: «yes to your question about
-// single widget root tab».
-//
-// The rule is now the tab's SHAPE (`widgetOptions` in `options.ts`,
-// `resetWidget` in `shell.ts`): a saved layout of one widget is LIFTED into
-// the tab that holds it (`inline`, shell.ts), so that tab shows one widget
-// and gets `Reset widget` and its OPTIONS, one item each, like any other. A
-// layout of several widgets arrives under a split and gets neither; its
-// panes have their own.
-//
-// Since da-vhwq an option is THIS SESSION'S: setting one from this menu
-// changes what the tab shows and leaves the layout alone, and «Save options
-// with layout» — offered only with something held — is what makes it the
-// layout's. What is DONE to the page — Change Widget, Split, Close tab —
-// is layout mode's (da-vvcxc), with the ways out of it.
+// `inline` (shell.ts) keeps a saved layout's root pane whole under the root
+// tab, and the save is unchanged. Since da-ze1x such a widget's acts were
+// the root bar's, the widget filling the root with no frame of its own;
+// they are the same acts, in the pane's menu now. An option is THIS
+// SESSION'S (da-vhwq), and «Save options with layout» makes it the layout's.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
-	chooseRoot,
-	menuLines,
-	optionChecked,
+	atRest,
 	choiceLines,
-	pickOption,
+	choose,
+	chooseRoot,
 	enterLayoutMode,
 	leaveLayoutMode,
+	menuLines,
+	optionChecked,
+	pickOption,
 	rootMenuButton,
+	titledMenuButton,
+	titledPane,
 	toggleOption
 } from './support/layout.mjs';
 import { until } from './support/until.mjs';
@@ -44,14 +41,11 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-// ONE APP for the desktop tests (da-6b3dj, sharedApp in support/app.mjs).
-// Those that open `/<name>` first take `wipe`, since the navigation builds
-// the page anew from a device with no layouts kept; `main` takes `solo`. The
-// phone's round trip keeps an app of its own: the one test on that screen.
 const shared = sharedApp(DESKTOP);
 
 const NEWEST = 'newest first';
 const HISTORY = 'history';
+const FROZEN = 'today frozen at the bottom';
 const SAVE = 'Save options with layout';
 const RESET_WIDGET = 'Reset widget';
 const RESET_LAYOUT = 'Reset layout';
@@ -60,27 +54,19 @@ const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true,
 /** The layout acts, in the order `layoutActs` builds them for a shipped layout. */
 const ACTS = ['Save layout', 'Restore layout', RESET_LAYOUT, 'Save layout as'];
 
-/** Open the root menu, read its lines, close it again. */
-const rootLines = (page) => linesFrom(page, () => rootMenuButton(page).click());
-
-/** The same in layout mode (da-vvcxc), and back out of it. */
-async function rootManageLines(page) {
-	await enterLayoutMode(page);
-	const lines = await rootLines(page);
-	await leaveLayoutMode(page);
-	return lines;
-}
-
 /** The root's layout-mode menu: what is done to the page, and the ways out. */
 const MANAGE = ['Change Widget', 'Split ← ↓ ↑ →', 'Accept', 'Save layout', 'Discard changes', '× Close tab'];
 
-async function linesFrom(page, open) {
-	await open();
+async function linesFrom(page, button) {
+	await button.click();
 	const lines = await menuLines(page);
 	await page.keyboard.press('Escape');
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 	return lines;
 }
+
+const rootLines = (page) => linesFrom(page, rootMenuButton(page));
+const paneLines = (page, title) => linesFrom(page, titledMenuButton(page, title));
 
 /** Open `/<name>` and wait for the root tab to be it. */
 async function openPage(app, name) {
@@ -88,135 +74,169 @@ async function openPage(app, name) {
 	await rootMenuButton(app.page).filter({ hasText: name }).waitFor();
 }
 
-/** The settings of the widget the root tab in front holds. */
-const rootSettings = (page) =>
+/** The one pane the root tab in front holds: in the tree, and its id. */
+const lonePane = (page) =>
 	page.evaluate(() => {
 		const root = window.datum.layout.current().root;
-		return root.tabs[root.active].content.settings;
+		const { content } = root.tabs[root.active];
+		return content.children?.length === 1 ? content.children[0] : null;
 	});
+
+/** The settings of the widget that pane holds. */
+const loneSettings = (page) => lonePane(page).then((p) => p.tabs[0].content.settings);
 
 const dotted = (page, name) =>
 	page.locator('.root-bar [role="tab"].modified').filter({ hasText: name }).count().then((n) => n > 0);
 
+/** The root tab in front's frame, and its one pane's: both boxes, and the pane's bottom border. */
+const frames = (page, title) =>
+	page.evaluate((title) => {
+		const root = document.querySelector('section.root');
+		const front = root.querySelector(':scope > .content > .tab-body:not(.behind)');
+		const pane = front.querySelector(`section.pane[data-title="${title}"]`);
+		const box = (el) => el.getBoundingClientRect().toJSON();
+		return {
+			panes: front.querySelectorAll('section.pane').length,
+			root: box(root),
+			pane: pane && box(pane),
+			bottom: pane && getComputedStyle(pane).borderBottomStyle,
+			bottomWidth: pane && parseFloat(getComputedStyle(pane).borderBottomWidth)
+		};
+	}, title);
+
 describe('a root tab whose layout is one widget', () => {
-	test('/repl opens with Reset widget, its option and the acts; layout mode has Change Widget', async () => {
+	for (const [what, screen] of [
+		['a desktop', DESKTOP],
+		['a phone', PHONE]
+	])
+		test(`${what}: dayview is one pane framed and titled «dayview», its options in its menu and not the root's`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					await titledPane(page, 'dayview').waitFor();
+					const at = await frames(page, 'dayview');
+					assert.equal(at.panes, 1, 'not one pane');
+					// The frame is drawn whole, its bottom edge inside the root's box.
+					assert.equal(at.bottom, 'solid', 'no bottom edge');
+					assert.ok(at.bottomWidth >= 1, 'no bottom edge');
+					assert.ok(at.pane.bottom <= at.root.bottom, `the bottom edge is cut off: ${at.pane.bottom} > ${at.root.bottom}`);
+					assert.equal((await titledPane(page, 'dayview').locator('> .titlebar h2').innerText()).trim(), 'dayview');
+
+					const pane = await paneLines(page, 'dayview');
+					assert.ok(pane.includes(RESET_WIDGET), `the pane reads ${pane.join(' | ')}`);
+					assert.ok(pane.some((l) => l.includes(FROZEN)), `the pane reads ${pane.join(' | ')}`);
+					assert.deepEqual(await rootLines(page), ACTS);
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...screen, home: { names: ['main', 'dayview'], active: 1 } }
+			);
+		});
+
+	test('dragged past the last root tab, the pane’s frame moves with its content, and goes back', async () => {
+		await withApp(
+			async ({ page }) => {
+				await titledPane(page, 'dayview').waitFor();
+				const before = (await frames(page, 'dayview')).pane;
+				const strip = await page.locator('.swipe-strip').boundingBox();
+				const y = strip.y + strip.height / 2;
+				const cdp = await page.context().newCDPSession(page);
+				await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 290, y }] });
+				for (let i = 1; i <= 6; i++)
+					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 290 - (160 * i) / 6, y }] });
+				const held = (await frames(page, 'dayview')).pane;
+				const moved = await page
+					.locator('section.root > .content > .tab-body:not(.behind)')
+					.evaluate((el) => Number(/translateX\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0));
+				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+				await cdp.detach();
+				assert.ok(moved < 0, `the drag past the end gave nothing: ${moved}`);
+				assert.ok(Math.abs(held.left - before.left - moved) < 1, `the frame stayed: ${before.left} → ${held.left}, the content ${moved}`);
+				assert.ok(Math.abs(held.right - before.right - moved) < 1, `the frame stayed: ${before.right} → ${held.right}, the content ${moved}`);
+				await atRest(page.locator('section.root > .content'));
+				assert.ok(Math.abs((await frames(page, 'dayview')).pane.left - before.left) < 1, 'it did not go back');
+			},
+			{ ...PHONE, home: { names: ['main', 'dayview'], active: 1 } }
+		);
+	});
+
+	test('/cli: Reset widget and its option are the pane’s, the root’s are the acts, and the save is unchanged', async () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'cli');
-
-			const lines = await rootLines(page);
-			assert.deepEqual(lines, [RESET_WIDGET, NEWEST, ...ACTS]);
-			assert.deepEqual(await rootManageLines(page), MANAGE);
-			// The two ways back are told apart by their words and by where
-			// they sit: `Reset widget` is at the head of the NAME's slice,
-			// with the options, about the widget in front; `Reset layout` is
-			// down in the layout's own block, between Restore and Save as.
-			assert.ok(lines.indexOf(RESET_WIDGET) < lines.indexOf('Save layout'));
-			assert.ok(lines.indexOf(RESET_LAYOUT) > lines.indexOf('Restore layout'));
+			assert.deepEqual(await paneLines(page, 'cli'), [RESET_WIDGET, NEWEST]);
+			assert.deepEqual(await rootLines(page), ACTS);
+			await enterLayoutMode(page);
+			assert.deepEqual(await rootLines(page), MANAGE);
+			await leaveLayoutMode(page);
+			// Drawn in a pane, held as it shipped: the pane is the layout's own
+			// root pane, and no dot.
+			const lone = await lonePane(page);
+			assert.deepEqual([lone.id, lone.tabs.length, lone.tabs[0].content.kind], ['cli-only', 1, 'cli']);
+			assert.equal(await dotted(page, 'cli'), false, 'drawing it in a pane modified the layout');
+			// The page's settings by the root tab's id are its pane's widget's.
+			const [byRoot, byPane] = await page.evaluate(() => {
+				const root = window.datum.layout.current().root;
+				const tab = root.tabs[root.active];
+				return [tab.id, tab.content.children[0].tabs[0].id].map((id) => window.datum.layout.settings(id));
+			});
+			assert.notEqual(byRoot, undefined, 'the root tab’s id finds no widget');
+			assert.deepEqual(byRoot, byPane);
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	// On a phone this menu is the only door to the widget, so the whole
-	// round trip is driven here: the switch, the session, the ask that
-	// makes it the layout's, and the reload that proves which is which.
-	test('/repl on a phone: the switch flips the order this session, and the save makes it the layout’s', async () => {
+	// On a phone the round trip: the switch, the session, the ask that makes
+	// it the layout's, and the reload that proves which is which.
+	test('/cli on a phone: the pane’s switch flips the order this session, and the save makes it the layout’s', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await openPage(app, 'cli');
-			assert.ok((await rootLines(page)).includes(NEWEST), 'no option on the phone’s root menu');
-			// The option works, and it is not the layout's.
-			await toggleOption(page, null, NEWEST);
+			const id = (await lonePane(page)).id;
+			await toggleOption(page, id, NEWEST);
 			assert.equal(await dotted(page, 'cli'), false, 'a session setting dirtied the layout');
-			assert.equal((await rootSettings(page)).reversed, undefined, 'a session setting reached the tree');
-			// The menu whole on a 390px screen, wherever it is placed.
-			await rootMenuButton(page).click();
-			const box = await page.locator('[role="menu"]').boundingBox();
-			assert.ok(box.x >= 0 && box.x + box.width <= 390, `the menu runs off the phone: ${JSON.stringify(box)}`);
-			await page.keyboard.press('Escape');
-			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+			assert.equal((await loneSettings(page)).reversed, undefined, 'a session setting reached the tree');
 
-			// A reload keeps it on this device, and the layout still has not
-			// heard of it (da-ray91).
 			await app.reload();
-			assert.equal(await optionChecked(page, null, NEWEST), true, 'a reload lost a session setting');
-			assert.equal((await rootSettings(page)).reversed, undefined, 'a kept session setting reached the tree');
+			assert.equal(await optionChecked(page, id, NEWEST), true, 'a reload lost a session setting');
+			assert.equal((await loneSettings(page)).reversed, undefined, 'a kept session setting reached the tree');
 
-			// Asked for, it is a draft edit of the layout the tab names, so
-			// the dot lights and it survives a reload.
-			await chooseRoot(page, SAVE);
-			await until(() => rootSettings(page), (s) => s.reversed === true);
+			await choose(page, id, SAVE);
+			await until(() => loneSettings(page), (s) => s.reversed === true);
 			assert.equal(await dotted(page, 'cli'), true, 'the save left the layout unmodified');
 
 			await app.reload();
-			await until(() => rootSettings(page), (s) => s.reversed === true);
+			await until(() => loneSettings(page), (s) => s.reversed === true);
 
 			await chooseRoot(page, 'Restore layout');
-			await until(() => rootSettings(page), (s) => s.reversed !== true);
+			await until(() => loneSettings(page), (s) => s.reversed !== true);
 			assert.equal(await dotted(page, 'cli'), false);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
 
-	test('/nowview: Reset widget from the root menu puts history back, saved or held', async () => {
+	test('/nowview: Reset widget from the pane’s menu puts history back, saved or held', async () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'nowview');
+			const id = (await lonePane(page)).id;
 
-			await pickOption(page, null, HISTORY, '45m');
-			await chooseRoot(page, SAVE);
-			await until(() => rootSettings(page), (s) => s.history === '45m');
+			await pickOption(page, id, HISTORY, '45m');
+			await choose(page, id, SAVE);
+			await until(() => loneSettings(page), (s) => s.history === '45m');
 
-			// Held again over the save: «defaults» goes back past both.
-			await pickOption(page, null, HISTORY, '90m');
-			await chooseRoot(page, RESET_WIDGET);
-			await until(() => rootSettings(page), (s) => s.history === '30m');
-			assert.deepEqual(await choiceLines(page, null, HISTORY).then((l) => l.filter((v) => v.startsWith('✓'))), [
+			await pickOption(page, id, HISTORY, '90m');
+			await choose(page, id, RESET_WIDGET);
+			await until(() => loneSettings(page), (s) => s.history === '30m');
+			assert.deepEqual(await choiceLines(page, id, HISTORY).then((l) => l.filter((v) => v.startsWith('✓'))), [
 				'✓ 30m · default'
 			]);
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	// `custom` declares neither options nor defaults (registry.ts), so it has
-	// nothing to offer and the items are left out — the same arithmetic a
-	// pane's menu does. It is the example here because `tail` stopped being
-	// one: da-hkjp gave that kind a declared `type`, and a kind that declares
-	// something has both items.
-	test('/custom: neither item, because its kind declares neither', async () => {
-		await shared.wipe(async (app) => {
-			const { page } = app;
-			await openPage(app, 'custom');
-			const lines = await rootLines(page);
-			// `custom` declares neither defaults nor options, so its menu is
-			// the whole list less both widget items. (`tail` was the
-			// example until da-hkjp gave it a `type`.) A ROOT tab always
-			// holds a layout, so it keeps its acts and its menu — unlike a
-			// PANE of such a kind, which since da-z8klv has none at all.
-			assert.deepEqual(lines, ACTS, `custom reads ${lines.join(' | ')}`);
-			assert.ok(!lines.includes(RESET_WIDGET), `custom reads ${lines.join(' | ')}`);
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	// More than one widget: the root tab holds a split, so there is no one
-	// widget to mean and the menu is what it always was.
-	test('day: the root menu is unchanged, and its panes keep their own', async () => {
-		await shared.solo(async (app) => {
-			const { page } = app;
-			const lines = await rootLines(page);
-			assert.ok(!lines.includes(NEWEST), `main reads ${lines.join(' | ')}`);
-			assert.ok(!lines.includes(RESET_WIDGET), `main reads ${lines.join(' | ')}`);
-			assert.equal(lines[0], 'Save layout');
-			assert.equal(lines.at(-1), ACTS.at(-1));
-			assert.deepEqual(await rootManageLines(page), MANAGE);
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	// A layout the reader saved themselves is the same shape and gets the
-	// same menu — the rule is never the layout's NAME (da-ze1x's trap).
-	test('a one-widget layout a person saved gets the items too, and no Reset layout', async () => {
+	// A layout the reader saved themselves is the same shape and is drawn the
+	// same way — the rule is never the layout's NAME (da-ze1x's trap).
+	test('a one-widget layout a person saved is a pane too, with the items, and its root has no Reset layout', async () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'cli');
@@ -224,12 +244,10 @@ describe('a root tab whose layout is one widget', () => {
 			await chooseRoot(page, 'Save layout as');
 			await rootMenuButton(page).filter({ hasText: 'mine' }).waitFor();
 
-			const lines = await rootLines(page);
-			assert.ok(lines.includes(RESET_WIDGET), `mine reads ${lines.join(' | ')}`);
-			assert.ok(lines.includes(NEWEST), `mine reads ${lines.join(' | ')}`);
+			assert.deepEqual(await paneLines(page, 'cli'), [RESET_WIDGET, NEWEST]);
 			// Nothing shipped under this name, so there is no shipped tree to
-			// go back to (da-luwe) — which is the one act the two differ on.
-			assert.ok(!lines.includes(RESET_LAYOUT), `mine reads ${lines.join(' | ')}`);
+			// go back to (da-luwe).
+			assert.deepEqual(await rootLines(page), ACTS.filter((a) => a !== RESET_LAYOUT));
 			assert.deepEqual(app.errors, []);
 		});
 	});

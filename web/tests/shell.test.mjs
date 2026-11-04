@@ -1146,7 +1146,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			assert.deepEqual(await dotted(page), [], 'the session alone dirtied the layout');
 
 			// «Save options with layout» is the one writer to the tree.
-			await chooseRoot(page, 'Save options with layout');
+			await choose(page, 'dayview', 'Save options with layout');
 			await until(() => drawn(page), (n) => n === 85);
 
 			// The key is sitting in the tree — and the tree still reads as
@@ -1163,7 +1163,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			// the same if nothing had happened at all.
 			await page.locator('.dayview .spine').focus();
 			await page.keyboard.press('ArrowRight');
-			await chooseRoot(page, 'Save options with layout');
+			await choose(page, 'dayview', 'Save options with layout');
 			await until(() => dotted(page), (d) => d.length === 1);
 
 			// And the save carries the label width and no day height —

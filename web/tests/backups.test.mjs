@@ -29,6 +29,13 @@ async function openSheet(page) {
 	await page.getByRole('menuitem', { name: 'Backups', exact: true }).click();
 	const sheet = page.locator('section.pane[data-title="backups"]');
 	await sheet.locator('.backups').waitFor();
+	// In front and at rest: a tab's pane is drawn titled as it slides in
+	// (da-7nh4l), and a press during the slide is the tab's it left.
+	await page.waitForFunction(() => {
+		const { root } = window.datum.layout.current();
+		const front = !!document.querySelector('dialog.sheet[open]') || root.tabs[root.active].layout === 'backups';
+		return front && !document.querySelector('section.root > .content.moving');
+	});
 	return sheet;
 }
 

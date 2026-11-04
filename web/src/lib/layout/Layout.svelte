@@ -61,7 +61,7 @@
 	import type { NodeId, Pane as PaneNode, Split, Tab } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
-	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios } from './tree.js';
+	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios, soleWidgetOf } from './tree.js';
 	import { maximized, maximizedIn } from './maximize.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
@@ -74,12 +74,15 @@
 		/** The root pane's id: the one pane whose last tab cannot be closed. */
 		rootId,
 		/** Normal mode: the page is not in layout mode, so nothing here moves the tree. */
-		locked = false
+		locked = false,
+		/** The one pane of a root tab: its widget's close is the root tab's (PaneFrame.svelte). */
+		lone = false
 	}: {
 		pane: PaneNode;
 		epoch?: number;
 		rootId: NodeId;
 		locked?: boolean;
+		lone?: boolean;
 	} = $props();
 
 	/**
@@ -231,7 +234,11 @@
 	// One function, two callers, two `minOf`s — keep them apart: the drag's
 	// floor is the frame alone, the root's is every pane legible.
 	const floor = $derived((child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf));
-	/** The root split's least box: its panes' legible boxes, laid out as the tree lays them. */
+	/**
+	 * The root split's least box: its panes' legible boxes, laid out as the
+	 * tree lays them. Not a tab of one widget (da-7nh4l): it fills the tab as
+	 * it did before it had a pane, there being no pane to close to make room.
+	 */
 	const legible = $derived((root: PaneNode) =>
 		rootFloorOf(
 			root,
@@ -398,6 +405,7 @@
 	{canClose}
 	root={pane.id === rootId}
 	locked={locked}
+	{lone}
 	kind={isSplit(content) ? undefined : content.kind}
 >
 	{#snippet children(peek, moves)}
@@ -412,7 +420,7 @@
 		{#each pane.id === rootId ? pane.tabs.filter((t, i) => i === peek || i === pane.active || opened.includes(t.id)) : pane.tabs as tab (tab.id)}
 		{@const content = tab.content}
 		{@const at = pane.id === rootId ? drawnAt(tab, tab === active || tab === pane.tabs[peek], epoch, behind) : epoch}
-		{@const least = pane.id === rootId && isSplit(content) ? legible(pane) : undefined}
+		{@const least = pane.id === rootId && isSplit(content) && !soleWidgetOf(tab) ? legible(pane) : undefined}
 		<TabBody
 			active={tab === active}
 			beside={tab === pane.tabs[peek]}
@@ -464,7 +472,7 @@
 							style:--ratio={grow[i]}
 							style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 						>
-							<Layout pane={child} epoch={at} {rootId} {locked} />
+							<Layout pane={child} epoch={at} {rootId} {locked} lone={pane.id === rootId && split.children.length === 1} />
 						</div>
 					{/each}
 				</div>

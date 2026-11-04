@@ -30,9 +30,9 @@
 	ways out: Accept, Save layout, Discard changes. Escape asks which; so does moving to another
 	tab with a change in hand.
 
-	In normal mode the name opens what the tab shows and what it is saved
-	as — the widget's options on a tab of one widget, and the layout's acts,
-	where the orange dot is (vividn: "Maybe highlight Restore and Save so
+	In normal mode the name opens what the tab is saved as — the layout's
+	acts (a layout of one widget is drawn in a pane of its own, whose menu
+	has that widget's options, da-7nh4l), where the orange dot is (vividn: "Maybe highlight Restore and Save so
 	that it is obvious that that is what the orange dot is referring to").
 	While the tab is modified Save and Restore are marked in the menu and
 	the tab keeps its dot, so the dot's meaning is one press from the dot.
@@ -198,9 +198,10 @@
 	const alarming = $derived(noticed.some(({ n }) => n.kind !== 'member'));
 
 	/**
-	 * The widget's own options, inline (da-vhwq), for a root tab that SHOWS
-	 * ONE widget — on a phone that tab is the whole page, so this menu is
-	 * the only door to them. The scope a session setting is held against is
+	 * The widget's own options, inline (da-vhwq), for a root tab that IS a
+	 * bare widget, a kind with no layout of its own (`widgetInto`): it has
+	 * no pane, so this menu is the only door to them. A layout of one
+	 * widget holds it in a pane, whose menu has them (da-7nh4l). The scope a session setting is held against is
 	 * the layout this tab names, which is the outermost there is.
 	 */
 	const sessionOf = $derived(keyOf($layout, id ?? ''));
@@ -309,11 +310,9 @@
 	const keep = $derived(preview ? [{ label: 'Keep tab', run: () => void attempt(async () => id !== undefined && keepTab(id)) }] : []);
 
 	/**
-	 * What the open tab's name opens. In NORMAL MODE, what the tab shows and
-	 * what it is saved as: on a tab of one widget that widget's reset and
-	 * options (da-ze1x) — on a phone that tab is the whole page, so this menu
-	 * is the only door to them — then the layout's acts, and `Keep tab` on a
-	 * preview.
+	 * What the open tab's name opens. In NORMAL MODE, what the tab is saved
+	 * as: the layout's acts, and `Keep tab` on a preview — and on a tab that
+	 * is a bare widget, that widget's reset and options first (da-ze1x).
 	 *
 	 * In LAYOUT MODE (da-vvcxc), «all the down arrow actions» (vividn) — what
 	 * the root `▾` held: `Change Widget`, `Split`, which at the root is a side
@@ -535,7 +534,7 @@
 					look="tab"
 					label="menu of the {labelOf(tab)} layout"
 					title="layout menu"
-					data-help="The layout in front, and what it is saved as: save it, restore an earlier save, save it under another name, reset it to how it shipped, and, on a tab of one widget, set that widget's options. Long press or right-click it for layout mode, where its panes are split, moved, resized and closed."
+					data-help="The layout in front, and what it is saved as: save it, restore an earlier save, save it under another name, reset it to how it shipped. Long press or right-click it for layout mode, where its panes are split, moved, resized and closed."
 					role="tab"
 					aria-selected="true"
 					tabindex="0"

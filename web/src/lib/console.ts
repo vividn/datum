@@ -35,8 +35,7 @@ import type { Verb } from './track.js';
 import { get } from 'svelte/store';
 import { apply, editing, layout } from './layout/current.js';
 import { forgetSession, keyOf, session, withSession } from './layout/session.js';
-import { findTab } from './layout/tree.js';
-import { isWidget } from './layout/types.js';
+import { findTab, soleWidgetOf } from './layout/tree.js';
 import type { Layout, WidgetKindMeta } from './layout/types.js';
 import { KINDS } from './layout/registry.js';
 import { LESSONS, type Lesson } from './layout/defaults.js';
@@ -152,10 +151,9 @@ export function installConsole(target: Record<string, unknown>): void {
 			forgetSession,
 			settings: (tabId) => {
 				const tree = get(layout);
-				const tab = findTab(tree, tabId);
-				return tab && isWidget(tab.content)
-					? withSession(tab.content.settings, get(session)[keyOf(tree, tabId)])
-					: undefined;
+				// A root tab of one widget answers for its pane's (da-7nh4l).
+				const sole = soleWidgetOf(findTab(tree, tabId));
+				return sole && withSession(sole.widget.settings, get(session)[keyOf(tree, sole.tab.id)]);
 			}
 		},
 		shell,

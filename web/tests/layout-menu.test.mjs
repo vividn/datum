@@ -484,17 +484,17 @@ describe('the menu the title opens', () => {
 		});
 	});
 
-	// The last pane cannot be closed — `tree.test.mjs` holds `closeTab` to
-	// it — and the root frame, which used to grey the item, draws no bar
-	// of its own now (da-2a5y): its tabs are the shell's top bar.
-	test('the root frame draws no bar: a lone root widget has no title, no menu and no inset', async () => {
+	// The root frame, which used to grey the last pane's close, draws no bar
+	// of its own (da-2a5y): its tabs are the shell's top bar. A lone widget
+	// is a pane inside it, with the title and menu any pane has (da-7nh4l).
+	test('the root frame draws no bar: a lone root widget is a pane of its own, titled', async () => {
 		await shared.solo(async ({ page }) => {
 			assert.deepEqual(await titles(page), ['cli']);
 			const root = page.locator('section.root');
-			assert.equal(await root.locator('.titlebar').count(), 0);
-			assert.equal(await root.locator('button.title, button.add').count(), 0);
-			assert.equal(await root.locator('h2').count(), 0);
-			assert.equal(await root.locator('> .content').evaluate((el) => getComputedStyle(el).paddingTop), '0px');
+			assert.equal(await root.locator('> .titlebar').count(), 0);
+			const lone = root.locator('section.pane[data-title="cli"]');
+			assert.equal((await lone.locator('> .titlebar h2').innerText()).trim(), 'cli');
+			assert.equal(await lone.locator('> .titlebar button.title').count(), 1);
 		}, ONE_PANE);
 	});
 
@@ -537,7 +537,7 @@ describe('the menu the title opens', () => {
 describe("the root bar's menu", () => {
 	/** The root's differences from a pane's, and only these. */
 	const NO_BREAK = 'Break out ← ↓ ↑ →'; // a tab leaves its STRIP, and the root has none (da-a642)
-	const NO_OPTIONS = 'Widget options'; // the root's are its normal-mode menu, it having no frame of its own
+	const NO_OPTIONS = 'Widget options'; // a widget's are its pane's, and the root holds layouts (da-7nh4l)
 	const ROOT_ONLY = ['Accept', 'Save layout', 'Discard changes']; // the ways out of layout mode (da-vvcxc)
 	const CLOSE = '× Close tab'; //        last in both (da-ygc9)
 

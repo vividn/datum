@@ -197,14 +197,14 @@
 </script>
 
 <script lang="ts">
-	import { setContext, tick, untrack, type Snippet } from 'svelte';
+	import { getContext, setContext, tick, untrack, type Snippet } from 'svelte';
 	import { on } from 'svelte/events';
 	import { act } from '#lib/act.ts';
 	import { keepLine } from '#lib/bar.ts';
 	import { ask } from '#lib/confirm.ts';
 	import { holds } from '#lib/hold.ts';
 	import { settled } from '#lib/run.ts';
-	import { writable } from 'svelte/store';
+	import { derived, writable, type Readable } from 'svelte/store';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
 	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding, wrapTabs } from './shell.js';
@@ -237,6 +237,12 @@
 		 * still find a pane's insides.
 		 */
 		kind = undefined,
+		/**
+		 * The one pane of a root tab (da-7nh4l): a layout of one widget is
+		 * drawn in a pane of its own, and the close its widget offers in its
+		 * body (the welcome's) is the root tab's, as when it filled the root.
+		 */
+		lone = false,
 		/** What the pane holds, handed the tab a swipe is bringing on (`peek`) and the strip's transforms. */
 		children
 	}: {
@@ -245,6 +251,7 @@
 		root?: boolean;
 		locked?: boolean;
 		kind?: string | undefined;
+		lone?: boolean;
 		children?: Snippet<[number, Strip | null]>;
 	} = $props();
 
@@ -302,7 +309,18 @@
 	 * root's last tab.
 	 */
 	const close = writable<(() => void) | null>(null);
-	setContext('layout-frame', { alarm, titleHost, hosted, close });
+	const outer = getContext<{ close: Readable<(() => void) | null> } | undefined>('layout-frame');
+	const lonely = writable(false);
+	$effect.pre(() => {
+		const is = lone;
+		untrack(() => lonely.set(is));
+	});
+	setContext('layout-frame', {
+		alarm,
+		titleHost,
+		hosted,
+		close: outer ? derived([lonely, outer.close, close], ([is, tab, own]) => (is ? tab : own)) : close
+	});
 	let h2: HTMLElement | null = $state(null);
 	$effect.pre(() => {
 		const host = h2;
@@ -983,7 +1001,8 @@
 	class:bare
 	class:big
 	class:stripped
-	class:clip={!root && kind !== undefined}
+	class:clip={!root && !lone && kind !== undefined}
+	class:lone
 	class:editing={!locked}
 	data-bar-drop={dropAt?.edge}
 	data-pane={pane.id}
@@ -1804,6 +1823,12 @@
 	   floors do not fit overflows into it and the page scrolls to the
 	   rest. A widget's own body may scroll inside its pane. */
 	.root > .content {
+		overflow: auto;
+	}
+	/* A root tab's one pane scrolls as the root did when the widget filled
+	   it (da-7nh4l): a widget with no scroller of its own, the stats on a
+	   short phone, is read to its end, not cut off at the pane's edge. */
+	.lone > .content {
 		overflow: auto;
 	}
 	/* The strip's frame: what hangs out of the box is not drawn. And a
