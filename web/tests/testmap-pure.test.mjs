@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_BEHIND, READS_TREE, SYNC_TESTS, UPGRADE_TESTS, actLines, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
+import { MAX_BEHIND, READS_TESTS, READS_TREE, SYNC_TESTS, UPGRADE_TESTS, actLines, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
 
 const MAP = {
 	commit: 'abc123',
@@ -144,6 +144,29 @@ test('a use:act line added or taken out runs the double-outline sweep, live; any
 	const none = run(['web/src/lib/DayStrip.svelte'], { map, tests });
 	assert.deepEqual(none.sweep, []);
 	assert.deepEqual(picked(none), ['tests/strip.test.mjs']);
+});
+
+test('a test or support file changed runs the rules over every test file too: #1668 and #1671 ran tutorial-switch and never wait-caps (da-04897)', () => {
+	const tests = [...TESTS, 'tests/tutorial-switch.test.mjs', ...READS_TESTS];
+	const map = { ...MAP, files: { ...MAP.files, 'tests/strip.test.mjs': [...MAP.files['tests/strip.test.mjs'], 'tests/support/daystrip.mjs'], ...Object.fromEntries([...READS_TESTS, 'tests/tutorial-switch.test.mjs'].map((t) => [t, []])) } };
+	const r = run(['web/tests/tutorial-switch.test.mjs'], { map, tests });
+	assert.deepEqual(picked(r), ['tests/tutorial-switch.test.mjs', ...READS_TESTS].sort());
+	assert.ok(r.picked.get('tests/wait-caps.test.mjs').startsWith('web/tests/tutorial-switch.test.mjs: '));
+	assert.deepEqual(picked(run(['web/tests/support/daystrip.mjs'], { map, tests })), ['tests/strip.test.mjs', ...READS_TESTS].sort());
+	// A deleted one too: a list the holders read may still name it.
+	assert.deepEqual(picked(run(['web/tests/gone.test.mjs'], { map, tests })), [...READS_TESTS].sort());
+	// A src file selects neither, unless the map links it.
+	assert.deepEqual(picked(run(['web/src/lib/DayStrip.svelte'], { map, tests })), ['tests/strip.test.mjs']);
+	const linked = { ...map, files: { ...map.files, 'tests/wait-caps.test.mjs': ['src/lib/DayStrip.svelte'] } };
+	assert.deepEqual(picked(run(['web/src/lib/DayStrip.svelte'], { map: linked, tests })), ['tests/strip.test.mjs', 'tests/wait-caps.test.mjs']);
+});
+
+test('every test that lists its own directory is a rule over every test file, so a test changed runs it', () => {
+	const dir = new URL('.', import.meta.url);
+	const scanning = readdirSync(dir, { recursive: true, encoding: 'utf8' })
+		.filter((f) => f.endsWith('.test.mjs') && /new URL\('\.\/?', import\.meta\.url\)/.test(readFileSync(new URL(f, dir), 'utf8')) && /\breaddir/.test(readFileSync(new URL(f, dir), 'utf8')))
+		.map((f) => `tests/${f}`);
+	assert.deepEqual(scanning.sort(), [...READS_TESTS].sort());
 });
 
 test('a web/src file no test reached runs everything', () => {

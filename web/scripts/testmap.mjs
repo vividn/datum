@@ -22,6 +22,8 @@
 // files to run, one per line, to OUT_DIR/web.tests, or OUT_DIR/FULL with
 // why everything runs. A `web/src/` or `web/tests/support/` file selects the
 // tests whose set has it, and a test file added or edited selects itself;
+// any test or support file changed selects READS_TESTS too, the rules over
+// every test file;
 // every test the map does not know runs. A crate's file selects nothing:
 // staging's full run tests what it does to the web. A migration selects
 // UPGRADE_TESTS, a change to datum.day's sync store SYNC_TESTS (da-33tn8),
@@ -101,6 +103,16 @@ export const actLines = (diff) => diff.split('\n').filter((l) => /^[+-][^+-].*us
  * way must say so here, or the map takes it for one that ran nothing there.
  */
 export const READS_TREE = /\bread(?:File|dir)(?:Sync)?\([^\n]*\b(?:src|build|built|web)\b/;
+/**
+ * The tests that read `tests/` itself as data, the rules over every test file:
+ * wait-caps (§16's caps) and testmap-pure (UPGRADE_TESTS, SYNC_TESTS and
+ * `always` held to the files). No coverage sees a test file read as text, so a
+ * test or support module added, edited or deleted runs them beside itself
+ * (da-04897: #1668 and #1671 added a bare cap that only staging's wait-caps
+ * caught). `testmap-pure.test.mjs` holds any test listing its own directory to
+ * this list.
+ */
+export const READS_TESTS = ['tests/testmap-pure.test.mjs', 'tests/wait-caps.test.mjs'];
 
 /**
  * Which test files a change runs: `{full: [reason, …]}`, or `{picked: Map(test
@@ -125,6 +137,7 @@ export function choose({ map, behind, changed, tests, narrow, acts = [] }) {
 	for (const path of changed) {
 		const p = path.slice('web/'.length);
 		for (const [re, these, what] of REACHES) if (re.test(path)) for (const t of these) pick(t, `${path}: ${what}`);
+		if (/^web\/tests\/.+\.mjs$/.test(path)) for (const t of READS_TESTS) pick(t, `${path}: a rule over every test file reads it`);
 		if (/^web\/tests\/.+\.test\.mjs$/.test(path)) {
 			if (tests.includes(p)) pick(p, `${path}: added or edited`);
 			else notes.push(`${path}: deleted`);
