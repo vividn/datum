@@ -135,7 +135,7 @@ fn a_state_beside_an_edit_holds_zero() {
     // `off` ends the field and `on` starts it, which name no states.
     for word in ["off", "on"] {
         let msg = refused(&db, &["switch", "x", word, "+=late"]);
-        assert!(msg.contains("(`on`, `off`) does not name"), "{msg}");
+        assert!(msg.contains("an `on` or an `off` does not name"), "{msg}");
     }
     run_cli(&["switch", "x", "_0,parked", "+=late", "-t", "-4"], &db).unwrap();
     assert_eq!(newest(&db, "x").0, json!(["queued", "parked", "late"]));
@@ -146,7 +146,7 @@ fn start_and_end_take_no_edit() {
     let db = fresh_db();
     for line in [["start", "x", "+=a"], ["end", "x", "-=a"]] {
         let msg = refused(&db, &line);
-        assert!(msg.contains("datum switch <field>"), "{msg}");
+        assert!(msg.contains("datum change <field>"), "{msg}");
     }
     assert!(logged_entries(&db, "x").is_empty());
 }

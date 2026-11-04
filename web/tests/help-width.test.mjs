@@ -43,7 +43,7 @@ for (const line of ['help moment', 'help']) {
 				assert.ok(wide <= room, `${line} is ${wide}px wide in a ${room}px pane`);
 				assert.equal(sideways, 0, `the history scrolls ${sideways}px sideways`);
 				// Still a table: each row's description starts at its column.
-				const [a, b] = line === 'help' ? ['add ', 'note '] : ['--show <MODE>', '--json'];
+				const [a, b] = line === 'help' ? ['record ', 'remark '] : ['--show <MODE>', '--json'];
 				const at = (flag) => {
 					const row = lines.find((l) => l.includes(flag));
 					return row.length - row.slice(row.indexOf(flag) + flag.length).trimStart().length;

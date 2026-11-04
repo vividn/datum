@@ -167,7 +167,7 @@ fn kit_show_reads_out_the_sample_kit() {
         "kit 'sample'",
         "fields (8):",
         "  coffee           moment  #8d5524",
-        "  mood             switch  (auto)",
+        "  mood             change  (auto)",
         "aliases (4):",
         "  cof              moment coffee",
         "views (1):",

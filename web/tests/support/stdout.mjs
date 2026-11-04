@@ -39,7 +39,7 @@ export function masker() {
 			// a row that opens with its `_n` (da-431c).
 			.replace(
 				// `TRACK<glyph>` is an action word too (da-c8mh).
-				new RegExp(`((?:MOMENT|PERIOD|ON\/OFF|SWITCH|RECORD|REMARK|EXISTS|UPDATE|DELETE|TRACK.)${ESC} ${ESC})([0-9a-z]{5})\\b`, 'g'),
+				new RegExp(`((?:MOMENT|PERIOD|ON\/OFF|CHANGE|RECORD|REMARK|EXISTS|UPDATE|DELETE|TRACK.)${ESC} ${ESC})([0-9a-z]{5})\\b`, 'g'),
 				(_, before, m) => before + id(m)
 			)
 			.replace(new RegExp(`^(${ESC}_\\d+${ESC} .* )([0-9a-z]{5})$`, 'gm'), (_, before, m) => before + id(m))

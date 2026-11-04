@@ -181,8 +181,8 @@ fn a_colour_writes_the_verb_the_log_implies() {
 fn track_without_a_verb_or_a_log_names_the_choices() {
     let db = fresh_db();
     let err = run_cli(&["track", "x"], &db).unwrap_err().to_string();
-    assert!(err.contains("--verb"), "err = {err}");
-    for choice in ["moment", "start", "switch", "add"] {
+    assert!(err.contains("--kind"), "err = {err}");
+    for choice in ["moment", "on/off", "change", "record"] {
         assert!(err.contains(choice), "err = {err}");
     }
     assert!(db.load_spec("x").unwrap().is_none(), "a spec was minted");
@@ -195,7 +195,7 @@ fn spec_set_on_a_new_field_needs_a_verb() {
     let err = run_cli(&["setup", "y", "--color", "red"], &db)
         .unwrap_err()
         .to_string();
-    assert!(err.contains("--verb"), "err = {err}");
+    assert!(err.contains("--kind"), "err = {err}");
 }
 
 /// da-c8mh renamed the flag. The old spelling is an error that names the
@@ -210,7 +210,7 @@ fn default_verb_flag_is_an_error_naming_verb() {
     ] {
         let err = run_cli(&argv, &db).unwrap_err().to_string();
         assert!(
-            err.contains("--default-verb is now --verb"),
+            err.contains("--default-verb is now --kind"),
             "{argv:?} → {err}"
         );
     }

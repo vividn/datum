@@ -756,7 +756,7 @@ fn add_with_only_an_id_key_still_needs_an_id() {
     let err = run_cli(&["add", "person", "id=vividn"], &db)
         .unwrap_err()
         .to_string();
-    assert!(err.contains("add needs an id"), "{err}");
+    assert!(err.contains("record needs an id"), "{err}");
     assert!(err.contains("--id <value>"), "{err}");
     assert!(!err.contains("id="), "{err}");
     assert!(db.get_entry("person:vividn").is_err());
@@ -784,7 +784,9 @@ fn card_with_no_word_says_how_to_give_an_id() {
         .unwrap_err()
         .to_string();
     assert!(
-        err.contains("add needs an id: `datum add book <id> …` (or -K <key>, or --id <value>)"),
+        err.contains(
+            "record needs an id: `datum record book <id> …` (or -K <key>, or --id <value>)"
+        ),
         "{err}"
     );
 }
@@ -858,7 +860,7 @@ fn a_timed_or_remaindered_add_keeps_its_id_and_words() {
     let err = run_cli(&["add", "memo", "just", "words"], &db)
         .unwrap_err()
         .to_string();
-    assert!(err.contains("add needs an id"), "{err}");
+    assert!(err.contains("record needs an id"), "{err}");
 }
 
 /// `--id` and `-K` build one id, in the order given, as v2's `idParts`

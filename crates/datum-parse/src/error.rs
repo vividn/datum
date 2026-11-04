@@ -137,7 +137,7 @@ pub type Result<T> = std::result::Result<T, ParseError>;
 /// usual fix ("supply a field name first") isn't obvious without it.
 fn missing_key_hint(path: &str) -> &'static str {
     if path == "field" {
-        " — bare `<FIELD>` positional required first; `KEY=VALUE` tokens bind to data keys, not the field slot. Try: `datum <verb> <field> KEY=VALUE`."
+        " — bare `<FIELD>` positional required first; `KEY=VALUE` tokens bind to data keys, not the field slot. Try: `datum <command> <field> KEY=VALUE`."
     } else {
         ""
     }

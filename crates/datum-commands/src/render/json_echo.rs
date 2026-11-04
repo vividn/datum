@@ -81,9 +81,10 @@ fn document(lines: &ActionLines) -> JsonValue {
     if lines.created {
         doc["created"] = json!(true);
     }
-    // An update's parts that changed, each as it was and as it is (da-27x6p).
+    // An update's diff: its parts that changed, each as it was and as it is
+    // (da-27x6p), `diff` since `change` is a command (da-gpz6m).
     if let Some(changes) = &lines.changes {
-        doc["changes"] = changes
+        doc["diff"] = changes
             .iter()
             .map(|c| json!({ "part": c.part, "key": c.key, "before": c.before, "after": c.after }))
             .collect();

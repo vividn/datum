@@ -28,7 +28,7 @@ use datum_parse::input::{Show, TimeArgs};
 pub(crate) fn parse_verb(raw: &str) -> Result<Action> {
     verb_choice(raw).ok_or_else(|| {
         anyhow::anyhow!(
-            "invalid --verb '{raw}' — must be one of: {VERB_NAMES_TEXT} \
+            "invalid --kind '{raw}' — must be one of: {VERB_NAMES_TEXT} \
              (`datum help logging` says what each is)"
         )
     })
@@ -46,7 +46,7 @@ pub fn resolve_verb(field: &str, requested: Option<&str>, db: &Db) -> Result<Act
     if field == TIMEZONE_FIELD {
         return match requested.map(parse_verb).transpose()? {
             None | Some(Action::Switch) => Ok(Action::Switch),
-            Some(_) => anyhow::bail!("'{field}' is a switch"),
+            Some(_) => anyhow::bail!("'{field}' is a change"),
         };
     }
     if let Some(raw) = requested {
@@ -57,7 +57,7 @@ pub fn resolve_verb(field: &str, requested: Option<&str>, db: &Db) -> Result<Act
     }
     db.verb_from_field_log(field)?.ok_or_else(|| {
         anyhow::anyhow!(
-            "'{field}' is new — say what a press of it means: --verb {VERB_CHOICES_TEXT}"
+            "'{field}' is new — say what a press of it means: --kind {VERB_CHOICES_TEXT}"
         )
     })
 }

@@ -120,7 +120,7 @@ fn json_carries_action_shape_and_the_state_left() {
     let doc: Value = serde_json::from_str(&run(&db, "json", &["ignore", "mood"])).unwrap();
     let doc = &doc["docs"][0];
     assert_eq!(doc["action"], "IGNORE");
-    assert_eq!(doc["shape"], "SWITCH");
+    assert_eq!(doc["shape"], "CHANGE");
     assert_eq!(doc["state"], "IGNORED");
     // The LEAD slot, painted with what the field left.
     let lead = doc["info_segments"]
@@ -133,7 +133,7 @@ fn json_carries_action_shape_and_the_state_left() {
     let doc: Value = serde_json::from_str(&run(&db, "json", &["track", "mood"])).unwrap();
     let doc = &doc["docs"][0];
     assert_eq!(doc["action"], "TRACK▞");
-    assert_eq!(doc["shape"], "SWITCH");
+    assert_eq!(doc["shape"], "CHANGE");
     assert_eq!(doc["state"], "TRACKED");
 }
 

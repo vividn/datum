@@ -837,7 +837,7 @@ fn show(name: &str, db: &Db) -> Result<()> {
         "fields",
         specs.iter().map(|s| {
             let color = s.color.as_deref().unwrap_or("(auto)");
-            format!("{:<16} {:<7} {color}", s.field, s.verb.word())
+            format!("{:<16} {:<7} {color}", s.field, s.verb.kind())
         }),
     );
     section(

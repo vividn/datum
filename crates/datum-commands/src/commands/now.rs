@@ -94,7 +94,7 @@ fn now_once(args: &NowArgs, db: &Db) -> Result<()> {
         // (an occur field, da-k1q9o), which is `render_snapshot`'s sentinel.
         let tracked = db.get_tracked_fields(chrono::Utc::now())?;
         if tracked.is_empty() {
-            println!("No tracked fields. Use `datum track <field>` or log with `moment`/`start`.");
+            println!("No tracked fields. Use `datum track <field>` or log with `moment`/`on`.");
             return Ok(());
         }
         all_ignored = tracked.iter().all(|f| f.ignored);

@@ -213,7 +213,7 @@ describe('the swipe strip', () => {
 				await page.locator('.prompt-bar input').press('PageDown');
 				await submit('occur alfa');
 				await submit('update alfa n=1 , switch mood happy');
-				await page.waitForFunction(() => document.querySelector('.prompt-bar .reopen .said')?.textContent.trim() === 'UPD,SW');
+				await page.waitForFunction(() => document.querySelector('.prompt-bar .reopen .said')?.textContent.trim() === 'UPD,CH');
 				const seen = await page.evaluate(() => {
 					const tab = document.querySelector('.prompt-bar .reopen');
 					const range = document.createRange();

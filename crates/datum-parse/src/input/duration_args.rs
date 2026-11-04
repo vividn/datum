@@ -25,7 +25,7 @@ use crate::input::flag_registry::{FlagAction, FlagSpec};
 /// Rejection text for the retired `--dur` flag. Names both surviving
 /// spellings and the `-t` anchoring that the flag got wrong, so the
 /// message teaches the replacement instead of just refusing.
-pub const DUR_FLAG_REMOVED: &str = "`--dur` was removed. Write the duration as a trailing positional (`datum end work 12m`) or as `dur=12m`. On end/stop those end the block AT `-t`, the duration being the span that precedes it (da-zwct).";
+pub const DUR_FLAG_REMOVED: &str = "`--dur` was removed. Write the duration as a trailing positional (`datum off work 12m`) or as `dur=12m`. On on/off those end the period AT `-t`, the duration being the span that precedes it (da-zwct).";
 
 /// Canonical flag set for the duration concern.
 ///

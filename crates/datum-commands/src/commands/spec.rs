@@ -41,8 +41,8 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                     anyhow::bail!(say);
                 }
                 println!(
-                    "No spec defined for field '{field}'; set one up: `datum setup {field} --verb moment` \
-                     (or start, switch, add; `datum help logging` says what each is)"
+                    "No spec defined for field '{field}'; set one up: `datum setup {field} --kind moment` \
+                     (or on/off, change, record; `datum help logging` says what each is)"
                 )
             }
         },
@@ -478,7 +478,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             && datum_parse::alias::KNOWN_SUBCOMMANDS.contains(&state.as_str())
         {
             eprintln!(
-                "  ⚠ alias '{state}' shadowed by the command `datum {state}`, which runs instead; log the state with `datum switch {} {state}`",
+                "  ⚠ alias '{state}' shadowed by the command `datum {state}`, which runs instead; log the state with `datum change {} {state}`",
                 args.field
             );
         }
@@ -905,7 +905,7 @@ struct Block {
 
 impl Block {
     fn of(spec: &FieldSpec, ignored: bool) -> Self {
-        let mut head = vec![("verb".to_string(), spec.verb.word())];
+        let mut head = vec![("kind".to_string(), spec.verb.kind())];
         if let Some(c) = &spec.color {
             head.push(("color".into(), c.clone()));
         }

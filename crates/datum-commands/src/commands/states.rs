@@ -107,7 +107,7 @@ pub fn format_states(listing: &JsonValue, start: bool) -> String {
             // switch field's what switching it on or off stores (da-tpktb).
             let description = match (&r["declared"], state) {
                 (JsonValue::Bool(true), _) => r["description"].as_str().unwrap_or("").to_string(),
-                (_, JsonValue::Bool(_)) if start => "the start/stop verb's own".to_string(),
+                (_, JsonValue::Bool(_)) if start => "the on/off kind's own".to_string(),
                 (_, JsonValue::Bool(true)) => "the field switched on".to_string(),
                 (_, JsonValue::Bool(false)) => "the field switched off".to_string(),
                 _ => "undeclared".to_string(),
@@ -243,7 +243,7 @@ mod tests {
         let lines: Vec<&str> = table.lines().collect();
         for (line, word) in lines[1..].iter().zip(["on", "off"]) {
             assert!(line.starts_with(word), "{table}");
-            assert!(line.ends_with("the start/stop verb's own"), "{table}");
+            assert!(line.ends_with("the on/off kind's own"), "{table}");
         }
         assert!(
             !table.contains("true") && !table.contains("undeclared"),

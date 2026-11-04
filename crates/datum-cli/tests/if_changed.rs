@@ -61,7 +61,7 @@ fn same_state_twice_prints_islast_and_writes_nothing() {
     let env = Env::new();
     assert!(env
         .ok(&["switch", "mood", "happy", "--if-changed"])
-        .contains("SWITCH"));
+        .contains("CHANGE"));
     let n = env.count();
     assert!(env
         .ok(&["switch", "mood", "happy", "--if-changed"])
@@ -76,7 +76,7 @@ fn a_different_state_writes() {
     let n = env.count();
     assert!(env
         .ok(&["switch", "mood", "sad", "--if-changed"])
-        .contains("SWITCH"));
+        .contains("CHANGE"));
     assert_eq!(env.count(), n + 1);
 }
 
@@ -92,7 +92,7 @@ fn compares_with_the_state_governing_at_t() {
         .starts_with("ISLAST"));
     assert!(env
         .ok(&["switch", "mood", "sad", "--if-changed", "-t", "1000"])
-        .contains("SWITCH"));
+        .contains("CHANGE"));
     assert_eq!(env.count(), n + 1);
 }
 
@@ -103,7 +103,7 @@ fn without_the_flag_a_duplicate_is_written() {
     let n = env.count();
     assert!(env
         .ok(&["switch", "mood", "happy", "-t", "1000"])
-        .contains("SWITCH"));
+        .contains("CHANGE"));
     assert_eq!(env.count(), n + 1);
 }
 

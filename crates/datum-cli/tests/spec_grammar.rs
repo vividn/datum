@@ -74,7 +74,7 @@ fn spec_alone_lists_the_specs_and_tag_filters_them() {
 fn spec_field_prints_its_block_and_json_its_document() {
     let dir = mood();
     let block = lines(&ok(&dir, &["setup", "mood"]));
-    assert_eq!(block[0], "mood switch #888888 tracked");
+    assert_eq!(block[0], "mood change #888888 tracked");
     assert!(
         block.contains(&"states happy · sad".to_string()),
         "{block:?}"
@@ -109,7 +109,7 @@ fn a_change_prints_the_spec_with_what_changed_marked() {
         out[0].starts_with("UPDATE ") && out[0].ends_with(" spec:mood"),
         "{out:?}"
     );
-    assert_eq!(out[1], "mood switch #b87333 tracked");
+    assert_eq!(out[1], "mood change #b87333 tracked");
     for line in [
         "~ color #888888 → #b87333",
         "~ states happy · sad → happy · calm",
@@ -161,8 +161,8 @@ fn delete_deletes_the_spec_and_a_second_says_there_is_none() {
 fn a_new_field_needs_a_verb() {
     let dir = mood();
     let err = refused(&dir, &["setup", "tea", "--color", "red"]);
-    assert!(err.contains("--verb"), "{err}");
-    assert!(ok(&dir, &["setup", "tea", "--verb", "occur"]).starts_with("MOMENT "));
+    assert!(err.contains("--kind"), "{err}");
+    assert!(ok(&dir, &["setup", "tea", "--kind", "moment"]).starts_with("MOMENT "));
 }
 
 /// `spec` is `setup`'s alias (da-3ie71), as `rt` is `retime`'s: every form

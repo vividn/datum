@@ -277,25 +277,27 @@ fn unknown_keys<'de, D: serde::Deserializer<'de>>(
 /// The subset of actions permitted as a field's [`FieldSpec::verb`].
 pub const VERB_CHOICES: &[Action] = &[Action::Occur, Action::Start, Action::Switch, Action::Add];
 
-/// The one sentence every "which verb?" error says, so the four choices
-/// are spelled the same everywhere the user meets them.
-pub const VERB_CHOICES_TEXT: &str = "moment|start|switch|add";
+/// The one sentence every "which kind?" error says, so the four kinds
+/// are spelled the same everywhere the user meets them (da-gpz6m).
+pub const VERB_CHOICES_TEXT: &str = "moment|on/off|change|record";
 
-/// A field's verb by name: one of the four, `moment` being `occur` (da-cswh8), or
-/// datum.day's name for it — `occurrence`, `on` or `on/off`, `card` (da-qk4jo). The
-/// four are what is stored, so a spec reads the same whichever name set it.
+/// A field's kind by name: one of the glossary's four (da-gpz6m), or an old
+/// word for it — `occur`, `occurrence`, `start`, `on`, `switch`, `add`,
+/// `card` (da-cswh8, da-qk4jo). The stored names are `occur`, `start`,
+/// `switch` and `add`, so a spec reads the same whichever name set it.
 pub fn verb_choice(name: &str) -> Option<Action> {
     match name.to_lowercase().as_str() {
         "moment" | "occur" | "occurrence" => Some(Action::Occur),
-        "start" | "on" | "on/off" => Some(Action::Start),
-        "switch" => Some(Action::Switch),
-        "add" | "card" => Some(Action::Add),
+        "on/off" | "on" | "start" => Some(Action::Start),
+        "change" | "switch" => Some(Action::Switch),
+        "record" | "add" | "card" => Some(Action::Add),
         _ => None,
     }
 }
 
 /// Every name [`verb_choice`] takes, for the error that refuses another.
-pub const VERB_NAMES_TEXT: &str = "moment|start|switch|add, or occur|occurrence|on|on/off|card";
+pub const VERB_NAMES_TEXT: &str =
+    "moment|on/off|change|record, or occur|occurrence|on|start|switch|add|card";
 
 /// The verb a field's LOG implies, for a field that has no spec yet.
 ///
@@ -405,8 +407,8 @@ impl FieldSpec {
             Ok(())
         } else {
             Err(format!(
-                "invalid verb '{}' — must be one of: {VERB_CHOICES_TEXT}",
-                self.verb
+                "invalid kind '{}' — must be one of: {VERB_CHOICES_TEXT}",
+                self.verb.kind()
             ))
         }
     }

@@ -216,7 +216,7 @@ describe('one document', () => {
 				await page.locator(`${DOC} .action[title="${action}"]`).waitFor();
 				return { group: await box(OUT), section: await box(`${BAR} .section.output`) };
 			};
-			const switched = await answer('switch mood happy', 'SWITCH');
+			const switched = await answer('switch mood happy', 'CHANGE');
 			assert.ok(switched.group.width < switched.section.width / 2, 'a switch took the section: nothing to compare with');
 			for (const [line, action] of [
 				['ignore mood', 'IGNORE'],
@@ -287,7 +287,7 @@ describe('several documents', () => {
 			// Each side echoed its own document: `DATUM_SHOW` reaches EVERY
 			// side, not only the last.
 			assert.equal(first.did, 'MOMENT');
-			assert.equal(second.did, 'SWITCH');
+			assert.equal(second.did, 'CHANGE');
 			assert.notEqual(first.hid, second.hid);
 			assert.ok(first.info.includes('coffee'), first.info);
 			assert.ok(second.info.includes('happy'), second.info);
@@ -570,7 +570,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 				['occur coffee cups=2 -t -50', 'MOMENT'],
 				['start work -t -40', 'ON/OFF'],
 				['end work -t -30', 'ON/OFF'],
-				['switch mood happy -t -20', 'SWITCH'],
+				['switch mood happy -t -20', 'CHANGE'],
 				['switch mood calm dur=0 -t -10', 'MOMENT'],
 				['switch mood sad 5m -t -5', 'PERIOD'],
 				['add book dune title=x', 'RECORD']
@@ -1644,7 +1644,7 @@ describe('folded, a command still answers', () => {
 		}, held(AT));
 	});
 
-	test('a line of two says UPD,SW in two colors, with the box unmoved at 360px, and a failure in a line says the failure', async () => {
+	test('a line of two says UPD,CH in two colors, with the box unmoved at 360px, and a failure in a line says the failure', async () => {
 		const AT = todayAt(12, 0);
 		await withApp(async (app) => {
 			const { page } = app;
@@ -1655,7 +1655,7 @@ describe('folded, a command still answers', () => {
 			await marks(page).waitFor();
 			const one = await boxWidth(page);
 			await app.submit(LINE_OF_TWO);
-			await page.waitForFunction(() => document.querySelector('.prompt-bar .reopen .said')?.textContent.trim() === 'UPD,SW');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .reopen .said')?.textContent.trim() === 'UPD,CH');
 			assert.ok(Math.abs((await boxWidth(page)) - one) <= 0.5, 'the word moved the box');
 			const colors = await marks(page).evaluateAll((els) => els.map((el) => getComputedStyle(el).color));
 			assert.equal(colors.length, 2);

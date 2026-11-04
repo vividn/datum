@@ -874,7 +874,7 @@ mod runtime_tests {
     /// but the normalizer still runs over it harmlessly.
     fn normalize(raw: &str) -> String {
         let create_drop = regex_lite::Regex::new(
-            r"^(?:CREATE|MOMENT|PERIOD|ON/OFF|SWITCH|RECORD|REMARK) \S+ \S+$",
+            r"^(?:CREATE|MOMENT|PERIOD|ON/OFF|CHANGE|RECORD|REMARK) \S+ \S+$",
         )
         .unwrap();
         let exists_line = regex_lite::Regex::new(

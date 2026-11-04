@@ -499,7 +499,7 @@ pub struct Undid {
 ///
 /// `RECORD` a timeless card (`add`, `note`); `PERIOD` anything with a duration,
 /// whatever its state, a hole's false block included; a change with no duration
-/// `ON/OFF` by a state of `true` or `false`, `SWITCH` by any other; and `MOMENT`
+/// `ON/OFF` by a state of `true` or `false`, `CHANGE` by any other; and `MOMENT`
 /// a point, with a state or none.
 ///
 /// It is also the word a NEW entry's echo is headed with, in place of CREATE
@@ -518,7 +518,7 @@ pub fn shape(entry: &Entry) -> &'static str {
     }
     match (entry.verb, &entry.state) {
         (Verb::Switch, Some(JsonValue::Bool(_))) => "ON/OFF",
-        (Verb::Switch, _) => "SWITCH",
+        (Verb::Switch, _) => "CHANGE",
         _ => "MOMENT",
     }
 }
@@ -2725,7 +2725,7 @@ mod tests {
             (at(Verb::Switch, &off, None), "ON/OFF", "open switch off"),
             (
                 at(Verb::Switch, &named, None),
-                "SWITCH",
+                "CHANGE",
                 "open switch on a state",
             ),
         ] {

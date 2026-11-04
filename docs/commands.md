@@ -20,19 +20,19 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ```
   datum moment coffee                 a coffee, now
-  datum switch mood happy             mood is happy from now on
+  datum change mood happy             mood is happy from now on
   datum tail                          the last ten entries
   datum now                           each field's state now
 ```
 
 ## LOGGING
 
-- `add` — Register a keyed timeless record, by an id (alias: card)
-- `note` — Jot a timeless entry (auto create_time id)
 - `moment` — A point in time (alias: occur)
-- `start` — Begin a duration-tracked activity (alias: on)
-- `stop` — End a duration-tracked activity (alias: end, off)
-- `switch` — Transition a field to a new state
+- `on` — Turn a field on, until an off (alias: start)
+- `off` — Turn a field off (alias: end, stop)
+- `change` — Put a field in a new state (alias: switch)
+- `record` — An untimed entry, by a key (alias: add, card)
+- `remark` — Untimed words on a field, by its create time (alias: note)
 - `track` — Track a field in the now view
 - `ignore` — Ignore a field in the now view
 - `flag` — Mark a field for review (lightweight 'come back to this')
@@ -68,7 +68,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ## ADMIN
 
-- `setup` — Set up a field: its verb, states and look (alias: spec)
+- `setup` — Set up a field: its kind, states and look (alias: spec)
 - `alias` — Manage aliases
 - `check` — Run database consistency checks
 - `db` — DB-lifecycle (purge, backup, restore, migrate, v2import, config, rename)

@@ -341,7 +341,7 @@ fn subprocess_setup_state_named_after_a_command_warns_on_stderr() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("alias 'check' shadowed by the command `datum check`")
-            && stderr.contains("`datum switch payment check`")
+            && stderr.contains("`datum change payment check`")
             && !stderr.contains("'cash'"),
         "expected one shadow warning on stderr, got: {stderr}"
     );

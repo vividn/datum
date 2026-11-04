@@ -210,7 +210,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            "Missing required key: field — bare `<FIELD>` positional required first; `KEY=VALUE` tokens bind to data keys, not the field slot. Try: `datum <verb> <field> KEY=VALUE`."
+            "Missing required key: field — bare `<FIELD>` positional required first; `KEY=VALUE` tokens bind to data keys, not the field slot. Try: `datum <command> <field> KEY=VALUE`."
         );
     }
 

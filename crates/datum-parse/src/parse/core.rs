@@ -264,7 +264,7 @@ pub(crate) fn unknown_flag(f: FlagSplit<'_>) -> ParseError {
 /// production, so the old spelling is not accepted — it is an error that
 /// names its replacement.
 pub(crate) fn renamed_default_verb() -> ParseError {
-    ParseError::InvalidArg("--default-verb is now --verb".to_string())
+    ParseError::InvalidArg("--default-verb is now --kind".to_string())
 }
 
 pub(crate) fn parse_usize(s: &str, label: &str) -> Result<usize> {

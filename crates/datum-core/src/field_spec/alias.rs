@@ -217,7 +217,7 @@ pub fn shadow_warning(name: &str) -> Option<String> {
     datum_parse::alias::KNOWN_SUBCOMMANDS
         .contains(&name)
         .then(|| format!(
-            "warning: alias '{name}' shadows a built-in subcommand and will not fire when a verb is expected"
+            "warning: alias '{name}' shadows a built-in subcommand and will not fire when a command is expected"
         ))
 }
 

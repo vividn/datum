@@ -204,6 +204,7 @@ fn notes_only_a_never_seen_field(argv: &[&str], doing: &str) {
 
 #[test]
 fn ending_a_never_seen_field_notes_it() {
+    notes_only_a_never_seen_field(&["off", "FIELD"], "ending");
     notes_only_a_never_seen_field(&["end", "FIELD"], "ending");
     notes_only_a_never_seen_field(&["stop", "FIELD"], "ending");
 }

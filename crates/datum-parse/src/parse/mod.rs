@@ -267,9 +267,9 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "moment" | "occur" => Command::Occur(parse_log_args(rest)?),
         "start" | "on" => Command::Start(parse_log_args(rest)?),
         "stop" | "end" | "off" => Command::Stop(parse_log_args(rest)?),
-        "switch" => Command::Switch(parse_log_args(rest)?),
-        "add" | "card" => Command::Add(parse_log_args(rest)?),
-        "note" => Command::Note(parse_log_args(rest)?),
+        "change" | "switch" => Command::Switch(parse_log_args(rest)?),
+        "record" | "add" | "card" => Command::Add(parse_log_args(rest)?),
+        "remark" | "note" => Command::Note(parse_log_args(rest)?),
 
         "tail" => Command::Tail(parse_tail_args(rest)?),
         "head" => {

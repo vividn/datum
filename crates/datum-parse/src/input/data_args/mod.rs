@@ -247,8 +247,11 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
 }
 
 /// The commands a trailing word changes a log line to, as v2's
-/// `commandChanges` (`stop` being `end`'s other name).
-pub const COMMAND_CHANGES: &[&str] = &["moment", "occur", "start", "end", "stop", "switch"];
+/// `commandChanges` (`stop` being `end`'s other name, `change` the word
+/// for `switch`, which the line reads it as).
+pub const COMMAND_CHANGES: &[&str] = &[
+    "moment", "occur", "start", "end", "stop", "change", "switch",
+];
 
 /// [`handle_data_args`], and the command a trailing verb changed the line
 /// to (`start sleep end` → `end`, `occur coffee start` → `start`): with
@@ -505,7 +508,10 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
         }
     }
 
-    Ok((datum_data, command))
+    Ok((
+        datum_data,
+        command.map(|c| if c == "change" { "switch".into() } else { c }),
+    ))
 }
 
 /// What v2's `changeDatumCommand` does to the data and the slots: an occur
@@ -521,7 +527,7 @@ fn change_command(data: &mut DatumData, keys: &mut Vec<String>, command: &str) {
         data.remove("dur");
     }
     keys.insert(0, "dur=".into());
-    if command == "switch" {
+    if matches!(command, "change" | "switch") {
         data.remove("state");
         keys.insert(0, "state=true".into());
     }

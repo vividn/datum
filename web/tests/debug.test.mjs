@@ -197,7 +197,7 @@ describe('the sample seeder', () => {
 				.filter((li) => li.querySelector('code').textContent.endsWith(' sample=true'))
 				.map((li) => ({
 					argv: li.querySelector('code').textContent,
-					created: /^(MOMENT|PERIOD|ON\/OFF|SWITCH) /m.test(li.querySelector('pre')?.textContent ?? ''),
+					created: /^(MOMENT|PERIOD|ON\/OFF|CHANGE) /m.test(li.querySelector('pre')?.textContent ?? ''),
 					failed: li.classList.contains('failed')
 				})),
 		SEED);

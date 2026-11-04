@@ -20,17 +20,17 @@ USAGE:
 
 EXAMPLES:
   datum moment coffee                 a coffee, now
-  datum switch mood happy             mood is happy from now on
+  datum change mood happy             mood is happy from now on
   datum tail                          the last ten entries
   datum now                           each field's state now
 
 LOGGING:
-  add      Register a keyed timeless record, by an id (alias: card)
-  note     Jot a timeless entry (auto create_time id)
   moment   A point in time (alias: occur)
-  start    Begin a duration-tracked activity (alias: on)
-  stop     End a duration-tracked activity (alias: end, off)
-  switch   Transition a field to a new state
+  on       Turn a field on, until an off (alias: start)
+  off      Turn a field off (alias: end, stop)
+  change   Put a field in a new state (alias: switch)
+  record   An untimed entry, by a key (alias: add, card)
+  remark   Untimed words on a field, by its create time (alias: note)
   track    Track a field in the now view
   ignore   Ignore a field in the now view
   flag     Mark a field for review (lightweight 'come back to this')
@@ -62,7 +62,7 @@ RENDER:
   now      Show the current state of tracked fields + terminal nowview band
 
 ADMIN:
-  setup        Set up a field: its verb, states and look (alias: spec)
+  setup        Set up a field: its kind, states and look (alias: spec)
   alias        Manage aliases
   check        Run database consistency checks
   db           DB-lifecycle (purge, backup, restore, migrate, v2import, config, rename)
@@ -168,12 +168,12 @@ fn snapshot_tail_help() {
 // log verb, exercising LOG_FLAGS through the table renderer. The expected
 // string is byte-identical to the legacy `log_help("add")` output.
 const EXPECTED_ADD: &str = "\
-datum add — register a keyed timeless record, by an id (alias: card)
+datum record — an untimed entry, by a key (alias: add, card)
 
 USAGE:
-  datum add <FIELD> <ID> [KEY=VALUE]...
-  datum add <FIELD> -K <KEY> [KEY=VALUE]...
-  datum add <FIELD> --id <VALUE>
+  datum record <FIELD> <ID> [KEY=VALUE]...
+  datum record <FIELD> -K <KEY> [KEY=VALUE]...
+  datum record <FIELD> --id <VALUE>
 
 OPTIONS:
   -K, --slug-key <S>    ...or derive the id from this key (K / K= / K=val)
@@ -188,10 +188,10 @@ OUTPUT:
 
 #[test]
 fn snapshot_add_help() {
-    let actual = command_help("add");
+    let actual = command_help("record");
     assert_eq!(
         actual, EXPECTED_ADD,
-        "datum add --help drifted from snapshot"
+        "datum record --help drifted from snapshot"
     );
 }
 
@@ -205,10 +205,10 @@ fn snapshot_note_help() {
     // `add` keeps the two flags that give it an id, `note` keeps none and
     // says in its USAGE where the bare words go.
     let expected = "\
-datum note — jot a timeless entry (auto create_time id)
+datum remark — untimed words on a field, by its create time (alias: note)
 
 USAGE:
-  datum note <FIELD> [WORD | KEY=VALUE]...
+  datum remark <FIELD> [WORD | KEY=VALUE]...
       the WORDs join into extra_data.comment \u{2014} no quotes, no -C
 
 OPTIONS:
@@ -219,9 +219,9 @@ OUTPUT:
       --json            Shorthand for --show json
 ";
     assert_eq!(
-        command_help("note"),
+        command_help("remark"),
         expected,
-        "datum note --help drifted from snapshot"
+        "datum remark --help drifted from snapshot"
     );
 }
 
@@ -364,14 +364,14 @@ fn snapshot_end_alias_substitutes_verb() {
     // `-t` is the block's END and the duration is the span that preceded
     // it (da-vq0z fixed the words).
     let expected = "\
-datum end — end a duration-tracked activity (also: stop, off)
+datum end — turn a field off (also: off, stop)
 
-Stop, or end, closes what a `start` of the same field opened.
+Off turns off what an `on` of the same field turned on.
 
-  datum stop work                     work ends now
-  datum end work -t 17:30             work ended at 17:30
+  datum off work                      work ends now
+  datum off work -t 17:30             work ended at 17:30
 
-A duration on stop is the BREAK, not the work: `datum end work 12m -t
+A length on off is the BREAK, not the work: `datum off work 12m -t
 14:12` is a break from 14:00 to 14:12.
 
 USAGE:
@@ -380,7 +380,7 @@ USAGE:
     `datum end work 12m -t 14:12` is a break from 14:00 to 14:12
 
 OPTIONS:
-      --if-changed      switch/start/end: write nothing if already in this state
+      --if-changed      change/on/off: write nothing if already in this state
   -l, --last-state <V>  The state being left; `datum check` flags a mismatch
   -L, --ensure-last-state <V>  As -l, but write nothing unless the field is in V
   common logging options: `datum help logging`
@@ -410,7 +410,7 @@ fn snapshot_sync_help_starts_with_header() {
 fn alias_end_renders_with_input_name() {
     let s = command_help("end");
     assert!(
-        s.starts_with("datum end — end a duration-tracked activity (also: stop, off)\n"),
+        s.starts_with("datum end — turn a field off (also: off, stop)\n"),
         "expected `datum end — …` header, got: {}",
         &s[..s.find('\n').unwrap_or(s.len())]
     );
@@ -420,34 +420,40 @@ fn alias_end_renders_with_input_name() {
 fn canonical_stop_names_its_alias() {
     // Under its own name the page names the alias; only under the alias
     // does the suffix turn to name the canonical command (da-5jsqx).
-    let s = command_help("stop");
-    assert!(s.starts_with("datum stop — end a duration-tracked activity (alias: end, off)\n"));
+    let s = command_help("off");
+    assert!(s.starts_with("datum off — turn a field off (alias: end, stop)\n"));
 }
 
 #[test]
 fn web_names_page_the_command_they_name() {
-    // datum.day's names (da-zz6en): each is the page of the command it
-    // stands for, under its own name, saying which.
+    // The old names (da-zz6en, da-gpz6m): each is the page of the command
+    // it stands for, under its own name, saying which.
     for (name, title, usage) in [
         (
-            "on",
-            "begin a duration-tracked activity (also: start)",
-            "datum on <FIELD>",
+            "start",
+            "turn a field on, until an off (also: on)",
+            "datum start <FIELD>",
         ),
         (
-            "off",
-            "end a duration-tracked activity (also: stop, end)",
-            "datum off <FIELD>",
+            "stop",
+            "turn a field off (also: off, end)",
+            "datum stop <FIELD>",
         ),
         (
             "card",
-            "register a keyed timeless record, by an id (also: add)",
+            "an untimed entry, by a key (also: record, add)",
             "datum card <FIELD>",
         ),
     ] {
         let s = command_help(name);
         assert!(s.starts_with(&format!("datum {name} — {title}\n")), "{s}");
         assert!(s.contains(&format!("\n  {usage} ")), "{s}");
+    }
+    // `switch` and `note` page the command they name under its own name, as
+    // `occur` does `moment`.
+    for (old, page) in [("switch", "change"), ("note", "remark")] {
+        let s = command_help(old);
+        assert!(s.starts_with(&format!("datum {page} — ")), "{s}");
     }
 }
 
@@ -619,8 +625,8 @@ fn the_logging_topic_carries_the_whole_wall() {
         );
     }
     assert!(
-        page.contains("`note` is the exception"),
-        "the topic has to name the one verb the shared set is not true for:\n{page}"
+        page.contains("`remark` is the exception"),
+        "the topic has to name the one command the shared set is not true for:\n{page}"
     );
 }
 

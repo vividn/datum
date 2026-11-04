@@ -103,7 +103,7 @@ fn the_first_log_of_a_field_is_one_document() {
         (vec!["occur", "coffee"], "MOMENT"),
         (vec!["start", "work"], "ON/OFF"),
         (vec!["end", "chore"], "ON/OFF"),
-        (vec!["switch", "mood", "happy"], "SWITCH"),
+        (vec!["switch", "mood", "happy"], "CHANGE"),
         (vec!["note", "idea", "words"], "REMARK"),
     ] {
         // A fresh db per case: what is under test is the FIRST log.
@@ -609,7 +609,7 @@ fn setup_of_a_field_with_no_spec_says_how_to_set_one_up() {
     env.run(&["occur", "coffee"]);
     assert_eq!(
         env.run(&["setup", "tea"]),
-        "No spec defined for field 'tea'; set one up: `datum setup tea --verb moment` \
-         (or start, switch, add; `datum help logging` says what each is)\n"
+        "No spec defined for field 'tea'; set one up: `datum setup tea --kind moment` \
+         (or on/off, change, record; `datum help logging` says what each is)\n"
     );
 }

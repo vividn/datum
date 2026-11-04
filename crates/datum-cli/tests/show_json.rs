@@ -137,18 +137,25 @@ fn each_doc_names_the_shape_its_entry_stores() {
         (&["end", "work"], "ON/OFF"),
         (&["start", "posture", "4"], "PERIOD"),
         (&["end", "posture", "5"], "PERIOD"),
-        (&["switch", "mood", "happy"], "SWITCH"),
+        (&["switch", "mood", "happy"], "CHANGE"),
+        (&["change", "mood", "sad"], "CHANGE"),
         (&["switch", "mood", "sad", "20m"], "PERIOD"),
         (&["switch", "mood", "calm", "dur=0"], "MOMENT"),
         (&["switch", "mood", "calm", "dur=MOMENT"], "MOMENT"),
         (&["add", "book", "dune", "title=x"], "RECORD"),
         (&["note", "jot", "hi"], "RECORD"),
+        (&["remark", "jot", "ho"], "RECORD"),
+        (&["record", "book", "emma"], "RECORD"),
     ];
     for (args, shape) in cases {
         let docs = env.docs(&[args, &["--show", "json"][..]].concat());
         assert_eq!(docs.len(), 1, "{args:?}: one entry, one doc");
         assert_eq!(docs[0]["shape"], *shape, "{args:?}");
-        let word = if args[0] == "note" { "REMARK" } else { shape };
+        let word = if ["note", "remark"].contains(&args[0]) {
+            "REMARK"
+        } else {
+            shape
+        };
         assert_eq!(docs[0]["action"], word, "{args:?}");
         assert_eq!(docs[0]["created"], true, "{args:?}");
         let printed = strip_ansi(&terminal.run(args));
@@ -387,7 +394,7 @@ fn a_partial_update_echoes_the_update_it_made() {
 }
 
 /// An update of several entries echoes each one's change (da-27x6p): every
-/// changed part before and after under `changes`, the info line and the
+/// changed part before and after under `diff`, the info line and the
 /// data view drawn as the change, the unchanged parts as they are.
 #[test]
 fn an_update_of_several_entries_carries_each_ones_before_and_after() {
@@ -419,16 +426,16 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
         serde_json::json!(["size: \"large\" → \"medium\"", "shop: \"corner\""])
     );
     assert_eq!(
-        docs[0]["changes"],
+        docs[0]["diff"],
         serde_json::json!([{"part": "data", "key": "size", "before": "\"large\"", "after": "\"medium\""}])
     );
     assert_eq!(docs[1]["hid"], b);
-    assert_eq!(docs[1]["changes"][0]["before"], "\"small\"");
+    assert_eq!(docs[1]["diff"][0]["before"], "\"small\"");
 
     let moved = env.docs(&["update", a, "at=10:00", "--show", "json"]);
     let info = moved[0]["info"].as_str().unwrap();
     assert!(info.contains(":00:00") && info.contains(" → "), "{info}");
-    assert_eq!(moved[0]["changes"][0]["part"], "time");
+    assert_eq!(moved[0]["diff"][0]["part"], "time");
     let segments: String = moved[0]["info_segments"]
         .as_array()
         .unwrap()
@@ -439,8 +446,8 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
 
     let created = env.docs(&["occur", "tea", "--show", "json"]);
     assert!(
-        created[0].get("changes").is_none(),
-        "only an update carries changes"
+        created[0].get("diff").is_none(),
+        "only an update carries a diff"
     );
 }
 
@@ -463,7 +470,7 @@ fn an_undone_update_is_the_change_taken_back() {
         docs[0]["data"],
         serde_json::json!(["size: \"large\" ← \"small\"", "shop: \"corner\""])
     );
-    assert_eq!(docs[0]["changes"][0]["before"], "\"small\"");
+    assert_eq!(docs[0]["diff"][0]["before"], "\"small\"");
     assert_eq!(docs[0]["undid"]["action"], "UPDATE");
     assert!(docs[0]["undid"]["time"].as_str().unwrap().ends_with('Z'));
 
@@ -622,7 +629,7 @@ fn a_bare_undo_of_a_list_echoes_each_entry_and_redo_the_update() {
         assert_eq!(doc["action"], "REVERT");
         assert_eq!(doc["undid"], docs[0]["undid"], "one command undone");
         assert_eq!(doc["undid"]["action"], "UPDATE");
-        assert_eq!(doc["changes"][0]["before"], "5");
+        assert_eq!(doc["diff"][0]["before"], "5");
     }
 
     let redone = env.docs(&["redo", "--show", "json"]);
@@ -630,7 +637,7 @@ fn a_bare_undo_of_a_list_echoes_each_entry_and_redo_the_update() {
     for doc in &redone {
         assert_eq!(doc["action"], "UPDATE");
         assert!(doc.get("undid").is_none(), "{doc}");
-        assert_eq!(doc["changes"][0]["after"], "5");
+        assert_eq!(doc["diff"][0]["after"], "5");
     }
 }
 

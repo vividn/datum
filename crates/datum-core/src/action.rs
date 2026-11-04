@@ -49,12 +49,28 @@ pub enum Action {
 }
 
 impl Action {
-    /// The word a person reads: `Display` is the name stored, and `occur`'s
-    /// word is `moment` (da-cswh8).
+    /// The command a person types and reads: `Display` is the name stored,
+    /// and the glossary's word is `moment` (da-cswh8), `on`, `off`, `change`,
+    /// `record` or `remark` (da-gpz6m).
     pub fn word(self) -> String {
         match self {
-            Action::Occur => "moment".to_string(),
-            other => other.to_string(),
+            Action::Occur => "moment",
+            Action::Start => "on",
+            Action::Stop => "off",
+            Action::Switch => "change",
+            Action::Add => "record",
+            Action::Note => "remark",
+            Action::Block => "block",
+        }
+        .to_string()
+    }
+
+    /// The field kind a spec storing this names (da-gpz6m): `on/off` for
+    /// `start`, else its [`word`](Self::word).
+    pub fn kind(self) -> String {
+        match self {
+            Action::Start => "on/off".to_string(),
+            other => other.word(),
         }
     }
 }
@@ -78,12 +94,12 @@ impl std::str::FromStr for Action {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "moment" | "occur" => Ok(Action::Occur),
-            "start" => Ok(Action::Start),
-            "stop" | "end" => Ok(Action::Stop),
-            "switch" => Ok(Action::Switch),
+            "on" | "start" => Ok(Action::Start),
+            "off" | "stop" | "end" => Ok(Action::Stop),
+            "change" | "switch" => Ok(Action::Switch),
             "block" => Ok(Action::Block),
-            "add" => Ok(Action::Add),
-            "note" => Ok(Action::Note),
+            "record" | "add" | "card" => Ok(Action::Add),
+            "remark" | "note" => Ok(Action::Note),
             _ => Err(format!("Unknown action: '{s}'")),
         }
     }

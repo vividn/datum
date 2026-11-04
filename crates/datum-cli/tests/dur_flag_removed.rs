@@ -49,7 +49,7 @@ fn dur_flag_is_rejected_on_every_logging_verb() {
             // person restores the flag rather than learning the two
             // forms that survived.
             assert!(
-                err.contains("datum end work 12m") && err.contains("dur=12m"),
+                err.contains("datum off work 12m") && err.contains("dur=12m"),
                 "tombstone must name both surviving spellings, got: {err}",
             );
         }

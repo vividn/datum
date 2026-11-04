@@ -82,7 +82,7 @@ fn add_without_id_errors_descriptively() {
     let err = run_cli(&["add", "widget"], &db).expect_err("bare add must error");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("add needs an id"),
+        msg.contains("record needs an id"),
         "error states the contract, got: {msg}"
     );
     assert!(

@@ -382,10 +382,16 @@ fn what_takes_one_field_says_so() {
 fn one_field_commands_quote_the_word_and_say_what_to_do() {
     let env = Env::new();
     for (line, says) in [
-        (&["add", "coffee,tea"][..], "`add coffee … , add tea …`"),
-        (&["add", "coffee,tea", "x"], "`add coffee … , add tea …`"),
-        (&["note", "coffee,tea"], "`note coffee … , note tea …`"),
-        (&["add", "a,,b"], "`add a … , add b …`"),
+        (
+            &["add", "coffee,tea"][..],
+            "`record coffee … , record tea …`",
+        ),
+        (
+            &["add", "coffee,tea", "x"],
+            "`record coffee … , record tea …`",
+        ),
+        (&["note", "coffee,tea"], "`remark coffee … , remark tea …`"),
+        (&["add", "a,,b"], "`record a … , record b …`"),
         (&["setup", "a,b"], "`setup a … , setup b …`"),
         (
             &["setup", "a,b", "--states", "on"],

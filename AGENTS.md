@@ -58,10 +58,11 @@ we talk to each other»). Code that has not moved to a word yet says the old one
 | writing one | **log** | | | record (verb), write, enter |
 
 The command you type is the word the echo prints; a period alone has no command of its own.
-`change`, `record`, `remark`, `--kind` and `--as` do not run yet: until the CLI moves, type `switch`,
-`add`, `note` and `--verb`.
+The old words still run, as aliases (`occur`, `start`, `stop`, `end`, `switch`, `add`, `card`, `note`,
+`--verb`), and a spec still stores `occur`, `start`, `switch` or `add`, shown as its kind, until the
+data moves (da-gpz6m).
 An update's before-and-after is its **diff**, in its echo and in `--show json`, since `change` is
-to be a command. A command waiting for its field, in datum.day's bar, is a **pending command**.
+a command. A command waiting for its field, in datum.day's bar, is a **pending command**.
 
 In code a field kind is `FieldKind`, never a bare `kind`: a layout's `kind` is a widget's. A remark is
 no field kind: it adds untimed data to a field that is otherwise timed. Every other «verb» goes too.

@@ -262,13 +262,13 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
         Some(Slot::Entry) => entries(db, cur),
         Some(Slot::Keys) => {
             let field = field_on_line(&slots, given);
-            // `switch`'s state is the word after the field.
-            let state = (spec.name == "switch")
+            // `change`'s state is the word after the field.
+            let state = (spec.name == "change")
                 .then(|| given.iter().filter(|w| !w.contains('=')).nth(1))
                 .flatten()
                 .map(|s| s.to_string());
             let mut found = Vec::new();
-            if spec.name == "switch" && state.is_none() {
+            if spec.name == "change" && state.is_none() {
                 found.extend(field.as_deref().map(|f| states(db, f)).unwrap_or_default());
             }
             let on_line: BTreeSet<&str> = given

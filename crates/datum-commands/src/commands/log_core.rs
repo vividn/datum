@@ -45,7 +45,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // bucket instead of state, leaving a surprise `state=true`.
     if args.string_state {
         if !matches!(action, Action::Switch) {
-            anyhow::bail!("`-I`/`--string-state` is only valid with `switch`");
+            anyhow::bail!("`-I`/`--string-state` is only valid with `change`");
         }
         if args.remainder.is_some() || args.string_remainder || args.comment_remainder {
             anyhow::bail!(
@@ -56,7 +56,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
 
     if args.if_changed && !matches!(action, Action::Switch | Action::Start | Action::Stop) {
-        anyhow::bail!("`--if-changed` is only valid with `switch`, `start` and `end`");
+        anyhow::bail!("`--if-changed` is only valid with `change`, `on` and `off`");
     }
 
     // da-tldkb: a name that is no field may name one it starts, read
@@ -350,10 +350,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
     // da-5ns.3 strict positional gate (the timeless Add/Note family): the
     // v=20 model has no implicit `value` column, so a bare unkeyed positional
-    // with no `-K` slot binding has nowhere to land. Reject with a generic
-    // extra-args error naming the offending tokens — `state=<v>` is just
-    // one of several ways to attach data and should not be presented as a
-    // hard requirement (da-obmm).
+    // with no `-K` slot binding has nowhere to land. Reject it naming the
+    // offending tokens: `state=<v>` is one of several ways to attach data,
+    // not a requirement (da-obmm).
     if matches!(action, Action::Add | Action::Note) && value.is_some() && args.slug_keys.is_empty()
     {
         let extras: Vec<&str> = args
@@ -364,9 +363,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             .collect();
         let joined = extras.join(" ");
         anyhow::bail!(
-            "unexpected positional argument(s) for `dm {action}`: {joined}. \
+            "unexpected positional argument(s) for `datum {}`: {joined}. \
              Use `KEY=VALUE` to assign data (e.g. `state=...`, `foo=bar`), declare a \
-             `-K key=` slug slot, or route them with `-R <bucket>` / `-C`."
+             `-K key=` slug slot, or route them with `-R <bucket>` / `-C`.",
+            action.word()
         );
     }
 
@@ -378,8 +378,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // command-level mistake we want to surface, not silently insert.
     if matches!(action, Action::Occur) && reserved.state.is_some() {
         anyhow::bail!(
-            "`dm occur` doesn't carry state — drop the `state=<v>` key and \
-             use `dm switch` (or `start`/`stop`) for state-changing entries"
+            "`datum moment` doesn't carry state — drop the `state=<v>` key and \
+             use `datum change` (or `on`/`off`) for state-changing entries"
         );
     }
 
@@ -899,7 +899,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         // `add … -T` is exempt: `-T` explicitly converts to note-data, so it
         // takes the create_time-id branch below like any other `-T` insert.
         anyhow::bail!(
-            "add needs an id: `datum add {} <id> …` (or -K <key>, or --id <value>)",
+            "record needs an id: `datum record {} <id> …` (or -K <key>, or --id <value>)",
             entry.field
         );
     } else {
@@ -1665,7 +1665,7 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     // get folded into following_state and look like an alias for `a,b`
     // concurrent state — wrong.
     if args.rest.iter().skip(comma_idx + 1).any(|t| t == ",") {
-        anyhow::bail!("switch: multi-step `,` chains aren't supported yet — use one bare comma");
+        anyhow::bail!("change: multi-step `,` chains aren't supported yet — use one bare comma");
     }
     let post: Vec<String> = args.rest.split_off(comma_idx + 1);
     // Drop the comma token itself.
@@ -1674,19 +1674,19 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     for token in post {
         if token.contains('=') {
             anyhow::bail!(
-                "switch: only a bare state value may follow the `,` chain marker (got `{token}`)"
+                "change: only a bare state value may follow the `,` chain marker (got `{token}`)"
             );
         }
         post_bare.push(token);
     }
     if post_bare.is_empty() {
         anyhow::bail!(
-            "switch: `,` chain marker requires a trailing state (e.g. `switch body vertical 5 , sit`)"
+            "change: `,` chain marker requires a trailing state (e.g. `change body vertical 5 , sit`)"
         );
     }
     if post_bare.len() > 1 {
         anyhow::bail!(
-            "switch: `,` chain marker accepts exactly one trailing state (got {n})",
+            "change: `,` chain marker accepts exactly one trailing state (got {n})",
             n = post_bare.len()
         );
     }
@@ -1744,7 +1744,7 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
             let dur_token = args.rest.remove(dur_idx);
             if args.duration.duration.is_some() {
                 anyhow::bail!(
-                    "switch: `{keyword}`-chain duration positional `{dur_token}` conflicts with an already-peeled duration"
+                    "change: `{keyword}`-chain duration positional `{dur_token}` conflicts with an already-peeled duration"
                 );
             }
             args.duration.duration = Some(dur_token);
@@ -2071,8 +2071,8 @@ impl StateEdit {
         let label = label.join(" ");
         if !matches!(action, Action::Switch) {
             anyhow::bail!(
-                "{label} changes the states a field is in, which a start or an end \
-                 (`on`, `off`) does not name: `datum switch <field> {label}`"
+                "{label} changes the states a field is in, which an `on` or an `off` \
+                 does not name: `datum change <field> {label}`"
             );
         }
         let named = match named.as_slice() {

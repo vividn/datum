@@ -117,12 +117,14 @@ pub(crate) fn parse_spec_set(tail: &[&str], timed: bool) -> Result<(SpecSetArgs,
                 out.from_json = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("verb") => {
-                let (v, ni) = take_value(tail, i, None, "--verb")?;
+            // The field's kind: `--kind`, `--as` its short form, and the
+            // old `--verb` (da-gpz6m).
+            FlagSplit::Long(name @ ("kind" | "as" | "verb")) => {
+                let (v, ni) = take_value(tail, i, None, &format!("--{name}"))?;
                 out.verb = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("verb", v) => {
+            FlagSplit::LongAttached("kind" | "as" | "verb", v) => {
                 out.verb = Some(v.to_string());
                 i += 1;
             }

@@ -96,9 +96,12 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "stop",
     "end",
     "off",
+    "change",
     "switch",
+    "record",
     "add",
     "card",
+    "remark",
     "note",
     "tail",
     "head",
@@ -152,16 +155,20 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "upgrade",
 ];
 
-/// Other names for four commands, each the command it names (da-zz6en): `moment`
-/// is `occur`'s (da-cswh8), the rest datum.day's (`web/src/lib/track.ts`). A
+/// The words a person types for seven commands, each the command it names
+/// (da-zz6en, da-gpz6m): the glossary's `moment`, `on`, `off`, `change`,
+/// `record` and `remark` (da-cswh8 the first), and datum.day's `card`. A
 /// side's lead word is read as that command as aliases expand, so everything
-/// after reads `occur`, `start`, `stop` or `add`; only a help page keeps the
-/// word it was asked by.
+/// after reads `occur`, `start`, `stop`, `switch`, `add` or `note`, the
+/// names stored; only a help page keeps the word it was asked by.
 const COMMAND_SYNONYMS: &[(&str, &str)] = &[
     ("moment", "occur"),
     ("on", "start"),
     ("off", "stop"),
+    ("change", "switch"),
+    ("record", "add"),
     ("card", "add"),
+    ("remark", "note"),
 ];
 
 /// The command `word` names: itself, or the one a synonym stands for.

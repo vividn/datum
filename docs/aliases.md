@@ -16,7 +16,7 @@ grammar's punctuation — are in
 
 Manage aliases
 
-Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — verb, field, flags, or all three.
+Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — command, field, flags, or all three.
 
 A standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically, at one time unless a side names its own. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi. Inside a word it joins a list instead — `vertical,sit` is one parallel state, `key=a,b` one list value — and a comma touching one side only (`vertical, sit`) is refused.
 
@@ -24,11 +24,11 @@ Key slot forms (`-k` and `-K` accept the same three shapes): `-k key` is require
 
 `--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary.
 
-Time flags at the call site compose with the ones the alias bound: `-q` and a relative `-t` add to whatever time the alias bound — on an alias bound to `-t +5`, `-t +10` writes at +15 — and `-y` and `-d` move the day of a clock it bound; beside a relative time they need one (`datum help time`). A time flag on one side of a `,` is that side's: `moment tea -t 9:00 , switch mood calm -t 9:10` writes tea at 9:00 and mood at 9:10, and a side naming no time takes the first side's.
+Time flags at the call site compose with the ones the alias bound: `-q` and a relative `-t` add to whatever time the alias bound — on an alias bound to `-t +5`, `-t +10` writes at +15 — and `-y` and `-d` move the day of a clock it bound; beside a relative time they need one (`datum help time`). A time flag on one side of a `,` is that side's: `moment tea -t 9:00 , change mood calm -t 9:10` writes tea at 9:00 and mood at 9:10, and a side naming no time takes the first side's.
 
 After a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.
 
-After an alias's slots are filled, a word naming a command runs that command on the alias's field: a log verb logs (`bed end`, with `bed` = `start sleep`, ends sleep), and any other takes the field as its first word, with the state the alias names as its filter where it takes one (`outside tail`, with `outside` = `switch environment outside`, is `tail environment:outside`) and ignoring its other data. An alias of several fields passes them all. Slots fill first, so a state wins over a command: `envi tail`, with `envi` = `switch environment`, switches to «tail», and `envi . tail` is `tail environment`. `.` takes a slot's default (a switch's state is true, a start's duration none, a key its default or nothing, a required key refuses it), and `...` is a `.` for every slot left: `practice ... tail` is `tail session` when `practice` = `moment session -k skill -k dur`.
+After an alias's slots are filled, a word naming a command runs that command on the alias's field: a log command logs (`bed off`, with `bed` = `on sleep`, turns sleep off), and any other takes the field as its first word, with the state the alias names as its filter where it takes one (`outside tail`, with `outside` = `change environment outside`, is `tail environment:outside`) and ignoring its other data. An alias of several fields passes them all. Slots fill first, so a state wins over a command: `envi tail`, with `envi` = `change environment`, changes to «tail», and `envi . tail` is `tail environment`. `.` takes a slot's default (a change's state is true, an on's length none, a key its default or nothing, a required key refuses it), and `...` is a `.` for every slot left: `practice ... tail` is `tail session` when `practice` = `moment session -k skill -k dur`.
 
 `datum alias install zsh >> ~/.zshrc` (or `bash >> ~/.bashrc`) adds a loop to the rc file, which `install` prints and does not write, so a new shell runs each alias, and `moment`, `start`, `stop`, `switch`, `on`, `off` and `card`, by its bare name, making a shell alias only of a name that is not already a command (`find` stays `/usr/bin/find`). The loop reads the names from `datum alias list --names`, so only names, never code, come from datum as a shell starts; `datum alias uninstall zsh` takes the loop out.
 
@@ -51,20 +51,20 @@ datum alias uninstall <zsh|bash>
 #### Examples
 
 ```
-datum alias set vbp "note word srcLang=pt pos=verb"
+datum alias set vbp "remark word srcLang=pt pos=verb"
 datum vbp correr "to run"
 ```
 
-An alias stands in for any PREFIX of an invocation — verb, field, flags, data keys. The call above writes a `word` note with `srcLang=pt`, `pos=verb` and `comment=["correr to run"]`.
+An alias stands in for any PREFIX of an invocation — command, field, flags, data keys. The call above writes a `word` remark with `srcLang=pt`, `pos=verb` and `comment=["correr to run"]`.
 
 ```
-datum switch body vertical , switch body sit
+datum change body vertical , change body sit
 ```
 
 A whitespace-bounded `,` splits one invocation into two sides that write atomically at one `at`. Same field, same instant, so the two merge into ONE `body` row with `state = [vertical, sit]` rather than overwriting each other.
 
 ```
-datum alias set oov "switch environment outside , switch body vertical"
+datum alias set oov "change environment outside , change body vertical"
 datum oov
 ```
 

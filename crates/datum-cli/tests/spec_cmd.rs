@@ -443,20 +443,20 @@ fn a_key_this_datum_does_not_know_survives_a_save() {
 fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
     let page = datum_parse::help::command_help("setup");
     let logging = datum_parse::help::command_help("logging");
-    assert!(page.contains("\nVERB: "), "{page}");
+    assert!(page.contains("\nKIND: "), "{page}");
+    assert!(page.contains("  on/off   something that lasts      datum on work"));
     for line in [
         "  moment   a point in time           datum moment coffee",
-        "  start    something that lasts      datum start work",
-        "  switch   a change of state         datum switch mood happy",
-        "  add      a record with a key       datum add book -K title Dune",
+        "  change   a new state               datum change mood happy",
+        "  record   an untimed entry, keyed   datum record book -K title Dune",
     ] {
         assert!(page.contains(line), "setup lacks {line:?}:\n{page}");
         assert!(logging.contains(line), "logging lacks {line:?}");
     }
     let example = page
         .lines()
-        .find(|l| l.trim().starts_with("datum setup tea --verb"))
-        .expect("no `datum setup tea --verb` example on setup --help");
+        .find(|l| l.trim().starts_with("datum setup tea --kind"))
+        .expect("no `datum setup tea --kind` example on setup --help");
     let argv: Vec<&str> = example.split_whitespace().skip(1).collect();
     let db = fresh_db();
     run_cli(&argv, &db).unwrap();
@@ -467,8 +467,8 @@ fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
         let err = run_cli(&["setup", field, "--verb", "event"], &db).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "invalid --verb 'event' — must be one of: moment|start|switch|add, \
-             or occur|occurrence|on|on/off|card (`datum help logging` says what each is)"
+            "invalid --kind 'event' — must be one of: moment|on/off|change|record, \
+             or occur|occurrence|on|start|switch|add|card (`datum help logging` says what each is)"
         );
     }
 }
@@ -494,5 +494,5 @@ fn setup_verb_takes_the_web_kind_names_and_stores_the_canonical_verb() {
             .unwrap();
         assert_eq!(stored["verb"], verb.to_string(), "{name}");
     }
-    assert!(datum_parse::help::command_help("logging").contains("moment, on/off, switch or card"));
+    assert!(datum_parse::help::command_help("logging").contains("moment, on/off, change or record"));
 }

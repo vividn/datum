@@ -283,7 +283,7 @@ fn the_new_names_spec_wins_and_a_difference_is_said() {
         );
     }
     let spec = env.ok("a", &["setup", "mood"]);
-    assert!(spec.contains("switch"), "{spec}");
+    assert!(spec.contains("change"), "{spec}");
     let gone = env.query(
         "a",
         "SELECT hid FROM entries WHERE slug = 'spec:moood' AND deleted_at IS NULL",

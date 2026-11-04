@@ -206,8 +206,8 @@ fn help_documents_the_rule_and_drops_the_flag() {
         "`datum help logging` documents the shared flag:\n{topic}",
     );
     assert!(
-        topic.contains("`note` is the exception"),
-        "`datum help logging` must say `note` has no -C:\n{topic}",
+        topic.contains("`remark` is the exception"),
+        "`datum help logging` must say `remark` has no -C:\n{topic}",
     );
     // And the parser still accepts it on a sibling, folded page or not.
     assert!(env.ok(&["help", "occur"]).contains("datum help logging"));

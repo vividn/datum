@@ -108,9 +108,10 @@ pub struct KitParam {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldEntry {
     pub name: String,
-    /// `occur | start | switch | add` — what a bare press of the field
-    /// means. Required (da-c8mh): a kit that installs a field says what
-    /// the field is.
+    /// The field's kind, `moment | on/off | change | record` or an old word
+    /// for one (da-gpz6m): what a bare press of the field means. Required
+    /// (da-c8mh): a kit that installs a field says what the field is. The
+    /// key stays `verb`: a kit's `kind` is refused (da-uokdb).
     pub verb: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -376,8 +377,9 @@ pub const WIDGET_READS: [&str; 15] = [
 
 /// The verbs a widget's `row_action` may start with: a tap logs, and does
 /// nothing else a kit, which is shared text, could ask of it.
-pub const WIDGET_ACTIONS: [&str; 8] = [
-    "moment", "occur", "start", "end", "stop", "switch", "add", "note",
+pub const WIDGET_ACTIONS: [&str; 14] = [
+    "moment", "occur", "on", "start", "off", "end", "stop", "change", "switch", "record", "add",
+    "card", "remark", "note",
 ];
 
 /// Screen a `[[widget]]` block: a name; a command that only reads — one of
@@ -842,7 +844,7 @@ impl FieldEntry {
     pub fn into_spec(self, color_resolved: Option<String>) -> Result<FieldSpec> {
         let Some(action) = crate::field_spec::verb_choice(&self.verb) else {
             return Err(DatumError::Other(format!(
-                "kit field '{}': invalid verb '{}' (must be {})",
+                "kit field '{}': invalid kind '{}' (must be {})",
                 self.name,
                 self.verb,
                 crate::field_spec::VERB_NAMES_TEXT
@@ -1460,14 +1462,14 @@ states.japan = {}
     }
 
     #[test]
-    fn rejects_invalid_verb() {
+    fn rejects_invalid_kind() {
         let entry = FieldEntry {
             verb: "stop".into(),
             ..FieldEntry::from_spec(&FieldSpec::new("x", Action::Occur))
         };
         let err = entry.into_spec(None).unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("verb"), "msg = {msg}");
+        assert!(msg.contains("invalid kind"), "msg = {msg}");
     }
 
     #[test]
