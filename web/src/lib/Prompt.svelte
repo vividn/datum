@@ -89,7 +89,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { act } from '#lib/act.ts';
 	import { clearLine, commandsOpen, ghost, pills, registerLine, spent, submitLine, text } from '#lib/bar.ts';
-	import { isLength, roleOf, valuedFlags } from '#lib/commands.ts';
+	import { isLength, roleOf, saysKey, valuedFlags } from '#lib/commands.ts';
 	import LengthArrow from '#lib/LengthArrow.svelte';
 	import Pill from '#lib/Pill.svelte';
 	import { fields, grammar, ready } from '#lib/layout/engine.ts';
@@ -412,7 +412,9 @@
 			     `.pill` — a test included — is never handed one. -->
 			{#each $spent as pill (pill.id)}
 				<span class="spent {pill.kind}" style:--pill={pill.color} style:animation-delay="-{pill.age}ms"
-					use:withGhost>{#if isLength(pill)}<LengthArrow />{/if}{pill.text}</span
+					use:withGhost
+					>{#if !isLength(pill)}{pill.text}{:else if saysKey([...$pills, ...$spent], $fields)}dur={pill.text}{:else}<LengthArrow
+						/>{pill.text}{/if}</span
 				>
 			{/each}
 		</span>

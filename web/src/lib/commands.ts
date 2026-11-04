@@ -272,6 +272,18 @@ export const pillWord = (p: Pick<Pill, 'kind' | 'text'>): string => (isLength(p)
 export const isLength = (p: Pick<Pill, 'kind' | 'text'>): boolean => p.kind === 'dur' && !p.text.includes('=');
 
 /**
+ * Does a length pill SAY its key, `dur=25m`, rather than `←25m` (da-wdcbo)?
+ * vividn, 11-03: «if there are positional data, make the data pill say
+ * dur=». So where the field pill on the bar declares positional keys — the
+ * spec's `keys` (`fields --json`, `declared_keys` as the CLI binds them),
+ * where a bare `25m` would fill one — the pill says what the line gets.
+ */
+export const saysKey = (all: Pill[], fields: FieldButton[]): boolean => {
+	const field = argumentsOf(all).find((p) => p.kind === 'field');
+	return !!fields.find((b) => b.field === field?.text)?.keys?.length;
+};
+
+/**
  * The fields a loaded duration leaves showing: the BLOCKS — a `start`
  * field and a `switch`, the two shapes that draw a span (vividn, 09-17: «if
  * a duration is selected, filter down to start/switch based fields»).

@@ -775,6 +775,63 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 		});
 	});
 
+	// vividn, 11-03: «if there are positional data, make the data pill say
+	// dur=» (da-wdcbo): under a field pill whose spec declares a key, which a
+	// bare `25m` would fill, the length pill says the word the line gets.
+	test('under a field pill with positional keys the length says `dur=25m`, and `←25m` under one without', async () => {
+		await withBand(async (app) => {
+			const { page } = app;
+			const set = await app.run(['setup', 'posture', '--verb', 'start', '--data-key', 'side=left']);
+			assert.equal(set.code, 0, set.stderr);
+			await app.redraw();
+			const g = await geometry(page);
+			await drag(page, at(g, 5), at(g, 30), { hold: true });
+			await saysPills(page, ['time:-q', 'dur:25m']);
+
+			/** The length pill as drawn: its words, and whether it wears the arrow. */
+			const length = () =>
+				page.locator('.prompt-bar .pill.dur button.remove').evaluate((b) => ({
+					text: b.querySelector('.label').textContent,
+					arrow: !!b.querySelector('svg.length-arrow')
+				}));
+			const says = (want) => until(length, (seen) => seen.text === want.text && seen.arrow === want.arrow);
+			/** Load `field`'s pill beside the range, or take it away (`null`). */
+			const fieldPill = (field) =>
+				page.evaluate(
+					(field) =>
+						window.datum.bar.setPills([
+							...window.datum.bar.pills().filter((p) => p.kind !== 'field'),
+							...(field ? [{ id: 'field', kind: 'field', text: field }] : [])
+						]),
+					field
+				);
+
+			const arrow = { text: '25m', arrow: true };
+			const keyed = { text: 'dur=25m', arrow: false };
+			await says(arrow);
+			// The same pill, its text changed in place as the field pill comes and goes.
+			const pill = await page.locator('.prompt-bar .pill.dur').elementHandle();
+			await fieldPill('posture');
+			await says(keyed);
+			await fieldPill('work');
+			await says(arrow);
+			await fieldPill(null);
+			await says(arrow);
+			await fieldPill('posture');
+			await says(keyed);
+			assert.ok(await pill.evaluate((el) => el.isConnected), 'the length pill was drawn again, not changed in place');
+			// What it says it stores: the 25m block, its key at its default.
+			await saysPills(page, ['time:-q', 'dur:25m', 'field:posture']);
+
+			const seen = await app.spyOnRunner();
+			assert.match(await barRun(page, 'start'), /^CREATE$/);
+			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), ['start', 'posture', '-q', 'dur=25m']);
+			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
+			assert.equal(posture.dur, 'PT25M', JSON.stringify(posture));
+			assert.equal(posture.data?.side, 'left', JSON.stringify(posture));
+		});
+	});
+
 	// vremya on PR #48: after `start posture` the `-q` pill was BACK, the
 	// cursor was still set, a white line was still drawn, and the next plain
 	// `occur` was logged at it. A command spends both of a range's pills at

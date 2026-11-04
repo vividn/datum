@@ -26,8 +26,9 @@
 	somewhere else sets that number for itself.
 -->
 <script lang="ts">
-	import { dropSection, sectionsOf, toggleLockPill, type Pill } from './bar.js';
-	import { isLength } from './commands.js';
+	import { dropSection, pills, sectionsOf, toggleLockPill, type Pill } from './bar.js';
+	import { isLength, saysKey } from './commands.js';
+	import { fields } from './layout/engine.js';
 	import LengthArrow from './LengthArrow.svelte';
 
 	interface Props {
@@ -41,6 +42,9 @@
 	}
 
 	let { pill, context = false }: Props = $props();
+
+	/** A length says `dur=25m` under a field with positional keys, `←25m` otherwise (`saysKey`, da-wdcbo). */
+	const keyed = $derived(isLength(pill) && saysKey($pills, $fields));
 </script>
 
 <span
@@ -57,7 +61,8 @@
 			onclick={() => dropSection(pill.id, i)}
 			>{#if context}<svg class="glyph funnel" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
 					><path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z" /></svg
-				>{/if}{#if isLength(pill)}<LengthArrow />{/if}<span class="label">{section.text}</span
+				>{/if}{#if isLength(pill) && !keyed}<LengthArrow />{/if}<span class="label"
+				>{keyed ? 'dur=' : ''}{section.text}</span
 			>{#if !section.rest && !context}<span class="x" aria-hidden="true">×</span>{/if}</button
 		>{/each}{#if !context}<button
 		type="button"
