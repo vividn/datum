@@ -648,7 +648,7 @@ export function inspectMark(
 	else {
 		const order = root ? marksIn(root).map(hidOf).filter((h): h is string => !!h) : [hid];
 		pointAt(null);
-		select(hid, inspectMods(e), order);
+		select(hid, inspectMods(e), order, true);
 	}
 	spendPress();
 	return true;

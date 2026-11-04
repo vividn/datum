@@ -364,6 +364,14 @@ pills.subscribe((all) => {
 	if (pill) setHids(hidsOf(pill), !!pill.locked);
 });
 
+/**
+ * Whether the selection was made on a picture (da-xdz73): there a press
+ * ranks the fields (da-qu16), which collect keeps showing in place of the
+ * entry's card until vividn rules between the two.
+ */
+export const pictured = writable(false);
+selected.subscribe((hids) => void (hids.length || pictured.set(false)));
+
 /** The last entry tapped: where a shift-click's range starts. */
 let anchor: string | null = null;
 
@@ -434,10 +442,12 @@ function setHids(hids: string[], locked: boolean): void {
 export function select(
 	hid: string,
 	e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
-	order: string[]
+	order: string[],
+	picture = false
 ): void {
 	const pill = get(pills).find((p) => p.kind === 'hid');
 	const locked = !!pill?.locked;
+	pictured.set(picture);
 	setHids(picked(get(selected), hid, pickOf(e, locked), order, anchor, locked), locked);
 	anchor = hid;
 }
@@ -451,6 +461,7 @@ export function select(
 export function selectHeld(hid: string): void {
 	const pill = get(pills).find((p) => p.kind === 'hid');
 	const kept = pill?.locked ? get(selected).filter((h) => !same(h, hid)) : [];
+	pictured.set(false);
 	setHids([...kept, hid], true);
 	anchor = hid;
 }

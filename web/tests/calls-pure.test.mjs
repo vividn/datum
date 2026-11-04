@@ -198,6 +198,7 @@ const SAMPLES = {
 	statsArgv: [[DEFAULT_STATS], [{ range: 'all' }, 'coffee']],
 	specShowArgv: [['coffee'], ['mood']],
 	specHistoryArgv: [['coffee'], ['mood']],
+	entryArgv: [[HID]],
 	entriesHistoryArgv: [[[HID]], [[HID, HID]]],
 	stepArgv: [[[HID]]],
 	revertToVersionArgv: [[HID, 1]],

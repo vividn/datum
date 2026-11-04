@@ -113,11 +113,15 @@
 	import { get } from 'svelte/store';
 	import { act } from './act.js';
 	import { holds } from './hold.js';
-	import { fieldPill, focusLine, pills, prefill, setFieldPill, text, type Pill } from './bar.js';
+	import { fieldPill, focusLine, pills, pictured, prefill, refs, selected, setFieldPill, text, type Pill } from './bar.js';
+	import { onAnyChange } from './changes.js';
+	import { currentDb } from './database.js';
+	import { run } from './run.js';
+	import { entryArgv } from './calls.js';
 	import { SPAN_ID, cursor, pointAt, pointed, type Cursor } from './cursor.js';
 	import { grammar } from '#lib/layout/engine.ts';
 	import { previewOf } from './preview.js';
-	import { withPills } from './selection.js';
+	import { labelOf, withPills } from './selection.js';
 	import { closer, rowsUnder, type Near } from './lanes.js';
 	import { shellJoin } from './shellSplit.js';
 	import {
@@ -524,6 +528,70 @@
 		if (picked !== null && (picking === null || $fieldPill !== picked)) untrack(close);
 	});
 
+	// ---- an ENTRY selected (da-xdz73) ------------------------------------
+	//
+	// vividn, 2026-11-03: «if you select an hid pill, it could show
+	// information about this individual datum … no need to show by metadata
+	// here, just the data / put a -A button which toggles showing all the
+	// data». The bar's `hid` pill, its last entry, while no field is open
+	// and it was not selected on a picture, whose press ranks the fields
+	// instead (da-qu16) until vividn rules between the two. A field pill on
+	// the bar keeps the fields too, its hold being theirs (da-05oit):
+	// its field and time, then its data; `−A` adds every other column, as
+	// `get -A` prints them. Its actions are the command pane's (da-fg4w4).
+
+	/** The entry shown: the hid pill's last, read again on every write. */
+	const hid = $derived($pictured ? null : ($selected.at(-1) ?? null));
+	let entry: Record<string, unknown> | null = $state.raw(null);
+	/** `−A`: every column, metadata included. */
+	let everything = $state(false);
+	$effect(() => {
+		if (!hid) return void ((entry = null), (everything = false));
+		// One read at a time, and one more if a write came meanwhile: a burst
+		// of writes is one read, not one each (`onAnyChange` coalesces nothing).
+		let live = true;
+		let reading = false;
+		let again = false;
+		const read = async () => {
+			if (reading) return void (again = true);
+			reading = true;
+			do {
+				again = false;
+				const got = await run(entryArgv(hid));
+				let next = null;
+				try {
+					next = got.code === 0 ? JSON.parse(got.stdout) : null;
+				} catch {
+					// Not a document: no card.
+				}
+				if (live) entry = next;
+			} while (again && live);
+			reading = false;
+		};
+		void read();
+		const unhear = onAnyChange(() => void read(), currentDb());
+		return () => ((live = false), unhear());
+	});
+	/** Whether the entry's card is up, in place of the fields. */
+	const card = $derived(!!entry && !!hid && !$fieldPill);
+	/** The entry's own clock, `13:23`, at the offset it was logged at. */
+	function clockOf(e: Record<string, unknown>): string {
+		const at = e.at as { utc: string; offset_minutes: number } | null;
+		return at ? new Date(Date.parse(at.utc) + at.offset_minutes * 60_000).toISOString().slice(11, 16) : '';
+	}
+	/** A value as it reads: a string bare, anything else its JSON. */
+	const said = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v));
+	/** The rows shown: the data's keys, and with `−A` every other column too. */
+	const rows = $derived.by((): [string, unknown][] => {
+		if (!entry) return [];
+		const data = Object.entries((entry.data as Record<string, unknown> | null) ?? {});
+		return everything ? [...data, ...Object.entries(entry).filter(([k]) => k !== 'data')] : data;
+	});
+	/** Back from an entry: its pill goes. */
+	function unselect() {
+		pills.update((all) => all.filter((p) => p.kind !== 'hid'));
+	}
+
 	/** Where a selection is, without its length. */
 	const where = (c: Cursor) => (c.rel !== undefined ? { rel: c.rel, from: c.from } : { at: c.at, step: 1, from: c.from });
 
@@ -885,7 +953,7 @@
 	maxRows={Infinity}
 	center={!picture && buttons.length > 0}
 	key={keyOf}
-	class={picking ? 'picking' : clustered.length ? 'clustered' : ''}
+	class={picking || card ? 'picking' : clustered.length ? 'clustered' : ''}
 	bind:bar
 	onpointerenter={() => (over = true)}
 	onpointerleave={() => (over = false)}
@@ -917,7 +985,33 @@
 		{/if}
 	{/snippet}
 	{#snippet overlay()}
-	{#if picking || clustered.length}
+	{#if card && entry && hid}
+		{@const button = fields.find((b) => b.field === entry!.field)}
+		{@const state = entry.state}
+		<!-- An entry selected (da-xdz73): its field and time, then its data. -->
+		<div class="collect open entry" data-entry={hid}>
+			<div class="head">
+				<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={unselect}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg> back
+				</button>
+				<span class="ref">{labelOf(hid, $refs)}</span>
+			</div>
+			<div class="card">
+				<div class="title">
+					<span class="name" style:color={button?.color}>{entry.field}</span>
+					{#if state !== null && state !== undefined}<span style:color={button?.stateColors[said(state)]}>{said(state)}</span>{/if}
+					<span class="clock">{clockOf(entry)}</span>
+					<button class="nav round all" class:on={everything} data-all aria-pressed={everything} title="show all of it, as get -A" onclick={() => (everything = !everything)}>−A</button>
+				</div>
+				<dl>
+					<!-- Unkeyed: under −A a data key may share a column's name (an import's `data.at`). -->
+					{#each rows as [key, value]}
+						<div data-row={key}><dt>{key}</dt><dd>{said(value)}</dd></div>
+					{/each}
+				</dl>
+			</div>
+		</div>
+	{:else if picking || clustered.length}
 		{@const here = picking}
 		{@const states = here ? statesOf(here.shape).filter((s) => s !== 'false') : []}
 		<!-- The fields' place (da-w6437): at rest the fields, the most used in
@@ -1325,8 +1419,58 @@
 		border-top: 1px dashed var(--rule);
 	}
 
-	.head .name {
+	.head .name,
+	.card .name {
 		font-weight: 600;
+	}
+
+	/* An entry selected (da-xdz73): a card in the middle of the widget. */
+	.entry .card {
+		margin: auto;
+		max-width: 100%;
+		padding: 0.6rem 0.8rem;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+		font-size: 0.85rem;
+	}
+
+	.card .title {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.card .name {
+		text-decoration: underline;
+	}
+
+	.card .all {
+		margin-left: auto;
+	}
+
+	.card .all.on {
+		border-color: var(--accent);
+		color: var(--ink-bright);
+	}
+
+	.entry .ref,
+	.card .clock,
+	.card dt {
+		color: var(--muted);
+	}
+
+	.card dl {
+		margin: 0.4rem 0 0;
+	}
+
+	.card dl div {
+		display: flex;
+		gap: 0.6rem;
+	}
+
+	.card dd {
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.head .to {

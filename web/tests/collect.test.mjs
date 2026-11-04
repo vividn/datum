@@ -213,4 +213,68 @@ describe('collect', () => {
 			assert.match(await page.locator(`${VIEW} .head`).innerText(), /back\s*coffee/);
 		});
 	});
+
+	// da-xdz73. vividn, 2026-11-03: «if you select an hid pill, it could show
+	// information about this individual datum … no need to show by metadata
+	// here, just the data / put a -A button which toggles showing all the data».
+	describe('an entry selected', () => {
+		const ENTRY = `${VIEW}[data-entry]`;
+		/** mood's entry, `why=tired`, selected by a tap on its tail row. */
+		const selected = (fn, data = ['why=tired']) =>
+			collect(async (app) => {
+				const logged = await app.run(['switch', 'mood', 'good', ...data, '-t', '14:00']);
+				assert.equal(logged.code, 0, logged.stderr);
+				await app.redraw();
+				const [{ hid }] = JSON.parse((await app.run(['tail', 'mood', '-n', '1', '--json'])).stdout).rows;
+				await app.page.locator(`section[data-title="tail"] tbody tr[data-hid^="${hid.slice(0, 5)}"]`).click();
+				await app.page.locator(`${ENTRY} [data-row="why"]`).waitFor();
+				await fn(app, hid);
+			});
+		const rows = (page) => page.locator(`${ENTRY} [data-row]`).evaluateAll((rs) => rs.map((r) => r.dataset.row));
+
+		test('a tail row selected shows its entry: field and time, then its keys and values, and no metadata', async () => {
+			await selected(async ({ page }) => {
+				assert.match(await page.locator(`${ENTRY} .title`).innerText(), /mood\s*good\s*14:00/);
+				assert.equal(await page.locator(`${ENTRY} [data-row="why"]`).innerText(), 'why\ntired');
+				assert.deepEqual(await rows(page), ['why']);
+			});
+		});
+
+		test('−A shows the metadata too, and a second tap hides it', async () => {
+			await selected(async ({ page }, hid) => {
+				await page.locator(`${ENTRY} [data-all]`).click();
+				await page.locator(`${ENTRY} [data-row="hid"]`).waitFor();
+				assert.equal(await page.locator(`${ENTRY} [data-row="hid"] dd`).innerText(), hid);
+				for (const key of ['why', 'slug', 'create_time', 'raw_input']) assert.ok((await rows(page)).includes(key), key);
+				await page.locator(`${ENTRY} [data-all]`).click();
+				await page.locator(`${ENTRY} [data-row="hid"]`).waitFor({ state: 'detached' });
+				assert.deepEqual(await rows(page), ['why']);
+			});
+		});
+
+		test('−A shows a data key named as a column beside the column', async () => {
+			await selected(
+				async (app, hid) => {
+					await app.page.locator(`${ENTRY} [data-all]`).click();
+					await app.page.locator(`${ENTRY} [data-row="hid"]`).waitFor();
+					const slugs = await app.page.locator(`${ENTRY} [data-row="slug"] dd`).allInnerTexts();
+					assert.equal(slugs.length, 2, `slugs: ${slugs}`);
+					assert.equal(slugs[0], 'mine');
+					assert.equal(await app.page.locator(`${ENTRY} [data-row="hid"] dd`).innerText(), hid);
+					assert.deepEqual(app.errors, []);
+				},
+				['why=tired', 'slug=mine']
+			);
+		});
+
+		test('back clears the entry pill and returns to the fields', async () => {
+			await selected(async ({ page }) => {
+				assert.equal(await page.locator(`${BAR_PILLS}.hid`).count(), 1);
+				await page.locator(`${ENTRY} [data-back]`).click();
+				await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
+				assert.equal(await page.locator(ENTRY).count(), 0);
+				assert.equal(await page.locator(`${BAR_PILLS}.hid`).count(), 0);
+			});
+		});
+	});
 });

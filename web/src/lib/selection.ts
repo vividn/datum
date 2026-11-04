@@ -64,7 +64,7 @@ export type Refs = Record<string, string>;
  * it (da-kjikt) — its `_n` in `refs` where it has one, else the CLI's short
  * form. Only the drawing: the pill's text stays the hid.
  */
-const labelOf = (hid: string, refs: Refs): string =>
+export const labelOf = (hid: string, refs: Refs): string =>
 	Object.keys(refs).find((n) => same(refs[n], hid)) ?? hid.slice(0, 5);
 
 /**

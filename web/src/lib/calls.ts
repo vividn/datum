@@ -118,6 +118,11 @@ export function stepArgv(hids: string[]): string[] {
 	return ['revert', hids.join(',')];
 }
 
+/** One entry, every column, as collect's entry card reads it (da-xdz73). */
+export function entryArgv(hid: string): string[] {
+	return ['get', hid, '--pretty'];
+}
+
 /** The entries' trails, newest version first: one hid's alone, or each under its own hid. */
 export function entriesHistoryArgv(hids: string[]): string[] {
 	return ['history', hids.join(','), '--json'];
