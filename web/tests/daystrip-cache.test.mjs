@@ -250,7 +250,7 @@ describe('the day strip across a swipe', () => {
 				await pictures(app);
 				await app.idle();
 				// Back from over its tail: the nowview in collect's middle pans under a finger.
-				await awayAndBack(app, () => app.page.setViewportSize({ width: 360, height: 700 }), 'collect', { x: 0.5, y: 0.15 });
+				await awayAndBack(app, () => app.page.setViewportSize({ width: 360, height: 700 }), 'collection', { x: 0.5, y: 0.15 });
 				const today = app.page.locator('section[data-pane] .band[data-days-ago="0"]').first();
 				await until(
 					async () => [

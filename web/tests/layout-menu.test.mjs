@@ -180,7 +180,7 @@ describe('the menu the title opens', () => {
 			assert.deepEqual(await empty.locator('.body button').allInnerTexts(), ['Change Widget']);
 			await openChooser(page);
 			assert.deepEqual(await offers(page), [
-				'collect',
+				'collection',
 				'dayview',
 				'cli',
 				'nowview',

@@ -233,7 +233,7 @@ describe('Reset default layouts', () => {
 			// the widgets.)
 			assert.deepEqual(await layoutOffers(page), [
 				{ name: 'main', source: 'builtin' },
-				{ name: 'collect', source: 'builtin' },
+				{ name: 'collection', source: 'builtin' },
 				{ name: 'mine', source: 'user' },
 				{ name: 'focus-day', source: 'kit:focus' }
 			]);

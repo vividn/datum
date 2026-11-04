@@ -33,6 +33,8 @@ before(startApp);
 after(stopApp);
 
 const FIRST = ['welcome', 'setup', 'collect', 'dayview'];
+/** What those tabs read: `collect` is called «collection» (da-jzica). */
+const SHOWN = ['welcome', 'setup', 'collection', 'dayview'];
 const FRESH_DESKTOP = { ...DESKTOP, home: null, desk: null };
 const FRESH_PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null };
 
@@ -63,7 +65,7 @@ describe('a first visit', () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				assert.deepEqual(await rootNames(page), FIRST);
-				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), FIRST);
+				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), SHOWN);
 				assert.deepEqual(await front(page), ['welcome', 'welcome']);
 				// Nothing about it is an edit: no dot, and no offer of a new
 				// default to a device that starts on it.
@@ -77,7 +79,7 @@ describe('a first visit', () => {
 				await page.locator('.host.setup .field-form input.field').waitFor();
 				assert.deepEqual(await rootNames(page), FIRST);
 
-				await page.locator('.root-bar [role="tab"]', { hasText: exactly('collect') }).click();
+				await page.locator('.root-bar [role="tab"]', { hasText: exactly('collection') }).click();
 				await until(() => front(page), ([name]) => name === 'collect');
 				await app.idle();
 				assert.deepEqual(await titles(page), collect);
@@ -248,7 +250,7 @@ describe('a first visit', () => {
 			await page.evaluate(() => window.datum.shell.close(1));
 			await until(() => rootNames(page), (names) => names.join() === 'setup,dayview,welcome');
 			await page.locator('.root-bar button.add').first().click();
-			await chooser(page).locator('button.layout', { hasText: exactly('collect') }).click();
+			await chooser(page).locator('button.layout', { hasText: exactly('collection') }).click();
 			await until(() => rootNames(page), (names) => names.join() === 'setup,dayview,welcome,collect');
 			assert.deepEqual(app.errors, []);
 		}, FRESH_DESKTOP);

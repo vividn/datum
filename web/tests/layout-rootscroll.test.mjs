@@ -46,17 +46,34 @@ const inView = (page) =>
 				.map((t) => t.textContent.replace('•', '').trim()),
 			front: all.findIndex((t) => t.getAttribute('aria-selected') === 'true'),
 			names: all.map((t) => t.textContent.replace('•', '').trim()),
+			// Each tab's edges, from the strip's left, scrolled as it is.
+			edges: all.map((t) => {
+				const r = t.getBoundingClientRect();
+				return [r.left - s.left, r.right - s.left];
+			}),
+			client: strip.clientWidth,
 			scroll: strip.scrollLeft,
+			max: strip.scrollWidth - strip.clientWidth,
 			overflows: strip.scrollWidth > strip.clientWidth
 		};
 	});
 
-/** Waits until the tab at `index` is in front with its neighbours in view. */
+/**
+ * Waits until the tab at `index` is in front with its neighbours in view, as
+ * far as they fit (RootBar.svelte): where the three are wider than the strip
+ * (a first visit's `collection` at 360px, da-jzica), the tab in front is
+ * wholly in view and in the strip's middle, unless the strip is at an end.
+ */
 const framed = (page, index) =>
 	until(
 		() => inView(page),
-		({ front, names, shown }) =>
-			front === index && [names[index - 1], names[index], names[index + 1]].filter(Boolean).every((n) => shown.includes(n))
+		({ front, names, shown, edges, client, scroll, max }) => {
+			if (front !== index) return false;
+			const trio = [index - 1, index, index + 1].filter((i) => i >= 0 && i < names.length);
+			if (edges[trio.at(-1)][1] - edges[trio[0]][0] <= client) return trio.every((i) => shown.includes(names[i]));
+			const [l, r] = edges[index];
+			return shown.includes(names[index]) && (Math.abs((l + r) / 2 - client / 2) <= 1 || scroll <= 0 || scroll >= max - 1);
+		}
 	);
 
 describe('the root bar scrolls the tab in front into view', () => {

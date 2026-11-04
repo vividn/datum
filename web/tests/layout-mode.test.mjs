@@ -127,7 +127,7 @@ describe('on a phone', () => {
 						client: el.clientWidth
 					};
 				});
-				assert.deepEqual(at.names, ['welcome', 'setup', 'collect', 'dayview']);
+				assert.deepEqual(at.names, ['welcome', 'setup', 'collection', 'dayview']);
 				assert.equal(at.closes, 4);
 				assert.deepEqual(at.out, [], `out of reach of the strip's ${at.client}px`);
 				t.diagnostic(`${width} wide: the strip is ${at.scroll} of ${at.client}px`);

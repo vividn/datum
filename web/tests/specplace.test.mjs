@@ -131,8 +131,8 @@ describe('a typed `setup F`', () => {
 				const tab = (name) => page.locator('.root-bar [role="tab"]', { hasText: name });
 				await tab('setup').click();
 				await until(() => shown(page), (t) => t === 'setup');
-				await tab('collect').click();
-				await until(() => shown(page), (t) => t === 'collect');
+				await tab('collection').click();
+				await until(() => shown(page), (t) => t === 'collection');
 				// A root tab that is the widget alone has no pane host around it: the form is what is kept.
 				await page.locator(`.tab-body.behind ${FIELD_FORM}`).waitFor({ state: 'attached' });
 				// Typed in the bar, which collect's page has; its CLI widget, where `submit` waits for the echo, it has not.

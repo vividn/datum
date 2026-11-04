@@ -700,7 +700,7 @@ describe('widget options', () => {
 			assert.equal(await orientation(dayStrip), 'vertical');
 
 			await page.evaluate(() => window.datum.shell.open('collect'));
-			await page.locator('.root-bar [role="tab"][aria-selected="true"]').filter({ hasText: 'collect' }).waitFor();
+			await page.locator('.root-bar [role="tab"][aria-selected="true"]').filter({ hasText: 'collection' }).waitFor();
 			const otherStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
 			assert.equal(await orientation(otherStrip), 'horizontal', 'the two layouts shared one tab’s setting');
 
@@ -723,7 +723,7 @@ describe('widget options', () => {
 			// main's back to the default and collect's must not follow.
 			await pickOption(page, dayStrip, ORIENT, 'horizontal');
 			assert.equal(await orientation(dayStrip), 'horizontal');
-			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('collect') }).click();
+			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('collection') }).click();
 			await titledPane(page, 'dayview').first().waitFor();
 			assert.equal(await orientation(otherStrip), 'vertical', 'main’s write reached collect');
 			assert.deepEqual(app.errors, []);

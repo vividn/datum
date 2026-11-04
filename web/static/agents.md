@@ -141,8 +141,8 @@ To see the data, ask them to type a command and paste you what it prints: `tail 
 ## Logging on datum.day
 
 Whichever way you set it up, your person logs on datum.day. Teach them the taps first, and typing as the
-alternative. The **collect** tab has what they need: a **fields** pane with a button for each field and the **nowview**
-(the minutes around now). The **dayview** (the day as a strip) has a tab of its own, and on a desktop is on collect too.
+alternative. The **collection** tab has what they need: a **collect** pane with a button for each field and the **nowview**
+(the minutes around now). The **dayview** (the day as a strip) has a tab of its own, and on a desktop is on collection too.
 
 - **Now:** tap the field's button. A moment is logged at once. An on/off field turns on, and the next tap turns
   it off. A switch field shows its states (home, office, café), and a tap on one switches to it.

@@ -41,6 +41,7 @@
 	import { act } from '#lib/act.ts';
 	import { CHANGE } from './menu.js';
 	import { currentDb } from '#lib/database.ts';
+	import { layoutTitle } from './defaults.js';
 	import { pickableIn, titleOf } from './registry.js';
 	import type { Choice, Offer } from './chooser.js';
 	import type { KitWidget } from './store.js';
@@ -95,7 +96,7 @@
 					data-source={source}
 					onclick={() => pick({ layout: name })}
 				>
-					<span class="name">{name}</span>{#if source.startsWith('kit:')}<span class="from"
+					<span class="name">{layoutTitle(name)}</span>{#if source.startsWith('kit:')}<span class="from"
 							>{source.slice(4)}</span
 						>{/if}
 				</button>

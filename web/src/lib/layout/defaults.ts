@@ -311,6 +311,19 @@ export const ALIASES: Record<string, string> = {
 	track: 'setup'
 };
 
+/**
+ * What a built-in layout is CALLED where it is not its name (da-jzica): the
+ * root tab, the `+`. `collect` is the widget's title, so the page of that
+ * name reads «collection» (vividn, 2026-11-03: «let's name the layout
+ * collection, and the widget collect»). The name stays its identity, as the
+ * widget kind stayed `widgetbar`, so nothing saved or open migrates; a
+ * layout saved under another name is called that.
+ */
+export const LAYOUT_TITLES: Record<string, string> = { collect: 'collection' };
+
+/** What the layout `name` is called on the page (`LAYOUT_TITLES`). */
+export const layoutTitle = (name: string): string => LAYOUT_TITLES[name] ?? name;
+
 /** The built-in layout `name` names, if any; `phone` picks `main`'s tree. */
 export function builtinLayout(name: string, phone: boolean): Layout | null {
 	const make = BUILTIN[ALIASES[name] ?? name];

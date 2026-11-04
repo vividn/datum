@@ -577,22 +577,26 @@ export function setTitle(layout: Layout, tabId: NodeId, title?: string): Layout 
 }
 
 /**
- * What a tab is called: the layout it holds, else its own title, else
+ * What a tab is called: the layout it holds (as `layoutTitle` calls it), else its own title, else
  * what it shows — its widget kind's title (`kindTitle`), or for a split
  * the names of its panes' front tabs in the notation vividn writes by hand
  * (da-6ji5): ` | ` across a row, ` / ` down a column, a nested split in
  * parentheses — `tail | (nowview / custom)`. Derived on every read, so it
  * is always true; it is a label and never an identity.
  */
-export function nameOf(tab: Tab, kindTitle: (kind: string, settings?: Record<string, unknown>) => string): string {
-	if (tab.layout !== undefined) return tab.layout;
+export function nameOf(
+	tab: Tab,
+	kindTitle: (kind: string, settings?: Record<string, unknown>) => string,
+	layoutTitle: (name: string) => string = (name) => name
+): string {
+	if (tab.layout !== undefined) return layoutTitle(tab.layout);
 	if (tab.title !== undefined) return tab.title;
 	if (!isSplit(tab.content)) return kindTitle(tab.content.kind, tab.content.settings);
 	const { children, direction } = tab.content;
 	return children
 		.map(({ tabs, active }) => {
 			const front = tabs[active];
-			const name = nameOf(front, kindTitle);
+			const name = nameOf(front, kindTitle, layoutTitle);
 			return front.layout === undefined && front.title === undefined && isSplit(front.content) ? `(${name})` : name;
 		})
 		.join(direction === 'row' ? ' | ' : ' / ');

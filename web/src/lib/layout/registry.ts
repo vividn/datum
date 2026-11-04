@@ -59,7 +59,7 @@ import {
 	todayBox
 } from '#lib/panes.ts';
 import { REACH_PX } from '#lib/lanes.ts';
-import { DEBUG_DB } from './defaults.js';
+import { DEBUG_DB, layoutTitle } from './defaults.js';
 import { DEFAULT_STATS, type StatsRange } from '#lib/stats.ts';
 import { BUCKETS, DEFAULT_CHART, FIELDS_OFFER, RANGES, SHOWS, chartSettings, keysOffer } from '#lib/chart.ts';
 import AliasesWidget from './AliasesWidget.svelte';
@@ -692,11 +692,12 @@ export const titleOf = (kind: string, settings: Record<string, unknown> = {}): s
  * frame's title and its tab strip all read this one rule (da-9puz).
  *
  * The layout a tab holds is its name — a tab carrying `layout` is one
- * thing with an identity, and wears it. Failing that its own `title`, and
+ * thing with an identity, and wears it, as `layoutTitle` calls it
+ * (`collect` reads «collection», defaults.ts). Failing that its own `title`, and
  * failing that what it shows: the widget kind's title, or for a split the
  * names of its panes, `tail | nowview` (`nameOf`, tree.ts, da-6ji5).
  */
-export const labelOf = (tab: Tab): string => nameOf(tab, titleOf);
+export const labelOf = (tab: Tab): string => nameOf(tab, titleOf, layoutTitle);
 
 /**
  * The settings a fresh widget of `kind` starts with, or undefined when the
