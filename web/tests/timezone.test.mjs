@@ -1,4 +1,4 @@
-// The `timezone` field on datum.day (da-yw6o2): opt in from the gear, a very
+// The `timezone` field on datum.day (da-yw6o2): opt in from the Settings place (da-99g5q), a very
 // thin band at the top of the day, and in the fields widget unless IGNORED.
 // What it accepts is the CLI's (`crates/datum-cli/tests/timezone_field.rs`).
 
@@ -16,38 +16,41 @@ const BERLIN = { timezone: 'Europe/Berlin', viewport: { width: 1280, height: 900
 const PHONE = { timezone: 'Asia/Tokyo', clock: Date.parse('2026-06-01T03:00:00Z'), device: devices['iPhone 12'] };
 const GEAR = '.root-bar button.gear';
 const ITEM = '[role="menu"][aria-label="settings"] button';
+const PLACE = 'dialog.sheet[data-place="settings"]';
 
 const held = async (app) => JSON.parse((await app.run(['fields', 'timezone', '--json'])).stdout)[0].zone;
 
-/** The gear's timezone item, read with the menu open and left open. */
+/** The settings place's timezone button: the gear's «Settings» opens it, a modal on a desktop (da-99g5q). */
 async function item(page) {
 	await page.locator(GEAR).click();
-	const it = page.locator(ITEM).filter({ hasText: /tracking timezone|Track timezone/ });
+	await page.locator(ITEM).first().waitFor();
+	const setting = (await page.locator(ITEM).allInnerTexts()).find((t) => /timezone|Wrap tabs/.test(t));
+	assert.equal(setting, undefined, 'the gear still holds a setting');
+	await page.locator(ITEM).filter({ hasText: /^Settings$/ }).click();
+	const it = page.locator(`${PLACE} button[data-setting="timezone"]`);
 	await it.waitFor();
 	return it;
 }
 
-test("the gear's item logs the device's zone, and again IGNORED, and says which", async () => {
+test("Settings' timezone button logs the device's zone, and again IGNORED, and says which", async () => {
 	await withApp(async (app) => {
 		const { page } = app;
 		assert.equal(await held(app), null, 'nothing logs a zone unless someone asks');
-		const off = await item(page);
-		assert.equal((await off.textContent()).trim(), 'Track timezone (Europe/Berlin)');
-		await off.click();
+		const it = await item(page);
+		assert.equal((await it.textContent()).trim(), 'Track timezone (Europe/Berlin)');
+		await it.click();
 		await until(() => held(app), (zone) => zone === 'Europe/Berlin');
 		await app.clock.forward(60_000);
+		await until(() => it.textContent(), (label) => label.trim() === 'Stop tracking timezone (Europe/Berlin)');
 
-		const on = await item(page);
-		await until(() => on.textContent(), (label) => label.trim() === 'Stop tracking timezone (Europe/Berlin)');
-		await on.click();
+		await it.click();
 		await until(() => held(app), (zone) => zone === null);
 		await app.clock.forward(60_000);
 		const state = JSON.parse((await app.run(['fields', 'timezone', '--json'])).stdout)[0];
 		assert.equal(state.ignored, true);
-
-		const back = await item(page);
-		await until(() => back.textContent(), (label) => label.trim() === 'Track timezone (Europe/Berlin)');
+		await until(() => it.textContent(), (label) => label.trim() === 'Track timezone (Europe/Berlin)');
 		await page.keyboard.press('Escape');
+		await page.locator(PLACE).waitFor({ state: 'detached' });
 	}, BERLIN);
 });
 

@@ -217,7 +217,7 @@ or `edit` does (da-h8k9q). It changes no
 other entry. Its band defaults to very thin at the top of the day, over every
 lane, in dayview and nowview alike (`PresentationSpec::resolve_position`), until
 its spec places it; `fields` hides it `IGNORED` as any field, says `never_false`,
-so its picker draws no `end`, and says the `zone` it holds, which datum.day's gear item, «Track timezone», reads: opt in, a click
+so its picker draws no `end`, and says the `zone` it holds, which datum.day's Settings place's «Track timezone» (the gear's «Settings») reads: opt in, a click
 logs the device's zone, the next logs `IGNORED`.
 
 Where it holds a zone, an entry is in the field's zone at its instant, past or

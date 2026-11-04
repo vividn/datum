@@ -1021,7 +1021,7 @@ export const sliding = writable<NodeId | null>(null);
 
 /**
  * Whether a swipe past the last tab goes to the first and past the first to
- * the last (da-25qs9), the gear's «Wrap tabs when swiping»: this device's, as
+ * the last (da-25qs9), the Settings widget's «Wrap tabs when swiping»: this device's, as
  * how its fingers expect a page to move is, and off until it says.
  */
 export const wrapTabs = writable(loadWrap());

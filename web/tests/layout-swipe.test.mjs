@@ -1480,10 +1480,26 @@ describe('past the first or last tab', () => {
 		const box = await page.locator(STRIP).boundingBox();
 		return box.y + box.height / 2;
 	};
+	/** The root tabs' names, in order. */
+	const tabNames = async (page) => (await page.locator('.root-bar [role="tab"]').allInnerTexts()).map((t) => t.replace(/\s*•\s*$/, ''));
+	/**
+	 * Turn «Wrap tabs when swiping» over where it lives (da-99g5q): the gear's
+	 * «Settings» opens the settings place, on a phone a tab beside this one,
+	 * which back closes again. Resolves with whether it was on before.
+	 */
 	const wrap = async (page) => {
+		const before = await tabNames(page);
 		await page.locator('.root-bar button.gear').click();
-		await page.getByRole('menuitemcheckbox', { name: 'Wrap tabs when swiping' }).click();
-		await page.keyboard.press('Escape');
+		await page.locator('[role="menu"][aria-label="settings"] button', { hasText: /^Settings$/ }).click();
+		const box = page.locator('section.pane[data-title="settings"]').getByRole('checkbox', { name: 'Wrap tabs when swiping' });
+		await box.waitFor();
+		await until(() => shown(page), (name) => name === 'settings');
+		const was = await box.isChecked();
+		await box.click();
+		await page.goBack();
+		await until(() => tabNames(page), (t) => t.join() === before.join());
+		await atRest(page.locator(ROOT));
+		return was;
 	};
 
 	/** Pull past an end, and see the tab give, less for each px, and go home with no tab changed. */
@@ -1662,11 +1678,7 @@ describe('past the first or last tab', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				const item = () => page.getByRole('menuitemcheckbox', { name: 'Wrap tabs when swiping' });
-				await page.locator('.root-bar button.gear').click();
-				assert.equal(await item().getAttribute('aria-checked'), 'false', 'it starts on');
-				await page.keyboard.press('Escape');
-				await wrap(page);
+				assert.equal(await wrap(page), false, 'it starts on');
 
 				// Past the first, toward the right: the last tab comes on from the left.
 				const y = await stripMiddle(page);
@@ -1700,7 +1712,7 @@ describe('past the first or last tab', () => {
 
 				// Off again: the same swipe stays.
 				await pastTheWindow(page);
-				await wrap(page);
+				assert.equal(await wrap(page), true, 'the reload lost it');
 				await swipe(page, 290, await stripMiddle(page), -220, 0);
 				await atRest(page.locator(ROOT));
 				await page.waitForTimeout(300);

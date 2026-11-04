@@ -267,6 +267,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	help: () => only('help', 'help'),
 	welcome: () => only('welcome', 'welcome'),
 	backups: () => only('backups', 'backups'),
+	settings: () => only('settings', 'settings'),
 	conflicts: () => only('conflicts', 'conflicts'),
 	setup: () => only('setup', 'setup'),
 	input: () => only('input', 'input')

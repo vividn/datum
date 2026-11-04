@@ -75,6 +75,7 @@ import NowviewWidget from './NowviewWidget.svelte';
 import CliWidget from './CliWidget.svelte';
 import FieldWidget from './FieldWidget.svelte';
 import KitWidget from './KitWidget.svelte';
+import SettingsWidget from './SettingsWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
 import TutorialWidget from './TutorialWidget.svelte';
 import WelcomeWidget from './WelcomeWidget.svelte';
@@ -590,6 +591,19 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Each plan lists its backups by database, newest first, each with Restore.'
 		].join('\n'),
 		legible: { width: 206, height: 99 }
+	},
+	// «Settings» (da-99g5q), a place: the gear's «Settings» opens it
+	// (`openPlace`). The page's settings, each with a line saying what it
+	// does. Legible at the first setting and its line (about 70px,
+	// estimated) plus padding; the rest scrolls.
+	settings: {
+		meta: meta('settings', 'settings'),
+		component: SettingsWidget,
+		help: [
+			"The page's settings, each with a line saying what it does.",
+			"Track timezone logs this device's zone to the timezone field, and again stops; Wrap tabs when swiping, on this device, makes a swipe past the last tab go to the first and past the first to the last."
+		].join('\n'),
+		legible: { width: 200, height: 86 }
 	},
 	// The conflicts widget (da-6cutb), a place: the commands widget's
 	// «conflicts» and a typed `conflicts` open it. Legible at one entry — its

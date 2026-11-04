@@ -64,7 +64,9 @@
 	`openPlace` (da-ea5q2): a modal on a desktop, a tab on a phone. It
 	took the place of the root tab menu's `export backup…`, so a backup
 	has one home. «Sync» beside it opens the Sync place the same way
-	(da-s9r58), a door a newcomer can see.
+	(da-s9r58), a door a newcomer can see, and «Settings» after it the
+	Settings place (da-99g5q, layout/SettingsWidget.svelte), where the
+	page's settings went: tracking the timezone and wrapping tabs.
 
 	The other is «Reset default layouts» (da-jbcv). It held an act of that
 	shape once — «Reset all layouts…», which deleted every saved layout, on
@@ -135,7 +137,7 @@
 	import { tick } from 'svelte';
 	import { currentDb } from '#lib/database.ts';
 	import { run } from '#lib/run.ts';
-	import { fieldArgv, pausedArgv } from '#lib/calls.ts';
+	import { pausedArgv } from '#lib/calls.ts';
 	import { syncStates } from '#lib/sync.ts';
 	import { ackNotice, expelDevice, noticeWords } from '#lib/syncView.ts';
 	import { act } from '#lib/act.ts';
@@ -147,7 +149,6 @@
 	import { updated } from '$app/state';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
-	import { press } from './engine.js';
 	import { CHANGE, CLOSE, aimed, layoutActs, type Item } from './menu.js';
 	import { accept, discard, enter, isAsking, leave, save as saveMode } from './mode.js';
 	import { offers, widgetOptions } from './options.js';
@@ -155,7 +156,7 @@
 	import PaneMenu from './PaneMenu.svelte';
 	import { ALIASES } from './defaults.js';
 	import { labelOf } from './registry.js';
-	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions, wrapTabs } from './shell.js';
+	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions } from './shell.js';
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
@@ -407,21 +408,8 @@
 		});
 
 	/**
-	 * «Track timezone» (da-yw6o2). vividn, 2026-10-30: «in the settings menu
-	 * you click on track timezone and it switches timezone to be the current
-	 * timezone of the device. clicking it again IGNOREs the timezone». The
-	 * zone the field holds is the CLI's answer, read as the menu opens.
-	 */
-	let zone: string | null = $state(null);
-	const deviceZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-	async function readZone() {
-		const { code, stdout } = await run(fieldArgv('timezone'));
-		zone = (code === 0 && JSON.parse(stdout)[0]?.zone) || null;
-	}
-
-	/**
 	 * The gear's menu: the page's own settings, which belong to no layout
-	 * and no pane — the backups, sync, the act above, and which build is in front of you,
+	 * and no pane — the backups, sync and settings places, the act below, and which build is in front of you,
 	 * disabled, because it is a fact and not an act, with the word on the
 	 * beta under it (da-eue7y).
 	 *
@@ -432,10 +420,7 @@
 	const settings = $derived([
 		{ label: 'Backups', act: 'open' as const, run: () => void openBackups() },
 		{ label: 'Sync', act: 'open' as const, run: () => void openPlace('sync') },
-		zone
-			? { label: `Stop tracking timezone (${zone})`, act: 'run' as const, run: () => void press(['timezone', 'IGNORED']) }
-			: { label: `Track timezone (${deviceZone})`, act: 'run' as const, run: () => void press(['timezone', deviceZone]) },
-		{ label: 'Wrap tabs when swiping', toggled: $wrapTabs, run: () => wrapTabs.update((on) => !on) },
+		{ label: 'Settings', act: 'open' as const, run: () => void openPlace('settings') },
 		{ label: 'Reset default layouts', act: 'open' as const, run: doResetDefaults },
 		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true },
 		{ label: `datum.day is early software. ${$storageSentence}`, note: true as const }
@@ -492,11 +477,10 @@
 <nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts" data-layout-mode={$editing ? '' : undefined}>
 	<PaneMenu
 		items={settings}
-		onshow={readZone}
 		look="badge"
 		label="settings"
 		title="settings"
-		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Track timezone, which logs this device's zone to the timezone field, and again stops; Wrap tabs when swiping, which on this device makes a swipe past the last tab go to the first and past the first to the last; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
+		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Settings, where timezone tracking and wrapping tabs on a swipe are set; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
 		class="gear"
 		aria-label="settings"
 		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">

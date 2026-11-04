@@ -268,20 +268,21 @@ describe('the shell', () => {
 			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
 			assert.equal(await page.locator('.root-bar .build').count(), 0, 'the build stamp is still on the root bar');
-			// Above it, the gear's acts: «Backups» (da-9ow8m), «Sync»
-			// (da-s9r58), and «Reset
+			// Above it, the gear's doors: «Backups» (da-9ow8m), «Sync»
+			// (da-s9r58), «Settings» (da-99g5q), which holds the settings
+			// the gear held, and the act «Reset
 			// default layouts» (da-jbcv), which is the narrow half of the
 			// «Reset all layouts…» that deleted every saved layout on every
 			// device and went for it (da-luwe).
 			const gear = await gearItems(page);
 			assert.deepEqual(
-				gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp').replace(/^datum\.day is early software\. .+/, 'the beta note').replace(/^Track timezone .+/, 'Track timezone')),
-				['Backups', 'Sync', 'Track timezone', 'Wrap tabs when swiping', 'Reset default layouts', 'the build stamp', 'the beta note']
+				gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp').replace(/^datum\.day is early software\. .+/, 'the beta note')),
+				['Backups', 'Sync', 'Settings', 'Reset default layouts', 'the build stamp', 'the beta note']
 			);
-			assert.deepEqual(gear.map((i) => i.disabled), [false, false, false, false, false, true, false]);
+			assert.deepEqual(gear.map((i) => i.disabled), [false, false, false, false, true, false]);
 			// The stamp is the web's build, `3.0.<height>-beta · <sha7>`, and
 			// patch 0 where a shallow CI checkout cannot count (da-5172a, da-cv118).
-			assert.match(gear[5].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
+			assert.match(gear[4].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			// The NAME's slice in normal mode: what the tab shows and what it
@@ -304,7 +305,7 @@ describe('the shell', () => {
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await offered(page), ['New layout', 'main', 'collection', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'collect', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
+			assert.deepEqual(await offered(page), ['New layout', 'main', 'collection', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'collect', 'aliases', 'sync', 'help', 'welcome', 'backups', 'settings', 'conflicts', 'setup', 'input']);
 
 			await pick(page, 'nowview');
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
@@ -325,7 +326,7 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The chooser reads the saved layouts each time it opens, so the
 			// save is on the list the first time it is asked.
-			assert.deepEqual(await offered(page), ['New layout', 'main', 'collection', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'collect', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
+			assert.deepEqual(await offered(page), ['New layout', 'main', 'collection', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'collect', 'aliases', 'sync', 'help', 'welcome', 'backups', 'settings', 'conflicts', 'setup', 'input']);
 		});
 
 		// Which tabs are open is per device (vividn: the selection is not synced).
@@ -1008,7 +1009,7 @@ describe('the one chooser', () => {
 			// A saved layout, so the Layouts section holds more than `main`.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
 			const fromRoot = await offered(page);
-			assert.deepEqual(fromRoot, ['New layout', 'main', 'collection', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'collect', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'setup', 'input']);
+			assert.deepEqual(fromRoot, ['New layout', 'main', 'collection', 'mine', 'dayview', 'cli', 'nowview', 'tail', 'custom', 'command', 'stats', 'chart', 'collect', 'aliases', 'sync', 'help', 'welcome', 'backups', 'settings', 'conflicts', 'setup', 'input']);
 
 			await manage(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'empty', 'custom', 'collect']);

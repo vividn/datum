@@ -113,7 +113,7 @@
 	    too, and nothing above is left to let it through to (da-25qs9). vividn,
 	    2026-10-31: «on the first and last tab, add an elastic effect for
 	    trying to swipe further»: the tab follows the finger with resistance
-	    (`give`) and goes back on release. With the gear's «Wrap tabs when
+	    (`give`) and goes back on release. With the Settings widget's «Wrap tabs when
 	    swiping» on (`wrapTabs`, «maybe we have wrap be an option you can
 	    enable»), the other end's tab comes on from the side the finger is
 	    bringing it from, and lands.

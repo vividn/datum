@@ -195,6 +195,7 @@ describe('the menu the title opens', () => {
 				'help',
 				'welcome',
 				'backups',
+				'settings',
 				'conflicts',
 				'setup',
 				'input'
