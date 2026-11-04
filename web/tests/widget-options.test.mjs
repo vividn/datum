@@ -140,7 +140,8 @@ describe('widget options', () => {
 				'the buttons stand',
 				'a switch is labelled with its',
 				'show ignored fields',
-				'a tap'
+				'a tap',
+				'side'
 			]);
 			// The freeze wears its icon before its words (da-2hd21).
 			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', '⤓ today frozen at the bottom', 'orientation']);

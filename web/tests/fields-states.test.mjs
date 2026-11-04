@@ -25,6 +25,7 @@ import assert from 'node:assert/strict';
 import { pressArgv } from '../src/lib/fields.ts';
 import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { GREEN, MOOD, seed, untilFieldStyle } from './support/fields.mjs';
+import { until } from './support/until.mjs';
 
 // A state field asks WHICH, so its button reads `name:` and a press puts
 // that field's states in place of the fields — the back icon first, then
@@ -43,9 +44,13 @@ describe('a state field fills the widget with its states', () => {
 	// scroll test keeps an app of its own, the one on its screen.
 	const shared = sharedApp({ clock: todayAt(15) });
 
-	/** Every button under `selector`, in order, by the word on it, the back icon by its name. */
+	/** Every button under `selector`, in order, by the word on it, the back icon by its name, a state on collect's strip by its field's (da-lw7ue). */
 	const words = (page, selector) =>
-		page.locator(selector).evaluate((el) => [...el.querySelectorAll('button')].map((b) => (b.dataset.back !== undefined ? 'back' : b.textContent.trim())));
+		page
+			.locator(selector)
+			.evaluate((el) =>
+				[...el.querySelectorAll('button')].map((b) => (b.dataset.back !== undefined ? 'back' : b.dataset.nowField ? `now:${b.dataset.nowField}` : b.textContent.trim()))
+			);
 	/** Every button collect is showing. */
 	const bar = (page) => words(page, 'section.pane[data-title="collect"] .bar');
 	/** The buttons of a field's view: back, its time, its states, its keys. */
@@ -73,7 +78,7 @@ describe('a state field fills the widget with its states', () => {
 			assert.deepEqual((await app.tailRows()).rows.at(-1).state, 'happy');
 			// The run spent the pills, and the view closes with them.
 			await closed(page);
-			assert.deepEqual(await bar(page), ['mood:']);
+			assert.deepEqual(await bar(page), ['now:mood', 'mood:']);
 		});
 	});
 
@@ -87,7 +92,7 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-back]').click();
 
 			await closed(page);
-			assert.deepEqual(await bar(page), ['mood:']);
+			assert.deepEqual(await bar(page), ['now:mood', 'mood:']);
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 0, 'Back left a pill');
 			assert.equal((await app.echoes()).length, before, 'Back logged something');
 		});
@@ -188,26 +193,36 @@ describe('a state field fills the widget with its states', () => {
 	test('the fields’ pan survives Back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			// One row of more fields than the room holds, so the rows pan (da-lw7ue).
 			for (const field of ['alfa', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel'])
-				await app.submit(`setup ${field} --verb occur`);
+				await app.submit(`setup ${field} --from-json '${JSON.stringify({ field, verb: 'occur', y: 0.5 })}'`);
 			await seed(app, MOOD, 'mood');
-			const ring = page.locator('section[data-pane="bar"] .room .ring');
-			const room = await page.locator('section[data-pane="bar"] .room').boundingBox();
-			const was = await ring.boundingBox();
-			assert.ok(was.x < room.x, 'the fields fit their pane — there is nothing this test can prove');
-			const y = room.y + room.height / 2;
-			await page.mouse.move(room.x + 10, y);
+			const room = page.locator('section[data-pane="bar"] .room');
+			assert.equal(await room.getAttribute('data-pans'), 'x', 'the fields fit their pane — there is nothing this test can prove');
+			/** How far the rows are panned, once a glide has stopped. */
+			const panned = async () => {
+				let last = null;
+				await until(
+					() => page.locator('section[data-pane="bar"] .spot.shelf[data-section="recent"]').first().evaluate((s) => new DOMMatrix(getComputedStyle(s).transform).m41),
+					(now) => ((last === now) || ((last = now), false))
+				);
+				return last;
+			};
+			const was = await panned();
+			const box = await room.boundingBox();
+			const y = box.y + box.height / 2;
+			await page.mouse.move(box.x + box.width - 10, y);
 			await page.mouse.down();
-			await page.mouse.move(room.x + 30, y, { steps: 3 });
-			await page.mouse.move(room.x + 60, y, { steps: 3 });
+			await page.mouse.move(box.x + box.width - 30, y, { steps: 3 });
+			await page.mouse.move(box.x + box.width - 60, y, { steps: 3 });
 			await page.mouse.up();
-			const at = await ring.boundingBox();
-			assert.ok(at.x > was.x, 'the drag did not pan');
+			const at = await panned();
+			assert.ok(at < was, 'the drag did not pan');
 
 			await page.locator('.bar [data-field="mood"]').dispatchEvent('click');
 			await page.locator('.bar [data-back]').dispatchEvent('click');
 			await closed(page);
-			assert.deepEqual(await ring.boundingBox(), at);
+			assert.equal(await panned(), at);
 		}, { clock: todayAt(15), viewport: { width: 390, height: 640 } });
 	});
 });

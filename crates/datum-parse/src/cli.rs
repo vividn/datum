@@ -1437,6 +1437,9 @@ pub struct FieldsArgs {
     /// `--sort frecency`: most used first, recent use weighing more, and
     /// each row carries its `frecency` (da-xtkcp). Otherwise alphabetical.
     pub by_frecency: bool,
+    /// `--sort recency`: the most recently used first, and each row carries
+    /// its `last_used` (da-lw7ue). Otherwise alphabetical.
+    pub by_recency: bool,
     /// The fields named: only theirs are listed, one the database knows
     /// nothing of too, where the pictures will draw it (da-gq232).
     pub fields: Vec<String>,

@@ -221,7 +221,7 @@ describe('under a press, the fields it reached get the rows to themselves (da-xt
 	// little more vertically in this case to better utilize the space.»
 	/** Six fields a sixth apart in y, none used more than another. */
 	const six = ['a', 'b', 'c', 'd', 'e', 'f'].map((field, i) => ({ field, y: i / 6, active: false }));
-	const standings = new Map(six.map(({ field, y }) => [field, { y, frecency: 0 }]));
+	const standings = new Map(six.map(({ field, y }) => [field, { y, last: 0 }]));
 	const near = (dy) => ({ rank: 2, dy, dx: 0 });
 	const read = (rows) => rows.map(({ lead, rest }) => [lead.map((b) => b.field), rest.map((b) => b.field)]);
 

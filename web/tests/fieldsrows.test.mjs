@@ -1,18 +1,19 @@
-// The collect widget's order (da-xtkcp, da-w6437). vividn, 2026-09-24: a
-// stable order, re-sorted at quiet moments and not while in use; and
-// 2026-11-03: «moving the frecent entries to the middle of the pane».
+// The collect widget's order (da-xtkcp, da-w6437, da-lw7ue). vividn,
+// 2026-09-24: a stable order, re-sorted at quiet moments and not while in
+// use; 2026-11-04: «recency, not frecency, for now», and of a field ending,
+// «Since it is the most recent it should always get the first slot».
 //
-// So: the cluster stands the most used first, the first in the middle and
-// the rest ring by ring around it (`fields --sort frecency`, ties by `y`);
-// the order is taken on load and when the app comes back to the
-// foreground; and nothing a person does while it is open — a press, a
-// field becoming active, a refresh — moves a button. That last is what
-// da-8i1kn saw go wrong: a press on `coffee` set off a refresh that put
-// `mood` (just active) where `coffee` had been, under the next tap.
+// So: each row stands its fields most recently used first (`fields --sort
+// recency`); the order is taken on load and when the app comes back to the
+// foreground; and between those nothing moves but a field that starts, into
+// the active section, or ends, to the first slot of its row (the ending is
+// collect-rest.test.mjs). A press on a moment, a write that would reorder, a
+// refresh: none moves a button. da-8i1kn saw that go wrong once: a press on
+// `coffee` set off a refresh that put another field under the next tap.
 //
-// The arrangement itself is pure (`fieldRows` in fields.test.mjs,
-// `rowsUnder` in lanes-pure.test.mjs); this is the built app on a seeded
-// database, read as the cluster's order.
+// The arrangement itself is pure (`atRest` in fields.test.mjs, `rowsUnder`
+// in lanes-pure.test.mjs); this is the built app on a seeded database, read
+// as each row's order.
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,11 +28,7 @@ const BAR = 'section.pane[data-title="collect"] .bar';
 /** A field with its `y` set, the way a spec sets it. */
 const at = (field, verb, y) => `setup ${field} --from-json '${JSON.stringify({ field, verb, y })}'`;
 
-/**
- * Six fields, three high and three low, used 0–3 times each — so that the
- * bands (by `y`) and the order along them (by use) are different
- * questions with different answers.
- */
+/** Six fields, three high and three low, used in an order that is neither their names' nor their heights'. */
 const SEED = [
 	at('a', 'occur', 0.1),
 	at('b', 'occur', 0.2),
@@ -39,32 +36,38 @@ const SEED = [
 	at('d', 'occur', 0.6),
 	at('e', 'start', 0.7),
 	at('f', 'occur', 0.8),
-	'occur a -t 08:00',
-	'occur b -t 08:00',
-	'occur b -t 08:01',
-	'occur b -t 08:02',
-	'occur c -t 08:00',
-	'occur c -t 08:01',
-	'occur d -t 08:00',
-	'occur f -t 08:00',
-	'occur f -t 08:01'
+	'occur d',
+	'occur a',
+	'occur f',
+	'occur c',
+	'occur b'
 ];
 
-/** Most used first; a tie by `y`, higher up first. */
+/** Last used first; the never used after, by name. */
 const SORTED = ['b', 'c', 'f', 'a', 'd', 'e'];
 
-/** The cluster's order, first (the middle) to last. */
-const order = (page) => page.locator(`${BAR} .room .spot [data-field]`).evaluateAll((bs) => bs.map((b) => b.dataset.field));
-const saysOrder = (page, want) =>
-	until(
-		() => order(page),
-		(seen) => JSON.stringify(seen) === JSON.stringify(want)
-	);
+/** The fields not in the active section, row by row, each left to right. */
+const rows = (page) =>
+	page.locator(`${BAR} .room .spot.shelf[data-section="recent"]`).evaluateAll((spots) => {
+		const by = new Map();
+		for (const s of spots.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left))
+			by.set(s.dataset.row, [...(by.get(s.dataset.row) ?? []), s.querySelector('[data-field]').dataset.field]);
+		return [...by.values()];
+	});
 
-/** The app on that seed, loaded after it. */
+/** Whether every row stands in `order`'s order, and the rows hold `order` whole. */
+const follows = (seen, order) =>
+	seen.flat().length === order.length && seen.every((row) => JSON.stringify(row) === JSON.stringify(order.filter((f) => row.includes(f))));
+
+const saysOrder = (page, order) => until(() => rows(page), (seen) => follows(seen, order));
+
+/** The app on that seed, a minute between each line, loaded after it. */
 async function withOrder(fn) {
 	await withApp(async (app) => {
-		for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
+		for (const line of SEED) {
+			assert.equal((await app.runLine(line)).code, 0, line);
+			await app.clock.forward(60_000);
+		}
 		await app.reload();
 		await app.page.locator(`${BAR} [data-field="e"]`).waitFor();
 		await app.idle();
@@ -72,44 +75,39 @@ async function withOrder(fn) {
 	});
 }
 
-test('the most used stands first, in the middle, and the rest by use', async () => {
+test('each row stands its fields last used first', async () => {
 	await withOrder(async ({ page }) => {
 		await saysOrder(page, SORTED);
 	});
 });
 
-test('nothing moves while the app is in use; coming back to the foreground re-sorts', async () => {
+test('nothing moves while the app is in use but a field starting; coming back to the foreground re-sorts', async () => {
 	await withOrder(async (app) => {
 		const { page } = app;
 		await saysOrder(page, SORTED);
 
-		// A real press: `e` starts, and is ACTIVE (da-8i1kn's `mood`).
+		// A real press: `e` starts, and goes into the active section; the rest stand still.
 		await app.pressWidget('e', 'start');
-		await page.locator(`${BAR} [data-field="e"].on`).waitFor();
+		await page.locator(`${BAR} .spot.shelf[data-section="active"] [data-field="e"]`).waitFor();
 		await app.idle();
-		assert.deepEqual(await order(page), SORTED, 'the press moved a button');
+		const rest = SORTED.filter((f) => f !== 'e');
+		assert.ok(follows(await rows(page), rest), `the press moved a button: ${JSON.stringify(await rows(page))}`);
 
-		// Writes that WOULD reorder it — `d` is now the most used — and a
-		// field that did not exist, all through the bar's own line, so the
-		// page refreshes on them as on any command.
-		await seedLines(app, [
-			'occur d -t 09:00',
-			'occur d -t 09:01',
-			'occur d -t 09:02',
-			at('g', 'occur', 0.65),
-			'occur g -t 09:00'
-		]);
+		// Writes that WOULD reorder it — `d` is now the last used — and a field
+		// that did not exist, all through the bar's own line, so the page
+		// refreshes on them as on any command.
+		await app.clock.forward(60_000);
+		assert.equal((await app.runLine('occur d')).code, 0);
+		await app.clock.forward(60_000);
+		await seedLines(app, [at('g', 'occur', 0.65), 'occur g']);
 		await page.locator(`${BAR} [data-field="g"]`).waitFor();
 		// The new field stands last; nothing else moved.
-		assert.deepEqual(await order(page), [...SORTED, 'g'], 'a refresh moved a button');
+		assert.ok(follows(await rows(page), [...rest, 'g']), `a refresh moved a button: ${JSON.stringify(await rows(page))}`);
 
 		// The page comes back to the foreground: sorted again, from what the CLI now says.
 		await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-		const sorted = JSON.parse((await app.run(['fields', '--json', '--sort', 'frecency'])).stdout);
-		assert.equal(sorted.reduce((a, b) => ((b.frecency ?? 0) > (a.frecency ?? 0) ? b : a)).field, 'd');
-		await until(
-			() => order(page),
-			(seen) => seen[0] === 'd' && seen.length === 7
-		);
+		const sorted = JSON.parse((await app.run(['fields', '--json', '--sort', 'recency'])).stdout);
+		assert.equal(sorted[0].field, 'g');
+		await saysOrder(page, ['g', 'd', 'b', 'c', 'f', 'a']);
 	});
 });

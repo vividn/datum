@@ -13,12 +13,20 @@
 	record is its name, underlined, and a click prefills `add <field> ` in
 	the bottom bar rather than running anything.
 
-	AT REST the fields stand in a CLUSTER (`clustered`): the most used and
-	most recent first (`rowsUnder`, the order taken on load and on coming
-	back to the foreground and never while in use), the first in the middle
-	of the widget and the rest ring by ring around it (`ringOf`), panned by a
-	drag where they run past the widget's edges. A box too short for the
-	ring holds them in the rows it has, which run past its sides (`dealt`).
+	AT REST (da-lw7ue) the fields stand in ROWS locked to the pictures'
+	height, each in the row its band's middle falls in (`atRest`): on the
+	left a STRIP, the current state of each active field drawn on its band as
+	the nowview's now section draws it, a tap there putting that field's pill
+	on the bar; then the ACTIVE SECTION, every field in an active state
+	inside a dotted outline that steps with each row; then each row's other
+	fields, the most recently used first (`rowsUnder`, the order taken on
+	load and on coming back to the foreground). A drag pans those sideways,
+	gliding on after a swipe; the strip and the active section stay, until
+	the section is wider than half the widget and pans with them. A field
+	that starts glides into the section, and one that ends out of it into the
+	first slot of its row (`bumped`). A tutorial game's fields (`tapLogs`)
+	keep the cluster: the first in the middle of the widget and the rest ring
+	by ring around it (`ringOf`).
 
 	A TAP OPENS a field (vividn's frames, 2026-11-03), a switch alone in
 	1-click mode and every field in 2-click (below): its pill goes on the
@@ -57,7 +65,7 @@
 	pictures' own y axis. Each field's button stands centred on its band,
 	`y` and `height` from `datum fields --json` — never computed here —
 	and as tall as the band where that is taller than a button; fields
-	whose bands overlap stand side by side, most used first by the last
+	whose bands overlap stand side by side, last used first by the last
 	sort, and a band too crowded for the width runs on to the right, where
 	the bar scrolls (`aligned` in fields.ts). A pinch — two fingers, or ctrl+wheel, a trackpad's pinch — zooms
 	the y axis around itself: the buttons keep their size and glide apart.
@@ -99,9 +107,12 @@
 	import ButtonRows from './ButtonRows.svelte';
 	import LengthArrow from './LengthArrow.svelte';
 	import { CLICK_SLOP } from './inspect.js';
+	import { TAU } from './detent.js';
+	import { speedOver, tracked, type Sample } from './grip.js';
 	import {
 		FULL,
 		aligned,
+		atRest,
 		panned,
 		ringIn,
 		dealt,
@@ -209,6 +220,11 @@
 		 * <state>` whole, with no pill on the app's bar.
 		 */
 		tapLogs = false,
+		/**
+		 * Which edge the strip and the active section stand at (da-lw7ue):
+		 * `right` is the mirror, recency running leftward and panning left.
+		 */
+		side = 'left',
 		/** Run a press's line. */
 		onrun,
 		/** Put a press's line in the command line, unrun, for the rest to be typed. */
@@ -225,6 +241,7 @@
 		standings?: Standings;
 		clicks?: 'one' | 'two';
 		tapLogs?: boolean;
+		side?: 'left' | 'right';
 		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
@@ -318,19 +335,20 @@
 	/** Whether the buttons stand where their fields are drawn: the option, on a bar of fields. */
 	const picture = $derived(align === 'picture' && buttons.length > 0);
 	/**
-	 * The fields at rest, most used and most recent first, a press's fields
-	 * ahead of them (`rowsUnder`): the first stands in the middle of the
-	 * widget and the rest ring by ring around it (vividn, 2026-11-03:
-	 * «moving the frecent entries to the middle of the pane»).
+	 * The fields at rest, last used first, a press's fields ahead of them
+	 * (`rowsUnder`): the order they take their slots in collect's rows
+	 * (`atRest`, da-lw7ue), or in a tutorial game's ring.
 	 */
 	const under = $derived(buttons.length === 0 || picture ? [] : rowsUnder(buttons, 1, standings, shown));
 	const clustered = $derived(under.flatMap(({ lead, rest }) => [...lead, ...rest]));
+	/** Whether the fields stand in collect's rows at rest (`atRest`), and not a tutorial game's cluster. */
+	const resting = $derived(!tapLogs && clustered.length > 0);
 	/** The fields a press on a picture put first, marked so (da-qu16). */
 	const promoted = $derived(new Set(under.flatMap(({ lead }) => lead.map((b) => b.field))));
-	/** The fields in the order they claim their places: most used at the last sort first. */
+	/** The fields in the order they claim their places: most recently used at the last sort first. */
 	const placing = $derived(
 		[...buttons]
-			.sort((a, b) => (standings.get(b.field)?.frecency ?? -1) - (standings.get(a.field)?.frecency ?? -1))
+			.sort((a, b) => (standings.get(b.field)?.last ?? -1) - (standings.get(a.field)?.last ?? -1))
 			.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
 	);
 	/** The bar's height, and each placed slot's size as drawn, in px. */
@@ -361,9 +379,32 @@
 	let glide = $state(false);
 	let live = $state(false);
 	$effect.pre(() => {
-		if (picture) requestAnimationFrame(() => requestAnimationFrame(() => (glide = picture)));
+		const on = picture || resting;
+		if (on) requestAnimationFrame(() => requestAnimationFrame(() => (glide = picture || resting)));
 		else glide = false;
 	});
+
+	/** The strip's width at rest: about a fifth of the widget (vividn: «maybe 20%»). */
+	const strip = $derived(Math.round(paneW / 5));
+	/** Where each field stands at rest, and the active section's outline. */
+	const shelves = $derived.by(() => {
+		const hs = [...sizes.values()].map((s) => s.h);
+		return atRest(
+			clustered.map((b) => ({ ...b, w: sizes.get(`f:${b.field}`)?.w ?? 0 })),
+			{ height: paneH, rowH: hs.length ? Math.max(...hs) : 30, gap: GAP, strip }
+		);
+	});
+	/** The strip and the active section stay while the section is under half the widget; past it the section pans too. */
+	const frozen = $derived(shelves.section <= paneW / 2);
+	/** Each active field's current state, on its band, as the nowview's now section draws it. */
+	const nowBands = $derived(fields.filter((b) => b.active && !b.ignored));
+	// The other side pans the other way: a pan kept from the last starts again at the strip.
+	$effect.pre(() => {
+		void side;
+		untrack(() => (pan = null));
+	});
+	/** Where a field stands across the room at rest, `x` from the strip's edge: mirrored on the right. */
+	const across = (x: number, field: string) => (side === 'right' ? paneW - x - (sizes.get(`f:${field}`)?.w ?? 0) : x);
 
 	/** Keep `sizes` to the slot's size as drawn. */
 	function sized(node: HTMLElement, key: string) {
@@ -742,6 +783,9 @@
 
 	/** Open `button`: its pill on the bar, and its view over the fields. */
 	function open(button: FieldButton) {
+		// A glide still going stops where it is, for Back to return to.
+		cancelAnimationFrame(coast);
+		coast = 0;
 		if (tapLogs) return void ((restPan = pan), (pan = null), (picked = button.field));
 		entered = { cursor: get(cursor), moment };
 		if ($fieldPill !== button.field) setFieldPill(button.field, button.color);
@@ -862,6 +906,11 @@
 	 * the room's and no further, like a scroll.
 	 */
 	function kept(x: number, y: number) {
+		// At rest the rows pan sideways alone, as far as brings the furthest field into the room.
+		if (resting && picked === null) {
+			const most = Math.max(0, shelves.end + GAP - paneW);
+			return { x: side === 'right' ? Math.min(most, Math.max(x, 0)) : Math.min(0, Math.max(x, -most)), y: 0 };
+		}
 		const axis = (at: number, to: number, start: number, size: number) =>
 			Math.min(Math.max(at, Math.min(0, to - start - size)), Math.max(0, -start));
 		return {
@@ -886,19 +935,43 @@
 	 * even one that starts on a button, and its click is swallowed; one that
 	 * does not is a press of whatever it is on.
 	 */
-	let drag: { id: number; x: number; y: number; from: { x: number; y: number }; moving: boolean } | null = null;
+	let drag: {
+		id: number;
+		x: number;
+		y: number;
+		from: { x: number; y: number };
+		moving: boolean;
+		xs: Sample[];
+		ys: Sample[];
+	} | null = null;
 	/** A drag just ended: the click it ends in is not a press. */
 	let dragged = false;
+	/** The glide a swipe let go of (da-lw7ue), a frame's request; 0 when none. */
+	let coast = 0;
 	function down(e: PointerEvent) {
 		// Any press ends a swallow still pending. A drag's click follows its
 		// pointerup at once, and a touch that travelled makes none, so only a
 		// second pen or mouse pressed in between could let one through.
 		dragged = false;
-		if (e.button === 0) drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: shift, moving: false };
+		// A finger put down stops a glide where it is.
+		cancelAnimationFrame(coast);
+		coast = 0;
+		if (e.button === 0)
+			drag = {
+				id: e.pointerId,
+				x: e.clientX,
+				y: e.clientY,
+				from: shift,
+				moving: false,
+				xs: [{ at: e.clientX, t: e.timeStamp }],
+				ys: [{ at: e.clientY, t: e.timeStamp }]
+			};
 	}
 	function move(e: PointerEvent) {
 		if (drag?.id !== e.pointerId) return;
 		const [dx, dy] = [e.clientX - drag.x, e.clientY - drag.y];
+		drag.xs = tracked(drag.xs, e.clientX, e.timeStamp);
+		drag.ys = tracked(drag.ys, e.clientY, e.timeStamp);
 		if (!drag.moving && Math.hypot(dx, dy) <= CLICK_SLOP) return;
 		if (!drag.moving) (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		drag.moving = true;
@@ -907,8 +980,26 @@
 	function up(e: PointerEvent) {
 		if (drag?.id !== e.pointerId) return;
 		dragged = drag.moving;
+		// A swipe carries on (vividn, 2026-11-04: «scrolling should have some
+		// momentum. Right now there is no inertia with swipes»), by the bar's own
+		// reading of its speed (#lib/grip.ts) and its own decay: `speed * TAU`
+		// further, slowing to a stop. A finger's or a pen's: a mouse's drag
+		// stops where the mouse lets go. A cancel carries nothing on.
+		const v = e.type === 'pointerup' && drag.moving && e.pointerType !== 'mouse' ? { x: speedOver(drag.xs, e.clientX, e.timeStamp), y: speedOver(drag.ys, e.clientY, e.timeStamp) } : null;
 		drag = null;
+		if (v && (v.x || v.y)) glideOn(shift, v);
 	}
+	/** Pan on from `from` at `v` px/ms, decaying by `TAU`, and as far as `kept` allows. */
+	function glideOn(from: { x: number; y: number }, v: { x: number; y: number }) {
+		const t0 = performance.now();
+		const step = (now: number) => {
+			const fade = Math.exp(-(now - t0) / TAU);
+			pan = kept(from.x + v.x * TAU * (1 - fade), from.y + v.y * TAU * (1 - fade));
+			coast = Math.hypot(v.x, v.y) * fade > 0.01 ? requestAnimationFrame(step) : 0;
+		};
+		coast = requestAnimationFrame(step);
+	}
+	$effect(() => () => cancelAnimationFrame(coast));
 	/**
 	 * A reveal — a focus, a scroll into view — scrolls the room itself (da-71p3u):
 	 * taken as the pan that shows the same, so the room stays unscrolled and a
@@ -1086,8 +1177,8 @@
 	{:else if picking || clustered.length}
 		{@const here = picking}
 		{@const states = here ? statesOf(here.shape).filter((s) => s !== 'false') : []}
-		<!-- The fields' place (da-w6437): at rest the fields, the most used in
-		     the middle; a field tapped, its time at the top, its states in the
+		<!-- The fields' place (da-w6437): at rest the fields in their rows
+		     (da-lw7ue); a field tapped, its time at the top, its states in the
 		     middle and its keys at the bottom, the fields hidden under it. -->
 		<div class="collect" class:open={!!here}>
 			{#if here}
@@ -1137,6 +1228,50 @@
 				onscroll={fold}
 				onclickcapture={swallow}
 			>
+				{#if !here && resting}
+					<!-- At rest (da-lw7ue): the strip, the active section, then each row by recency. -->
+					<div class="frozen" class:right={side === 'right'} style:width="{frozen ? shelves.section : strip}px"></div>
+					<div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
+						{#each nowBands as band (band.field)}
+							<button
+								class="now-state"
+								data-now-field={band.field}
+								tabindex="-1"
+								style:top="{band.y * paneH}px"
+								style:height="{Math.max(3, band.height * paneH)}px"
+								style:background={lookOf(band, switchLabel).fill}
+								{disabled}
+								title="{band.field}{typeof band.current === 'string' ? ` · ${band.current}` : ''} · tap to select the field"
+								aria-label="select {band.field}"
+								onclick={() => setFieldPill(band.field, band.color)}
+							></button>
+						{/each}
+					</div>
+					{#if shelves.outline}
+						<svg class="dotted" class:frozen style:transform={frozen ? null : `translateX(${shift.x}px)`} aria-hidden="true">
+							<path d={shelves.outline} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
+						</svg>
+					{/if}
+					{#each clustered as button (button.field)}
+						{@const stand = shelves.stands.get(button.field)}
+						{@const pinned = button.active && frozen}
+						<div
+							class="spot shelf"
+							class:glide
+							class:pinned
+							data-role="field"
+							data-row={shelves.rows.get(button.field)}
+							data-section={button.active ? 'active' : 'recent'}
+							data-promoted={promoted.has(button.field) ? '' : undefined}
+							style:left="{across(stand?.x ?? 0, button.field)}px"
+							style:top="{stand?.top ?? 0}px"
+							style:transform={pinned ? null : `translateX(${shift.x}px)`}
+							use:sized={`f:${button.field}`}
+						>
+							{@render fieldButton(button)}
+						</div>
+					{/each}
+				{:else}
 				<div
 					class="ring"
 					use:around
@@ -1171,6 +1306,7 @@
 						{/each}
 					{/if}
 				</div>
+				{/if}
 			</div>
 			{#if here}
 				<div class="data" data-data-row>
@@ -1562,6 +1698,101 @@
 
 	.ring {
 		position: absolute;
+	}
+
+	/* At rest (da-lw7ue): the strip and, while it is frozen, the active
+	   section stand over the rows that pan under them. A field's place glides
+	   (`glide`); one leaving the section keeps above the backing until it has
+	   left it, and one entering rises above it at once. */
+	.frozen {
+		position: absolute;
+		inset: 0 auto 0 0;
+		z-index: 1;
+		background: var(--ground);
+	}
+
+	.present {
+		position: absolute;
+		inset: 0 auto 0 0;
+		z-index: 2;
+		border-right: 1px solid var(--rule);
+	}
+
+	.now-state {
+		position: absolute;
+		left: 0;
+		right: 3px;
+		padding: 0;
+		border: none;
+		border-radius: 0 2px 2px 0;
+		cursor: pointer;
+	}
+
+	/* The mirror (`side`): the strip and the section at the right edge. */
+	.frozen.right,
+	.present.right {
+		left: auto;
+		right: 0;
+	}
+
+	.present.right {
+		border-right: none;
+		border-left: 1px solid var(--rule);
+	}
+
+	.present.right .now-state {
+		left: 3px;
+		right: 0;
+		border-radius: 2px 0 0 2px;
+	}
+
+	.dotted {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		overflow: visible;
+		/* Not the ground the app's pictures stand on: the rows show through. */
+		background: none;
+		pointer-events: none;
+		fill: none;
+		stroke: var(--muted);
+		stroke-width: 1.5;
+		stroke-dasharray: 1.5 4;
+		stroke-linecap: round;
+	}
+
+	.dotted.frozen {
+		z-index: 2;
+	}
+
+	.spot.shelf {
+		transition: z-index 0s 0.3s;
+	}
+
+	.spot.shelf.glide {
+		transition:
+			left 0.3s ease-out,
+			top 0.3s ease-out,
+			z-index 0s 0.3s;
+	}
+
+	.spot.shelf.pinned {
+		z-index: 2;
+		transition: z-index 0s;
+	}
+
+	.spot.shelf.pinned.glide {
+		transition:
+			left 0.3s ease-out,
+			top 0.3s ease-out,
+			z-index 0s;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.spot.shelf.glide {
+			transition: none;
+		}
 	}
 
 	.nav {

@@ -50,8 +50,8 @@ export function dryRunArgv(argv: string[]): string[] {
 	return [...argv, '--dry-run'];
 }
 
-export function frecencyArgv(): string[] {
-	return ['fields', '--json', '--sort', 'frecency'];
+export function recencyArgv(): string[] {
+	return ['fields', '--json', '--sort', 'recency'];
 }
 
 export function grammarArgv(): string[] {
@@ -468,10 +468,10 @@ export interface SpecVersion {
 }
 
 export interface Reads {
-	/** `frecency` comes with `--sort frecency` alone. */
-	fieldsArgv: Omit<FieldListing, 'frecency'>[];
-	fieldArgv: Omit<FieldListing, 'frecency'>[];
-	frecencyArgv: FieldListing[];
+	/** `last_used` comes with `--sort recency` alone. */
+	fieldsArgv: Omit<FieldListing, 'last_used'>[];
+	fieldArgv: Omit<FieldListing, 'last_used'>[];
+	recencyArgv: FieldListing[];
 	grammarArgv: GrammarEntry[];
 	nowArgv: NowListing;
 	firstEntryArgv: TailListing;

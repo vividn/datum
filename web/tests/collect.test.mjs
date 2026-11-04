@@ -2,7 +2,8 @@
 // logging. vividn, 2026-11-03: «the primary interaction widget on the
 // collect pane … this widget really adapts to whatever you're doing».
 //
-// At rest its fields stand in a cluster, the most used in the middle. A tap
+// At rest its fields stand in rows by height, those on in a section of their
+// own (collect-rest.test.mjs). A tap
 // opens a field: back, its name and chosen state on the first row; its time
 // (`−q`, `−m`, `5m`, which become pills); a switch field's states, the first
 // of its spec in the middle; its keys and `+ data` at the bottom. Every pill
@@ -67,17 +68,13 @@ const barPills = (page) =>
 const partPill = (page, kind) => page.locator(`${VIEW} .part-pill[data-pill="${kind}"] .more`);
 
 describe('collect', () => {
-	test('at rest the widget is titled collect, and the most used field stands in its middle', async () => {
+	test('at rest the widget is titled collect, and the field that is on stands in the active section, its state on the strip', async () => {
 		await collect(async ({ page }) => {
-			// coffee, logged three times, is the most used.
-			await page.waitForFunction((view) => {
-				const room = document.querySelector(`${view} .room`)?.getBoundingClientRect();
-				const first = document.querySelector(`${view} .spot`);
-				return room && first?.querySelector('[data-field="coffee"]');
-			}, VIEW);
-			const room = await center(page, `${VIEW} .room`);
-			const coffee = await center(page, `${VIEW} [data-field="coffee"]`);
-			assert.ok(Math.abs(room.x - coffee.x) <= 2 && Math.abs(room.y - coffee.y) <= 2, `coffee at ${JSON.stringify(coffee)}, the middle at ${JSON.stringify(room)}`);
+			// mood was switched to bad: it is on, the others are not (da-lw7ue).
+			await page.locator(`${VIEW} .spot.shelf[data-section="active"] [data-field="mood"]`).waitFor();
+			await page.locator(`${VIEW} [data-now-field="mood"]`).waitFor();
+			const sections = await page.$$eval(`${VIEW} .spot.shelf`, (spots) => spots.map((s) => s.dataset.section));
+			assert.equal(sections.filter((s) => s === 'active').length, 1, JSON.stringify(sections));
 		});
 	});
 

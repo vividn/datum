@@ -29,13 +29,14 @@ import { cli as history, record, stepped, wroteBy, type Command } from '#lib/cli
 import { run, type RunResult } from '#lib/run.ts';
 import { FROZEN_AT } from '#lib/dbProtocol.ts';
 import { currentDb } from '#lib/database.ts';
-import { conflictsArgv, entriesHistoryArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv, stepArgv, type Reads } from '#lib/calls.ts';
+import { conflictsArgv, entriesHistoryArgv, fieldsArgv, grammarArgv, nowArgv, recencyArgv, stepArgv, type Reads } from '#lib/calls.ts';
 import { listsConflicts, type Conflicted } from '#lib/conflicts.ts';
 import { verbAsked } from '#lib/track.ts';
 import { openField, specOpens } from '#lib/fieldWidget.ts';
 import { openPlace, settledTree } from './shell.js';
 import { FIELDS } from './draft.js';
 import {
+	bumped,
 	buttonsFor,
 	type FieldButton,
 	type FieldListing,
@@ -93,26 +94,37 @@ export const conflicts = writable<Conflicted[]>([]);
 
 /**
  * Where each field stood at the last sort (da-xtkcp) — which row of the
- * fields bar it is in and where along it. Written by `resort` alone.
+ * fields bar it is in and where along it. Written by `resort`, and by a
+ * field starting or ending (below).
  */
 export const standings = writable<Standings>(last.standings);
+
+// A field that starts or ends was just used (da-lw7ue): it is made the most
+// recent, so one that ends takes the first slot of its row in collect.
+// Whichever wrote the bar — a refresh or a write's own echo (`guess`).
+let wasActive = new Map(get(fields).map((b) => [b.field, b.active]));
+fields.subscribe((buttons) => {
+	const moved = buttons.filter((b) => wasActive.has(b.field) && wasActive.get(b.field) !== b.active);
+	wasActive = new Map(buttons.map((b) => [b.field, b.active]));
+	if (moved.length) standings.update((s) => bumped(s, moved));
+});
 
 /**
  * Sort the fields bar again: on load, and when the app comes back to the
  * foreground (vividn, 2026-09-24: a stable order, re-sorted at quiet
- * moments, not while in use). `fields --sort frecency` is asked here and
+ * moments, not while in use). `fields --sort recency` is asked here and
  * only here, so the refresh every command sets off never pays for the read
- * — and never moves a button.
+ * — and moves no button but one that started or ended.
  */
 export async function resort(): Promise<void> {
-	const sorted = await run(frecencyArgv());
+	const sorted = await run(recencyArgv());
 	try {
 		if (sorted.code === 0)
 			standings.set(
 				new Map(
-					(JSON.parse(sorted.stdout) as FieldListing[]).map(({ field, y, frecency }) => [
+					(JSON.parse(sorted.stdout) as FieldListing[]).map(({ field, y, last_used }) => [
 						field,
-						{ y, frecency: frecency ?? 0 }
+						{ y, last: (last_used && Date.parse(last_used)) || 0 }
 					])
 				)
 			);

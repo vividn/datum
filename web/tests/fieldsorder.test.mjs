@@ -50,8 +50,8 @@ const SEED = [
 ];
 
 /**
- * The usual order, and what the cluster returns to (da-xtkcp, da-w6437):
- * by use, as the CLI sorts it, and a field on now moves nowhere. Read off
+ * The usual order, and what collect returns to (da-xtkcp, da-lw7ue): last
+ * used first, as the CLI sorts it. Read off
  * the page when a test starts, as `usual`.
  */
 const ALL = ['coffee', 'mood', 'run', 'sleep'];
@@ -148,10 +148,14 @@ describe('a click on the picture puts the fields drawn there first', () => {
 				await saysFields(page, ['run', ...usual.filter((f) => f !== 'run')]);
 				assert.deepEqual((await marked(page)).promoted, ['run'], 'the promoted field says so');
 
-				// The fields a press reached come first, so `run` stands in the
-				// middle of the cluster as DRAWN.
-				const [room, run] = await Promise.all([page.locator(`${BAR} .room`).boundingBox(), page.locator(`${BAR} [data-field="run"]`).boundingBox()]);
-				assert.ok(Math.abs(room.x + room.width / 2 - (run.x + run.width / 2)) <= 2, 'run is not in the middle');
+				// The fields a press reached come first, so `run` takes the first
+				// slot of its row as DRAWN (da-lw7ue).
+				const ahead = await page.$$eval(`${BAR} .room .spot.shelf[data-section="recent"]`, (spots) => {
+					const run = spots.find((s) => s.querySelector('[data-field="run"]'));
+					const left = (s) => s.getBoundingClientRect().left;
+					return spots.filter((s) => s.dataset.row === run.dataset.row && left(s) < left(run)).map((s) => s.textContent.trim());
+				});
+				assert.deepEqual(ahead, [], 'run is not first in its row');
 
 				// The ✕ on the selection's pill — the entry's, since a tap on a
 				// mark selects it (da-xg1vi). Clearing the selection clears

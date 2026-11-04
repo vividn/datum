@@ -226,7 +226,7 @@ pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
     Ok(out)
 }
 
-/// `fields [<FIELD>...] [--include-ignored | -A] [--sort frecency]` — every
+/// `fields [<FIELD>...] [--include-ignored | -A] [--sort frecency|recency]` — every
 /// field, or the ones named (da-gq232).
 ///
 /// `--json` and `--show` are gone from here: da-qt6z folded the output
@@ -241,6 +241,7 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
         output: OutputArgs,
         include_ignored: bool,
         by_frecency: bool,
+        by_recency: bool,
     }
     let mut registry: Vec<LiftedSpec<FieldsParsing>> = Vec::new();
     for spec in input::output_args::FLAG_SPECS {
@@ -250,14 +251,17 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
         p.include_ignored = true;
         Ok(())
     }));
-    registry.push(local_value(None, Some("sort"), |p, v| match v {
-        "frecency" => {
-            p.by_frecency = true;
-            Ok(())
-        }
-        other => Err(ParseError::InvalidArg(format!(
-            "fields --sort takes `frecency`, not '{other}'"
-        ))),
+    registry.push(local_value(None, Some("sort"), |p, v| {
+        (p.by_frecency, p.by_recency) = match v {
+            "frecency" => (true, false),
+            "recency" => (false, true),
+            other => {
+                return Err(ParseError::InvalidArg(format!(
+                    "fields --sort takes `frecency` or `recency`, not '{other}'"
+                )))
+            }
+        };
+        Ok(())
     }));
 
     let mut composed = FieldsParsing::default();
@@ -266,6 +270,7 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
         show: Show::default(),
         include_ignored: composed.include_ignored || composed.output.show_all,
         by_frecency: composed.by_frecency,
+        by_recency: composed.by_recency,
         fields: fields.into_iter().flat_map(field_list).collect(),
     })
 }

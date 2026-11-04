@@ -128,23 +128,23 @@ describe('the widget fits its screen, legibly', () => {
 		{ width: 320, height: 664 },
 		{ width: 1280, height: 800 }
 	]) {
-		// The cluster (da-w6437): the first field in the middle of its room,
-		// the rest around it and reached by a drag where they run past it.
-		test(`at ${viewport.width}x${viewport.height} the first field stands in the room’s middle, every button ≥ 24px, a field first in the Tab order`, async () => {
+		// At rest (da-lw7ue): every field in the room past the strip, whose
+		// states are drawn as tall as the pictures draw their bands.
+		test(`at ${viewport.width}x${viewport.height} every field stands in the room past the strip, every button ≥ 24px, a field first in the Tab order`, async () => {
 			await withApp(async ({ page }) => {
 				for (const line of [...FIXTURE, 'occur tea', 'occur water', 'occur run']) await type(page, line);
 				await page.locator('.bar [data-field="run"]').waitFor();
 				const bar = await page.locator('.bar').first().evaluate((el) => {
 					const room = el.querySelector('.room').getBoundingClientRect();
-					const first = el.querySelector('.room .spot button').getBoundingClientRect();
+					const spots = [...el.querySelectorAll('.room .spot')].map((s) => s.getBoundingClientRect());
 					return {
-						off: [first.left + first.width / 2 - (room.left + room.width / 2), first.top + first.height / 2 - (room.top + room.height / 2)],
+						inside: spots.every((r) => r.left >= room.left + room.width / 5 && r.top >= room.top && r.bottom <= room.bottom),
 						fits: el.getBoundingClientRect().width <= el.parentElement.getBoundingClientRect().width + 1,
-						heights: [...el.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height)
+						heights: [...el.querySelectorAll('button:not([data-now-field])')].map((b) => b.getBoundingClientRect().height)
 					};
 				});
 				assert.ok(bar.fits, 'the bar is wider than the pane it is in');
-				assert.ok(bar.off.every((d) => Math.abs(d) <= 2), `the first field is ${bar.off} from the room's middle`);
+				assert.ok(bar.inside, 'a field stands over the strip or past the room');
 				for (const h of bar.heights) assert.ok(h >= 24, `a button is ${h}px tall`);
 
 				const first = await page.locator('.bar').first().evaluate((el) => {

@@ -164,10 +164,10 @@ for (const [name, screen] of [
 			await settle(page);
 			assert.ok(Math.abs((await boxes(page)).fields.mid.top - seen.fields.mid.top) <= 1);
 
-			// And the option set back is the cluster, the most used in the middle (da-w6437).
-			await pickOption(page, 'bar', 'the buttons stand', 'in the middle');
+			// And the option set back is the rows (da-lw7ue).
+			await pickOption(page, 'bar', 'the buttons stand', 'in rows');
 			await page.locator(`${PANE} .fields[data-align="rows"]`).waitFor();
-			await page.locator(`${BAR} .room .ring [data-field="mid"]`).waitFor();
+			await page.locator(`${BAR} .room .spot.shelf [data-field="mid"]`).waitFor();
 			assert.deepEqual(app.errors, []);
 		}, screen);
 	});

@@ -92,7 +92,7 @@ let from: { y: number; open: number; id: number; node: HTMLElement } | null = nu
  * `DOMHighResTimeStamp` against the document's one time origin, so the
  * difference is milliseconds.
  */
-let track: { y: number; t: number }[] = [];
+let track: Sample[] = [];
 
 let dragging = false;
 /** Whether the press interrupted a settle that has to be finished for it. */
@@ -110,21 +110,32 @@ let swallowUntil = -Infinity;
  */
 let swallowOn: HTMLElement | null = null;
 
+/** Where a pointer was along one axis, and when (`event.timeStamp`). */
+export type Sample = { at: number; t: number };
+
+/** `track` and a move to `at` at `t`, kept to the samples a release reads. */
+export const tracked = (track: Sample[], at: number, t: number): Sample[] =>
+	[...track, { at, t }].filter((sample) => t - sample.t <= WINDOW_MS);
+
 /**
- * px/ms over the window before `t`, positive when the bar is opening.
+ * px/ms along `track`'s axis over the window before `t`, the pointer now at
+ * `at`: positive toward a larger coordinate. The bar's reading, and collect's
+ * pan reads it too (da-lw7ue).
  *
  * Measured back from `t` and not from the last move (da-5rr8f): a pointer
  * at rest sends none, so a finger that stopped and held would otherwise
  * let go at the speed it had stopped from.
  */
-function speed(y: number, t: number): number {
+export function speedOver(track: Sample[], at: number, t: number): number {
 	const first = track.find((sample) => t - sample.t <= WINDOW_MS);
 	if (!first) return 0;
 	const ms = t - first.t;
 	if (ms < MIN_MS) return 0;
-	const px = (first.y - y) / ms;
-	return Math.max(-MAX_SPEED, Math.min(MAX_SPEED, px));
+	return Math.max(-MAX_SPEED, Math.min(MAX_SPEED, (at - first.at) / ms));
 }
+
+/** px/ms over the window before `t`, positive when the bar is opening: up the page. */
+const speed = (y: number, t: number) => -speedOver(track, y, t);
 
 /** Put the bar back on its way, after a press that turned out to be a tap. */
 function unpause(): void {
@@ -147,7 +158,7 @@ function onPointerDown(event: PointerEvent): void {
 	settling = moving();
 	stop();
 	from = { y: event.clientY, open: at(), id: event.pointerId, node: event.currentTarget as HTMLElement };
-	track = [{ y: event.clientY, t: event.timeStamp }];
+	track = [{ at: event.clientY, t: event.timeStamp }];
 	dragging = false;
 }
 
@@ -182,9 +193,7 @@ function onPointerMove(event: PointerEvent): void {
 	// block above: the browser would otherwise select text under the
 	// finger for the whole rest of the pull.
 	event.preventDefault();
-	track = [...track, { y: event.clientY, t: event.timeStamp }].filter(
-		(sample) => event.timeStamp - sample.t <= WINDOW_MS
-	);
+	track = tracked(track, event.clientY, event.timeStamp);
 	// ONE NUMBER, THREE PHASES. Nothing here knows which phase it is in:
 	// past the ceiling the same pull becomes the list scrolling, and back
 	// at the list's top the same pull becomes the bar closing (#lib/log.ts).

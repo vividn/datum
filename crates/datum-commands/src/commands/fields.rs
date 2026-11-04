@@ -9,6 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
+use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::Db;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
@@ -28,6 +29,9 @@ pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
     };
     if args.by_frecency {
         by_frecency(&mut listing, &db.field_frecency(chrono::Utc::now())?);
+    }
+    if args.by_recency {
+        by_recency(&mut listing, &db.field_recency(chrono::Utc::now())?);
     }
     if args.show == ShowFlag::None {
         return Ok(());
@@ -59,6 +63,21 @@ fn by_frecency(listing: &mut JsonValue, frecency: &HashMap<String, f64>) {
     }
     let score = |row: &JsonValue| row["frecency"].as_f64().unwrap_or(0.0);
     rows.sort_by(|a, b| score(b).total_cmp(&score(a)));
+}
+
+/// `--sort recency` (da-lw7ue): each row gains its `last_used`
+/// ([`Db::field_recency`], null where the field has none) and the rows go
+/// most recently used first — stable, so equals and the unused keep their
+/// alphabetical order. datum.day's collect widget orders each row by it.
+fn by_recency(listing: &mut JsonValue, last: &HashMap<String, DateTime<Utc>>) {
+    let Some(rows) = listing.as_array_mut() else {
+        return;
+    };
+    let at = |row: &JsonValue| row["field"].as_str().and_then(|f| last.get(f)).copied();
+    rows.sort_by_key(|row| std::cmp::Reverse(at(row)));
+    for row in rows.iter_mut() {
+        row["last_used"] = json!(at(row).map(|t| t.to_rfc3339_opts(SecondsFormat::Millis, true)));
+    }
 }
 
 /// The plain listing (da-1lnf): a `field` / `states` header over one row
@@ -352,6 +371,48 @@ mod tests {
             })
             .collect();
         assert_eq!(rows, [("mood", 3.0), ("coffee", 2.75), ("apple", 0.0)]);
+    }
+
+    /// da-lw7ue: `--sort recency` puts the last used first, whatever was
+    /// used most, each row saying when, and a field only declared last
+    /// with none.
+    #[test]
+    fn sort_by_recency_puts_the_last_used_first() {
+        let db = fresh_db();
+        // A whole millisecond: `last_used` says no finer.
+        let now = DateTime::from_timestamp_millis(Utc::now().timestamp_millis()).unwrap();
+        let used = |field: &str, minutes: &[i64]| {
+            for m in minutes {
+                let at = now - chrono::Duration::minutes(*m);
+                let mut e = entry_builder(field).time_start_utc(at).build();
+                e.create_time = at;
+                db.insert_entry(&e).unwrap();
+            }
+        };
+        used("coffee", &[90, 80, 70]);
+        used("mood", &[5]);
+        db.save_field_spec(&FieldSpec::new("apple", Action::Start))
+            .unwrap();
+
+        let mut listing = compute_fields(&db).unwrap();
+        by_recency(&mut listing, &db.field_recency(now).unwrap());
+        let rows: Vec<&str> = listing
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["field"].as_str().unwrap())
+            .collect();
+        assert_eq!(rows, ["mood", "coffee", "apple"]);
+        let last = |i: usize| {
+            listing[i]["last_used"]
+                .as_str()
+                .map(|s| s.parse::<DateTime<Utc>>().unwrap())
+        };
+        assert_eq!(
+            last(0).map(|t| t.timestamp_millis()),
+            Some((now - chrono::Duration::minutes(5)).timestamp_millis())
+        );
+        assert_eq!(listing[2]["last_used"], JsonValue::Null);
     }
 
     /// da-btyvj: an anchored field's `y` and `height` are its anchor's,

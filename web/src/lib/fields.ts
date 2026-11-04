@@ -177,8 +177,8 @@ export interface FieldListing {
 	y: number;
 	/** How tall the band is, as a share of the pictures' data area. */
 	height: number;
-	/** How much the field is used, recent use weighing more — `--sort frecency` alone carries it (da-xtkcp). */
-	frecency?: number;
+	/** When the field was last used, RFC 3339 to the millisecond, null for never — `--sort recency` alone carries it (da-lw7ue). */
+	last_used?: string | null;
 	/** The field has no off whatever its spec says: `timezone`'s row alone. */
 	never_false?: boolean;
 }
@@ -231,13 +231,27 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 
 /**
  * Where each field stood when the bar was last sorted (da-xtkcp): its `y`,
- * which picks its row, and its `frecency` (`datum fields --sort
- * frecency`), which places it along the row. Taken only on load and when
- * the app comes back to the foreground (`resort` in #lib/layout/engine.ts)
- * — never while it is in use, so nothing a press sets off can move a
- * button.
+ * which picks its row, and when it was `last` used, in ms since the epoch
+ * (`datum fields --sort recency`, da-lw7ue; 0 for never), which places it
+ * along the row.
+ * Taken on load and when the app comes back to the foreground (`resort` in
+ * #lib/layout/engine.ts), and moved between those only for a field that
+ * starts or ends (`bumped`): nothing else a press sets off moves a button.
  */
-export type Standings = Map<string, { y: number; frecency: number }>;
+export type Standings = Map<string, { y: number; last: number }>;
+
+/**
+ * `standings` with each of `fields` made the most recent (da-lw7ue): a
+ * field that started or ended was just used, so one that ends takes the
+ * first slot of its row, ahead of everything the last sort read.
+ */
+export function bumped(standings: Standings, fields: { field: string; y: number }[]): Standings {
+	if (fields.length === 0) return standings;
+	const next = new Map(standings);
+	const last = Math.max(0, ...[...standings.values()].map((s) => s.last)) + 1;
+	for (const { field, y } of fields) next.set(field, { y: standings.get(field)?.y ?? y, last });
+	return next;
+}
 
 /** `items` cut, in order, into `rows` runs of equal count (one apart at most); none empty. */
 export function bands<T>(items: T[], rows: number): T[][] {
@@ -249,10 +263,10 @@ export function bands<T>(items: T[], rows: number): T[][] {
 
 /**
  * The bar's rows (vividn, 2026-09-24: «the frecency is left to right, the y
- * spec is top to bottom»): the fields that STOOD at the last sort, by `y`,
+ * spec is top to bottom»; recency since da-lw7ue): the fields that STOOD at the last sort, by `y`,
  * cut into `rows` bands of equal count — not fixed ranges of `y`, which
  * overflow one row and leave another empty whenever fields cluster — and
- * each band most used first, all by the `standings` and not by the
+ * each band most recently used first, all by the `standings` and not by the
  * fields as they are now.
  *
  * A field that has appeared since (a new one tracked) moves nothing
@@ -266,7 +280,7 @@ export function fieldRows(buttons: FieldButton[], rows: number, standings: Stand
 	const at = (b: FieldButton) => standings.get(b.field)!;
 	const cut = bands([...stood].sort((a, b) => at(a).y - at(b).y), rows);
 	const tops = cut.map((band) => at(band[0]).y);
-	const lanes = cut.map((band) => band.sort((a, b) => at(b).frecency - at(a).frecency));
+	const lanes = cut.map((band) => band.sort((a, b) => at(b).last - at(a).last));
 	for (const b of buttons)
 		if (!standings.has(b.field)) lanes[Math.max(0, tops.findLastIndex((top) => top <= b.y))].push(b);
 	return lanes;
@@ -344,7 +358,7 @@ export interface Stand {
  * scrolls, and a zoom that pulls two bands apart lets the second fall back
  * to the left.
  *
- * `items` come in the order they claim places — most used first — and the
+ * `items` come in the order they claim places — most recently used first — and the
  * stands come back in it.
  */
 export function aligned(items: Sized[], height: number, view: View, gap: number): Stand[] {
@@ -360,6 +374,86 @@ export function aligned(items: Sized[], height: number, view: View, gap: number)
 		placed.push({ ...item, x, top });
 		return { x, top };
 	});
+}
+
+/** A field collect stands at rest: its band, whether it is on, and its button's width as drawn. */
+export interface Shelved {
+	field: string;
+	y: number;
+	height: number;
+	active: boolean;
+	w: number;
+}
+
+/** Where collect stands its fields at rest (`atRest`). */
+export interface Shelves {
+	/**
+	 * Each field's place in the room, in px before any pan: `x` from the
+	 * strip's edge of the room, the left on `side: left`, which the widget
+	 * mirrors on the right, as it does `section`, `end` and the outline.
+	 */
+	stands: Map<string, Stand>;
+	/** The row a field is in, 0 at the top. */
+	rows: Map<string, number>;
+	/** The active section's dotted outline, an SVG path; null with nothing active. */
+	outline: string | null;
+	/** Where the active section ends, or the strip with nothing active. */
+	section: number;
+	/** The right edge of the furthest field. */
+	end: number;
+}
+
+/**
+ * Collect at rest (da-lw7ue). vividn, 2026-11-04: «on the far left (maybe
+ * 20%) of the collect widget, let's draw the current state (so like the now
+ * section of the nowview), then have this active section with a dotted
+ * line … then you pan to the right to see more and more distantly used
+ * fields, but can always see the active ones», and «Everything should be
+ * locked to it's proper y positioning».
+ *
+ * So the room is cut into as many rows as `rowH` and `gap` fit in its
+ * `height`, each the same share of the pictures' height, and a field stands
+ * in the row its band's middle falls in. Past the `strip`, each row holds
+ * its active fields, then the rest. The active section is as wide as its
+ * widest row, one row growing it rather than wrapping (vividn: «the active
+ * section keeps growing»), and its outline steps with each row's width from
+ * its first active row to its last. The rest start past it, in a column.
+ *
+ * `items` come in the order they take their slots, most recent first.
+ */
+export function atRest(items: Shelved[], o: { height: number; rowH: number; gap: number; strip: number }): Shelves {
+	const n = Math.max(1, Math.floor((o.height + o.gap) / (o.rowH + o.gap)));
+	const pitch = o.height / n;
+	const rowOf = (s: Shelved) => Math.min(n - 1, Math.max(0, Math.floor((s.y + s.height / 2) * n)));
+	const topOf = (r: number) => r * pitch + (pitch - o.rowH) / 2;
+	const rows = new Map(items.map((s) => [s.field, rowOf(s)]));
+	const stands = new Map<string, Stand>();
+	const lay = (from: number, active: boolean) => {
+		const right: number[] = [];
+		for (const s of items.filter((s) => s.active === active)) {
+			const r = rows.get(s.field)!;
+			const x = right[r] ?? from;
+			stands.set(s.field, { x, top: topOf(r) });
+			right[r] = x + s.w + o.gap;
+		}
+		return right;
+	};
+	const inner = o.strip + o.gap;
+	const active = lay(inner + o.gap, true);
+	const lit = active.flatMap((x, r) => (x === undefined ? [] : [r]));
+	const section = lit.length ? Math.max(...lit.map((r) => active[r])) : o.strip;
+	const rest = lay(section + o.gap, false);
+	let outline: string | null = null;
+	if (lit.length) {
+		const [first, last] = [lit[0], lit.at(-1)!];
+		const edge = (r: number) => (r === last ? topOf(r) + o.rowH + o.gap / 2 : (topOf(r) + o.rowH + topOf(r + 1)) / 2);
+		const steps = Array.from({ length: last - first + 1 }, (_, i) => first + i).map(
+			(r) => `H${active[r] ?? inner + 2 * o.gap}V${edge(r)}`
+		);
+		outline = `M${inner} ${topOf(first) - o.gap / 2}${steps.join('')}H${inner}Z`;
+	}
+	const end = Math.max(section, ...rest.filter((x) => x !== undefined).map((x) => x - o.gap));
+	return { stands, rows, outline, section, end };
 }
 
 /**

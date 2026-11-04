@@ -312,6 +312,31 @@ impl Db {
         }
         Ok(out)
     }
+
+    /// When each field was last used (da-lw7ue): the latest `create_time`
+    /// of its live entries, a declaration not being a use. Read over the
+    /// same [`FRECENCY_HORIZON_WEEKS`] as [`Db::field_frecency`], by the same
+    /// seek, so a field unused for that long is absent.
+    pub fn field_recency(&self, now: DateTime<Utc>) -> Result<HashMap<String, DateTime<Utc>>> {
+        let horizon = now - chrono::Duration::weeks(FRECENCY_HORIZON_WEEKS);
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT field, CAST(ROUND((MAX(julianday(create_time)) - 2440587.5) * 86400000) AS INTEGER) \
+             FROM entries WHERE modify_time_ms >= ?1 AND {LIVE_SQL} AND {} \
+             GROUP BY field",
+            crate::track::NOT_A_DECLARATION_SQL
+        ))?;
+        let rows = stmt.query_map(params![horizon.timestamp_millis()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (field, ms) = row.map_err(DatumError::Db)?;
+            if let Some(at) = DateTime::from_timestamp_millis(ms) {
+                out.insert(field, at);
+            }
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]

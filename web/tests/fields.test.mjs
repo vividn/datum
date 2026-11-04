@@ -29,7 +29,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, shapeFor, buttonsFor, bands, fieldRows } from '../src/lib/fields.ts';
+import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, shapeFor, buttonsFor, bands, fieldRows, atRest, bumped } from '../src/lib/fields.ts';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
@@ -108,16 +108,16 @@ describe('the logic', () => {
 		assert.deepEqual(bands([], 3), []);
 	});
 
-	describe('fieldRows: rows by y, most used first along each (da-xtkcp)', () => {
+	describe('fieldRows: rows by y, last used first along each (da-xtkcp, da-lw7ue)', () => {
 		const at = (field, y) => ({ field, y });
 		/** Six fields, two of them clustered low — the case fixed ranges of `y` get wrong. */
 		const six = [at('a', 0.05), at('b', 0.1), at('c', 0.15), at('d', 0.2), at('e', 0.9), at('f', 0.95)];
-		const stood = (frecency) => new Map(six.map(({ field, y }) => [field, { y, frecency: frecency[field] ?? 0 }]));
+		const stood = (last) => new Map(six.map(({ field, y }) => [field, { y, last: last[field] ?? 0 }]));
 		const names = (rows) => rows.map((row) => row.map((b) => b.field));
 
-		test('equal-count bands of y, top to bottom; each band by frecency, left to right', () => {
-			const frecency = { a: 1, b: 3, c: 0.5, d: 2, e: 0, f: 4 };
-			assert.deepEqual(names(fieldRows(six, 3, stood(frecency))), [
+		test('equal-count bands of y, top to bottom; each band last used first, left to right', () => {
+			const last = { a: 1, b: 3, c: 0.5, d: 2, e: 0, f: 4 };
+			assert.deepEqual(names(fieldRows(six, 3, stood(last))), [
 				['b', 'a'],
 				['d', 'c'],
 				['f', 'e']
@@ -156,6 +156,53 @@ describe('the logic', () => {
 				['e', 'f']
 			]);
 		});
+	});
+
+	describe('atRest: collect at rest, rows locked to y (da-lw7ue)', () => {
+		const at = (field, y, active = false, w = 40) => ({ field, y, height: 0.1, active, w });
+		// 100px tall, 24px rows and a 6px gap: three rows, a third of the height each.
+		const ROOM = { height: 100, rowH: 24, gap: 6, strip: 50 };
+
+		test('a field stands in the row its band’s middle falls in; past the strip, the active section, then the rest in order', () => {
+			const { stands, rows, section, outline, end } = atRest(
+				[at('a', 0), at('b', 0.6, true), at('c', 0.05), at('d', 0.85), at('e', 0.6)],
+				ROOM
+			);
+			assert.deepEqual(Object.fromEntries(rows), { a: 0, b: 1, c: 0, d: 2, e: 1 });
+			// The active `b` stands past the strip and a gap's padding; the section ends a gap past it.
+			assert.equal(stands.get('b').x, 50 + 12);
+			assert.equal(section, 50 + 12 + 40 + 6);
+			// The rest start past the section, in a column, each row in the order given.
+			assert.deepEqual(['a', 'd', 'e'].map((f) => stands.get(f).x), [section + 6, section + 6, section + 6]);
+			assert.equal(stands.get('c').x, section + 6 + 40 + 6);
+			assert.equal(end, stands.get('c').x + 40);
+			assert.ok(outline?.startsWith('M56 '), outline);
+		});
+
+		test('nothing active: no outline, and the rest start past the strip', () => {
+			const { outline, section, stands } = atRest([at('a', 0)], ROOM);
+			assert.equal(outline, null);
+			assert.equal(section, 50);
+			assert.equal(stands.get('a').x, 56);
+		});
+
+		test('the section grows with its widest row, and the outline steps with each row from the first active row to the last', () => {
+			const { section, outline } = atRest([at('a', 0, true), at('b', 0, true), at('c', 0.85, true, 20)], ROOM);
+			assert.equal(section, 62 + 40 + 6 + 40 + 6);
+			// Row 0 out to the section, row 1 (none active) a stub, row 2 to its one field.
+			const steps = [...outline.matchAll(/H([\d.]+)/g)].map((m) => Number(m[1]));
+			assert.deepEqual(steps, [section, 56 + 12, 62 + 20 + 6, 56]);
+		});
+	});
+
+	test('bumped: a field that started or ended is made the most recent, its row kept', () => {
+		const stood = new Map([
+			['a', { y: 0.1, last: 5 }],
+			['b', { y: 0.2, last: 9 }]
+		]);
+		const next = bumped(stood, [{ field: 'a', y: 0.9 }]);
+		assert.deepEqual(next.get('a'), { y: 0.1, last: 10 });
+		assert.equal(bumped(stood, []), stood, 'nothing moved, the same standings');
 	});
 
 	test('`active` is whether `now` named the field — not whether the state has a colour', () => {

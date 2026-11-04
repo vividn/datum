@@ -465,7 +465,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// device (da-ray91).
 	widgetbar: {
 		live: true,
-		meta: meta('widgetbar', 'collect', { align: 'rows', switchLabel: 'field', showIgnored: false, clicks: 'one' }, [
+		meta: meta('widgetbar', 'collect', { align: 'rows', switchLabel: 'field', showIgnored: false, clicks: 'one', side: 'left' }, [
 			// Where the buttons stand (da-omw4n): today's rows, or each at the
 			// height its field is drawn in the pictures.
 			{
@@ -473,7 +473,7 @@ export const KINDS: Record<string, WidgetKind> = {
 				label: 'the buttons stand',
 				type: 'choice',
 				choices: [
-					{ value: 'rows', label: 'in the middle' },
+					{ value: 'rows', label: 'in rows' },
 					{ value: 'picture', label: 'aligned to the picture' }
 				]
 			},
@@ -499,18 +499,30 @@ export const KINDS: Record<string, WidgetKind> = {
 					{ value: 'one', label: 'logs what it can, 1-click' },
 					{ value: 'two', label: 'opens and chooses, 2-click' }
 				]
+			},
+			// vividn, 2026-11-04: «a "side: left | right" row in the widget
+			// menu» (da-lw7ue): right is the mirror, the strip at the right edge.
+			{
+				key: 'side',
+				label: 'side',
+				type: 'choice',
+				choices: [
+					{ value: 'left', label: 'left' },
+					{ value: 'right', label: 'right' }
+				]
 			}
 		]),
 		component: FieldsPane,
 		help: [
-			'Every field you log, as a button, lit when it is on: the most used in the middle.',
+			'Every field you log, as a button, at the height the pictures draw it: on the left what is on now, then the fields that are on inside a dotted line, then the rest, last used first, which a swipe pans.',
 			'A tap logs a moment, or starts or ends a block, at once; a switch, or a field with keys to type, opens to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
 			'A state logs at once. In 2-click mode every field opens, a state is chosen, and the command at the bottom logs it; a long press on a state does the other.',
 			'Under a pending verb a tap logs at once; hold for a field pill alone.'
 		].join('\n'),
-		props: ({ align, switchLabel, showIgnored, clicks }) => ({
+		props: ({ align, switchLabel, showIgnored, clicks, side }) => ({
 			align: align === 'picture' ? 'picture' : 'rows',
 			clicks: clicks === 'two' ? 'two' : 'one',
+			side: side === 'right' ? 'right' : 'left',
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
 			showIgnored: showIgnored === true
 		}),
