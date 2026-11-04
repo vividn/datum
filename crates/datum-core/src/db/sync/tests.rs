@@ -385,6 +385,48 @@ fn the_row_hashes_are_stamped_by_their_rule_and_not_the_build() {
     assert!(!stamp.contains(crate::build()), "{stamp}");
 }
 
+/// Parts kept under a fresh stamp that this build would not compute, a
+/// change the probe holds no value of (da-g9wph): a sampled row that
+/// differs reads every row again, and a row outside the sample is not
+/// read, nor after a log, whose row is the newest and has no part yet.
+#[test]
+fn a_sampled_row_that_disagrees_rehashes_every_row() {
+    let db = Db::open_in_memory().unwrap();
+    for f in ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"] {
+        log_at(&db, 0, f);
+    }
+    let right = db.sync_state_hash(None).unwrap();
+    let stale = |sql: &str| {
+        db.conn
+            .execute(
+                &format!("UPDATE sync_row_hashes SET hash = ?1 {sql}"),
+                [hex(&[7; 32])],
+            )
+            .unwrap();
+        db.conn
+            .execute("UPDATE sync_state_sums SET sum = ?1", [hex(&[9; 32])])
+            .unwrap();
+    };
+    let stale_parts = || -> i64 {
+        db.conn
+            .query_row(
+                "SELECT COUNT(*) FROM sync_row_hashes WHERE hash = ?1",
+                [hex(&[7; 32])],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    stale("");
+    assert_eq!(db.sync_state_hash(None).unwrap(), right);
+    assert_eq!(stale_parts(), 0, "every part computed again");
+
+    stale("WHERE hid = (SELECT hid FROM entries ORDER BY rowid LIMIT 1 OFFSET 5)");
+    assert_eq!(db.sync_state_hash(None).unwrap(), hex(&[9; 32]));
+    log_at(&db, 0, "k");
+    db.sync_state_hash(None).unwrap();
+    assert_eq!(stale_parts(), 1, "a log reads no row but its own");
+}
+
 /// [`ROW_HASH_PROBE`] sets every stored column of `entries` but those no
 /// row's hash reads, every key a row's hash writes, and each JSON column
 /// it sets parses: a column or key it leaves out is one a build could

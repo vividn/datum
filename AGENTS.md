@@ -567,7 +567,8 @@ verified», never a MISMATCH (da-o2arv). The hash is the sum, mod 2^256, of
 each row's SHA-256 (da-9ln3s), kept as rows change: each row's part is kept
 (`sync_row_hashes`, per `row_hash_rule`: the schema and what this build
 hashes probe rows to, so a deploy hashing a row as the last did reads none,
-da-vpwkw), triggers on `entries` name every row a write
+da-vpwkw, and up to six real rows hashed again at each verify, every row
+read again where one differs, da-g9wph), triggers on `entries` name every row a write
 touches (`sync_rows_changed`), and a verify reads those rows again and no
 others, so a session that brought 20 ops hashes 20 rows whatever the history.
 A sum of hashes binds copies that are not trying to fool each other, and is
