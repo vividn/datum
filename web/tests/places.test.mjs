@@ -325,6 +325,27 @@ describe('a place on a phone', () => {
 		});
 	});
 
+	// da-hoqfg: the tab in front is the one opened from until the slide lands,
+	// so a back pressed meanwhile found no place in front and was dropped.
+	test('a back pressed while it slides in still returns, and closes it', async () => {
+		await phone.solo(async ({ page }) => {
+			const during = await page.evaluate(async () => {
+				const { shell, layout } = window.datum;
+				await shell.openPlace('sync');
+				// Two frames in: the slide in is under way.
+				for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r));
+				const { tabs, active } = layout.current().root;
+				history.back();
+				return tabs[active].layout;
+			});
+			assert.notEqual(during, 'sync', 'the back was pressed after the slide landed');
+			await until(() => rootTabs(page), (t) => t.join() === 'main');
+			await atRest(rootContent(page));
+			assert.deepEqual(await rootTabs(page), ['main']);
+			assert.equal(await shown(page), 'main');
+		});
+	});
+
 	// canary-kimi-k3 on #349: one `pushed` flag for every place made leaving
 	// the first pop the second's history entry, and the pop slide the second
 	// closed too.

@@ -1178,10 +1178,14 @@ export function leavePlace(): void {
 
 /** The browser's back, from a place: back to the tab it opened beside. */
 function onPopState(): void {
+	const name = pushedFor;
 	pushedFor = null;
 	if (get(modalPlace) !== null) return modalPlace.set(null);
 	const { tabs, active } = get(layout).root;
-	if (inPlace()) sliding.set(tabs[Math.max(0, active - 1)].id);
+	// The place in front, or one still sliding in (da-hoqfg): the frame lands
+	// that slide first, then this one, and the place closes as it is left.
+	const at = inPlace() ? active : tabs.findIndex((t) => t.layout === name);
+	if (at >= 0) sliding.set(tabs[Math.max(0, at - 1)].id);
 }
 
 /**
