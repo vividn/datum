@@ -557,3 +557,163 @@ fn upgrade_refuses_sums_the_release_key_did_not_sign() {
     assert!(h.ok(&["upgrade"]).contains("datum 9.9.9"));
     assert_eq!(std::fs::read(h.exe()).unwrap(), stub);
 }
+
+impl Home {
+    /// The daily upgrade's unit of `kind`, `timer` or `service`.
+    fn auto(&self, kind: &str) -> PathBuf {
+        self.path(&format!("config/systemd/user/datum-auto-upgrade.{kind}"))
+    }
+
+    /// `datum install` with stdin a terminal, on which `typed` is typed.
+    fn install_on_a_terminal(&self, typed: &[u8]) -> Output {
+        use std::io::Write;
+        let (mut master, slave) = crate::ambiguous_time::pty();
+        let path = format!(
+            "{}:{}",
+            self.path("fake").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let child = Command::new(self.exe())
+            .args(["install", "--no-completions"])
+            .env("PATH", path)
+            .env("HOME", self.path("home"))
+            .env("XDG_CONFIG_HOME", self.path("config"))
+            .env("DATUM_HOME", self.path("data"))
+            .env("DATUM_CONFIG_HOME", self.path("dconf"))
+            .env("DATUM_DB", self.path("data/data.db"))
+            .env("DATUM_SYNC_NO_DAEMON", "1")
+            .stdin(slave)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        master.write_all(typed).unwrap();
+        child.wait_with_output().unwrap()
+    }
+}
+
+/// `upgrade --auto` installs a daily timer running `datum upgrade` on this
+/// binary, `--check` says whether it is on, and `--no-auto` and `uninstall`
+/// remove it (da-f7ckm).
+#[test]
+fn upgrade_auto_installs_a_daily_timer_and_no_auto_removes_it() {
+    let h = Home::new();
+    h.ok(&["install", "--no-completions", "--no"]);
+    assert!(!h.auto("timer").exists(), "--no answers no");
+    h.release(&std::fs::read(h.exe()).unwrap(), None);
+    let said = h.ok(&["upgrade", "--check"]);
+    assert!(said.contains("daily upgrades: off"), "{said}");
+
+    let said = h.ok(&["upgrade", "--auto"]);
+    assert!(said.contains("datum-auto-upgrade.timer"), "{said}");
+    let service = std::fs::read_to_string(h.auto("service")).unwrap();
+    assert!(
+        service.contains(&format!("\nExecStart=\"{}\" upgrade\n", h.exe().display())),
+        "{service}"
+    );
+    assert!(
+        service.contains(&format!(
+            "Environment=\"DATUM_HOME={}\"",
+            h.path("data").display()
+        )),
+        "{service}"
+    );
+    let timer = std::fs::read_to_string(h.auto("timer")).unwrap();
+    assert!(timer.contains("\nOnCalendar=daily\n"), "{timer}");
+    assert!(
+        h.log()
+            .contains("systemctl --user enable --now datum-auto-upgrade.timer"),
+        "{}",
+        h.log()
+    );
+    let said = h.ok(&["upgrade", "--check"]);
+    assert!(said.contains("daily upgrades: on"), "{said}");
+    assert!(said.contains("datum is up to date"), "{said}");
+
+    let said = h.ok(&["upgrade", "--no-auto"]);
+    assert!(said.contains("removed the systemd user timer"), "{said}");
+    assert!(!h.auto("timer").exists() && !h.auto("service").exists());
+    assert!(h
+        .ok(&["upgrade", "--no-auto"])
+        .contains("no daily upgrade timer installed"));
+
+    h.ok(&["upgrade", "--auto"]);
+    h.ok(&["uninstall"]);
+    assert!(!h.auto("timer").exists() && !h.auto("service").exists());
+}
+
+/// `datum install` offers the daily upgrade: a terminal is asked, yes the
+/// default; with none it is yes unasked, and `--yes` / `--no` answer it.
+#[test]
+fn install_offers_daily_upgrades() {
+    let h = Home::new();
+    let out = h.install_on_a_terminal(b"n\n");
+    assert!(out.status.success(), "{out:?}");
+    let asked = String::from_utf8_lossy(&out.stderr);
+    assert!(asked.contains("Upgrade datum daily"), "{asked}");
+    assert!(!h.auto("timer").exists(), "answered no");
+
+    let out = h.install_on_a_terminal(b"\n");
+    assert!(out.status.success(), "{out:?}");
+    assert!(h.auto("timer").exists(), "Enter takes yes");
+
+    h.ok(&["upgrade", "--no-auto"]);
+    h.ok(&["install", "--no-completions", "--no"]);
+    assert!(!h.auto("timer").exists());
+    h.ok(&["install", "--no-completions"]);
+    assert!(h.auto("timer").exists(), "no terminal: yes");
+    h.ok(&["upgrade", "--no-auto"]);
+    h.ok(&["install", "--no-completions", "--yes"]);
+    assert!(h.auto("timer").exists());
+}
+
+/// A datum cargo built is refused the timer, saying why, and offered none.
+#[test]
+fn a_cargo_build_gets_no_daily_upgrade() {
+    let h = Home::new();
+    h.cargo_built();
+    h.ok(&["install", "--no-completions", "--yes"]);
+    assert!(!h.auto("timer").exists());
+    let said = h.err(&["upgrade", "--auto"]);
+    assert!(
+        said.contains("built by cargo") && said.contains("`datum upgrade` moves it"),
+        "{said}"
+    );
+    assert!(!h.auto("timer").exists());
+}
+
+/// A datum this user cannot replace, its directory not theirs to write (a
+/// link to a binary root keeps current, say), is not upgraded, gets no
+/// timer, and is offered none (da-f7ckm).
+#[test]
+fn a_datum_not_yours_to_replace_is_left_alone() {
+    let h = Home::new();
+    h.ok(&["install", "--no-completions", "--no"]);
+    h.release(b"#!/bin/sh\necho datum 9.9.9\n", None);
+    let bin = h.path("bin");
+    let mode = |m| std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o555);
+    let upgrade = h.run(&["upgrade"]);
+    let check = h.run(&["upgrade", "--check"]);
+    let auto = h.run(&["upgrade", "--auto"]);
+    let offered = h.run(&["install", "--no-completions", "--yes"]);
+    mode(0o755);
+    // root writes anywhere: there is nothing to refuse, so nothing to test.
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("skipped: run as root, which may write any directory");
+        return;
+    }
+    for out in [&upgrade, &check, &auto] {
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success() && said.contains("is not yours to replace"),
+            "{out:?}"
+        );
+    }
+    assert!(offered.status.success(), "{offered:?}");
+    assert!(!h.auto("timer").exists());
+    assert_ne!(
+        std::fs::read(h.exe()).unwrap(),
+        b"#!/bin/sh\necho datum 9.9.9\n"
+    );
+}

@@ -149,8 +149,12 @@ pub enum Command {
     Install(InstallArgs),
     Uninstall,
     Upgrade {
-        /// `--check`: only say whether a newer release exists.
+        /// `--check`: only say whether a newer release exists, and whether
+        /// the daily upgrade timer is on.
         check: bool,
+        /// `--auto` installs the daily upgrade timer, `--no-auto` removes
+        /// it (da-f7ckm).
+        auto: Option<bool>,
     },
 }
 
@@ -179,6 +183,9 @@ pub struct InstallArgs {
     /// `--daemon`: install the sync daemon even with no database syncing.
     pub daemon: bool,
     pub no_completions: bool,
+    /// `--yes` / `--no`: the answer to whether datum upgrades daily, which
+    /// it otherwise asks (da-f7ckm).
+    pub auto_upgrade: Option<bool>,
 }
 
 // ─── Completions ──────────────────────────────────────────────────────────

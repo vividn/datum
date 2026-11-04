@@ -174,6 +174,10 @@ pub(crate) fn parse_install_args(tail: &[&str]) -> Result<InstallArgs> {
                 args.no_completions = true;
                 continue;
             }
+            FlagSplit::Long(yes @ ("yes" | "no")) => {
+                args.auto_upgrade = Some(yes == "yes");
+                continue;
+            }
             FlagSplit::Long("shell") => words.next().copied().unwrap_or(""),
             FlagSplit::LongAttached("shell", name) => name,
             other => return Err(unknown_flag(other)),
@@ -186,13 +190,18 @@ pub(crate) fn parse_install_args(tail: &[&str]) -> Result<InstallArgs> {
 }
 
 pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
-    match tail {
-        [] => Ok(Command::Upgrade { check: false }),
-        ["--check"] => Ok(Command::Upgrade { check: true }),
-        ["--check", extra, ..] => Err(ParseError::InvalidArg(format!(
+    let (check, auto) = match tail.first().copied() {
+        None => (false, None),
+        Some("--check") => (true, None),
+        Some("--auto") => (false, Some(true)),
+        Some("--no-auto") => (false, Some(false)),
+        Some(tok) => return Err(unknown_flag(split_flag(tok))),
+    };
+    match tail.get(1) {
+        Some(extra) => Err(ParseError::InvalidArg(format!(
             "unexpected argument: '{extra}'"
         ))),
-        [tok, ..] => Err(unknown_flag(split_flag(tok))),
+        None => Ok(Command::Upgrade { check, auto }),
     }
 }
 

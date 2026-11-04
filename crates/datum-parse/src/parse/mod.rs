@@ -623,8 +623,21 @@ mod tests {
         let e = |w: &[&str]| parse_argv(&argv(w)).unwrap_err().to_string();
         assert!(matches!(
             parse_argv(&argv(&["upgrade", "--check"])).unwrap().command,
-            Command::Upgrade { check: true }
+            Command::Upgrade {
+                check: true,
+                auto: None
+            }
         ));
+        assert!(matches!(
+            parse_argv(&argv(&["upgrade", "--no-auto"]))
+                .unwrap()
+                .command,
+            Command::Upgrade {
+                check: false,
+                auto: Some(false)
+            }
+        ));
+        assert!(e(&["upgrade", "--auto", "--check"]).contains("unexpected argument: '--check'"));
         assert!(e(&["upgrade", "--check", "x"]).contains("unexpected argument: 'x'"));
         assert!(e(&["upgrade", "--nope"]).contains("unexpected flag: --nope"));
     }

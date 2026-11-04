@@ -394,7 +394,7 @@ fn into(body: &str) -> String {
 /// Whether the unit's timer is not running: `is-active` says 3, «not
 /// running», or 4, «no such unit» (systemd never loaded it). Any other
 /// failure is systemctl not reaching the user bus, which says nothing of it.
-fn timer_stopped(unit: &str) -> bool {
+pub(super) fn timer_stopped(unit: &str) -> bool {
     Command::new("systemctl")
         .args(["--user", "is-active", "--quiet", &format!("{unit}.timer")])
         .status()

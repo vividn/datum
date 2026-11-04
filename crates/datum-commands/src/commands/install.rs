@@ -5,7 +5,12 @@
 //! undoes it and keeps the record; `upgrade` replaces that binary with the
 //! newest release. `datum check`'s install section reads the same record
 //! ([`findings`]).
+//!
+//! `upgrade --auto` installs a systemd user timer that runs `datum upgrade`
+//! daily, on the backup daemon's pattern, and `install` offers it (da-f7ckm;
+//! vividn, 2026-11-04: «offered»).
 
+use std::io::IsTerminal;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,6 +21,8 @@ use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::question::{is_yes, Question};
+use super::sync_daemon::{ctl, linger_note, quoted, ENV};
 use super::{alias, backup_daemon, completions, sync_daemon};
 use crate::args::SyncDaemonAct;
 use crate::config;
@@ -23,6 +30,10 @@ use crate::config;
 /// The release `datum.day/install.sh` installs from; `DATUM_RELEASE_URL`
 /// names another, as it does there.
 const RELEASE: &str = "https://github.com/vividn/datum/releases/download/latest";
+
+/// The daily upgrade's timer and service: not `datum-upgrade`, a name a
+/// machine may already give a timer of its own.
+const AUTO: &str = "datum-auto-upgrade";
 
 /// The key a release's SHA256SUMS is signed with (da-0b55k). A binary
 /// trusts this one alone, whatever serves the download.
@@ -98,6 +109,9 @@ pub fn install(args: InstallArgs) -> Result<()> {
             .map(|s| s.name().into()),
     })?;
     println!("installed {}", exe.display());
+    if let Err(e) = offer_auto(&exe, args.auto_upgrade) {
+        eprintln!("warning: daily upgrades were not turned on: {e:#}");
+    }
     let rc = match shell {
         Some(Shell::Zsh) => Some(("zsh", "${ZDOTDIR:-$HOME}/.zshrc")),
         Some(Shell::Bash) => Some(("bash", "~/.bashrc")),
@@ -120,6 +134,9 @@ pub fn uninstall() -> Result<()> {
     };
     step("sync daemon", sync_daemon::daemon(SyncDaemonAct::Uninstall));
     step("backup daemon", backup_daemon::uninstall_all());
+    if auto_on() {
+        step("daily upgrade timer", auto(false));
+    }
     step(
         "tab completion",
         completions::uninstall_all().map(|s| print!("{s}")),
@@ -195,20 +212,13 @@ pub fn upgrade(check: bool) -> Result<()> {
     // is, and recorded as `datum install` records, so its next upgrade is
     // an ordinary one.
     let cargo = cargo_root(&exe).map(Path::to_path_buf);
-    let recorded = installed();
-    match &recorded {
-        Some(i) if i.exe == exe => {}
-        None if cargo.is_some() => {}
-        Some(i) => bail!(
-            "this datum ({}) is not the one `datum install` set up ({}): upgrade that one",
-            exe.display(),
-            i.exe.display()
-        ),
-        None => bail!(
-            "this datum ({}) was not set up by `datum install`, so upgrade leaves it alone: \
-             run `datum install` first if it is yours to upgrade",
-            exe.display()
-        ),
+    let recorded = upgradable(&exe, cargo.is_some())?;
+    // `--check` too, so it never offers an upgrade the run would refuse.
+    replaceable(&exe)?;
+    if check {
+        if let Some(said) = auto_said() {
+            println!("{said}");
+        }
     }
     let (url, want) = newest()?;
     if sha256(&exe)? == want {
@@ -281,6 +291,205 @@ pub fn upgrade(check: bool) -> Result<()> {
         Err(e) => eprintln!("warning: the sync daemon still runs the old datum: {e:#}"),
     }
     Ok(())
+}
+
+/// What `datum install` recorded of `exe`, which `upgrade` upgrades; `None`
+/// for a datum `cargo` built, which it moves onto the release. Any other
+/// datum is refused.
+fn upgradable(exe: &Path, cargo: bool) -> Result<Option<Installed>> {
+    let recorded = installed();
+    match &recorded {
+        Some(i) if i.exe == exe => {}
+        None if cargo => {}
+        Some(i) => bail!(
+            "this datum ({}) is not the one `datum install` set up ({}): upgrade that one",
+            exe.display(),
+            i.exe.display()
+        ),
+        None => bail!(
+            "this datum ({}) was not set up by `datum install`, so upgrade leaves it alone: \
+             run `datum install` first if it is yours to upgrade",
+            exe.display()
+        ),
+    }
+    Ok(recorded)
+}
+
+/// Refused where this user cannot replace `exe` (the binary a link names,
+/// as `current_exe` resolves it): an upgrade renames the new one into its
+/// directory. A link to a binary root keeps current, say, is root's to
+/// upgrade, and is never replaced (da-f7ckm).
+fn replaceable(exe: &Path) -> Result<()> {
+    let dir = exe.parent().context("this datum is in no directory")?;
+    let c = std::ffi::CString::new(dir.as_os_str().as_encoded_bytes())?;
+    // SAFETY: `c` is a NUL-terminated path that outlives the call.
+    // The effective uid's access, which the rename will have.
+    let ok =
+        unsafe { libc::faccessat(libc::AT_FDCWD, c.as_ptr(), libc::W_OK, libc::AT_EACCESS) } == 0;
+    ensure!(
+        ok,
+        "this datum ({}) is not yours to replace: you cannot write {}, so whoever put it there \
+         upgrades it",
+        exe.display(),
+        dir.display()
+    );
+    Ok(())
+}
+
+/// Where the timer's units go: systemd's user directory, on Linux alone.
+fn units_dir() -> Result<PathBuf> {
+    ensure!(
+        cfg!(target_os = "linux"),
+        "no systemd here, and `datum upgrade --auto` installs a systemd user timer: \
+         run `datum upgrade` daily from what starts jobs here"
+    );
+    Ok(config::xdg_config_dir()
+        .context("HOME is not set")?
+        .join("systemd/user"))
+}
+
+fn auto_on() -> bool {
+    units_dir().is_ok_and(|d| d.join(format!("{AUTO}.timer")).exists())
+}
+
+/// `upgrade --check`'s word on the timer; none where there is no systemd.
+fn auto_said() -> Option<String> {
+    units_dir().ok()?;
+    Some(match auto_on() {
+        true if backup_daemon::timer_stopped(AUTO) => format!(
+            "daily upgrades: installed but not running: \
+             `systemctl --user enable --now {AUTO}.timer` starts them"
+        ),
+        true => {
+            format!("daily upgrades: on ({AUTO}.timer); `datum upgrade --no-auto` turns them off")
+        }
+        false => "daily upgrades: off; `datum upgrade --auto` turns them on".into(),
+    })
+}
+
+/// `upgrade --auto | --no-auto`: the daily upgrade timer installed, or removed.
+pub fn auto(on: bool) -> Result<()> {
+    let dir = units_dir()?;
+    let timer = format!("{AUTO}.timer");
+    if !on {
+        if !dir.join(&timer).exists() {
+            println!("no daily upgrade timer installed");
+            return Ok(());
+        }
+        // Stopping may fail (no user bus): the files go regardless.
+        let stopped = ctl("systemctl", &["--user", "disable", "--now", &timer]);
+        for kind in ["timer", "service"] {
+            match std::fs::remove_file(dir.join(format!("{AUTO}.{kind}"))) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(e).with_context(|| format!("removing {AUTO}.{kind}"))
+                }
+                _ => {}
+            }
+        }
+        let _ = ctl("systemctl", &["--user", "daemon-reload"]);
+        let _ = ctl(
+            "systemctl",
+            &["--user", "reset-failed", &format!("{AUTO}.service")],
+        );
+        println!(
+            "removed the systemd user timer {timer}: datum upgrades when you run `datum upgrade`"
+        );
+        if let Err(e) = stopped {
+            eprintln!("warning: it may still be running: {e:#}");
+        }
+        return Ok(());
+    }
+    let exe = this_exe()?;
+    ensure!(
+        cargo_root(&exe).is_none(),
+        "this datum ({}) was built by cargo from a checkout, and a daily upgrade would move it onto \
+         the release's builds unasked: `datum upgrade` moves it once, saying so, and then \
+         `datum upgrade --auto` upgrades it daily",
+        exe.display()
+    );
+    upgradable(&exe, false)?;
+    replaceable(&exe).context("so no daily upgrade timer for it")?;
+    let env: String = (ENV.iter().chain(&["DATUM_RELEASE_URL"]))
+        .filter_map(|k| Some((k, std::env::var(k).ok().filter(|v| !v.is_empty())?)))
+        .map(|(k, v)| format!("Environment=\"{k}={}\"\n", quoted(&v)))
+        .collect();
+    let described = "[Unit]\nDescription=datum upgrade, daily\n";
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let service = dir.join(format!("{AUTO}.service"));
+    std::fs::write(
+        &service,
+        format!(
+            "{described}\n[Service]\nType=oneshot\nExecStart=\"{}\" upgrade\n{env}",
+            quoted(&exe.display().to_string())
+        ),
+    )
+    .with_context(|| format!("writing {}", service.display()))?;
+    // A day missed while the machine was off runs once it is on, each at a
+    // random hour's delay so installs do not all ask the release at once.
+    std::fs::write(
+        dir.join(&timer),
+        format!(
+            "{described}\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=1h\nPersistent=true\n\n\
+             [Install]\nWantedBy=timers.target\n"
+        ),
+    )
+    .with_context(|| format!("writing {timer}"))?;
+    ctl("systemctl", &["--user", "daemon-reload"])
+        .and_then(|()| ctl("systemctl", &["--user", "enable", "--now", &timer]))
+        .with_context(|| {
+            format!("wrote {timer}, but could not start it: `datum upgrade --no-auto` removes it")
+        })?;
+    println!(
+        "installed the systemd user timer {timer} ({}): `datum upgrade` daily; \
+         `datum upgrade --no-auto` removes it",
+        dir.display()
+    );
+    linger_note();
+    Ok(())
+}
+
+/// `datum install`'s offer of the daily upgrade, `answer` its `--yes` or
+/// `--no`. A timer already on is put onto this binary unasked; a datum cargo
+/// built, or a system with no systemd, is offered nothing.
+fn offer_auto(exe: &Path, answer: Option<bool>) -> Result<()> {
+    if units_dir().is_err()
+        || cargo_root(exe).is_some()
+        || replaceable(exe).is_err()
+        || answer == Some(false)
+    {
+        return Ok(());
+    }
+    match answer {
+        // `--yes`, or a timer already on, put onto this binary unasked.
+        Some(_) => auto(true),
+        None if auto_on() || ask_auto()? => auto(true),
+        None => {
+            println!("daily upgrades: off; `datum upgrade --auto` turns them on");
+            Ok(())
+        }
+    }
+}
+
+/// Whether to upgrade daily, asked of a person at a terminal: on stdin, or
+/// on the terminal itself where stdin is install.sh's own script (`curl … |
+/// sh`), never read. With no one to ask, yes.
+fn ask_auto() -> Result<bool> {
+    let question = Question::yes_no(
+        "Upgrade datum daily, as releases come out?",
+        "upgrade daily",
+        Some(true),
+    );
+    let answer = match std::io::stdin().is_terminal() {
+        true => question.ask()?,
+        false => match (std::io::stderr().is_terminal())
+            .then(|| std::fs::File::open("/dev/tty").ok())
+            .flatten()
+        {
+            Some(tty) => question.ask_on(&mut std::io::BufReader::new(tty), true)?,
+            None => return Ok(true),
+        },
+    };
+    Ok(is_yes(&answer))
 }
 
 /// This platform's binary in the newest release, and its SHA256SUMS line.

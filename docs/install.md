@@ -30,6 +30,8 @@ takes the script's arguments: `| sh -s -- --no-completions`, say.
   datum's data directory (`--to DIR` another, `DIR/<db>/`; one daemon per destination).
   `--db a,b` installs one for each database, and `--all` one that backs up
   every database datum knows at each run.
+- Whether to upgrade daily (`datum upgrade --auto`, below), asked on a
+  terminal; `--yes` or `--no` answers it.
 - It ends with the line that makes your aliases and the verbs commands
   of their own in your shell, for you to add if you want it.
 
@@ -51,6 +53,14 @@ signature, or a mismatch, changes nothing), puts it in place of the
 running binary in one rename, and restarts the sync daemon if one runs.
 It upgrades only the binary `datum install` set up, or one cargo built
 from a checkout (below).
+
+`datum upgrade --auto` upgrades daily: a systemd user timer runs `datum
+upgrade` once a day, a day missed once the machine is on, and `datum
+upgrade --no-auto` removes it; `--check` says whether it is on. `datum
+install` offers it, yes by default and unasked with no terminal: `--yes`
+or `--no` answers for a script. A binary cargo built gets no timer (`datum
+upgrade` moves it onto the release first), and with no systemd (macOS)
+nothing is installed.
 
 datum makes no network call of its own unless you sync, upgrade, or turn
 on update checks: with `update_check = true` in `datumrc.toml` (in
