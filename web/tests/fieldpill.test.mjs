@@ -152,6 +152,8 @@ async function ready(app) {
 const fieldsBar = (page) => pane(page, 'bar').locator('.bar');
 const chip = (page, field) => fieldsBar(page).locator(`[data-field="${field}"]`);
 const fieldPill = (page) => page.locator('.prompt-bar .pill.field');
+/** Collect's view open on `field`: a hold opens it (da-z45a6), its pill on the bar. */
+const opened = (page, field) => pane(page, 'bar').locator(`[data-open-field="${field}"]`);
 
 /**
  * The same page, with every write to the pills key counted (da-1py00), as
@@ -208,7 +210,7 @@ async function onReloading(fn) {
 /** What this load has written to the pills key, in order. */
 const writes = (page) => page.evaluate(() => window.__pillWrites);
 
-/** Hold a field: the gesture that mints the pill (right click is one of four). */
+/** Hold a field: the gesture that mints the pill and opens the field in collect (right click is one of four). */
 async function hold(page, field) {
 	await chip(page, field).click({ button: 'right' });
 }
@@ -281,10 +283,13 @@ describe('the gesture, and the pill it mints', () => {
 				await fieldPill(page).evaluate((el) => getComputedStyle(el).backgroundColor),
 				ORANGE
 			);
-			// And the button says where the pill came from.
-			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+			// And collect is open on it (da-z45a6).
+			await opened(page, 'coffee').waitFor();
 
-			// ONE field at a time, as the time cursor holds one instant.
+			// ONE field at a time, as the time cursor holds one instant: Back
+			// takes coffee's, and the fields are there to hold again.
+			await page.keyboard.press('Escape');
+			await fieldPill(page).waitFor({ state: 'detached' });
 			await hold(page, 'mood');
 			await page.waitForFunction(
 				() => document.querySelector('.prompt-bar .pill.field')?.textContent.includes('mood')
@@ -294,19 +299,17 @@ describe('the gesture, and the pill it mints', () => {
 				await fieldPill(page).evaluate((el) => getComputedStyle(el).backgroundColor),
 				BLUE
 			);
-			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
+			await opened(page, 'mood').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
 	// vividn named four gestures and the `-t` / `dur` / `note` panel had every
-	// one of them, so da-8810n made the panel a step BEHIND the pill: hold
-	// again and the bubbles opened. vividn then decided the other way — «mint
-	// the pill, let's remove that -t/dur panel» — so the gesture has ONE
-	// meaning at every count (da-e78x6). And then that it TOGGLES (da-05oit):
-	// «long pressing or right clicking on a field again after a pill is
-	// added should remove the pill/filter».
-	test('shift+click mints it too, and the same gesture again takes it away', async () => {
+	// one of them, so da-8810n made the panel a step BEHIND the pill; vividn
+	// then removed it (da-e78x6), made the gesture a TOGGLE (da-05oit), and
+	// then the other mode's tap (da-z45a6): in 1-click, the default, the
+	// field's pill and its view in collect, where Escape is Back.
+	test('shift+click mints it too and opens the field, logging nothing, and Escape takes it away', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			// The CLI widget as the seed left it: a hold logs nothing, so it stays so.
@@ -315,25 +318,16 @@ describe('the gesture, and the pill it mints', () => {
 
 			await chip(page, 'coffee').click({ modifiers: ['Shift'] });
 			await fieldPill(page).waitFor();
+			await opened(page, 'coffee').waitFor();
 			// And nothing was logged: shift+click is the hold, not a press.
 			assert.deepEqual(await app.echoes(), logged);
 
-			await chip(page, 'coffee').click({ modifiers: ['Shift'] });
-			// The gesture that used to open the panel: a beat to let one
-			// appear, and then the claim that none did. Any floating surface,
-			// not `.panel` alone — the bead removed the thing, so the assertion
-			// must not be aimed at the one class name it went by. The beat is
-			// the gesture's own effect, the pill gone, and two frames after it
-			// for anything the same handler opened to be drawn (da-h1pi9).
+			await page.keyboard.press('Escape');
 			await settle(page);
-			assert.equal(
-				await page.locator('.bar .panel, .bar .bubbles, .bar [aria-expanded="true"]').count(),
-				0,
-				'the hold opened something'
-			);
-			assert.equal(await fieldPill(page).count(), 0, 'the pill survived a second hold');
+			assert.equal(await fieldPill(page).count(), 0, 'the pill survived Escape');
+			await chip(page, 'coffee').waitFor();
 			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
-			assert.deepEqual(await app.echoes(), logged, 'the second hold ran a command');
+			assert.deepEqual(await app.echoes(), logged, 'Escape ran a command');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -367,7 +361,7 @@ describe('the gesture, and the pill it mints', () => {
 		['a finger', { device: { isMobile: true, hasTouch: true }, viewport: { width: 390, height: 844 } }]
 	]) {
 		const finger = pointer === 'a finger';
-		test(`a long press with ${pointer} mints, and a second takes it away`, async () => {
+		test(`a long press with ${pointer} mints and opens the field, and Back takes it away`, async () => {
 			// The finger is the one test on its screen: an app of its own.
 			const open = finger ? (fn) => withApp(async (app) => fn(await ready(app)), options) : seeded;
 			await open(async (app) => {
@@ -381,16 +375,13 @@ describe('the gesture, and the pill it mints', () => {
 				// landed on the chip at all.
 				await fieldPill(page).waitFor();
 				assert.equal(await fieldPill(page).locator('.label').innerText(), 'coffee', 'the press landed on another field');
-				assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+				await opened(page, 'coffee').waitFor();
 
-				await longPress(page, 'coffee', { finger });
+				const back = pane(page, 'bar').locator('[data-back]');
+				await (finger ? back.tap() : back.click());
 				await settle(page);
-				assert.equal(
-					await page.locator('.bar .panel, .bar .bubbles, .bar [aria-expanded="true"]').count(),
-					0,
-					'the second long press opened something'
-				);
-				assert.equal(await fieldPill(page).count(), 0, 'the second long press kept the pill');
+				assert.equal(await fieldPill(page).count(), 0, 'Back kept the pill');
+				await chip(page, 'coffee').waitFor();
 				assert.deepEqual(await app.echoes(), logged, 'a long press logged');
 				assert.deepEqual(app.errors, []);
 			});
@@ -407,10 +398,12 @@ describe('the gesture, and the pill it mints', () => {
 
 			await longPress(page, 'coffee');
 			await fieldPill(page).waitFor();
+			await page.keyboard.press('Escape');
+			await fieldPill(page).waitFor({ state: 'detached' });
 
 			await chip(page, 'coffee').focus();
 			await page.keyboard.press('ContextMenu');
-			await fieldPill(page).waitFor({ state: 'detached' });
+			await opened(page, 'coffee').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -441,9 +434,9 @@ describe('the gesture, and the pill it mints', () => {
 			await fieldPill(page).waitFor();
 
 			const seen = await app.spyOnRunner();
-			// Under a pending verb, which runs at once (a bare tap opens, da-w6437).
-			await page.locator('.prompt-bar input').fill('moment ');
-			await page.locator('.bar [data-field="coffee"][data-act="run"]').click();
+			// Typed: mood's view is open (da-z45a6), so coffee's button is not there to press.
+			await page.locator('.prompt-bar input').fill('moment coffee');
+			await page.locator('.prompt-bar input').press('Enter');
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'moment'));
 			assert.deepEqual((await seen()).find((a) => a[0] === 'moment'), [
 				'moment',
@@ -551,11 +544,12 @@ describe('what narrows to it', () => {
 		});
 	});
 
-	// da-05oit: the second hold is the filter's off switch, and a LOCKED
-	// pill goes too — the reader asked for it by name. «Whole again» is read
+	// da-05oit: the filter's off switch takes a LOCKED pill too — the reader
+	// asked for it by name. With the field open in collect (da-z45a6) the
+	// switch is Escape, which is Back. «Whole again» is read
 	// off the widgets, not the pill: stats is `stats --month` and the tail
 	// lists mood again.
-	test('a second right click takes a locked pill away, and stats and the tail are whole again', async () => {
+	test('Escape takes a locked pill away, and stats and the tail are whole again', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			await hold(page, 'coffee');
@@ -566,7 +560,7 @@ describe('what narrows to it', () => {
 			await fieldPill(page).locator('button.lock').click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar .pill.field .lock')?.ariaPressed === 'true');
 
-			await hold(page, 'coffee');
+			await page.keyboard.press('Escape');
 			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
 			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats --month');
@@ -745,9 +739,8 @@ describe('what survives a reload', () => {
 			await page.waitForFunction(
 				() => document.querySelector('.stats .body')?.textContent?.startsWith('coffee')
 			);
-			// And the widget that minted it knows it is pilled again, so a
-			// second hold has somewhere to be aimed.
-			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+			// And collect opens the field it names, as any field pill does (da-z45a6).
+			await opened(page, 'coffee').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -977,14 +970,14 @@ describe('a field pill under a selected hid is context', () => {
 	});
 
 	// da-05oit: «Only that field's pill goes. Other pills, and the typed
-	// line, stay.»
-	test('a second hold takes the field pill alone: the hid and the typed line stay', async () => {
+	// line, stay.» The field open in collect (da-z45a6), Back is what takes it.
+	test('Back takes the field pill alone: the hid and the typed line stay', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			await pillThenSelect(app);
 			await page.locator(BOX).fill('hello');
 
-			await hold(page, 'coffee');
+			await pane(page, 'bar').locator('[data-back]').click();
 			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.equal(await hidPill(page).count(), 1, 'the hid pill went with the field');
 			assert.equal(await page.locator(BOX).inputValue(), 'hello', 'the typed line went with the field');
@@ -992,25 +985,23 @@ describe('a field pill under a selected hid is context', () => {
 		});
 	});
 
-	test('Escape drops the hid, and the field is an argument again; then the field', async () => {
+	// The field open in collect (da-z45a6), the first Escape is collect's Back, as
+	// for a field tapped open (da-al892): the field goes, and the hid stays; then
+	// the commands the pills opened over the output (da-lnirx), then the hid.
+	test('Escape is Back first: the field goes and the hid stays; then the commands, then the hid', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			await pillThenSelect(app);
 			await page.locator(BOX).focus();
-
-			// The pills opened the commands over the output (da-lnirx): the first Escape is theirs.
 			await page.locator('#bar-commands').waitFor();
+
+			await page.keyboard.press('Escape');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.equal(await hidPill(page).count(), 1, 'the first Escape took the hid too');
 			await page.keyboard.press('Escape');
 			await page.locator('#bar-commands').waitFor({ state: 'detached' });
 			await page.keyboard.press('Escape');
 			await hidPill(page).waitFor({ state: 'detached' });
-			assert.equal(await fieldPill(page).count(), 1, 'the first Escape took the field too');
-			await page.waitForFunction(() => !document.querySelector('.prompt-bar .pill.field.context'));
-			const [field, box] = await Promise.all([fieldPill(page), page.locator(BOX)].map((l) => l.boundingBox()));
-			assert.ok(field.x >= box.x, 'the argument field is still before the box');
-
-			await page.keyboard.press('Escape');
-			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.deepEqual(app.errors, []);
 		});
 	});

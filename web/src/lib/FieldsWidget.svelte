@@ -47,8 +47,9 @@
 	block starts or ends it, with the pills there are.
 	In 2-click mode (`clicks`, da-u017i) every field opens, and a tap only
 	CHOOSES the state: its pill is placed and its chip ringed, and the command
-	pane's ready «switch → state» logs it. A long press on a state does the
-	other mode's tap.
+	pane's ready «switch → state» logs it. A long press, on a field or a
+	state, does the other mode's tap (da-z45a6). Whatever puts a field pill
+	on the bar opens that field: a hold, the now strip, a script.
 	A run spends them, the field's with them, and collect is back at rest.
 	Back takes the field's pill and every pill made since the tap, and puts
 	back the time and `-m` there were before it; Escape is Back.
@@ -150,6 +151,7 @@
 		pressKind,
 		typesKeys,
 		verbPress,
+		type PressKind,
 		type Verb
 	} from './commands.js';
 
@@ -207,7 +209,7 @@
 		 * What a tap does (da-u017i, da-gra0z): `one` logs a moment or a block
 		 * on its field's tap and a state on its own, `two` opens every field
 		 * and only chooses a state, for the command pane's ready command to
-		 * log. A long press on a state does what the other does.
+		 * log. A long press, on a field or a state, does what the other does.
 		 */
 		clicks = 'one',
 		/**
@@ -527,18 +529,26 @@
 	/**
 	 * What the HOLD gesture does — the long press, the right click, the
 	 * shift+click and the menu key, which are the four vividn named
-	 * (da-8810n).
+	 * (da-8810n): the other mode's tap (da-z45a6). vividn, 2026-11-04:
+	 * «1-click mode: tap -> logs immediately (if no extra data needed), long
+	 * press/right click -> field pill and open the next menu / 2-click mode:
+	 * reversed». So in 1-click it opens the field, its pill on the bar, and
+	 * in 2-click it logs what needs nothing more, as `press` does with the
+	 * other `oneTap`. Under a pending verb, which a tap runs in either mode,
+	 * it opens the field. With the view open the field's button is not there
+	 * to hold again: Back or Escape takes the pill away, as for a tapped one.
 	 *
-	 * A TOGGLE: the field goes on the bar as a pill, in its own colour,
-	 * and the page narrows to it; held again while its pill is there, the
-	 * pill goes — locked or not — and the page is whole again (da-05oit).
-	 * vividn: «long pressing or right clicking on a field again after a pill
-	 * is added should remove the pill/filter». Only that field's pill:
-	 * every other pill and the typed line stay.
+	 * A tutorial game's fields (`tapLogs`) keep the TOGGLE (da-05oit): the
+	 * field's pill on the bar, the page narrowed to it, and held again the
+	 * pill goes, every other pill and the typed line staying.
 	 */
 	function hold(button: FieldButton) {
+		if (!tapLogs) return press(button, heldKind(button));
 		setFieldPill($fieldPill === button.field ? null : button.field, button.color);
 	}
+
+	/** What a hold does: the other mode's tap, or under a pending verb, which a tap runs, the field opened. */
+	const heldKind = (button: FieldButton): PressKind => (verb && verbPress(verb, button) ? 'show' : pressKind(button, verb, !oneTap));
 
 	/**
 	 * What a button says it does, which is the one place both gestures are
@@ -549,19 +559,10 @@
 	function titleOf(button: FieldButton): string {
 		const record = button.shape.kind === 'record';
 		const kind = pressKind(button, verb, oneTap);
-		const press = record
-			? `${shellJoin(['add', button.field])} … — fills the prompt`
-			: kind === 'run'
-				? 'press to log it'
-				: kind === 'fill'
-					? 'press to fill the prompt'
-					: 'press to collect it';
-		return [
-			...(record ? [] : [button.field]),
-			...(button.ignored ? ['ignored'] : []),
-			press,
-			'hold to filter the page to it'
-		].join(' · ');
+		const does = (kind: PressKind) => (kind === 'run' ? 'log it' : kind === 'fill' ? 'fill the prompt' : 'collect it');
+		const press = record ? `${shellJoin(['add', button.field])} … — fills the prompt` : `press to ${does(kind)}`;
+		const held = tapLogs ? 'filter the page to it' : does(heldKind(button));
+		return [...(record ? [] : [button.field]), ...(button.ignored ? ['ignored'] : []), press, `hold to ${held}`].join(' · ');
 	}
 
 	// ---- the PILLS a field's view makes (da-w6437) ----------------------
@@ -602,7 +603,10 @@
 	// A picked field gone — deleted, the database emptied or restored,
 	// another tab's write — closes, not a view held in waiting to take the
 	// bar over again the moment a field of that name returns (da-mv8ng). So
-	// does one whose pill went: a run spent it, or its × was pressed.
+	// does one whose pill went: a run spent it, or its × was pressed. A pill
+	// still on the bar is no view held in waiting: it is in sight, its ×
+	// takes it, and collect follows it (da-z45a6, below), so its field opens
+	// again when it returns, as on a reload, whose pill comes before its field.
 	$effect.pre(() => {
 		if (picked !== null && (picking === null || (!tapLogs && $fieldPill !== picked))) untrack(close);
 	});
@@ -826,8 +830,7 @@
 	 * A press does what `pressKind` says — the same answer the button's
 	 * outline is drawn from, so the two cannot disagree (da-z8z40).
 	 */
-	function press(button: FieldButton) {
-		const kind = pressKind(button, verb, oneTap);
+	function press(button: FieldButton, kind = pressKind(button, verb, oneTap)) {
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
 		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
@@ -948,6 +951,14 @@
 	let dragged = false;
 	/** The glide a swipe let go of (da-lw7ue), a frame's request; 0 when none. */
 	let coast = 0;
+	// Whatever sets a field pill opens that field's view (da-z45a6, vividn:
+	// «if anything elese opens a field pill, it hsould also advance to this
+	// secondary menu as well»): a hold, the now strip, a reload, a script.
+	// Here, below what `open` reads, as it runs at init (da-1oi8w).
+	$effect.pre(() => {
+		const pilled = tapLogs || picked === $fieldPill ? null : fields.find((b) => b.field === $fieldPill);
+		if (pilled) untrack(() => open(pilled));
+	});
 	function down(e: PointerEvent) {
 		// Any press ends a swallow still pending. A drag's click follows its
 		// pointerup at once, and a touch that travelled makes none, so only a

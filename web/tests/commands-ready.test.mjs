@@ -112,18 +112,19 @@ test("another field's pill, or none, takes a state pill left on the bar, and the
 		const { page } = app;
 		await seedLines(app, SEED);
 		const kinds = () => page.evaluate(() => window.datum.bar.pills().map((p) => `${p.kind}:${p.text}`));
-		// Held, a field in collect is its pill: the gesture that sets another's (#lib/bar.ts's setFieldPill).
-		const hold = (name) => page.locator(`main section.pane[data-pane="bar"] [data-field="${name}"]`).click({ button: 'right' });
 		await load(page, [field('mood'), state('bad')]);
 		await page.waitForFunction(() => document.querySelector('main button.lead')?.dataset.ready === 'true');
 
-		await hold('light');
+		// Mood's view is open (any field pill opens it, da-z45a6), so no other
+		// field is there to hold: the pill moved from anywhere else, its state left.
+		await load(page, [field('light'), state('bad')]);
 		await until(kinds, (k) => k.join() === 'field:light');
 		await page.waitForFunction(() => document.querySelector('main button.lead')?.dataset.ready === 'false');
 		assert.equal((await drawn(page)).name, 'switch → ?');
 
 		await load(page, [field('mood'), state('bad')]);
-		await hold('mood');
+		// Its field's button is not there to hold: its pill's × takes it.
+		await page.locator('.prompt-bar .pill.field button.remove').click();
 		await until(kinds, (k) => k.length === 0);
 		await lead(page).waitFor({ state: 'detached' });
 	});
@@ -287,5 +288,88 @@ describe('collect: 1-click and 2-click', () => {
 			},
 			{ ...DESKTOP, desk: { ...JSON.parse(PAGE), designedFor: 'desktop' } }
 		);
+	});
+
+	// da-z45a6, vividn 2026-11-04: «1-click mode: tap -> logs immediately (if
+	// no extra data needed), long press/right click -> field pill and open the
+	// next menu / 2-click mode: reversed».
+	/** Hold a field at rest: a right click, or a mouse held down until `landed` says the hold did something. */
+	async function hold(page, name, how, landed) {
+		const at = page.locator(`${VIEW} [data-field="${name}"]`);
+		if (how === 'a right click') return at.click({ button: 'right' });
+		const box = await at.boundingBox();
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await landed().catch(() => {});
+		await page.mouse.up();
+	}
+	const runs = async (seen, verb) => (await seen()).filter((a) => a[0] === verb && !a.includes('--dry-run'));
+
+	for (const how of ['a long press', 'a right click']) {
+		test(`1-click: ${how} on a moment opens it with its pill and logs nothing, and Escape takes the pill`, async () => {
+			await onPage(async (app) => {
+				const { page } = app;
+				await seedLines(app, [...SEED, 'moment coffee']);
+				const seen = await app.spyOnRunner();
+				const opened = () => page.locator(`${VIEW} [data-time-row]`).waitFor();
+				await hold(page, 'coffee', how, opened);
+				await opened();
+				assert.deepEqual(await kinds(page), ['field:coffee']);
+				await app.idle();
+				assert.deepEqual(await runs(seen, 'moment'), [], 'the hold logged');
+
+				await page.keyboard.press('Escape');
+				await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
+				assert.deepEqual(await kinds(page), []);
+				assert.deepEqual(app.errors, []);
+			});
+		});
+
+		test(`2-click: ${how} logs a moment, fills the line for a key to type, and opens a switch to its states`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					await seedLines(app, [...SEED, 'setup tea --verb moment --data-key cup', 'moment coffee']);
+					await pickOption(page, 'bar', 'a tap', 'opens and chooses, 2-click');
+					await page.locator(`${VIEW} [data-field="tea"]`).waitFor();
+					const seen = await app.spyOnRunner();
+
+					await hold(page, 'coffee', how, () => until(() => runs(seen, 'moment'), (r) => r.length === 1));
+					await until(() => runs(seen, 'moment'), (r) => r.length === 1);
+					assert.deepEqual(await runs(seen, 'moment'), [['moment', 'coffee']]);
+					await app.idle();
+					assert.equal(await page.locator(`${VIEW} [data-time-row]`).count(), 0, 'the hold opened coffee');
+
+					await hold(page, 'tea', how, () => page.waitForFunction(() => document.querySelector('.prompt-bar input').value !== ''));
+					await page.waitForFunction(() => document.querySelector('.prompt-bar input').value.startsWith('moment tea'));
+					assert.deepEqual(await runs(seen, 'moment'), [['moment', 'coffee']], 'the hold ran a field with a key to type');
+					await page.locator('.prompt-bar input').fill('');
+
+					await hold(page, 'mood', how, () => chip(page, 'good').waitFor());
+					await chip(page, 'good').waitFor();
+					assert.deepEqual(await kinds(page), ['field:mood']);
+					await app.idle();
+					assert.deepEqual(await runs(seen, 'switch'), [], 'the hold logged a state');
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...DESKTOP, desk: { ...JSON.parse(PAGE), designedFor: 'desktop' } }
+			);
+		});
+	}
+
+	// vividn, 16:10:35: «if anything elese opens a field pill, it hsould also advance to this secondary menu as well».
+	test('a field pill put on the bar from anywhere opens that field, and another field’s pill opens that one', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			await load(page, [field('mood')]);
+			await chip(page, 'good').waitFor();
+			await load(page, [field('light')]);
+			await chip(page, 'on').waitFor();
+			assert.equal(await chip(page, 'good').count(), 0, 'mood is still open');
+			await load(page, []);
+			await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
+			assert.deepEqual(app.errors, []);
+		});
 	});
 });
