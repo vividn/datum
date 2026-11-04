@@ -2193,7 +2193,8 @@ fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
         "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions;
          DELETE FROM integrity_warnings; DELETE FROM last_docs;
          DELETE FROM stats_cache; DELETE FROM stats_cache_days;
-         DELETE FROM stats_cache_through; DELETE FROM stats_cache_dirty;",
+         DELETE FROM stats_cache_through; DELETE FROM stats_cache_dirty;
+         DELETE FROM dayview_kept; DELETE FROM dayview_kept_dirty;",
     )?;
     // A PRAGMA binds no parameter; `secure` is the integer it gave.
     conn.execute_batch(&format!("PRAGMA secure_delete = {secure}"))?;
