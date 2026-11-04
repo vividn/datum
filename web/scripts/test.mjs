@@ -65,6 +65,17 @@
 // stdout, and a file is cut, ✗, unless its own `test:summary` came: a whole
 // file's process sends one before it exits.
 //
+// `forceExit` ends it with `process.exit()`, which on node 24 can hang for
+// good (nodejs/node#64274; its fix, #66171, is unreleased): it joins V8's
+// worker threads with the isolate still alive, so a background Sparkplug or
+// Maglev compile parked waiting for a GC that only the main thread runs is
+// never let go. readcache.test.mjs hung so twice in CI, every test printed
+// `ok`, until the silence below cut the run (da-iya37). So a file's process
+// compiles neither in the background, upstream's workaround: readcache, six
+// at once on two cores, hung at exit 17 times in 600 without it and 0 in 600
+// with it, for 0 to 10% on the node-side files timed (readcache, instance,
+// calls-pure).
+//
 // That is node 24's `run()`. Node 22's never hands the budget on, and its
 // file process ignores `--test-timeout` without `--test`, so there the 300 s
 // is the FILE's whole wall: `tailwatch.test.mjs`, 130 s on its own, was cut
@@ -241,7 +252,11 @@ const hooked = new Set(); // files whose top-level hook failed
 let stray = false; // a hook failure whose file's summary is still to come
 let notRun;
 const summarized = new Set(); // files whose own summary came
-const execArgv = ['--import=data:text/javascript,process.stdout._handle.setBlocking(true)'];
+const execArgv = [
+	'--import=data:text/javascript,process.stdout._handle.setBlocking(true)',
+	'--no-maglev',
+	'--no-concurrent-sparkplug'
+];
 const stop = new AbortController();
 const stream = run({
 	files,
