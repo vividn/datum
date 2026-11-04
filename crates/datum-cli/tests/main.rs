@@ -75,6 +75,7 @@ mod field_name_controls;
 mod field_prefix;
 mod fields_cmd;
 mod first_log_spec;
+mod flag_cluster_value;
 mod float_roundtrip;
 mod get_cmd;
 mod get_projection;

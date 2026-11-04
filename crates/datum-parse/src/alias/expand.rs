@@ -655,7 +655,8 @@ fn scan_placeholders(s: &str, mut f: impl FnMut(usize)) {
 /// concern modules (the count-stackable `y`/`q`, plus the boolean
 /// switches `S`/`C`/`l`/`m`/`F`/`A`/`D`/`T`). Mixing is fine: `-yS`,
 /// `-Sy`, `-CR` all expand. Value-taking shorts (`c`/`k`/`K`/`R`/`o`/
-/// `d`/`t`/`z`) can only appear as the terminal char.
+/// `d`/`t`/`z`) can only appear as the terminal char, and take the rest
+/// of the token as their value: `-yt20` is `-y -t 20`.
 ///
 /// Also handles datum's `-t<t|q>+` recent-past shorthand: a leading
 /// `-t` followed by `t` (1 min) and/or `q` (5 min) characters sums the
@@ -719,14 +720,28 @@ fn expand_stacked(s: &str) -> Option<Vec<String>> {
     }
 
     // Switch prefix followed by exactly one terminal char (e.g. `-yyt` →
-    // `-y -y -t`, `-qqqd` → `-q -q -q -d`, `-yt` → `-y -t`, `-SR` →
-    // `-S -R`, `-CR` → `-C -R`).
+    // `-y -y -t`, `-qqqd` → `-q -q -q -d`, `-SR` → `-S -R`).
     if prefix_len >= 1 && prefix_len == chars.len() - 1 {
         return Some(chars.iter().map(|c| format!("-{c}")).collect());
     }
 
-    // Switch prefix + a multi-char remainder that is neither more switches
-    // nor a lone terminal short (e.g. `-qq10`, `-yy2024`): expand the real
+    // Switch prefix then a letter and more: the letter is the terminal flag
+    // and takes the rest of the token as its value, as getopt does
+    // (da-dzxqb): `-yt20` → `-y -t20`, which the parser reads as `-t 20`. The tail is expanded
+    // again, so `-ytt` is `-y -t -1`; a letter that is no flag is refused
+    // downstream, by name.
+    if prefix_len >= 1 && chars[prefix_len].is_ascii_alphabetic() {
+        let mut out: Vec<String> = chars[..prefix_len]
+            .iter()
+            .map(|c| format!("-{c}"))
+            .collect();
+        let tail = format!("-{}", chars[prefix_len..].iter().collect::<String>());
+        out.extend(expand_stacked(&tail).unwrap_or_else(|| vec![tail]));
+        return Some(out);
+    }
+
+    // Switch prefix + a remainder that does not start with a letter
+    // (e.g. `-qq10`, `-yy2024`): expand the real
     // switches and hand the remainder back as a standalone positional, so it
     // fails the keyless-arg check downstream instead of being silently
     // swallowed as an attached value on the last switch.
@@ -1630,6 +1645,23 @@ mod tests {
         // Same shape with `-y`: `-yy2024` → `-y -y 2024`.
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-yy2024"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-y", "-y", "2024"]));
+    }
+
+    #[test]
+    fn value_terminal_takes_the_rest_of_the_cluster() {
+        // da-dzxqb: as getopt, the first value-taking letter takes the rest
+        // of the token: `-yt20` is `-y -t20`, which the parser reads as
+        // `-t 20`.
+        for (cluster, want) in [
+            ("-yt20", &["-y", "-t20"][..]),
+            ("-yt20:30", &["-y", "-t20:30"]),
+            ("-yyt9am", &["-y", "-y", "-t9am"]),
+            ("-ytt", &["-y", "-t", "-1"]),
+            ("-yx20", &["-y", "-x20"]),
+        ] {
+            let (argv, _) = expand_argv(v(&["datum", "occur", "x", cluster]), &NoResolver).unwrap();
+            assert_eq!(argv[3..], v(want)[..], "{cluster}");
+        }
     }
 
     #[test]
