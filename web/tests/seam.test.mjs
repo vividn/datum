@@ -392,8 +392,12 @@ describe('the visual views', () => {
 				`no dot for the occur: ${drawn.stdout}`
 			);
 			// And nothing at all for the terminating switch — `sleep` has
-			// no other mark, so the field is dropped rather than drawn.
-			assert.doesNotMatch(drawn.stdout, /data-field="sleep"/);
+			// no other mark, so the field is dropped rather than drawn. What
+			// `check integrity` says of it, a close with nothing open, is
+			// the one mark naming it (da-bj14t).
+			const marks = drawn.stdout.match(/<g class="integrity-error" data-field="sleep"[^]*?<\/g>/g) ?? [];
+			assert.equal(marks.length, 1, drawn.stdout);
+			assert.doesNotMatch(drawn.stdout.replace(marks[0], ''), /data-field="sleep"/);
 		});
 	});
 

@@ -109,6 +109,28 @@ describe('the nowview flows', () => {
 		);
 	});
 
+	test('what check integrity finds is marked where the dayview marks it, and slides with the lanes (da-bj14t)', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				for (const t of ['14:50', '14:55']) assert.equal((await app.run(['switch', 'mood', 'happy', '-t', t])).code, 0);
+				await app.reload();
+				const mark = page.locator(`${NOWVIEW} svg.svg .flow .integrity-error`);
+				await mark.waitFor({ state: 'attached' });
+				const at = new Date(todayAt(14, 55)).toISOString();
+				assert.deepEqual(await mark.evaluateAll((gs) => gs.map((g) => [g.dataset.field, g.dataset.at])), [['mood', at]]);
+				assert.match((await app.run(['dayview'])).stdout, new RegExp(`class="integrity-error" data-field="mood" data-at="${at}"`));
+				// On its instant in the picture, as a block's edge would be.
+				const { now, pxPerSecond } = await reading(page);
+				const x = await mark.locator('line').evaluate((l) => l.getBoundingClientRect().left + l.getBoundingClientRect().width / 2);
+				const behind = ((await page.evaluate(() => Date.now())) - Date.parse(at)) / 1000;
+				assert.ok(Math.abs(x - (now - behind * pxPerSecond)) < 1.5, `the mark is at ${x}, ${behind}s before now at ${now}`);
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: AT, holdTimers: true, desk: deskWith({ history: '30m' }) }
+		);
+	});
+
 	test('the clock times flow past with their labels, at the instants they name', async () => {
 		await withApp(
 			async (app) => {

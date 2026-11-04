@@ -1821,7 +1821,13 @@ mod tests {
             ahead_minutes: 5.0,
             ..NowviewGeometry::default()
         };
-        let layout = compute_dayview(&nowview_config(fields, now, now, None, &geom));
+        let mut config = nowview_config(fields, now, now, None, &geom);
+        config.days[0].errors = vec![crate::dayview::DayviewError {
+            time_ms: now - 10 * min,
+            field: "mood".into(),
+            what: "switched into the state it was already in".into(),
+        }];
+        let layout = compute_dayview(&config);
         let states = [NowviewCurrentState {
             field: "mood".into(),
             state_label: Some("calm".into()),
@@ -1889,6 +1895,14 @@ mod tests {
         );
         assert!(marked.contains(">12:03</text>"), "{marked}");
         assert!(svg.contains(&format!("H{}V", extent + 0.5)), "{svg}");
+
+        // What `check integrity` found slides with the lanes (da-bj14t).
+        let error = svg.split(r#"<g class="integrity-error""#).nth(1).unwrap();
+        assert!(
+            svg.contains(r#"<g class="flow"><g class="integrity-error""#),
+            "{svg}"
+        );
+        assert!((num(error, "line", "error-line", "x1") - (extent - 10.0 * per_min)).abs() < 1e-6);
 
         // Not drawn ahead, nothing flows.
         assert!(!gap_picture(false).1.contains("flow"));

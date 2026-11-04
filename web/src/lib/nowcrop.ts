@@ -158,6 +158,11 @@ export function compose(overlay: string, days: Layer[], now: number): SVGSVGElem
 			// its own to keep its size (da-syaz8).
 			const day = make('g', { transform: y ? `translate(${cross} ${b})` : `translate(${b} ${cross})` });
 			for (const child of span.children) day.append(document.importNode(child, true));
+			// What `check integrity` found in the stretch, as the day drew it: it slides with the lanes (da-bj14t).
+			for (const error of span.ownerDocument.querySelectorAll('.integrity-error')) {
+				const t = Date.parse(error.getAttribute('data-at') ?? '');
+				if (t >= from.from && t < from.to) day.append(document.importNode(error, true));
+			}
 			// A block's stripes start where it starts (da-rdiph): a copy of its
 			// pattern at its instant, which the widget scales back about it, so
 			// a stretch moves them with the block and never across it.

@@ -25,7 +25,7 @@ use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_core::state::FieldStateRows;
 use datum_core::time::{Zone, ZoneTimeline};
-use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
+use datum_layout::dayview::{compute_dayview, DayviewError, DayviewFieldInput, Orientation};
 use datum_layout::dayview_svg::ClockMark;
 use datum_layout::nowview::{
     ahead, clock_step_seconds, crop_to_window, nowview_config, NowviewBlock, NowviewCurrentState,
@@ -213,13 +213,25 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let lookback = (day.end_ms - day.start_ms) as f64 / 60_000.0;
     let day_end = Utc.timestamp_millis_opt(day.end_ms).single().unwrap_or(now);
     day.fields = build_dayview_fields(db, day_end, lookback.max(1.0), ahead > 0.0)?;
-    if !args.fields.is_empty() {
-        day.fields.retain(|f| args.fields.contains(&f.field));
-    }
+    let drawn = |field: &str| args.fields.is_empty() || args.fields.iter().any(|f| f == field);
+    day.fields.retain(|f| drawn(&f.field));
     let window = (
         middle.timestamp_millis() - minutes(history_minutes - after).num_milliseconds(),
         middle.timestamp_millis() + minutes(after).num_milliseconds(),
     );
+    // What `check integrity` finds in the window, read as the dayview reads
+    // it, so the two views mark the same entries (da-bj14t).
+    let utc = |ms: i64| Utc.timestamp_millis_opt(ms).single().unwrap_or(now);
+    day.errors = datum_core::integrity::findings_between(db.conn(), utc(window.0), utc(window.1))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|f| drawn(&f.field))
+        .map(|f| DayviewError {
+            time_ms: f.at.timestamp_millis(),
+            field: f.field,
+            what: f.what.to_string(),
+        })
+        .collect();
     let mut layout = compute_dayview(&config);
     let mut current_states = build_current_states(db, anchor, &layout);
     // `--labels` beside a length asked for along time: their gutter comes
@@ -236,6 +248,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     if let Some(along) = along.filter(|_| gutter > 0.0) {
         *along = (*along - gutter).max(1.0);
         let fields = std::mem::take(&mut config.days[0].fields);
+        let errors = std::mem::take(&mut config.days[0].errors);
         config = nowview_config(
             fields,
             middle.timestamp_millis(),
@@ -243,6 +256,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
             at.map(|t| t.timestamp_millis()),
             &geometry,
         );
+        config.days[0].errors = errors;
         layout = compute_dayview(&config);
         current_states = build_current_states(db, anchor, &layout);
     }

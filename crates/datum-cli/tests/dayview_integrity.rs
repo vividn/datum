@@ -195,3 +195,38 @@ fn check_integrity_and_the_dayview_agree() {
     assert_eq!(checked, ["mood", "walk", "work"]);
     assert_eq!(drawn, checked);
 }
+
+/// The `integrity-error` groups `svg` draws, as `(data-field, data-at)`.
+fn error_marks(svg: &str) -> Vec<(String, String)> {
+    let attr = |g: &str, name: &str| {
+        let from = g.find(&format!(r#"{name}=""#)).unwrap() + name.len() + 2;
+        g[from..][..g[from..].find('"').unwrap()].to_string()
+    };
+    (svg.split(r#"<g class="integrity-error" "#).skip(1))
+        .map(|g| (attr(g, "data-field"), attr(g, "data-at")))
+        .collect()
+}
+
+/// The nowview marks what the dayview does, where its window reaches
+/// (da-bj14t).
+#[test]
+fn the_nowview_marks_what_the_dayview_does_in_its_window() {
+    let dir = TempDir::new().unwrap();
+    let db = db_in(&dir);
+    let (nine, _) = at("09:00");
+    let (half, half_utc) = at("09:30");
+    let (noon, _) = at("12:00");
+    datum(&db, &["switch", "mood", "happy", "-t", &nine]);
+    assert!(
+        error_marks(&datum(&db, &["nowview", "-t", &half, "--context", "60m"])).is_empty(),
+        "no findings, no marks"
+    );
+    datum(&db, &["switch", "mood", "happy", "-t", &half]);
+
+    let mark = vec![("mood".to_string(), half_utc)];
+    assert_eq!(error_marks(&datum(&db, &["dayview", "--days", "2"])), mark);
+    let around = datum(&db, &["nowview", "-t", &half, "--context", "60m"]);
+    assert_eq!(error_marks(&around), mark, "{around}");
+    let later = datum(&db, &["nowview", "-t", &noon, "--context", "60m"]);
+    assert!(error_marks(&later).is_empty(), "{later}");
+}

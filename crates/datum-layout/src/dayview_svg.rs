@@ -683,7 +683,11 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
         // What `check integrity` finds at an instant (da-0lful): a red
         // dotted line across the whole day and the field's name at its
-        // start. The warning icon is the day label's alone (da-0w8le).
+        // start. The warning icon is the day label's alone (da-0w8le). A
+        // flowing picture slides them with its lanes (da-bj14t).
+        if !day.errors.is_empty() {
+            out.push_str(&flow_open);
+        }
         for e in &day.errors {
             let field = escape_xml(&e.field);
             let (x1, y1) = to_xy(layout, &geom, e.time_pos, day.day_offset);
@@ -705,6 +709,9 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 what = escape_xml(&e.what),
             );
             out.push_str("</g>");
+        }
+        if !day.errors.is_empty() {
+            out.push_str(flow_close);
         }
 
         // The day's warning icon, in its date label's box and never in the
