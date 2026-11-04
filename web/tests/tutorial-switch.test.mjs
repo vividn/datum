@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
 import { cuedRoom, isStatus, startSwitch, switchRoom } from './support/tutorial.mjs';
+import { until } from './support/until.mjs';
 import { DOORS, ROOMS, WALK_MS, WALLS, dotAt } from '../src/lib/house.ts';
 
 before(startApp);
@@ -304,6 +305,38 @@ test('each room has its furniture; room cannot be ended, and Reset leaves it IGN
 			assert.deepEqual(app.errors, []);
 		},
 		{ ...PHONE, query: '?db=tutorial' }
+	);
+});
+
+// da-uzyih.4943: on a 280 px phone `room`'s states are dealt into one row
+// wider than the room, which pans. Dealt about its middle, «garden» fell
+// left of the room, where no reveal reaches (it scrolls only right and down),
+// so a cue naming it could not be followed by a tap and the 280 px game test
+// went red whenever the round began in the garden. Every state is tapped here.
+test('on a 280 px phone every state of room is in reach of a tap', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await seeded(app);
+			for (const { state } of ROOMS) {
+				await app.clock.forward(1000);
+				const before = (await rows(app)).length;
+				await page.locator(`${FIELDS} .fields button[data-field="room"]`).click();
+				const room = await page.locator(`${FIELDS} .room`).boundingBox();
+				const states = await page.locator(`${FIELDS} .ring button[data-state]`).evaluateAll((bs) =>
+					bs.map((b) => ({ state: b.dataset.state, ...b.getBoundingClientRect().toJSON() }))
+				);
+				assert.deepEqual(states.map((s) => s.state).sort(), ROOMS.map((r) => r.state).sort());
+				assert.ok(Math.max(...states.map((s) => s.right)) > room.x + room.width, 'the row overruns the room, which pans');
+				for (const s of states)
+					assert.ok(s.left >= room.x - 0.5 && s.top >= room.y - 0.5, `${s.state} (${s.left}, ${s.top}) is not left of or above the room (${room.x}, ${room.y})`);
+				// A tap as a learner's, which Playwright reveals by a scroll first.
+				await page.locator(`${FIELDS} .ring button[data-state="${state}"]`).click({ timeout: 5000 });
+				await until(() => rows(app).then((r) => r.length), (n) => n === before + 1);
+			}
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...PHONE, viewport: { width: 280, height: 653 }, query: '?db=tutorial' }
 	);
 });
 

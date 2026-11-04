@@ -834,7 +834,12 @@
 				w: Math.max(...edges.map((e, i) => e.left + widths[i])) - left,
 				h: Math.max(...edges.map((e) => e.top + h)) - top
 			};
-			anchor = { x: -left, y: -top };
+			// A tutorial game's dealt rows, centered along an axis they fit and
+			// from the room's edge along one they overrun: a reveal scrolls the
+			// room only right and down (`fold`), so a state dealt past its left
+			// was out of reach (da-uzyih.4943, «garden» on a 280 px phone).
+			const [W, H] = [room.clientWidth, room.clientHeight];
+			anchor = tapLogs && deal ? { x: Math.min(extent.w, W) / 2, y: Math.min(extent.h, H) / 2 } : { x: -left, y: -top };
 		};
 		const observer = new ResizeObserver(place);
 		observer.observe(room);
