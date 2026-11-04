@@ -859,7 +859,8 @@ mod runtime_tests {
     /// runs of a fixture produce identical output.
     ///
     /// What we scrub:
-    /// * `CREATE <hid> <slug>` log lines — dropped entirely.
+    /// * `CREATE <hid> <slug>` log lines — dropped entirely, and ours,
+    ///   which name a new entry by its shape (da-p01v9).
     /// * `EXISTS \x1b[m<hid>\x1b[m` headers in `get` output — replaced
     ///   with `EXISTS <HID>`.
     /// * Trailing `<hid>` in `tail` rows (the rightmost column) —
@@ -872,7 +873,10 @@ mod runtime_tests {
     /// SVG output (nowview/dayview) doesn't carry hids in its content,
     /// but the normalizer still runs over it harmlessly.
     fn normalize(raw: &str) -> String {
-        let create_drop = regex_lite::Regex::new(r"^CREATE \S+ \S+$").unwrap();
+        let create_drop = regex_lite::Regex::new(
+            r"^(?:CREATE|MOMENT|PERIOD|ON/OFF|SWITCH|RECORD|REMARK) \S+ \S+$",
+        )
+        .unwrap();
         let exists_line = regex_lite::Regex::new(
             r"^\x1b\[33mEXISTS\x1b\[39m\s+\x1b\[33m[a-z0-9]+\x1b\[39m(?P<rest>.*)$",
         )

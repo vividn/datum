@@ -54,7 +54,7 @@ fn a_switch_after_a_finished_block_is_not_a_repeat() {
     let env = Env::new();
     nates_history(&env);
     let out = env.ok(&["switch", "field", "state2", "-t", "-1"]);
-    assert!(out.contains("CREATE"), "{out}");
+    assert!(out.contains("SWITCH"), "{out}");
     assert!(!out.contains("!state2"), "state1 had resumed:\n{out}");
     let check = env.ok(&["check"]);
     assert!(!check.contains("repeated_state"), "{check}");
@@ -66,7 +66,7 @@ fn if_changed_writes_it_and_marks_no_repeat() {
     nates_history(&env);
     let out = env.ok(&["switch", "field", "state2", "-t", "-1", "--if-changed"]);
     assert!(
-        out.contains("CREATE"),
+        out.contains("SWITCH"),
         "the state was state1, so it writes:\n{out}"
     );
     assert!(

@@ -115,7 +115,7 @@ fn an_installed_shell_runs_aliases_by_name() {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr),
         );
-        assert!(stdout.contains("CREATE"), "{shell}: {stdout} {stderr}");
+        assert!(stdout.contains("MOMENT"), "{shell}: {stdout} {stderr}");
         assert!(stdout.contains("[unset]"), "{shell}: {stdout}");
         assert!(
             stdout.contains("find is /") && !stdout.contains("alias"),

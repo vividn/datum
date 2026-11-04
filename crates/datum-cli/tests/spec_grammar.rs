@@ -162,7 +162,7 @@ fn a_new_field_needs_a_verb() {
     let dir = mood();
     let err = refused(&dir, &["setup", "tea", "--color", "red"]);
     assert!(err.contains("--verb"), "{err}");
-    assert!(ok(&dir, &["setup", "tea", "--verb", "occur"]).starts_with("CREATE "));
+    assert!(ok(&dir, &["setup", "tea", "--verb", "occur"]).starts_with("MOMENT "));
 }
 
 /// `spec` is `setup`'s alias (da-3ie71), as `rt` is `retime`'s: every form

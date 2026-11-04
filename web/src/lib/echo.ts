@@ -40,7 +40,10 @@ export interface InfoSegment {
 
 /** One document of the CLI's echo — `--show json`'s own field names. */
 export interface EchoDoc {
-	/** `CREATE`, `EXISTS`, `DELETE`, … */
+	/**
+	 * What the command did, the terminal header's word: a new entry's shape
+	 * (`MOMENT`, `ON/OFF`, …, a note's `REMARK`, da-p01v9), `EXISTS`, `DELETE`, …
+	 */
 	action: string;
 	/** The short, prefix-addressable id the CLI prints. */
 	hid: string;
@@ -65,7 +68,7 @@ export interface EchoDoc {
 	state?: unknown;
 	/**
 	 * `#rrggbb` for the ACTION word — the colour the terminal paints the tag
-	 * (da-ckw3, `Outcome::hex`): green a CREATE, red a DELETE or a FAILED,
+	 * (da-ckw3, `Outcome::hex`): green a new entry, red a DELETE or a FAILED,
 	 * yellow an EXISTS, cyan an UPDATE/RENAME/RETIME, blue an OWRITE, orange
 	 * a NODIFF, lavender an UNDONE or a REVERT. Absent from a module too old to carry it, which is why every
 	 * surface falls back to its own accent.
@@ -74,10 +77,11 @@ export interface EchoDoc {
 	/**
 	 * The shape of what the entry stores, six characters (da-hxjrk): `MOMENT`,
 	 * `PERIOD`, `ON/OFF`, `SWITCH` or `RECORD`. Absent from a module too old
-	 * to carry it, where the frame is labelled with `action` instead. A
-	 * CREATE's frame alone is labelled with it (da-nafql).
+	 * to carry it. A new entry's `action` is it, or a note's REMARK (da-p01v9).
 	 */
 	shape?: string;
+	/** Set on the document of an entry the command made (da-p01v9). */
+	created?: true;
 	/** `#rrggbb` for the field, as `fields --json` publishes it. */
 	field_color?: string;
 	/** `#rrggbb` for the state, or null where the state paints none. */

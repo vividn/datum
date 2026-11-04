@@ -48,9 +48,9 @@ datum switch body vertical , switch project gardening
 ```
 
 ```
-CREATE m29u1 body:2026-09-22T15:59:03.422Z
+SWITCH m29u1 body:2026-09-22T15:59:03.422Z
 17:59:03+2  body  vertical
-CREATE t45xa project:2026-09-22T15:59:03.422Z
+SWITCH t45xa project:2026-09-22T15:59:03.422Z
 17:59:03+2  project  gardening
 ```
 
@@ -67,9 +67,9 @@ datum start run , start bike ,, 30m
 ```
 
 ```
-CREATE t7dho run:2026-09-22T15:59:03.470Z
+PERIOD t7dho run:2026-09-22T15:59:03.470Z
 17:59:03+2  run  start  30m
-CREATE knn04 bike:2026-09-22T15:59:03.470Z
+PERIOD knn04 bike:2026-09-22T15:59:03.470Z
 17:59:03+2  bike  start  30m
 ```
 
@@ -86,12 +86,12 @@ datum moment a , '(' moment b , moment c ,, k=1 ')'
 ```
 
 ```
-CREATE l6mpc a:2026-09-22T15:59:03.522Z
+MOMENT l6mpc a:2026-09-22T15:59:03.522Z
 17:59:03+2  a ∅●
-CREATE 3vgr2 b:2026-09-22T15:59:03.522Z
+MOMENT 3vgr2 b:2026-09-22T15:59:03.522Z
 17:59:03+2  b ∅●
   k: 1
-CREATE xbijk c:2026-09-22T15:59:03.522Z
+MOMENT xbijk c:2026-09-22T15:59:03.522Z
 17:59:03+2  c ∅●
   k: 1
 ```
@@ -109,7 +109,7 @@ datum moment f -k expr ,, '\('
 ```
 
 ```
-CREATE qf416 f:2026-09-22T15:59:03.584Z
+MOMENT qf416 f:2026-09-22T15:59:03.584Z
 17:59:03+2  f ∅●
   expr: "("
 ```
@@ -141,7 +141,7 @@ datum moment f -k note -- --verbose
 ```
 
 ```
-CREATE wnlyu f:2026-09-22T15:59:03.648Z
+MOMENT wnlyu f:2026-09-22T15:59:03.648Z
 17:59:03+2  f ∅●
   note: "--verbose"
 ```
@@ -157,9 +157,9 @@ datum scaff .
 ```
 
 ```
-CREATE ljz13 body:2026-09-22T15:59:03.750Z
+SWITCH ljz13 body:2026-09-22T15:59:03.750Z
 17:59:03+2  body  sit
-CREATE za2rq caffeine:2026-09-22T15:59:03.750Z
+MOMENT za2rq caffeine:2026-09-22T15:59:03.750Z
 17:59:03+2  caffeine ∅●
 ```
 
@@ -174,7 +174,7 @@ datum switch tv -I the end '\.'
 ```
 
 ```
-CREATE mz3aa tv:2026-09-22T15:59:03.816Z
+SWITCH mz3aa tv:2026-09-22T15:59:03.816Z
 17:59:03+2  tv  the end .
 ```
 
@@ -186,7 +186,7 @@ datum db backup -
 ```
 
 The backup goes to stdout rather than to a file, so the first bytes after
-the `moment`'s own CREATE line are the archive itself:
+the `moment`'s own MOMENT line are the archive itself:
 
 ```
 {"type":"daydumb_backup","schema_version":37,"ba…
@@ -211,11 +211,11 @@ datum act cooking
 ```
 
 ```
-CREATE vs2yj activity:2026-09-24T14:47:29.896Z
+SWITCH vs2yj activity:2026-09-24T14:47:29.896Z
 16:47:29+2  activity  reading
 ISLAST vs2yj activity:2026-09-24T14:47:29.896Z
 16:47:29+2  activity  reading
-CREATE 19zx6 activity:2026-09-24T14:47:29.927Z
+SWITCH 19zx6 activity:2026-09-24T14:47:29.927Z
 16:47:29+2  activity  cooking
 ```
 
@@ -258,10 +258,10 @@ Two writes, one state — the `!` on the second only marks that the field
 was already in it:
 
 ```
-CREATE kymo7 mood:2026-09-22T16:08:44.707Z
+SWITCH kymo7 mood:2026-09-22T16:08:44.707Z
 18:08:44+2  mood  {happy}
   { .id: "happy", .intensity: 7 }
-CREATE or5mr mood:2026-09-22T16:08:44.738Z
+SWITCH or5mr mood:2026-09-22T16:08:44.738Z
 18:08:44+2  mood !{happy}
   { .id: "happy", .intensity: 7 }
 ```
@@ -287,7 +287,7 @@ datum moment run gear.shoes=trail
 ```
 
 ```
-CREATE odafg run:2026-09-22T15:59:04.026Z
+MOMENT odafg run:2026-09-22T15:59:04.026Z
 17:59:04+2  run ∅●
   gear: {"shoes":"trail"}
 ```
@@ -315,19 +315,19 @@ datum moment cleared 'tags=[]'
 ```
 
 ```
-CREATE dxtmj tagged:2026-10-07T12:13:40.762Z
+MOMENT dxtmj tagged:2026-10-07T12:13:40.762Z
 14:13:40+2  tagged ∅●
   tags: ["work","home"]
-CREATE veslm one:2026-10-07T12:13:40.783Z
+MOMENT veslm one:2026-10-07T12:13:40.783Z
 14:13:40+2  one ∅●
   tags: ["work"]
-CREATE t8ti1 gappy:2026-10-07T12:13:40.804Z
+MOMENT t8ti1 gappy:2026-10-07T12:13:40.804Z
 14:13:40+2  gappy ∅●
   tags: ["x",null,"y"]
-CREATE eehnx prose:2026-10-07T12:13:40.825Z
+MOMENT eehnx prose:2026-10-07T12:13:40.825Z
 14:13:40+2  prose ∅●
   left: "Anna,", note: "met Anna, Ben"
-CREATE 0m1wk cleared:2026-10-07T12:13:40.843Z
+MOMENT 0m1wk cleared:2026-10-07T12:13:40.843Z
 14:13:40+2  cleared ∅●
   tags: []
 ```
@@ -347,7 +347,7 @@ datum moment n k=null j=undefined s='"null"'
 ```
 
 ```
-CREATE zlpeh n:2026-09-28T13:22:34.918Z
+MOMENT zlpeh n:2026-09-28T13:22:34.918Z
 15:22:34+2  n ∅●
   k: null, s: "null"
 ```
@@ -366,7 +366,7 @@ datum moment shapes flag=true obj='{"a":1}' empty="''"
 ```
 
 ```
-CREATE k4opv shapes:2026-09-22T16:06:14.598Z
+MOMENT k4opv shapes:2026-09-22T16:06:14.598Z
 18:06:14+2  shapes ∅●
   empty: "", flag: true, obj: {"a":1}
 ```
@@ -384,7 +384,7 @@ datum moment quoted -k key "',,'" "v='a,b'" "l=['a', 'b']"
 ```
 
 ```
-CREATE mfqdd quoted:2026-10-07T17:39:46.343Z
+MOMENT mfqdd quoted:2026-10-07T17:39:46.343Z
 19:39:46+2  quoted ∅●
   key: ",,", l: ["a","b"], v: "a,b"
 ```
@@ -397,7 +397,7 @@ datum moment f -k raw ,, '=2'
 ```
 
 ```
-CREATE qe1ts f:2026-09-22T16:06:14.628Z
+MOMENT qe1ts f:2026-09-22T16:06:14.628Z
 18:06:14+2  f ∅●
   raw: "=2"
 ```
@@ -413,7 +413,7 @@ datum moment lift weight=75.2kg reps=10 set=4th
 ```
 
 ```
-CREATE f2f8i lift:2026-09-22T15:59:04.152Z
+MOMENT f2f8i lift:2026-09-22T15:59:04.152Z
 17:59:04+2  lift ∅●
   reps: 10, set: "4th", weight: "75.2kg"
 ```
@@ -439,7 +439,7 @@ datum delete coffee:_ -c "wrong day"
 ```
 
 ```
-CREATE dtgnq coffee:2026-09-24T14:54:52.113Z
+MOMENT dtgnq coffee:2026-09-24T14:54:52.113Z
 16:54:52+2  coffee ∅●
   comment: "decaf"
 UPDATE dtgnq coffee:2026-09-24T14:54:52.113Z
@@ -494,22 +494,22 @@ datum check refs
 ```
 
 ```
-CREATE rp2sb book:dune
+RECORD rp2sb book:dune
 c21:40:09+2  book ¢
   title: "Dune"
-CREATE 54ii3 read:2026-09-28T19:40:09.998Z
+MOMENT 54ii3 read:2026-09-28T19:40:09.998Z
 21:40:09+2  read ∅●
   what: "ref://book:dune"
-CREATE p41in quote:2026-09-28T19:40:10.013Z
+MOMENT p41in quote:2026-09-28T19:40:10.013Z
 21:40:10+2  quote ∅●
   said: "ref://book:dune"
 Dune
 ref://book:dune
 ✓ Spec saved for 'task'
-CREATE bdd2a task:2026-09-28T19:40:10.066Z
+MOMENT bdd2a task:2026-09-28T19:40:10.066Z
 21:40:10+2  task ∅●
   blocker: "issue:k7f2a"
-CREATE j285u plan:2026-09-28T19:40:10.083Z
+MOMENT j285u plan:2026-09-28T19:40:10.083Z
 21:40:10+2  plan ∅●
   needs: ["ref://book:dune","ref://book:emma"]
 [WARN ] dangling_data_ref (x1): 1 plan entry refers to book:emma, which is no live entry (key needs)
@@ -544,7 +544,7 @@ datum get coffee -A
 ```
 
 ```
-CREATE 6r55f coffee:2026-09-22T12:00:00.000Z
+MOMENT 6r55f coffee:2026-09-22T12:00:00.000Z
 14:00:± +2  coffee ∅●
 ```
 
@@ -603,8 +603,8 @@ datum moment probe -d sunday+
 ```
 
 ```
-CREATE e3h0w probe:2026-09-20
-CREATE qty4x probe:2026-09-27
+MOMENT e3h0w probe:2026-09-20
+MOMENT qty4x probe:2026-09-27
 ```
 
 (Run on a Tuesday: the Sunday before, then the Sunday after.) Without a
@@ -621,10 +621,10 @@ datum moment probe -d oct10,2022
 ```
 
 ```
-CREATE eoe38 probe:2026-04-29
-CREATE 6wm5i probe:2025-04-29
-CREATE zkkr4 probe:2024-04-29
-CREATE gtudw probe:2022-10-10
+MOMENT eoe38 probe:2026-04-29
+MOMENT 6wm5i probe:2025-04-29
+MOMENT zkkr4 probe:2024-04-29
+MOMENT gtudw probe:2022-10-10
 ```
 
 The first is the nearest April 29; the other three are pinned. All three
@@ -841,7 +841,7 @@ datum note word correr --id '%field%:%srcLang%:%pos%' srcLang=pt pos=verb
 ```
 
 ```
-CREATE rvpcn word:word:pt:verb
+REMARK rvpcn word:word:pt:verb
 ```
 
 A missing key renders empty and the delimiters around it collapse, so a
@@ -853,8 +853,8 @@ datum note word andar --id '%?srcLang%:%pos%' pos=verb
 ```
 
 ```
-CREATE tof44 word:pt:verb
-CREATE aiye2 word:verb
+REMARK tof44 word:pt:verb
+REMARK aiye2 word:verb
 ```
 
 `%?key%` and `%key%` behave identically today — the `?` records that the
@@ -866,7 +866,7 @@ datum note w3 x --id '%field%-%pos%' --id-delimiter - pos=verb
 ```
 
 ```
-CREATE 9ad7v w3:w3-verb
+REMARK 9ad7v w3:w3-verb
 ```
 
 `\%` is a literal percent:
@@ -876,7 +876,7 @@ datum note pct y --id '100\%-%field%'
 ```
 
 ```
-CREATE ow8wk pct:100%-pct
+REMARK ow8wk pct:100%-pct
 ```
 
 `-o` reads the same way, against each row a read command prints:

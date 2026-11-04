@@ -95,7 +95,8 @@ fn occur_emits_one_doc_with_the_addressable_pieces() {
     assert_eq!(docs.len(), 1, "one entry, one doc");
     let d = &docs[0];
 
-    assert_eq!(d["action"], "CREATE");
+    assert_eq!(d["action"], "MOMENT");
+    assert_eq!(d["created"], true);
     let hid = d["hid"].as_str().unwrap();
     let id = d["id"].as_str().unwrap();
     assert_eq!(hid.len(), 5, "the displayed hid, not the stored 12: {hid}");
@@ -105,7 +106,7 @@ fn occur_emits_one_doc_with_the_addressable_pieces() {
     );
     assert_eq!(
         d["header"].as_str().unwrap(),
-        format!("CREATE {hid} {id}"),
+        format!("MOMENT {hid} {id}"),
         "the header is exactly its three pieces"
     );
     assert!(d["info"].as_str().unwrap().contains("coffee"));
@@ -118,9 +119,14 @@ fn occur_emits_one_doc_with_the_addressable_pieces() {
 /// one word, and `start` on a field already on is still an ON/OFF. Geometry
 /// first (da-cswh8): a point is a MOMENT with a state or none, and anything
 /// with a duration a PERIOD, a hole's false block included.
+///
+/// And that word heads the echo (da-p01v9): the terminal's header and
+/// `action` alike, a note's REMARK, so datum.day labels the frame with
+/// `action` and chooses nothing.
 #[test]
 fn each_doc_names_the_shape_its_entry_stores() {
     let env = Env::new();
+    let terminal = Env::new();
     let cases: &[(&[&str], &str)] = &[
         (&["moment", "coffee"], "MOMENT"),
         (&["occur", "coffee", "cups=2"], "MOMENT"),
@@ -142,8 +148,18 @@ fn each_doc_names_the_shape_its_entry_stores() {
         let docs = env.docs(&[args, &["--show", "json"][..]].concat());
         assert_eq!(docs.len(), 1, "{args:?}: one entry, one doc");
         assert_eq!(docs[0]["shape"], *shape, "{args:?}");
-        assert_eq!(docs[0]["action"], "CREATE", "{args:?}: the outcome stays");
+        let word = if args[0] == "note" { "REMARK" } else { shape };
+        assert_eq!(docs[0]["action"], word, "{args:?}");
+        assert_eq!(docs[0]["created"], true, "{args:?}");
+        let printed = strip_ansi(&terminal.run(args));
+        assert_eq!(printed.split(' ').next(), Some(word), "{args:?}: {printed}");
     }
+    let update = env.docs(&["update", "_LAST", "x=1", "--show", "json"]);
+    assert_eq!(
+        update[0]["action"], "UPDATE",
+        "any other action keeps its word"
+    );
+    assert!(update[0].get("created").is_none(), "an update made nothing");
 }
 
 /// `moment` is the command and `occur` its alias (da-cswh8, vividn, 2026-10-31:

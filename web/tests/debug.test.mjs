@@ -190,14 +190,14 @@ describe('the sample seeder', () => {
 		return page.locator(`${SEED} .report`).innerText();
 	}
 
-	/** The commands the log shows that wrote a sample entry, and whether each came back with a CREATE. */
+	/** The commands the log shows that wrote a sample entry, and whether each came back as one. */
 	const written = (page) =>
 		page.evaluate((seed) =>
 			[...document.querySelectorAll(`${seed} .log li`)]
 				.filter((li) => li.querySelector('code').textContent.endsWith(' sample=true'))
 				.map((li) => ({
 					argv: li.querySelector('code').textContent,
-					created: /^CREATE /m.test(li.querySelector('pre')?.textContent ?? ''),
+					created: /^(MOMENT|PERIOD|ON\/OFF|SWITCH) /m.test(li.querySelector('pre')?.textContent ?? ''),
 					failed: li.classList.contains('failed')
 				})),
 		SEED);
@@ -213,12 +213,12 @@ describe('the sample seeder', () => {
 			// The log shows every command as typed on this page — the page's
 			// database is no flag of argv (da-7xne1), and `tagged` above is
 			// where the rows landed — each dated and timed, and each answered
-			// with a CREATE.
+			// with its shape.
 			const log = await written(page);
 			assert.equal(log.length, n);
 			for (const { argv, created } of log) {
 				assert.match(argv, /^❯ datum \w+ \w+ .*-d \d{4}-\d\d-\d\d -t \d\d:\d\d:\d\d\.\d{3} sample=true$/);
-				assert.ok(created, `${argv} came back without a CREATE`);
+				assert.ok(created, `${argv} came back without its shape`);
 			}
 
 			// Seven days of it, nothing in the future, and a block still running.

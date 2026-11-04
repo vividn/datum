@@ -35,7 +35,7 @@ fn run(db: &PathBuf, args: &[&str]) -> (String, String) {
 /// the entry's echo follows.
 fn entry_echo(stdout: &str) -> Vec<&str> {
     let lines: Vec<&str> = stdout.lines().collect();
-    match lines.iter().rposition(|l| l.starts_with("CREATE")) {
+    match lines.iter().rposition(|l| l.starts_with("MOMENT")) {
         Some(i) if i > 0 => lines[i..].to_vec(),
         _ => lines,
     }
@@ -50,7 +50,7 @@ fn occur_emits_two_line_create_with_hid_and_extra() {
     assert!(lines.len() >= 3, "expected 3+ lines, got: {stdout:?}");
 
     // Header: action + hid + slug (datum's user-facing `field:time` id).
-    assert!(lines[0].contains("CREATE"), "line 0: {:?}", lines[0]);
+    assert!(lines[0].contains("MOMENT"), "line 0: {:?}", lines[0]);
     assert!(
         lines[0].contains("coffee:"),
         "expected slug (field:time) in header: {:?}",
@@ -152,7 +152,7 @@ fn show_minimal_emits_header_only() {
         1,
         "minimal should emit 1 line per doc, got: {stdout:?}"
     );
-    assert!(lines[0].contains("CREATE"));
+    assert!(lines[0].contains("MOMENT"));
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn format_string_renders_custom_template() {
         "default `-o` should keep the two info lines plus the format string, got: {stdout:?}"
     );
     assert!(
-        lines[0].starts_with("CREATE"),
+        lines[0].starts_with("MOMENT"),
         "first line should be the action header, got: {stdout:?}"
     );
     assert!(
@@ -235,12 +235,12 @@ fn format_string_renders_custom_template() {
 fn header_has_action_hid_and_slug_not_ulid() {
     let db = tmp_db();
     let (stdout, _) = run(&db, &["occur", "coffee"]);
-    // Header layout (colors off, whitespace-collapsed): CREATE <hid> <slug>
+    // Header layout (colors off, whitespace-collapsed): MOMENT <hid> <slug>
     // The slug is datum-compatible `field:YYYY-MM-DDTHH:MMZ`, NOT the raw ULID.
     let first = entry_echo(&stdout)[0];
     let toks: Vec<&str> = first.split_whitespace().collect();
     assert_eq!(toks.len(), 3, "expected 3 header tokens, got {toks:?}");
-    assert_eq!(toks[0], "CREATE");
+    assert_eq!(toks[0], "MOMENT");
 
     let hid = toks[1];
     assert_eq!(hid.len(), 5, "hid length: {hid:?}");

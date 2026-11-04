@@ -89,17 +89,17 @@ describe('the record is what was typed (da-vx31e)', () => {
 	test('a --show the reader typed wins', async () => {
 		await onSeam(async (app) => {
 			await app.submit('occur coffee --show minimal');
-			assert.match((await app.stdouts()).at(-1) ?? '', /^CREATE /);
+			assert.match((await app.stdouts()).at(-1) ?? '', /^MOMENT /);
 		});
 	});
 });
 
 describe('parseEcho', () => {
 	const doc = {
-		action: 'CREATE',
+		action: 'MOMENT',
 		hid: '35mtf',
 		id: 'coffee:2026-03-16T09:15Z',
-		header: 'CREATE 35mtf coffee:2026-03-16T09:15Z',
+		header: 'MOMENT 35mtf coffee:2026-03-16T09:15Z',
 		info: '09:15:00+0  coffee',
 		data: [],
 		data_inline: ''
@@ -363,7 +363,7 @@ describe('a kit alias logs in the bar', () => {
 			// `setup F …` echoes the spec it wrote and logs nothing (da-npjfk).
 			const answered = async () =>
 				parseEcho(await app.page.evaluate(() => window.datum.bar.last().result.stdout))?.map((d) => d.action);
-			assert.deepEqual(await answered(), ['CREATE']);
+			assert.deepEqual(await answered(), ['MOMENT']);
 			assert.equal(await tracked(), 0);
 			const spec = await app.run(['setup', 'vacuum', '--json']);
 			assert.match(spec.stdout, /next_date=\+4/, spec.stdout || spec.stderr);

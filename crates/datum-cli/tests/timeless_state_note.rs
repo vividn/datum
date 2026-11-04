@@ -57,14 +57,16 @@ fn paint(color: &str, body: &str) -> String {
 /// that renders the state. (The badge is the field's own bg chip on every
 /// row, timed or not.)
 fn state_part(stdout: &str, field: &str) -> String {
-    // The entry's own info line — the one under its `CREATE` header. A
+    // The entry's own info line — the one under its header, which names it by
+    // its slug, painted grey, so just after an escape's `m` (da-p01v9: the
+    // header's word is the entry's shape). A
     // field's first log prints the TRACK document that declares it first
     // (da-c8mh), and data lines may follow.
     let lines: Vec<&str> = stdout.lines().collect();
     let header = lines
         .iter()
-        .rposition(|l| l.contains("CREATE"))
-        .expect("CREATE header");
+        .rposition(|l| l.contains(&format!("m{field}:")))
+        .expect("the entry's header");
     let line = lines[header + 1];
     let badge_end = line.find(field).expect("field badge") + field.len();
     line[badge_end..].to_string()

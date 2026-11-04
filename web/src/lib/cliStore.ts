@@ -118,15 +118,16 @@ export function clearScrollback(): void {
 
 /**
  * The action words that changed the database (`Outcome` in the CLI's
- * render/mod.rs); EXISTS, NODIFF, ISLAST and FAILED moved nothing.
+ * render/mod.rs); EXISTS, NODIFF, ISLAST and FAILED moved nothing. A new
+ * entry's word is its shape, which the document says is a write as `created`.
  *
  * A TRACK row names itself in that word (`TRACK●`), a `track`'s and a `get`'s
  * of one alike; only `action_color`, EXISTS's yellow on a `get`, parts them.
  */
-const WRITES = new Set(['CREATE', 'UPDATE', 'DELETE', 'OWRITE', 'RENAME', 'RETIME', 'UNDONE', 'REVERT', 'IGNORE']);
+const WRITES = new Set(['UPDATE', 'DELETE', 'OWRITE', 'RENAME', 'RETIME', 'UNDONE', 'REVERT', 'IGNORE']);
 const EXISTS_COLOR = '#e5a50a';
 const wroteDoc = (d: EchoDoc): boolean =>
-	WRITES.has(d.action) || (d.action.startsWith('TRACK') && d.action_color !== EXISTS_COLOR);
+	d.created || WRITES.has(d.action) || (d.action.startsWith('TRACK') && d.action_color !== EXISTS_COLOR);
 const wrote = new WeakMap<Command, string[]>();
 
 /** The entries a command wrote, by hid, out of its echo (da-25q3k). */

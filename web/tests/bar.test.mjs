@@ -216,7 +216,7 @@ describe('one document', () => {
 				await page.locator(`${DOC} .action[title="${action}"]`).waitFor();
 				return { group: await box(OUT), section: await box(`${BAR} .section.output`) };
 			};
-			const switched = await answer('switch mood happy', 'CREATE');
+			const switched = await answer('switch mood happy', 'SWITCH');
 			assert.ok(switched.group.width < switched.section.width / 2, 'a switch took the section: nothing to compare with');
 			for (const [line, action] of [
 				['ignore mood', 'IGNORE'],
@@ -286,8 +286,8 @@ describe('several documents', () => {
 			const [first, second] = [await section(page, 0), await section(page, 1)];
 			// Each side echoed its own document: `DATUM_SHOW` reaches EVERY
 			// side, not only the last.
-			assert.equal(first.did, 'CREATE');
-			assert.equal(second.did, 'CREATE');
+			assert.equal(first.did, 'MOMENT');
+			assert.equal(second.did, 'SWITCH');
 			assert.notEqual(first.hid, second.hid);
 			assert.ok(first.info.includes('coffee'), first.info);
 			assert.ok(second.info.includes('happy'), second.info);
@@ -302,8 +302,8 @@ describe('several documents', () => {
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .group:last-child .doc').length === 2);
 
 			const [first, second] = [await section(page, 0), await section(page, 1)];
-			assert.equal(first.did, 'CREATE');
-			assert.equal(second.did, 'CREATE');
+			assert.equal(first.did, 'MOMENT');
+			assert.equal(second.did, 'MOMENT');
 			assert.ok(first.info.includes('coffee'), first.info);
 			assert.ok(second.info.includes('tea'), second.info);
 			assert.equal(first.when, second.when);
@@ -505,7 +505,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 	// da-nafql. vividn, 2026-10-30: «For other actions besides CREATE, keep using
 	// the output actions that were there before», and «Let's have UNDONE actually
 	// show what is changing». Each undo kind by what it draws, none like another.
-	test('only a CREATE is labelled with its shape, and each UNDONE and REVERT draws what it changes', async () => {
+	test('only a new entry is labelled with its shape, and each UNDONE and REVERT draws what it changes', async () => {
 		await desktop(async (app) => {
 			const { page } = app;
 			const run = async (line) => {
@@ -1082,7 +1082,7 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			await group('occur coffee').getByRole('button', { name: 'redo' }).tap();
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .head.struck'));
 			assert.ok(await listed(coffee), 'redone, the entry is not back');
-			assert.equal(await row.locator('.doc .action').getAttribute('title'), 'CREATE', 'redone, the row still answers as undone');
+			assert.equal(await row.locator('.doc .action').getAttribute('title'), 'MOMENT', 'redone, the row still answers as undone');
 			assert.equal(await group('occur coffee').getByRole('button', { name: 'undo' }).count(), 1);
 
 			// Buried: a later command wrote the same entry, far enough along the strip to be out of view.
@@ -1330,7 +1330,7 @@ describe('a command with no echo', () => {
 			await page.locator(`${OUT} .raw p`).first().waitFor();
 			assert.equal(await page.locator(DOC).count(), 0, 'a document was drawn from no document');
 			const shown = await page.locator(`${OUT} .raw p`).allInnerTexts();
-			assert.match(shown[0].replace(ESC, ''), /^CREATE /);
+			assert.match(shown[0].replace(ESC, ''), /^MOMENT /);
 			assert.ok(shown.some((l) => l.includes('water')), shown.join(' | '));
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
@@ -1629,7 +1629,7 @@ describe('folded, a command still answers', () => {
 			assert.equal(await marks(page).innerText(), await drawn.innerText());
 			const painted = await marks(page).evaluate((el) => getComputedStyle(el).color);
 			assert.equal(painted, await drawn.evaluate((el) => getComputedStyle(el).color));
-			assert.equal(painted, 'rgb(38, 162, 105)', 'not a CREATE green (#26a269)');
+			assert.equal(painted, 'rgb(38, 162, 105)', 'not a new entry green (#26a269)');
 
 			// Driven, not slept: fifteen seconds is not a wait a suite takes.
 			await app.clock.forward(16_000);
@@ -1705,7 +1705,7 @@ describe('folded, a command still answers', () => {
 				"the ERROR is not the page's own error colour"
 			);
 
-			// Past the moment a CREATE would have gone, and still there.
+			// Past the moment an ACTION word would have gone, and still there.
 			await app.clock.forward(16_000);
 			assert.equal(await failed.count(), 1, 'the ERROR went with the ACTION words');
 			// It does NOT open by itself: vividn chose the word over an unfold.

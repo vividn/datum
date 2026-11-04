@@ -311,7 +311,12 @@ pub(crate) fn extract_with_context_at(
         !QUEUED.get() && matches!(action, None | Some(Outcome::Create) | Some(Outcome::Exists));
     let action_text = match datum_core::track::track_verb(entry).filter(|_| names_the_row) {
         Some(verb) => Some(paint_track(verb)),
-        None => action.map(paint_action),
+        None => action.map(|a| match a {
+            Outcome::Create if !QUEUED.get() => {
+                paint_word(a, created_word(entry, ctx.is_some_and(|c| c.remark)))
+            }
+            _ => paint_action(a),
+        }),
     };
     let slug_text = Some(paint(GREY_FG, &entry.slug));
     let hid_text = Some(paint(
@@ -381,11 +386,15 @@ fn paint_track(verb: datum_core::action::Action) -> String {
 }
 
 fn paint_action(action: Outcome) -> String {
+    paint_word(action, action.name())
+}
+
+/// `word` in the colour of `action`'s tag.
+fn paint_word(action: Outcome, word: &str) -> String {
     if !color_enabled() {
-        return action.name().to_string();
+        return word.to_string();
     }
-    let code = action.ansi_color();
-    format!("{code}{}{RESET}", action.name())
+    format!("{}{word}{RESET}", action.ansi_color())
 }
 
 // ─── Time rendering ──────────────────────────────────────────────────────────
@@ -466,6 +475,10 @@ pub struct ActionLines {
     pub changes: Option<Vec<diff::Change>>,
     /// What an `UNDONE` or `REVERT` took back (da-3mryj); `None` for every other echo.
     pub undid: Option<Undid>,
+    /// The echo of an entry this command made, whose [`Self::action`] is the
+    /// word [`created_word`] chose (da-p01v9), so a caller never lists them;
+    /// not a TRACK row's, whose word is its own.
+    pub created: bool,
 }
 
 /// The change an `undo` or `revert` took back: the action it was and when it was made.
@@ -488,6 +501,9 @@ pub struct Undid {
 /// whatever its state, a hole's false block included; a change with no duration
 /// `ON/OFF` by a state of `true` or `false`, `SWITCH` by any other; and `MOMENT`
 /// a point, with a state or none.
+///
+/// It is also the word a NEW entry's echo is headed with, in place of CREATE
+/// (da-p01v9), as [`created_word`] says.
 pub fn shape(entry: &Entry) -> &'static str {
     if entry.at.is_none() {
         return "RECORD";
@@ -504,6 +520,17 @@ pub fn shape(entry: &Entry) -> &'static str {
         (Verb::Switch, Some(JsonValue::Bool(_))) => "ON/OFF",
         (Verb::Switch, _) => "SWITCH",
         _ => "MOMENT",
+    }
+}
+
+/// The word a new entry's echo is headed with (da-p01v9): its [`shape`], and
+/// `REMARK` for a `note`'s, vividn, 2026-11-04: a note is «not really a kind of
+/// data … more a way of adding untimed data to an otherwise timed field».
+pub fn created_word(entry: &Entry, remark: bool) -> &'static str {
+    if remark {
+        "REMARK"
+    } else {
+        shape(entry)
     }
 }
 
@@ -590,6 +617,10 @@ pub fn action_lines_at(
         info_segments,
         changes: None,
         undid: None,
+        // Where the word is the shape: a TRACK row names itself (`TRACK●`).
+        created: action == Outcome::Create
+            && !QUEUED.get()
+            && datum_core::track::track_verb(entry).is_none(),
     }
 }
 
@@ -2275,7 +2306,7 @@ mod tests {
     fn extract_populates_all_primary_fields() {
         let entry = sample_entry("coffee", Verb::Point, Some(JsonValue::from(2)));
         let ex = extract(&entry, Some(Outcome::Create), None);
-        assert!(ex.action.as_deref().unwrap().contains("CREATE"));
+        assert!(ex.action.as_deref().unwrap().contains("MOMENT"));
         assert!(ex.hid.is_some());
         assert!(ex.slug.is_some());
         assert!(ex.time_occur.is_some());

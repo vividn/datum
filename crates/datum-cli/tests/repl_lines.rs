@@ -240,7 +240,7 @@ fn a_sync_as_line_binds_no_later_line() {
         "sync --as deadbeef status",
         "occur tea -t 9:00",
     );
-    assert!(printed.contains("CREATE"), "{printed}");
+    assert!(printed.contains("MOMENT"), "{printed}");
 }
 
 #[test]

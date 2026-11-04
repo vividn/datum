@@ -9,12 +9,11 @@
 	field/state indicator on the first line, time on the second line, extra
 	data below that.» The time is the first line again, as the CLI prints it
 	(da-hbpkw), vividn, 2026-10-31: «let's have the time be above the data
-	again, just like in the CLI». A CREATE is labelled with the shape it stores, the
-	CLI's six characters (`shape`: MOMENT, PERIOD, ON/OFF, SWITCH, RECORD),
-	and every other action with its own word (da-nafql), vividn, 2026-10-30:
-	«For other actions besides CREATE, keep using the output actions that
-	were there before». Either way painted in the colour of what the command
-	did (`action_color`), whose word is the label's title.
+	again, just like in the CLI». The label is the CLI's own action word, as
+	the terminal's header prints it (da-p01v9): a new entry's shape (MOMENT,
+	PERIOD, ON/OFF, SWITCH, RECORD, a note's REMARK), every other action its
+	own word (da-nafql), painted in the colour of what the command did
+	(`action_color`).
 
 	An undo says what it changes in the CLI's own strings (`−` and `+` on the
 	lines, a reversed arrow), and an entry it took away is struck through
@@ -118,7 +117,7 @@
 	onclick={tap}
 >
 	<div class="receipt">
-		<span class="action" style:color={doc.action_color} title={doc.action}>{doc.action === 'CREATE' ? (doc.shape ?? doc.action) : doc.action}</span>
+		<span class="action" style:color={doc.action_color} title={doc.action}>{doc.action}</span>
 		<span class="dot" aria-hidden="true">·</span>
 		<button
 			type="button"

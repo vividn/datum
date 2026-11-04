@@ -73,7 +73,7 @@ fn each_echoes_its_action_and_state_on_an_occur_and_a_stateful_field() {
             "IGNORED",
         );
         says(&run(&db, "", &["track", field]), track, field, "TRACKED");
-        // Each six columns, as CREATE.
+        // Each six columns, as MOMENT.
         assert_eq!(track.chars().count(), 6);
     }
 }
@@ -150,11 +150,18 @@ fn a_declaration_echoes_the_spec_then_the_row() {
         .iter()
         .map(|d| d["action"].as_str().unwrap())
         .collect();
-    assert_eq!(actions, ["CREATE", "TRACK●"]);
+    assert_eq!(actions, ["MOMENT", "TRACK●"]);
+    let created: Vec<bool> = doc["docs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["created"] == true)
+        .collect();
+    assert_eq!(created, [true, false], "a TRACK row's word is not a shape");
 
     let out = run(&db, "", &["track", "nap", "--verb", "start"]);
     let last_two = out.lines().rev().take(2).collect::<Vec<_>>();
     assert!(last_two[1].starts_with("TRACK█ "), "{out}");
     assert!(last_two[0].contains("TRACKED"), "{out}");
-    assert!(out.starts_with("CREATE "), "{out}");
+    assert!(out.starts_with("MOMENT "), "{out}");
 }

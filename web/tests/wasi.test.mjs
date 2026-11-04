@@ -30,7 +30,7 @@ describe('the wasi CLI', () => {
 		await onSeam(async (app) => {
 			const logged = await app.run(['occur', 'coffee', '-t', '0915']);
 			assert.equal(logged.code, 0, logged.stderr);
-			assert.match(plain(logged.stdout), /^CREATE [0-9a-z]{5} coffee:\d{4}-\d\d-\d\dT09:15:00\.000Z$/m);
+			assert.match(plain(logged.stdout), /^MOMENT [0-9a-z]{5} coffee:\d{4}-\d\d-\d\dT09:15:00\.000Z$/m);
 
 			await app.reload();
 			const tail = await app.run(['tail']);

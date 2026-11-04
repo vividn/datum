@@ -82,7 +82,7 @@ describe('window.datum.run — the loud door', () => {
 			const [word, hid] = (await receipt(page).textContent()).split(' · ');
 			const { rows } = await app.tailRows();
 			assert.equal(word, 'MOMENT');
-			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');
+			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'MOMENT');
 			// The declaration `declare` wrote, and the entry under it.
 			assert.equal(rows.length, 2);
 			assert.ok(
@@ -128,7 +128,7 @@ describe('window.datum.run — the loud door', () => {
 			await tailShows(page, 'cocoa');
 			assert.equal(await samePage(page), true, 'the page reloaded');
 			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .group:last-child .receipt .action').title === 'CREATE'
+				document.querySelector('.prompt-bar .group:last-child .receipt .action').title === 'MOMENT'
 			);
 			assert.deepEqual(app.errors, []);
 		}, NO_CLI);

@@ -64,7 +64,7 @@ fn a_typed_show_wins() {
     let db = dir.path().join("t.db");
     assert_eq!(ok(&db, "json", &["occur", "x", "--show", "none"]), "");
     // Empty is unset: the default echo.
-    assert!(ok(&db, "", &["occur", "y"]).starts_with("CREATE "));
+    assert!(ok(&db, "", &["occur", "y"]).starts_with("MOMENT "));
 }
 
 #[test]

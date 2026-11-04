@@ -241,7 +241,7 @@ async function barRun(page, line) {
 	await page.waitForFunction(
 		`(${receiptNow})() !== ${JSON.stringify(before)} && (${receiptNow})() !== ''`
 	);
-	// What the command did, CREATE or EXISTS: the label is the entry's shape, and this its title (da-hxjrk).
+	// What the command did: a new entry's shape, or EXISTS (da-p01v9).
 	return page.locator('.prompt-bar .group:last-child .doc .action').last().getAttribute('title');
 }
 
@@ -341,7 +341,7 @@ describe('a tap on a two-minute window is to the nearest five seconds', () => {
 			await page.mouse.click(at(g, 21 / 60).x, g.y);
 			await saysPills(page, ['time:-t -20s']);
 
-			assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
+			assert.match(await barRun(page, 'occur coffee'), /^MOMENT$/);
 			const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 			assert.equal(
 				new Date(Date.parse(coffee.at.utc)).toISOString(),
@@ -387,7 +387,7 @@ describe('a tap on a window panned off now is to the same step, said as a clock'
 			() => pillsOf(page),
 			(seen) => seen.length === 1
 		);
-		assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
+		assert.match(await barRun(page, 'occur coffee'), /^MOMENT$/);
 		const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 		return { pills, logged: Date.parse(coffee.at.utc) };
 	}
@@ -503,7 +503,7 @@ describe('a relative selection is measured from NOW, not from the press', () => 
 
 				// And a line typed with the pill is logged seven minutes
 				// before the RUN, not before the press: 15:02 − 7 = 14:55.
-				assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
+				assert.match(await barRun(page, 'occur coffee'), /^MOMENT$/);
 				const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 				assert.equal(
 					new Date(Date.parse(coffee.at.utc)).toISOString(),
@@ -764,7 +764,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			// the selection and its duration runs back from there (da-zwct).
 			// The pill says `25m`; the line keys it, `dur=25m` (da-g2ruk): a
 			// bare length after a field's key would fill the key.
-			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
+			assert.match(await barRun(page, 'start posture'), /^PERIOD$/);
 			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), ['start', 'posture', '-q', 'dur=25m']);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT25M', JSON.stringify(posture));
@@ -824,7 +824,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			await saysPills(page, ['time:-q', 'dur:25m', 'field:posture']);
 
 			const seen = await app.spyOnRunner();
-			assert.match(await barRun(page, 'start'), /^CREATE$/);
+			assert.match(await barRun(page, 'start'), /^PERIOD$/);
 			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), ['start', 'posture', '-q', 'dur=25m']);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT25M', JSON.stringify(posture));
@@ -844,7 +844,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			await drag(page, at(g, 5), at(g, 20), { shift: true });
 			await saysPills(page, ['time:-q', 'dur:15m']);
 
-			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
+			assert.match(await barRun(page, 'start posture'), /^PERIOD$/);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT15M');
 			assert.equal(
@@ -863,7 +863,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 
 			// And the proof of what the bug cost: a SECOND plain entry, with
 			// no selection made for it, is logged NOW.
-			assert.match(await barRun(page, 'occur coffee'), /^CREATE$/);
+			assert.match(await barRun(page, 'occur coffee'), /^MOMENT$/);
 			const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 			assert.equal(
 				new Date(Date.parse(coffee.at.utc)).toISOString(),
@@ -881,7 +881,7 @@ describe('a range: two pills, and a block that ends where the range ends', () =>
 			const mark = await gridline(page, 10);
 			await page.mouse.click(mark.x, mark.y);
 			await saysPills(page, ['time:-qq']);
-			assert.match(await barRun(page, 'occur water'), /^CREATE$/);
+			assert.match(await barRun(page, 'occur water'), /^MOMENT$/);
 			await saysPills(page, []);
 			assert.equal(await page.evaluate(() => window.datum.cursor.of()), null);
 		});
@@ -946,7 +946,7 @@ describe('the now region: a long press dragged LEFT is a duration ending NOW', (
 			const marks = await drawn(page, NOWVIEW);
 			assert.ok(marks.span && marks.span.w > 9 * perMinute(g), `the band is ${marks.span?.w}px`);
 
-			assert.match(await barRun(page, 'start posture'), /^CREATE$/);
+			assert.match(await barRun(page, 'start posture'), /^PERIOD$/);
 			const [posture] = (await app.entries()).filter((e) => e.field === 'posture');
 			assert.equal(posture.dur, 'PT12M', JSON.stringify(posture));
 			assert.equal(new Date(Date.parse(posture.at.utc)).toISOString(), new Date(NOW).toISOString());

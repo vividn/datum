@@ -244,7 +244,7 @@ export async function ran(result?: RunResult): Promise<void> {
 
 /**
  * The bar as the write's own echo says it now stands, at once (da-70g2u;
- * vividn: «the whole app must feel very snappy»): a CREATE in `true` or a
+ * vividn: «the whole app must feel very snappy»): a new entry in `true` or a
  * state turns its field's button on, in the state's colour; one in `false`
  * turns it off; anything else (an occur's `null` or quantity, a point or a
  * record field) changes nothing. A guess — a block with a duration, or a
@@ -252,7 +252,7 @@ export async function ran(result?: RunResult): Promise<void> {
  * and what it reads wins.
  */
 function guess(result: RunResult): void {
-	const docs = (parseEcho(result.stdout) ?? []).filter((d) => d.action === 'CREATE');
+	const docs = (parseEcho(result.stdout) ?? []).filter((d) => d.created);
 	if (!docs.length) return;
 	fields.update((buttons) =>
 		buttons.map((b) => {

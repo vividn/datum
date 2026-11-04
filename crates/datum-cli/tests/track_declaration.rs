@@ -99,18 +99,18 @@ impl Env {
 /// echoes ONE document, and it is the log itself.
 #[test]
 fn the_first_log_of_a_field_is_one_document() {
-    for argv in [
-        vec!["occur", "coffee"],
-        vec!["start", "work"],
-        vec!["end", "chore"],
-        vec!["switch", "mood", "happy"],
-        vec!["note", "idea", "words"],
+    for (argv, word) in [
+        (vec!["occur", "coffee"], "MOMENT"),
+        (vec!["start", "work"], "ON/OFF"),
+        (vec!["end", "chore"], "ON/OFF"),
+        (vec!["switch", "mood", "happy"], "SWITCH"),
+        (vec!["note", "idea", "words"], "REMARK"),
     ] {
         // A fresh db per case: what is under test is the FIRST log.
         let env = Env::new();
         assert_eq!(
             env.actions(&argv),
-            vec!["CREATE".to_string()],
+            vec![word.to_string()],
             "{argv:?} should echo the entry and nothing beside it",
         );
     }
@@ -299,7 +299,7 @@ fn the_first_log_undoes_in_one() {
 /// same row in `tail` is its state and no action word; both surfaces are
 /// asserted here so neither half can drift alone.
 ///
-/// The action word is still SIX display columns, like `CREATE` — the
+/// The action word is still SIX display columns, like `MOMENT` — the
 /// column the CLI aligns by display width has one cell per row, and a
 /// glyph that measured two would push every later cell out of true.
 #[test]

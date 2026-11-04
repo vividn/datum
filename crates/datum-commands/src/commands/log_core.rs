@@ -1211,7 +1211,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // renders agree on transition history. The state probes inside
     // `for_entry` exclude this row by hid, so calling post-insert is safe
     // even though the row is now in the DB.
-    let ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
+    let mut ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
+    ctx.remark = action == Action::Note; // its echo says REMARK (da-p01v9)
     match &outcome {
         InsertOutcome::Inserted { slug, .. } => {
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());

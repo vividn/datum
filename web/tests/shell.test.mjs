@@ -717,7 +717,7 @@ describe('the bottom bar', () => {
 			// The entry's shape and its hid, and what the command did to it (da-hxjrk).
 			const [word, hid] = (await receipt(page).textContent()).split(' · ');
 			assert.equal(word, 'MOMENT');
-			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'CREATE');
+			assert.equal(await receipt(page).locator('.action').getAttribute('title'), 'MOMENT');
 			assert.ok(hid.length >= 4 && rows[0].hid.startsWith(hid), `the receipt's ${hid} is not the row's ${rows[0].hid}`);
 			assert.equal(await receipt(page).evaluate((el) => el.classList.contains('error')), false);
 			// As if typed at the CLI widget: it is in its scrollback.

@@ -158,8 +158,8 @@ alternative. The **collection** tab has what they need: a **collect** pane with 
 
 - `-t` gives a time (`-t 07:10`, or `-t -20` for twenty minutes ago), `-y` means yesterday, `-d` a day (`-d -1`, or
   `-d 2026-10-20`). They work on aliases too: `c -t -20`.
-- Each command prints what it wrote: a first line with the entry's id in UTC (`CREATE 8ykoo
-  sleep:2026-10-20T21:40:00.000Z`), then the same entry in local time (`-1d 23:40:00+2  sleep  on`, a day back).
+- Each command prints what it wrote: a first line with what it wrote, a new entry by its shape, and the entry's
+  id in UTC (`ON/OFF 8ykoo sleep:2026-10-20T21:40:00.000Z`), then the same entry in local time (`-1d 23:40:00+2  sleep  on`, a day back).
 - `undo` takes back the last write. `now` shows every field's state, `tail` the latest entries, `help` every
   command (`help setup` for one).
 - Their record lives only on their devices, so a second copy matters: sync it to another device, or

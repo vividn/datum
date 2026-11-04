@@ -123,6 +123,9 @@ pub struct RenderContext {
     /// already looking rather than in a command they have to remember.
     /// Only the listing surfaces fill this (see `build_table_contexts`).
     pub has_supersedees: bool,
+    /// The row a `note` wrote: its echo is headed `REMARK` rather than its
+    /// shape ([`super::created_word`], da-p01v9). Only the log echo sets it.
+    pub remark: bool,
 }
 
 /// Which renderer is asking for the context. Per da-9p2u: pick the
@@ -208,6 +211,7 @@ impl RenderContext {
             is_state_repeat,
             quick_ordinal: None,
             has_supersedees: false,
+            remark: false,
         }
     }
 }

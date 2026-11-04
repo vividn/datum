@@ -64,7 +64,7 @@ fn an_alias_is_read_from_the_last() {
     let env = Env::new();
     env.ok(&["--db", "last", "alias", "set", "al", "occur f"]);
     let out = env.ok(&["--db", "first", "--db", "last", "al"]);
-    assert!(out.contains("CREATE"), "{out}");
+    assert!(out.contains("MOMENT"), "{out}");
     assert!(!env.has_db("first"));
 }
 

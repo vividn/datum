@@ -729,7 +729,7 @@ fn a_repl_write_under_a_held_lock_is_queued_and_lands_later() {
 }
 
 /// A queued line's QUEUED is that line's (da-3f9nl): with the lock let go,
-/// the REPL's next write lands, and says CREATE.
+/// the REPL's next write lands, and says MOMENT.
 #[test]
 fn a_repl_write_after_a_queued_one_is_written() {
     use std::io::Write;
@@ -750,7 +750,7 @@ fn a_repl_write_after_a_queued_one_is_written() {
         .lines()
         .find(|l| l.contains("cake:"))
         .unwrap_or_default();
-    assert!(cake.starts_with("CREATE"), "{out}");
+    assert!(cake.starts_with("MOMENT"), "{out}");
     let fields: Vec<String> = env.rows().into_iter().map(|r| r.1).collect();
     assert_eq!(fields, ["coffee", "tea", "cake"]);
 }

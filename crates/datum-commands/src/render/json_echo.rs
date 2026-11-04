@@ -5,8 +5,8 @@
 //! dispatch scope prints them as ONE document:
 //!
 //! ```json
-//! {"docs":[{"action":"CREATE","hid":"35mtf","id":"coffee:2026-09-14T16:50:09.613Z",
-//!           "header":"CREATE 35mtf coffee:2026-09-14T16:50:09.613Z",
+//! {"docs":[{"action":"MOMENT","created":true,"hid":"35mtf","id":"coffee:2026-09-14T16:50:09.613Z",
+//!           "header":"MOMENT 35mtf coffee:2026-09-14T16:50:09.613Z",
 //!           "info":"18:50:09+2  coffee ∅●","info_time":"18:50:09+2",
 //!           "data":["beans: \"ethiopian\"","cups: 2"],
 //!           "data_inline":"beans: \"ethiopian\", cups: 2",
@@ -78,6 +78,9 @@ fn document(lines: &ActionLines) -> JsonValue {
             })
             .collect::<Vec<_>>(),
     });
+    if lines.created {
+        doc["created"] = json!(true);
+    }
     // An update's parts that changed, each as it was and as it is (da-27x6p).
     if let Some(changes) = &lines.changes {
         doc["changes"] = changes
@@ -171,6 +174,7 @@ mod tests {
             info_segments: vec![],
             changes: None,
             undid: None,
+            created: true,
         }
     }
 

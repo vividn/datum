@@ -690,7 +690,7 @@ export const ERROR_MS = 60_000;
  * What a folded bar says about the command just run (da-ckw3).
  *
  * `words` is what each document the CLI echoed draws as its action, in the
- * CLI's own order — a CREATE's shape, UPDATE, DELETE — each with the colour datum paints it
+ * CLI's own order — a new entry's shape, UPDATE, DELETE — each with the colour datum paints it
  * (`action_color`, da-ckw3), and nothing else: a command that echoes
  * no document (a `tail`, a `now`) leaves the corner empty, and the caret is
  * one tap from what it actually answered.
@@ -716,7 +716,7 @@ let fading: ReturnType<typeof setTimeout> | undefined;
 function mark(result: RunResult): void {
 	clearTimeout(fading);
 	const words = (parseEcho(result.stdout) ?? []).map((doc) => ({
-		text: doc.action === 'CREATE' ? (doc.shape ?? doc.action) : doc.action,
+		text: doc.action,
 		color: doc.action_color
 	}));
 	// Exit 11 with an echoed document is datum's benign re-log, `EXISTS`
