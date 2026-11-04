@@ -35,7 +35,14 @@
 name: CI
 
 on:
+  # A draft PR runs nothing (da-283i3, vividn, 2026-11-04: «no need to run on
+  # those yet»): both jobs skip while `pull_request.draft`, a `WIP:` or `[WIP]`
+  # title on Forgejo, so the merge gate, which needs CI green at the head, holds
+  # it. Forgejo sends no ready_for_review: leaving draft is a title edit, so
+  # `edited` starts the run, and scripts/ci-edited.sh keeps a body edit from
+  # testing a head a run has tested already.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     # `ci/**` is for bisecting a red main (da-2f1vp): push the midpoint commit
     # as `ci/<sha8>`, read its verdict, delete the branch. Such a run is never
@@ -87,9 +94,12 @@ on:
 # A dispatched run on an integration branch, the integration nightly's
 # (da-4g6zm), has a group of its own: a push to the branch and the nightly
 # never cancel each other's run.
+#
+# An edit cancels nothing (da-283i3): it queues behind the run in progress,
+# whose verdict it then takes (scripts/ci-edited.sh). A push still cancels it.
 concurrency:
   group: ci-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'integration/') && '-nightly' || '' }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/staging' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/staging' && github.event.action != 'edited' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -103,8 +113,8 @@ jobs:
   ci:
     name: CI (cargo + web)
     # A push to an integration branch, and a sync of one, are the `integration`
-    # job's alone.
-    if: (github.event_name != 'push' || !startsWith(github.ref_name, 'integration/')) && (github.event_name != 'workflow_dispatch' || !startsWith(github.ref_name, 'sync/integration/'))
+    # job's alone. A draft PR runs neither (see `on`).
+    if: (github.event_name != 'push' || !startsWith(github.ref_name, 'integration/')) && (github.event_name != 'workflow_dispatch' || !startsWith(github.ref_name, 'sync/integration/')) && !github.event.pull_request.draft
     # A staging run, pushed or dispatched, runs on its own runner, labelled ONLY
     # `staging` so it never takes a PR job (da-laema). On the shared one it
     # queued behind every PR run and, started after the tip had moved,
@@ -211,6 +221,18 @@ jobs:
 
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: env.TRAIN != '1'
+
+      # A PR's title or body edit takes the verdict of the run already on its
+      # head, and tests in full only a head none has (da-283i3).
+      - name: An edit tests only a head no run has tested
+        if: env.TRAIN != '1' && github.event.action == 'edited'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.base_ref }}
+        run: scripts/ci-edited.sh ci.yml
 
       # A PR into a branch the integration permit lists runs the `integration`
       # job below instead (da-44xpb), so this one sets the same TRAIN=1 as an
@@ -706,7 +728,7 @@ jobs:
   # red: the crane lands a green sync, and nothing would have been tested.
   integration:
     name: CI (integration)
-    if: (github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) || (github.event_name == 'push' && startsWith(github.ref_name, 'integration/')) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'sync/integration/'))
+    if: ((github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) || (github.event_name == 'push' && startsWith(github.ref_name, 'integration/')) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'sync/integration/'))) && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -714,12 +736,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      # As the full job's (da-283i3): TRAIN=1 skips the permit, so LISTED is
+      # never set and every later step skips.
+      - name: An edit tests only a head no run has tested
+        if: github.event.action == 'edited'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.base_ref }}
+        run: scripts/ci-edited.sh ci.yml
+
       # The branch's entry: LISTED=1 runs every later step. DIFF is what the
       # change is read against: a PR's base, a push's previous tip (staging's
       # tip for a new branch), a sync's its first parent, the branch's tip. Not
       # staging for every push: a sync squashes staging into the branch, so
       # `staging...HEAD` holds staging's changes.
       - name: Is this branch in the integration permit?
+        if: env.TRAIN != '1'
         env:
           BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
           BASE: ${{ github.event_name == 'pull_request' && github.base_ref || 'staging' }}

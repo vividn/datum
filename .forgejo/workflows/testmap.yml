@@ -32,7 +32,10 @@ on:
   # A PR into staging or main alone (da-44xpb): the map is staging's, and a
   # sync PR into an integration branch carries these paths from staging and
   # built two maps no one reads, ~28 min each on the runner (#1061, 10-22).
+  # A draft runs nothing, and a title or body edit tests only a head no run
+  # has (da-283i3: ci.yml's `on` says why `edited`).
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     branches: [main, staging]
     paths:
       - .forgejo/workflows/testmap.yml
@@ -44,10 +47,11 @@ on:
 # A staging build once started finishes (da-wqdmq): with `cancel-in-progress`
 # false Forgejo queues every run of the group behind the one running and
 # cancels none (QueueBehind), and `newest` skips a queued run whose tip the
-# one before it mapped. A PR's run is still cancelled by the PR's next push.
+# one before it mapped. A PR's run is still cancelled by the PR's next push;
+# an edit queues behind it, and takes its verdict.
 concurrency:
   group: testmap-${{ github.event_name == 'pull_request' && github.ref || 'staging' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'edited' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -61,10 +65,11 @@ jobs:
   # own head and pushes nothing, and only where its own diff changes the
   # map's machinery (`changes` below).
   newest:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.tip.outputs.sha }}
-      skip: ${{ steps.tip.outputs.skip || steps.changes.outputs.skip }}
+      skip: ${{ steps.tip.outputs.skip || steps.edited.outputs.skip || steps.changes.outputs.skip }}
     steps:
       # Forgejo matches `paths` against the files changed since the payload's
       # merge_base, which a rebase leaves at the old one (16.0.7,
@@ -76,8 +81,18 @@ jobs:
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: github.event_name == 'pull_request'
 
+      - id: edited
+        if: github.event.action == 'edited'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.base_ref }}
+        run: scripts/ci-edited.sh testmap.yml
+
       - id: changes
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.edited.outputs.skip != 'true'
         env:
           BASE: ${{ github.base_ref }}
         run: |
@@ -115,7 +130,9 @@ jobs:
 
   testmap:
     needs: newest
-    if: needs.newest.outputs.skip != 'true'
+    # The forge reads this with no implicit success(): a skipped `newest` (a
+    # draft, da-283i3) or a failed one would otherwise build the map.
+    if: needs.newest.result == 'success' && needs.newest.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -161,7 +178,7 @@ jobs:
 
   web:
     needs: newest
-    if: needs.newest.outputs.skip != 'true'
+    if: needs.newest.result == 'success' && needs.newest.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:

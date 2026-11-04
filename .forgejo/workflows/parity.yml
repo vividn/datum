@@ -28,8 +28,10 @@ on:
     # goldens matter.
     - cron: "17 6 * * 1"
   workflow_dispatch:
+  # A draft runs nothing, and a title or body edit tests only a head no run
+  # has (da-283i3: ci.yml's `on` says why `edited`).
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
     branches: [main, staging]
     paths:
       - "crates/datum-parity/**"
@@ -41,10 +43,11 @@ on:
       - ".forgejo/workflows/parity.yml"
 
 # A newer push to a PR cancels its superseded run instead of queueing another
-# lane-hour behind it; on main a run is never cancelled, as in ci.yml.
+# lane-hour behind it; on main a run is never cancelled, as in ci.yml. An
+# edit queues behind the run in progress instead, and takes its verdict.
 concurrency:
   group: parity-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event.action != 'edited' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -55,14 +58,26 @@ env:
 jobs:
   parity-runtime:
     name: Cross-runtime goldens vs. vividn/datum
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: An edit tests only a head no run has tested
+        if: github.event.action == 'edited'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.base_ref }}
+        run: scripts/ci-edited.sh parity.yml
+
       # As ci.yml: rust-toolchain.toml is the version, and the shared
       # /root/.cargo is written only under .ci-install.lock (da-nmf83).
       - name: Install rustup and the pinned toolchain
+        if: env.TRAIN != '1'
         run: |
           set -euo pipefail
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -74,6 +89,7 @@ jobs:
           rustc --version && cargo --version
 
       - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: env.TRAIN != '1'
         with:
           node-version: 22
 
@@ -85,12 +101,14 @@ jobs:
       # refused. A floating package manager against a pinned lockfile is a
       # pin with one end loose.
       - name: Install the pinned pnpm
+        if: env.TRAIN != '1'
         run: npm install --global pnpm@11
 
       # The pin is on this repository's v2 branch, which is private: the job's
       # token reads it, as actions/checkout does, through git's environment
       # rather than an argv anyone on the box can read.
       - name: Clone + install vividn/datum at the pinned SHA
+        if: env.TRAIN != '1'
         env:
           TOKEN: ${{ github.token }}
           SERVER: ${{ github.server_url }}
@@ -103,4 +121,5 @@ jobs:
           bash crates/datum-parity/scripts/setup_datum.sh
 
       - name: cargo test -p datum-parity --features parity-runtime
+        if: env.TRAIN != '1'
         run: cargo test --locked -p datum-parity --features parity-runtime -- --nocapture
