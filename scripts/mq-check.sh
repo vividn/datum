@@ -176,7 +176,9 @@ web_selection() {
     fi
   fi
   [ -e "$list" ] || : >"$list"
-  sort -u "$list" "$own" >"$sel/web.tests"
+  # A use:act changed: the double-outline sweep's files, live (da-isvl4).
+  [ -e "$sel/web/SWEEP" ] || : >"$sel/web/SWEEP"
+  sort -u "$list" "$own" "$sel/web/SWEEP" >"$sel/web.tests"
   echo "mq-check: web tests: $(wc -l <"$sel/web.tests") files"
   sed 's/^/  /' "$sel/web.tests"
 }
@@ -240,7 +242,8 @@ if [ -n "$web" ] || { [ -n "$integration" ] && [ -n "$rust" ] && [ -z "$full" ];
       (cd web && pnpm install --frozen-lockfile && pnpm run check)
       if [ -s "$sel/web.tests" ]; then
         cargo build -p datum-cli
-        (cd web && DATUM_TEST_PR=1 DATUM_TEST_ONLY="$sel/web.tests" pnpm test)
+        sweep=$([ -s "$sel/web/SWEEP" ] && echo 1 || true)
+        (cd web && DATUM_TEST_PR=1 DATUM_TEST_SWEEP="$sweep" DATUM_TEST_ONLY="$sel/web.tests" pnpm test)
       fi
     fi
   fi

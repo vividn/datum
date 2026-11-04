@@ -624,6 +624,10 @@ jobs:
             [ -s "$WEBTESTS/web.tests" ] || { echo "no web test reaches this change"; exit 0; }
             export DATUM_TEST_ONLY="$WEBTESTS/web.tests"
           fi
+          if [ -n "${WEBTESTS:-}" ] && [ -s "$WEBTESTS/SWEEP" ]; then
+            echo "the double-outline sweep runs live: this diff adds or takes out a use:act line (da-isvl4), the selection step names it"
+            export DATUM_TEST_SWEEP=1
+          fi
           n=$(( $(nproc) * 4 / 5 ))
           export DATUM_TEST_CONCURRENCY=$(( n < 4 ? n : 4 ))
           export DATUM_TEST_RED="$RUNNER_TEMP/web-red.json"
@@ -632,7 +636,10 @@ jobs:
           # A PR skips the staging-only tests, which name the reason in its
           # log; every push and dispatch runs them (da-v7y8x, vividn
           # 2026-10-19: «staging only»). Today that is the double-outline
-          # sweep, `support/taps.mjs`: 151 s over the six act-taps files.
+          # sweep, `support/taps.mjs`: 151 s over the act-taps files. A PR
+          # whose diff adds or takes out a `use:act` runs it all the same
+          # (da-isvl4): the selection writes SWEEP, and the step above sets
+          # DATUM_TEST_SWEEP=1, which taps.mjs reads over this.
           DATUM_TEST_PR: ${{ github.event_name == 'pull_request' && '1' || '' }}
           # Known flakes get ONE retry, logged as `RETRIED web/tests/<file>
           # (<bead>): …`; no other file is ever retried (da-8bmqe). An entry

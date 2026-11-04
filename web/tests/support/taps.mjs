@@ -38,7 +38,10 @@
 // 2026-10-19): 151 s over the six act-taps files, and a red on staging is
 // caught within the hour and reverted. ci.yml sets `DATUM_TEST_PR=1` on a
 // pull_request run, which skips them by name, map selection or not; the
-// rest of each file (a reset's restore) runs there too.
+// rest of each file (a reset's restore) runs there too. But a PR whose diff
+// adds or takes out a `use:act` line runs them live (da-isvl4, vividn
+// 2026-11-03): `testmap.mjs select` picks them and writes SWEEP, and ci.yml
+// then sets `DATUM_TEST_SWEEP=1`, which wins over `DATUM_TEST_PR`.
 
 import { before, after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,7 +53,7 @@ import { resolveLibAsSource } from './libhook.mjs';
 resolveLibAsSource();
 const { layersArgv } = await import('../../src/lib/panes.ts');
 
-const sweep = process.env.DATUM_TEST_PR === '1' && 'staging-only: the double-outline sweep runs on staging and main pushes, not on a PR (da-v7y8x)';
+const sweep = process.env.DATUM_TEST_PR === '1' && process.env.DATUM_TEST_SWEEP !== '1' && 'staging-only: the double-outline sweep runs on staging and main pushes, not on a PR (da-v7y8x)';
 
 /**
  * Every shape of field, one of them ignored (`run`, a point). `stats

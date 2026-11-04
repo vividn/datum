@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_BEHIND, READS_TREE, SYNC_TESTS, UPGRADE_TESTS, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
+import { MAX_BEHIND, READS_TREE, SYNC_TESTS, UPGRADE_TESTS, actLines, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
 
 const MAP = {
 	commit: 'abc123',
@@ -20,7 +20,7 @@ const MAP = {
 	always: []
 };
 const TESTS = Object.keys(MAP.files).sort();
-const run = (changed, { map = MAP, behind = 0, tests = TESTS } = {}) => choose({ map, behind, changed, tests });
+const run = (changed, { map = MAP, behind = 0, tests = TESTS, acts } = {}) => choose({ map, behind, changed, tests, acts });
 const picked = (r) => (assert.equal(r.full, undefined, `ran everything: ${r.full}`), [...r.picked.keys()].sort());
 
 test('a changed component runs exactly the test files that executed it', () => {
@@ -116,6 +116,34 @@ test('every test that starts a relay is a sync test, so a change to the sync sto
 		.filter((f) => f.endsWith('.test.mjs') && /\bstartRelay\(/.test(readFileSync(new URL(f, dir), 'utf8')))
 		.map((f) => `tests/${f}`);
 	assert.deepEqual(relaying.sort(), [...SYNC_TESTS].sort());
+});
+
+test('a use:act line added or taken out runs the double-outline sweep, live; any other change leaves it to staging (da-isvl4)', () => {
+	const diff = [
+		'diff --git a/web/src/lib/A.svelte b/web/src/lib/A.svelte',
+		'--- a/web/src/lib/A.svelte',
+		'+++ b/web/src/lib/A.svelte',
+		'@@ -3 +3 @@',
+		"-\t<button use:act={'run'} onclick={go}>Turn on sync</button>",
+		"+\t<button use:act={'open'} onclick={go}>Turn on sync</button>",
+		' \tunchanged use:act context'
+	].join('\n');
+	assert.equal(actLines(diff).length, 2);
+	assert.deepEqual(actLines(diff.replaceAll('use:act', 'onclick')), []);
+	const tests = [...TESTS, 'tests/act-taps-desktop.test.mjs', 'tests/act-taps-dialogs-menu.test.mjs', 'tests/act-guard.test.mjs'];
+	const map = { ...MAP, files: { ...MAP.files, 'tests/act-taps-desktop.test.mjs': [], 'tests/act-taps-dialogs-menu.test.mjs': [], 'tests/act-guard.test.mjs': [] } };
+	const sweep = ['tests/act-taps-desktop.test.mjs', 'tests/act-taps-dialogs-menu.test.mjs'];
+	const r = run(['web/src/lib/DayStrip.svelte'], { map, tests, acts: actLines(diff) });
+	assert.deepEqual(r.sweep, sweep);
+	assert.deepEqual(picked(r), [...sweep, 'tests/strip.test.mjs'].sort());
+	assert.match(r.picked.get(sweep[0]), /use:act/);
+	// Beside the whole suite it is still named, so the run sets the sweep live.
+	assert.deepEqual(run(['web/src/lib/DayStrip.svelte'], { map, tests, behind: MAX_BEHIND + 1, acts: actLines(diff) }).sweep, sweep);
+	assert.deepEqual(run(['web/src/lib/DayStrip.svelte'], { map: null, tests, acts: actLines(diff) }).sweep, sweep);
+	// No use:act line changed: the sweep's files are not picked, and it stays skipped.
+	const none = run(['web/src/lib/DayStrip.svelte'], { map, tests });
+	assert.deepEqual(none.sweep, []);
+	assert.deepEqual(picked(none), ['tests/strip.test.mjs']);
 });
 
 test('a web/src file no test reached runs everything', () => {

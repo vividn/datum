@@ -26,7 +26,9 @@
 // staging's full run tests what it does to the web. A migration selects
 // UPGRADE_TESTS, a change to datum.day's sync store SYNC_TESTS (da-33tn8),
 // and beside nothing else the web reads, only them, with no need of the map
-// (da-ako1r). Everything runs for any
+// (da-ako1r). A `use:act` line added or taken out under web/src runs the
+// double-outline sweep's files, the sweep live (da-isvl4), listed in
+// OUT_DIR/SWEEP, beside FULL too. Everything runs for any
 // other change that can reach the web, a `web/src/` or support file no set
 // holds, or a map missing or more than MAX_BEHIND commits behind the base.
 //
@@ -89,6 +91,10 @@ const REACHES = [
 	[MIGRATION, UPGRADE_TESTS, 'a migration'],
 	[SYNC, SYNC_TESTS, "datum.day's sync store"]
 ];
+/** The double-outline sweep's files (`tests/support/taps.mjs`): staging's alone, and a PR's that changes a `use:act` (da-isvl4). */
+export const SWEEP = /^tests\/act-taps-[^/]*\.test\.mjs$/;
+/** The lines a `git diff -U0` adds or takes out that hold a `use:act`. */
+export const actLines = (diff) => diff.split('\n').filter((l) => /^[+-][^+-].*use:act/.test(l));
 /**
  * A test that reads `src/` or the build as data: a `readFile`/`readdir`, sync
  * or not, naming one of them on its line. A test that reads the tree any other
@@ -98,13 +104,16 @@ export const READS_TREE = /\bread(?:File|dir)(?:Sync)?\([^\n]*\b(?:src|build|bui
 
 /**
  * Which test files a change runs: `{full: [reason, …]}`, or `{picked: Map(test
- * → the change that picked it), notes}`. `changed` is repo-relative,
- * `tests` every test file this tree has (`tests/x.test.mjs`), `behind` how
- * far the map's commit is behind the base, or null when it is no ancestor.
+ * → the change that picked it), notes}`, each with `sweep`, the sweep's files
+ * when `acts` (`actLines` of the diff under web/src) holds any. `changed` is
+ * repo-relative, `tests` every test file this tree has (`tests/x.test.mjs`),
+ * `behind` how far the map's commit is behind the base, or null when it is no
+ * ancestor.
  */
-export function choose({ map, behind, changed, tests, narrow }) {
+export function choose({ map, behind, changed, tests, narrow, acts = [] }) {
+	const sweep = acts.length ? tests.filter((t) => SWEEP.test(t)) : [];
 	const onlyReaching = changed.some((p) => REACHES.some(([re]) => re.test(p))) && changed.every((p) => CRATE.test(p) || NOT_WEB.test(p));
-	if (!map && !onlyReaching) return { full: ['no web test map'] };
+	if (!map && !onlyReaching) return { full: ['no web test map'], sweep };
 	const full = [];
 	if (!onlyReaching && behind === null) full.push(`the map's commit ${map.commit} is not an ancestor of the base`);
 	else if (!onlyReaching && behind > MAX_BEHIND) full.push(`the map is ${behind} commits behind the base (more than ${MAX_BEHIND})`);
@@ -112,6 +121,7 @@ export function choose({ map, behind, changed, tests, narrow }) {
 	const picked = new Map();
 	const pick = (test, why) => tests.includes(test) && !picked.has(test) && picked.set(test, why);
 	const notes = [];
+	for (const t of sweep) pick(t, 'a use:act line changed: the double-outline sweep (da-isvl4)');
 	for (const path of changed) {
 		const p = path.slice('web/'.length);
 		for (const [re, these, what] of REACHES) if (re.test(path)) for (const t of these) pick(t, `${path}: ${what}`);
@@ -127,11 +137,11 @@ export function choose({ map, behind, changed, tests, narrow }) {
 		else if (NOT_WEB.test(path)) notes.push(`${path}: no web test reads it`);
 		else full.push(`${path}: can reach the web (the CLI's build, a fixture, a kit, CI)`);
 	}
-	if (full.length) return { full };
-	if (onlyReaching) return { picked, notes };
+	if (full.length) return { full, sweep };
+	if (onlyReaching) return { picked, notes, sweep };
 	for (const t of map.always) pick(t, 'reads src/ or the build as data');
 	for (const t of tests) if (!(t in map.files)) pick(t, 'not in the map');
-	return { picked, notes };
+	return { picked, notes, sweep };
 }
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -364,10 +374,16 @@ export function inputs(mapPath, base) {
 
 function select(mapPath, base, out) {
 	mkdirSync(out, { recursive: true });
-	for (const f of ['FULL', 'web.tests']) rmSync(join(out, f), { force: true });
+	for (const f of ['FULL', 'web.tests', 'SWEEP']) rmSync(join(out, f), { force: true });
 	const { map, behind, changed, tests } = inputs(mapPath, base);
 	if (map) console.log(`web test map of ${map.commit}: ${Object.keys(map.files).length} test files`);
-	const { full, picked, notes } = choose({ map, behind, changed, tests });
+	const acts = actLines(git('diff', '-U0', '--no-renames', `${base}...HEAD`, '--', 'src'));
+	const { full, picked, notes, sweep } = choose({ map, behind, changed, tests, acts });
+	if (sweep.length) {
+		console.log('THE DOUBLE-OUTLINE SWEEP RUNS, live (da-isvl4): the diff adds or takes out a use:act line');
+		for (const l of acts) console.log(`  ${l.trim()}`);
+		writeFileSync(join(out, 'SWEEP'), sweep.map((t) => `${t}\n`).join(''));
+	}
 	if (full) {
 		console.log('FULL WEB SUITE:');
 		for (const r of full) console.log(`  ${r}`);
