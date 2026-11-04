@@ -271,6 +271,41 @@ fn retime_is_asked_which_reading() {
     assert_eq!(teas(&dir), second_stored());
 }
 
+/// da-605u9: retiming several entries asks about the first the new time
+/// makes ambiguous, not just the first entry: a tea the day before, where
+/// `-t 02:30` is one instant, then one on the fall-back night, named by a
+/// comma list and by `--field`.
+#[test]
+fn a_retime_of_several_asks_about_a_later_ambiguous_one() {
+    let dir = tempfile::tempdir().unwrap();
+    for day in ["2026-10-24", "2026-10-25"] {
+        let logged = run(&dir, &["occur", "tea", "-d", day, "-t", "01:00"])
+            .output()
+            .unwrap();
+        assert!(logged.status.success(), "{}", said(&logged));
+    }
+    let hids = rows(
+        &dir,
+        "SELECT hid, NULL FROM entries WHERE field = 'tea' ORDER BY at",
+    );
+    let list = format!("{},{}", hids[0].0, hids[1].0);
+    let before = teas(&dir);
+    for targets in [&[list.as_str()][..], &["--field", "tea"]] {
+        let out = run(&dir, &["retime", "-t", "02:30"])
+            .args(targets)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let err = said(&out);
+        assert_eq!(out.status.code(), Some(12), "{targets:?}: {err}");
+        assert!(
+            err.contains(&format!("1  {FIRST}")) && err.contains(&format!("2  {SECOND}")),
+            "{targets:?}: {err}"
+        );
+        assert_eq!(teas(&dir), before, "{targets:?}: nothing moved");
+    }
+}
+
 /// da-job98: an `at=` key is a wall time as `-t` is, and unanswered
 /// where no one can be asked, naming both as the key.
 #[test]
