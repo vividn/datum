@@ -37,6 +37,35 @@ a top-level `migrations/` folder.)
 4. **Flexible data model** — both freeform and schema-defined data must work without friction.
 5. **American spelling** in everything that lands in the repo: user-facing text, docs, help, error messages, commit messages, new code and comments — color, center, gray, behavior, practice (verb and noun), license (noun), canceled, organize, recognize, favorite (vividn, 2026-10-22). Input stays tolerant: `--colour` is read as `--color`, and `grey` is a color name.
 
+## Vocabulary
+
+datum's data words, defined here and in `docs/concepts.md` (one table, kept the same in both), and
+nowhere else. They hold in what a person reads (the interface, docs, the tutorial, what is drawn) and
+in the code, its comments and how we talk about it (vividn, 2026-11-04: «Particuarly in user facing
+things--interface, docs, tutorial, renders--but also in the data structures, codebase, comments and how
+we talk to each other»). Code that has not moved to a word yet says the old one until its sweep lands.
+
+| concept | the word | command | echo | old words (kept as aliases where typed) |
+|---|---|---|---|---|
+| what a field's entries are | **field kind** | `setup <field> --kind <k>`, `--as <k>` | | shape, verb, `--verb` |
+| a point in time | **moment** | `moment` | MOMENT | occur, occurrence, point |
+| a state turned on or off | **on/off** | `on`, `off` | ON/OFF | start, end, stop, state |
+| a stretch with a length | **period** | none: `on <field> <length>` makes one | PERIOD | block, span |
+| one state among several | **change** | `change` | CHANGE | switch, states |
+| an untimed, keyed entry | **record** | `record` | RECORD | add, card |
+| untimed data on a timed field, not a field kind | **remark** | `remark` | REMARK | note |
+| one written row of data | **entry** | | | record (noun), row, doc |
+| writing one | **log** | | | record (verb), write, enter |
+
+The command you type is the word the echo prints; a period alone has no command of its own.
+`change`, `record`, `remark`, `--kind` and `--as` do not run yet: until the CLI moves, type `switch`,
+`add`, `note` and `--verb`.
+An update's before-and-after is its **diff**, in its echo and in `--show json`, since `change` is
+to be a command. A command waiting for its field, in datum.day's bar, is a **pending command**.
+
+In code a field kind is `FieldKind`, never a bare `kind`: a layout's `kind` is a widget's. A remark is
+no field kind: it adds untimed data to a field that is otherwise timed. Every other «verb» goes too.
+
 ## Data model fundamentals
 
 ### Entry fields

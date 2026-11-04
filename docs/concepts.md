@@ -1,24 +1,51 @@
 # Concepts
 
+## Words
+
+datum's data words, defined here and in `AGENTS.md` (one table, kept the same in both). Code
+and help that have not moved to a word yet say the old one until they do.
+
+| concept | the word | command | echo | old words (kept as aliases where typed) |
+|---|---|---|---|---|
+| what a field's entries are | **field kind** | `setup <field> --kind <k>`, `--as <k>` | | shape, verb, `--verb` |
+| a point in time | **moment** | `moment` | MOMENT | occur, occurrence, point |
+| a state turned on or off | **on/off** | `on`, `off` | ON/OFF | start, end, stop, state |
+| a stretch with a length | **period** | none: `on <field> <length>` makes one | PERIOD | block, span |
+| one state among several | **change** | `change` | CHANGE | switch, states |
+| an untimed, keyed entry | **record** | `record` | RECORD | add, card |
+| untimed data on a timed field, not a field kind | **remark** | `remark` | REMARK | note |
+| one written row of data | **entry** | | | record (noun), row, doc |
+| writing one | **log** | | | record (verb), write, enter |
+
+The command you type is the word the echo prints; a period alone has no command of its own.
+`change`, `record`, `remark`, `--kind` and `--as` do not run yet: until the CLI moves, type `switch`,
+`add`, `note` and `--verb`.
+An update's before-and-after is its **diff**, in its echo and in `--show json`, since `change` is
+to be a command. A command waiting for its field, in datum.day's bar, is a **pending command**.
+
+A remark is no field kind: it adds untimed data to a field that is otherwise timed.
+
+## The model
+
 One-line summaries of the model:
 
-- **Entry** — one row. Has an id (ULID), a slug (`field:time`), a field,
-  a verb (storage classifier), an `at`, a `state` JSON value, an
-  optional ISO-8601 `dur`, an optional `following_state`, and arbitrarily
-  nested `extra_data`.
+- **Entry** — one written row of data. Has an id (ULID), a slug
+  (`field:time`), a field, a stored classifier, an `at`, a `state` JSON
+  value, an optional ISO-8601 `dur`, an optional `following_state`, and
+  arbitrarily nested `data`.
 - **Field** — what is being tracked: `mood`, `coffee`, `weight`,
   `project`. Freeform by default; can be schema-constrained via
   `datum setup <field>`.
-- **Action** — the user's command intent at the CLI: `add`, `moment`,
-  `start`, `stop`, `switch`. Action is parsed from argv, canonicalizes
-  the (state, dur, following_state) triple (`start` ⇒ state=true,
-  `stop` ⇒ state=false), and is then discarded — only the triple
+- **Command** — what is typed to log an entry: `add` (to be `record`),
+  `moment`, `on`, `off`, `switch` (to be `change`), and `note` (to be
+  `remark`). It is parsed from argv, canonicalizes
+  the (state, dur, following_state) triple (`on` ⇒ state=true,
+  `off` ⇒ state=false), and is then discarded — only the triple
   reaches storage.
-- **Verb** — the storage classifier derived from (state, dur,
-  following_state) by `derive_verb` (datum-parse::verb): `point`,
-  `switch`, `block`, `block-switch`, `point-switch`. The CLI verbs
-  `add`/`moment`/`start`/`stop`/`switch` map onto these via the truth
-  table in `crates/datum-parse/src/verb.rs`.
+- **Stored classifier** — derived from (state, dur, following_state) by
+  `derive_verb` (datum-parse::verb, still the `verb` column): `point`,
+  `switch`, `block`, `block-switch`, `point-switch`. The commands map
+  onto these via the truth table in `crates/datum-parse/src/verb.rs`.
 - **State** — derived from state-bearing entries (`Switch`,
   `BlockSwitch`, `PointSwitch`, `Block` with state=set, `Point` as a
   false-event marker): at any past instant we can reconstruct a
@@ -37,14 +64,14 @@ One-line summaries of the model:
   states a FIELD is in, carried by ordinary rows in the same `state`
   column every other value lands in — not flags on a row, not columns
   of their own. A field is ignored when its newest state-bearing row is
-  `IGNORED`, and the next `moment`/`start`/`switch`/`track` on it tracks
+  `IGNORED`, and the next `moment`/`on`/`switch`/`track` on it tracks
   it again; so tracked-ness is read off the entry log
   (`is_ignored_state` in `crates/datum-parse/src/shape.rs`,
   `Db::get_tracked_fields` in `crates/datum-core/src/db/state.rs`),
   which is what `datum fields` filters on, what `datum now` hides
   (`now -A` shows them again), and what `datum info` tallies as
   `tracked`/`ignored`. `TRACKED` is a different thing wearing the same
-  word: the OFF state `datum track` writes on a field of any verb,
+  word: the OFF state `datum track` writes on a field of any field kind,
   "declared, nothing logged yet", which reads as `false` everywhere but
   the printed text, where `tail` draws it in gray. It is not what makes
   a field tracked, and no row carrying it is ever required.
@@ -67,7 +94,7 @@ One-line summaries of the model:
 
 The command `datum track` and the tracked-ness above are not the same
 thing, and it is worth keeping them apart. The COMMAND declares a field:
-it writes the spec that gives the field its verb, its color and its
+it writes the spec that gives the field its field kind, its color and its
 states, and one row saying the declaration happened (`datum help
 track`). The STATE is the default every logged field already has. A
 field you never tracked is tracked; a field you tracked and then
