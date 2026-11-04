@@ -48,12 +48,11 @@ const FRESH_PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile:
 const rootNames = (page) =>
 	page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout));
 
-/** The widget kind the root tab in front shows, if it shows one: over its command pane, where it has one (da-h3jcu). */
+/** The widget kind the root tab in front shows, if it shows one. */
 const front = (page) =>
 	page.evaluate(() => {
 		const { tabs, active } = window.datum.layout.current().root;
-		const { content } = tabs[active];
-		return [tabs[active].layout, content.kind ?? content.children?.[0].tabs[0].content.kind];
+		return [tabs[active].layout, tabs[active].content.kind];
 	});
 
 /** The welcome widget's own text. */
@@ -64,8 +63,8 @@ const closeWelcome = (page) => page.getByRole('button', { name: 'Close welcome',
 
 describe('a first visit', () => {
 	for (const [what, device, collect] of [
-		['a desktop', FRESH_DESKTOP, ['dayview', 'tail', 'collect', 'nowview', 'stats', 'command']],
-		['a phone', FRESH_PHONE, ['tail', 'nowview', 'collect', 'command']]
+		['a desktop', FRESH_DESKTOP, ['dayview', 'tail', 'collect', 'nowview', 'stats']],
+		['a phone', FRESH_PHONE, ['tail', 'nowview', 'collect']]
 	])
 		test(`${what} opens welcome · setup · collect on welcome; setup is the setup widget; collect is the page it opened before`, async () => {
 			await withApp(async (app) => {
@@ -280,8 +279,8 @@ describe('a first visit', () => {
 describe('a device that has been here', () => {
 	test('keeps the tabs it had, and the tree under them', async () => {
 		for (const [device, name, shown] of [
-			[{ ...DESKTOP, desk: null }, 'main', ['dayview', 'tail', 'collect', 'nowview', 'stats', 'command']],
-			[{ ...FRESH_PHONE, home: 'mobile' }, 'mobile', ['tail', 'nowview', 'collect', 'command']]
+			[{ ...DESKTOP, desk: null }, 'main', ['dayview', 'tail', 'collect', 'nowview', 'stats']],
+			[{ ...FRESH_PHONE, home: 'mobile' }, 'mobile', ['tail', 'nowview', 'collect']]
 		])
 			await withApp(async ({ page }) => {
 				assert.deepEqual(await rootNames(page), [name]);

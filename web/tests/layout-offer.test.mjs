@@ -46,6 +46,7 @@ const FIRST_VISIT = [
 	['welcome', 'setup', 'collect'],
 	['welcome', 'setup', 'collect'],
 	['welcome', 'setup', 'collect', 'dayview'],
+	['welcome', 'setup', 'collect', 'dayview'],
 	['welcome', 'setup', 'collect', 'dayview']
 ];
 
@@ -128,7 +129,7 @@ describe('a new default is offered', () => {
 // `collect` before it, which had seen the four sentences before its own.
 describe('the new collect and the dayview tab, to a device already here', () => {
 	const BEFORE = ['welcome', 'setup', 'collect'];
-	const COLLECT = ['dayview', 'tail', 'collect', 'nowview', 'stats', 'command'];
+	const COLLECT = ['dayview', 'tail', 'collect', 'nowview', 'stats'];
 	const THEIRS = {
 		id: 'mine',
 		tabs: [{ id: 'mine-tab', content: { id: 'mine-w', kind: 'stats', settings: {} } }],
@@ -164,7 +165,7 @@ describe('the new collect and the dayview tab, to a device already here', () => 
 			await page.evaluate(() => window.datum.shell.open('collect'));
 			await until(() => titles(page), (t) => t.join() === COLLECT.join());
 			await page.evaluate(() => window.datum.shell.open('dayview'));
-			await until(() => titles(page), (t) => t.join() === 'dayview,command');
+			await until(() => titles(page), (t) => t.join() === 'dayview');
 		}, device);
 	});
 

@@ -13,14 +13,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
-import { PHONE as IPHONE, swipe, swipeOver } from './support/layout.mjs';
-
-/**
- * A phone as tall as the setup form needs for a bare stretch of its body to
- * swipe on, now that its tab closes on the command pane (da-h3jcu): an
- * iPhone 12 with Safari's bars gone.
- */
-const PHONE = { device: { ...IPHONE.device, viewport: { width: 390, height: 844 } } };
+import { PHONE, swipe, swipeOver } from './support/layout.mjs';
 import { FIELD_FORM, PANEL, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 

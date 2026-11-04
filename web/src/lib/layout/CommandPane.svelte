@@ -48,8 +48,9 @@
 
 	/**
 	 * One `redo --dry-run` for every pane asking the same at the same epoch:
-	 * every root tab keeps its command pane mounted (TabBody.svelte), and a
-	 * write would otherwise ask once per tab (da-h3jcu).
+	 * the bar's palette and every command pane a layout holds, each root tab
+	 * kept mounted behind the one in front (TabBody.svelte), would otherwise
+	 * each ask on a write (da-h3jcu).
 	 */
 	let latest: { key: string; answer: Promise<boolean> } | null = null;
 	const redoes = (argv: string[], epoch: number): Promise<boolean> => {

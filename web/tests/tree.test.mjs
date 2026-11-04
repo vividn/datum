@@ -930,13 +930,7 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 			// it is on (da-w6437), and the alias keeps the two apart.
 			const only = BUILTIN[name](false);
 			assert.equal(only.name, name);
-			// A first visit's tabs close on the command pane (da-h3jcu): the
-			// widget is the column's first pane, the commands its last.
-			const foot = only.root.tabs[0].content;
-			const tree = 'children' in foot ? foot.children : [only.root];
-			if ('children' in foot) assert.deepEqual(kinds(tree.at(-1)), ['command'], `the ${name} built-in has no command pane at its foot`);
-			assert.deepEqual(kinds(tree[0]), [kind], `the ${name} built-in is not the ${kind} widget`);
-			assert.ok(tree.length <= 2, `the ${name} built-in holds more than its widget and the commands`);
+			assert.deepEqual(kinds(only.root), [kind], `the ${name} built-in is the ${kind} widget alone`);
 		}
 	});
 

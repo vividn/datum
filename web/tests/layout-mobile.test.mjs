@@ -45,12 +45,9 @@ const onDayview = (width, height) => ({ ...phone(width, height), home: { names: 
 /** The whole-tab strip's pane, by its title: a root tab re-mints its ids. */
 const stripPane = (page) => page.locator('section.pane[data-title="dayview"]');
 
-/**
- * `collect`'s two trees, by their panes' titles: the phone's, and the shipped
- * desktop's (`desk: null`), each over the command pane at its foot (da-h3jcu).
- */
-const MOBILE_TREE = ['tail', 'nowview', 'collect', 'command'];
-const DESKTOP_TREE = ['dayview', 'tail', 'collect', 'nowview', 'stats', 'command'];
+/** `collect`'s two trees, by their panes' titles: the phone's, and the shipped desktop's (`desk: null`). */
+const MOBILE_TREE = ['tail', 'nowview', 'collect'];
+const DESKTOP_TREE = ['dayview', 'tail', 'collect', 'nowview', 'stats'];
 
 /** A desktop that has never opened the site. */
 const FRESH_DESKTOP = { ...DESKTOP, home: null };
@@ -88,14 +85,10 @@ const screen = (page) =>
 		// bar holds a CLI widget of its own, and it mounts on the first drag
 		// (da-ckw3) — which is now how the output is unfolded, since the `^`
 		// button went. A pane below the fold is not a pane on this screen.
-		// The tab in front's, too: every root tab stays mounted behind it, each
-		// closing on a command pane (da-h3jcu), whose id the first of them keeps.
-		panes: [...document.querySelectorAll('main section.pane')]
-			.filter((p) => !p.closest('.tab-body.behind'))
-			.map((p) => {
-				const { left, right, top, bottom } = p.getBoundingClientRect();
-				return { id: p.dataset.title === 'command' ? 'commands' : p.dataset.pane, left, right, top, bottom };
-			})
+		panes: [...document.querySelectorAll('main section.pane')].map((p) => {
+			const { left, right, top, bottom } = p.getBoundingClientRect();
+			return { id: p.dataset.pane, left, right, top, bottom };
+		})
 	}));
 
 const fieldsBar = (page) => pane(page, 'bar').locator('.bar').first();
@@ -166,7 +159,7 @@ describe('a fresh phone', () => {
 			await app.spyOnRunner();
 			assert.deepEqual(await rootNames(page), FIRST);
 			assert.deepEqual(await titles(page), MOBILE_TREE);
-			// The command pane at the foot (da-h3jcu), and the bar's output open over the input.
+			// No command pane: the bar's output stands where it was, open.
 			assert.equal(await page.locator('.prompt-bar .section.output').count(), 1, 'the output is not open');
 			// The root bar's own tab is not the dashboard's.
 			assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `mobile` is still tabbed');
@@ -248,10 +241,10 @@ describe('a fresh phone', () => {
 			assert.equal(b.today.of, Math.min(MAX_DAY, Math.round((b.inner - AXIS - SEAM) / 1.25)), `a ${b.today.of}px today in a ${b.inner}px box`);
 			assert.equal(await lineOnToday(page), true, 'the day line is not on today');
 
-			// The freeze is the widget's option, in its pane's menu (the tab
-			// holds the command pane too, da-h3jcu), and pinned the same holds:
-			// yesterday over today, the day line the seam between them.
-			await toggleOption(page, 'dayview-only', FREEZE);
+			// The freeze is the widget's option, in the root tab's menu on a tab
+			// of one widget, and pinned the same holds: yesterday over today, the
+			// day line the seam between them.
+			await toggleOption(page, null, FREEZE);
 			await strip.locator('.row.pinned').waitFor();
 			await page.waitForFunction(() => {
 				const stack = document.querySelector('.stack');
@@ -267,10 +260,9 @@ describe('a fresh phone', () => {
 	test('at 390×844 the rows are his 1/3, 1/4 and 5/12, each the full width', async () => {
 		await withApp(async ({ page }) => {
 			const { panes } = await screen(page);
-			// The splits' shares are of what the borders between the rows leave,
-			// over the command pane at the foot (da-h3jcu).
+			// The splits' shares are of what the borders between the rows leave.
 			const height = panes[2].bottom - panes[0].top - (panes[1].top - panes[0].bottom) * 2;
-			assert.deepEqual(panes.map((p) => p.id), ['tail', 'nowview', 'bar', 'commands']);
+			assert.deepEqual(panes.map((p) => p.id), ['tail', 'nowview', 'bar']);
 			[1 / 3, 1 / 4, 5 / 12].forEach((share, i) => {
 				const h = panes[i].bottom - panes[i].top;
 				assert.ok(Math.abs(h - height * share) <= 2, `${panes[i].id} is ${h}px of ${height}`);
@@ -288,18 +280,14 @@ describe('a fresh phone', () => {
 				// A phone opens with the output OPEN (da-mwp4m), which is the
 				// state this layout is drawn for now; folded gives the dashboard
 				// the output's room back. Both are asked: nothing is cut in
-				// either, the command pane at the foot (da-h3jcu) included.
+				// either, the room the commands pane took being the output's.
 				for (const folded of [false, true]) {
 					if (folded) await foldBar(page);
 					// `main` clips rather than scrolls, so the scroll metrics say
 					// nothing: each pane's own box against the screen does.
 					const s = await screen(page);
-					assert.equal(s.panes.length, 4);
-					// On the shortest phone, with the output open, the command pane at
-					// the foot (da-h3jcu) runs under the bar, said in its PR; folded, it
-					// is on the screen.
-					const cut = width === 412 && !folded ? ['commands'] : [];
-					const under = s.panes.filter((p) => p.bottom > s.prompt + 0.5 && !cut.includes(p.id)).map((p) => p.id);
+					assert.equal(s.panes.length, 3);
+					const under = s.panes.filter((p) => p.bottom > s.prompt + 0.5).map((p) => p.id);
 					for (const p of s.panes)
 						assert.ok(p.left >= 0 && p.right <= s.width, `${p.id} is off the side: ${p.left}…${p.right} of ${s.width}`);
 					assert.deepEqual(under, [], `${folded ? 'folded' : 'open'}, ${under.join(', ')} runs under the bottom bar`);

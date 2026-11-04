@@ -6,10 +6,9 @@
 // over the app's own bottom bar with no `input` pane drawing that bar a
 // second time.
 //
-// The commands pane at the foot went in da-mwp4m (vividn, 2026-10-27:
-// «remove the command widget on the collect tab») and came back in da-h3jcu
-// (vividn, 2026-11-03: «let's keep the command pane at the bottom … keep that
-// design unified across the app»), the bar's output still open over the input.
+// The commands pane at the foot went in da-mwp4m. vividn, 2026-10-27:
+// «remove the command widget on the collect tab (it can remain a widget in
+// general)»: its room is the bar's output section's, open over the input.
 //
 // The rest of the suite opens `main` on a tree it PINS (support/desk.mjs),
 // so this file is the one that asks for the shipped tree (`desk: null`).
@@ -54,44 +53,35 @@ const LEGIBLE = {
 	tail: { width: 200, height: 102 },
 	nowview: { width: 160, height: 108 },
 	stats: { width: 240, height: 140 },
-	bar: { width: 160, height: 49 },
-	commands: { width: 160, height: 72 }
+	bar: { width: 160, height: 49 }
 };
 
 /**
  * What his shares leave under its legible box, by screen, said in the PR and
  * not bent away (da-uzi5x): half of two thirds is 127px at a netbook's height.
- * The command pane at the foot (da-h3jcu, `COMMANDS_SHARE`) takes its 16% of
- * the tab from them: stats goes under at 1366×768 (146 of 154), and at
- * 1280×720 and a netbook's both stats and the commands themselves (80 and 72
- * of 86).
  */
-const SHORT = { '1366×768': ['stats'], '1280×720': ['stats', 'commands'], '1024×600': ['stats', 'commands'] };
+const SHORT = { '1024×600': ['stats'] };
 
 /** Every dashboard pane's box, and the top of the bottom bar. */
 const screen = (page) =>
 	page.evaluate(() => ({
 		prompt: document.querySelector('.prompt-bar').getBoundingClientRect().top,
-		// The tab in front's: every root tab stays mounted behind it, and each
-		// closes on a command pane (da-h3jcu), whose id the first of them keeps.
 		panes: Object.fromEntries(
-			[...document.querySelectorAll('main section.pane')]
-				.filter((p) => !p.closest('.tab-body.behind'))
-				.map((p) => {
-					const { left, right, top, bottom, width, height } = p.getBoundingClientRect();
-					return [p.dataset.title === 'command' ? 'commands' : p.dataset.pane, { left, right, top, bottom, width, height }];
-				})
+			[...document.querySelectorAll('main section.pane')].map((p) => {
+				const { left, right, top, bottom, width, height } = p.getBoundingClientRect();
+				return [p.dataset.pane, { left, right, top, bottom, width, height }];
+			})
 		)
 	}));
 
 describe('a fresh desktop', () => {
-	test('`collect` is `main`: dayview / tail | fields | nowview over stats, over the command pane', async () => {
+	test('`collect` is `main`: dayview / tail | fields | nowview over stats, and no command pane', async () => {
 		const { page, errors } = await fresh();
 		assert.deepEqual(
 			await page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout)),
 			['welcome', 'setup', 'collect', 'dayview']
 		);
-		assert.deepEqual(await titles(page), ['dayview', 'tail', 'collect', 'nowview', 'stats', 'command']);
+		assert.deepEqual(await titles(page), ['dayview', 'tail', 'collect', 'nowview', 'stats']);
 		// No `input`: the bottom bar is the command line, and one is enough.
 		assert.equal(await page.locator('main section.pane[data-title="input"]').count(), 0);
 		// Splits, not tabs: every pane is on the screen at once.
@@ -110,8 +100,6 @@ describe('a fresh desktop', () => {
 		assert.ok(p.tail.right <= p.bar.left + 1 && p.bar.right <= p.nowview.left + 1, 'the row is not tail, fields, nowview');
 		assert.ok(near(p.nowview.top, p.tail.top) && near(p.stats.bottom, p.tail.bottom), 'nowview over stats is not the row');
 		assert.ok(near(p.nowview.height, p.stats.height, 1) && p.nowview.bottom <= p.stats.top + 1, 'nowview is not half over stats');
-		// The command pane at the foot (da-h3jcu): the whole width, under the row.
-		assert.ok(p.commands.top >= p.tail.bottom && near(p.commands.left, p.tail.left) && near(p.commands.right, p.nowview.right), 'the commands are not the foot');
 		// Its room is the bar's output, open over the input.
 		assert.equal(await page.locator('.prompt-bar .section.output').count(), 1, 'the output section is not open');
 		assert.deepEqual(errors, []);

@@ -1,5 +1,6 @@
-// The command pane at the bottom of every tab, and the command the pills
-// make ready leading it (da-h3jcu).
+// The command pane, and the command the pills make ready leading it
+// (da-h3jcu). The pane is the palette the `❯` opens, not a pane of every
+// tab (da-jvwr8).
 //
 // vividn, 2026-11-03: «let's keep the command pane at the bottom with the
 // circular commands like we just discussed, keep that design unified across
@@ -129,8 +130,10 @@ test("another field's pill, or none, takes a state pill left on the bar, and the
 });
 
 /**
- * The command pane is every first-visit tab's last pane but welcome's: as
- * wide as the tab, and nothing under it.
+ * The command pane is the palette the `❯` slides up over the output, and no
+ * first-visit tab holds one of its own (da-jvwr8), vividn, 2026-11-04: «The
+ * command pallete comes out from the >, so a separate widget is redundant».
+ * The ready command leads the palette as it leads any command pane.
  */
 const TABS = { setup: 1, collect: 2, dayview: 3 };
 const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
@@ -139,26 +142,27 @@ for (const [device, options] of [
 	['a desktop', { ...DESKTOP, desk: null }],
 	['a phone', PHONE]
 ]) {
-	test(`on ${device}, setup, collect and dayview each close on the command pane`, async () => {
+	test(`on ${device}, setup, collect and dayview hold no command pane, and the ❯'s leads with the ready command`, async () => {
 		await withApp(
-			async ({ page }) => {
-				for (const [name, index] of Object.entries(TABS)) {
+			async (app) => {
+				const { page } = app;
+				for (const index of Object.values(TABS)) {
 					await page.evaluate((i) => window.datum.shell.activate(i), index);
-					// Every root tab stays mounted, clipped behind the one in front (TabBody.svelte): measure that one's.
-					const drawn = () =>
-						page.evaluate(() => {
-							const front = [...document.querySelectorAll('main section.pane')].filter((p) => !p.closest('.tab-body.behind'));
-							const box = (el) => el.getBoundingClientRect();
-							const foot = front.filter((p) => p.dataset.title === 'command');
-							return { panes: front.map(box), feet: foot.length, foot: foot[0] && box(foot[0]) };
-						});
-					// One command pane in front, once the tab left has gone behind.
-					const { panes, foot } = await until(drawn, (d) => d.feet === 1);
-					const left = Math.min(...panes.map((b) => b.left));
-					const right = Math.max(...panes.map((b) => b.right));
-					assert.ok(panes.every((b) => b.bottom <= foot.bottom + 0.5), `${name}: a pane under the commands`);
-					assert.ok(Math.abs(foot.left - left) < 1 && Math.abs(foot.right - right) < 1, `${name}: the commands are not the tab's width`);
+					await page.locator('main section.pane').first().waitFor();
+					assert.equal(await page.locator('main section.pane[data-title="command"]').count(), 0);
 				}
+				await page.evaluate((i) => window.datum.shell.activate(i), TABS.collect);
+				// The shipped tabs hold no CLI widget for `seedLines`' echo, and a
+				// quiet line tells the page of no new field: a reload reads it.
+				assert.equal((await app.runLine(SEED[0])).code, 0);
+				await app.reload();
+				await load(page, [field('coffee')]);
+				const palette = page.locator('.prompt-bar #bar-commands button.lead');
+				await page.waitForFunction(() => document.querySelector('.prompt-bar #bar-commands button.lead')?.dataset.ready === 'true');
+				assert.equal((await palette.textContent()).trim(), 'moment coffee');
+				await palette.click();
+				await until(() => entries(app), (e) => e.includes('coffee'));
+				assert.deepEqual(app.errors, []);
 			},
 			{ ...options, home: ON_COLLECT }
 		);

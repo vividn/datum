@@ -79,29 +79,6 @@ const legibly = (heights: number[]): number[] =>
 	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
- * The command pane's share of the tab it closes: its legible box (72,
- * registry.ts) and its 14px frame, 86px, of the 545px a 1366×768 laptop's
- * tab has between the root bar and the bottom bar, which leaves a 390×844
- * phone's, its output open, 98px.
- *
- * ONE share for every tree rather than `legibly`'s: over a tab holding one
- * widget, the day strip's legible box is the pane's own, so `legibly` would
- * hand the commands half the dayview tab. A shorter screen squeezes it, as
- * layout-desktop.test.mjs and layout-mobile.test.mjs say where.
- */
-export const COMMANDS_SHARE = 0.16;
-
-/**
- * `root` with the command pane at its foot (da-h3jcu), vividn, 2026-11-03:
- * «let's keep the command pane at the bottom with the circular commands like
- * we just discussed, keep that design unified across the app». Every tab a
- * first visit opens and every new one closes on it, so commands always live
- * in one place; the tree above keeps its own shares.
- */
-export const withCommands = (root: Pane): Pane =>
-	holder('foot', split('commands-foot', 'column', [1 - COMMANDS_SHARE, COMMANDS_SHARE], [root, widgetPane('commands', 'command')]));
-
-/**
  * The desktop: dayview over a row of tail | fields | nowview over stats.
  *
  * vividn, 2026-10-30 (da-uzi5x): «on desktop
@@ -115,16 +92,16 @@ export const withCommands = (root: Pane): Pane =>
  * its legible box at six screens. Nowview over stats at a half each is a
  * default of the bead's: he gave them no split.
  *
- * No `input` pane: the bottom bar is one. The commands pane da-mwp4m took
- * away (vividn, 2026-10-27: «remove the command widget on the collect tab»)
- * is back at the foot, as on every tab (`withCommands`, da-h3jcu); the bar's
- * output section keeps its room.
+ * No `input` pane: the bottom bar is one, and the room of the commands pane
+ * da-mwp4m took away is the bar's output section's (`--output-height`,
+ * routes/+layout.svelte). vividn, 2026-10-27: «remove the command widget on
+ * the collect tab (it can remain a widget in general)».
  */
 export const DEFAULT_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
 	name: 'default',
 	designedFor: 'desktop',
-	root: withCommands(holder(
+	root: holder(
 		'root',
 		split('main', 'column', [1 / 3, 2 / 3], [
 			strip(),
@@ -140,7 +117,7 @@ export const DEFAULT_LAYOUT: Layout = {
 				])
 			)
 		])
-	))
+	)
 };
 
 const tabbed = (id: string, kinds: string[]): Pane => ({
@@ -193,23 +170,24 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
  * this layout out. The tail keeps its smaller type (da-hkjp: «decrease
  * fontsize of tail a little bit»).
  *
- * vividn, 2026-10-27: «make the output section open by default … take up a
- * bit more room», so the bar's output section, above the input, has that
- * room (`--output-height`). The commands pane he removed then is back at the
- * foot (da-h3jcu), and the three rows share what is left.
+ * vividn, 2026-10-27: «remove the command widget on the collect tab (it can
+ * remain a widget in general)», and «make the output section open by default
+ * … take up a bit more room, basically where the command widget is now by
+ * default». So the bar's output section, above the input, has that room
+ * (`--output-height`), and the three rows share what is left.
  */
 export const MOBILE_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
 	name: 'mobile',
 	designedFor: 'mobile',
-	root: withCommands(holder(
+	root: holder(
 		'root',
 		split('main', 'column', [1 / 3, 1 / 4, 5 / 12], [
 			widgetPane('tail', 'tail', { type: 'small' }),
 			widgetPane('nowview', 'nowview'),
 			widgetPane('bar', 'widgetbar')
 		])
-	))
+	)
 };
 
 /** The phone breakpoint the old grid used (da-hkpd), kept as the one number. */
@@ -252,12 +230,6 @@ const only = (name: string, kind: string, settings: Record<string, unknown> = {}
 	root: widgetPane(`${name}-only`, kind, settings)
 });
 
-/** One widget over the command pane: a tab a first visit opens (da-h3jcu). */
-const over = (name: string, kind: string, settings: Record<string, unknown> = {}): Layout => ({
-	...only(name, kind, settings),
-	root: withCommands(widgetPane(`${name}-only`, kind, settings))
-});
-
 /** The built-ins by name; `main` is looked up through `builtinLayout`, since it depends on the device. */
 export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	main: (phone) => ({ ...defaultLayoutFor(phone), name: 'main' }),
@@ -266,7 +238,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	// as `main` is (da-lsjs9).
 	collect: (phone) => ({ ...(phone ? MOBILE_LAYOUT : defaultLayoutFor(false)), name: 'collect' }),
 	mobile: () => MOBILE_LAYOUT,
-	dayview: () => over('dayview', 'daystrip', { ...STRIP }),
+	dayview: () => only('dayview', 'daystrip', { ...STRIP }),
 	cli: () => only('cli', 'cli'),
 	nowview: () => only('nowview', 'nowview'),
 	tail: () => only('tail', 'tail'),
@@ -281,7 +253,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	welcome: () => only('welcome', 'welcome'),
 	backups: () => only('backups', 'backups'),
 	conflicts: () => only('conflicts', 'conflicts'),
-	setup: () => over('setup', 'setup'),
+	setup: () => only('setup', 'setup'),
 	input: () => only('input', 'input')
 };
 
@@ -350,7 +322,8 @@ const NEW_DEFAULTS: string[] = [
 	"On a phone, collect's day strip is a little taller again, so the sliver of yesterday shows on shorter phones too.",
 	"collect has no command pane now: the command line's output stands open above it, where the commands were. The commands are still a widget to add.",
 	"collect is laid out anew. On a phone: the tail, the nowview and the fields, one under the other, and no day strip. On a desktop: the day strip over the tail, the fields, and the nowview over the stats. And a new tab, dayview, is the day strip alone.",
-	'The commands are back at the bottom of collect, setup and dayview, the same pane on each: round buttons, and the command your pills make ready leading them, larger.'
+	'The commands are back at the bottom of collect, setup and dayview, the same pane on each: round buttons, and the command your pills make ready leading them, larger.',
+	'The command pane at the bottom of collect, setup and dayview is gone again: the commands open from the ❯ on the command line, the command your pills make ready leading them.'
 ];
 
 /** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */

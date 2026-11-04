@@ -103,8 +103,7 @@ import {
 	TUTORIAL_DB,
 	TUTORIAL_LAYOUTS,
 	builtinLayout,
-	newDefaults,
-	withCommands
+	newDefaults
 } from './defaults.js';
 import {
 	clearDraft,
@@ -925,12 +924,11 @@ export async function taken(name: string): Promise<boolean> {
 
 /**
  * «New layout» (da-1a9fh): a BLANK layout — one pane holding one empty
- * tab, the tree's own empty shape, over the command pane every tab closes
- * on (da-h3jcu) — saved under `name` as any layout is, then opened as a
- * root tab. The store refuses a name a save already has.
+ * tab, the tree's own empty shape — saved under `name` as any layout is,
+ * then opened as a root tab. The store refuses a name a save already has.
  */
 export async function openBlank(name: string): Promise<void> {
-	await saveAsSaved({ version: LAYOUT_VERSION, name, root: withCommands(newPane()) }, name);
+	await saveAsSaved({ version: LAYOUT_VERSION, name, root: newPane() }, name);
 	await open(name);
 }
 
@@ -1129,10 +1127,6 @@ export function closeModalPlace(): void {
 function soleWidget(l: Layout | null): Widget | null {
 	const tabs = l?.root.tabs ?? [];
 	const content = tabs.length === 1 ? migrated(tabs[0]).content : null;
-	// The command pane a tab closes on (`withCommands`, da-h3jcu) is the page's,
-	// which has one of its own: the modal draws the widget over it.
-	const [above, foot] = content && isSplit(content) && content.children.length === 2 ? content.children : [];
-	if (above && soleWidget({ ...l!, root: foot })?.kind === 'command') return soleWidget({ ...l!, root: above });
 	return content && isWidget(content) && KINDS[content.kind] ? content : null;
 }
 

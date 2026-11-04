@@ -1,6 +1,6 @@
 // Every button on a desktop page that holds a commands pane, tapped
-// (da-0o5z9). The shipped trees close on one again (da-h3jcu), but this
-// page is the one the sweep was written for. The how is `support/taps.mjs`.
+// (da-0o5z9): the shipped trees have had none since da-mwp4m, so no other
+// sweep reaches the commands widget. The how is `support/taps.mjs`.
 
 import { everyButton } from './support/taps.mjs';
 import { DESKTOP, along, widgetPane } from './support/layout.mjs';
