@@ -1,13 +1,17 @@
-// The offer of a new default (da-cr0w2).
+// A new default, tab by tab (da-cr0w2, da-3eegv).
 //
 // vividn, 2026-10-08: «Do we have a way to trigger a prompt to reset to
-// default views? I think we talked about that at one point, but I've never
-// seen it appear. Let's get that working. That way users can decide».
+// default views? … That way users can decide». And 2026-11-04: «tabs that
+// haven't been changed get the new layout automatically / new default tabs
+// that get added get added for everyone / tabs that have been closed stay
+// closed / tabs that have been changed prompt about the changes for their
+// particular tab / if there are multiple tbas that have potential new changes
+// one of th ebutton son the popup could be upddate all tabs».
 //
-// So a device that started on an earlier default is asked ONCE per new one
-// — what changed, then «Use the new layout», which is «Reset default
-// layouts», or «Keep mine» — and either answer is remembered. A device that
-// has never been here starts on the newest and is never asked.
+// So a device that started on an earlier default is asked only about a tab
+// it saved or drafted that the new default touches, with that tab's own
+// sentences, and each answer is remembered. A device that has never been here
+// starts on the newest and is never asked.
 //
 // The suite ships its OWN new defaults (`window.__datumNewDefaults`, as
 // support/desk.mjs pins a tree): datum's list is whatever it is today, and
@@ -23,21 +27,26 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const USE = 'Use the new layout';
+const UPDATE = 'Update';
+const ALL = 'Update all tabs';
 const KEEP = 'Keep mine';
-const FIRST = 'A first visit opens on a welcome tab.';
-const SECOND = 'The day view moved to the bottom.';
+const ON_COLLECT = 'collect moved its day strip.';
+const ON_WELCOME = 'welcome says more.';
 
-/** Where a device keeps how many new defaults it has seen (layout/draft.ts). */
+/** Where a device keeps how many new defaults it has seen, and the shipped tabs it was given (layout/draft.ts). */
 const SEEN = 'datum.layout.defaults.v1';
+const GIVEN = 'datum.layout.given.v1';
+
+/** collect's panes as datum ships it on a desktop. */
+const COLLECT = ['dayview', 'tail', 'collect', 'nowview', 'stats'];
 
 /**
  * The tabs a first visit opens, by how many new defaults datum had shipped
  * when it opened them.
  *
- * ⚑ WHEN THE LAST TEST FAILS the default moved. Append the sentence that
- * says what changed to `NEW_DEFAULTS` (layout/defaults.ts) — that is what
- * offers it to everybody already here — and its tabs to this list.
+ * ⚑ WHEN THE LAST TEST FAILS the default moved. Append an entry saying what
+ * changed, and the tabs it changed, to `NEW_DEFAULTS` (layout/defaults.ts) —
+ * that is what brings it to everybody already here — and its tabs to this list.
  */
 const FIRST_VISIT = [
 	['main'],
@@ -50,20 +59,53 @@ const FIRST_VISIT = [
 	['welcome', 'setup', 'collect', 'dayview']
 ];
 
-/** From the next load on, datum has shipped `news`. */
-const ship = (context, news) => context.addInitScript((news) => (window.__datumNewDefaults = news), news);
+/** A layout of a single stats pane: the reader's own version of `name`. */
+const theirs = (name) => ({
+	version: 1,
+	name,
+	root: {
+		id: `mine-${name}`,
+		tabs: [{ id: `mine-${name}-tab`, content: { id: `mine-${name}-w`, kind: 'stats', settings: {} } }],
+		active: 0,
+		bar: { edge: 'top', align: 'start' }
+	}
+});
 
 /**
- * A device that has been here before `news` shipped: its open list is
- * written (`home`) — `tail` alone, so a reset is something to see — and it
- * has never been offered anything.
+ * A device that has been here before `news` shipped and seen none of them:
+ * its open `tabs`, the shipped tabs it was `given` (none: a device from before
+ * the record), and its `drafts` of shipped layouts.
  */
-const returning = (news) => ({ ...DESKTOP, home: 'tail', prepare: (context) => ship(context, news) });
+const here = ({ news, tabs, given = null, drafts = [] }) => ({
+	...DESKTOP,
+	home: null,
+	desk: null,
+	prepare: (context) =>
+		context.addInitScript(
+			({ news, tabs, given, drafts, SEEN, GIVEN }) => {
+				window.__datumNewDefaults = news;
+				if (localStorage.getItem(SEEN) !== null) return;
+				localStorage.setItem(SEEN, '0');
+				localStorage.setItem('datum.layout.root.v1', JSON.stringify({ names: tabs, active: 0 }));
+				if (given) localStorage.setItem(GIVEN, JSON.stringify(given));
+				for (const draft of drafts) localStorage.setItem(`datum.layout.draft.v1.${draft.name}`, JSON.stringify(draft));
+			},
+			{ news, tabs, given, drafts, SEEN, GIVEN }
+		)
+});
 
 const rootNames = (page) =>
 	page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout));
 
 const seen = (page) => page.evaluate((key) => localStorage.getItem(key), SEEN);
+
+const saved = (page) =>
+	page.evaluate(async () => (await window.datum.layouts.listLayouts()).filter((l) => l.source === 'user').map((l) => l.name));
+
+const shows = async (page, name, panes) => {
+	await page.evaluate((name) => window.datum.shell.open(name), name);
+	await until(() => titles(page), (t) => t.join() === panes.join());
+};
 
 /**
  * The offer, if this load made one. The app is `ready`, so the boot is over
@@ -71,121 +113,121 @@ const seen = (page) => page.evaluate((key) => localStorage.getItem(key), SEEN);
  * dialog now is no dialog at all.
  */
 const offer = (page) => page.locator('dialog.confirm');
+const answer = (page, name) => offer(page).getByRole('button', { name, exact: true }).click();
 
-describe('a new default is offered', () => {
-	test('once, saying what changed; «Use the new layout» is the reset, and is remembered', async () => {
+describe('a new default, tab by tab', () => {
+	test('an unchanged tab takes it unasked, a new shipped tab is added at its place, a closed one stays closed, and the order is kept', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			const text = await offer(page).locator('p').innerText();
-			assert.ok(text.includes(`${FIRST} ${SECOND}`), text);
-			assert.deepEqual(await offer(page).getByRole('button').allInnerTexts(), [USE, KEEP]);
-			assert.deepEqual(await rootNames(page), ['tail']);
-
-			await offer(page).getByRole('button', { name: USE, exact: true }).click();
-			await until(() => rootNames(page), (names) => names.join() === FIRST_VISIT.at(-1).join());
+			await until(() => rootNames(page), (names) => names.join() === 'collect,dayview,welcome');
+			assert.equal(await offer(page).count(), 0);
+			assert.deepEqual(await titles(page), COLLECT);
+			assert.equal(await seen(page), '1');
 
 			await app.reload();
 			assert.equal(await offer(page).count(), 0);
-			assert.deepEqual(await rootNames(page), FIRST_VISIT.at(-1));
-		}, returning([FIRST, SECOND]));
+			assert.deepEqual(await rootNames(page), ['collect', 'dayview', 'welcome']);
+		}, here({ news: [{ tabs: ['collect', 'dayview'], text: ON_COLLECT }], tabs: ['collect', 'welcome'], given: ['welcome', 'setup', 'collect'] }));
 	});
 
-	for (const [how, answer] of [
-		[KEEP, (page) => offer(page).getByRole('button', { name: KEEP, exact: true }).click()],
+	test('a device with no record keeps a closed tab closed', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal(await offer(page).count(), 0);
+			assert.deepEqual(await rootNames(page), ['welcome', 'collect']);
+			assert.equal(await seen(page), '1');
+		}, here({ news: [{ tabs: ['setup', 'dayview'], text: ON_COLLECT }], tabs: ['welcome', 'collect'] }));
+	});
+
+	test('a changed tab is asked about with its own sentence; «Update» gives it the new layout and keeps theirs as «collect (mine)»', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const text = await offer(page).locator('p').innerText();
+			assert.ok(text.includes(ON_COLLECT) && !text.includes(ON_WELCOME), text);
+			assert.ok(text.includes('collect (mine)'), text);
+			assert.deepEqual(await offer(page).getByRole('button').allInnerTexts(), [UPDATE, KEEP]);
+			await answer(page, UPDATE);
+			// The tab a device that changed collect had never been given is added too.
+			await until(() => rootNames(page), (names) => names.join() === 'welcome,collect,dayview');
+			await shows(page, 'collect', COLLECT);
+			assert.ok((await saved(page)).includes('collect (mine)'));
+			await shows(page, 'collect (mine)', ['stats']);
+
+			await app.reload();
+			assert.equal(await offer(page).count(), 0);
+		}, here({
+			news: [{ tabs: ['collect'], text: ON_COLLECT }, { tabs: ['welcome'], text: ON_WELCOME }],
+			tabs: ['welcome', 'collect'],
+			given: ['welcome', 'setup', 'collect'],
+			drafts: [theirs('collect')]
+		}));
+	});
+
+	for (const [how, keep] of [
+		[KEEP, (page) => answer(page, KEEP)],
 		['Escape', (page) => page.keyboard.press('Escape')]
 	])
-		test(`${how} changes nothing, is remembered, and the next default is offered alone`, async () => {
+		test(`${how} keeps a collect it saved, and is not asked again`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
+				// Unchanged at first, so taken unasked; then saved, and the default shipped again.
+				await until(() => seen(page), (n) => n === '1');
+				await page.evaluate((l) => window.datum.layouts.saveLayout(l), theirs('collect'));
+				await page.evaluate((key) => localStorage.setItem(key, '0'), SEEN);
+				await app.reload();
 				await offer(page).waitFor();
-				await answer(page);
+				await keep(page);
 				await offer(page).waitFor({ state: 'detached' });
-				assert.deepEqual(await rootNames(page), ['tail']);
+				assert.deepEqual(await rootNames(page), ['collect']);
+				await until(() => titles(page), (t) => t.join() === 'stats');
 
 				await app.reload();
 				assert.equal(await offer(page).count(), 0);
-				assert.deepEqual(await rootNames(page), ['tail']);
-
-				await ship(page.context(), [FIRST, SECOND]);
-				await app.reload();
-				const text = await offer(page).locator('p').innerText();
-				assert.ok(text.includes(SECOND) && !text.includes(FIRST), text);
-			}, returning([FIRST]));
+				await until(() => titles(page), (t) => t.join() === 'stats');
+			}, here({ news: [{ tabs: ['collect'], text: ON_COLLECT }], tabs: ['collect'], given: FIRST_VISIT.at(-1) }));
 		});
+
+	test('three changed tabs offer «Update all tabs», which updates every one and asks nothing more', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const text = await offer(page).locator('p').innerText();
+			assert.ok(text.includes('setup'), text);
+			assert.deepEqual(await offer(page).getByRole('button').allInnerTexts(), [UPDATE, ALL, KEEP]);
+			await answer(page, ALL);
+			// Written once every tab is rebuilt.
+			await until(() => seen(page), (n) => n === '1');
+			assert.equal(await offer(page).count(), 0);
+			const mine = await saved(page);
+			for (const name of ['setup', 'collect', 'dayview']) assert.ok(mine.includes(`${name} (mine)`), mine.join());
+			await shows(page, 'collect', COLLECT);
+			await page.evaluate(() => window.datum.shell.open('setup'));
+			await until(() => titles(page), (t) => t.length > 0 && t.join() !== 'stats');
+		}, here({
+			news: [{ tabs: ['setup', 'collect', 'dayview'], text: ON_COLLECT }],
+			tabs: ['setup', 'collect', 'dayview'],
+			given: FIRST_VISIT.at(-1),
+			drafts: [theirs('setup'), theirs('collect'), theirs('dayview')]
+		}));
+	});
 
 	test('never to a device that starts on it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			assert.equal(await offer(page).count(), 0);
 			assert.equal(await seen(page), '2');
+			assert.deepEqual(JSON.parse(await page.evaluate((key) => localStorage.getItem(key), GIVEN)), FIRST_VISIT.at(-1));
 
 			await app.reload();
 			assert.equal(await offer(page).count(), 0);
-		}, { ...DESKTOP, home: null, prepare: (context) => ship(context, [FIRST, SECOND]) });
-	});
-});
-
-// The redesign of da-uzi5x, on datum's OWN list: a device that opened
-// `collect` before it, which had seen the four sentences before its own.
-describe('the new collect and the dayview tab, to a device already here', () => {
-	const BEFORE = ['welcome', 'setup', 'collect'];
-	const COLLECT = ['dayview', 'tail', 'collect', 'nowview', 'stats'];
-	const THEIRS = {
-		id: 'mine',
-		tabs: [{ id: 'mine-tab', content: { id: 'mine-w', kind: 'stats', settings: {} } }],
-		active: 0,
-		bar: { edge: 'top', align: 'start' }
-	};
-	const here = (context) =>
-		context.addInitScript(
-			([key, tabs]) => {
-				if (localStorage.getItem(key) !== null) return;
-				localStorage.setItem(key, '4');
-				localStorage.setItem('datum.layout.root.v1', JSON.stringify({ names: tabs, active: 2 }));
-			},
-			[SEEN, BEFORE]
-		);
-	const device = { ...DESKTOP, home: null, desk: null, prepare: here };
-	const answer = (page, name) => offer(page).getByRole('button', { name, exact: true }).click();
-
-	test('«Use the new layout» gives it the new trees and the tab, a collect it saved included', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			const text = await offer(page).locator('p').innerText();
-			assert.ok(text.includes('dayview') && text.includes('collect'), text);
-			// What «Keep mine» cannot keep, said before it is chosen (vremya on #1444).
-			assert.ok(text.includes('never changed'), text);
-			await answer(page, KEEP);
-			await offer(page).waitFor({ state: 'detached' });
-			await page.evaluate((root) => window.datum.layouts.saveLayout({ version: 1, name: 'collect', root }), THEIRS);
-			await page.evaluate((key) => localStorage.setItem(key, '4'), SEEN);
-			await app.reload();
-			await answer(page, USE);
-			await until(() => rootNames(page), (names) => names.join() === FIRST_VISIT.at(-1).join());
-			await page.evaluate(() => window.datum.shell.open('collect'));
-			await until(() => titles(page), (t) => t.join() === COLLECT.join());
-			await page.evaluate(() => window.datum.shell.open('dayview'));
-			await until(() => titles(page), (t) => t.join() === 'dayview');
-		}, device);
-	});
-
-	test('«Keep mine» keeps its tabs and the collect it saved; one it never changed follows the shipped tree', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await answer(page, KEEP);
-			await offer(page).waitFor({ state: 'detached' });
-			assert.deepEqual(await rootNames(page), BEFORE);
-			// ⚑ Nothing pins a tree no one changed: no save or draft stands
-			// between the name and defaults.ts, so this is what every shipped
-			// change to a tree has done, the offer or not.
-			assert.deepEqual(await titles(page), COLLECT);
-
-			await page.evaluate((root) => window.datum.layouts.saveLayout({ version: 1, name: 'collect', root }), THEIRS);
-			await app.reload();
-			assert.equal(await offer(page).count(), 0);
-			assert.deepEqual(await rootNames(page), BEFORE);
-			await until(() => titles(page), (t) => t.join() === 'stats');
-		}, device);
+		}, {
+			...DESKTOP,
+			home: null,
+			prepare: (context) =>
+				context.addInitScript(
+					(news) => (window.__datumNewDefaults = news),
+					[{ tabs: ['collect'], text: ON_COLLECT }, { tabs: ['welcome'], text: ON_WELCOME }]
+				)
+		});
 	});
 });
 

@@ -308,27 +308,54 @@ export function builtinLayout(name: string, phone: boolean): Layout | null {
 export const BUILTIN_NAMES = Object.keys(BUILTIN);
 
 /**
- * Each NEW DEFAULT datum has shipped since this list began, as the sentence
- * that says what changed (da-cr0w2). A device that started on an earlier
- * one is offered the new one once, with the sentences it has not seen
- * (`offerDefaults`, shell.ts), so a change to what a first visit opens —
- * its tabs (`fresh`, shell.ts) or a tree above — that a reader should hear
- * of is one sentence APPENDED here. Never edited or removed: a device
- * remembers how many it has seen.
+ * Each NEW DEFAULT datum has shipped since this list began (da-cr0w2): the
+ * sentence that says what changed, and the shipped tabs it changed (da-3eegv).
+ * A device that started on an earlier one takes each new one tab by tab
+ * (`offerDefaults`, shell.ts), and is asked only about a tab it changed, with
+ * that tab's sentences. So a change to what a first visit opens — its tabs
+ * (`fresh`, shell.ts) or a tree above — that a reader should hear of is one
+ * entry APPENDED here. Never edited or removed: a device remembers how many it
+ * has seen.
  */
-const NEW_DEFAULTS: string[] = [
-	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; setup, where you choose what to track; and collect, the page you log on.',
-	"On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room.",
-	"On a phone, collect's day strip is a little taller again, so the sliver of yesterday shows on shorter phones too.",
-	"collect has no command pane now: the command line's output stands open above it, where the commands were. The commands are still a widget to add.",
-	"collect is laid out anew. On a phone: the tail, the nowview and the fields, one under the other, and no day strip. On a desktop: the day strip over the tail, the fields, and the nowview over the stats. And a new tab, dayview, is the day strip alone.",
-	'The commands are back at the bottom of collect, setup and dayview, the same pane on each: round buttons, and the command your pills make ready leading them, larger.',
-	'The command pane at the bottom of collect, setup and dayview is gone again: the commands open from the ❯ on the command line, the command your pills make ready leading them.'
+export interface NewDefault {
+	tabs: string[];
+	text: string;
+}
+
+const NEW_DEFAULTS: NewDefault[] = [
+	{
+		tabs: ['welcome', 'setup', 'collect'],
+		text: 'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; setup, where you choose what to track; and collect, the page you log on.'
+	},
+	{
+		tabs: ['collect'],
+		text: "On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room."
+	},
+	{
+		tabs: ['collect'],
+		text: "On a phone, collect's day strip is a little taller again, so the sliver of yesterday shows on shorter phones too."
+	},
+	{
+		tabs: ['collect'],
+		text: "collect has no command pane now: the command line's output stands open above it, where the commands were. The commands are still a widget to add."
+	},
+	{
+		tabs: ['collect', 'dayview'],
+		text: "collect is laid out anew. On a phone: the tail, the nowview and the fields, one under the other, and no day strip. On a desktop: the day strip over the tail, the fields, and the nowview over the stats. And a new tab, dayview, is the day strip alone."
+	},
+	{
+		tabs: ['collect', 'setup', 'dayview'],
+		text: 'The commands are back at the bottom of collect, setup and dayview, the same pane on each: round buttons, and the command your pills make ready leading them, larger.'
+	},
+	{
+		tabs: ['collect', 'setup', 'dayview'],
+		text: 'The command pane at the bottom of collect, setup and dayview is gone again: the commands open from the ❯ on the command line, the command your pills make ready leading them.'
+	}
 ];
 
 /** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */
-export const newDefaults = (): string[] =>
-	(globalThis as { __datumNewDefaults?: string[] }).__datumNewDefaults ?? NEW_DEFAULTS;
+export const newDefaults = (): NewDefault[] =>
+	(globalThis as { __datumNewDefaults?: NewDefault[] }).__datumNewDefaults ?? NEW_DEFAULTS;
 
 // ---- the DEBUG database (da-o2wm8) -------------------------------------
 //

@@ -303,23 +303,19 @@ describe('a device that has been here', () => {
 	});
 
 	// Against datum's OWN list of new defaults (layout/defaults.ts), which
-	// the harness otherwise empties for a device with a stored list: this
-	// is the sentence that tells the early users' devices.
-	test('is offered the new tabs once, in words that name them, and «Use the new layout» opens them', async () => {
+	// the harness otherwise empties for a device with a stored list. A device
+	// from before the record of shipped tabs it was given counts as given every
+	// tab shipped now (da-3eegv, vividn: «sure»), so an early device on `main`
+	// alone is asked nothing and keeps it: the tabs are in the `+`.
+	test('a device from before the welcome tab keeps its own tabs, unasked', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			const offer = page.locator('dialog.confirm');
-			const text = await offer.locator('p').innerText();
-			for (const name of FIRST) assert.ok(text.includes(name), `the offer does not name ${name}: ${text}`);
+			assert.equal(await page.locator('dialog.confirm').count(), 0);
 			assert.deepEqual(await rootNames(page), ['main']);
 
-			await offer.getByRole('button', { name: 'Use the new layout', exact: true }).click();
-			await until(() => rootNames(page), (names) => names.join() === FIRST.join());
-			assert.deepEqual(await front(page), ['welcome', 'welcome']);
-
 			await app.reload();
-			assert.equal(await offer.count(), 0);
-			assert.deepEqual(await rootNames(page), FIRST);
+			assert.equal(await page.locator('dialog.confirm').count(), 0);
+			assert.deepEqual(await rootNames(page), ['main']);
 		}, {
 			...DESKTOP,
 			home: null,

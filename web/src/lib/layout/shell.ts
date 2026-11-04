@@ -83,7 +83,7 @@
 
 import { derived, get, writable } from 'svelte/store';
 import { onExternalChange } from '#lib/changes.ts';
-import { confirm } from '#lib/confirm.ts';
+import { choose } from '#lib/confirm.ts';
 import { currentDb, DEFAULT_DB } from '#lib/database.ts';
 import { initDb } from '#lib/db.ts';
 import { installTutorialKit, loudly, settingUpQuietly, setUpTutorial } from '#lib/tutorial.ts';
@@ -109,12 +109,14 @@ import {
 	clearDraft,
 	isModified,
 	loadDefaults,
+	loadGiven,
 	loadDevice,
 	loadDraft,
 	loadRoot,
 	loadShell,
 	loadWrap,
 	saveDefaults,
+	saveGiven,
 	saveDevice,
 	saveDraft,
 	saveRoot,
@@ -771,7 +773,7 @@ export function boot(): Promise<void> {
 		// The offer is not the tutorial's: it resets the layouts datum ships and the
 		// tabs to a first visit's, which is the reader's own database's business,
 		// and the tutorial's tabs are its lessons whatever datum ships.
-		void (db === TUTORIAL_DB ? Promise.resolve() : offerDefaults(stored === null))
+		void (db === TUTORIAL_DB ? Promise.resolve() : offerDefaults(stored))
 			.then(() => import('./engine.js'))
 			.then(({ followZone }) => followZone());
 	})());
@@ -1314,6 +1316,7 @@ export async function resetDefaults(): Promise<void> {
 	const saved = new Set((await listLayouts()).filter((l) => l.source === 'user').map((l) => l.name));
 	// A first visit decides which device this is, so this does again (da-lsjs9).
 	saveDevice(null);
+	saveGiven(fresh().names);
 	for (const name of BUILTIN_NAMES) {
 		clearDraft(name);
 		if (saved.has(name)) await deleteLayout(name);
@@ -1346,34 +1349,81 @@ export async function resetTutorial(): Promise<void> {
 }
 
 /**
- * The one prompt that offers a reset by itself (da-cr0w2). vividn: «Do we
- * have a way to trigger a prompt to reset to default views? … That way
- * users can decide».
+ * A new default, tab by tab (da-cr0w2, da-3eegv). vividn, 2026-11-04: «tabs
+ * that haven't been changed get the new layout automatically / new default
+ * tabs that get added get added for everyone / tabs that have been closed stay
+ * closed / tabs that have been changed prompt about the changes for their
+ * particular tab / if there are multiple tbas that have potential new changes
+ * one of th ebutton son the popup could be upddate all tabs».
  *
- * A device whose open list was written under an earlier default is asked
- * ONCE per new one, with what changed, and either answer — Escape is «Keep
- * mine» — is remembered, so that default is never offered here again. A
- * `fresh` device starts on the newest and is only marked as having it.
+ * A tab with no save or draft draws its shipped tree already, so it needs
+ * nothing. A shipped tab this device was never given (`loadGiven`) is added at
+ * its shipped place; one it was given and has not open stays closed. A tab
+ * the new defaults touch that the reader saved or drafted is asked about, its
+ * own sentences; «Update» keeps theirs as «<tab> (mine)». The answers are
+ * remembered with the count of defaults seen, so none is asked twice. A device
+ * with no list (`stored` null) starts on the newest.
  */
-async function offerDefaults(fresh: boolean): Promise<void> {
+async function offerDefaults(stored: RootState | null): Promise<void> {
 	const news = newDefaults();
-	const seen = fresh ? news.length : loadDefaults();
-	if (fresh) saveDefaults(seen);
-	if (seen >= news.length) return;
-	const yes = await confirm(
-		`datum has a new default layout. ${news.slice(seen).join(' ')}\n\n` +
-			'Using it puts every layout that ships with datum back the way it comes, one you changed included, and the tabs at the top of the page back to the ones a first visit opens. ' +
-			'Layouts you saved under a name of your own, and layouts a kit installed, are not touched.\n\n' +
-			'«Keep mine» keeps your tabs and the layouts you changed or saved, and this is not asked again. A layout that ships with datum and that you never changed draws the new way anyway. ' +
-			'«Reset default layouts» in the ⚙ menu does what using it does, at any time.',
-		'Use the new layout',
-		'',
-		'Keep mine'
+	const shipped = fresh().names;
+	if (!stored) {
+		saveDefaults(news.length);
+		saveGiven(shipped);
+		return;
+	}
+	// A device from before the record has been given every tab shipped now (vividn: «sure»).
+	const given = new Set(loadGiven() ?? shipped);
+	const open = [...new Set(stored.names.map(canonicalName))];
+	const names = [...open];
+	shipped.forEach((name, i) => {
+		if (given.has(name) || names.includes(name)) return;
+		const before = shipped.slice(0, i).findLast((n) => names.includes(n));
+		names.splice(before ? names.indexOf(before) + 1 : 0, 0, name);
+	});
+	const pending = news.slice(loadDefaults());
+	const saved = new Set(
+		pending.length ? (await listLayouts()).filter((l) => l.source === 'user').map((l) => l.name) : []
 	);
-	// Remembered once it is done: a reset that failed is offered again.
-	if (yes) await resetDefaults();
+	const about = (name: string) => pending.filter((n) => n.tabs.map(canonicalName).includes(name));
+	const changed = names.filter(
+		(name) => BUILTIN_NAMES.includes(name) && about(name).length > 0 && (saved.has(name) || loadDraft(name))
+	);
+	const updated: string[] = [];
+	let all = false;
+	for (const [i, name] of changed.entries()) {
+		let aside = `${name} (mine)`;
+		for (let n = 2; saved.has(aside); n++) aside = `${name} (mine ${n})`;
+		const answer: string | null = all
+			? UPDATE
+			: await choose(
+					`The ${name} tab has a new default layout. ${about(name).map((n) => n.text).join(' ')}\n\n` +
+						`You changed this tab. «${UPDATE}» gives it the new layout and keeps yours as the layout «${aside}», which the + opens. ` +
+						'«Keep mine» keeps yours here, and this is not asked again.',
+					i < changed.length - 1 ? [UPDATE, UPDATE_ALL] : [UPDATE],
+					'Keep mine',
+					'run'
+				);
+		if (!answer) continue;
+		if (answer === UPDATE_ALL) all = true;
+		await saveLayout({ ...(loadDraft(name) ?? (await loadLayout(name))), name: aside });
+		saved.add(aside);
+		if (saved.has(name)) await deleteLayout(name);
+		updated.push(name);
+	}
+	// Remembered once it is done: a default that failed is offered again.
+	if (updated.length || names.length > open.length) {
+		const root = get(layout).root;
+		const front = root.tabs[root.active]?.layout ?? '';
+		for (const name of updated) clearDraft(name);
+		await fillRoot(withShipped({ names, active: Math.max(0, names.indexOf(front)) }));
+	}
+	saveGiven(shipped);
 	saveDefaults(news.length);
 }
+
+const UPDATE = 'Update';
+const UPDATE_ALL = 'Update all tabs';
 
 /**
  * `Reset widget` (da-7ymx): the act that puts the kind's declared defaults

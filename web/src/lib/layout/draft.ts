@@ -76,6 +76,22 @@ export const loadDefaults = (): number => Number(get(DEFAULTS)) || 0;
 export const saveDefaults = (seen: number) => set(DEFAULTS, String(seen));
 
 /**
+ * The shipped tabs this device has been given (da-3eegv): written at a first
+ * visit and at every new default, so a shipped tab not in it is new and one
+ * in it that is not open was closed — null where nothing has written it.
+ */
+const GIVEN = `${PREFIX}given.v1`;
+export function loadGiven(): string[] | null {
+	try {
+		const names = JSON.parse(get(GIVEN) ?? 'null');
+		return Array.isArray(names) ? names.filter((n) => typeof n === 'string') : null;
+	} catch {
+		return null;
+	}
+}
+export const saveGiven = (names: string[]) => set(GIVEN, JSON.stringify(names));
+
+/**
  * Which of a shipped layout's two trees this device draws, `mobile` or
  * `desktop` (da-lsjs9) — null where it has not decided (`device`, shell.ts).
  */
