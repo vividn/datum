@@ -33,10 +33,11 @@ function scratch({ sums = (asset) => sha256(binary(asset)) } = {}) {
 	mkdirSync(release);
 	mkdirSync(bin);
 	mkdirSync(join(root, 'home'));
-	for (const asset of ASSETS) writeFileSync(join(release, asset), binary(asset));
+	// Each binary under its build's name, as release/publish.sh uploads it.
+	for (const asset of ASSETS) writeFileSync(join(release, `${asset}-0123abc`), binary(asset));
 	const lines = ASSETS.map((asset) => [sums(asset), asset]).filter(([sum]) => sum);
-	writeFileSync(join(release, 'SHA256SUMS'), lines.map(([sum, asset]) => `${sum}  ${asset}\n`).join(''));
-	writeFileSync(join(release, 'SHA256SUMS.minisig'), 'a signature\n');
+	writeFileSync(join(release, 'SHA256SUMS'), lines.map(([sum, asset]) => `${sum}  ${asset}-0123abc\n`).join(''));
+	writeFileSync(join(release, 'SHA256SUMS-0123abc.minisig'), 'a signature\n');
 	writeFileSync(join(bin, 'uname'), '#!/bin/sh\ncase "$1" in -s) echo "$STUB_S" ;; -m) echo "$STUB_M" ;; esac\n');
 	chmodSync(join(bin, 'uname'), 0o755);
 	const signer = join(root, 'signer');
@@ -127,6 +128,16 @@ describe('install.sh refuses a binary SHA256SUMS does not vouch for', () => {
 		assert.equal(readFileSync(old, 'utf8'), 'the old one');
 	});
 
+	test('a release from before build names, listing only the fixed names, installs', () => {
+		const box = scratch();
+		for (const asset of ASSETS) writeFileSync(join(box.release, asset), binary(asset));
+		writeFileSync(join(box.release, 'SHA256SUMS'), ASSETS.map((asset) => `${sha256(binary(asset))}  ${asset}\n`).join(''));
+		writeFileSync(join(box.release, 'SHA256SUMS.minisig'), 'a signature\n');
+		const run = install(box, 'Linux', 'x86_64');
+		assert.equal(run.status, 0, run.stderr);
+		assert.equal(readFileSync(run.installed, 'utf8'), binary('datum-x86_64-linux'));
+	});
+
 	test('a binary SHA256SUMS does not list installs nothing', () => {
 		const box = scratch({ sums: (asset) => (asset === 'datum-aarch64-macos' ? null : sha256(binary(asset))) });
 		const run = install(box, 'Darwin', 'arm64');
@@ -162,10 +173,10 @@ describe('install.sh checks SHA256SUMS is signed by the release key, with minisi
 
 	test('a release with no signature installs nothing', () => {
 		const box = scratch();
-		rmSync(join(box.release, 'SHA256SUMS.minisig'));
+		rmSync(join(box.release, 'SHA256SUMS-0123abc.minisig'));
 		const run = install(box, 'Linux', 'x86_64');
 		assert.notEqual(run.status, 0);
-		assert.match(run.stderr, /\S+\/SHA256SUMS\.minisig\b/, 'it names the signature it could not download');
+		assert.match(run.stderr, /\S+\/SHA256SUMS-0123abc\.minisig\b/, "it names the build's signature it could not download");
 		assert.equal(existsSync(run.installed), false);
 	});
 
@@ -173,7 +184,189 @@ describe('install.sh checks SHA256SUMS is signed by the release key, with minisi
 		const box = scratch();
 		const run = install(box, 'Linux', 'x86_64', { PATH: `${box.bin}:${process.env.PATH}` });
 		assert.equal(run.status, 0, run.stderr);
-		assert.ok(run.stderr.includes(`minisign -Vm SHA256SUMS -P ${KEY}`), `the command to check it by hand: ${run.stderr}`);
+		assert.ok(run.stderr.includes(`minisign -Vm SHA256SUMS -x SHA256SUMS-0123abc.minisig -P ${KEY}`), `the command to check it by hand: ${run.stderr}`);
 		assert.equal(existsSync(run.installed), true);
+	});
+});
+
+// release/publish.sh (da-mzhau) against a fake `gh` holding the release in a
+// directory: each uploaded asset a file under release/, which install.sh
+// reads, and assets.json each asset's id, state and name, as GitHub lists
+// them. The upload FAKE_GH_CUT names is cut short as GitHub's was: gh deletes
+// the asset it clobbers, and the new one is left a hidden `starter`, which a
+// later upload of that name fails on. minisign is faked too: a signature is
+// the hash of what it signs, so a SHA256SUMS beside another's signature is
+// refused.
+const publishScript = fileURLToPath(new URL('../../release/publish.sh', import.meta.url));
+const fakeGh = `#!${process.execPath}
+const fs = require('fs'), path = require('path');
+const dir = process.env.FAKE_GH, file = path.join(dir, 'assets.json'), release = path.join(dir, 'release');
+const state = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
+const save = () => fs.writeFileSync(file, JSON.stringify(state));
+const exit = (code, why) => { if (why) console.error(why); process.exit(code); };
+const args = process.argv.slice(2);
+if (args[0] === 'api') {
+  const at = args.find((a, i) => i > 0 && !a.startsWith('-') && !['-X', '--jq'].includes(args[i - 1]));
+  if (at.endsWith('/git/ref/tags/latest')) exit(0);
+  if (!state) exit(1, 'HTTP 404');
+  if (args.includes('DELETE')) {
+    const i = state.assets.findIndex((a) => a.id === Number(at.split('/').pop()));
+    if (i < 0) exit(1, 'HTTP 404');
+    if (state.assets[i].state === 'uploaded') fs.rmSync(path.join(release, state.assets[i].name));
+    state.assets.splice(i, 1);
+    save();
+    exit(0);
+  }
+  if (at.endsWith('/releases/tags/latest')) exit(0, void state.assets.forEach((a) => console.log([a.id, a.state, a.name].join('\\t'))));
+} else if (args[0] === 'release' && ['view', 'edit'].includes(args[1])) {
+  exit(state ? 0 : 1);
+} else if (args[0] === 'release' && ['create', 'upload'].includes(args[1])) {
+  if (args[1] === 'create' ? state : !state) exit(1, 'fake gh: ' + args.join(' '));
+  const now = state ?? { next: 1, assets: [] };
+  fs.mkdirSync(release, { recursive: true });
+  for (const f of args.slice(3)) {
+    if (f.startsWith('--')) break;
+    const name = path.basename(f);
+    const had = now.assets.findIndex((a) => a.name === name);
+    if (had >= 0 && now.assets[had].state !== 'uploaded') exit(1, 'HTTP 422: ' + name + ' already_exists');
+    if (had >= 0) {
+      fs.rmSync(path.join(release, name));
+      now.assets.splice(had, 1);
+    }
+    const id = now.next++;
+    if (name === process.env.FAKE_GH_CUT) {
+      now.assets.push({ id, name, state: 'starter' });
+      fs.writeFileSync(file, JSON.stringify(now));
+      exit(1, 'cut short: ' + name);
+    }
+    fs.copyFileSync(f, path.join(release, name));
+    now.assets.push({ id, name, state: 'uploaded' });
+    fs.writeFileSync(file, JSON.stringify(now));
+  }
+  exit(0);
+}
+exit(1, 'fake gh: ' + args.join(' '));
+`;
+const fakeMinisign = `#!${process.execPath}
+const fs = require('fs'), crypto = require('crypto');
+const a = process.argv.slice(2), val = (f) => a[a.indexOf(f) + 1];
+const signed = 'signed ' + crypto.createHash('sha256').update(fs.readFileSync(val('-m'))).digest('hex') + '\\n';
+if (a[0] === '-S') process.exit(void fs.writeFileSync(val('-x'), signed) ?? 0);
+const sig = val('-m') + '.minisig';
+process.exit(fs.existsSync(sig) && fs.readFileSync(sig, 'utf8') === signed ? 0 : 1);
+`;
+
+function releaseBox() {
+	const box = scratch();
+	box.fake = join(box.root, 'github');
+	box.release = join(box.fake, 'release');
+	mkdirSync(box.fake);
+	writeFileSync(join(box.bin, 'gh'), fakeGh);
+	writeFileSync(join(box.signer, 'minisign'), fakeMinisign);
+	chmodSync(join(box.bin, 'gh'), 0o755);
+	chmodSync(join(box.signer, 'minisign'), 0o755);
+	return box;
+}
+
+// The binaries `sha` built, published to the box's release.
+function publish(box, sha, env = {}) {
+	const dist = mkdtempSync(join(box.root, 'dist-'));
+	for (const asset of ASSETS) writeFileSync(join(dist, asset), built(sha, asset));
+	return spawnSync('bash', [publishScript, dist], {
+		encoding: 'utf8',
+		env: {
+			PATH: `${box.bin}:${box.signer}:${process.env.PATH}`,
+			FAKE_GH: box.fake,
+			GH_REPO: 'vividn/datum',
+			GITHUB_SHA: sha,
+			MINISIGN_SECRET_KEY: 'a key',
+			...env
+		}
+	});
+}
+const built = (sha, asset = 'datum-x86_64-linux') => binary(`${asset} ${sha.slice(0, 7)}`);
+const assetsOf = (box) => JSON.parse(readFileSync(join(box.fake, 'assets.json'), 'utf8')).assets;
+const [A, B, C, D] = ['a', 'b', 'c', 'd'].map((c) => c.repeat(40));
+
+describe('release/publish.sh moves installs to a build only once it is all up', () => {
+	const installs = (box) => {
+		const run = install(box, 'Linux', 'x86_64');
+		assert.equal(run.status, 0, run.stderr);
+		return readFileSync(run.installed, 'utf8');
+	};
+	const published = (box, sha, env) => {
+		const run = publish(box, sha, env);
+		assert.equal(run.status, 0, run.stdout + run.stderr);
+		return run;
+	};
+
+	test('a full run moves installs to its build, and the fixed names a datum before build names reads', () => {
+		const box = releaseBox();
+		for (const sha of [A, B]) {
+			published(box, sha);
+			assert.equal(installs(box), built(sha));
+		}
+		assert.equal(readFileSync(join(box.release, 'datum-x86_64-linux'), 'utf8'), built(B));
+		assert.match(readFileSync(join(box.release, 'SHA256SUMS'), 'utf8'), /^\S+ {2}datum-x86_64-linux$/m);
+	});
+
+	test('a run cut short uploading its binaries leaves the previous build installable', () => {
+		const box = releaseBox();
+		published(box, A);
+		const run = publish(box, B, { FAKE_GH_CUT: `datum-x86_64-macos-${B.slice(0, 7)}` });
+		assert.notEqual(run.status, 0);
+		assert.equal(existsSync(join(box.release, `datum-x86_64-linux-${B.slice(0, 7)}`)), true, "this build's own binary went up");
+		assert.equal(installs(box), built(A));
+	});
+
+	test('a cache serving the previous SHA256SUMS beside the new signatures installs the previous build', () => {
+		const box = releaseBox();
+		published(box, A);
+		const stale = readFileSync(join(box.release, 'SHA256SUMS'));
+		published(box, B);
+		writeFileSync(join(box.release, 'SHA256SUMS'), stale);
+		assert.equal(installs(box), built(A));
+	});
+
+	test("a 'starter' asset a run leaves blocks no later run", () => {
+		const box = releaseBox();
+		published(box, A);
+		assert.notEqual(publish(box, B, { FAKE_GH_CUT: `datum-x86_64-linux-${B.slice(0, 7)}` }).status, 0);
+		// Run again at the same commit: the same name, which the starter holds.
+		published(box, B);
+		assert.equal(installs(box), built(B));
+		// The fixed name cut short, as on 11-04: installs move on, and the next run uploads it.
+		const run = published(box, C, { FAKE_GH_CUT: 'datum-x86_64-linux' });
+		assert.match(run.stdout, /::warning::/);
+		assert.equal(installs(box), built(C));
+		published(box, D);
+		assert.equal(readFileSync(join(box.release, 'datum-x86_64-linux'), 'utf8'), built(D));
+		assert.deepEqual(assetsOf(box).filter((a) => a.state !== 'uploaded'), []);
+	});
+
+	test('a prune that would delete the build SHA256SUMS names deletes nothing', () => {
+		const box = releaseBox();
+		for (const sha of [A, B, C]) published(box, sha);
+		// Asset ids that no longer follow the builds' order, as a recreated release's might.
+		const file = join(box.fake, 'assets.json');
+		const state = JSON.parse(readFileSync(file, 'utf8'));
+		for (const a of state.assets) a.id += 1000;
+		writeFileSync(file, JSON.stringify(state));
+		const run = publish(box, D);
+		assert.notEqual(run.status, 0);
+		assert.match(run.stdout, /::error::.*\bnothing pruned\b/);
+		assert.equal(assetsOf(box).filter((a) => a.name.endsWith(A.slice(0, 7))).length, ASSETS.length, 'the oldest build is kept too');
+		assert.equal(installs(box), built(D));
+	});
+
+	test('it keeps the newest three builds and deletes the rest', () => {
+		const box = releaseBox();
+		for (const sha of [A, B, C, D]) published(box, sha);
+		const names = assetsOf(box).map((a) => a.name);
+		const builds = new Set(names.map((n) => n.match(/^datum-[^-]+-[^-]+-([0-9a-f]+)$/)?.[1]).filter(Boolean));
+		assert.deepEqual([...builds].sort(), [B, C, D].map((sha) => sha.slice(0, 7)));
+		assert.equal(names.length, (ASSETS.length + 1) * 3 + ASSETS.length + 2, `three builds with their signatures, the fixed names and the signed SHA256SUMS: ${names}`);
+		for (const sha of [B, C, D]) assert.ok(names.includes(`SHA256SUMS-${sha.slice(0, 7)}.minisig`), `${sha}'s signature: ${names}`);
+		assert.equal(installs(box), built(D));
 	});
 });

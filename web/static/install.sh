@@ -4,8 +4,8 @@
 #
 #   curl -fsSL https://datum.day/install.sh | sh
 #
-# It downloads this machine's binary (Linux or macOS, x86_64 or aarch64)
-# and SHA256SUMS from the `latest` release, which .github/workflows/
+# It downloads SHA256SUMS and the binary it names for this machine (Linux or
+# macOS, x86_64 or aarch64) from the `latest` release, which .github/workflows/
 # release.yml publishes on every push to main, and refuses a binary whose
 # checksum does not match. With minisign on PATH it also checks that
 # SHA256SUMS is signed by the release key below (release/minisign.pub),
@@ -45,21 +45,32 @@ asset="datum-$arch-$os"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-for file in "$asset" SHA256SUMS; do
-  curl -fsSL -o "$tmp/$file" "$release/$file" || fail "could not download $release/$file"
-done
+curl -fsSL -o "$tmp/SHA256SUMS" "$release/SHA256SUMS" || fail "could not download $release/SHA256SUMS"
+
+# SHA256SUMS names the build's own binary, datum-<arch>-<os>-<sha7>, and is
+# signed by that build's SHA256SUMS-<sha7>.minisig: a release cut short, or a
+# cache serving the previous SHA256SUMS, gives the previous build's, still
+# there (release/publish.sh). One from before build names lists only
+# datum-<arch>-<os>, read where no build name is, under SHA256SUMS.minisig.
+line=$(awk -v f="^$asset-[0-9a-f]+\$" '$2 ~ f { print $1, $2; exit }' "$tmp/SHA256SUMS")
+[ -n "$line" ] || line=$(awk -v f="$asset" '$2 == f { print $1, $2; exit }' "$tmp/SHA256SUMS")
+[ -n "$line" ] || fail "SHA256SUMS lists no $asset; nothing installed"
+want=${line% *}
+name=${line#* }
+sig=SHA256SUMS.minisig
+[ "$name" = "$asset" ] || sig="SHA256SUMS-${name#"$asset"-}.minisig"
+asset=$name
 
 if command -v minisign > /dev/null; then
-  curl -fsSL -o "$tmp/SHA256SUMS.minisig" "$release/SHA256SUMS.minisig" ||
-    fail "SHA256SUMS is not signed: could not download $release/SHA256SUMS.minisig; nothing installed"
+  curl -fsSL -o "$tmp/SHA256SUMS.minisig" "$release/$sig" ||
+    fail "SHA256SUMS is not signed: could not download $release/$sig; nothing installed"
   minisign -Vq -m "$tmp/SHA256SUMS" -P "$key" ||
     fail "SHA256SUMS's signature does not verify with the release key; nothing installed"
 else
-  echo "minisign is not installed, so SHA256SUMS's signature was not checked (by hand: minisign -Vm SHA256SUMS -P $key)" >&2
+  echo "minisign is not installed, so SHA256SUMS's signature was not checked (by hand: minisign -Vm SHA256SUMS -x $sig -P $key)" >&2
 fi
 
-want=$(awk -v f="$asset" '$2 == f { print $1 }' "$tmp/SHA256SUMS")
-[ -n "$want" ] || fail "SHA256SUMS lists no $asset; nothing installed"
+curl -fsSL -o "$tmp/$asset" "$release/$asset" || fail "could not download $release/$asset"
 if command -v sha256sum > /dev/null; then
   got=$(sha256sum "$tmp/$asset")
 else

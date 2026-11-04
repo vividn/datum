@@ -169,26 +169,46 @@ impl Home {
         })
     }
 
-    /// A release holding `binary` as this platform's, with `sum` its line
-    /// in SHA256SUMS (`None`: its real one), signed by the test key.
+    /// A release holding `binary` as this platform's build, with `sum` its
+    /// line in SHA256SUMS (`None`: its real one), signed by the test key.
+    /// The fixed name a datum from before build names reads (da-mzhau) is
+    /// listed first, with a sum nothing matches, so an upgrade that read it
+    /// would refuse.
     fn release(&self, binary: &[u8], sum: Option<&str>) {
         let dir = self.path("release");
         std::fs::create_dir_all(&dir).unwrap();
-        let asset = format!("datum-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
+        let fixed = format!("datum-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
+        let real = format!("{:x}", Sha256::digest(binary));
+        let asset = format!("{fixed}-{}", &real[..7]);
         std::fs::write(dir.join(&asset), binary).unwrap();
-        let sum = sum.map_or_else(|| format!("{:x}", Sha256::digest(binary)), String::from);
-        std::fs::write(dir.join("SHA256SUMS"), format!("{sum}  {asset}\n")).unwrap();
+        let sum = sum.unwrap_or(&real);
+        let zero = "0".repeat(64);
+        std::fs::write(
+            dir.join("SHA256SUMS"),
+            format!("{zero}  {fixed}\n{sum}  {asset}\n"),
+        )
+        .unwrap();
         self.sign(&TEST_KEY);
     }
 
     /// Signs the release's SHA256SUMS with `seed`'s key.
     fn sign(&self, seed: &[u8; 32]) {
         let sums = std::fs::read(self.path("release/SHA256SUMS")).unwrap();
-        std::fs::write(
-            self.path("release/SHA256SUMS.minisig"),
-            minisign(seed, &sums),
-        )
-        .unwrap();
+        std::fs::write(self.sig(), minisign(seed, &sums)).unwrap();
+    }
+
+    /// The signature an upgrade reads: the build's, `SHA256SUMS-<sha7>.minisig`,
+    /// where SHA256SUMS names one, and `SHA256SUMS.minisig` where it does not.
+    fn sig(&self) -> PathBuf {
+        let sums = std::fs::read_to_string(self.path("release/SHA256SUMS")).unwrap();
+        let fixed = format!("datum-{}-{}-", std::env::consts::ARCH, std::env::consts::OS);
+        let name = sums
+            .split_whitespace()
+            .find_map(|w| w.strip_prefix(&fixed))
+            .map_or("SHA256SUMS.minisig".into(), |b| {
+                format!("SHA256SUMS-{b}.minisig")
+            });
+        self.path(&format!("release/{name}"))
     }
 }
 
@@ -385,6 +405,26 @@ fn a_cargo_install_upgrades_from_its_checkout() {
     assert!(h.log().contains(&cargo), "{}", h.log());
 }
 
+/// A release from before build names lists only the fixed name, which an
+/// upgrade reads where SHA256SUMS lists no build name (da-mzhau).
+#[test]
+fn upgrade_reads_a_release_from_before_build_names() {
+    let h = Home::new();
+    h.ok(&["install", "--no-completions"]);
+    let stub = b"#!/bin/sh\necho datum 9.9.9\n";
+    let fixed = format!("datum-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
+    std::fs::create_dir_all(h.path("release")).unwrap();
+    std::fs::write(h.path(&format!("release/{fixed}")), stub).unwrap();
+    std::fs::write(
+        h.path("release/SHA256SUMS"),
+        format!("{:x}  {fixed}\n", Sha256::digest(stub)),
+    )
+    .unwrap();
+    h.sign(&TEST_KEY);
+    assert!(h.ok(&["upgrade"]).contains("datum 9.9.9"));
+    assert_eq!(std::fs::read(h.exe()).unwrap(), stub);
+}
+
 /// An upgrade trusts no line of SHA256SUMS its signature by the key this
 /// datum was built with does not cover (da-0b55k), and refuses, changing
 /// nothing, when it is missing, by another key, or over other bytes.
@@ -394,7 +434,6 @@ fn upgrade_refuses_sums_the_release_key_did_not_sign() {
     h.ok(&["install", "--no-completions"]);
     let before = std::fs::read(h.exe()).unwrap();
     let stub = b"#!/bin/sh\necho datum 9.9.9\n";
-    let sig = h.path("release/SHA256SUMS.minisig");
     let refused = |why: &str| {
         let said = h.err(&["upgrade"]);
         assert!(said.contains(why), "{said}");
@@ -403,8 +442,8 @@ fn upgrade_refuses_sums_the_release_key_did_not_sign() {
     };
 
     h.release(stub, None);
-    std::fs::remove_file(&sig).unwrap();
-    refused("SHA256SUMS is not signed: the release has no SHA256SUMS.minisig");
+    std::fs::remove_file(h.sig()).unwrap();
+    refused("SHA256SUMS is not signed: the release has no SHA256SUMS-");
 
     h.sign(&OTHER_KEY);
     refused("does not verify with the key this datum was built with: The signature was created with a different key");
@@ -412,9 +451,9 @@ fn upgrade_refuses_sums_the_release_key_did_not_sign() {
     // The binary swapped and SHA256SUMS rewritten to match, the old
     // signature kept.
     h.release(stub, None);
-    let kept = std::fs::read(&sig).unwrap();
+    let kept = std::fs::read(h.sig()).unwrap();
     h.release(b"#!/bin/sh\necho datum 6.6.6\n", None);
-    std::fs::write(&sig, kept).unwrap();
+    std::fs::write(h.sig(), kept).unwrap();
     refused(
         "does not verify with the key this datum was built with: The signature verification failed",
     );

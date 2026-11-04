@@ -2,7 +2,7 @@
 # Linux (static musl, so no glibc version matters) and macOS, x86_64 and
 # aarch64, with a SHA256SUMS and its minisign signature, SHA256SUMS.minisig
 # (da-0b55k), as the assets of one rolling release tagged `latest` (a tag
-# the forge holds, below). https://datum.day/install.sh (web/static/install.sh) installs
+# the forge holds, release/publish.sh). https://datum.day/install.sh (web/static/install.sh) installs
 # from it. `datum --version` names the commit, so the tag needs no version.
 name: Release
 
@@ -11,9 +11,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# A newer push cancels the run in progress. The publish replaces assets one at
-# a time, so one cut short can leave a binary and SHA256SUMS of different
-# commits; install.sh refuses that mismatch, and the newer run repairs it.
+# A newer push cancels the run in progress. A run cut short leaves the
+# previous build installable: release/publish.sh uploads each binary under its
+# build's name and moves SHA256SUMS, which names them, last (da-mzhau).
 concurrency:
   group: release-latest
   cancel-in-progress: true
@@ -110,8 +110,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      # release/minisign.pub, for the signature's check below. Before the
-      # download, which a checkout's clean would remove.
+      # release/: publish.sh, and minisign.pub for the signature's check.
+      # Before the download, which a checkout's clean would remove.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: release
@@ -121,14 +121,6 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # The `latest` tag is the forge's: its push mirror pushes every tag with
-      # --mirror, so it deletes one GitHub alone holds, and GitHub drafts the
-      # release (the downloads 404). So this never creates or moves it, and
-      # refuses to publish when the mirror has not brought it. Its commit is
-      # whatever the forge's says; the notes and `datum --version` name the
-      # build's. Binaries first, then SHA256SUMS, and its signature last: a
-      # reader catching a new SUMS beside the old signature refuses it, and
-      # the retry finds them matched.
       - name: Install minisign
         run: |
           sudo apt-get update -q
@@ -139,35 +131,4 @@ jobs:
       - name: Write SHA256SUMS, sign it and publish
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-        run: |
-          set -euo pipefail
-          gh api "repos/$GH_REPO/git/ref/tags/latest" > /dev/null || {
-            echo "::error::No 'latest' tag on GitHub. It must come from the forge, whose push mirror deletes a tag only GitHub has: push it there (git push origin <main sha>:refs/tags/latest) and let the mirror sync."
-            exit 1
-          }
-          cd dist
-          sha256sum datum-* > SHA256SUMS
-          cat SHA256SUMS
-          key=$(mktemp)
-          trap 'rm -f "$key"' EXIT
-          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
-          # The key has no password (`minisign -G -W`); one that has fails
-          # here at once, where an open stdin would wait for it.
-          minisign -S -s "$key" -m SHA256SUMS -x SHA256SUMS.minisig -t "datum ${GITHUB_SHA}" < /dev/null
-          # As datum verifies it, before anything is uploaded: prehashed (-H;
-          # datum refuses minisign's legacy form) and by the key it is built
-          # with, so a secret that is not that key fails here and publishes
-          # nothing that new binaries refuse.
-          minisign -VHq -m SHA256SUMS -P "$(sed -n 2p ../release/minisign.pub)" || {
-            echo "::error::SHA256SUMS.minisig does not verify, prehashed, with release/minisign.pub: MINISIGN_SECRET_KEY is not its secret key, or this minisign signed in the legacy form. Nothing was uploaded."
-            exit 1
-          }
-          notes="The datum CLI built from ${GITHUB_SHA}. Install: curl -fsSL https://datum.day/install.sh | sh"
-          if gh release view latest > /dev/null 2>&1; then
-            gh release upload latest datum-* --clobber
-            gh release upload latest SHA256SUMS --clobber
-            gh release upload latest SHA256SUMS.minisig --clobber
-            gh release edit latest --notes "$notes"
-          else
-            gh release create latest datum-* SHA256SUMS SHA256SUMS.minisig --verify-tag --title "datum (latest main)" --notes "$notes" --latest
-          fi
+        run: release/publish.sh dist

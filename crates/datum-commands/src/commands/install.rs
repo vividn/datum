@@ -259,26 +259,47 @@ fn newest() -> Result<(String, String)> {
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| RELEASE.into());
     let sums = curl(&format!("{release}/SHA256SUMS"), None)?;
-    let sig = curl(&format!("{release}/SHA256SUMS.minisig"), None)
-        .context("SHA256SUMS is not signed: the release has no SHA256SUMS.minisig")?;
+    // The build's own name, `datum-<arch>-<os>-<sha7>`, signed by that
+    // build's `SHA256SUMS-<sha7>.minisig`: a release cut short, or a cache
+    // serving the previous SHA256SUMS, gives the previous build's, still
+    // there (release/publish.sh, da-mzhau). One from before build names
+    // lists only `datum-<arch>-<os>`, read where no build name is, under
+    // `SHA256SUMS.minisig`.
+    let build = |name: &str| {
+        name.strip_prefix(asset.as_str())
+            .and_then(|b| b.strip_prefix('-'))
+            .is_some_and(|b| !b.is_empty() && b.bytes().all(|c| c.is_ascii_hexdigit()))
+    };
+    let text = String::from_utf8_lossy(&sums);
+    let line = |wanted: &dyn Fn(&str) -> bool| {
+        text.lines()
+            .find_map(|l| match l.split_whitespace().collect::<Vec<_>>()[..] {
+                // `*` marks a sum `sha256sum -b` made.
+                [sum, name] if wanted(name.trim_start_matches('*')) => {
+                    Some((sum.to_lowercase(), name.trim_start_matches('*').to_string()))
+                }
+                _ => None,
+            })
+    };
+    let (want, name) = line(&build)
+        .or_else(|| line(&|name| name == asset))
+        .with_context(|| format!("SHA256SUMS lists no {asset}"))?;
+    let signature = match name.strip_prefix(&format!("{asset}-")) {
+        Some(b) => format!("SHA256SUMS-{b}.minisig"),
+        None => "SHA256SUMS.minisig".into(),
+    };
+    let sig = curl(&format!("{release}/{signature}"), None)
+        .with_context(|| format!("SHA256SUMS is not signed: the release has no {signature}"))?;
     Signature::decode(&String::from_utf8_lossy(&sig))
         .and_then(|sig| release_key().verify(&sums, &sig, false))
         .map_err(|e| {
             anyhow!("SHA256SUMS's signature does not verify with the key this datum was built with: {e}")
         })?;
-    let want = String::from_utf8_lossy(&sums)
-        .lines()
-        .find_map(|l| match l.split_whitespace().collect::<Vec<_>>()[..] {
-            // `*` marks a sum `sha256sum -b` made.
-            [sum, name] if name.trim_start_matches('*') == asset => Some(sum.to_lowercase()),
-            _ => None,
-        })
-        .with_context(|| format!("SHA256SUMS lists no {asset}"))?;
     ensure!(
         want.len() == 64 && want.bytes().all(|b| b.is_ascii_hexdigit()),
-        "SHA256SUMS's line for {asset} holds no sha256: {want}"
+        "SHA256SUMS's line for {name} holds no sha256: {want}"
     );
-    Ok((format!("{release}/{asset}"), want))
+    Ok((format!("{release}/{name}"), want))
 }
 
 /// datum carries no HTTP client: `curl` downloads, to `out` or to memory.

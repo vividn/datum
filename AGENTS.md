@@ -1584,6 +1584,12 @@ by minisign (`.github/workflows/release.yml`, the secret key in the GitHub
 `release` environment). `release/minisign.pub` is the public half, built
 into every datum by `include_str!`, and `datum upgrade` refuses a release
 that key did not sign, trusting no line of SHA256SUMS before (da-0b55k).
+Each binary goes up under its build's name, `datum-<arch>-<os>-<sha7>`, with
+the signature as `SHA256SUMS-<sha7>.minisig`, and SHA256SUMS, which names them,
+last (`release/publish.sh`, da-mzhau): install.sh and `datum upgrade` take the
+name from it and check that build's signature, so a run cut short, or a cache
+serving the previous SHA256SUMS, leaves every install on the previous build. The fixed names go up after it, for a datum from
+before build names to upgrade by.
 A binary trusts only the key it was built with, so a new key ships in a
 release still signed by the old one: change `release/minisign.pub` (and
 its copies in `web/static/install.sh`, `README.md` and
