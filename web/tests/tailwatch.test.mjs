@@ -3,7 +3,7 @@
 // pinned at every scroll position, a page of history is held above the
 // screen from the first listing so the first scroll up moves at once
 // (da-gtk48), scrolling up pages older rows in, and a write while the
-// reader is scrolled up keeps their place and says `↓ new` at the foot.
+// reader is scrolled up keeps their place, `now ↓` at the foot.
 //
 // Every row is the CLI's (`tail --json`); what is asserted here is the
 // geometry — the count the pane's box holds, by the pane's own header and
@@ -62,11 +62,20 @@ const geometry = (page) =>
 			return r.top >= (headRect?.bottom ?? content) - 1 && r.bottom <= end + 1;
 		};
 		const first = trs.find(onScreen);
+		const n = Math.floor((box - head) / row);
 		return {
 			box,
 			head,
 			row,
-			n: Math.floor((box - head) / row),
+			n,
+			// How many rows `onScreen` can find whole at rest. The last row ends
+			// at the body's bottom edge (da-cizxo), so the one above the n the box
+			// holds is cut by the header by a row less the room past them; within
+			// a pixel or so of `onScreen`'s pixel, where a scroll offset's
+			// rounding decides, it may read as whole.
+			holds: row - (box - head - n * row) < 2 ? [n, n + 1] : [n],
+			// From the last row's bottom to the body's: no space under it.
+			gap: trs.length ? end - trs.at(-1).getBoundingClientRect().bottom : 0,
 			// Every row held, the history above the screen with them.
 			hids: trs.map((tr) => tr.dataset.hid),
 			// The rows on screen: whole, under the header and inside the box.
@@ -108,7 +117,7 @@ const waitRows = (page, expr, arg = 0) =>
 const atRest = (page, timeout) =>
 	until(
 		async () => ({ inflight: await page.evaluate(() => window.__datumInflight), ...(await geometry(page).catch(() => null)) }),
-		(g) => g.inflight === 0 && g.hids?.length > 0 && g.atBottom && g.shown.length === g.n,
+		(g) => g.inflight === 0 && g.hids?.length > 0 && g.atBottom && g.holds.includes(g.shown.length),
 		timeout
 	);
 
@@ -119,8 +128,8 @@ const waitTopNot = (page, hid) =>
 		hid
 	);
 
-/** The tail pane's `↓ new` marker. */
-const marker = (page) => page.locator('section.pane[data-title="tail"] button.new');
+/** The tail pane's `now ↓` button, which took `↓ new`'s place (da-cizxo). */
+const marker = (page) => page.locator('section.pane[data-title="tail"] button.home');
 
 /**
  * `count` entries of field `seed`, one a minute ending at 2026-09-10 05:00
@@ -218,12 +227,11 @@ async function wheelUp(page) {
  * all of them — held for the first scroll up (da-gtk48).
  */
 function assertFits(g, label, total) {
-	assert.equal(g.shown.length, g.n, `${label}: ${g.shown.length} rows on screen in a box of ${g.box}px that holds ${g.n}`);
-	assert.deepEqual(g.shown, g.hids.slice(-g.n), `${label}: the rows on screen are not the newest`);
+	assert.ok(g.holds.includes(g.shown.length), `${label}: ${g.shown.length} rows on screen in a box of ${g.box}px that holds ${g.n}`);
+	assert.deepEqual(g.shown, g.hids.slice(-g.shown.length), `${label}: the rows on screen are not the newest`);
 	assert.equal(g.hids.length, Math.min(total, g.n + pageOf(g.n)), `${label}: not a page held above the screen`);
 	assert.ok(g.atBottom, `${label}: not at the bottom`);
-	assert.ok(g.last <= g.box + 0.5, `${label}: the rows overflow the box (${g.last} of ${g.box}px)`);
-	assert.ok(g.box - g.last < g.row, `${label}: a gap under the last row (${g.box - g.last}px, a row is ${g.row}px)`);
+	assert.ok(Math.abs(g.gap) <= 1, `${label}: ${g.gap}px between the last row and the body's bottom edge`);
 	assert.ok(g.headInside, `${label}: the header is not in the pane`);
 }
 
@@ -250,7 +258,7 @@ describe('rows from height', () => {
 				assertFits(g, `${width}x${height}`, 40);
 				assert.ok(g.n < 40, `the pane holds all forty rows (n = ${g.n}), which tests nothing`);
 				assert.equal(g.hids.at(-1), seedHid(39), 'the newest row is not last');
-				assert.deepEqual(g.shown, g.shown.map((_, i) => seedHid(40 - g.n + i)), 'the rows are not the newest n');
+				assert.deepEqual(g.shown, g.shown.map((_, i) => seedHid(40 - g.shown.length + i)), 'the rows are not the newest n');
 				// The CLI shrinks `field` and `state` to `f` and `s` when no
 				// row is wide — here none is — and the pane says the whole
 				// words, as `tail -w` over a wide terminal would. The 240px
@@ -661,7 +669,7 @@ describe('scrolling up', () => {
 			assert.ok(g.shown.includes(newest), `scrolling down stopped at ${g.hids.at(-1)}, short of ${newest}`);
 			assert.equal(g.hids.at(-1), newest, 'the newest row is not last');
 			assert.ok(g.hids.length <= 300, `held ${g.hids.length} rows, past the cap`);
-			await page.waitForFunction(() => !document.querySelector('section.pane[data-title="tail"] button.new'));
+			await page.waitForFunction(() => !document.querySelector('section.pane[data-title="tail"] button.home'));
 			const [after] = await app.entries(1);
 			assert.equal(after.hid, before.hid, 'a write landed: not the case this is about');
 		});
@@ -713,7 +721,7 @@ describe('scrolling up', () => {
 });
 
 describe('a write', () => {
-	test('while scrolled up keeps the place and shows ↓ new, which returns to the live end', async () => {
+	test('while scrolled up keeps the place, and `now ↓` returns to the live end', async () => {
 		await TALL.solo(async (app) => {
 			const { page } = app;
 			await seed(app, 30);
@@ -727,7 +735,9 @@ describe('a write', () => {
 			const g1 = await geometry(page);
 			assert.equal(g1.scrollTop, 10);
 			assert.ok(!g1.atBottom, 'still at the bottom after scrolling up');
-			assert.equal(await marker(page).count(), 0, '↓ new before anything is new');
+			// Now's line is under the newest row, off the bottom.
+			await marker(page).waitFor();
+			assert.equal(await marker(page).textContent(), 'now ↓');
 
 			await app.submit('occur tea');
 			await app.idle();
@@ -744,7 +754,7 @@ describe('a write', () => {
 			await marker(page).click();
 			const g3 = await atRest(page);
 			assert.equal(g3.shown.at(-1), newest.hid, 'the new row is not last');
-			assert.equal(await marker(page).count(), 0, '↓ new is still up');
+			assert.equal(await marker(page).count(), 0, '`now ↓` is still up');
 		});
 	});
 
@@ -974,10 +984,10 @@ describe('a write', () => {
 					);
 					await app.idle();
 					const g1 = await geometry(page);
-					assert.equal(g1.shown.length, g0.n, 'the count changed with the write');
+					assert.equal(g1.shown.length, g0.shown.length, 'the count changed with the write');
 					assert.deepEqual(g1.shown.slice(0, -1), g0.shown.slice(1), 'the screen is not the newest page');
 					assertFits(g1, 'after the write', 32);
-					assert.equal(await marker(page).count(), 0, '↓ new for a row that is on screen');
+					assert.equal(await marker(page).count(), 0, '`now ↓` for a row that is on screen');
 
 					// Asked for what fits the box as it was at the asking — a
 					// phone's box settles after the first listing lands, and the

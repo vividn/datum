@@ -100,6 +100,7 @@
 	import StateCell from './StateCell.svelte';
 	import { fieldPill, select, selected, selectHeld } from './bar.js';
 	import { cursor, timeArg, type Cursor } from './cursor.js';
+	import { now } from './clock.js';
 	import { HOLD_MS, swallowTail } from './hold.js';
 	import { pressTraveled } from './inspect.js';
 	import { isSelected, same } from './selection.js';
@@ -204,8 +205,6 @@
 	/** What the tail last followed: a hid, `@<ms>` for an instant, or '' for nothing. */
 	let followed = '';
 
-	/** Rows landed below the reader's view, while the live end is held. */
-	let unseen = $state(false);
 	/** The page above came back with nothing new: the listing's beginning. */
 	let exhausted = $state(false);
 	/** Bumped whenever the screen is replaced, so a page in flight for the old one is dropped. */
@@ -234,10 +233,10 @@
 	 * its rows — kept across an epoch, since that screen is still shown.
 	 */
 	const unsettled = { n: null as number | null, fits: 0, over: Infinity };
-	let drawn = $state.raw({ box: null as PaneBox | null, epoch: -1, ...unsettled, slack: Infinity });
+	let drawn = $state.raw({ box: null as PaneBox | null, epoch: -1, ...unsettled });
 	$effect.pre(() => {
 		if (box !== drawn.box) {
-			drawn = { box, epoch, ...unsettled, slack: Infinity };
+			drawn = { box, epoch, ...unsettled };
 			least = 0;
 		}
 	});
@@ -248,10 +247,9 @@
 		}
 	});
 
-	/** The count the box holds, and the slack under it. Null until measured, or while the pane is hidden. */
+	/** The count the box holds. Null until measured, or while the pane is hidden. */
 	const fit = $derived(measure(box, probeHead, probeRows));
 	const n = $derived(fit ? (drawn.n ?? fit.n) : null);
-	const slack = $derived(fit ? Math.min(fit.slack, drawn.slack) : 0);
 	/**
 	 * A row's place in the listing, the CLI's order: by time — a timeless
 	 * row's is the stamp it was created at (da-2vgj1) — then by slug.
@@ -260,6 +258,71 @@
 	const above = (a: Shown, b: Shown) => at(a) < at(b) || (at(a) === at(b) && a.row.slug < b.row.slug);
 	const nearBottom = () =>
 		!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 2;
+	const visible = $derived(n === 0 ? [] : rows);
+	/** The row the selected instant's line is over (da-lqz3j); past the last, under it; -1 for none. */
+	const line = $derived($cursor && !$cursor.span ? lineOver(visible, +$cursor.at, exhausted, live) : -1);
+	/** The row now's yellow line is over (da-cizxo); past the last, under it; -1 when now is not among the rows held. */
+	const nowAt = $derived(lineOver(visible, +$now, exhausted, live));
+	$effect(() => {
+		void nowAt;
+		void visible;
+		untrack(see);
+	});
+
+	/**
+	 * Where the body rests by default, at height `h` (da-cizxo, vividn: «if
+	 * there are entries in the future, show up to 3 future entries and then
+	 * 2.5 entries if there are more than 3»): now's line with the rows after
+	 * it under it, at the bottom while they are three or fewer, and with
+	 * more, the third cut through its middle, so the rest are plainly there
+	 * to scroll to — the past above. Never so far down that the line goes
+	 * under the header. Null when now is not among the rows held.
+	 */
+	function homeTop(h: number): number | null {
+		const trs = tbody?.rows;
+		if (!scroller || !trs?.length || nowAt < 0) return null;
+		// Where the body's scrolled content starts, on screen.
+		const base = scroller.getBoundingClientRect().top + scroller.clientTop - scroller.scrollTop;
+		const y = nowY(trs) - base;
+		const third = trs.length - nowAt > 3 ? trs[nowAt + 2].getBoundingClientRect() : null;
+		const end = third ? (third.top + third.bottom) / 2 - base : scroller.scrollHeight;
+		const head = thead?.getBoundingClientRect().height ?? 0;
+		return Math.max(0, Math.min(end - h, y - head, scroller.scrollHeight - h));
+	}
+
+	/** Now's line on screen: the top of the row it is over, or the bottom of the last. Only while `nowAt >= 0`, as both callers check. */
+	const nowY = (trs: HTMLCollectionOf<HTMLTableRowElement>) =>
+		nowAt < trs.length ? trs[nowAt].getBoundingClientRect().top : trs[trs.length - 1].getBoundingClientRect().bottom;
+
+	/** To the default view; false when now is not among the rows held. */
+	function home(): boolean {
+		const top = scroller ? homeTop(scroller.clientHeight) : null;
+		if (top !== null) scrollTo(top);
+		return top !== null;
+	}
+
+	/** At the default view: where a write replaces the screen, as at the bottom it did. */
+	function atHome(): boolean {
+		const top = scroller ? homeTop(scroller.clientHeight) : null;
+		return !scroller || (top !== null && Math.abs(scroller.scrollTop - top) <= 2);
+	}
+
+	/** Which way now's line is from the reader's view, '' while it is in it: the `now ↓` / `now ↑` button. */
+	let nowOff = $state<'' | '↑' | '↓'>('');
+	/** The header's height, which `now ↑` stands under. */
+	let headPx = $state(0);
+
+	function see(): void {
+		const trs = tbody?.rows;
+		if (!scroller || !trs?.length || !visible.length) return void (nowOff = '');
+		headPx = thead?.getBoundingClientRect().height ?? 0;
+		// Now is not among the rows held: every row held is after it and the
+		// older ones are not held, or every one is before it and the newer not.
+		if (nowAt < 0) return void (nowOff = at(visible[0]) > +$now ? '↑' : '↓');
+		const y = nowY(trs);
+		const top = scroller.getBoundingClientRect().top + scroller.clientTop;
+		nowOff = y < top + headPx - 1 ? '↑' : y > top + scroller.clientHeight + 1 ? '↓' : '';
+	}
 	/**
 	 * The last listing asked for, and what it asked with. A resize that
 	 * leaves the count alone asks the same `tail -n`, whose answer only an
@@ -278,9 +341,6 @@
 		const count = n, at = epoch;
 		if (count !== null && box) untrack(() => void refresh(Math.max(1, count), at));
 	});
-	const visible = $derived(n === 0 ? [] : rows);
-	/** The row the selected instant's line is over (da-lqz3j); past the last, under it; -1 for none. */
-	const line = $derived($cursor && !$cursor.span ? lineOver(visible, +$cursor.at, exhausted, live) : -1);
 
 	/** Where `t` falls among `shown`, or -1 when it is past an end that is not the listing's. */
 	function lineOver(shown: Shown[], t: number, first: boolean, last: boolean): number {
@@ -319,12 +379,11 @@
 		rows = [];
 		probed = [];
 		exhausted = false;
-		unseen = false;
 		away = false;
 		extra = 0;
 		least = 0;
 		generation++;
-		drawn = { box, epoch, ...unsettled, slack: Infinity };
+		drawn = { box, epoch, ...unsettled };
 		if (n !== null) void refresh(Math.max(1, n), epoch, true);
 	}
 
@@ -332,11 +391,11 @@
 	 * How many rows `box` holds: the header row, then rows of the one-line
 	 * row's height — all alike, since no border is shared between the
 	 * header and the first (the rule under the header is a shadow, so it
-	 * stays pinned with it). And what is left under
-	 * them, which a spacer takes: a scroller cannot scroll past its end,
-	 * so without it a page prepended to a table shorter than its box could
-	 * not keep the reader's row where it was — it would sit the slack
-	 * lower.
+	 * stays pinned with it). What is left under them is not drawn: the
+	 * listing holds a page above the screen, so at rest the last row ends
+	 * at the body's bottom edge and the oldest on screen is cut at the
+	 * header (da-cizxo, vividn: «there is an extra line of space at the
+	 * bottom of the tail widget. let's remove it»).
 	 *
 	 * A box no taller than the header — the observer's first report, before
 	 * layout, or a pane on a tab not shown — is not a size: nothing is asked
@@ -346,13 +405,13 @@
 		box: PaneBox | null,
 		head: HTMLTableSectionElement | undefined,
 		rows: HTMLTableSectionElement | undefined
-	): { n: number; slack: number; row: number } | null {
+	): { n: number; row: number } | null {
 		if (!box || !head || !rows) return null;
 		const headPx = head.getBoundingClientRect().height;
 		const row = rows.getBoundingClientRect().height;
 		if (row <= 0 || box.height <= headPx) return null;
 		const n = Math.floor((box.height - headPx) / row);
-		return { n, slack: Math.max(0, box.height - headPx - n * row), row };
+		return { n, row };
 	}
 
 	/**
@@ -382,7 +441,7 @@
 			n = Math.max(shown, Math.min(over - 1, shown + Math.floor(room / fit.row)));
 		}
 		const most = fits === shown ? Math.max(drawn.fits, shown) : drawn.fits;
-		drawn = { ...drawn, n, over, fits: most, slack: Math.max(0, room) };
+		drawn = { ...drawn, n, over, fits: most };
 	}
 
 	/**
@@ -491,19 +550,6 @@
 		keys.sort((a, b) => rank(a) - rank(b));
 	}
 
-	// A new box draws a new slack before the listing for it lands: at the
-	// end before it, at the end after it, or that listing reads the body as
-	// scrolled up and keeps the place instead of the live end (da-vcdil).
-	let ended = false;
-	$effect.pre(() => {
-		void slack;
-		ended = untrack(nearBottom);
-	});
-	$effect(() => {
-		void slack;
-		untrack(() => ended && scroller && scrollTo(scroller.scrollHeight));
-	});
-
 	/** The first row on screen and where it is, to put it back there after a change. */
 	function anchor(): { hid: string; y: number } | null {
 		if (!scroller || !tbody) return null;
@@ -565,7 +611,7 @@
 		// pull at the top.
 		exhausted = false;
 		const page = toShown(table);
-		if (force || rows.length === 0 || (!paging && !away && nearBottom())) {
+		if (force || rows.length === 0 || (!paging && !away && atHome())) {
 			// Pinned: the screen is the CLI's newest page and nothing else.
 			generation++;
 			away = jumped = false;
@@ -574,24 +620,29 @@
 			rows = page;
 			probed = page.slice(-count);
 			adopt(table.columns, true);
-			unseen = false;
 			await decide();
 			await hold(true);
 			// The screen as drawn can change the room under it; pinned is
 			// pinned under that room, not the one before it.
 			redraw(_epoch, count);
 			await tick();
-			if (scroller) scrollTo(scroller.scrollHeight);
+			// More rows after now than the listing holds: the rows around now instead.
+			if (nowAt < 0 && visible.length && at(visible[0]) > +$now) {
+				if (!(await around(`@${+$now}`))) return;
+				// Short of the live end, and still the default view.
+				away = false;
+				await tick();
+			}
+			if (!home() && scroller) scrollTo(scroller.scrollHeight);
 		} else {
 			// Scrolled up: keep the place. The page is the truth for the
 			// span it covers — a row of ours inside that span but not in
 			// it was deleted or retimed — and what we hold above the span
 			// stays. A page that does not reach down to our newest row
 			// is not contiguous (more than a page landed, or the far end
-			// was let go at the cap): leave the screen, say so below.
+			// was let go at the cap): leave the screen, the rows held
+			// short of the live end, and `now ↓` says so.
 			const a = anchor();
-			const held = new Set(rows.map((row) => row.hid));
-			const fresh = page.some((row) => !held.has(row.hid));
 			const newest = rows[rows.length - 1];
 			const first = page[0];
 			if (first && !above(newest, first)) {
@@ -599,9 +650,7 @@
 				rows = [...rows.filter((row) => !inPage.has(row.hid) && above(row, first)), ...page];
 				if (rows.length > CAP) rows = rows.slice(rows.length - CAP);
 				adopt(table.columns, false);
-			}
-			// Under a listing short of the live end, the rows below page in.
-			if (fresh && live) unseen = true;
+			} else if (first) live = false;
 			await decide();
 			await hold(false);
 			await keep(a);
@@ -627,7 +676,7 @@
 			if (of !== generation) return;
 			if (down && table.rows.length < size) live = true;
 			// Found at the bottom already: no scroll event is coming to say so.
-			if (down && live && nearBottom()) unseen = away = false;
+			if (down && live && nearBottom()) away = false;
 			// A row retimed since it was listed can come back above itself.
 			const held = new Set(rows.map((row) => row.hid));
 			const fresh = toShown(table).filter((row) => !held.has(row.hid));
@@ -665,7 +714,7 @@
 		}
 	}
 
-	/** `↓ new`: back to the live end, fresh. */
+	/** `now ↓` / `now ↑`: back to the live end, fresh, and the default view. */
 	function jump(): void {
 		if (n !== null) void refresh(Math.max(1, n), epoch, true);
 	}
@@ -687,6 +736,46 @@
 		else if (jumped && !c?.span) jump();
 	}
 
+	/**
+	 * In place of the rows held, those around `to` — a hid, or `@<ms>` for an
+	 * instant: a page above it and a page below. False when they did not land.
+	 */
+	async function around(to: string): Promise<boolean> {
+		if (!n) return false;
+		const t = to.startsWith('@') ? +to.slice(1) : null;
+		// A listing or page in flight is for the screen this replaces.
+		const mine = (shown = ++started);
+		const of = ++generation;
+		const size = pageSize(n);
+		try {
+			const above = await tailListing({
+				count: size,
+				...(t === null ? { above: to } : { until: timeArg(new Date(t), new Date(0)) }),
+				...bounds()
+			});
+			const last = above.rows.at(-1)?.hid;
+			// For an entry, itself and a page under it.
+			const count = size + (t === null ? 1 : 0);
+			const below = await tailListing({ count, head: true, ...(last ? { below: last } : {}), ...bounds() });
+			if (of !== generation || mine !== shown) return false;
+			error = '';
+			rows = [...toShown(above), ...toShown(below)];
+			probed = rows;
+			live = below.rows.length < count;
+			away = !live;
+			exhausted = above.rows.length < size;
+			extra = 0;
+			adopt(above.columns, true);
+			adopt(below.columns, false);
+			await decide();
+			await hold(true);
+			return true;
+		} catch {
+			// A selection the CLI cannot list around moves nothing.
+			return false;
+		}
+	}
+
 	async function goTo(to: string): Promise<void> {
 		const t = to.startsWith('@') ? +to.slice(1) : null;
 		const newest = rows[rows.length - 1];
@@ -698,39 +787,7 @@
 			t === null
 				? rows.some((row) => same(row.hid, to))
 				: !!newest && at(rows[0]) <= t && (live || t <= at(newest));
-		if (!held && n) {
-			// A listing or page in flight is for the screen this replaces.
-			const mine = (shown = ++started);
-			const of = ++generation;
-			const size = pageSize(n);
-			try {
-				const above = await tailListing({
-					count: size,
-					...(t === null ? { above: to } : { until: timeArg(new Date(t), new Date(0)) }),
-					...bounds()
-				});
-				const last = above.rows.at(-1)?.hid;
-				// For an entry, itself and a page under it.
-				const count = size + (t === null ? 1 : 0);
-				const below = await tailListing({ count, head: true, ...(last ? { below: last } : {}), ...bounds() });
-				if (of !== generation || mine !== shown) return;
-				error = '';
-				rows = [...toShown(above), ...toShown(below)];
-				probed = rows;
-				live = below.rows.length < count;
-				away = !live;
-				exhausted = above.rows.length < size;
-				unseen = false;
-				extra = 0;
-				adopt(above.columns, true);
-				adopt(below.columns, false);
-				await decide();
-				await hold(true);
-			} catch {
-				// A selection the CLI cannot list around moves nothing.
-				return;
-			}
-		}
+		if (!held && !(await around(to))) return;
 		await tick();
 		// An instant is the two rows either side of its line.
 		const i = t === null ? rows.findIndex((row) => same(row.hid, to)) : lineOver(rows, t, true, true);
@@ -755,7 +812,7 @@
 	}
 
 	// The reader's scrolling, on the pane's body. Up to within a page of
-	// the top, less a screen, the page above; at the bottom, nothing is unseen. A table that fits exactly
+	// the top, less a screen, the page above; at home, nothing is away. A table that fits exactly
 	// cannot be scrolled at all, so a wheel or a finger pulling down at the
 	// top asks the same way.
 	/** The body's height as last observed, and how many times it has changed. */
@@ -806,7 +863,9 @@
 		height = scroller.clientHeight;
 		if (!was || !height || was === height) return;
 		resizes++;
-		if (scroller.scrollHeight - last - was <= 2) return scrollTo(scroller.scrollHeight);
+		// At the default view, the default view.
+		const top = homeTop(was);
+		if (top !== null && Math.abs(last - top) <= 2) return void home();
 		let share = 0.5;
 		const tr = tbody?.querySelector<HTMLTableRowElement>('tr.line, tr.line-under');
 		if (tr) {
@@ -815,6 +874,7 @@
 			if (y >= last && y <= last + was) share = (y - last) / was;
 		}
 		scrollTo(last + share * (was - height));
+		see();
 	}
 
 	function onScroll(): void {
@@ -822,6 +882,7 @@
 		const top = scroller.scrollTop;
 		const up = top < last;
 		last = top;
+		see();
 		// Fewer rows than before clamp the scroll on their own, and a
 		// clamp is a scroll event too — so a scroll of ours is known by
 		// where it landed, and a scroll that cannot be a reader's, in a
@@ -829,7 +890,7 @@
 		const mine = own !== null && top === own;
 		own = null;
 		if (mine) return;
-		if (nearBottom() && live) unseen = away = false;
+		if ((nearBottom() && live) || atHome()) away = false;
 		const lead = n && fit ? (pageSize(n) - n) * fit.row : 0;
 		if (up && top <= lead && scroller.scrollHeight > scroller.clientHeight + 1) void page();
 		if (!up && !live && scroller.scrollHeight - top - scroller.clientHeight <= lead) void page(true);
@@ -892,7 +953,7 @@
      Hidden, and a `tfoot` rather than a head and a body, so that nothing
      that reads the table — `thead th`, `tbody tr`, the body's text — sees
      it: it is a ruler, not a row. -->
-<table class="probe" aria-hidden="true">
+<table class="probe tail-probe" aria-hidden="true">
 	<tfoot bind:this={probeHead}><tr><th>&nbsp;</th></tr></tfoot>
 	<tfoot bind:this={probeRows}><tr><td>&nbsp;</td></tr></tfoot>
 </table>
@@ -925,6 +986,11 @@
 {:else if rows.length === 0}
 	<p class="quiet">{empty}</p>
 {:else}
+	{#if nowOff === '↑'}
+		<div class="crown">
+			<button type="button" class="home" title="back to now" style:top="{headPx}px" onclick={jump}>now ↑</button>
+		</div>
+	{/if}
 	<table class:held={widths !== null} style:width={widths ? `${Object.values(widths).reduce((a, b) => a + b, 0)}px` : null}>
 		<colgroup>
 			{#each cols as key (key)}
@@ -950,6 +1016,8 @@
 					class:selected={isSelected($selected, row.hid)}
 					class:line={i === line}
 					class:line-under={line === visible.length && i === line - 1}
+					class:now={i === nowAt}
+					class:now-under={nowAt === visible.length && i === nowAt - 1}
 					onmousedown={(e) => e.shiftKey && e.preventDefault()}
 					onclick={(e) =>
 						tapped(e) && !pressTraveled() && select(row.hid, e, visible.map((r) => r.hid))}
@@ -973,10 +1041,12 @@
 			{/each}
 		</tbody>
 	</table>
-	<div class="slack" style:height="{slack + extra}px"></div>
-	{#if unseen || !live}
+	<div class="slack" style:height="{extra}px"></div>
+	<!-- Now off the screen (da-cizxo): the way to it, at that edge, as the
+	     nowview's own «now» button says it; a tap is the default view. -->
+	{#if nowOff === '↓'}
 		<div class="foot">
-			<button type="button" class="new" onclick={jump}>↓ new</button>
+			<button type="button" class="home" title="back to now" onclick={jump}>now ↓</button>
 		</div>
 	{/if}
 {/if}
@@ -1054,13 +1124,12 @@
 		overflow-wrap: normal;
 	}
 
-	/* Pinned, as `tail -w` pins its header. A sticky box stops at the
-	   scroller's padding edge, so it is pulled up by the pane's `.body`
-	   top padding (Pane.svelte) to sit flush with the pane's top, leaving
-	   no strip for the rows scrolled under it to show through. */
+	/* Pinned, as `tail -w` pins its header, flush with the pane's top:
+	   the body has no padding there, so no strip is left for the rows
+	   scrolled under it to show through. */
 	thead {
 		position: sticky;
-		top: -0.33rem;
+		top: 0;
 	}
 
 	th {
@@ -1123,48 +1192,89 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* Paged up to the log's first row: a dotted edge over it, drawn as a
-	   background so the row's height, and the count, are untouched. */
-	.start td {
-		background: linear-gradient(to right, var(--quiet) 50%, transparent 0) top / 6px 1px repeat-x;
+	/* The marks over a row are dotted lines drawn as its cells' background,
+	   so no row grows and the count is untouched; one each, so two on one
+	   row are both drawn. */
+	td {
+		background: var(--now-mark, none), var(--line-mark, none), var(--start-mark, none);
 	}
 
-	/* The selected instant (da-lqz3j): the pictures' white dotted line,
-	   drawn as a background like `.start`'s, so no row grows. */
-	.line td {
-		background: linear-gradient(to right, #fff 50%, transparent 0) top / 6px 2px repeat-x;
+	/* Paged up to the log's first row: a dotted edge over it. */
+	.start {
+		--start-mark: linear-gradient(to right, var(--quiet) 50%, transparent 0) top / 6px 1px repeat-x;
 	}
 
-	.line-under td {
-		background: linear-gradient(to right, #fff 50%, transparent 0) bottom / 6px 2px repeat-x;
+	/* The selected instant (da-lqz3j): the pictures' white dotted line. */
+	.line {
+		--line-mark: linear-gradient(to right, #fff 50%, transparent 0) top / 6px 2px repeat-x;
 	}
 
-	/* What the count leaves under the last row: under a page, it is the room
-	   the reader's row needs to stay put. */
+	.line-under {
+		--line-mark: linear-gradient(to right, #fff 50%, transparent 0) bottom / 6px 2px repeat-x;
+	}
+
+	/* Now (da-cizxo): the nowview's now yellow, dotted, its dots in the
+	   white line's gaps where the two meet. */
+	.now {
+		--now-mark: linear-gradient(to right, #ffcc00 50%, transparent 0) 3px 0 / 6px 2px repeat-x;
+	}
+
+	.now-under {
+		--now-mark: linear-gradient(to right, #ffcc00 50%, transparent 0) 3px 100% / 6px 2px repeat-x;
+	}
+
+	/* The last row ends at the body's bottom edge (da-cizxo): its padding
+	   under the rows goes too, and over them, which the pinned header
+	   covered, so the rows the box holds are the rows drawn. */
+	:global(.body:has(> table.tail-probe)) {
+		padding-top: 0;
+		padding-bottom: 0;
+	}
+
+	/* Room a kept place needs past the end: under a page, what the
+	   reader's row needs to stay put. */
 	.slack {
 		width: 100%;
 	}
 
-	/* The `↓ new` marker: no height of its own, so the count is untouched;
-	   stuck to the foot of the scrolling body, at the right. */
-	.foot {
+	/* `now ↓` and `now ↑`: no height of their own, so the count is
+	   untouched; stuck to the foot of the scrolling body, or under the
+	   header at its top, at the right. */
+	.foot,
+	.crown {
 		position: sticky;
-		bottom: 0;
 		height: 0;
+		z-index: 1;
 	}
 
-	.new {
+	.foot {
+		bottom: 0;
+	}
+
+	.crown {
+		top: 0;
+	}
+
+	/* The nowview's «now» button (`.nowview-now`): filled with the now
+	   yellow, black words. */
+	.home {
 		position: absolute;
 		right: 0;
-		bottom: 0;
-		font: inherit;
-		font-size: 0.8em;
-		color: var(--accent);
-		background: var(--ground);
-		border: 1px solid var(--rule);
+		padding: 1px 6px;
+		border: none;
 		border-radius: 4px;
-		padding: 0.1em 0.5em;
+		background: #ffcc00;
+		color: #000000;
+		font: inherit;
+		font-size: 0.7rem;
+		font-weight: 600;
+		line-height: 1.2;
+		white-space: nowrap;
 		cursor: pointer;
+	}
+
+	.foot .home {
+		bottom: 2px;
 	}
 
 	.quiet {
