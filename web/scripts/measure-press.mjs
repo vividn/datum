@@ -58,6 +58,16 @@ const LAYOUT = text('layout');
 const WIDE = flag('width', 1280);
 const HIGH = flag('height', 800);
 /**
+ * The root tabs a fresh profile opens with the measured one in front, as
+ * measure-log.mjs seeds them: a fresh profile opens on `welcome`, which
+ * draws no field bar. A phone is any width the page takes for one
+ * (`PHONE_WIDTH` in layout/defaults.ts), and measures its `collect` tab.
+ */
+const HOME =
+	WIDE <= 720
+		? { names: ['welcome', 'setup', 'collect', 'dayview'], active: 2 }
+		: { names: ['main'], active: 0 };
+/**
  * Hold the widget bar's own two commands (`fields --json`, `now --json`)
  * until the panes' have settled, through the seam and without touching the
  * app: the counterfactual for "the bar's refresh is at the HEAD of the
@@ -84,13 +94,17 @@ const report = {
 	entries: ENTRIES,
 	throttle: THROTTLE,
 	viewport: `${WIDE}x${HIGH}`,
-	layout: LAYOUT ?? 'default',
+	layout: LAYOUT ?? HOME.names[HOME.active],
 	cli: !NO_CLI,
 	deferBar: DEFER_BAR,
 	presses: []
 };
 
 try {
+	await context.addInitScript((home) => {
+		if (!localStorage.getItem('datum.layout.root.v1'))
+			localStorage.setItem('datum.layout.root.v1', JSON.stringify(home));
+	}, HOME);
 	const page = await context.newPage();
 	if (THROTTLE > 1) {
 		const cdp = await context.newCDPSession(page);
@@ -207,7 +221,7 @@ try {
 		window.__press = { runs: [], paints: [], t0: 0 };
 		const isBar = (argv) =>
 			(argv[0] === 'fields' || argv[0] === 'now') && argv[1] === '--json' && argv.length === 2;
-		const previous = window.datum.setRunner(async (argv, stdin, onStderr, key) => {
+		const previous = window.datum.setRunner(async (argv, stdin, onStderr, key, ...rest) => {
 			const run = { argv, key, dispatched: performance.now() };
 			window.__press.runs.push(run);
 			if (deferBar && isBar(argv)) {
@@ -220,7 +234,7 @@ try {
 				);
 			}
 			run.started = performance.now();
-			const promise = previous(argv, stdin, onStderr, key);
+			const promise = previous(argv, stdin, onStderr, key, ...rest);
 			run.promise = promise;
 			const result = await promise;
 			run.settled = performance.now();
@@ -231,7 +245,13 @@ try {
 		const watch = (name, selector) => {
 			const node = document.querySelector(selector);
 			if (!node) return;
-			new MutationObserver(() => window.__press.paints.push({ name, at: performance.now() })).observe(
+			// The nowview slides with the clock, a `style` on its `.flow` groups
+			// every half second: a batch of only that is no redraw.
+			const slide = (r) =>
+				r.type === 'attributes' && r.attributeName === 'style' && r.target.classList?.contains('flow');
+			new MutationObserver((rs) => {
+				if (!rs.every(slide)) window.__press.paints.push({ name, at: performance.now() });
+			}).observe(
 				node,
 				{ childList: true, subtree: true, characterData: true, attributes: true }
 			);
@@ -266,7 +286,17 @@ try {
 			},
 			null,
 			{ timeout: 120_000, polling: 100 }
-		);
+		).catch(async (e) => {
+			// A hang names what it waited on: the regions still redrawing, the commands still running.
+			const still = await page.evaluate(() => {
+				const since = performance.now() - 5000;
+				const paints = {};
+				for (const p of window.__press.paints) if (p.at > since) paints[p.name] = (paints[p.name] ?? 0) + 1;
+				const running = window.__press.runs.filter((r) => !r.settled).map((r) => r.argv.join(' '));
+				return { paints, running };
+			});
+			throw new Error(`never quiet: in the last 5 s ${JSON.stringify(still)}`, { cause: e });
+		});
 	await quiet();
 
 	for (let i = 0; i < PRESSES; i++) {
