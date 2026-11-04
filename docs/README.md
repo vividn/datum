@@ -2,6 +2,7 @@
 
 For using datum:
 
+- [basics.md](basics.md): why keep data, the terms, and the shapes a field takes; the tutorial's words.
 - [concepts.md](concepts.md): the model in one page, from an entry to tracked fields.
 - [commands.md](commands.md): every command, generated from the help `datum help` prints.
 - [grammar-tokens.md](grammar-tokens.md): the grammar's punctuation, every example a real run.

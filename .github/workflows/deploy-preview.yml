@@ -1,0 +1,109 @@
+# The tutorial's private preview (da-uzyih.2): integration/tutorial, built as
+# deploy.yml builds datum.day, synced to a bucket of its own and kept out of
+# search engines. datum.day is not touched: its bucket key is the
+# `production` environment's, and this job has only `preview`'s.
+name: Deploy the preview
+
+on:
+  push:
+    branches: [integration/tutorial]
+  workflow_dispatch:
+
+# As deploy.yml: the newer push's sync is the repair for a cancelled one.
+concurrency:
+  group: deploy-preview
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build, upload, verify
+    runs-on: ubuntu-latest
+    # The forge runs .github/workflows too and has no bucket secrets; see deploy.yml.
+    if: ${{ github.server_url == 'https://github.com' }}
+    # Its deployment branches are limited to integration/tutorial, so its key
+    # reaches no other branch.
+    environment:
+      name: preview
+      url: ${{ steps.url.outputs.url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert the aws CLI is on the runner
+        run: aws --version
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # Built, never fetched: a module fetched from `wasm` says the main commit
+      # it was built for, and the verify below asks the served CLI for THIS
+      # commit. SOURCE is HEAD, so deploy.sh's ensure-wasm keeps it.
+      - name: Build the CLI module
+        run: |
+          set -euo pipefail
+          rustup toolchain install --no-self-update
+          rustup target add wasm32-wasip1
+          node web/scripts/build-cli-wasm.mjs
+          git rev-parse HEAD > web/src/lib/wasm/SOURCE
+
+      # Unlisted: the preview's build alone, so production is unchanged.
+      - name: Keep the preview out of search engines
+        run: |
+          set -euo pipefail
+          printf 'User-agent: *\nDisallow: /\n' > web/static/robots.txt
+          sed -i 's|<meta charset="utf-8" />|&\n\t\t<meta name="robots" content="noindex, nofollow" />|' web/src/app.html
+          grep -q 'name="robots" content="noindex' web/src/app.html
+
+      # The website endpoint, not the S3 API one (web/DEPLOY.md, step 2):
+      # https://s3.<region>.scw.cloud -> https://<bucket>.s3-website.<region>.scw.cloud,
+      # whose TLS wildcard covers a bucket name with no dot in it.
+      - name: The preview's URL
+        id: url
+        env:
+          DATUM_DAY_BUCKET: ${{ vars.DATUM_DAY_BUCKET }}
+          DATUM_DAY_ENDPOINT: ${{ vars.DATUM_DAY_ENDPOINT }}
+        run: |
+          url=${DATUM_DAY_ENDPOINT/:\/\/s3./://$DATUM_DAY_BUCKET.s3-website.}
+          [ "$url" != "$DATUM_DAY_ENDPOINT" ] || { echo "::error::DATUM_DAY_ENDPOINT is not https://s3.<region>…: no website URL to derive"; exit 1; }
+          [[ "$DATUM_DAY_BUCKET" != *.* ]] || { echo "::error::DATUM_DAY_BUCKET has a dot: its website URL fails TLS (web/DEPLOY.md, step 2)"; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Build and upload
+        env:
+          DATUM_DAY_BUCKET: ${{ vars.DATUM_DAY_BUCKET }}
+          DATUM_DAY_ENDPOINT: ${{ vars.DATUM_DAY_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: ./web/deploy.sh --yes
+
+      - name: Install the browser
+        working-directory: web
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      # What is served, read from outside: robots, noindex, and the served
+      # CLI's own --version naming this commit.
+      - name: Verify the preview
+        working-directory: web
+        env:
+          URL: ${{ steps.url.outputs.url }}
+        run: |
+          set -euo pipefail
+          grep -qx 'Disallow: /' <<<"$(curl -fsS "$URL/robots.txt")"
+          grep -q 'name="robots" content="noindex' <<<"$(curl -fsS "$URL/")"
+          node scripts/served-version.mjs "$URL/" "$GITHUB_SHA" | tee version.txt
+          {
+            echo "Preview: $URL"
+            echo
+            echo "$(cat version.txt)"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -128,3 +128,20 @@ fn of_two_processes_racing_one_claim_exactly_one_lands() {
         .unwrap();
     assert_eq!(rows, 1);
 }
+
+/// datum.day's Reset (`startOver`, `web/src/lib/tutorial.ts`) ends each state
+/// it read with `end F -L S` and passes over these two refusals by their
+/// words: a reworded message must fail here, not break Reset.
+#[test]
+fn the_refusals_the_tutorials_reset_passes_over_keep_their_words() {
+    let db = fresh_db();
+    let err = run_cli(&["end", "lamp", "-L", "true"], &db).expect_err("nothing open");
+    assert!(format!("{err:#}").contains("No open block"), "{err:#}");
+
+    run_cli(&["switch", "lamp", "red", "-t", "-5"], &db).unwrap();
+    let err = run_cli(&["end", "lamp", "-L", "blue"], &db).expect_err("changed since the read");
+    assert!(
+        format!("{err:#}").contains("so nothing is written"),
+        "{err:#}"
+    );
+}

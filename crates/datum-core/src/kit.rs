@@ -74,6 +74,11 @@ pub struct KitMeta {
     pub version: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// `no_sync = true`: the database the kit is installed into never syncs,
+    /// nor starts or joins a chain — datum.day's tutorial, whose practice
+    /// data must never reach a chain (da-6cvrd).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_sync: bool,
     /// `[kit.params]`: the values an install fills in wherever the kit's
     /// text says `%kit:<name>%` (da-netk8). See [`KitToml::fill_params`].
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

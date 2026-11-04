@@ -319,3 +319,69 @@ describe("§16: a wait's cap is a hang-stop", () => {
 		);
 	});
 });
+
+// A predicate that returns a PROMISE waits for nothing: `waitForFunction`
+// resolves on a truthy value, does not await one, and a Promise is truthy —
+// `waitForFunction(() => Promise.resolve(false))` returns at once, where
+// `waitForFunction(() => false)` times out (measured, da-uzyih.4883). Nine
+// waits on `runQuiet(…).then(…)` and an async arrow passed whatever their
+// condition said. A wait on something asynchronous polls it with `until`
+// (`support/until.mjs`) over `page.evaluate`, which does await.
+//
+// The scan reads the predicate when it is written inline. One passed by name
+// is not read: every such one in the suite is synchronous, which is said here
+// rather than checked.
+const PROMISED = /\basync\b|\bawait\b|\.then\(|\bnew Promise\b|\bdatum\.run/;
+
+/** Every `waitForFunction` whose inline predicate returns a promise, as `line: text`. */
+function promised(lines) {
+	const found = [];
+	let calls = 0;
+	lines.forEach((line, i) => {
+		for (const m of code(line).matchAll(/\bwaitForFunction\(/g)) {
+			calls++;
+			const [predicate] = args(call(lines.slice(i), m.index));
+			if (PROMISED.test(predicate)) found.push(`${i + 1}: ${predicate.trim().split('\n')[0]}`);
+		}
+	});
+	return { calls, found };
+}
+
+// Interpolated, as `ms` is above, so this file's own shapes are not found in it.
+const [ASYNC, THEN, RUN] = ['async', '.then', 'datum.run'];
+
+const PREDICATES = [
+	[REFUSE, 'a then on a runQuiet', `page.waitForFunction(() =>\n\twindow.${RUN}Quiet(['tail'])${THEN}((r) => r.code === 0)\n);`],
+	[REFUSE, 'a then, its argument after it', `page.waitForFunction(\n\t(n) => p${THEN}((r) => r === n),\n\t1\n);`],
+	[REFUSE, 'an async arrow', `page.waitForFunction(${ASYNC} ([a]) => {\n\treturn a;\n}, [1]);`],
+	[REFUSE, 'a bare runQuiet', `page.waitForFunction(() => window.${RUN}Quiet(['tail']));`],
+	[EXCUSE, 'a synchronous predicate', `page.waitForFunction(() => document.querySelector('.x'));`],
+	[EXCUSE, 'a then on the wait itself', `page.waitForFunction(() => ok)${THEN}(() => {});`],
+	[EXCUSE, 'a named predicate (not read)', `page.waitForFunction(echoed);`]
+];
+
+describe('a waitForFunction predicate is synchronous', () => {
+	const each = files.map((file) => ({ file, ...promised(readFileSync(new URL(file, dir), 'utf8').split('\n')) }));
+
+	test('the scan has something to say', () => {
+		const calls = each.reduce((sum, f) => sum + f.calls, 0);
+		console.log(`wait-promises: ${calls} waitForFunction calls read`);
+		assert.ok(calls > 100, `only ${calls} waitForFunction calls under tests/ — the scan is broken`);
+	});
+
+	test('the rule tells every known shape apart', () => {
+		const verdict = (src) => (promised(src.split('\n')).found.length ? REFUSE : EXCUSE);
+		assert.deepEqual(
+			PREDICATES.map(([, name, src]) => `${verdict(src)}: ${name}`),
+			PREDICATES.map(([want, name]) => `${want}: ${name}`)
+		);
+	});
+
+	test('no predicate returns a promise', () => {
+		assert.deepEqual(
+			each.flatMap((f) => f.found.map((at) => `${f.file}:${at}`)),
+			[],
+			'a promise is truthy, so this wait returns at once whatever it says: poll it with `until` over `page.evaluate`'
+		);
+	});
+});

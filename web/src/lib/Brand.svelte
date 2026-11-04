@@ -183,6 +183,28 @@
 		outline-offset: 2px;
 	}
 
+	/* POINTED AT (da-6cvrd): the tutorial's Introduction says this is the
+	   way back to «datum», and its «where?» rings it for a moment, pulsing
+	   three times (da-uzyih.4869). */
+	:global(html[data-point-at='switcher']) .brand-menu :global(.brand) {
+		outline: 2px solid var(--accent-bright);
+		outline-offset: 3px;
+		border-radius: 4px;
+		animation: point-at 0.8s ease-in-out 3;
+	}
+
+	@keyframes point-at {
+		50% {
+			outline-color: transparent;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(html[data-point-at='switcher']) .brand-menu :global(.brand) {
+			animation: none;
+		}
+	}
+
 	/* Cut here, not on the button: the arrow after it keeps its own box. */
 	.name {
 		min-width: 0;

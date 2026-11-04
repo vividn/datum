@@ -933,6 +933,13 @@ pub fn gave_way(e: &anyhow::Error) -> bool {
         .is_some_and(|f| f.0 == Failure::Refused(Why::Busy) && f.1.ends_with(CARRIED_WHY))
 }
 
+/// Whether `e` is a session this copy refused for applying another, telling
+/// its dialer, in [`BUSY_WHY`], that this copy syncs again once done. Not a
+/// dial closed as busy, which a session between the two copies carries.
+pub fn refused_applying(e: &anyhow::Error) -> bool {
+    failure(e) == Some(Failure::Refused(Why::Busy)) && e.root_cause().to_string() == BUSY_WHY
+}
+
 /// Await `work`, sending a [`BUSY`] every quarter of [`idle`] until it ends.
 /// Only work that awaits something done off this thread lets one out.
 async fn busy<T>(s: &mut SendStream, work: impl Future<Output = Result<T>>) -> Result<T> {
@@ -2842,6 +2849,10 @@ mod tests {
         let sent = |why: &str| format!("{:#}", anyhow!(why.to_string()));
         assert!(gave_way(&refused(sent(CARRIED_WHY), Some(Why::Busy))));
         assert!(!gave_way(&refused(sent(BUSY_WHY), Some(Why::Busy))));
+        let busy = Failure::Refused(Why::Busy);
+        let by_this = anyhow!(BUSY_WHY).context(Failed(busy, "refused x".into()));
+        assert!(refused_applying(&by_this));
+        assert!(!refused_applying(&Failed(busy, "x: closed".into()).into()));
         assert!(!gave_way(&refused(sent(CARRIED_WHY), Some(Why::Other))));
     }
 

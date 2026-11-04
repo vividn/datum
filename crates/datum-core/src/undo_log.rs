@@ -21,6 +21,13 @@
 //! what it took on its own row (`took`), so the next goes on past it. The table
 //! is this copy's alone: nothing here syncs, and an entry a sync changed after
 //! an action is refused rather than reverted ([`blocker`]).
+//!
+//! Under `DATUM_NOT_UNDOABLE` a command is no action either (da-uzyih.4937):
+//! a page's setup of its own (the tutorial's kit and tabs), which no person
+//! did and a bare `undo` must not take back, nor `_LAST` name (`last_docs`).
+//! The history is written as ever, but its rows carry no `action_id`, there
+//! being no action: they read as any write outside one, so an earlier action
+//! on the same entry is refused as changed since ([`blocker`]).
 
 use std::cell::Cell;
 
@@ -38,6 +45,11 @@ thread_local! {
     static ACTION: Cell<Option<Option<i64>>> = const { Cell::new(None) };
 }
 
+/// Whether this command is a page's own setup, which is nobody's to take back.
+pub(crate) fn not_undoable() -> bool {
+    std::env::var_os("DATUM_NOT_UNDOABLE").is_some()
+}
+
 /// Run `f` as one action. A scope inside a scope is the outer one's, so a
 /// multi-side log is one action however many sides it dispatches.
 pub fn scope<T>(f: impl FnOnce() -> T) -> T {
@@ -47,7 +59,7 @@ pub fn scope<T>(f: impl FnOnce() -> T) -> T {
             ACTION.set(None);
         }
     }
-    if ACTION.get().is_some() {
+    if ACTION.get().is_some() || not_undoable() {
         return f();
     }
     ACTION.set(Some(None));

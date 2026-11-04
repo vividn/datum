@@ -950,11 +950,10 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 	// database's to become.
 	test('a kind gated to a database is out of PICKABLE, and its database carries its tree', async () => {
 		const { KINDS, PICKABLE, pickableIn, titleOf } = await import('../src/lib/layout/registry.ts');
-		const { DEBUG_DB, DEBUG_LAYOUT, DEBUG_LAYOUT_TREE, BUILTIN_NAMES } = await import(
-			'../src/lib/layout/defaults.ts'
-		);
+		const { DEBUG_DB, DEBUG_LAYOUT, DEBUG_LAYOUT_TREE, BUILTIN_NAMES, LESSONS, TUTORIAL_DB, TUTORIAL_LAYOUTS } =
+			await import('../src/lib/layout/defaults.ts');
 		const gated = Object.keys(KINDS).filter((kind) => KINDS[kind].db);
-		assert.deepEqual(gated, ['debug', 'seed'], 'a new gated kind wants its line here');
+		assert.deepEqual(gated, ['debug', 'seed', 'tutorial'], 'a new gated kind wants its line here');
 		for (const kind of gated) {
 			assert.ok(!PICKABLE.includes(kind), `${kind} is gated and still in PICKABLE`);
 			assert.ok(!BUILTIN_NAMES.includes(kind), `${kind} is gated and still has a built-in layout`);
@@ -963,14 +962,29 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		}
 		// Every ungated kind is offered everywhere, gated database included.
 		assert.deepEqual(pickableIn('datum'), PICKABLE);
-		assert.deepEqual(pickableIn(DEBUG_DB), [...PICKABLE, ...gated].sort((a, b) =>
-			Object.keys(KINDS).indexOf(a) - Object.keys(KINDS).indexOf(b)
-		));
+		const order = (a, b) => Object.keys(KINDS).indexOf(a) - Object.keys(KINDS).indexOf(b);
+		for (const db of [DEBUG_DB, TUTORIAL_DB])
+			assert.deepEqual(pickableIn(db), [...PICKABLE, ...gated.filter((k) => KINDS[k].db === db)].sort(order));
 		// The tree the DEBUG database is shipped holds every gated kind, and
 		// is named as the first is titled.
 		assert.equal(DEBUG_LAYOUT_TREE.name, DEBUG_LAYOUT);
 		assert.equal(DEBUG_LAYOUT, titleOf('debug'));
-		assert.deepEqual(['debug-bar', 'debug-seed'].flatMap((id) => kinds(findPane(DEBUG_LAYOUT_TREE, id))), gated);
+		assert.deepEqual(['debug-bar', 'debug-seed'].flatMap((id) => kinds(findPane(DEBUG_LAYOUT_TREE, id))), ['debug', 'seed']);
 		assert.ok(isCanonical(DEBUG_LAYOUT_TREE), 'the shipped DEBUG tree is not canonical');
+		// The tutorial's tabs (da-6cvrd): one per lesson, in order, each its
+		// lesson's widget once, wherever its split puts it (a nowview beside
+		// it, da-6xeqy), and a game's about over the nowview and its fields under
+		// it (da-uzyih.4908),
+		// none a built-in's name.
+		const lessonsIn = (node) =>
+			!node || typeof node !== 'object' ? [] : node.kind === 'tutorial' ? [node.settings] : Object.values(node).flatMap(lessonsIn);
+		assert.deepEqual(TUTORIAL_LAYOUTS.map((l) => l.name), LESSONS.map((l) => l.name));
+		for (const tree of TUTORIAL_LAYOUTS) {
+			assert.ok(isCanonical(tree), `the tutorial's ${tree.name} is not canonical`);
+			assert.ok(!BUILTIN_NAMES.includes(tree.name), `${tree.name} shadows a built-in`);
+			const game = ['moment', 'on-off', 'switch'].includes(tree.name);
+			const lessons = game ? [{ lesson: tree.name, part: 'about' }, { lesson: tree.name }, { lesson: tree.name, part: 'fields' }] : [{ lesson: tree.name }];
+			assert.deepEqual(lessonsIn(tree.root), lessons);
+		}
 	});
 });

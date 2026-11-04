@@ -361,7 +361,7 @@ describe('in the app', () => {
 			assert.equal(await commit.isEnabled(), false, 'a name alone is not a field');
 			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
 			assert.deepEqual(glyphs.map((g) => g.trim()), VERBS.map((v) => v.glyph));
-			// Named as the welcome names it, with its line beside it.
+			// Named as the tutorial's shapes tab names it, with its line beside it.
 			assert.deepEqual(await page.locator(`${MODAL} .verb .name`).allInnerTexts(), VERBS.map((v) => v.what));
 			assert.deepEqual(await page.locator(`${MODAL} .verb .line`).allInnerTexts(), VERBS.map((v) => v.line));
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();

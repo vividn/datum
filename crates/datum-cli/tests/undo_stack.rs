@@ -27,6 +27,33 @@ fn hid_of(db: &Db, field: &str) -> String {
         .to_string()
 }
 
+/// The real binary, so the variable is its process's alone and no test's beside it.
+#[test]
+fn a_command_under_datum_not_undoable_is_no_step_of_the_stack() {
+    let dir = tempfile::tempdir().unwrap();
+    let datum = |env: bool, args: &[&str]| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_datum"));
+        command.args(args).env("DATUM_DB", dir.path().join("d.db"));
+        if env {
+            command.env("DATUM_NOT_UNDOABLE", "1");
+        }
+        command.output().unwrap()
+    };
+
+    assert!(datum(true, &["occur", "setup"]).status.success());
+    let nothing = datum(false, &["undo"]);
+    assert!(!nothing.status.success());
+    assert!(String::from_utf8_lossy(&nothing.stderr).contains("Nothing to undo"));
+    assert!(!datum(false, &["del"]).status.success(), "nor is it _LAST");
+
+    assert!(datum(false, &["occur", "tap"]).status.success());
+    assert!(datum(false, &["undo"]).status.success());
+    assert!(!datum(false, &["undo"]).status.success(), "the setup stays");
+
+    let tail = datum(false, &["tail", "setup", "--json"]);
+    assert!(String::from_utf8_lossy(&tail.stdout).contains("\"field\": \"setup\""));
+}
+
 #[test]
 fn undo_walks_back_and_redo_walks_forward() {
     let db = fresh_db();

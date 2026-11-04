@@ -1,0 +1,29 @@
+Noto Emoji images
+
+The SVGs in this directory are Google's Noto Color Emoji images, taken
+unmodified from https://github.com/googlefonts/noto-emoji, directory
+2D/svg/, at commit 99701e07d3d1fe1bdbcdb14964547f0fd592966f (2026-10-26):
+
+  emoji_u1f950.svg  🥐 croissant
+  emoji_u1f370.svg  🍰 shortcake
+  emoji_u1f96f.svg  🥯 bagel
+  emoji_u2615.svg   ☕ hot beverage
+  emoji_u1f375.svg  🍵 teacup without handle
+
+The notice that directory carries (2D/svg/LICENSE):
+
+  Copyright 2013 Google, Inc. All Rights Reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+LICENSE in this directory is the Apache License, Version 2.0, in full.

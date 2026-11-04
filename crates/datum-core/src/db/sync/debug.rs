@@ -16,6 +16,7 @@ use super::{apply_in, now_ms, parse_hlc, unhex, vector_where, Chain};
 use crate::db::insert::{insert_entry_in_tx_pub, save_existing_entry_with_kind_in_tx};
 use crate::db::spec::NOT_META_FIELD_SQL;
 use crate::db::tombstone::soft_delete_in_tx;
+use crate::db::types::LIVE_SQL;
 use crate::db::ConflictStrategy;
 use crate::db::Db;
 use crate::entry::{Entry, Verb};
@@ -41,10 +42,29 @@ fn device(conn: &Connection) -> Result<Option<SigningKey>> {
 }
 
 /// A copy holding a debug device's ops starts, joins and syncs with no
-/// chain, in either direction.
+/// chain, in either direction — nor does one holding a kit whose `[kit]`
+/// says `no_sync` (datum.day's tutorial, da-6cvrd). Run at every handshake,
+/// apply round and baseline chunk; `field = 'kit'` seeks
+/// `entries_live_field_hybrid`, so it reads the kit rows alone.
 pub(super) fn refuse(conn: &Connection) -> Result<()> {
-    match device(conn)? {
-        Some(_) => Err(DatumError::Other(DEBUG_COPY.into())),
+    if device(conn)?.is_some() {
+        return Err(DatumError::Other(DEBUG_COPY.into()));
+    }
+    let kit: Option<String> = conn
+        .query_row(
+            &format!(
+                "SELECT json_extract(data, '$.name') FROM entries WHERE field = 'kit'
+                   AND json_extract(data, '$.no_sync') AND {LIVE_SQL} LIMIT 1"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match kit {
+        Some(kit) => Err(DatumError::Other(format!(
+            "this database holds the kit «{kit}», which never syncs: \
+             it does not sync, nor start or join a sync chain"
+        ))),
         None => Ok(()),
     }
 }

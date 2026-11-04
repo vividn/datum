@@ -39,6 +39,11 @@ import { findTab } from './layout/tree.js';
 import { isWidget } from './layout/types.js';
 import type { Layout, WidgetKindMeta } from './layout/types.js';
 import { KINDS } from './layout/registry.js';
+import { LESSONS, type Lesson } from './layout/defaults.js';
+import { startOver } from './tutorial.js';
+import * as house from './house.js';
+import * as cafe from './cafe.js';
+import { DEN, type Round } from './den.js';
 import { KINDS as BACKUP_KINDS, type DestinationKind } from './backups.js';
 import { syncConnect, syncLeads, syncOffer, syncStates, type Invite, type SyncState } from './sync.js';
 import type { SyncReport } from './syncProtocol.js';
@@ -117,8 +122,13 @@ export interface DatumConsole {
 	field(field?: string, verb?: Verb | null): Promise<RunResult | null>;
 	/** The backup destinations' kinds (#lib/backups.ts), by name: what a plan's `kind` opens. */
 	backupKinds: Record<string, DestinationKind>;
-	/** `datum help <name>` in the Help place, as a «Learn more» link opens it (da-efruz). */
+	/** `datum help <name>` in the Help place, as the Help button opens it (da-efruz). */
 	help(name?: string): Promise<void>;
+	/**
+	 * The tutorial's lessons (da-6cvrd), the very objects its tabs read, a game's Reset, which ends the active states of the fields it is given (da-uzyih.4864), and the Introduction's reset, refused outside the tutorial (da-uzyih.4893).
+	 * `cafe` is the occur lesson's scene (da-nl1co) and `house` the switch lesson's (da-uzyih.4867), each: `round.seed` its next round (null, a fresh one each), `scene` what a seed scripts. `den` is «On and off»'s round, which a test shortens (da-rru2t).
+	 */
+	tutorial: { lessons: Lesson[]; startOver(fields: string[]): Promise<void>; reset(): Promise<void>; cafe: typeof cafe; house: typeof house; den: Round };
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -155,7 +165,8 @@ export function installConsole(target: Record<string, unknown>): void {
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		field: openField,
 		backupKinds: BACKUP_KINDS,
-		help: explainCommand
+		help: explainCommand,
+		tutorial: { lessons: LESSONS, startOver, reset: shell.resetTutorial, cafe, house, den: DEN }
 	};
 	target.datum = handle;
 }

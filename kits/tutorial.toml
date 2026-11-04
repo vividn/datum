@@ -1,0 +1,114 @@
+[kit]
+name = "tutorial"
+version = "0.2"
+description = "datum.day's tutorial (da-uzyih): the fields its lessons log, each found by its name in the lesson that logs it, so a tab's widgets show its own and a game's Reset ends only theirs. datum.day installs it into the database «tutorial» on the first visit, with the lessons' tabs beside it. Practice data never syncs."
+# The database it is installed into refuses every sync, so the practice
+# never reaches a chain (da-6cvrd).
+no_sync = true
+
+# The lessons' fields, plain names: the tutorial is a database of its own,
+# so they collide with nothing logged for real. LESSONS in
+# web/src/lib/layout/defaults.ts lists each lesson's by name.
+
+# Each lesson's fields fill the band between them (da-uzyih.4894): `pos` is
+# a lane's top and `size` its height, fractions of the band. A lesson's own
+# lanes never overlap and differ in height, to show a lane can be any size.
+# Two lessons' lanes may share the band: one game is played at a time, so
+# their entries are apart in time (vividn, 2026-10-28: «prioritize
+# distinctness within a lesson rather than across lessons»). A moment's dot
+# is `glyph_scale` standard dots (0.08 of the band) tall, exactly its lane.
+# A bar is drawn its lane's height rounded up to a whole pixel
+# (`compute_dayview`), so a gap of 0.04 is left under each bar.
+
+# Things that happen (da-nl1co): what appears on the café table, a field
+# a kind, each tap a moment, drawn as the scene's picture of it
+# (`#lib/cafe.ts`'s KINDS; the café lesson's web test holds the two together).
+# Five hues apart from each other.
+[[field]]
+name = "coffee"
+verb = "moment"
+color = "#8b5a2b"
+glyph = "☕"
+pos = 0.0
+size = 0.22
+glyph_scale = 2.75
+
+[[field]]
+name = "tea"
+verb = "moment"
+color = "#12b886"
+glyph = "🍵"
+pos = 0.235
+size = 0.16
+glyph_scale = 2.0
+
+[[field]]
+name = "croissant"
+verb = "moment"
+color = "#fab005"
+glyph = "🥐"
+pos = 0.41
+size = 0.2
+glyph_scale = 2.5
+
+[[field]]
+name = "cake"
+verb = "moment"
+color = "#d6336c"
+glyph = "🍰"
+pos = 0.625
+size = 0.24
+glyph_scale = 3.0
+
+[[field]]
+name = "bagel"
+verb = "moment"
+color = "#d4a373"
+glyph = "🥯"
+pos = 0.88
+size = 0.12
+glyph_scale = 1.5
+
+# On and off (da-uzyih.4866): a book, a TV and a phone, several at once,
+# each in the color the scene draws it in (OnOffLesson.svelte). The TV, the
+# biggest thing, the widest bar; the phone the thinnest.
+[[field]]
+name = "reading"
+verb = "start"
+color = "#7950f2"
+pos = 0.04
+size = 0.26
+
+[[field]]
+name = "tv"
+verb = "start"
+color = "#1c7ed6"
+pos = 0.34
+size = 0.38
+
+[[field]]
+name = "phone"
+verb = "start"
+color = "#e8590c"
+pos = 0.76
+size = 0.18
+
+# States (da-uzyih.4867): where a dot in a house is, a state a room, or the garden.
+# The person is always somewhere (da-uzyih.4880): no end, and `false` refused;
+# a game's Reset IGNOREs it instead. Each room is the color of what is in
+# it, and the scene draws its name and furniture in it (SwitchLesson.svelte):
+# the kitchen the stove's red, the living room the wood of its sofa and table,
+# the bedroom a night's lavender, the bathroom an off-white blue, the garden green.
+# The lesson's one field, so its bar takes most of the band.
+[[field]]
+name = "room"
+verb = "switch"
+never_false = true
+only_listed_states = true
+pos = 0.1
+size = 0.8
+states.kitchen = { color = "#f03e3e" }
+states.living_room = { color = "#a47148" }
+states.bedroom = { color = "#9775fa" }
+states.bathroom = { color = "#cfe6f5" }
+states.garden = { color = "#40c057" }

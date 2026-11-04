@@ -37,7 +37,7 @@ import {
 	newLayoutArgv,
 	updateLayoutArgv
 } from '../calls.js';
-import { cliError, run } from '../run.js';
+import { cliError, run, type RunResult } from '../run.js';
 import type { Layout } from './types.js';
 
 /**
@@ -187,13 +187,25 @@ export async function refreshKits(): Promise<void> {
  * how the app ships the DEBUG database its debug layout without there
  * being a kit file to install.
  *
- * REJECTS WHEN THE SLUG IS TAKEN, which is the install path's own
- * conflict policy: an entry already under the name is left alone, kit's
- * or person's. `replace` is the one exception — a new version of a kit
- * row the caller has just read as its own kit's (`kitLayout`).
+ * Throws `cliError` when the command fails, whatever the reason; one is
+ * the slug being taken, the install path's own conflict policy: an entry
+ * already under the name is left alone, kit's or person's. `replace` is
+ * the one exception — a new version of a kit row the caller has just read
+ * as its own kit's (`kitLayout`).
+ *
+ * `through` runs the command: `run` by default, and the caller's own
+ * where the write must run otherwise — the shell's `settingUpQuietly`,
+ * which keeps the app's setup off the undo stack (`DATUM_NOT_UNDOABLE`).
  */
-export async function installKitLayout(layout: Layout, kit: string, replace = false): Promise<void> {
-	await data(...(replace ? updateLayoutArgv(layout, kit) : newLayoutArgv(layout, kit)));
+export async function installKitLayout(
+	layout: Layout,
+	kit: string,
+	replace = false,
+	through: (argv: string[]) => Promise<RunResult> = run
+): Promise<void> {
+	const argv = replace ? updateLayoutArgv(layout, kit) : newLayoutArgv(layout, kit);
+	const result = await through(argv);
+	if (result.code !== 0) throw cliError(result.stderr, `datum ${argv[0]} exited ${result.code}`);
 }
 
 async function row(name: string): Promise<LayoutRow> {

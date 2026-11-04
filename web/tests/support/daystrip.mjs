@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
 import { swipeNoWait } from './press.mjs';
 import { optionChecked, toggleOption } from './layout.mjs';
+import { until } from './until.mjs';
 
 /** «Save options with layout» (da-vhwq): what hands a widget's own move to the layout. */
 export const SAVE_OPTIONS = 'Save options with layout';
@@ -26,7 +27,7 @@ export const NARROW = { viewport: { width: 360, height: 640 } };
  */
 export const settledRoom = (on, name, fn) =>
 	on.room(name, async (app) => {
-		await app.page.waitForFunction(async ([min, max, sliver]) => {
+		await until(() => app.page.evaluate(async ([min, max, sliver]) => {
 			const strip = document.querySelector('.strip');
 			const body = strip?.closest('.body');
 			const grip = strip?.querySelector('.today-line');
@@ -46,7 +47,7 @@ export const settledRoom = (on, name, fn) =>
 			const day = (Math.floor(content) - axis - seam) / (1 + sliver);
 			const derived = Math.min(max, Math.max(min, Math.round(day)));
 			return Number(grip.getAttribute('aria-valuenow')) === derived;
-		}, [MIN_DAY, MAX_DAY, SLIVER]);
+		}, [MIN_DAY, MAX_DAY, SLIVER]), (ok) => ok);
 		await app.idle();
 		return fn(app);
 	});

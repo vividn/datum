@@ -93,6 +93,8 @@ It defines `alias word='datum word'` only where the word is free, so `tail` stay
   then `datum chorelist` (a [kit](kits/chores.toml) bundles fields, aliases and commands in one file: install asks
   before it adds an index, and `--dry-run` says first what it brings; datum.day/kits/ lists the rest)
 
+Start with one or two fields, and make noticing and logging them a habit before you add more.
+
 **Make it yours.** Any word is a field the moment you log it; nothing needs setting up first. A field (the word after
 the verb: `coffee`, `sleep`, `environment`) can also declare the keys its entries hold, and an alias of your own can carry
 part of the data:

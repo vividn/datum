@@ -261,6 +261,67 @@ fn a_dial_given_way_to_a_session_that_gave_way_to_a_write_waits_no_minute() {
     }
 }
 
+/// `b`'s file's gate, taken as any process holding it reads: `b` is applying.
+fn applying(b: &Copy) -> std::fs::File {
+    let mut at = b.db().into_os_string();
+    at.push(".applying");
+    let gate = std::fs::File::options()
+        .create(true)
+        .append(true)
+        .open(at)
+        .unwrap();
+    gate.lock().unwrap();
+    gate
+}
+
+/// A copy that refused a push as busy syncs again once done, as its refusal
+/// says, though what it applied moved its vector nowhere and so asks no push
+/// of its own: the peer's write does not wait out the minute (da-uzyih.4927).
+#[test]
+fn a_copy_that_refused_as_busy_comes_back_though_it_applied_nothing_new() {
+    let (a, b) = paired();
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let a_err = lines(a_runs.child.stderr.take().unwrap());
+    let mut b_runs = b.serve(&["sync", "run"]);
+    b_runs.lines_until(" got ");
+    // b's push of what it just got has ended, or it would carry the walk.
+    std::thread::sleep(Duration::from_secs(3));
+
+    let gate = applying(&b);
+    a.ok(&["occur", "walk"]);
+    // Its log says what a run's silence could not (da-uzyih.4927).
+    while !a_err
+        .recv_timeout(Duration::from_secs(10))
+        .expect("a's run saying b is busy")
+        .contains("is busy")
+    {}
+    assert!(!b.has("walk"));
+    drop(gate);
+    eventually("a's walk reaching b inside the minute", || b.has("walk"));
+}
+
+/// Two copies each refused by the other, one after the other, each holding
+/// off from the other for its minute: the one that refused last owes the
+/// session, and its hold does not keep it from it (da-uzyih.4927).
+#[test]
+fn copies_that_refused_each_other_as_busy_do_not_both_wait_the_minute() {
+    let (a, b) = paired();
+    let _a_runs = a.serve(&["sync", "run"]);
+    let mut b_runs = b.serve(&["sync", "run"]);
+    b_runs.lines_until(" got ");
+
+    let b_gate = applying(&b);
+    a.ok(&["occur", "walk"]);
+    std::thread::sleep(Duration::from_secs(2));
+    // b, done, comes back, and a refuses it in turn.
+    let a_gate = applying(&a);
+    drop(b_gate);
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(!b.has("walk"));
+    drop(a_gate);
+    eventually("a's walk reaching b inside the minute", || b.has("walk"));
+}
+
 /// A peer whose file a write holds refuses as busy, and this copy waits the
 /// applying gap, a minute, to push to it again. The peer gives way itself
 /// and pushes once the write ends, which is what brings it the change, well

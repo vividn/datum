@@ -20,7 +20,7 @@
 // tag is how "what seeding wrote" outlives the page that wrote it.
 
 import { stripAnsi } from './ansi.js';
-import { deleteSampleArgv, kitInstallArgv, kitUninstallArgv, sampleTaggedArgv } from './calls.js';
+import { deleteHidsArgv, kitInstallArgv, kitUninstallArgv, sampleTaggedArgv } from './calls.js';
 import { run, type RunResult } from './run.js';
 import SAMPLE_KIT from '../../../kits/sample.toml?raw';
 
@@ -152,7 +152,7 @@ async function tagged(onStep: (s: Step) => void): Promise<string[]> {
 export async function clearSample(onStep: (s: Step) => void): Promise<number> {
 	const hids = await tagged(onStep);
 	if (!hids.length) return 0;
-	await step(deleteSampleArgv(hids), onStep);
+	await step(deleteHidsArgv(hids), onStep);
 	return (await tagged(onStep)).length;
 }
 

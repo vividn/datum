@@ -30,9 +30,9 @@ export interface VerbChoice {
 	verb: Verb;
 	/** The glyph the CLI prints after `TRACK` for a field declared this way. */
 	glyph: string;
-	/** The shape's name, the one a newcomer chooses by (da-fu29p); vividn's names of 2026-10-14, shared with the welcome. */
+	/** The shape's name, the one a newcomer chooses by (da-fu29p); vividn's names of 2026-10-14, shared with the tutorial's games and docs/basics.md. */
 	what: string;
-	/** What a field of this shape is, in a line, under its name. */
+	/** What a field of this shape is, in a line, under its name: on the setup widget's shape buttons. */
 	line: string;
 }
 

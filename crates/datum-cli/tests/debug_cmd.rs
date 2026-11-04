@@ -157,3 +157,57 @@ fn specs_and_sample_entries_are_not_real_entries() {
     let (ok, out) = env.run(&["debug", "conflicts", "1"]);
     assert!(ok, "{out}");
 }
+
+/// A database holding a kit whose `[kit]` says `no_sync` — datum.day's
+/// tutorial, the very kit it ships (da-6cvrd) — refuses every sync as a
+/// debug copy does, and syncs again once the kit is uninstalled.
+#[test]
+fn a_database_holding_a_no_sync_kit_does_not_sync() {
+    let env = Env::new();
+    let kit = env._tmp.path().join("tutorial.toml");
+    std::fs::write(&kit, include_str!("../../../kits/tutorial.toml")).unwrap();
+    let (ok, out) = env.run(&["kit", "install", kit.to_str().unwrap()]);
+    assert!(ok, "{out}");
+    let never = "kit «tutorial», which never syncs";
+    for argv in [
+        &["sync", "pipe", "ops"][..],
+        &["sync"],
+        &["sync", "run"],
+        &["sync", "chain", "invite"],
+        &["sync", "chain", "join", "nonsense"],
+    ] {
+        let (ok, out) = env.run(argv);
+        assert!(!ok && out.contains(never), "{argv:?}: {out}");
+    }
+    let (ok, out) = env.run(&["sync", "status"]);
+    assert!(ok && out.contains(never), "{out}");
+    let (_, out) = env.run(&["sync", "status", "--show", "json"]);
+    assert!(out.contains(r#""chain":null"#), "no chain started: {out}");
+
+    let (ok, out) = env.run(&["kit", "uninstall", "tutorial"]);
+    assert!(ok, "{out}");
+    let (_, out) = env.run(&["sync", "status"]);
+    assert!(!out.contains(never), "uninstalled, it may sync: {out}");
+}
+
+/// A kit holding `no_sync` and nothing else still writes its row: the row
+/// is the refusal, so a kit with no fields must not skip it (da-uzyih.6).
+#[test]
+fn a_kit_holding_only_no_sync_is_installed_and_does_not_sync() {
+    let env = Env::new();
+    let kit = env._tmp.path().join("bare.toml");
+    std::fs::write(
+        &kit,
+        "[kit]\nname = \"bare\"\nversion = \"0.1\"\nno_sync = true\n",
+    )
+    .unwrap();
+    let (ok, out) = env.run(&["kit", "install", kit.to_str().unwrap()]);
+    assert!(ok, "{out}");
+    let (_, out) = env.run(&["kit", "list"]);
+    assert!(out.lines().any(|l| l.starts_with("bare ")), "{out}");
+    let (ok, out) = env.run(&["sync"]);
+    assert!(
+        !ok && out.contains("kit «bare», which never syncs"),
+        "{out}"
+    );
+}

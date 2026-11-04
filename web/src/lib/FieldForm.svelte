@@ -9,14 +9,14 @@
 	#lib/track.ts, `track_action_label` in datum-core): the row this form
 	is about to write will print `TRACK●` in every action column there is,
 	so what a person presses here is the shape they will meet again. Each is
-	named as the welcome names it — moment, on/off, switch, card — with
-	a line of what it is beside it.
+	named as the tutorial's games name it (`VERBS`, docs/basics.md) —
+	moment, on/off, switch, card — with a line of what it is beside it.
 
 	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
 	name, start with the shape buttons. I think that ends up being the most
-	important question to answer». Each is named and lined as the welcome
-	names it, and on a new field has an «ex.» part to the side that opens
-	its examples in a sheet (`EXAMPLES`, less the ones there is already a
+	important question to answer». Each is named as the tutorial's games
+	name it, and on a new field has an «ex.» part to the side
+	that opens its examples in a sheet (`EXAMPLES`, less the ones there is already a
 	field for, da-yqx0t), each with its icon: one tap fills the form — never the
 	database — with a field of that shape, its colour, symbol, keys and
 	states, to be read, changed and saved or not. Neither a shape nor an

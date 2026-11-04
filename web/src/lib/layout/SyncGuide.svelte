@@ -4,10 +4,10 @@
 	should be made as well to describe how to use it», and the CLI's
 	subcommands in an expandable section at the end, not in the body.
 
-	The Help place draws it (#lib/help.ts `GUIDES`): the welcome's «Syncing
-	your devices», the Help button on the Sync widget and the widget's own `?`
-	open it. Every control it names is a `b.ui` in the words the widget shows,
-	and `tests/syncguide.test.mjs` walks the widget and finds each one there.
+	The Help place draws it (#lib/help.ts `GUIDES`): the Help button on the
+	Sync widget and the widget's own `?` open it. Every control it names is
+	a `b.ui` in the words the widget shows, and `tests/syncguide.test.mjs`
+	walks the widget and finds each one there.
 	`widget` is the kind's help, what the widget's lines and marks mean; the
 	reference is `datum help sync`, the CLI's own, so it cannot drift.
 -->

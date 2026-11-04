@@ -87,7 +87,7 @@ describe('the field widget', () => {
 			assert.equal(await page.locator(`${WIDGET} button.new`).count(), 0);
 			assert.equal(await pick(page).count(), 0);
 			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
-			// The shapes come first, above the name, each named and lined as the welcome has it.
+			// The shapes come first, above the name, each named and lined as the tutorial's shapes tab has it.
 			const said = await page.locator(`${FIELD_FORM} .verb`).evaluateAll((all) =>
 				all.map((b) => [...b.children].map((c) => c.textContent.trim()))
 			);

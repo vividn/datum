@@ -9,7 +9,7 @@
 // how to close tabs».
 //
 // So: a device that has never been here opens the three, `welcome` in
-// front; its button lands on `setup`; it closes the way it says it does,
+// front; `setup` is the next tab; it closes the way it says it does,
 // leaving the other two, and the `+` brings it back; and a device that has
 // been here keeps the tabs it had. What the WORDS claim about the page is
 // done to the page here, by the controls they name.
@@ -19,6 +19,12 @@
 // widget that closes the widget too … I am imagining that the welcome
 // widget will have some scrolling and reading rather than all fitting on
 // one page».
+//
+// And it is short (da-uzyih.19). vividn, 2026-10-22: «trim down the welcome
+// page considerably after the tutorial is in … it should mostly just welcome
+// you, give a tag line, tell you to point your agent there, maybe link to the
+// repo? and give docs». What it taught is the tutorial's Introduction
+// (tutorial.test.mjs reads it there).
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,7 +67,7 @@ describe('a first visit', () => {
 		['a desktop', FRESH_DESKTOP, ['dayview', 'tail', 'collect', 'nowview', 'stats', 'command']],
 		['a phone', FRESH_PHONE, ['tail', 'nowview', 'collect', 'command']]
 	])
-		test(`${what} opens welcome · setup · collect on welcome; its button lands on setup; collect is the page it opened before`, async () => {
+		test(`${what} opens welcome · setup · collect on welcome; setup is the setup widget; collect is the page it opened before`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				assert.deepEqual(await rootNames(page), FIRST);
@@ -72,7 +78,7 @@ describe('a first visit', () => {
 				assert.equal(await page.locator('.root-bar [role="tab"].modified').count(), 0);
 				assert.equal(await page.locator('dialog.confirm').count(), 0);
 
-				await page.getByRole('button', { name: 'Setup', exact: true }).click();
+				await page.locator('.root-bar [role="tab"]', { hasText: exactly('setup') }).click();
 				await until(() => front(page), ([name]) => name === 'setup');
 				assert.deepEqual(await front(page), ['setup', 'setup']);
 				// The setup widget, on a new field.
@@ -87,49 +93,55 @@ describe('a first visit', () => {
 			}, device);
 		});
 
-	test('what it says: datum, a field, an entry, the four kinds as the Track form draws them, the flow, and the tabs', async () => {
+	// What it HAS and DOES, not its sentences (vividn, 2026-10-28: «seems like tests that quote word for word are kind
+	// of useless»): the copy is his to change without a test following it.
+	const LINKS = ['https://github.com/vividn/datum/blob/main/docs/README.md', 'https://datum.day/agents.md', 'https://github.com/vividn/datum'];
+
+	test('what it has: the name, local first, the Tutorial button, the docs, the guide for agents and the repo, then «Close welcome»', async () => {
 		await withApp(async ({ page }) => {
-			const text = await words(page);
-			for (const said of [
-				'Record your life, cultivate awareness, and confront the truth.',
-				'No one else sees or can access your data.',
-				'Each field is one thing you track',
-				'For each field you log entries',
-				'which persists until the next state change.',
-				'Choose one or two fields to track.',
-				'Log them as they happen: tap, or type in the input bar.',
-				'Find your patterns: visualize and analyze all that beautiful data.',
-				'Every tap shows the command it ran',
-				'Open a widget, or a tab you closed: the + beside the tabs.',
-				'Move a tab: drag it. On a phone, hold it first.',
-				'Change a page: hold its tab, or right-click it, for layout mode.',
-				"In layout mode a pane's name splits, changes or closes it.",
-				"Leave by the tab's name: Accept, Save layout (every device), or Discard changes."
-			])
-				assert.ok(text.includes(said), `not said: ${said}\n${text}`);
+			const host = page.locator('.host.welcome');
+			assert.equal(await host.getByRole('heading', { level: 1 }).innerText(), 'datum');
+			// Back from the Introduction (da-uzyih.4869, vividn, 2026-10-27).
+			assert.match(await words(page), /local first/i);
+			const controls = await host.locator('div.welcome').locator('button, a').evaluateAll((all) =>
+				all.map((e) => (e.tagName === 'A' ? e.getAttribute('href') : e.textContent.trim()))
+			);
+			assert.deepEqual(controls, ['Tutorial', ...LINKS]);
 			// «a button at the bottom of the welcome widget»: the last thing in it.
-			assert.ok(text.trimEnd().endsWith('Close welcome'), text);
-			// The four shapes, glyph and name, are the ones the Track form offers (vividn's names, 10-14).
-			const kinds = await page.locator('.host.welcome .shapes li .head').allInnerTexts();
-			assert.deepEqual(kinds.map((k) => k.replace(/\s+/g, ' ')), [
-				'● moment: a single point in time (no state)',
-				'█ on/off: on for a while, then off',
-				'▞ switch: one state until the next (custom states)',
-				'¢ card: keys and values, with no time'
+			assert.equal((await host.getByRole('button').last().innerText()).trim(), 'Close welcome');
+			for (const link of await host.getByRole('link').all()) assert.equal(await link.getAttribute('target'), '_blank');
+		}, FRESH_DESKTOP);
+	});
+
+	test('what it does: its Tutorial button opens the tutorial database', async () => {
+		await withApp(async ({ page }) => {
+			await Promise.all([
+				page.waitForURL((url) => url.searchParams.get('db') === 'tutorial'),
+				page.locator('.host.welcome').getByRole('button', { name: 'Tutorial', exact: true }).click()
 			]);
 		}, FRESH_DESKTOP);
 	});
 
+	// The Help place's front page is the same short welcome, under its own line (da-uzyih.19): no full copy is kept.
+	test('Help\'s front page is the short welcome under its own line', async () => {
+		await withApp(async ({ page }) => {
+			await page.evaluate(() => window.datum.shell.open('help'));
+			const help = page.locator('.host[data-widget="help"]');
+			assert.equal(await help.locator('p.quiet + div.welcome').count(), 1);
+			const links = await help.locator('div.welcome').getByRole('link').evaluateAll((all) => all.map((a) => a.getAttribute('href')));
+			assert.deepEqual(links, LINKS);
+			const text = await help.innerText();
+			for (const gone of ['Field shapes', 'The input bar', 'Tabs and widgets', 'How to track', 'Learn more'])
+				assert.ok(!text.includes(gone), `still says ${gone}: ${text}`);
+		}, DESKTOP);
+	});
+
 	// da-s1ek1, vividn, 2026-10-21: «It should be clear on the front page of datum.day that you can point your agent
 	// there to help you get setup with your data.» One line, linking the guide an agent reads, on a phone's first screen.
-	test('it says an AI agent can help you set up, links the guide for agents, and is on a phone\'s first screen', async () => {
+	test('its line for AI agents links the guide for agents, and is on a phone\'s first screen', async () => {
 		await withApp(async ({ page }) => {
-			const line = page.locator('.host.welcome p', { hasText: 'Using an AI agent?' });
-			assert.equal(
-				(await line.innerText()).replace(/\s+/g, ' '),
-				'Using an AI agent? Point it at datum.day and it can help you set up what you track.'
-			);
-			assert.equal(await line.getByRole('link', { name: 'datum.day', exact: true }).getAttribute('href'), 'https://datum.day/agents.md');
+			const line = page.locator('.host.welcome p', { has: page.locator('a[href="https://datum.day/agents.md"]') });
+			assert.equal(await line.count(), 1);
 			// Read before any scrolling: the line ends inside the pane that scrolls the welcome, which is at its top.
 			const at = await line.evaluate((p) => {
 				let el = p.parentElement;
@@ -141,26 +153,26 @@ describe('a first visit', () => {
 		}, FRESH_PHONE);
 	});
 
-	// It was «fits a phone without scrolling» until 2026-10-14, when the welcome became the Help place's front page,
-	// sections and links and all: vividn, 10-09, «some scrolling and reading rather than all fitting on one page». What
-	// still matters on a phone is that it never scrolls sideways, and that the text past the pane can be scrolled to.
-	test('on a phone it scrolls down to its end, never sideways', async () => {
+	// «fits a phone screen without scrolling» again (da-uzyih.19), as it was until 2026-10-14: its close button too.
+	test('on a phone it fits the screen without scrolling', async () => {
 		await withApp(async ({ page }) => {
 			const box = await page.locator('.host.welcome').evaluate((host) => {
 				let el = host.querySelector('div.welcome');
-				const bottom = el.getBoundingClientRect().bottom;
+				const bottom = Math.max(...[...host.querySelectorAll('div.welcome, button.command')].map((e) => e.getBoundingClientRect().bottom));
 				while (el && getComputedStyle(el).overflowY === 'visible') el = el.parentElement;
-				return { bottom, within: el.getBoundingClientRect().bottom, scrolls: getComputedStyle(el).overflowY, wide: el.scrollWidth - el.clientWidth };
+				return { bottom, within: el.getBoundingClientRect().bottom, tall: el.scrollHeight - el.clientHeight, wide: el.scrollWidth - el.clientWidth };
 			});
-			assert.ok(box.bottom <= box.within || ['auto', 'scroll'].includes(box.scrolls), `the text ends at ${box.bottom}, its pane at ${box.within}, and the pane does not scroll (${box.scrolls})`);
+			assert.ok(box.bottom <= box.within, `the welcome ends at ${box.bottom}, below its pane's ${box.within}`);
+			assert.equal(box.tall, 0, 'the widget scrolls down');
 			assert.equal(box.wide, 0, 'the widget scrolls sideways');
 		}, FRESH_PHONE);
 	});
 
-	// vividn, 2026-10-14: «make the track button on the welcome page more visible like make the outline colored».
-	test('its Setup button is outlined in the accent at rest, not only when pointed at', async () => {
+	// vividn, 2026-10-14: «make the track button on the welcome page more visible like make the outline colored»; the
+	// Tutorial button is the one thing to do next now.
+	test('its Tutorial button is outlined in the accent at rest, not only when pointed at', async () => {
 		await withApp(async ({ page }) => {
-			const [border, accent] = await page.locator('.host.welcome div.welcome button.command').evaluate((button) => {
+			const [border, accent] = await page.locator('.host.welcome div.welcome button.command', { hasText: 'Tutorial' }).evaluate((button) => {
 				const probe = document.createElement('div');
 				probe.style.color = 'var(--accent)';
 				button.parentElement.append(probe);
@@ -319,23 +331,11 @@ describe('a device that has been here', () => {
 				})
 		});
 	});
-
-	test('its button opens the setup widget where there is no setup tab: a place', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await page.evaluate(() => window.datum.shell.open('welcome'));
-			await page.getByRole('button', { name: 'Setup', exact: true }).click();
-			// A desktop's place is a modal (da-jozgv); the tabs do not move.
-			await page.locator('dialog.sheet[data-place="setup"] .field-form input.field').waitFor();
-			assert.deepEqual(await rootNames(page), ['main', 'welcome']);
-			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
-	});
 });
 
 // da-rgyq8, vividn: an early user «suggested we call it "setup" widget and I would
 // agree». What the app ships says «Track» nowhere but as the verb of the
-// welcome's first sentence and of the gear's «Track timezone» (da-yw6o2,
+// sentence that says what a field is (WelcomeText.svelte) and of the gear's «Track timezone» (da-yw6o2,
 // vividn's word for it): no title, button, tab or help of the widget.
 test('the built app says «Track» only as a verb', () => {
 	const build = fileURLToPath(new URL('../build', import.meta.url));

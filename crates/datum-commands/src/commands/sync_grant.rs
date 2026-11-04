@@ -875,6 +875,12 @@ impl Watch {
         std::thread::spawn(move || {
             let mut failed = false;
             for g in grants {
+                eprintln!(
+                    "{} joining «{}»: {} granted it to this device",
+                    Utc::now().to_rfc3339(),
+                    g.name,
+                    g.from
+                );
                 match join(&g, true) {
                     Ok(said) => eprintln!("{said}"),
                     Err(e) => {

@@ -449,8 +449,11 @@ fn install_toml(
     // version installed (da-xnzc7) — once the kit owns a row: a kit whose
     // every row was skipped installed nothing. Its widgets go in it
     // (da-gh37k), so a kit of widgets alone owns that row, and a parameter
-    // given a new value is kept for the next install whatever it wrote.
-    let widgets_installed = if (!kept.is_empty() && values != kept)
+    // given a new value is kept for the next install whatever it wrote. A
+    // `no_sync` kit's table is a row of its own, the database's refusal to
+    // sync (da-6cvrd).
+    let widgets_installed = if kit.kit.no_sync
+        || (!kept.is_empty() && values != kept)
         || report.installed().next().is_some()
         || !report.indices_installed.is_empty()
         || view_report.installed().next().is_some()

@@ -30,9 +30,9 @@ use datum_core::db::{chain, Db};
 use datum_core::error::{DatumError, Refusal as CoreRefusal};
 use datum_parse::time::Zone;
 use datum_sync_wire::{
-    accept, dial, failure, gave_way, redeem, serve, unix_now, About, Applied, Asked, Diffed,
-    Digest, Endpoint, EndpointAddr, Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector,
-    Version, Why,
+    accept, dial, failure, gave_way, redeem, refused_applying, serve, unix_now, About, Applied,
+    Asked, Diffed, Digest, Endpoint, EndpointAddr, Failure, Lost, Net, Refusal, Report, Store,
+    Ticket, Vector, Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use iroh::{SecretKey, Watcher};
@@ -1363,7 +1363,7 @@ pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Resul
                         // again after the first gap, which does not grow
                         // (da-h31wt), or at once after any session with it.
                         (Err(e), peer) if failure(&e) == Some(BUSY) => {
-                            if let Some((id, _)) = peer {
+                            if let Some((id, label)) = peer {
                                 pushed.remove(&id);
                                 // No wait while a session served to it
                                 // carries this copy's ops: it pushes once
@@ -1373,8 +1373,20 @@ pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Resul
                                 // and its peer then waits on this copy
                                 // (da-le37o).
                                 if !store.serves(&id) && !gave_way(&e) {
-                                    busy.insert(id, Instant::now() + backoff(None));
+                                    let wait = backoff(None);
+                                    eprintln!("{} {label} is busy: next push in {} at the latest", now(), gap(wait));
+                                    busy.insert(id, Instant::now() + wait);
                                 }
+                            // Applying, this copy refused a dial, saying it
+                            // syncs again once done. What it applies may move
+                            // its vector nowhere and so ask no push: it owes
+                            // one to every member, the next tick it is not
+                            // applying, a member it holds off from too
+                            // (da-uzyih.4927).
+                            } else if refused_applying(&e) {
+                                eprintln!("{} {e}: pushing to every member once done", now());
+                                pushed.clear();
+                                busy.clear();
                             }
                         }
                         // A session lost past the handshake names its peer.

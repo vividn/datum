@@ -6,32 +6,18 @@
 	how to close tabs, so that users know how to close it and also
 	manipulate tabs and widgets in general».
 
-	So it is read in about half a minute, top to bottom: what datum is, a
-	field and an entry in a sentence each, the four kinds as the Track form
-	names them (`VERBS`, so the two cannot come to disagree), the flow, its
-	button, and how tabs and widgets are handled: that the + brings back
-	a tab that was closed, this one too, and that a page is rearranged in
-	layout mode (da-vvcxc), entered from its tab and left by Accept, Save
-	or Discard.
+	Since da-uzyih.19 it is short (WelcomeText.svelte): the name, its
+	tagline, the tutorial, the line for an AI agent, the docs and the
+	source, on a phone's screen without scrolling. What it taught (fields,
+	shapes, the input bar, tabs and widgets) is the tutorial's first tabs.
 
-	The first button is the setup widget's door (`openField`): the setup
-	tab while it is open, the place every other door reaches once it is
-	closed.
-
-	The last one closes the widget (da-zhz0u). vividn, 2026-10-09: «maybe
+	The button closes the widget (da-zhz0u). vividn, 2026-10-09: «maybe
 	start unlocked. Let's put a button at the bottom of the welcome widget
 	that closes the widget too … I am imagining that the welcome widget will
 	have some scrolling and reading rather than all fitting on one page».
 	So the button stands after the text, where the reading ends. It is the
 	frame's own close (PaneFrame.svelte's `close`), which at the root is in
 	either mode: not on the page's last tab, not in a place's modal.
-
-	Reworked with vividn on 2026-10-14, section by section. The name is bigger
-	(«"datum" can be a bit bigger yes»), the opening says why and who
-	holds the data, «state» joins field and entry as a word to know, and the
-	four kinds became SHAPES you can see: three timelines of one working
-	day, labelled by field and lined up (coffee, screentime, and an activity
-	that is mostly email and meetings), and a card (a person, vividn's).
 -->
 <script lang="ts">
 	import { getContext } from 'svelte';

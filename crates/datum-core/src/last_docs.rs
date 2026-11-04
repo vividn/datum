@@ -45,6 +45,9 @@ pub struct LastDocsRef {
 /// Replace the last-docs pointer with the given hids. An empty `hids`
 /// slice clears the row (a follow-up `_LAST` resolves to nothing).
 pub fn set_last_docs(db: &Db, hids: &[Hid]) -> Result<()> {
+    if crate::undo_log::not_undoable() {
+        return Ok(());
+    }
     let json = serde_json::to_string(hids)?;
     let now = Utc::now().to_rfc3339();
     db.conn().execute(

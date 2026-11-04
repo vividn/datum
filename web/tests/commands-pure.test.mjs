@@ -127,6 +127,14 @@ describe('the icons', () => {
 	});
 });
 
+// da-uzyih.4898, vividn, 2026-10-29: the setup widget's shape buttons «should probably keep 1 liners»; what more there
+// is to say of each is docs/basics.md (da-uzyih.4908).
+describe('the shapes', () => {
+	test('a shape button says its shape in a line', () => {
+		for (const { verb, line } of TRACK_VERBS) assert.ok(!/[.!?]\s/.test(line), `${verb}'s button says more than a line: ${line}`);
+	});
+});
+
 describe('the verb a line is pending', () => {
 	test('the first word, whole', () => {
 		assert.equal(pendingVerb('moment '), 'moment');
@@ -312,6 +320,24 @@ describe('what a field tap does', () => {
 		assert.equal(pressKind(onSwitch, null), 'show');
 		assert.equal(pressKind(boolSwitch, null), 'show');
 		assert.equal(pressKind(record, null), 'fill');
+	});
+
+	// da-uzyih.4940: a tutorial game's tap logs, as every tap did before
+	// collect; the app's own tap is collect's, and opens the field.
+	test('a game’s tap logs a moment or block and opens a switch’s states; the app’s tap opens every one', () => {
+		const tea = { ...point, field: 'tea', required: ['amount'] };
+		for (const [button, game] of [
+			[point, 'run'],
+			[offBlock, 'run'],
+			[onBlock, 'run'],
+			[tea, 'fill'],
+			[onSwitch, 'show'],
+			[boolSwitch, 'show'],
+			[record, 'fill']
+		]) {
+			assert.equal(pressKind(button, null, true), game, `the game's tap on ${button.field}`);
+			assert.equal(pressKind(button, null), button === record ? 'fill' : 'show', `the app's tap on ${button.field}`);
+		}
 	});
 
 	test('under a verb, every field it leaves runs — but where verbPress asks first', () => {

@@ -308,7 +308,9 @@ export const ALIASES: Record<string, string> = {
 	// `track` tab was it again, and both are the setup widget (da-rgyq8).
 	spec: 'setup',
 	field: 'setup',
-	track: 'setup'
+	track: 'setup',
+	// The tutorial's first tab was `introduction` until da-uzyih.4898 (vividn: «make the name of the tab intro»).
+	introduction: 'intro'
 };
 
 /**
@@ -381,12 +383,10 @@ export const DEBUG_KIT = 'debug';
  * seeder's 250 — its buttons, its report and a log worth scrolling.
  *
  * ⚑ NOT IN `BUILTIN`, and that is the point. It is installed as a KIT
- * layout into the DEBUG database itself (`shipDebugLayout`, shell.ts), so
- * the name `debug` means a tree THERE and nothing anywhere else. A
- * `debug` tab left in this device's open list by a visit to DEBUG is
- * therefore skipped in another database rather than opening onto a widget
- * whose only word would be that it is in the wrong place — and `settle`
- * writes the list back without it.
+ * layout into the DEBUG database itself (`shipLayouts`, shell.ts), so
+ * the name `debug` means a tree THERE and nothing anywhere else: a
+ * `debug` tab in another database's list is skipped rather than opening
+ * onto a widget whose only word would be that it is in the wrong place.
  */
 export const DEBUG_LAYOUT_TREE: Layout = {
 	version: LAYOUT_VERSION,
@@ -396,3 +396,81 @@ export const DEBUG_LAYOUT_TREE: Layout = {
 		split('debug-tools', 'column', legibly([108, 250]), [widgetPane('debug-bar', 'debug'), widgetPane('debug-seed', 'seed')])
 	)
 };
+
+// ---- the tutorial database (da-6cvrd) ----------------------------------
+//
+// Like DEBUG, a database whose name is the gate: its tabs are KIT layouts
+// installed into it (`shipLayouts`, shell.ts), so they mean nothing in any
+// other, and the `tutorial` widget is offered there alone. What is done in
+// it — the kit's install, a game's Reset, the way in and out — is
+// `#lib/tutorial.ts`.
+
+/** The database the tutorial is. */
+export const TUTORIAL_DB = 'tutorial';
+
+/** One tab of the tutorial: its layout's name, its title, and its fields. */
+export interface Lesson {
+	name: string;
+	title: string;
+	/** The fields its game's Reset ends the active states of: the lesson's own, by name (`coffee` …). */
+	fields: string[];
+}
+
+/**
+ * The lessons in order, which is the tabs' order: the Introduction, the three
+ * that collect data (TU2 da-nl1co, TU3 da-rru2t, TU4 da-6xeqy), then pages of
+ * text with no fields, what a user needs only once they log (da-uzyih.4869).
+ * The field shapes were a tab of their own after the Introduction (da-uzyih.4898)
+ * until the tutorial went to playing first (da-uzyih.4908): their words are
+ * `docs/basics.md`, and each game says what its shape is.
+ * Each game's fields are the kit's (`kits/tutorial.toml`), the ones its
+ * scene logs (da-uzyih.4865, .4866, .4867).
+ */
+export const LESSONS: Lesson[] = [
+	{ name: 'intro', title: 'Introduction', fields: [] },
+	{
+		name: 'moment',
+		title: 'moment: record points in time when something happens',
+		fields: ['croissant', 'cake', 'bagel', 'coffee', 'tea']
+	},
+	{
+		name: 'on-off',
+		title: 'on/off: record when and how long things are happening',
+		fields: ['tv', 'phone', 'reading']
+	},
+	{
+		name: 'switch',
+		title: 'switch: record how the state of something changes over time',
+		fields: ['room']
+	},
+	{ name: 'input-bar', title: 'The input bar', fields: [] },
+	{ name: 'tabs', title: 'Tabs and widgets', fields: [] }
+];
+
+/**
+ * A game under a two-minute nowview, where its taps land as they are made:
+ * what is watched while tapping, right above what is tapped (vividn, 2026-10-22).
+ * Over both, its title and what its shape of data is, read before playing;
+ * the game and its fields are panes of their own (da-uzyih.4908, vividn,
+ * 2026-10-29: «Maybe 1/3 for the description, 1/6 for nowview, … 1/4 for game
+ * and 1/4 for field widget. Let's have the game and the fields widgets be
+ * separate widgets here»).
+ */
+const withNowview = (name: string): Layout => ({
+	version: LAYOUT_VERSION,
+	name,
+	root: holder(
+		name,
+		split(`${name}-split`, 'column', [1 / 3, 1 / 6, 1 / 4, 1 / 4], [
+			widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }),
+			widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
+			widgetPane(`${name}-lesson`, 'tutorial', { lesson: name }),
+			widgetPane(`${name}-fields`, 'tutorial', { lesson: name, part: 'fields' })
+		])
+	)
+});
+
+/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, four panes (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the switch lesson's, da-6xeqy). */
+export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map(({ name }) =>
+	name === 'moment' || name === 'on-off' || name === 'switch' ? withNowview(name) : only(name, 'tutorial', { lesson: name })
+);

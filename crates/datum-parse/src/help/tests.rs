@@ -1432,8 +1432,8 @@ fn no_help_page_says_colour() {
 // Intros, and a page as JSON (da-efruz).
 // ---------------------------------------------------------------------------
 
-/// The pages a newcomer reaches first: the welcome's «Learn more», then the
-/// verbs and the commands met next.
+/// The pages a newcomer reaches first: the topics and guides, then the verbs
+/// and the commands met next.
 const NEWCOMER_PAGES: &[&str] = &[
     "logging", "time", "setup", "alias", "sync", "db", "stats", "track", "moment", "occur",
     "start", "stop", "now", "switch", "tail", "undo",

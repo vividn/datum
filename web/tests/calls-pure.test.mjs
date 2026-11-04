@@ -265,12 +265,16 @@ const SAMPLES = {
 	layoutHistoryArgv: [[LAYOUT.name]],
 	layoutRevertArgv: [[LAYOUT.name], [LAYOUT.name, 1]],
 	deleteLayoutArgv: [[HID]],
-	deleteSampleArgv: [[[HID]]],
-	kitWidgetArgv: [['chorelist'], ['chorelist --all']]
+	deleteHidsArgv: [[[HID]]],
+	endArgv: [['mood', 'calm'], ['mood', ['calm', 'happy']]],
+	trackArgv: [[['coffee']], [['coffee', 'tea']]],
+	ignoreArgv: [[['coffee']], [['coffee', 'tea']]],
+	kitWidgetArgv: [['chorelist'], ['chorelist --all']],
+	tutorialAliasArgv: [['setup-tutorial']]
 };
 
 /** What a call that reads its standard input is given. */
-const STDIN = { mergeArgv: BACKUP, restoreArgv: BACKUP, restorePreviewArgv: BACKUP, kitInstallArgv: KIT };
+const STDIN = { mergeArgv: BACKUP, restoreArgv: BACKUP, restorePreviewArgv: BACKUP, kitInstallArgv: KIT, tutorialKitArgv: KIT };
 
 /**
  * Run on a database of its own: an invite takes a member, and the seeded

@@ -2,12 +2,13 @@
 // the Help place. vividn, 2026-10-15: «a nice sync widget web help text should
 // be made as well to describe how to use it».
 //
-// Three entrances open it, a test each: the welcome's «Syncing your
-// devices», the Help button on the Sync widget (its kind's help), and the
-// widget's own `?`. Then a walk through the widget as a person takes it —
-// the gear's Sync, Turn on sync, a device connecting, its notice, More, and
-// a join link opened in a browser — and every control the guide names (a
-// `b.ui`) is one the walk saw, in those words.
+// Two entrances open it, a test each: the Help button on the Sync widget
+// (its kind's help), and the widget's own `?`. The welcome's «Syncing your
+// devices» was a third until the welcome became short (da-uzyih.19). Then
+// a walk through the widget as a person takes it — the gear's Sync, Turn on
+// sync, a device connecting, its notice, More, and a join link opened in a
+// browser — and every control the guide names (a `b.ui`) is one the walk
+// saw, in those words.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -63,13 +64,6 @@ function isTheGuide({ words, sections, widget, reference }) {
 }
 
 describe('the sync guide opens from', () => {
-	test('the welcome’s «Syncing your devices»', async () => {
-		await shared.solo(async ({ page }) => {
-			await page.locator('.host.welcome button.link', { hasText: 'Syncing your devices' }).click();
-			isTheGuide(await guide(page));
-		}, PAGE);
-	});
-
 	test('the Help button, then the Sync widget; nothing in the widget runs', async () => {
 		await shared.solo(async ({ page }) => {
 			await page.locator('.root-bar button.help[data-command="help"]').click();

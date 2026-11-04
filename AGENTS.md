@@ -1035,6 +1035,18 @@ binary.
 
 ## Web app (PWA)
 
+What you watch while you act sits right above what you act with, with
+nothing between them, and what you read before acting goes above them both.
+vividn, 2026-10-22, of the tutorial: «[nowview] [game] [fields widget]
+[explanation] that way, as you're tapping and paying attention to the game,
+you also have the nowview close by so that you can see what is happening
+there without the explanation in between», and 2026-10-29: «move the title
+and description of each game above the nowview». So each game's tab is its
+title and what its shape of data is, over a nowview, over the game and the
+fields widget with Undo beside it (`withNowview`, `layout/defaults.ts`;
+`web/tests/tutorial.test.mjs` holds the order); a new layout or widget is
+laid out the same way.
+
 - SvelteKit static adapter — no server-side rendering
 - Svelte 5, runes only (`$props`, `$state`, `$derived`, `$effect`, snippets,
   `onclick`, a callback prop for an event): `compilerOptions: { runes: true }`
@@ -1271,8 +1283,11 @@ binary.
   floors and settings are `registry.ts`; today's page as data is
   `defaults.ts` (a desktop and a phone tree), which a first visit opens as
   the third of four root tabs (da-u7vz8, da-uzi5x, `fresh` in `shell.ts`):
-  `welcome`, a widget saying what datum is and how tabs and widgets are
-  handled, `setup`, the setup widget (da-rgyq8; `track` and `field` open it), `collect`, that page, and `dayview`, the day strip alone; the one live store is
+  `welcome`, a widget saying what datum is in a line and pointing at the
+  tutorial, the docs and the source (short since da-uzyih.19; what it taught
+  is the tutorial's Introduction, `Basics.svelte`), `setup`, the setup
+  widget (da-rgyq8; `track` and `field` open it), `collect`, that page, and
+  `dayview`, the day strip alone; the one live store is
   `current.ts` (`layout` + `apply`), which the header's save/restore
   controls fill from the draft or the saved layout. `engine.ts`
   owns the epoch and routes a widget-bar press through whichever CLI widget is

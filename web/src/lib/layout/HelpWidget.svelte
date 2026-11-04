@@ -94,7 +94,7 @@
 			{/if}
 		</div>
 	{:else}
-		<!-- The front page is the welcome's own words (vividn, 2026-10-14), its «Learn more» links leading here. -->
+		<!-- The front page is the welcome's own words (vividn, 2026-10-14), the short welcome since da-uzyih.19. -->
 		<p class="quiet">Press Help, then tap a command, a widget or a pill: it is explained here.</p>
 		<WelcomeText />
 	{/if}

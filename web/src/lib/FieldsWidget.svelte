@@ -193,6 +193,16 @@
 		 * press does what the other does.
 		 */
 		clicks = 'one',
+		/**
+		 * A tap logs at once, as before collect (da-uzyih.4940): a tutorial
+		 * game's fields alone (LessonFields.svelte) set it. The games score a
+		 * single tap — the moment game its reaction time — and re-teaching
+		 * them on collect's tap-then-state flow is vividn's call, not taken
+		 * yet. A moment or block logs on the tap; a switch field opens its
+		 * states, and a state logs `switch <field> <state>` whole, with no
+		 * pill on the app's bar.
+		 */
+		tapLogs = false,
 		/** Run a press's line. */
 		onrun,
 		/** Put a press's line in the command line, unrun, for the rest to be typed. */
@@ -208,6 +218,7 @@
 		showIgnored?: boolean;
 		standings?: Standings;
 		clicks?: 'one' | 'two';
+		tapLogs?: boolean;
 		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
@@ -535,7 +546,7 @@
 	// bar over again the moment a field of that name returns (da-mv8ng). So
 	// does one whose pill went: a run spent it, or its × was pressed.
 	$effect.pre(() => {
-		if (picked !== null && (picking === null || $fieldPill !== picked)) untrack(close);
+		if (picked !== null && (picking === null || (!tapLogs && $fieldPill !== picked))) untrack(close);
 	});
 
 	// ---- an ENTRY selected (da-xdz73) ------------------------------------
@@ -687,6 +698,10 @@
 	 * placed and nothing runs: the command pane's ready command logs it.
 	 */
 	function choose(button: FieldButton, state: string, logs = clicks === 'one') {
+		if (tapLogs) {
+			close();
+			return emit(pressArgv(button, state));
+		}
 		if (logs && typesKeys('switch', button)) {
 			// Closed, not Back: the time pills made here stay for the line filled.
 			setFieldPill(null);
@@ -710,6 +725,7 @@
 
 	/** Open `button`: its pill on the bar, and its view over the fields. */
 	function open(button: FieldButton) {
+		if (tapLogs) return void ((restPan = pan), (pan = null), (picked = button.field));
 		entered = { cursor: get(cursor), moment };
 		if ($fieldPill !== button.field) setFieldPill(button.field, button.color);
 		restPan = pan;
@@ -729,7 +745,7 @@
 	/** Back: the field's pill and the ones made since it was tapped go, and a time pill already there stays. */
 	function back() {
 		const was = entered;
-		setFieldPill(null);
+		if (!tapLogs) setFieldPill(null);
 		close();
 		if (!was) return;
 		if (get(cursor) !== was.cursor) cursor.set(was.cursor);
@@ -750,7 +766,7 @@
 	 * outline is drawn from, so the two cannot disagree (da-z8z40).
 	 */
 	function press(button: FieldButton) {
-		const kind = pressKind(button, verb);
+		const kind = pressKind(button, verb, tapLogs);
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
 		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
@@ -781,9 +797,14 @@
 			const ring = ringIn(w, h, GAP, { w: room.clientWidth, h: room.clientHeight, side: 0, lid: 0 });
 			const ys = [ring.end, ...ring.states].map((p) => p.y);
 			// Taller than the room, it is dealt into the room's rows instead, which run past its sides.
-			const { end, states } = Math.max(...ys) - Math.min(...ys) + h > room.clientHeight ? dealt(w, h, GAP, room.clientHeight) : ring;
-			// The first is the middle of the room, whichever way they were stood.
-			const at = [end, ...states].map((p) => ({ x: p.x - end.x, y: p.y - end.y }));
+			const deal = Math.max(...ys) - Math.min(...ys) + h > room.clientHeight;
+			const { end, states } = deal ? dealt(w, h, GAP, room.clientHeight) : ring;
+			// The first is the middle of the room, whichever way they were stood:
+			// in a short box, half a row of `ringIn`'s rows past it, which pans.
+			// A tutorial game's fields are all in view instead, as before collect
+			// (`tapLogs`, da-uzyih.4940): its rows fit the room about its middle.
+			const mid = tapLogs && !deal ? { x: 0, y: 0 } : end;
+			const at = [end, ...states].map((p) => ({ x: p.x - mid.x, y: p.y - mid.y }));
 			const edges = spots.map((el, i) => ({ el, left: at[i].x - widths[i] / 2, top: at[i].y - h / 2 }));
 			const [left, top] = [Math.min(...edges.map((e) => e.left)), Math.min(...edges.map((e) => e.top))];
 			for (const e of edges) {
@@ -917,7 +938,7 @@
 		     any other, and only what a press MEANS is its own. -->
 		<button
 			class="record"
-			use:act={pressKind(button, verb)}
+			use:act={pressKind(button, verb, tapLogs)}
 			class:ignored={button.ignored}
 			class:pilled={$fieldPill === button.field}
 			role="link"
@@ -932,7 +953,7 @@
 	{:else}
 		<button
 			class="widget {button.shape.kind}"
-			use:act={pressKind(button, verb)}
+			use:act={pressKind(button, verb, tapLogs)}
 			class:on={look.fill !== null}
 			class:ignored={button.ignored}
 			class:pilled={$fieldPill === button.field}

@@ -1456,7 +1456,7 @@ const ADD_SHARED_FLAGS: SharedFlags = SharedFlags {
     binders: BINDERS,
 };
 
-/// `datum help logging`'s opening: the welcome's «Logging an entry» (da-efruz).
+/// `datum help logging`'s opening, a newcomer's «Logging an entry» (da-efruz).
 const LOGGING_INTRO: &str = "\
 An entry is one line: a verb, a field, then the field's state or data.
 The verb says what kind of thing happened:

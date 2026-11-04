@@ -320,7 +320,7 @@ describe('a help page', () => {
 	/** The pages whose intros were written as guides for a newcomer. */
 	const GUIDES = ['logging', 'time', 'setup', 'alias', 'sync', 'db', 'stats', 'track', 'moment', 'start', 'stop', 'switch', 'tail', 'undo'];
 
-	/** Open `datum help <name>` in the Help pane, as a «Learn more» link does. */
+	/** Open `datum help <name>` in the Help pane, as the Help button does. */
 	async function open(page, name) {
 		await page.evaluate((n) => window.datum.help(n), name);
 		await until(() => place(page).locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === `datum help ${name}`);

@@ -314,6 +314,19 @@ export async function press(
 }
 
 /**
+ * What the page runs of its own accord, shown as a press is: the ghost at
+ * the prompt, the command and what it printed in the history (da-uzyih.4893;
+ * vividn, 2026-10-28: «let's not hide the plumbing»). The tutorial's setup,
+ * a game's `track` and `ignore`, its reset. It never waits for the tree, as
+ * a press does: the boot still building it runs the setup.
+ */
+export async function shown(argv: string[], stdin?: string, env: string[] = []): Promise<RunResult> {
+	const line = shellJoin(argv);
+	showGhost(line);
+	return cli ? cli.runArgv(argv, line, stdin, env) : alone(argv, line, stdin, env);
+}
+
+/**
  * The CLI's «which verb?» refusal is a question, and the web has somewhere
  * to ask it: `track <field>` on a field with neither a spec nor a log
  * comes back asking for `--verb`, and that is the setup widget's own

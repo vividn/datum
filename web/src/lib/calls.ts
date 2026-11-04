@@ -395,7 +395,7 @@ export function sampleTaggedArgv(): string[] {
 	return ['grep', '"sample":true', '-o', '%full_hid%'];
 }
 
-export function deleteSampleArgv(hids: string[]): string[] {
+export function deleteHidsArgv(hids: string[]): string[] {
 	return ['delete', hids.join(','), '--show', 'none'];
 }
 
@@ -405,6 +405,36 @@ export function kitInstallArgv(): string[] {
 
 export function kitUninstallArgv(): string[] {
 	return ['kit', 'uninstall', 'sample'];
+}
+
+// ---- the tutorial (da-6cvrd) ---------------------------------------------------------
+
+/** Its kit, from stdin, over whatever it installed before: the database is the kit's own. */
+export function tutorialKitArgv(): string[] {
+	return ['kit', 'install', '-', '--force', '--yes'];
+}
+
+/** `word`, the tutorial's one setup command (da-uzyih.4937), made: it reads the kit from stdin, tabs included. */
+export function tutorialAliasArgv(word: string): string[] {
+	return ['alias', 'set', word, tutorialKitArgv().join(' ')];
+}
+
+/**
+ * `field`'s state ended: an on/off field off, a switch field false (a game's Reset, da-uzyih.4864),
+ * and nothing written unless it is still in `state`, as `now --json` read it (`-L`, da-v2d29).
+ */
+export function endArgv(field: string, state: unknown): string[] {
+	return ['end', field, '-L', String(state)];
+}
+
+/** `fields` TRACKED, as a game begins (da-uzyih.4882), in one command (da-klzka); on a field already tracked, nothing is written. */
+export function trackArgv(fields: string[]): string[] {
+	return ['track', fields.join(',')];
+}
+
+/** `fields` IGNORED, their states ended, as a game ends (da-uzyih.4882). */
+export function ignoreArgv(fields: string[]): string[] {
+	return ['ignore', fields.join(',')];
 }
 
 // ---- what the page reads -----------------------------------------------------------

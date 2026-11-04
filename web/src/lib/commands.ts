@@ -327,9 +327,12 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
  * (`typesKeys`); otherwise a record fills and every other field opens.
  */
 export type PressKind = 'run' | 'fill' | 'show';
-export function pressKind(button: FieldButton, verb: Verb | null): PressKind {
+export function pressKind(button: FieldButton, verb: Verb | null, tapLogs = false): PressKind {
 	if (verb !== null && verbPress(verb, button)) return typesKeys(verb, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
+	// A tutorial game's tap logs, as every tap did before collect (`tapLogs`
+	// on FieldsWidget): `moment` or `start`, or ends a running block.
+	if (tapLogs && button.shape.kind !== 'states') return typesKeys(button.current ? 'end' : 'moment', button) ? 'fill' : 'run';
 	// A bare tap opens the field in the collect widget, to set its time,
 	// state and data before it is logged (da-w6437) — a running block too:
 	// ending it is the commands' (vividn, 2026-11-03 16:07: «"off" be one of

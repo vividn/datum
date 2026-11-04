@@ -4,7 +4,8 @@
 //! databases by name in its own `DATUM_HOME`, each database on a localhost
 //! port of its own (`DATUM_SYNC_BIND`), as in `sync_net`.
 
-use std::io::{BufRead, BufReader};
+use std::cell::RefCell;
+use std::io::{BufRead, BufReader, Read};
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::Receiver;
@@ -91,7 +92,7 @@ impl Install {
         status["this"]["device"].as_str().unwrap().to_string()
     }
 
-    /// `sync run` on `db`, up, its stderr read on a thread.
+    /// `sync run` on `db`, up, its stdout and stderr read on threads.
     fn run(&self, db: &'static str) -> Running {
         self.running(db, self.cmd(db, &["sync", "run"]))
     }
@@ -99,15 +100,25 @@ impl Install {
     /// `c`, a run of `db`, once it says it is up.
     fn running(&self, db: &'static str, mut c: Command) -> Running {
         let mut child = c.spawn().unwrap();
-        let err = BufReader::new(child.stderr.take().unwrap());
         let (tx, log) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            err.lines()
-                .map_while(Result::ok)
-                .try_for_each(|l| tx.send(l))
-        });
+        let out = Box::new(child.stdout.take().unwrap()) as Box<dyn Read + Send>;
+        for pipe in [out, Box::new(child.stderr.take().unwrap())] {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                BufReader::new(pipe)
+                    .lines()
+                    .map_while(Result::ok)
+                    .try_for_each(|l| tx.send(l))
+            });
+        }
         let who = format!("{}'s {db}", self.user);
-        let running = Running { child, log, who };
+        let read = RefCell::default();
+        let running = Running {
+            child,
+            log,
+            read,
+            who,
+        };
         running.says("is up");
         running
     }
@@ -134,6 +145,8 @@ impl Install {
 struct Running {
     child: Child,
     log: Receiver<String>,
+    /// What [`Running::says`] has read off `log`, for a failure to print.
+    read: RefCell<Vec<String>>,
     who: String,
 }
 
@@ -144,6 +157,7 @@ impl Running {
             let Ok(line) = self.log.recv_timeout(Duration::from_secs(20)) else {
                 panic!("the run saying {what:?} within 20s");
             };
+            self.read.borrow_mut().push(line.clone());
             if line.contains(what) {
                 return line;
             }
@@ -157,6 +171,8 @@ impl Drop for Running {
         if std::thread::panicking() {
             let ended = self.child.try_wait();
             eprintln!("{}'s run, ended: {ended:?}", self.who);
+            let read = self.read.borrow();
+            read.iter().for_each(|l| eprintln!("  {l}"));
             self.log.try_iter().for_each(|l| eprintln!("  {l}"));
         }
         let _ = self.child.kill();
@@ -234,6 +250,7 @@ fn a_grant_joins_a_device_that_shares_a_chain_online_or_later() {
     // Its seven days end on another day: that date once, and the clock (da-x2p2h).
     let (_, until) = said.rsplit_once("until ").unwrap();
     assert_eq!(until.split_whitespace().count(), 2, "{said}");
+    tom.says("joining «work»");
     tom.says("joined «work»");
     eventually("tom's work holding gina's coffee", || {
         t.has("work", "coffee")

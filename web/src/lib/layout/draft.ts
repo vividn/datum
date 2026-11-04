@@ -10,6 +10,7 @@
 // The per-name LOCK that lived here went with layout mode (da-vvcxc); a
 // `datum.layout.locked.v1.*` key an older version wrote is read by nothing.
 
+import { DEFAULT_DB } from '#lib/database.ts';
 import type { Layout } from './types.js';
 
 /** What every key here begins with. */
@@ -93,9 +94,17 @@ export interface RootState {
 	active: number;
 }
 
-export function loadRoot(): RootState | null {
+/**
+ * One list per DATABASE (da-6cvrd): the tutorial's tabs are its own, and a
+ * visit to it neither shows the reader's tabs nor leaves its own in
+ * theirs. `datum` keeps the key every device already has. Nothing is keyed
+ * under one (`${rootKey(db)}.x`), so a name with a dot collides with no other.
+ */
+const rootKey = (db: string) => (db === DEFAULT_DB ? ROOT : `${ROOT}.${db}`);
+
+export function loadRoot(db: string): RootState | null {
 	try {
-		const state = JSON.parse(get(ROOT) ?? 'null');
+		const state = JSON.parse(get(rootKey(db)) ?? 'null');
 		if (!Array.isArray(state?.names) || !state.names.every((n: unknown) => typeof n === 'string')) return null;
 		if (state.names.length === 0) return null;
 		const active = Number.isInteger(state.active) ? state.active : 0;
@@ -105,7 +114,7 @@ export function loadRoot(): RootState | null {
 	}
 }
 
-export const saveRoot = (state: RootState) => set(ROOT, JSON.stringify(state));
+export const saveRoot = (db: string, state: RootState) => set(rootKey(db), JSON.stringify(state));
 
 /**
  * The whole tree as this device last drew it on database `db` (da-bhudz):

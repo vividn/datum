@@ -84,8 +84,11 @@
 import { derived, get, writable } from 'svelte/store';
 import { onExternalChange } from '#lib/changes.ts';
 import { confirm } from '#lib/confirm.ts';
-import { currentDb } from '#lib/database.ts';
+import { currentDb, DEFAULT_DB } from '#lib/database.ts';
 import { initDb } from '#lib/db.ts';
+import { installTutorialKit, loudly, settingUpQuietly, setUpTutorial } from '#lib/tutorial.ts';
+import { dbPurgeArgv } from '#lib/calls.ts';
+import { cliError } from '#lib/run.ts';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 import { LAYOUT_VERSION, isSplit, isWidget } from './types.js';
 import { apply, layout, loaded, replay } from './current.js';
@@ -97,6 +100,8 @@ import {
 	DEBUG_LAYOUT,
 	DEBUG_LAYOUT_TREE,
 	PHONE_WIDTH,
+	TUTORIAL_DB,
+	TUTORIAL_LAYOUTS,
 	builtinLayout,
 	newDefaults,
 	withCommands
@@ -146,13 +151,37 @@ const phone = () =>
 	typeof matchMedia === 'function' && matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches;
 
 /**
+ * In the tutorial, every lesson is open (da-6cvrd): one closed comes back
+ * on the next load, and so does one a newer app added — the lessons are the
+ * tutorial. It comes back after the lesson before it (da-uzyih.4898), so a
+ * lesson added second is second. A lesson that left is the tab it led to:
+ * the shapes, the café (da-uzyih.4908).
+ */
+const lessons = (): string[] => TUTORIAL_LAYOUTS.map((l) => l.name);
+const LEFT: Record<string, string> = { shapes: 'moment', occur: 'moment' };
+const lessonName = (name: string): string => LEFT[name] ?? canonicalName(name);
+
+/** `state` with every lesson open, each missing one after the lesson before it, and the same tab in front. */
+const withLessons = ({ names, active }: RootState): RootState => {
+	const open = lessons().reduce((open, name, i) => {
+		if (open.includes(name)) return open;
+		const at = i && open.indexOf(lessons()[i - 1]) + 1;
+		return [...open.slice(0, at), name, ...open.slice(at)];
+	}, [...new Set(names.map(lessonName))]);
+	return { names: open, active: Math.max(0, open.indexOf(lessonName(names[active] ?? ''))) };
+};
+
+/**
  * The root bar a fresh install shows (da-u7vz8), `welcome` in front: what
  * datum is, the setup widget to choose what to track in, `collect`, the page
  * to log on — which is what a first visit opened alone before, as `mobile`
  * on a phone (da-shzs) and `main` elsewhere — and `dayview`, the day strip
- * alone (da-uzi5x).
+ * alone (da-uzi5x). The tutorial's is its lessons (da-6cvrd).
  */
-const fresh = (): RootState => ({ names: ['welcome', 'setup', 'collect', 'dayview'], active: 0 });
+const fresh = (): RootState =>
+	currentDb() === TUTORIAL_DB
+		? { names: lessons(), active: 0 }
+		: { names: ['welcome', 'setup', 'collect', 'dayview'], active: 0 };
 
 /**
  * This DEVICE, in the word a layout's `designedFor` uses: decided ONCE, by
@@ -617,15 +646,49 @@ async function fillRoot(state: RootState): Promise<void> {
  * attempted once per load, and until it lands the name simply means
  * nothing — which is what it means in every other database anyway.
  */
-async function shipDebugLayout(): Promise<void> {
-	if (currentDb() !== DEBUG_DB) return;
-	// A tree shipped by an older app (the knobs alone, before da-6ecm5) is
-	// brought up to this one: the kit row is the app's, never the reader's
-	// — a save of the name goes to `_internal` and shadows it.
-	const shipped = kitLayout(DEBUG_LAYOUT);
-	if (shipped && !isModified(DEBUG_LAYOUT_TREE, shipped)) return;
+async function shipLayouts(): Promise<void> {
+	if (currentDb() === DEBUG_DB) await shipKitLayouts([DEBUG_LAYOUT_TREE], DEBUG_KIT);
+	else if (currentDb() === TUTORIAL_DB) await shipTutorial();
+}
+
+const staleOf = (trees: Layout[]): Layout[] =>
+	trees.filter((tree) => {
+		const shipped = kitLayout(tree.name);
+		return !shipped || isModified(tree, shipped);
+	});
+
+/**
+ * The tutorial (da-6cvrd): its kit, whose fields and `no_sync` keep the practice
+ * off every chain, at every load, since a kit's fields change without its tabs
+ * (da-uzyih.4881). Tabs to install, as at a first open, make it the one setup
+ * command, in the CLI's sight (`setUpTutorial`); otherwise it is quiet. A failure
+ * ends it, as `shipKitLayouts`'s does.
+ */
+async function shipTutorial(): Promise<void> {
 	try {
-		await installKitLayout(DEBUG_LAYOUT_TREE, DEBUG_KIT, !!shipped);
+		await (staleOf(TUTORIAL_LAYOUTS).length ? setUpTutorial(TUTORIAL_LAYOUTS) : installTutorialKit());
+		// New fields, which the fields bar, read as the engine booted beside
+		// this, does not know of yet (da-uzyih.11); imported here, since the
+		// engine imports this module.
+		await import('./engine.js').then(({ ran }) => ran());
+	} catch {
+		return;
+	}
+	await refreshKits();
+}
+
+/**
+ * Each of `trees` written as `kit`'s layout where it is missing or another
+ * tree than this app's — once per load, a failure ending it.
+ * A tree shipped by an older app (the knobs alone, before da-6ecm5) is
+ * brought up to this one: the kit row is the app's, never the reader's — a
+ * save of the name goes to `_internal` and shadows it.
+ */
+async function shipKitLayouts(trees: Layout[], kit: string): Promise<void> {
+	const stale = staleOf(trees);
+	if (!stale.length) return;
+	try {
+		for (const tree of stale) await installKitLayout(tree, kit, !!kitLayout(tree.name), settingUpQuietly);
 	} catch {
 		// The slug is taken by a row that is not a kit's, or the write
 		// failed. Either way there is nothing here to put right.
@@ -635,19 +698,21 @@ async function shipDebugLayout(): Promise<void> {
 }
 
 /**
- * In the DEBUG database, the debug layout is open and in front.
+ * The tabs a database the app ships tabs for always has open: in the DEBUG
+ * database, the debug layout, in front; in the tutorial, every lesson
+ * (`lessons`).
  *
  * "It only gets loaded for the DEBUG db" — so it is added HERE, at the
- * boot, rather than written into this device's open list: the list is one
- * per device and not per database (layouts are the device's, da-vk1x), and
- * a `debug` written into it would follow him back to his own database. It
- * cannot: the name means nothing there, so `openTab` passes over it and
- * `settle` writes the list back without it.
+ * boot, to whatever list DEBUG opens on: its own, or at first the reader's
+ * (`boot`). The list is the database's own since da-6cvrd, so a `debug`
+ * written into it stays in DEBUG's.
  */
-const withDebug = (state: RootState): RootState =>
+const withShipped = (state: RootState): RootState =>
 	currentDb() === DEBUG_DB && !state.names.includes(DEBUG_LAYOUT)
 		? { names: [DEBUG_LAYOUT, ...state.names], active: 0 }
-		: state;
+		: currentDb() === TUTORIAL_DB
+			? withLessons(state)
+			: state;
 
 /** The page's door not yet through, `settledTree`'s to wait out. */
 let arrival: Promise<unknown> = Promise.resolve();
@@ -667,7 +732,10 @@ export const settledTree = (): Promise<unknown> => boot().then(() => arrival);
 /** Fill the root from this device's open layouts (`fresh`'s at first). Once. */
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
-		const stored = loadRoot();
+		// This database's own tabs (da-6cvrd); a database with none yet opens
+		// on the reader's — but the tutorial, on its lessons (`fresh`).
+		const db = currentDb();
+		const stored = loadRoot(db) ?? (db === TUTORIAL_DB ? null : loadRoot(DEFAULT_DB));
 		// Drawn before the CLI is asked anything (da-bhudz, vividn: «none of
 		// the tabs are even there in header bar»): the tree as this device
 		// last drew it, else what it can build without the database. The
@@ -678,15 +746,15 @@ export function boot(): Promise<void> {
 		if (last?.version === LAYOUT_VERSION) layout.set(last);
 		else {
 			provisional = true;
-			await fillRoot(withDebug(stored ?? fresh())).finally(() => (provisional = false));
+			await fillRoot(withShipped(stored ?? fresh())).finally(() => (provisional = false));
 		}
 		loaded.set(true);
 		await initDb().catch(() => {});
 		// Before the first `resolve`: a kit's layout is one of the trees a
 		// name may mean, and `shippedTree` reads the cache synchronously.
 		await refreshKits();
-		await shipDebugLayout();
-		await fillRoot(withDebug(stored ?? fresh()));
+		await shipLayouts();
+		await fillRoot(withShipped(stored ?? fresh()));
 		booted = true;
 		// A fresh device's tabs are written now, and so is a change made to
 		// the tree drawn early (da-bhudz), rather than at the next change
@@ -701,7 +769,10 @@ export function boot(): Promise<void> {
 		onExternalChange(refreshKits, currentDb());
 		// Every tab takes part; one per database leads it (da-6kpj5).
 		void import('#lib/sync.ts').then(({ startSync }) => startSync(currentDb()));
-		void offerDefaults(stored === null)
+		// The offer is not the tutorial's: it resets the layouts datum ships and the
+		// tabs to a first visit's, which is the reader's own database's business,
+		// and the tutorial's tabs are its lessons whatever datum ships.
+		void (db === TUTORIAL_DB ? Promise.resolve() : offerDefaults(stored === null))
 			.then(() => import('./engine.js'))
 			.then(({ followZone }) => followZone());
 	})());
@@ -747,7 +818,7 @@ function settle(): void {
 	const front = names.indexOf(tabs[$layout.root.active]);
 	const before = tabs.slice(0, $layout.root.active).filter(kept).length;
 	const active = front >= 0 ? front : Math.max(0, before - 1);
-	saveRoot({ names: names.map((t) => t.layout as string), active });
+	saveRoot(currentDb(), { names: names.map((t) => t.layout as string), active });
 	// What the next load draws before the CLI answers: the tree as written.
 	saveShell(currentDb(), { ...$layout, root: { ...$layout.root, tabs: names, active } });
 	const bases = get(baselines);
@@ -1257,6 +1328,26 @@ export async function resetDefaults(): Promise<void> {
 	// is about to be read again from what the names now mean.
 	baselines.set({});
 	previews.set(new Set());
+	await fillRoot(fresh());
+}
+
+/**
+ * «reset the tutorial» (da-uzyih.4893; vividn, 2026-10-28: «it calls a db
+ * purge, clears the CLI and does the setup to get the tutorial in its
+ * initial state»): the purge, shown, which clears this database's history
+ * as any purge does (`forget`, da-3ni5m), then the setup a first open runs,
+ * shown, and its tabs as a first open draws them. In the tutorial alone.
+ */
+export async function resetTutorial(): Promise<void> {
+	if (currentDb() !== TUTORIAL_DB) throw new Error(`Only the ${TUTORIAL_DB} database is reset`);
+	const purged = await loudly(dbPurgeArgv());
+	if (purged.code !== 0) throw cliError(purged.stderr, `datum db purge exited ${purged.code}`);
+	unmaximize();
+	for (const name of lessons()) clearDraft(name);
+	baselines.set({});
+	previews.set(new Set());
+	await refreshKits();
+	await shipLayouts();
 	await fillRoot(fresh());
 }
 

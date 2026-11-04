@@ -136,14 +136,14 @@ async function explain(target: Element | null): Promise<void> {
 	return explainCommand(command);
 }
 
-/** A guide in the Help place, given its kind's help: the welcome's link, the Help button and the widget's own `?` open it. */
+/** A guide in the Help place, given its kind's help: the Help button and the widget's own `?` open it. */
 export function explainGuide(name: string): void {
 	show(GUIDES[name], KINDS[name]?.help ?? '', { guide: name });
 }
 
 /**
- * `datum help <name>` in the Help place, as the Help button lands a command's: the
- * welcome's «Learn more» links take this path, so what they open is the CLI's own help.
+ * `datum help <name>` in the Help place, as the Help button lands a command's, so what
+ * it opens is the CLI's own help.
  * A named page is asked for as JSON, to lead with its intro (da-efruz); the general
  * help, the list of commands, is its text. Either is asked for at the place's
  * width, `COLUMNS` as a terminal that wide sets it, once it has one (da-nrjze).

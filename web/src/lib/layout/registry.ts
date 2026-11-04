@@ -59,7 +59,7 @@ import {
 	todayBox
 } from '#lib/panes.ts';
 import { REACH_PX } from '#lib/lanes.ts';
-import { DEBUG_DB, layoutTitle } from './defaults.js';
+import { DEBUG_DB, layoutTitle, TUTORIAL_DB } from './defaults.js';
 import { DEFAULT_STATS, type StatsRange } from '#lib/stats.ts';
 import { BUCKETS, DEFAULT_CHART, FIELDS_OFFER, RANGES, SHOWS, chartSettings, keysOffer } from '#lib/chart.ts';
 import AliasesWidget from './AliasesWidget.svelte';
@@ -76,6 +76,7 @@ import CliWidget from './CliWidget.svelte';
 import FieldWidget from './FieldWidget.svelte';
 import KitWidget from './KitWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
+import TutorialWidget from './TutorialWidget.svelte';
 import WelcomeWidget from './WelcomeWidget.svelte';
 
 export interface WidgetKind {
@@ -132,6 +133,8 @@ export interface WidgetKind {
  * canvas before any band is drawn.
  */
 const SVG_MARGIN_PX = 2;
+/** The fields widget's floor, and a tutorial game's fields part's, which draws it. */
+const FIELDS_LEGIBLE: Floor = { width: 160, height: 49 };
 
 /**
  * How narrow nowview's snapshot (`showHistory: false`) stays usable.
@@ -509,7 +512,7 @@ export const KINDS: Record<string, WidgetKind> = {
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
 			showIgnored: showIgnored === true
 		}),
-		legible: { width: 160, height: 49 }
+		legible: FIELDS_LEGIBLE
 	},
 	// The aliases widget (da-x6yj): every alias, listed.
 	aliases: {
@@ -548,16 +551,16 @@ export const KINDS: Record<string, WidgetKind> = {
 		].join('\n'),
 		legible: { width: 200, height: 72 }
 	},
-	// The welcome widget (da-u7vz8): what datum is and how the page is
-	// handled, as prose — the first tab of a first visit. Legible at its
-	// title and the two sentences under it (20px a line) plus padding; the
-	// rest scrolls.
+	// The welcome widget (da-u7vz8): what datum is, the tutorial, and where
+	// to read more — the first tab of a first visit (short since
+	// da-uzyih.19). Legible at its title and the two sentences under it
+	// (20px a line) plus padding; the rest scrolls.
 	welcome: {
 		meta: meta('welcome', 'welcome'),
 		component: WelcomeWidget,
 		help: [
-			'What datum is; what a field, an entry and a state are; the shapes a field takes; the input bar; and how tabs and widgets are opened, moved, split and closed.',
-			'«Setup» goes to the setup widget, and «Learn more» opens a topic of `datum help` in the Help place, whose front page is these same words.'
+			'What datum is, in a line; «Tutorial», where fields, their shapes, the input bar and tabs are taught; pointing an AI agent at datum.day; and links to the documentation and the source.',
+			'The Help place\'s front page is these same words.'
 		].join('\n'),
 		legible: { width: 200, height: 100 }
 	},
@@ -640,6 +643,19 @@ export const KINDS: Record<string, WidgetKind> = {
 		{ width: 200, height: 60 },
 		'Seeds a plausible week of sample data into this database. Only in the DEBUG database.'
 	),
+	// A lesson of the tutorial (da-6cvrd): offered in its database alone,
+	// where its tabs carry one each. Legible at a heading and two lines; its
+	// fields part draws the fields widget, and is legible where that is.
+	tutorial: {
+		meta: meta('tutorial', 'tutorial', { lesson: 'intro' }),
+		component: TutorialWidget,
+		help: [
+			'A lesson of the tutorial: its game, in a box with Start, «Reset» once it is over, and its fields; or, over a game\'s nowview, its title and what its shape of data is.',
+			'The Introduction says how to go back to your own database, datum.'
+		].join('\n'),
+		db: TUTORIAL_DB,
+		legible: ({ part }) => (part === 'fields' ? FIELDS_LEGIBLE : { width: 200, height: 100 })
+	},
 	// A widget a KIT shipped (da-gh37k): `settings` name the kit and its
 	// widget, whose command and row action are in the kit's own entry in
 	// this database (store.ts), and carry the title it was chosen under.
