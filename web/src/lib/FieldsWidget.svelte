@@ -826,6 +826,17 @@
 	}
 
 	/**
+	 * The axes a drag pans the cluster along, those it overruns (`kept`),
+	 * declared to PaneFrame as `data-pans` so a drag along one is the room's
+	 * and never also the pane's tab swipe (da-ut8e5); along an axis it fits
+	 * the swipe is the pane's, as before.
+	 */
+	const pans = $derived.by(() => {
+		const [low, high] = [kept(-Infinity, -Infinity), kept(Infinity, Infinity)];
+		return (low.x < high.x ? 'x' : '') + (low.y < high.y ? 'y' : '');
+	});
+
+	/**
 	 * A drag on the cluster pans it: a press that travels past the slop,
 	 * even one that starts on a button, and its click is swallowed; one that
 	 * does not is a press of whatever it is on.
@@ -936,13 +947,15 @@
 	{/if}
 {/snippet}
 
-<!-- A pill of the view's own, two parts: the left one presses `more` (none: it only says), the × clears it. -->
+<!-- A pill of the view's own, two parts: the left one presses `more` (none: it only says), the × clears it.
+     A time's or a length's jogs sideways, so a drag across it is never the pane's tab swipe (`data-pans`, da-ut8e5). -->
 {#snippet twoPart(kind: string, label: string, more: (() => void) | null, clear: () => void)}
 	<span class="part-pill" data-pill={kind}>
 		<!-- Not `disabled` with nothing to add: a drag goes on holding it. -->
 		<button
 			class="more"
 			data-more
+			data-pans={kind === 'moment' ? undefined : 'x'}
 			{disabled}
 			aria-disabled={!more || undefined}
 			onpointerdown={(e) => jogDown(kind, e)}
@@ -1071,6 +1084,7 @@
 				class="room"
 				bind:clientWidth={paneW}
 				bind:clientHeight={paneH}
+				data-pans={pans || undefined}
 				onpointerdown={down}
 				onpointermove={move}
 				onpointerup={up}

@@ -12,7 +12,7 @@
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE as IPHONE, swipe, swipeOver } from './support/layout.mjs';
 
 /**
@@ -140,4 +140,41 @@ test('on a phone a drag on the placement or a state\'s handle is theirs, and a v
 		assert.equal(await rootShown(page), 'setup');
 		assert.deepEqual(app.errors, []);
 	}, PHONE);
+});
+
+// da-ut8e5, vividn, 2026-11-04: «scrolling on the new collect widget also
+// causes panes to swipe, so trying to pan around in the collect widget is
+// almost impossible». The room declares the axes it pans (`data-pans`), so a
+// sideways drag across states that overrun it pans them, either way, and the
+// super tab stays; at rest the fields fit, and a swipe on them is the frame's.
+test("on a phone a sideways drag in collect's room pans the states it overruns and stays on the super tab, and one on fields that fit changes it", async () => {
+	const ROOM = 'section.pane[data-title="collect"] .bar .collect .room';
+	const many = Array.from({ length: 22 }, (_, i) => `a_rather_long_state_${String(i).padStart(2, '0')}`);
+	await withApp(async (app) => {
+		const { page } = app;
+		assert.equal((await app.run(['setup', 'mood', '--verb', 'switch', '--states', `false,${many.join(',')}`])).code, 0);
+		await app.redraw();
+		const shown = await rootShown(page);
+		const field = page.locator(`${ROOM} [data-field="mood"]`);
+		await field.waitFor();
+		assert.equal(await page.locator(ROOM).getAttribute('data-pans'), null, 'one field overruns the room: the last case is not tested');
+		await field.click();
+		await page.locator(`${ROOM} [data-state="${many[0]}"]`).waitFor();
+		const left = () => page.locator(`${ROOM} .ring`).evaluate((el) => el.getBoundingClientRect().left);
+		const fits = await page.locator(ROOM).evaluate((room) => room.querySelector('.ring').getBoundingClientRect().width <= room.clientWidth);
+		assert.equal(fits, false, 'the states fit across: the case is not tested');
+		for (const dx of [-80, 80]) {
+			const was = await left();
+			await swipeOver(page, page.locator(ROOM), dx, 0);
+			await until(left, (now) => Math.abs(now - was) > 20).catch((e) => {
+				throw new Error(`a drag of ${dx} did not pan the states: ${e.message}`);
+			});
+			assert.equal(await rootShown(page), shown, `a drag of ${dx} in the room swiped the super tab`);
+		}
+		await page.keyboard.press('Escape');
+		await field.waitFor();
+		await swipeOver(page, page.locator(ROOM), -200, 0);
+		await until(() => rootShown(page), (t) => t !== shown);
+		assert.deepEqual(app.errors, []);
+	}, { ...PHONE, home: ON_COLLECT });
 });
