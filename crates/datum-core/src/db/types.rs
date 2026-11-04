@@ -271,12 +271,12 @@ pub struct RetimeFilter<'a> {
 }
 
 /// One retimed row: the entry as it stands after the move, paired with the
-/// `at` it carried before. Retime's renderer prints the pair as
-/// `before ⟶ after`, so the shift has to travel back out of the db layer
-/// rather than collapsing to a count.
+/// entry as it was before. Retime echoes the pair as `update` does, each part
+/// that moved `old → new` (da-amc4h), so the row has to travel back out of the
+/// db layer rather than collapsing to a count.
 #[derive(Debug, Clone)]
 pub struct Retimed {
-    pub before: crate::time::DatumTime,
+    pub before: Entry,
     pub entry: Entry,
 }
 

@@ -291,6 +291,34 @@ describe('what the columns cannot carry', () => {
 	});
 });
 
+// da-amc4h: vividn, 2026-11-04: «on web it currently takes up the full width
+// rather than being a stanard command entry frame holder like the CREATE ones
+// make». A retime answers with its echo, so it stands in a column.
+describe('a retime is a column, as a create is', () => {
+	test('its frame measures as the create’s and not the whole row', async () => {
+		await withApp(
+			async (app) => {
+				await seed(app, ['occur coffee', 'retime coffee -t +5']);
+				const frames = await app.page.evaluate(() =>
+					[...document.querySelectorAll('.entry')].map((el) => ({
+						echo: el.querySelector('.echo')?.textContent.trim(),
+						whole: el.classList.contains('whole'),
+						width: Math.round(el.getBoundingClientRect().width)
+					}))
+				);
+				const [create, retime] = ['❯ occur coffee', '❯ retime coffee -t +5'].map((echo) =>
+					frames.find((f) => f.echo === echo)
+				);
+				assert.ok(create && retime, JSON.stringify(frames));
+				assert.equal(retime.whole, false, `the retime took the whole row: ${JSON.stringify(frames)}`);
+				assert.equal(retime.width, create.width, JSON.stringify(frames));
+				assert.deepEqual(app.errors, []);
+			},
+			{ viewport: PHONES[0], query: 'cli', clock: todayAt(15) }
+		);
+	});
+});
+
 describe('the frames, once there are columns', () => {
 	// EACH COMMAND IS A FRAME (da-hxjrk): the seam between two is their
 	// frames' edges with air between them, beside each other or one over the

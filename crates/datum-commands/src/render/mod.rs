@@ -834,55 +834,30 @@ pub fn show_rename(before_id: &str, after_id: &str, args: &OutputArgs) {
     println!("{tag} {before_colored} ⟶ {after_colored}");
 }
 
-/// Datum's RETIME output: the entry's stable hid, then the time it moved
-/// from ⟶ the time it now carries. Mirrors [`show_rename`] — retime moves a
-/// time the way rename moves an id, so it reports the same before/after
-/// shape rather than a bare count. One line per entry, so a batch retime
-/// reads like a batch delete (one action line per row).
+/// `RETIME`, the shape every write echoes (da-amc4h): the action, the hid
+/// and the slug the entry now has, then its line with each part that moved
+/// drawn `old → new` as [`update_lines_at`] draws it. One echo per moved row.
 pub fn show_retime(
-    entry: &Entry,
-    before: &DatumTime,
+    before: &Entry,
+    after: &Entry,
     registry: Option<&SpecRegistry>,
     args: &OutputArgs,
 ) {
-    if args.silent() || args.show == Show::Format {
-        return;
-    }
-    // No `--show json` branch: `retime` carries no output flags at all
-    // (`RetimeArgs` has no `OutputArgs`), so this renderer is only ever
-    // reached at the default show.
-    println!(
-        "{}",
-        format_retime_line(entry, before, registry, &self::action::now_local())
-    );
+    show_lines(after, args, |now| {
+        retime_lines_at(before, after, registry, now)
+    });
 }
 
-/// The [`show_retime`] line, as a string (`now` injected so tests are
-/// deterministic).
-fn format_retime_line(
-    entry: &Entry,
-    before: &DatumTime,
+/// [`action_lines_at`] for a `retime` of `before` into `after`.
+pub fn retime_lines_at(
+    before: &Entry,
+    after: &Entry,
     registry: Option<&SpecRegistry>,
     now: &DatumTime,
-) -> String {
-    let code = Outcome::Retime.ansi_color();
-    let spec = registry.and_then(|r| r.fields.get(&entry.field));
-    let after = entry
-        .at
-        .as_ref()
-        .map(|t| self::action::format_timestamp(t, now, entry.at_uncertainty()))
-        .unwrap_or_else(|| "timeless".into()); // `retime -T`
-    format!(
-        "{} {} {} {} ⟶ {}",
-        paint_action(Outcome::Retime),
-        paint(code, &short_hid(&entry.hid)),
-        self::action::format_field_cell(&entry.field, spec),
-        paint(
-            code,
-            &self::action::format_timestamp(before, now, before.uncertainty.as_deref(),)
-        ),
-        paint("\x1b[32m", &after), // green for the new time
-    )
+) -> ActionLines {
+    let mut lines = action_lines_at(after, Outcome::Retime, registry, None, now);
+    self::diff::apply(&mut lines, before, after, registry, now, Outcome::Retime);
+    lines
 }
 
 // ─── Table output (tail / head / grep) ───────────────────────────────────────
@@ -2388,32 +2363,39 @@ mod tests {
         Entry::new(field, verb, value, None, Some(t), None, "d1")
     }
 
-    /// da-bgq2: a retime reports the move itself — `RETIME <hid> <field>
-    /// <before> ⟶ <after>` — the same before/after shape RENAME uses, not
-    /// a count of touched rows.
+    /// da-amc4h: a retime echoes as every write does — `RETIME <hid>
+    /// <slug>`, then the entry's line with its time `old → new` — for a
+    /// moment and for a block alike.
     #[test]
-    fn retime_line_shows_before_and_after() {
-        let now = DatumTime::now();
-        let before = DatumTime {
-            utc: "2024-01-01T08:00:00Z".parse().unwrap(),
+    fn retime_echoes_its_header_then_the_moved_line() {
+        let at = |hm: &str| DatumTime {
+            utc: format!("2024-01-01T{hm}:00Z").parse().unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
             uncertainty: None,
         };
-        let mut entry = sample_entry("coffee", Verb::Point, None);
-        entry.at = Some(DatumTime {
-            utc: "2024-01-01T09:00:00Z".parse().unwrap(),
-            ..before.clone()
-        });
-
-        let line = strip_ansi(&format_retime_line(&entry, &before, None, &now));
-        assert_eq!(
-            line,
-            format!(
-                "RETIME {} coffee 2024-01-01 08:00:00+0 ⟶ 2024-01-01 09:00:00+0",
-                short_hid(&entry.hid)
+        let now = at("12:00");
+        let mut walk = sample_entry("walk", Verb::Block, Some(JsonValue::Bool(true)));
+        walk.dur = Dur::parse("PT30M");
+        for (before, info) in [
+            (
+                sample_entry("coffee", Verb::Point, None),
+                "09:00:00+0 → 09:30:00+0  coffee  ●",
             ),
-        );
+            (walk, "09:00:00+0 → 09:30:00+0  walk   on   30m"),
+        ] {
+            let mut before = before;
+            before.at = Some(at("09:00"));
+            let mut after = before.clone();
+            after.at = Some(at("09:30"));
+            let lines = retime_lines_at(&before, &after, None, &now);
+            assert_eq!(
+                strip_ansi(&lines.header),
+                format!("RETIME {} {}", short_hid(&after.hid), lines.id)
+            );
+            assert_eq!(strip_ansi(&lines.info), info);
+            assert_eq!(lines.info_time, "09:00:00+0 → 09:30:00+0");
+        }
     }
 
     // ─── S4 visual parity tests ──────────────────────────────────────────────

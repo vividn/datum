@@ -751,6 +751,7 @@ impl_output_args_ext!(GetArgs);
 impl_output_args_ext!(UpdateArgs);
 impl_output_args_ext!(EditArgs);
 impl_output_args_ext!(DeleteArgs);
+impl_output_args_ext!(RetimeArgs);
 impl_output_args_ext!(UndoArgs);
 impl_output_args_ext!(RedoArgs);
 impl_output_args_ext!(RevertArgs);

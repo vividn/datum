@@ -179,7 +179,7 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // draw every level.
         "moment" | "occur" | "start" | "on" | "stop" | "end" | "off" | "switch" | "add"
         | "card" | "note" | "get" | "delete" | "del" | "undo" | "redo" | "revert" | "update"
-        | "comment" | "merge" | "rekey" | "edit" => ALL_SHOWS,
+        | "comment" | "merge" | "rekey" | "edit" | "retime" | "rt" => ALL_SHOWS,
         // The table renderer honours silence and the format string.
         "grep" => &[Show::Default, Show::None, Show::Format],
         // …and `tail`/`head` have their own JSON rows on top of it.
@@ -404,8 +404,8 @@ mod tests {
             "{msg}"
         );
         assert!(check_show(Show::Json, "fields").is_ok());
-        assert!(check_show(Show::Json, "retime").is_err());
-        assert!(check_show(Show::Default, "retime").is_ok());
+        assert!(check_show(Show::Json, "rename").is_err());
+        assert!(check_show(Show::Default, "rename").is_ok());
         // An unknown value is loud too, rather than degrading to default.
         assert!(take_show(&["--show", "banana"]).is_err());
     }

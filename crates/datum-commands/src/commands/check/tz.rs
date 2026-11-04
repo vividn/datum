@@ -271,11 +271,7 @@ pub(super) fn fix_declared(db: &Db, entries: &[Entry]) -> Result<FixReport> {
     let afters: Vec<Entry> = changed.iter().map(|r| r.entry.clone()).collect();
     let blocks: Vec<String> = (changed.into_iter().zip(field_and_state(db, &afters)))
         .map(|(r, drawn)| {
-            let before = Entry {
-                at: Some(r.before),
-                ..r.entry.clone()
-            };
-            let rows = aligned(&[zone_columns(&before), zone_columns(&r.entry)]);
+            let rows = aligned(&[zone_columns(&r.before), zone_columns(&r.entry)]);
             format!("  {}  {drawn}\n→ {}\n", rows[0], rows[1])
         })
         .collect();

@@ -430,3 +430,47 @@ fn retime_no_timestamp_makes_a_start_a_note() {
     assert_eq!(after.verb, datum_core::entry::Verb::Point);
     assert_eq!(after.state, Some(json!(true)));
 }
+
+/// da-amc4h: a retime echoes as every write does, a header and the entry's
+/// line, its time `old → new` where a create puts its time: for a moment and
+/// a block, and as one document a row under `--show json`.
+#[test]
+fn retime_echoes_the_header_then_the_moved_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join("r.db");
+    let datum = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &db)
+            .env("DATUM_HOME", tmp.path())
+            .env("DATUM_CONFIG_HOME", tmp.path())
+            .env("NO_COLOR", "1")
+            .env("TZ", "UTC")
+            .args(args)
+            .output()
+            .expect("spawn datum");
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    datum(&["moment", "coffee", "-t", "09:00"]);
+    datum(&["start", "walk", "-t", "10:00", "30m"]);
+    for (field, to, line) in [
+        ("coffee", "09:30", "09:00:00+0 → 09:30:00+0  coffee  ●"),
+        ("walk", "11:00", "10:00:00+0 → 11:00:00+0  walk   on   30m"),
+    ] {
+        let printed = datum(&["retime", field, "-t", to]);
+        let lines: Vec<&str> = printed.lines().collect();
+        let header: Vec<&str> = lines[0].split(' ').collect();
+        assert_eq!((header.len(), header[0]), (3, "RETIME"), "{printed}");
+        let slug = header[2];
+        assert!(slug.starts_with(&format!("{field}:")), "{printed}");
+        assert!(slug.ends_with(&format!("T{to}:00.000Z")), "{printed}");
+        assert_eq!(lines[1..], [line], "{printed}");
+    }
+    let doc: serde_json::Value = serde_json::from_str(&datum(&[
+        "retime", "coffee", "-t", "09:40", "--show", "json",
+    ]))
+    .unwrap();
+    let doc = &doc["docs"][0];
+    assert_eq!(doc["action"], "RETIME");
+    assert_eq!(doc["info_time"], "09:30:00+0 → 09:40:00+0");
+}

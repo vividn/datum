@@ -686,6 +686,8 @@ pub struct RetimeArgs {
     /// `-r`/`--relative`: read `time` as a pure shift of the entry's
     /// at — `-y` moves it a day and keeps its clock.
     pub relative: bool,
+    /// `--show` / `-A` / `-o`: each moved row echoes as a write does (da-amc4h).
+    pub output: OutputArgs,
 }
 
 #[derive(Debug)]

@@ -511,6 +511,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Tail(a) | Command::Head(a) => a.output.show = Some(named),
         Command::Get(a) => a.output.show = Some(named),
         Command::Delete(a) => a.output.show = Some(named),
+        Command::Retime(a) => a.output.show = Some(named),
         Command::Undo(a) => a.output.show = Some(named),
         Command::Redo(a) => a.output.show = Some(named),
         Command::Revert(a) => a.output.show = Some(named),

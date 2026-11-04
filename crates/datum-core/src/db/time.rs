@@ -112,10 +112,7 @@ impl Db {
             |_| {
                 let (mut rows, mut befores) = (Vec::new(), Vec::new());
                 for mut e in select_retime_targets(self, filter)? {
-                    // Targets always carry an at (the selector
-                    // excludes timeless rows), so the `before` half of the
-                    // pair is always there to render.
-                    befores.push(e.at.clone());
+                    befores.push(e.clone());
                     let old_slug = e.slug.clone();
                     change(&mut e)?;
                     rows.push((old_slug, e));
@@ -127,12 +124,7 @@ impl Db {
         Ok(saved
             .into_iter()
             .zip(befores)
-            .filter_map(|(entry, before)| {
-                Some(Retimed {
-                    before: before?,
-                    entry,
-                })
-            })
+            .map(|(entry, before)| Retimed { before, entry })
             .collect())
     }
 
@@ -437,8 +429,8 @@ mod tests {
     }
 
     /// da-bgq2: the retime paths report the move, not a count — each
-    /// moved row comes back paired with the `at` it left, which
-    /// is what the RETIME line renders as `before ⟶ after`.
+    /// moved row comes back paired with the row it was, which the RETIME
+    /// echo draws as `before → after` (da-amc4h).
     #[test]
     fn retime_reports_before_and_after_per_row() {
         let db = Db::open_in_memory().unwrap();
@@ -460,7 +452,10 @@ mod tests {
         let moved = db.update_times(&filter, Duration::hours(1)).unwrap();
         assert_eq!(moved.len(), 1);
         assert_eq!(moved[0].entry.hid, e.hid);
-        assert_eq!(moved[0].before.utc, seed_dt("2024-01-01T08:00:00Z").utc);
+        assert_eq!(
+            moved[0].before.at.as_ref().unwrap().utc,
+            seed_dt("2024-01-01T08:00:00Z").utc
+        );
         assert_eq!(
             moved[0].entry.at.as_ref().unwrap().utc,
             seed_dt("2024-01-01T09:00:00Z").utc,
@@ -472,7 +467,7 @@ mod tests {
             .unwrap();
         assert_eq!(moved.len(), 1);
         assert_eq!(
-            moved[0].before.utc,
+            moved[0].before.at.as_ref().unwrap().utc,
             seed_dt("2024-01-01T09:00:00Z").utc,
             "the absolute path reports where the row came from too",
         );
@@ -628,7 +623,10 @@ mod tests {
         };
         let moved = db.clear_at(&filter).unwrap();
         assert_eq!(moved.len(), 1);
-        assert_eq!(moved[0].before.utc, seed_dt("2024-01-01T10:00:00Z").utc);
+        assert_eq!(
+            moved[0].before.at.as_ref().unwrap().utc,
+            seed_dt("2024-01-01T10:00:00Z").utc
+        );
 
         let after = db.get_entry(&e.hid.0).unwrap();
         assert!(after.at.is_none());

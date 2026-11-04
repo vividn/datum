@@ -244,6 +244,8 @@ const READERS = [
 /** Verbs that DO echo a document (da-yc9w's own list). */
 const WRITERS = [
 	['occur', 'coffee'],
+	// da-amc4h: one document a moved row, as a create's.
+	['retime', 'coffee', '-t', '+5'],
 	['note', 'coffee', 'jot=a note'],
 	['add', 'coffee', '--id', 'a-thing'],
 	['start', 'work'],

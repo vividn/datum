@@ -19,13 +19,14 @@ use datum_core::{
     time::{parse_date, parse_time, DatumTime, TimeCtx},
 };
 
-use crate::args::RetimeArgs;
+use crate::args::{OutputFlagsExt, RetimeArgs};
 use crate::commands::helpers::{registry_of, resolve_batch, BatchMode};
 use crate::commands::log_core::{build_time_anchored, which_reading, zone_agrees};
 use crate::commands::time_bounds::{parse_after, parse_before};
 use crate::render::{show_retime, OutputArgs};
 
 pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
+    let output = args.output()?;
     // da-rorg: slug defaults to `_LAST` (matching update/merge/delete/
     // undo) so a bare `datum retime` resolves the user's last touch.
     // Bulk filters (--field/--after/--before) stay as explicit
@@ -153,7 +154,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
     if let Some(offset_str) = args.offset.as_deref() {
         let offset = datum_core::time::parse_duration(offset_str)
             .with_context(|| format!("Invalid --offset value '{offset_str}'"))?;
-        return shift(db, &filters, offset);
+        return shift(db, &filters, offset, &output);
     }
 
     // Path 2a — `-r/--relative` reads the time-args as a pure shift of
@@ -173,7 +174,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
         for filter in &filters {
             moved.extend(db.clear_at(filter)?);
         }
-        return report(db, &moved);
+        return report(db, &moved, &output);
     }
 
     // Path 2b — a target built from the time-args, each entry's own time
@@ -233,32 +234,36 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
             })?,
         );
     }
-    report(db, &moved)
+    report(db, &moved, &output)
 }
 
 /// Apply a pure duration shift across every filter and report it.
-fn shift(db: &Db, filters: &[RetimeFilter], offset: chrono::Duration) -> Result<()> {
+fn shift(
+    db: &Db,
+    filters: &[RetimeFilter],
+    offset: chrono::Duration,
+    output: &OutputArgs,
+) -> Result<()> {
     let mut moved = Vec::new();
     for filter in filters {
         moved.extend(db.update_times(filter, offset)?);
     }
-    report(db, &moved)
+    report(db, &moved, output)
 }
 
-/// da-bgq2: one RETIME line per moved row — the same one-action-line-per-
-/// entry shape `del` renders — rather than a count and a raw second-offset.
+/// da-bgq2: one RETIME echo per moved row — the shape every write has, its
+/// moved time `old → new` (da-amc4h) — rather than a count and a raw offset.
 /// A retime that matched nothing is an error, not a silent success: the
 /// only ways to get here empty are a bulk filter that selected no rows and
 /// a target that is timeless (never a retime target).
-fn report(db: &Db, moved: &[datum_core::db::Retimed]) -> Result<()> {
+fn report(db: &Db, moved: &[datum_core::db::Retimed], output: &OutputArgs) -> Result<()> {
     if moved.is_empty() {
         anyhow::bail!("no entries retimed");
     }
     crate::cmd::stamp_batch(db);
     let registry = registry_of(db, moved.iter().map(|r| &r.entry));
-    let output = OutputArgs::default();
     for r in moved {
-        show_retime(&r.entry, &r.before, registry.as_ref(), &output);
+        show_retime(&r.before, &r.entry, registry.as_ref(), output);
     }
     Ok(())
 }

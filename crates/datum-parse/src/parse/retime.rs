@@ -12,6 +12,7 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
         after: Option<String>,
         before: Option<String>,
         relative: bool,
+        output: input::output_args::OutputArgs,
     }
     let mut registry: Vec<LiftedSpec<RetimeParsing>> = Vec::new();
     // Time-arg group (-t/-y/-q/-d/-z/-D/-T): lifted onto `time` so
@@ -20,6 +21,9 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     // semantics unified across mutating commands.
     for spec in input::time_args::FLAG_SPECS {
         registry.push(lift(|p: &mut RetimeParsing| &mut p.time, spec));
+    }
+    for spec in input::output_args::FLAG_SPECS {
+        registry.push(lift(|p: &mut RetimeParsing| &mut p.output, spec));
     }
     registry.push(local_value(None, Some("offset"), |p, v| {
         p.offset = Some(v.to_string());
@@ -101,5 +105,6 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
         after: composed.after,
         before: composed.before,
         relative: composed.relative,
+        output: composed.output,
     })
 }

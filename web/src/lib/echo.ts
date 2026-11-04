@@ -142,8 +142,7 @@ const NO_ECHO = new Set([
 	'config',
 	'sync',
 	'kit',
-	// Writers with no echo of their own.
-	'retime',
+	// A writer with no echo of its own.
 	'reparse',
 	// Words the CLI answers but does not list in `datum help`.
 	'help',
