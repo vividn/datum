@@ -566,36 +566,51 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
 }
 
 /// da-wd6r5: on a fall-back day, a P1D row stays on its day once now is past
-/// the change. Midnight was CEST, now is CET; read at now's offset, the row
-/// put the bare date on the day before.
+/// the change. Midnight was summer time, now is standard time; read at now's
+/// offset, the row put the bare date on the day before. Both sides of UTC
+/// (da-qwmib): Berlin goes CEST → CET, New York EDT → EST.
 #[test]
 fn render_p1d_entry_keeps_its_date_past_a_dst_change() {
     use datum_parse::time::clock::{install, uninstall, MockClock};
-    let at = |iso: &str| DatumTime::from_utc_and_tz(iso.parse().unwrap(), "Europe/Berlin").unwrap();
-    let prev = install(std::sync::Arc::new(MockClock::new(at(
-        "2026-10-25T08:00:00Z",
-    ))));
-    let midnight = at("2026-10-24T22:00:00Z");
-    let tf = [tracked("birthday")];
-    let mut latest = HashMap::new();
-    let mut e = entry_builder("birthday")
-        .verb(Verb::Point)
-        .time_start(midnight)
-        .build();
-    e.set_at_uncertainty(Some("P1D".to_string()));
-    latest.insert("birthday".to_string(), e);
+    for (tz, midnight, now, day, eve) in [
+        (
+            "Europe/Berlin",
+            "2026-10-24T22:00:00Z",
+            "2026-10-25T08:00:00Z",
+            "2026-10-25",
+            "2026-10-24",
+        ),
+        (
+            "America/New_York",
+            "2026-11-01T04:00:00Z",
+            "2026-11-01T17:00:00Z",
+            "2026-11-01",
+            "2026-10-31",
+        ),
+    ] {
+        let at = |iso: &str| DatumTime::from_utc_and_tz(iso.parse().unwrap(), tz).unwrap();
+        let prev = install(std::sync::Arc::new(MockClock::new(at(now))));
+        let tf = [tracked("birthday")];
+        let mut latest = HashMap::new();
+        let mut e = entry_builder("birthday")
+            .verb(Verb::Point)
+            .time_start(at(midnight))
+            .build();
+        e.set_at_uncertainty(Some("P1D".to_string()));
+        latest.insert("birthday".to_string(), e);
 
-    let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
-    uninstall();
-    if let Some(p) = prev {
-        install(p);
+        let snap = build_snapshot(&tf, &latest, false);
+        let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
+        uninstall();
+        if let Some(p) = prev {
+            install(p);
+        }
+        let plain = strip_ansi(&out);
+        assert!(
+            plain.contains(day) && !plain.contains(eve),
+            "{tz}: P1D row must keep its date across the DST change, got:\n{plain}"
+        );
     }
-    let plain = strip_ansi(&out);
-    assert!(
-        plain.contains("2026-10-25") && !plain.contains("2026-10-24"),
-        "P1D row must keep its date across the DST change, got:\n{plain}"
-    );
 }
 
 // ─── da-84cg: `--json` wire schema ───────────────────────────────────────────
