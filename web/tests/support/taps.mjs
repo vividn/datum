@@ -45,6 +45,10 @@ import assert from 'node:assert/strict';
 import { changeCounter, ready, settled, sharedApp, startApp, stopApp } from './app.mjs';
 import { toggleOption } from './layout.mjs';
 import { FIXTURE, MOOD } from './fields.mjs';
+import { resolveLibAsSource } from './libhook.mjs';
+
+resolveLibAsSource();
+const { layersArgv } = await import('../../src/lib/panes.ts');
 
 const sweep = process.env.DATUM_TEST_PR === '1' && 'staging-only: the double-outline sweep runs on staging and main pushes, not on a PR (da-v7y8x)';
 
@@ -52,9 +56,30 @@ const sweep = process.env.DATUM_TEST_PR === '1' && 'staging-only: the double-out
  * Every shape of field, one of them ignored (`run`, a point). `stats
  * --last-month` fills the stats cache back past any week this month began in:
  * else, in a month's first days, the stats pane's month reaches back less far
- * than its week, and the tap on «week» writes that derived cache.
+ * than its week, and the tap on «week» writes that derived cache. The day
+ * strip's check of the days it holds (`dayview --digests`) keeps each past
+ * day's digest, so a tap whose pane checks held days would write that one
+ * (da-7z5i9): the month `heldDays` keeps, either way up, kept last, after
+ * every write that reaches a day. Built by the page's own `layersArgv`, as
+ * the key is every flag it sets, so the two cannot drift: from any 32 dates in
+ * a row, whose days back, 0 to 31, count from the run's today once
+ * `--end-date` (which keys no day) is dropped. Today's is drawn, not kept.
  */
-const SEED = [...FIXTURE, ...MOOD, 'occur run -t 0800', 'ignore run', 'stats --last-month'];
+const kept = (vertical) => {
+	const day = (back) => new Date(Date.UTC(2026, 0, 31 - back)).toISOString().slice(0, 10);
+	const argv = layersArgv(Array.from({ length: 32 }, (_, back) => day(back)), vertical, true);
+	argv.splice(argv.indexOf('--end-date'), 2);
+	return argv.join(' ');
+};
+const SEED = [
+	...FIXTURE,
+	...MOOD,
+	'occur run -t 0800',
+	'ignore run',
+	'stats --last-month',
+	kept(false),
+	kept(true)
+];
 
 /** Where the database's change counter stands: it moves on every write. */
 const writes = (app) => changeCounter(app.page);

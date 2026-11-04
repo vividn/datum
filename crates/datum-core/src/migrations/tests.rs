@@ -57,6 +57,8 @@ fn fresh_db_matches_schema_sql_shape() {
         "_meta",
         "check_changes",
         "check_kept",
+        "dayview_kept",
+        "dayview_kept_dirty",
         "entries",
         "entry_history",
         "integrity_warnings",

@@ -13,12 +13,13 @@
 //! whatever zone the reader is in now. [`day_spans`] cuts each day where
 //! that clock jumped, and the layout draws the jump.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use datum_core::action::Action;
-use datum_core::db::Db;
+use datum_core::db::{Db, KeptDay};
 use datum_core::dur::Dur;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
@@ -133,20 +134,19 @@ fn today(db: &Db, now: &DatumTime) -> Result<NaiveDate> {
 }
 
 fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
-    let (layout, end_date) = layout_of(args, db, None)?;
+    if args.show == ShowFlag::Json && !(args.digests.is_empty() && args.pictures.is_empty()) {
+        return write_payload(
+            args.output_file.as_deref(),
+            &serde_json::to_string_pretty(&by_days(args, db)?)?,
+            OutputKind::Json,
+        );
+    }
+    let (layout, _) = layout_of(args, db, None)?;
     if args.show == ShowFlag::None {
         return Ok(());
     }
     if args.show == ShowFlag::Json {
-        let mut json = serde_json::to_value(&layout)?;
-        if !args.digests.is_empty() {
-            let hash = |svg: String| format!("{:x}", Sha256::digest(svg)).into();
-            json["digests"] = by_day(args, db, end_date, &args.digests, hash)?;
-        }
-        if !args.pictures.is_empty() {
-            json["pictures"] = by_day(args, db, end_date, &args.pictures, JsonValue::from)?;
-        }
-        let json = serde_json::to_string_pretty(&json)?;
+        let json = serde_json::to_string_pretty(&serde_json::to_value(&layout)?)?;
         return write_payload(args.output_file.as_deref(), &json, OutputKind::Json);
     }
 
@@ -167,54 +167,169 @@ fn svg_of(args: &DayviewArgs, layout: &DayviewLayout) -> String {
     render_dayview_svg_with(layout, opts)
 }
 
-/// `--digests` and `--pictures`: each day's picture as `--days 1
-/// --end-date` that day would draw it (the stdout less its newline), by
-/// days back from `end_date`, as `each` gives it: its SHA-256 hex, so a
-/// viewer holding a band knows whether its picture still stands without
-/// asking for it (da-efxk5), or the SVG itself, so the bands a viewer
-/// lacks come in one run and not one process a day (da-p5lyt).
-fn by_day(
-    args: &DayviewArgs,
-    db: &Db,
-    end_date: NaiveDate,
-    backs: &[u32],
-    each: impl Fn(String) -> JsonValue,
-) -> Result<JsonValue> {
-    let midnight = |back: u32| {
-        (end_date - Duration::days(back.into()))
-            .and_time(Default::default())
-            .and_utc()
+/// `--digests` and `--pictures`, and nothing else: each day's picture as
+/// `--days 1 --end-date` that day would draw it (the stdout less its
+/// newline), by days back from the end date. `digests` its SHA-256 hex, so
+/// a viewer holding a band knows whether its picture still stands without
+/// asking for it (da-efxk5); `pictures` the SVG itself, so the bands a
+/// viewer lacks come in one run and not one process a day (da-p5lyt).
+///
+/// A digest is kept (da-7z5i9): a past day's data layer is hashed once and
+/// answered from `dayview_kept` until a write reaches it, which its triggers
+/// say (`dayview_kept.sql`), so a check of the days on screen after a write
+/// today draws none of them. The check that keeps one writes; one that finds
+/// each day kept writes nothing.
+fn by_days(args: &DayviewArgs, db: &Db) -> Result<JsonValue> {
+    if args.context.is_some() {
+        anyhow::bail!(CONTEXT_ONE_BAND);
+    }
+    let end_date = resolved_end_date(args, today(db, &DatumTime::now())?)?;
+    let day_of = |back: u32| DayviewArgs {
+        start_date: None,
+        end_date: Some((end_date - Duration::days(back.into())).to_string()),
+        n_days: Some(1),
+        digests: Vec::new(),
+        pictures: Vec::new(),
+        ..args.clone()
+    };
+    let hex = |svg: &str| format!("{:x}", Sha256::digest(svg));
+    let mut out = serde_json::Map::new();
+    if !args.pictures.is_empty() {
+        let drawn = draw_days(db, args.pictures.iter().map(|&b| (b, day_of(b))).collect())?;
+        let pictures = drawn
+            .into_iter()
+            .map(|(back, svg, _)| (back.to_string(), JsonValue::from(svg)));
+        out.insert("pictures".into(), pictures.collect());
+    }
+    if args.digests.is_empty() {
+        return Ok(out.into());
+    }
+    let now_ms = DatumTime::now().utc.timestamp_millis();
+    // A key a past day's data layer, with no sample: what the strip asks.
+    let keyed: Vec<(u32, DayviewArgs, Option<String>)> = (args.digests.iter())
+        .map(|&back| {
+            let day = day_of(back);
+            // Every flag the picture reads; where it is written, not.
+            let flags = DayviewArgs {
+                output_file: None,
+                watch: false,
+                ..day.clone()
+            };
+            let key = (args.data_layer && args.sample.is_none()).then(|| {
+                hex(&format!(
+                    "{}\n{}\n{flags:?}",
+                    datum_core::build(),
+                    Zone::host().name()
+                ))
+            });
+            (back, day, key)
+        })
+        .collect();
+    let (seen, kept_now, digests) = db.read(|view| -> Result<_> {
+        let keys: Vec<String> = keyed.iter().filter_map(|(_, _, k)| k.clone()).collect();
+        // A cache: tables an older file opened to read lacks are none kept.
+        let held = db.dayview_kept(&keys).unwrap_or_default();
+        let missing = (keyed.iter())
+            .filter(|(_, _, k)| k.as_ref().is_none_or(|k| !held.contains_key(k)))
+            .map(|(back, day, _)| (*back, day.clone()))
+            .collect();
+        let drawn = draw_days(db, missing)?;
+        let mut keep = Vec::new();
+        let mut digests: HashMap<u32, String> = HashMap::new();
+        for (back, svg, layout) in drawn {
+            let digest = hex(&svg);
+            let key = keyed
+                .iter()
+                .find(|(b, _, _)| *b == back)
+                .and_then(|(_, _, k)| k.clone());
+            if let (Some(key), Some(day)) = (key, layout.days.first()) {
+                if day.end_ms <= now_ms {
+                    keep.push((key, kept_day(&digest, day)));
+                }
+            }
+            digests.insert(back, digest);
+        }
+        for (back, _, key) in &keyed {
+            if let Some(digest) = key.as_ref().and_then(|k| held.get(k)) {
+                digests.insert(*back, digest.clone());
+            }
+        }
+        Ok((view.seen(), keep, digests))
+    })?;
+    // Not kept is drawn again next time: the lock held elsewhere, or a
+    // write between the read and this.
+    let _ = db.dayview_keep(seen, &kept_now);
+    let digests =
+        (args.digests.iter()).map(|b| (b.to_string(), JsonValue::from(digests[b].clone())));
+    out.insert("digests".into(), digests.collect());
+    Ok(out.into())
+}
+
+/// A day's picture as kept: how far past its end each field's drawing
+/// reads. A block running past midnight says where it ends (`data-to`): at
+/// the row that ends it, or, cut at the day's end with none yet, at the first
+/// row of its field in the [`FETCH_BUFFER`] the day's window reads past it.
+fn kept_day(digest: &str, day: &datum_layout::dayview::RenderedDay) -> KeptDay {
+    let mut reach = std::collections::BTreeMap::new();
+    for field in &day.fields {
+        let ends = field.blocks.iter().map(|b| b.end_ms);
+        let reads = ends
+            .filter(|&end| end >= day.end_ms)
+            .map(|end| match end > day.end_ms {
+                true => end,
+                false => day.end_ms + FETCH_BUFFER.num_milliseconds(),
+            });
+        if let Some(until) = reads.max() {
+            reach.insert(field.field.clone(), until);
+        }
+    }
+    KeptDay {
+        digest: digest.to_string(),
+        end_ms: day.end_ms,
+        reach,
+    }
+}
+
+/// Each of `days`, one day's args by its days back, drawn: its SVG and
+/// layout.
+fn draw_days(db: &Db, days: Vec<(u32, DayviewArgs)>) -> Result<Vec<(u32, String, DayviewLayout)>> {
+    let midnight = |day: &DayviewArgs| {
+        NaiveDate::parse_from_str(day.end_date.as_deref().unwrap_or_default(), "%Y-%m-%d")
+            .map(|d| d.and_time(Default::default()).and_utc())
     };
     // What `check integrity` finds, most of a day's cost, read once for
     // days a week apart or less (`layout_of`'s window, each side): a read
     // costs its window, so a day far from the others reads its own.
-    let mut sorted = backs.to_vec();
+    let mut sorted: Vec<u32> = days.iter().map(|(b, _)| *b).collect();
     sorted.sort_unstable();
     sorted.dedup();
-    let mut read = std::collections::HashMap::new();
+    let mut read = HashMap::new();
     for run in sorted.chunk_by(|a, b| b - a <= 7) {
-        let since = midnight(run[run.len() - 1]) - Duration::days(3);
-        let until = midnight(run[0]) + Duration::days(3);
+        let day = |back| {
+            &days
+                .iter()
+                .find(|(b, _)| *b == back)
+                .expect("a day asked")
+                .1
+        };
+        let since = midnight(day(run[run.len() - 1]))? - Duration::days(3);
+        let until = midnight(day(run[0]))? + Duration::days(3);
         let findings = std::rc::Rc::new(
             datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default(),
         );
         read.extend(run.iter().map(|&back| (back, findings.clone())));
     }
-    let mut out = serde_json::Map::new();
-    for &back in backs {
-        let day = DayviewArgs {
-            start_date: None,
-            end_date: Some((end_date - Duration::days(back.into())).to_string()),
-            n_days: Some(1),
-            digests: Vec::new(),
-            pictures: Vec::new(),
-            ..args.clone()
-        };
-        let svg = svg_of(&day, &layout_of(&day, db, Some(&read[&back]))?.0);
-        out.insert(back.to_string(), each(svg));
-    }
-    Ok(out.into())
+    days.into_iter()
+        .map(|(back, day)| {
+            let layout = layout_of(&day, db, Some(&read[&back]))?.0;
+            Ok((back, svg_of(&day, &layout), layout))
+        })
+        .collect()
 }
+
+/// `--context` beside a flag naming days, which it would drop unsaid.
+const CONTEXT_ONE_BAND: &str = "--context draws one window before now: \
+     no --start-date, --end-date, --digests, --pictures, or --days but 1";
 
 /// The layout `args` draws, and the last day it draws. `findings`, when
 /// given, are what `check integrity` finds around its days, read already.
@@ -316,10 +431,7 @@ fn layout_of(
             || !args.digests.is_empty()
             || !args.pictures.is_empty())
     {
-        anyhow::bail!(
-            "--context draws one window before now: \
-             no --start-date, --end-date, --digests, --pictures, or --days but 1"
-        );
+        anyhow::bail!(CONTEXT_ONE_BAND);
     }
     // Its ticks are measured along a horizontal band.
     if windowed && args.orientation == DayviewOrientation::Vertical {
@@ -640,6 +752,9 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
 ///
 /// `sample` is `--sample`'s spec, and whether it is drawn in place of what
 /// the field has (`--context`, da-jc8ic) or only where it has nothing.
+/// How far either side of a day [`build_day_fields`] reads its rows.
+const FETCH_BUFFER: Duration = Duration::days(2);
+
 fn build_day_fields(
     db: &Db,
     day_start_ms: i64,
@@ -663,7 +778,7 @@ fn build_day_fields(
     // (da-zwct): one that began today and ends after midnight is kept by
     // its leading edge (da-tyggo). A state older than the buffer is
     // carried in below. The layout clips to the visible window.
-    let buffer = chrono::Duration::days(2);
+    let buffer = FETCH_BUFFER;
     let entries = db.list_entries(&super::render_helpers::live_window_params(
         day_start_utc - buffer,
         day_end_utc + buffer,

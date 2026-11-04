@@ -451,7 +451,7 @@ export interface Reads {
 	tailArgv: TailListing;
 	geometryArgv: DayviewJson;
 	/** Each day's data layer, or its digest, by days back. */
-	layersArgv: DayviewJson & { pictures?: Record<string, string>; digests?: Record<string, string> };
+	layersArgv: { pictures?: Record<string, string>; digests?: Record<string, string> };
 	showAllArgv: AllFieldsStats | FieldStats;
 	specShowArgv: Spec;
 	specHistoryArgv: SpecVersion[];

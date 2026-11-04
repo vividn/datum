@@ -30,13 +30,14 @@ pub(crate) const ENTRY_AUTHOR_SQL: &str = include_str!("entry_author.sql");
 /// The DDL an open lays and a purge lays again, in order: `CREATE … IF NOT
 /// EXISTS`, so laying it twice changes nothing. A file added here is in
 /// [`LAID`] too.
-const EVERY_OPEN_SQL: [&str; 6] = [
+const EVERY_OPEN_SQL: [&str; 7] = [
     include_str!("../schema.sql"),
     STATS_CACHE_SQL,
     SPEC_ALIAS_NAMES_SQL,
     CHECK_KEPT_SQL,
     SYNC_UNCOVERED_SQL,
     ENTRY_AUTHOR_SQL,
+    DAYVIEW_KEPT_SQL,
 ];
 /// What `_meta` `laid` starts with once this build has laid
 /// [`EVERY_OPEN_SQL`] on [`crate::migrations::CURRENT_SCHEMA_VERSION`]
@@ -86,6 +87,9 @@ mod spool;
 mod state;
 mod stats_cache;
 pub(crate) use stats_cache::STATS_CACHE_SQL;
+mod dayview_kept;
+pub use dayview_kept::KeptDay;
+pub(crate) use dayview_kept::DAYVIEW_KEPT_SQL;
 mod sync;
 mod time;
 mod tombstone;
