@@ -82,6 +82,13 @@
 	scrolled (da-vu7pi): as many rows as fit, up to three, each packed on
 	its own and all of them scrolled along the bar's axis.
 
+	THE PALETTE, the ❯'s commands over the bottom bar's output (da-qzzox,
+	vividn, 2026-11-04: «increase the size of the buttons in the command
+	pallette. It should be one row, horizontally scrollable»): `palette`
+	draws larger circles in ONE row that never wraps, scrolled sideways,
+	and the row declares `data-pans="x"`, so a sideways scroll in it is
+	never a tab swipe.
+
 	Every command is a CIRCLE with its mark inside and its name beneath
 	(da-fg4w4, vividn: «to visually distinguish them from other types of
 	buttons»; `iconOf` in commands.ts). The circle IS the button, so its
@@ -124,7 +131,6 @@
 		subcommandsOf,
 		suggestionOf,
 		type Suggestion,
-		type Axis,
 		type CommandButton,
 		type Grammar,
 		type Menu,
@@ -151,8 +157,8 @@
 		conflicts = 0,
 		/** Whose bar this is: what it was showing is kept under it across a remount. */
 		key = '',
-		/** The axis the bar is reached along (ButtonRows). */
-		axis = 'x',
+		/** The ❯'s palette: larger circles in one row scrolled sideways (da-qzzox). */
+		palette = false,
 		/** A press that runs: the argv. */
 		onrun,
 		/** A press that writes the line instead: what to write, and what it spends. */
@@ -169,7 +175,7 @@
 		redoable?: boolean;
 		conflicts?: number;
 		key?: string;
-		axis?: Axis;
+		palette?: boolean;
 		onrun?: (argv: string[]) => void;
 		online?: (line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }) => void;
 		onflag?: (flag: { command: string; flag: string; keyboard: boolean }) => void;
@@ -219,12 +225,11 @@
 						: BASE
 	);
 	/**
-	 * The lines the bar is dealt into, at most: the base row is ONE row in a
-	 * pane, and over the bottom bar's output, where a line is a column,
-	 * every column that fits; a flag is no circle, and keeps the three
-	 * columns wide enough for it.
+	 * The lines the bar is dealt into, at most: the palette is ONE row
+	 * whatever it shows, and in a pane the base row is one and the rest as
+	 * many as fit, up to three.
 	 */
-	const lines = $derived(flagged ? MAX_ROWS : axis === 'y' ? Infinity : shown === BASE ? 1 : MAX_ROWS);
+	const lines = $derived(palette || (shown === BASE && !flagged) ? 1 : MAX_ROWS);
 	/** The base row's sync while there are conflicts: it opens the submenu that holds them. */
 	const syncMenu = (command: CommandButton) => command.name === 'sync' && conflicts > 0 && shown === BASE;
 	/** What a tap on `command` does: the press below and the outline are both this. */
@@ -313,6 +318,7 @@
 	{@const s = suggested}
 	<button
 		class="lead"
+		class:palette
 		class:ready={s.ready}
 		use:act={s.ready ? 'run' : 'fill'}
 		{disabled}
@@ -327,7 +333,14 @@
 	</button>
 {/if}
 
-<ButtonRows class="commands" items={shown} key={(command) => command.name} {axis} maxRows={lines} bind:bar>
+<ButtonRows
+	class="commands{palette ? ' palette' : ''}"
+	items={shown}
+	key={(command) => command.name}
+	maxRows={lines}
+	pans={palette ? 'x' : undefined}
+	bind:bar
+>
 	{#snippet probe()}
 		<button class="command round" tabindex="-1">{@render face('', 'probe')}</button>
 	{/snippet}
@@ -437,6 +450,24 @@
 		line-height: 1;
 	}
 
+	/* The palette's are larger (da-qzzox): the output's height holds one
+	   row of them, names included, and the row scrolls sideways. */
+	:global(.bar.commands.palette) .command.round {
+		inline-size: 2.9rem;
+		block-size: 2.9rem;
+		margin-block-end: 1rem;
+		font-size: 1.25rem;
+	}
+
+	:global(.bar.commands.palette) .command svg {
+		inline-size: 1.4rem;
+		block-size: 1.4rem;
+	}
+
+	:global(.bar.commands.palette) .name {
+		font-size: 0.68rem;
+	}
+
 	/* Room at either end for a name wider than its circle (`conflicts`), so
 	   one at an end spills into the bar's padding and nothing scrolls. */
 	:global(.bar.commands) {
@@ -523,6 +554,16 @@
 		font-size: 1.3rem;
 		line-height: 1;
 		cursor: pointer;
+	}
+
+	.lead.palette {
+		inline-size: 3.3rem;
+		block-size: 3.3rem;
+		font-size: 1.6rem;
+	}
+
+	.lead.palette .name {
+		font-size: 0.7rem;
 	}
 
 	/* Ready, it runs at a tap, so it wears the double outline every such

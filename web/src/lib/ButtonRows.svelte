@@ -4,7 +4,7 @@
 	today, and the next one by using this rather than copying its CSS.
 
 	THE SCROLL RULE (vividn, 2026-09-22): the bar is always reached along
-	one axis — `axis`, left and right in a pane, up and down over the bottom bar's output — and a taller box buys it more rows,
+	one axis — `axis`, left and right wherever a bar stands today — and a taller box buys it more rows,
 	up to `maxRows` (three, MAX_ROWS, unless the widget lifts it: the fields
 	widget takes all its box fits, da-arms4), never a wrap onto the other axis. The rows are counted
 	from the box the layout gave the bar and the size of the `probe` snippet
@@ -46,6 +46,8 @@
 		maxRows?: number;
 		/** Hold buttons that do not fill the box in its middle. */
 		center?: boolean;
+		/** The axes the bar declares its own (`data-pans`, PaneFrame.svelte): a drag along one is never a tab swipe. */
+		pans?: string;
 		/** The scroller itself, for a widget that has to put a scroll back. */
 		bar?: HTMLElement;
 		class?: string;
@@ -65,6 +67,7 @@
 		arrange = lanesOf,
 		maxRows = MAX_ROWS,
 		center = false,
+		pans,
 		bar = $bindable(),
 		class: classes = '',
 		onpointerenter,
@@ -98,6 +101,7 @@
 	class:short={center && lines < rows}
 	data-rows={rows}
 	data-axis={axis}
+	data-pans={pans}
 	{onpointerenter}
 	{onpointerleave}
 >

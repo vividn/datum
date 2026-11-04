@@ -64,7 +64,7 @@
 	import { untrack } from 'svelte';
 	import CommandsWidget from '#lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, commandsOpen, pills, prefill, text, type Pill } from '#lib/bar.ts';
-	import { argumentsOf, opensField, withFlag, type Axis, type Suggestion } from '#lib/commands.ts';
+	import { argumentsOf, opensField, withFlag, type Suggestion } from '#lib/commands.ts';
 	import { openField } from '#lib/fieldWidget.ts';
 	import { redoArgv } from '#lib/calls.ts';
 	import { withPills } from '#lib/selection.ts';
@@ -74,12 +74,12 @@
 		epoch = 0,
 		/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
 		key = '',
-		/** The axis its buttons are reached along: up and down over the bar's output (da-m9zo7). */
-		axis = 'x'
+		/** The ❯'s palette over the bar's output: one row of larger circles, scrolled sideways (da-qzzox). */
+		palette = false
 	}: {
 		epoch?: number;
 		key?: string;
-		axis?: Axis;
+		palette?: boolean;
 	} = $props();
 
 	let redoable = $state(false);
@@ -130,7 +130,7 @@
 <div class="body">
 	<CommandsWidget
 		disabled={!$ready}
-		{axis}
+		{palette}
 		grammar={$grammar}
 		pills={$pills}
 		fields={$fields}

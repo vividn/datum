@@ -1110,9 +1110,10 @@ laid out the same way.
   tag (`Outcome::hex`, carried as `action_color` on `--show json`), fading, or
   a `FAILED` or a red `ERROR!` that opens the output on a tap. The `❯` is a button (`commandsOpen` in `#lib/bar.ts`,
   da-xw655): pressed, it turns a quarter, fills, and slides the command
-  widget up over the output section at its height, its buttons in columns
-  scrolled up and down, a swipe or a wheel on them theirs and never the
-  bar's (`data-own-gestures` in `#lib/grip.ts`, da-m9zo7); the `❯` again, Escape,
+  widget up over the output section at its height, its buttons larger
+  circles in one row scrolled sideways (da-qzzox), a swipe or a wheel on them
+  theirs and never the bar's (`data-own-gestures` in `#lib/grip.ts`,
+  da-m9zo7) nor a tab's (`data-pans="x"`); the `❯` again, Escape,
   a run (`pressWithPills`, the output then showing it) or a choice that
   fills the line takes it away. OVER the bar is the history, oldest first and the
   newest nearest the input (`#lib/BarLog.svelte`), its rows scrolling as

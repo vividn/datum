@@ -837,9 +837,9 @@ export function lanesOf<T>(items: T[], rows: number): T[][] {
 
 /**
  * The axis a bar is reached along: `x`, rows reached left and right, is
- * every bar in a pane; `y`, columns reached up and down, is the ❯'s commands
- * over the bottom bar's output (da-m9zo7), and what a pivoted dayview/nowview
- * will want of the fields widget (da-a6guc).
+ * every bar today, the ❯'s commands over the bottom bar's output among them
+ * (da-qzzox); `y`, columns reached up and down, is what a pivoted
+ * dayview/nowview will want of the fields widget (da-a6guc).
  */
 export type Axis = 'x' | 'y';
 

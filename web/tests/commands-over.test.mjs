@@ -259,21 +259,29 @@ describe('the ❯ opens the commands over the output', () => {
 
 // vividn, 2026-10-28: «it should intercept swipes rather than going down
 // through to the output bar like currently. i.e., swiping up on the command
-// pop up bar shouldn't open the cli» (da-m9zo7). So the commands stand in
-// columns reached up and down, a swipe or a wheel on them scrolls them, and
-// the bar and the log under them stay where they were; a swipe on the input
-// row still moves the bar.
+// pop up bar shouldn't open the cli» (da-m9zo7). And 2026-11-04: «increase
+// the size of the buttons in the command pallette. It should be one row,
+// horizontally scrollable» (da-qzzox). So the commands are larger circles in
+// one row, a sideways swipe or wheel on them scrolls them, the row declares
+// `data-pans="x"` so it is never a tab swipe, and the bar and the log under
+// them stay where they were; a swipe on the input row still moves the bar.
 describe('a swipe on the commands is theirs', () => {
 	const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, prepare: withBar };
 	const LIST = `${OVER} .bar.commands`;
 
-	/** How far the bar is open, how tall the log, and how far the commands are scrolled. */
+	/** How far the bar is open, how tall the log, how far the commands are scrolled, and the root tab in front. */
 	const state = (page) =>
 		page.evaluate((list) => {
 			const style = getComputedStyle(document.querySelector('.shell'));
 			const px = (name) => Math.round(parseFloat(style.getPropertyValue(name)) || 0);
 			const el = document.querySelector(list);
-			return { shown: px('--shown'), log: px('--log-height'), scrolled: Math.round(el?.scrollTop ?? -1), room: el ? el.scrollHeight - el.clientHeight : -1 };
+			return {
+				shown: px('--shown'),
+				log: px('--log-height'),
+				scrolled: Math.round(el?.scrollLeft ?? -1),
+				room: el ? el.scrollWidth - el.clientWidth : -1,
+				tab: document.querySelector('.root-bar [role="tab"][aria-selected="true"]')?.textContent.replace('•', '').trim()
+			};
 		}, LIST);
 
 	/** Wait for the scroll and the bar to stop moving: three readings alike, so a stalled frame is not a stop. */
@@ -289,6 +297,23 @@ describe('a swipe on the commands is theirs', () => {
 		}
 	};
 
+	/** The circles' rows, whether each is wholly inside the row's box, and whether the last is. */
+	const row = (page) =>
+		page.locator(LIST).evaluate((bar) => {
+			const box = bar.getBoundingClientRect();
+			const all = [...bar.querySelectorAll('button.round')].map((b) => b.getBoundingClientRect());
+			const inside = (b) => b.left >= box.left - 0.5 && b.right <= box.right + 0.5;
+			return {
+				circles: all.length,
+				lines: new Set(all.map((b) => Math.round(b.top))).size,
+				size: Math.min(...all.map((b) => b.height)),
+				below: all.every((b) => b.bottom <= box.bottom + 0.5),
+				last: inside(all.at(-1)),
+				pans: bar.dataset.pans,
+				down: bar.scrollHeight > bar.clientHeight + 1
+			};
+		});
+
 	/**
 	 * Up, with every command in them: a pill only a few commands refuse
 	 * leaves them flat and long enough to scroll (da-fg4w4), and opens them
@@ -300,53 +325,53 @@ describe('a swipe on the commands is theirs', () => {
 		await slid(page);
 	};
 
-	// da-fg4w4: «a phone width still fits the base row without scrolling», at the narrowest phone the tests hold.
 	for (const width of [360, 390])
-		test(`on a ${width}px phone, the base row is eight circles in one row, each wholly in sight, with nothing to scroll`, async () => {
+		test(`on a ${width}px phone, the base row is eight larger circles in one row that scrolls sideways and never down`, async () => {
 			await withApp(
 				async ({ page, errors }) => {
 					await page.locator(CHEVRON).click();
 					await page.locator(`${LIST} button[data-command="undo"]`).waitFor();
 					await slid(page);
-					const row = await page.locator(LIST).evaluate((bar) => {
-						const box = bar.getBoundingClientRect();
-						const all = [...bar.querySelectorAll('button.round')].map((b) => b.getBoundingClientRect());
-						return {
-							circles: all.length,
-							lines: new Set(all.map((b) => Math.round(b.top))).size,
-							inside: all.every((b) => b.left >= box.left - 0.5 && b.right <= box.right + 0.5 && b.bottom <= box.bottom + 0.5),
-							scrolls: bar.scrollHeight > bar.clientHeight + 1 || bar.scrollWidth > bar.clientWidth + 1
-						};
-					});
-					assert.deepEqual(row, { circles: 8, lines: 1, inside: true, scrolls: false });
+					const base = await row(page);
+					assert.deepEqual(
+						{ ...base, size: base.size >= 44 },
+						{ circles: 8, lines: 1, size: true, below: true, last: false, pans: 'x', down: false },
+						`the base row: ${JSON.stringify(base)}`
+					);
 					assert.deepEqual(errors, []);
 				},
 				{ ...PHONE, viewport: { width, height: 664 } }
 			);
 		});
 
-	test('on a phone, up and down scroll them and the bar stays; a swipe on the input row still moves it', async () => {
+	test('on a phone, a sideways swipe scrolls them to the last, in one row, and the bar and the root tab stay; a swipe on the input row still moves the bar', async () => {
 		await withApp(async ({ page, errors }) => {
 			await open(page);
 			const before = await still(page);
 			assert.equal(before.scrolled, 0);
-			assert.ok(before.room > 40, `the commands have ${before.room}px to scroll`);
+			assert.ok(before.room > 100, `the commands have ${before.room}px to scroll`);
+			const flat = await row(page);
+			assert.equal(flat.lines, 1, `${flat.circles} commands stand in ${flat.lines} rows`);
+			assert.equal(flat.last, false, 'the last command is in sight before any scroll: the case is not tested');
 			const box = await page.locator(LIST).boundingBox();
-			const x = box.x + box.width / 2;
+			const y = box.y + box.height / 2;
 
-			// A real finger up, a frame a move: the list scrolls, the bar and the log do not move.
-			await swipe(page, x, box.y + box.height - 8, 0, -60, 10, 16);
-			const up = await still(page);
-			assert.ok(up.scrolled > 0, `a swipe up left the commands at ${up.scrolled}px`);
-			assert.deepEqual([up.shown, up.log], [before.shown, before.log], 'a swipe up on the commands moved the bar');
+			// Real fingers leftwards, a frame a move: the row scrolls to its end, the bar, the log and the root tab do not move.
+			for (let i = 0; i < 12 && !(await row(page)).last; i++) {
+				await swipe(page, box.x + box.width - 20, y, -(box.width - 60), 0, 10, 16);
+				const now = await still(page);
+				assert.deepEqual([now.shown, now.log, now.tab], [before.shown, before.log, before.tab], 'a sideways swipe on the commands moved the bar or the tab');
+			}
+			const end = await still(page);
+			assert.ok((await row(page)).last, `swipes left the commands at ${end.scrolled}px of ${end.room}px, the last out of sight`);
 
-			// And down again.
-			await swipe(page, x, box.y + 8, 0, 60, 10, 16);
-			const down = await still(page);
-			assert.ok(down.scrolled < up.scrolled, `a swipe down left the commands at ${down.scrolled}px, from ${up.scrolled}px`);
-			assert.deepEqual([down.shown, down.log], [before.shown, before.log], 'a swipe down on the commands moved the bar');
+			// And back: the row scrolls back and the tab stays.
+			await swipe(page, box.x + 20, y, box.width - 60, 0, 10, 16);
+			const back = await still(page);
+			assert.ok(back.scrolled < end.scrolled, `a swipe right left the commands at ${back.scrolled}px, from ${end.scrolled}px`);
+			assert.equal(back.tab, before.tab, 'a swipe right on the commands swiped the root tab');
 
-			// The bar's grip never sees it, even as a drag the browser does not take.
+			// The bar's grip never sees an upward drag on them, even one the browser does not take.
 			await dragOn(page, OVER, -200);
 			const dragged = await still(page);
 			assert.deepEqual([dragged.shown, dragged.log], [before.shown, before.log], 'a drag on the commands moved the bar');
@@ -361,19 +386,28 @@ describe('a swipe on the commands is theirs', () => {
 		}, PHONE);
 	});
 
-	test('a wheel over them scrolls them and leaves the bar', async () => {
+	test('a sideways wheel over them scrolls them and leaves the bar', async () => {
 		await onPage(async ({ page, errors }) => {
-			await open(page);
-			const before = await still(page);
-			const box = await page.locator(OVER).boundingBox();
-			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-			await page.mouse.wheel(0, 60);
-			const after = await still(page);
-			assert.ok(after.scrolled > before.scrolled, `a wheel left the commands at ${after.scrolled}px`);
-			assert.deepEqual([after.shown, after.log], [before.shown, before.log], 'a wheel on the commands moved the bar');
-			// Clearing the last pill takes them away.
-			await page.evaluate(() => window.datum.bar.setPills([]));
-			await page.locator(OVER).waitFor({ state: 'detached' });
+			await page.setViewportSize({ width: 600, height: 800 });
+			try {
+				await open(page);
+				const before = await still(page);
+				assert.ok(before.room > 0, 'the commands fit across: the case is not tested');
+				const box = await page.locator(OVER).boundingBox();
+				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+				await page.mouse.wheel(60, 0);
+				const across = await still(page);
+				assert.ok(across.scrolled > before.scrolled, `a wheel left the commands at ${across.scrolled}px`);
+				assert.deepEqual([across.shown, across.log], [before.shown, before.log], 'a sideways wheel on the commands moved the bar');
+				await page.mouse.wheel(0, 60);
+				const down = await still(page);
+				assert.deepEqual([down.shown, down.log], [before.shown, before.log], 'a wheel down on the commands moved the bar');
+				// Clearing the last pill takes them away.
+				await page.evaluate(() => window.datum.bar.setPills([]));
+				await page.locator(OVER).waitFor({ state: 'detached' });
+			} finally {
+				await page.setViewportSize({ width: 1280, height: 800 });
+			}
 			assert.deepEqual(errors, []);
 		});
 	});
