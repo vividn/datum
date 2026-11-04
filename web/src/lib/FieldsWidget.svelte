@@ -20,7 +20,8 @@
 	drag where they run past the widget's edges. A box too short for the
 	ring holds them in the rows it has, which run past its sides (`dealt`).
 
-	A TAP OPENS a field (vividn's frames, 2026-11-03): its pill goes on the
+	A TAP OPENS a field (vividn's frames, 2026-11-03), a switch alone in
+	1-click mode and every field in 2-click (below): its pill goes on the
 	bar and its view takes the widget, top to bottom with no labels —
 	‹ back and the field; its TIME, `−q` (five minutes earlier), and for a
 	field with a length `−m` (a moment) and `5m` (five minutes long), each
@@ -33,9 +34,13 @@
 	page's selection (#lib/cursor.ts), so the `-qq` and length pills are the
 	nowview's own. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
 	click); any other field runs from the commands, which take the pills.
-	In 2-click mode (`clicks`, da-u017i) a tap only CHOOSES the state: its
-	pill is placed and its chip ringed, and the command pane's ready
-	«switch → state» logs it. A long press does the other mode's tap.
+	In 1-click mode, the default, a field that needs nothing more is not
+	opened at all (da-gra0z, `pressKind`): a tap on a moment logs it, on a
+	block starts or ends it, with the pills there are.
+	In 2-click mode (`clicks`, da-u017i) every field opens, and a tap only
+	CHOOSES the state: its pill is placed and its chip ringed, and the command
+	pane's ready «switch → state» logs it. A long press on a state does the
+	other mode's tap.
 	A run spends them, the field's with them, and collect is back at rest.
 	Back takes the field's pill and every pill made since the tap, and puts
 	back the time and `-m` there were before it; Escape is Back.
@@ -188,9 +193,10 @@
 		/** Where each field stood at the last sort (`standings` in #lib/layout/engine.ts, da-xtkcp). */
 		standings = new Map(),
 		/**
-		 * What a tap on a state does (da-u017i): `one` logs it, `two` only
-		 * chooses it, for the command pane's ready command to log. A long
-		 * press does what the other does.
+		 * What a tap does (da-u017i, da-gra0z): `one` logs a moment or a block
+		 * on its field's tap and a state on its own, `two` opens every field
+		 * and only chooses a state, for the command pane's ready command to
+		 * log. A long press on a state does what the other does.
 		 */
 		clicks = 'one',
 		/**
@@ -198,9 +204,9 @@
 		 * game's fields alone (LessonFields.svelte) set it. The games score a
 		 * single tap — the moment game its reaction time — and re-teaching
 		 * them on collect's tap-then-state flow is vividn's call, not taken
-		 * yet. A moment or block logs on the tap; a switch field opens its
-		 * states, and a state logs `switch <field> <state>` whole, with no
-		 * pill on the app's bar.
+		 * yet. A moment or block logs on the tap, whatever `clicks` says; a
+		 * switch field opens its states, and a state logs `switch <field>
+		 * <state>` whole, with no pill on the app's bar.
 		 */
 		tapLogs = false,
 		/** Run a press's line. */
@@ -222,6 +228,9 @@
 		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
+
+	/** Does a bare tap log what needs nothing more (`pressKind`)? */
+	const oneTap = $derived(tapLogs || clicks === 'one');
 
 	let bar: HTMLElement | undefined = $state.raw();
 	// The hold's action (#lib/hold.ts) on the bar ButtonRows draws — an
@@ -492,12 +501,20 @@
 
 	/**
 	 * What a button says it does, which is the one place both gestures are
-	 * named: the press, then the hold. The field's whole name leads where
-	 * the press does not name it, since the button may cut it short.
+	 * named: the press, then the hold. The press is `pressKind`'s answer, as
+	 * the outline is (da-gra0z). The field's whole name leads where the press
+	 * does not name it, since the button may cut it short.
 	 */
 	function titleOf(button: FieldButton): string {
 		const record = button.shape.kind === 'record';
-		const press = record ? `${shellJoin(['add', button.field])} … — fills the prompt` : 'press to collect it';
+		const kind = pressKind(button, verb, oneTap);
+		const press = record
+			? `${shellJoin(['add', button.field])} … — fills the prompt`
+			: kind === 'run'
+				? 'press to log it'
+				: kind === 'fill'
+					? 'press to fill the prompt'
+					: 'press to collect it';
 		return [
 			...(record ? [] : [button.field]),
 			...(button.ignored ? ['ignored'] : []),
@@ -766,7 +783,7 @@
 	 * outline is drawn from, so the two cannot disagree (da-z8z40).
 	 */
 	function press(button: FieldButton) {
-		const kind = pressKind(button, verb, tapLogs);
+		const kind = pressKind(button, verb, oneTap);
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
 		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
@@ -802,7 +819,9 @@
 			// The first is the middle of the room, whichever way they were stood:
 			// in a short box, half a row of `ringIn`'s rows past it, which pans.
 			// A tutorial game's fields are all in view instead, as before collect
-			// (`tapLogs`, da-uzyih.4940): its rows fit the room about its middle.
+			// (`tapLogs`, da-uzyih.4940): `ringIn` stands the rows about the
+			// room's middle, the origin, so taking that as the middle, not the
+			// first button, keeps every row in the room with nothing to pan.
 			const mid = tapLogs && !deal ? { x: 0, y: 0 } : end;
 			const at = [end, ...states].map((p) => ({ x: p.x - mid.x, y: p.y - mid.y }));
 			const edges = spots.map((el, i) => ({ el, left: at[i].x - widths[i] / 2, top: at[i].y - h / 2 }));
@@ -938,7 +957,7 @@
 		     any other, and only what a press MEANS is its own. -->
 		<button
 			class="record"
-			use:act={pressKind(button, verb, tapLogs)}
+			use:act={pressKind(button, verb, oneTap)}
 			class:ignored={button.ignored}
 			class:pilled={$fieldPill === button.field}
 			role="link"
@@ -953,7 +972,7 @@
 	{:else}
 		<button
 			class="widget {button.shape.kind}"
-			use:act={pressKind(button, verb, tapLogs)}
+			use:act={pressKind(button, verb, oneTap)}
 			class:on={look.fill !== null}
 			class:ignored={button.ignored}
 			class:pilled={$fieldPill === button.field}

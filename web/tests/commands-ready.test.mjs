@@ -221,16 +221,54 @@ describe('collect: 1-click and 2-click', () => {
 		});
 	});
 
+	// da-gra0z, vividn 2026-11-04: «you can still record with 1 tap unless
+	// there is some extra data or whatever needed».
+	test('1-click: a moment logs with one tap, and a block starts and ends with one each', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, [...SEED, 'setup walk --verb start', 'moment coffee', 'start walk -t -30', 'end walk -t -20']);
+			// The clock is held: a minute on, so the tap's moment has an instant of its own.
+			await app.clock.forward(60_000);
+			const seen = await app.spyOnRunner();
+			const runs = async () => (await seen()).filter((a) => ['moment', 'start', 'end'].includes(a[0]) && !a.includes('--dry-run'));
+			for (const [name, line] of [
+				['coffee', ['moment', 'coffee']],
+				['walk', ['start', 'walk']],
+				['walk', ['end', 'walk']]
+			]) {
+				const before = (await runs()).length;
+				await open(page, name);
+				await until(runs, (r) => r.length === before + 1);
+				assert.deepEqual((await runs()).at(-1), line);
+				await app.idle();
+				assert.equal(await page.locator(`${VIEW} [data-time-row]`).count(), 0, `${name} opened`);
+				// The clock is held: a minute on, so the next has an instant of its own.
+				await app.clock.forward(60_000);
+			}
+			const rows = async (f) => JSON.parse((await app.runLine(`tail ${f} --json`)).stdout).rows;
+			assert.equal((await rows('coffee')).length, 2, 'the moment is not logged');
+			assert.deepEqual((await rows('walk')).map((r) => r.state), [true, false, true, false]);
+		});
+	});
+
 	test('2-click: a tap chooses and the command at the bottom logs it, a long press logs, and a reload keeps the mode', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				await seedLines(app, [...SEED, 'moment coffee']);
-				await pickOption(page, 'bar', 'a tap on a state', 'chooses it, 2-click');
+				await pickOption(page, 'bar', 'a tap', 'opens and chooses, 2-click');
 				await app.reload();
 				await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
 
+				// A moment opens, to collect it, and logs nothing.
 				let seen = await app.spyOnRunner();
+				await open(page, 'coffee');
+				await page.locator(`${VIEW} [data-time-row]`).waitFor();
+				await app.idle();
+				assert.deepEqual((await seen()).filter((a) => a[0] === 'moment' && !a.includes('--dry-run')), [], 'the tap logged');
+				await page.locator(`${VIEW} [data-back]`).click();
+
+				seen = await app.spyOnRunner();
 				await open(page, 'mood');
 				await page.locator(`${VIEW} [data-q]`).click();
 				await chip(page, 'bad').click();

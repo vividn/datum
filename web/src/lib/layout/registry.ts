@@ -488,22 +488,24 @@ export const KINDS: Record<string, WidgetKind> = {
 			},
 			{ key: 'showIgnored', label: 'show ignored fields', type: 'boolean' },
 			// vividn, 2026-11-03: «1-click vs 2-click mode which reverses long
-			// press and short press operations» (da-u017i).
+			// press and short press operations» (da-u017i); 2026-11-04: «you can
+			// still record with 1 tap unless there is some extra data or whatever
+			// needed» (da-gra0z).
 			{
 				key: 'clicks',
-				label: 'a tap on a state',
+				label: 'a tap',
 				type: 'choice',
 				choices: [
-					{ value: 'one', label: 'logs it, 1-click' },
-					{ value: 'two', label: 'chooses it, 2-click' }
+					{ value: 'one', label: 'logs what it can, 1-click' },
+					{ value: 'two', label: 'opens and chooses, 2-click' }
 				]
 			}
 		]),
 		component: FieldsPane,
 		help: [
 			'Every field you log, as a button, lit when it is on: the most used in the middle.',
-			'Tap one to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
-			'A state logs at once; in 2-click mode it is chosen, and the command at the bottom logs it. A long press does the other.',
+			'A tap logs a moment, or starts or ends a block, at once; a switch, or a field with keys to type, opens to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
+			'A state logs at once. In 2-click mode every field opens, a state is chosen, and the command at the bottom logs it; a long press on a state does the other.',
 			'Under a pending verb a tap logs at once; hold for a field pill alone.'
 		].join('\n'),
 		props: ({ align, switchLabel, showIgnored, clicks }) => ({

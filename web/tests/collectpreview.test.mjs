@@ -9,6 +9,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
+import { pickOption } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -21,8 +22,10 @@ const SEED = ['setup mood --verb switch --states good,bad,meh', 'setup run --ver
 
 const shared = sharedApp({ clock: todayAt(15) });
 
+/** `field` opened in collect: a switch by one tap, a block in 2-click mode, since one click logs it (da-gra0z). */
 const opened = (field, fn) =>
 	shared.solo(async (app) => {
+		if (field !== 'mood') await pickOption(app.page, 'bar', 'a tap', 'opens and chooses, 2-click');
 		for (const line of SEED) {
 			const logged = await app.run(line.split(' '));
 			assert.equal(logged.code, 0, `${line}: ${logged.stderr}`);

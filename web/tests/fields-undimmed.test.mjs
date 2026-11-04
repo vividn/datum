@@ -93,13 +93,8 @@ const dimmed = (page) => page.evaluate(() => ((window.__dimStop = true), [...new
 
 const button = (page, field) => page.locator(`section.pane[data-title="collect"] button[data-field="${field}"]`);
 const rootTab = (page, name) => page.locator('.root-bar [role="tab"]', { hasText: name });
-/** Whether the press on tea was taken: tea open in collect, its pill on the bar (da-w6437: a bare tap opens it). */
-const taken = (page) =>
-	page.evaluate(
-		() =>
-			!!document.querySelector('section.pane[data-title="collect"] [data-open-field="tea"]') &&
-			[...document.querySelectorAll('.prompt-bar .pill.field')].some((p) => p.innerText.includes('tea'))
-	);
+/** Whether the press on tea was taken: one click logs a moment on its tap (da-gra0z), tea's second entry. */
+const taken = async (app) => JSON.parse((await app.run(['tail', 'tea', '--json'])).stdout).rows.length === 2;
 
 test('back on a tab while the strip draws, the fields are live and a press is taken', async () => {
 	await withApp(
@@ -120,7 +115,7 @@ test('back on a tab while the strip draws, the fields are live and a press is ta
 			assert.ok(await page.evaluate(() => window.__datumInflight > 0), 'the strip was done drawing: nothing to wait behind');
 			await app.idle();
 			assert.deepEqual(await dimmed(page), [], 'the fields widget looked disabled');
-			assert.ok(await taken(page), 'the press was not taken');
+			assert.ok(await taken(app), 'the press was not taken');
 		},
 		{ ...DESKTOP, home: { names: ['main', 'dayview'], active: 0 }, prepare: inWorker(slowDayview(300)) }
 	);
@@ -144,7 +139,7 @@ test('while datum boots, the fields are live and a press is taken', async () => 
 			if (booted instanceof Error) throw booted;
 			await app.idle();
 			assert.deepEqual(await dimmed(page), [], 'the fields widget looked disabled');
-			assert.ok(await taken(page), 'the press was not taken');
+			assert.ok(await taken(app), 'the press was not taken');
 		},
 		DESKTOP
 	);

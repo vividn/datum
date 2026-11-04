@@ -1,6 +1,6 @@
 // The collect widget's outlines (da-z8z40): a button a tap RUNS is drawn
-// in the DOUBLE outline, and one that opens or fills is not — since
-// da-w6437 a bare tap opens, so only a pending verb's tap runs — rule 1 of
+// in the DOUBLE outline, and one that opens or fills is not — one click
+// (da-gra0z) runs a moment or block on a bare tap, and opens a switch — rule 1 of
 // the design language, derived from `pressKind` in #lib/commands.ts, the
 // same answer the press itself takes. The pure table is in
 // `commands-pure.test.mjs`; here is what a reader sees, and what a tap on
@@ -13,6 +13,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, FIXTURE, MOOD, type, untilFieldStyle } from './support/fields.mjs';
+import { until } from './support/until.mjs';
 
 /** Every button under `selector` — the bar, or the states' window — by what it is, with its top border's style. */
 const outlines = (page, selector = 'section.pane[data-title="collect"] .bar') =>
@@ -54,18 +55,18 @@ describe('the outline says what a tap does', () => {
 	after(stopApp);
 	const shared = sharedApp();
 
-	// da-w6437: a bare tap opens a field in collect, so with no verb nothing
-	// is double; under a pending verb a tap runs, and is.
-	test('with no verb no field is double, and a state in its view is; under a verb a run is', async () => {
+	// da-gra0z: one click runs a moment or block on a bare tap, double, and
+	// opens a switch (da-w6437), not; under a pending verb a tap runs, and is.
+	test('with no verb a moment or block is double and a switch is not, and a state in its view is; under a verb a run is', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of [...FIXTURE, ...MOOD]) await type(page, line);
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			await app.idle();
 			assert.deepEqual(await outlines(page), {
-				coffee: 'solid',
-				work: 'solid',
-				untracked: 'solid',
+				coffee: 'double',
+				work: 'double',
+				untracked: 'double',
 				mood: 'solid',
 				note: 'none'
 			});
@@ -112,23 +113,29 @@ describe('the outline says what a tap does', () => {
 	});
 
 	// The behavior behind the look: tap every field button in turn with no
-	// verb, and none writes an entry.
-	test('with no verb a tap writes nothing: a field opens, a record fills', async () => {
+	// verb, and a double writes one entry where any other writes none.
+	test('with no verb a double tap writes one entry; a switch opens and a record fills, writing nothing', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of [...FIXTURE, ...MOOD]) await type(page, line);
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			await app.idle();
+			// The clock is held: a minute on, so `untracked`'s tap has an instant of its own.
+			await app.clock.forward(60_000);
 
 			for (const field of ['coffee', 'work', 'untracked', 'mood', 'note']) {
+				const runs = (await outlines(page))[field] === 'double';
+				assert.equal(runs, !['mood', 'note'].includes(field), `${field}: ${runs ? '' : 'not '}double`);
 				const had = await entries(app);
 				const echoed = (await app.echoes()).length;
 				await page.locator(`.bar [data-field="${field}"]`).click();
 				if (field === 'note') await page.waitForFunction(() => document.querySelector('.prompt-bar input').value.startsWith('add note'));
-				else await page.locator('.bar [data-back]').click();
+				else if (!runs) await page.locator('.bar [data-back]').click();
+				else await until(() => entries(app), (n) => n === had + 1);
 				await app.idle();
-				assert.equal((await app.echoes()).length, echoed, `${field}: ran`);
-				assert.equal(await entries(app), had, `${field}: wrote`);
+				assert.equal((await app.echoes()).length, echoed + (runs ? 1 : 0), `${field}: ran`);
+				assert.equal(await entries(app), had + (runs ? 1 : 0), `${field}: wrote`);
+				assert.equal(await page.locator('.bar [data-back]').count(), 0, `${field}: open`);
 				await page.locator('.prompt-bar input').fill('');
 			}
 		});

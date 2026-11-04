@@ -1,9 +1,10 @@
-// A field tap when the field has a REQUIRED key (da-chml5); since da-w6437
-// a bare tap opens it, and the fill is a pending verb's. vividn, 09-27:
+// A field tap when the field has a REQUIRED key (da-chml5). vividn, 09-27:
 // «moment/start/end run at once with a double outline, unless there are
-// required keys only, in which case fill the line and focus it». The rule
-// is `typesKeys` in #lib/commands.ts; the verb under a field PILL, which
-// had it first (da-lxqqz), is `commands.test.mjs`'s.
+// required keys only, in which case fill the line and focus it». One click
+// (da-gra0z) fills it on a bare tap as a pending verb does; 2-click opens
+// the field, as every field. The rule is `typesKeys` in #lib/commands.ts;
+// the verb under a field PILL, which had it first (da-lxqqz), is
+// `commands.test.mjs`'s.
 //
 // Its own file, as fields-press.test.mjs's budget asks of a new group.
 
@@ -31,24 +32,19 @@ describe('a field with a required key', () => {
 	after(stopApp);
 	const shared = sharedApp();
 
-	// A bare tap opens the field (da-w6437): its keys are chips at the
-	// bottom, the required one drawn solid, and nothing is written. Under a
-	// pending verb a tap still fills its line.
-	test('a bare tap opens it with its keys; under a verb a tap fills its first key frame, focused, nothing written', async () => {
+	test('taps to fill: single outline, the line in its first key frame, focused, nothing written', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of SEED) await type(page, line);
 			await app.idle();
-			assert.equal(await chip(page, 'tea').getAttribute('data-act'), 'show');
+			assert.equal(await chip(page, 'tea').getAttribute('data-act'), 'fill');
 			const counter = await changeCounter(page);
 
 			await chip(page, 'tea').click();
-			await page.locator('.bar [data-key="amount"]').waitFor();
-			assert.deepEqual(
-				await page.locator('.bar [data-key]').evaluateAll((ks) => ks.map((k) => [k.dataset.key, k.classList.contains('required')])),
-				[['amount', true], ['cups', false]]
-			);
-			await page.locator('.bar [data-back]').click();
+			// The first key's frame, which a bare word fills (da-31d1d, da-p3hxn).
+			await lineIs(page, 'moment tea ');
+			await app.idle();
+			assert.equal(await changeCounter(page), counter, 'the tap wrote');
 
 			// Under a pending verb its flags come too, after the field, so
 			// the frame is still written (canary finding on #273).

@@ -324,19 +324,21 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
  * the same answer (the `fires` pattern): a `run` is the double outline, so
  * a button cannot act without looking as if it does. A pending verb runs
  * wherever `verbPress` has an argv, but fills where it has keys to type
- * (`typesKeys`); otherwise a record fills and every other field opens.
+ * (`typesKeys`); otherwise a record fills, and `oneTap` decides the rest.
  */
 export type PressKind = 'run' | 'fill' | 'show';
-export function pressKind(button: FieldButton, verb: Verb | null, tapLogs = false): PressKind {
+export function pressKind(button: FieldButton, verb: Verb | null, oneTap = false): PressKind {
 	if (verb !== null && verbPress(verb, button)) return typesKeys(verb, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
-	// A tutorial game's tap logs, as every tap did before collect (`tapLogs`
-	// on FieldsWidget): `moment` or `start`, or ends a running block.
-	if (tapLogs && button.shape.kind !== 'states') return typesKeys(button.current ? 'end' : 'moment', button) ? 'fill' : 'run';
-	// A bare tap opens the field in the collect widget, to set its time,
-	// state and data before it is logged (da-w6437) — a running block too:
-	// ending it is the commands' (vividn, 2026-11-03 16:07: «"off" be one of
-	// the commands on the bottom»), or `end` pending on the line.
+	// One click (`clicks`, da-gra0z; a tutorial game's `tapLogs`) logs what
+	// needs nothing more: a moment, or a block started or ended. vividn,
+	// 2026-11-04: «you can still record with 1 tap unless there is some extra
+	// data or whatever needed», so a switch opens to its states, which it needs.
+	if (oneTap && button.shape.kind !== 'states') return typesKeys(button.current ? 'end' : 'moment', button) ? 'fill' : 'run';
+	// Otherwise a bare tap opens the field in the collect widget, to set its
+	// time, state and data before it is logged (da-w6437) — a running block
+	// too: ending it is the commands' (vividn, 2026-11-03 16:07: «"off" be one
+	// of the commands on the bottom»), or `end` pending on the line.
 	return 'show';
 }
 

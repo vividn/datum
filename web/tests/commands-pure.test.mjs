@@ -322,22 +322,36 @@ describe('what a field tap does', () => {
 		assert.equal(pressKind(record, null), 'fill');
 	});
 
-	// da-uzyih.4940: a tutorial game's tap logs, as every tap did before
-	// collect; the app's own tap is collect's, and opens the field.
-	test('a game’s tap logs a moment or block and opens a switch’s states; the app’s tap opens every one', () => {
+	// da-gra0z, vividn 2026-11-04: «you can still record with 1 tap unless
+	// there is some extra data or whatever needed» — one click (collect's
+	// default, and a tutorial game's tap, da-uzyih.4940) logs a moment or a
+	// block and opens a switch's states; two clicks open every one.
+	test('one click logs a moment or block and opens a switch’s states; two clicks open every one', () => {
 		const tea = { ...point, field: 'tea', required: ['amount'] };
-		for (const [button, game] of [
+		const walk = { ...offBlock, field: 'walk', required: ['route'] };
+		const walking = { ...onBlock, field: 'walk', required: ['route'] };
+		for (const [button, one] of [
 			[point, 'run'],
 			[offBlock, 'run'],
 			[onBlock, 'run'],
 			[tea, 'fill'],
+			[walk, 'fill'],
+			// `end` takes no keys (da-o4jaa).
+			[walking, 'run'],
 			[onSwitch, 'show'],
 			[boolSwitch, 'show'],
 			[record, 'fill']
 		]) {
-			assert.equal(pressKind(button, null, true), game, `the game's tap on ${button.field}`);
-			assert.equal(pressKind(button, null), button === record ? 'fill' : 'show', `the app's tap on ${button.field}`);
+			assert.equal(pressKind(button, null, true), one, `one click on ${button.field}`);
+			assert.equal(pressKind(button, null), button === record ? 'fill' : 'show', `two clicks on ${button.field}`);
 		}
+	});
+
+	// da-uzyih.4941: a pending verb is answered before one click is asked.
+	test('one click changes nothing under a verb', () => {
+		for (const verb of VERBS)
+			for (const button of fieldsUnder(ALL, verb)) assert.equal(pressKind(button, verb, true), pressKind(button, verb), `${verb} ${button.field}`);
+		assert.equal(pressKind(onSwitch, 'switch', true), 'show');
 	});
 
 	test('under a verb, every field it leaves runs — but where verbPress asks first', () => {

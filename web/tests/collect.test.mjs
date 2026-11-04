@@ -11,6 +11,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
+import { pickOption } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -32,9 +33,14 @@ const SEED = [
 
 const shared = sharedApp({ clock: todayAt(15) });
 
-/** The app seeded, its fields sorted again as on a load, coffee drawn. */
-const collect = (fn) =>
+/**
+ * The app seeded, its fields sorted again as on a load, coffee drawn. One
+ * click logs a moment or block on its tap (da-gra0z), so a test of the view
+ * such a field opens to taps it in 2-click mode (`twoClicks`).
+ */
+const collect = (fn, { twoClicks = false } = {}) =>
 	shared.solo(async (app) => {
+		if (twoClicks) await pickOption(app.page, 'bar', 'a tap', 'opens and chooses, 2-click');
 		for (const line of SEED) {
 			const logged = await app.run(line.split(' '));
 			assert.equal(logged.code, 0, `${line}: ${logged.stderr}`);
@@ -135,7 +141,7 @@ describe('collect', () => {
 			await page.waitForFunction((v) => document.querySelector(`${v} .part-pill[data-pill="time"] .more`)?.innerText === '-qq', VIEW);
 			assert.equal(await page.locator(`${VIEW} .part-pill`).count(), 1, 'a second pill');
 			assert.deepEqual(await barPills(page), ['field:coffee', 'time:-qq']);
-		});
+		}, { twoClicks: true });
 	});
 
 	test('5m tapped twice is ←10m, −m after it replaces the length, and 5m −m', async () => {
@@ -160,7 +166,7 @@ describe('collect', () => {
 			assert.equal(await partPill(page, 'length').locator('svg.length-arrow').count(), 1, 'the length wears no arrow');
 			assert.equal(await page.locator(`${BAR_PILLS}.moment`).count(), 0);
 			assert.equal(await page.locator(`${BAR_PILLS}.dur`).count(), 1);
-		});
+		}, { twoClicks: true });
 	});
 
 	test('× clears its own pill and no other', async () => {
@@ -177,7 +183,7 @@ describe('collect', () => {
 			await page.locator(`${VIEW} .part-pill[data-pill="time"] .clear`).click();
 			await page.locator(`${VIEW} [data-q]`).waitFor();
 			assert.deepEqual(await barPills(page), ['field:work']);
-		});
+		}, { twoClicks: true });
 	});
 
 	test('back takes the field and the pills made since the tap, and keeps a time pill already there', async () => {
@@ -200,7 +206,7 @@ describe('collect', () => {
 			await page.locator(`${VIEW} [data-back]`).click();
 			await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
 			assert.deepEqual(await barPills(page), ['time:-q']);
-		});
+		}, { twoClicks: true });
 	});
 
 	test('a moment field shows no states, and of its time −q alone', async () => {
@@ -211,7 +217,7 @@ describe('collect', () => {
 			assert.deepEqual(await page.locator(`${VIEW} [data-time-row] button`).allInnerTexts(), ['−q']);
 			assert.deepEqual(await page.locator(`${VIEW} [data-data-row] button`).allInnerTexts(), ['+ data']);
 			assert.match(await page.locator(`${VIEW} .head`).innerText(), /back\s*coffee/);
-		});
+		}, { twoClicks: true });
 	});
 
 	// da-xdz73. vividn, 2026-11-03: «if you select an hid pill, it could show

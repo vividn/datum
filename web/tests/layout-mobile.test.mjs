@@ -22,7 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { fold as foldBar } from './support/bar.mjs';
-import { DESKTOP, pane, titles, toggleOption } from './support/layout.mjs';
+import { DESKTOP, pane, pickOption, titles, toggleOption } from './support/layout.mjs';
 import { FREEZE, MAX_DAY } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
@@ -298,13 +298,15 @@ describe('a fresh phone', () => {
 		});
 	}
 
-	// A field tapped opens in collect (da-w6437), its pill on the bar, and a
-	// pill opens the commands over the output (da-lnirx): `moment` there is
-	// the log. The bar is where `undo` is typed.
+	// A field tapped opens in collect (da-w6437) in 2-click mode (one click
+	// logs a moment at once, da-gra0z), its pill on the bar, and a pill opens
+	// the commands over the output (da-lnirx): `moment` there is the log. The
+	// bar is where `undo` is typed.
 	test('a field tapped then `moment` logs an entry, tail shows it, and `undo` at the bar takes it back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.declare('coffee');
+			await pickOption(page, 'bar', 'a tap', 'opens and chooses, 2-click');
 			await app.reload();
 			await fieldsBar(page).locator('[data-field="coffee"]').click();
 			await page.locator('#bar-commands [data-command="moment"]').click();

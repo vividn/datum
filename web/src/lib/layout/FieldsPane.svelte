@@ -49,7 +49,7 @@
 		 * so from here it is an ordinary prop like any other.
 		 */
 		showIgnored = false,
-		/** What a tap on a state does: logs it, or chooses it for the command pane (da-u017i). */
+		/** What a tap does: logs what needs nothing more, or opens the field and chooses a state for the command pane (da-u017i, da-gra0z). */
 		clicks = 'one'
 	}: { switchLabel?: SwitchLabel; align?: Align; showIgnored?: boolean; clicks?: 'one' | 'two' } = $props();
 

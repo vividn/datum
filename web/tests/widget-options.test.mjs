@@ -140,7 +140,7 @@ describe('widget options', () => {
 				'the buttons stand',
 				'a switch is labelled with its',
 				'show ignored fields',
-				'a tap on a state'
+				'a tap'
 			]);
 			// The freeze wears its icon before its words (da-2hd21).
 			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', '⤓ today frozen at the bottom', 'orientation']);
@@ -634,16 +634,19 @@ describe('widget options', () => {
 			};
 			const drawn = await button.evaluate(lines);
 			assert.ok(drawn.opacity < 1, `an ignored field drawn at opacity ${drawn.opacity}`);
-			// A bare tap OPENS a field (da-w6437), so it keeps one dashed line,
-			// a point as much as a state field.
-			for (const field of ['run', 'mood']) {
+			// One click runs a point on a bare tap (da-gra0z), so it draws its
+			// dashes double (da-nmna0); a state field OPENS (da-w6437), one dashed line.
+			for (const [field, outline] of [
+				['run', 'dashed'],
+				['mood', 'none']
+			]) {
 				const seen = await page.locator(`.bar button[data-field="${field}"]`).evaluate(lines);
-				assert.deepEqual({ border: seen.border, outline: seen.outline }, { border: 'dashed', outline: 'none' }, `an ignored ${field} is not drawn in one dashed line`);
+				assert.deepEqual({ border: seen.border, outline: seen.outline }, { border: 'dashed', outline }, `an ignored ${field}'s dashes`);
 			}
 			const tracked = page.locator('.bar button[data-field="walk"]');
 			assert.equal(await tracked.getAttribute('data-ignored'), null);
-			// A tracked point opens on a tap, so it wears the single outline (da-z8z40, da-w6437).
-			assert.equal(await tracked.evaluate((b) => getComputedStyle(b).borderTopStyle), 'solid');
+			// A tracked point runs on a tap, so it wears the double outline (da-z8z40, da-gra0z).
+			assert.equal(await tracked.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
 			assert.equal(await tracked.evaluate((b) => parseFloat(getComputedStyle(b).opacity)), 1);
 
 			// It is a SECOND way to see them, not a replacement for the one that
