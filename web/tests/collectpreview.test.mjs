@@ -43,16 +43,6 @@ const box = (page, selector) =>
 		return r && { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
 	});
 
-/** Px along the nowview's time for one minute, read off its day group. */
-const pxPerMinute = (page) =>
-	page.locator(`${NOWVIEW} svg.svg [data-lo]`).evaluateAll((gs) => {
-		const g = gs.find((g) => g.closest('svg').getBoundingClientRect().width);
-		const r = g.closest('svg').getBoundingClientRect();
-		const view = g.closest('svg').viewBox.baseVal;
-		const units = (Number(g.dataset.hi) - Number(g.dataset.lo)) * (r.width / view.width);
-		return units / ((Date.parse(g.dataset.to) - Date.parse(g.dataset.from)) / 60_000);
-	});
-
 const near = (a, b, slop, what) => assert.ok(Math.abs(a - b) <= slop, `${what}: ${a} against ${b}`);
 
 /**
@@ -77,14 +67,22 @@ async function settled(page, minutes, { atHead = false, before = Infinity } = {}
 			const head = [...svg.querySelectorAll(h)][0]?.getBoundingClientRect();
 			const perMin = ((Number(g.dataset.hi) - Number(g.dataset.lo)) * (svg.getBoundingClientRect().width / svg.viewBox.baseVal.width)) / ((Date.parse(g.dataset.to) - Date.parse(g.dataset.from)) / 60_000);
 			const b = block.getBoundingClientRect();
-			const [frame, pill] = [svg.getBoundingClientRect(), svg.closest('section.pane').querySelector('.nowview-pills .pill.time')?.getBoundingClientRect()];
+			const frame = svg.getBoundingClientRect();
+			const at = (s, root = svg) => root.querySelector(s)?.getBoundingClientRect();
+			const mid = (r) => r && { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
+			const lane = at('.block[data-field="mood"]');
 			return {
 				long: (b.right - b.left) / perMin,
 				left: b.left,
 				right: b.right,
+				top: b.top,
+				bottom: b.bottom,
 				head: head && (head.left + head.right) / 2,
+				band: at('.cursor-span')?.right,
+				lane: lane && { top: lane.top, bottom: lane.bottom },
 				middle: (frame.top + frame.bottom) / 2,
-				pill: pill && { x: (pill.left + pill.right) / 2, y: (pill.top + pill.bottom) / 2 }
+				pill: mid(at('.nowview-pills .pill.time', svg.closest('section.pane'))),
+				dur: mid(at('.nowview-pills .pill.dur', svg.closest('section.pane')))
 			};
 		};
 	});
@@ -108,26 +106,23 @@ describe('collect previews on the nowview', () => {
 			await page.locator(`${COLLECT} .part-pill[data-pill="time"] .more`).click();
 			await page.locator(`${COLLECT} [data-five]`).click();
 			await page.locator(`${COLLECT} .part-pill[data-pill="length"] .more`).click();
-			await page.waitForFunction((s) => document.querySelector(s), PREVIEW);
+			// Each press draws a picture of its own: read the one of ten minutes, all in one frame (da-yozs7).
+			const seen = await settled(page, 10, { atHead: true });
+			assert.ok(seen, 'a preview drawn');
 			const shown = await page.locator(PREVIEW).evaluate((el) => ({ tag: el.tagName, stroke: el.getAttribute('stroke'), dash: el.getAttribute('stroke-dasharray') }));
 			assert.deepEqual(shown, { tag: 'rect', stroke: '#ffffff', dash: '3 3' });
 
 			// Its time is the selection's: the ten minutes ending at −qq.
-			const [preview, band, perMin] = [await box(page, PREVIEW), await box(page, `${NOWVIEW} svg.svg .cursor-span`), await pxPerMinute(page)];
-			near(preview.right, band.right, 1.5, 'the block ends at −qq');
-			near(preview.right - preview.left, 10 * perMin, 1.5, 'ten minutes long');
+			near(seen.right, seen.band, 1.5, 'the block ends at −qq');
+			near(seen.long, 10, 0.3, 'ten minutes long');
 			// In mood's lane, as the CLI drew it.
-			const lane = await box(page, `${NOWVIEW} svg.svg .block[data-field="mood"]`);
-			near(preview.top, lane.top, 1, 'top');
-			near(preview.bottom, lane.bottom, 1, 'bottom');
+			near(seen.top, seen.lane.top, 1, 'top');
+			near(seen.bottom, seen.lane.bottom, 1, 'bottom');
 
 			// The pills: −qq at its line on the relative axis, the length at the block's far edge, beside it.
-			const svg = await box(page, `${NOWVIEW} svg.svg`);
-			const [time, dur] = [await box(page, `${NOWVIEW} .nowview-pills .pill.time`), await box(page, `${NOWVIEW} .nowview-pills .pill.dur`)];
-			const middle = (b) => (b.top + b.bottom) / 2;
-			assert.ok(middle(time) > (svg.top + svg.bottom) / 2 && middle(dur) > (svg.top + svg.bottom) / 2, 'both on the bottom axis');
-			near((time.left + time.right) / 2, preview.right, 1.5, '−qq at its line');
-			near((dur.left + dur.right) / 2, preview.left, 1.5, 'the length at the far edge');
+			assert.ok(seen.pill.y > seen.middle && seen.dur.y > seen.middle, 'both on the bottom axis');
+			near(seen.pill.x, seen.right, 1.5, '−qq at its line');
+			near(seen.dur.x, seen.left, 1.5, 'the length at the far edge');
 		});
 	});
 
