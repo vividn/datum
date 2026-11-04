@@ -48,8 +48,10 @@
 		 * session's option, merged over the tree's settings by the renderer,
 		 * so from here it is an ordinary prop like any other.
 		 */
-		showIgnored = false
-	}: { switchLabel?: SwitchLabel; align?: Align; showIgnored?: boolean } = $props();
+		showIgnored = false,
+		/** What a tap on a state does: logs it, or chooses it for the command pane (da-u017i). */
+		clicks = 'one'
+	}: { switchLabel?: SwitchLabel; align?: Align; showIgnored?: boolean; clicks?: 'one' | 'two' } = $props();
 
 	/**
 	 * A press under the pending verb runs the LINE with the field after it
@@ -88,6 +90,7 @@
 		{align}
 		{switchLabel}
 		{showIgnored}
+		{clicks}
 		onrun={run}
 		onfill={fill}
 	/>

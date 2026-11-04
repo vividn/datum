@@ -33,6 +33,9 @@
 	page's selection (#lib/cursor.ts), so the `-qq` and length pills are the
 	nowview's own. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
 	click); any other field runs from the commands, which take the pills.
+	In 2-click mode (`clicks`, da-u017i) a tap only CHOOSES the state: its
+	pill is placed and its chip ringed, and the command pane's ready
+	«switch → state» logs it. A long press does the other mode's tap.
 	A run spends them, the field's with them, and collect is back at rest.
 	Back takes the field's pill and every pill made since the tap, and puts
 	back the time and `-m` there were before it; Escape is Back.
@@ -184,6 +187,12 @@
 		showIgnored = false,
 		/** Where each field stood at the last sort (`standings` in #lib/layout/engine.ts, da-xtkcp). */
 		standings = new Map(),
+		/**
+		 * What a tap on a state does (da-u017i): `one` logs it, `two` only
+		 * chooses it, for the command pane's ready command to log. A long
+		 * press does what the other does.
+		 */
+		clicks = 'one',
 		/** Run a press's line. */
 		onrun,
 		/** Put a press's line in the command line, unrun, for the rest to be typed. */
@@ -198,6 +207,7 @@
 		rank?: Map<string, Near> | null;
 		showIgnored?: boolean;
 		standings?: Standings;
+		clicks?: 'one' | 'two';
 		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
@@ -207,7 +217,7 @@
 	// action cannot be handed through a component, so it is attached here.
 	// So are the picture layout's pinch, pan and wheel.
 	onMount(() => {
-		const held = holds(bar!, { within: 'button[data-field]', run: holdField });
+		const held = holds(bar!, { within: 'button[data-field], button[data-state]', run: holdField });
 		const unzoom = zooming(bar!);
 		const box = new ResizeObserver(() => (tall = bar!.clientHeight));
 		box.observe(bar!);
@@ -673,9 +683,11 @@
 	 * the time pills set: its pill goes beside the field's and `switch` takes
 	 * them all, so a success spends them and collect is back at rest. A field
 	 * with keys to type has its line filled instead, the field's view closed.
+	 * Not `logs` (2-click, or 1-click's long press, da-u017i), the pill is
+	 * placed and nothing runs: the command pane's ready command logs it.
 	 */
-	function choose(button: FieldButton, state: string) {
-		if (typesKeys('switch', button)) {
+	function choose(button: FieldButton, state: string, logs = clicks === 'one') {
+		if (logs && typesKeys('switch', button)) {
 			// Closed, not Back: the time pills made here stay for the line filled.
 			setFieldPill(null);
 			close();
@@ -687,7 +699,7 @@
 			const at = rest.findIndex((p) => p.kind === 'field') + 1;
 			return [...rest.slice(0, at), pill, ...rest.slice(at)];
 		});
-		onrun(['switch']);
+		if (logs) onrun(['switch']);
 	}
 
 	/** A key's chip: `key=` on the line, the caret after it. */
@@ -876,6 +888,8 @@
 	 * there is nothing left here to swallow it with.
 	 */
 	const holdField = (el: HTMLElement) => {
+		// A state held does the other mode's tap (da-u017i).
+		if (el.dataset.state !== undefined && picking) return choose(picking, el.dataset.state, clicks !== 'one');
 		const button = buttons.find((b) => b.field === el.dataset.field);
 		if (button) hold(button);
 	};
@@ -1076,10 +1090,10 @@
 						{#each states as state (state)}
 							{@const look = stateLook(here, state)}
 							<div class="spot" data-role="state">
-								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
+								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type, or a tap only chooses it (2-click, da-u017i). -->
 								<button
 									class="widget states"
-									use:act={typesKeys('switch', here) ? 'fill' : 'run'}
+									use:act={clicks === 'two' ? 'arm' : typesKeys('switch', here) ? 'fill' : 'run'}
 									class:on={here.current === state}
 									class:chosen={chosen === shellJoin([state])}
 									style={vars(look)}

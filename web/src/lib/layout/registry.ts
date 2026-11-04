@@ -462,7 +462,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// device (da-ray91).
 	widgetbar: {
 		live: true,
-		meta: meta('widgetbar', 'collect', { align: 'rows', switchLabel: 'field', showIgnored: false }, [
+		meta: meta('widgetbar', 'collect', { align: 'rows', switchLabel: 'field', showIgnored: false, clicks: 'one' }, [
 			// Where the buttons stand (da-omw4n): today's rows, or each at the
 			// height its field is drawn in the pictures.
 			{
@@ -483,16 +483,29 @@ export const KINDS: Record<string, WidgetKind> = {
 					{ value: 'state', label: 'state' }
 				]
 			},
-			{ key: 'showIgnored', label: 'show ignored fields', type: 'boolean' }
+			{ key: 'showIgnored', label: 'show ignored fields', type: 'boolean' },
+			// vividn, 2026-11-03: «1-click vs 2-click mode which reverses long
+			// press and short press operations» (da-u017i).
+			{
+				key: 'clicks',
+				label: 'a tap on a state',
+				type: 'choice',
+				choices: [
+					{ value: 'one', label: 'logs it, 1-click' },
+					{ value: 'two', label: 'chooses it, 2-click' }
+				]
+			}
 		]),
 		component: FieldsPane,
 		help: [
 			'Every field you log, as a button, lit when it is on: the most used in the middle.',
 			'Tap one to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
+			'A state logs at once; in 2-click mode it is chosen, and the command at the bottom logs it. A long press does the other.',
 			'Under a pending verb a tap logs at once; hold for a field pill alone.'
 		].join('\n'),
-		props: ({ align, switchLabel, showIgnored }) => ({
+		props: ({ align, switchLabel, showIgnored, clicks }) => ({
 			align: align === 'picture' ? 'picture' : 'rows',
+			clicks: clicks === 'two' ? 'two' : 'one',
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
 			showIgnored: showIgnored === true
 		}),
