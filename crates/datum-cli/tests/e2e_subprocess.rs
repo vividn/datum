@@ -1032,9 +1032,10 @@ fn subprocess_tail_json_is_readable_without_counting_columns() {
 #[test]
 fn subprocess_tail_json_carries_the_table_columns() {
     let env = Env::new();
-    assert_ok(&env.run(&["occur", "coffee", "-t", "0900"]), "occur");
+    // Yesterday, so both are past at any hour and the refs are `_N`.
+    assert_ok(&env.run(&["occur", "coffee", "-y", "-t", "0900"]), "occur");
     assert_ok(
-        &env.run(&["switch", "mood", "happy", "-t", "0930"]),
+        &env.run(&["switch", "mood", "happy", "-y", "-t", "0930"]),
         "switch",
     );
 

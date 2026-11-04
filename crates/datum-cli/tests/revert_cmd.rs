@@ -390,8 +390,8 @@ fn a_field_with_no_entries_and_a_name_nothing_starts_are_refused() {
 #[test]
 fn an_entry_already_reverted_by_id_is_no_action_left_on_the_field() {
     let env = Env::new();
-    env.ok("moment a -t 9:00");
-    env.ok("moment a -t 9:10");
+    env.ok("moment a -y -t 9:00");
+    env.ok("moment a -y -t 9:10");
     let newest = env.hid("a");
     env.ok(&format!("revert {newest}"));
     assert_eq!(env.live("a"), (1, true));

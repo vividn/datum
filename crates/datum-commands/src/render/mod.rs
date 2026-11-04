@@ -1086,7 +1086,7 @@ fn build_rows(
         // vividn, 2026-11-03: «if something has a _n id, use that,
         // otherwise use the hid».
         let mut reference = match ctx.and_then(|c| c.quick_ordinal) {
-            Some(n) => paint(GREY_FG, &format!("_{n}")),
+            Some(r) => paint(GREY_FG, &r.to_string()),
             None => ex.hid.unwrap_or_default(),
         };
         // da-uxgv: `*` after the ref means "another row lost an identity

@@ -11,13 +11,18 @@
 //! |---------------------|---------------------------------------------|
 //! | `ab3d…` (any hid)   | Exact hid match (full or unique prefix).    |
 //! | `mood:2024-…`       | Exact slug match (full or unique prefix).   |
-//! | `_`                 | Most recently-touched live entry globally.  |
+//! | `_`                 | Most recent live entry not in the future.   |
 //! | `__` … `_____…`     | 2nd / 3rd / Nth most-recent (count of `_`). |
 //! | `_4`, `_10`, …      | Nth most-recent (single `_` + decimal).     |
-//! | `_2-_10`            | Every entry in that run of ordinals.        |
+//! | `_+1`, `_+2`, …     | Nth entry in the future, nearest first.     |
+//! | `_2-_10`, `_+1-_+3` | Every entry in that run of ordinals.        |
 //! | `<field>:_`         | Most recent live entry for `<field>`.       |
-//! | `<field>:__`, `_4`  | Field-scoped Nth most-recent.               |
+//! | `<field>:__`, `_4`  | Field-scoped Nth most-recent (or `_+N`).    |
 //! | `<field>:<state>:_` | Same, among its entries in `<state>`.       |
+//!
+//! The past ordinals count entries at or before the moment the command
+//! runs, and `_+N` the ones after it (da-xxmhn), each by the listing's
+//! `at ?? create_time`.
 //! | `book:gol*`         | Slug wildcard. `*` → any chars, `?` → one.  |
 //!
 //! Exact hid/slug matches always beat every other rule, so typing a full
@@ -63,14 +68,48 @@ pub const UNDO_TOKEN: &str = "_UNDO";
 /// Maximum number of candidates surfaced on an ambiguous resolution.
 const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
 
-/// The order `_`, `__`, `_4`, … count in: most recent first, by the
-/// listing's own `at ?? create_time` (da-2vgj1), so a timeless row
-/// counts at its create time as `tail` lists it there. Shared by the
-/// resolvers below and by [`quick_ordinals`], so what `tail` displays and
-/// what `_N` resolves to can't drift apart. Both skip the meta fields'
-/// entries (specs, layouts, aliases, views, commands, index definitions —
-/// da-lc26c) unless the field is named.
-const NTH_ORDER: &str = "ORDER BY COALESCE(at, create_time) DESC, slug DESC";
+/// A row's quick id: `_N`, the Nth entry at or before now counting back,
+/// or `_+N`, the Nth after now counting forward (da-xxmhn; vividn,
+/// 2026-11-04: «the _,_1,_2 quick ids should apply to past entries. Let's
+/// add _+1 and _+2... quick ids for entries in the future»).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct QuickRef {
+    pub future: bool,
+    pub n: usize,
+}
+
+impl std::fmt::Display for QuickRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let sign = if self.future { "+" } else { "" };
+        write!(f, "_{sign}{}", self.n)
+    }
+}
+
+/// The side of now an ordinal counts on, and the order it counts in: by
+/// the listing's own `at ?? create_time` (da-2vgj1), so a timeless row
+/// counts at its create time as `tail` lists it there; the past newest
+/// first, the future nearest first. `now` is the number of the query's
+/// parameter holding [`now`]. Shared by the resolvers below and by
+/// [`quick_ordinals`], so what `tail` displays and what `_N` resolves to
+/// can't drift apart. Both skip the meta fields' entries (specs, layouts,
+/// aliases, views, commands, index definitions — da-lc26c) unless the field
+/// is named.
+fn nth_order(future: bool, now: usize) -> String {
+    if future {
+        format!("AND COALESCE(at, create_time) > ?{now} ORDER BY COALESCE(at, create_time), slug")
+    } else {
+        format!(
+            "AND COALESCE(at, create_time) <= ?{now} \
+             ORDER BY COALESCE(at, create_time) DESC, slug DESC"
+        )
+    }
+}
+
+/// Now, by the clock a test may freeze, spelled as the `at` and
+/// `create_time` columns are, so the two compare as text.
+fn now() -> String {
+    crate::time::DatumTime::now().utc.to_rfc3339()
+}
 
 /// Resolve a quickId pattern to zero or more live entries.
 ///
@@ -125,25 +164,25 @@ pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
         return Ok(out);
     }
 
-    // `<field>:_+` / `<field>:_<digits>` / `<field>:_A-_B` — Nth most
-    // recent entry (or run of them) within a single field. Checked
+    // `<field>:__…` / `<field>:_<digits>` / `<field>:_+<digits>` /
+    // `<field>:_A-_B` — Nth entry (or run of them) within a single field. Checked
     // before the bare-underscore path so a pattern with a colon never
     // falls into the global-Nth branch.
     if let Some(idx) = pattern.find(':') {
         let field = &pattern[..idx];
         let suffix = &pattern[idx + 1..];
         if !field.is_empty() {
-            if let Some((from, to)) = parse_underscore_span(suffix) {
-                return live_entry_range(db, Some(field), from, to);
+            if let Some((future, from, to)) = parse_underscore_span(suffix) {
+                return live_entry_range(db, Some(field), future, from, to);
             }
         }
     }
 
-    // Bare `_+` / `_<digits>` / `_A-_B` — Nth most recent entry (or run
-    // of them) across every field. `_LAST` already handled above so it
+    // Bare `__…` / `_<digits>` / `_+<digits>` / `_A-_B` — Nth entry (or
+    // run of them) across every field. `_LAST` already handled above so it
     // never reaches here.
-    if let Some((from, to)) = parse_underscore_span(pattern) {
-        return live_entry_range(db, None, from, to);
+    if let Some((future, from, to)) = parse_underscore_span(pattern) {
+        return live_entry_range(db, None, future, from, to);
     }
 
     // Exact match always wins. Using the live-only `get_entry` here keeps
@@ -156,8 +195,8 @@ pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
     // spans, counting only the entries whose state is, or in a parallel
     // state includes, `<state>` (da-jloyq). After the exact match, so a slug
     // spelled the same still wins.
-    if let Some((field, state, from, to)) = parse_state_scoped(pattern) {
-        return state_entry_range(db, pattern, field, state, from, to);
+    if let Some((field, state, future, from, to)) = parse_state_scoped(pattern) {
+        return state_entry_range(db, pattern, field, state, future, from, to);
     }
 
     // Slug wildcard expansion.
@@ -269,62 +308,84 @@ pub fn parse_underscore_ordinal(s: &str) -> Option<usize> {
     None
 }
 
-/// Parse an underscore-shorthand *range* (`_2-_10`) into an inclusive
-/// ordinal span (da-6n25).
+/// A past ordinal ([`parse_underscore_ordinal`]) or a future one, `_+N`
+/// with N ≥ 1 in decimal digits (da-xxmhn).
+fn parse_quick_ref(s: &str) -> Option<QuickRef> {
+    if let Some(n) = parse_underscore_ordinal(s) {
+        return Some(QuickRef { future: false, n });
+    }
+    let digits = s.strip_prefix("_+")?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n: usize = digits.parse().ok()?;
+    (n >= 1).then_some(QuickRef { future: true, n })
+}
+
+/// Parse an underscore-shorthand *range* (`_2-_10`, `_+1-_+3`) into an
+/// inclusive ordinal span on one side of now (da-6n25).
 ///
-/// Both endpoints use the grammar of [`parse_underscore_ordinal`], so
-/// `_2-_10`, `__-__________` and `_2-__________` all name the same run.
-/// The endpoints are normalized ascending: `_10-_2` names that same run,
-/// because "everything between these two rows" is what the user means
-/// whichever end they type first.
+/// Both endpoints use the grammar of [`parse_quick_ref`], so `_2-_10`,
+/// `__-__________` and `_2-__________` all name the same run; a range
+/// across now (`_2-_+1`) is none. The endpoints are normalized ascending:
+/// `_10-_2` names that same run, because "everything between these two
+/// rows" is what the user means whichever end they type first.
 ///
 /// Returns `None` unless the whole pattern is exactly two ordinals joined
 /// by one `-`, so slugs carrying dashes (`mood:2024-03-16T09:15Z`) and
 /// half-written ranges (`_2-`) fall through to the matchers below.
-fn parse_underscore_range(s: &str) -> Option<(usize, usize)> {
+fn parse_underscore_range(s: &str) -> Option<(bool, usize, usize)> {
     let (lo, hi) = s.split_once('-')?;
-    let a = parse_underscore_ordinal(lo)?;
-    let b = parse_underscore_ordinal(hi)?;
-    Some((a.min(b), a.max(b)))
+    let a = parse_quick_ref(lo)?;
+    let b = parse_quick_ref(hi)?;
+    (a.future == b.future).then_some((a.future, a.n.min(b.n), a.n.max(b.n)))
 }
 
 /// A lone ordinal and a range are the same shape — a span of the recency
-/// ordering — so the resolver parses them together and runs one query.
-fn parse_underscore_span(s: &str) -> Option<(usize, usize)> {
-    parse_underscore_ordinal(s)
-        .map(|n| (n, n))
+/// ordering on one side of now — so the resolver parses them together and
+/// runs one query.
+fn parse_underscore_span(s: &str) -> Option<(bool, usize, usize)> {
+    parse_quick_ref(s)
+        .map(|r| (r.future, r.n, r.n))
         .or_else(|| parse_underscore_range(s))
 }
 
-/// Live entries whose recency ordinals fall in the inclusive `from..=to`
-/// span, newest first, optionally scoped to one field.
+/// Live entries whose ordinals on one side of now fall in the inclusive
+/// `from..=to` span, nearest now first, optionally scoped to one field.
 ///
 /// A span running past the end of the store yields the rows that do
 /// exist rather than failing: `_8-_20` on a twelve-entry store is five
 /// entries, and the batch commands print every row they touch.
-fn live_entry_range(db: &Db, field: Option<&str>, from: usize, to: usize) -> Result<Vec<Entry>> {
+fn live_entry_range(
+    db: &Db,
+    field: Option<&str>,
+    future: bool,
+    from: usize,
+    to: usize,
+) -> Result<Vec<Entry>> {
     let offset = from.saturating_sub(1) as i64;
     let limit = (to.saturating_sub(from) as i64).saturating_add(1);
     let mut stmt = db.conn().prepare(&format!(
         "SELECT * FROM entries
          WHERE deleted_at IS NULL AND superseded_by IS NULL
            AND (?1 IS NULL AND {NOT_META_FIELD_SQL} OR field = ?1)
-         {NTH_ORDER} LIMIT ?2 OFFSET ?3"
+         {} LIMIT ?2 OFFSET ?3",
+        nth_order(future, 4)
     ))?;
-    let rows = stmt.query_map(params![field, limit, offset], row_to_entry_public)?;
+    let rows = stmt.query_map(params![field, limit, offset, now()], row_to_entry_public)?;
     rows.map(|r| r.map_err(DatumError::Db)).collect()
 }
 
 /// `<field>:<state>:<span>`. The state is everything between the first `:`
 /// and the last, so a slug state reads whole: `media:book:gatsby:_`.
-fn parse_state_scoped(pattern: &str) -> Option<(&str, &str, usize, usize)> {
+fn parse_state_scoped(pattern: &str) -> Option<(&str, &str, bool, usize, usize)> {
     let (field, rest) = pattern.split_once(':')?;
     let (state, span) = rest.rsplit_once(':')?;
     if field.is_empty() || state.is_empty() {
         return None;
     }
-    let (from, to) = parse_underscore_span(span)?;
-    Some((field, state, from, to))
+    let (future, from, to) = parse_underscore_span(span)?;
+    Some((field, state, future, from, to))
 }
 
 /// [`live_entry_range`] over `field`'s entries whose state shares an element
@@ -336,6 +397,7 @@ fn state_entry_range(
     pattern: &str,
     field: &str,
     state: &str,
+    future: bool,
     from: usize,
     to: usize,
 ) -> Result<Vec<Entry>> {
@@ -346,9 +408,10 @@ fn state_entry_range(
     let mut stmt = db.conn().prepare(&format!(
         "SELECT * FROM entries
          WHERE deleted_at IS NULL AND superseded_by IS NULL AND field = ?1
-         {NTH_ORDER}"
+         {}",
+        nth_order(future, 2)
     ))?;
-    let mut rows = stmt.query(params![field])?;
+    let mut rows = stmt.query(params![field, now()])?;
     let (mut seen, mut out) = (0, Vec::new());
     while seen < to {
         let Some(row) = rows.next()? else { break };
@@ -376,8 +439,8 @@ fn state_entry_range(
     Ok(out)
 }
 
-/// Hid → `_N` ordinal for the [`QUICK_ORDINAL_CAP`] most recent live
-/// entries.
+/// Hid → quick id for the [`QUICK_ORDINAL_CAP`] most recent live entries
+/// at or before now (`_N`) and the as many nearest after it (`_+N`).
 ///
 /// The `_N` shorthands resolve but were invisible: nothing told the user
 /// that the row in front of them is the one `_3` names. The listing
@@ -385,22 +448,27 @@ fn state_entry_range(
 /// the rows they recognise; a row outside the map has no short form worth
 /// showing and is referenced by its hid.
 ///
-/// One query, same `ORDER BY` as [`live_entry_range`], so a printed `_3` is
+/// One query a side, the same as [`live_entry_range`]'s, so a printed `_3` is
 /// the row `_3` resolves to — ordinals are global and count every live
 /// entry, including the ones the caller's own filters hide, so a filtered
 /// listing shows gaps rather than a renumbered 1..n that wouldn't resolve.
 ///
 /// The `entries_hybrid` partial index covers this exact ordering, so the
-/// scan stops after [`QUICK_ORDINAL_CAP`] rows.
-pub fn quick_ordinals(db: &Db) -> Result<HashMap<Hid, usize>> {
-    let mut stmt = db.conn().prepare(&format!(
-        "SELECT hid FROM entries WHERE deleted_at IS NULL AND superseded_by IS NULL \
-           AND {NOT_META_FIELD_SQL} {NTH_ORDER} LIMIT {QUICK_ORDINAL_CAP}"
-    ))?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+/// scan stops after [`QUICK_ORDINAL_CAP`] rows a side.
+pub fn quick_ordinals(db: &Db) -> Result<HashMap<Hid, QuickRef>> {
+    let now = now();
     let mut out = HashMap::new();
-    for (i, hid) in rows.enumerate() {
-        out.insert(Hid(hid.map_err(DatumError::Db)?), i + 1);
+    for future in [false, true] {
+        let mut stmt = db.conn().prepare(&format!(
+            "SELECT hid FROM entries WHERE deleted_at IS NULL AND superseded_by IS NULL \
+               AND {NOT_META_FIELD_SQL} {} LIMIT {QUICK_ORDINAL_CAP}",
+            nth_order(future, 1)
+        ))?;
+        let rows = stmt.query_map([&now], |r| r.get::<_, String>(0))?;
+        for (i, hid) in rows.enumerate() {
+            let n = i + 1;
+            out.insert(Hid(hid.map_err(DatumError::Db)?), QuickRef { future, n });
+        }
     }
     Ok(out)
 }
@@ -490,15 +558,15 @@ mod tests {
     fn state_scoped_parse() {
         assert_eq!(
             parse_state_scoped("body:run:_"),
-            Some(("body", "run", 1, 1))
+            Some(("body", "run", false, 1, 1))
         );
         assert_eq!(
             parse_state_scoped("body:run:_2-_3"),
-            Some(("body", "run", 2, 3))
+            Some(("body", "run", false, 2, 3))
         );
         assert_eq!(
             parse_state_scoped("media:book:gatsby:__"),
-            Some(("media", "book:gatsby", 2, 2))
+            Some(("media", "book:gatsby", false, 2, 2))
         );
         for no in [
             "body:_",
@@ -714,18 +782,24 @@ mod tests {
     fn range_parse_accepts_both_endpoint_spellings() {
         // Either endpoint may be written in the count form or the
         // numeric form; both name the same span.
-        assert_eq!(parse_underscore_range("_2-_10"), Some((2, 10)));
-        assert_eq!(parse_underscore_range("__-__________"), Some((2, 10)));
-        assert_eq!(parse_underscore_range("_2-__________"), Some((2, 10)));
-        assert_eq!(parse_underscore_range("_-_3"), Some((1, 3)));
+        assert_eq!(parse_underscore_range("_2-_10"), Some((false, 2, 10)));
+        assert_eq!(
+            parse_underscore_range("__-__________"),
+            Some((false, 2, 10))
+        );
+        assert_eq!(
+            parse_underscore_range("_2-__________"),
+            Some((false, 2, 10))
+        );
+        assert_eq!(parse_underscore_range("_-_3"), Some((false, 1, 3)));
     }
 
     #[test]
     fn range_parse_normalizes_reversed_endpoints() {
         // "everything between these two rows" is the intent whichever
         // end the user types first.
-        assert_eq!(parse_underscore_range("_10-_2"), Some((2, 10)));
-        assert_eq!(parse_underscore_range("_3-_3"), Some((3, 3)));
+        assert_eq!(parse_underscore_range("_10-_2"), Some((false, 2, 10)));
+        assert_eq!(parse_underscore_range("_3-_3"), Some((false, 3, 3)));
     }
 
     #[test]
@@ -745,9 +819,9 @@ mod tests {
     fn range_span_still_covers_the_lone_ordinal() {
         // A single ordinal is the degenerate span, so both spellings go
         // through the one query.
-        assert_eq!(parse_underscore_span("_3"), Some((3, 3)));
-        assert_eq!(parse_underscore_span("___"), Some((3, 3)));
-        assert_eq!(parse_underscore_span("_2-_4"), Some((2, 4)));
+        assert_eq!(parse_underscore_span("_3"), Some((false, 3, 3)));
+        assert_eq!(parse_underscore_span("___"), Some((false, 3, 3)));
+        assert_eq!(parse_underscore_span("_2-_4"), Some((false, 2, 4)));
         assert_eq!(parse_underscore_span("nope"), None);
     }
 
@@ -1088,8 +1162,8 @@ mod tests {
         let map = quick_ordinals(&db).unwrap();
         assert_eq!(map.len(), 9);
         for (hid, ordinal) in &map {
-            let resolved = resolve_quickid_single(&db, &format!("_{ordinal}")).unwrap();
-            assert_eq!(&resolved.hid, hid, "_{ordinal} should name {hid:?}");
+            let resolved = resolve_quickid_single(&db, &ordinal.to_string()).unwrap();
+            assert_eq!(&resolved.hid, hid, "{ordinal} should name {hid:?}");
         }
     }
 
@@ -1105,8 +1179,8 @@ mod tests {
 
         let map = quick_ordinals(&db).unwrap();
         assert!(!map.contains_key(&newest.hid));
-        assert_eq!(map.get(&entries[1].hid), Some(&1));
-        assert_eq!(map.get(&entries[0].hid), Some(&2));
+        assert_eq!(map.get(&entries[1].hid), Some(&past(1)));
+        assert_eq!(map.get(&entries[0].hid), Some(&past(2)));
     }
 
     #[test]
@@ -1127,11 +1201,114 @@ mod tests {
 
         let map = quick_ordinals(&db).unwrap();
         assert_eq!(map.len(), QUICK_ORDINAL_CAP);
-        assert_eq!(map.get(&entries.last().unwrap().hid), Some(&1));
+        assert_eq!(map.get(&entries.last().unwrap().hid), Some(&past(1)));
         // Oldest two rows fall off the end.
         assert_eq!(map.get(&entries[0].hid), None);
         assert_eq!(map.get(&entries[1].hid), None);
-        assert_eq!(map.get(&entries[2].hid), Some(&QUICK_ORDINAL_CAP));
+        assert_eq!(map.get(&entries[2].hid), Some(&past(QUICK_ORDINAL_CAP)));
+    }
+
+    // ─── past and future (da-xxmhn): `_N` counts back from now, `_+N`
+    //     forward from it ──────────────────────────────────────────────
+
+    fn past(n: usize) -> QuickRef {
+        QuickRef { future: false, n }
+    }
+
+    fn future(n: usize) -> QuickRef {
+        QuickRef { future: true, n }
+    }
+
+    /// Entries at −2 h, −1 h, +1 h and +2 h from now, in that order.
+    fn around_now(db: &Db, field: &str) -> Vec<Entry> {
+        [-2, -1, 1, 2]
+            .into_iter()
+            .map(|h| {
+                entry_builder(field)
+                    .time_start_utc(Utc::now() + chrono::Duration::hours(h))
+                    .insert(db)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn future_ordinal_parse() {
+        assert_eq!(parse_quick_ref("_+1"), Some(future(1)));
+        assert_eq!(parse_quick_ref("_+12"), Some(future(12)));
+        assert_eq!(parse_quick_ref("_1"), Some(past(1)));
+        for no in ["_+", "_+0", "_++1", "_+-1", "_+1a", "+1", "_+ 1"] {
+            assert_eq!(parse_quick_ref(no), None, "{no}");
+        }
+        assert_eq!(parse_underscore_range("_+3-_+1"), Some((true, 1, 3)));
+        // A range does not cross now.
+        assert_eq!(parse_underscore_range("_2-_+1"), None);
+        assert_eq!(
+            parse_state_scoped("body:run:_+2"),
+            Some(("body", "run", true, 2, 2))
+        );
+    }
+
+    #[test]
+    fn past_ordinals_skip_the_future_and_future_ones_count_forward() {
+        let db = fresh_db();
+        let [m2, m1, p1, p2] = <[Entry; 4]>::try_from(around_now(&db, "mood")).unwrap();
+        let hid = |p: &str| resolve_quickid_single(&db, p).unwrap().hid;
+        assert_eq!(hid("_"), m1.hid);
+        assert_eq!(hid("_1"), m1.hid);
+        assert_eq!(hid("__"), m2.hid);
+        assert_eq!(hid("_2"), m2.hid);
+        assert_eq!(hid("_+1"), p1.hid);
+        assert_eq!(hid("_+2"), p2.hid);
+        assert!(resolve_quickid(&db, "_3").unwrap().is_empty());
+        assert!(resolve_quickid(&db, "_+3").unwrap().is_empty());
+        let run: Vec<Hid> = resolve_quickid(&db, "_+2-_+1")
+            .unwrap()
+            .into_iter()
+            .map(|e| e.hid)
+            .collect();
+        assert_eq!(run, vec![p1.hid.clone(), p2.hid.clone()]);
+        assert_eq!(hid("mood:_+1"), p1.hid);
+        assert_eq!(hid("mood:_"), m1.hid);
+
+        let map = quick_ordinals(&db).unwrap();
+        assert_eq!(map.get(&m1.hid), Some(&past(1)));
+        assert_eq!(map.get(&m2.hid), Some(&past(2)));
+        assert_eq!(map.get(&p1.hid), Some(&future(1)));
+        assert_eq!(map.get(&p2.hid), Some(&future(2)));
+        for (hid, r) in &map {
+            assert_eq!(
+                &resolve_quickid_single(&db, &r.to_string()).unwrap().hid,
+                hid
+            );
+        }
+    }
+
+    #[test]
+    fn field_scoped_future_picks_that_fields_nearest() {
+        let db = fresh_db();
+        let coffee = around_now(&db, "coffee");
+        // Another field's future entry, nearer now than coffee's.
+        entry_builder("mood")
+            .time_start_utc(Utc::now() + chrono::Duration::minutes(5))
+            .insert(&db);
+        let one = resolve_quickid_single(&db, "coffee:_+1").unwrap();
+        assert_eq!(one.hid, coffee[2].hid);
+    }
+
+    #[test]
+    fn state_scoped_future_counts_its_states_forward() {
+        let db = fresh_db();
+        let at = |h: i64, state: &str| {
+            entry_builder("body")
+                .state(serde_json::json!(state))
+                .time_start_utc(Utc::now() + chrono::Duration::hours(h))
+                .insert(&db)
+        };
+        at(-1, "run");
+        at(1, "walk");
+        let run = at(2, "run");
+        let got = resolve_quickid_single(&db, "body:run:_+1").unwrap();
+        assert_eq!(got.hid, run.hid);
     }
 
     #[test]

@@ -15,6 +15,7 @@ use datum_commands::render::{
 };
 use datum_core::{
     entry::{Entry, Verb},
+    ids::QuickRef,
     time::DatumTime,
 };
 use datum_test_util::{color_scope, no_color_scope};
@@ -366,14 +367,25 @@ fn tail_table_shows_quick_ordinals() {
     let entries = [
         entry_at("mood", Verb::Point, None, dt(2026, 5, 22, 9, 15)),
         entry_at("coffee", Verb::Point, None, dt(2026, 5, 22, 10, 15)),
+        entry_at("tea", Verb::Point, None, dt(2026, 5, 22, 11, 15)),
     ];
     let ctxs = [
         RenderContext {
-            quick_ordinal: Some(7),
+            quick_ordinal: Some(QuickRef {
+                future: false,
+                n: 7,
+            }),
             ..Default::default()
         },
         RenderContext {
-            quick_ordinal: Some(2),
+            quick_ordinal: Some(QuickRef {
+                future: false,
+                n: 2,
+            }),
+            ..Default::default()
+        },
+        RenderContext {
+            quick_ordinal: Some(QuickRef { future: true, n: 1 }),
             ..Default::default()
         },
     ];
@@ -385,6 +397,8 @@ fn tail_table_shows_quick_ordinals() {
     );
     assert!(lines.next().unwrap_or("").starts_with("_7 "), "{table:?}");
     assert!(lines.next().unwrap_or("").starts_with("_2 "), "{table:?}");
+    // An entry after now (da-xxmhn).
+    assert!(lines.next().unwrap_or("").starts_with("_+1 "), "{table:?}");
     assert!(
         !table.contains(&entries[0].hid.0[..5]),
         "no hid column: {table:?}"
@@ -418,7 +432,10 @@ fn tail_table_refs_rows_past_the_cap_by_their_hid() {
     let ctxs = [
         RenderContext::default(),
         RenderContext {
-            quick_ordinal: Some(1),
+            quick_ordinal: Some(QuickRef {
+                future: false,
+                n: 1,
+            }),
             ..Default::default()
         },
     ];
@@ -444,7 +461,10 @@ fn numbered_block() -> (Entry, RenderContext) {
         "test-device",
     );
     let ctx = RenderContext {
-        quick_ordinal: Some(1),
+        quick_ordinal: Some(QuickRef {
+            future: false,
+            n: 1,
+        }),
         ..Default::default()
     };
     (e, ctx)
@@ -519,7 +539,10 @@ fn a_track_row_adds_no_column_of_its_own() {
         "test-device",
     );
     let track_ctx = RenderContext {
-        quick_ordinal: Some(2),
+        quick_ordinal: Some(QuickRef {
+            future: false,
+            n: 2,
+        }),
         ..Default::default()
     };
     let alone = [block.clone()];
@@ -573,7 +596,10 @@ fn narrow_terminal_still_squeezes_the_state_not_the_quick_column() {
         dt(2026, 5, 22, 9, 15),
     );
     let ctx = RenderContext {
-        quick_ordinal: Some(1),
+        quick_ordinal: Some(QuickRef {
+            future: false,
+            n: 1,
+        }),
         ..Default::default()
     };
     let args = TableArgs {

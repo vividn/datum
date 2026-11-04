@@ -233,7 +233,7 @@ pub fn tail_rows(
                 quick_id: contexts
                     .and_then(|c| c.get(i))
                     .and_then(|c| c.quick_ordinal)
-                    .map(|n| format!("_{n}")),
+                    .map(|r| r.to_string()),
                 data: e.data.clone().unwrap_or(JsonValue::Null),
                 create_time: e.create_time.to_rfc3339(),
                 modify_time: e.modify_time.to_rfc3339(),
@@ -838,21 +838,32 @@ mod tests {
     /// the table would print — both read it off the row's context.
     #[test]
     fn quick_id_comes_from_the_row_context() {
+        use datum_core::ids::QuickRef;
         let entries = vec![
             entry(Verb::Switch, Some(json!("a")), None),
             entry(Verb::Switch, Some(json!("b")), None),
         ];
         let ctxs = vec![
             RenderContext {
-                quick_ordinal: Some(2),
+                quick_ordinal: Some(QuickRef {
+                    future: false,
+                    n: 2,
+                }),
                 ..RenderContext::default()
             },
             RenderContext::default(),
+            RenderContext {
+                quick_ordinal: Some(QuickRef { future: true, n: 1 }),
+                ..RenderContext::default()
+            },
         ];
+        let entries = [entries.clone(), vec![entries[0].clone()]].concat();
         let rows = tail_rows(&entries, Some(&ctxs), TimeMetricCol::Hybrid, None);
         assert_eq!(rows[0].quick_id.as_deref(), Some("_2"));
         // Past the ordinal cap there is no shorthand — `null`, not a
         // guess a consumer could hand back to the CLI.
         assert_eq!(rows[1].quick_id, None);
+        // An entry after now is `_+N` (da-xxmhn).
+        assert_eq!(rows[2].quick_id.as_deref(), Some("_+1"));
     }
 }

@@ -190,15 +190,16 @@ mod tests {
         let ctxs = build_table_contexts(&listed, &db);
 
         for (e, ctx) in listed.iter().zip(&ctxs) {
-            let n = ctx
+            let r = ctx
                 .quick_ordinal
                 .expect("every seeded row is within the cap");
             let resolved =
-                datum_core::ids::resolve_quickid_single(&db, &format!("_{n}")).expect("resolve");
-            assert_eq!(resolved.hid, e.hid, "_{n} must name the row it labels");
+                datum_core::ids::resolve_quickid_single(&db, &r.to_string()).expect("resolve");
+            assert_eq!(resolved.hid, e.hid, "{r} must name the row it labels");
         }
-        assert_eq!(ctxs[0].quick_ordinal, Some(1));
-        assert_eq!(ctxs[3].quick_ordinal, Some(4));
+        let past = |n| Some(datum_core::ids::QuickRef { future: false, n });
+        assert_eq!(ctxs[0].quick_ordinal, past(1));
+        assert_eq!(ctxs[3].quick_ordinal, past(4));
     }
 
     /// da-uxgv: the tail marks the row that *won* a contest, not the row
@@ -254,7 +255,7 @@ mod tests {
                 .insert(&db),
         );
         assert_eq!(
-            crate::render::quick_ordinal_map(&entries),
+            crate::render::quick_ordinal_map(&entries, Utc::now()),
             datum_core::ids::quick_ordinals(&db).unwrap()
         );
     }

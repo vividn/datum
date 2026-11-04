@@ -139,7 +139,7 @@ An **entry** has a `field` (what is tracked), a `state` (JSON value), an optiona
 ISO-8601 `dur`, an `at` (its time), and a `slug` — the human-readable id, `field:<time>`
 for a time-anchored entry or `field:c<create_time>` for a timeless `note`/`-T` one
 (the short `hid` in `datum tail` resolves to the same entry, as does the `_n`
-ordinal beside it — `_1` is the newest entry, `_2` the one before it). You choose the CLI verb;
+ordinal beside it — `_1` is the newest entry not in the future, `_2` the one before it, and `_+1` the nearest one in the future). You choose the CLI verb;
 datum *derives* the storage classifier (point / switch / block / block-switch /
 point-switch) from the (state, dur) it produces.
 

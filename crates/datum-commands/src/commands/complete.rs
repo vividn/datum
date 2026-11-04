@@ -609,7 +609,7 @@ fn entries(db: &Db, cur: &str) -> Candidates {
         let mut by_n: Vec<_> = ordinals.into_iter().map(|(h, n)| (n, h)).collect();
         by_n.sort_by_key(|(n, _)| *n);
         let by_n = by_n.into_iter().filter(|(_, h)| visible(db, h.as_ref()));
-        out.extend(by_n.map(|(n, _)| format!("_{n}")));
+        out.extend(by_n.map(|(r, _)| r.to_string()));
         return out;
     }
     let like = format!("{}%", cur.replace(['%', '_'], ""));

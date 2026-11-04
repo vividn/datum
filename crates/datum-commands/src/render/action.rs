@@ -113,10 +113,10 @@ pub struct RenderContext {
     pub prior_state_ignored: bool,
     pub ongoing_state: Option<JsonValue>,
     pub is_state_repeat: bool,
-    /// da-8sx8: the row's `_N` quickId ordinal, when it has one. Only the
+    /// da-8sx8: the row's quick id, `_N` or `_+N` (da-xxmhn), when it has one. Only the
     /// listing surfaces fill this (see `build_table_contexts`); everywhere
     /// else it stays `None` and the table's `_n` column drops out.
-    pub quick_ordinal: Option<usize>,
+    pub quick_ordinal: Option<datum_core::ids::QuickRef>,
     /// da-uxgv: another row lost an identity contest to this one and is
     /// sitting superseded behind it. The table marks such a row with a
     /// trailing `*` on its hid, so a conflict is met where the user is

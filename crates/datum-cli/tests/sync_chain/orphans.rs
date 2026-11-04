@@ -76,10 +76,10 @@ fn no_command_takes_a_row_away_and_keeps_its_ops() {
     // A merge's restored row, sharing a live entry's slug, folds to nothing
     // once undone: its row goes on every copy (da-4ldvb).
     let backup = a.key("pie.jsonl");
-    a.ok(&["occur", "pie", "-t", "09:00"]);
+    a.ok(&["occur", "pie", "-y", "-t", "09:00"]);
     a.ok(&["db", "backup", &backup]);
     a.ok(&["delete", "pie:_"]);
-    a.ok(&["occur", "pie", "-t", "09:00"]);
+    a.ok(&["occur", "pie", "-y", "-t", "09:00"]);
     a.ok(&["db", "restore", &backup, "--merge", "--yes"]);
     assert!(a.send(&b).0);
     no_orphans(&[&a, &b], "db restore --merge");

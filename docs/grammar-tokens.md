@@ -637,9 +637,10 @@ Every command that takes an `ID_OR_SLUG` takes these.
 
 | token                   | means                                          |
 |-------------------------|------------------------------------------------|
-| `_` `__` `___`          | 1st, 2nd, 3rd most recent entry                |
+| `_` `__` `___`          | 1st, 2nd, 3rd most recent entry, not in the future |
 | `_4`                    | the 4th, for counts past a few underscores     |
-| `_2-_10`                | the whole run between two ordinals             |
+| `_+1` `_+2`             | 1st, 2nd entry in the future, nearest first    |
+| `_2-_10`, `_+1-_+3`     | the whole run between two ordinals             |
 | `<field>:_3`            | the same counting, inside one field            |
 | `<field>:<state>:_`     | inside one field, only entries in that state   |
 | `_LAST`                 | everything the last write touched              |

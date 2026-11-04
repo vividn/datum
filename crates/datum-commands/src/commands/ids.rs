@@ -39,13 +39,13 @@ pub fn compute_ids(args: &IdsArgs, db: &Db) -> Result<Vec<String>> {
     )?)
 }
 
-/// `ids --ref`: each `_n` and the hid it names, `_1` first; `--json` is
-/// one object, `_n` → hid (da-kjikt: what datum.day's hid pill is labeled by).
+/// `ids --ref`: each `_n` and the hid it names, `_1` first, then each `_+n`,
+/// `_+1` first (da-xxmhn); `--json` is one object, `_n` → hid (da-kjikt: what datum.day's hid pill is labeled by).
 /// The ordinals are global, so its parser refuses a FIELD, `--since`,
 /// `--slug` and `--oldest-first` beside it (`parse_ids_args`); only `-n`
 /// applies.
 fn refs(args: &IdsArgs, db: &Db) -> Result<()> {
-    let mut refs: Vec<(usize, String)> = datum_core::ids::quick_ordinals(db)?
+    let mut refs: Vec<(datum_core::ids::QuickRef, String)> = datum_core::ids::quick_ordinals(db)?
         .into_iter()
         .map(|(hid, n)| (n, hid.0))
         .collect();
@@ -56,13 +56,13 @@ fn refs(args: &IdsArgs, db: &Db) -> Result<()> {
         ShowFlag::Json => {
             let map: serde_json::Map<String, serde_json::Value> = refs
                 .into_iter()
-                .map(|(n, hid)| (format!("_{n}"), hid.into()))
+                .map(|(r, hid)| (r.to_string(), hid.into()))
                 .collect();
             println!("{}", serde_json::Value::Object(map));
         }
         _ => {
-            for (n, hid) in refs {
-                println!("_{n}  {hid}");
+            for (r, hid) in refs {
+                println!("{r}  {hid}");
             }
         }
     }

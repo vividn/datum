@@ -17,9 +17,11 @@ fn get(db: &Db, id: &str) -> Entry {
     resolve_quickid_single(db, id).unwrap_or_else(|e| panic!("{id} must resolve: {e}"))
 }
 
+/// Yesterday, so both are past whatever the hour (`_` counts back from now,
+/// da-xxmhn).
 fn run_then_lift(db: &Db) -> (Entry, Entry) {
-    run_cli(&["switch", "body", "run", "-t", "9:30"], db).unwrap();
-    run_cli(&["switch", "body", "lift", "-t", "9:50", "3"], db).unwrap();
+    run_cli(&["switch", "body", "run", "-y", "-t", "9:30"], db).unwrap();
+    run_cli(&["switch", "body", "lift", "-y", "-t", "9:50", "3"], db).unwrap();
     (get(db, "body:run:_"), get(db, "body:_"))
 }
 
@@ -41,9 +43,9 @@ fn state_scoped_names_the_run_and_update_lands_on_it() {
 #[test]
 fn double_underscore_is_the_older_run() {
     let db = fresh_db();
-    run_cli(&["switch", "body", "run", "-t", "8:00"], &db).unwrap();
+    run_cli(&["switch", "body", "run", "-y", "-t", "8:00"], &db).unwrap();
     let older = get(&db, "body:_");
-    run_cli(&["switch", "body", "rest", "-t", "8:40"], &db).unwrap();
+    run_cli(&["switch", "body", "rest", "-y", "-t", "8:40"], &db).unwrap();
     let (newer, _) = run_then_lift(&db);
     assert_ne!(older.hid, newer.hid);
     assert_eq!(get(&db, "body:run:__").hid, older.hid);
@@ -60,12 +62,14 @@ fn undefined_is_a_state_name_not_null() {
 #[test]
 fn a_parallel_state_holding_it_matches() {
     let db = fresh_db();
-    run_then_lift(&db);
+    let (run, _) = run_then_lift(&db);
     let both = entry_builder("body")
         .state(json!(["run", "stretch"]))
         .time_start_utc(chrono::Utc::now() + chrono::Duration::days(1))
         .insert(&db);
-    assert_eq!(get(&db, "body:run:_").hid, both.hid);
+    // A day ahead, so `_+1`; `_` is still the run (da-xxmhn).
+    assert_eq!(get(&db, "body:run:_+1").hid, both.hid);
+    assert_eq!(get(&db, "body:run:_").hid, run.hid);
 }
 
 #[test]

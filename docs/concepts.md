@@ -51,8 +51,9 @@ One-line summaries of the model:
 - **Slug vs. hid** — `slug` is the human-readable id (`mood:2026-04-29T09:15Z`).
   `hid` is the short hash; both resolve to the same entry. `datum tail`
   leads each row with its `ref`: its ordinal, `_1` for the most recent
-  entry, `_2` the one before it, and so on, so `datum del _3` names the
-  row you just read, or its hid where it has none. Ordinals count every live entry, so a
+  entry at or before now, `_2` the one before it, and so on, and `_+1` for
+  the nearest entry in the future, `_+2` the one after it, so `datum del _3`
+  names the row you just read, or its hid where it has none. Ordinals count every live entry, so a
   field-filtered listing shows gaps — `_3` always means the same row it
   does everywhere else. Two ordinals joined by a dash name the whole run
   between them, so `datum del _2-_10` acts on nine rows in one go

@@ -1054,11 +1054,16 @@ fn tail_lists_flag_and_meta_rows_and_one_is_its_newest_row() {
     let newest = rows.last().unwrap();
     assert_eq!(newest.hid, flagged.hid);
     let ordinals = datum_core::ids::quick_ordinals(&db).unwrap();
-    assert_eq!(ordinals.get(&newest.hid), Some(&1));
+    assert_eq!(ordinals.get(&newest.hid).map(|r| r.n), Some(1));
     let one = datum_core::ids::resolve_quickid_single(&db, "_1").unwrap();
     assert_eq!(one.hid, newest.hid, "`_1` names the row tail shows first");
     for (i, row) in rows.iter().rev().enumerate() {
-        assert_eq!(ordinals.get(&row.hid), Some(&(i + 1)), "{:?}", row.slug);
+        assert_eq!(
+            ordinals.get(&row.hid).map(|r| r.n),
+            Some(i + 1),
+            "{:?}",
+            row.slug
+        );
     }
 }
 
