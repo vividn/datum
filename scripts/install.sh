@@ -12,7 +12,9 @@
 # `datum --version` names the commit it was built from. No `--force`: the
 # only case it changes is a `datum` in the install root that cargo did not
 # put there (copied by hand, or another package's), which cargo refuses to
-# overwrite rather than clobber — remove that file and run this again.
+# overwrite rather than clobber — remove that file and run this again. The
+# one such file it does replace is a datum, such as the release `datum
+# upgrade` swapped in for a checkout's build.
 # `--locked` builds exactly the versions in `Cargo.lock`, the ones CI
 # tested, and fails if the lockfile is out of date instead of re-resolving.
 set -euo pipefail
@@ -30,5 +32,13 @@ if command -v rustup >/dev/null; then
   rustup toolchain list | grep -q "^$channel-" || rustup toolchain install --no-self-update "$channel"
   cargo=(cargo "+$channel")
 fi
-"${cargo[@]}" install --path "$repo_root/crates/datum-cli" --locked
-"${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}/bin/datum" install "$@"
+root="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}"
+# A release datum `datum upgrade` put in place of cargo's is no longer
+# cargo's, which would refuse to overwrite it: a datum there that cargo
+# does not list makes way for this checkout's build.
+force=
+if ! grep -qs '^"datum-cli ' "$root/.crates.toml"; then
+  case "$("$root/bin/datum" --version 2>/dev/null)" in datum\ *) force=--force ;; esac
+fi
+"${cargo[@]}" install --path "$repo_root/crates/datum-cli" --locked ${force:+"$force"}
+"$root/bin/datum" install "$@"

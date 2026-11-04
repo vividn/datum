@@ -49,7 +49,8 @@ downloads the newest release for your machine, checks that
 (`release/minisign.pub`) and the binary against it (a missing or bad
 signature, or a mismatch, changes nothing), puts it in place of the
 running binary in one rename, and restarts the sync daemon if one runs.
-It upgrades only the binary `datum install` set up.
+It upgrades only the binary `datum install` set up, or one cargo built
+from a checkout (below).
 
 datum makes no network call of its own unless you sync, upgrade, or turn
 on update checks: with `update_check = true` in `datumrc.toml` (in
@@ -65,7 +66,9 @@ scripts/install.sh
 
 It runs `cargo install --path crates/datum-cli --locked`, then `datum
 install` (its arguments go there). To upgrade, `git pull &&
-scripts/install.sh`: `datum upgrade` leaves a binary cargo built alone. A
+scripts/install.sh`. `datum upgrade` moves a binary cargo built onto the
+release's builds instead, verified with the release key that build
+carries, and says so; `scripts/install.sh` puts a checkout build back. A
 `--path` install always builds and installs, replacing the `datum` cargo
 installed before even at the same version, and `datum --version` shows
 the commit it was built from — `3.0.<height>-beta (<sha7>)` — to confirm

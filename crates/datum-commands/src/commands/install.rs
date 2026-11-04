@@ -57,6 +57,15 @@ fn installed() -> Option<Installed> {
     toml::from_str(&std::fs::read_to_string(record_path().ok()?).ok()?).ok()
 }
 
+fn record(installed: &Installed) -> Result<()> {
+    let path = record_path()?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    std::fs::write(&path, toml::to_string(installed)?)
+        .with_context(|| format!("writing {}", path.display()))
+}
+
 fn this_exe() -> Result<PathBuf> {
     std::env::current_exe().context("finding this datum binary")
 }
@@ -80,20 +89,14 @@ pub fn install(args: InstallArgs) -> Result<()> {
     if let Some(said) = backup_daemon::said() {
         println!("{said}");
     }
-    let path = record_path()?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    }
     // The shell is recorded even when its script could not be written, so
     // `datum check` says it is missing until it is not.
-    let record = Installed {
+    record(&Installed {
         exe: exe.clone(),
         completions: shell
             .filter(|_| !args.no_completions)
             .map(|s| s.name().into()),
-    };
-    std::fs::write(&path, toml::to_string(&record)?)
-        .with_context(|| format!("writing {}", path.display()))?;
+    })?;
     println!("installed {}", exe.display());
     let rc = match shell {
         Some(Shell::Zsh) => Some(("zsh", "${ZDOTDIR:-$HOME}/.zshrc")),
@@ -151,25 +154,33 @@ pub fn uninstall() -> Result<()> {
     Ok(())
 }
 
-/// The install root cargo put `exe` in, if it did: cargo keeps
-/// `.crates.toml` there, beside `bin/`.
+/// The install root cargo put `exe` in, if it did: cargo lists what it
+/// installed in `.crates.toml` there, beside `bin/`. A release datum
+/// `upgrade` put in place of cargo's is no longer listed.
 fn cargo_root(exe: &Path) -> Option<&Path> {
     let root = exe.parent()?.parent()?;
-    root.join(".crates.toml").exists().then_some(root)
+    let listed = std::fs::read_to_string(root.join(".crates.toml")).ok()?;
+    listed
+        .lines()
+        .any(|l| l.starts_with("\"datum-cli "))
+        .then_some(root)
+}
+
+fn cargo_uninstall(root: &Path) -> Result<()> {
+    let ok = Command::new("cargo")
+        .args(["uninstall", "--root"])
+        .arg(root)
+        .arg("datum-cli")
+        .status()
+        .context("running cargo uninstall")?
+        .success();
+    ensure!(ok, "`cargo uninstall` failed");
+    Ok(())
 }
 
 fn remove_binary(exe: &Path) -> Result<()> {
     match cargo_root(exe) {
-        Some(root) => {
-            let ok = Command::new("cargo")
-                .args(["uninstall", "--root"])
-                .arg(root)
-                .arg("datum-cli")
-                .status()
-                .context("running cargo uninstall")?
-                .success();
-            ensure!(ok, "`cargo uninstall` failed");
-        }
+        Some(root) => cargo_uninstall(root)?,
         None => std::fs::remove_file(exe).with_context(|| format!("removing {}", exe.display()))?,
     }
     println!("removed {}", exe.display());
@@ -178,14 +189,16 @@ fn remove_binary(exe: &Path) -> Result<()> {
 
 pub fn upgrade(check: bool) -> Result<()> {
     let exe = this_exe()?;
-    if cargo_root(&exe).is_some() {
-        bail!(
-            "{} was built by cargo from a checkout: upgrade it with `git pull && scripts/install.sh`",
-            exe.display()
-        );
-    }
-    match installed() {
+    // A datum cargo built from a checkout moves onto the release (da-1yc69;
+    // vividn, 2026-11-04: «it uses the public key in the checkedout version,
+    // and then verifies the binary and switches»): verified as any upgrade
+    // is, and recorded as `datum install` records, so its next upgrade is
+    // an ordinary one.
+    let cargo = cargo_root(&exe).map(Path::to_path_buf);
+    let recorded = installed();
+    match &recorded {
         Some(i) if i.exe == exe => {}
+        None if cargo.is_some() => {}
         Some(i) => bail!(
             "this datum ({}) is not the one `datum install` set up ({}): upgrade that one",
             exe.display(),
@@ -202,12 +215,22 @@ pub fn upgrade(check: bool) -> Result<()> {
         println!("datum is up to date");
         return Ok(());
     }
+    if cargo.is_some() {
+        eprintln!(
+            "warning: {} was built by cargo from a checkout: upgrading moves it onto the release's \
+             builds, and `scripts/install.sh` in the checkout puts a checkout build back",
+            exe.display()
+        );
+    }
     if check {
         println!("a newer datum is released: `datum upgrade` installs it");
         return Ok(());
     }
     // Beside the binary, so the rename that puts it in place is atomic.
     let part = exe.with_file_name(".datum-upgrade");
+    // Set once cargo has removed the old datum: the release is then the
+    // only one left, and a failed rename keeps it.
+    let mut kept = false;
     let swapped = (|| {
         curl(&url, Some(&part))?;
         let got = sha256(&part)?;
@@ -224,13 +247,34 @@ pub fn upgrade(check: bool) -> Result<()> {
             .ok()
             .filter(|o| o.status.success())
             .with_context(|| format!("{url} does not run here: nothing changed"))?;
-        std::fs::rename(&part, &exe).with_context(|| format!("replacing {}", exe.display()))?;
+        // Through cargo, so its record no longer claims the binary. It
+        // goes first, since cargo would delete a release renamed in before
+        // it: so this path alone has a moment with no datum in place.
+        if let Some(root) = &cargo {
+            cargo_uninstall(root).context("nothing changed")?;
+            kept = true;
+        }
+        std::fs::rename(&part, &exe).with_context(|| match kept {
+            true => format!(
+                "cargo uninstalled {exe} but the release could not take its place: it is kept, \
+                 verified, at {part}, and `mv '{part}' '{exe}'` finishes the upgrade",
+                exe = exe.display(),
+                part = part.display()
+            ),
+            false => format!("replacing {}", exe.display()),
+        })?;
         Ok(String::from_utf8_lossy(&version.stdout).trim().to_string())
     })();
-    if swapped.is_err() {
+    if swapped.is_err() && !kept {
         let _ = std::fs::remove_file(&part);
     }
     println!("upgraded {} to {}", exe.display(), swapped?);
+    if recorded.is_none() {
+        record(&Installed {
+            exe: exe.clone(),
+            completions: None,
+        })?;
+    }
     match sync_daemon::restart() {
         Ok(true) => println!("restarted the sync daemon onto it"),
         Ok(false) => {}

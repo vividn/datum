@@ -62,7 +62,9 @@ impl Home {
             ("systemctl", format!("echo \"systemctl $*\" >> {log}")),
             (
                 "cargo",
-                format!("echo \"cargo $*\" >> {log}; rm \"$3/bin/datum\""),
+                format!(
+                    "echo \"cargo $*\" >> {log}; rm \"$3/bin/datum\"; echo '[v1]' > \"$3/.crates.toml\""
+                ),
             ),
         ] {
             let path = fake.join(name);
@@ -141,6 +143,14 @@ impl Home {
         let out = self.run_with(args, env);
         assert!(out.status.success(), "{args:?}: {out:?}");
         String::from_utf8(out.stdout).unwrap()
+    }
+
+    /// Makes this datum one cargo installed: its root's `.crates.toml`
+    /// lists it.
+    fn cargo_built(&self) {
+        let listed =
+            "[v1]\n\"datum-cli 3.0.0 (path+file:///checkout/crates/datum-cli)\" = [\"datum\"]\n";
+        std::fs::write(self.path(".crates.toml"), listed).unwrap();
     }
 
     fn err(&self, args: &[&str]) -> String {
@@ -384,18 +394,13 @@ fn upgrade_refuses_a_mismatch_and_swaps_in_a_good_release() {
     );
 }
 
-/// A datum cargo installed upgrades from its checkout, and uninstalls by
-/// cargo, so cargo's own record of it goes too.
+/// A datum cargo installed uninstalls by cargo, so cargo's own record of
+/// it goes too.
 #[test]
-fn a_cargo_install_upgrades_from_its_checkout() {
+fn a_cargo_install_uninstalls_by_cargo() {
     let h = Home::new();
-    std::fs::write(h.path(".crates.toml"), "").unwrap();
+    h.cargo_built();
     h.ok(&["install", "--no-completions"]);
-    let refused = h.err(&["upgrade"]);
-    assert!(
-        refused.contains("git pull && scripts/install.sh"),
-        "{refused}"
-    );
     h.ok(&["uninstall"]);
     assert!(!h.exe().exists());
     let cargo = format!(
@@ -403,6 +408,96 @@ fn a_cargo_install_upgrades_from_its_checkout() {
         h.tmp.path().display()
     );
     assert!(h.log().contains(&cargo), "{}", h.log());
+}
+
+/// A datum cargo built from a checkout upgrades onto the release, verified
+/// with the key its build carries, saying it leaves the checkout's builds
+/// (da-1yc69): cargo uninstalls it, the release takes its place, and it is
+/// recorded as `datum install` records, so the next upgrade is ordinary.
+/// One `datum install` never set up moves too.
+#[test]
+fn a_cargo_install_moves_onto_the_release() {
+    let h = Home::new();
+    h.cargo_built();
+    let before = std::fs::read(h.exe()).unwrap();
+    // A real datum, so the release runs: an ELF with bytes after it.
+    let release = |tail: &[u8]| [&before[..], tail].concat();
+    let warned = |out: &Output| {
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(said.contains("built by cargo from a checkout"), "{said}");
+        assert!(said.contains("scripts/install.sh"), "{said}");
+    };
+    let unchanged = || {
+        assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+        assert!(!h.path("bin/.datum-upgrade").exists());
+        assert_eq!(h.log(), "", "cargo uninstalled nothing");
+        assert!(!h.path("data/installed.toml").exists());
+    };
+
+    h.release(&release(b"one"), None);
+    h.sign(&OTHER_KEY);
+    let out = h.run(&["upgrade"]);
+    assert!(!out.status.success(), "{out:?}");
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        said.contains("does not verify with the key this datum was built with"),
+        "{said}"
+    );
+    unchanged();
+
+    h.sign(&TEST_KEY);
+    let out = h.run(&["upgrade", "--check"]);
+    assert!(out.status.success(), "{out:?}");
+    warned(&out);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("a newer datum"));
+    unchanged();
+
+    let out = h.run(&["upgrade"]);
+    assert!(out.status.success(), "{out:?}");
+    warned(&out);
+    assert_eq!(std::fs::read(h.exe()).unwrap(), release(b"one"));
+    let cargo = format!(
+        "cargo uninstall --root {} datum-cli",
+        h.tmp.path().display()
+    );
+    assert_eq!(h.log().matches(&cargo).count(), 1, "{}", h.log());
+    let record = std::fs::read_to_string(h.path("data/installed.toml")).unwrap();
+    assert!(record.contains(&h.exe().display().to_string()), "{record}");
+
+    h.release(&release(b"two"), None);
+    let out = h.run(&["upgrade"]);
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !said.contains("built by cargo"),
+        "an ordinary upgrade: {said}"
+    );
+    assert_eq!(std::fs::read(h.exe()).unwrap(), release(b"two"));
+    assert_eq!(h.log().matches(&cargo).count(), 1, "{}", h.log());
+}
+
+/// Once cargo has uninstalled the checkout's datum, the release is the only
+/// one left: a rename that then fails keeps it and says how to finish.
+#[test]
+fn a_failed_swap_after_cargo_uninstall_keeps_the_release() {
+    let h = Home::new();
+    h.cargo_built();
+    // An uninstall that leaves a directory where the binary was, which no
+    // file can be renamed onto.
+    std::fs::write(
+        h.path("fake/cargo"),
+        "#!/bin/sh\nrm \"$3/bin/datum\"; mkdir -p \"$3/bin/datum/in-the-way\"\n",
+    )
+    .unwrap();
+    let release = [&std::fs::read(h.exe()).unwrap()[..], b"one"].concat();
+    h.release(&release, None);
+    let said = h.err(&["upgrade"]);
+    let part = h.path("bin/.datum-upgrade");
+    assert!(
+        said.contains(&format!("mv '{}' '{}'", part.display(), h.exe().display())),
+        "{said}"
+    );
+    assert_eq!(std::fs::read(&part).unwrap(), release);
 }
 
 /// A release from before build names lists only the fixed name, which an
