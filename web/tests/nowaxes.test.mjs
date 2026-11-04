@@ -595,6 +595,45 @@ for (const vertical of [false, true]) {
 			});
 		});
 
+		// da-vfxgp, the mirror of da-f4sto, vividn 2026-11-03: «rel first then
+		// abs -> hmmm spawn a dur pill down on the rel axis I suppose?».
+		test('with a relative pill, a press on the clock axis before it keeps it and adds the length back to it, on the relative axis', async () => {
+			await withAxes(vertical, async (app) => {
+				const { page } = app;
+				await page.evaluate(() => window.datum.cursor.point({ rel: 10, from: 'nowview' }));
+				await drewPill(app);
+				const g = await read(page);
+				const [a, b] = g.clock;
+				const at = (t) => pt(g, a.p + ((t - a.at) * (b.p - a.p)) / (b.at - a.at), g.absRow);
+				// On clock marks, whose time a press near takes whole, before the
+				// pill's own instant, which a relative pill reads off the minute's clock.
+				const P = await page.evaluate(() => window.datum.cursor.at().getTime());
+				const marks = g.clock.filter((m) => m.at < P - 60_000 && m.at > P - 60 * 60_000 && clear(g, m.p)).sort((x, y) => y.at - x.at);
+				assert.ok(marks.length >= 2, `no two clock marks before the pill: ${JSON.stringify(g.clock)}`);
+				const [ten, twenty, later] = [marks[0].at, marks[1].at, P + 5 * 60_000];
+				const [m1, m2] = [ten, twenty].map((t) => `${(P - t) / 60_000}m`);
+				assert.ok(clear(g, vertical ? at(later).y : at(later).x), 'a handle is in the way');
+				const timed = (p) => p.filter((x) => /^(time|dur):/.test(x));
+				const lengthIs = async (want) => {
+					const said = await until(() => pillsOf(page), (p) => p.includes(`dur:${want}`));
+					assert.deepEqual(timed(said), ['time:-qq', `dur:${want}`]);
+				};
+				await finger(page, at(ten));
+				await lengthIs(m1);
+				await finger(page, at(ten), at(twenty));
+				await lengthIs(m2);
+				await page.locator(`${NOWVIEW} svg.svg .cursor-span`).waitFor({ state: 'attached' });
+				await app.idle();
+				const dur = await page.locator(`${NOWVIEW} .axis-pill:has(.pill.dur)`).boundingBox();
+				const across = vertical ? dur.x + dur.width / 2 : dur.y + dur.height / 2;
+				assert.ok(Math.abs(across - g.relRow) <= 2, `the length pill is at ${across}, the relative axis at ${g.relRow}`);
+				// Later than the pill, not decided yet (dur_forward): an absolute time, as before.
+				await finger(page, at(later));
+				const said = await until(() => pillsOf(page), (p) => timed(p).some((x) => /^time:-t \d\d:\d\d$/.test(x)));
+				assert.equal(timed(said).length, 1, `a later press kept a length: ${said}`);
+			});
+		});
+
 		test('a press near a mark of either axis takes it: the relative one’s relative, the clock’s absolute', async () => {
 			await withAxes(vertical, async (app) => {
 				const { page } = app;

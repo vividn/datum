@@ -909,13 +909,17 @@
 	/** The pill the press in hand is on, as `onPillDown` hands it to `begin`. */
 	let pillDown: string | undefined;
 	/**
-	 * The absolute pill a scrub of the relative axis gives a LENGTH to, in ms
-	 * (da-f4sto, vividn: «when an absolute time is selected and you press in
-	 * the relative time axis it adds a dur automatically»): set by a press
-	 * before it, and kept for the scrub, so the time stays and the span runs
-	 * from the finger to it, a duration ending at its time.
+	 * The time pill a scrub of the OTHER axis gives a LENGTH to: its instant
+	 * in ms, and its `rel` where it is relative. An absolute pill takes one
+	 * from the relative axis (da-f4sto, vividn: «when an absolute time is
+	 * selected and you press in the relative time axis it adds a dur
+	 * automatically»), a relative one from the clock's (da-vfxgp, «rel first
+	 * then abs -> hmmm spawn a dur pill down on the rel axis I suppose?»), a
+	 * press on the length's own pill from either. Set by a press before it,
+	 * and kept for the scrub, so the time stays and the span runs from the
+	 * finger to it, a duration ending at its time.
 	 */
-	let lengthTo: number | null = null;
+	let lengthTo: { at: number; rel?: number } | null = null;
 	/** When an axis last made a selection by a press: the pill it leaves under the finger, a double tap's second is not a tap on it. */
 	let axisPressed = -Infinity;
 
@@ -940,13 +944,13 @@
 		if (!near) return null;
 		if (on === 'abs') {
 			const at = Date.parse(near.previousElementSibling?.getAttribute('data-at') ?? '');
-			return Number.isNaN(at) ? null : exact(at);
+			return Number.isNaN(at) ? null : lengthTo ? lengthOf(at) : exact(at);
 		}
 		const word = /^t?([-+])(.+)$/.exec(near.textContent ?? '');
 		const by = word ? stepMinutes(word[2]) * (word[1] === '-' ? -1 : 1) : NaN;
 		const at = instantMs() + by * 60_000;
 		// As a scrub's: a label at the pill or past it leaves the pill and no length.
-		if (lengthTo !== null && !Number.isNaN(at)) return lengthOf(at);
+		if (lengthTo && !Number.isNaN(at)) return lengthOf(at);
 		return Number.isNaN(at) || at >= nowMs() ? null : { rel: (nowMs() - at) / 60_000, from: 'nowview' as const };
 	}
 
@@ -958,7 +962,7 @@
 	 */
 	function scrubAt(x: number, y: number) {
 		const at = instantAt(x, y);
-		if (scrubbing === 'rel' && lengthTo !== null) return lengthOf(at);
+		if (lengthTo) return lengthOf(at);
 		if (at >= nowMs() - EDGE_MS) return null;
 		if (scrubbing === 'rel') return selection(at, undefined, 'rel');
 		const near = dataNear(along(x, y), SCRUB_SNAP_PX);
@@ -984,9 +988,11 @@
 			mode = 'scrub';
 			scrubbing = on;
 			waiting = null;
-			// A press later than the pill is not decided (asked of vividn
-			// 11-03): it makes a relative time, as with none.
-			lengthTo = on === 'rel' && counted && instantAt(press.x, press.y) < +counted.at ? +counted.at : null;
+			// A press later than the pill waits on a length running forward
+			// (vividn 11-03: «we will need to handle the dur_forward
+			// discussion»): it makes a time of its axis's kind, as with none.
+			const other = pillDown === SPAN_ID || (on === 'rel' ? !!counted : pill?.rel !== undefined);
+			lengthTo = pill && other && instantAt(press.x, press.y) < +pill.at ? { at: +pill.at, rel: pill.rel } : null;
 			if (pillDown) return void (landedOn = { pill: pillDown });
 			const label = labelAt(press.x, press.y, on);
 			landedOn = label && {};
@@ -1061,13 +1067,12 @@
 		kind === 'abs'
 			? { at: new Date(ms), step: grain, span, from: 'nowview' as const }
 			: { rel: (Math.round((nowMs() - ms) / 1000 / grain) * grain) / 60, span, from: 'nowview' as const };
-	/** `lengthTo`'s pill, with the span back from it to `ms` in the window's step: none from it on. */
-	const lengthOf = (ms: number) => ({
-		at: new Date(lengthTo!),
-		step: 1,
-		span: (Math.max(0, Math.round((lengthTo! - ms) / 1000 / grain)) * grain) / 60,
-		from: 'nowview' as const
-	});
+	/** `lengthTo`'s pill, as it was, with the span back from it to `ms` in the window's step: none from it on. */
+	const lengthOf = (ms: number) => {
+		const { at, rel } = lengthTo!;
+		const span = (Math.max(0, Math.round((at - ms) / 1000 / grain)) * grain) / 60;
+		return rel === undefined ? { at: new Date(at), step: 1, span, from: 'nowview' as const } : { rel, span, from: 'nowview' as const };
+	};
 	/** An instant a mark or a clock time names, absolute and to the second: what a snap lands on. */
 	const exact = (ms: number) => ({ at: new Date(ms), step: 1, from: 'nowview' as const });
 
