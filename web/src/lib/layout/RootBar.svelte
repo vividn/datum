@@ -103,6 +103,16 @@
 	not visible». Its `data-command` is the button's own: pressed again while
 	armed, it is the general help. Layout mode has none: the mode's menus say
 	what they do, and on a phone its tabs' × need the room (vremya on #764).
+	It is filled with the accent, the palette's one color, so it is seen
+	(da-ylkin), vividn, 2026-11-04: «Let's fill in the (?) button with the
+	primary color so that it is a bit more visible».
+
+	Between them, an orange «↑ Upgrade» once a newer build of the page is
+	deployed (da-ylkin, `#lib/upgrade.ts`): SvelteKit's `updated`, which
+	reads `/_app/version.json` as the tab shows or takes focus, and hourly.
+	vividn, 2026-11-04: «an orange colored button in between the gear and
+	the help button that says "↑ Upgrade", so that users are aware that they
+	can upgrade». A tap reloads at once, so it wears the double outline.
 
 	At the right end, a ⚠ (da-8fucg) while a sync notice — a new device,
 	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
@@ -133,6 +143,8 @@
 	import { openBackups } from '#lib/backups.ts';
 	import { ask, choose as chooseAnswer, confirm } from '#lib/confirm.ts';
 	import { arm, helping } from '#lib/help.ts';
+	import { upgrade } from '#lib/upgrade.ts';
+	import { updated } from '$app/state';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
 	import { press } from './engine.js';
@@ -468,6 +480,9 @@
 			.filter(Boolean)
 			.join(' ');
 
+	/** Pressed «↑ Upgrade», waiting for the CLI to be idle to reload; false again if it failed. */
+	let upgrading = $state(false);
+
 	/** The gear's eight teeth, by the angle each is turned to. */
 	const TEETH = [0, 45, 90, 135, 180, 225, 270, 315];
 </script>
@@ -490,6 +505,19 @@
 		</svg><span class="beta" aria-hidden="true">beta</span></PaneMenu
 	>
 	{#if !$editing}
+	{#if updated.current}
+	<button
+		type="button"
+		class="control upgrade"
+		use:act={'run'}
+		disabled={upgrading}
+		data-help="A newer datum.day is out. Loads it, past every cache, once nothing is running or syncing; your data stays as it is."
+		onclick={() => {
+			upgrading = true;
+			upgrade().catch(() => (upgrading = false));
+		}}>↑ Upgrade</button
+	>
+	{/if}
 	<button
 		type="button"
 		class="control badge help"
@@ -756,16 +784,48 @@
 		flex: none;
 	}
 
-	/* The (?) is round, and armed it is lit as the commands widget's Help is. */
-	.help {
+	/* The (?) is round and filled with the accent (da-ylkin), its glyph the
+	   page's ground on it, hovered too. Armed it is the brighter accent, with
+	   a ring of it round the bar's ground. */
+	.root-bar .help,
+	.root-bar .help:hover:not(:disabled),
+	.root-bar .help:focus-visible {
 		flex: none;
 		border-radius: 50%;
-	}
-
-	.help.armed {
 		background: var(--accent);
 		border-color: var(--accent);
 		color: var(--page);
+		font-weight: 700;
+	}
+
+	.root-bar .help.armed {
+		background: var(--accent-bright);
+		border-color: var(--accent-bright);
+		box-shadow: 0 0 0 2px var(--ground), 0 0 0 3px var(--accent-bright);
+	}
+
+	/* «↑ Upgrade» (da-ylkin): orange, vividn's color for it, which is the
+	   palette's `--alarm`; filled, and its double outline drawn round the
+	   fill with the bar's ground between the two lines. */
+	.upgrade {
+		flex: none;
+		block-size: 24px;
+		padding: 0 0.4rem;
+		background: var(--alarm) padding-box;
+		color: var(--page);
+		font-weight: 700;
+		white-space: nowrap;
+	}
+
+	/* `:global`, as every `[data-act]` rule: `use:act` writes the attribute,
+	   which Svelte cannot see, so it would drop the rule as unused. */
+	.upgrade:global([data-act='run']) {
+		border: 3px double var(--alarm);
+	}
+
+	.upgrade:disabled {
+		cursor: progress;
+		opacity: 0.6;
 	}
 
 	/* The ⚠ (da-8fucg) is a pill and not a badge: it opens a dialog, and so
