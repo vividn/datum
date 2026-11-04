@@ -3378,7 +3378,7 @@ fn roundtrip_v69_to_v70_sync_row_hashes() {
     assert_eq!(objects(), 0);
 }
 
-/// da-w6pp2: `setting` is reserved as `kit` was; nothing moves either way.
+/// da-w6pp2: `setting` is reserved as `kit` was; nothing moves migrating up or down.
 #[test]
 fn roundtrip_v70_to_v71_setting_is_reserved() {
     let db = fresh_at(70);

@@ -314,8 +314,9 @@ mod tests {
     }
 
     /// da-mzhxw: the newest holder before the entry gives the key, whatever
-    /// its name, null reading as absent, and data that does not parse
-    /// holding nothing.
+    /// its name. A null in the newest holder reads as the key absent: no
+    /// older holder is consulted. Data that does not parse holds nothing,
+    /// so the reading goes on past it to an older holder.
     #[test]
     fn key_before_reads_the_newest_holder() {
         let db = Db::open_in_memory().unwrap();
