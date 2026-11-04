@@ -1017,7 +1017,8 @@ fn build_rows(
 
     // da-lkji: the time column's UTC offset moves into the header. The
     // reference is the most common offset among the displayed stamps (tie →
-    // the offset of the newest such row); rows that match print no offset,
+    // the offset of the newest such row, and of two at one instant the one
+    // listed last, da-2grmc); rows that match print no offset,
     // rows that differ get a gray `(±off)` prefix. Only computed when the
     // header is actually printed — headerless embeds (`datum check`) keep
     // the legacy per-row trailing offsets so the offset stays visible.
@@ -1026,8 +1027,8 @@ fn build_rows(
     let reference_offset: Option<i32> = if args.suppress_header || dates::iso_times() {
         None
     } else {
-        let mut votes: HashMap<i32, (usize, chrono::DateTime<chrono::Utc>)> = HashMap::new();
-        for e in entries {
+        let mut votes: HashMap<i32, (usize, chrono::DateTime<chrono::Utc>, usize)> = HashMap::new();
+        for (i, e) in entries.iter().enumerate() {
             // P1D rows render a bare date (no clock, no offset) and
             // entries without the metric's stamp render nothing — neither
             // votes for the reference.
@@ -1053,14 +1054,16 @@ fn build_rows(
                 TimeMetricCol::None => None,
             };
             if let Some((off, ts)) = vote {
-                let slot = votes.entry(off).or_insert((0, ts));
+                let slot = votes.entry(off).or_insert((0, ts, i));
                 slot.0 += 1;
-                slot.1 = slot.1.max(ts);
+                if ts >= slot.1 {
+                    (slot.1, slot.2) = (ts, i);
+                }
             }
         }
         votes
             .into_iter()
-            .max_by_key(|&(_, (count, newest))| (count, newest))
+            .max_by_key(|&(_, vote)| vote)
             .map(|(off, _)| off)
     };
 

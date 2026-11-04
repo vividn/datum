@@ -807,6 +807,42 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
     );
 }
 
+/// Two offsets tied on count and on their newest instant (one instant logged
+/// in two zones) pick the offset of the row listed last, every time: the
+/// votes are a HashMap, whose order is seeded per map (da-2grmc).
+#[test]
+fn tail_table_header_offset_tie_at_one_instant_is_the_row_listed_last() {
+    let _g = no_color_scope();
+    let now = dt_off(2026, 4, 22, 15, 0, 120, "Europe/Berlin");
+    let utc = entry_at(
+        "coffee",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 7, 0, 0, "UTC"),
+    );
+    let berlin = entry_at(
+        "walk",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 7, 0, 120, "Europe/Berlin"),
+    );
+    let args = TableArgs {
+        metric: TimeMetricCol::Occur,
+        ..Default::default()
+    };
+    for (entries, want) in [
+        (vec![utc.clone(), berlin.clone()], "time (+2)"),
+        (vec![berlin, utc], "time (+0)"),
+    ] {
+        for _ in 0..32 {
+            let table =
+                strip_ansi(&format_table_with(&entries, None, Some(&now), None, &args).unwrap());
+            let header = table.lines().next().unwrap();
+            assert!(header.contains(want), "want {want}: {header:?}");
+        }
+    }
+}
+
 /// The `(±off)` prefix and an uncertain time's `±` are grey (GREY_FG);
 /// the clock stays unpainted.
 #[test]
