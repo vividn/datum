@@ -1437,7 +1437,7 @@ Add tests for new behavior.
 ## Integration branches
 
 Work too big for one PR, many beads under one epic that should land on staging together, is built on a branch of
-its own, `integration/<name>`, so it can move fast, and lands on staging in one PR at the end. The first was the
+its own, `integration/<name>`, so it can move fast, and lands on staging in one PR at the end, squashed. The first was the
 tutorial (epic da-uzyih, `integration/tutorial`); the rules below are for any such branch. vividn, 2026-10-22:
 «shorten the turn around time for integration branch work … we'll do one big PR at the end to merge the integration
 branch into staging later, that will go through a deeper check», and «I want this integration procedure to be
@@ -1488,6 +1488,11 @@ generally applicable in the future, not just for this tutorial development».
 - The final PR, from the branch into staging, gets the deep check: staging's CI as any PR there (the Rust tests
   its change can reach, by the test map) and the full suites when it lands, the canaries, vremya's full gate over
   the whole diff, and a read of the entire branch.
+- **It lands as one squash commit**, never a merge (vividn, 2026-11-04: «integration branches should land as squash
+  commits to avoid this dance next time»): #1616 merged `integration/tutorial`, putting its 180 commits into
+  staging's history and its version height from 2503 to 2684, and staging was rewritten before main took it. Its
+  beads closed as each PR merged into the branch, so a squash loses none. A sync INTO a branch stays a merge commit, since
+  the branch must carry staging's history, and so does the crane's repair of a staging diverged from main.
 
 ## Pre-submit
 
