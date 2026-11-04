@@ -28,7 +28,8 @@ const widgetPane = (id: string, kind: string, settings: Record<string, unknown> 
 
 /**
  * The strip's settings, written down rather than implied — all but the
- * DAY HEIGHT, which is written down nowhere (da-r0ydu).
+ * DAY HEIGHT, which only the `dayview` tab writes down
+ * (`DAYVIEW_TAB_DAY_HEIGHT`, da-cp8pv) and collect's strip nowhere (da-r0ydu).
  *
  * Its absence is the setting: no day height means one day fills the
  * widget (pinned, with a quarter of yesterday showing above it,
@@ -51,6 +52,20 @@ const STRIP = {
 };
 
 const strip = () => widgetPane('strip', 'daystrip', { ...STRIP });
+
+/**
+ * The day height the `dayview` TAB holds (da-cp8pv), the one tree that
+ * writes one down: collect's desktop strip keeps following its box.
+ *
+ * vividn, 2026-11-04: «let's make the default day height much smaller,
+ * maybe showing the last two weeks», then «keep pixels consistent, so
+ * however many pixels gets about 12 days on a pixel 8 pro with the output
+ * section open». That pane is 578px there: (578 − 15 axis) ÷ 12 ≈ 47, and
+ * the same 47 on every screen. A number in the tree, so the day line still
+ * moves it and a reader's own height wins over it, as any held one does.
+ * Above `MIN_DAY_HEIGHT` (40), so the date stamp keeps its three lines.
+ */
+export const DAYVIEW_TAB_DAY_HEIGHT = 47;
 
 const holder = (id: string, split: Split): Pane => ({
 	id,
@@ -238,7 +253,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	// as `main` is (da-lsjs9).
 	collect: (phone) => ({ ...(phone ? MOBILE_LAYOUT : defaultLayoutFor(false)), name: 'collect' }),
 	mobile: () => MOBILE_LAYOUT,
-	dayview: () => only('dayview', 'daystrip', { ...STRIP }),
+	dayview: () => only('dayview', 'daystrip', { ...STRIP, dayHeight: DAYVIEW_TAB_DAY_HEIGHT }),
 	cli: () => only('cli', 'cli'),
 	nowview: () => only('nowview', 'nowview'),
 	tail: () => only('tail', 'tail'),
@@ -350,6 +365,10 @@ const NEW_DEFAULTS: NewDefault[] = [
 	{
 		tabs: ['collect', 'setup', 'dayview'],
 		text: 'The command pane at the bottom of collect, setup and dayview is gone again: the commands open from the ❯ on the command line, the command your pills make ready leading them.'
+	},
+	{
+		tabs: ['dayview'],
+		text: 'The dayview tab draws its days smaller, the same size on every screen: about the last two weeks on a phone.'
 	}
 ];
 

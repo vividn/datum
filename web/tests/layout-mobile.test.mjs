@@ -23,7 +23,7 @@ import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { fold as foldBar } from './support/bar.mjs';
 import { DESKTOP, pane, pickOption, titles, toggleOption } from './support/layout.mjs';
-import { FREEZE, MAX_DAY } from './support/daystrip.mjs';
+import { FREEZE } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -93,8 +93,9 @@ const screen = (page) =>
 
 const fieldsBar = (page) => pane(page, 'bar').locator('.bar').first();
 
-/** The hour ruler under today's band (`AXIS_HEIGHT`, #lib/panes.ts). */
-const AXIS = 15;
+/** The day height the dayview tab holds (`DAYVIEW_TAB_DAY_HEIGHT`, layout/defaults.ts). */
+const TAB_DAY = 47;
+
 /** The line between the past and a pinned today (`SEAM`, #lib/panes.ts). */
 const SEAM = 3;
 
@@ -216,7 +217,7 @@ describe('a fresh phone', () => {
 	});
 
 	// vividn, 2026-10-15 (da-2hd21): «yes show a little bit of yesterday». The
-	// day FOLLOWS the box: it is `dayUnderSliver` of it, floored at 40.
+	// tab's day is a held 47px now (da-cp8pv), so yesterday shows whole.
 	for (const [width, height] of SIZES)
 		test(`at ${width}×${height}, unfrozen, today whole and a sliver of yesterday over the seam`, async () => {
 			await withApp(async ({ page }) => {
@@ -237,8 +238,7 @@ describe('a fresh phone', () => {
 			const strip = stripPane(page);
 			await strip.locator('[data-days-ago="1"] svg').waitFor({ state: 'attached' });
 			const b = await bands(page);
-			// `dayUnderSliver`, up to `MAX_DAY_HEIGHT`: a whole tab holds more past.
-			assert.equal(b.today.of, Math.min(MAX_DAY, Math.round((b.inner - AXIS - SEAM) / 1.25)), `a ${b.today.of}px today in a ${b.inner}px box`);
+			assert.equal(b.today.of, TAB_DAY, `a ${b.today.of}px today in a ${b.inner}px box`);
 			assert.equal(await lineOnToday(page), true, 'the day line is not on today');
 
 			// The freeze is the widget's option, in the root tab's menu on a tab
@@ -255,6 +255,36 @@ describe('a fresh phone', () => {
 			assert.equal(await lineOnToday(page), true, 'pinned, the day line is not on today');
 		}, onDayview());
 	});
+
+	// vividn, 2026-11-04 (da-cp8pv): «keep pixels consistent, so however many
+	// pixels gets about 12 days on a pixel 8 pro with the output section
+	// open». So the tab holds 47px days at a phone's width and a desktop's,
+	// and the day line still moves them: the reader's height wins.
+	for (const [at, options] of [
+		['a phone', onDayview()],
+		['a desktop', { ...DESKTOP, home: { names: FIRST, active: 3 } }]
+	])
+		test(`on ${at}, the dayview tab's days are ${TAB_DAY}px, and a reader's own height wins`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await page.evaluate(() => window.datum.run(['occur', 'coffee', '-y']));
+				const strip = stripPane(page);
+				await strip.locator('[data-days-ago="1"] svg').waitFor({ state: 'attached' });
+				const b = await bands(page);
+				assert.equal(b.today.of, TAB_DAY, `today: ${JSON.stringify(b)}`);
+				assert.equal(b.yesterday.of, TAB_DAY, `yesterday: ${JSON.stringify(b)}`);
+
+				const line = strip.locator('.today-line');
+				const box = await line.boundingBox();
+				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+				await page.mouse.move(x, y);
+				await page.mouse.down();
+				await page.mouse.move(x, y - 40, { steps: 8 });
+				await page.mouse.up();
+				await until(() => bands(page), (now) => now.today.of === TAB_DAY + 40);
+				assert.equal(Number(await line.getAttribute('aria-valuenow')), TAB_DAY + 40);
+			}, options);
+		});
 
 	// vividn, 2026-10-30 (da-uzi5x): 1/3, 1/4, 5/12, each the full width.
 	test('at 390×844 the rows are his 1/3, 1/4 and 5/12, each the full width', async () => {
