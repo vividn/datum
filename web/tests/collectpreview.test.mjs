@@ -57,7 +57,11 @@ const near = (a, b, slop, what) => assert.ok(Math.abs(a - b) <= slop, `${what}: 
  * by that picture's own axis, its two ends, and the selection's head there —
  * once it is `minutes` long, ending at the head where `atHead`, and ending
  * left of `before` where given. A widened window redraws the picture, so nothing is
- * read off two pictures (the one before and after it).
+ * read off two pictures (the one before and after it): the time pill and the
+ * picture's middle across are read in the same frame, since a selection made
+ * in collect asks for a window about it, and the one asked for a step of a
+ * drag before can still be on screen, the head two minutes off where the
+ * next draws it (da-uthkn).
  */
 async function settled(page, minutes, { atHead = false, before = Infinity } = {}) {
 	await page.evaluate(() => {
@@ -70,7 +74,15 @@ async function settled(page, minutes, { atHead = false, before = Infinity } = {}
 			const head = [...svg.querySelectorAll(h)][0]?.getBoundingClientRect();
 			const perMin = ((Number(g.dataset.hi) - Number(g.dataset.lo)) * (svg.getBoundingClientRect().width / svg.viewBox.baseVal.width)) / ((Date.parse(g.dataset.to) - Date.parse(g.dataset.from)) / 60_000);
 			const b = block.getBoundingClientRect();
-			return { long: (b.right - b.left) / perMin, left: b.left, right: b.right, head: head && (head.left + head.right) / 2 };
+			const [frame, pill] = [svg.getBoundingClientRect(), svg.closest('section.pane').querySelector('.nowview-pills .pill.time')?.getBoundingClientRect()];
+			return {
+				long: (b.right - b.left) / perMin,
+				left: b.left,
+				right: b.right,
+				head: head && (head.left + head.right) / 2,
+				middle: (frame.top + frame.bottom) / 2,
+				pill: pill && { x: (pill.left + pill.right) / 2, y: (pill.top + pill.bottom) / 2 }
+			};
 		};
 	});
 	const marks = [PREVIEW, '.cursor-head'];
@@ -148,11 +160,10 @@ describe('collect previews on the nowview', () => {
 			assert.ok((await page.locator('.prompt-bar .pill.time').innerText()).includes(said.slice(3)), 'the bar holds it');
 			// Earlier, on the clock's axis now, over the line it names.
 			const after = await settled(page, 5, { atHead: true, before: before.right - 2 });
-			const [svg, time] = [await box(page, `${NOWVIEW} svg.svg`), await box(page, `${NOWVIEW} .nowview-pills .pill.time`)];
 			assert.ok(after.right < before.right - 2, `earlier: ${after.right} left of ${before.right}`);
 			near(after.long, 5, 0.3, 'the same length');
-			assert.ok((time.top + time.bottom) / 2 < (svg.top + svg.bottom) / 2, 'on the top axis');
-			near((time.left + time.right) / 2, after.right, 1.5, 'at its line');
+			assert.ok(after.pill.y < after.middle, 'on the top axis');
+			near(after.pill.x, after.right, 1.5, 'at its line');
 
 			// The length dragged left grows, plain: it adds no five on a tap.
 			const length = `${COLLECT} .part-pill[data-pill="length"] .more`;
