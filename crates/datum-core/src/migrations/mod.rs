@@ -64,7 +64,7 @@ use v81_v90::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 82;
+pub const CURRENT_SCHEMA_VERSION: u32 = 81;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -680,12 +680,5 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_peers.floor: the sync floor each peer said, so a copy says which of two across a floor must update (da-52vdj)",
         apply: m80_to_81_peer_floor,
         down: down_81_to_80_peer_floor,
-    },
-    Migration {
-        from: 81,
-        to: 82,
-        summary: "dayview_kept: a past day's digest kept until a write reaches it, which triggers on entries and integrity_warnings say (da-7z5i9)",
-        apply: m81_to_82_dayview_kept,
-        down: down_82_to_81_dayview_kept,
     },
 ];

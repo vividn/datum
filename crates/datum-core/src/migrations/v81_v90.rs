@@ -25,27 +25,3 @@ pub(super) fn down_81_to_80_peer_floor(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
-
-/// da-7z5i9: `dayview --digests`' kept days and the triggers that say which
-/// a write reached (`dayview_kept.sql`), laid empty. Local and derived.
-pub(super) fn m81_to_82_dayview_kept(conn: &Connection) -> Result<()> {
-    if table_exists(conn, "entries")? && table_exists(conn, "integrity_warnings")? {
-        conn.execute_batch(crate::db::DAYVIEW_KEPT_SQL)?;
-    }
-    Ok(())
-}
-
-/// Reverse v81→v82: a v81 build draws every day it checks.
-pub(super) fn down_82_to_81_dayview_kept(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
-        "DROP TRIGGER IF EXISTS dayview_kept_insert;
-         DROP TRIGGER IF EXISTS dayview_kept_update;
-         DROP TRIGGER IF EXISTS dayview_kept_delete;
-         DROP TRIGGER IF EXISTS dayview_kept_warning_insert;
-         DROP TRIGGER IF EXISTS dayview_kept_warning_update;
-         DROP TRIGGER IF EXISTS dayview_kept_warning_delete;
-         DROP TABLE IF EXISTS dayview_kept;
-         DROP TABLE IF EXISTS dayview_kept_dirty;",
-    )?;
-    Ok(())
-}
