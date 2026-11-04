@@ -652,8 +652,6 @@ fn render_markdown_command(spec: &CommandSpec) -> String {
 // names fall back to the top-level page (matches the help-text and
 // markdown renderers).
 
-use super::DATUM_VERSION;
-
 /// Render roff source for the `datum(1)` man page (`cmd = None`) or for
 /// a specific subcommand (`cmd = Some("tail")` → `datum-tail(1)`).
 pub fn render_roff(cmd: Option<&str>) -> String {
@@ -799,7 +797,9 @@ fn render_roff_command(spec: &CommandSpec) -> String {
 fn render_th(name: &str, section: u8) -> String {
     format!(
         ".TH \"{}\" \"{}\" \"\" \"datum {}\" \"datum manual\"\n",
-        name, section, DATUM_VERSION
+        name,
+        section,
+        crate::build()
     )
 }
 

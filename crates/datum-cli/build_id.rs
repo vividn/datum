@@ -2,7 +2,8 @@
 //! the version they make, `3.0.<height>-beta (<sha7>)` (da-cv118).
 //!
 //! Shared by `build.rs`, which hands it to the binary as `DATUM_BUILD`, and
-//! by `tests/version.rs`, which runs it against repos of a known shape.
+//! by `tests/version.rs`, which runs it against repos of a known shape, and by
+//! `xtask manpages`, whose pages name it.
 //! `web/scripts/build-id.mjs` computes the same for the page.
 
 use std::path::Path;

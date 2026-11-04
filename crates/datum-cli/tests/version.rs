@@ -75,6 +75,28 @@ fn the_binary_prints_semver_whose_patch_is_the_height_and_the_sha7() {
     assert_eq!(line.trim_end().replace("+)", ")"), format!("datum {want}"));
 }
 
+/// Every man page's header names the version `--version` prints, the
+/// build's, not Cargo's (da-wg2dx).
+#[test]
+fn every_man_page_names_the_version_the_binary_prints() {
+    let datum = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let version = datum(&["--version"]);
+    let version = version.trim_end();
+    for args in [&["--man"][..], &["--man", "tail"]] {
+        let page = datum(args);
+        let th = page.lines().next().unwrap_or_default();
+        assert!(th.starts_with(".TH "), "{args:?}: {th:?}");
+        assert!(th.contains(&format!("\"{version}\"")), "{args:?}: {th:?}");
+    }
+}
+
 #[test]
 fn the_version_is_cargos_with_the_height_for_patch() {
     assert_eq!(

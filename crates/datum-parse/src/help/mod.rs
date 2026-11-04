@@ -30,8 +30,6 @@ pub use spec::{
     SharedFlags, TopicSpec,
 };
 
-pub const DATUM_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 /// Render the top-level `datum --help` string.
 pub fn top_level_help() -> String {
     render_help_text(None)

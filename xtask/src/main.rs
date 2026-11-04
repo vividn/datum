@@ -12,6 +12,8 @@ use anyhow::{bail, Context, Result};
 use datum_parse::help::{render_roff, COMMANDS};
 use xtask::{autogen_section, splice_autogen, AUTOGEN_BLOCKS};
 
+#[path = "../../crates/datum-cli/build_id.rs"]
+mod build_id;
 mod health;
 mod testmap;
 
@@ -81,6 +83,10 @@ fn manpages(args: Vec<String>) -> Result<()> {
     fs::create_dir_all(&dir)
         .with_context(|| format!("creating output directory {}", dir.display()))?;
 
+    // The pages name the build, as `datum --man` does (da-wg2dx).
+    let root = workspace_root()?;
+    let (height, commit) = build_id::build_id(&root, None);
+    let _ = datum_parse::BUILD.set(build_id::version(&height, &commit).leak());
     write_page(&dir, "datum", &render_roff(None))?;
     for spec in COMMANDS {
         let stem = format!("datum-{}", spec.name);
