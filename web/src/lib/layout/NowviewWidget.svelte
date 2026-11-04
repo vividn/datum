@@ -173,6 +173,7 @@
 	import { DOUBLE_MS, inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
 	import { markOf, pressSpent } from '#lib/inspect.ts';
 	import { readLanes } from '#lib/lanes.ts';
+	import { MAX_SPEED, speedOver, tracked, type Sample } from '#lib/grip.ts';
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { clockLabel, now as clockNow } from '#lib/clock.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
@@ -218,10 +219,8 @@
 	// The coast's (da-v8gzq), up here too: how far the picture is drawn is sized by it.
 	/** How fast a coast slows: its speed falls by e in this many ms, as a phone's list does. */
 	const GLIDE_MS = 325;
-	/** The fastest flick a coast takes, in px per ms. */
-	const FLICK_MAX = 4;
-	/** How far the fastest coast travels, in px: its speed times how fast it slows (`aheadOf`). */
-	const COAST_PX = FLICK_MAX * GLIDE_MS;
+	/** How far the fastest coast travels, in px: the fastest flick a lift reads (#lib/grip.ts) times how fast it slows (`aheadOf`). */
+	const COAST_PX = MAX_SPEED * GLIDE_MS;
 	/** How far a narrow band's surround reaches either side at most: a week. */
 	const REACH_MS = 7 * 86_400_000;
 
@@ -1024,7 +1023,7 @@
 		mode = 'press';
 		long = false;
 		panned = 0;
-		moves = [];
+		track = [];
 		caught = false;
 	}
 
@@ -1048,7 +1047,7 @@
 		if (mode === 'range' && was !== 'range') pointAt(selection(instantAt(press.x, press.y)));
 		if (mode === 'pan') {
 			raw = along(x, y) - along(press.x, press.y);
-			moves = [...moves.slice(-7), { t, raw }];
+			track = tracked(track, raw, t);
 			panned = stopAtNow(raw);
 		}
 		if (mode === 'range') range(instantAt(press.x, press.y), instantAt(x, y));
@@ -1170,7 +1169,7 @@
 
 	/** The pan's slide in px as the finger alone would make it, and its last moves, for the speed a lift carries. */
 	let raw = 0;
-	let moves: { t: number; raw: number }[] = [];
+	let track: Sample[] = [];
 	/** The frame a coast or a spring back waits on, while one runs. */
 	let coasting = 0;
 	/** Whether the press in hand stopped a coast: then a still lift is no tap. */
@@ -1196,20 +1195,6 @@
 		if (!(raw < limit)) return raw;
 		const over = limit - raw;
 		return limit - over / (1 + over / STRETCH_PX);
-	}
-
-	/**
-	 * The speed of the last tenth of a second before a lift at `t`, in px per
-	 * ms; none for a pointer held still. Every time is the input's own
-	 * (`event.timeStamp`), not when its handler ran: a frame the page
-	 * stalled at the lift read a flick as held still (da-couf7).
-	 */
-	function speed(t: number): number {
-		const end = moves.at(-1);
-		if (!end || t - end.t > 60) return 0;
-		const from = moves.find((m) => end.t - m.t <= 100) ?? end;
-		const v = end.t > from.t ? (end.raw - from.raw) / (end.t - from.t) : 0;
-		return Math.max(-FLICK_MAX, Math.min(FLICK_MAX, v));
 	}
 
 	/**
@@ -1279,7 +1264,9 @@
 		if (landedOn?.pill && still && event.timeStamp - axisPressed > DOUBLE_MS) removePill(landedOn.pill);
 		// A flick coasts on, a finger's or a mouse's (da-w57do); one held still first stops where it is let go.
 		if (mode === 'pan') {
-			const v = speed(event.timeStamp);
+			// Read as the bar's and collect's are, over the time before the LIFT (da-4gwp5):
+			// a finger at rest sends no moves. The input's own time, not the handler's (da-couf7).
+			const v = speedOver(track, raw, event.timeStamp);
 			drop();
 			return glide(v);
 		}

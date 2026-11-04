@@ -1384,6 +1384,34 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 		);
 	});
 
+	// da-4gwp5: the speed a lift carries is read over the 80ms before the LIFT, as the bar's
+	// and collect's are (`speedOver`, #lib/grip.ts, da-5rr8f), not before the last move: a
+	// finger at rest sends no moves, so one that stopped and held let go at the speed it had
+	// stopped from. Over that window a 40ms hold reads about a quarter of the flick's speed
+	// (16ms moves: 111px of coast to 416), and a hold past 50ms none; the last move's window
+	// read it whole, 522px either way.
+	test('a finger flick that stops and holds before the lift coasts far less than one that does not', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const box = await seeded(app);
+				const coast = async (still) => {
+					await record(page);
+					await flick(page, { x: box.x + 40, y: box.y + box.height / 2 }, 160, { still });
+					const frames = await settle(page);
+					const up = frames.findLastIndex((f) => f.down) + 1;
+					return shift(frames[up - 1], frames.at(-1));
+				};
+				const plain = await coast(0);
+				const held = await coast(40);
+				assert.ok(plain > 40, `the plain flick moved on ${plain}px after the lift`);
+				assert.ok(held < plain / 2, `held 40ms, the window moved on ${held}px after the lift, a plain flick ${plain}px`);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
 	test('a mouse drag held still before its release stops where it is let go', async () => {
 		await withApp(
 			async (app) => {

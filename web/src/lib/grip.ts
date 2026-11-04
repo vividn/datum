@@ -65,7 +65,7 @@ const WINDOW_MS = 80;
 const MIN_MS = 8;
 
 /** Faster than this is a slip of the sensor, not a thumb. */
-const MAX_SPEED = 4;
+export const MAX_SPEED = 4;
 
 /** Every surface the grip is on — the bar, and the log under it. */
 const gripped = new Set<HTMLElement>();
