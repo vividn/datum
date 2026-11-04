@@ -61,6 +61,8 @@ after(stopApp);
 const shared = sharedApp();
 const clocked = sharedApp({ clock: todayAt(12) });
 const narrow = sharedApp(NARROW);
+/** A box that derives a day well over the floor, so a layout can hold less. */
+const TALL = { viewport: { width: 1280, height: 1400 } };
 
 describe("the day strip's day height and its pin", () => {
 	// ⛔ FOLLOW UNTIL TOUCHED, THEN HOLD — and back onto the derived value
@@ -543,6 +545,36 @@ describe("the day strip's day height and its pin", () => {
 			assert.deepEqual(inTree(await tree()), [], 'the kept sizes reached the layout');
 			assert.deepEqual(app.errors, []);
 		});
+	});
+
+	// A layout that HOLDS a day height (the dayview tab's 47, da-cp8pv): the
+	// line dragged onto the box's own height follows the box, and a reload
+	// keeps it following. The session holds that as a key set to nothing,
+	// which JSON dropped, so the reload drew the layout's height (da-t0d4y).
+	test("a line let go over a layout's day height still follows after a reload", async () => {
+		await withApp(async (app) => { // own app: it reloads
+			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
+			const free = await following(app);
+			assert.ok(free - 30 >= MIN_DAY, `the box derives ${free}, too short to hold less`);
+			const laid = free - 30;
+			await say(app, { dayHeight: laid });
+			await settledAt(app, laid);
+
+			await dragBy(app, '.today-line', 0, -30);
+			assert.equal(await valueOf(app), free);
+			await heardIs(app, undefined);
+
+			await app.reload();
+			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
+			assert.match(
+				await app.page.evaluate(() => JSON.stringify(window.datum.layout.current())),
+				new RegExp(`"dayHeight":${laid}\\b`),
+				'the layout no longer holds the day height, so the reload asks nothing'
+			);
+			await settledAt(app, free);
+			assert.equal(await heard(app), undefined, 'a reload holds a day height again');
+			assert.deepEqual(app.errors, []);
+		}, TALL);
 	});
 
 	// The «better preview rendering» (vividn, 2026-09-15): the bands follow

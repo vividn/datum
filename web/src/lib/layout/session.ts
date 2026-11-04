@@ -51,11 +51,28 @@ function stored(): Record<string, Settings> | null {
 		return null;
 	}
 	try {
-		return JSON.parse(raw ?? '{}') ?? {};
+		return each(JSON.parse(raw ?? '{}') ?? {}, (value) => (value === null ? undefined : value));
 	} catch {
 		return {};
 	}
 }
+
+/**
+ * Every setting of every key through `to`. JSON has no `undefined` and drops
+ * a key holding it, but a setting moved back to NOTHING over a layout that
+ * holds something is held as exactly that: the day strip dragged onto its
+ * box's own height over a layout's 47 follows its box again, and a reload
+ * that dropped the key drew it at 47 (da-t0d4y). So it is kept as `null`
+ * and read back as `undefined`: a setting is never `null`, `null` IS nothing,
+ * and a widget that stored one would read it back as `undefined`.
+ */
+const each = (all: Record<string, Settings>, to: (value: unknown) => unknown): Record<string, Settings> =>
+	Object.fromEntries(
+		Object.entries(all).map(([key, settings]) => [
+			key,
+			Object.fromEntries(Object.entries(settings).map(([name, value]) => [name, to(value)]))
+		])
+	);
 
 const store = writable<Record<string, Settings>>(stored() ?? {});
 
@@ -68,7 +85,7 @@ function change(edit: (all: Record<string, Settings>) => Record<string, Settings
 	store.update((mine) => {
 		const all = edit(stored() ?? mine);
 		try {
-			if (Object.keys(all).length > 0) localStorage.setItem(KEPT, JSON.stringify(all));
+			if (Object.keys(all).length > 0) localStorage.setItem(KEPT, JSON.stringify(each(all, (value) => value ?? null)));
 			else localStorage.removeItem(KEPT);
 		} catch {
 			// Refused or full: the setting holds for the visit, as it always did.
