@@ -309,7 +309,7 @@ export function graftAxis(into: SVGSVGElement, overlay: string | null, by = 0): 
  * units, and dropped where nothing of it is left; one still running at the
  * day's `end` (drawn on to it) cut at `running` too.
  */
-function trim(day: Element, lo: number, hi: number, running: number, end: number, y: boolean): void {
+export function trim(day: Element, lo: number, hi: number, running: number, end: number, y: boolean): void {
 	const [start, length] = y ? ['y', 'height'] : ['x', 'width'];
 	for (const block of day.querySelectorAll('rect.block')) {
 		const to = Date.parse(block.getAttribute('data-to') ?? '') >= end ? Math.min(hi, running) : hi;

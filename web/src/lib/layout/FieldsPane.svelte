@@ -24,6 +24,13 @@
 	front. Both arrive here as stores and go in as plain props, so the
 	widget itself asks nothing of the page.
 
+	The NOW STRIP (da-uuzu6) is today's data layer, the one the nowview and
+	the day strip hold (#lib/dayLayers.ts), asked again at each write's epoch.
+	A press that logs at now adds its mark at the tap's instant at once
+	(`pendingOf`), the instant the CLI's clock is frozen at (`gestureAt`), so
+	the layer's own mark lands where it stood. A refused press takes it back;
+	one that wrote keeps it until a layer asked after the write has come.
+
 	`showIgnored` (da-xhio) arrives as a prop too, though its value is the
 	SESSION's rather than the layout's: the renderer merges the two before
 	it draws (Layout.svelte, #lib/layout/session.ts), so neither this pane
@@ -31,13 +38,19 @@
 -->
 <script lang="ts">
 	import FieldsWidget from '#lib/FieldsWidget.svelte';
+	import { get } from 'svelte/store';
+	import { untrack } from 'svelte';
 	import { clearPending, pending, pills, prefill, text } from '#lib/bar.ts';
+	import { minute } from '#lib/clock.ts';
+	import { dateBack, layers, standIn, type Layer } from '#lib/dayLayers.ts';
+	import { pendingOf, type Mark } from '#lib/nowStrip.ts';
+	import { withPills } from '#lib/selection.ts';
 	import { flagLine, hasDuration } from '#lib/commands.ts';
 	import { advance } from '#lib/keyframes.ts';
 	import type { Align, SwitchLabel } from '#lib/fields.ts';
 	import { lanes } from '#lib/lanes.ts';
 	import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
-	import { fields, grammar, pressWithPills, standings } from './engine.js';
+	import { epoch as written, fields, gestureAt, grammar, pressWithPills, standings } from './engine.js';
 
 	let {
 		switchLabel = 'field',
@@ -52,8 +65,31 @@
 		/** What a tap does: logs what needs nothing more, or opens the field and chooses a state for the command pane (da-u017i, da-gra0z). */
 		clicks = 'one',
 		/** Which edge the strip and the active section stand at (da-lw7ue). */
-		side = 'left'
-	}: { switchLabel?: SwitchLabel; align?: Align; showIgnored?: boolean; clicks?: 'one' | 'two'; side?: 'left' | 'right' } = $props();
+		side = 'left',
+		epoch = 0
+	}: { switchLabel?: SwitchLabel; align?: Align; showIgnored?: boolean; clicks?: 'one' | 'two'; side?: 'left' | 'right'; epoch?: number } = $props();
+
+	const today = $derived.by(() => {
+		void $minute;
+		return dateBack(0);
+	});
+	let layer = $state.raw<Layer>();
+	/** The epoch the layer drawn was asked at. */
+	let shown = -1;
+	/** The taps' marks the layer does not hold yet: `after`, once the write landed, the epoch a layer must be asked at to hold it. */
+	let marks = $state.raw<{ mark: Mark; after?: number }[]>([]);
+	$effect(() => {
+		const [date, at] = [today, epoch];
+		untrack(() => {
+			if (!layer) void standIn(date).then((held) => held && !layer && (layer = held));
+			void layers([date], at)[0].then((got) => {
+				if (date !== today || at !== epoch) return;
+				if (!got.error) [layer, shown] = [got, at];
+				marks = marks.filter((m) => m.after === undefined || m.after > at);
+			});
+		});
+	});
+	const doc = $derived(layer?.doc());
 
 	/**
 	 * A press under the pending verb runs the LINE with the field after it
@@ -64,8 +100,18 @@
 		const line = pendingFlags(argv);
 		if (line) $text = '';
 		else clearPending();
-		void pressWithPills(line ? [...line, ...argv.slice(1)] : argv);
+		const sent = line ? [...line, ...argv.slice(1)] : argv;
+		const at = gestureAt() ?? Date.now();
+		const mark = pendingOf(withPills($grammar, sent, $pills).argv, $fields, at);
+		const held: { mark: Mark; after?: number } | null = mark && { mark };
+		if (held) marks = [...marks, held];
+		void pressWithPills(sent).then((result) => {
+			if (!held) return;
+			if (result.code === 0) held.after = get(written);
+			if (result.code !== 0 || held.after! <= shown) marks = marks.filter((m) => m !== held);
+		});
 	}
+	const nowPending = $derived(marks.map((m) => m.mark));
 
 	/** The pending line's flags, when `argv` spends its verb and it holds only flags. */
 	const pendingFlags = (argv: string[]): string[] | null =>
@@ -94,6 +140,8 @@
 		{showIgnored}
 		{clicks}
 		{side}
+		nowDoc={doc}
+		{nowPending}
 		onrun={run}
 		onfill={fill}
 	/>

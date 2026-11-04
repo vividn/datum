@@ -49,6 +49,24 @@ async function logs(app, line) {
 	await app.redraw();
 }
 
+/**
+ * What the now strip draws of `field`: each mark's kind, fill, and where it
+ * stands inside the strip, cut to it (`left`, `right`, `mid`, from the strip's
+ * left), and the strip's width (`of`). A mark wholly outside it is left out;
+ * one that only touches its edge, as a tap's block does at once, is not.
+ */
+const drawn = (page, field) =>
+	page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => {
+		const box = svg.getBoundingClientRect();
+		return [...svg.querySelectorAll(`[data-mark="${field}"]`)]
+			.map((el) => {
+				const r = el.getBoundingClientRect();
+				const [left, right] = [Math.max(r.left, box.left) - box.left, Math.min(r.right, box.right) - box.left];
+				return { kind: el.localName, ground: el.classList.contains('ground'), fill: getComputedStyle(el).fill, left, right, mid: (r.left + r.right) / 2 - box.left, of: box.width };
+			})
+			.filter((m) => m.right >= m.left);
+	}, field);
+
 /** Every field at rest: its row, its section, and where it is drawn. */
 const shelf = (page) =>
 	page.locator(`${ROOM} .spot.shelf`).evaluateAll((spots) =>
@@ -125,12 +143,12 @@ describe('collect at rest', () => {
 			const section = Math.max(...spots.filter((s) => s.section === 'active').map((s) => s.right));
 			for (const s of spots.filter((s) => s.section === 'recent')) assert.ok(s.left > section, `${s.field} stands in the active section`);
 			await page.locator(`${ROOM} .dotted path`).waitFor();
-			const strip = await page.locator(`${ROOM} [data-now-field]`).evaluateAll((bs) => bs.map((b) => [b.dataset.nowField, getComputedStyle(b).backgroundColor]));
-			assert.deepEqual(strip.map(([f]) => f).sort(), ['mood', 'work']);
-			// Each in the colour its button is filled with.
-			for (const [field, color] of strip) {
+			const strip = await page.locator(`${ROOM} [data-now-field]`).evaluateAll((bs) => bs.map((b) => b.dataset.nowField));
+			assert.deepEqual(strip.sort(), ['mood', 'work']);
+			// Each drawn across the whole strip, in the colour its button is filled with.
+			for (const field of strip) {
 				const fill = await page.locator(`${ROOM} [data-field="${field}"]`).evaluate((b) => getComputedStyle(b).backgroundColor);
-				assert.equal(color, fill, `${field}'s strip`);
+				await until(() => drawn(page, field), (marks) => marks.some((m) => m.fill === fill && m.left <= 0.5 && m.right >= m.of - 0.5));
 			}
 		}, AT_REST);
 	});
@@ -185,6 +203,138 @@ describe('collect at rest', () => {
 				() => page.locator('.prompt-bar .pill').evaluateAll((ps) => ps.map((p) => [[...p.classList].filter((c) => c !== 'pill').join(' '), p.innerText.replace(/[×\s]+$/, '').trim()])),
 				(pills) => pills.length === 1 && pills[0][1] === 'work' && /field/.test(pills[0][0])
 			);
+		}, AT_REST);
+	});
+});
+
+// da-uuzu6, vividn, 2026-11-04: «I want this now section to show the last
+// second essentially so immediately after you tap and state change, the new
+// change sweeps in from the right for a second. Likewise occur dots start on
+// the right hand side and sweep over over a second».
+describe('the now strip is the last second', () => {
+	/** `field`'s button's fill, as the strip paints it. */
+	const fillOf = (page, field) => page.locator(`${ROOM} [data-field="${field}"]`).evaluate((b) => getComputedStyle(b).backgroundColor);
+	/** `field`'s colour as `fields --json` resolves it, as a computed `fill` reads. */
+	const colorOf = async (app, field) => {
+		const hex = JSON.parse((await app.runLine('fields --json')).stdout).find((f) => f.field === field).color;
+		return `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+	};
+	/** How much of the strip `field` holds in `fill`, from its right edge, once it is `want` px within `slack`. */
+	const sweep = async (page, field, fill, want, slack = 3) =>
+		until(
+			async () => (await drawn(page, field)).filter((m) => m.kind === 'rect' && m.fill === fill),
+			(marks) => marks.some((m) => Math.abs(m.right - m.of) <= 0.5 && Math.abs(m.right - m.left - want) <= slack)
+		);
+
+	test('a tap that starts a block sweeps its colour in from the right edge over a second, then the row is solid', async () => {
+		await withApp(async (app) => {
+			await seeded(app, SEED);
+			const { page } = app;
+			await page.locator(`${ROOM} [data-field="work"]`).click();
+			const fill = await colorOf(app, 'work');
+			const of = (await page.locator(`${ROOM} svg.now-strip`).boundingBox()).width;
+			// At once: at the right edge, and no wider than the moments since the tap.
+			await sweep(page, 'work', fill, 0);
+			await app.clock.forward(500);
+			await sweep(page, 'work', fill, of / 2);
+			await app.clock.forward(500);
+			await sweep(page, 'work', fill, of, 0.5);
+			await app.clock.forward(5000);
+			await sweep(page, 'work', fill, of, 0.5);
+		}, AT_REST);
+	});
+
+	test("a moment's dot enters at the right edge and crosses the strip in a second", async () => {
+		await withApp(async (app) => {
+			await seeded(app, SEED);
+			const { page } = app;
+			await page.locator(`${ROOM} [data-field="coffee"]`).click();
+			const dot = () => drawn(page, 'coffee').then((marks) => marks.find((m) => m.kind === 'circle'));
+			await until(dot, (d) => d && Math.abs(d.mid - d.of) <= 3);
+			await app.clock.forward(500);
+			await until(dot, (d) => d && Math.abs(d.mid - d.of / 2) <= 3);
+			await app.clock.forward(600);
+			await until(dot, (d) => d === undefined);
+		}, AT_REST);
+	});
+
+	/** Hold the database's files, so a command waits until `release`. */
+	const holdFiles = (page) =>
+		page.evaluate(() => new Promise((granted) => navigator.locks.request('datum-cli-files', () => (granted(), new Promise((release) => (window.release = release))))));
+	const release = (page) => page.evaluate(() => window.release());
+	/** The strip's tap marks and the layer's dots of `field`. */
+	const dots = (page, field) =>
+		page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => ({
+			taps: svg.querySelectorAll(`.pending[data-mark="${field}"]`).length,
+			layer: svg.querySelectorAll(`.point-bg[data-mark="${field}"]`).length
+		}), field);
+
+	// vremya on #1694: drawn exactly over the layer's own, a mark never dropped shows nowhere.
+	test("a written tap's mark goes once the layer holding the write is drawn: one dot, not two", async () => {
+		await withApp(async (app) => {
+			await seeded(app, SEED);
+			const { page } = app;
+			// The seed's coffee is laid too, out of the second's view: the tap's is one more.
+			const before = await dots(page, 'coffee');
+			await holdFiles(page);
+			await page.locator(`${ROOM} [data-field="coffee"]`).click();
+			const atTap = await dots(page, 'coffee');
+			await release(page);
+			assert.deepEqual(atTap, { taps: 1, layer: before.layer }, 'the tap drew its dot before the database answered');
+			await until(() => dots(page, 'coffee'), (d) => d.layer === before.layer + 1 && d.taps === 0);
+		}, AT_REST);
+	});
+
+	// vividn, 2026-11-04 22:40: «it should literally just draw the same now as nowview does … right now hidden fields are shown and multi state is not rendered».
+	test('the strip draws as the nowview does: a field in two states in its stripes, a field hidden from the pictures not at all', async () => {
+		await withApp(async (app) => {
+			await seeded(app, [at('secret', 'start', 0.5, { render: false }), at('cat', 'occur', 0.5, { symbol: '★' }), ...SEED, 'switch mood good,bad', 'start secret']);
+			const { page } = app;
+			await page.locator(`${ROOM} [data-now-field="secret"]`).waitFor({ state: 'attached' });
+			const strip = () =>
+				page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => ({
+					secret: svg.querySelectorAll('[data-mark="secret"]').length,
+					mood: [...svg.querySelectorAll('rect.block[data-mark="mood"]')].map((b) => {
+						const id = /^url\(#(.+)\)$/.exec(b.getAttribute('fill') ?? '')?.[1];
+						return !!id && svg.querySelector(`defs > pattern[id="${id}"]`) !== null;
+					})
+				}));
+			await until(strip, (s) => s.mood.length > 0 && s.mood.every(Boolean));
+			assert.equal((await strip()).secret, 0, 'a field hidden from the pictures is on the strip');
+			// A moment's symbol is its mark, as the nowview draws it, and it enters at the right edge.
+			await page.locator(`${ROOM} [data-field="cat"]`).click();
+			await until(
+				() =>
+					page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => {
+						const box = svg.getBoundingClientRect();
+						return [...svg.querySelectorAll('g[data-mark="cat"] text')].map((t) => [t.textContent, Math.abs(t.getBoundingClientRect().left + t.getBoundingClientRect().width / 2 - box.right) <= 3]);
+					}),
+				(marks) => marks.some(([text, atEdge]) => text === '★' && atEdge)
+			);
+		}, AT_REST);
+	});
+
+	test('a refused press takes its sweep back: the row is as it was', async () => {
+		await withApp(async (app) => {
+			await seeded(app, SEED);
+			const { page } = app;
+			// work on since three seconds ago, and a moment of it now, which an end now collides with.
+			const now = app.clock.at();
+			await app.clock.set(now - 3000);
+			await logs(app, 'start work');
+			await app.clock.set(now);
+			await logs(app, 'moment work');
+			const fill = await fillOf(page, 'work');
+			const whole = (marks) => marks.some((m) => m.fill === fill && m.left <= 0.5 && m.right >= m.of - 0.5);
+			await until(() => drawn(page, 'work'), whole);
+			// The database's files held, so the end waits: its ground is drawn at the tap, before any answer.
+			await holdFiles(page);
+			await page.locator(`${ROOM} [data-field="work"]`).click();
+			const atTap = await drawn(page, 'work');
+			await release(page);
+			assert.ok(atTap.some((m) => m.ground), 'no sweep at the tap');
+			await until(() => drawn(page, 'work'), (marks) => !marks.some((m) => m.ground) && whole(marks));
+			assert.equal((await app.runLine('get work::state')).stdout.trim(), 'true', 'the end was refused');
 		}, AT_REST);
 	});
 });

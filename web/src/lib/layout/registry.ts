@@ -515,7 +515,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		]),
 		component: FieldsPane,
 		help: [
-			'Every field you log, as a button, at the height the pictures draw it: on the left what is on now, then the fields that are on inside a dotted line, then the rest, last used first, which a swipe pans.',
+			'Every field you log, as a button, at the height the pictures draw it: on the left the last second, a tap sweeping in from the right, then the fields that are on inside a dotted line, then the rest, last used first, which a swipe pans.',
 			'A tap logs a moment, or starts or ends a block, at once; a switch, or a field with keys to type, opens to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
 			'A state logs at once. In 2-click mode every field opens, a state is chosen, and the command at the bottom logs it. A long press, on a field or a state, does what a tap does in the other mode, and whatever puts a field pill on the bar opens that field.',
 			'Under a pending verb a tap logs at once; a hold opens the field.'

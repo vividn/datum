@@ -388,10 +388,16 @@ globalThis.addEventListener?.('pointerdown', () => (key = undefined), true);
  * that awaits first runs on the wall clock, as before (da-szzgy).
  */
 function gesture(): string[] {
+	const at = gestureAt();
+	return at === undefined ? [] : [`${FROZEN_AT}${at}`];
+}
+
+/** The instant of the gesture being dispatched, which `gesture` freezes the CLI's clock at; none outside one. */
+export function gestureAt(): number | undefined {
 	const event = (globalThis as { event?: Event }).event;
-	if (!event?.isTrusted) return [];
+	if (!event?.isTrusted) return undefined;
 	const age = Math.max(0, performance.now() - (event instanceof MouseEvent && event.detail > 0 ? event : (key ?? event)).timeStamp);
-	return [`${FROZEN_AT}${Math.round(Date.now() - age)}`];
+	return Math.round(Date.now() - age);
 }
 
 /** With no CLI widget mounted: run it, record it, and bump the epoch here. */

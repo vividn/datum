@@ -15,9 +15,11 @@
 
 	AT REST (da-lw7ue) the fields stand in ROWS locked to the pictures'
 	height, each in the row its band's middle falls in (`atRest`): on the
-	left a STRIP, the current state of each active field drawn on its band as
-	the nowview's now section draws it, a tap there putting that field's pill
-	on the bar; then the ACTIVE SECTION, every field in an active state
+	left a STRIP, the last second of today's data on each field's band, now at
+	its right edge and sliding with the clock, so a change sweeps in from the
+	right and a dot crosses it in a second (NowStrip.svelte, da-uuzu6); a tap
+	adds its own mark there before the database answers (`nowPending`), and a
+	tap on an active field's band puts that field's pill on the bar; then the ACTIVE SECTION, every field in an active state
 	inside a dotted outline that steps with each row; then each row's other
 	fields, the most recently used first (`rowsUnder`, the order taken on
 	load and on coming back to the foreground). A drag pans those sideways,
@@ -107,6 +109,8 @@
 	import { flushSync, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
 	import LengthArrow from './LengthArrow.svelte';
+	import NowStrip from './NowStrip.svelte';
+	import type { Mark } from './nowStrip.js';
 	import { CLICK_SLOP } from './inspect.js';
 	import { TAU } from './detent.js';
 	import { speedOver, tracked, type Sample } from './grip.js';
@@ -227,6 +231,10 @@
 		 * `right` is the mirror, recency running leftward and panning left.
 		 */
 		side = 'left',
+		/** Today's data layer, which the now strip draws the last second of (da-uuzu6). */
+		nowDoc = null,
+		/** What the taps added to the strip that the layer does not hold yet. */
+		nowPending = [],
 		/** Run a press's line. */
 		onrun,
 		/** Put a press's line in the command line, unrun, for the rest to be typed. */
@@ -244,6 +252,8 @@
 		clicks?: 'one' | 'two';
 		tapLogs?: boolean;
 		side?: 'left' | 'right';
+		nowDoc?: Document | null;
+		nowPending?: Mark[];
 		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
@@ -398,7 +408,7 @@
 	});
 	/** The strip and the active section stay while the section is under half the widget; past it the section pans too. */
 	const frozen = $derived(shelves.section <= paneW / 2);
-	/** Each active field's current state, on its band, as the nowview's now section draws it. */
+	/** Each active field's band on the strip, a tap's target over its picture. */
 	const nowBands = $derived(fields.filter((b) => b.active && !b.ignored));
 	// The other side pans the other way: a pan kept from the last starts again at the strip.
 	$effect.pre(() => {
@@ -1243,6 +1253,7 @@
 					<!-- At rest (da-lw7ue): the strip, the active section, then each row by recency. -->
 					<div class="frozen" class:right={side === 'right'} style:width="{frozen ? shelves.section : strip}px"></div>
 					<div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
+						<NowStrip doc={nowDoc} pending={nowPending} width={strip} height={paneH} mirrored={side === 'right'} />
 						{#each nowBands as band (band.field)}
 							<button
 								class="now-state"
@@ -1250,7 +1261,6 @@
 								tabindex="-1"
 								style:top="{band.y * paneH}px"
 								style:height="{Math.max(3, band.height * paneH)}px"
-								style:background={lookOf(band, switchLabel).fill}
 								{disabled}
 								title="{band.field}{typeof band.current === 'string' ? ` · ${band.current}` : ''} · tap to select the field"
 								aria-label="select {band.field}"
@@ -1729,13 +1739,14 @@
 		border-right: 1px solid var(--rule);
 	}
 
+	/* A band's hit area over the strip's picture (NowStrip.svelte): a tap selects the field. */
 	.now-state {
 		position: absolute;
 		left: 0;
-		right: 3px;
+		right: 0;
 		padding: 0;
 		border: none;
-		border-radius: 0 2px 2px 0;
+		background: none;
 		cursor: pointer;
 	}
 
@@ -1749,12 +1760,6 @@
 	.present.right {
 		border-right: none;
 		border-left: 1px solid var(--rule);
-	}
-
-	.present.right .now-state {
-		left: 3px;
-		right: 0;
-		border-radius: 2px 0 0 2px;
 	}
 
 	.dotted {
