@@ -13,7 +13,8 @@
 //
 // - PUSH on every write to the database, this tab's or any other's
 //   (`onAnyChange`): a member whose vector is behind ours is dialed, one
-//   session per member at a time, a write during a session making one more.
+//   session per member at a time, dialed or served, a write during a session
+//   making one more.
 //   What a session writes itself — the handshake, the ops it applies, how it
 //   ended (`record-session`) — is not a write to push on: that dialed again
 //   a peer whose dial was still open (da-df6cb). Ops that arrived are pushed
@@ -299,6 +300,8 @@ class Leader {
 	/** Per peer: who waits for this endpoint to stop serving it. */
 	unserved = new Map<string, (() => void)[]>();
 	again = new Set<string>();
+	/** A push that found the peer's own session served here: it goes again once that session ends (da-398aw). */
+	held = new Set<string>();
 	seen = new Map<string, number>();
 	errors = new Map<string, string>();
 	applying?: { done: number; of: number };
@@ -373,7 +376,13 @@ class Leader {
 			do {
 				this.pushAgain = false;
 				const vector = all ? '' : (await must(['--db', this.db, ...vectorArgv()])).trim();
-				for (const p of this.peers) if (all || this.inStep.get(p.endpoint) !== vector) void this.dial(p);
+				for (const p of this.peers) {
+					if (!all && this.inStep.get(p.endpoint) === vector) continue;
+					// Its vector is known again only as the session ends: a read
+					// that writes a cache (`dayview --digests`) dialed it (da-398aw).
+					if (this.serves.has(p.endpoint)) this.held.add(p.endpoint);
+					else void this.dial(p);
+				}
 				all = false;
 			} while (this.pushAgain);
 		} finally {
@@ -465,6 +474,12 @@ class Leader {
 	}
 
 	served(e: Extract<SyncEvent, { served: string }>): void {
+		// `serving` said it ended, a `sync diff` too; the push reads the
+		// vector before it compares, after `done` below has kept this one's.
+		if (this.held.size) {
+			this.held.clear();
+			void this.push().catch(() => {});
+		}
 		// A `sync diff` this copy answered moved nothing, and is no session (da-n0ruf).
 		if ('report' in e && e.report.diffed) return;
 		if ('report' in e) {

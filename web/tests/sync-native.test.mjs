@@ -296,8 +296,10 @@ describe('datum.day and a native copy', () => {
 
 	// A session the peer dialed and the page serves is as open as one the
 	// page dialed: the peer is online while it lasts (da-eglw0). Its verify
-	// held, it lasts; with the pull's tick taken away and nothing written
-	// here, the page dials nothing, so the session is the served one.
+	// held, it lasts; with the pull's tick taken away, the page dials
+	// nothing, so the session is the served one. A write here meanwhile
+	// pushes to no peer whose session the page serves: its vector is known
+	// only once that session ends (da-398aw).
 	test('a peer whose session the page serves is online while it lasts (da-eglw0)', async () => {
 		const native = await nativeCopy(relay);
 		try {
@@ -311,6 +313,11 @@ describe('datum.day and a native copy', () => {
 					await until(() => app.paneText('tail'), (text) => text.includes('arrived'));
 					const reach = await app.page.evaluate(() => Object.values(window.datum.sync.states().datum.peers).map((p) => p.reach));
 					assert.deepEqual(reach, ['online']);
+					const { push } = await app.page.evaluate(() => window.__pushes);
+					await app.run(['occur', 'meanwhile']);
+					await until(() => app.page.evaluate(() => window.__pushes.push), (n) => n > push);
+					// A dial follows the push's vector read within milliseconds.
+					await new Promise((r) => setTimeout(r, 1000));
 					assert.equal(await app.page.evaluate(() => window.__pushes.dial), dial, 'the page dialed: not a served session');
 				},
 				{ prepare: async (context) => (await relayed(relay)(context), context.addInitScript(countPushes)) }
