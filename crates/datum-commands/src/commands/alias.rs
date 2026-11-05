@@ -87,14 +87,21 @@ fn shell_names<'a>(names: impl Iterator<Item = &'a String>) -> Vec<&'a str> {
     names
 }
 
+/// The log commands the loop makes a shell alias of beside the alias
+/// names: the words of the vocabulary, not their old aliases (da-klera).
+/// `datum help alias` names the same. A new log command goes here too: the
+/// words are `COMMAND_SYNONYMS`' in datum-parse's `alias/expand.rs` but
+/// `card`, datum.day's, and with `allday`, a command of its own.
+const SHELL_COMMANDS: &str = "moment on off change record remark allday";
+
 /// The loop for `shell`'s rc file: a shell alias `NAME='datum NAME'` for
-/// each alias name and log verb, unless the shell already finds something
+/// each alias name and log command, unless the shell already finds something
 /// by that name (`find` stays `/usr/bin/find`). Only names come from
 /// datum at a shell's start, never code (vividn, 2026-10-21).
 fn rc_loop(db_name: Option<&str>) -> Result<String> {
     let datum = datum_word(db_name)?;
     Ok(format!(
-        "{} occur start stop switch on off card; do\n  \
+        "{} {SHELL_COMMANDS}; do\n  \
          command -v \"$__datum_a\" >/dev/null 2>&1 || alias \"$__datum_a={datum} $__datum_a\"\n\
          done\n\
          {LOOP_END}",
@@ -105,8 +112,8 @@ fn rc_loop(db_name: Option<&str>) -> Result<String> {
 /// The loop's last line, which every build has printed.
 const LOOP_END: &str = "unset __datum_a\n";
 
-/// The loop's first line up to its verbs, which every four-line build has
-/// printed for `datum`: the verbs after it change (da-ik88w).
+/// The loop's first line up to its commands, which every four-line build
+/// has printed for `datum`: the commands after it change (da-ik88w).
 fn loop_head(datum: &str) -> String {
     format!("for __datum_a in $({datum} alias list --names 2>/dev/null)")
 }

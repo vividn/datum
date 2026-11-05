@@ -31,7 +31,7 @@ fn install_prints_the_loop_and_writes_nothing() {
             assert_eq!(
                 String::from_utf8(out.stdout).unwrap(),
                 format!(
-                    "for __datum_a in $({datum} alias list --names 2>/dev/null) occur start stop switch on off card; do\n  \
+                    "for __datum_a in $({datum} alias list --names 2>/dev/null) moment on off change record remark allday; do\n  \
                      command -v \"$__datum_a\" >/dev/null 2>&1 || alias \"$__datum_a={datum} $__datum_a\"\n\
                      done\n\
                      unset __datum_a\n"
@@ -103,7 +103,7 @@ fn an_installed_shell_runs_aliases_by_name() {
         let Ok(out) = sh
             .args([
                 "-ic",
-                "asleep; occur coffee; type find; echo \"[${__datum_a-unset}]\"; datum_no_such_word; true",
+                "asleep; moment coffee; type find; echo \"[${__datum_a-unset}]\"; datum_no_such_word; true",
             ])
             .output()
         else {
@@ -129,7 +129,7 @@ fn an_installed_shell_runs_aliases_by_name() {
         datum(&["alias", "uninstall", shell]);
         assert_eq!(std::fs::read_to_string(&rc).unwrap(), mine, "{shell}");
     }
-    // Each shell that ran ran `asleep` and the verb `occur` once, and
+    // Each shell that ran ran `asleep` and the command `moment` once, and
     // nothing logged under `found`.
     let tail = datum(&["tail", "-n", "20"]);
     assert_eq!(tail.matches("sleep").count(), ran, "{tail}");
@@ -239,8 +239,9 @@ fn a_shell_before_the_first_write_starts_quietly() {
     }
 }
 
-/// `uninstall` takes out a loop whatever verbs the build that printed it
-/// had (#1012's lacked `on off card`), the first build's one-line loop
+/// `uninstall` takes out a loop whatever commands the build that printed
+/// it had (#1012's lacked `on off card`, and the next named the old words,
+/// da-klera), the first build's one-line loop
 /// too, and only its own --db's; a head without its `unset` line three
 /// below is left, with what follows it (da-ik88w).
 #[test]
@@ -283,9 +284,10 @@ fn uninstall_takes_an_older_builds_loop() {
     };
     let rc = home.join(".zshrc");
     let read = || std::fs::read_to_string(&rc).unwrap();
-    let (old, new) = (
+    let (old, words, new) = (
         "occur start stop switch",
         "occur start stop switch on off card",
+        "moment on off change record remark allday",
     );
     let other = format!(
         "{}{}",
@@ -295,9 +297,10 @@ fn uninstall_takes_an_older_builds_loop() {
     std::fs::write(
         &rc,
         format!(
-            "# mine\n{}{other}{}export X=1\n{}",
+            "# mine\n{}{other}{}export X=1\n{}{}",
             four("datum", old),
             one("'datum '"),
+            four("datum", words),
             four("datum", new)
         ),
     )
@@ -320,4 +323,62 @@ fn uninstall_takes_an_older_builds_loop() {
     assert!(stdout.starts_with("not in"), "{stdout}");
     assert!(stderr.contains(".zshrc:2: "), "{stderr}");
     assert_eq!(read(), kept);
+}
+
+/// `datum help alias` and docs/aliases.md name the commands the loop
+/// makes, the same ones in the same order (da-klera).
+#[test]
+fn the_help_names_the_loops_commands() {
+    let tmp = tempfile::tempdir().expect("create tmpdir");
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(args)
+            .env("HOME", tmp.path())
+            .env("DATUM_HOME", tmp.path().join("data"))
+            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+            .env("NO_COLOR", "1")
+            .output()
+            .expect("spawn datum");
+        assert!(out.status.success(), "datum {args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let block = run(&["alias", "install", "zsh"]);
+    let looped: Vec<&str> = block
+        .split_once("2>/dev/null) ")
+        .and_then(|(_, rest)| rest.split_once("; do"))
+        .expect("the loop's head")
+        .0
+        .split(' ')
+        .collect();
+    assert_eq!(
+        looped,
+        ["moment", "on", "off", "change", "record", "remark", "allday"]
+    );
+    // The words between `start` and `end`, a list `a, b and c`.
+    let named = |text: &str, start: &str, end: &str| -> Vec<String> {
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let list = text
+            .split_once(start)
+            .and_then(|(_, rest)| rest.split_once(end))
+            .unwrap_or_else(|| panic!("no {start:?} … {end:?} in {text}"))
+            .0
+            .replace('`', "")
+            .replace(" and ", ", ");
+        list.split(", ").map(str::to_string).collect()
+    };
+    let help = run(&["help", "alias"]);
+    assert_eq!(
+        named(&help, "run your aliases, and ", ", by bare name"),
+        looped,
+        "datum help alias"
+    );
+    let docs = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/aliases.md"),
+    )
+    .unwrap();
+    assert_eq!(
+        named(&docs, "runs each alias, and ", ", by its bare name"),
+        looped,
+        "docs/aliases.md"
+    );
 }
