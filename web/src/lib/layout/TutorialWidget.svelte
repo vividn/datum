@@ -51,10 +51,10 @@
 
 	/** A game's pane: its title and what its shape of data is, or its fields; neither, the game itself. */
 	const part = $derived(lesson.fields.length ? settings.part : undefined);
-	/** The game's shape of data, named as the setup widget names it: a new game names its shape here too. */
-	const shape = $derived(VERBS.find((v) => v.verb === { moment: 'occur', 'on-off': 'start', switch: 'switch' }[lesson.name]));
 	/** A lesson as vividn names it: the word its title leads with («on/off»), or the whole of a title with none. */
 	const label = (l: Lesson): string => l.title.split(':')[0];
+	/** The game's field kind, named as the setup widget names it, by the word its title leads with. */
+	const shape = $derived(VERBS.find((v) => v.what === label(lesson)));
 
 	let resetting = $state(false);
 	/** Why the last reset failed, said under its button: a refusal before any command runs shows nowhere else (da-uzyih.4913). */
@@ -116,10 +116,10 @@
 					something that happens or is measured at a single point in time, a dot on the timeline. Each one logged is an
 					<b>entry</b>, a timestamped log of the field.
 				{:else if lesson.name === 'on-off'}
-					something that happens for a while and then stops, a block on the timeline. Its <b>state</b> is true or false, and
+					something that happens for a while and then stops, a period on the timeline. Its <b>state</b> is true or false, and
 					lasts until an entry changes it.
 				{:else}
-					something that passes through phases or modes, a block that changes color on the timeline. Each <b>state</b> is
+					something that passes through phases or modes, periods that change color on the timeline. Each <b>state</b> is
 					one you name, and lasts until the next.
 				{/if}
 			</p>
@@ -136,7 +136,7 @@
 				and analyze data on your life.
 			</p>
 			<p>
-				To leave the tutorial, use the menu at the bottom to switch databases
+				To leave the tutorial, use the menu at the bottom to go to another database
 				(<button type="button" class="where" onclick={where}>where?</button>): tap its name, <b>tutorial</b>, and
 				choose <b>datum</b>, your own. You can also make new databases as you like. Come back the same way; what you did here is kept.
 			</p>

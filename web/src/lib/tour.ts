@@ -32,13 +32,13 @@ export const tour = writable<Stop[]>([]);
 const KEY = 'datum.tour';
 
 /**
- * What a tap on the button does, for each shape of field: said, not asked
+ * What a tap on the button does, for each kind of field: said, not asked
  * for, since a tap in the tour only moves it on (da-q8koz).
  */
 const TAP: Record<FieldButton['shape']['kind'], (f: string) => string> = {
-	point: (f) => `A tap on ${f} opens it: set its time and data, then log it.`,
-	state: (f) => `A tap on ${f} opens it: set its time and data, then start or end it.`,
-	states: (f) => `A tap on ${f} opens it: choose what it is now, its time and data.`,
+	moment: (f) => `A tap on ${f} opens it: set its time and data, then log it.`,
+	'on/off': (f) => `A tap on ${f} opens it: set its time and data, then turn it on or off.`,
+	change: (f) => `A tap on ${f} opens it: choose what it is now, its time and data.`,
 	record: (f) => `A tap on ${f} starts a ${f} entry in the bar below.`
 };
 
@@ -90,7 +90,7 @@ export async function begin(field: string): Promise<void> {
 	try {
 		localStorage.setItem(KEY, 'seen');
 	} catch {}
-	const shape = get(fields).find((f) => f.field === field)?.shape.kind ?? 'point';
+	const shape = get(fields).find((f) => f.field === field)?.shape.kind ?? 'moment';
 	tour.set(
 		[
 			{ at: buttonOf(field), say: TAP[shape](field) },

@@ -145,7 +145,7 @@ describe('the ranking orders the bar without hiding anything', () => {
 	const bar = (active = []) =>
 		['coffee', 'mood', 'run', 'sleep'].map((field) => ({
 			field,
-			shape: { kind: 'point' },
+			shape: { kind: 'moment' },
 			active: active.includes(field)
 		}));
 	const fields = bar();

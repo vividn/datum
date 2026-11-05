@@ -233,7 +233,7 @@ describe('the widget and the bar are two views of one command line', () => {
 
 describe('a focus nobody clicked', () => {
 	/**
-	 * Press a RECORD field, which prefills `add <field> ` and runs nothing.
+	 * Press a RECORD field, which prefills `record <field> ` and runs nothing.
 	 *
 	 * The prefill this measures used to come from the hold panel's `note`;
 	 * da-e78x6 removed that panel, and a record's press is the same door on
@@ -255,13 +255,13 @@ describe('a focus nobody clicked', () => {
 			await page.waitForFunction(
 				(w) => {
 					const box = document.querySelector(w);
-					return box.value === 'add coffee ' && document.activeElement === box;
+					return box.value === 'record coffee ' && document.activeElement === box;
 				},
 				WIDGET
 			);
 			// One buffer still: the bar has the line too, it just does not
 			// have the caret.
-			assert.equal(await valueOf(page, BAR), 'add coffee ');
+			assert.equal(await valueOf(page, BAR), 'record coffee ');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -277,7 +277,7 @@ describe('a focus nobody clicked', () => {
 			await page.waitForFunction(
 				(bar) => {
 					const box = document.querySelector(bar);
-					return box.value === 'add coffee ' && document.activeElement === box;
+					return box.value === 'record coffee ' && document.activeElement === box;
 				},
 				BAR
 			);

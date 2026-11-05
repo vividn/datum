@@ -38,7 +38,7 @@ import { browser } from '$app/env';
 import { derived, get, writable } from 'svelte/store';
 import { refsArgv } from './calls.js';
 import { onAnyChange } from './changes.js';
-import { hidsOf, pendingVerb as verbOf, roleOf, type Verb } from './commands.js';
+import { hidsOf, pendingCommand, roleOf, type LogCommand } from './commands.js';
 import { currentDb } from './database.js';
 import { parseEcho } from './echo.js';
 import { pressWithPills } from './layout/engine.js';
@@ -533,7 +533,7 @@ function takeKeptLine(): string {
  * every input widget (da-3zon).
  *
  * `pressWithPills` is the rest of it: the pills go into the argv after the
- * verb, the line is echoed as typed, the receipt lands on `last` and in
+ * command, the line is echoed as typed, the receipt lands on `last` and in
  * the shared history, and a success spends the unlocked pills. Clearing
  * the box is the caller's, because the box is `text` and both views empty
  * together the moment it is set.
@@ -573,7 +573,7 @@ export function registerLine(el: HTMLInputElement, widget: boolean): () => void 
  * work, and a phone's on-screen keyboard stays down — a tap on `occur` is
  * far more often followed by a tap on a field than by typing. The box
  * gives the keyboard back itself (`Prompt.svelte`): on a tap on it, on
- * blur, and whenever the line empties — run, cleared, or a verb spent.
+ * blur, and whenever the line empties — run, cleared, or a pending command spent.
  */
 export const focusLine = (keyboard = true): void => {
 	// A widget in a tab behind is mounted too (da-rjmg), and inert: it can
@@ -594,32 +594,32 @@ export const focusLine = (keyboard = true): void => {
 export const prefill = writable<{ line: string; keyboard: boolean } | null>(null);
 
 /**
- * The verb the command line is PENDING (da-ltux) — the fields widget
- * filters itself to what that verb can be spent on.
+ * The command the line is PENDING (da-ltux) — the fields widget
+ * filters itself to what that command can be spent on.
  *
  * Derived from `text` and stored nowhere, so a tap on the commands
- * widget's `occur` and a person typing `occur` are the same event: both
+ * widget's `moment` and a person typing `moment` are the same event: both
  * put the word in the one buffer, and this reads it back. A second store
  * a tap had to remember to set is a second store to fall out of step.
  */
-export const pending = derived(text, verbOf);
+export const pending = derived(text, pendingCommand);
 
 /**
- * Spend the pending verb: the word a tap put in the box has been used, so
+ * Spend the pending command: the word a tap put in the box has been used, so
  * the box is empty again and the fields widget is whole (C1).
  *
  * Only when the line is that word ALONE. A box with more in it is a line
  * the reader is in the middle of typing, and a press must never take that
  * away (`ghost.test.mjs`: «a line typed while a command is in flight is
- * not overwritten, by the command or by a press»). The verb stays pending
+ * not overwritten, by the command or by a press»). The command stays pending
  * while the box still says it, which is the same rule read the same way.
  */
 export const clearPending = (): void => {
 	const line = get(text).trim();
-	if (verbOf(line) !== null && !/\s/.test(line)) text.set('');
+	if (pendingCommand(line) !== null && !/\s/.test(line)) text.set('');
 };
 
-export type { Verb };
+export type { LogCommand };
 
 export interface Ghost {
 	/** The command, as the scrollback echoes it. */

@@ -23,10 +23,11 @@ datum.day shows each kind with its name and glyph; the command is what gets type
 |---|---|---|---|
 | ● moment | `moment` | a point in time | `moment coffee` |
 | █ on/off | `on`, `off` | something that lasts a while | `on sleep`, later `off sleep` |
-| ▞ switch | `switch` | a state that holds until it changes | `switch place office` |
-| ¢ card | `card` | a record with no time, found by an id | `card book -K title Dune "Frank Herbert"` |
+| ▞ change | `change` | a state that holds until it changes | `change place office` |
+| ¢ record | `record` | an entry with no time, found by an id | `record book -K title Dune "Frank Herbert"` |
 
-(`on`, `off` and `card` are also `start`, `stop` and `add`.) A field can carry **keys**, named values on each entry:
+(The old words still run: `moment` is also `occur`, `on` and `off` are `start` and `stop`, `change` is `switch`,
+`record` is `add`.) A field can carry **keys**, named values on each entry:
 `mood` with a `rating`, `water` with `ml`, `pill` with `medicine` and `doseMg`. Any word is a field the moment it is
 logged; `setup` fixes a field's kind, keys and states, and after it the field's name alone logs it: `coffee`.
 
@@ -38,15 +39,15 @@ twenty they won't.
 1. **What do they want to notice, and why?** Sleep, mood, energy, caffeine, symptoms, medication, habits, where
    their time goes. The why decides what is worth recording, and what you will look for later.
 2. **For each thing, which kind?** Does it happen at a moment, or last a while (on/off)? Are they
-   always in exactly one of a few states, like home, office, café (switch)? Is it a thing to remember rather than an
-   event, like a book (card)?
+   always in exactly one of a few states, like home, office, café (change)? Is it a thing to remember rather than an
+   event, like a book (record)?
 3. **What details belong on each entry?** A rating and its scale (say the scale out loud, «1 to 10»), an amount and
    its unit, a name. These are keys. A key is required unless set up with `=` (`-k note=`); a required key left
    out is refused. **Several words at once**, like the feelings of an evening, go to a remainder key: with
    `-R words`, `mood 6 tired anxious` keeps the rating and both words. Each entry can hold as many as they name. One
    word is stored as a string, several as a list. `-S` joins them into one string instead, for a phrase.
 4. **How will they log, and how often?** On datum.day, mostly by tapping (*Logging on datum.day*, below). For
-   typing, short is everything: the field's name alone logs it, a state's name alone switches to it, and a word of
+   typing, short is everything: the field's name alone logs it, a state's name alone changes to it, and a word of
    their own can stand for a longer line (`alias set c "moment coffee"`).
 5. **Anything from before today?** Any entry can take a time in the past.
 
@@ -85,10 +86,10 @@ datum.day as a database of its own instead of joining theirs.
 **Set up their fields and log for them:**
 
 ```bash
-datum --db alex setup coffee --verb moment
-datum --db alex setup sleep --verb on
-datum --db alex setup mood --verb moment -k rating -R words
-datum --db alex setup place --verb switch --states home,office,café
+datum --db alex setup coffee --kind moment
+datum --db alex setup sleep --kind on/off
+datum --db alex setup mood --kind moment -k rating -R words
+datum --db alex setup place --kind change --states home,office,café
 datum --db alex on sleep -y -t 23:40      # they went to bed at 23:40 yesterday
 datum --db alex off sleep -t 07:15        # and got up at 07:15
 datum --db alex on sleep -d 2026-10-14 -t 00:30   # older notes: -d names the day, -t the time on it
@@ -127,10 +128,10 @@ page. A line that fails stops the run: it stays in the prompt with the lines aft
 once it is fixed, Enter runs it and then the rest.
 
 ```
-setup coffee --verb moment
-setup sleep --verb on
-setup mood --verb moment -k rating -R words
-setup place --verb switch --states home,office,café
+setup coffee --kind moment
+setup sleep --kind on/off
+setup mood --kind moment -k rating -R words
+setup place --kind change --states home,office,café
 on sleep -y -t 23:40
 off sleep -t 07:15
 ```
@@ -145,7 +146,7 @@ alternative. The **collection** tab has what they need: a **collect** pane with 
 (the minutes around now). The **dayview** (the day as a strip) has a tab of its own, and on a desktop is on collection too.
 
 - **Now:** tap the field's button. A moment is logged at once. An on/off field turns on, and the next tap turns
-  it off. A switch field shows its states (home, office, café), and a tap on one switches to it.
+  it off. A change field shows its states (home, office, café), and a tap on one changes to it.
 - **With values:** a field with a required key puts it in the prompt instead (`moment mood `), waiting for its
   values: they type `6 tired anxious` and press Enter.
 - **At another time:** tap that time on the dayview or the nowview first. A time pill appears in the bar (`08:55`
@@ -158,7 +159,7 @@ alternative. The **collection** tab has what they need: a **collect** pane with 
 
 - `-t` gives a time (`-t 07:10`, or `-t -20` for twenty minutes ago), `-y` means yesterday, `-d` a day (`-d -1`, or
   `-d 2026-10-20`). They work on aliases too: `c -t -20`.
-- Each command prints what it wrote: a first line with what it wrote, a new entry by its shape, and the entry's
+- Each command prints what it wrote: a first line with what it wrote, a new entry by its kind, and the entry's
   id in UTC (`ON/OFF 8ykoo sleep:2026-10-20T21:40:00.000Z`), then the same entry in local time (`-1d 23:40:00+2  sleep  on`, a day back).
 - `undo` takes back the last write. `now` shows every field's state, `tail` the latest entries, `help` every
   command (`help setup` for one).
@@ -173,10 +174,10 @@ time: every session starts fresh, so «when did I do that?» and «how long did 
 them instead. What agents track well:
 
 ```bash
-datum --db <your-name> switch activity reviewing      # what you are doing, until you switch
+datum --db <your-name> change activity reviewing      # what you are doing, until it changes
 datum --db <your-name> moment decision choice=merge   # a decision and what you chose
-datum --db <your-name> switch tone steady             # a background mood, if you keep one
-datum --db <your-name> switch activity off            # done; the gap after is honest
+datum --db <your-name> change tone steady             # a background mood, if you keep one
+datum --db <your-name> change activity off            # done; the gap after is honest
 datum --db <your-name> tail activity                  # read it back: times from the record, not a guess
 ```
 

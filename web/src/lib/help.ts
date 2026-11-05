@@ -48,7 +48,7 @@ export const helping = writable(false);
 /** What each kind of pill is, and what it does to the next command, with its own text in it. */
 const PILL_HELP: Record<string, (text: string) => string> = {
 	time: (t) => `${t}: the time cursor. The next command is logged at this time instead of now.`,
-	dur: (t) => `${t}: a span of time. The next start or switch covers it.`,
+	dur: (t) => `${t}: a length of time. The next on or change covers it.`,
 	hid: (t) => `${t}: the selected entries. The next command acts on them: get, delete, retime…`,
 	field: (t) =>
 		`${t}: the field in focus. The widgets narrow to it, and the next command names it.`

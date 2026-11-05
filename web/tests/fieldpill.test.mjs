@@ -469,7 +469,7 @@ describe('what narrows to it', () => {
 			for (const name of ['get', 'delete', 'update', 'grep'])
 				assert.ok(!under.includes(name), `${name} names no field and was not hidden`);
 			// coffee is an OCCUR field (da-57j14): the other verbs are hidden.
-			for (const name of ['start', 'end', 'switch', 'add'])
+			for (const name of ['on', 'off', 'change', 'record'])
 				assert.ok(!under.includes(name), `${name} does not fit a moment field and was not hidden`);
 			// The order is the widget's flat one; the filter only removes.
 			assert.deepEqual(under, COMMANDS.map((c) => c.name).filter((name) => under.includes(name)));
@@ -500,19 +500,19 @@ describe('what narrows to it', () => {
 	// rule the fields widget narrows by under a pending verb. mood is a
 	// switch in a state, so it can be switched or ended, not occurred,
 	// started or added; and taking the pill away brings the five back.
-	test('a switch field leaves switch and end of the verbs, and every verb comes back without it', async () => {
+	test('a change field leaves change and off of the log commands, and every one comes back without it', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			const verbs = async () =>
-				(await commands(page)).filter((name) => ['moment', 'start', 'end', 'switch', 'add'].includes(name));
+				(await commands(page)).filter((name) => ['moment', 'on', 'off', 'change', 'record'].includes(name));
 
 			await hold(page, 'mood');
-			await pane(page, 'cmd').locator('[data-command="switch"]').waitFor();
-			assert.deepEqual(await verbs(), ['end', 'switch']);
+			await pane(page, 'cmd').locator('[data-command="change"]').waitFor();
+			assert.deepEqual(await verbs(), ['off', 'change']);
 
 			await fieldPill(page).locator('button.remove').click();
 			await reach(pane(page, 'cmd').locator('.bar'), 'moment');
-			assert.deepEqual(await verbs(), ['moment', 'start', 'end', 'switch', 'add']);
+			assert.deepEqual(await verbs(), ['moment', 'on', 'off', 'change', 'record']);
 			assert.deepEqual(app.errors, []);
 		});
 	});

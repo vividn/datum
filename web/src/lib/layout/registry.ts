@@ -258,7 +258,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: DayviewWidget,
 		help: [
 			'Your days as bands of color: today at the bottom, the days before it above.',
-			'Tap a moment for a -t time pill; hold, then drag, for a span.',
+			'Tap a moment for a -t time pill; hold, then drag, for a range.',
 			'Hold still, or double tap, to select the entry under your finger. Pinch zooms.'
 		].join('\n'),
 		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
@@ -321,7 +321,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: NowviewWidget,
 		help: [
 			'What each field is doing now, and how it got there; hover or hold a time on the axis to step the window, drag it sideways to scale.',
-			'Tap for a -t time pill; drag to pan; hold and drag, or drag left from now, for a span.',
+			'Tap for a -t time pill; drag to pan; hold and drag, or drag left from now, for a range.',
 			'Hold still, or double tap, to select the entry under your finger.'
 		].join('\n'),
 		// `'0'` is read here too, not only by the migration: a session or a
@@ -392,7 +392,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: CommandPane,
 		help: [
 			'Every datum command as a round button: undo (↷ redoes), then write, read, fields and settings, each opening its commands, and kit, db and sync.',
-			'A verb goes on the command line and filters the fields; a double outline runs at once.',
+			'A log command goes on the command line and filters the fields; a double outline runs at once.',
 			'The pills you have loaded hide the commands that cannot take them.',
 			'A command your pills make ready leads, larger: filled, a tap runs it; dashed, a tap writes it for you to finish.'
 		].join('\n'),
@@ -480,7 +480,7 @@ export const KINDS: Record<string, WidgetKind> = {
 			},
 			{
 				key: 'switchLabel',
-				label: 'a switch is labelled with its',
+				label: 'a change field is labelled with its',
 				type: 'choice',
 				choices: [
 					{ value: 'field', label: 'field' },
@@ -516,9 +516,9 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: FieldsPane,
 		help: [
 			'Every field you log, as a button, at the height the pictures draw it: on the left the last second, a tap sweeping in from the right, then the fields that are on inside a dotted line, then the rest, last used first, which a swipe pans.',
-			'A tap logs a moment, or starts or ends a block, at once; a switch, or a field with keys to type, opens to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
+			'A tap logs a moment, or turns an on/off field on or off, at once; a change field, or a field with keys to type, opens to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
 			'A state logs at once. In 2-click mode every field opens, a state is chosen, and the command at the bottom logs it. A long press, on a field or a state, does what a tap does in the other mode, and whatever puts a field pill on the bar opens that field.',
-			'Under a pending verb a tap logs at once; a hold opens the field.'
+			'Under a pending command a tap logs at once; a hold opens the field.'
 		].join('\n'),
 		props: ({ align, switchLabel, showIgnored, clicks, side }) => ({
 			align: align === 'picture' ? 'picture' : 'rows',
@@ -574,7 +574,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('welcome', 'welcome'),
 		component: WelcomeWidget,
 		help: [
-			'What datum is, in a line; «Tutorial», where fields, their shapes, the input bar and tabs are taught; pointing an AI agent at datum.day; and links to the documentation and the source.',
+			'What datum is, in a line; «Tutorial», where fields, their kinds, the input bar and tabs are taught; pointing an AI agent at datum.day; and links to the documentation and the source.',
 			'The Help place\'s front page is these same words.'
 		].join('\n'),
 		legible: { width: 200, height: 100 }
@@ -629,7 +629,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('setup', 'setup'),
 		component: FieldWidget,
 		help: [
-			'A field is one thing you track. Make one here, or pick one to change: its shape, states, data, aliases and placement.',
+			'A field is one thing you track. Make one here, or pick one to change: its kind, states, data, aliases and placement.',
 			'Save makes a new field with one `setup F --track`, which one Undo takes back; Cancel leaves it unmade.',
 			"A field's changes save in one `setup F`, by Save or by leaving it. Revert drops what is not saved, or steps the spec back to its version before, through its whole history; Redo steps forward again."
 		].join('\n'),
@@ -678,7 +678,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('tutorial', 'tutorial', { lesson: 'intro' }),
 		component: TutorialWidget,
 		help: [
-			'A lesson of the tutorial: its game, in a box with Start, «Reset» once it is over, and its fields; or, over a game\'s nowview, its title and what its shape of data is.',
+			'A lesson of the tutorial: its game, in a box with Start, «Reset» once it is over, and its fields; or, over a game\'s nowview, its title and what its kind of data is.',
 			'The Introduction says how to go back to your own database, datum.'
 		].join('\n'),
 		db: TUTORIAL_DB,

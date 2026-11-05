@@ -211,10 +211,10 @@ const SAMPLES = {
 	layersArgv: [[['2026-10-25', '2026-10-28'], false], [['2026-10-27'], true, true]],
 	nowviewSpec: [['30m'], ['0', new Date().toISOString(), true], ['30m', new Date().toISOString(), false, new Date(Date.now() - 600_000).toISOString()]],
 	pressArgv: [
-		[{ field: 'coffee', shape: { kind: 'point' } }],
-		[{ field: 'walk', shape: { kind: 'state' }, current: true }],
-		[{ field: 'work', shape: { kind: 'state' }, current: false }],
-		[{ field: 'mood', shape: { kind: 'switch' } }, 'happy']
+		[{ field: 'coffee', shape: { kind: 'moment' } }],
+		[{ field: 'walk', shape: { kind: 'on/off' }, current: true }],
+		[{ field: 'work', shape: { kind: 'on/off' }, current: false }],
+		[{ field: 'mood', shape: { kind: 'change' } }, 'happy']
 	],
 	declareArgv: [
 		['tea', { verb: 'occur', color: '', description: '', states: [] }],

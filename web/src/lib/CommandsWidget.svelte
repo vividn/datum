@@ -25,23 +25,23 @@
 	  `delete` with an hid selected deletes it. `fires` in commands.ts
 	  decides, and the same answer (`kindOf`) draws the button with a DOUBLE
 	  outline (`use:act`, #lib/act.ts), so what looks as if it fires is
-	  what fires. So does `moment`, `start` or `end` under a FIELD pill
-	  (da-lxqqz, `fieldVerb`) — unless the field has a key with no
-	  default and the verb is not `end` (da-o4jaa), when the tap writes `moment <field> ` with the first key's
+	  what fires. So does `moment`, `on` or `off` under a FIELD pill
+	  (da-lxqqz, `fieldCommand`) — unless the field has a key with no
+	  default and the command is not `off` (da-o4jaa), when the tap writes `moment <field> ` with the first key's
 	  `key=` (da-31d1d) and opens the keyboard for the keys, and the pill
 	  is spent onto the line.
 	- `help`, in settings (da-vjwid), ARMS the page — `#lib/help.ts`: the
 	  next tap on a command, a widget or a pill is explained instead of
 	  acted on, and a second press on Help is `datum help`, and the answer
 	  opens in a modal. Armed, it is filled and its name asks «on what?».
-	- a VERB puts `<verb> ` on the command line and leaves the caret in
-	  it. That is the whole of pending a verb: the fields widget reads the
+	- a LOG COMMAND puts `<command> ` on the command line and leaves the caret in
+	  it. That is the whole of pending a command: the fields widget reads the
 	  line's first word, so tapping `moment` and typing `moment` reach the
 	  same state through the same buffer.
 	- anything else puts `<name> ` on the line too — a command with an
 	  argument to finish, and nothing to filter. A field or hid pill it
 	  takes goes into the line with it, in its slot, and is spent, when
-	  words are TYPED next (da-8ru0m): `note coffee `, `update <hid> `,
+	  words are TYPED next (da-8ru0m): `remark coffee `, `update <hid> `,
 	  the caret after them. `track` too (da-fg4w4): it writes its word, and
 	  only `setup` opens the setup widget.
 	- a command with SUBCOMMANDS (`db`, `kit`, …) opens them
@@ -69,13 +69,13 @@
 	no submenus (`commandsUnder`, vividn: «When a pill is loaded, there is
 	still a filtering action which then only shows the available commands»).
 	A selected hid leaves the id commands; a `-t` the ones that take a time;
-	a field the verbs that field can take (da-57j14).
+	a field the log commands that field can take (da-57j14).
 
 	A command the pills make READY leads the bar (da-h3jcu, `suggestionOf`
 	in commands.ts): a larger circle before the rows, filled in its field's
-	color (its state's, for a switch) and named for what it runs, «moment
-	coffee», «switch → reading». A tap runs it. While something it needs is
-	missing, a switch's state or a key to type, it is dashed and a tap writes
+	color (its state's, for a change) and named for what it runs, «moment
+	coffee», «change → reading». A tap runs it. While something it needs is
+	missing, a change's state or a key to type, it is dashed and a tap writes
 	the line, the field and the pill's state on it, for the rest to be typed.
 
 	The bar is `ButtonRows` — how every button bar is laid out and
@@ -120,7 +120,7 @@
 		commandsUnder,
 		drills,
 		opensField,
-		fieldVerb,
+		fieldCommand,
 		fires,
 		flagsOf,
 		hasFlags,
@@ -149,7 +149,7 @@
 		disabled = false,
 		grammar = null,
 		pills = [],
-		/** The fields widget's buttons: what a field pill's verbs are read off. */
+		/** The fields widget's buttons: what a field pill's log commands are read off. */
 		fields = [],
 		/** Would `redo` move anything? The CLI's own answer, from the pane. */
 		redoable = false,
@@ -189,7 +189,7 @@
 		if (s.ready) return onsuggest?.(s);
 		const { argv, used } = withPills(grammar, s.argv, pills.filter((p) => p.kind === 'field' || p.kind === 'state'));
 		const line = [argv[0], shellJoin(argv.slice(1))].join(' ');
-		online?.({ name: s.verb, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
+		online?.({ name: s.command, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
 	}
 
 	/** The presses whose kind is theirs whatever is loaded. */
@@ -241,7 +241,7 @@
 				? 'open'
 				: !open && drills(grammar, command.name)
 					? 'show'
-					: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
+					: fires(grammar?.get(command.name), pills) || fieldCommand(command.name, pills, fields)?.runs
 						? 'run'
 						: 'fill'));
 
@@ -285,9 +285,9 @@
 			// Words TYPED next go after the field and hid pills, so those are
 			// written into their slots first and spent (da-8ru0m): a pill left
 			// loaded would lose its slot to the words. What a TAP completes
-			// (`retime`, a verb) keeps them loaded for that tap; a verb under
+			// (`retime`, a log command) keeps them loaded for that tap; a log command under
 			// a field it will not run is typed (da-lxqqz).
-			const keyed = fieldVerb(command.name, pills, fields);
+			const keyed = fieldCommand(command.name, pills, fields);
 			const slotted = command.next === 'type' || keyed ? pills.filter((p) => p.kind === 'field' || p.kind === 'hid') : [];
 			const { argv, used } = withPills(grammar, [command.name], slotted);
 			// The command's own words stay bare (`db migrate` is two); what follows is quoted.
@@ -323,10 +323,10 @@
 		use:act={s.ready ? 'run' : 'fill'}
 		{disabled}
 		style:--lead={s.color}
-		data-suggested={s.verb}
+		data-suggested={s.command}
 		data-ready={s.ready}
-		data-glyph={ICONS[s.verb]}
-		title={`${s.ready ? 'run ' : ''}${[s.verb, s.field, s.state].filter(Boolean).join(' ')}${s.ready ? '' : ' …'}`}
+		data-glyph={ICONS[s.command]}
+		title={`${s.ready ? 'run ' : ''}${[s.command, s.field, s.state].filter(Boolean).join(' ')}${s.ready ? '' : ' …'}`}
 		onclick={() => lead(s)}
 	>
 		<span class="name">{s.label}</span>

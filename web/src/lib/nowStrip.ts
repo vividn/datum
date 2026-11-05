@@ -14,6 +14,7 @@
 // a write, never for the clock. A tap's mark is added at once (`pendingOf`),
 // at the tap's instant, the one the CLI's clock is frozen at (da-szzgy).
 
+import { pendingCommand } from './commands.js';
 import { layMarks } from './dayLayers.js';
 import type { FieldButton } from './fields.js';
 import { trim } from './nowcrop.js';
@@ -86,19 +87,21 @@ export function laid(doc: Document | null | undefined, origin: number, k: number
 
 /**
  * What a press of `argv` at `at` adds to the strip before the database
- * answers: a moment's dot, a start's block in the field's colour, a switch's
- * in its state's, an end's ground. Null for anything else, a time or a length
+ * answers: a moment's dot, an `on`'s block in the field's colour, a change's
+ * in its state's, an `off`'s ground. An old word for each, `start` and
+ * the rest, is read as the CLI reads it (`pendingCommand`). Null for anything else, a time or a length
  * with it included, which the strip's last second would not show where it lands.
  */
 export function pendingOf(argv: string[], fields: FieldButton[], at: number): Mark | null {
-	const [verb, name, state, ...rest] = argv;
+	const [word, name, state, ...rest] = argv;
+	const command = pendingCommand(word ?? '');
 	const button = fields.find((b) => b.field === name);
 	if (!button || rest.length || !Number.isFinite(button.y) || !Number.isFinite(button.height)) return null;
 	const band = { field: name, from: at, to: Infinity, y: button.y * LAYER_HEIGHT, h: button.height * LAYER_HEIGHT };
 	const bare = state === undefined;
-	if ((verb === 'moment' || verb === 'occur') && bare) return { ...band, to: at, y: band.y + band.h / 3, h: band.h / 3, fill: button.color, dot: true };
-	if (verb === 'start' && bare) return { ...band, fill: button.color };
-	if ((verb === 'end' || verb === 'stop') && bare) return { ...band, fill: null };
-	if (verb === 'switch' && state) return { ...band, fill: button.stateColors[state] ?? button.color };
+	if (command === 'moment' && bare) return { ...band, to: at, y: band.y + band.h / 3, h: band.h / 3, fill: button.color, dot: true };
+	if (command === 'on' && bare) return { ...band, fill: button.color };
+	if (command === 'off' && bare) return { ...band, fill: null };
+	if (command === 'change' && state) return { ...band, fill: button.stateColors[state] ?? button.color };
 	return null;
 }

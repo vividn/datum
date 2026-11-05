@@ -371,7 +371,7 @@ describe('a -t pill', () => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 10:00' }]));
 			await page.locator('main .bar.commands [data-command="moment"]').waitFor();
 			const names = await drawn(page);
-			for (const n of ['moment', 'start', 'end', 'switch', 'add', 'retime']) assert.ok(names.includes(n), n);
+			for (const n of ['moment', 'on', 'off', 'change', 'record', 'retime']) assert.ok(names.includes(n), n);
 			for (const n of ['now', 'get', 'delete', 'undo']) assert.ok(!names.includes(n), n);
 			await page.locator('.prompt-bar .pill.time button.remove').click();
 			await page.locator('main .bar.commands [data-menu="write"]').waitFor();

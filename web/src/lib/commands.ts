@@ -1,6 +1,6 @@
 // The commands widget's logic, kept out of the markup (da-ltux): which
 // commands get a button and in what order, what a press on each one
-// means, which verb the command line is PENDING, and what the fields
+// means, which command the command line is PENDING, and what the fields
 // widget shows while one is. Pure but for `watchRows` at the end, which
 // is the scroll rule reading a box.
 //
@@ -10,8 +10,8 @@
 // also occur should appear in the input box after tapping occur), filter
 // the fields to only occur fields.»
 //
-// One source for the verb's shape: a field's `shape` is the spec's verb
-// (da-c8mh, `shapeFor` in fields.ts), so every rule below reads that and
+// One source for what a command fits: a field's `shape` is its kind, read
+// off its spec (da-c8mh, `kindFor` in fields.ts), so every rule below reads that and
 // never the field's name. «Currently on/off» is `now --json`'s truth,
 // which arrives on the button as `current` — never anything remembered
 // here.
@@ -19,17 +19,20 @@
 import type { Pill } from './bar.js';
 import type { FieldButton } from './fields.js';
 
-/** A verb the command line can be pending: the five a field is logged with. */
-export type Verb = 'moment' | 'start' | 'end' | 'switch' | 'add';
+/** A command the line can be PENDING: the five a field is logged with, by the glossary's words (AGENTS.md). */
+export type LogCommand = 'moment' | 'on' | 'off' | 'change' | 'record';
 
-export const VERBS: Verb[] = ['moment', 'start', 'end', 'switch', 'add'];
+export const LOG_COMMANDS: LogCommand[] = ['moment', 'on', 'off', 'change', 'record'];
+
+/** Each one's old words, which the CLI still runs as aliases: typed, they pend the same command. */
+const ALIASES: Record<string, LogCommand> = { occur: 'moment', start: 'on', end: 'off', stop: 'off', switch: 'change', add: 'record', card: 'record' };
 
 /** What a press on a command button does. */
 export type Press =
 	/** Run it, now, with no argument: `undo` (and its redo icon). */
 	| 'run'
-	/** Put `<name> ` on the command line and pend the verb. */
-	| 'verb'
+	/** Put `<name> ` on the command line and pend the command. */
+	| 'pend'
 	/** Put `<name> ` on the command line; there is nothing to pend. */
 	| 'fill'
 	/** Arm the page: the next tap is explained, not acted on (#lib/help.ts). */
@@ -52,7 +55,7 @@ export interface CommandButton {
 	label: string;
 	press: Press;
 	/**
-	 * What the person does after a `verb` or `fill` press (da-k34p): `tap`
+	 * What the person does after a `pend` or `fill` press (da-k34p): `tap`
 	 * — a field, a pill — so the line is focused WITHOUT a phone's
 	 * keyboard; `type`, and the keyboard opens with it.
 	 */
@@ -90,13 +93,13 @@ const CONFLICTS: CommandButton = { name: 'conflicts', label: 'conflicts', press:
  * `conflicts` is under `sync` («should not be top level»), which opens that
  * submenu only while there are any, and its place at once otherwise.
  *
- * `note` is typed after its field — `note <field> <words>` — and a tap on
+ * `remark` is typed after its field — `remark <field> <words>` — and a tap on
  * it under a field pill writes the pill into the line first (da-8ru0m).
  */
 export const MENUS = {
 	write: [
-		...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap' })),
-		...fills(['note', 'flag', 'update', 'retime', 'delete', 'revert'])
+		...LOG_COMMANDS.map((name): CommandButton => ({ name, label: name, press: 'pend', next: 'tap' })),
+		...fills(['remark', 'flag', 'update', 'retime', 'delete', 'revert'])
 	],
 	read: fills(['tail', 'now', 'stats', 'get', 'history', 'grep', 'fields', 'count', 'info', 'check']),
 	fields: fills(['setup', 'track', 'ignore', 'alias', 'rename']),
@@ -136,7 +139,7 @@ export const COMMANDS: CommandButton[] = [
  * «make the command buttons circular with an icon in the circle and the
  * name of the command beneath them».
  *
- * One character is a GLYPH, drawn as text: a verb's is the CLI's own, so
+ * One character is a GLYPH, drawn as text: a log command's is the CLI's own, so
  * the button shows the shape the row it writes will show (`TRACK●`/`█`/
  * `▞`/`¢` in datum-core's track.rs; `■` is the end of a `█`). No two share
  * a mark; a subcommand wears its command's. Anything longer is the path of
@@ -145,11 +148,11 @@ export const COMMANDS: CommandButton[] = [
 export const ICONS: Record<string, string> = {
 	undo: '↶',
 	moment: '●',
-	start: '█',
-	end: '■',
-	switch: '▞',
-	add: '¢',
-	note: '✎',
+	on: '█',
+	off: '■',
+	change: '▞',
+	record: '¢',
+	remark: '✎',
 	flag: '⚑',
 	update: 'Δ',
 	retime: 'M8 1.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13zM8 4.5V8l2.5 1.5',
@@ -192,58 +195,56 @@ export const iconOf = (command: CommandButton): string =>
 	(command.press === 'menu' ? MENU_ICONS[command.name] : (ICONS[command.name] ?? ICONS[command.name.split(' ')[0]])) ?? '';
 
 /**
- * The verb the command line is pending, from what is typed in it.
+ * The command the line is pending, from what is typed in it.
  *
  * The FIRST WORD, whole: a tap on `moment` puts `moment ` in the box and a
- * person typing the same word, or its alias `occur`, reaches the same state,
- * because both are read back off the one buffer (#lib/bar.ts's `text`) rather
- * than from a second store a tap would have to remember to set.
+ * person typing the same word, or an old word for it (`occur`), reaches the
+ * same state, because both are read back off the one buffer (#lib/bar.ts's
+ * `text`) rather than from a second store a tap would have to remember to set.
  */
-export function pendingVerb(line: string): Verb | null {
+export function pendingCommand(line: string): LogCommand | null {
 	const [typed] = line.trimStart().split(/\s/, 1);
-	const word = typed === 'occur' ? 'moment' : typed;
-	return (VERBS as string[]).includes(word) ? (word as Verb) : null;
+	const word = ALIASES[typed] ?? typed;
+	return (LOG_COMMANDS as string[]).includes(word) ? (word as LogCommand) : null;
 }
 
-/** `true` among a switch's states: the state that makes it startable/endable. */
+/** `true` among a change field's states: the state that turns it on or off. */
 const hasTrue = (button: FieldButton): boolean =>
-	button.shape.kind === 'states' && button.shape.states.includes('true');
+	button.shape.kind === 'change' && button.shape.states.includes('true');
 
-/** Is the field on now — an open block, or a switch in a state? */
+/** Is the field on now — an on/off field on, or a change field in a state? */
 const on = (button: FieldButton): boolean => button.current !== undefined;
 
 /**
- * Can `verb` be spent on `button` (vividn's rules above)? ONE rule, read
- * both ways (da-57j14): a pending verb keeps the fields it fits
- * (`fieldsUnder`), and a loaded field keeps the verbs that fit it
+ * Can `command` be spent on `button` (vividn's rules above)? ONE rule, read
+ * both ways (da-57j14): a pending command keeps the fields it fits
+ * (`fieldsUnder`), and a loaded field keeps the commands that fit it
  * (`commandsUnder`) — so the two lists can never disagree.
  */
-export function verbFits(verb: Verb, button: FieldButton): boolean {
-	switch (verb) {
+export function commandFits(command: LogCommand, button: FieldButton): boolean {
+	switch (command) {
 		case 'moment':
-			return button.shape.kind === 'point';
-		case 'add':
-			return button.shape.kind === 'record';
-		case 'switch':
-			return button.shape.kind === 'states';
-		// A block takes both whatever its state (da-vpzbv, vividn: «this would
-		// be how a user might enter in a repeated state because of
-		// forgetting»): a start or an end re-logged is one that was missed.
-		case 'start':
-			return button.shape.kind === 'state' || hasTrue(button);
-		case 'end':
-			return button.shape.kind === 'state' || (button.shape.kind === 'states' && on(button));
+		case 'record':
+		case 'change':
+			return button.shape.kind === command;
+		// An on/off field takes both whatever its state (da-vpzbv, vividn: «this
+		// would be how a user might enter in a repeated state because of
+		// forgetting»): an on or an off re-logged is one that was missed.
+		case 'on':
+			return button.shape.kind === 'on/off' || hasTrue(button);
+		case 'off':
+			return button.shape.kind === 'on/off' || (button.shape.kind === 'change' && on(button));
 		default:
 			return true;
 	}
 }
 
 /**
- * The fields a pending verb leaves showing: the ones that verb can
- * actually be spent on. No verb leaves the list whole.
+ * The fields a pending command leaves showing: the ones it can actually be
+ * spent on. No pending command leaves the list whole.
  */
-export const fieldsUnder = (buttons: FieldButton[], verb: Verb | null): FieldButton[] =>
-	verb ? buttons.filter((b) => verbFits(verb, b)) : buttons;
+export const fieldsUnder = (buttons: FieldButton[], command: LogCommand | null): FieldButton[] =>
+	command ? buttons.filter((b) => commandFits(command, b)) : buttons;
 
 /**
  * Does the bar hold a DURATION — a length waiting to be spent (da-qu16)?
@@ -261,9 +262,9 @@ export const hasDuration = (all: Pill[]): boolean => all.some((p) => p.kind === 
  * (`25m`, `1h30m`) goes as `dur=25m` (da-g2ruk). vividn, 11-03: «let's
  * unify on not using dur= and rather the 12m format for duration», so the
  * pill SAYS `25m`; the line keeps the key because a bare one is the
- * duration only where no slot comes first — `start F 25m` on a field
- * declaring a key fills the key, `switch F 25m` with no state is the state,
- * and `add F 25m` is the slug. A text with its key already (`start_time=`,
+ * duration only where no slot comes first — `on F 25m` on a field
+ * declaring a key fills the key, `change F 25m` with no state is the state,
+ * and `record F 25m` is the slug. A text with its key already (`start_time=`,
  * an old session's `dur=25m`) goes as it is.
  */
 export const pillWord = (p: Pick<Pill, 'kind' | 'text'>): string => (isLength(p) ? `dur=${p.text}` : p.text);
@@ -284,35 +285,35 @@ export const saysKey = (all: Pill[], fields: FieldButton[]): boolean => {
 };
 
 /**
- * The fields a loaded duration leaves showing: the BLOCKS — a `start`
- * field and a `switch`, the two shapes that draw a span (vividn, 09-17: «if
- * a duration is selected, filter down to start/switch based fields»).
+ * The fields a loaded duration leaves showing: an on/off field and a change
+ * field, the two kinds that draw a period (vividn, 09-17: «if a duration is
+ * selected, filter down to start/switch based fields»).
  *
- * A point has no length and a record is typed, so a loaded length hides
+ * A moment has no length and a record is typed, so a loaded length hides
  * them and dismissing it brings them back. It COMPOSES with a pending
- * verb: this filter and `fieldsUnder` both apply, exactly as the `-t`
- * pill and the verb do.
+ * command: this filter and `fieldsUnder` both apply, exactly as the `-t`
+ * pill and the command do.
  */
 export function fieldsWithDuration(buttons: FieldButton[], duration: boolean): FieldButton[] {
 	if (!duration) return buttons;
-	return buttons.filter((b) => b.shape.kind === 'state' || b.shape.kind === 'states');
+	return buttons.filter((b) => b.shape.kind === 'on/off' || b.shape.kind === 'change');
 }
 
 /**
- * What a tap on `button` runs while `verb` is pending — `<verb> <field>`,
+ * What a tap on `button` runs while `command` is pending — `<command> <field>`,
  * at once (C1).
  *
- * `null` where that argv is not a command: `switch <field>` has no state
- * to switch to, so the field's own state list asks which first (da-g635)
- * and runs `switch <field> <state>`; `add <field>` has no record in it, so
- * the field does what it always does and leaves the line for a person to
- * finish typing. Both still spend the pending verb — it is the verb they
- * end in.
+ * `null` where that argv is not a whole command: `change <field>` has no
+ * state to change to, so the field's own state list asks which first
+ * (da-g635) and runs `change <field> <state>`; `record <field>` has nothing
+ * in it, so the field does what it always does and leaves the line for a
+ * person to finish typing. Both still spend the pending command — it is the
+ * command they end in.
  */
-export function verbPress(verb: Verb, button: FieldButton): string[] | null {
-	if (verb === 'switch' && button.shape.kind === 'states') return null;
-	if (verb === 'add' && button.shape.kind === 'record') return null;
-	return [verb, button.field];
+export function pendingPress(command: LogCommand, button: FieldButton): string[] | null {
+	if (command === 'change' && button.shape.kind === 'change') return null;
+	if (command === 'record' && button.shape.kind === 'record') return null;
+	return [command, button.field];
 }
 
 /**
@@ -322,35 +323,35 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
  *
  * The fields widget's press is decided here and its outline is drawn from
  * the same answer (the `fires` pattern): a `run` is the double outline, so
- * a button cannot act without looking as if it does. A pending verb runs
- * wherever `verbPress` has an argv, but fills where it has keys to type
+ * a button cannot act without looking as if it does. A pending command runs
+ * wherever `pendingPress` has an argv, but fills where it has keys to type
  * (`typesKeys`); otherwise a record fills, and `oneTap` decides the rest.
  */
 export type PressKind = 'run' | 'fill' | 'show';
-export function pressKind(button: FieldButton, verb: Verb | null, oneTap = false): PressKind {
-	if (verb !== null && verbPress(verb, button)) return typesKeys(verb, button) ? 'fill' : 'run';
+export function pressKind(button: FieldButton, pending: LogCommand | null, oneTap = false): PressKind {
+	if (pending !== null && pendingPress(pending, button)) return typesKeys(pending, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
 	// One click (`clicks`, da-gra0z; a tutorial game's `tapLogs`) logs what
 	// needs nothing more: a moment, or a block started or ended. vividn,
 	// 2026-11-04: «you can still record with 1 tap unless there is some extra
-	// data or whatever needed», so a switch opens to its states, which it needs.
-	if (oneTap && button.shape.kind !== 'states') return typesKeys(button.current ? 'end' : 'moment', button) ? 'fill' : 'run';
+	// data or whatever needed», so a change field opens to its states, which it needs.
+	if (oneTap && button.shape.kind !== 'change') return typesKeys(button.current ? 'off' : 'moment', button) ? 'fill' : 'run';
 	// Otherwise a bare tap opens the field in the collect widget, to set its
 	// time, state and data before it is logged (da-w6437) — a running block
 	// too: ending it is the commands' (vividn, 2026-11-03 16:07: «"off" be one
-	// of the commands on the bottom»), or `end` pending on the line.
+	// of the commands on the bottom»), or `off` pending on the line.
 	return 'show';
 }
 
 /**
- * Does a log by `verb` leave its line for keys to be typed rather than run
+ * Does a log by `command` leave its line for keys to be typed rather than run
  * (da-chml5)? vividn, 09-27: «occur/start/end run at once with a double
  * outline, unless there are required keys only, in which case fill the
  * line and focus it» — so any log of a field with a key that has no
- * default, but `end`, which takes none (da-o4jaa). A field tap, a state
- * in its ring and a verb under its pill (`fieldVerb`) all ask this.
+ * default, but `off`, which takes none (da-o4jaa). A field tap, a state
+ * in its ring and a command under its pill (`fieldCommand`) all ask this.
  */
-export const typesKeys = (verb: string, button: FieldButton): boolean => verb !== 'end' && button.required.length > 0;
+export const typesKeys = (command: string, button: FieldButton): boolean => command !== 'off' && button.required.length > 0;
 
 // ---- the pills a command takes (da-r13j) --------------------------------
 //
@@ -544,15 +545,15 @@ export function fits(takes: Takes | undefined, pill: Pill): boolean {
 /**
  * The commands the widget draws under `pills`: the ones whose grammar takes
  * every pill, in their usual order. The rest are HIDDEN (vividn, 09-17: «let's
- * do hidden»), as the fields widget hides what a pending verb cannot be
+ * do hidden»), as the fields widget hides what a pending command cannot be
  * spent on. No pills is the whole list; with no grammar, an hid pill is
  * taken by nothing and hides every command until the grammar is read.
  *
- * A field pill narrows the VERBS too (da-57j14, vividn: «When an occur field
+ * A field pill narrows the LOG_COMMANDS too (da-57j14, vividn: «When an occur field
  * is selected, start, end, and switch should be filtered out»): `fields`
- * are the fields widget's buttons, and a verb stays only if it `verbFits`
+ * are the fields widget's buttons, and one stays only if it `commandFits`
  * the pill's field — an ARGUMENT field: a context one narrows no command. A field not among them — one not logged yet — keeps
- * every verb, as it has no shape to narrow by.
+ * every log command, as it has no kind to narrow by.
  */
 export function commandsUnder(grammar: Grammar | null, pills: Pill[], fields: FieldButton[] = []): CommandButton[] {
 	const name = argumentsOf(pills).find((p) => p.kind === 'field')?.text;
@@ -560,7 +561,7 @@ export function commandsUnder(grammar: Grammar | null, pills: Pill[], fields: Fi
 	return COMMANDS.filter((command) => {
 		// Help takes no pill and explains every one, so no pill hides it.
 		if (command.press === 'help') return true;
-		if (field && command.press === 'verb' && !verbFits(command.name as Verb, field)) return false;
+		if (field && command.press === 'pend' && !commandFits(command.name as LogCommand, field)) return false;
 		const takes = grammar?.get(command.name);
 		return argumentsOf(pills).every((p) => fits(takes, p));
 	});
@@ -590,22 +591,22 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
 }
 
 /**
- * A verb under a FIELD pill (da-lxqqz), vividn, 09-26: «when a field is
+ * A log command under a FIELD pill (da-lxqqz), vividn, 09-26: «when a field is
  * selected, then the start/end/occur buttons should … auto trigger entry
  * (unless there are extra keys to be filled in, in which case the input
  * line should automatically be selected for typing in those fields». So
- * `moment`, `start` and `end` with a known field's pill as an argument
+ * `moment`, `on` and `off` with a known field's pill as an argument
  * RUN, unless that field has a key with no default (`required`); then the
- * tap writes `<verb> <field> ` for the keys to be typed after. `end`
+ * tap writes `<command> <field> ` for the keys to be typed after. `off`
  * always runs (da-o4jaa), vividn, 09-27: «generally speaking I don't save
  * any extra_data in this one, so I think that should be the default» —
  * its keys are never prompted, only typed. `null` where there is no such
  * pill, and the press is what it always was.
  */
-export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { field: Pill; runs: boolean } | null {
+export function fieldCommand(name: string, all: Pill[], fields: FieldButton[]): { field: Pill; runs: boolean } | null {
 	const field = argumentsOf(all).find((p) => p.kind === 'field');
 	const button = fields.find((b) => b.field === field?.text);
-	if (!field || !button || !['moment', 'start', 'end'].includes(name)) return null;
+	if (!field || !button || !['moment', 'on', 'off'].includes(name)) return null;
 	return { field, runs: !typesKeys(name, button) };
 }
 
@@ -615,25 +616,25 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
  * a command ready, it's the pane's suggested action: a larger circle, dashed
  * while something's missing, filled in its field's color once it can run».
  *
- * An ARGUMENT field pill of a known field names it, by the field's shape as
- * a bare tap on it reads it: a point is `moment`, a block `start` or, while
- * on, `end`, a switch `switch` to the state pill's state, a record `add`.
- * `ready` is whether it runs as it stands: a switch with no state, a record
+ * An ARGUMENT field pill of a known field names it, by the field's kind as
+ * a bare tap on it reads it: a moment is `moment`, an on/off field `on` or,
+ * while on, `off`, a change field `change` to the state pill's state, a
+ * record `record`. `ready` is whether it runs as it stands: a change with no state, a record
  * and a field with a key to type (`typesKeys`) are missing something, so the
  * circle is dashed and a tap writes the line instead. No field pill, an
  * unknown field or a field that is context (under an hid) suggests nothing.
  */
 export interface Suggestion {
-	verb: Verb;
+	command: LogCommand;
 	field: string;
-	/** The switch's state, from the state pill. */
+	/** The change's state, from the state pill. */
 	state?: string;
-	/** What the circle says: `moment coffee`, `switch → reading`, `switch → ?`. */
+	/** What the circle says: `moment coffee`, `change → reading`, `change → ?`. */
 	label: string;
 	/** Its fill: the state's color where there is one, else the field's. */
 	color: string;
 	ready: boolean;
-	/** What it runs: the verb, the field pill and a switch's state pill (collect's, right after it) joining it as a press places them. */
+	/** What it runs: the command, the field pill and a change's state pill (collect's, right after it) joining it as a press places them. */
 	argv: string[];
 }
 
@@ -641,18 +642,17 @@ export function suggestionOf(all: Pill[], fields: FieldButton[]): Suggestion | n
 	const field = argumentsOf(all).find((p) => p.kind === 'field');
 	const button = fields.find((b) => b.field === field?.text);
 	if (!field || !button) return null;
-	const { shape } = button;
-	const verb: Verb =
-		shape.kind === 'point' ? 'moment' : shape.kind === 'record' ? 'add' : shape.kind === 'states' ? 'switch' : button.current ? 'end' : 'start';
-	const state = verb === 'switch' ? all.find((p) => p.kind === 'state') : undefined;
+	const { kind } = button.shape;
+	const command: LogCommand = kind === 'on/off' ? (button.current ? 'off' : 'on') : kind;
+	const state = command === 'change' ? all.find((p) => p.kind === 'state') : undefined;
 	return {
-		verb,
+		command,
 		field: field.text,
 		state: state?.text,
-		label: verb === 'switch' ? `switch → ${state?.text ?? '?'}` : `${verb} ${field.text}`,
+		label: command === 'change' ? `change → ${state?.text ?? '?'}` : `${command} ${field.text}`,
 		color: (state && (state.color ?? button.stateColors[state.text])) || button.color,
-		ready: verb !== 'add' && (verb !== 'switch' || !!state) && !typesKeys(verb, button),
-		argv: [verb]
+		ready: command !== 'record' && (command !== 'change' || !!state) && !typesKeys(command, button),
+		argv: [command]
 	};
 }
 
@@ -771,9 +771,9 @@ export function withFlag(line: string, command: string, flag: string): string {
 }
 
 /**
- * The line's words when everything after its verb is a flag, each one
+ * The line's words when everything after its command is a flag, each one
  * that takes a value followed by it (`moment -q`, `moment -t 1400`): a field
- * tap under that verb runs them with the field after, and spends the line
+ * tap under that command runs them with the field after, and spends the line
  * (da-bbmpx). Null for anything else — a positional (`moment half-typed`)
  * is a line being typed, which a press never takes, and a trailing `-t`
  * waits for its value, which the field would otherwise become. A flag
@@ -784,7 +784,7 @@ export const valuedFlags = (takes: Takes | undefined): string[] =>
 	(takes?.flags ?? []).filter((f) => f.takes_value && !f.value_optional).flatMap((f) => [`--${f.long}`, f.short ? `-${f.short}` : '']).filter(Boolean);
 
 export function flagLine(words: string[], takes: Takes | undefined): string[] | null {
-	// No grammar: a value flag cannot be told from a switch, so only a bare verb.
+	// No grammar: a value flag cannot be told from a boolean one, so only a bare command.
 	if (!takes) return words.length > 1 ? null : words;
 	const valued = valuedFlags(takes);
 	for (let i = 1; i < words.length; i++) {

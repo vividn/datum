@@ -1,6 +1,6 @@
-// The web's «which verb?» — the four answers, as data.
+// The web's «which kind?» — the four field kinds, as data.
 //
-// A field cannot be born verbless (da-c8mh): `track <field>` on a field
+// A field cannot be born without a kind (da-c8mh): `track <field>` on a field
 // with neither a spec nor a log refuses and names the four choices. The
 // CLI asks with that sentence; the web asks with `FieldForm.svelte`, and
 // this module is the one place that knows what the four are, what they
@@ -22,7 +22,7 @@
 import type { SpecKey } from './fields.js';
 import type { RunResult } from './run.js';
 
-/** The verbs a spec may carry — `VERB_CHOICES` in datum-core's field_spec. */
+/** The values a spec STORES for its kind — `VERB_CHOICES` in datum-core's field_spec (phase 2 of the vocabulary migrates them). */
 export type Verb = 'occur' | 'start' | 'switch' | 'add';
 
 /** One of the four, as the modal draws it. */
@@ -30,21 +30,21 @@ export interface VerbChoice {
 	verb: Verb;
 	/** The glyph the CLI prints after `TRACK` for a field declared this way. */
 	glyph: string;
-	/** The shape's name, the one a newcomer chooses by (da-fu29p); vividn's names of 2026-10-14, shared with the tutorial's games and docs/basics.md. */
+	/** The kind's name, the glossary's (AGENTS.md), the one a newcomer chooses by (da-fu29p), shared with the tutorial's games and docs/basics.md. */
 	what: string;
-	/** What a field of this shape is, in a line, under its name: on the setup widget's shape buttons. */
+	/** What a field of this kind is, in a line, under its name: on the setup widget's kind buttons. */
 	line: string;
 }
 
 /**
- * The four, in the CLI's order (`VERB_CHOICES`): `occur`, which a person
- * calls a moment, first, the smallest claim a field can make.
+ * The four, in the CLI's order (`VERB_CHOICES`): a moment (stored `occur`)
+ * first, the smallest claim a field can make.
  */
 export const VERBS: VerbChoice[] = [
 	{ verb: 'occur', glyph: '●', what: 'moment', line: 'a single point in time (no state)' },
 	{ verb: 'start', glyph: '█', what: 'on/off', line: 'on for a while, then off' },
-	{ verb: 'switch', glyph: '▞', what: 'switch', line: 'one state until the next (custom states)' },
-	{ verb: 'add', glyph: '¢', what: 'card', line: 'keys and values, with no time' }
+	{ verb: 'switch', glyph: '▞', what: 'change', line: 'one state until the next (custom states)' },
+	{ verb: 'add', glyph: '¢', what: 'record', line: 'keys and values, with no time' }
 ];
 
 /** A field to start from: what an example fills the form with, never the database (da-fu29p). */
@@ -113,14 +113,14 @@ export const EXAMPLES: Example[] = [
 	{
 		field: 'reading',
 		verb: 'switch',
-		shows: 'each state a book card: reading dune is book:dune',
+		shows: 'each state a book record: reading dune is book:dune',
 		color: '#c39bd3',
 		glyph: '📖',
 		lookup: 'book'
 	},
-	{ field: 'person', verb: 'add', shows: 'a card with a name and a city', color: '#e59866', glyph: '👤', keys: [id, dataKey('name'), dataKey('city')] },
-	{ field: 'book', verb: 'add', shows: 'a card with a title and an author', color: '#c39bd3', glyph: '📚', keys: [id, dataKey('title'), dataKey('author')] },
-	{ field: 'place', verb: 'add', shows: 'a card with a name and an address', color: '#76d7c4', glyph: '📍', keys: [id, dataKey('name'), dataKey('address')] }
+	{ field: 'person', verb: 'add', shows: 'a record with a name and a city', color: '#e59866', glyph: '👤', keys: [id, dataKey('name'), dataKey('city')] },
+	{ field: 'book', verb: 'add', shows: 'a record with a title and an author', color: '#c39bd3', glyph: '📚', keys: [id, dataKey('title'), dataKey('author')] },
+	{ field: 'place', verb: 'add', shows: 'a record with a name and an address', color: '#76d7c4', glyph: '📍', keys: [id, dataKey('name'), dataKey('address')] }
 ];
 
 /** The action word `tail` prints for a field declared with `verb`. */
@@ -256,7 +256,7 @@ export type KeyMode = 'k' | 'K' | Rest;
 /** The modes in the order the button cycles them, each with the line under a row in it. */
 export const KEY_MODES: { mode: KeyMode; line: string }[] = [
 	{ mode: 'k', line: '' },
-	{ mode: 'K', line: "goes into the entry's id: a card's id, as in book:dune" },
+	{ mode: 'K', line: "goes into the entry's id: a record's id, as in book:dune" },
 	{ mode: 'R', line: 'takes the rest of the line, as a list of its words' },
 	{ mode: 'SR', line: 'takes the rest of the line, as one string' },
 	{ mode: 'C', line: 'the rest of the line is kept as a comment' }
@@ -582,14 +582,14 @@ export const specArgv = (spec: Spec): string[] => [
 ];
 
 /**
- * The field a «which verb?» refusal is about, or null when the result is
+ * The field a «which kind?» refusal is about, or null when the result is
  * not one.
  *
  * The sentence is `VERB_CHOICES_TEXT`'s companion in
  * crates/datum-commands/src/commands/track.rs — the ONE refusal, so
  * matching it here is matching every surface that can raise it.
  */
-export function verbAsked(argv: string[], result: RunResult): string | null {
+export function kindAsked(argv: string[], result: RunResult): string | null {
 	if (result.code === 0 || argv[0] !== 'track') return null;
 	const asked = /'([^']+)' is new — say what a press of it means/.exec(result.stderr);
 	return asked ? asked[1] : null;

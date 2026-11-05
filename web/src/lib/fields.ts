@@ -11,22 +11,23 @@
 import type { FieldSpec } from './types.js';
 
 /**
- * What a press on a button means, derived from the field's declared shape.
+ * What a press on a button means: the field's KIND (the glossary's word,
+ * AGENTS.md), derived from its spec.
  *
- *   point  — a thing that happened:  `moment <field>`
- *   state  — a block, on or off:     `start <field>` / `end <field>`
- *   states — a state among several:  `switch <field> <state>`
- *   record — a keyed record:         `add <field> …`, typed, never pressed
+ *   moment — a thing that happened:  `moment <field>`
+ *   on/off — on for a while, then off: `on <field>` / `off <field>`
+ *   change — one state among several: `change <field> <state>`
+ *   record — a keyed record:          `record <field> …`, typed, never pressed
  */
-export type FieldShape =
-	| { kind: 'point' }
-	| { kind: 'state' }
-	| { kind: 'states'; states: string[] }
+export type FieldKind =
+	| { kind: 'moment' }
+	| { kind: 'on/off' }
+	| { kind: 'change'; states: string[] }
 	| { kind: 'record' };
 
 export interface FieldButton {
 	field: string;
-	shape: FieldShape;
+	shape: FieldKind;
 	/**
 	 * `datum fields --json`'s `ignored` — the field's latest track/ignore
 	 * status, defined once in datum-core (da-d08c). The bar draws a button
@@ -83,34 +84,35 @@ export interface FieldButton {
 }
 
 /**
- * Decide a field's shape.
+ * Decide a field's kind.
  *
- * The spec's verb says it: `switch`, `start`, `add`, `occur` all say what a
- * press means regardless of how the field has been logged so far, and every
- * spec has one (da-c8mh). Only a field with NO spec is read off its log —
- * a field the next log is about to write a spec for: string states make a
- * multi-state field, `true`/`false` a block, anything else a point. The
- * field's *name* is never consulted.
+ * The spec says it: its stored `verb` (`switch`, `start`, `add`, `occur`,
+ * which phase 2 of the vocabulary migrates) says what a press means
+ * regardless of how the field has been logged so far, and every spec has one
+ * (da-c8mh). Only a field with NO spec is read off its log — a field the next
+ * log is about to write a spec for: string states make a change field,
+ * `true`/`false` an on/off one, anything else a moment. The field's *name* is
+ * never consulted.
  */
-export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []): FieldShape {
+export function kindFor(spec: FieldSpec | undefined, observed: unknown[] = []): FieldKind {
 	const strings = [...new Set(observed.filter((v): v is string => typeof v === 'string'))].sort();
 
 	switch (spec?.verb) {
 		case 'switch':
-			// A switch field with no allowed set is unconstrained, so the states
+			// A change field with no allowed set is unconstrained, so the states
 			// it has been logged with are the honest menu.
-			return { kind: 'states', states: spec.allowed_states?.length ? spec.allowed_states : strings };
+			return { kind: 'change', states: spec.allowed_states?.length ? spec.allowed_states : strings };
 		case 'start':
-			return { kind: 'state' };
+			return { kind: 'on/off' };
 		case 'add':
 			return { kind: 'record' };
 		case 'occur':
-			return { kind: 'point' };
+			return { kind: 'moment' };
 	}
 
-	if (strings.length > 0) return { kind: 'states', states: strings };
-	if (observed.some((v) => typeof v === 'boolean')) return { kind: 'state' };
-	return { kind: 'point' };
+	if (strings.length > 0) return { kind: 'change', states: strings };
+	if (observed.some((v) => typeof v === 'boolean')) return { kind: 'on/off' };
+	return { kind: 'moment' };
 }
 
 /** A key the spec declares for the field (`keysOf`). */
@@ -212,7 +214,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 			const state = now.get(field);
 			return {
 				field,
-				shape: shapeFor(spec ?? undefined, states),
+				shape: kindFor(spec ?? undefined, states),
 				ignored,
 				color,
 				stateColors: state_colors,
@@ -555,9 +557,9 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
 	const field = button.color;
 	const { current, shape } = button;
 	const filled = (fill: string, label: string): Look => ({ fill, line: field, text: inkOver(fill), label });
-	if (shape.kind === 'point') return { fill: null, line: field, text: 'var(--ink)', label: button.field, glyph: button.glyph ?? '●' };
+	if (shape.kind === 'moment') return { fill: null, line: field, text: 'var(--ink)', label: button.field, glyph: button.glyph ?? '●' };
 	if (shape.kind === 'record' || current === undefined) return { fill: null, line: field, text: field, label: button.field };
-	if (current === true || shape.kind === 'state') return filled(field, button.field);
+	if (current === true || shape.kind === 'on/off') return filled(field, button.field);
 	const fill = button.stateColors[current] ?? button.color;
 	return filled(fill, variant === 'state' ? current : button.field);
 }
@@ -565,8 +567,9 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
 /**
  * Compose the argv one press runs.
  *
- * `state` is required for a multi-state button and ignored otherwise. A
- * block that is on ends; one that is off starts.
+ * `state` is required for a change button and ignored otherwise. An
+ * on/off field that is on goes off; one that is off goes on. Every other
+ * kind's command is its own name.
  *
  * The COMMAND and nothing else. It used to take an `Adjust` as well — a
  * `-t` and a `dur=` the hold panel's bubbles set — and da-e78x6 removed
@@ -576,13 +579,8 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
  */
 export function pressArgv(button: FieldButton, state?: string): string[] {
 	const { kind } = button.shape;
-	return kind === 'point'
-		? ['moment', button.field]
-		: kind === 'state'
-			? [button.current ? 'end' : 'start', button.field]
-			: kind === 'record'
-				? ['add', button.field]
-				: ['switch', button.field, state ?? ''];
+	if (kind === 'on/off') return [button.current ? 'off' : 'on', button.field];
+	return kind === 'change' ? ['change', button.field, state ?? ''] : [kind, button.field];
 }
 
 /**
@@ -593,7 +591,7 @@ export function pressArgv(button: FieldButton, state?: string): string[] {
  *     own chip draws it (`lookOf`'s switch case), and bold (the widget's);
  *   every other state — a LIGHT TINT, a quarter of its own colour, in its
  *     own outline, under the app's ink;
- *   the back icon, the `+` and `end` — hollow, and not drawn here.
+ *   the back icon, the `+` and `off` — hollow, and not drawn here.
  */
 export function stateLook(button: FieldButton, state: string): Look {
 	if (button.current === state) return lookOf(button, 'state');

@@ -129,7 +129,7 @@ describe('the outline says what a tap does', () => {
 				const had = await entries(app);
 				const echoed = (await app.echoes()).length;
 				await page.locator(`.bar [data-field="${field}"]`).click();
-				if (field === 'note') await page.waitForFunction(() => document.querySelector('.prompt-bar input').value.startsWith('add note'));
+				if (field === 'note') await page.waitForFunction(() => document.querySelector('.prompt-bar input').value.startsWith('record note'));
 				else if (!runs) await page.locator('.bar [data-back]').click();
 				else await until(() => entries(app), (n) => n === had + 1);
 				await app.idle();

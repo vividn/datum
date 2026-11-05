@@ -5,7 +5,7 @@
 //
 // No browser here can show a virtual keyboard, so this file holds the
 // MECHANISM: after a command tap the box is focused with `inputmode="none"`;
-// a tap on the box, the fields widget's `add <field> ` prefill, and every
+// a tap on the box, the fields widget's `record <field> ` prefill, and every
 // way out of the quiet state (run, clear, blur, verb spent) leave it with
 // its normal input mode — a `none` left behind is a prompt nobody can type
 // in on a phone. The phone is the real check.
@@ -96,9 +96,9 @@ describe('a command tap focuses the line without the keyboard', () => {
 
 	test('a tap on the box brings the keyboard on that first tap', async () => {
 		await onPhone(async ({ page }) => {
-			await tapCommand(page, 'start');
+			await tapCommand(page, 'on');
 			await page.locator(BAR).tap();
-			assert.deepEqual(await state(page), { text: 'start ', focused: true, mode: '' });
+			assert.deepEqual(await state(page), { text: 'on ', focused: true, mode: '' });
 		});
 	});
 
@@ -145,13 +145,13 @@ describe('a command tap focuses the line without the keyboard', () => {
 		});
 	});
 
-	test('the fields widget’s `add <field> ` opens the keyboard at once', async () => {
+	test('the fields widget’s `record <field> ` opens the keyboard at once', async () => {
 		await onPhone(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			await fieldsBar(page).locator('[data-field="rec"]').tap();
-			await page.waitForFunction((s) => document.querySelector(s).value === 'add rec ', BAR);
-			assert.deepEqual(await state(page), { text: 'add rec ', focused: true, mode: '' });
+			await page.waitForFunction((s) => document.querySelector(s).value === 'record rec ', BAR);
+			assert.deepEqual(await state(page), { text: 'record rec ', focused: true, mode: '' });
 		});
 	});
 

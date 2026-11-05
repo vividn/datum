@@ -4,13 +4,13 @@
 	2026-10-08 — «let's fully combine track/spec widgets into just 1».
 	There is no dialog: a field is made and edited in a place.
 
-	A field cannot be born without a verb (da-c8mh), and the four pictograms
+	A field cannot be born without a kind (da-c8mh), and the four pictograms
 	are the whole of that question. The glyphs are the CLI's own (`VERBS` in
 	#lib/track.ts, `track_action_label` in datum-core): the row this form
 	is about to write will print `TRACK●` in every action column there is,
 	so what a person presses here is the shape they will meet again. Each is
 	named as the tutorial's games name it (`VERBS`, docs/basics.md) —
-	moment, on/off, switch, card — with a line of what it is beside it.
+	moment, on/off, change, record — the field kinds of the glossary (AGENTS.md) — with a line of what it is beside it.
 
 	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
 	name, start with the shape buttons. I think that ends up being the most
@@ -410,10 +410,10 @@
 									aria-label="disable off"
 									aria-pressed={neverFalse}
 									title={listsFalse
-										? 'false is one of its states, so the ring keeps end'
+										? 'false is one of its states, so the ring keeps off'
 										: !neverFalse && named.length === 0
-											? 'a switch needs another state before off can go'
-											: 'off disabled, the fields widget leaves a gap where end would stand'}
+											? 'a change field needs another state before off can go'
+											: 'off disabled, the fields widget leaves a gap where off would stand'}
 									disabled={listsFalse || (!neverFalse && named.length === 0)}
 									onclick={() => (neverFalse = !neverFalse)}>✕</button
 								>
@@ -470,7 +470,7 @@
 						<button type="button" class="add" onclick={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
 							>+ state</button
 						>
-						<label class="row" title="a bare state names the entry FIELD:<state>, as switch reading dune names book:dune">
+						<label class="row" title="a bare state names the entry FIELD:<state>, as change reading dune names book:dune">
 							<span class="label">each state is a</span>
 							<input class="lookup" bind:value={lookup} placeholder="field, e.g. book" spellcheck="false" autocapitalize="none" />
 						</label>
@@ -509,7 +509,7 @@
 					<DataKeys bind:keys card={verb === 'add'} detail />
 				{:else}
 					<label class="auto"
-						><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
+						><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the kind and states</label
 					>
 					<ul class="aliases">
 						{#each aliases as alias (alias)}
@@ -528,7 +528,7 @@
 									<input
 										class="expands"
 										bind:value={alias.expands_to}
-										placeholder="{!verb || verb === 'occur' ? 'moment' : verb} {field}"
+										placeholder="{(verb === 'start' ? 'on' : VERBS.find((v) => v.verb === verb)?.what) ?? 'moment'} {field}"
 										aria-label="what {alias.state || 'it'} runs"
 										spellcheck="false"
 										autocapitalize="none"
@@ -544,7 +544,7 @@
 						{/each}
 					</ul>
 					{#if autoalias}
-						<p class="later">made again from the verb and states when saved</p>
+						<p class="later">made again from the kind and states when saved</p>
 					{:else}
 						<button
 							type="button"

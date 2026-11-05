@@ -12,17 +12,18 @@
 // one before it is left out, is written `key=`.
 
 import type { Key } from './fields.js';
+import { pendingCommand } from './commands.js';
 import { DATUM_SPACE, shellSpans } from './shellSplit.js';
 
 /**
- * The verbs a field's keys are typed after — the ones the CLI gives them
- * (`takes_spec_keys`). Not `end` (da-o4jaa), vividn, 09-27: «generally
- * speaking I don't save any extra_data in this one, so I think that should
- * be the default. But allowing it might also be nice??» — so `end <field>`
- * draws no frames, and a `key=value` typed on it by hand still runs as
- * typed.
+ * The commands a field's keys are typed after — the ones the CLI gives them
+ * (`takes_spec_keys`), each by its old word too (`pendingCommand`). Not `off`
+ * (da-o4jaa), vividn, 09-27: «generally speaking I don't save any extra_data
+ * in this one, so I think that should be the default. But allowing it might
+ * also be nice??» — so `off <field>` draws no frames, and a `key=value` typed
+ * on it by hand still runs as typed.
  */
-const VERBS = ['moment', 'occur', 'start', 'add', 'switch'];
+const KEYED: (string | null)[] = ['moment', 'on', 'record', 'change'];
 
 /** A field and the keys a log of it takes (`FieldButton`'s). */
 type Keyed = { field: string; keys: Key[]; stateKeys?: Record<string, Key[]> };
@@ -41,20 +42,21 @@ export const writes = (key: Key): string => `${key.name}=`;
 
 /**
  * The frames for a line — one per key the field declares, in its order —
- * or null when the line is not `moment|start|add <field>`, or `switch
+ * or null when the line is not `moment|on|record <field>`, or `change
  * <field> <state>`, for a field with keys. A key is written when a token
  * after the field names it (`key=value`), or when a bare word falls to it:
  * the bare words fill the unnamed keys in order, as the CLI binds them.
- * A switch's first bare word is its state, whose own keys it takes where
+ * A change's first bare word is its state, whose own keys it takes where
  * it declares some (da-cej7q). A flag is no key's, and neither is the word
  * after one of the `valued` flags (`-t 1400`, `valuedFlags`).
  */
 export function framesOf(line: string, fields: Keyed[], valued: string[] = []): Frame[] | null {
-	const [verb, field, ...rest] = shellSpans(line).tokens;
-	const button = VERBS.includes(verb?.text) ? fields.find((b) => b.field === field?.text) : undefined;
+	const [word, field, ...rest] = shellSpans(line).tokens;
+	const command = pendingCommand(word?.text ?? '');
+	const button = KEYED.includes(command) ? fields.find((b) => b.field === field?.text) : undefined;
 	const bare = rest.filter((t, i) => !t.text.includes('=') && !t.text.startsWith('-') && !valued.includes(rest[i - 1]?.text));
-	const state = verb?.text === 'switch' ? bare.shift()?.text : undefined;
-	const keys = state === undefined ? (verb?.text === 'switch' ? undefined : button?.keys) : (button?.stateKeys?.[state] ?? button?.keys);
+	const state = command === 'change' ? bare.shift()?.text : undefined;
+	const keys = state === undefined ? (command === 'change' ? undefined : button?.keys) : (button?.stateKeys?.[state] ?? button?.keys);
 	if (!keys?.length) return null;
 	const frames: Frame[] = keys.map((key) => {
 		const token = rest.find((t) => t.text.startsWith(writes(key)));

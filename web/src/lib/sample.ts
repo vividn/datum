@@ -42,35 +42,35 @@ type Slot = [minutes: number, jitter: number, words: string[]];
  * states, and `coffee` and `water` as occur dots.
  */
 const WEEKDAY: Slot[] = [
-	[430, 25, ['end', 'sleep']],
+	[430, 25, ['off', 'sleep']],
 	[460, 15, ['moment', 'coffee']],
-	[480, 30, ['switch', 'mood', 'focused|calm']],
-	[535, 5, ['switch', 'project', 'datum|email']],
-	[545, 5, ['start', 'work']],
+	[480, 30, ['change', 'mood', 'focused|calm']],
+	[535, 5, ['change', 'project', 'datum|email']],
+	[545, 5, ['on', 'work']],
 	[630, 40, ['moment', 'water', 'amount=300']],
-	[730, 15, ['end', 'work']],
-	[775, 8, ['start', 'walk', '25m']],
-	[800, 8, ['start', 'work']],
+	[730, 15, ['off', 'work']],
+	[775, 8, ['on', 'walk', '25m']],
+	[800, 8, ['on', 'work']],
 	[870, 30, ['moment', 'coffee']],
-	[930, 30, ['switch', 'project', 'email|admin|datum']],
+	[930, 30, ['change', 'project', 'email|admin|datum']],
 	[965, 30, ['moment', 'water', 'amount=250']],
-	[1005, 15, ['switch', 'mood', 'happy', '20m']],
-	[1060, 20, ['end', 'work']],
-	[1260, 30, ['switch', 'mood', 'tired|calm']],
-	[1385, 30, ['start', 'sleep']]
+	[1005, 15, ['change', 'mood', 'happy', '20m']],
+	[1060, 20, ['off', 'work']],
+	[1260, 30, ['change', 'mood', 'tired|calm']],
+	[1385, 30, ['on', 'sleep']]
 ];
 
 /** A weekend day: a later morning, a long walk, no work. */
 const WEEKEND: Slot[] = [
-	[520, 40, ['end', 'sleep']],
+	[520, 40, ['off', 'sleep']],
 	[550, 30, ['moment', 'coffee']],
-	[570, 40, ['switch', 'mood', 'calm|happy']],
-	[690, 30, ['start', 'walk', '70m']],
+	[570, 40, ['change', 'mood', 'calm|happy']],
+	[690, 30, ['on', 'walk', '70m']],
 	[780, 60, ['moment', 'water', 'amount=300']],
-	[900, 60, ['switch', 'project', 'admin']],
+	[900, 60, ['change', 'project', 'admin']],
 	[960, 45, ['moment', 'coffee']],
-	[1230, 40, ['switch', 'mood', 'tired|calm']],
-	[1420, 20, ['start', 'sleep']]
+	[1230, 40, ['change', 'mood', 'tired|calm']],
+	[1420, 20, ['on', 'sleep']]
 ];
 
 const pad = (n: number, width = 2) => String(n).padStart(width, '0');
@@ -110,9 +110,9 @@ export function sampleCommands(now = new Date()): string[][] {
 		}
 	}
 	const open = (field: string) =>
-		at.findLast(([, [verb, f]]) => f === field && verb !== 'moment')?.[1][0] === 'start';
+		at.findLast(([, [verb, f]]) => f === field && verb !== 'moment')?.[1][0] === 'on';
 	if (!open('work') && !open('sleep'))
-		at.push([new Date(now.getTime() - (20 + Math.random() * 30) * 60 * 1000), ['start', 'read']]);
+		at.push([new Date(now.getTime() - (20 + Math.random() * 30) * 60 * 1000), ['on', 'read']]);
 	return at
 		.sort(([a], [b]) => a.getTime() - b.getTime())
 		.map(([when, words]) => [

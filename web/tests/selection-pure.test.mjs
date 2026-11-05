@@ -31,10 +31,10 @@ const Y = { short: 'y', long: 'yesterday', takes_value: false };
 const GRAMMAR = grammarOf([
 	entry('moment', ['datum moment <FIELD> [VALUE | KEY=VALUE]...'], [T]),
 	entry(
-		'stop',
-		['datum stop <FIELD> [VALUE | KEY=VALUE]... [DUR]'],
+		'off',
+		['datum off <FIELD> [VALUE | KEY=VALUE]... [DUR]'],
 		[T, Y, { short: 'L', long: 'ensure-last-state', takes_value: true }],
-		['end']
+		['end', 'stop']
 	),
 	entry(
 		'tail',
@@ -293,7 +293,7 @@ describe('which commands are active under the pills', () => {
 
 	test('a -t pill: what takes -t', () => {
 		const names = active([time]);
-		for (const n of ['moment', 'end', 'retime', 'tail']) assert.ok(names.includes(n), n);
+		for (const n of ['moment', 'off', 'retime', 'tail']) assert.ok(names.includes(n), n);
 		for (const n of ['now', 'get', 'delete', 'undo', 'revert']) assert.ok(!names.includes(n), n);
 	});
 
@@ -302,7 +302,7 @@ describe('which commands are active under the pills', () => {
 	// silently does nothing. What is held here is the HIDING.
 	test('a field pill: what names a field — and `setup`, which the spec editor is reached by', () => {
 		const names = active([mood]);
-		for (const n of ['moment', 'end', 'tail', 'flag', 'stats', 'count', 'setup', 'now'])
+		for (const n of ['moment', 'off', 'tail', 'flag', 'stats', 'count', 'setup', 'now'])
 			assert.ok(names.includes(n), `${n} takes a field and was hidden`);
 		for (const n of ['get', 'delete', 'update', 'retime', 'grep', 'conflicts'])
 			assert.ok(!names.includes(n), `${n} takes no field and was not hidden`);
@@ -310,7 +310,7 @@ describe('which commands are active under the pills', () => {
 
 	test('a field pill and a -t pill compose: both filters apply', () => {
 		const names = active([mood, time]);
-		for (const n of ['moment', 'end', 'tail']) assert.ok(names.includes(n), n);
+		for (const n of ['moment', 'off', 'tail']) assert.ok(names.includes(n), n);
 		// `flag` names a field and takes no -t; `retime` takes -t and names
 		// no field. Each pill hides the other's.
 		for (const n of ['flag', 'retime']) assert.ok(!names.includes(n), n);

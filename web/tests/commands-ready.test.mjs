@@ -81,9 +81,9 @@ describe('the ready command leads the command pane', () => {
 			await load(page, [field('mood')]);
 			await lead(page).waitFor();
 			const { name, ready, border } = await drawn(page);
-			assert.deepEqual({ name, ready, border }, { name: 'switch → ?', ready: 'false', border: 'dashed' });
+			assert.deepEqual({ name, ready, border }, { name: 'change → ?', ready: 'false', border: 'dashed' });
 			await lead(page).click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'switch mood ');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'change mood ');
 			assert.deepEqual(await entries(app), before, 'the tap ran something');
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), [], 'the field pill was not spent onto the line');
 		});
@@ -95,7 +95,7 @@ describe('the ready command leads the command pane', () => {
 			await seedLines(app, SEED);
 			await load(page, [field('mood'), state('bad')]);
 			await page.waitForFunction(() => document.querySelector('button.lead')?.dataset.ready === 'true');
-			assert.deepEqual(await drawn(page), { name: 'switch → bad', ready: 'true', border: 'solid', fill: 'rgb(153, 51, 102)' });
+			assert.deepEqual(await drawn(page), { name: 'change → bad', ready: 'true', border: 'solid', fill: 'rgb(153, 51, 102)' });
 			await lead(page).click();
 			await page.waitForFunction(() => !window.datum.bar.pills().length);
 			assert.equal((await entries(app)).at(-1), 'mood bad');
@@ -120,7 +120,7 @@ test("another field's pill, or none, takes a state pill left on the bar, and the
 		await load(page, [field('light'), state('bad')]);
 		await until(kinds, (k) => k.join() === 'field:light');
 		await page.waitForFunction(() => document.querySelector('main button.lead')?.dataset.ready === 'false');
-		assert.equal((await drawn(page)).name, 'switch → ?');
+		assert.equal((await drawn(page)).name, 'change → ?');
 
 		await load(page, [field('mood'), state('bad')]);
 		// Its field's button is not there to hold: its pill's × takes it.
@@ -180,7 +180,7 @@ describe('collect: 1-click and 2-click', () => {
 	const chip = (page, state) => page.locator(`${VIEW} [data-state="${state}"]`);
 	const kinds = (page) => page.evaluate(() => window.datum.bar.pills().map((p) => `${p.kind}:${p.text}`));
 	/** The `switch` lines run, dry runs (the nowview's preview) left out. */
-	const switches = async (seen) => (await seen()).filter((a) => a[0] === 'switch' && !a.includes('--dry-run'));
+	const switches = async (seen) => (await seen()).filter((a) => a[0] === 'change' && !a.includes('--dry-run'));
 	/** Chosen, not logged: the chip ringed, its pill beside the field's and the time's, and the lead ready. */
 	async function chosen(app, seen, state) {
 		const { page } = app;
@@ -188,7 +188,7 @@ describe('collect: 1-click and 2-click', () => {
 		assert.deepEqual((await kinds(page)).sort(), ['field:mood', `state:${state}`, 'time:-q'].sort());
 		assert.equal(await chip(page, state).evaluate((b) => b.classList.contains('chosen')), true, 'the chip is not marked');
 		await page.waitForFunction(() => document.querySelector('main button.lead')?.dataset.ready === 'true');
-		assert.equal((await drawn(page)).name, `switch → ${state}`);
+		assert.equal((await drawn(page)).name, `change → ${state}`);
 		await app.idle();
 		assert.deepEqual(await switches(seen), [], 'choosing logged');
 	}
@@ -196,7 +196,7 @@ describe('collect: 1-click and 2-click', () => {
 	async function logged(app, seen, state) {
 		const { page } = app;
 		await until(() => switches(seen), (s) => s.length === 1);
-		assert.deepEqual(await switches(seen), [['switch', 'mood', state, '-q']]);
+		assert.deepEqual(await switches(seen), [['change', 'mood', state, '-q']]);
 		await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
 		await until(() => kinds(page), (k) => k.length === 0);
 		await app.idle();
@@ -231,11 +231,11 @@ describe('collect: 1-click and 2-click', () => {
 			// The clock is held: a minute on, so the tap's moment has an instant of its own.
 			await app.clock.forward(60_000);
 			const seen = await app.spyOnRunner();
-			const runs = async () => (await seen()).filter((a) => ['moment', 'start', 'end'].includes(a[0]) && !a.includes('--dry-run'));
+			const runs = async () => (await seen()).filter((a) => ['moment', 'on', 'off'].includes(a[0]) && !a.includes('--dry-run'));
 			for (const [name, line] of [
 				['coffee', ['moment', 'coffee']],
-				['walk', ['start', 'walk']],
-				['walk', ['end', 'walk']]
+				['walk', ['on', 'walk']],
+				['walk', ['off', 'walk']]
 			]) {
 				const before = (await runs()).length;
 				await open(page, name);
@@ -349,7 +349,7 @@ describe('collect: 1-click and 2-click', () => {
 					await chip(page, 'good').waitFor();
 					assert.deepEqual(await kinds(page), ['field:mood']);
 					await app.idle();
-					assert.deepEqual(await runs(seen, 'switch'), [], 'the hold logged a state');
+					assert.deepEqual(await runs(seen, 'change'), [], 'the hold logged a state');
 					assert.deepEqual(app.errors, []);
 				},
 				{ ...DESKTOP, desk: { ...JSON.parse(PAGE), designedFor: 'desktop' } }

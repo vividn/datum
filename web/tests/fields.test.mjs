@@ -29,7 +29,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, shapeFor, buttonsFor, bands, fieldRows, atRest, bumped } from '../src/lib/fields.ts';
+import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, kindFor, buttonsFor, bands, fieldRows, atRest, bumped } from '../src/lib/fields.ts';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
@@ -41,14 +41,14 @@ describe('the logic', () => {
 	test('a spec\'s verb wins, whatever the log says; a spec-less field falls back to the log', () => {
 		// occur is a declaration too: a field logged with `true`/`false` under
 		// an occur spec still stays a point (da-u8n7), not a block.
-		assert.deepEqual(shapeFor(spec('sleep', { verb: 'occur' }), [true, false]), { kind: 'point' });
-		assert.deepEqual(shapeFor(spec('coffee', { verb: 'occur' })), { kind: 'point' });
-		assert.deepEqual(shapeFor(spec('work', { verb: 'start' })), { kind: 'state' });
-		assert.deepEqual(shapeFor(spec('note', { verb: 'add' })), { kind: 'record' });
+		assert.deepEqual(kindFor(spec('sleep', { verb: 'occur' }), [true, false]), { kind: 'moment' });
+		assert.deepEqual(kindFor(spec('coffee', { verb: 'occur' })), { kind: 'moment' });
+		assert.deepEqual(kindFor(spec('work', { verb: 'start' })), { kind: 'on/off' });
+		assert.deepEqual(kindFor(spec('note', { verb: 'add' })), { kind: 'record' });
 		// No spec: the log is the only evidence. A boolean log is a block...
-		assert.deepEqual(shapeFor(undefined, [true, false]), { kind: 'state' });
+		assert.deepEqual(kindFor(undefined, [true, false]), { kind: 'on/off' });
 		// ...and named states are a menu.
-		assert.deepEqual(shapeFor(undefined, ['b', 'a']), { kind: 'states', states: ['a', 'b'] });
+		assert.deepEqual(kindFor(undefined, ['b', 'a']), { kind: 'change', states: ['a', 'b'] });
 	});
 
 	test('every field, a spec or not; `ignored` is the CLI\'s; `now` says what is on', () => {
@@ -64,10 +64,10 @@ describe('the logic', () => {
 			[{ field: 'b', state: true }, { field: 'c', state: 'x' }]
 		);
 		assert.deepEqual(widgets.map((w) => [w.field, w.shape.kind, w.ignored, w.current, w.glyph]), [
-			['a', 'state', false, undefined, undefined],
-			['b', 'state', true, true, undefined],
-			['c', 'states', false, 'x', undefined],
-			['d', 'point', false, undefined, '☕']
+			['a', 'on/off', false, undefined, undefined],
+			['b', 'on/off', true, true, undefined],
+			['c', 'change', false, 'x', undefined],
+			['d', 'moment', false, undefined, '☕']
 		]);
 	});
 
@@ -252,13 +252,13 @@ describe('the logic', () => {
 		const w = (shape, rest = {}) => ({ field: 'f', shape, tracked: true, color: '#7c7cff', stateColors: {}, ...rest });
 		// da-h2io6: empty, the name in the app's ink, and beside it the mark
 		// an occur of it draws — the CLI's dot, or the spec's glyph.
-		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00' })), { fill: null, line: '#ffff00', text: 'var(--ink)', label: 'f', glyph: '●' });
-		assert.equal(lookOf(w({ kind: 'point' }, { glyph: '☕' })).glyph, '☕');
-		assert.equal(lookOf(w({ kind: 'point' }, { color: '#ffff00', current: 'x' })).fill, null, 'never coloured by a state');
-		assert.equal(lookOf(w({ kind: 'state' })).glyph, undefined, 'a point\'s alone');
-		assert.deepEqual(lookOf(w({ kind: 'state' }, { color: '#0000ff' })), { fill: null, line: '#0000ff', text: '#0000ff', label: 'f' });
-		assert.deepEqual(lookOf(w({ kind: 'state' }, { color: '#0000ff', current: true })).fill, '#0000ff');
-		const mood = w({ kind: 'states', states: ['good', 'meh'] }, { color: '#800080', stateColors: { good: '#00ff00' }, current: 'good' });
+		assert.deepEqual(lookOf(w({ kind: 'moment' }, { color: '#ffff00' })), { fill: null, line: '#ffff00', text: 'var(--ink)', label: 'f', glyph: '●' });
+		assert.equal(lookOf(w({ kind: 'moment' }, { glyph: '☕' })).glyph, '☕');
+		assert.equal(lookOf(w({ kind: 'moment' }, { color: '#ffff00', current: 'x' })).fill, null, 'never coloured by a state');
+		assert.equal(lookOf(w({ kind: 'on/off' })).glyph, undefined, 'a point\'s alone');
+		assert.deepEqual(lookOf(w({ kind: 'on/off' }, { color: '#0000ff' })), { fill: null, line: '#0000ff', text: '#0000ff', label: 'f' });
+		assert.deepEqual(lookOf(w({ kind: 'on/off' }, { color: '#0000ff', current: true })).fill, '#0000ff');
+		const mood = w({ kind: 'change', states: ['good', 'meh'] }, { color: '#800080', stateColors: { good: '#00ff00' }, current: 'good' });
 		assert.deepEqual(lookOf(mood), { fill: '#00ff00', line: '#800080', text: '#000000', label: 'f' });
 		assert.deepEqual(lookOf(mood, 'state'), { fill: '#00ff00', line: '#800080', text: '#000000', label: 'good' }, 'the variant picks the word, not the ink');
 		assert.equal(lookOf({ ...mood, current: 'meh' }).fill, '#800080', 'a state without a colour takes the field colour');
@@ -270,34 +270,34 @@ describe('the logic', () => {
 		// `color` is always a resolved `#rrggbb` in production (da-yiyj) — no
 		// longer an "uncoloured" case for `lookOf` itself to handle.
 		for (const color of ['#7c7cff', '#e8820c', '#00ff00', '#000080']) {
-			const painted = lookOf(w({ kind: 'states', states: ['on'] }, { color, current: 'on' }));
+			const painted = lookOf(w({ kind: 'change', states: ['on'] }, { color, current: 'on' }));
 			assert.notEqual(painted.text, painted.fill, `a switch in ${color} is painted on itself`);
 		}
 	});
 
-	test('a block that is on ends; a record is `add`', () => {
+	test('an on/off field that is on goes off; a record is `record`', () => {
 		const w = (shape, current) => ({ field: 'f', shape, tracked: true, stateColors: {}, current });
-		assert.deepEqual(pressArgv(w({ kind: 'state' })), ['start', 'f']);
-		assert.deepEqual(pressArgv(w({ kind: 'state' }, true)), ['end', 'f']);
-		assert.deepEqual(pressArgv(w({ kind: 'record' })), ['add', 'f']);
+		assert.deepEqual(pressArgv(w({ kind: 'on/off' })), ['on', 'f']);
+		assert.deepEqual(pressArgv(w({ kind: 'on/off' }, true)), ['off', 'f']);
+		assert.deepEqual(pressArgv(w({ kind: 'record' })), ['record', 'f']);
 		// The COMMAND and nothing else (da-e78x6): the second argument is the
 		// state, not the `-t` / `dur=` an `Adjust` used to carry. A press that
 		// appended a flag of its own would say so here.
-		assert.deepEqual(pressArgv(w({ kind: 'states', states: ['ok'] }), 'ok'), ['switch', 'f', 'ok']);
+		assert.deepEqual(pressArgv(w({ kind: 'change', states: ['ok'] }), 'ok'), ['change', 'f', 'ok']);
 	});
 
-	test('an occur spec presses `occur`, even once it has been logged with a boolean state (da-u8n7)', () => {
-		const shape = shapeFor(spec('jumps', { verb: 'occur' }), [true]);
-		assert.deepEqual(shape, { kind: 'point' });
+	test('an occur spec presses `moment`, even once it has been logged with a boolean state (da-u8n7)', () => {
+		const shape = kindFor(spec('jumps', { verb: 'occur' }), [true]);
+		assert.deepEqual(shape, { kind: 'moment' });
 		assert.deepEqual(pressArgv({ field: 'jumps', shape, tracked: true, stateColors: {} }), ['moment', 'jumps']);
 	});
 
 	// da-c8mh: every spec carries a verb, so only a field with NO spec is
 	// read off its log — the one the next log is about to write a spec for.
 	test('only a spec-less field is read off its log', () => {
-		assert.deepEqual(shapeFor(undefined, [true, false]), { kind: 'state' });
-		assert.deepEqual(shapeFor(undefined, ['sad', 'ok']), { kind: 'states', states: ['ok', 'sad'] });
-		assert.deepEqual(shapeFor(undefined), { kind: 'point' });
+		assert.deepEqual(kindFor(undefined, [true, false]), { kind: 'on/off' });
+		assert.deepEqual(kindFor(undefined, ['sad', 'ok']), { kind: 'change', states: ['ok', 'sad'] });
+		assert.deepEqual(kindFor(undefined), { kind: 'moment' });
 	});
 
 	// What a new field is declared WITH is the field form's (da-94q1):

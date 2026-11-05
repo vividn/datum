@@ -639,7 +639,7 @@ export const layersArgv = (dates: string[], vertical: boolean, digests = false):
 export const TAIL: PaneSpec = {
 	title: 'tail',
 	argv: ['tail'],
-	empty: 'nothing logged yet — try `switch mood happy`',
+	empty: 'nothing logged yet — try `change mood happy`',
 	view: 'tail-table'
 };
 

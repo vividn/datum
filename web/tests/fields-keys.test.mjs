@@ -69,20 +69,20 @@ describe('a field with a required key', () => {
 		});
 	});
 
-	test('a block fills its start under `start`, and ends at once under `end`', async () => {
+	test('an on/off field fills its on under `on`, and goes off at once under `off`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of SEED) await type(page, line);
-			await page.locator('.prompt-bar input').fill('start ');
+			await page.locator('.prompt-bar input').fill('on ');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="shift"]')?.dataset.act === 'fill');
 			await chip(page, 'shift').click();
-			await lineIs(page, 'start shift ');
+			await lineIs(page, 'on shift ');
 
 			// Not backdated: `track` wrote its TRACKED marker now, which would end it.
 			await app.clock.forward(60_000);
-			await type(page, 'start shift project=a');
-			await app.pressWidget('shift', 'end');
-			assert.equal((await app.echoes()).at(-1), 'end shift');
+			await type(page, 'on shift project=a');
+			await app.pressWidget('shift', 'off');
+			assert.equal((await app.echoes()).at(-1), 'off shift');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -124,10 +124,10 @@ describe('a field with a required key', () => {
 			await type(page, 'setup "my notes" --verb add');
 			await type(page, 'setup "my mood" --verb switch --states false,good');
 			await app.idle();
-			assert.match(await chip(page, 'my notes').getAttribute('title'), /add "my notes"/);
+			assert.match(await chip(page, 'my notes').getAttribute('title'), /record "my notes"/);
 			await chip(page, 'my mood').click();
 			const good = page.locator('.bar [data-state="good"]');
-			assert.match(await good.getAttribute('title'), /^switch "my mood" good\b/);
+			assert.match(await good.getAttribute('title'), /^change "my mood" good\b/);
 			assert.deepEqual(app.errors, []);
 		});
 	});

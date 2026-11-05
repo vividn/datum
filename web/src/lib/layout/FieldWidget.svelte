@@ -72,13 +72,12 @@
 	import { run } from '#lib/run.ts';
 	import Sheet from '#lib/Sheet.svelte';
 	import { begin } from '#lib/tour.ts';
-	import { VERBS, type Save, type Spec, type Verb } from '#lib/track.ts';
+	import { VERBS, type Save, type Spec } from '#lib/track.ts';
 	import { fields, press } from './engine.js';
 	import { leavePlace } from './shell.js';
 
-	/** The verb each shape of button is logged with: whose glyph its chip wears. */
-	const VERB: Record<FieldButton['shape']['kind'], Verb> = { point: 'occur', state: 'start', states: 'switch', record: 'add' };
-	const glyphOf = (f: FieldButton) => f.glyph ?? VERBS.find((v) => v.verb === VERB[f.shape.kind])?.glyph;
+	/** The glyph of the field's kind, which its chip wears where its spec names none. */
+	const glyphOf = (f: FieldButton) => f.glyph ?? VERBS.find((v) => v.what === f.shape.kind)?.glyph;
 
 	/** The spec as read: undefined while reading, null for a field without one (made here instead). */
 	let spec: Spec | null | undefined = $state.raw();

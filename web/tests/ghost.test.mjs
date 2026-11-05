@@ -151,7 +151,7 @@ describe('the ghost', () => {
 
 			const saw = await app.watchGhosts();
 			await press(page);
-			const { values, look } = await ghostOf(saw, 'switch');
+			const { values, look } = await ghostOf(saw, 'change');
 			assert.deepEqual(values, [''], 'the press became the input’s value');
 
 			// Dimmer than a typed line, and brighter than the placeholder it
@@ -200,7 +200,7 @@ describe('the ghost', () => {
 			// is known to be another element and not the same one living on.
 			const saw = await app.watchGhosts();
 			await press(page);
-			assert.deepEqual((await ghostOf(saw, 'switch')).values, ['']);
+			assert.deepEqual((await ghostOf(saw, 'change')).values, ['']);
 
 			await press(page, 'bad');
 			// A fresh element AND a fade starting over: the element's own
@@ -209,7 +209,7 @@ describe('the ghost', () => {
 				.waitForFunction(() => window.__datumGhosts.some((g) => g.look.nth === 2) && window.__datumGhosts)
 				.then((h) => h.jsonValue());
 			const second = ghosts.find((g) => g.look.nth === 2);
-			assert.equal(second.line, 'switch');
+			assert.equal(second.line, 'change');
 			assert.ok(second.look.age < 400, `the second ghost's fade began ${second.look.age}ms in`);
 			assert.deepEqual([...new Set(ghosts.map((g) => g.count))], [1], 'two ghosts at once');
 		});
@@ -223,7 +223,7 @@ describe('the ghost', () => {
 
 			const saw = await app.watchGhosts();
 			await press(page);
-			assert.deepEqual((await ghostOf(saw, 'switch')).values, ['']);
+			assert.deepEqual((await ghostOf(saw, 'change')).values, ['']);
 
 			// A key that types nothing, so what clears the ghost is the
 			// keystroke itself and not the box turning non-empty. Read in the
@@ -275,7 +275,7 @@ describe('the ghost', () => {
 
 				const saw = await app.watchGhosts();
 				await press(page);
-				const { values, look } = await ghostOf(saw, 'switch');
+				const { values, look } = await ghostOf(saw, 'change');
 				assert.deepEqual(values, ['']);
 				assert.equal(look.animations, 0, 'the ghost fades for a reader who asked for no motion');
 				await gone(page);

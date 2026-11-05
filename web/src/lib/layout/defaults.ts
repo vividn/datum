@@ -309,7 +309,7 @@ export const ALIASES: Record<string, string> = {
  * widget kind stayed `widgetbar`, so nothing saved or open migrates; a
  * layout saved under another name is called that.
  */
-export const LAYOUT_TITLES: Record<string, string> = { collect: 'collection' };
+export const LAYOUT_TITLES: Record<string, string> = { collect: 'collection', switch: 'change' };
 
 /** What the layout `name` is called on the page (`LAYOUT_TITLES`). */
 export const layoutTitle = (name: string): string => LAYOUT_TITLES[name] ?? name;
@@ -460,7 +460,7 @@ export const LESSONS: Lesson[] = [
 	},
 	{
 		name: 'switch',
-		title: 'switch: record how the state of something changes over time',
+		title: 'change: record how the state of something changes over time',
 		fields: ['room']
 	},
 	{ name: 'input-bar', title: 'The input bar', fields: [] },

@@ -24,6 +24,7 @@
 -->
 <script lang="ts">
 	import { tailArgv } from '#lib/calls.ts';
+	import { pendingCommand } from '#lib/commands.ts';
 	import { run } from '#lib/run.ts';
 	import { isStatus, percent, type Outcome } from '#lib/tutorial.ts';
 	import { FIELD, PLAN, ROOMS, ROUND_MS, WALLS, accuracy, dotAt, round, scene, stateAt, type Change, type Tap } from '#lib/house.ts';
@@ -51,9 +52,9 @@
 	/** The round as the fields' pane shares it: its taps and failures (LessonFields.svelte). */
 	const shared = roundOf('switch');
 	const { phase } = shared;
-	/** At rest, a switch to the dot's room starts the game. */
+	/** At rest, a change to the dot's room starts the game. */
 	shared.wrote = (argv) => {
-		if (argv[0] === 'switch' && argv[1] === FIELD && argv[2] === next[0].state && get(phase) === 'neutral') box.begin();
+		if (pendingCommand(argv[0] ?? '') === 'change' && argv[1] === FIELD && argv[2] === next[0].state && get(phase) === 'neutral') box.begin();
 	};
 
 	function begin(at: number): void {
@@ -108,7 +109,7 @@
 {/snippet}
 
 {#snippet cue()}
-	<p class="cue">Switch <b>{FIELD}</b> to <b>{next[0].state}</b> to start ↓</p>
+	<p class="cue">Change <b>{FIELD}</b> to <b>{next[0].state}</b> to start ↓</p>
 {/snippet}
 
 <div class="lesson">

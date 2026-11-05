@@ -77,14 +77,14 @@
 	edge shows which part of the pictures' height is in view; a tap on it
 	shows the whole again. The zoom is this session's alone.
 
-	A PENDING VERB (`verb`, da-ltux) is the commands widget talking to this
+	A PENDING COMMAND (`pending`, da-ltux) is the commands widget talking to this
 	one through the command line they share: the list becomes the fields
-	that verb can be spent on, and a press MEANS that verb and runs at once.
-	Which fields, and what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
+	that command can be spent on, and a press MEANS that command and runs at once.
+	Which fields, and what a press then runs, are `fieldsUnder` and `pendingPress` in commands.ts.
 
 	A SELECTION talks to it too (da-qu16). A length pill (`25m`) on the bar leaves
-	the fields a length can be spent on — the blocks — and composes with a
-	pending verb, both filters applying. And a press on a PICTURE gives
+	the fields a length can be spent on — on/off and change — and composes with a
+	pending command, both filters applying. And a press on a PICTURE gives
 	the fields drawn near that height the middle of the cluster, ahead of
 	the rest (`rowsUnder`, #lib/lanes.ts): that one only ORDERS, so
 	everything is still there. Nothing moves under a finger: while a
@@ -100,7 +100,7 @@
 	on the bar as a PILL alone (da-8810n), which narrows the rest of the
 	page to it, and held again takes it away (da-05oit).
 
-	Under a pending verb a press composes an argv and dispatches it, and the page runs it through `run()` and echoes the
+	Under a pending command a press composes an argv and dispatches it, and the page runs it through `run()` and echoes the
 	result's own argv into the CLI widget. That is the teach loop, and it only
 	teaches the truth because the echoed argv IS the executed argv — there
 	is no second string built for display that could drift from it.
@@ -129,7 +129,7 @@
 		type Look,
 		type SwitchLabel,
 		type FieldButton,
-		type FieldShape,
+		type FieldKind,
 		type Standings,
 		type Align,
 		type View
@@ -154,9 +154,9 @@
 		lanesOf,
 		pressKind,
 		typesKeys,
-		verbPress,
+		pendingPress,
 		type PressKind,
-		type Verb
+		type LogCommand
 	} from './commands.js';
 
 	let {
@@ -171,20 +171,19 @@
 		/** How a switch in a state is labelled; see `SwitchLabel`. */
 		switchLabel = 'field',
 		/**
-		 * The verb the command line is pending (da-ltux), or null.
+		 * The command the line is pending (da-ltux), or null.
 		 *
-		 * It filters the list to the fields that verb can be spent on and
-		 * makes a press MEAN that verb — so `start` on a switch field with
-		 * `true` among its states runs `start <field>`, not the state list a
-		 * plain press would open. The `+` at the end is then the way to a
-		 * field that does not exist yet, with the verb already chosen.
+		 * It filters the list to the fields that command can be spent on and
+		 * makes a press MEAN that command — so `on` on a change field with
+		 * `true` among its states runs `on <field>`, not the state list a
+		 * plain press would open.
 		 */
-		verb = null,
+		pending = null,
 		/**
 		 * Whether the bar holds a DURATION — a pill of kind `dur` (da-qu16).
 		 *
-		 * It leaves the fields a length can be spent on: the blocks. It
-		 * COMPOSES with `verb` — both filters apply.
+		 * It leaves the fields a length can be spent on: on/off and change.
+		 * It COMPOSES with `pending` — both filters apply.
 		 */
 		duration = false,
 		/**
@@ -244,7 +243,7 @@
 		align?: Align;
 		disabled?: boolean;
 		switchLabel?: SwitchLabel;
-		verb?: Verb | null;
+		pending?: LogCommand | null;
 		duration?: boolean;
 		rank?: Map<string, Near> | null;
 		showIgnored?: boolean;
@@ -319,7 +318,7 @@
 				fields.filter((w) => showIgnored || !w.ignored),
 				duration
 			),
-			verb
+			pending
 		)
 	);
 	// Among every field, not the bar's: a length made in its own view must
@@ -532,8 +531,8 @@
 		return `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}`;
 	}
 
-	function statesOf(shape: FieldShape): string[] {
-		return shape.kind === 'states' ? shape.states : [];
+	function statesOf(shape: FieldKind): string[] {
+		return shape.kind === 'change' ? shape.states : [];
 	}
 
 	/**
@@ -544,7 +543,7 @@
 	 * press/right click -> field pill and open the next menu / 2-click mode:
 	 * reversed». So in 1-click it opens the field, its pill on the bar, and
 	 * in 2-click it logs what needs nothing more, as `press` does with the
-	 * other `oneTap`. Under a pending verb, which a tap runs in either mode,
+	 * other `oneTap`. Under a pending command, which a tap runs in either mode,
 	 * it opens the field. With the view open the field's button is not there
 	 * to hold again: Back or Escape takes the pill away, as for a tapped one.
 	 *
@@ -557,8 +556,9 @@
 		setFieldPill($fieldPill === button.field ? null : button.field, button.color);
 	}
 
-	/** What a hold does: the other mode's tap, or under a pending verb, which a tap runs, the field opened. */
-	const heldKind = (button: FieldButton): PressKind => (verb && verbPress(verb, button) ? 'show' : pressKind(button, verb, !oneTap));
+	/** What a hold does: the other mode's tap, or under a pending command, which a tap runs, the field opened. */
+	const heldKind = (button: FieldButton): PressKind =>
+		pending && pendingPress(pending, button) ? 'show' : pressKind(button, pending, !oneTap);
 
 	/**
 	 * What a button says it does, which is the one place both gestures are
@@ -568,9 +568,9 @@
 	 */
 	function titleOf(button: FieldButton): string {
 		const record = button.shape.kind === 'record';
-		const kind = pressKind(button, verb, oneTap);
+		const kind = pressKind(button, pending, oneTap);
 		const does = (kind: PressKind) => (kind === 'run' ? 'log it' : kind === 'fill' ? 'fill the prompt' : 'collect it');
-		const press = record ? `${shellJoin(['add', button.field])} … — fills the prompt` : `press to ${does(kind)}`;
+		const press = record ? `${shellJoin(['record', button.field])} … — fills the prompt` : `press to ${does(kind)}`;
 		const held = tapLogs ? 'filter the page to it' : does(heldKind(button));
 		return [...(record ? [] : [button.field]), ...(button.ignored ? ['ignored'] : []), press, `hold to ${held}`].join(' · ');
 	}
@@ -604,9 +604,9 @@
 	// CLI's dry run of it. Asked again as a pill moves, and as the minute
 	// moves a relative time on.
 	$effect(() => {
-		const verb = picking && picking.shape.kind !== 'record' ? pressArgv(picking)[0] : null;
+		const command = picking && picking.shape.kind !== 'record' ? pressArgv(picking)[0] : null;
 		void $pointed;
-		previewOf(verb ? withPills($grammar, [verb], $pills).argv : null);
+		previewOf(command ? withPills($grammar, [command], $pills).argv : null);
 	});
 	$effect(() => () => void previewOf(null));
 
@@ -774,7 +774,7 @@
 			close();
 			return emit(pressArgv(button, state));
 		}
-		if (logs && typesKeys('switch', button)) {
+		if (logs && typesKeys('change', button)) {
 			// Closed, not Back: the time pills made here stay for the line filled.
 			setFieldPill(null);
 			close();
@@ -786,7 +786,7 @@
 			const at = rest.findIndex((p) => p.kind === 'field') + 1;
 			return [...rest.slice(0, at), pill, ...rest.slice(at)];
 		});
-		if (logs) onrun(['switch']);
+		if (logs) onrun(['change']);
 	}
 
 	/** A key's chip: `key=` on the line, the caret after it. */
@@ -840,10 +840,10 @@
 	 * A press does what `pressKind` says — the same answer the button's
 	 * outline is drawn from, so the two cannot disagree (da-z8z40).
 	 */
-	function press(button: FieldButton, kind = pressKind(button, verb, oneTap)) {
-		// With a verb pending, the press IS that verb (C1: a field tap runs
+	function press(button: FieldButton, kind = pressKind(button, pending, oneTap)) {
+		// With a command pending, the press IS that command (C1: a field tap runs
 		// at once).
-		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
+		const argv = (pending && pendingPress(pending, button)) || pressArgv(button);
 		// A plain press opens the field, to collect it (da-w6437).
 		if (kind === 'show') open(button);
 		// A record, or a field with keys to type: the line goes to the prompt.
@@ -1074,7 +1074,7 @@
 		     any other, and only what a press MEANS is its own. -->
 		<button
 			class="record"
-			use:act={pressKind(button, verb, oneTap)}
+			use:act={pressKind(button, pending, oneTap)}
 			class:ignored={button.ignored}
 			class:pilled={$fieldPill === button.field}
 			role="link"
@@ -1088,8 +1088,8 @@
 		>
 	{:else}
 		<button
-			class="widget {button.shape.kind}"
-			use:act={pressKind(button, verb, oneTap)}
+			class="widget {button.shape.kind.replace('/', '')}"
+			use:act={pressKind(button, pending, oneTap)}
 			class:on={look.fill !== null}
 			class:ignored={button.ignored}
 			class:pilled={$fieldPill === button.field}
@@ -1100,7 +1100,7 @@
 			data-pilled={$fieldPill === button.field ? '' : undefined}
 			title={titleOf(button)}
 			onclick={() => press(button)}
-		>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
+		>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'change' ? ':' : ''}</button>
 	{/if}
 {/snippet}
 
@@ -1220,17 +1220,17 @@
 					<!-- `−m` and the length are one pill, never both (vividn: «they don't
 					     make sense in conjunction»); the other's button stays to swap. A
 					     moment field has no length to give: `−q` alone (vividn, 16:07). -->
-					{#if here.shape.kind === 'point'}
+					{#if here.shape.kind === 'moment'}
 						<!-- nothing more -->
 					{:else if moment}
 						{@render twoPart('moment', '−m', toggleMoment, toggleMoment)}
 					{:else if span !== null}
 						{@render twoPart('length', `${span}m`, addsM ? longer : null, clearLength)}
 					{/if}
-					{#if here.shape.kind !== 'point' && !moment}
+					{#if here.shape.kind !== 'moment' && !moment}
 						<button class="nav round" data-m {disabled} title="a moment, no length" onclick={toggleMoment}>−m</button>
 					{/if}
-					{#if here.shape.kind !== 'point' && span === null}
+					{#if here.shape.kind !== 'moment' && span === null}
 						<button class="nav round" data-five {disabled} title="five minutes long" onclick={longer}>5m</button>
 					{/if}
 				</div>
@@ -1308,13 +1308,13 @@
 								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type, or a tap only chooses it (2-click, da-u017i). -->
 								<button
 									class="widget states"
-									use:act={clicks === 'two' ? 'arm' : typesKeys('switch', here) ? 'fill' : 'run'}
+									use:act={clicks === 'two' ? 'arm' : typesKeys('change', here) ? 'fill' : 'run'}
 									class:on={here.current === state}
 									class:chosen={chosen === shellJoin([state])}
 									style={vars(look)}
 									{disabled}
 									data-state={state}
-									title={shellJoin(['switch', here.field, state])}
+									title={shellJoin(['change', here.field, state])}
 									onclick={() => choose(here, state)}
 								>
 									{state}
@@ -1455,7 +1455,7 @@
 		font-size: 0.85rem;
 	}
 
-	.widget.point {
+	.widget.moment {
 		border-radius: 999px;
 	}
 
@@ -1927,7 +1927,8 @@
 
 	/* The state the field is in now: solid, as the field's own chip draws
 	   it (`stateLook`), and bold — the rest are a tint. */
-	.states.on {
+	.states.on,
+	.widget.change.on {
 		font-weight: 700;
 	}
 

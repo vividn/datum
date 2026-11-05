@@ -205,7 +205,8 @@ describe('the Help button', () => {
 			const lines = await explain(page, page.locator('.host[data-widget="setup"] p.what'), 'setup');
 			assert.equal(lines.join('\n'), await kindHelp('setup'));
 			assert.ok(lines.join('\n').includes('`setup F --track`'), 'it names the command a new field\'s Save runs');
-			assert.doesNotMatch(lines.join('\n'), /\bkind\b|\bkeys\b/);
+			// A field's kind is the glossary's word (da-kjkpx), the old «shape» gone; its keys are its data.
+			assert.doesNotMatch(lines.join('\n'), /\bshapes?\b|\bkeys\b/);
 		}, withField);
 	});
 

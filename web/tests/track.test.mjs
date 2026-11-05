@@ -21,7 +21,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
-	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, verbAsked, wide
+	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, kindAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 import { FIELD_FORM as MODAL, PANEL, leaveField, declared, openField, pickImage } from './support/field.mjs';
@@ -314,12 +314,12 @@ describe('the argv it composes', () => {
 	test('the refusal is read for the field it names, and nothing else is', () => {
 		const said = (stderr, code = 1) => ({ argv: [], code, stdout: '', stderr });
 		assert.equal(
-			verbAsked(['track', 'mood'], said("error: 'mood' is new — say what a press of it means: --verb occur|start|switch|add")),
+			kindAsked(['track', 'mood'], said("error: 'mood' is new — say what a press of it means: --verb occur|start|switch|add")),
 			'mood'
 		);
-		assert.equal(verbAsked(['track', 'mood'], said('', 0)), null, 'a success is not a question');
-		assert.equal(verbAsked(['occur', 'mood'], said("'mood' is new — say what a press of it means:")), null);
-		assert.equal(verbAsked(['track', 'mood'], said('error: no such field')), null);
+		assert.equal(kindAsked(['track', 'mood'], said('', 0)), null, 'a success is not a question');
+		assert.equal(kindAsked(['occur', 'mood'], said("'mood' is new — say what a press of it means:")), null);
+		assert.equal(kindAsked(['track', 'mood'], said('error: no such field')), null);
 	});
 });
 

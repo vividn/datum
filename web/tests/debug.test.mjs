@@ -315,13 +315,13 @@ describe('the sample seeder', () => {
 			await page.evaluate(() => {
 				let mornings = 0;
 				const previous = window.datum.setRunner((argv, ...rest) =>
-					argv.includes('end') && argv.includes('sleep') && ++mornings === 2
+					argv.includes('off') && argv.includes('sleep') && ++mornings === 2
 						? Promise.resolve({ argv, code: 1, stdout: '', stderr: 'Error: refused\n' })
 						: previous(argv, ...rest)
 				);
 			});
 			const report = await press(page, 'seed the last 7 days');
-			assert.match(report, /`datum end sleep -d [\d-]+ -t [\d:.]+ sample=true`/, 'it names the command that failed');
+			assert.match(report, /`datum off sleep -d [\d-]+ -t [\d:.]+ sample=true`/, 'it names the command that failed');
 			assert.match(report, /Error: refused$/, 'and what the CLI said');
 			const log = await written(page);
 			assert.ok(log.at(-1).failed, 'the last command shown is not the one that failed');

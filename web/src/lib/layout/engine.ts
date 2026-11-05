@@ -31,7 +31,7 @@ import { FROZEN_AT } from '#lib/dbProtocol.ts';
 import { currentDb } from '#lib/database.ts';
 import { conflictsArgv, entriesHistoryArgv, fieldsArgv, grammarArgv, nowArgv, recencyArgv, stepArgv, type Reads } from '#lib/calls.ts';
 import { listsConflicts, type Conflicted } from '#lib/conflicts.ts';
-import { verbAsked } from '#lib/track.ts';
+import { kindAsked } from '#lib/track.ts';
 import { openField, specOpens } from '#lib/fieldWidget.ts';
 import { openPlace, settledTree } from './shell.js';
 import { FIELDS } from './draft.js';
@@ -226,8 +226,8 @@ function activeOf(now: RunResult): NowActive[] {
 /**
  * A command ran, here or in another tab: the panes and the fields bar read
  * again when it CHANGED a database (da-fprk0). By effect — the worker's
- * change counters, `result.changed` — never by verb, so no list of which
- * verbs write can drift out of step with the CLI, and a failed write that
+ * change counters, `result.changed` — never by command, so no list of which
+ * commands write can drift out of step with the CLI, and a failed write that
  * still moved a row counts. A read moves nothing: on the deployed layout
  * one cost nine pane runs, most of a keystroke. Without a result (another
  * tab's write, a seed) something is known to have changed.
@@ -257,7 +257,7 @@ function guess(result: RunResult): void {
 	fields.update((buttons) =>
 		buttons.map((b) => {
 			const doc = docs.findLast((d) => d.field === b.field);
-			if (!doc || b.shape.kind === 'point' || b.shape.kind === 'record') return b;
+			if (!doc || b.shape.kind === 'moment' || b.shape.kind === 'record') return b;
 			const { state, state_color } = doc;
 			if (state === false) return { ...b, active: false, current: undefined };
 			if (state === true) return { ...b, active: true, current: true };
@@ -322,7 +322,7 @@ export async function press(
 	// So do `setup` and `setup F` the field widget, on F (da-ez40f).
 	const field = specOpens(argv);
 	if (result.code === 0 && field !== null) void openField(field);
-	return (await answerVerb(argv, result)) ?? result;
+	return (await answerKind(argv, result)) ?? result;
 }
 
 /**
@@ -339,20 +339,20 @@ export async function shown(argv: string[], stdin?: string, env: string[] = []):
 }
 
 /**
- * The CLI's «which verb?» refusal is a question, and the web has somewhere
+ * The CLI's «which kind?» refusal is a question, and the web has somewhere
  * to ask it: `track <field>` on a field with neither a spec nor a log
- * comes back asking for `--verb`, and that is the setup widget's own
+ * comes back asking for `--kind`, and that is the setup widget's own
  * question (da-94q1, da-fu29p). Its place opens with the field already
  * named, and what it saves REPLACES the refused command — the answer is a
- * `track` with the verb on it, so there is nothing left to retry.
+ * `track` with the kind on it, so there is nothing left to retry.
  *
  * Null whenever the result was not that refusal, or the place was left
  * without a save: the refusal then stands, as any other error does. It
  * stands too where a setup widget was in view already — that one is put on
  * the field and saves in its own time, which nothing here waits for.
  */
-async function answerVerb(argv: string[], result: RunResult): Promise<RunResult | null> {
-	const field = verbAsked(argv, result);
+async function answerKind(argv: string[], result: RunResult): Promise<RunResult | null> {
+	const field = kindAsked(argv, result);
 	return field === null ? null : openField(field);
 }
 

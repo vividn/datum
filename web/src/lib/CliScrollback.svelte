@@ -200,7 +200,7 @@
 
 <Pane title="cli" {bare} alarm={isDegraded($storage)} bind:this={pane} bind:body>
 	{#if entries.length === 0}
-		<p class="quiet">type a command — <code>switch mood happy</code>, <code>tail</code></p>
+		<p class="quiet">type a command — <code>change mood happy</code>, <code>tail</code></p>
 	{/if}
 	{#if $progress && reversed}
 		<p class="progress">{$progress}</p>

@@ -38,7 +38,7 @@ async function seeded(app) {
 		window.datum.tutorial.house.round.seed = seed;
 		return window.datum.tutorial.house.scene(seed);
 	}, SEED);
-	await page.locator('.root-bar [role="tab"]', { hasText: 'switch' }).click();
+	await page.locator('.root-bar [role="tab"]', { hasText: 'change' }).click();
 	await page.locator(`${PANE} .game[aria-busy="false"]`).waitFor();
 	return walk;
 }

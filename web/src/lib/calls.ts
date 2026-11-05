@@ -312,7 +312,7 @@ export function savePlanArgv(plan: Plan, exists: boolean): string[] {
 	const value = `plan=${JSON.stringify(plan)}`;
 	return exists
 		? ['update', `backup_plan:${plan.name}`, '-k', value]
-		: ['occur', 'backup_plan', '--id', '%name', '-k', `name=${JSON.stringify(plan.name)}`, '-k', value];
+		: ['moment', 'backup_plan', '--id', '%name', '-k', `name=${JSON.stringify(plan.name)}`, '-k', value];
 }
 
 export function deletePlanArgv(name: string): string[] {
@@ -358,7 +358,7 @@ export function layoutsArgv(): string[] {
 }
 
 export function newLayoutArgv(layout: Layout, kit?: string): string[] {
-	return ['occur', 'layout', '--id', '%name', '-k', `name=${JSON.stringify(layout.name)}`, ...layoutKeys(layout, kit)];
+	return ['moment', 'layout', '--id', '%name', '-k', `name=${JSON.stringify(layout.name)}`, ...layoutKeys(layout, kit)];
 }
 
 export function updateLayoutArgv(layout: Layout, kit?: string): string[] {
@@ -421,11 +421,11 @@ export function tutorialAliasArgv(word: string): string[] {
 }
 
 /**
- * `field`'s state ended: an on/off field off, a switch field false (a game's Reset, da-uzyih.4864),
+ * `field`'s state ended: an on/off field off, a change field false (a game's Reset, da-uzyih.4864),
  * and nothing written unless it is still in `state`, as `now --json` read it (`-L`, da-v2d29).
  */
 export function endArgv(field: string, state: unknown): string[] {
-	return ['end', field, '-L', String(state)];
+	return ['off', field, '-L', String(state)];
 }
 
 /** `fields` TRACKED, as a game begins (da-uzyih.4882), in one command (da-klzka); on a field already tracked, nothing is written. */

@@ -238,7 +238,7 @@ describe('the bar of commands', () => {
 				Object.assign(looks, Object.fromEntries(await read()));
 				await commands(page).locator('button[data-back]').click();
 			}
-			const glyphs = { undo: '↶', moment: '●', start: '█', end: '■', switch: '▞', add: '¢', note: '✎', track: '+' };
+			const glyphs = { undo: '↶', moment: '●', on: '█', off: '■', change: '▞', record: '¢', remark: '✎', track: '+' };
 			for (const [name, glyph] of Object.entries(glyphs)) assert.ok(looks[name].icon.startsWith(`"${glyph}"`), `${name} draws ${looks[name].icon}`);
 			for (const name of ['delete', 'retime', 'tail', 'stats', 'sync', 'menu write']) assert.match(looks[name].icon, /^M/, `${name} draws ${looks[name].icon}`);
 			const icons = Object.values(looks).map((l) => l.icon);
@@ -476,17 +476,17 @@ describe('a verb fills the line and filters the fields', () => {
 
 			// Every block, running or not (da-vpzbv: a start re-logged is a
 			// forgotten one), and a switch with `true` among its states.
-			await tap(page, 'start');
+			await tap(page, 'on');
 			assert.deepEqual(await showing(page), ['light', 'sleep', 'work']);
 
 			// Every block again, and the switches that are on by `now`'s truth.
-			await tap(page, 'end');
+			await tap(page, 'off');
 			assert.deepEqual(await showing(page), ['mood', 'sleep', 'work']);
 
-			await tap(page, 'switch');
+			await tap(page, 'change');
 			assert.deepEqual(await showing(page), ['light', 'mood']);
 
-			await tap(page, 'add');
+			await tap(page, 'record');
 			assert.deepEqual(await showing(page), ['rec']);
 		});
 	});
@@ -500,23 +500,23 @@ describe('a verb fills the line and filters the fields', () => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const verbs = async () =>
-				(await drawn(page)).filter((name) => ['moment', 'start', 'end', 'switch', 'add'].includes(name));
+				(await drawn(page)).filter((name) => ['moment', 'on', 'off', 'change', 'record'].includes(name));
 
 			for (const field of ['work', 'sleep']) {
 				await fieldsBar(page).locator(`[data-field="${field}"]`).click({ button: 'right' });
 				// The pill's commands, flat (da-fg4w4), in place of the base row.
-				await page.waitForFunction(() => document.querySelector('main .bar.commands [data-command="start"]'));
-				assert.deepEqual(await verbs(), ['start', 'end'], field);
+				await page.waitForFunction(() => document.querySelector('main .bar.commands [data-command="on"]'));
+				assert.deepEqual(await verbs(), ['on', 'off'], field);
 				await page.locator('.prompt-bar .pill.field button.remove').click();
 				await page.waitForFunction(() => document.querySelector('main .bar.commands [data-menu="write"]'));
 			}
 
-			await tap(page, 'start');
+			await tap(page, 'on');
 			await echoed(app, () => fieldsBar(page).locator('[data-field="work"]').click());
-			assert.equal((await app.echoes()).at(-1), 'start work');
-			await tap(page, 'end');
+			assert.equal((await app.echoes()).at(-1), 'on work');
+			await tap(page, 'off');
 			await echoed(app, () => fieldsBar(page).locator('[data-field="sleep"]').click());
-			assert.equal((await app.echoes()).at(-1), 'end sleep');
+			assert.equal((await app.echoes()).at(-1), 'off sleep');
 			await app.idle();
 			assert.deepEqual(
 				(await app.entries(2)).map((e) => e.field).sort(),
@@ -542,6 +542,7 @@ describe('a verb fills the line and filters the fields', () => {
 			// and the state it is given runs the pending verb (da-g635).
 			await fieldsBar(page).locator('[data-field="mood"]').click();
 			await echoed(app, () => fieldsBar(page).locator('[data-state="bad"]').click());
+			// The old word typed pends `change`, and runs as it was typed.
 			assert.equal((await app.echoes()).at(-1), 'switch mood bad');
 			assert.equal((await line(page)).text, '', 'the verb was not spent');
 
@@ -563,7 +564,7 @@ describe('a verb under a field pill', () => {
 		'setup tea --verb moment --data-key amount',
 		'setup juice --verb moment --data-key cups=1',
 		'setup shift --verb start --data-key project --data-key n=1',
-		'start shift project=a n=1 -t -30'
+		'on shift project=a n=1 -t -30'
 	];
 	const verb = (page, name) => commands(page).locator(`button[data-command="${name}"]`);
 	const fieldPill = (page) => page.locator('.prompt-bar .pill.field');
@@ -572,7 +573,7 @@ describe('a verb under a field pill', () => {
 	async function pillOf(page, field) {
 		await fieldsBar(page).locator(`[data-field="${field}"]`).click({ button: 'right' });
 		await fieldPill(page).waitFor();
-		await page.waitForFunction(() => !document.querySelector('[data-command="switch"]'));
+		await page.waitForFunction(() => !document.querySelector('[data-command="change"]'));
 	}
 
 	test('a field that needs nothing typed: the verb is double-outlined and logs at once, spending the pill', async () => {
@@ -596,7 +597,7 @@ describe('a verb under a field pill', () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, KEYED);
-			for (const name of ['start', 'end']) {
+			for (const name of ['on', 'off']) {
 				await pillOf(page, 'sleep');
 				assert.equal(await verb(page, name).getAttribute('data-act'), 'run', name);
 				await echoed(app, () => verb(page, name).click());
@@ -685,11 +686,11 @@ describe('a verb under a field pill', () => {
 			const { page } = app;
 			await seedLines(app, KEYED);
 			await pillOf(page, 'shift');
-			assert.equal(await verb(page, 'start').getAttribute('data-act'), 'fill');
-			assert.equal(await verb(page, 'end').getAttribute('data-act'), 'run');
+			assert.equal(await verb(page, 'on').getAttribute('data-act'), 'fill');
+			assert.equal(await verb(page, 'off').getAttribute('data-act'), 'run');
 
-			await echoed(app, () => verb(page, 'end').click());
-			assert.equal((await app.echoes()).at(-1), 'end shift');
+			await echoed(app, () => verb(page, 'off').click());
+			assert.equal((await app.echoes()).at(-1), 'off shift');
 			await fieldPill(page).waitFor({ state: 'detached' });
 			await app.idle();
 			const [entry] = await app.entries(1);
@@ -712,21 +713,21 @@ describe('a typing command under field and hid pills', () => {
 	const caret = (page) =>
 		input(page).evaluate((el) => ({ text: el.value, focused: document.activeElement === el, at: el.selectionStart }));
 
-	test('note under a coffee pill writes `note coffee ` with the caret last; the words land after the field', async () => {
+	test('remark under a coffee pill writes `remark coffee ` with the caret last; the words land after the field', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			await fieldsBar(page).locator('[data-field="coffee"]').click({ button: 'right' });
 			await pill(page, 'field').waitFor();
 
-			await commands(page).locator('button[data-command="note"]').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'note coffee ');
-			assert.deepEqual(await caret(page), { text: 'note coffee ', focused: true, at: 'note coffee '.length });
+			await commands(page).locator('button[data-command="remark"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'remark coffee ');
+			assert.deepEqual(await caret(page), { text: 'remark coffee ', focused: true, at: 'remark coffee '.length });
 			await pill(page, 'field').waitFor({ state: 'detached' });
 
 			await input(page).pressSequentially('too strong');
 			await echoed(app, () => input(page).press('Enter'));
-			assert.equal((await app.echoes()).at(-1), 'note coffee too strong');
+			assert.equal((await app.echoes()).at(-1), 'remark coffee too strong');
 			await app.idle();
 			const all = await app.allEntries();
 			// A note is timeless (da-r17h), so it is found, not taken from the end.
@@ -739,8 +740,8 @@ describe('a typing command under field and hid pills', () => {
 
 	test('with no pills, a typing command writes its name alone, as it always did', async () => {
 		await onPage(async ({ page }) => {
-			await tap(page, 'note');
-			assert.deepEqual(await caret(page), { text: 'note ', focused: true, at: 5 });
+			await tap(page, 'remark');
+			assert.deepEqual(await caret(page), { text: 'remark ', focused: true, at: 7 });
 		});
 	});
 
@@ -794,19 +795,19 @@ describe('the scroll rule', () => {
 				assert.deepEqual(drawn.filter((b) => !b.inside).map((b) => b.name), [], `${want} rows: clipped`);
 				packed(await gaps(commands(page), '.lane > *'), `${want} rows`);
 				if (want === 2) {
-					// Dealt by index: back and moment start the two rows, start
-					// follows back and end follows moment.
+					// Dealt by index: back and moment start the two rows, on
+					// follows back and off follows moment.
 					const at = Object.fromEntries((await boxes(commands(page), 'button.round')).map((b) => [b.name, b]));
 					const back = at['back'];
 					assert.deepEqual(
 						[
 							back.left === at.moment.left,
 							back.line < at.moment.line,
-							at.start.line === back.line && at.start.left > back.left,
-							at.end.line === at.moment.line && at.end.left > at.moment.left
+							at.on.line === back.line && at.on.left > back.left,
+							at.off.line === at.moment.line && at.off.left > at.moment.left
 						],
 						[true, true, true, true],
-						'the rows are not back start … over moment end …'
+						'the rows are not back on … over moment off …'
 					);
 				}
 				// And the rest really is reached by scrolling, not by spilling —

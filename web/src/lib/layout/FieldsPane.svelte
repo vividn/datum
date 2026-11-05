@@ -13,9 +13,9 @@
 	whichever CLI widget is on screen; a record's line, and a log with keys to
 	type (da-chml5), go to the bottom bar's prompt, unrun.
 
-	`pending` is the verb the command line holds (da-ltux): it filters the
-	list, and a press under it runs `<verb> <field>` at once — with the
-	flags the line carries between them (da-bbmpx) — and spends the verb:
+	`pending` is the command the line holds (da-ltux): it filters the
+	list, and a press under it runs `<command> <field>` at once — with the
+	flags the line carries between them (da-bbmpx) — and spends the command:
 	the box empties, and the list is whole again.
 
 	The SELECTION is the other thing the widget answers (da-qu16): a length
@@ -92,9 +92,9 @@
 	const doc = $derived(layer?.doc());
 
 	/**
-	 * A press under the pending verb runs the LINE with the field after it
-	 * — `occur -q ` and coffee is `occur -q coffee` — and spends it
-	 * (da-bbmpx); a line `flagLine` refuses keeps today's `occur coffee`.
+	 * A press under the pending command runs the LINE with the field after it
+	 * — `moment -q ` and coffee is `moment -q coffee` — and spends it
+	 * (da-bbmpx); a line `flagLine` refuses keeps today's `moment coffee`.
 	 */
 	function run(argv: string[]) {
 		const line = pendingFlags(argv);
@@ -113,17 +113,19 @@
 	}
 	const nowPending = $derived(marks.map((m) => m.mark));
 
-	/** The pending line's flags, when `argv` spends its verb and it holds only flags. */
+	/** The pending line's flags, when `argv` spends its command and it holds only flags. */
 	const pendingFlags = (argv: string[]): string[] | null =>
 		argv[0] === $pending ? flagLine(shellSplit($text), $grammar?.get(argv[0])) : null;
 
 	/**
 	 * The same line, left unrun and straight into its first key's frame
 	 * (da-31d1d). The flags go AFTER the field, where the CLI takes them as
-	 * well: the frames read the field as the second word.
+	 * well: the frames read the field as the second word. The command is the
+	 * word typed, as a run's is: `start ` typed fills `start shift `.
 	 */
 	function fill(argv: string[]) {
-		const line = shellJoin([...argv, ...(pendingFlags(argv)?.slice(1) ?? [])]);
+		const [command, ...flags] = pendingFlags(argv) ?? argv.slice(0, 1);
+		const line = shellJoin([command, ...argv.slice(1), ...flags]);
 		prefill.set({ line: advance(line, $fields) ?? `${line} `, keyboard: true });
 	}
 </script>
@@ -131,7 +133,7 @@
 <div class="body">
 	<FieldsWidget
 		fields={$fields}
-		verb={$pending}
+		pending={$pending}
 		duration={hasDuration($pills)}
 		rank={$lanes}
 		standings={$standings}

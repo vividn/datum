@@ -155,7 +155,7 @@ describe('a tab behind takes no focus and no key', () => {
 		}, { ...DESKTOP, clock: todayAt(15) });
 	});
 
-	// A prefill (the fields widget's `add <field> `, a record's press) puts
+	// A prefill (the fields widget's `record <field> `, a record's press) puts
 	// the caret in the newest input widget: one mounted in a tab behind
 	// cannot take it, so it goes to the widget line in front, and with none
 	// there to the bar's. It was the hold panel's `note` until da-e78x6
@@ -174,7 +174,7 @@ describe('a tab behind takes no focus and no key', () => {
 			/** Press coffee, clear the line, and say where the caret went. */
 			const note = async () => {
 				await page.locator('.bar [data-field="coffee"]').click();
-				await page.waitForFunction(() => document.activeElement?.value === 'add coffee ');
+				await page.waitForFunction(() => document.activeElement?.value === 'record coffee ');
 				const where = await page.evaluate(() =>
 					document.activeElement.closest('.prompt-bar') ? 'bar' : document.activeElement.closest('section[data-pane]')?.dataset.pane
 				);

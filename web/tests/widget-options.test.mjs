@@ -138,7 +138,7 @@ describe('widget options', () => {
 			assert.deepEqual(await linesOf(page, 'bar'), [
 				'Reset widget',
 				'the buttons stand',
-				'a switch is labelled with its',
+				'a change field is labelled with its',
 				'show ignored fields',
 				'a tap',
 				'side'
@@ -186,7 +186,7 @@ describe('widget options', () => {
 	// the modal had, in the menu. The default is named as one.
 	test('a choice opens a submenu of its values, the one in force ticked', async () => {
 		await shared.solo(async ({ page }) => {
-			assert.deepEqual(await choiceLines(page, 'bar', 'a switch is labelled with its'), ['✓ field · default', 'state']);
+			assert.deepEqual(await choiceLines(page, 'bar', 'a change field is labelled with its'), ['✓ field · default', 'state']);
 			const windows = await choiceLines(page, 'nowview', 'history');
 			assert.equal(windows.length, 15, windows.join(' | '));
 			assert.deepEqual(windows.slice(0, 4), ['30s', '1m', '2m', '5m']);

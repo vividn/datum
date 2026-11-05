@@ -53,11 +53,11 @@ describe('a press', () => {
 			await untilFieldStyle(page, 'sleep', 'borderTopColor', BLUE);
 			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).verb, 'start');
 
-			await untilShape(page, 'state');
+			await untilShape(page, 'onoff');
 
 			await type(page, 'end sleep');
 			await type(page, 'setup sleep --verb moment');
-			await untilShape(page, 'point');
+			await untilShape(page, 'moment');
 		});
 	});
 
@@ -218,7 +218,7 @@ describe('a press', () => {
 			await page.locator('.bar [data-field="note"]').click();
 			await page.waitForFunction(() => {
 				const input = document.querySelector('.prompt-bar input');
-				return input.value === 'add note ' && document.activeElement === input;
+				return input.value === 'record note ' && document.activeElement === input;
 			});
 			assert.equal((await app.echoes()).length, echoes);
 		});

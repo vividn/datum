@@ -111,7 +111,7 @@ export async function startOver(fields: string[]): Promise<void> {
 		// The CLI's refusals for either: `-L S: F is in T, so nothing is written` (changed since) and `No open
 		// block for 'F'` (ended since); `ensure_last_state.rs` pins both words.
 		const { code, stderr } = await loudly(endArgv(field, state));
-		if (code !== 0 && !/so nothing is written|No open block/.test(stderr)) throw cliError(stderr, `datum end exited ${code}`);
+		if (code !== 0 && !/so nothing is written|No open block/.test(stderr)) throw cliError(stderr, `datum off exited ${code}`);
 	}
 }
 
