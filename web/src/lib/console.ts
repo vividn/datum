@@ -31,7 +31,7 @@ import { cursor, pointAt, setCursor, type Cursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
 import { openField } from './fieldWidget.js';
 import { explainCommand } from './help.js';
-import type { Verb } from './track.js';
+import type { Example, Verb } from './track.js';
 import { get } from 'svelte/store';
 import { apply, editing, layout } from './layout/current.js';
 import { forgetSession, keyOf, session, withSession } from './layout/session.js';
@@ -115,10 +115,11 @@ export interface DatumConsole {
 	};
 	/**
 	 * Open the setup widget (da-fu29p) on `field` — none is a new one,
-	 * `verb` its kind chosen — resolving with what its
-	 * place's next save ran, or null when it is left without one.
+	 * `verb` its kind chosen, `brought` from another pane or filled with an
+	 * `example` — resolving with what its place's next save ran, or null
+	 * when it is left without one.
 	 */
-	field(field?: string, verb?: Verb | null): Promise<RunResult | null>;
+	field(field?: string, verb?: Verb | null, options?: { brought?: boolean; example?: Example }): Promise<RunResult | null>;
 	/** The backup destinations' kinds (#lib/backups.ts), by name: what a plan's `kind` opens. */
 	backupKinds: Record<string, DestinationKind>;
 	/** `datum help <name>` in the Help place, as the Help button opens it (da-efruz). */

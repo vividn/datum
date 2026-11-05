@@ -47,56 +47,104 @@ export const VERBS: VerbChoice[] = [
 	{ verb: 'add', glyph: '¢', what: 'record', line: 'keys and values, with no time' }
 ];
 
-/** A field to start from: what an example fills the form with, never the database (da-fu29p). */
+/** A key an example declares: the key row's name, kind, place in the slug, and whether it takes the rest of the line. */
+export type ExampleKey = Pick<KeyRow, 'name' | 'kind' | 'in_slug' | 'rest'>;
+
+/** A field to start from: what an example fills the setup form with, never the database (da-fu29p). */
 export interface Example {
 	field: string;
 	verb: Verb;
+	/** The theme it is listed under in the premade widget (da-36whg). */
+	theme: string;
 	/** What it shows of datum, under its name. */
 	shows: string;
 	color: string;
 	/** Its icon in the examples, saved as the field's glyph. */
 	glyph: string;
-	/** Each state and its colour, in the order they stand. */
+	/** Each state and its color, in the order they stand. */
 	states?: Record<string, string>;
-	keys?: Pick<KeyRow, 'name' | 'kind' | 'in_slug'>[];
+	keys?: ExampleKey[];
+	/** Choices that each give the keys in place of `keys`: weight's lbs or kg. */
+	choices?: Record<string, ExampleKey[]>;
+	/** Aliases of its own, which then are the whole list (`no_autoalias`): meal's `snack`. */
+	aliases?: DerivedAlias[];
 	/** A switch whose bare state names an entry of this field (`state_lookup_field`). */
 	lookup?: string;
 	neverFalse?: boolean;
 }
 
-const dataKey = (name: string, kind: KeyKind = 'optional', in_slug = false) => ({ name, kind, in_slug });
-/** A card's id: required, and in the slug, as `-K id` makes it — `person:vr520`. */
+const dataKey = (name: string, kind: KeyKind = 'optional', in_slug = false): ExampleKey => ({ name, kind, in_slug });
+/** A record's id: required, and in the slug, as `-K id` makes it: `person:vr520`. */
 const id = dataKey('id', 'required', true);
+const moment = (theme: string, field: string, shows: string, color: string, glyph: string, keys?: ExampleKey[]): Example => ({
+	field,
+	verb: 'occur',
+	theme,
+	shows,
+	color,
+	glyph,
+	...(keys && { keys })
+});
+const onOff = (theme: string, field: string, shows: string, color: string, glyph: string, keys?: ExampleKey[]): Example => ({
+	...moment(theme, field, shows, color, glyph, keys),
+	verb: 'start'
+});
+const record = (field: string, shows: string, color: string, glyph: string, keys: string[]): Example => ({
+	field,
+	verb: 'add',
+	theme: 'records',
+	shows,
+	color,
+	glyph,
+	keys: [id, ...keys.map((k) => dataKey(k))]
+});
 
 /**
- * vividn's starting catalog, a few per shape (2026-10-14), to be refined with
- * him: «a nice color (potentially symbol), any extra data, states, etc is
- * filled in for you». A spec has no range, so mood's -5 to +5 is its line.
+ * vividn's list, by theme (2026-11-05, da-36whg): «a nice color (potentially
+ * symbol), any extra data, states, etc is filled in for you». The themes are
+ * interim, his to rename. A spec has no range, so mood's -5 to +5 is its line.
  */
 export const EXAMPLES: Example[] = [
-	{ field: 'coffee', verb: 'occur', shows: 'each cup, and its size', color: '#c69c6d', glyph: '☕', keys: [dataKey('size')] },
-	{ field: 'mood', verb: 'occur', shows: 'a level, -5 to +5', color: '#e8c547', glyph: '🙂', keys: [dataKey('level', 'required')] },
-	{ field: 'headache', verb: 'occur', shows: 'each one, and how bad', color: '#d46a6a', glyph: '⚡', keys: [dataKey('severity')] },
-	{ field: 'medication', verb: 'occur', shows: 'what you took, and how much', color: '#7fb8d4', glyph: '💊', keys: [dataKey('name', 'required'), dataKey('dose')] },
-	{ field: 'sleep', verb: 'start', shows: 'on at night, off in the morning', color: '#7b68ee', glyph: '🌙' },
-	{ field: 'screentime', verb: 'start', shows: 'on while you are on a screen', color: '#8fa3bf', glyph: '📱' },
-	{ field: 'work', verb: 'start', shows: 'on when you start, off when you stop', color: '#d4a35a', glyph: '💼' },
-	{ field: 'shower', verb: 'start', shows: 'on in, off out', color: '#5ac8d4', glyph: '🚿' },
-	{ field: 'menstruation', verb: 'start', shows: 'on while it lasts, off when it ends', color: '#d64545', glyph: '🩸' },
+	onOff('body', 'sleep', 'on at night, off in the morning', '#7b68ee', '🌙'),
 	{
-		field: 'activity',
+		...moment('body', 'weight', 'each weighing, in lbs or kg', '#8fbc8f', '⚖'),
+		choices: { lbs: [dataKey('lbs')], kg: [dataKey('kg')] }
+	},
+	moment('body', 'water', 'each glass, and how many ml', '#5ab4e8', '💧', [dataKey('ml')]),
+	moment('body', 'medication', 'what you took, and how much', '#7fb8d4', '💊', [dataKey('name', 'required'), dataKey('dose')]),
+	onOff('body', 'headache', 'on while it lasts, off when it ends', '#d46a6a', '⚡'),
+	moment('food & drink', 'coffee', 'each cup', '#c69c6d', '☕'),
+	{
+		...onOff('food & drink', 'meal', 'on as you sit down, off when done; snack, a bite between', '#e0a458', '🍽', [dataKey('food')]),
+		aliases: [
+			{ state: 'meal', expands_to: 'start meal', kind: 'bare_field' },
+			{ state: 'meale', expands_to: 'end meal', kind: 'terminal_end' },
+			{ state: 'snack', expands_to: 'moment meal' }
+		]
+	},
+	moment('food & drink', 'alcohol', 'each drink', '#b5485d', '🍷'),
+	moment('food & drink', 'tobacco', 'each one', '#a0937d', '🚬'),
+	moment('food & drink', 'cannabis', 'each time', '#6b8e23', '🌿'),
+	moment('mind', 'mood', 'a level, -5 to +5', '#e8c547', '🙂', [dataKey('level', 'required')]),
+	moment('mind', 'emotion', 'the words for what you feel', '#d48ad4', '💭', [dataKey('words', 'required'), { ...dataKey('words'), rest: 'R' }]),
+	moment('mind', 'energy', 'a level, 0 to 10', '#f0a830', '🔋', [dataKey('level', 'required')]),
+	onOff('movement', 'run', 'on as you set off, off with how far, in km', '#e8734a', '🏃', [dataKey('distanceKm')]),
+	{
+		...moment('movement', 'workout', 'lift, swim, bike or yoga, until the next', '#4fa3e8', '🏋'),
 		verb: 'switch',
-		shows: 'email, meeting or deepwork, until the next',
-		color: '#c8c8c8',
-		glyph: '🗂',
-		states: { email: '#4f8fe8', meeting: '#d48788', deepwork: '#7bd389' }
+		states: { lift: '#d4a35a', swim: '#5ab4e8', bike: '#7bd389', yoga: '#c39bd3' }
+	},
+	onOff('work', 'work', 'on when you start, off when you stop', '#d4a35a', '💼'),
+	{ ...moment('work', 'project', 'the project you are on, until the next', '#9b7fd4', '📁'), verb: 'switch' },
+	onOff('work', 'meeting', 'on as it starts, off as it ends', '#d48788', '👥'),
+	{
+		...moment('home & chores', 'room', 'the room you are in, or off', '#cbb994', '🚪'),
+		verb: 'switch',
+		states: { kitchen: '#e0b070', bedroom: '#7b68ee', living: '#9ad48a', bathroom: '#5ac8d4', office: '#7f9cc4' }
 	},
 	{
-		field: 'environment',
+		...moment('home & chores', 'environment', 'where you are: home, office, car, train…', '#9acd32', '🌳'),
 		verb: 'switch',
-		shows: 'where you are: home, office, car, train…',
-		color: '#9acd32',
-		glyph: '🌳',
 		// vividn gave outside a light green and airplane an off-white (da-yqx0t).
 		states: {
 			home: '#e0b070',
@@ -110,18 +158,42 @@ export const EXAMPLES: Example[] = [
 		},
 		neverFalse: true
 	},
+	moment('home & chores', 'laundry', 'each load', '#8fb8de', '🧺'),
+	moment('home & chores', 'plants', 'each watering', '#6fbf73', '🪴'),
+	moment('home & chores', 'makebed', 'the bed made', '#c8a2c8', '🛏'),
+	moment('home & chores', 'dishes', 'each wash', '#9ec5d6', '🧽'),
+	moment('home & chores', 'trash', 'each time it goes out', '#8a8a8a', '🗑'),
+	moment('home & chores', 'vacuum', 'each time', '#b0a0d0', '🧹'),
+	onOff('screens & media', 'phone', 'on while you are on it', '#8fa3bf', '📱'),
 	{
-		field: 'reading',
+		...moment('screens & media', 'watch', 'what you watch: dune is movie:dune, series:severance a series', '#e57373', '📺'),
 		verb: 'switch',
-		shows: 'each state a book record: reading dune is book:dune',
-		color: '#c39bd3',
-		glyph: '📖',
+		lookup: 'movie'
+	},
+	{
+		...moment('screens & media', 'reading', 'the book you read: dune is book:dune', '#c39bd3', '📖'),
+		verb: 'switch',
 		lookup: 'book'
 	},
-	{ field: 'person', verb: 'add', shows: 'a record with a name and a city', color: '#e59866', glyph: '👤', keys: [id, dataKey('name'), dataKey('city')] },
-	{ field: 'book', verb: 'add', shows: 'a record with a title and an author', color: '#c39bd3', glyph: '📚', keys: [id, dataKey('title'), dataKey('author')] },
-	{ field: 'place', verb: 'add', shows: 'a record with a name and an address', color: '#76d7c4', glyph: '📍', keys: [id, dataKey('name'), dataKey('address')] }
+	moment('habits', 'floss', 'each time', '#e0e0e0', '🦷'),
+	moment('habits', 'stretch', 'each time', '#7bd389', '🤸'),
+	moment('habits', 'vitamins', 'each day you take them', '#f4c542', '🍊'),
+	record('person', 'a name, how to reach them, where they work', '#e59866', '👤', ['name', 'lastName', 'address', 'company', 'phone', 'email', 'city']),
+	record('book', 'a title and an author', '#c39bd3', '📚', ['title', 'author']),
+	record('movie', 'a title and a year', '#e57373', '🎬', ['title', 'year']),
+	record('series', 'a title and a season', '#ef9a9a', '🎞', ['title', 'season']),
+	record('word', 'a word, its language, part of speech and meaning', '#80cbc4', '🔤', ['lang', 'pos', 'meaning'])
 ];
+
+/** The examples by theme, in the order the themes first come. */
+export const THEMES: { theme: string; examples: Example[] }[] = [...new Set(EXAMPLES.map((e) => e.theme))].map((theme) => ({
+	theme,
+	examples: EXAMPLES.filter((e) => e.theme === theme)
+}));
+
+/** `example` with `choice`'s keys in place of its own: what a tap on one of its choices fills the form with. */
+export const chosen = (example: Example, choice?: string): Example =>
+	choice && example.choices?.[choice] ? { ...example, keys: example.choices[choice] } : example;
 
 /** The action word `tail` prints for a field declared with `verb`. */
 export const trackLabel = (verb: Verb): string =>

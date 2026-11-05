@@ -76,6 +76,7 @@ import NowviewWidget from './NowviewWidget.svelte';
 import CliWidget from './CliWidget.svelte';
 import FieldWidget from './FieldWidget.svelte';
 import KitWidget from './KitWidget.svelte';
+import PremadeWidget from './PremadeWidget.svelte';
 import SettingsWidget from './SettingsWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
 import TutorialWidget from './TutorialWidget.svelte';
@@ -605,6 +606,18 @@ export const KINDS: Record<string, WidgetKind> = {
 		help: [
 			'What datum is, in a line; «Tutorial», where fields, their kinds, the input bar and tabs are taught; pointing an AI agent at datum.day; and links to the documentation and the source.',
 			'The Help place\'s front page is these same words.'
+		].join('\n'),
+		legible: { width: 200, height: 100 }
+	},
+	// The premade widget (da-36whg): fields ready to set up, by theme, each
+	// opening setup filled in. Legible at its sentence and one row of cards
+	// (about 40px each, estimated) plus padding; the rest scrolls.
+	premade: {
+		meta: meta('premade', 'premade'),
+		component: PremadeWidget,
+		help: [
+			'Fields ready to set up, by theme: body, food and drink, mind, and on. A tap opens setup with one filled in, its kind, color, symbol, states and keys; nothing is written until it is saved there.',
+			'One whose field exists says «set up», and a tap opens setup on it.'
 		].join('\n'),
 		legible: { width: 200, height: 100 }
 	},

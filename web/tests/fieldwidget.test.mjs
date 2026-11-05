@@ -6,8 +6,8 @@
 // what "field" actually is and means.»
 //
 // So what is held here is what a newcomer meets: the sentence, the shapes
-// first (da-uipyt), each with an «ex.» part opening a sheet of examples
-// that fill the form and not the database (da-yqx0t), the `field:` line
+// first (da-uipyt) and no examples, which are the premade widget's
+// (da-36whg, premade.test.mjs), the `field:` line
 // and its «fields» (da-zz9rn), a save that leaves a field the
 // bar can log, and the sheet of fields that goes from one to the next.
 // The form's own tabs are `track.test.mjs`'s, the place's coming and going
@@ -16,7 +16,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { EXAMPLES, VERBS } from '../src/lib/track.ts';
+import { VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
 import { FIELD_FORM, PANEL, leaveField, declared, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
@@ -38,40 +38,8 @@ const marked = async (page) => (await page.locator(`${PICKER} .chips [aria-curre
 const heading = async (page) => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim();
 
 const TABS = ['basics', 'data', 'aliases'];
-/** The shape's «ex.» part, which opens its examples. */
-const more = (page, verb) => page.locator(`${FIELD_FORM} [data-examples="${verb}"]`);
-const SHEET = 'dialog.sheet[data-catalog]';
-const offered = (page) => page.locator(`${FIELD_FORM} [data-example]`).evaluateAll((all) => all.map((b) => b.dataset.example));
-/** The examples `verb`'s «ex.» opens, the sheet shut again with Escape. */
-async function examplesOf(page, verb) {
-	await more(page, verb).click();
-	await page.locator(SHEET).waitFor();
-	const fields = await offered(page);
-	await page.keyboard.press('Escape');
-	await page.locator(SHEET).waitFor({ state: 'detached' });
-	return fields;
-}
 /** Whether a text box has the focus: on a phone, the keyboard up. */
 const typing = (page) => page.evaluate(() => !!document.activeElement?.matches('input, textarea, [contenteditable]'));
-
-/** A line the bar logs each example with, once it is saved, and the data that line stores. */
-const LOGGED = {
-	coffee: ['coffee large', { size: 'large' }],
-	mood: ['mood -- -3', { level: -3 }],
-	headache: ['headache 7', { severity: 7 }],
-	medication: ['medication ibuprofen 200mg', { name: 'ibuprofen', dose: '200mg' }],
-	sleep: ['sleep', null],
-	screentime: ['screentime', null],
-	work: ['work', null],
-	shower: ['shower', null],
-	menstruation: ['menstruation', null],
-	activity: ['activity meeting', null],
-	environment: ['environment train', null],
-	reading: ['reading dune', null],
-	person: ['person vr520 vremya cantown', { id: 'vr520', name: 'vremya', city: 'cantown' }],
-	book: ['book dune Dune Herbert', { id: 'dune', title: 'Dune', author: 'Herbert' }],
-	place: ['place rosa Rosa Kastanienallee', { id: 'rosa', name: 'Rosa', address: 'Kastanienallee' }]
-};
 
 describe('the field widget', () => {
 	const shared = sharedApp(DESKTOP);
@@ -97,8 +65,9 @@ describe('the field widget', () => {
 			// None chosen, and every tab there before a save, none of them required.
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
 			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
-			// The examples wait behind each shape's «ex.».
-			assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0);
+			// No examples: they are the premade widget's (da-36whg).
+			for (const gone of ['[data-example]', '[data-examples]', 'button.ex']) assert.equal(await page.locator(`${WIDGET} ${gone}`).count(), 0, gone);
+			assert.equal(await page.locator('dialog.sheet[data-catalog]').count(), 0);
 			assert.equal(await page.locator(`${FIELD_FORM} button.commit`).isEnabled(), false);
 			assert.deepEqual(app.errors, []);
 		});
@@ -106,7 +75,7 @@ describe('the field widget', () => {
 
 	// vividn, 2026-10-19: «after selecting an example don't enter text edit mode and open the keyboard, that is
 	// jarring. In fact, maybe don't enter that either after selecting a data shape» (da-zz9rn).
-	test('on a phone: the name line, description first, no keyboard after a shape or an example, and a field saved tracked', async () => {
+	test('on a phone: the name line, description first, no keyboard after a shape, and a field saved tracked', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
@@ -125,14 +94,10 @@ describe('the field widget', () => {
 			const tops = await panel.evaluate((el) => [...el.children].map((c) => [c.getBoundingClientRect().top, c.querySelector('input.description') !== null]));
 			assert.equal(tops.find(([top]) => top === Math.min(...tops.map(([t]) => t)))[1], true, 'the description is not first');
 
-			// Neither a shape nor an example puts the focus in a text box.
-			await page.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
+			// A shape does not put the focus in a text box (an example neither: premade.test.mjs).
+			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 			assert.equal(await typing(page), false, 'a shape opened the keyboard');
-			await more(page, 'occur').click();
-			await page.locator(`${SHEET} [data-example="coffee"]`).click();
-			await page.locator(SHEET).waitFor({ state: 'detached' });
-			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'coffee');
-			assert.equal(await typing(page), false, 'an example opened the keyboard');
+			await page.locator(`${FIELD_FORM} input.field`).fill('coffee');
 
 			// Saved, it is tracked: one `setup F --track`. (A phone's CLI widget is folded away: the save says what it ran.)
 			await page.locator(`${FIELD_FORM} button.commit`).click();
@@ -178,137 +143,6 @@ describe('the field widget', () => {
 		}, PHONE);
 	});
 
-	// vividn, 2026-10-15: «divide the shape button into a little extra chunk to the side (maybe 20-30%), and
-	// write ex. centered there … Open up examples in a separate dialog box. Use nice icons for each».
-	test('on a phone each shape\'s «ex.» part opens a sheet of its own examples, each with its icon', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			const { saved } = await openField(page);
-			for (const { verb, what } of VERBS) {
-				const ex = more(page, verb);
-				assert.equal((await ex.innerText()).trim(), 'ex.');
-				const part = await ex.boundingBox();
-				const card = await page.locator(`${FIELD_FORM} [data-verb="${verb}"]`).boundingBox();
-				const share = part.width / (part.width + card.width);
-				assert.ok(share >= 0.2 && share <= 0.3, `${verb}'s ex. is ${share} of its card`);
-				assert.equal(Math.round(part.y), Math.round(card.y), 'the ex. part is not beside the shape');
-				assert.equal(await ex.evaluate((el) => getComputedStyle(el).textAlign), 'center');
-
-				await ex.click();
-				await page.locator(SHEET).waitFor();
-				assert.equal((await page.locator(`${SHEET} .sheet-head > span`).innerText()).trim(), `examples of ${what}`);
-				const mine = EXAMPLES.filter((e) => e.verb === verb);
-				assert.ok(mine.length >= 3, `${verb} has ${mine.length} examples`);
-				assert.deepEqual(await offered(page), mine.map((e) => e.field));
-				// Each with its icon in its colour, its name, and what it shows.
-				const rows = await page.locator(`${SHEET} [data-example]`).evaluateAll((all) =>
-					all.map((b) => [b.querySelector('.icon').textContent, getComputedStyle(b.querySelector('.icon')).color, b.querySelector('.name').textContent, b.querySelector('.what').textContent])
-				);
-				const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
-				assert.deepEqual(rows, mine.map((e) => [e.glyph, rgb(e.color), e.field, e.shows]));
-				await page.keyboard.press('Escape');
-				await page.locator(SHEET).waitFor({ state: 'detached' });
-			}
-			// Nothing was chosen by looking.
-			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
-
-			// A tap fills the form — name, glyph, states and their colours — and shuts the sheet.
-			const environment = EXAMPLES.find((e) => e.field === 'environment');
-			await more(page, 'switch').click();
-			await page.locator(`${SHEET} [data-example="environment"]`).click();
-			await page.locator(SHEET).waitFor({ state: 'detached' });
-			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'environment');
-			assert.equal(await page.locator(`${FIELD_FORM} .tile[aria-label^="the field's symbol:"]`).getAttribute('data-glyph'), '🌳');
-			assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(environment.states));
-			await page.locator(`${FIELD_FORM} button.commit`).click();
-			const { line, spec } = declared(shellJoin((await saved).argv));
-			assert.equal(line, 'setup environment --from-json --track');
-			assert.deepEqual([spec.verb, spec.color, spec.allowed_states], ['switch', environment.color, Object.keys(environment.states)]);
-			assert.deepEqual(spec.state_colors, Object.fromEntries(Object.entries(environment.states).filter(([, color]) => color)));
-			assert.equal(environment.states.outside, '#9ad48a');
-			assert.equal(environment.states.airplane, '#ece8df');
-			assert.deepEqual(app.errors, []);
-		}, PHONE);
-	});
-
-	for (const example of EXAMPLES) {
-		test(`the ${example.field} example fills the form, not the database, and saves to a field the bar logs`, async () => {
-			await shared.solo(async (app) => {
-				const { page } = app;
-				const { saved } = await openField(page);
-				const tall = () => page.locator(FIELD_FORM).evaluate((el) => el.getBoundingClientRect().height);
-				// Typed before it, and not the example's: the example is the whole field.
-				await page.locator(`${FIELD_FORM} input.description`).fill('left over');
-				await more(page, example.verb).click();
-				const was = await tall();
-				await page.locator(`${FIELD_FORM} [data-example="${example.field}"]`).click();
-				// The place keeps its size: nothing moves under the finger that tapped.
-				assert.equal(await tall(), was, 'the form changed height from the examples to Basics');
-				assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0, 'the examples stayed open');
-
-				// The form says what the field would be: its name, ready to retype, its shape, states, data.
-				assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), example.field);
-				assert.equal(await typing(page), false, 'the example opened the keyboard');
-				assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), '', 'what was typed before stayed');
-				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
-				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(example.states ?? {}));
-				// A card's keys are on Basics; any other shape's a line says, which goes to the Data tab (da-i9upr).
-				if (example.verb !== 'add') {
-					const said = (await page.locator(`${FIELD_FORM} .data-line .ask`).innerText()).trim();
-					const names = (example.keys ?? []).map((k) => k.name);
-					assert.ok(said && names.every((n) => said.includes(n)), `${said} names ${names}`);
-					await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
-				}
-				assert.deepEqual(
-					await page
-						.locator(`${PANEL} ul.data li.key`)
-						.evaluateAll((all) => all.map((li) => [li.querySelector('.mode').textContent, li.querySelector('input.name').value, li.querySelector('.eq').getAttribute('aria-pressed')])),
-					(example.keys ?? []).map((k) => [k.in_slug ? '-K' : '-k', k.name, String(k.kind !== 'required')])
-				);
-				// Nothing is written yet.
-				await app.idle();
-				assert.deepEqual(await app.allEntries(), []);
-				assert.equal((await app.run(['setup'])).stdout.includes(example.field), false, 'the tap declared it');
-
-				// Saved, it is ONE `setup F` with the whole form, which writes its TRACK row too
-				// (da-2pbvd); the widget stays on the field it made.
-				const before = (await app.echoes()).length;
-				await page.locator(`${FIELD_FORM} button.commit`).click();
-				const result = await saved;
-				assert.equal(result.code, 0, result.stderr);
-				const echoes = (await app.echoes()).slice(before);
-				assert.equal(echoes.length, 1, `one command, not a stream: ${echoes.join(' | ')}`);
-				assert.equal(declared(echoes[0]).line, `setup ${example.field} --from-json --track`);
-				const shown = JSON.parse((await app.run(['setup', example.field, '--json'])).stdout);
-				assert.equal(shown.color, example.color);
-				assert.equal(shown.description, null);
-				assert.equal(shown.symbol, example.glyph);
-				assert.deepEqual(shown.state_colors, example.states ?? {});
-				assert.equal(shown.state_lookup_field, example.lookup);
-				assert.equal(shown.never_false, example.neverFalse);
-				await page.locator(`${FIELD_FORM} h2`).waitFor();
-				assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), example.field);
-				assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
-				await page.keyboard.press('Escape');
-				await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
-
-				// A working field: the bar logs one entry of it.
-				const [line, data] = LOGGED[example.field];
-				await app.clock.forward(1000);
-				await app.submit(line);
-				assert.deepEqual(app.errors, []);
-				const logged = (await app.entries()).filter((e) => e.field === example.field);
-				assert.equal(logged.length, 1, JSON.stringify(await app.allEntries()));
-				if (data) assert.deepEqual(logged[0].data, data);
-
-				// Undo takes back the entry, and one more the field whole: its spec and TRACK row (da-2pbvd).
-				for (const _ of [1, 2]) assert.equal((await app.run(['undo'])).code, 0);
-				assert.match((await app.run(['setup', example.field, '--json'])).stdout, /No spec defined/);
-				assert.deepEqual(await app.allEntries(), []);
-			});
-		});
-	}
-
 	test('the sheet of fields is every tracked field in its own colour and glyph, and a tap goes to that field', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
@@ -339,15 +173,11 @@ describe('the field widget', () => {
 			assert.equal(await page.locator('dialog.confirm').count(), 0, 'leaving a spec asked');
 			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).description, 'nights', 'leaving did not save');
 
-			// And «+ new field» in the sheet is the way back to an empty form and its examples,
-			// less the ones there is a field for already: a tap would re-declare it.
+			// And «+ new field» in the sheet is the way back to an empty form.
 			await pick(page).click();
 			await page.locator(`${PICKER} button.new`).click();
 			await page.locator(`${FIELD_FORM} input.field`).waitFor();
 			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
-			assert.deepEqual(await examplesOf(page, 'occur'), ['headache', 'medication']);
-			assert.deepEqual(await examplesOf(page, 'start'), ['screentime', 'work', 'shower', 'menstruation']);
-			assert.deepEqual(await examplesOf(page, 'add'), ['book', 'place']);
 
 			// A new field is not made by leaving it: the pick asks, and cancel keeps what was typed and the sheet.
 			const asks = (answer) => page.locator('dialog.confirm').getByRole('button', { name: answer, exact: true }).click();

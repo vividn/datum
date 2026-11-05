@@ -174,7 +174,8 @@ const withLessons = ({ names, active }: RootState): RootState => {
 
 /**
  * The root bar a fresh install shows (da-u7vz8), `welcome` in front: what
- * datum is, the setup widget to choose what to track in, `collect`, the page
+ * datum is, `premade`, fields ready to set up (da-36whg), the setup widget
+ * to choose what to track in, `collect`, the page
  * to log on — which is what a first visit opened alone before, as `mobile`
  * on a phone (da-shzs) and `main` elsewhere — and `dayview`, the day strip
  * alone (da-uzi5x). The tutorial's is its lessons (da-6cvrd).
@@ -182,7 +183,7 @@ const withLessons = ({ names, active }: RootState): RootState => {
 const fresh = (): RootState =>
 	currentDb() === TUTORIAL_DB
 		? { names: lessons(), active: 0 }
-		: { names: ['welcome', 'setup', 'collect', 'dayview'], active: 0 };
+		: { names: ['welcome', 'premade', 'setup', 'collect', 'dayview'], active: 0 };
 
 /**
  * This DEVICE, in the word a layout's `designedFor` uses: decided ONCE, by

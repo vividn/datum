@@ -37,10 +37,10 @@ const phone = (width = 390, height = 844) => ({
 });
 
 /** The tabs a first visit opens (da-u7vz8, da-uzi5x). */
-const FIRST = ['welcome', 'setup', 'collect', 'dayview'];
+const FIRST = ['welcome', 'premade', 'setup', 'collect', 'dayview'];
 
 /** A phone one tap further on, the dayview tab in front. */
-const onDayview = (width, height) => ({ ...phone(width, height), home: { names: FIRST, active: 3 } });
+const onDayview = (width, height) => ({ ...phone(width, height), home: { names: FIRST, active: 4 } });
 
 /** The whole-tab strip's pane, by its title: a root tab re-mints its ids. */
 const stripPane = (page) => page.locator('section.pane[data-title="dayview"]');
@@ -262,7 +262,7 @@ describe('a fresh phone', () => {
 	// and the day line still moves them: the reader's height wins.
 	for (const [at, options] of [
 		['a phone', onDayview()],
-		['a desktop', { ...DESKTOP, home: { names: FIRST, active: 3 } }]
+		['a desktop', { ...DESKTOP, home: { names: FIRST, active: 4 } }]
 	])
 		test(`on ${at}, the dayview tab's days are ${TAB_DAY}px, and a reader's own height wins`, async () => {
 			await withApp(async (app) => {
@@ -365,7 +365,7 @@ test('a time tapped on collect’s nowview stands on the dayview tab, and its pi
 		const box = await band.boundingBox();
 		await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
 		const picked = await until(pills, (seen) => seen.length > 0);
-		await page.evaluate(() => window.datum.shell.activate(3));
+		await page.evaluate(() => window.datum.shell.activate(4));
 		await stripPane(page).locator('.band[data-days-ago="0"] svg.svg line.cursor').first().waitFor({ state: 'attached' });
 		assert.deepEqual(await pills(), picked);
 	}, phone());
@@ -419,9 +419,9 @@ describe('who gets it', () => {
 			await page.locator('dialog.confirm').getByRole('button', { name: 'reset', exact: true }).click();
 			await page.locator('dialog.confirm').waitFor({ state: 'detached' });
 			// A reset lands on `welcome`, some time after its dialog goes;
-			// `collect` is the third tab.
+			// `collect` is the fourth tab.
 			await until(
-				async () => (await page.evaluate(() => window.datum.shell.activate(2)), titles(page)),
+				async () => (await page.evaluate(() => window.datum.shell.activate(3)), titles(page)),
 				(t) => t.join() === DESKTOP_TREE.join()
 			);
 			await app.reload();

@@ -22,17 +22,18 @@ import { derived, get, writable } from 'svelte/store';
 import { layout } from './layout/current.js';
 import { isPreview, modalPlace, openPlace } from './layout/shell.js';
 import type { RunResult } from './run.js';
-import type { Verb } from './track.js';
+import type { Example, Verb } from './track.js';
 
 /** The widget's kind, and the name of its place. */
 const FIELD = 'setup';
 
 /**
  * The field the widget is on — `''` is a new one — and the kind a new one
- * opens with. Every set is a new object, which is what draws the form
+ * opens with, or the example it opens filled with (the premade widget's,
+ * da-36whg). Every set is a new object, which is what draws the form
  * afresh: a new field opened twice is an empty form twice.
  */
-export const editing = writable<{ field: string; verb?: Verb | null }>({ field: '' });
+export const editing = writable<{ field: string; verb?: Verb | null; example?: Example }>({ field: '' });
 
 /** Whether the widget's place is open: the desktop's modal, or a root tab (da-jozgv). */
 const placeOpen = derived([layout, modalPlace], ([l, m]) => m?.name === FIELD || l.root.tabs.some((t) => t.layout === FIELD));
@@ -67,17 +68,21 @@ export function answerField(result: RunResult | null): void {
 }
 
 /**
- * Put the setup widget on `field` — none is a new one, `verb` its kind —
- * and bring it into view: a pane showing it already, else its place
+ * Put the setup widget on `field` — none is a new one, `verb` its kind, an
+ * `example` what a new one is filled with — and bring it into view: a pane showing it already, else its place
  * (`openPlace`), `away` from where the caller was when it is `brought`. Resolves with what the place's next save ran — a refused
  * one leaves it open, to be put right — or null when it is left without
  * one. A widget someone keeps, in a pane or a tab of its own, answers in
  * its own time: null at once.
  */
-export async function openField(field = '', verb: Verb | null = null, { brought = false } = {}): Promise<RunResult | null> {
+export async function openField(
+	field = '',
+	verb: Verb | null = null,
+	{ brought = false, example }: { brought?: boolean; example?: Example } = {}
+): Promise<RunResult | null> {
 	answerField(null);
 	away.set(false);
-	editing.set({ field, verb });
+	editing.set({ field, verb, ...(example && { example }) });
 	// A pane's tabs behind the front one stay mounted, hidden (TabBody.svelte): not in view.
 	const hosts = [...document.querySelectorAll(`.host[data-widget="${FIELD}"]`)];
 	if (hosts.some((host) => !host.closest('.tab-body.behind'))) return null;

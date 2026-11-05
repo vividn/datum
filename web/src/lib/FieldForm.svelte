@@ -15,11 +15,11 @@
 	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
 	name, start with the shape buttons. I think that ends up being the most
 	important question to answer». Each is named as the tutorial's games
-	name it, and on a new field has an «ex.» part to the side
-	that opens its examples in a sheet (`EXAMPLES`, less the ones there is already a
-	field for, da-yqx0t), each with its icon: one tap fills the form — never the
-	database — with a field of that shape, its colour, symbol, keys and
-	states, to be read, changed and saved or not. Neither a shape nor an
+	name it. The examples are the premade widget's (da-36whg,
+	#lib/layout/PremadeWidget.svelte), by theme: a tap there opens this form
+	on its `example`, which fills it — never the database — with a field of
+	that shape, its color, symbol, keys, aliases and states, to be read,
+	changed and saved or not. Neither a shape nor an
 	example takes the focus (da-zz9rn), vividn, 2026-10-19: «after selecting
 	an example don't enter text edit mode and open the keyboard, that is
 	jarring». The name line reads `field:` with «fields» beside it, the
@@ -76,14 +76,12 @@
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
 	import { shellJoin } from './shellSplit.js';
-	import Sheet from './Sheet.svelte';
 	import Swatch from './Swatch.svelte';
 	import {
 		declareArgv,
 		draftSpec,
 		draggedTo,
 		editedSpec,
-		EXAMPLES,
 		keyRows,
 		moved,
 		placeOf,
@@ -109,8 +107,8 @@
 		ignored = [],
 		/** The spec to edit (`setup F --json`); null declares a new field instead. */
 		spec = null,
-		/** The fields there are already: an example of that name would re-declare one, so it is not offered. */
-		taken = [],
+		/** The example a new field's form opens filled with (the premade widget's), or none. */
+		example = null,
 		/** Whether it differs from what it opened as: what leaving it now would lose. */
 		dirty = $bindable(false),
 		/** A spec's edits as the save leaving it runs (da-hda4j), or null while there are none. */
@@ -137,7 +135,7 @@
 		verb?: Verb | null;
 		ignored?: string[];
 		spec?: Spec | null;
-		taken?: string[];
+		example?: Example | null;
 		dirty?: boolean;
 		pending?: Save | null;
 		back?: boolean;
@@ -169,8 +167,6 @@
 	const TABS = ['basics', 'data', 'aliases'] as const;
 	let tab: (typeof TABS)[number] = $state('basics');
 	let bar: HTMLElement | undefined = $state();
-	/** The shape whose examples are open, if any. */
-	let catalog: Verb | null = $state(null);
 	if (opening) verb = opening.verb;
 
 	// What the name would do if it were submitted, before the press rather
@@ -209,26 +205,22 @@
 	const auto = $derived(field.trim() ? defaultColor(field.trim()) : 'transparent');
 	const named = $derived(states.filter((s) => s.name.trim()));
 	const keyed = $derived(keys.map((k) => k.name.trim()).filter(Boolean));
-	const examples = $derived(EXAMPLES.filter((e) => e.verb === catalog && !taken.includes(e.field)));
-	const offers = (shape: Verb) => !spec && EXAMPLES.some((e) => e.verb === shape && !taken.includes(e.field));
 
-	/**
-	 * Fill the form with `example` — the whole of it, every tab: what was
-	 * typed before it is not the example's. Nothing is written until it is saved.
-	 */
-	function fill(example: Example) {
-		field = example.field;
-		verb = example.verb;
-		color = example.color;
-		description = '';
-		symbol = example.glyph ?? '';
-		icon = '';
-		[autoalias, aliases, place] = [true, [], {}];
-		states = Object.entries(example.states ?? {}).map(([name, color]) => ({ name, color, description: '', glyph: '' }));
-		keys = (example.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any' }));
-		lookup = example.lookup ?? '';
-		neverFalse = !!example.neverFalse;
-		catalog = null;
+	// A new field opened on an example is that example, every tab of it; nothing is written until it is saved.
+	const given = untrack(() => (opening ? null : example));
+	if (given) {
+		field = given.field;
+		verb = given.verb;
+		color = given.color;
+		symbol = given.glyph;
+		lookup = given.lookup ?? '';
+		neverFalse = !!given.neverFalse;
+		states = Object.entries(given.states ?? {}).map(([name, color]) => ({ name, color, description: '', glyph: '' }));
+		keys = (given.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any' }));
+		if (given.aliases) {
+			autoalias = false;
+			aliases = given.aliases.map((a) => ({ ...a }));
+		}
 	}
 
 	// ---- the states' order (da-puzij), as the data keys are moved (DataKeys.svelte) ----
@@ -303,51 +295,21 @@
 		<div class="scroll">
 			<div class="verbs" role="radiogroup" aria-label="what a press logs">
 				{#each VERBS as choice (choice.verb)}
-					<div class="shape" class:split={offers(choice.verb)}>
-						<button
-							type="button"
-							class="verb"
-							class:on={verb === choice.verb}
-							role="radio"
-							aria-checked={verb === choice.verb}
-							data-verb={choice.verb}
-							onclick={() => (verb = choice.verb)}
-						>
-							<span class="glyph">{choice.glyph}</span>
-							<span class="name">{choice.what}</span>
-							<span class="line">{choice.line}</span>
-						</button>
-						{#if offers(choice.verb)}
-							<button
-								type="button"
-								class="ex"
-								use:act={'open'}
-								data-examples={choice.verb}
-								aria-haspopup="dialog"
-								aria-label="examples of {choice.what}"
-								onclick={() => (catalog = choice.verb)}>ex.</button
-							>
-						{/if}
-					</div>
+					<button
+						type="button"
+						class="verb"
+						class:on={verb === choice.verb}
+						role="radio"
+						aria-checked={verb === choice.verb}
+						data-verb={choice.verb}
+						onclick={() => (verb = choice.verb)}
+					>
+						<span class="glyph">{choice.glyph}</span>
+						<span class="name">{choice.what}</span>
+						<span class="line">{choice.line}</span>
+					</button>
 				{/each}
 			</div>
-			<!-- Each fills the form, not the database. -->
-			<Sheet
-				title="examples of {VERBS.find((v) => v.verb === catalog)?.what}"
-				open={examples.length > 0}
-				onclose={() => (catalog = null)}
-				data-catalog={catalog}
-			>
-				<div class="examples" role="group" aria-label="examples">
-					{#each examples as example (example.field)}
-						<button type="button" data-example={example.field} onclick={() => fill(example)}>
-							<span class="icon" style:color={example.color}>{example.glyph}</span>
-							<span class="name">{example.field}</span>
-							<span class="what">{example.shows}</span>
-						</button>
-					{/each}
-				</div>
-			</Sheet>
 			<!-- A field's name is over its shapes, a new one's under them (da-uipyt): one line, moved by `order`. -->
 			<div class="row name-line" class:over={spec}>
 				<span class="label">field:</span>
@@ -705,75 +667,6 @@
 		gap: 0.4rem;
 	}
 
-	/* A shape with examples is one card in two parts: the shape, and a
-	   quarter of it to the side that reads «ex.» (vividn, 2026-10-15). */
-	.shape {
-		display: grid;
-	}
-
-	.shape.split {
-		grid-template-columns: 3fr 1fr;
-	}
-
-	.shape.split .verb {
-		border-start-end-radius: 0;
-		border-end-end-radius: 0;
-	}
-
-	.ex {
-		background: var(--raised);
-		border: 1px solid var(--rule);
-		border-inline-start: 0;
-		border-radius: 0 6px 6px 0;
-		color: var(--muted);
-		font: inherit;
-		font-size: 0.75rem;
-		text-align: center;
-		cursor: pointer;
-	}
-
-	.ex:hover,
-	.ex:focus-visible {
-		color: var(--accent);
-		border-color: var(--accent);
-	}
-
-	:global(dialog.sheet[data-catalog]) {
-		width: min(24rem, calc(100vw - 2rem));
-	}
-
-	.examples {
-		display: grid;
-		gap: 0.4rem;
-	}
-
-	/* The icon, then the name over what it shows. */
-	.examples button {
-		display: grid;
-		grid-template-columns: 2rem 1fr;
-		align-items: center;
-		column-gap: 0.5rem;
-		background: var(--raised);
-		border: 1px solid var(--rule);
-		border-radius: 6px;
-		padding: 0.35rem 0.5rem;
-		color: var(--ink-bright);
-		font: inherit;
-		text-align: start;
-		cursor: pointer;
-	}
-
-	.examples button:hover,
-	.examples button:focus-visible {
-		border-color: var(--accent);
-	}
-
-	.examples .icon {
-		grid-row: span 2;
-		font-size: 1.5rem;
-		text-align: center;
-	}
-
 	/* The pictogram beside the shape's name and line, so four fit over the
 	   name box on a phone. */
 	.verb {
@@ -811,7 +704,6 @@
 		color: var(--ink-bright);
 	}
 
-	.what,
 	.line {
 		font-size: 0.65rem;
 		line-height: 1.2;

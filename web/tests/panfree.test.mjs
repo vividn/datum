@@ -29,7 +29,7 @@ after(stopApp);
 
 const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
 // The strip is the dayview tab's on a phone (da-uzi5x), the nowview collect's.
-const ON_DAYVIEW = { ...PHONE, home: { ...ON_COLLECT, active: 3 } };
+const ON_DAYVIEW = { ...PHONE, home: { ...ON_COLLECT, active: 4 } };
 const TODAY = '.band[data-days-ago="0"]';
 const MOVES = 20;
 

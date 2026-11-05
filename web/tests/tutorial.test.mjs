@@ -51,7 +51,7 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 			const { page } = app;
 			const home = await tabs(page);
 			const datumHue = await hue(page);
-			assert.deepEqual(home, ['welcome', 'setup', 'collection', 'dayview'], 'a fresh datum.day opens on the welcome');
+			assert.deepEqual(home, ['welcome', 'premade', 'setup', 'collection', 'dayview'], 'a fresh datum.day opens on the welcome');
 
 			await press(page, 'Tutorial', 'tutorial');
 			assert.equal(await db(page), 'tutorial');

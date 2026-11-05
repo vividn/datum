@@ -250,7 +250,7 @@
 					verb={readFor.verb ?? null}
 					{spec}
 					ignored={$fields.filter((f) => f.ignored).map((f) => f.field)}
-					taken={$fields.map((f) => f.field)}
+					example={readFor.example ?? null}
 					bind:dirty
 					bind:pending
 					away={$away}
