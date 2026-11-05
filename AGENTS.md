@@ -467,6 +467,18 @@ old one), `rt` for `retime`,
 old name as its alias when it was renamed (da-a4ptr, then da-3ie71: «leave
 "spec" as a verb which is aliased to setup»). Do not remove it.
 
+### `--dry-run` writes nothing
+Every command that changes something takes `--dry-run` (da-7r1v4). One with a
+dry run of its own runs it (the log commands, `update`, `merge`, `rekey`, `delete`, `redo`,
+`rename`, `kit install`, `db restore`, `db v2import`, `backup`, `sync chain
+leave`, `sync refold`); any other that changes only the database runs whole on
+a copy of it in memory (`Db::copy_in_memory`, `dry_run` in `datum-cli`), every
+action word DRYRUN, and the copy is dropped: no row, no op, no file, a database
+not there yet included. One that only reads refuses it, «nothing to dry-run:
+<cmd> writes nothing», and one that writes outside the database (a shell's rc,
+a timer, the network) says it has none. On a line of several commands it is
+the whole line's: each side runs on the one copy.
+
 ### A command asks one way
 A question is `commands/question.rs` (da-jytnl): yes/no with a default, named
 choices, or a name to type. A terminal is prompted. A pipe's line is the answer

@@ -19,11 +19,12 @@ pub mod repl;
 use anyhow::Result;
 use datum_commands::commands;
 use datum_core::db::Db;
+use datum_parse::cli::MetaCommand;
 use datum_parse::{help, ParseError};
 
 use crate::args::{
-    AliasCommand, BackupRotationArgs, Cli, Command, DbCommand, InfoArgs, Invocation, KitCommand,
-    RotationAction, SpecCommand, SyncCommand,
+    AliasCommand, BackupRotationArgs, Cli, Command, ConfigCommand, ConflictsCommand, DbCommand,
+    InfoArgs, Invocation, KitCommand, RotationAction, SpecCommand, SyncCommand,
 };
 
 /// `datum 3.0.<height>-beta (<sha7>)`, from git at build time (da-5172a,
@@ -130,7 +131,36 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     // Clear the dedup-no-op flag so it reflects only this invocation
     // (da-9sfm). `main` reads it after a clean run to choose exit code 11.
     args::reset_duplicate_noop();
-    let (invocation, opened) = match args::parse_invocation_opening(argv.clone()) {
+    let mut parsed = args::parse_invocation_opening(argv.clone());
+    if (0..argv.len()).any(dry_run_flag(&argv)) {
+        match parsed {
+            // Its own dry run, but of a database not there yet, which no
+            // dry run makes.
+            Ok((invocation, opened))
+                if sides(&invocation)
+                    .iter()
+                    .all(|c| dry_runs_itself(&c.command)) =>
+            {
+                let new = sides(&invocation)
+                    .iter()
+                    .all(|c| missing(c.db.as_deref()).is_some() && dry_runs_on_a_copy(&c.command));
+                if new {
+                    return dry_run(&argv, invocation, None);
+                }
+                parsed = Ok((invocation, opened));
+            }
+            // A dry run asked of a line that does not parse without the flag
+            // says why it does not: it never runs that line for real.
+            _ => match args::parse_invocation_opening(without_dry_run(&argv)) {
+                Ok((invocation, opened)) => {
+                    drop(parsed);
+                    return dry_run(&argv, invocation, opened.as_ref());
+                }
+                Err(e) => parsed = Err(e),
+            },
+        }
+    }
+    let (invocation, opened) = match parsed {
         Ok(parsed) => parsed,
         Err(e) => {
             // Propagate `--help` / `--version` / `--man` as a clean stdout print.
@@ -172,11 +202,7 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     };
 
     // A list in `--db` is the backup timers' alone yet (da-bw7ur).
-    let sides = match &invocation {
-        Invocation::Single(cli) => std::slice::from_ref(cli),
-        Invocation::Multi { sides, .. } => &sides[..],
-    };
-    for cli in sides {
+    for cli in sides(&invocation) {
         if !matches!(cli.command, Command::Db(DbCommand::BackupDaemon(_))) {
             config::one_db(cli.db.as_deref())?;
         }
@@ -193,6 +219,176 @@ pub fn run(argv: Vec<String>) -> Result<()> {
         return queue(path, args::parse_invocation(argv)?);
     }
     result
+}
+
+/// The commands of `invocation`, one a side.
+pub(crate) fn sides(invocation: &Invocation) -> &[Cli] {
+    match invocation {
+        Invocation::Single(cli) => std::slice::from_ref(cli),
+        Invocation::Multi { sides, .. } => sides,
+    }
+}
+
+/// `--dry-run`, or its spelling `--dryrun`, before any `--`.
+pub(crate) fn dry_run_flag(argv: &[String]) -> impl Fn(usize) -> bool + '_ {
+    let end = argv.iter().position(|a| a == "--").unwrap_or(argv.len());
+    move |i| i < end && matches!(argv[i].as_str(), "--dry-run" | "--dryrun")
+}
+
+/// `argv` without its `--dry-run`: the line of a command that does not run
+/// a dry run itself, which [`dry_run`] runs (da-7r1v4).
+pub(crate) fn without_dry_run(argv: &[String]) -> Vec<String> {
+    let flag = dry_run_flag(argv);
+    let rest = (0..argv.len()).filter(|i| !flag(*i));
+    rest.map(|i| argv[i].clone()).collect()
+}
+
+/// Was `command` parsed with a `--dry-run` of its own, which it runs as it
+/// always has: the log commands, `update`, `delete`, `redo`, `rename`, `kit
+/// install`, `db restore`, `db v2import`, `backup`'s rotation, `sync chain
+/// leave` and `sync refold`.
+pub(crate) fn dry_runs_itself(command: &Command) -> bool {
+    match command {
+        Command::Occur(a)
+        | Command::Start(a)
+        | Command::Stop(a)
+        | Command::Switch(a)
+        | Command::Add(a)
+        | Command::Note(a) => a.dry_run,
+        Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => a.dry_run,
+        Command::Delete(a) => a.dry_run,
+        Command::Redo(a) => a.dry_run,
+        Command::Rename(a) => a.dry_run,
+        Command::Kit(KitCommand::Install(a)) => a.dry_run,
+        Command::Db(DbCommand::Restore(a)) => a.dry_run,
+        Command::Db(DbCommand::V2import(a)) => a.dry_run,
+        Command::Db(DbCommand::BackupRotation(a)) => {
+            matches!(a.action, RotationAction::Plan { .. })
+        }
+        Command::Sync(SyncCommand::Leave { dry_run, .. } | SyncCommand::Refold { dry_run, .. }) => {
+            *dry_run
+        }
+        _ => false,
+    }
+}
+
+/// Does `command` change only what the database holds? Then its dry run is
+/// the command itself, run on a copy of the database in memory. The help
+/// pages that say so are `DRY_RUNS_ON_A_COPY` in `datum-parse`'s
+/// `help/render.rs`: a command added here is added there.
+fn dry_runs_on_a_copy(command: &Command) -> bool {
+    match command {
+        Command::Spec(c) => matches!(c, SpecCommand::Set(_) | SpecCommand::Delete { .. }),
+        Command::Alias(c) => matches!(c, AliasCommand::Set { .. } | AliasCommand::Remove { .. }),
+        Command::Kit(c) => matches!(c, KitCommand::Uninstall(_)),
+        Command::Conflicts(c) => matches!(c, ConflictsCommand::Resolve(_)),
+        Command::Meta(c) => matches!(c, MetaCommand::Add { .. }),
+        Command::Check(a) => a.fix,
+        Command::Db(DbCommand::Config(a)) => a.value.is_some(),
+        // `--user` keeps this install's username, outside the database.
+        Command::Sync(SyncCommand::Rename { user, .. }) => user.is_none(),
+        Command::Sync(c) => matches!(
+            c,
+            SyncCommand::Pause
+                | SyncCommand::Resume
+                | SyncCommand::Ack { .. }
+                | SyncCommand::Rekey
+                | SyncCommand::Admin { .. }
+        ),
+        c => matches!(c, Command::Reparse(_) | Command::FollowZone) || changes_entries(c),
+    }
+}
+
+/// Does `command` write nothing at all, so a dry run has nothing to show?
+fn writes_nothing(command: &Command) -> bool {
+    match command {
+        Command::Db(DbCommand::Backup(_)) => false,
+        Command::Db(DbCommand::Config(a)) => a.value.is_none(),
+        Command::Check(a) => !a.fix,
+        c => {
+            only_reads(c)
+                || matches!(
+                    c,
+                    Command::Info(_)
+                        | Command::Debug(_)
+                        | Command::Completions(_)
+                        | Command::Config(ConfigCommand::Show(_))
+                        | Command::Conflicts(ConflictsCommand::List(_))
+                        | Command::Meta(MetaCommand::Show { .. })
+                        | Command::Sync(
+                            SyncCommand::Members { .. } | SyncCommand::AdminList { .. }
+                        )
+                )
+        }
+    }
+}
+
+/// The words of `argv` naming its command: the first, and the second where
+/// it is one of the first's subcommands.
+fn command_words(argv: &[String]) -> String {
+    let (argv, _) = config::split_off_global_db_flag(argv.to_vec());
+    let (argv, _) = config::split_off_global_color_flag(argv);
+    let flag = dry_run_flag(&argv);
+    let mut words = (1..argv.len()).filter(|i| !flag(*i)).map(|i| &argv[i]);
+    let first = words.next().map_or("", String::as_str);
+    match (help::find_command(first), words.next()) {
+        (Some((spec, _)), Some(sub)) if spec.subcommands.iter().any(|s| s.name == sub) => {
+            format!("{first} {sub}")
+        }
+        _ => first.to_string(),
+    }
+}
+
+/// Run `invocation`, which `argv` asked for a dry run of, on a copy in
+/// memory of the database `db`, or of a new one where there is none, with
+/// DRYRUN for its every action word: it parses, resolves and prints as the
+/// real run would, and what it writes is written nowhere (da-7r1v4).
+pub(crate) fn dry_run(argv: &[String], invocation: Invocation, db: Option<&Db>) -> Result<()> {
+    for cli in sides(&invocation) {
+        let words = || command_words(argv);
+        if writes_nothing(&cli.command) {
+            anyhow::bail!("nothing to dry-run: {} writes nothing", words());
+        }
+        if !dry_runs_on_a_copy(&cli.command) {
+            anyhow::bail!(
+                "{} has no --dry-run: it changes what is outside the database (a file, a timer, the network)",
+                words()
+            );
+        }
+    }
+    let _color = sides(&invocation)
+        .first()
+        .and_then(|c| c.color)
+        .map(output::colors::ColorOverride::set);
+    // None opened: a database not there yet is a fresh one, and one there
+    // that would not open fails as the real run does.
+    let named = sides(&invocation).first().and_then(|c| c.db.clone());
+    let copy = match (db, missing(named.as_deref())) {
+        (Some(db), _) => db.copy_in_memory()?,
+        (None, Some(_)) => Db::open_in_memory()?,
+        (None, None) => {
+            // Opened as the alias pass opens it, saying why it would not.
+            let path = config::resolve_db(named.as_deref())?.path;
+            let at = path.to_string_lossy();
+            match Db::writable(&path) {
+                true => Db::open(&at)?,
+                false => Db::open_to_read(&at)?,
+            }
+            .copy_in_memory()?
+        }
+    };
+    let own = sides(&invocation)
+        .iter()
+        .all(|c| dry_runs_itself(&c.command));
+    if own {
+        return cmd::dispatch_invocation(invocation, &copy);
+    }
+    {
+        let _dry = output::Queued::dry_run();
+        cmd::dispatch_invocation(invocation, &copy)?;
+    }
+    eprintln!("[dry-run] nothing written");
+    Ok(())
 }
 
 /// Exit code for a duplicate / "already have this" outcome. Matches datum v2
@@ -320,33 +516,37 @@ const SPOOL_AFTER: std::time::Duration = std::time::Duration::from_millis(750);
 /// whose indices are DDL no op carries. None in the browser, whose database
 /// is one process's at a time. Nor a [`claims`] command.
 fn spools(command: &Command) -> bool {
-    !cfg!(target_family = "wasm")
-        && !claims(command)
-        && matches!(
-            command,
-            Command::Occur(_)
-                | Command::Start(_)
-                | Command::Stop(_)
-                | Command::Switch(_)
-                | Command::Add(_)
-                | Command::Note(_)
-                | Command::Delete(_)
-                | Command::Undo(_)
-                | Command::Redo(_)
-                | Command::Revert(_)
-                | Command::Edit(_)
-                | Command::Update(_)
-                | Command::Merge(_)
-                | Command::Rekey(_)
-                | Command::Retime(_)
-                | Command::Rename(_)
-                | Command::Spec(_)
-                | Command::Alias(_)
-                | Command::Conflicts(_)
-                | Command::Track(_)
-                | Command::Ignore(_)
-                | Command::Flag(_)
-        )
+    !cfg!(target_family = "wasm") && !claims(command) && changes_entries(command)
+}
+
+/// The commands that change entries, in any build: [`spools`]' and the
+/// [`claims`].
+fn changes_entries(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Occur(_)
+            | Command::Start(_)
+            | Command::Stop(_)
+            | Command::Switch(_)
+            | Command::Add(_)
+            | Command::Note(_)
+            | Command::Delete(_)
+            | Command::Undo(_)
+            | Command::Redo(_)
+            | Command::Revert(_)
+            | Command::Edit(_)
+            | Command::Update(_)
+            | Command::Merge(_)
+            | Command::Rekey(_)
+            | Command::Retime(_)
+            | Command::Rename(_)
+            | Command::Spec(_)
+            | Command::Alias(_)
+            | Command::Conflicts(_)
+            | Command::Track(_)
+            | Command::Ignore(_)
+            | Command::Flag(_)
+    )
 }
 
 /// Is `command` a `-L` claim (da-ovnf9), or a switch that edits its field's
@@ -392,31 +592,35 @@ fn claim_behind_queue(db: &datum_core::db::Db, path: &str, command: &Command) ->
 /// error, and only a write makes it (da-oo6tr). The browser's database is
 /// made by the page.
 fn reads(command: &Command) -> bool {
-    !cfg!(target_family = "wasm")
-        && matches!(
-            command,
-            Command::Tail(_)
-                | Command::Head(_)
-                | Command::Now(_)
-                | Command::Get(_)
-                | Command::History(_)
-                | Command::Why(_)
-                | Command::Grep(_)
-                | Command::Check(_)
-                | Command::Count(_)
-                | Command::Stats(_)
-                | Command::Ids(_)
-                | Command::Fields(_)
-                | Command::States(_)
-                | Command::Dayview(_)
-                | Command::Nowview(_)
-                | Command::View(_)
-                | Command::Kit(KitCommand::List | KitCommand::Export(_) | KitCommand::Show { .. })
-                | Command::Db(DbCommand::Backup(_))
-                | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
-                | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })
-                | Command::Sync(SyncCommand::Status { .. } | SyncCommand::Grid { .. })
-        )
+    !cfg!(target_family = "wasm") && only_reads(command)
+}
+
+/// [`reads`]' commands, in any build.
+fn only_reads(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Tail(_)
+            | Command::Head(_)
+            | Command::Now(_)
+            | Command::Get(_)
+            | Command::History(_)
+            | Command::Why(_)
+            | Command::Grep(_)
+            | Command::Check(_)
+            | Command::Count(_)
+            | Command::Stats(_)
+            | Command::Ids(_)
+            | Command::Fields(_)
+            | Command::States(_)
+            | Command::Dayview(_)
+            | Command::Nowview(_)
+            | Command::View(_)
+            | Command::Kit(KitCommand::List | KitCommand::Export(_) | KitCommand::Show { .. })
+            | Command::Db(DbCommand::Backup(_))
+            | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
+            | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })
+            | Command::Sync(SyncCommand::Status { .. } | SyncCommand::Grid { .. })
+    )
 }
 
 /// Does a command that [`reads`] the database at `path` open it read-only

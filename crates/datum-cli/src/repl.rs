@@ -82,12 +82,23 @@ fn run_line(line: &str, db: &Db, path: &str) -> Result<()> {
     let mut argv = vec!["datum".to_string()];
     argv.extend(shell_split(line));
 
-    match datum_commands::args::parse_invocation_with_db(argv.clone(), db) {
+    let parse = |argv| datum_commands::args::parse_invocation_with_db(argv, db);
+    // `run`'s dry-run seam (da-7r1v4) on the REPL's open database, which is
+    // always there: keep the two alike.
+    if (0..argv.len()).any(crate::dry_run_flag(&argv))
+        && !parse(argv.clone()).is_ok_and(|i| {
+            crate::sides(&i)
+                .iter()
+                .all(|c| crate::dry_runs_itself(&c.command))
+        })
+    {
+        if let Ok(invocation) = parse(crate::without_dry_run(&argv)) {
+            return crate::dry_run(&argv, invocation, Some(db));
+        }
+    }
+    match parse(argv.clone()) {
         Ok(invocation) => match crate::run_on(db, path, invocation) {
-            Err(e) if e.is::<crate::Locked>() => crate::queue(
-                path,
-                datum_commands::args::parse_invocation_with_db(argv, db)?,
-            ),
+            Err(e) if e.is::<crate::Locked>() => crate::queue(path, parse(argv)?),
             r => r,
         },
         Err(e) => {
