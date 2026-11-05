@@ -38,6 +38,11 @@
 	`momentsAt`). A tap on that field deletes the entry, with no pill: an hid
 	pill on the bar would be deleted too.
 
+	`only` (da-gfy7w) is the widget's `fields` option: set, the buttons are
+	those fields alone, in order and mode as ever; empty, every field. A name
+	no field has is not drawn, and is offered beside the fields there are so
+	the menu can take it off again.
+
 	`showIgnored` (da-xhio) arrives as a prop too, though its value is the
 	SESSION's rather than the layout's: the renderer merges the two before
 	it draws (Layout.svelte, #lib/layout/session.ts), so neither this pane
@@ -56,7 +61,8 @@
 	import { withPills } from '#lib/selection.ts';
 	import { flagLine, hasDuration } from '#lib/commands.ts';
 	import { advance } from '#lib/keyframes.ts';
-	import { standingAt, type Align, type NowActive, type NowListing, type SwitchLabel } from '#lib/fields.ts';
+	import { offers } from './options.js';
+	import { COLLECT_FIELDS_OFFER, standingAt, type Align, type NowActive, type NowListing, type SwitchLabel } from '#lib/fields.ts';
 	import { lanes } from '#lib/lanes.ts';
 	import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
 	import { epoch as written, fields, gestureAt, grammar, press, pressWithPills, standings } from './engine.js';
@@ -77,9 +83,12 @@
 		side = 'left',
 		/** How large the rows are drawn, which a pinch moves (da-l1z6h); `onchange` hands it to the session. */
 		zoom = 1,
+		/** The fields shown, or every field where empty (da-gfy7w). */
+		only = [],
 		epoch = 0,
 		onchange
 	}: {
+		only?: string[];
 		switchLabel?: SwitchLabel;
 		align?: Align;
 		showIgnored?: boolean;
@@ -140,7 +149,15 @@
 	});
 	const doc = $derived(layer?.doc());
 	/** The buttons at the selected time by the last `now -t` answered, kept while a moving instant rests, else as they stand now. */
-	const standing = $derived(at !== null && then ? standingAt($fields, then.active, momentsAt(doc, then.at)) : $fields);
+	const standing = $derived.by(() => {
+		const all = at !== null && then ? standingAt($fields, then.active, momentsAt(doc, then.at)) : $fields;
+		return only.length ? all.filter((f) => only.includes(f.field)) : all;
+	});
+	$effect.pre(() => {
+		const named = [...new Set([...$fields.map((f) => f.field), ...only])];
+		const offered = { [COLLECT_FIELDS_OFFER]: named.map((field) => ({ value: field, label: field })) };
+		untrack(() => offers.update((o) => ({ ...o, ...offered })));
+	});
 
 	/**
 	 * A press under the pending command runs the LINE with the field after it

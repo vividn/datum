@@ -550,6 +550,9 @@ export function defaultColor(name: string): string {
  */
 export type SwitchLabel = 'field' | 'state';
 
+/** What the collect widget offers its `fields` option (`offers`, layout/options.ts, da-gfy7w): every field, and any it names. */
+export const COLLECT_FIELDS_OFFER = 'collect:fields';
+
 export interface Look {
 	/** The background, or null for none. */
 	fill: string | null;

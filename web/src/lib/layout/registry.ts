@@ -68,6 +68,7 @@ import BackupsWidget from './BackupsWidget.svelte';
 import ConflictsWidget from './ConflictsWidget.svelte';
 import DayviewWidget from './DayviewWidget.svelte';
 import CollectPane from './CollectPane.svelte';
+import { COLLECT_FIELDS_OFFER } from '#lib/fields.ts';
 import HelpWidget from './HelpWidget.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
@@ -466,7 +467,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// device (da-ray91).
 	widgetbar: {
 		live: true,
-		meta: meta('widgetbar', 'collect', { align: 'rows', switchLabel: 'field', showIgnored: false, clicks: 'one', side: 'left' }, [
+		meta: meta('widgetbar', 'collect', { align: 'rows', switchLabel: 'field', showIgnored: false, clicks: 'one', side: 'left', fields: [] }, [
 			// Where the buttons stand (da-omw4n): today's rows, or each at the
 			// height its field is drawn in the pictures.
 			{
@@ -511,7 +512,12 @@ export const KINDS: Record<string, WidgetKind> = {
 					{ value: 'left', label: 'left' },
 					{ value: 'right', label: 'right' }
 				]
-			}
+			},
+			// vividn, 2026-11-05: «a widget option to filter a collect widget»
+			// (da-gfy7w): set, only these fields; empty, every field. A name no
+			// field has yet is offered and not drawn, so a layout may name a
+			// kit's fields before the kit is installed.
+			{ key: 'fields', label: 'fields', type: 'offered', many: true, choices: (_, offers) => offers[COLLECT_FIELDS_OFFER] ?? [] }
 		]),
 		component: CollectPane,
 		help: [
@@ -521,7 +527,8 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Under a pending command a tap logs at once; a hold opens the field.',
 			'Pinch the rows to zoom: smaller fits more rows, larger fewer.'
 		].join('\n'),
-		props: ({ align, switchLabel, showIgnored, clicks, side, zoom }) => ({
+		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, fields }) => ({
+			only: Array.isArray(fields) ? fields.filter((f): f is string => typeof f === 'string') : [],
 			align: align === 'picture' ? 'picture' : 'rows',
 			zoom: typeof zoom === 'number' ? zoom : 1,
 			clicks: clicks === 'two' ? 'two' : 'one',

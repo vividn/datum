@@ -141,7 +141,8 @@ describe('widget options', () => {
 				'a change field is labelled with its',
 				'show ignored fields',
 				'a tap',
-				'side'
+				'side',
+				'fields'
 			]);
 			// The freeze wears its icon before its words (da-2hd21).
 			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', '⤓ today frozen at the bottom', 'orientation']);
@@ -674,6 +675,52 @@ describe('widget options', () => {
 			await app.reload();
 			await button.waitFor();
 			assert.equal((await tree(page)).includes('"showIgnored":true'), false, 'a kept session setting reached the tree');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	// vividn, 2026-11-05: «a widget option to filter a collect widget»
+	// (da-gfy7w). Set in the menu it narrows the buttons at once and a reload
+	// keeps it; named in the layout it narrows them too, and a name no field
+	// has is left out with no error, so a layout may name a kit's fields
+	// before the kit is installed.
+	test('collect: «fields» shows only the fields it names, set in the menu or in the layout', async () => {
+		await withApp(async (app) => { // reloads
+			const { page } = app;
+			const shown = () =>
+				page.locator('.bar button[data-field]').evaluateAll((bs) => [...new Set(bs.map((b) => b.dataset.field))].sort());
+			for (const field of ['coffee', 'tea', 'water']) await app.submit(`occur ${field}`);
+			await page.locator('.bar button[data-field="water"]').waitFor();
+			assert.deepEqual(await shown(), ['coffee', 'tea', 'water']);
+
+			await menuButton(page, 'bar').click();
+			await page.getByRole('menuitem', { name: 'fields', exact: true }).click();
+			for (const field of ['coffee', 'tea']) {
+				await page.getByRole('menuitemcheckbox', { name: field, exact: true }).click();
+				await page.getByRole('menuitemcheckbox', { name: field, exact: true, checked: true }).waitFor();
+			}
+			await page.keyboard.press('Escape');
+			await page.keyboard.press('Escape');
+			await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+			await page.locator('.bar button[data-field="water"]').waitFor({ state: 'detached' });
+			assert.deepEqual(await shown(), ['coffee', 'tea']);
+
+			await app.reload();
+			await page.locator('.bar button[data-field="coffee"]').waitFor();
+			assert.deepEqual(await shown(), ['coffee', 'tea'], 'a reload lost the fields');
+
+			// The layout's own setting, once the session holds none.
+			await choose(page, 'bar', 'Reset widget');
+			await page.locator('.bar button[data-field="water"]').waitFor();
+			await page.evaluate(() =>
+				window.datum.layout.apply((l) =>
+					JSON.parse(JSON.stringify(l), (_, v) =>
+						v?.kind === 'widgetbar' ? { ...v, settings: { ...v.settings, fields: ['tea', 'juice'] } } : v
+					)
+				)
+			);
+			await page.locator('.bar button[data-field="coffee"]').waitFor({ state: 'detached' });
+			assert.deepEqual(await shown(), ['tea']);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
