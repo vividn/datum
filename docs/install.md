@@ -34,7 +34,7 @@ takes the script's arguments: `| sh -s -- --no-completions`, say.
   <file>` is one file, and starts none of this.
 - Whether to upgrade daily (`datum upgrade --auto`, below), asked on a
   terminal and yes unasked; `--yes` or `--no` answers both.
-- It ends with the line that makes your aliases and the verbs commands
+- It ends with the line that makes your aliases and the logging commands
   of their own in your shell, for you to add if you want it.
 
 Running it again is harmless. `datum check` then says when any of it goes

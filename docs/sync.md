@@ -31,4 +31,4 @@ it (`datum conflicts resolve`).
 A copy of the file at another path mints its own key the first time it
 signs, so `cp a.db b.db` gives two copies that sync. Two copies found
 signing with one key are refused by name; `datum sync chain rekey` gives one of
-them a new key (and its peers pair with it again).
+them a new key (and it joins the chain again).

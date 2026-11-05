@@ -265,3 +265,51 @@ fn errors_say_the_new_words() {
         }
     }
 }
+
+/// What a person reads of the user docs says a kind of data by its word
+/// (da-7j00d): no `switch`, `card` or field «shape» for a kind, no old
+/// command typed. concepts.md names the old words where it says what they
+/// were: its glossary table, the aliases paragraph and the stored column.
+#[test]
+fn the_user_docs_say_the_new_words() {
+    let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+    let kind = |l: &str| {
+        let lower = l.to_lowercase();
+        ["shape", "**switch**", "**card**"]
+            .into_iter()
+            .find(|w| lower.contains(w))
+    };
+    let mut said = Vec::new();
+    for name in ["README", "basics", "concepts", "agents", "install", "sync"] {
+        let text = std::fs::read_to_string(docs.join(format!("{name}.md"))).unwrap();
+        let mut told = false;
+        for line in text.lines() {
+            // A passage telling the old words, to its blank line or next bullet.
+            if line.trim().is_empty() || line.starts_with("- ") {
+                told = false;
+            }
+            if name == "concepts"
+                && (line.starts_with("The old words still run")
+                    || line.starts_with("- **Stored classifier**"))
+            {
+                told = true;
+            }
+            if told || (name == "concepts" && line.starts_with('|')) {
+                continue;
+            }
+            // A file's path names its module, not a word.
+            let words: String = line
+                .split('`')
+                .enumerate()
+                .map(|(i, s)| if i % 2 == 1 && s.contains('/') { "" } else { s })
+                .collect::<Vec<_>>()
+                .join("`");
+            if let Some(w) = old_word(&words).or(kind(&words)) {
+                said.push(format!("docs/{name}.md says {w}: {line}"));
+            }
+        }
+    }
+    assert!(said.is_empty(), "{}", said.join("\n"));
+    assert_eq!(kind("- ▞ **switch**: switch data"), Some("**switch**"));
+    assert_eq!(kind("## Field shapes"), Some("shape"));
+}

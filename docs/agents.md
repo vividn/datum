@@ -2,7 +2,7 @@
 
 datum keeps a life's record as small, honest entries, and an AI agent can use it in three ways: to keep its own
 record, to help its person keep theirs, and to work on datum itself. The [datum skill](../skills/datum/SKILL.md)
-is the short version for an agent: which verb fits which kind of moment, how to backdate, how to read it back.
+is the short version for an agent: which kind of data fits what you track, how to backdate, how to read it back.
 
 datum suits an agent well. Every command is one non-interactive call, `--json` prints rows a program can read, a
 non-zero exit says what went wrong, and `--db <name>` keeps each record in a database of its own.
@@ -12,10 +12,10 @@ non-zero exit says what went wrong, and `--db <name>` keeps each record in a dat
 What an agent can track about itself, if it wants to know where its time and attention went:
 
 ```bash
-datum switch activity reviewing           # what it is doing now, until it switches
+datum change activity reviewing           # what it is doing now, until it changes
 datum moment decision choice=merge         # a decision, with what it chose
-datum switch tone patient                 # a background mood, if it keeps one
-datum switch activity off                 # done; the gap after is honest
+datum change tone patient                 # a background mood, if it keeps one
+datum change activity off                 # done; the gap after is honest
 datum tail activity                       # read it back
 ```
 

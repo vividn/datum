@@ -41,9 +41,9 @@ One-line summaries of the model:
   `project`. Freeform by default; can be schema-constrained via
   `datum setup <field>`.
 - **Command** — what is typed to log an entry: `moment`, `on`, `off`,
-  `change`, `record` and `remark`. It is parsed from argv, canonicalizes
-  the (state, dur, following_state) triple (`on` ⇒ state=true,
-  `off` ⇒ state=false), and is then discarded — only the triple
+  `change`, `record`, `allday` and `remark`. It is parsed from argv,
+  canonicalizes the (state, dur, following_state) triple (`on` ⇒
+  state=true, `off` ⇒ state=false), and is then discarded — only the triple
   reaches storage.
 - **Stored classifier** — derived from (state, dur, following_state) by
   `derive_verb` (datum-parse::verb, still the `verb` column): `point`,
@@ -67,7 +67,7 @@ One-line summaries of the model:
   states a FIELD is in, carried by ordinary rows in the same `state`
   column every other value lands in — not flags on a row, not columns
   of their own. A field is ignored when its newest state-bearing row is
-  `IGNORED`, and the next `moment`/`on`/`switch`/`track` on it tracks
+  `IGNORED`, and the next `moment`/`on`/`change`/`track` on it tracks
   it again; so tracked-ness is read off the entry log
   (`is_ignored_state` in `crates/datum-parse/src/shape.rs`,
   `Db::get_tracked_fields` in `crates/datum-core/src/db/state.rs`),

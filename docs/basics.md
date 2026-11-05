@@ -22,18 +22,18 @@ concepts and how to use the tool effectively.
 | state | Persistent attribute of a field. Entries can modify a field's state, which lasts until the next state change |
 | dur   | Rather than persistently changing a field's state, an entry can specify a duration, which describes how long the field was just in that state, before returning to its previous state |
 
-## Field shapes
+## Kinds of data
 
-Fields can take a few different shapes, based on how they relate to time:
+Data come in a few kinds, by how they relate to time:
 
 - ● **moment**: something that happens or is measured at a single point in time. Represented by dots on a
   timeline. Moments have no state and no duration, but can store extra data. Ex. medication, alarm, weight, coffee
 - █ **on/off**: on/off data have just 2 states, true and false. Represented by blocks of a single color on the
   timeline. For things that happen for a while and then stop happening. Ex. sleep, screentime, work
-- ▞ **switch**: switch data use custom states to describe things that pass through different phases or modes.
+- ▞ **change**: change data use custom states to describe things that pass through different phases or modes.
   Represented by blocks that change color on the timeline as they change states. Ex. environment, project, activity,
   stoplight
-- ¢ **card**: a collection of keys and values with no relation to time. Used for storing information about the world.
+- ¢ **record**: a collection of keys and values with no relation to time. Used for storing information about the world.
   Ex. people, words, catalogs
 - ▤ **all day**: a value that belongs to a whole day rather than to a moment in it. Every entry is on a date with no
   time: today, or the day `-d` names (`datum allday steps 8000`, `datum allday steps 9000 -d 2026-11-01`), and `-t`
