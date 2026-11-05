@@ -113,6 +113,8 @@ export const EXAMPLES: Example[] = [
 	moment('body', 'water', 'each glass, and how many ml', '#5ab4e8', '💧', [dataKey('ml')]),
 	moment('body', 'medication', 'what you took, and how much', '#7fb8d4', '💊', [dataKey('name', 'required'), dataKey('dose')]),
 	onOff('body', 'headache', 'on while it lasts, off when it ends', '#d46a6a', '⚡'),
+	onOff('body', 'shower', 'on in, off out', '#5ac8d4', '🚿'),
+	onOff('body', 'menstruation', 'on while it lasts, off when it ends', '#d64545', '🩸'),
 	moment('food & drink', 'coffee', 'each cup', '#c69c6d', '☕'),
 	{
 		...onOff('food & drink', 'meal', 'on as you sit down, off when done; snack, a bite between', '#e0a458', '🍽', [dataKey('food')]),
@@ -137,6 +139,11 @@ export const EXAMPLES: Example[] = [
 	onOff('work', 'work', 'on when you start, off when you stop', '#d4a35a', '💼'),
 	{ ...moment('work', 'project', 'the project you are on, until the next', '#9b7fd4', '📁'), verb: 'switch' },
 	onOff('work', 'meeting', 'on as it starts, off as it ends', '#d48788', '👥'),
+	{
+		...moment('work', 'activity', 'email, meeting or deepwork, until the next', '#c8c8c8', '🗂'),
+		verb: 'switch',
+		states: { email: '#4f8fe8', meeting: '#d48788', deepwork: '#7bd389' }
+	},
 	{
 		...moment('home & chores', 'room', 'the room you are in, or off', '#cbb994', '🚪'),
 		verb: 'switch',
@@ -165,6 +172,7 @@ export const EXAMPLES: Example[] = [
 	moment('home & chores', 'trash', 'each time it goes out', '#8a8a8a', '🗑'),
 	moment('home & chores', 'vacuum', 'each time', '#b0a0d0', '🧹'),
 	onOff('screens & media', 'phone', 'on while you are on it', '#8fa3bf', '📱'),
+	onOff('screens & media', 'screentime', 'on while you are on a screen', '#8fa3bf', '📱'),
 	{
 		...moment('screens & media', 'watch', 'what you watch: dune is movie:dune, series:severance a series', '#e57373', '📺'),
 		verb: 'switch',
@@ -179,6 +187,7 @@ export const EXAMPLES: Example[] = [
 	moment('habits', 'stretch', 'each time', '#7bd389', '🤸'),
 	moment('habits', 'vitamins', 'each day you take them', '#f4c542', '🍊'),
 	record('person', 'a name, how to reach them, where they work', '#e59866', '👤', ['name', 'lastName', 'address', 'company', 'phone', 'email', 'city']),
+	record('place', 'a record with a name and an address', '#76d7c4', '📍', ['name', 'address']),
 	record('book', 'a title and an author', '#c39bd3', '📚', ['title', 'author']),
 	record('movie', 'a title and a year', '#e57373', '🎬', ['title', 'year']),
 	record('series', 'a title and a season', '#ef9a9a', '🎞', ['title', 'season']),
