@@ -55,7 +55,7 @@ import { writable, type Readable } from 'svelte/store';
 import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
-import { cliError, dbOf, type RunResult } from './run.js';
+import { cliError, dbOf, run, type RunResult } from './run.js';
 import type { ChainList, Member, Notice, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
 
@@ -127,7 +127,19 @@ export interface Invite {
 	id: string;
 }
 
-type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string; label?: string } | { op: 'sync' };
+type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string; label?: string } | { op: 'sync' } | { op: 'said' };
+
+/** What a bare `sync` on the page says (da-5lpeg): one line a member, and whether it did its job. */
+interface Said {
+	lines: string[];
+	/** A member synced, or there is none to sync with; false fails as `datum sync` does (da-9d6uy). */
+	ok: boolean;
+}
+
+/** A session's report in `datum sync`'s words: across a sync floor, the floor's (da-52vdj). */
+function reportLine(r: SyncReport): string {
+	return r.floor ?? `${r.label}: sent ${r.sent}, got ${r.got}, conflicts ${r.conflicts}, ${r.verify}`;
+}
 
 const states = writable<Record<string, SyncState>>({});
 /** Every database's sync state this tab has heard, from its leader. */
@@ -315,6 +327,8 @@ class Leader {
 	held = new Set<string>();
 	seen = new Map<string, number>();
 	errors = new Map<string, string>();
+	/** Per peer: the report of the last session with it that ended well. */
+	reports = new Map<string, SyncReport>();
 	applying?: { done: number; of: number };
 	/** A push reading the vector, and a write since it began. */
 	pushing = false;
@@ -323,8 +337,12 @@ class Leader {
 	// Not a parameter property: node's type stripping, which the pure tests
 	// import this through (engine.ts → `syncCommand`), refuses one.
 	readonly db: string;
+	/** Settled once the setup was first read: whether the database syncs is known. */
+	readonly ready: Promise<void>;
+	readied = () => {};
 	constructor(db: string) {
 		this.db = db;
+		this.ready = new Promise((r) => (this.readied = r));
 	}
 
 	/**
@@ -452,6 +470,28 @@ class Leader {
 		);
 	}
 
+	/**
+	 * A bare `sync` typed on the page (da-5lpeg): every member now, then how
+	 * each went, as `datum sync` says it. Null where this copy dials nothing
+	 * — in no chain, or paused — which the CLI says in its own words.
+	 */
+	async said(): Promise<Said | null> {
+		await this.ready;
+		if (!this.endpoint || this.paused) return null;
+		if (!this.peers.length) return { lines: ['no sync peers: `sync chain invite` makes an invite'], ok: true };
+		await this.syncNow();
+		const each = this.peers.map((p) => {
+			const error = this.errors.get(p.endpoint);
+			const report = this.reports.get(p.endpoint);
+			// Across a sync floor no entry synced: as natively, no member synced (da-52vdj).
+			return error || !report ? { line: `${p.label}: ${error ?? 'not synced'}`, ok: false } : { line: reportLine(report), ok: !report.floor };
+		});
+		return {
+			lines: [`syncing with ${this.peers.map((p) => p.label).join(', ')}`, ...each.map((e) => e.line)],
+			ok: each.some((e) => e.ok)
+		};
+	}
+
 	/** A session's apply moved on; undefined once it is over. */
 	progress(applying?: { done: number; of: number }): void {
 		this.applying = applying && { done: applying.done, of: applying.of };
@@ -463,6 +503,7 @@ class Leader {
 		this.unsynced = undefined;
 		this.seen.set(id, Date.now());
 		this.errors.delete(id);
+		this.reports.set(id, report);
 		this.inStep.set(id, JSON.stringify(report.vector));
 		if (report.got) void this.push().catch(() => {});
 		// A peer this leader does not list yet: admitted in a session that was
@@ -507,6 +548,7 @@ class Leader {
 
 	async call(c: Call): Promise<unknown> {
 		if (c.op === 'sync') return this.syncNow();
+		if (c.op === 'said') return this.said();
 		if (c.op === 'connect') {
 			await this.start();
 			// The admit records the name it joins as, so the inviter holds it at once.
@@ -571,6 +613,7 @@ async function lead(db: string): Promise<void> {
 	for (let wait = RETRY_MS; ; wait = Math.min(wait * 2, PULL_MS)) {
 		try {
 			await leader.refresh();
+			leader.readied();
 			break;
 		} catch (e) {
 			console.warn(`sync ${db}:`, e);
@@ -677,8 +720,8 @@ export const inviting = writable<string | null>(null);
  * and the result says what native `join` says. The argv it echoes holds
  * no ticket. A bare `sync chain invite` (da-5g0nk) waits for a redeemer, which
  * no prompt line can show, so it opens the Sync widget with the invite under
- * way there, as a bare `sync` opens it (da-s9r58). Null for anything
- * else — `--help` and an invite's flags too — which runs as typed.
+ * way there (da-s9r58). A bare `sync` syncs now (`syncHere`). Null for
+ * anything else — `--help` and an invite's flags too — which runs as typed.
  */
 export function syncCommand(argv: string[]): Promise<RunResult> | null {
 	if (words(argv).join(' ') === 'sync') return syncHere(argv);
@@ -694,7 +737,7 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
 				r.left ? `this copy's own sync chain ${r.left[0]} (just itself) is replaced by sync chain ${r.left[1]}` : '',
 				r.added ? `added sync peer ${r.label} (${r.id.slice(0, 10)})` : '',
 				// Across a sync floor its words name the other copy (da-52vdj).
-				r.floor ?? `${r.label}: sent ${r.sent}, got ${r.got}, conflicts ${r.conflicts}, ${r.verify}`
+				reportLine(r)
 			]
 				.filter(Boolean)
 				.join('\n'),
@@ -705,14 +748,16 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
 }
 
 /**
- * A bare `sync` (da-s9r58) opens the Sync widget, where its devices stand —
- * or how to start a chain, outside one — and asks the leader for a round,
- * which does nothing outside a chain or while paused.
+ * A bare `sync` (da-5lpeg; vividn: «It should instead do `sync run`»)
+ * syncs with every member now on the leader and says how each went, as
+ * `datum sync` does, failing where none synced (da-9d6uy). In no chain, or
+ * paused, the CLI answers as typed: it says so, and how to start one.
  */
 async function syncHere(argv: string[]): Promise<RunResult> {
-	void syncNow(dbOf(argv)).catch(() => {});
-	await (await import('./layout/shell.js')).openPlace('sync');
-	return { argv, code: 0, stdout: 'sync is in the sync widget: each device and how it stands, or how to start a chain', stderr: '' };
+	const said = await call<Said | null>(dbOf(argv), { op: 'said' });
+	if (!said) return run(argv);
+	const stderr = said.ok ? '' : `error: none of ${said.lines.length - 1} peer(s) synced`;
+	return { argv, code: said.ok ? 0 : 1, stdout: said.lines.join('\n'), stderr };
 }
 
 async function inviteHere(argv: string[]): Promise<RunResult> {

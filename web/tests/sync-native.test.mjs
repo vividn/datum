@@ -102,6 +102,42 @@ describe('datum.day and a native copy', () => {
 		}
 	});
 
+	// vividn, 2026-11-05: «type sync right now in the web opens the sync pane.
+	// It should instead do `sync run`» (da-5lpeg). The native copy serves an
+	// invite, which dials nobody, so what it wrote reaches the page only by
+	// the page's own dial.
+	test('a typed bare `sync` syncs with each member now, says how each went, and opens nothing (da-5lpeg)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					// Paired by an invite that has ended: one at work holds the database (da-apd52).
+					const pairing = native.spawn(['sync', 'chain', 'invite']);
+					const ended = new Promise((r) => pairing.child.on('exit', r));
+					const [, ticket] = await until(() => /datum sync chain join '([^']+)'/.exec(pairing.stdout), Boolean);
+					await app.page.evaluate((t) => window.datum.sync.connect('datum', t), ticket);
+					await ended;
+					const { label } = JSON.parse((await native.run(['sync', 'status', '--json'])).stdout).this;
+					assert.equal((await native.run(['occur', 'pulled', '-t', '1000'])).code, 0);
+					// Serving once it prints its link: dialed before, it refuses the connection.
+					const serving = native.spawn(['sync', 'chain', 'invite']);
+					await until(() => serving.stdout + serving.stderr, (out) => /datum sync chain join '|Error/.test(out));
+					assert.match(serving.stdout, /datum sync chain join '/, serving.stderr);
+					assert.equal(await countOf(app, 'pulled'), 0);
+					await app.submit('sync');
+					const said = await until(() => app.stdouts(), (s) => s.at(-1)?.includes(`${label}: sent`));
+					const named = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+					assert.match(said.at(-1), new RegExp(`^syncing with ${named}\\n${named}: sent \\d+, got [1-9]\\d*, conflicts 0, verify ok$`));
+					assert.equal(await countOf(app, 'pulled'), 1);
+					assert.equal(await app.page.locator('.host[data-widget="sync"]').count(), 0);
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('the page answers a native copy\'s `sync diff`: what it holds of each entry that differs, and nothing moves (da-n0ruf)', async () => {
 		const native = await nativeCopy(relay);
 		try {

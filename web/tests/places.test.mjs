@@ -537,20 +537,25 @@ describe('a place on a phone', () => {
 	});
 });
 
-// vividn, 2026-10-15: «yes typing sync should definitely open the sync widget
-// on the web, also add a sync menu in the gear» (da-s9r58). Before, a fresh
-// phone's typed `sync` left its answer behind the folded bar.
+// vividn, 2026-10-15: «also add a sync menu in the gear» (da-s9r58). A typed
+// `sync` opened the Sync place too, until vividn, 2026-11-05: «It should
+// instead do `sync run`» (da-5lpeg): it syncs, as `datum sync` does.
 describe('the ways into Sync, on a fresh phone', () => {
 	const fresh = { ...PHONE, home: null };
 
-	test('a typed bare `sync` opens the Sync place', async () => {
+	test('a typed bare `sync` in no chain says so, and how to start one, and opens nothing (da-5lpeg)', async () => {
 		await withApp(async ({ page, errors }) => {
 			// Typed, not `submit`: a fresh phone's page has no CLI widget to echo it in.
 			const input = page.locator('.prompt-bar input');
 			await input.fill('sync');
 			await input.press('Enter');
-			await until(() => shown(page), (t) => t === 'sync');
-			await page.locator('.host[data-widget="sync"] .sync header').waitFor();
+			await unfold(page);
+			await until(
+				() => page.locator('.prompt-bar .section.output').innerText(),
+				(t) => /in no sync chain/.test(t) && /sync chain invite/.test(t)
+			);
+			assert.notEqual(await shown(page), 'sync');
+			assert.equal(await page.locator('.host[data-widget="sync"]').count(), 0);
 			assert.deepEqual(errors, []);
 		}, fresh);
 	});
