@@ -68,6 +68,28 @@ function parse(text: string): Document | null {
 }
 
 /**
+ * The overlays last composed, by their text, parsed and sanitized, or `null`
+ * with no axis to crop for. A write asks again for the data and not for the
+ * overlay, so its recompose is of the same text, and was ~56 ms of parsing a
+ * write on a phone (da-6slk8). A few, for the pictures on screen and on
+ * standby; `compose` draws from a copy, so what is held is never changed.
+ */
+const overlays = new Map<string, Element | null>();
+
+function held(text: string): Element | null {
+	let svg = overlays.get(text);
+	if (svg === undefined) {
+		const parsed = parse(text)?.documentElement;
+		svg = parsed?.querySelector('[data-lo]') ? parsed : null;
+		if (svg) sanitizeSvg(svg);
+		if (overlays.size >= 4) overlays.delete(overlays.keys().next().value!);
+	}
+	overlays.delete(text);
+	overlays.set(text, svg);
+	return svg;
+}
+
+/**
  * The overlay `overlay` with the data of `days` laid under it, as a node of
  * the page, sanitized as the layers are, for `CliOutput` to draw as it is:
  * as text, a dense day was serialized and parsed again at every draw, ~450 ms
@@ -77,9 +99,8 @@ function parse(text: string): Document | null {
  * not left out unsaid.
  */
 export function compose(overlay: string, days: Layer[], now: number): SVGSVGElement | string {
-	const parsed = parse(overlay)?.documentElement;
-	if (!parsed?.querySelector('[data-lo]')) return overlay;
-	sanitizeSvg(parsed);
+	const parsed = held(overlay);
+	if (!parsed) return overlay;
 	const root = document.importNode(parsed, true) as unknown as SVGSVGElement;
 	const stretches = [...root.querySelectorAll('[data-lo]')];
 	// The ids drawn so far: a node not in a document has no `getElementById`,

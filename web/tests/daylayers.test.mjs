@@ -258,3 +258,56 @@ test('the overlay the nowview crops under is sanitized before it reaches the pag
 		{ ...DESKTOP, home: ON_COLLECT, clock: todayAt(12) }
 	);
 });
+
+// A write asks the data again and not the overlay, which opens no database:
+// so its recompose is of the overlay text already drawn, and parsing and
+// sanitizing it again was ~56 ms a write on a phone at CPU 4x (da-6slk8).
+// `compose` keeps it parsed by its text, and draws the same picture from it
+// as from a fresh parse: the one a reload draws.
+test('a write recomposes the nowview from the overlay it holds, never parsed again', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await app.idle();
+			await seedLines(app, ['switch mood calm -t -20', 'occur coffee -t -5']);
+			await page.locator(`${NOWVIEW} svg.svg [data-field="coffee"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+			const seen = await app.spyOnRunner();
+			await page.evaluate(() => {
+				const parse = DOMParser.prototype.parseFromString;
+				window.overlays = [];
+				DOMParser.prototype.parseFromString = function (text, type) {
+					if (text.includes('class="now-strip"')) window.overlays.push(text);
+					return parse.call(this, text, type);
+				};
+			});
+			await seedLines(app, ['occur tea -t -2']);
+			await page.locator(`${NOWVIEW} svg.svg [data-field="tea"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+
+			// Every element, its attributes and its own text, in any order: the
+			// days' groups and their defs may land in either order on a reload.
+			const picture = () =>
+				page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) =>
+					[...svg.querySelectorAll('*')]
+						.map((el) => {
+							const attrs = [...el.attributes].map((a) => `${a.name}=${a.value}`).sort();
+							const text = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
+							return `${el.localName} ${attrs.join(' ')} ${text}`;
+						})
+						.sort()
+				);
+			const held = await picture();
+			const overlays = await page.evaluate(() => window.overlays.length);
+			assert.deepEqual((await seen()).filter((argv) => argv[0] === 'nowview'), [], 'the write asked for the overlay again');
+			assert.equal(overlays, 0, 'the overlay drawn was parsed again for the write');
+
+			await app.reload();
+			await page.locator(`${NOWVIEW} svg.svg [data-field="tea"]`).first().waitFor({ state: 'attached' });
+			await app.idle();
+			assert.deepEqual(held, await picture(), 'the picture from the overlay held is not the one a fresh parse draws');
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...DESKTOP, home: ON_COLLECT, clock: todayAt(12) }
+	);
+});
