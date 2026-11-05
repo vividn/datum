@@ -46,7 +46,7 @@ export const taps = writable<Tap[]>([]);
 /**
  * Add `mark` to `taps`, and the call that settles it: the epoch its write
  * landed at, or null to take it back, refused. A tap still in flight stays
- * whatever its age; one whose write landed over a minute before this tap
+ * whatever its age; a settled one made over a minute before this tap
  * goes, each strip asking its layer again at every write, so a minute on
  * its own has long held it, and a strip mounted since asks at an epoch past it.
  */
