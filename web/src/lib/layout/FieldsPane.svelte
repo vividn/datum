@@ -31,6 +31,13 @@
 	the layer's own mark lands where it stood. A refused press takes it back;
 	one that wrote keeps it until a layer asked after the write has come.
 
+	At a SELECTED TIME (da-0qdsp, the cursor's instant, not a length ending
+	now) the strip is that day's layer centered on it, still, and the buttons
+	stand as `now --json -t <time>` says the fields stood then, a moment
+	field whose entry is at that instant among the active ones (`standingAt`,
+	`momentsAt`). A tap on that field deletes the entry, with no pill: an hid
+	pill on the bar would be deleted too.
+
 	`showIgnored` (da-xhio) arrives as a prop too, though its value is the
 	SESSION's rather than the layout's: the renderer merges the two before
 	it draws (Layout.svelte, #lib/layout/session.ts), so neither this pane
@@ -40,17 +47,19 @@
 	import FieldsWidget from '#lib/FieldsWidget.svelte';
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { clearPending, pending, pills, prefill, text } from '#lib/bar.ts';
+	import { clearPending, dropHids, pending, pills, prefill, text } from '#lib/bar.ts';
+	import { pointed } from '#lib/cursor.ts';
+	import { run as read } from '#lib/run.ts';
 	import { minute } from '#lib/clock.ts';
-	import { dateBack, layers, standIn, type Layer } from '#lib/dayLayers.ts';
-	import { pendingOf, type Mark } from '#lib/nowStrip.ts';
+	import { dateBack, daysBack, layers, standIn, type Layer } from '#lib/dayLayers.ts';
+	import { momentsAt, pendingOf, type Mark } from '#lib/nowStrip.ts';
 	import { withPills } from '#lib/selection.ts';
 	import { flagLine, hasDuration } from '#lib/commands.ts';
 	import { advance } from '#lib/keyframes.ts';
-	import type { Align, SwitchLabel } from '#lib/fields.ts';
+	import { standingAt, type Align, type NowActive, type NowListing, type SwitchLabel } from '#lib/fields.ts';
 	import { lanes } from '#lib/lanes.ts';
 	import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
-	import { epoch as written, fields, gestureAt, grammar, pressWithPills, standings } from './engine.js';
+	import { epoch as written, fields, gestureAt, grammar, press, pressWithPills, standings } from './engine.js';
 
 	let {
 		switchLabel = 'field',
@@ -81,9 +90,26 @@
 		onchange?: (zoom: number) => void;
 	} = $props();
 
+	/** The selected instant, or null at now: a length ending now selects no time. */
+	const at = $derived($pointed && $pointed.rel !== 0 ? +$pointed.at : null);
+	/** The day the strip draws: the selected instant's, else today. */
 	const today = $derived.by(() => {
 		void $minute;
-		return dateBack(0);
+		return dateBack(at === null ? 0 : daysBack(at));
+	});
+	/** `now --json -t <at>`'s active fields, and the instant and epoch they answer. */
+	let then = $state.raw<{ at: number; epoch: number; active: NowActive[] } | null>(null);
+	$effect(() => {
+		const [t, e] = [at, epoch];
+		if (t === null) return;
+		void read(['now', '--json', '-t', new Date(t).toISOString()]).then((r) => {
+			if (r.code !== 0 || at !== t || epoch !== e) return;
+			try {
+				then = { at: t, epoch: e, active: (JSON.parse(r.stdout) as NowListing).active ?? [] };
+			} catch {
+				// The bar stays as it was.
+			}
+		});
 	});
 	let layer = $state.raw<Layer>();
 	/** The epoch the layer drawn was asked at. */
@@ -102,6 +128,8 @@
 		});
 	});
 	const doc = $derived(layer?.doc());
+	/** The buttons at the selected time once `now -t` answered for it, else as they stand now. */
+	const standing = $derived(at !== null && then?.at === at ? standingAt($fields, then.active, momentsAt(doc, at)) : $fields);
 
 	/**
 	 * A press under the pending command runs the LINE with the field after it
@@ -109,6 +137,7 @@
 	 * (da-bbmpx); a line `flagLine` refuses keeps today's `moment coffee`.
 	 */
 	function run(argv: string[]) {
+		if (argv[0] === 'delete') return void press(argv).then((r) => r.code === 0 && dropHids(argv.slice(1)));
 		const line = pendingFlags(argv);
 		if (line) $text = '';
 		else clearPending();
@@ -144,7 +173,7 @@
 
 <div class="body">
 	<FieldsWidget
-		fields={$fields}
+		fields={standing}
 		pending={$pending}
 		duration={hasDuration($pills)}
 		rank={$lanes}
@@ -157,6 +186,7 @@
 		{zoom}
 		onzoom={onchange}
 		nowDoc={doc}
+		nowAt={at}
 		{nowPending}
 		onrun={run}
 		onfill={fill}

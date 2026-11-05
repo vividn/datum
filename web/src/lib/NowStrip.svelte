@@ -9,6 +9,8 @@
 	The marks are laid in px from `origin`, so their numbers stay small, and
 	one transform on `.flow` slides them: on each frame while an edge is in
 	the second, and otherwise not until one comes or `origin` is laid again.
+	At a selected instant `at` (da-0qdsp) the second about it is drawn, still,
+	the instant at the center.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -18,16 +20,18 @@
 	let {
 		doc,
 		pending = [],
+		at = null,
 		width,
 		height,
 		mirrored = false
-	}: { doc: Document | null | undefined; pending?: Mark[]; width: number; height: number; mirrored?: boolean } = $props();
+	}: { doc: Document | null | undefined; pending?: Mark[]; at?: number | null; width: number; height: number; mirrored?: boolean } = $props();
 
 	/** How far either side of `origin` a block is laid, and how often `origin` is laid again. */
 	const SPAN = 600_000;
 	const REBASE = 60_000;
 
-	let origin = $state(Date.now());
+	let live = $state(Date.now());
+	const origin = $derived(at ?? live);
 	let flow = $state<SVGGElement>();
 	let layer = $state<SVGGElement>();
 	const k = $derived(width / STRIP_MS);
@@ -46,11 +50,12 @@
 	$effect(() => {
 		const edges = [...drawn.edges, ...taps.flatMap((m) => [m.from, m.to])];
 		void width;
+		if (at !== null) return void flow?.setAttribute('transform', `translate(${width / 2} 0)`);
 		let frame = 0;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const slide = () => {
 			const now = Date.now();
-			if (now - origin > REBASE) return void (origin = now);
+			if (now - origin > REBASE) return void (live = now);
 			flow?.setAttribute('transform', `translate(${width - (now - origin) * k} 0)`);
 			if (edges.some((e) => e > now - STRIP_MS - 50 && e <= now)) frame = requestAnimationFrame(slide);
 			else timer = setTimeout(slide, Math.min(origin + REBASE, ...edges.filter((e) => e > now)) - now + 1);

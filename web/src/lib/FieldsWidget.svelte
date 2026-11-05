@@ -18,7 +18,10 @@
 	left a STRIP, the last second of today's data on each field's band, now at
 	its right edge and sliding with the clock, so a change sweeps in from the
 	right and a dot crosses it in a second (NowStrip.svelte, da-uuzu6); a tap
-	adds its own mark there before the database answers (`nowPending`), and a
+	adds its own mark there before the database answers (`nowPending`). At a
+	selected time the strip is centered on it, still, and the fields stand as
+	they stood then, a moment there in the active section and a tap taking it
+	away (`nowAt`, `here`, da-0qdsp). And a
 	tap on an active field's band puts that field's pill on the bar; then the ACTIVE SECTION, every field in an active state
 	inside a dotted outline that steps with each row; then each row's other
 	fields right against its own part of the section (da-il6ni), the most
@@ -240,6 +243,8 @@
 		nowDoc = null,
 		/** What the taps added to the strip that the layer does not hold yet. */
 		nowPending = [],
+		/** The selected instant the strip is centered on, still (da-0qdsp); null slides with now. */
+		nowAt = null,
 		/** How large the rows at rest are drawn, a button's font and height together (da-l1z6h). */
 		zoom = 1,
 		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep. */
@@ -263,6 +268,7 @@
 		side?: 'left' | 'right';
 		nowDoc?: Document | null;
 		nowPending?: Mark[];
+		nowAt?: number | null;
 		zoom?: number;
 		onzoom?: (zoom: number) => void;
 		onrun: (argv: string[]) => void;
@@ -862,6 +868,8 @@
 		const argv = (pending && pendingPress(pending, button)) || pressArgv(button);
 		// A plain press opens the field, to collect it (da-w6437).
 		if (kind === 'show') open(button);
+		// Its moment at the selected time is taken away: a second tap logs it again (da-0qdsp).
+		else if (button.here && !pending) emit(['delete', button.here]);
 		// A record, or a field with keys to type: the line goes to the prompt.
 		else if (kind === 'fill') fill(argv);
 		else emit(argv);
@@ -1301,7 +1309,7 @@
 						<path d={frozen ? shelves.backing : `M0 0H${strip}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
 					</svg>
 					<div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
-						<NowStrip doc={nowDoc} pending={nowPending} width={strip} height={paneH} mirrored={side === 'right'} />
+						<NowStrip doc={nowDoc} pending={nowPending} at={nowAt} width={strip} height={paneH} mirrored={side === 'right'} />
 						{#each nowBands as band (band.field)}
 							<button
 								class="now-state"

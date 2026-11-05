@@ -71,6 +71,12 @@ export interface FieldButton {
 	 * nothing. A press ranks by this one (`promoted` in #lib/lanes.ts).
 	 */
 	active: boolean;
+	/**
+	 * A moment field's entry at the page's selected time, by hid (da-0qdsp):
+	 * the field stands in the active section, filled a little, and a tap
+	 * deletes that entry rather than logging another.
+	 */
+	here?: string;
 	/** Where the field's band sits in the pictures, 0 at the top — `fields --json`'s `y`. */
 	y: number;
 	/** How tall that band is, as a share of the pictures — `fields --json`'s `height`. */
@@ -211,7 +217,6 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 	return [...listing]
 		.sort((a, b) => a.y - b.y)
 		.map(({ field, spec, states, color, state_colors, ignored, y, height, never_false }) => {
-			const state = now.get(field);
 			return {
 				field,
 				shape: kindFor(spec ?? undefined, states),
@@ -220,8 +225,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				stateColors: state_colors,
 				glyph: spec?.symbol ?? undefined,
 				neverFalse: never_false || (!!spec?.never_false && !spec.allowed_states?.includes('false')),
-				active: now.has(field),
-				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
+				...standing(now, field),
 				y,
 				height,
 				required: requiredKeys(spec),
@@ -229,6 +233,26 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				stateKeys: stateKeysOf(spec)
 			};
 		});
+}
+
+/** Whether `field` is active and in what, by `now --json`'s states. */
+function standing(now: Map<string, unknown>, field: string): Pick<FieldButton, 'active' | 'current'> {
+	const state = now.get(field);
+	return { active: now.has(field), current: state === true || (typeof state === 'string' && state !== '') ? state : undefined };
+}
+
+/**
+ * The buttons as they stood at a selected time (da-0qdsp): `active` is
+ * `now --json -t <time>`'s, and `here` each moment field's entry at that
+ * instant (`momentsAt` in #lib/nowStrip.ts), which stands it with the active ones.
+ */
+export function standingAt(buttons: FieldButton[], active: NowActive[], here: Map<string, string>): FieldButton[] {
+	const now = new Map(active.map((a) => [a.field, a.state]));
+	return buttons.map((b) => {
+		const hid = b.shape.kind === 'moment' ? here.get(b.field) : undefined;
+		const at = standing(now, b.field);
+		return { ...b, ...at, active: at.active || !!hid, here: hid };
+	});
 }
 
 /**
@@ -565,7 +589,9 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
 	const field = button.color;
 	const { current, shape } = button;
 	const filled = (fill: string, label: string): Look => ({ fill, line: field, text: inkOver(fill), label });
-	if (shape.kind === 'moment') return { fill: null, line: field, text: 'var(--ink)', label: button.field, glyph: button.glyph ?? '●' };
+	// A moment there at the selected time is filled a little (da-0qdsp): «somehow filled in a bit more».
+	const tint = button.here ? `color-mix(in srgb, ${field} 35%, transparent)` : null;
+	if (shape.kind === 'moment') return { fill: tint, line: field, text: 'var(--ink)', label: button.field, glyph: button.glyph ?? '●' };
 	if (shape.kind === 'record' || current === undefined) return { fill: null, line: field, text: field, label: button.field };
 	if (current === true || shape.kind === 'on/off') return filled(field, button.field);
 	const fill = button.stateColors[current] ?? button.color;

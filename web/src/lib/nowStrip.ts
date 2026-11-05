@@ -105,3 +105,15 @@ export function pendingOf(argv: string[], fields: FieldButton[], at: number): Ma
 	if (command === 'change' && state) return { ...band, fill: button.stateColors[state] ?? button.color };
 	return null;
 }
+
+/**
+ * Each field's moment at the selected instant `at` in the layer `doc`, by
+ * hid (da-0qdsp): a point's mark whose `data-at` is in the same second, the
+ * resolution a selection is made to. The last such mark wins.
+ */
+export function momentsAt(doc: Document | null | undefined, at: number): Map<string, string> {
+	const here = new Map<string, string>();
+	for (const el of doc?.querySelectorAll('.point-bg[data-at][data-id][data-field]') ?? [])
+		if (Math.floor(time(el, 'data-at') / 1000) === Math.floor(at / 1000)) here.set(el.getAttribute('data-field')!, el.getAttribute('data-id')!);
+	return here;
+}
