@@ -66,8 +66,20 @@
 		clicks = 'one',
 		/** Which edge the strip and the active section stand at (da-lw7ue). */
 		side = 'left',
-		epoch = 0
-	}: { switchLabel?: SwitchLabel; align?: Align; showIgnored?: boolean; clicks?: 'one' | 'two'; side?: 'left' | 'right'; epoch?: number } = $props();
+		/** How large the rows are drawn, which a pinch moves (da-l1z6h); `onchange` hands it to the session. */
+		zoom = 1,
+		epoch = 0,
+		onchange
+	}: {
+		switchLabel?: SwitchLabel;
+		align?: Align;
+		showIgnored?: boolean;
+		clicks?: 'one' | 'two';
+		side?: 'left' | 'right';
+		zoom?: number;
+		epoch?: number;
+		onchange?: (zoom: number) => void;
+	} = $props();
 
 	const today = $derived.by(() => {
 		void $minute;
@@ -142,6 +154,8 @@
 		{showIgnored}
 		{clicks}
 		{side}
+		{zoom}
+		onzoom={onchange}
 		nowDoc={doc}
 		{nowPending}
 		onrun={run}

@@ -518,15 +518,21 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Every field you log, as a button, at the height the pictures draw it: on the left the last second, a tap sweeping in from the right, then the fields that are on inside a dotted line, then the rest, last used first, which a swipe pans.',
 			'A tap logs a moment, or turns an on/off field on or off, at once; a change field, or a field with keys to type, opens to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
 			'A state logs at once. In 2-click mode every field opens, a state is chosen, and the command at the bottom logs it. A long press, on a field or a state, does what a tap does in the other mode, and whatever puts a field pill on the bar opens that field.',
-			'Under a pending command a tap logs at once; a hold opens the field.'
+			'Under a pending command a tap logs at once; a hold opens the field.',
+			'Pinch the rows to zoom: smaller fits more rows, larger fewer.'
 		].join('\n'),
-		props: ({ align, switchLabel, showIgnored, clicks, side }) => ({
+		props: ({ align, switchLabel, showIgnored, clicks, side, zoom }) => ({
 			align: align === 'picture' ? 'picture' : 'rows',
+			zoom: typeof zoom === 'number' ? zoom : 1,
 			clicks: clicks === 'two' ? 'two' : 'one',
 			side: side === 'right' ? 'right' : 'left',
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
 			showIgnored: showIgnored === true
 		}),
+		// A pinch on the rows (da-l1z6h) moves `zoom`, this session's as any
+		// setting a widget moves itself; not among the defaults, as the
+		// strip's day height is not, so `Reset widget` is the way back to 1.
+		onChange: (settings, zoom) => ({ ...settings, zoom }),
 		legible: FIELDS_LEGIBLE
 	},
 	// The aliases widget (da-x6yj): every alias, listed.

@@ -26,7 +26,12 @@
 	gliding on after a swipe; the strip and the active section stay, until
 	the section is wider than half the widget and pans with them. A field
 	that starts glides into the section, and one that ends out of it into the
-	first slot of its row (`bumped`). A tutorial game's fields (`tapLogs`)
+	first slot of its row (`bumped`). A PINCH on the rows — two fingers, or
+	ctrl+wheel, a trackpad's — zooms them (da-l1z6h): each field's button,
+	its font and its height together, so smaller fits more rows into the
+	widget and larger fewer, the rows still locked to the pictures' height.
+	The zoom is a setting the widget moves itself, this session's
+	(`onzoom`), between `ZOOM`'s bounds. A tutorial game's fields (`tapLogs`)
 	keep the cluster: the first in the middle of the widget and the rest ring
 	by ring around it (`ringOf`).
 
@@ -234,6 +239,10 @@
 		nowDoc = null,
 		/** What the taps added to the strip that the layer does not hold yet. */
 		nowPending = [],
+		/** How large the rows at rest are drawn, a button's font and height together (da-l1z6h). */
+		zoom = 1,
+		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep. */
+		onzoom,
 		/** Run a press's line. */
 		onrun,
 		/** Put a press's line in the command line, unrun, for the rest to be typed. */
@@ -253,6 +262,8 @@
 		side?: 'left' | 'right';
 		nowDoc?: Document | null;
 		nowPending?: Mark[];
+		zoom?: number;
+		onzoom?: (zoom: number) => void;
 		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
@@ -489,7 +500,11 @@
 			live = false;
 		};
 		const wheel = (e: WheelEvent) => {
-			if (!picture) return;
+			if (!picture) {
+				if (!e.ctrlKey || !resting || picked !== null) return;
+				e.preventDefault();
+				return onzoom?.((scale = bounded(scale * Math.exp(-e.deltaY / 200))));
+			}
 			const box = node.getBoundingClientRect();
 			if (e.ctrlKey) view = zoomed(view, (e.clientY - box.top) / box.height, Math.exp(-e.deltaY / 200));
 			else if (zoomedIn && Math.abs(e.deltaY) > Math.abs(e.deltaX)) view = panned(view, e.deltaY / tall);
@@ -957,6 +972,18 @@
 		xs: Sample[];
 		ys: Sample[];
 	} | null = null;
+	/** The rows' zoom from small, legible still, to large (da-l1z6h). */
+	const ZOOM = { min: 0.65, max: 2.5 };
+	const bounded = (z: number) => Math.min(ZOOM.max, Math.max(ZOOM.min, z));
+	/** The rows' zoom as drawn: `zoom`, inside the bounds whatever was stored, or a pinch's while it moves. */
+	let scale = $derived(bounded(zoom));
+	/** The fingers down on the room, and a pinch of two of them at rest: how far apart they began, and the zoom then. */
+	const fingers = new Map<number, { x: number; y: number }>();
+	let pinch: { d: number; from: number } | null = null;
+	const apart = () => {
+		const [a, b] = [...fingers.values()];
+		return Math.hypot(a.x - b.x, a.y - b.y);
+	};
 	/** A drag just ended: the click it ends in is not a press. */
 	let dragged = false;
 	/** The glide a swipe let go of (da-lw7ue), a frame's request; 0 when none. */
@@ -977,7 +1004,16 @@
 		// A finger put down stops a glide where it is.
 		cancelAnimationFrame(coast);
 		coast = 0;
-		if (e.button === 0)
+		// Touch alone: a mouse or a pen is captured by nothing, so one let go of
+		// outside the room never reaches `up` and would stay in the map, a finger
+		// for the next touch to pinch against. A mouse zooms by ctrl+wheel.
+		if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		// A second finger at rest is a pinch: the pan stops, and a hold the first had started is called off.
+		if (fingers.size === 2 && resting && picked === null) {
+			bar?.dispatchEvent(new PointerEvent('pointercancel'));
+			[pinch, drag] = [{ d: apart(), from: scale }, null];
+		}
+		if (e.button === 0 && !pinch)
 			drag = {
 				id: e.pointerId,
 				x: e.clientX,
@@ -989,6 +1025,8 @@
 			};
 	}
 	function move(e: PointerEvent) {
+		if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pinch && fingers.size === 2 && pinch.d > 0) scale = bounded((pinch.from * apart()) / pinch.d);
 		if (drag?.id !== e.pointerId) return;
 		const [dx, dy] = [e.clientX - drag.x, e.clientY - drag.y];
 		drag.xs = tracked(drag.xs, e.clientX, e.timeStamp);
@@ -999,6 +1037,12 @@
 		pan = kept(drag.from.x + dx, drag.from.y + dy);
 	}
 	function up(e: PointerEvent) {
+		fingers.delete(e.pointerId);
+		if (pinch && fingers.size < 2) {
+			// Its click, should one come, is not a press.
+			[pinch, dragged] = [null, true];
+			onzoom?.(scale);
+		}
 		if (drag?.id !== e.pointerId) return;
 		dragged = drag.moving;
 		// A swipe carries on (vividn, 2026-11-04: «scrolling should have some
@@ -1242,6 +1286,7 @@
 				bind:clientWidth={paneW}
 				bind:clientHeight={paneH}
 				data-pans={pans || undefined}
+				style:--zoom={scale}
 				onpointerdown={down}
 				onpointermove={move}
 				onpointerup={up}
@@ -1784,6 +1829,12 @@
 
 	.spot.shelf {
 		transition: z-index 0s 0.3s;
+	}
+
+	/* The rows' zoom (da-l1z6h): the button and all in it, so its slot,
+	   which `atRest` counts the rows from, is measured at the zoom. */
+	.spot.shelf > button {
+		zoom: var(--zoom);
 	}
 
 	.spot.shelf.glide {
