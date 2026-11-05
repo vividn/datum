@@ -280,8 +280,9 @@ describe('collect at rest', () => {
 // da-uuzu6, vividn, 2026-11-04: «I want this now section to show the last
 // second essentially so immediately after you tap and state change, the new
 // change sweeps in from the right for a second. Likewise occur dots start on
-// the right hand side and sweep over over a second».
-describe('the now strip is the last second', () => {
+// the right hand side and sweep over over a second», and 2026-11-05 (da-qtaxt):
+// «maybe half a second instead of a full second».
+describe('the now strip is the last half second', () => {
 	/** `field`'s button's fill, as the strip paints it. */
 	const fillOf = (page, field) => page.locator(`${ROOM} [data-field="${field}"]`).evaluate((b) => getComputedStyle(b).backgroundColor);
 	/** `field`'s colour as `fields --json` resolves it, as a computed `fill` reads. */
@@ -296,7 +297,7 @@ describe('the now strip is the last second', () => {
 			(marks) => marks.some((m) => Math.abs(m.right - m.of) <= 0.5 && Math.abs(m.right - m.left - want) <= slack)
 		);
 
-	test('a tap that starts a block sweeps its colour in from the right edge over a second, then the row is solid', async () => {
+	test('a tap that starts a block sweeps its colour in from the right edge over half a second, then the row is solid', async () => {
 		await withApp(async (app) => {
 			await seeded(app, SEED);
 			const { page } = app;
@@ -305,27 +306,94 @@ describe('the now strip is the last second', () => {
 			const of = (await page.locator(`${ROOM} svg.now-strip`).boundingBox()).width;
 			// At once: at the right edge, and no wider than the moments since the tap.
 			await sweep(page, 'work', fill, 0);
-			await app.clock.forward(500);
+			await app.clock.forward(250);
 			await sweep(page, 'work', fill, of / 2);
-			await app.clock.forward(500);
+			await app.clock.forward(250);
 			await sweep(page, 'work', fill, of, 0.5);
 			await app.clock.forward(5000);
 			await sweep(page, 'work', fill, of, 0.5);
 		}, AT_REST);
 	});
 
-	test("a moment's dot enters at the right edge and crosses the strip in a second", async () => {
+	test("a moment's dot enters at the right edge and crosses the strip in half a second", async () => {
 		await withApp(async (app) => {
 			await seeded(app, SEED);
 			const { page } = app;
 			await page.locator(`${ROOM} [data-field="coffee"]`).click();
 			const dot = () => drawn(page, 'coffee').then((marks) => marks.find((m) => m.kind === 'circle'));
 			await until(dot, (d) => d && Math.abs(d.mid - d.of) <= 3);
-			await app.clock.forward(500);
+			await app.clock.forward(250);
 			await until(dot, (d) => d && Math.abs(d.mid - d.of / 2) <= 3);
-			await app.clock.forward(600);
+			await app.clock.forward(300);
 			await until(dot, (d) => d === undefined);
 		}, AT_REST);
+	});
+
+	/** `field`'s dots on the strip, the tap's and the layer's, each with where it stands from the strip's left and how tall it is. */
+	const dotsOf = (page, field) =>
+		page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => {
+			const box = svg.getBoundingClientRect();
+			const at = (el) => {
+				const r = el.getBoundingClientRect();
+				return { left: r.left - box.left, right: r.right - box.left, mid: (r.left + r.right) / 2 - box.left, h: r.height, of: box.width, tall: box.height };
+			};
+			return {
+				taps: [...svg.querySelectorAll(`circle.pending[data-mark="${field}"]`)].map(at),
+				layer: [...svg.querySelectorAll(`g[data-mark="${field}"] circle.point-fg`)].map(at)
+			};
+		}, field);
+
+	// vividn, 2026-11-05 (da-qtaxt): «moment dots that have a different size configured start out the wrong size and then change size a half second later».
+	test("a tap's dot is drawn at its field's size from the first frame, and keeps it when the layer's takes over", async () => {
+		await withApp(async (app) => {
+			await seeded(app, [at('big', 'occur', 0.5, { symbol_scale: 2 }), ...SEED]);
+			const { page } = app;
+			await holdFiles(page);
+			await page.locator(`${ROOM} [data-field="big"]`).click();
+			const atTap = await dotsOf(page, 'big');
+			await release(page);
+			assert.equal(atTap.layer.length, 0, 'the layer had the tap before the database answered');
+			assert.equal(atTap.taps.length, 1, 'no dot at the tap');
+			// The CLI's standard dot, 0.08 of the day, twice over.
+			const [tap] = atTap.taps;
+			assert.ok(Math.abs(tap.h - 0.16 * tap.tall) < 0.5, `the tap's dot is ${tap.h}px of ${tap.tall}px`);
+			const landed = await until(
+				() => dotsOf(page, 'big'),
+				(d) => d.taps.length === 0 && d.layer.length === 1
+			);
+			assert.ok(Math.abs(landed.layer[0].h - tap.h) < 0.5, `the dot went from ${tap.h}px to ${landed.layer[0].h}px`);
+		}, AT_REST);
+	});
+
+	// vividn, 2026-11-05 (da-qtaxt): «they should go completely off the left side and then be destroyed. Right now with a big occur dot … it just hangs there indefinitely».
+	// The page's timers held (`holdTimers`), so a forward fires the frame that came due and nothing else:
+	// each place is read at once, never waited for, so a strip that stopped sliding is read standing (vremya on #1723).
+	test('a big dot slides wholly past the left edge, and is then gone', async () => {
+		await withApp(
+			async (app) => {
+				await seeded(app, [at('huge', 'occur', 0.5, { symbol_scale: 6 }), ...SEED]);
+				const { page } = app;
+				await page.locator(`${ROOM} [data-field="huge"]`).click();
+				const [dot] = (await until(() => dotsOf(page, 'huge'), (d) => d.taps.length === 0 && d.layer.length === 1)).layer;
+				assert.ok(Math.abs(dot.mid - dot.of) <= 3, `the dot lands at ${dot.mid}px, not the right edge`);
+				const width = dot.right - dot.left;
+				// Its half width in time: 500 ms is the strip's width.
+				const out = Math.round((width / 2) * (500 / dot.of));
+				assert.ok(out > 100, `the dot is too small to show it: ${width}px of ${dot.of}px`);
+				// Its centre at the left edge, its right half still in the strip.
+				await app.clock.forward(500);
+				const [left] = (await dotsOf(page, 'huge')).layer;
+				assert.ok(left && Math.abs(left.mid) <= 3, `at its centre's exit it stands at ${left?.mid}px`);
+				assert.ok(left.right > 1, `the dot is out of view already: right at ${left.right}px`);
+				await app.clock.forward(out / 2);
+				const [half] = (await dotsOf(page, 'huge')).layer;
+				assert.ok(half && Math.abs(half.mid + width / 4) <= 3, `halfway out it stands at ${half?.mid}px, not ${-width / 4}px`);
+				await app.clock.forward(out / 2 + 50);
+				assert.deepEqual((await dotsOf(page, 'huge')).layer, [], 'the dot is still there once wholly past the left edge');
+				assert.equal(await page.locator(`${ROOM} svg.now-strip [data-mark="huge"] :is(circle, text, use, line)`).count(), 0, 'a mark of the dot is left');
+			},
+			{ ...AT_REST, holdTimers: true }
+		);
 	});
 
 	/** Hold the database's files, so a command waits until `release`. */

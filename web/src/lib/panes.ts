@@ -612,6 +612,9 @@ export const nowviewSpec = (history: string, center?: string, vertical = false, 
 /** How tall a day's data layer is drawn: any view scales it to its own (#lib/dayLayers.ts, da-m6i2a). */
 export const LAYER_HEIGHT = 100;
 
+/** A dot's height at a scale of 1, a share of the day whatever its lane: the CLI's `STANDARD_DOT`, two thirds of a lane with no height (`tests/standard-dot-pure.test.mjs`). */
+export const STANDARD_DOT = 0.08;
+
 /**
  * The data layers of the ISO dates `dates` asked as one run (da-m6i2a): each
  * day by instant, a second a unit, by days back from the newest, absolute so

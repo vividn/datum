@@ -81,6 +81,9 @@ export interface FieldButton {
 	y: number;
 	/** How tall that band is, as a share of the pictures — `fields --json`'s `height`. */
 	height: number;
+	/** A moment's dot's height over the standard dot's and its width over its height: the spec's `symbol_scale` and `symbol_aspect`, absent for 1. */
+	dotScale?: number;
+	dotAspect?: number;
 	/** The keys a log of it cannot do without (`requiredKeys`). */
 	required: string[];
 	/** Every key its spec declares (`keysOf`): the input line's frames. */
@@ -228,12 +231,16 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				...standing(now, field),
 				y,
 				height,
+				dotScale: num(spec?.symbol_scale),
+				dotAspect: num(spec?.symbol_aspect),
 				required: requiredKeys(spec),
 				keys: keysOf(spec),
 				stateKeys: stateKeysOf(spec)
 			};
 		});
 }
+
+const num = (n: unknown) => (typeof n === 'number' ? n : undefined);
 
 /** Whether `field` is active and in what, by `now --json`'s states. */
 function standing(now: Map<string, unknown>, field: string): Pick<FieldButton, 'active' | 'current'> {

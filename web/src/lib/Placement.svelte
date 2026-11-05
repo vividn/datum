@@ -81,6 +81,7 @@
 	import { inlineSvg } from './svgSafe.js';
 	import { bandArgv, fieldArgv, fieldsArgv } from './calls.js';
 	import { run } from './run.js';
+	import { STANDARD_DOT } from './panes.js';
 	import type { FieldListing } from './fields.js';
 	import { specArgv, type Place, type Spec } from './track.js';
 
@@ -99,8 +100,6 @@
 	const H = 110;
 	/** The thinnest lane a drag leaves. */
 	const MIN = 0.02;
-	/** A dot's height at a scale of 1, whatever its lane: the CLI's `STANDARD_DOT`, two thirds of a lane with no height (`tests/standard-dot-pure.test.mjs`). */
-	const STANDARD_DOT = 0.08;
 
 	let band: HTMLDivElement | undefined = $state.raw();
 	let svg = $state.raw<SVGSVGElement | null>(null);

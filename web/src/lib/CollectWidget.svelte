@@ -15,9 +15,9 @@
 
 	AT REST (da-lw7ue) the fields stand in ROWS locked to the pictures'
 	height, each in the row its band's middle falls in (`atRest`): on the
-	left a STRIP, the last second of today's data on each field's band, now at
+	left a STRIP, the last half second of today's data on each field's band, now at
 	its right edge and sliding with the clock, so a change sweeps in from the
-	right and a dot crosses it in a second (NowStrip.svelte, da-uuzu6); a tap
+	right and a dot crosses it in half a second (NowStrip.svelte, da-uuzu6); a tap
 	adds its own mark there before the database answers (`nowPending`). At a
 	selected time the strip is centered on it, still, and the fields stand as
 	they stood then, a moment there in the active section and a tap taking it
@@ -242,7 +242,7 @@
 		 * `right` is the mirror, recency running leftward and panning left.
 		 */
 		side = 'left',
-		/** Today's data layer, which the now strip draws the last second of (da-uuzu6). */
+		/** Today's data layer, which the now strip draws the last half second of (da-uuzu6). */
 		nowDoc = null,
 		/** What the taps added to the strip that the layer does not hold yet. */
 		nowPending = [],

@@ -1,6 +1,7 @@
 // The placement editor draws a dot's box at the CLI's standard size (da-a87dh):
-// Placement.svelte keeps its own `STANDARD_DOT`, which must be the one
-// datum-layout draws by, or the box and the dot it frames part.
+// panes.ts keeps its own `STANDARD_DOT`, which Placement.svelte and collect's
+// now strip draw by. It must be the one datum-layout draws by, or the box and
+// the dot it frames part, and a tap's dot changes size as the layer lands.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,6 +16,6 @@ const dot = (text, pattern) => {
 
 test("the placement editor's standard dot is the CLI's", () => {
 	const cli = dot(read('../../crates/datum-layout/src/dayview.rs'), /pub const STANDARD_DOT: f64 = ([\d.]+);/);
-	const web = dot(read('../src/lib/Placement.svelte'), /const STANDARD_DOT = ([\d.]+);/);
+	const web = dot(read('../src/lib/panes.ts'), /export const STANDARD_DOT = ([\d.]+);/);
 	assert.equal(web, cli);
 });

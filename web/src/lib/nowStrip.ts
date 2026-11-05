@@ -3,7 +3,8 @@
 // vividn, 2026-11-04: «I want this now section to show the last second
 // essentially so immediately after you tap and state change, the new change
 // sweeps in from the right for a second. Likewise occur dots start on the
-// right hand side and sweep over over a second», and «it should be aware of
+// right hand side and sweep over over a second», and 2026-11-05: «maybe half
+// a second instead of a full second», and «it should be aware of
 // how nowview renders now. just updating the svg apporpriately, rather than
 // rendering it from scratch», and of the strip as first drawn: «it should
 // literally just draw the same now as nowview does». So the strip lays the
@@ -18,17 +19,18 @@ import { pendingCommand } from './commands.js';
 import { layMarks } from './dayLayers.js';
 import type { FieldButton } from './fields.js';
 import { trim } from './nowcrop.js';
-import { LAYER_HEIGHT } from './panes.js';
+import { LAYER_HEIGHT, STANDARD_DOT } from './panes.js';
 
 /** How much time the strip spans, now at its edge. */
-export const STRIP_MS = 1000;
+export const STRIP_MS = 500;
 
 /**
  * A tap's mark on the strip before the layer has it: a block from `from` to
  * `to`, or a dot at `from`, on its band (`y`, `h` in the layer's units,
- * `LAYER_HEIGHT` across). `fill` null is the strip's ground: an end.
+ * `LAYER_HEIGHT` across; a dot's `h` its height, `aspect` its width over it).
+ * `fill` null is the strip's ground: an end.
  */
-export type Mark = { field: string; from: number; to: number; y: number; h: number; fill: string | null; dot?: boolean };
+export type Mark = { field: string; from: number; to: number; y: number; h: number; fill: string | null; dot?: boolean; aspect?: number };
 
 const NS = 'http://www.w3.org/2000/svg';
 const num = (el: Element, name: string) => Number(el.getAttribute(name));
@@ -41,11 +43,20 @@ const time = (el: Element, name: string) => Date.parse(el.getAttribute(name) ?? 
  * of `origin` alone, so the numbers stay small. Their `data-` and `aria-`
  * attributes and titles go, a lane's and a mark's `data-field` kept as
  * `data-mark`, so no selector of a button, a state or an entry finds them. With
- * the instants of their edges, for the slide to know when one is in view.
+ * the instants of the blocks' edges, for the slide to know when one is in
+ * view, and each dot's instant and elements, for it to slide the dot wholly
+ * past the left edge and then remove it.
  */
-export function laid(doc: Document | null | undefined, origin: number, k: number, across: number, span: number): { node: SVGGElement; edges: number[] } {
+export function laid(
+	doc: Document | null | undefined,
+	origin: number,
+	k: number,
+	across: number,
+	span: number
+): { node: SVGGElement; edges: number[]; dots: { at: number; marks: Element[] }[] } {
 	const node = document.createElementNS(NS, 'g');
 	const edges: number[] = [];
+	const dots: { at: number; marks: Element[] }[] = [];
 	for (const day of doc?.querySelectorAll('.day-data[data-lo]') ?? []) {
 		const [from, to, lo, hi] = [time(day, 'data-from'), time(day, 'data-to'), num(day, 'data-lo'), num(day, 'data-hi')];
 		const rate = (hi - lo) / (to - from);
@@ -56,13 +67,20 @@ export function laid(doc: Document | null | undefined, origin: number, k: number
 			const copy = document.importNode(lane, false) as Element;
 			// A mark's symbol follows it, with no instant of its own.
 			let keep = false;
+			let dot: Element[] | null = null;
 			for (const el of lane.children) {
-				const [a, b] = el.hasAttribute('data-at') ? [time(el, 'data-at'), time(el, 'data-at')] : [time(el, 'data-from'), time(el, 'data-to')];
+				const point = el.hasAttribute('data-at');
+				const [a, b] = point ? [time(el, 'data-at'), time(el, 'data-at')] : [time(el, 'data-from'), time(el, 'data-to')];
 				if (Number.isFinite(a)) {
 					keep = a <= origin + span && b >= origin - span;
-					if (keep) edges.push(a, b);
+					dot = keep && point ? [] : null;
+					if (dot) dots.push({ at: a, marks: dot });
+					else if (keep) edges.push(a, b);
 				}
-				if (keep) copy.append(document.importNode(el, true));
+				if (!keep) continue;
+				const mark = document.importNode(el, true);
+				copy.append(mark);
+				dot?.push(mark);
 			}
 			if (copy.firstChild) g.append(copy);
 		}
@@ -82,7 +100,7 @@ export function laid(doc: Document | null | undefined, origin: number, k: number
 		layMarks(g, k / rate, across);
 		node.append(g);
 	}
-	return { node, edges };
+	return { node, edges, dots };
 }
 
 /**
@@ -99,7 +117,9 @@ export function pendingOf(argv: string[], fields: FieldButton[], at: number): Ma
 	if (!button || rest.length || !Number.isFinite(button.y) || !Number.isFinite(button.height)) return null;
 	const band = { field: name, from: at, to: Infinity, y: button.y * LAYER_HEIGHT, h: button.height * LAYER_HEIGHT };
 	const bare = state === undefined;
-	if (command === 'moment' && bare) return { ...band, to: at, y: band.y + band.h / 3, h: band.h / 3, fill: button.color, dot: true };
+	// As datum sizes it: the standard dot times the field's scale, on its band's middle.
+	const dot = STANDARD_DOT * LAYER_HEIGHT * (button.dotScale ?? 1);
+	if (command === 'moment' && bare) return { ...band, to: at, y: band.y + (band.h - dot) / 2, h: dot, fill: button.color, dot: true, aspect: button.dotAspect };
 	if (command === 'on' && bare) return { ...band, fill: button.color };
 	if (command === 'off' && bare) return { ...band, fill: null };
 	if (command === 'change' && state) return { ...band, fill: button.stateColors[state] ?? button.color };
