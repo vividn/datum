@@ -125,7 +125,7 @@ fn two_state_changes_at_one_instant_are_still_refused() {
     assert_eq!(live_slugs(&db, "project"), vec!["project:2026-09-03"]);
 }
 
-/// Two stateless points with no id template still collide — on the *slug*,
+/// Two stateless points with no id template, where the field refuses, still collide — on the *slug*,
 /// because the default template is `%at%` and they both resolve to
 /// `tx:2026-09-02`. The message has to name the way out, since the slug is
 /// now the only thing standing between the two.
@@ -134,8 +134,17 @@ fn stateless_slug_collision_names_the_id_template() {
     let db = fresh_db();
 
     run_cli(&["occur", "tx", "-k", "amount=7", "-d", "2026-09-02"], &db).expect("first");
-    let err = run_cli(&["occur", "tx", "-k", "amount=9", "-d", "2026-09-02"], &db)
-        .expect_err("same slug, different data");
+    let refused = [
+        "occur",
+        "tx",
+        "-k",
+        "amount=9",
+        "-d",
+        "2026-09-02",
+        "--conflict",
+        "refuse",
+    ];
+    let err = run_cli(&refused, &db).expect_err("same slug, different data");
 
     let msg = format!("{err}");
     assert!(

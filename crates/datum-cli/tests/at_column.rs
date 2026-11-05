@@ -283,7 +283,7 @@ fn stored_id_templates_keep_their_slugs() {
         &["occur", "hold", "-d", "2026-10-04", "-t", "10:00", "pr=7"],
         "",
     );
-    assert!(String::from_utf8_lossy(&again.stdout).contains("EXISTS"));
+    assert!(String::from_utf8_lossy(&again.stdout).contains("NODIFF"));
     assert_eq!(copy.query(holds), one, "the stored template, after");
 
     // The default: an old row's `%occur_time%`, a new row's `%at%`.

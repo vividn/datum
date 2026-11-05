@@ -456,7 +456,9 @@ describe('the now strip is the last half second', () => {
 		await withApp(async (app) => {
 			await seeded(app, SEED);
 			const { page } = app;
-			// work on since three seconds ago, and a moment of it now, which an end now collides with.
+			// work on since three seconds ago, and a moment of it now, which an end now collides with:
+			// refused, as work's spec says (da-wudrc).
+			assert.equal((await app.runLine('setup work --conflict refuse')).code, 0);
 			const now = app.clock.at();
 			await app.clock.set(now - 3000);
 			await logs(app, 'start work');

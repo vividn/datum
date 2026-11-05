@@ -1120,7 +1120,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return Ok(());
     }
 
-    let strategy = args.conflict_strategy();
+    let strategy = args.conflict_strategy(db.load_spec(&entry.field)?.and_then(|s| s.conflict));
     // The spec is written only if the entry lands, and in its transaction.
     let declare = match declares_field {
         true => crate::commands::helpers::track_spec(db, &entry.field, kind)?,
@@ -1194,16 +1194,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // follow-up bare `get` / `delete` / `update` can target it — before
     // anything prints, since a closed pipe ends the process at the print
     // (da-ki5j3). Failure to write the pointer must not fail the insert.
-    if let Some(slug) = match &outcome {
-        InsertOutcome::Inserted { slug, .. }
-        | InsertOutcome::Updated { slug }
-        | InsertOutcome::Merged { slug }
-        | InsertOutcome::Ignored { slug } => Some(slug.as_str()),
-        InsertOutcome::Rekeyed { new_slug, .. } => Some(new_slug.as_str()),
-    } {
-        if let Ok(fresh) = db.get_entry(slug) {
-            let _ = datum_core::last_docs::set_last_docs(db, &[fresh.hid]);
-        }
+    if let Ok(fresh) = db.get_entry(outcome.slug()) {
+        let _ = datum_core::last_docs::set_last_docs(db, &[fresh.hid]);
     }
 
     let registry = crate::commands::helpers::registry_for(db, &[&entry.field]);
@@ -1235,6 +1227,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             if let Ok(fresh) = db.get_entry(new_slug) {
                 show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
             }
+        }
+        InsertOutcome::Unchanged { slug } => {
+            let held = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
+            crate::render::show_nodiff(&held, registry.as_ref(), &output);
         }
         InsertOutcome::Ignored { slug } => {
             if let Ok(existing) = db.get_entry(slug) {
