@@ -158,8 +158,9 @@ jobs:
           v=0.9.146
           if ! cargo nextest --version 2>/dev/null | grep -x "release: $v" >/dev/null; then
             tmp=$(mktemp -d "$HOME/.cargo/.nextest.XXXXXX")
-            curl -LsSf "https://get.nexte.st/$v/linux" | tar zxf - -C "$tmp"
-            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rmdir "$tmp"
+            curl -LsSf --retry 3 --retry-all-errors -o "$tmp/nextest.tar.gz" "https://get.nexte.st/$v/linux"
+            tar zxf "$tmp/nextest.tar.gz" -C "$tmp"
+            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rm -r "$tmp"
           fi
 
       # The cost is the point of reading this log: wall time and max RSS,
