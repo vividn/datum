@@ -138,11 +138,11 @@ pub fn db_list(cli_db: &str) -> Result<Vec<&str>> {
 }
 
 /// Refuse a list in `--db` for a command that takes one database: only
-/// `db backup daemon` takes a list yet.
+/// `backup --auto`, `--no-auto` and `status` take a list yet.
 pub fn one_db(cli_db: Option<&str>) -> Result<()> {
     match cli_db.map(db_list).transpose()?.as_deref() {
         Some([_, _, ..]) => anyhow::bail!(
-            "--db {}: this command takes one database; a list is for `db backup daemon`",
+            "--db {}: this command takes one database; a list is for `backup --auto`, `--no-auto` and `status`",
             cli_db.unwrap_or_default()
         ),
         _ => Ok(()),

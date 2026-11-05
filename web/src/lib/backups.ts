@@ -4,7 +4,8 @@
 // vividn, 2026-09-25: «create cloud backup menu that let's the user create
 // automated tower of hanoi backups … configure frequency of backups (maybe
 // every hour as a default?) and max slots (set to none …)». The rotation is
-// the CLI's own (`db backup --to DIR --every D [--slots N]`, da-d5cmj),
+// the CLI's own (`db backup --to DIR`, da-d5cmj, its period and cap the
+// index's, written here from the plan, da-tsna7),
 // and so is every number the widget shows: the ages (`--list`), the reach
 // (`--plan`), the size of one backup, what a restore would do (`db restore
 // --dry-run`). Nothing here knows which slot a period lands in.
@@ -369,8 +370,11 @@ async function backupOne(plan: Plan, db: string): Promise<void> {
 	// dbs share the device's one index as they always have.
 	const held = await dest.get(at + 'index.json');
 	const index = held ? JSON.parse(new TextDecoder().decode(held)) : {};
-	index.dbs = { [db]: {}, ...index.dbs };
-	const out = await json<BackupRun>(['--db', db, ...backupToArgv(plan)], {
+	// The step reads the rotation's period and cap from the index (da-tsna7):
+	// the plan's, as they are now.
+	const was = index.dbs?.[db] ?? {};
+	index.dbs = { ...index.dbs, [db]: { ...was, every_secs: Math.round(plan.every), slots: plan.slots || null } };
+	const out = await json<BackupRun>(['--db', db, ...backupToArgv()], {
 		'index.json': new TextEncoder().encode(JSON.stringify(index))
 	});
 	if (out.slot === null) return;

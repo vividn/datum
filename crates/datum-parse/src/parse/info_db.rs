@@ -192,7 +192,8 @@ pub(crate) fn parse_install_args(tail: &[&str]) -> Result<InstallArgs> {
 pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
     let (check, auto) = match tail.first().copied() {
         None => (false, None),
-        Some("--check") => (true, None),
+        // `status`, as `backup status` and `sync status` say it (da-tsna7).
+        Some("status" | "--check") => (true, None),
         Some("--auto") => (false, Some(true)),
         Some("--no-auto") => (false, Some(false)),
         Some(tok) => return Err(unknown_flag(split_flag(tok))),

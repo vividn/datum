@@ -18,6 +18,18 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     if matches!(*sub, "-v" | "--verbose") && rest.is_empty() {
         return Ok(SyncCommand::Now { verbose: true });
     }
+    // The sync daemon on or off, as `backup --auto` and `upgrade --auto`
+    // turn theirs (da-tsna7).
+    match (*sub, rest) {
+        ("--auto", []) => return Ok(SyncCommand::Daemon(SyncDaemonAct::Install)),
+        ("--no-auto", []) => return Ok(SyncCommand::Daemon(SyncDaemonAct::Uninstall)),
+        ("--auto" | "--no-auto", [extra, ..]) => {
+            return Err(ParseError::InvalidArg(format!(
+                "sync {sub} takes nothing more: {extra}"
+            )))
+        }
+        _ => {}
+    }
     let mut rest = rest.iter();
     let cmd = match *sub {
         // `--json` is the swept `--show json`, set by `apply_show`.

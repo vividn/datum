@@ -65,6 +65,7 @@ use self::history::*;
 use self::info_db::*;
 use self::kit::*;
 use self::log::*;
+use self::migrate_io::parse_backup_cmd;
 use self::sync::*;
 // Re-exported so the help-drift guard (`help::tests`) can compare the
 // documented log-verb flags against the flags the parser actually accepts.
@@ -351,6 +352,9 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             Command::Sync(parse_sync_cmd(&argv)?)
         }
         "db" => Command::Db(parse_db_cmd(rest)?),
+        // `db backup`'s other name, as it was in v2 (da-tsna7; vividn,
+        // 2026-11-04: «a common enough thing not to hide inside of db»).
+        "backup" => Command::Db(parse_backup_cmd(rest)?),
 
         "config" => Command::Config(parse_config_cmd(rest)?),
 
@@ -719,23 +723,16 @@ mod tests {
 
     #[test]
     fn db_backup_rotation_flags() {
-        // da-d5cmj: --to / --list / --plan are the rotation; a bare path the file.
+        // da-d5cmj, da-tsna7: --to alone is the timer's step, --list and
+        // --dry-run the rest of the rotation; a bare path the file.
         let rot = |words: &[&str]| match parse_argv(&argv(words)).map(|c| c.command) {
             Ok(Command::Db(DbCommand::BackupRotation(a))) => a,
             other => panic!("expected a rotation for {words:?}, got {other:?}"),
         };
-        let a = rot(&[
-            "db",
-            "backup",
-            "--to",
-            "bk",
-            "--every=1h",
-            "--slots",
-            "8",
-            "--json",
-        ]);
+        let a = rot(&["db", "backup", "--to", "bk", "--json"]);
         assert_eq!(a.action, RotationAction::To("bk".into()));
-        assert_eq!((a.every, a.slots, a.show), (3600, Some(8), Show::Json));
+        assert_eq!((a.every, a.slots, a.show), (None, None, Show::Json));
+        assert!(rot(&["backup", "--to", "bk", "--all"]).all);
         assert_eq!(
             rot(&["db", "backup", "--list", "bk"]).action,
             RotationAction::List("bk".into())
@@ -743,9 +740,36 @@ mod tests {
         let a = rot(&["db", "backup", "--plan", "--every", "30m", "--span", "2d"]);
         assert_eq!(
             (a.action, a.every, a.slots),
-            (RotationAction::Plan { span: 172_800 }, 1800, None)
+            (
+                RotationAction::Plan {
+                    span: Some(172_800),
+                    to: None
+                },
+                Some(1800),
+                None
+            )
         );
-        // da-gbac0: `daemon` is a word after `backup`, and install takes a run's flags.
+        // `--dry-run` is `--plan`'s new name, and takes what `--auto` does.
+        let a = rot(&[
+            "backup",
+            "--to",
+            "bk",
+            "--auto",
+            "--slots",
+            "4",
+            "--dry-run",
+        ]);
+        assert_eq!(
+            (a.action, a.every, a.slots),
+            (
+                RotationAction::Plan {
+                    span: None,
+                    to: Some("bk".into())
+                },
+                Some(BACKUP_EVERY_SECS),
+                Some(4)
+            )
+        );
         let daemon = |words: &[&str]| match parse_argv(&argv(words)).map(|c| c.command) {
             Ok(Command::Db(DbCommand::BackupDaemon(a))) => Ok(a),
             other => Err(format!("{other:?}")),
@@ -757,18 +781,47 @@ mod tests {
                 slots,
                 all,
             }) => (to, every, slots, all),
-            other => panic!("{other:?}"),
+            other => panic!("{words:?}: {other:?}"),
         };
+        // --auto is every 30 minutes, --every sets it and implies --auto.
+        for words in [
+            &["backup", "--to", "bk", "--auto"][..],
+            &["db", "backup", "--to=bk", "--auto"],
+        ] {
+            assert_eq!(install(words), (Some("bk".into()), 1800, None, false));
+        }
+        assert_eq!(
+            install(&["backup", "--to", "bk", "--every=1h", "--slots", "8"]),
+            (Some("bk".into()), 3600, Some(8), false)
+        );
+        assert_eq!(
+            install(&["backup", "--auto", "--every", "1h", "--all"]),
+            (None, 3600, None, true)
+        );
+        assert!(matches!(
+            daemon(&["backup", "--no-auto", "--to", "bk"]),
+            Ok(BackupDaemonAct::Uninstall { to: Some(t), all: false }) if t == "bk"
+        ));
+        assert!(matches!(
+            daemon(&["backup", "--no-auto", "--all"]),
+            Ok(BackupDaemonAct::Uninstall {
+                to: None,
+                all: true
+            })
+        ));
+        for words in [&["backup", "status"][..], &["db", "backup", "status"]] {
+            assert!(matches!(daemon(words), Ok(BackupDaemonAct::Status)));
+        }
+        // da-gbac0: the `daemon` words stay, install taking --every.
         assert_eq!(
             install(&["db", "backup", "daemon", "install", "--to", "bk", "--every", "15m"]),
             (Some("bk".into()), 900, None, false)
         );
         // No --to: the data directory's backups/ (vividn, 2026-11-02).
         assert_eq!(
-            install(&["db", "backup", "daemon", "install", "--every", "1h", "--slots", "4"]),
+            install(&["backup", "daemon", "install", "--every", "1h", "--slots", "4"]),
             (None, 3600, Some(4), false)
         );
-        // da-bw7ur: --all, one daemon for every database.
         assert_eq!(
             install(&["db", "backup", "daemon", "install", "--all", "--every", "1h"]),
             (None, 3600, None, true)
@@ -790,7 +843,6 @@ mod tests {
             daemon(&["db", "backup", "daemon", "uninstall", "--all", "--to=bk"]),
             Ok(BackupDaemonAct::Uninstall { to: Some(t), all: true }) if t == "bk"
         ));
-        assert!(rot(&["db", "backup", "--to", "bk", "--every", "1h", "--all"]).all);
         assert!(matches!(
             daemon(&["db", "backup", "daemon", "status"]),
             Ok(BackupDaemonAct::Status)
@@ -798,6 +850,7 @@ mod tests {
         for bad in [
             &["db", "backup", "daemon"][..],
             &["db", "backup", "daemon", "install", "--to", "bk"],
+            &["db", "backup", "daemon", "install", "--auto"],
             &["db", "backup", "daemon", "install"],
             &["db", "backup", "daemon", "uninstall", "--to"],
             &["db", "backup", "daemon", "uninstall", "--every", "1h"],
@@ -807,21 +860,38 @@ mod tests {
         ] {
             assert!(daemon(bad).is_err(), "{bad:?}");
         }
-        assert!(matches!(
-            parse_argv(&argv(&["db", "backup", "out.jsonl.gz"]))
-                .unwrap()
-                .command,
-            Command::Db(DbCommand::Backup(_))
-        ));
+        // A file is one file: it never starts a rotation.
+        for words in [
+            &["db", "backup", "out.jsonl.gz"][..],
+            &["backup", "-"],
+            &["backup", "./status"],
+        ] {
+            assert!(matches!(
+                parse_argv(&argv(words)).unwrap().command,
+                Command::Db(DbCommand::Backup(_))
+            ));
+        }
         for bad in [
-            &["db", "backup", "--to", "bk"][..],
+            &["backup"][..],
+            &["backup", "status", "x"],
+            &["backup", "--to", "bk", "--slots", "8"],
+            &["backup", "--slots", "8"],
+            &["backup", "--all"],
+            &["backup", "--auto", "--no-auto"],
+            &["backup", "--no-auto", "--every", "1h"],
+            &["backup", "--no-auto", "--slots", "4"],
+            &["backup", "--no-auto", "--dry-run"],
+            &["backup", "--to", "bk", "--span", "2d"],
+            &["backup", "--auto", "--span", "2d"],
+            &["backup", "out.jsonl", "--auto"],
+            &["backup", "out.jsonl", "--dry-run"],
+            &["backup", "out.jsonl", "--no-auto"],
             &[
                 "db", "backup", "--to", "bk", "--every", "1h", "--slots", "0",
             ],
             &[
                 "db", "backup", "--to", "bk", "--list", "bk", "--every", "1h",
             ],
-            &["db", "backup", "--plan", "--every", "1h"],
             &["db", "backup", "out.jsonl", "--every", "1h"],
             &["db", "backup", "out.jsonl", "--all"],
             &["db", "backup", "--list", "bk", "--all"],
@@ -829,12 +899,31 @@ mod tests {
             &["db", "backup", "--list", "bk", "--slots", "8"],
             &["db", "backup", "--list", "bk", "--every", "1h"],
             &["db", "backup", "--list", "bk", "--span", "2d"],
+            &["db", "backup", "--list", "bk", "--auto"],
             &[
                 "db", "backup", "--to", "bk", "--every", "1h", "--span", "2d",
             ],
         ] {
             assert!(parse_argv(&argv(bad)).is_err(), "{bad:?} should be refused");
         }
+    }
+
+    /// da-tsna7: `sync --auto | --no-auto` is the sync daemon on or off, and
+    /// `upgrade status` is `upgrade --check`.
+    #[test]
+    fn sync_auto_and_upgrade_status() {
+        let cmd = |words: &[&str]| format!("{:?}", parse_argv(&argv(words)).unwrap().command);
+        assert_eq!(
+            cmd(&["sync", "--auto"]),
+            cmd(&["sync", "daemon", "install"])
+        );
+        assert_eq!(
+            cmd(&["sync", "--no-auto"]),
+            cmd(&["sync", "daemon", "uninstall"])
+        );
+        assert!(parse_argv(&argv(&["sync", "--auto", "x"])).is_err());
+        assert_eq!(cmd(&["upgrade", "status"]), cmd(&["upgrade", "--check"]));
+        assert!(parse_argv(&argv(&["upgrade", "status", "x"])).is_err());
     }
 
     #[test]
@@ -1596,9 +1685,11 @@ mod tests {
             "alias list",
             "config show",
             "db restore f",
-            "db backup --to d --every 1h",
-            "db backup --list d",
+            "db backup --to d",
+            "backup --to d",
+            "backup --list d",
             "db backup --plan --every 1h --span 1d",
+            "backup --to d --auto --dry-run",
             "undo",
             "redo",
             "revert a",
@@ -1621,6 +1712,9 @@ mod tests {
             ("db migrate", ""),
             ("db purge", ""),
             ("db backup", "f"),
+            ("backup", "f"),
+            ("backup", "--auto"),
+            ("backup", "--to d --every 1h"),
             ("db migrate run", ""),
             ("db migrate status", ""),
             ("db migrate edit", ""),

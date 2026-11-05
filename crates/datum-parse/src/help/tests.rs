@@ -65,11 +65,12 @@ ADMIN:
   setup        Set up a field: its kind, states and look (alias: spec)
   alias        Manage aliases
   check        Run database consistency checks
+  backup       Back up a database: one file, or a rotation on a schedule
   db           DB-lifecycle (purge, backup, restore, migrate, v2import, config, rename)
   info         Show health/metadata for DB(s)
   config       Show or manage user configuration
   completions  Shell tab completion: print, install or remove the script
-  install      Set datum up: tab completion, the sync daemon
+  install      Set datum up: tab completion, the sync daemon, backups and upgrades
   uninstall    Undo `datum install`, remove the binary, keep your record
   upgrade      Replace this datum with the newest release
   meta         Attach or list protocol-change notes on a field
@@ -1045,7 +1046,7 @@ fn help_json_lists_db_subcommands() {
         names,
         ["purge", "backup", "restore", "migrate", "v2import", "config", "rename"]
     );
-    assert_eq!(db["subcommands"][1]["usage"].as_array().unwrap().len(), 7);
+    assert_eq!(db["subcommands"][1]["usage"].as_array().unwrap().len(), 5);
     assert_eq!(db["bare"], false);
     assert_eq!(entry("sync")["bare"], true);
     assert_eq!(entry("conflicts")["bare"], true);
@@ -1289,7 +1290,7 @@ fn subcommand_help_is_its_own_page() {
 
     // `status` is the top-level row; the daemon's is under `daemon`.
     assert!(parse("sync status -h").contains("Per member"));
-    assert!(parse("sync daemon status -h").contains("Whether it is installed"));
+    assert!(parse("sync daemon status -h").contains("whether it is installed"));
     // A word that names no subcommand stops the path.
     assert_eq!(parse("occur coffee --help"), command_help("occur"));
     // The renderer reads a page name as the parser does.

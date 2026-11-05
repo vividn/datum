@@ -207,8 +207,9 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
     if cur.starts_with('-') {
         let mut found = flags(all_flags.iter().copied());
         // A subcommand's own flags are named only in its usage lines
-        // (`db purge --chain`, da-8x1vv).
-        if sub.is_some() {
+        // (`db purge --chain`, da-8x1vv), and so are a command's that has
+        // no table of them (`backup --auto`, da-tsna7).
+        if sub.is_some() || spec.flags.is_empty() {
             found.extend(usage_flags(if lines.is_empty() { usage } else { &lines }));
         }
         return found;
@@ -222,7 +223,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
             .collect();
     }
 
-    // A group of its own (`sync chain`, `db backup daemon`): the word after
+    // A group of its own (`sync chain`, `db backup status`): the word after
     // the words given, in its usage.
     if sub.is_some() {
         let mut words: Vec<String> = (usage.iter().map(|l| group_tokens(l)))

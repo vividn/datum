@@ -50,7 +50,7 @@ Each entry is one row in the SQLite database on your device, and the CLI makes n
 every command and `datum help <command>` each one; logging and reading commands take `--json` for output as JSON.
 
 datum is still beta: the storage format and the commands can still change, so keep backups of what matters
-(`datum db backup <file>`).
+(`datum backup <file>`).
 
 ## Install
 

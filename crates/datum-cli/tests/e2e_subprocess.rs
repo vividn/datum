@@ -1443,54 +1443,6 @@ fn subprocess_backup_header_names_the_db_it_backed_up() {
     assert_eq!(source_db(&["db", "backup", "-"]), default.to_string_lossy());
 }
 
-/// da-d5cmj: `db backup --to DIR` keys the rotation in `index.json` by the
-/// db it opened, in its own `DIR/<db>/` (da-o6fvk), and its slot file
-/// restores like any other backup.
-#[test]
-fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
-    let tmp = tempfile::tempdir().expect("create tmpdir");
-    let dir = tmp.path().join("backups");
-    let dir = dir.to_str().unwrap();
-    let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
-            .env_remove("DATUM_DB")
-            .env("DATUM_HOME", tmp.path().join("home"))
-            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
-            .env("NO_COLOR", "1")
-            .args(args)
-            .output()
-            .expect("spawn datum");
-        assert_ok(&out, &format!("{args:?}"));
-        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap_or_default()
-    };
-
-    run(&["--db", "fitness", "occur", "pushups"]);
-    let took = run(&[
-        "--db", "fitness", "db", "backup", "--to", dir, "--every", "1h", "--json",
-    ]);
-    assert_eq!(took["slot"], 0);
-    let file = took["written"][0].as_str().expect("the slot's file");
-    assert!(file.starts_with("fitness/"), "{file}");
-    assert_eq!(took["written"][1], "fitness/index.json");
-
-    let listed = run(&["db", "backup", "--list", dir, "--json"]);
-    assert_eq!(listed["backups"][0]["source_db"], "fitness");
-    // The entry and the spec its first log wrote (specs are entries, da-lc26c).
-    assert_eq!(listed["backups"][0]["entry_count"], 2);
-    assert_eq!(listed["rotations"]["fitness"]["every_secs"], 3600);
-
-    let path = std::path::Path::new(dir).join(file);
-    let restored = run(&[
-        "--db",
-        "fresh",
-        "db",
-        "restore",
-        path.to_str().unwrap(),
-        "--json",
-    ]);
-    assert_eq!(restored["inserted"], 2);
-}
-
 /// da-f5pg2: under `DATUM_NO_DEFAULT_ANSWER=1` a stale-`_LAST` question that
 /// meets the end of stdin is no answer — `retime` exits 12 with the question
 /// on stderr and changes nothing, where natively the same empty stdin takes

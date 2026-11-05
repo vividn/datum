@@ -1,5 +1,9 @@
-//! `datum db backup --to DIR --every D [--slots N]` — a Tower of Hanoi
-//! rotation of backups kept in one directory (da-d5cmj).
+//! `datum backup --to DIR` — a Tower of Hanoi rotation of backups kept in
+//! one directory (da-d5cmj), a step at a time. `datum backup --auto --every
+//! D [--slots N]` records the period and cap in DIR as it installs the timer
+//! that takes the steps, and each step reads them there (da-tsna7): a step by
+//! hand into a DIR holding no rotation is refused, so a backup by hand starts
+//! none.
 //!
 //! Slot 0 is the first backup ever taken in DIR for a db, and nothing
 //! overwrites it. Every later backup is keyed by its period, `p = floor((now
@@ -27,14 +31,40 @@ use serde_json::json;
 use super::backup_restore::{create_private_file, derive_source_db, write_jsonl_gz, BackupHeader};
 use crate::args::{BackupRotationArgs, RotationAction, ShowFlag};
 
+#[cfg(feature = "net")]
+use super::backup_daemon::would_install;
+
+/// A build with no timers (datum.day's) has none to say it would install.
+#[cfg(not(feature = "net"))]
+fn would_install(
+    _: Option<String>,
+    _: i64,
+    _: Option<u32>,
+    _: Option<&str>,
+    _: bool,
+) -> Result<(String, String, String)> {
+    anyhow::bail!("no backup timer in this build")
+}
+
 const INDEX_FILE: &str = "index.json";
 const INDEX_VERSION: u32 = 1;
 
-/// `index.json`: per db, the rotation's settings and the backups it holds.
+/// `index.json`: per db, the rotation's settings and the backups it holds;
+/// at DIR's top, `all`, the settings of the timer backing up every database
+/// into DIR, which each of its steps takes (da-tsna7).
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Index {
     #[serde(default)]
     dbs: BTreeMap<String, Rotation>,
+    #[serde(default)]
+    all: Option<Schedule>,
+}
+
+/// A rotation's period and its cap on the slots, slot 0 not counted.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Schedule {
+    pub every_secs: i64,
+    pub slots: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -102,14 +132,35 @@ pub fn cmd_backup_rotation(args: BackupRotationArgs, cli_db: Option<&str>, db: &
                 cli_db.is_none(),
                 "--all or --db, not both: --all backs up every database datum knows"
             );
-            rotate_all(Path::new(dir), args.every, args.slots, now, &mut failed)
+            rotate_all(Path::new(dir), now, &mut failed)?
         }
         RotationAction::To(dir) => {
             let source_db = derive_source_db(cli_db);
-            rotate(db, Path::new(dir), &source_db, args.every, args.slots, now)?
+            rotate(db, Path::new(dir), &source_db, None, now)?
         }
         RotationAction::List(dir) => list(Path::new(dir), now)?,
-        RotationAction::Plan { span } => plan_report(args.every, args.slots, *span),
+        RotationAction::Plan { span, to } => {
+            let every = args.every.unwrap_or(datum_parse::cli::BACKUP_EVERY_SECS);
+            let set_up = would_install(to.clone(), every, args.slots, cli_db, args.all);
+            let (mut doc, mut text) = match span {
+                Some(span) => plan_report(every, args.slots, *span),
+                None => (
+                    json!({ "every_secs": every, "slots": args.slots }),
+                    String::new(),
+                ),
+            };
+            match set_up {
+                Ok((name, to, what)) => {
+                    doc["timer"] = json!(format!("{name}.timer"));
+                    doc["to"] = json!(to);
+                    text = format!(
+                        "would install the systemd user timer {name}.timer: {what}\n{text}"
+                    );
+                }
+                Err(e) => text = format!("{e:#}\n{text}"),
+            }
+            (doc, text)
+        }
     };
     match args.show {
         ShowFlag::None => {}
@@ -122,14 +173,22 @@ pub fn cmd_backup_rotation(args: BackupRotationArgs, cli_db: Option<&str>, db: &
 
 /// `--all`: every database datum knows at this run, each into its own
 /// rotation in `dir`, so one made since the install is taken and one deleted
-/// drops out. One that fails is named in `failed`, the rest taken (da-bw7ur).
+/// drops out, at the period and cap DIR's top records for every database;
+/// a DIR recording none is refused. One that fails is named in `failed`, the
+/// rest taken (da-bw7ur).
 fn rotate_all(
     dir: &Path,
-    every: i64,
-    cap: Option<u32>,
     now: DateTime<Utc>,
     failed: &mut Vec<String>,
-) -> (serde_json::Value, String) {
+) -> Result<(serde_json::Value, String)> {
+    // Refused whole, as one database's step into a DIR holding none is.
+    let Some(schedule) = read_index(dir)?.all else {
+        anyhow::bail!(
+            "{} holds no rotation of every database: `datum backup --to {} --auto --all` starts one",
+            dir.display(),
+            dir.display()
+        );
+    };
     let (mut docs, mut text) = (serde_json::Map::new(), String::new());
     // A registry entry whose file is gone is no database, and is not made one.
     for (name, path) in crate::config::known_dbs()
@@ -141,7 +200,7 @@ fn rotate_all(
             false => Db::open_to_read(&path.to_string_lossy()),
         };
         match (opened.map_err(anyhow::Error::from))
-            .and_then(|db| rotate(&db, dir, &name, every, cap, now))
+            .and_then(|db| rotate(&db, dir, &name, Some(schedule), now))
         {
             Ok((doc, t)) => {
                 docs.insert(name.clone(), doc);
@@ -150,25 +209,79 @@ fn rotate_all(
             Err(e) => failed.push(format!("{name} ({e:#})")),
         }
     }
-    (docs.into(), text)
+    Ok((docs.into(), text))
 }
 
+/// Where in DIR `source_db`'s rotation lives: DIR itself for one begun flat
+/// before the subdirectories, else `DIR/<label>/`.
+fn home(dir: &Path, source_db: &str) -> Result<PathBuf> {
+    Ok(match read_index(dir)?.dbs.contains_key(source_db) {
+        true => PathBuf::new(),
+        false => PathBuf::from(label(source_db)),
+    })
+}
+
+/// The period and cap a scheduled rotation takes, recorded in DIR as its
+/// timer is installed, for each step to read (da-tsna7): `source_db`'s own,
+/// or with `None` every database's, at DIR's top. A rotation already there
+/// keeps its backups and takes the new settings, as a step with another
+/// `--every` did.
+#[cfg_attr(not(feature = "net"), allow(dead_code))]
+pub(crate) fn set_schedule(dir: &Path, source_db: Option<&str>, schedule: Schedule) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("Creating {}", dir.display()))?;
+    let Some(source_db) = source_db else {
+        let mut index = read_index(dir)?;
+        index.all = Some(schedule);
+        return write_index(dir, &index);
+    };
+    let dir = &dir.join(home(dir, source_db)?);
+    std::fs::create_dir_all(dir).with_context(|| format!("Creating {}", dir.display()))?;
+    let mut index = read_index(dir)?;
+    let rotation = index
+        .dbs
+        .entry(source_db.to_string())
+        .or_insert_with(|| Rotation {
+            every_secs: 0,
+            slots: None,
+            backups: Vec::new(),
+        });
+    (rotation.every_secs, rotation.slots) = (schedule.every_secs, schedule.slots);
+    write_index(dir, &index)
+}
+
+/// One step of `source_db`'s rotation in `dir`, at `schedule`, or with
+/// `None` at the period and cap its index records.
 fn rotate(
     db: &Db,
     dir: &Path,
     source_db: &str,
-    every: i64,
-    cap: Option<u32>,
+    schedule: Option<Schedule>,
     now: DateTime<Utc>,
 ) -> Result<(serde_json::Value, String)> {
-    let sub = match read_index(dir)?.dbs.contains_key(source_db) {
-        true => PathBuf::new(),
-        false => PathBuf::from(label(source_db)),
-    };
+    let top = dir;
+    let sub = home(dir, source_db)?;
     let named = |f: &str| sub.join(f).to_string_lossy().into_owned();
     let dir = &dir.join(&sub);
-    std::fs::create_dir_all(dir).with_context(|| format!("Creating {}", dir.display()))?;
     let mut index = read_index(dir)?;
+    let held = (index.dbs.get(source_db))
+        .filter(|r| r.every_secs > 0)
+        .map(|r| Schedule {
+            every_secs: r.every_secs,
+            slots: r.slots,
+        });
+    let Some(Schedule {
+        every_secs: every,
+        slots: cap,
+    }) = schedule.or(held)
+    else {
+        anyhow::bail!(
+            "{} holds no rotation of {source_db}: `datum backup --to {} --auto` starts one, \
+             or `datum backup <PATH>` writes one file",
+            top.display(),
+            top.display()
+        );
+    };
+    std::fs::create_dir_all(dir).with_context(|| format!("Creating {}", dir.display()))?;
     let rotation = index
         .dbs
         .entry(source_db.to_string())
@@ -337,7 +450,10 @@ fn read_index(dir: &Path) -> Result<Index> {
 
 fn write_index(dir: &Path, index: &Index) -> Result<()> {
     let tmp = dir.join(format!("{INDEX_FILE}.tmp"));
-    let doc = json!({ "version": INDEX_VERSION, "dbs": index.dbs });
+    let mut doc = json!({ "version": INDEX_VERSION, "dbs": index.dbs });
+    if let Some(all) = index.all {
+        doc["all"] = json!(all);
+    }
     std::fs::write(&tmp, serde_json::to_vec_pretty(&doc)?)?;
     std::fs::rename(&tmp, dir.join(INDEX_FILE))?;
     Ok(())
@@ -477,7 +593,14 @@ mod tests {
     /// One run `p` periods (plus `extra` seconds) after slot 0's time.
     fn run_at(db: &Db, dir: &Path, p: i64, extra: i64, cap: Option<u32>) -> serde_json::Value {
         let now = t0() + chrono::Duration::seconds(p * HOUR + extra);
-        rotate(db, dir, "main", HOUR, cap, now).unwrap().0
+        rotate(db, dir, "main", every(cap), now).unwrap().0
+    }
+
+    fn every(slots: Option<u32>) -> Option<Schedule> {
+        Some(Schedule {
+            every_secs: HOUR,
+            slots,
+        })
     }
 
     fn held(dir: &Path) -> Vec<(u32, u64)> {
@@ -652,7 +775,7 @@ mod tests {
                     s.spawn(move || {
                         let (db, _) = setup();
                         start.wait();
-                        rotate(&db, dir, name, HOUR, None, t0()).unwrap();
+                        rotate(&db, dir, name, every(None), t0()).unwrap();
                     });
                 }
             });
@@ -679,7 +802,7 @@ mod tests {
         std::fs::write(dir.path().join(INDEX_FILE), flat.to_string()).unwrap();
         let run = |name: &str, p: i64| {
             let now = t0() + chrono::Duration::seconds(p * HOUR);
-            rotate(&db, dir.path(), name, HOUR, None, now).unwrap().0
+            rotate(&db, dir.path(), name, every(None), now).unwrap().0
         };
         let a = run("a", 0);
         assert_eq!(a["written"][1], INDEX_FILE);
@@ -696,6 +819,54 @@ mod tests {
         assert_eq!(files.len(), 3);
         assert_eq!(files[0], a["written"][0]);
         assert!(files[2].starts_with("b/"), "{files:?}");
+    }
+
+    /// da-tsna7: a step reads its period and cap from DIR, where the install
+    /// recorded them; DIR holding none, it is refused and writes nothing, so a
+    /// step by hand starts no rotation. Every database's, at DIR's top, wins
+    /// over a database's own.
+    #[test]
+    fn a_step_takes_the_schedule_dir_records() {
+        let (db, dir) = setup();
+        let err = rotate(&db, dir.path(), "main", None, t0()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("holds no rotation of main"),
+            "{err:#}"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+
+        let capped = Schedule {
+            every_secs: HOUR,
+            slots: Some(2),
+        };
+        set_schedule(dir.path(), Some("main"), capped).unwrap();
+        for p in 0..=12 {
+            let now = t0() + chrono::Duration::seconds(p * HOUR);
+            rotate(&db, dir.path(), "main", None, now).unwrap();
+        }
+        assert_eq!(held(dir.path()), plan(12, Some(2)));
+        // Recorded again, it keeps the backups held.
+        set_schedule(dir.path(), Some("main"), every(None).unwrap()).unwrap();
+        let index = read_index(&dir.path().join("main")).unwrap();
+        assert_eq!(index.dbs["main"].slots, None);
+        assert_eq!(index.dbs["main"].backups.len(), plan(12, Some(2)).len());
+
+        let all = Schedule {
+            every_secs: 2 * HOUR,
+            slots: None,
+        };
+        // `--all` by hand into a DIR no `--auto --all` set up is refused whole.
+        let mut failed = Vec::new();
+        let err = rotate_all(dir.path(), t0(), &mut failed).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("holds no rotation of every database"),
+            "{err:#}"
+        );
+        set_schedule(dir.path(), None, all).unwrap();
+        assert_eq!(read_index(dir.path()).unwrap().all, Some(all));
+        rotate_all(dir.path(), t0(), &mut failed).unwrap();
+        // The top index lists no database, so none is rotated flat.
+        assert!(read_index(dir.path()).unwrap().dbs.is_empty());
     }
 
     /// A flat rotation whose new name is keyed there already is kept as it

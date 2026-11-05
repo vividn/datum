@@ -97,8 +97,8 @@ pub fn install(args: InstallArgs) -> Result<()> {
         Err(e) if args.daemon => return Err(e),
         Err(e) => eprintln!("warning: the sync daemon was not installed: {e:#}"),
     }
-    if let Some(said) = backup_daemon::said() {
-        println!("{said}");
+    if let Err(e) = backup_daemon::offer(args.auto_upgrade, |q| ask(q, "back up")) {
+        eprintln!("warning: backups on a schedule were not turned on: {e:#}");
     }
     // The shell is recorded even when its script could not be written, so
     // `datum check` says it is missing until it is not.
@@ -462,7 +462,15 @@ fn offer_auto(exe: &Path, answer: Option<bool>) -> Result<()> {
     match answer {
         // `--yes`, or a timer already on, put onto this binary unasked.
         Some(_) => auto(true),
-        None if auto_on() || ask_auto()? => auto(true),
+        None if auto_on()
+            || ask(
+                "Upgrade datum daily, as releases come out?",
+                "upgrade daily",
+            )?
+            .unwrap_or(true) =>
+        {
+            auto(true)
+        }
         None => {
             println!("daily upgrades: off; `datum upgrade --auto` turns them on");
             Ok(())
@@ -470,15 +478,11 @@ fn offer_auto(exe: &Path, answer: Option<bool>) -> Result<()> {
     }
 }
 
-/// Whether to upgrade daily, asked of a person at a terminal: on stdin, or
-/// on the terminal itself where stdin is install.sh's own script (`curl … |
-/// sh`), never read. With no one to ask, yes.
-fn ask_auto() -> Result<bool> {
-    let question = Question::yes_no(
-        "Upgrade datum daily, as releases come out?",
-        "upgrade daily",
-        Some(true),
-    );
+/// One of `datum install`'s offers, asked of a person at a terminal, yes the
+/// default: on stdin, or on the terminal itself where stdin is install.sh's
+/// own script (`curl … | sh`), never read. With no one to ask, `None`.
+fn ask(question: &str, label: &str) -> Result<Option<bool>> {
+    let question = Question::yes_no(question, label, Some(true));
     let answer = match std::io::stdin().is_terminal() {
         true => question.ask()?,
         false => match (std::io::stderr().is_terminal())
@@ -486,10 +490,10 @@ fn ask_auto() -> Result<bool> {
             .flatten()
         {
             Some(tty) => question.ask_on(&mut std::io::BufReader::new(tty), true)?,
-            None => return Ok(true),
+            None => return Ok(None),
         },
     };
-    Ok(is_yes(&answer))
+    Ok(Some(is_yes(&answer)))
 }
 
 /// This platform's binary in the newest release, and its SHA256SUMS line.

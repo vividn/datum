@@ -275,13 +275,15 @@ pub struct ReparseArgs {
 pub enum DbCommand {
     /// `datum db purge` — drop every datum table and rebuild from scratch.
     Purge(DbPurgeArgs),
-    /// `datum db backup` — dump live entries to JSONL or tar.gz.
+    /// `datum backup <PATH>` (`db backup`) — dump live entries to JSONL or
+    /// tar.gz.
     Backup(BackupArgs),
-    /// `datum db backup --to DIR | --list DIR | --plan` — the Tower of
+    /// `datum backup --to DIR | --list DIR | --dry-run` — the Tower of
     /// Hanoi rotation (da-d5cmj).
     BackupRotation(BackupRotationArgs),
-    /// `datum db backup daemon install | uninstall | status` — that
-    /// rotation on a systemd timer (da-gbac0).
+    /// `datum backup --auto | --every D | --no-auto | status` (`backup
+    /// daemon install | uninstall | status`) — that rotation on a systemd
+    /// timer (da-gbac0, da-tsna7).
     BackupDaemon(BackupDaemonAct),
     /// `datum db restore` — replay entries from a backup file.
     Restore(RestoreArgs),
@@ -1618,13 +1620,19 @@ pub struct BackupArgs {
     pub overwrite: bool,
 }
 
-/// `datum db backup --to DIR --every D [--slots N]`, `--list DIR`, and
-/// `--plan --every D [--slots N] --span S` (da-d5cmj).
+/// A scheduled rotation's period when `--auto` names none: thirty minutes
+/// (da-tsna7; vividn, 2026-11-04: «--auto without every should default to
+/// some sane backup time»).
+pub const BACKUP_EVERY_SECS: i64 = 1800;
+
+/// `datum backup --to DIR` (the timer's step), `--list DIR`, and `--dry-run
+/// [--to DIR] [--every D] [--slots N] [--span S]` (da-d5cmj, da-tsna7).
 #[derive(Debug)]
 pub struct BackupRotationArgs {
     pub action: RotationAction,
-    /// `--every`, in seconds: the rotation's period.
-    pub every: i64,
+    /// `--every`, in seconds: the rotation's period, a dry run's alone. The
+    /// step reads its own from DIR.
+    pub every: Option<i64>,
     /// `--slots N`: the cap on the rotating slots, slot 0 not counted.
     /// `None` lets the slots grow as time passes.
     pub slots: Option<u32>,
@@ -1635,10 +1643,10 @@ pub struct BackupRotationArgs {
     pub show: Show,
 }
 
-/// `datum db backup daemon …` (da-gbac0).
+/// `datum backup --auto | --no-auto | status` (da-gbac0, da-tsna7).
 #[derive(Debug)]
 pub enum BackupDaemonAct {
-    /// Run the rotation `--to DIR --every D [--slots N]` takes, every D;
+    /// Run the rotation `--to DIR` takes, every D, with N slots at most;
     /// `to: None` is the data directory's `backups/`. One per database and
     /// destination; `all`, one for every database datum knows at each run
     /// (da-bw7ur).
@@ -1657,13 +1665,18 @@ pub enum BackupDaemonAct {
 
 #[derive(Debug, PartialEq)]
 pub enum RotationAction {
-    /// Take one backup into the rotation kept in this directory.
+    /// Take one backup into the rotation kept in this directory, at the
+    /// period and cap its index records.
     To(String),
     /// Read the directory's index: its backups, newest first.
     List(String),
-    /// The slots a rotation holds after `span` seconds, and how far back
-    /// each reaches — the arithmetic, with no database or directory.
-    Plan { span: i64 },
+    /// `--dry-run` (`--plan`): the timer `--auto` would install into `to`,
+    /// and with `span` the slots its rotation holds after `span` seconds and
+    /// how far back each reaches. It writes nothing and opens no database.
+    Plan {
+        span: Option<i64>,
+        to: Option<String>,
+    },
 }
 
 #[derive(Debug)]

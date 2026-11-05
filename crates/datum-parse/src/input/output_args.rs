@@ -187,11 +187,11 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         "tail" | "head" => &[Show::Default, Show::None, Show::Format, Show::Json],
         // Readers carrying a JSON document beside their stock output.
         // `alias`, `config` and `db` are groups: only `alias list`,
-        // `config show`, `db restore` and `db backup --to | --list | --plan`
+        // `config show`, `db restore` and `backup --to | --list | --dry-run`
         // render the document, and the parser refuses a typed `--show` on
         // the sibling subcommands (da-a6p7v).
         "now" | "nowview" | "dayview" | "count" | "states" | "ids" | "history" | "check"
-        | "alias" | "config" | "db" => &[Show::Default, Show::None, Show::Json],
+        | "alias" | "config" | "db" | "backup" => &[Show::Default, Show::None, Show::Json],
         // `fields` draws one more: `--show all` is the engineering
         // spelling of its `--include-ignored` (da-1lnf). `stats --show
         // all` is its text and then its JSON line, from one run (da-cddng).

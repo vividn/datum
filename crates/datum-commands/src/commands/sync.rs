@@ -1874,7 +1874,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
     if super::sync_daemon::missing() {
         println!(
             "⚠ no sync daemon: this copy syncs only when `datum sync` is run — \
-             `datum sync daemon install` keeps it syncing in the background"
+             `datum sync --auto` keeps it syncing in the background"
         );
     }
     // What `datum check` shows of sync too, from the same source (da-nq07y).

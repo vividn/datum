@@ -1,4 +1,5 @@
-//! `datum db backup daemon` (da-gbac0): the systemd user timers and services
+//! `datum backup --auto` and `db backup daemon` (da-gbac0, da-tsna7): the
+//! systemd user timers and services
 //! written to a throwaway home, `systemctl` faked on PATH so nothing reaches
 //! a real service manager. The fake says a timer is not loaded (exit 4)
 //! while its name is a line of the file `inactive`, not enabled while it is
@@ -124,6 +125,28 @@ impl Home {
         String::from_utf8(out.stdout).unwrap()
     }
 
+    /// A rotation's period and cap as DIR records them for the step: every
+    /// database's at DIR's top, or the one database's in its subdirectory.
+    fn schedule(&self, service: &str) -> (i64, Option<u64>) {
+        let to = (service.lines())
+            .find_map(|l| l.strip_prefix("X-Datum-To="))
+            .unwrap();
+        let read = |p: PathBuf| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+        };
+        let rotation = match service.contains("X-Datum-All=yes") {
+            true => read(PathBuf::from(to).join("index.json"))["all"].clone(),
+            false => {
+                let dbs = read(PathBuf::from(to).join("data/index.json"))["dbs"].clone();
+                dbs.as_object().unwrap().values().next().unwrap().clone()
+            }
+        };
+        (
+            rotation["every_secs"].as_i64().unwrap(),
+            rotation["slots"].as_u64(),
+        )
+    }
+
     fn install(&self, extra: &[&str]) -> String {
         let args = [&["db", "backup", "daemon", "install"][..], extra].concat();
         self.ok(&args)
@@ -150,13 +173,15 @@ fn install_writes_the_command_and_its_period() {
     let exe = std::fs::canonicalize(env!("CARGO_BIN_EXE_datum")).unwrap();
     assert!(
         service.contains(&format!(
-            "ExecStart=\"{}\" --db \"{}\" db backup --to \"{bk}\" --every 900s\n",
+            "ExecStart=\"{}\" --db \"{}\" db backup --to \"{bk}\"\n",
             exe.display(),
             db.display(),
         )),
         "{service}"
     );
     assert!(service.contains("Type=oneshot"), "{service}");
+    // The step names no period: DIR records it (da-tsna7).
+    assert_eq!(h.schedule(&service), (900, None));
     // The delay a tenth of 15m, and the timer waits the period less it.
     assert!(timer.contains("OnUnitActiveSec=810s\n"), "{timer}");
     assert!(
@@ -177,9 +202,10 @@ fn no_to_backs_up_into_the_data_directorys_backups() {
     let backups = h.dir("data/backups");
     let (_, service, _) = h.unit_into(&backups);
     assert!(
-        service.contains(&format!("--to \"{backups}\" --every 3600s")),
+        service.contains(&format!("--to \"{backups}\"\n")),
         "{service}"
     );
+    assert_eq!(h.schedule(&service), (3600, None));
 }
 
 /// A database has a daemon per destination: a second adds one, a reinstall
@@ -204,7 +230,7 @@ fn a_daemon_per_destination() {
     let (again, service, timer) = h.unit_into(&here);
     assert_eq!(again, unit_here);
     assert!(timer.contains("OnUnitActiveSec=3300s\n"), "{timer}");
-    assert!(service.contains("--every 3600s --slots 8\n"), "{service}");
+    assert_eq!(h.schedule(&service), (3600, Some(8)));
     assert_eq!(h.unit_into(&drive).1, before_drive);
 
     // Status: a line each, its destination and period, and its last run.
@@ -365,16 +391,7 @@ fn every_timer_has_a_fixed_random_delay_below_its_period() {
             timer.contains("\nFixedRandomDelay=yes\n"),
             "{unit}: {timer}"
         );
-        let period = secs(
-            service
-                .lines()
-                .find(|l| l.starts_with("ExecStart="))
-                .unwrap()
-                .split(" --every ")
-                .nth(1)
-                .unwrap(),
-            "",
-        );
+        let period = h.schedule(service).0;
         let delay = secs(timer, "RandomizedDelaySec=");
         assert!(
             delay < period || period < 10 && delay == 0,
@@ -458,7 +475,8 @@ fn a_list_on_another_command_is_refused() {
     for args in [
         &["--db", "a,b", "moment", "x"][..],
         &["--db", "a,b", "tail"],
-        &["--db=a,b", "db", "backup", "--to", "bk", "--every", "1h"],
+        &["--db=a,b", "db", "backup", "--to", "bk"],
+        &["--db=a,b", "backup", "--auto", "--dry-run"],
     ] {
         let out = h.datum(args);
         assert!(!out.status.success(), "{args:?}: {out:?}");
@@ -673,4 +691,207 @@ fn rename_onto_another_databases_unit_touches_no_daemon() {
         "{err}"
     );
     assert_eq!(h.units(), before);
+}
+
+/// da-tsna7: a backup to a file is one file, and starts nothing: no unit,
+/// no call to systemctl, no rotation (vividn, 2026-11-04: «a user just
+/// trying to make a manual backup doesn't get a hanoi setup going»).
+#[test]
+fn a_backup_to_a_file_installs_nothing() {
+    let h = Home::new();
+    let out = h.path("out.jsonl.gz").display().to_string();
+    for words in [
+        &["backup", &out][..],
+        &["db", "backup", &out, "--overwrite"],
+    ] {
+        h.ok(words);
+        assert!(h.path("out.jsonl.gz").is_file());
+    }
+    assert!(h.units().is_empty());
+    assert!(!h.path("ctl.log").exists());
+    assert!(!h.path("data/backups").exists());
+}
+
+/// `--auto` is a timer every 30m, `--every D` one every D and `--auto` too,
+/// `--no-auto` takes it away, and `status` is the one place to look.
+#[test]
+fn auto_installs_every_30m_every_sets_it_and_no_auto_removes_it() {
+    let h = Home::new();
+    let bk = h.dir("bk");
+    let said = h.ok(&["backup", "--to", &bk, "--auto"]);
+    assert!(said.contains("every 30m"), "{said}");
+    let (unit, service, timer) = h.unit_into(&bk);
+    assert_eq!(h.schedule(&service), (1800, None));
+    assert!(timer.contains("OnUnitActiveSec=1620s\n"), "{timer}");
+    // --every sets the period, and the same DIR's timer is replaced.
+    h.ok(&["backup", "--to", &bk, "--every", "1h", "--slots", "6"]);
+    let (again, service, timer) = h.unit_into(&bk);
+    assert_eq!(again, unit);
+    assert_eq!(h.schedule(&service), (3600, Some(6)));
+    assert!(timer.contains("OnUnitActiveSec=3300s\n"), "{timer}");
+    // No --to: the data directory's backups/.
+    h.ok(&["backup", "--auto"]);
+    let backups = h.dir("data/backups");
+    assert_eq!(h.schedule(&h.unit_into(&backups).1), (1800, None));
+
+    let status = h.ok(&["backup", "status"]);
+    assert_eq!(status, h.ok(&["db", "backup", "daemon", "status"]));
+    assert!(status.contains(&format!("into {bk}, every 1h")), "{status}");
+    assert!(
+        status.contains(&format!("into {backups}, every 30m")),
+        "{status}"
+    );
+
+    let said = h.ok(&["backup", "--to", &bk, "--no-auto"]);
+    assert!(said.contains(&format!("{unit}.timer, into {bk}")), "{said}");
+    assert_eq!(h.units().len(), 1);
+    h.ok(&["backup", "--no-auto"]);
+    assert!(h.units().is_empty());
+    assert!(h.ok(&["backup", "status"]).contains("none installed"));
+}
+
+/// The timer's step is `backup --to DIR`, no --every: DIR's index records
+/// the period and the cap, and a step by hand into a DIR holding no rotation
+/// is refused and writes nothing. Its slot restores like any backup, and the
+/// index keys it by the database it opened (da-d5cmj, da-o6fvk).
+#[test]
+fn the_step_reads_its_period_from_dir() {
+    let h = Home::new();
+    h.ok(&["--db", "fitness", "moment", "pushups"]);
+    let empty = h.dir("empty");
+    let out = h.datum(&["--db", "fitness", "backup", "--to", &empty]);
+    assert!(!out.status.success(), "{out:?}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("holds no rotation of fitness"), "{err}");
+    assert!(err.contains("--auto"), "{err}");
+    assert_eq!(std::fs::read_dir(&empty).unwrap().count(), 0);
+
+    let bk = h.dir("bk");
+    h.ok(&["--db", "fitness", "backup", "--to", &bk, "--every", "1h"]);
+    let (_, service, _) = h.unit_into(&bk);
+    let exec = service
+        .lines()
+        .find(|l| l.starts_with("ExecStart="))
+        .unwrap();
+    assert!(
+        exec.ends_with(&format!("--db \"fitness\" db backup --to \"{bk}\"")),
+        "{exec}"
+    );
+    let ran = h.run_service(&service);
+    assert!(ran.status.success(), "{ran:?}");
+    let took: serde_json::Value =
+        serde_json::from_str(&h.ok(&["--db", "fitness", "backup", "--to", &bk, "--json"])).unwrap();
+    // The run above took slot 0, and this one is in its period.
+    assert_eq!(took["slot"], serde_json::Value::Null, "{took}");
+
+    let listed: serde_json::Value =
+        serde_json::from_str(&h.ok(&["backup", "--list", &bk, "--json"])).unwrap();
+    assert_eq!(listed["backups"][0]["source_db"], "fitness");
+    assert_eq!(listed["rotations"]["fitness"]["every_secs"], 3600);
+    let file = listed["backups"][0]["file"].as_str().unwrap();
+    assert!(file.starts_with("fitness/"), "{file}");
+    let restored: serde_json::Value = serde_json::from_str(&h.ok(&[
+        "--db",
+        "fresh",
+        "db",
+        "restore",
+        &format!("{bk}/{file}"),
+        "--json",
+    ]))
+    .unwrap();
+    assert_eq!(restored["inserted"], listed["backups"][0]["entry_count"]);
+}
+
+/// A unit installed before the step read DIR runs `--to DIR --every D`,
+/// which now installs a timer and would take no backup again. Run by
+/// systemd it rewrites itself to the step, takes the step, and leaves its
+/// timer enabled and running, as any install does.
+#[test]
+fn a_unit_from_before_rewrites_itself_as_it_runs() {
+    let h = Home::new();
+    let bk = h.dir("bk");
+    h.install(&["--to", &bk, "--every", "1h"]);
+    let (unit, service, _) = h.unit_into(&bk);
+    let old = service.replace(
+        &format!("--to \"{bk}\"\n"),
+        &format!("--to \"{bk}\" --every 3600s\n"),
+    );
+    assert_ne!(old, service);
+    let file = h.path(&format!("config/systemd/user/{unit}.service"));
+    std::fs::write(&file, &old).unwrap();
+    std::fs::remove_file(h.path("ctl.log")).unwrap();
+
+    let line = old
+        .lines()
+        .find_map(|l| l.strip_prefix("ExecStart="))
+        .unwrap();
+    let ran = h
+        .command("sh")
+        .args(["-c", line])
+        .env("INVOCATION_ID", "0123")
+        .output()
+        .unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), service);
+    let index = std::fs::read_to_string(h.path("bk/data/index.json")).unwrap();
+    assert!(index.contains("\"slot\": 0"), "{index}");
+    assert!(
+        String::from_utf8_lossy(&ran.stdout).contains("rewrote"),
+        "{ran:?}"
+    );
+    let log = std::fs::read_to_string(h.path("ctl.log")).unwrap();
+    assert!(log.contains(&format!("restart {unit}.timer")), "{log}");
+    // Run by hand, the same line installs, and takes no step.
+    std::fs::remove_file(h.path("ctl.log")).unwrap();
+    std::fs::write(&file, &old).unwrap();
+    let ran = h.command("sh").args(["-c", line]).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert!(
+        !String::from_utf8_lossy(&ran.stdout).contains("rewrote"),
+        "{ran:?}"
+    );
+    let log = std::fs::read_to_string(h.path("ctl.log")).unwrap();
+    assert!(log.contains(&format!("restart {unit}.timer")), "{log}");
+}
+
+/// `--dry-run` (and `--plan`, its older name) says what `--auto` would set
+/// up and, with `--span`, what the rotation would hold, writing nothing.
+#[test]
+fn dry_run_says_what_it_would_set_up_and_writes_nothing() {
+    let h = Home::new();
+    let bk = h.path("bk").display().to_string();
+    let dry = ["backup", "--to", &bk, "--every", "1h", "--slots", "4"];
+    let said = h.ok(&[&dry[..], &["--dry-run", "--span", "7d"]].concat());
+    assert!(
+        said.contains("would install the systemd user timer datum-backup-data-"),
+        "{said}"
+    );
+    assert!(
+        said.contains(&format!("into {bk}, every 1h, 4 slots at most")),
+        "{said}"
+    );
+    assert!(said.contains("after 7d: 5 files"), "{said}");
+    assert_eq!(
+        said,
+        h.ok(&[&dry[..], &["--plan", "--span", "7d"]].concat())
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&h.ok(&[&dry[..], &["--dry-run", "--json"]].concat())).unwrap();
+    assert!(
+        doc["timer"]
+            .as_str()
+            .unwrap()
+            .starts_with("datum-backup-data-"),
+        "{doc}"
+    );
+    assert_eq!(
+        (doc["every_secs"].as_i64(), doc["slots"].as_i64()),
+        (Some(3600), Some(4))
+    );
+    // --auto alone would be every 30m.
+    let said = h.ok(&["backup", "--to", &bk, "--auto", "--dry-run"]);
+    assert!(said.contains("every 30m"), "{said}");
+    assert!(h.units().is_empty());
+    assert!(!h.path("bk").exists());
+    assert!(!h.path("ctl.log").exists());
 }

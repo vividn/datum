@@ -126,7 +126,9 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
         "{purge}"
     );
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
-    assert_eq!(complete(&["daemon"]), ["install", "uninstall", "status"]);
+    // `sync --auto | --no-auto` turn it on and off; the words install and
+    // uninstall still parse, and only `status` is offered (da-tsna7).
+    assert_eq!(complete(&["daemon"]), ["status"]);
     // `datum sync help` is the page.
     assert_eq!(a.ok(&["sync", "help"]), a.ok(&["help", "sync"]));
 }

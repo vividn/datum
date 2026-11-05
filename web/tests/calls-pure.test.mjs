@@ -170,9 +170,12 @@ const KEYS = seed(calls.adminAddArgv('/data/stage/first.key'), { client: 'phone'
 seed([...calls.adminRemoveArgv('first.key', true), '--admin-key', '/data/stage/first.key'], { client: 'phone', stage: KEYS });
 seed(calls.adminAddArgv('/data/stage/admin.key'), { client: 'phone', stage: {} });
 // The index the page stages names its database, keeping the rotation flat
-// in the one folder a stage is (`backupOne`, da-o6fvk).
-const FLAT = new TextEncoder().encode(JSON.stringify({ dbs: { '/data/datum.db': {} } }));
-const STAGE = seed(calls.backupToArgv(PLAN), { stage: { 'index.json': FLAT } }).stage;
+// in the one folder a stage is (`backupOne`, da-o6fvk), with the plan's
+// period and cap for the step to read (da-tsna7).
+const FLAT = new TextEncoder().encode(
+	JSON.stringify({ dbs: { '/data/datum.db': { every_secs: PLAN.every, slots: PLAN.slots || null } } })
+);
+const STAGE = seed(calls.backupToArgv(), { stage: { 'index.json': FLAT } }).stage;
 const FILE = Object.keys(STAGE).find((file) => file !== 'index.json');
 const BACKUP = seed(calls.backupArgv()).stdout;
 const KIT = readFileSync(join(web, '../kits/sample.toml'), 'utf8');
@@ -258,7 +261,7 @@ const SAMPLES = {
 	restoreStagedArgv: [[FILE]],
 	savePlanArgv: [[PLAN, false], [PLAN, true]],
 	deletePlanArgv: [[PLAN.name]],
-	backupToArgv: [[PLAN]],
+	backupToArgv: [[]],
 	planReachArgv: [[PLAN, 86_400]],
 	newLayoutArgv: [[{ ...LAYOUT, name: 'phone' }], [{ ...LAYOUT, name: 'phone' }, 'k']],
 	updateLayoutArgv: [[LAYOUT], [LAYOUT, 'k']],

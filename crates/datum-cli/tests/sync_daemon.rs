@@ -438,7 +438,7 @@ fn status_names_a_missing_daemon_on_a_chained_copy() {
     h.invite(&[("DATUM_SYNC_NO_DAEMON", "1")]);
     let status = h.ok(&["sync", "status"]);
     assert!(
-        status.contains(missing) && status.contains("`datum sync daemon install`"),
+        status.contains(missing) && status.contains("`datum sync --auto`"),
         "{status}"
     );
     let opted_out = h.datum(&["sync", "status"], &[("DATUM_SYNC_NO_DAEMON", "1")]);

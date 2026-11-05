@@ -171,7 +171,7 @@ pub fn run(argv: Vec<String>) -> Result<()> {
         }
     };
 
-    // A list in `--db` is `db backup daemon`'s alone yet (da-bw7ur).
+    // A list in `--db` is the backup timers' alone yet (da-bw7ur).
     let sides = match &invocation {
         Invocation::Single(cli) => std::slice::from_ref(cli),
         Invocation::Multi { sides, .. } => &sides[..],

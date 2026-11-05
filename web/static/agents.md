@@ -163,7 +163,7 @@ alternative. The **collection** tab has what they need: a **collect** pane with 
 - `undo` takes back the last write. `now` shows every field's state, `tail` the latest entries, `help` every
   command (`help setup` for one).
 - Their record lives only on their devices, so a second copy matters: sync it to another device, or
-  `db backup <file>`.
+  `backup <file>`.
 
 ## Keeping your own record
 

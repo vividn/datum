@@ -22,16 +22,18 @@ takes the script's arguments: `| sh -s -- --no-completions`, say.
   names another shell, `--no-completions` skips it). The installed
   script asks the `datum` that installed it for its answers, so an
   upgrade never needs a reinstall.
-- The sync daemon, when a database syncs (`datum sync daemon install`),
+- The sync daemon, when a database syncs (`datum sync --auto`),
   restarted onto this binary; `--daemon` installs it before one does.
-- A line naming the backup daemons installed, or how to install one:
-  `datum db backup daemon install --every 1h` takes a database's Tower of
-  Hanoi rotation every hour on a systemd user timer, into `backups/<db>/` in
-  datum's data directory (`--to DIR` another, `DIR/<db>/`; one daemon per destination).
+- Whether to back up every database every 30 minutes (`datum backup --auto
+  --all`), asked on a terminal and no unasked. `datum backup --auto` takes a
+  database's Tower of Hanoi rotation every 30 minutes on a systemd user
+  timer, into `backups/<db>/` in datum's data directory (`--to DIR` another,
+  `DIR/<db>/`; one timer per destination; `--every 1h` another period).
   `--db a,b` installs one for each database, and `--all` one that backs up
-  every database datum knows at each run.
+  every database datum knows at each run. A backup with `datum backup
+  <file>` is one file, and starts none of this.
 - Whether to upgrade daily (`datum upgrade --auto`, below), asked on a
-  terminal; `--yes` or `--no` answers it.
+  terminal and yes unasked; `--yes` or `--no` answers both.
 - It ends with the line that makes your aliases and the verbs commands
   of their own in your shell, for you to add if you want it.
 
@@ -43,7 +45,7 @@ running or its last backup failed.
 ## Upgrading
 
 ```bash,no_run
-datum upgrade            # or: datum upgrade --check, which only says
+datum upgrade            # or: datum upgrade status, which only says
 ```
 
 downloads the newest release for your machine, checks that

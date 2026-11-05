@@ -221,13 +221,15 @@ fn status(manager: Option<Manager>) -> Result<()> {
     };
     let path = m.path()?;
     if !path.exists() {
-        println!("not installed: `datum sync daemon install` syncs every chained database in the background");
+        println!(
+            "not installed: `datum sync --auto` syncs every chained database in the background"
+        );
         return Ok(());
     }
     println!("installed: the {} ({})", m.name(), path.display());
     match m.running() {
         true => println!("running"),
-        false => println!("not running: `datum sync daemon install` starts it again"),
+        false => println!("not running: `datum sync --auto` starts it again"),
     }
     let chained: Vec<String> = chained().into_iter().map(|(name, _)| name).collect();
     println!(
@@ -459,7 +461,7 @@ pub fn auto_install(db: &Db) {
     }
     match m.install() {
         Ok(_) => eprintln!(
-            "sync now runs in the background ({}); `datum sync pause` to pause, `datum sync daemon uninstall` to remove",
+            "sync now runs in the background ({}); `datum sync pause` to pause, `datum sync --no-auto` to remove",
             m.name()
         ),
         Err(e) => eprintln!("warning: background sync not installed: {e:#}"),

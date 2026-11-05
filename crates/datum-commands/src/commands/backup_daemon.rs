@@ -1,8 +1,9 @@
-//! `datum db backup daemon install | uninstall | status` (da-gbac0; vividn,
-//! 2026-11-02: «let's have a backup daemon that can be installed. Please
-//! systemd and not cron»): the rotation `db backup --to DIR --every D`
-//! keeps, run every D by a systemd user timer and the oneshot service it
-//! starts. A daemon is a database and a destination: several destinations
+//! `datum backup --auto | --no-auto | status` (da-tsna7; `backup daemon
+//! install | uninstall | status` before it, da-gbac0; vividn, 2026-11-02:
+//! «let's have a backup daemon that can be installed. Please systemd and not
+//! cron»): the rotation `backup --to DIR` keeps, a step every D by a systemd
+//! user timer and the oneshot service it starts. The install records D and
+//! the cap in DIR, where each step reads them, so the step names neither. A daemon is a database and a destination: several destinations
 //! are several daemons, a local rotation every 15m and a daily one to an
 //! external drive, say. DIR defaults to the data directory's `backups/`, and
 //! the rotation keeps each database in its own `DIR/<label>/`.
@@ -24,7 +25,8 @@ use std::process::Command;
 use anyhow::{bail, ensure, Context, Result};
 use sha2::{Digest, Sha256};
 
-use super::backup_rotation::{ago, label, newest, rename_rotation};
+use super::backup_restore::derive_source_db;
+use super::backup_rotation::{ago, label, newest, rename_rotation, set_schedule, Schedule};
 use super::sync_daemon::{ctl, linger_note, quoted, ENV};
 use crate::args::BackupDaemonAct;
 use crate::config;
@@ -36,8 +38,9 @@ const TO_KEY: &str = "X-Datum-To=";
 /// The line in the service of the daemon that backs up every database.
 const ALL_LINE: &str = "X-Datum-All=yes";
 const NOT_ALL: &str = "--all or --db, not both: --all backs up every database datum knows";
-const NO_SYSTEMD: &str = "no systemd here, and `datum db backup daemon` installs a systemd \
-     user timer: run `datum db backup --to DIR --every DUR` every DUR from what starts jobs here";
+const NO_SYSTEMD: &str = "no systemd here, and a backup on a schedule is a systemd user timer: \
+     `datum backup --to DIR --auto` sets the rotation up in DIR, and `datum backup --to DIR` \
+     takes its step, from what starts jobs here";
 
 pub fn daemon(act: BackupDaemonAct, cli_db: Option<&str>) -> Result<()> {
     match act {
@@ -108,7 +111,10 @@ pub fn daemon(act: BackupDaemonAct, cli_db: Option<&str>) -> Result<()> {
                 units.retain(|(_, b)| ours(b, None) || dbs.iter().any(|d| ours(b, Some(d))));
             }
             if units.is_empty() {
-                println!("none installed: `datum db backup daemon install --every DUR` backs a database up every DUR");
+                println!(
+                    "none installed: `datum backup --auto` backs a database up every 30m, \
+                     `--every DUR` every DUR"
+                );
             }
             for (unit, body) in &units {
                 let what = body.lines().find_map(|l| l.strip_prefix("Description="));
@@ -219,18 +225,28 @@ fn units() -> Result<Vec<(String, String)>> {
     Ok(found)
 }
 
-fn install(
+/// The unit `install` writes for a database, or with `all` every one, into
+/// `to` (DIR, by default the data directory's `backups/`): its name, the
+/// database's file, the name its step backs it up by, DIR, and what it does,
+/// in words. `make` makes DIR first, so it is named as it will be.
+struct Planned {
+    name: String,
+    db: Option<PathBuf>,
+    source: String,
+    to: PathBuf,
+    what: String,
+}
+
+fn planned(
     to: Option<String>,
     every: i64,
-    slots: Option<u32>,
     cli_db: Option<&str>,
     all: bool,
-) -> Result<()> {
-    let dir = dir()?;
+    make: bool,
+) -> Result<Planned> {
     let (db, source) = match all {
         true => (None, "every database".to_string()),
         false => {
-            // There: the caller checked every database of the list first.
             let db = canon(&config::locate_db(cli_db).context("no data directory")?);
             // The name a run by hand gives, so it keeps the rotation it began.
             let source = config::active_db_name(cli_db).unwrap_or_else(|| db.display().to_string());
@@ -243,7 +259,9 @@ fn install(
             .context("no data directory")?
             .join("backups"),
     };
-    std::fs::create_dir_all(&to).with_context(|| format!("creating {}", to.display()))?;
+    if make {
+        std::fs::create_dir_all(&to).with_context(|| format!("creating {}", to.display()))?;
+    }
     let to = canon(&to);
     // The destination's hash keeps two destinations' daemons apart.
     let hash = format!("{:x}", Sha256::digest(to.display().to_string()));
@@ -251,7 +269,80 @@ fn install(
         true => "all".into(),
         false => label(&source),
     };
-    let unit = format!("{PREFIX}{named}-{}", &hash[..8]);
+    let what = format!(
+        "datum db backup of {source} into {}, every {}",
+        to.display(),
+        ago(every)
+    );
+    Ok(Planned {
+        name: format!("{PREFIX}{named}-{}", &hash[..8]),
+        db,
+        source,
+        to,
+        what,
+    })
+}
+
+/// `backup --dry-run`'s word (da-tsna7): the timer `--auto` would install,
+/// its DIR, and what it would do; nothing is written.
+pub(crate) fn would_install(
+    to: Option<String>,
+    every: i64,
+    slots: Option<u32>,
+    cli_db: Option<&str>,
+    all: bool,
+) -> Result<(String, String, String)> {
+    ensure!(!all || cli_db.is_none(), NOT_ALL);
+    dir()?;
+    let p = planned(to, every, cli_db, all, false)?;
+    let what = match slots {
+        Some(n) => format!("{}, {n} slots at most", p.what),
+        None => p.what,
+    };
+    Ok((p.name, p.to.display().to_string(), what))
+}
+
+/// The line a service runs.
+fn exec_start(body: &str) -> &str {
+    body.lines()
+        .find_map(|l| l.strip_prefix("ExecStart="))
+        .unwrap_or("")
+}
+
+fn install(
+    to: Option<String>,
+    every: i64,
+    slots: Option<u32>,
+    cli_db: Option<&str>,
+    all: bool,
+) -> Result<()> {
+    let p = planned(to, every, cli_db, all, true)?;
+    let (unit, to, what) = (&p.name, &p.to, &p.what);
+    // The step reads its period and cap from DIR, under the name it backs
+    // the database up by.
+    let schedule = Schedule {
+        every_secs: every,
+        slots,
+    };
+    let step_db = (!all).then(|| derive_source_db(Some(&p.source)));
+    // With no systemd (macOS) the rotation is set up and no timer is: what
+    // starts jobs there takes the step.
+    let Ok(dir) = dir() else {
+        set_schedule(to, step_db.as_deref(), schedule)?;
+        println!(
+            "no systemd here, so no timer: the rotation in {} is set up, every {}; run \
+             `datum{} backup --to \"{}\"` every {} from what starts jobs here",
+            to.display(),
+            ago(every),
+            match all {
+                true => String::new(),
+                false => format!(" --db \"{}\"", p.source),
+            },
+            to.display(),
+            ago(every)
+        );
+        return Ok(());
+    };
     // Every database's daemon and one database's into one DIR would keep
     // that database's rotation at two rhythms at once.
     if let Some((other, _)) = (units()?.iter())
@@ -269,45 +360,44 @@ fn install(
     let service = dir.join(format!("{unit}.service"));
     // A database named `all` and every database share a unit name: neither
     // takes the other's.
-    if let Some(other) = std::fs::read_to_string(&service)
-        .ok()
-        .filter(|b| !ours(b, db.as_deref()))
-    {
-        let (whose, by) = match key(&other, DB_KEY) {
-            Some(o) => (o.display().to_string(), format!("--db {}", o.display())),
-            None => ("every database".into(), "--all".into()),
+    let before = std::fs::read_to_string(&service).ok();
+    if let Some(other) = before.as_ref().filter(|b| !ours(b, p.db.as_deref())) {
+        let by = match key(other, DB_KEY) {
+            Some(o) => format!("--db {}", o.display()),
+            None => "--all".into(),
         };
         bail!(
-            "{unit} backs up {whose} into {} already: `datum db backup daemon uninstall {by} --to {}` frees the name",
+            "{unit} backs up {} into {} already: `datum {by} backup --no-auto --to {}` frees the name",
+            key(other, DB_KEY).map_or("every database".into(), |o| o.display().to_string()),
             to.display(),
             to.display()
         );
     }
+    // A unit from before da-tsna7 ran `--to DIR --every D`, which now
+    // installs, so its timer would take no backup again: run by systemd, it
+    // is rewritten here and takes its step too. The timer is enabled and
+    // restarted as any install's, so whichever unit ran it, the result is an
+    // install's (a restart from inside the service starts no second run).
+    let running_old = std::env::var_os("INVOCATION_ID").is_some()
+        && before.is_some_and(|b| exec_start(&b).contains(" --every "));
+    set_schedule(to, step_db.as_deref(), schedule)?;
     let exe = std::env::current_exe().context("finding this datum binary")?;
     let which = match all {
         true => "db backup --all".into(),
-        false => format!("--db \"{}\" db backup", quoted(&source)),
+        false => format!("--db \"{}\" db backup", quoted(&p.source)),
     };
-    let mut run = format!(
-        "\"{}\" {which} --to \"{}\" --every {every}s",
+    let run = format!(
+        "\"{}\" {which} --to \"{}\"",
         quoted(&exe.display().to_string()),
         quoted(&to.display().to_string()),
     );
-    if let Some(n) = slots {
-        run += &format!(" --slots {n}");
-    }
     let env: String = ENV
         .iter()
         .filter_map(|k| Some((k, std::env::var(k).ok().filter(|v| !v.is_empty())?)))
         .map(|(k, v)| format!("Environment=\"{k}={}\"\n", quoted(&v)))
         .collect();
-    let what = format!(
-        "datum db backup of {source} into {}, every {}",
-        to.display(),
-        ago(every)
-    );
     let described = format!("[Unit]\nDescription={}\n", what.replace('%', "%%"));
-    let whose = match &db {
+    let whose = match &p.db {
         Some(db) => format!("{DB_KEY}{}", db.display()),
         None => ALL_LINE.into(),
     };
@@ -338,18 +428,35 @@ fn install(
     )
     .with_context(|| format!("writing {timer}"))?;
     ctl("systemctl", &["--user", "daemon-reload"])?;
+    let stepped = match running_old {
+        false => None,
+        true => {
+            let mut step = Command::new(&exe);
+            match all {
+                true => step.args(["db", "backup", "--all"]),
+                false => step.args(["--db", &p.source, "db", "backup"]),
+            };
+            let ran = (step.arg("--to").arg(to).status()).context("taking the step")?;
+            println!("rewrote {unit} as it runs, its step `datum backup --to DIR` reading DIR");
+            Some(ran)
+        }
+    };
     ctl("systemctl", &["--user", "enable", &timer])?;
     ctl("systemctl", &["--user", "restart", &timer])
         .with_context(|| format!("wrote {unit}, but could not start it"))?;
     println!(
-        "installed the systemd user timer {timer} ({}): {what}, the first {}",
+        "installed the systemd user timer {timer} ({}): {what}{}, the first {}",
         dir.display(),
+        slots.map_or(String::new(), |n| format!(", {n} slots at most")),
         match delay {
             0 => "now".into(),
             d => format!("within {}", ago(d)),
         }
     );
     linger_note();
+    if let Some(ran) = stepped {
+        ensure!(ran.success(), "the backup into {} failed", to.display());
+    }
     Ok(())
 }
 
@@ -571,13 +678,44 @@ pub fn findings(db: &Path) -> Vec<(&'static str, String)> {
     found
 }
 
+/// `datum install`'s offer (da-tsna7): one timer backing up every database
+/// every 30m into the data directory's `backups/`, asked by `ask`, `answer`
+/// its `--yes` or `--no`. With no one to ask, none: no rotation starts that
+/// no one chose. One installed already is said, and nothing is asked; with no
+/// systemd nothing is offered.
+pub fn offer(answer: Option<bool>, ask: impl FnOnce(&str) -> Result<Option<bool>>) -> Result<()> {
+    let Some(said) = said() else {
+        return Ok(());
+    };
+    if !units()?.is_empty() {
+        println!("{said}");
+        return Ok(());
+    }
+    let to = config::data_dir_path()
+        .context("no data directory")?
+        .join("backups");
+    let every = datum_parse::cli::BACKUP_EVERY_SECS;
+    let question = format!(
+        "Back up every database every {}, into {}?",
+        ago(every),
+        to.display()
+    );
+    match answer.map_or_else(|| ask(&question), |a| Ok(Some(a)))? {
+        Some(true) => install(None, every, None, None, true),
+        _ => {
+            println!("{said}");
+            Ok(())
+        }
+    }
+}
+
 /// `datum install`'s line: which are installed, or how to install one.
 pub fn said() -> Option<String> {
     let units = units().ok()?;
     Some(match units.is_empty() {
-        true => "backups on a schedule: `datum db backup daemon install --every 1h`".into(),
+        true => "backups on a schedule: off; `datum backup --auto` turns them on".into(),
         false => format!(
-            "backup daemon: {} (`datum db backup daemon status`)",
+            "backups on a schedule: {} (`datum backup status`)",
             units
                 .iter()
                 .map(|(u, _)| &u[..])

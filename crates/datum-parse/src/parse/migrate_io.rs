@@ -57,69 +57,29 @@ pub(crate) fn parse_db_import(tail: &[&str]) -> Result<DbImportArgs> {
     Ok(out)
 }
 
-/// `db backup`: a single file (`<PATH> [--overwrite]`), or — with `--to`,
-/// `--list` or `--plan` — the Tower of Hanoi rotation (da-d5cmj).
+/// `datum backup` (`db backup` its other name, da-tsna7; vividn, 2026-11-04:
+/// «a user just trying to make a manual backup doesn't get a hanoi setup
+/// going»): `<PATH>` one file, and nothing else; `--auto` or `--every` a
+/// Tower of Hanoi rotation in DIR on a timer (da-d5cmj), `--no-auto` its
+/// end; `--dry-run` (`--plan`) what one would set up; `--list DIR`;
+/// `status`. `--to DIR` alone is the timer's step, which reads its period
+/// from DIR. `daemon install | uninstall | status` are the older spellings.
 pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
-    // `daemon` is a word here, never a file: `./daemon` is the file.
-    if let ["daemon", rest @ ..] = tail {
-        let act = match rest {
-            ["install", flags @ ..] => {
-                // No --to: the data directory's backups/, which the command finds.
-                let given = flags.iter().any(|f| *f == "--to" || f.starts_with("--to="));
-                let flags = match given {
-                    true => flags.to_vec(),
-                    false => [&["--to", ""][..], flags].concat(),
-                };
-                match parse_backup_cmd(&flags)? {
-                    DbCommand::BackupRotation(BackupRotationArgs {
-                        action: RotationAction::To(to),
-                        every,
-                        slots,
-                        all,
-                        ..
-                    }) => BackupDaemonAct::Install {
-                        to: given.then_some(to),
-                        every,
-                        slots,
-                        all,
-                    },
-                    _ => return Err(ParseError::InvalidArg(
-                        "db backup daemon install takes [--to DIR] --every DUR [--slots N] [--all]"
-                            .into(),
-                    )),
-                }
-            }
-            ["uninstall", flags @ ..] if flags.len() <= 3 => {
-                let all = flags.contains(&"--all");
-                let rest: Vec<&str> = flags.iter().copied().filter(|f| *f != "--all").collect();
-                let to = match rest[..] {
-                    [] => None,
-                    ["--to", to] => Some(to.to_string()),
-                    [flag] if flag.starts_with("--to=") => Some(flag["--to=".len()..].to_string()),
-                    [extra, ..] => {
-                        return Err(ParseError::InvalidArg(format!(
-                            "db backup daemon uninstall takes [--to DIR] [--all]: {extra}"
-                        )))
-                    }
-                };
-                BackupDaemonAct::Uninstall { to, all }
-            }
-            ["status"] => BackupDaemonAct::Status,
-            [act @ ("uninstall" | "status"), extra, ..] => {
-                return Err(ParseError::InvalidArg(format!(
-                    "db backup daemon {act} takes nothing more: {extra}"
-                )))
-            }
-            _ => {
-                return Err(ParseError::InvalidArg(
-                    "db backup daemon takes install, uninstall or status".into(),
-                ))
-            }
-        };
-        return Ok(DbCommand::BackupDaemon(act));
+    let invalid = |m: &str| Err(ParseError::InvalidArg(m.into()));
+    // A word here, never a file: `./status` and `./daemon` are the files.
+    match tail {
+        ["status"] => return Ok(DbCommand::BackupDaemon(BackupDaemonAct::Status)),
+        ["status", extra, ..] => {
+            return Err(ParseError::InvalidArg(format!(
+                "backup status takes nothing more: {extra}"
+            )))
+        }
+        ["daemon", rest @ ..] => return parse_backup_daemon(rest),
+        _ => {}
     }
     let mut pos: Vec<&str> = Vec::new();
-    let (mut overwrite, mut plan, mut all) = (false, false, false);
+    let (mut overwrite, mut dry_run, mut all) = (false, false, false);
+    let mut auto: Option<bool> = None;
     let (mut to, mut list, mut every, mut slots, mut span) = (None, None, None, None, None);
     let secs = |v: &str| -> Result<i64> {
         match crate::time::parse_duration(v)?.num_seconds() {
@@ -138,18 +98,20 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
                 i += 1;
                 continue;
             }
-            FlagSplit::Long("overwrite") => {
-                overwrite = true;
-                i += 1;
-                continue;
-            }
-            FlagSplit::Long("plan") => {
-                plan = true;
-                i += 1;
-                continue;
-            }
-            FlagSplit::Long("all") => {
-                all = true;
+            FlagSplit::Long(
+                n @ ("overwrite" | "plan" | "dry-run" | "all" | "auto" | "no-auto"),
+            ) => {
+                match n {
+                    "overwrite" => overwrite = true,
+                    "all" => all = true,
+                    "plan" | "dry-run" => dry_run = true,
+                    on => match auto.replace(on == "auto") {
+                        Some(was) if was != (on == "auto") => {
+                            return invalid("--auto or --no-auto, not both")
+                        }
+                        _ => {}
+                    },
+                }
                 i += 1;
                 continue;
             }
@@ -171,59 +133,117 @@ pub(crate) fn parse_backup_cmd(tail: &[&str]) -> Result<DbCommand> {
             }
         }
     }
-    let action = match (to, list, plan) {
-        (None, None, false) => {
-            if every.is_some() || slots.is_some() || span.is_some() || all {
-                return Err(ParseError::InvalidArg(
-                    "--every, --slots, --all and --span belong to --to or --plan".into(),
-                ));
+    let file = !pos.is_empty() || overwrite;
+    let rotation = |action, every| {
+        Ok(DbCommand::BackupRotation(BackupRotationArgs {
+            action,
+            every,
+            slots,
+            all,
+            show: Show::default(),
+        }))
+    };
+    if file {
+        if to.is_some() || list.is_some() || dry_run || auto.is_some() || every.is_some() {
+            return invalid(
+                "a backup to <PATH> is one file: a rotation takes no <PATH> and no --overwrite",
+            );
+        }
+        if slots.is_some() || span.is_some() || all {
+            return invalid("--slots, --span and --all belong to a rotation");
+        }
+        let path = require_pos(&pos, "<PATH>")?;
+        return Ok(DbCommand::Backup(BackupArgs { path, overwrite }));
+    }
+    if let Some(dir) = list {
+        let other = to.is_some() || dry_run || auto.is_some() || every.is_some();
+        if other || slots.is_some() || span.is_some() || all {
+            return invalid("--list takes only DIR");
+        }
+        return rotation(RotationAction::List(dir), None);
+    }
+    if span.is_some() && !dry_run {
+        return invalid("--span belongs to --dry-run");
+    }
+    if dry_run {
+        if auto == Some(false) {
+            return invalid("--dry-run shows what a rotation would set up: not with --no-auto");
+        }
+        let every = every.or(Some(BACKUP_EVERY_SECS));
+        return rotation(RotationAction::Plan { span, to }, every);
+    }
+    match (auto, every) {
+        (Some(false), None) if slots.is_none() => {
+            Ok(DbCommand::BackupDaemon(BackupDaemonAct::Uninstall {
+                to,
+                all,
+            }))
+        }
+        (Some(false), _) => invalid("--no-auto takes [--to DIR] [--all], no --every or --slots"),
+        (Some(true), _) | (None, Some(_)) => {
+            Ok(DbCommand::BackupDaemon(BackupDaemonAct::Install {
+                to,
+                every: every.unwrap_or(BACKUP_EVERY_SECS),
+                slots,
+                all,
+            }))
+        }
+        (None, None) => match to {
+            // The timer's step: the period and cap are DIR's.
+            Some(dir) if slots.is_none() => rotation(RotationAction::To(dir), None),
+            Some(_) => invalid("--slots goes with --auto or --every"),
+            None if all || slots.is_some() => {
+                invalid("--slots and --all belong to a rotation: --auto or --every")
             }
-            let path = require_pos(&pos, "<PATH>")?;
-            return Ok(DbCommand::Backup(BackupArgs { path, overwrite }));
-        }
-        (Some(dir), None, false) => RotationAction::To(dir),
-        (None, Some(dir), false) => RotationAction::List(dir),
-        (None, None, true) => RotationAction::Plan {
-            span: span.ok_or_else(|| ParseError::InvalidArg("--plan requires --span".into()))?,
+            None => require_pos(&pos, "<PATH>")
+                .map(|path| DbCommand::Backup(BackupArgs { path, overwrite })),
         },
-        _ => {
-            return Err(ParseError::InvalidArg(
-                "--to, --list and --plan are one each".into(),
-            ))
-        }
-    };
-    if !pos.is_empty() || overwrite {
-        return Err(ParseError::InvalidArg(
-            "a rotation takes no <PATH> and no --overwrite".into(),
-        ));
     }
-    // A flag the action never reads is refused, not ignored.
-    let stray = match action {
-        RotationAction::List(_) => every.is_some() || slots.is_some() || span.is_some() || all,
-        RotationAction::To(_) => span.is_some(),
-        RotationAction::Plan { .. } => all,
-    };
-    if stray {
-        return Err(ParseError::InvalidArg(
-            "--list takes only DIR, --span belongs to --plan, and --all belongs to --to".into(),
-        ));
-    }
-    let every = match (&action, every) {
-        (RotationAction::List(_), _) => 0,
-        (_, Some(e)) => e,
-        _ => {
-            return Err(ParseError::InvalidArg(
-                "--to and --plan require --every".into(),
-            ))
-        }
-    };
-    Ok(DbCommand::BackupRotation(BackupRotationArgs {
-        action,
-        every,
-        slots,
-        all,
-        show: Show::default(),
-    }))
+}
+
+/// `backup daemon install | uninstall | status`, as they were spelled
+/// before `--auto` (da-gbac0): install takes `--every`, unlike `--auto`.
+fn parse_backup_daemon(rest: &[&str]) -> Result<DbCommand> {
+    let act =
+        match rest {
+            ["install", flags @ ..] => {
+                let every = (flags.iter()).any(|f| *f == "--every" || f.starts_with("--every="));
+                match parse_backup_cmd(flags)? {
+                    DbCommand::BackupDaemon(act @ BackupDaemonAct::Install { .. }) if every => act,
+                    _ => return Err(ParseError::InvalidArg(
+                        "backup daemon install takes [--to DIR] --every DUR [--slots N] [--all]"
+                            .into(),
+                    )),
+                }
+            }
+            ["uninstall", flags @ ..] if flags.len() <= 3 => {
+                let all = flags.contains(&"--all");
+                let rest: Vec<&str> = flags.iter().copied().filter(|f| *f != "--all").collect();
+                let to = match rest[..] {
+                    [] => None,
+                    ["--to", to] => Some(to.to_string()),
+                    [flag] if flag.starts_with("--to=") => Some(flag["--to=".len()..].to_string()),
+                    [extra, ..] => {
+                        return Err(ParseError::InvalidArg(format!(
+                            "backup daemon uninstall takes [--to DIR] [--all]: {extra}"
+                        )))
+                    }
+                };
+                BackupDaemonAct::Uninstall { to, all }
+            }
+            ["status"] => BackupDaemonAct::Status,
+            [act @ ("uninstall" | "status"), extra, ..] => {
+                return Err(ParseError::InvalidArg(format!(
+                    "backup daemon {act} takes nothing more: {extra}"
+                )))
+            }
+            _ => {
+                return Err(ParseError::InvalidArg(
+                    "backup daemon takes install, uninstall or status".into(),
+                ))
+            }
+        };
+    Ok(DbCommand::BackupDaemon(act))
 }
 
 pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {

@@ -325,8 +325,9 @@ export function backupListArgv(): string[] {
 	return ['db', 'backup', '--list', '/data/stage', '--json'];
 }
 
-export function backupToArgv(plan: Plan): string[] {
-	return ['db', 'backup', '--to', '/data/stage', ...everyArgs(plan), '--json'];
+/** The rotation's step: its period and cap are the index's, which `backupOne` writes from the plan (da-tsna7). */
+export function backupToArgv(): string[] {
+	return ['db', 'backup', '--to', '/data/stage', '--json'];
 }
 
 export function planReachArgv(plan: Plan, span: number): string[] {

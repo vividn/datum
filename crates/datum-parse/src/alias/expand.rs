@@ -143,6 +143,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "kit",
     "info",
     "db",
+    "backup",
     "config",
     "sync",
     "conflicts",

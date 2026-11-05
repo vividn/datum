@@ -71,11 +71,12 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `setup` — Set up a field: its kind, states and look (alias: spec)
 - `alias` — Manage aliases
 - `check` — Run database consistency checks
+- `backup` — Back up a database: one file, or a rotation on a schedule
 - `db` — DB-lifecycle (purge, backup, restore, migrate, v2import, config, rename)
 - `info` — Show health/metadata for DB(s)
 - `config` — Show or manage user configuration
 - `completions` — Shell tab completion: print, install or remove the script
-- `install` — Set datum up: tab completion, the sync daemon
+- `install` — Set datum up: tab completion, the sync daemon, backups and upgrades
 - `uninstall` — Undo `datum install`, remove the binary, keep your record
 - `upgrade` — Replace this datum with the newest release
 - `meta` — Attach or list protocol-change notes on a field

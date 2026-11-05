@@ -980,7 +980,7 @@ The tree: `sync`, `status`, `grid` (every device against every chain this
 install's databases are in, by device key and chain id, read only, da-n0uj1.3),
 `pause | resume`, `diff <WHO>`, `refold`, `chain
 invite [<DEVICE> | --like <DB>]` (below) `| join | leave | list | rename | expel [--unjoin] [--wipe] | ack | rekey`,
-`admin list | add | remove`, `daemon install | uninstall | status` (a systemd
+`admin list | add | remove`, `--auto | --no-auto` (`daemon install | uninstall`, da-tsna7), `daemon status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
 run` for every chained db `known_dbs` lists; a copy's first `chain invite` /
 `join` keeps a db opened by path in the registry under its absolute path, so

@@ -564,6 +564,14 @@ impl Home {
         self.path(&format!("config/systemd/user/datum-auto-upgrade.{kind}"))
     }
 
+    /// The backup timer installed, if any.
+    fn backup_timer(&self) -> Option<String> {
+        let dir = std::fs::read_dir(self.path("config/systemd/user")).ok()?;
+        (dir.flatten())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .find(|n| n.starts_with("datum-backup-") && n.ends_with(".timer"))
+    }
+
     /// `datum install` with stdin a terminal, on which `typed` is typed.
     fn install_on_a_terminal(&self, typed: &[u8]) -> Output {
         use std::io::Write;
@@ -629,6 +637,8 @@ fn upgrade_auto_installs_a_daily_timer_and_no_auto_removes_it() {
     let said = h.ok(&["upgrade", "--check"]);
     assert!(said.contains("daily upgrades: on"), "{said}");
     assert!(said.contains("datum is up to date"), "{said}");
+    // `status` is the one form, `--check` its other name (da-tsna7).
+    assert_eq!(h.ok(&["upgrade", "status"]), said);
 
     let said = h.ok(&["upgrade", "--no-auto"]);
     assert!(said.contains("removed the systemd user timer"), "{said}");
@@ -642,29 +652,46 @@ fn upgrade_auto_installs_a_daily_timer_and_no_auto_removes_it() {
     assert!(!h.auto("timer").exists() && !h.auto("service").exists());
 }
 
-/// `datum install` offers the daily upgrade: a terminal is asked, yes the
-/// default; with none it is yes unasked, and `--yes` / `--no` answer it.
+/// `datum install` offers each `--auto` in turn (da-tsna7): backups of every
+/// database every 30m, then the daily upgrade. A terminal is asked each,
+/// yes the default; with none, backups are no and upgrades yes, unasked;
+/// `--yes` / `--no` answer both.
 #[test]
-fn install_offers_daily_upgrades() {
+fn install_offers_backups_and_daily_upgrades() {
     let h = Home::new();
-    let out = h.install_on_a_terminal(b"n\n");
+    let out = h.install_on_a_terminal(b"n\nn\n");
     assert!(out.status.success(), "{out:?}");
     let asked = String::from_utf8_lossy(&out.stderr);
-    assert!(asked.contains("Upgrade datum daily"), "{asked}");
+    let backups = asked
+        .find("Back up every database every 30m")
+        .expect(&asked);
+    let upgrades = asked.find("Upgrade datum daily").expect(&asked);
+    assert!(backups < upgrades, "{asked}");
     assert!(!h.auto("timer").exists(), "answered no");
+    assert!(h.backup_timer().is_none(), "answered no");
 
-    let out = h.install_on_a_terminal(b"\n");
+    let out = h.install_on_a_terminal(b"\n\n");
     assert!(out.status.success(), "{out:?}");
     assert!(h.auto("timer").exists(), "Enter takes yes");
+    let timer = h.backup_timer().expect("Enter takes yes");
+    assert!(timer.starts_with("datum-backup-all-"), "{timer}");
+    // One there already is said, and not asked again.
+    let out = h.install_on_a_terminal(b"\n");
+    assert!(out.status.success(), "{out:?}");
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("Back up every"));
 
     h.ok(&["upgrade", "--no-auto"]);
+    h.ok(&["backup", "--no-auto", "--all"]);
     h.ok(&["install", "--no-completions", "--no"]);
     assert!(!h.auto("timer").exists());
+    assert!(h.backup_timer().is_none());
     h.ok(&["install", "--no-completions"]);
     assert!(h.auto("timer").exists(), "no terminal: yes");
+    assert!(h.backup_timer().is_none(), "no terminal: no");
     h.ok(&["upgrade", "--no-auto"]);
     h.ok(&["install", "--no-completions", "--yes"]);
     assert!(h.auto("timer").exists());
+    assert!(h.backup_timer().is_some());
 }
 
 /// A datum cargo built is refused the timer, saying why, and offered none.
