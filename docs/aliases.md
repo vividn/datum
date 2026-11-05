@@ -47,6 +47,7 @@ datum alias uninstall <zsh|bash>
 
 - `--show <MODE>` — default|none|json
 - `--json` — Shorthand for --show json
+- `--dry-run` — Of set and remove: show what it would write, and write nothing
 
 #### Examples
 

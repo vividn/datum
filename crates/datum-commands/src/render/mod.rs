@@ -130,32 +130,54 @@ pub enum Outcome {
 
 thread_local! {
     static QUEUED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static DRY_RUN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// While held, every action word is QUEUED (da-9q3fr): the command runs on
 /// a snapshot of a database another holds the lock of, and what it prints
-/// lands when its spool drains.
-pub struct Queued;
+/// lands when its spool drains. Or, held by [`Queued::dry_run`], DRYRUN: the
+/// command runs on a copy in memory, and what it prints lands nowhere.
+pub struct Queued(&'static std::thread::LocalKey<std::cell::Cell<bool>>);
 
 impl Queued {
     pub fn hold() -> Self {
         QUEUED.set(true);
-        Queued
+        Queued(&QUEUED)
     }
+
+    pub fn dry_run() -> Self {
+        DRY_RUN.set(true);
+        Queued(&DRY_RUN)
+    }
+}
+
+/// Is every action word one word, QUEUED or DRYRUN, whatever it did?
+fn held() -> bool {
+    QUEUED.get() || DRY_RUN.get()
 }
 
 impl Drop for Queued {
     fn drop(&mut self) {
-        QUEUED.set(false);
+        self.0.set(false);
     }
 }
 
 impl Outcome {
+    /// What it is printed as: in a dry run, each write is DRYRUN, and what
+    /// would change nothing (NODIFF, ISLAST, EXISTS) or fail keeps its word.
+    fn shown(self) -> Self {
+        match self {
+            Outcome::NoDiff | Outcome::IsLast | Outcome::Exists | Outcome::Failed => self,
+            _ if DRY_RUN.get() => Outcome::DryRun,
+            _ => self,
+        }
+    }
+
     fn name(self) -> &'static str {
         if QUEUED.get() {
             return "QUEUED";
         }
-        match self {
+        match self.shown() {
             Outcome::Create => "CREATE",
             Outcome::Update => "UPDATE",
             Outcome::Delete => "DELETE",
@@ -192,7 +214,7 @@ impl Outcome {
         if QUEUED.get() {
             return "#c061cb"; // magenta
         }
-        match self {
+        match self.shown() {
             Outcome::Create | Outcome::Ignore => "#26a269", // green
             Outcome::Delete | Outcome::Failed => "#e01b24", // red
             Outcome::Exists => "#e5a50a",                   // yellow
@@ -211,7 +233,7 @@ impl Outcome {
         if QUEUED.get() {
             return "\x1b[35m"; // magenta
         }
-        match self {
+        match self.shown() {
             Outcome::Create | Outcome::Ignore => "\x1b[32m", // green
             Outcome::Delete | Outcome::Failed => "\x1b[31m", // red
             Outcome::Exists => "\x1b[33m",                   // yellow
@@ -308,11 +330,11 @@ pub(crate) fn extract_with_context_at(
     // The `∅` the following row already wears says the field was IGNORED
     // before, which is the information the word carried.
     let names_the_row =
-        !QUEUED.get() && matches!(action, None | Some(Outcome::Create) | Some(Outcome::Exists));
+        !held() && matches!(action, None | Some(Outcome::Create) | Some(Outcome::Exists));
     let action_text = match datum_core::track::track_verb(entry).filter(|_| names_the_row) {
         Some(verb) => Some(paint_track(verb)),
         None => action.map(|a| match a {
-            Outcome::Create if !QUEUED.get() => {
+            Outcome::Create if !held() => {
                 paint_word(a, created_word(entry, ctx.is_some_and(|c| c.remark)))
             }
             _ => paint_action(a),
@@ -619,7 +641,7 @@ pub fn action_lines_at(
         undid: None,
         // Where the word is the shape: a TRACK row names itself (`TRACK●`).
         created: action == Outcome::Create
-            && !QUEUED.get()
+            && !held()
             && datum_core::track::track_verb(entry).is_none(),
     }
 }
