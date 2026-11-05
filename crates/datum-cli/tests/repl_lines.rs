@@ -3,7 +3,7 @@
 //! here runs a line that sets one, then a line that must not see it, and
 //! holds the second to what it prints in a REPL of its own.
 //!
-//! The 17, and where each is held:
+//! The 16, and where each is held:
 //!
 //! | thread-local | |
 //! |---|---|
@@ -17,7 +17,6 @@
 //! | `SESSION` | `a_sync_as_line_binds_no_later_line` |
 //! | `ENDPOINT` | `a_rekey_signs_the_next_line_with_the_new_key` |
 //! | `QUEUED` | `spool.rs`: `a_repl_write_after_a_queued_one_is_written` |
-//! | `DRY_RUN` | `a_dry_run_is_that_lines` |
 //! | `READER` | not here: a cache keyed by the endpoint and the chain records it is derived from, so any line that changes either misses it |
 //! | `SKEW`, `WALKED` | not in the binary: `#[cfg(test)]` |
 
@@ -159,24 +158,6 @@ fn a_json_echo_is_that_lines() {
         "occur coffee -t 10:00",
     );
     assert!(printed.contains(r#"{"docs":"#), "no echo: {printed}");
-}
-
-/// A dry run at the prompt runs on a copy and writes nothing (da-7r1v4),
-/// and the line after it writes, its action words its own.
-#[test]
-fn a_dry_run_is_that_lines() {
-    let printed = second_line_as_alone(
-        &["occur tea -t 9:00"],
-        "retime tea -t 9:30 --dry-run",
-        "retime tea -t 10:00",
-    );
-    assert!(printed.contains("DRYRUN"), "no dry run: {printed}");
-    let env = Env::new();
-    env.repl(&["occur tea -t 9:00", "retime tea -t 9:30 --dry-run"]);
-    assert_eq!(
-        env.query("SELECT strftime('%H:%M', at, 'localtime') FROM entries WHERE field = 'tea'"),
-        "09:00"
-    );
 }
 
 /// The window fails at its atomic insert, after side 1 buffered a row and

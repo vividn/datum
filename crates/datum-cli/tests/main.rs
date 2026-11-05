@@ -62,7 +62,6 @@ mod delete_cmd;
 mod dot_glyphs;
 mod dot_icons;
 mod dot_skip_positional;
-mod dry_run_cmd;
 mod dur_flag_removed;
 mod e2e_subprocess;
 mod edit_cmd;

@@ -34,44 +34,8 @@ fn output_rows(command: &str) -> Vec<(String, String)> {
             "Shorthand for --show json".to_string(),
         ));
     }
-    if let Some((_, of)) = DRY_RUNS_ON_A_COPY.iter().find(|(c, _)| *c == command) {
-        rows.push((
-            "    --dry-run".to_string(),
-            match of.is_empty() {
-                true => "Show what it would write, and write nothing".to_string(),
-                false => format!("{of}show what it would write, and write nothing"),
-            },
-        ));
-    }
     rows
 }
-
-/// The pages whose command a `--dry-run` runs on a copy of the database in
-/// memory, and which of its forms (`datum-cli`'s `dry_runs_on_a_copy`,
-/// da-7r1v4): a command added there is added here. The log commands,
-/// `update`, `merge`, `rekey`, `delete`, `redo`, `rename`, `kit install`, `db
-/// restore`, `db v2import`, `backup`, `sync chain leave` and `sync refold`
-/// list their own.
-const DRY_RUNS_ON_A_COPY: &[(&str, &str)] = &[
-    ("retime", ""),
-    ("undo", ""),
-    ("revert", ""),
-    ("edit", ""),
-    ("track", ""),
-    ("ignore", ""),
-    ("setup", ""),
-    ("alias", "Of set and remove: "),
-    ("kit", "Of uninstall: "),
-    ("conflicts", "Of resolve: "),
-    ("flag", ""),
-    ("reparse", ""),
-    ("check", "With --fix: "),
-    ("meta", "Of add: "),
-    (
-        "sync",
-        "Of pause, resume, ack, rekey, rename and the admin acts: ",
-    ),
-];
 
 /// Render the plain-text help string for `cmd`, or the top-level help
 /// when `cmd` is `None`.

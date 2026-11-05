@@ -369,8 +369,33 @@ impl Db {
         // A WAL reader rarely waits (a checkpoint restarting the log, its
         // index being rebuilt), but a backup answered BUSY is a lost write.
         from.busy_timeout(Duration::from_secs(5))?;
-        let db = Self::in_memory_from(&from)?;
+        let mut conn = Connection::open_in_memory()?;
+        // Every page in one step: one read transaction, one snapshot.
+        rusqlite::backup::Backup::new(&from, &mut conn)?.run_to_completion(
+            i32::MAX,
+            Duration::ZERO,
+            None,
+        )?;
         drop(from);
+        Self::configure_connection(&mut conn)?;
+        // `sync::endpoint` takes the stored key only for the path it was
+        // minted at, or a blank one, and an in-memory copy's path is "":
+        // left as the file's, the snapshot would mint a key of its own.
+        let _ = conn.execute("UPDATE sync_local SET path = ''", []);
+        let db = Db {
+            conn: std::mem::ManuallyDrop::new(conn),
+            keep: false,
+            holds: None,
+            spec_alias_cache: Default::default(),
+            client_id: Default::default(),
+            apply_run: Default::default(),
+            last_migration: None,
+            created: false,
+            refold_failed: Default::default(),
+            create_time_ids_left: Default::default(),
+            path: None,
+            read_from: None,
+        };
         db.migrate(None)?;
         let spool = beside(file, ".spool");
         let (queued, set_aside, mut short) = match lines(&spool) {
@@ -392,44 +417,6 @@ impl Db {
             short,
         };
         Ok((db, spooled))
-    }
-
-    /// This database as it stands, copied into memory and writable: what a
-    /// `--dry-run` runs on, so what it writes is written nowhere (da-7r1v4).
-    pub fn copy_in_memory(&self) -> Result<Db> {
-        let db = Self::in_memory_from(&self.conn)?;
-        db.migrate(None)?;
-        Ok(db)
-    }
-
-    /// The database `from` reads, copied into memory, keeping its endpoint.
-    fn in_memory_from(from: &Connection) -> Result<Db> {
-        let mut conn = Connection::open_in_memory()?;
-        // Every page in one step: one read transaction, one snapshot.
-        rusqlite::backup::Backup::new(from, &mut conn)?.run_to_completion(
-            i32::MAX,
-            Duration::ZERO,
-            None,
-        )?;
-        Self::configure_connection(&mut conn)?;
-        // `sync::endpoint` takes the stored key only for the path it was
-        // minted at, or a blank one, and an in-memory copy's path is "":
-        // left as the file's, the snapshot would mint a key of its own.
-        let _ = conn.execute("UPDATE sync_local SET path = ''", []);
-        Ok(Db {
-            conn: std::mem::ManuallyDrop::new(conn),
-            keep: false,
-            holds: None,
-            spec_alias_cache: Default::default(),
-            client_id: Default::default(),
-            apply_run: Default::default(),
-            last_migration: None,
-            created: false,
-            refold_failed: Default::default(),
-            create_time_ids_left: Default::default(),
-            path: None,
-            read_from: None,
-        })
     }
 
     /// Are changes queued beside this database, not landed yet?
