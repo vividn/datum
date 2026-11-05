@@ -5,11 +5,15 @@
 // moment field in the active state box, tapping that field should toggle it in
 // that case, so i guess the moment field should be some how filled in a bit
 // more».
+//
+// And in 2-click mode (da-s8gr7), vividn, 2026-11-05: «it should open the
+// fields screen in the widget, but maybe the default action should be delete
+// instead of log, since something is already logged there».
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp, todayAt } from './support/app.mjs';
-import { PHONE } from './support/layout.mjs';
+import { PHONE, pickOption } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -121,6 +125,49 @@ describe('collect at a selected time', () => {
 
 			await coffee.click();
 			await until(() => coffees(app), (ts) => ts.length === 1 && ts[0] === todayAt(9, 30));
+		}, AT);
+	});
+
+	test('2-click: a tap opens the field, and where its moment sits the ready command deletes it, moment beside it; with nothing there it logs (da-s8gr7)', async () => {
+		await withApp(async (app) => {
+			await seeded(app);
+			const { page } = app;
+			await pickOption(page, 'bar', 'a tap', 'opens and chooses, 2-click');
+			const coffee = page.locator(`${ROOM} [data-field="coffee"]`);
+			const lead = page.locator('.prompt-bar #bar-commands button.lead');
+			const commands = () => page.locator('.prompt-bar #bar-commands [data-command]').evaluateAll((bs) => bs.map((b) => b.dataset.command));
+			const kinds = () => page.evaluate(() => window.datum.bar.pills().map((p) => p.kind).sort());
+			const palette = async () => {
+				const toggle = page.locator('.prompt-bar button.prompt');
+				if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+				await lead.waitFor();
+			};
+
+			await point(page, todayAt(9, 30));
+			await until(() => sections(page), (s) => s.coffee === 'active');
+			await coffee.click();
+			await page.locator('.collect [data-open-field="coffee"]').waitFor();
+			assert.deepEqual(await coffees(app), [todayAt(9, 30)], 'the tap ran something');
+			await palette();
+			await until(() => lead.getAttribute('data-suggested'), (c) => c === 'delete');
+			assert.equal((await lead.textContent()).trim(), 'delete coffee');
+			assert.equal(await lead.getAttribute('data-ready'), 'true');
+			assert.ok((await commands()).includes('moment'), `no moment beside it: ${await commands()}`);
+			await lead.click();
+			await until(() => coffees(app), (ts) => ts.length === 0);
+			await until(kinds, (k) => k.join() === 'time');
+			assert.equal(await page.evaluate(() => window.datum.cursor.at()?.toISOString()), iso(todayAt(9, 30)), 'the time stays selected');
+
+			// Nothing there now: the field's screen logs, at that time.
+			await until(() => sections(page), (s) => s.coffee === 'recent');
+			await coffee.click();
+			await page.locator('.collect [data-open-field="coffee"]').waitFor();
+			await palette();
+			await until(() => lead.getAttribute('data-suggested'), (c) => c === 'moment');
+			assert.equal((await lead.textContent()).trim(), 'moment coffee');
+			await lead.click();
+			await until(() => coffees(app), (ts) => ts.length === 1 && ts[0] === todayAt(9, 30));
+			assert.deepEqual(app.errors, []);
 		}, AT);
 	});
 });

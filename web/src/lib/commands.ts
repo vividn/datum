@@ -623,9 +623,15 @@ export function fieldCommand(name: string, all: Pill[], fields: FieldButton[]): 
  * and a field with a key to type (`typesKeys`) are missing something, so the
  * circle is dashed and a tap writes the line instead. No field pill, an
  * unknown field or a field that is context (under an hid) suggests nothing.
+ *
+ * A moment field with its entry exactly at the selected time (`here`, which
+ * collect in 2-click mode lends the pane) leads with `delete` of that entry
+ * instead (da-s8gr7), vividn, 2026-11-05: «maybe the default action should
+ * be delete instead of log, since something is already logged there»; its
+ * `moment` stays among the commands beside it.
  */
 export interface Suggestion {
-	command: LogCommand;
+	command: LogCommand | 'delete';
 	field: string;
 	/** The change's state, from the state pill. */
 	state?: string;
@@ -642,6 +648,7 @@ export function suggestionOf(all: Pill[], fields: FieldButton[]): Suggestion | n
 	const field = argumentsOf(all).find((p) => p.kind === 'field');
 	const button = fields.find((b) => b.field === field?.text);
 	if (!field || !button) return null;
+	if (button.here) return { command: 'delete', field: field.text, label: `delete ${field.text}`, color: button.color, ready: true, argv: ['delete', button.here] };
 	const { kind } = button.shape;
 	const command: LogCommand = kind === 'on/off' ? (button.current ? 'off' : 'on') : kind;
 	const state = command === 'change' ? all.find((p) => p.kind === 'state') : undefined;

@@ -86,6 +86,13 @@ const last = lastBar();
 export const fields = writable<FieldButton[]>(last.fields);
 
 /**
+ * Each moment field's entry exactly at the selected time, by hid, while a
+ * collect widget in 2-click mode stands at that time (da-s8gr7): the command
+ * pane's ready command, the field's screen's primary action, deletes it.
+ */
+export const here = writable<ReadonlyMap<string, string>>(new Map());
+
+/**
  * The entries with sync conflicts — `datum conflicts --json`, read on every
  * beat (da-6cutb): the commands widget's button counts them and the
  * conflicts widget lists them, so the two cannot disagree.

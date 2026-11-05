@@ -63,12 +63,13 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import CommandsWidget from '#lib/CommandsWidget.svelte';
-	import { clearUnlockedPills, commandsOpen, pills, prefill, text, type Pill } from '#lib/bar.ts';
+	import { clearUnlockedPills, commandsOpen, dropHids, pills, prefill, text, type Pill } from '#lib/bar.ts';
+	import { openOutput } from '#lib/log.ts';
 	import { argumentsOf, opensField, withFlag, type Suggestion } from '#lib/commands.ts';
 	import { openField } from '#lib/fieldWidget.ts';
 	import { redoArgv } from '#lib/calls.ts';
 	import { withPills } from '#lib/selection.ts';
-	import { conflicts, fields, grammar, pressWithPills, ready } from './engine.js';
+	import { conflicts, fields, grammar, here, press, pressWithPills, ready } from './engine.js';
 
 	let {
 		epoch = 0,
@@ -107,8 +108,26 @@
 		void pressWithPills(argv);
 	}
 
+	/** The buttons, a moment field with its entry at collect's selected time (da-s8gr7). */
+	const buttons = $derived($here.size ? $fields.map((b) => ({ ...b, here: $here.get(b.field) })) : $fields);
+
 	/** The ready command (da-h3jcu): it runs, with the pills it takes. */
-	const suggest = ({ argv }: Suggestion) => runNow(argv);
+	const suggest = ({ argv }: Suggestion) => (argv[0] === 'delete' ? deleteHere(argv) : runNow(argv));
+
+	/**
+	 * The entry at the selected time deleted (da-s8gr7) with no pills: the
+	 * time is where it stands and not delete's, and an hid pill would go with
+	 * it. Done, the field's pill goes, closing its screen; the time stays.
+	 */
+	async function deleteHere(argv: string[]): Promise<void> {
+		if ($commandsOpen) {
+			commandsOpen.set(false);
+			openOutput();
+		}
+		if ((await press(argv)).code !== 0) return;
+		dropHids(argv.slice(1));
+		clearUnlockedPills(argumentsOf($pills).filter((p) => p.kind === 'field'));
+	}
 
 	function fill({ name, line, keyboard, spend, held }: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }): void {
 		// A choice closes the widget over the output, as a run does (da-xw655);
@@ -133,7 +152,7 @@
 		{palette}
 		grammar={$grammar}
 		pills={$pills}
-		fields={$fields}
+		fields={buttons}
 		{redoable}
 		conflicts={$conflicts.length}
 		{key}

@@ -316,6 +316,7 @@
 
 {#if suggested}
 	{@const s = suggested}
+	{@const icon = ICONS[s.command]}
 	<button
 		class="lead"
 		class:palette
@@ -325,11 +326,11 @@
 		style:--lead={s.color}
 		data-suggested={s.command}
 		data-ready={s.ready}
-		data-glyph={ICONS[s.command]}
+		data-glyph={icon.length > 1 ? undefined : icon}
 		title={`${s.ready ? 'run ' : ''}${[s.command, s.field, s.state].filter(Boolean).join(' ')}${s.ready ? '' : ' …'}`}
 		onclick={() => lead(s)}
 	>
-		<span class="name">{s.label}</span>
+		{@render face(icon, s.label)}
 	</button>
 {/if}
 
@@ -579,6 +580,16 @@
 
 	.lead[data-glyph]::before {
 		content: attr(data-glyph) / '';
+	}
+
+	.lead svg {
+		inline-size: 1.2rem;
+		block-size: 1.2rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 
 	.lead .name {

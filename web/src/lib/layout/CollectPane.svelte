@@ -36,7 +36,9 @@
 	stand as `now --json -t <time>` says the fields stood then, a moment
 	field whose entry is at that instant among the active ones (`standingAt`,
 	`momentsAt`). A tap on that field deletes the entry, with no pill: an hid
-	pill on the bar would be deleted too.
+	pill on the bar would be deleted too. In 2-click mode the tap opens the
+	field, and its screen's primary action, the command pane's ready command,
+	is that delete, `moment` beside it (`here` in engine.ts, da-s8gr7).
 
 	`only` (da-gfy7w) is the widget's `fields` option: set, the buttons are
 	those fields alone, in order and mode as ever; empty, every field. A name
@@ -65,7 +67,7 @@
 	import { COLLECT_FIELDS_OFFER, standingAt, type Align, type NowActive, type NowListing, type SwitchLabel } from '#lib/fields.ts';
 	import { lanes } from '#lib/lanes.ts';
 	import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
-	import { epoch as written, fields, gestureAt, grammar, press, pressWithPills, standings } from './engine.js';
+	import { epoch as written, fields, gestureAt, grammar, here, press, pressWithPills, standings } from './engine.js';
 
 	let {
 		switchLabel = 'field',
@@ -157,6 +159,11 @@
 		const named = [...new Set([...$fields.map((f) => f.field), ...only])];
 		const offered = { [COLLECT_FIELDS_OFFER]: named.map((field) => ({ value: field, label: field })) };
 		untrack(() => offers.update((o) => ({ ...o, ...offered })));
+	});
+	// In 2-click mode a tap opens the field, and its screen leads with deleting the entry there (da-s8gr7).
+	$effect(() => {
+		here.set(new Map(clicks === 'two' ? standing.filter((b) => b.here).map((b) => [b.field, b.here!]) : []));
+		return () => here.set(new Map());
 	});
 
 	/**
