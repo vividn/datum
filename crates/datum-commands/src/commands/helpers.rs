@@ -1388,6 +1388,28 @@ mod tests {
         );
     }
 
+    /// da-16cfw: the stream keeps the command the alias says — the
+    /// glossary's `moment`, `change`, `on` — not the name the parser
+    /// stores it under (`occur`, `switch`, `start`).
+    #[test]
+    fn assembled_expansion_keeps_the_command_as_typed() {
+        for (body, want) in [
+            (
+                "moment coffee strength=strong",
+                "( moment coffee strength=strong ,, )",
+            ),
+            ("change mood happy", "( change mood happy ,, )"),
+            ("on reading", "( on reading ,, )"),
+            ("occur coffee", "( occur coffee ,, )"),
+        ] {
+            let chain = json!([{"name": "cf", "expansion": body}]);
+            assert_eq!(
+                assembled_expansion("cf", Some(&chain)).as_deref(),
+                Some(want)
+            );
+        }
+    }
+
     /// No stored chain, or a chain whose alias no longer matches the
     /// raw head, yields no `expanded:` line — the stream would just
     /// echo raw_input.

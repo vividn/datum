@@ -304,8 +304,18 @@ pub fn apply_switch_promote_override(mut argv: Vec<String>) -> Vec<String> {
 /// [`ParseError::AliasCycle`](crate::ParseError::AliasCycle) if expansion revisits a previously
 /// expanded name (e.g. `set a 'b'; set b 'a'; datum a`).
 pub fn try_expand_alias(
+    argv: Vec<String>,
+    resolver: &dyn Resolver,
+) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
+    expand_alias(argv, resolver, false)
+}
+
+/// [`try_expand_alias`], the command word left as typed when `as_typed`
+/// (`moment`, not `occur`): what `datum why` shows (da-16cfw).
+pub(super) fn expand_alias(
     mut argv: Vec<String>,
     resolver: &dyn Resolver,
+    as_typed: bool,
 ) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
     let mut chain: Vec<AliasStep> = Vec::new();
     let mut visited: Vec<String> = Vec::new();
@@ -321,7 +331,7 @@ pub fn try_expand_alias(
         let name_idx = 1 + lead;
         if argv.len() <= name_idx || KNOWN_SUBCOMMANDS.contains(&argv[name_idx].as_str()) {
             let help = argv.iter().any(|t| t == "--help" || t == "-h");
-            if let Some(word) = argv.get_mut(name_idx).filter(|_| !help) {
+            if let Some(word) = argv.get_mut(name_idx).filter(|_| !help && !as_typed) {
                 *word = command_named(word).to_string();
             }
             return Ok((argv, chain));

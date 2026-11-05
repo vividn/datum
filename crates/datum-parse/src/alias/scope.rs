@@ -28,9 +28,8 @@
 use crate::error::{ParseError, Result};
 
 use super::expand::{
-    apply_switch_promote_override, expand_stacked_flags, maybe_collapse_switch_chain,
-    split_argv_at_commas, try_expand_alias, AliasStep, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS,
-    MULTI_COMMA,
+    apply_switch_promote_override, expand_alias, expand_stacked_flags, maybe_collapse_switch_chain,
+    split_argv_at_commas, AliasStep, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA,
 };
 
 /// Result of [`expand_into_sides`]: N per-side argvs (each without the
@@ -52,16 +51,22 @@ pub struct ExpandedSides {
 /// The returned sides keep the wrapper groups and `,,` boundaries
 /// INTACT — this is the spec's *assembled wrapped expansion*, the
 /// self-describing token stream `datum why` surfaces (da-g5su).
-/// [`expand_into_sides`] continues from here by applying regions and
-/// the per-side normalisation passes.
+/// Each side's command is the word the person or the alias typed
+/// (`moment`, not `occur`, da-16cfw). [`expand_into_sides`] continues
+/// from [`wrapped`], which names each the command it stands for, by
+/// applying regions and the per-side normalisation passes.
 pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<ExpandedSides> {
+    wrapped(argv, resolver, true)
+}
+
+fn wrapped(argv: Vec<String>, resolver: &dyn Resolver, as_typed: bool) -> Result<ExpandedSides> {
     if argv.is_empty() {
         return Ok(ExpandedSides::default());
     }
     let bin = argv[0].clone();
 
     // Step 1 + 2: outermost alias expansion.
-    let (argv, mut chain) = try_expand_alias(argv, resolver)?;
+    let (argv, mut chain) = expand_alias(argv, resolver, as_typed)?;
 
     // Step 3: comma-split (skip the leading binary token).
     let rest: Vec<String> = argv.into_iter().skip(1).collect();
@@ -79,7 +84,7 @@ pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<Expa
             let mut side_argv = vec![bin.clone()];
             side_argv.extend(side);
             let before = side_argv.clone();
-            let (side_argv, side_chain) = try_expand_alias(side_argv, resolver)?;
+            let (side_argv, side_chain) = expand_alias(side_argv, resolver, as_typed)?;
             if side_argv != before {
                 grew_or_changed = true;
             }
@@ -111,7 +116,7 @@ pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<Expa
 /// Steps:
 ///
 /// 1. (retired: a word before the command was swapped behind it, da-z5vek.)
-/// 2. Run [`try_expand_alias`] on the whole argv — every resolve wraps
+/// 2. Run [`try_expand_alias`](super::expand::try_expand_alias) on the whole argv — every resolve wraps
 ///    its body in `( … ,, own-trailing )`.
 /// 3. Comma-split the resulting flat argv into N sides (groups and
 ///    boundaries ride inside their sides; commas split at any depth).
@@ -133,7 +138,7 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
     let bin = argv[0].clone();
 
     // Steps 1–4: alias expansion with wrapper groups intact.
-    let ExpandedSides { sides, chain, .. } = expand_wrapped(argv, resolver)?;
+    let ExpandedSides { sides, chain, .. } = wrapped(argv, resolver, false)?;
 
     // Step 5b: canonical flag shapes, then ONE region pass — a `,,`
     // binds the sides to its left within its innermost group, typed
