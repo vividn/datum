@@ -21,7 +21,8 @@
 	adds its own mark there before the database answers (`nowPending`), and a
 	tap on an active field's band puts that field's pill on the bar; then the ACTIVE SECTION, every field in an active state
 	inside a dotted outline that steps with each row; then each row's other
-	fields, the most recently used first (`rowsUnder`, the order taken on
+	fields right against its own part of the section (da-il6ni), the most
+	recently used first (`rowsUnder`, the order taken on
 	load and on coming back to the foreground). A drag pans those sideways,
 	gliding on after a swipe; the strip and the active section stay, until
 	the section is wider than half the widget and pans with them. A field
@@ -1296,7 +1297,9 @@
 			>
 				{#if !here && resting}
 					<!-- At rest (da-lw7ue): the strip, the active section, then each row by recency. -->
-					<div class="frozen" class:right={side === 'right'} style:width="{frozen ? shelves.section : strip}px"></div>
+					<svg class="backing" aria-hidden="true">
+						<path d={frozen ? shelves.backing : `M0 0H${strip}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
+					</svg>
 					<div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
 						<NowStrip doc={nowDoc} pending={nowPending} width={strip} height={paneH} mirrored={side === 'right'} />
 						{#each nowBands as band (band.field)}
@@ -1767,14 +1770,22 @@
 	}
 
 	/* At rest (da-lw7ue): the strip and, while it is frozen, the active
-	   section stand over the rows that pan under them. A field's place glides
-	   (`glide`); one leaving the section keeps above the backing until it has
-	   left it, and one entering rises above it at once. */
-	.frozen {
+	   section stand over the rows that pan under them, each row under its
+	   own part of the section (da-il6ni). A field's place glides (`glide`);
+	   one leaving the section keeps above the backing until it has left it,
+	   and one entering rises above it at once. */
+	.backing {
 		position: absolute;
-		inset: 0 auto 0 0;
+		inset: 0;
+		width: 100%;
+		height: 100%;
 		z-index: 1;
-		background: var(--ground);
+		pointer-events: none;
+		fill: var(--ground);
+	}
+
+	.backing path {
+		pointer-events: auto;
 	}
 
 	.present {
@@ -1796,7 +1807,6 @@
 	}
 
 	/* The mirror (`side`): the strip and the section at the right edge. */
-	.frozen.right,
 	.present.right {
 		left: auto;
 		right: 0;

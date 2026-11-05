@@ -172,10 +172,10 @@ describe('the logic', () => {
 			// The active `b` stands past the strip and a gap's padding; the section ends a gap past it.
 			assert.equal(stands.get('b').x, 50 + 12);
 			assert.equal(section, 50 + 12 + 40 + 6);
-			// The rest start past the section, in a column, each row in the order given.
-			assert.deepEqual(['a', 'd', 'e'].map((f) => stands.get(f).x), [section + 6, section + 6, section + 6]);
-			assert.equal(stands.get('c').x, section + 6 + 40 + 6);
-			assert.equal(end, stands.get('c').x + 40);
+			// The rest start past their own row's active fields, past the strip where it has none, each row in the order given.
+			assert.deepEqual(['a', 'd', 'e'].map((f) => stands.get(f).x), [56, 56, section + 6]);
+			assert.equal(stands.get('c').x, 56 + 40 + 6);
+			assert.equal(end, section + 6 + 40);
 			assert.ok(outline?.startsWith('M56 '), outline);
 		});
 
@@ -192,6 +192,22 @@ describe('the logic', () => {
 			// Row 0 out to the section, row 1 (none active) a stub, row 2 to its one field.
 			const steps = [...outline.matchAll(/H([\d.]+)/g)].map((m) => Number(m[1]));
 			assert.deepEqual(steps, [section, 56 + 12, 62 + 20 + 6, 56]);
+		});
+
+		// vividn, 2026-11-04: «nestle the inactive states right up next to the active zone, right now there is a big gap if one row has a lot of active states in it» (da-il6ni).
+		test('each row’s rest start right past its own active fields, and the backing steps with them', () => {
+			const { stands, section, backing } = atRest(
+				[at('a', 0, true), at('b', 0, true), at('c', 0), at('d', 0.85, true, 20), at('e', 0.85), at('f', 0.4)],
+				ROOM
+			);
+			assert.equal(stands.get('c').x, section + 6, 'the widest row: past the section');
+			assert.equal(stands.get('e').x, 62 + 20 + 6 + 6, 'a narrow row: past its own one field, not the section');
+			assert.equal(stands.get('f').x, 56 + 12 + 6, 'a row with none, inside the outline: past its stub');
+			// The rows pan under a backing as far as each row's own section, so nothing at rest is under it.
+			const steps = [...backing.matchAll(/H([\d.]+)V([\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+			assert.deepEqual(steps.map(([x]) => x), [section, 56 + 12, 62 + 20 + 6]);
+			assert.deepEqual(steps.map(([, y]) => +y.toFixed(3)), [33.333, 66.667, 100]);
+			for (const [f, r] of [['c', 0], ['e', 2], ['f', 1]]) assert.ok(stands.get(f).x > steps[r][0], `${f} under the backing`);
 		});
 	});
 

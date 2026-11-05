@@ -72,7 +72,7 @@ const shelf = (page) =>
 	page.locator(`${ROOM} .spot.shelf`).evaluateAll((spots) =>
 		spots.map((s) => {
 			const r = s.getBoundingClientRect();
-			return { field: s.querySelector('[data-field]').dataset.field, row: Number(s.dataset.row), section: s.dataset.section, left: r.left, right: r.right };
+			return { field: s.querySelector('[data-field]').dataset.field, row: Number(s.dataset.row), section: s.dataset.section, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
 		})
 	);
 
@@ -140,8 +140,10 @@ describe('collect at rest', () => {
 			const { page } = app;
 			const spots = await settled(page);
 			assert.deepEqual(rowsOf(spots, 'active'), { [spots.find((s) => s.field === 'mood').row]: ['mood'], [spots.find((s) => s.field === 'work').row]: ['work'] });
-			const section = Math.max(...spots.filter((s) => s.section === 'active').map((s) => s.right));
-			for (const s of spots.filter((s) => s.section === 'recent')) assert.ok(s.left > section, `${s.field} stands in the active section`);
+			for (const s of spots.filter((s) => s.section === 'recent')) {
+				const section = Math.max(...spots.filter((a) => a.section === 'active' && a.row === s.row).map((a) => a.right));
+				assert.ok(s.left > section, `${s.field} stands in the active section`);
+			}
 			await page.locator(`${ROOM} .dotted path`).waitFor();
 			const strip = await page.locator(`${ROOM} [data-now-field]`).evaluateAll((bs) => bs.map((b) => b.dataset.nowField));
 			assert.deepEqual(strip.sort(), ['mood', 'work']);
@@ -169,9 +171,77 @@ describe('collect at rest', () => {
 			await logs(app, 'switch mood bad');
 			await until(async () => (await shelf(page)).find((s) => s.field === 'mood').section, (s) => s === 'active');
 			spots = await settled(page);
-			assert.ok(spots.find((s) => s.field === 'mood').right < Math.min(...spots.filter((s) => s.section === 'recent').map((s) => s.left)));
+			const mood = spots.find((s) => s.field === 'mood');
+			assert.ok(mood.right < Math.min(...spots.filter((s) => s.section === 'recent' && s.row === mood.row).map((s) => s.left)));
 		}, AT_REST);
 	});
+
+	// vividn, 2026-11-04: «nestle the inactive states right up next to the
+	// active zone, right now there is a big gap if one row has a lot of
+	// active states in it» (da-il6ni).
+	for (const side of ['left', 'right'])
+		test(`side: ${side}: each row's other fields stand right against its own active fields, not the widest row's; none is under the backing at rest, and panned, a row goes under its own part of the section and no further`, async () => {
+			await withApp(async (app) => {
+				// More in work's row than the room holds, so the rows pan.
+				const more = Array.from({ length: 8 }, (_, i) => at(`low_${i}`, 'occur', 0.9));
+				await seeded(app, [at('x', 'start', 0.05), at('z', 'start', 0.05), ...more, ...SEED, 'start x', 'start z', 'start work']);
+				const { page } = app;
+				if (side === 'right') await pickOption(page, 'bar', 'side', 'right');
+				const near = (s) => (side === 'left' ? s.left : -s.right);
+				const far = (s) => (side === 'left' ? s.right : -s.left);
+				const room = await page.locator(ROOM).boundingBox();
+				const mid = room.x + room.width / 2;
+				const spots = await until(
+					() => settled(page),
+					(spots) => spots.filter((s) => s.section === 'active').length === 3 && (side === 'left') === spots.find((s) => s.field === 'work').left < mid
+				);
+				const work = spots.find((s) => s.field === 'work');
+				const wide = Math.max(...spots.filter((s) => s.section === 'active' && s.row !== work.row).map(far));
+				const next = spots.filter((s) => s.section === 'recent' && s.row === work.row).sort((a, b) => near(a) - near(b))[0];
+				assert.ok(far(work) < wide, `work's row is the narrower: ${far(work)} against ${wide}`);
+				// Narrow enough to stay while the rows pan under it, so the backing is the section's and not the strip's.
+				assert.ok(wide - far(side === 'left' ? { right: room.x } : { left: room.x + room.width }) <= room.width / 2, `the section is not frozen: ${wide}`);
+				assert.ok(near(next) - far(work) <= 2 * 6 + 1, `${next.field} ${near(next) - far(work)}px past work, the widest row ending at ${wide}`);
+				// Drawn, not under the backing the panned rows go under: each in the room, read and walk among them.
+				const shown = spots.filter((s) => s.section === 'recent' && s.left >= room.x && s.right <= room.x + room.width);
+				assert.ok(['read', 'walk'].every((f) => shown.some((s) => s.field === f)), JSON.stringify(shown));
+				for (const s of shown) {
+					// Its edge toward the section, where a backing too wide would lie over it.
+					const hit = await page.locator(`${ROOM} [data-field="${s.field}"]`).evaluate((b, side) => {
+						const r = b.getBoundingClientRect();
+						return b.contains(document.elementFromPoint(side === 'left' ? r.left + 2 : r.right - 2, (r.top + r.bottom) / 2));
+					}, side);
+					assert.ok(hit, `${s.field} is covered`);
+				}
+
+				// Panned toward the section, a slow swipe the finger's length: work's row goes under
+				// its own part of the section, and shows past it where the widest row's part is wider.
+				const strip = await page.locator(`${ROOM} [data-strip]`).boundingBox();
+				const [edge, wideEdge, stripEdge] = [far(work) + 6, wide + 6, far(side === 'left' ? { right: strip.x + strip.width } : { left: strip.x })];
+				const y = (work.top + work.bottom) / 2;
+				await swipe(page, room.x + room.width * (side === 'left' ? 0.85 : 0.15), y, side === 'left' ? -80 : 80, 0, 8, 60, 200);
+				const moved = await until(
+					() => settled(page),
+					(now) => now.find((s) => s.field === 'read').left !== next.left || now.find((s) => s.field === 'read').right !== next.right
+				);
+				// Points along the row's panned fields, away from work's own button and from the edge itself.
+				const points = moved
+					.filter((s) => s.section === 'recent' && s.row === work.row)
+					.flatMap((s) => Array.from({ length: Math.floor((far(s) - near(s)) / 2) }, (_, i) => near(s) + 1 + 2 * i))
+					.filter((u) => u > stripEdge + 1 && (u < near(work) - 1 || u > far(work) + 1) && Math.abs(u - edge) > 1);
+				const hits = await page.evaluate(
+					({ xs, y }) => xs.map((x) => {
+						const el = document.elementFromPoint(x, y);
+						return el?.closest('svg.backing') ? 'backing' : (el?.closest('[data-field]')?.dataset.field ?? String(el?.className));
+					}),
+					{ xs: points.map((u) => (side === 'left' ? u : -u)), y }
+				);
+				const wrong = points.flatMap((u, i) => ((u < edge) === (hits[i] === 'backing') ? [] : [`${hits[i]} at ${u}`]));
+				assert.deepEqual(wrong, [], `work's part of the section ends at ${edge}`);
+				assert.ok(points.some((u) => u < edge), 'nothing panned under the section');
+				assert.ok(points.some((u) => u > edge && u < wideEdge - 1), `nothing panned between ${edge} and the widest row's ${wideEdge}`);
+			}, AT_REST);
+		});
 
 	// vividn, 16:41: «a "side: left | right" row in the widget menu».
 	test('side: right is the mirror: the strip and the section at the right, each row last used first leftward', async () => {

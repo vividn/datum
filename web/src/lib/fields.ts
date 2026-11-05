@@ -401,6 +401,11 @@ export interface Shelves {
 	outline: string | null;
 	/** Where the active section ends, or the strip with nothing active. */
 	section: number;
+	/**
+	 * What the rows pan under while the section stays, an SVG path: the
+	 * strip, and each row out to its own part of the section.
+	 */
+	backing: string;
 	/** The right edge of the furthest field. */
 	end: number;
 }
@@ -419,7 +424,9 @@ export interface Shelves {
  * its active fields, then the rest. The active section is as wide as its
  * widest row, one row growing it rather than wrapping (vividn: «the active
  * section keeps growing»), and its outline steps with each row's width from
- * its first active row to its last. The rest start past it, in a column.
+ * its first active row to its last. Each row's rest start right past that
+ * row's own part of it (da-il6ni, vividn, 2026-11-04: «nestle the inactive
+ * states right up next to the active zone»), or past the strip.
  *
  * `items` come in the order they take their slots, most recent first.
  */
@@ -430,32 +437,33 @@ export function atRest(items: Shelved[], o: { height: number; rowH: number; gap:
 	const topOf = (r: number) => r * pitch + (pitch - o.rowH) / 2;
 	const rows = new Map(items.map((s) => [s.field, rowOf(s)]));
 	const stands = new Map<string, Stand>();
-	const lay = (from: number, active: boolean) => {
+	const lay = (from: (r: number) => number, active: boolean) => {
 		const right: number[] = [];
 		for (const s of items.filter((s) => s.active === active)) {
 			const r = rows.get(s.field)!;
-			const x = right[r] ?? from;
+			const x = right[r] ?? from(r);
 			stands.set(s.field, { x, top: topOf(r) });
 			right[r] = x + s.w + o.gap;
 		}
 		return right;
 	};
 	const inner = o.strip + o.gap;
-	const active = lay(inner + o.gap, true);
+	const active = lay(() => inner + o.gap, true);
 	const lit = active.flatMap((x, r) => (x === undefined ? [] : [r]));
+	const [first, last] = [lit[0] ?? n, lit.at(-1) ?? -1];
+	/** Where a row's part of the section ends: its active fields, a stub between them, the strip past them. */
+	const zone = (r: number) => active[r] ?? (r > first && r < last ? inner + 2 * o.gap : o.strip);
 	const section = lit.length ? Math.max(...lit.map((r) => active[r])) : o.strip;
-	const rest = lay(section + o.gap, false);
+	const rest = lay((r) => zone(r) + o.gap, false);
+	const backing = `M0 0${Array.from({ length: n }, (_, r) => `H${zone(r)}V${(r + 1) * pitch}`).join('')}H0Z`;
 	let outline: string | null = null;
 	if (lit.length) {
-		const [first, last] = [lit[0], lit.at(-1)!];
 		const edge = (r: number) => (r === last ? topOf(r) + o.rowH + o.gap / 2 : (topOf(r) + o.rowH + topOf(r + 1)) / 2);
-		const steps = Array.from({ length: last - first + 1 }, (_, i) => first + i).map(
-			(r) => `H${active[r] ?? inner + 2 * o.gap}V${edge(r)}`
-		);
+		const steps = Array.from({ length: last - first + 1 }, (_, i) => first + i).map((r) => `H${zone(r)}V${edge(r)}`);
 		outline = `M${inner} ${topOf(first) - o.gap / 2}${steps.join('')}H${inner}Z`;
 	}
 	const end = Math.max(section, ...rest.filter((x) => x !== undefined).map((x) => x - o.gap));
-	return { stands, rows, outline, section, end };
+	return { stands, rows, outline, section, backing, end };
 }
 
 /**
