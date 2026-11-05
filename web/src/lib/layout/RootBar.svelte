@@ -105,6 +105,8 @@
 	not visible». Its `data-command` is the button's own: pressed again while
 	armed, it is the general help. Layout mode has none: the mode's menus say
 	what they do, and on a phone its tabs' × need the room (vremya on #764).
+	Armed it reads «(click on something)», a pill, until a tap or Escape
+	disarms it (da-okj8i), as the commands widget's Help does.
 	It is filled with the accent, the palette's one color, so it is seen
 	(da-ylkin), vividn, 2026-11-04: «Let's fill in the (?) button with the
 	primary color so that it is a bit more visible».
@@ -146,7 +148,7 @@
 	import { storageSentence } from '#lib/storageState.ts';
 	import { openBackups } from '#lib/backups.ts';
 	import { ask, choose as chooseAnswer, confirm } from '#lib/confirm.ts';
-	import { arm, helping } from '#lib/help.ts';
+	import { ARMED, arm, helping } from '#lib/help.ts';
 	import { upgrade } from '#lib/upgrade.ts';
 	import { updated } from '$app/state';
 	import { choose, fillTab } from './chooser.js';
@@ -518,7 +520,7 @@
 		aria-pressed={$helping}
 		aria-label="help"
 		title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
-		onclick={arm}>?</button
+		onclick={arm}>{$helping ? ARMED : '?'}</button
 	>
 	{/if}
 	<!-- A hold on the OPEN tab, let go where it was, or its context menu —
@@ -778,12 +780,12 @@
 
 	/* The (?) is round and filled with the accent (da-ylkin), its glyph the
 	   page's ground on it, hovered too. Armed it is the brighter accent, with
-	   a ring of it round the bar's ground. */
+	   a ring of it round the bar's ground, and a pill wide as its words. */
 	.root-bar .help,
 	.root-bar .help:hover:not(:disabled),
 	.root-bar .help:focus-visible {
 		flex: none;
-		border-radius: 50%;
+		border-radius: 999px;
 		background: var(--accent);
 		border-color: var(--accent);
 		color: var(--page);
@@ -794,6 +796,9 @@
 		background: var(--accent-bright);
 		border-color: var(--accent-bright);
 		box-shadow: 0 0 0 2px var(--ground), 0 0 0 3px var(--accent-bright);
+		inline-size: auto;
+		padding-inline: 0.5rem;
+		white-space: nowrap;
 	}
 
 	/* «↑ New version» (da-ylkin, da-qob64): orange, vividn's color for it, which is the

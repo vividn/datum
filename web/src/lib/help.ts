@@ -45,6 +45,13 @@ import { run } from './run.js';
 
 export const helping = writable(false);
 
+/**
+ * What Help says while armed, on the header's (?) and the commands widget's
+ * button alike, so the page says one thing for one state (da-okj8i). vividn,
+ * 2026-11-05: «clicking the (?) should change it to (click on something)».
+ */
+export const ARMED = '(click on something)';
+
 /** What each kind of pill is, and what it does to the next command, with its own text in it. */
 const PILL_HELP: Record<string, (text: string) => string> = {
 	time: (t) => `${t}: the time cursor. The next command is logged at this time instead of now.`,

@@ -33,7 +33,8 @@
 	- `help`, in settings (da-vjwid), ARMS the page — `#lib/help.ts`: the
 	  next tap on a command, a widget or a pill is explained instead of
 	  acted on, and a second press on Help is `datum help`, and the answer
-	  opens in a modal. Armed, it is filled and its name asks «on what?».
+	  opens in a modal. Armed, it is filled and its name reads «(click on something)», as the
+	  header's (?) does (da-okj8i).
 	- a LOG COMMAND puts `<command> ` on the command line and leaves the caret in
 	  it. That is the whole of pending a command: the collect widget reads the
 	  line's first word, so tapping `moment` and typing `moment` reach the
@@ -139,7 +140,7 @@
 	import { act, type ActKind } from './act.js';
 	import { openBackups } from './backups.js';
 	import { openPlace } from './layout/shell.js';
-	import { arm, helping } from './help.js';
+	import { ARMED, arm, helping } from './help.js';
 	import { holds } from './hold.js';
 	import { inProgress } from './layout/session.js';
 	import { withPills } from './selection.js';
@@ -377,7 +378,7 @@
 				title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
 				onclick={() => press(command)}
 			>
-				{@render face(icon, $helping ? 'on what?' : command.label)}
+				{@render face(icon, $helping ? ARMED : command.label)}
 			</button>
 		{:else if command.press === 'back'}
 			<button class="command round" use:act={'show'} {disabled} data-back data-passes data-glyph={glyph} title="back" onclick={() => press(command)}>

@@ -113,10 +113,13 @@ async function kindHelp(kind) {
 	return kinds[kind].help;
 }
 
+/** What Help says while armed, on both buttons (da-okj8i). */
+const ARMED = '(click on something)';
+
 const label = async (page) => (await help(page).locator('.name').innerText()).trim();
 
 describe('the Help button', () => {
-	test('is in settings, single-outlined where undo is double; armed, its name asks «on what?», and Escape disarms', async () => {
+	test('is in settings, single-outlined where undo is double; armed, its name reads «(click on something)», and Escape disarms', async () => {
 		await onPage(async ({ page }) => {
 			// Undo runs at once and wears the double outline; Help waits, and wears one.
 			const undo = commands(page).locator('button[data-command="undo"]');
@@ -135,7 +138,7 @@ describe('the Help button', () => {
 			// A submenu opened while armed is no question: the tap passes, and Help stays armed.
 			await commands(page).locator('button[data-menu="settings"]').click();
 			assert.equal(await help(page).getAttribute('aria-pressed'), 'true');
-			assert.equal(await label(page), 'on what?');
+			assert.equal(await label(page), ARMED);
 			await page.keyboard.press('Escape');
 			assert.equal(await label(page), 'help');
 			assert.equal(await help(page).getAttribute('aria-pressed'), 'false');
@@ -411,18 +414,27 @@ describe('the root bar (?)', () => {
 	const asks = (page) => page.locator('.root-bar button.help[data-command="help"]');
 	const bare = JSON.stringify(along('column', widgetPane('welcome', 'welcome'), widgetPane('bar', 'widgetbar')));
 
-	test("with no commands widget: pressed while armed, Escape disarms; then a pane's title explains its widget, and twice the general help", async () => {
+	test("with no commands widget: pressed it reads «(click on something)» until Escape disarms; then a pane's title explains its widget, and twice the general help", async () => {
 		await onPage(async ({ page }) => {
 			assert.equal(await page.locator('.bar.commands').count(), 0, 'a commands widget is on the page');
 			const q = asks(page);
+			const says = async () => (await q.innerText()).trim();
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');
+			assert.equal(await says(), '?');
 			await q.click();
 			assert.equal(await q.getAttribute('aria-pressed'), 'true');
+			// da-okj8i: armed, it says so, in the words the commands widget's Help uses.
+			assert.equal(await says(), ARMED);
+			const fits = await q.evaluate((b) => b.scrollWidth <= b.clientWidth);
+			assert.ok(fits, 'the words overflow the (?)');
 			await page.keyboard.press('Escape');
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');
+			assert.equal(await says(), '?');
 			const title = page.locator('section.pane[data-title="welcome"] .titlebox');
 			const lines = await explain(page, title, 'welcome', undefined, q);
 			assert.equal(lines.join('\n'), await kindHelp('welcome'));
+			// The tap on the widget disarmed it.
+			assert.equal(await says(), '?');
 			const general = await explain(page, q, 'datum help', undefined, q);
 			assert.equal(general[0], (await cliHelp(page)).split('\n')[0]);
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');
