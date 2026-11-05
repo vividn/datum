@@ -174,6 +174,36 @@ describe('datum.day and a native copy', () => {
 		}
 	});
 
+	// A CLI run the database worker failed (a trap, its death) was answered
+	// to no one, and the session waited on it for good (da-16qzm).
+	test('a session whose CLI run fails ends with its error, not waiting for good (da-16qzm)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					const serving = native.spawn(['sync', 'chain', 'invite']);
+					const said = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
+					await app.page.evaluate(() => localStorage.setItem('datum.syncFailVerify', ''));
+					const ended = await app.page.evaluate(
+						(t) =>
+							Promise.race([
+								window.datum.sync.connect('datum', t).then(
+									() => 'joined',
+									(e) => String(e?.message ?? e)
+								),
+								new Promise((r) => setTimeout(() => r('still waiting'), 20000))
+							]),
+						said[1]
+					);
+					assert.match(ended, /failed by datum\.syncFailVerify/);
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('one write is one push: what a session itself writes pushes nothing (da-df6cb)', async () => {
 		const native = await nativeCopy(relay);
 		try {

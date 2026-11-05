@@ -80,6 +80,9 @@ const GATE_KEY = 'datum.syncGateApplyAfter';
 /** While set, the worker's `sync pipe verify` is never answered: a test's
  * lever for a session that has applied and not ended (da-ajk4z). */
 const HOLD_VERIFY_KEY = 'datum.syncHoldVerify';
+/** While set, the worker's `sync pipe verify` rejects, as a run the database
+ * worker failed does: a test's lever for a session that must fail (da-16qzm). */
+const FAIL_VERIFY_KEY = 'datum.syncFailVerify';
 const REACHABLE_MS = 60_000;
 /** How long since this copy last synced before the day view dims the stretch since (da-g5jjp). */
 export const UNSYNCED_MS = 3_600_000;
@@ -171,14 +174,22 @@ function syncWorker(): Worker {
 			if (data.argv.includes('apply') && held()) return;
 			if (data.argv.includes('verify') && lever(HOLD_VERIFY_KEY)) return;
 			const gate = data.argv.includes('apply') ? gated() : Promise.resolve();
-			void gate.then(() => cli(data.argv, data.stdin, true)).then((r) => {
-				// What a peer sent is this tab's to show once it applies, not
-				// once the session's verify, a hash of every row on both
-				// sides, is over too: seconds on a big history (da-ajk4z).
-				// The other tabs heard it from the process already.
-				if (r.changed?.length && data.argv.includes('apply')) announceHere([dbOf(data.argv)]);
-				worker?.postMessage({ ran: data.run, result: { code: r.code, stdout: r.stdout, stderr: r.stderr } });
-			});
+			const failed = data.argv.includes('verify') && lever(FAIL_VERIFY_KEY);
+			const post = (result: { code: number; stdout: string; stderr: string }) => worker?.postMessage({ ran: data.run, result });
+			void gate.then(() => (failed ? Promise.reject(new Error('failed by datum.syncFailVerify')) : cli(data.argv, data.stdin, true))).then(
+				(r) => {
+					// Answered first, so a listener that throws leaves no session waiting.
+					post({ code: r.code, stdout: r.stdout, stderr: r.stderr });
+					// What a peer sent is this tab's to show once it applies, not
+					// once the session's verify, a hash of every row on both
+					// sides, is over too: seconds on a big history (da-ajk4z).
+					// The other tabs heard it from the process already.
+					if (r.changed?.length && data.argv.includes('apply')) announceHere([dbOf(data.argv)]);
+				},
+				// A run the database worker failed (a trap, its death) fails the
+				// session with its error, which would otherwise wait for good (da-16qzm).
+				(e) => post({ code: 1, stdout: '', stderr: String(e) })
+			);
 		} else if ('served' in data) {
 			led.get(data.served)?.served(data);
 		} else if ('serving' in data) {
