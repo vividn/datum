@@ -835,6 +835,8 @@
 		el.addEventListener('wheel', onWheel, { passive: true });
 		el.addEventListener('touchstart', onTouchStart, { passive: true });
 		el.addEventListener('touchmove', onTouchMove, { passive: true });
+		el.addEventListener('touchend', onTouchEnd, { passive: true });
+		el.addEventListener('touchcancel', onTouchEnd, { passive: true });
 		height = el.clientHeight;
 		(sizes ??= new ResizeObserver(resized)).observe(el);
 	}
@@ -845,6 +847,8 @@
 		attached.removeEventListener('wheel', onWheel);
 		attached.removeEventListener('touchstart', onTouchStart);
 		attached.removeEventListener('touchmove', onTouchMove);
+		attached.removeEventListener('touchend', onTouchEnd);
+		attached.removeEventListener('touchcancel', onTouchEnd);
 		sizes?.unobserve(attached);
 		attached = undefined;
 	}
@@ -901,14 +905,70 @@
 	function onWheel(e: WheelEvent): void {
 		if (e.deltaY < 0 && scroller && scroller.scrollTop <= 0) void page();
 		if (e.deltaY > 0 && nearBottom()) void page(true);
+		wheelStretch(e);
+	}
+
+	// The stop at either end (da-c3oqn, vividn, 2026-11-05: «add a little
+	// elastic effect like in other places in the app»): past the newest row
+	// at the live end, or past the first once it is the log's start, the
+	// rows give with resistance, as the nowview's stop at now does, and
+	// spring back. Short of either, scrolling pages rows in as ever.
+	/** The most the rows give, however far the drag goes past the end. */
+	const STRETCH_PX = 48;
+	/** How far the rows are moved past an end, in px: down past the start, up (negative) past the newest. */
+	let stretched = $state(0);
+	/** Whether a finger holds the stretch: the rows follow it at once, and spring back at the lift. */
+	let dragging = $state(false);
+	/** `over` px of drag past an end, as far as the rows go for it. */
+	const resist = (over: number) => over / (1 + Math.abs(over) / STRETCH_PX);
+	/** Whether the rows can give `way`: 1 down, past the log's start; -1 up, past the newest row. */
+	const atEnd = (way: number) =>
+		!!scroller && (way > 0 ? exhausted && scroller.scrollTop <= 0 : live && nearBottom());
+
+	/** The wheel's drag past an end so far, and the pause after which the rows spring back. */
+	let wheeled = 0;
+	let wheelRest: ReturnType<typeof setTimeout> | undefined;
+	function wheelStretch(e: WheelEvent): void {
+		const over = wheeled - e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+		const way = Math.sign(over);
+		clearTimeout(wheelRest);
+		if (!way || way * wheeled < 0 || !atEnd(way)) return void (wheeled = stretched = 0);
+		wheeled = over;
+		stretched = resist(over);
+		wheelRest = setTimeout(() => (wheeled = stretched = 0), 120);
+	}
+
+	/** Where the finger was as the stretch began, the way it pulls, and where it was last. */
+	let pullY: number | null = null;
+	let pullWay = 0;
+	let fingerY = 0;
+	function touchStretch(y: number): void {
+		const dy = y - fingerY;
+		if (pullY === null && dy && atEnd(Math.sign(dy))) {
+			pullY = fingerY;
+			pullWay = Math.sign(dy);
+		}
+		fingerY = y;
+		if (pullY === null) return;
+		const over = y - pullY;
+		if (over * pullWay <= 0) return onTouchEnd();
+		dragging = true;
+		stretched = resist(over);
+	}
+	function onTouchEnd(): void {
+		pullY = null;
+		dragging = false;
+		stretched = 0;
 	}
 
 	let touchY: number | null = null;
 	function onTouchStart(e: TouchEvent): void {
 		touchY = e.touches[0]?.clientY ?? null;
+		fingerY = touchY ?? 0;
 	}
 	function onTouchMove(e: TouchEvent): void {
 		const y = e.touches[0]?.clientY;
+		if (y !== undefined) touchStretch(y);
 		if (touchY === null || y === undefined || !scroller) return;
 		if (y - touchY > 24 && scroller.scrollTop <= 0) {
 			touchY = null;
@@ -1006,7 +1066,11 @@
 				{/each}
 			</tr>
 		</thead>
-		<tbody bind:this={tbody}>
+		<tbody
+			bind:this={tbody}
+			class:springs={!dragging}
+			style:transform={stretched ? `translateY(${stretched}px)` : null}
+		>
 			{#each visible as row, i (row.hid)}
 				<!-- A tap selects the entry, as its hid pill (da-r13j), and a
 				     finger held on it locks the pill too (da-x19yo). The
@@ -1052,9 +1116,10 @@
 {/if}
 
 <style>
-	/* A selected entry (da-r13j): the accent the hid pill is filled with. */
+	/* A selected entry (da-r13j): the accent the hid pill is filled with,
+	   under the row's marks. */
 	tr.selected {
-		background: color-mix(in srgb, var(--accent) 22%, transparent);
+		--row-ground: color-mix(in srgb, var(--accent) 22%, transparent);
 	}
 
 	tbody tr {
@@ -1192,11 +1257,13 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* The marks over a row are dotted lines drawn as its cells' background,
-	   so no row grows and the count is untouched; one each, so two on one
-	   row are both drawn. */
-	td {
-		background: var(--now-mark, none), var(--line-mark, none), var(--start-mark, none);
+	/* The marks over a row are dotted lines drawn as its background, so no
+	   row grows and the count is untouched; one each, so two on one row are
+	   both drawn. The row's and not each cell's (da-c3oqn): a pattern a cell
+	   started again at each cell's edge, and the dots broke where a cell was
+	   no whole number of periods wide. */
+	tbody tr {
+		background: var(--now-mark, none), var(--line-mark, none), var(--start-mark, none) var(--row-ground, transparent);
 	}
 
 	/* Paged up to the log's first row: a dotted edge over it. */
@@ -1206,21 +1273,32 @@
 
 	/* The selected instant (da-lqz3j): the pictures' white dotted line. */
 	.line {
-		--line-mark: linear-gradient(to right, #fff 50%, transparent 0) top / 6px 2px repeat-x;
+		--line-mark: linear-gradient(to right, #fff 50%, transparent 0) top / 6px 1px repeat-x;
 	}
 
 	.line-under {
-		--line-mark: linear-gradient(to right, #fff 50%, transparent 0) bottom / 6px 2px repeat-x;
+		--line-mark: linear-gradient(to right, #fff 50%, transparent 0) bottom / 6px 1px repeat-x;
 	}
 
 	/* Now (da-cizxo): the nowview's now yellow, dotted, its dots in the
 	   white line's gaps where the two meet. */
 	.now {
-		--now-mark: linear-gradient(to right, #ffcc00 50%, transparent 0) 3px 0 / 6px 2px repeat-x;
+		--now-mark: linear-gradient(to right, #ffcc00 50%, transparent 0) 3px 0 / 6px 1px repeat-x;
 	}
 
 	.now-under {
-		--now-mark: linear-gradient(to right, #ffcc00 50%, transparent 0) 3px 100% / 6px 2px repeat-x;
+		--now-mark: linear-gradient(to right, #ffcc00 50%, transparent 0) 3px 100% / 6px 1px repeat-x;
+	}
+
+	/* Past an end of the log (da-c3oqn): the rows give, and spring back. */
+	tbody.springs {
+		transition: transform 200ms cubic-bezier(0.215, 0.61, 0.355, 1);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		tbody.springs {
+			transition: none;
+		}
 	}
 
 	/* The last row ends at the body's bottom edge (da-cizxo): its padding

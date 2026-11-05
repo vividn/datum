@@ -18,6 +18,9 @@ before(startApp);
 after(stopApp);
 
 const APP = sharedApp({ viewport: { width: 1280, height: 1200 } });
+/** The same, with a touchscreen: a finger by CDP (da-c3oqn). */
+const TOUCH = sharedApp({ viewport: { width: 1280, height: 1200 }, device: { hasTouch: true } });
+const BODY = 'section.pane[data-title="tail"] .body:not(.behind .body)';
 
 const MINUTE = 60_000;
 const hidOf = (i) => 'seed' + i.toString().padStart(8, '0');
@@ -179,6 +182,150 @@ describe('the tail pane at now', () => {
 			await app.clock.forward(11 * MINUTE);
 			const after = await until(() => tail(page), (t) => t.now !== before.now);
 			assert.equal(after.hids[after.now], hidOf(41), 'the line is not under the row the clock passed');
+		});
+	});
+});
+
+// vividn, 2026-11-05: «let's make the yellow dotted line thinner. Also there
+// are some odd breaks in it where the dot pattern is irregular, please fix
+// that. When trying to scroll down past the bottom (or the top if you've
+// reached the very beginning of the data) add a little elastic effect like
+// in other places in the app» (da-c3oqn).
+describe('the tail pane’s now line and its ends', () => {
+	test('the now line is 1px high, its dots one steady 6px pattern across the row’s cells', async () => {
+		await APP.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 40, 0);
+			await atHome(page, 0, 0);
+			const row = page.locator('section.pane[data-title="tail"] tbody tr.now-under');
+			const style = await row.evaluate((tr) => ({
+				size: getComputedStyle(tr).backgroundSize,
+				cells: [...tr.cells].map((td) => getComputedStyle(td).backgroundImage),
+				edges: [...tr.cells].map((td) => td.getBoundingClientRect().left)
+			}));
+			assert.match(style.size, /^6px 1px\b/, `the now line is not 6px a period and 1px high: ${style.size}`);
+			assert.deepEqual([...new Set(style.cells)], ['none'], 'a cell paints a pattern of its own');
+			// The row's bottom pixels as drawn: a column is a dot where yellow shows in any of them.
+			const png = await row.screenshot();
+			const dots = await page.evaluate(async (b64) => {
+				const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+				const ctx = new OffscreenCanvas(img.width, img.height).getContext('2d');
+				ctx.drawImage(img, 0, 0);
+				const h = Math.min(3, img.height);
+				const px = ctx.getImageData(0, img.height - h, img.width, h).data;
+				const yellow = (x) => {
+					for (let y = 0; y < h; y++) {
+						const i = (y * img.width + x) * 4;
+						if (px[i] - px[i + 2] > 60 && px[i + 1] - px[i + 2] > 40) return true;
+					}
+					return false;
+				};
+				const starts = [];
+				for (let x = 0; x < img.width; x++) if (yellow(x) && !yellow(x - 1)) starts.push(x);
+				return { starts, width: img.width };
+			}, png.toString('base64'));
+			const box = await row.boundingBox();
+			assert.ok(style.edges.length > 2, 'the row has no cell boundary to cross');
+			assert.ok(dots.starts.length >= Math.floor(dots.width / 6) - 1, `${dots.starts.length} dots over ${dots.width}px`);
+			const off = dots.starts.filter((x) => (x - dots.starts[0]) % 6 !== 0);
+			assert.deepEqual(
+				off,
+				[],
+				`dots off the row's 6px period, at ${off.join(', ')}; cells start at ${style.edges.map((e) => Math.round(e - box.x)).join(', ')}`
+			);
+		});
+	});
+
+	/** Where the first row stands in the body's content, so a scroll moves nothing; its transform; whether it is the log's start. */
+	const rest = (page) =>
+		page.evaluate((body) => {
+			const el = document.querySelector(body);
+			const tbody = el.querySelector('tbody');
+			return {
+				top: tbody.rows[0].getBoundingClientRect().top + el.scrollTop,
+				transform: tbody.style.transform,
+				start: tbody.querySelector('tr.start') !== null
+			};
+		}, BODY);
+
+	/** A finger by CDP from the body's middle, `dy` px in steps; `during` reads before the lift. */
+	async function pull(page, dy, during) {
+		const box = await page.locator(BODY).boundingBox();
+		const x = box.x + box.width / 2;
+		const y = box.y + box.height / 2;
+		const cdp = await page.context().newCDPSession(page);
+		const touch = (type, at) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: at ? [at] : [] });
+		await touch('touchStart', { x, y });
+		for (let i = 1; i <= 10; i++) await touch('touchMove', { x, y: y + (dy * i) / 10 });
+		const held = await during();
+		await touch('touchEnd');
+		await cdp.detach();
+		return held;
+	}
+
+	const springsBack = (page, at) =>
+		until(
+			() => rest(page),
+			(r) => r.transform === '' && Math.abs(r.top - at.top) < 0.5
+		);
+
+	test('a finger past the newest row, and past the log’s start: the rows give less than the drag, and spring back', async () => {
+		await TOUCH.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 40, 0);
+			await atHome(page, 0, 0);
+			// Every row fits, but the log's start is known only once asked for:
+			// the first pull at the top asks, and gives nothing.
+			const first = await pull(page, 150, () => rest(page));
+			assert.equal(first.transform, '', 'the rows gave before the log’s start was reached');
+			await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor({ state: 'attached' });
+			for (const dy of [-150, 150]) {
+				await scrollBody(page, dy < 0 ? 'bottom' : 0);
+				const at = await rest(page);
+				const held = await pull(page, dy, () => rest(page));
+				const moved = held.top - at.top;
+				assert.ok(Math.sign(moved) === Math.sign(dy) && Math.abs(moved) > 4, `a ${dy}px drag moved the rows ${moved}px`);
+				assert.ok(Math.abs(moved) < Math.abs(dy) / 2, `a ${dy}px drag moved the rows ${moved}px, with no resistance`);
+				await springsBack(page, at);
+			}
+		});
+	});
+
+	test('a wheel past the newest row gives, and springs back', async () => {
+		await APP.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 40, 0);
+			await atHome(page, 0, 0);
+			await scrollBody(page, 'bottom');
+			const before = await rest(page);
+			// Every transform the rows are given, as it is given: the spring back is a timer's.
+			await page.evaluate((body) => {
+				window.__given = [];
+				new MutationObserver((changes) => {
+					for (const { target } of changes) if (target.localName === 'tbody') window.__given.push(target.style.transform);
+				}).observe(document.querySelector(body), { subtree: true, attributeFilter: ['style'] });
+			}, BODY);
+			// On a row, as a wheel is: Playwright's own wheel reached no listener here.
+			await page.evaluate(
+				(body) => document.querySelector(`${body} tbody td`).dispatchEvent(new WheelEvent('wheel', { deltaY: 200, bubbles: true })),
+				BODY
+			);
+			await springsBack(page, before);
+			const given = await page.evaluate(() => window.__given);
+			const moved = Math.min(0, ...given.map((t) => Number(/translateY\((-?[\d.]+)px\)/.exec(t)?.[1] ?? 0)));
+			assert.ok(moved < -4 && moved > -100, `a 200px wheel moves the rows ${moved}px (${given.join(' ')})`);
+		});
+	});
+
+	test('short of the log’s start, a finger pulling at the top gives nothing', async () => {
+		await TOUCH.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 2000, 0);
+			await atHome(page, 1999, 0);
+			await scrollBody(page, 0);
+			const held = await pull(page, 150, () => rest(page));
+			assert.equal(held.start, false, 'the log’s start was reached before the pull');
+			assert.equal(held.transform, '', 'the rows gave short of the log’s start');
 		});
 	});
 });

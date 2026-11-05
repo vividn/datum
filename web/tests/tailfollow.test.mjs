@@ -144,7 +144,7 @@ describe('the tail follows the selection', () => {
 			assert.deepEqual(t.line, [seedHid(101)], 'the line is not over the first row after the time');
 			assert.ok(t.shown.includes(seedHid(100)), 'the row before the time is not on screen');
 			const line = await page.evaluate(
-				() => getComputedStyle(document.querySelector('section.pane[data-title="tail"] tr.line td')).backgroundImage
+				() => getComputedStyle(document.querySelector('section.pane[data-title="tail"] tr.line')).backgroundImage
 			);
 			assert.match(line, /rgb\(255, 255, 255\)/, `the line is not white: ${line}`);
 
