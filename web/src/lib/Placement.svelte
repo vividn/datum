@@ -35,7 +35,9 @@
 	keeps width over height, the reset puts back a round dot of the standard
 	size, whatever the lane (da-ijjjn) — which is how tall every view draws
 	it, as a fraction of the day. The lane's own reset puts back the lane it
-	has with no `y` or `height` (da-y72v8).
+	has with no `y` or `height` (da-y72v8). A drag of the dot moves its centre
+	anywhere in the day, the lane narrowed where it would leave it: a lane a
+	bar left tall is no edge a dot can be held by (da-u3sq2).
 
 	The band draws the field as the form holds it (da-srrqd), vividn,
 	2026-10-22: «you can see the dots/states/bars and what they look like as
@@ -385,6 +387,12 @@
 			tall = clamp(tall, MIN * H, H);
 			wide = clamp(wide, MIN * H, band!.clientWidth);
 			place = { ...place, symbol_scale: factor((tall * frame.h) / (STANDARD_DOT * H)), symbol_aspect: locked ? place.symbol_aspect : factor(wide / tall) };
+		} else if (drag.mode === 'move' && occur) {
+			// A dot is drawn at its lane's centre whatever the lane's height, which a bar may have left tall (da-u3sq2):
+			// the centre goes anywhere in the frame, the lane narrowed to stay in it.
+			const c = clamp(y + h / 2 + d, lo + min / 2, hi - min / 2);
+			const tall = Math.min(h, 2 * (c - lo), 2 * (hi - c));
+			put(c - tall / 2, tall);
 		} else if (drag.mode === 'move') put(clamp(y + d, lo, hi - h), h);
 		else if (drag.mode === 'bottom') put(y, clamp(h + d, min, hi - y));
 		else {

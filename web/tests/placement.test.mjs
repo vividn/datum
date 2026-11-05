@@ -948,6 +948,52 @@ describe('the Placement tab', () => {
 		});
 	});
 
+	// da-u3sq2, vividn, 2026-11-05: «switching a field to be an on/off; changing the size, and then switching back
+	// to a moment prevents you from resizing or changing the positioning of the occur dot». The bar's height stayed
+	// the lane's, and a moment's dot, drawn at the lane's centre whatever its height, was moved as that tall lane:
+	// held inside the day by an edge nobody could see, a lane of 0.92 left the dot 0.08 of the day to move in.
+	test('a moment taken to on/off, its bar made tall, and back to moment: its dot sizes, and moves across the whole day', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			const D = 0.08 * H;
+			await app.run(['track', 'coffee', '--verb', 'occur']);
+			await setPlace(app, 'coffee', { y: 0.3, height: 0.2 });
+			const { saved } = await openPlacement(page, 'coffee');
+			const kind = async (verb) => {
+				await page.locator(`${MODAL} button.verb[data-verb="${verb}"]`).click();
+				await page.locator(`${MODAL} .placement .band[data-drawn] svg`).waitFor();
+			};
+			await kind('start');
+			await tap(page, 'coffee');
+			await pull(page, await handle(page, 'top'), 0, -H);
+			await pull(page, await handle(page, 'bottom'), 0, H);
+			assert.deepEqual(numbers(await page.locator(`${MODAL} .readout`).innerText()), [0, 1], 'the bar the whole day');
+			await kind('occur');
+
+			await tap(page, 'coffee');
+			assert.equal(await page.locator(`${BOX}.dot`).count(), 1, 'the box is the dot');
+			const dot = () =>
+				page.evaluate(() => {
+					const r = [...document.querySelectorAll('.placement .band g.field[data-field="coffee"] .point-fg')].at(-1).getBoundingClientRect();
+					return { y: r.y + r.height / 2, h: r.height };
+				});
+			await pull(page, await handle(page, '0,1'), 0, 8);
+			assert.ok(Math.abs((await dot()).h - (D + 16)) < 1, `the bottom edge sizes it: ${(await dot()).h} vs ${D + 16}`);
+			for (const dy of [-0.3 * H, 0.4 * H]) {
+				const before = (await dot()).y;
+				await drag(page, 'coffee', dy);
+				await page.locator(`${MODAL} .placement .band[data-drawn]`).waitFor();
+				assert.ok(Math.abs((await dot()).y - (before + dy)) < 1, `a drag of ${dy}px moves it so: ${(await dot()).y - before}`);
+			}
+			await done(page, saved);
+			const shown = await spec(app, 'coffee');
+			assert.equal(shown.verb, 'occur');
+			assert.ok(Math.abs(shown.y + shown.height / 2 - 0.6) < 0.01, `its centre where it was dropped: ${shown.y} + ${shown.height} / 2`);
+			assert.ok(shown.y >= 0 && shown.y + shown.height <= 1, `the lane inside the day: ${shown.y}, ${shown.height}`);
+			assert.ok(Math.abs(shown.symbol_scale - (D + 16) / D) < 0.01, `scale ${shown.symbol_scale}`);
+		});
+	});
+
 	test('a block field has no size to set', async () => {
 		await onSeam(async (app) => {
 			await app.run(['track', 'work', '--verb', 'start']);
