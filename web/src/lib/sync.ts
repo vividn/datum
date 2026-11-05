@@ -296,8 +296,8 @@ function relay(): string | undefined {
 	}
 }
 
-/** What the leading tab of one database does. */
-class Leader {
+/** What the leading tab of one database does. Exported for `said-pure.test.mjs`. */
+export class Leader {
 	endpoint?: string;
 	/** The key `endpoint` is bound with: a leave takes a new one (da-j8c4l). */
 	key?: string;
@@ -327,6 +327,8 @@ class Leader {
 	held = new Set<string>();
 	seen = new Map<string, number>();
 	errors = new Map<string, string>();
+	/** When each peer's error was recorded: `said` names only this round's (da-i97ef). */
+	erred = new Map<string, number>();
 	/** Per peer: the report of the last session with it that ended well. */
 	reports = new Map<string, SyncReport>();
 	applying?: { done: number; of: number };
@@ -337,12 +339,12 @@ class Leader {
 	// Not a parameter property: node's type stripping, which the pure tests
 	// import this through (engine.ts → `syncCommand`), refuses one.
 	readonly db: string;
-	/** Settled once the setup was first read: whether the database syncs is known. */
-	readonly ready: Promise<void>;
-	readied = () => {};
+	/** Whether the setup was read once: whether the database syncs is known. */
+	read = false;
+	/** `lead`'s latest read of it, under way or failed. */
+	reading: Promise<void> = Promise.resolve();
 	constructor(db: string) {
 		this.db = db;
-		this.ready = new Promise((r) => (this.readied = r));
 	}
 
 	/**
@@ -428,6 +430,7 @@ class Leader {
 			this.done(p.endpoint, await ask<SyncReport>(this.db, { op: 'dial', addr: p.addr }));
 		} catch (e) {
 			this.errors.set(p.endpoint, (e as Error).message);
+			this.erred.set(p.endpoint, Date.now());
 		} finally {
 			this.busy.delete(p.endpoint);
 			this.applying = undefined;
@@ -474,15 +477,20 @@ class Leader {
 	 * A bare `sync` typed on the page (da-5lpeg): every member now, then how
 	 * each went, as `datum sync` says it. Null where this copy dials nothing
 	 * — in no chain, or paused — which the CLI says in its own words.
+	 * Before the setup is read it waits for the read under way, and one
+	 * that failed is its answer: `lead` backs off up to a pull (da-i97ef).
+	 * A member says only what this round did: one it did not dial (paused,
+	 * or the endpoint changed meanwhile) is not synced, not its last session.
 	 */
 	async said(): Promise<Said | null> {
-		await this.ready;
+		if (!this.read) await this.reading;
 		if (!this.endpoint || this.paused) return null;
 		if (!this.peers.length) return { lines: ['no sync peers: `sync chain invite` makes an invite'], ok: true };
+		const since = Date.now();
 		await this.syncNow();
 		const each = this.peers.map((p) => {
-			const error = this.errors.get(p.endpoint);
-			const report = this.reports.get(p.endpoint);
+			const error = (this.erred.get(p.endpoint) ?? -1) >= since ? this.errors.get(p.endpoint) : undefined;
+			const report = (this.seen.get(p.endpoint) ?? -1) >= since ? this.reports.get(p.endpoint) : undefined;
 			// Across a sync floor no entry synced: as natively, no member synced (da-52vdj).
 			return error || !report ? { line: `${p.label}: ${error ?? 'not synced'}`, ok: false } : { line: reportLine(report), ok: !report.floor };
 		});
@@ -612,8 +620,8 @@ async function lead(db: string): Promise<void> {
 	// off, so one that never succeeds costs a process per pull, not per 2 s.
 	for (let wait = RETRY_MS; ; wait = Math.min(wait * 2, PULL_MS)) {
 		try {
-			await leader.refresh();
-			leader.readied();
+			await (leader.reading = leader.refresh());
+			leader.read = true;
 			break;
 		} catch (e) {
 			console.warn(`sync ${db}:`, e);
@@ -754,7 +762,12 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
  * paused, the CLI answers as typed: it says so, and how to start one.
  */
 async function syncHere(argv: string[]): Promise<RunResult> {
-	const said = await call<Said | null>(dbOf(argv), { op: 'said' });
+	let said: Said | null;
+	try {
+		said = await call<Said | null>(dbOf(argv), { op: 'said' });
+	} catch (e) {
+		return { argv, code: 1, stdout: '', stderr: `error: ${(e as Error).message}` };
+	}
 	if (!said) return run(argv);
 	const stderr = said.ok ? '' : `error: none of ${said.lines.length - 1} peer(s) synced`;
 	return { argv, code: said.ok ? 0 : 1, stdout: said.lines.join('\n'), stderr };

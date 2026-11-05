@@ -93,4 +93,26 @@ describe('one endpoint per database', () => {
 			assert.ok(Date.now() - closed >= 14_000, `arrived ${Date.now() - closed} ms after the hand-off`);
 		});
 	});
+
+	// From da-5lpeg's review: a typed `sync` waited for the leader's first good
+	// read of its setup, so one whose reads kept failing never answered.
+	test('a typed `sync` on a leader whose reads of its setup keep failing answers with the failure at once (da-i97ef)', async () => {
+		await withTabs(
+			relay,
+			async (first, second) => {
+				await until(async () => [...(await leadsOf(first)), ...(await leadsOf(second))], (l) => l.length === 1);
+				const [leader, other] = (await leadsOf(first)).length ? [first, second] : [second, first];
+				await other.page.evaluate(() => localStorage.setItem('datum.syncFailRefresh', '1000'));
+				await leader.page.close();
+				await until(() => leadsOf(other), (l) => l.includes('datum'));
+				const typed = Date.now();
+				await other.submit('sync');
+				const { result } = await other.page.evaluate(() => window.datum.bar.last());
+				assert.equal(result.code, 1);
+				assert.match(result.stderr, /^error: datum\.syncFailRefresh: failed on purpose$/);
+				assert.ok(Date.now() - typed < 10_000, `answered ${Date.now() - typed} ms after it was typed`);
+			},
+			{ peer: false }
+		);
+	});
 });
