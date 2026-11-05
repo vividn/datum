@@ -99,17 +99,28 @@
 	});
 	/** `now --json -t <at>`'s active fields, and the instant and epoch they answer. */
 	let then = $state.raw<{ at: number; epoch: number; active: NowActive[] } | null>(null);
+	/**
+	 * How long a newly selected instant rests before `now -t` is asked for it
+	 * (da-63yb6): a time pill's drag, or the nowview's, moves it at every
+	 * step, and each ask is a CLI process queued ahead of real work. A write
+	 * at the instant already answered asks at once.
+	 */
+	const SETTLE_MS = 150;
 	$effect(() => {
 		const [t, e] = [at, epoch];
-		if (t === null) return;
-		void read(['now', '--json', '-t', new Date(t).toISOString()]).then((r) => {
-			if (r.code !== 0 || at !== t || epoch !== e) return;
-			try {
-				then = { at: t, epoch: e, active: (JSON.parse(r.stdout) as NowListing).active ?? [] };
-			} catch {
-				// The bar stays as it was.
-			}
-		});
+		if (t === null) return void (then = null);
+		const ask = () =>
+			void read(['now', '--json', '-t', new Date(t).toISOString()]).then((r) => {
+				if (r.code !== 0 || at !== t || epoch !== e) return;
+				try {
+					then = { at: t, epoch: e, active: (JSON.parse(r.stdout) as NowListing).active ?? [] };
+				} catch {
+					// The bar stays as it was.
+				}
+			});
+		if (untrack(() => then?.at) === t) return ask();
+		const resting = setTimeout(ask, SETTLE_MS);
+		return () => clearTimeout(resting);
 	});
 	let layer = $state.raw<Layer>();
 	/** The epoch the layer drawn was asked at. */
@@ -128,8 +139,8 @@
 		});
 	});
 	const doc = $derived(layer?.doc());
-	/** The buttons at the selected time once `now -t` answered for it, else as they stand now. */
-	const standing = $derived(at !== null && then?.at === at ? standingAt($fields, then.active, momentsAt(doc, at)) : $fields);
+	/** The buttons at the selected time by the last `now -t` answered, kept while a moving instant rests, else as they stand now. */
+	const standing = $derived(at !== null && then ? standingAt($fields, then.active, momentsAt(doc, then.at)) : $fields);
 
 	/**
 	 * A press under the pending command runs the LINE with the field after it

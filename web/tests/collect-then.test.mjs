@@ -72,6 +72,34 @@ describe('collect at a selected time', () => {
 		}, AT);
 	});
 
+	test('a selected instant moved at every step asks `now -t` once it rests, for where it rests (da-63yb6)', async () => {
+		await withApp(async (app) => {
+			await seeded(app);
+			const { page } = app;
+			const seen = await app.spyOnRunner();
+			// A drag's steps, a frame apart: 10:30 back to 09:15, five minutes a step.
+			const steps = Array.from({ length: 16 }, (_, i) => todayAt(10, 30) - i * 5 * 60_000);
+			const gaps = await page.evaluate(async (steps) => {
+				const gaps = [];
+				let last = performance.now();
+				for (const t of steps) {
+					window.datum.cursor.set(new Date(t));
+					await new Promise((r) => setTimeout(r, 16));
+					gaps.push(performance.now() - last);
+					last = performance.now();
+				}
+				return gaps;
+			}, steps);
+			await until(() => sections(page), (s) => s.work === 'active');
+			await app.idle();
+			const asked = (await seen()).filter((argv) => argv[0] === 'now' && argv.includes('-t')).map((argv) => argv[argv.indexOf('-t') + 1]);
+			// A step the box held past the settle is a rest of its own.
+			const rests = gaps.filter((g) => g >= 150).length;
+			assert.ok(asked.length >= 1 && asked.length <= rests + 1, `asked ${asked.length} times over ${steps.length} steps, ${rests} rests: ${asked}`);
+			assert.equal(asked.at(-1), iso(steps.at(-1)), 'asked for where it rests');
+		}, AT);
+	});
+
 	test("at a moment's instant: its dot is centered, its field is in the active section filled, and a tap takes it away and logs it back", async () => {
 		await withApp(async (app) => {
 			await seeded(app);
