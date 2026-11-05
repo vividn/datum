@@ -109,12 +109,14 @@
 	(da-ylkin), vividn, 2026-11-04: «Let's fill in the (?) button with the
 	primary color so that it is a bit more visible».
 
-	Between them, an orange «↑ Upgrade» once a newer build of the page is
-	deployed (da-ylkin, `#lib/upgrade.ts`): SvelteKit's `updated`, which
-	reads `/_app/version.json` as the tab shows or takes focus, and hourly.
-	vividn, 2026-11-04: «an orange colored button in between the gear and
-	the help button that says "↑ Upgrade", so that users are aware that they
-	can upgrade». A tap reloads at once, so it wears the double outline.
+	Left of the gear, an orange «↑ New version» once a newer build of the
+	page is deployed (da-ylkin, `#lib/upgrade.ts`): SvelteKit's `updated`,
+	which reads `/_app/version.json` as the tab shows or takes focus, and
+	hourly. vividn, 2026-11-04: «an orange colored button […] so that users
+	are aware that they can upgrade», and 2026-11-05 (da-qob64): «The upgrade
+	button in the header looks like for premium features and I think
+	":uparrow: New version" will read better. Let's also move it to the left
+	of the gear menu». A tap reloads at once, so it wears the double outline.
 
 	At the right end, a ⚠ (da-8fucg) while a sync notice — a new device,
 	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
@@ -471,7 +473,7 @@
 			.filter(Boolean)
 			.join(' ');
 
-	/** Pressed «↑ Upgrade», waiting for the CLI to be idle to reload; false again if it failed. */
+	/** Pressed «↑ New version», waiting for the CLI to be idle to reload; false again if it failed. */
 	let upgrading = $state(false);
 
 	/** The gear's eight teeth, by the angle each is turned to. */
@@ -481,6 +483,19 @@
 <svelte:window onkeydown={onEscape} />
 
 <nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts" data-layout-mode={$editing ? '' : undefined}>
+	{#if !$editing && updated.current}
+	<button
+		type="button"
+		class="control upgrade"
+		use:act={'run'}
+		disabled={upgrading}
+		data-help="A newer datum.day is out. Loads it, past every cache, once nothing is running or syncing; your data stays as it is."
+		onclick={() => {
+			upgrading = true;
+			upgrade().catch(() => (upgrading = false));
+		}}>↑ New version</button
+	>
+	{/if}
 	<PaneMenu
 		items={settings}
 		look="badge"
@@ -495,19 +510,6 @@
 		</svg><span class="beta" aria-hidden="true">beta</span></PaneMenu
 	>
 	{#if !$editing}
-	{#if updated.current}
-	<button
-		type="button"
-		class="control upgrade"
-		use:act={'run'}
-		disabled={upgrading}
-		data-help="A newer datum.day is out. Loads it, past every cache, once nothing is running or syncing; your data stays as it is."
-		onclick={() => {
-			upgrading = true;
-			upgrade().catch(() => (upgrading = false));
-		}}>↑ Upgrade</button
-	>
-	{/if}
 	<button
 		type="button"
 		class="control badge help"
@@ -794,7 +796,7 @@
 		box-shadow: 0 0 0 2px var(--ground), 0 0 0 3px var(--accent-bright);
 	}
 
-	/* «↑ Upgrade» (da-ylkin): orange, vividn's color for it, which is the
+	/* «↑ New version» (da-ylkin, da-qob64): orange, vividn's color for it, which is the
 	   palette's `--alarm`; filled, and its double outline drawn round the
 	   fill with the bar's ground between the two lines. */
 	.upgrade {

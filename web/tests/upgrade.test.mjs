@@ -1,4 +1,4 @@
-// The page's own upgrade (da-ylkin): «↑ Upgrade» between the gear and the (?)
+// The page's own upgrade (da-ylkin): «↑ New version» left of the gear (da-qob64)
 // once `/_app/version.json` names another build, and pressed, a reload that
 // reaches the deployed page past the service worker and its caches.
 //
@@ -80,7 +80,7 @@ async function check(page) {
 	await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
-test('«↑ Upgrade» shows for a newer build, and reloads onto the deployed page past the worker', async () => {
+test('«↑ New version» shows for a newer build, and reloads onto the deployed page past the worker', async () => {
 	const context = await chromium.launchPersistentContext(profile, {});
 	try {
 		const page = context.pages()[0] ?? (await context.newPage());
@@ -88,7 +88,7 @@ test('«↑ Upgrade» shows for a newer build, and reloads onto the deployed pag
 		await mounted(page);
 		await page.waitForFunction(() => !!navigator.serviceWorker.controller);
 		const bar = page.locator('nav.root-bar');
-		const upgrade = bar.locator('button.upgrade');
+		const upgrade = bar.getByRole('button', { name: '↑ New version', exact: true });
 
 		// The (?) is filled with the accent.
 		const [fill, accent] = await page.evaluate(() => {
@@ -110,12 +110,26 @@ test('«↑ Upgrade» shows for a newer build, and reloads onto the deployed pag
 		await mounted(page);
 		assert.notEqual(await served(page), pages, 'the worker let a slow reload reach the origin');
 
-		// A newer build deployed: the button, between the gear and the (?).
+		// A newer build deployed: the button, first in the bar and left of the gear.
 		deployed = 'newer';
 		await check(page);
 		await upgrade.waitFor();
-		const [gear, up, help] = await Promise.all(['.gear', 'button.upgrade', 'button.help'].map((s) => bar.locator(s).boundingBox()));
-		assert.ok(gear.x + gear.width <= up.x && up.x + up.width <= help.x, `gear ${gear.x}, upgrade ${up.x}, help ${help.x}`);
+		assert.ok(await upgrade.evaluate((b) => b.parentElement.firstElementChild === b), 'the button is not the bar\'s first item');
+		const [up, gear, help] = await Promise.all([upgrade, bar.locator('.gear'), bar.locator('button.help')].map((l) => l.boundingBox()));
+		assert.ok(up.x + up.width <= gear.x && gear.x + gear.width <= help.x, `upgrade ${up.x}, gear ${gear.x}, help ${help.x}`);
+
+		// On a 320 px phone the bar still fits: nothing past the screen's edge, and the tabs keep room.
+		const { width, height } = page.viewportSize();
+		await page.setViewportSize({ width: 320, height: 640 });
+		await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+		const fit = await bar.evaluate((nav) => ({
+			over: nav.scrollWidth - nav.clientWidth,
+			right: Math.max(...[...nav.children].map((c) => c.getBoundingClientRect().right)),
+			tabs: nav.querySelector('.tabs').getBoundingClientRect().width
+		}));
+		assert.ok(fit.over <= 0 && fit.right <= 320, `the bar overflows a 320 px screen: ${JSON.stringify(fit)}`);
+		assert.ok(fit.tabs > 40, `the tabs are crushed at 320 px: ${JSON.stringify(fit)}`);
+		await page.setViewportSize({ width, height });
 
 		// A press that fails, here at finding the worker, leaves the button to press again.
 		await page.evaluate(() => (navigator.serviceWorker.getRegistration = () => Promise.reject(new Error('refused'))));
