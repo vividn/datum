@@ -33,7 +33,8 @@ takes the script's arguments: `| sh -s -- --no-completions`, say.
   every database datum knows at each run. A backup with `datum backup
   <file>` is one file, and starts none of this.
 - Whether to upgrade daily (`datum upgrade --auto`, below), asked on a
-  terminal and yes unasked; `--yes` or `--no` answers both.
+  terminal and no unasked; `--yes` or `--no` answers both. So a script
+  that installs with no terminal sets up neither: `--yes` sets up both.
 - It ends with the line that makes your aliases and the logging commands
   of their own in your shell, for you to add if you want it.
 
@@ -59,8 +60,8 @@ from a checkout (below).
 `datum upgrade --auto` upgrades daily: a systemd user timer runs `datum
 upgrade` once a day, a day missed once the machine is on, and `datum
 upgrade --no-auto` removes it; `--check` says whether it is on. `datum
-install` offers it, yes by default and unasked with no terminal: `--yes`
-or `--no` answers for a script. A binary cargo built gets no timer (`datum
+install` offers it, yes by default, and with no terminal no, unasked:
+`--yes` or `--no` answers for a script. A binary cargo built gets no timer (`datum
 upgrade` moves it onto the release first), and with no systemd (macOS)
 nothing is installed.
 

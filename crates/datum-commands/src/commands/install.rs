@@ -535,7 +535,7 @@ fn offer_auto(exe: &Path, answer: Option<bool>) -> Result<()> {
                 "Upgrade datum daily, as releases come out?",
                 "upgrade daily",
             )?
-            .unwrap_or(true) =>
+            .unwrap_or(false) =>
         {
             auto(true)
         }
@@ -548,7 +548,10 @@ fn offer_auto(exe: &Path, answer: Option<bool>) -> Result<()> {
 
 /// One of `datum install`'s offers, asked of a person at a terminal, yes the
 /// default: on stdin, or on the terminal itself where stdin is install.sh's
-/// own script (`curl … | sh`), never read. With no one to ask, `None`.
+/// own script (`curl … | sh`), never read. With no one to ask, `None`, which
+/// each offer takes as no (vividn, 2026-11-05: «when run interactively, it
+/// should ask for both. Otherwise I guess the default should be no to either
+/// of those»).
 fn ask(question: &str, label: &str) -> Result<Option<bool>> {
     let question = Question::yes_no(question, label, Some(true));
     let answer = match std::io::stdin().is_terminal() {

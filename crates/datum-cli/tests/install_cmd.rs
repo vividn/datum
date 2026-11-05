@@ -767,8 +767,8 @@ fn upgrade_auto_installs_a_daily_timer_and_no_auto_removes_it() {
 
 /// `datum install` offers each `--auto` in turn (da-tsna7): backups of every
 /// database every 30m, then the daily upgrade. A terminal is asked each,
-/// yes the default; with none, backups are no and upgrades yes, unasked;
-/// `--yes` / `--no` answer both.
+/// yes the default; with none, both are no, unasked, each saying so
+/// (da-bo9po); `--yes` / `--no` answer both.
 #[test]
 fn install_offers_backups_and_daily_upgrades() {
     let h = Home::new();
@@ -798,10 +798,11 @@ fn install_offers_backups_and_daily_upgrades() {
     h.ok(&["install", "--no-completions", "--no"]);
     assert!(!h.auto("timer").exists());
     assert!(h.backup_timer().is_none());
-    h.ok(&["install", "--no-completions"]);
-    assert!(h.auto("timer").exists(), "no terminal: yes");
+    let said = h.ok(&["install", "--no-completions"]);
+    assert!(!h.auto("timer").exists(), "no terminal: no");
     assert!(h.backup_timer().is_none(), "no terminal: no");
-    h.ok(&["upgrade", "--no-auto"]);
+    assert!(said.contains("daily upgrades: off"), "{said}");
+    assert!(said.contains("backups on a schedule: off"), "{said}");
     h.ok(&["install", "--no-completions", "--yes"]);
     assert!(h.auto("timer").exists());
     assert!(h.backup_timer().is_some());
