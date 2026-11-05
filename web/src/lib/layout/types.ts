@@ -84,6 +84,15 @@ export interface Tab {
 	 * that layout's tree, and the shell saves and restores it by this name.
 	 */
 	layout?: string;
+	/**
+	 * A root tab's layout may be TALLER THAN THE SCREEN (da-py6pl): this many
+	 * screens tall, at least one, and the page scrolls. A border dragged down
+	 * then grows the pane above it and pushes the panes below down, and the
+	 * layout's foot grows its last pane. Absent: the layout fits one screen.
+	 * Saved on the layout's root pane (`Pane.tall`, `inline` and `extract`),
+	 * so a kit's `[[layout]]` can set it.
+	 */
+	tall?: number;
 }
 
 /**
@@ -97,6 +106,8 @@ export interface Pane {
 	/** Index into `tabs`. */
 	active: number;
 	bar: Bar;
+	/** On a saved layout's root pane only: its tab's `tall`. */
+	tall?: number;
 }
 
 /**

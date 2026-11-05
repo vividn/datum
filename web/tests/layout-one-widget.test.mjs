@@ -55,7 +55,7 @@ const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true,
 const ACTS = ['Save layout', 'Restore layout', RESET_LAYOUT, 'Save layout as'];
 
 /** The root's layout-mode menu: what is done to the page, and the ways out. */
-const MANAGE = ['Change Widget', 'Split ← ↓ ↑ →', 'Accept', 'Save layout', 'Discard changes', '× Close tab'];
+const MANAGE = ['Change Widget', 'Split ← ↓ ↑ →', 'Taller than the screen', 'Accept', 'Save layout', 'Discard changes', '× Close tab'];
 
 async function linesFrom(page, button) {
 	await button.click();

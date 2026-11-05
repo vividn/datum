@@ -9,7 +9,7 @@
 	Borders: pointer events with capture, so a fast drag does not lose the
 	border; `touch-action: none` on the border only, so a finger dragging
 	it is not a scroll. While the border is held the split re-lays out
-	with CSS alone — the ratios being dragged are a local preview on the
+	with CSS alone — the ratios being dragged are a preview (`dragged`) on the
 	cells' `--ratio`, and the tree is not written — and the drop applies
 	them once. Every CLI pane re-runs a WASI process per size it is shown
 	at, so the panes are told a drag is on (`resizing`, layout/resizing.ts)
@@ -46,9 +46,28 @@
 	The arrows do not snap. Every pane takes the share of the split its
 	ratio gives it — none sizes itself to its content (da-mbz2), so a
 	widget with more in it than its box holds scrolls inside it.
+
+	A root tab TALLER THAN THE SCREEN (`Tab.tall`, da-py6pl) is that many
+	screens tall, and the page scrolls. There a border between panes one
+	above the other takes no height from the pane below it: the pane above
+	grows by the drag, everything below moves down, and the layout grows
+	with it — each column split on the way up to the root gives the
+	dragged pane's cell the pixels, and the root tab's `tall` the screens.
+	The layout's foot is a border too, which grows its last pane; the
+	arrows on either push by `NUDGE` of a screen the same way; and a
+	drag held at the bottom of the screen keeps growing and scrolling
+	(`HOLD_PX_PER_S`). The drag previews every split it moves through
+	`dragged`, shared by every pane of the tree, and the drop writes them
+	all at once.
 -->
+<script lang="ts" module>
+	import { writable } from 'svelte/store';
+	/** The drag in hand: the ratios it shows, by split, and a tall root's screens. */
+	const dragged = writable<{ ratios: Record<string, number[]>; tall?: number } | null>(null);
+</script>
+
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { flushSync, untrack } from 'svelte';
 	import Layout from './Layout.svelte';
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
@@ -61,7 +80,7 @@
 	import type { NodeId, Pane as PaneNode, Split, Tab } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
-	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios, soleWidgetOf } from './tree.js';
+	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios, setTall, soleWidgetOf } from './tree.js';
 	import { maximized, maximizedIn } from './maximize.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
@@ -102,6 +121,9 @@
 	 * through the pair's ratio and 8 can come back as 8.000001.
 	 */
 	const SNAP_PX = 8;
+	/** How near the screen's bottom a held drag grows a tall layout, and how fast. */
+	const HOLD_EDGE_PX = 24;
+	const HOLD_PX_PER_S = 400;
 	const NONE = { width: 0, height: 0 };
 
 	const active = $derived(pane.tabs[pane.active]);
@@ -296,9 +318,113 @@
 		minRatios: number[];
 		/** The first child's extents a drag snaps to: its own snaps and the second's, from the far side. */
 		stops: number[];
+		/** A tall root's drag: what grows, measured at the grab. */
+		tall?: Tall;
 	} | null = null;
-	/** The ratios being dragged, shown on the cells and not yet in the tree. */
-	let preview = $state.raw<number[] | null>(null);
+
+	/**
+	 * A drag in a layout taller than the screen: the root tab, the page's
+	 * scroller and where it was, one screen and the layout's height, and
+	 * each column split from the dragged one up to the root with its cells'
+	 * heights and the one that grows. `least` is the drag's own floor, the
+	 * most the dragged cell may shrink, as a negative drag.
+	 */
+	type Tall = {
+		tab: NodeId;
+		scroller: HTMLElement;
+		scroll: number;
+		screen: number;
+		height: number;
+		least: number;
+		stack: { id: NodeId; heights: number[]; grows: number }[];
+		/** The pointer's last height on the screen, and the held drag's frame. */
+		at?: number;
+		held?: number;
+	};
+
+	/** The root tab in front, where it is taller than the screen. */
+	const tallTab = (): Tab | undefined => {
+		const tab = $layout.root.tabs[$layout.root.active];
+		return tab?.tall === undefined ? undefined : tab;
+	};
+
+	function tallFrom(el: HTMLElement, index: number, floor: number): Tall | undefined {
+		const tab = tallTab();
+		const scroller = el.closest<HTMLElement>('.root > .content');
+		const body = scroller?.querySelector<HTMLElement>(':scope > .tab-body:not(.behind)');
+		if (!tab || !scroller || !body) return undefined;
+		const stack: Tall['stack'] = [];
+		let at: HTMLElement | null = el;
+		let grows = index;
+		while (at) {
+			const boxes = [...at.querySelectorAll<HTMLElement>(':scope > .cell')];
+			if (at.classList.contains('column'))
+				stack.push({ id: at.dataset.split!, heights: boxes.map((b) => b.getBoundingClientRect().height), grows });
+			const cell: HTMLElement | null = at.parentElement?.closest('[data-split] > .cell') ?? null;
+			if (!cell || !body.contains(cell)) break;
+			at = cell.parentElement;
+			grows = [...at!.querySelectorAll(':scope > .cell')].indexOf(cell);
+		}
+		const pad = getComputedStyle(scroller);
+		const screen = scroller.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom);
+		const height = body.getBoundingClientRect().height;
+		const least = stack[0] ? floor - stack[0].heights[index] : -Infinity;
+		return { tab: tab.id, scroller, scroll: scroller.scrollTop, screen, height, least, stack };
+	}
+
+	/** A tall drag moved `by` pixels: the dragged cell and every cell holding it grow by it, and the root. */
+	function tallPreview(t: Tall, by: number): void {
+		const grown = Math.max(t.least, by);
+		const ratios: Record<string, number[]> = {};
+		for (const { id, heights, grows } of t.stack) {
+			const total = heights.reduce((a, b) => a + b, 0) + grown;
+			ratios[id] = heights.map((h, i) => (h + (i === grows ? grown : 0)) / total);
+		}
+		dragged.set({ ratios, tall: Math.max(1, (t.height + grown) / t.screen) });
+	}
+
+	/** The drag's pixels: the pointer's travel through the content, scrolled or not. */
+	const tallBy = (t: Tall, at: number): number => at - drag!.origin + t.scroller.scrollTop - t.scroll;
+
+	/** Held at the screen's bottom, a tall drag grows and scrolls with it, frame by frame. */
+	function holdAt(t: Tall, at: number): void {
+		t.at = at;
+		const bottom = t.scroller.getBoundingClientRect().bottom;
+		if (at < bottom - HOLD_EDGE_PX) {
+			if (t.held !== undefined) cancelAnimationFrame(t.held);
+			t.held = undefined;
+			return;
+		}
+		if (t.held !== undefined) return;
+		let last = performance.now();
+		const step = (now: number) => {
+			if (drag?.tall !== t) return;
+			const px = (HOLD_PX_PER_S * (now - last)) / 1000;
+			last = now;
+			flushSync(() => tallPreview(t, tallBy(t, t.at!) + px));
+			t.scroller.scrollTop += px;
+			t.held = requestAnimationFrame(step);
+		};
+		t.held = requestAnimationFrame(step);
+	}
+
+	/** A tall drag of border `index` (or the foot) in hand, at `origin`: measured now, or none where the tab is not tall. */
+	function tallDrag(split: Split, index: number, foot: boolean, origin: number): boolean {
+		const el = splitEls[split.id];
+		const tall =
+			(foot || split.direction === 'column') && el ? tallFrom(el, index, floor(split.children[index]).height) : undefined;
+		if (tall) drag = { index, origin, pair: 0, span: 0, from: split.ratios, minRatios: [], stops: [], tall };
+		return tall !== undefined;
+	}
+
+	// A pane unmounted mid-drag (its tab closed, the mode left) leaves no
+	// preview over the next tree, and its held frame stops (`drag` is gone).
+	$effect(() => () => {
+		if (!drag) return;
+		drag = null;
+		dragged.set(null);
+		resizing.set(false);
+	});
 
 	function cells(split: Split): HTMLElement[] {
 		const el = splitEls[split.id];
@@ -327,12 +453,17 @@
 		});
 	}
 
-	function down(event: PointerEvent, split: Split, index: number) {
+	function down(event: PointerEvent, split: Split, index: number, foot = false) {
 		const border = event.currentTarget as HTMLElement;
 		border.setPointerCapture(event.pointerId);
 		border.focus();
 		const boxes = cells(split);
-		if (!boxes[index] || !boxes[index + 1]) return;
+		if (tallDrag(split, index, foot, event.clientY)) {
+			resizing.set(true);
+			event.preventDefault();
+			return;
+		}
+		if (foot || !boxes[index] || !boxes[index + 1]) return;
 		const span = extent(boxes[index], split) + extent(boxes[index + 1], split);
 		drag = {
 			index,
@@ -351,6 +482,11 @@
 	}
 
 	function move(event: PointerEvent, split: Split) {
+		if (drag?.tall) {
+			tallPreview(drag.tall, tallBy(drag.tall, event.clientY));
+			holdAt(drag.tall, event.clientY);
+			return;
+		}
 		if (!drag || drag.span <= 0) return;
 		const at = split.direction === 'row' ? event.clientX : event.clientY;
 		const delta = ((at - drag.origin) / drag.span) * drag.pair;
@@ -358,19 +494,27 @@
 		// The two children share the span as they share the pair's ratio.
 		const px = (next[drag.index] / drag.pair) * drag.span;
 		const stop = drag.stops.reduce((a, b) => (Math.abs(b - px) < Math.abs(a - px) ? b : a), Infinity);
-		preview =
+		const ratios =
 			Math.abs(stop - px) < SNAP_PX + 0.5
 				? shifted(drag.from, drag.index, (stop / drag.span) * drag.pair - drag.from[drag.index], drag.minRatios)
 				: next;
+		dragged.set({ ratios: { [split.id]: ratios } });
 	}
 
 	/** The drop: the tree takes the previewed ratios, once, and the panes redraw. */
 	function up(split: Split) {
-		const ratios = preview;
+		const shown = $dragged;
 		const floors = drag?.minRatios;
+		const tall = drag?.tall;
+		if (tall?.held !== undefined) cancelAnimationFrame(tall.held);
 		drag = null;
-		preview = null;
-		if (ratios) apply((l) => setRatios(l, split.id, ratios, floors));
+		dragged.set(null);
+		if (tall && shown?.tall !== undefined) {
+			const screens = shown.tall;
+			apply((l) =>
+				Object.entries(shown.ratios).reduce((t, [id, r]) => setRatios(t, id, r), setTall(l, tall.tab, screens))
+			);
+		} else if (shown?.ratios[split.id]) apply((l) => setRatios(l, split.id, shown.ratios[split.id], floors));
 		resizing.set(false);
 	}
 
@@ -389,12 +533,20 @@
 		return next;
 	}
 
-	function nudge(event: KeyboardEvent, split: Split, index: number) {
-		const grow = split.direction === 'row' ? 'ArrowRight' : 'ArrowDown';
-		const shrink = split.direction === 'row' ? 'ArrowLeft' : 'ArrowUp';
+	/** The arrows; in a tall layout a column's border and the foot push down by `NUDGE` of a screen. */
+	function nudge(event: KeyboardEvent, split: Split, index: number, foot = false) {
+		const across = split.direction === 'row' && !foot;
+		const grow = across ? 'ArrowRight' : 'ArrowDown';
+		const shrink = across ? 'ArrowLeft' : 'ArrowUp';
 		const delta = event.key === grow ? NUDGE : event.key === shrink ? -NUDGE : 0;
 		if (delta === 0) return;
 		event.preventDefault();
+		if (tallDrag(split, index, foot, 0)) {
+			tallPreview(drag!.tall!, delta * drag!.tall!.screen);
+			up(split);
+			return;
+		}
+		if (foot) return;
 		const floors = minRatios(split);
 		apply((l) => setRatios(l, split.id, shifted(split.ratios, index, delta, floors), floors));
 	}
@@ -427,11 +579,12 @@
 			moved={tab === active ? moves?.front : tab === pane.tabs[peek] ? moves?.beside : undefined}
 			shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
 			{least}
+			tall={pane.id === rootId ? ((tab === active && $dragged?.tall) || tab.tall) : undefined}
 			kept={pane.id === rootId}
 		>
 			{#if isSplit(content)}
 				{@const split = content}
-				{@const grow = (tab === active && preview) || split.ratios}
+				{@const grow = $dragged?.ratios[split.id] ?? split.ratios}
 				<div
 					class="split {split.direction}"
 					class:maximized={tab === active && big !== null}
@@ -476,6 +629,26 @@
 						</div>
 					{/each}
 				</div>
+				{#if pane.id === rootId && tab.tall !== undefined && !locked}
+					<!-- A tall layout's foot (da-py6pl): dragged down, its last pane grows. -->
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+					<div
+						class="border foot"
+						role="separator"
+						tabindex="0"
+						aria-orientation="horizontal"
+						aria-label="grow the layout"
+						aria-valuenow={Math.round(((tab === active && $dragged?.tall) || tab.tall) * 100)}
+						aria-valuemin="100"
+						aria-valuetext="{(((tab === active && $dragged?.tall) || tab.tall) as number).toFixed(1)} screens"
+						style:--border="{BORDER}px"
+						onpointerdown={(e) => down(e, split, split.children.length - 1, true)}
+						onpointermove={(e) => move(e, split)}
+						onpointerup={() => up(split)}
+						onpointercancel={() => up(split)}
+						onkeydown={(e) => nudge(e, split, split.children.length - 1, true)}
+					></div>
+				{/if}
 			{:else if content.kind === EMPTY_KIND}
 				{@const tabId = tab.id}
 				<Pane title="empty">
@@ -591,7 +764,8 @@
 	.row > .border {
 		cursor: col-resize;
 	}
-	.column > .border {
+	.column > .border,
+	.foot {
 		cursor: row-resize;
 	}
 	.border.static {
@@ -613,7 +787,8 @@
 		height: 3rem;
 		transform: translate(-50%, -50%);
 	}
-	.column > .border:not(.static)::after {
+	.column > .border:not(.static)::after,
+	.foot::after {
 		width: 3rem;
 		height: 4px;
 		transform: translate(-50%, -50%);

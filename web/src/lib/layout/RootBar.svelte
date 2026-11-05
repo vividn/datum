@@ -158,7 +158,7 @@
 	import { labelOf } from './registry.js';
 	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions } from './shell.js';
 	import { reorders } from './reorder.js';
-	import { addEdge, moveTab } from './tree.js';
+	import { addEdge, moveTab, setTall } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
 	import type { Toward } from './tree.js';
 
@@ -316,13 +316,20 @@
 	 *
 	 * In LAYOUT MODE (da-vvcxc), «all the down arrow actions» (vividn) — what
 	 * the root `▾` held: `Change Widget`, `Split`, which at the root is a side
-	 * of the whole layout (`addEdge`, da-a642), and `Close tab` — and the
+	 * of the whole layout (`addEdge`, da-a642), «Taller than the screen»
+	 * (da-py6pl: the layout may grow past one screen and the page scrolls;
+	 * off fits it back, each pane keeping its share), and `Close tab` — and the
 	 * three ways out of the mode (`mode.ts`): Accept, Save layout where the
 	 * tab holds one, Discard changes. Close last, as ever.
 	 */
 	const arrange = $derived([
 		{ label: CHANGE, act: 'open' as const, run: () => id !== undefined && void fillTab(id) },
 		{ label: 'Split', row: aimed('split: a new pane', (t) => apply((l) => addEdge(l, SIDE[t]))) },
+		{
+			label: 'Taller than the screen',
+			toggled: active?.tall !== undefined,
+			run: () => id !== undefined && apply((l) => setTall(l, id, active?.tall === undefined ? 1 : undefined))
+		},
 		{ label: 'Accept', run: accept },
 		...(name === undefined ? [] : [{ label: 'Save layout', act: 'run' as const, run: () => void attempt(saveMode) }]),
 		{ label: 'Discard changes', run: discard },

@@ -253,11 +253,11 @@ describe('the menus in layout mode', () => {
 		}, DESKTOP);
 	});
 
-	test('the open root tab: Change Widget, Split, Accept, Save layout, Discard changes, Close tab', async () => {
+	test('the open root tab: Change Widget, Split, Taller than the screen, Accept, Save layout, Discard changes, Close tab', async () => {
 		await withApp(async ({ page }) => {
 			await enterLayoutMode(page);
 			await rootMenuButton(page).click();
-			assert.deepEqual(await menuNames(page), ['Change Widget', 'Split', 'Accept', 'Save layout', 'Discard changes', 'Close tab']);
+			assert.deepEqual(await menuNames(page), ['Change Widget', 'Split', 'Taller than the screen', 'Accept', 'Save layout', 'Discard changes', 'Close tab']);
 			await closeMenu(page);
 		}, DESKTOP);
 	});

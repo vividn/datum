@@ -517,6 +517,16 @@ export function setRatios(layout: Layout, splitId: NodeId, ratios: number[], flo
 	);
 }
 
+/** A root tab's `tall` (da-py6pl): set, or gone, which fits the layout back into one screen. */
+export function setTall(layout: Layout, tabId: NodeId, tall: number | undefined): Layout {
+	const tabs = layout.root.tabs.map((tab) => {
+		if (tab.id !== tabId) return tab;
+		const { tall: _, ...rest } = tab;
+		return tall === undefined ? rest : { ...rest, tall };
+	});
+	return withRoot(layout, { ...layout.root, tabs });
+}
+
 function clamped(ratios: number[], split: Split, floors: number[] | undefined): number[] {
 	const count = split.children.length;
 	const next = evenOut(ratios, count);

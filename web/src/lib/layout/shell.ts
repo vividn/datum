@@ -402,13 +402,15 @@ export function inline(saved: Layout, taken: Set<NodeId>, lift = false): Tab {
 		mapTabs(saved.root, (tab) => migrated(without(tab, 'locked'))),
 		mint
 	);
+	// The root pane's `tall` is the tab's (da-py6pl).
+	const tall = root.tall === undefined ? {} : { tall: root.tall };
 	const only = root.tabs.length === 1 ? root.tabs[0] : undefined;
 	if (only && (lift || isSplit(only.content)))
-		return { id: root.id, ...(only.title === undefined ? {} : { title: only.title }), content: only.content, layout: name };
+		return { id: root.id, ...(only.title === undefined ? {} : { title: only.title }), content: only.content, layout: name, ...tall };
 	const [tab, split] = only ? [`${saved.root.id}-layout`, `${saved.root.id}-split`] : [newId(), newId()];
 	// Drawn now, the pane needs the bar an older save may not carry.
-	const pane = { ...root, bar: root.bar ?? BAR };
-	return { id: mint(tab), content: { id: mint(split), direction: 'column', ratios: [1], children: [pane] }, layout: name };
+	const pane = { ...without(root, 'tall'), bar: root.bar ?? BAR };
+	return { id: mint(tab), content: { id: mint(split), direction: 'column', ratios: [1], children: [pane] }, layout: name, ...tall };
 }
 
 /**
@@ -454,7 +456,7 @@ export function extract(tab: Tab): Layout {
 			? bare
 			: { id: bare.id, layout: bare.layout, content: { id: `${bare.id}-stub`, kind: EMPTY_KIND, settings: {} } };
 	});
-	return { version: LAYOUT_VERSION, name, root: clean };
+	return { version: LAYOUT_VERSION, name, root: tab.tall === undefined ? clean : { ...clean, tall: tab.tall } };
 }
 
 /** The form a save is compared against: what it looks like once inlined and taken back out. */

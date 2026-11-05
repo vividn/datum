@@ -91,6 +91,8 @@
 		least?: { width: number; height: number } | undefined;
 		/** A root tab: behind, it is clipped rather than hidden or inert. */
 		kept?: boolean;
+		/** A root tab taller than the screen (da-py6pl): this many screens, the page scrolling. */
+		tall?: number;
 		children?: Snippet;
 	}
 
@@ -101,6 +103,7 @@
 		shy = 0,
 		least = undefined,
 		kept = false,
+		tall = undefined,
 		children
 	}: Props = $props();
 
@@ -150,7 +153,7 @@
 	aria-hidden={!active && kept ? 'true' : undefined}
 	onfocusin={!active && kept ? (e) => refuse(body!, e) : undefined}
 	style:min-width={active && least ? `${least.width}px` : null}
-	style:min-height={active && least ? `${least.height}px` : null}
+	style:min-height={active && (least || tall) ? `max(${least?.height ?? 0}px, ${(tall ?? 0) * 100}%)` : null}
 	style:transform={moved}
 	style:margin={(!active && shy > 0) || (beside && moved) ? `${shy}px` : null}
 >{@render children?.()}</div>
