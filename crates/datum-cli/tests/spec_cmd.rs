@@ -449,6 +449,7 @@ fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
         "  moment   a point in time           datum moment coffee",
         "  change   a new state               datum change mood happy",
         "  record   an untimed entry, keyed   datum record book -K title Dune",
+        "  allday   a value for a whole day   datum allday steps 8000",
     ] {
         assert!(page.contains(line), "setup lacks {line:?}:\n{page}");
         assert!(logging.contains(line), "logging lacks {line:?}");
@@ -467,8 +468,9 @@ fn the_spec_help_names_the_four_verbs_and_a_wrong_one_points_at_them() {
         let err = run_cli(&["setup", field, "--verb", "event"], &db).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "invalid --kind 'event' — must be one of: moment|on/off|change|record, \
-             or occur|occurrence|on|start|switch|add|card (`datum help logging` says what each is)"
+            "invalid --kind 'event' — must be one of: moment|on/off|change|record|allday, \
+             or occur|occurrence|on|start|switch|add|card|all-day (`datum help logging` says what \
+             each is)"
         );
     }
 }
@@ -494,5 +496,6 @@ fn setup_verb_takes_the_web_kind_names_and_stores_the_canonical_verb() {
             .unwrap();
         assert_eq!(stored["verb"], verb.to_string(), "{name}");
     }
-    assert!(datum_parse::help::command_help("logging").contains("moment, on/off, change or record"));
+    assert!(datum_parse::help::command_help("logging")
+        .contains("moment, on/off, change, record or allday"));
 }

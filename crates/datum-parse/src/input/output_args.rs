@@ -178,9 +178,9 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // The document renderers (`render::show_action_with_context`)
         // draw every level.
         "moment" | "occur" | "start" | "on" | "stop" | "end" | "off" | "change" | "switch"
-        | "record" | "add" | "card" | "remark" | "note" | "get" | "delete" | "del" | "undo"
-        | "redo" | "revert" | "update" | "comment" | "merge" | "rekey" | "edit" | "retime"
-        | "rt" => ALL_SHOWS,
+        | "record" | "add" | "card" | "remark" | "note" | "allday" | "get" | "delete" | "del"
+        | "undo" | "redo" | "revert" | "update" | "comment" | "merge" | "rekey" | "edit"
+        | "retime" | "rt" => ALL_SHOWS,
         // The table renderer honours silence and the format string.
         "grep" => &[Show::Default, Show::None, Show::Format],
         // …and `tail`/`head` have their own JSON rows on top of it.

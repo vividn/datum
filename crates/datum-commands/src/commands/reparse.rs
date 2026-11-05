@@ -104,6 +104,9 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
             Command::Switch(a) => (Action::Switch, a),
             Command::Add(a) => (Action::Add, a),
             Command::Note(a) => (Action::Note, a),
+            Command::AllDay(mut a) => {
+                (crate::commands::allday::all_day(Action::AllDay, &mut a)?, a)
+            }
             // Non-log verbs don't produce entries — their replay has nothing
             // to compare against.
             _ => continue,

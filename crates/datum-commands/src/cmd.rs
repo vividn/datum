@@ -395,6 +395,7 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         Command::Switch(args) => run_log_with_alias(args, db, commands::switch::switch),
         Command::Add(args) => run_log_with_alias(args, db, commands::add::add),
         Command::Note(args) => run_log_with_alias(args, db, commands::note::note),
+        Command::AllDay(args) => run_log_with_alias(args, db, commands::allday::allday),
         Command::Tail(args) => commands::tail::tail(args, db),
         Command::Head(args) => commands::head::head(args, db),
         Command::Now(args) => commands::now::now(args, db),

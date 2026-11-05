@@ -275,13 +275,19 @@ fn unknown_keys<'de, D: serde::Deserializer<'de>>(
 }
 
 /// The subset of actions permitted as a field's [`FieldSpec::verb`].
-pub const VERB_CHOICES: &[Action] = &[Action::Occur, Action::Start, Action::Switch, Action::Add];
+pub const VERB_CHOICES: &[Action] = &[
+    Action::Occur,
+    Action::Start,
+    Action::Switch,
+    Action::Add,
+    Action::AllDay,
+];
 
-/// The one sentence every "which kind?" error says, so the four kinds
+/// The one sentence every "which kind?" error says, so the five kinds
 /// are spelled the same everywhere the user meets them (da-gpz6m).
-pub const VERB_CHOICES_TEXT: &str = "moment|on/off|change|record";
+pub const VERB_CHOICES_TEXT: &str = "moment|on/off|change|record|allday";
 
-/// A field's kind by name: one of the glossary's four (da-gpz6m), or an old
+/// A field's kind by name: one of the glossary's five (da-gpz6m, da-rvvce), or an old
 /// word for it — `occur`, `occurrence`, `start`, `on`, `switch`, `add`,
 /// `card` (da-cswh8, da-qk4jo). The stored names are `occur`, `start`,
 /// `switch` and `add`, so a spec reads the same whichever name set it.
@@ -291,13 +297,14 @@ pub fn verb_choice(name: &str) -> Option<Action> {
         "on/off" | "on" | "start" => Some(Action::Start),
         "change" | "switch" => Some(Action::Switch),
         "record" | "add" | "card" => Some(Action::Add),
+        "allday" | "all-day" | "all day" => Some(Action::AllDay),
         _ => None,
     }
 }
 
 /// Every name [`verb_choice`] takes, for the error that refuses another.
 pub const VERB_NAMES_TEXT: &str =
-    "moment|on/off|change|record, or occur|occurrence|on|start|switch|add|card";
+    "moment|on/off|change|record|allday, or occur|occurrence|on|start|switch|add|card|all-day";
 
 /// The verb a field's LOG implies, for a field that has no spec yet.
 ///

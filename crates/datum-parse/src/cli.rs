@@ -42,6 +42,9 @@ pub enum Command {
     Add(LogArgs),
     /// `datum note <field>` — timeless, auto create_time id (da-r17h).
     Note(LogArgs),
+    /// `datum allday <field> [value]` — a whole day's value, `-t` refused
+    /// (da-rvvce).
+    AllDay(LogArgs),
 
     Tail(TailArgs),
     /// Show oldest entries — powered by Tail with `oldest_first = true`.

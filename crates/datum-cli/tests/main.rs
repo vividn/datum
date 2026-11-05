@@ -12,6 +12,7 @@
 //! declared one way or the other, and none declared here — nor the shared
 //! `common/` it compiles — writes the env.
 
+mod allday_kind;
 mod at_column;
 mod at_surface;
 mod common;

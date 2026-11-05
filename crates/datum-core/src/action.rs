@@ -46,6 +46,12 @@ pub enum Action {
     /// [`Add`](Action::Add): both are timeless, but `note` auto-ids on its
     /// create_time while `add` demands an explicit id.
     Note,
+    /// `datum allday <field> [value]` — a value for a whole day (da-rvvce):
+    /// always full-day (`-D`), on today unless `-d`/`-y` names another, and
+    /// `-t` is refused. Logged as `change … -m -D`: a point carrying the
+    /// day's value, which no later day inherits.
+    #[serde(rename = "allday")]
+    AllDay,
 }
 
 impl Action {
@@ -61,6 +67,7 @@ impl Action {
             Action::Add => "record",
             Action::Note => "remark",
             Action::Block => "block",
+            Action::AllDay => "allday",
         }
         .to_string()
     }
@@ -85,6 +92,7 @@ impl std::fmt::Display for Action {
             Action::Block => write!(f, "block"),
             Action::Add => write!(f, "add"),
             Action::Note => write!(f, "note"),
+            Action::AllDay => write!(f, "allday"),
         }
     }
 }
@@ -100,6 +108,7 @@ impl std::str::FromStr for Action {
             "block" => Ok(Action::Block),
             "record" | "add" | "card" => Ok(Action::Add),
             "remark" | "note" => Ok(Action::Note),
+            "allday" | "all-day" | "all day" => Ok(Action::AllDay),
             _ => Err(format!("Unknown action: '{s}'")),
         }
     }
@@ -111,7 +120,9 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        for s in ["occur", "start", "stop", "switch", "block", "add", "note"] {
+        for s in [
+            "occur", "start", "stop", "switch", "block", "add", "note", "allday",
+        ] {
             let a: Action = s.parse().unwrap();
             assert_eq!(a.to_string(), s);
         }

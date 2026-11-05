@@ -254,7 +254,8 @@ pub(crate) fn dry_runs_itself(command: &Command) -> bool {
         | Command::Stop(a)
         | Command::Switch(a)
         | Command::Add(a)
-        | Command::Note(a) => a.dry_run,
+        | Command::Note(a)
+        | Command::AllDay(a) => a.dry_run,
         Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => a.dry_run,
         Command::Delete(a) => a.dry_run,
         Command::Redo(a) => a.dry_run,
@@ -538,6 +539,7 @@ fn changes_entries(command: &Command) -> bool {
             | Command::Switch(_)
             | Command::Add(_)
             | Command::Note(_)
+            | Command::AllDay(_)
             | Command::Delete(_)
             | Command::Undo(_)
             | Command::Redo(_)
@@ -569,7 +571,8 @@ fn claims(command: &Command) -> bool {
             | Command::Stop(a)
             | Command::Switch(a)
             | Command::Add(a)
-            | Command::Note(a) if a.ensure_last_state
+            | Command::Note(a)
+            | Command::AllDay(a) if a.ensure_last_state
     ) || matches!(command, Command::Switch(a) if edits_states(&a.rest))
 }
 

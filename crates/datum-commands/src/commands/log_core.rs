@@ -38,6 +38,7 @@ use crate::{
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
 pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()> {
+    let (kind, action) = (action, super::allday::all_day(action, &mut args)?);
     // da-vo0y (review): `-I`/`--string-state` is Switch-only — on other
     // verbs it would silently suppress the injected `dur=` slot and change
     // duration parsing. And on switch it conflicts with the other
@@ -969,6 +970,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // written; now that it is written only after the entry lands, an
     // earlier side of the same multi window is the other thing that can
     // have declared this field already.
+    // Declared as typed: allday logs as a change; any other as a trailing verb left it.
+    let kind = if kind == Action::AllDay { kind } else { action };
     let declares_field = db.load_spec(&entry.field)?.is_none()
         && !crate::args::field_declared_in_window(&entry.field);
     if declares_field
@@ -976,8 +979,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         && entry.at.is_some()
         && entry.field != TIMEZONE_FIELD
     {
-        let declared =
-            datum_core::track::declared_state(datum_core::track::verb_for_action(action));
+        let declared = datum_core::track::declared_state(datum_core::track::verb_for_action(kind));
         if datum_core::derive_verb(
             entry.state.clone(),
             entry.dur.as_ref(),
@@ -1113,7 +1115,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if crate::args::push_to_multi_collector(entry.clone(), args.output()?, own_time) {
         // The window owns the spec write, once its atomic insert lands.
         if declares_field {
-            crate::args::push_pending_declaration(&entry.field, action);
+            crate::args::push_pending_declaration(&entry.field, kind);
         }
         return Ok(());
     }
@@ -1121,7 +1123,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let strategy = args.conflict_strategy();
     // The spec is written only if the entry lands, and in its transaction.
     let declare = match declares_field {
-        true => crate::commands::helpers::track_spec(db, &entry.field, action)?,
+        true => crate::commands::helpers::track_spec(db, &entry.field, kind)?,
         false => None,
     };
     // In the write's transaction: the set an edit changes, at now if it was
@@ -1471,11 +1473,8 @@ pub(crate) fn parse_log_args(
     // Remainder bucket policy:
     //   * `-R`/`--remainder` → user-named bucket.
     //   * `-C`/`--comment-remainder` → "comment" bucket.
-    //   * Action::Occur → no remainder; an unbound positional is an error
-    //     (occur doesn't carry state, has no `value` column to absorb it,
-    //     and silently routing to extra_data would mask user mistakes).
-    //   * Action::Occur | Start | Stop | Switch → no remainder. State is
-    //     hard-set (start/stop) or flows through the `state=true` slot
+    //   * Action::Occur | Start | Stop | Switch → no remainder. Occur carries
+    //     no state to absorb a positional; the others' state is hard-set (start/stop) or flows through the `state=true` slot
     //     (switch), and the trailing `dur=` slot absorbs the duration, so
     //     a leftover positional has nowhere meaningful to land. Erroring
     //     out (da-r6ds / da-ooe2) prevents silent coercion — e.g. a second

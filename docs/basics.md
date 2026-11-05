@@ -35,5 +35,8 @@ Fields can take a few different shapes, based on how they relate to time:
   stoplight
 - ¢ **card**: a collection of keys and values with no relation to time. Used for storing information about the world.
   Ex. people, words, catalogs
+- ▤ **all day**: a value that belongs to a whole day rather than to a moment in it. Every entry is on a date with no
+  time: today, or the day `-d` names (`datum allday steps 8000`, `datum allday steps 9000 -d 2026-11-01`), and `-t`
+  is refused. The value is that day's alone; the next day does not inherit it. Ex. steps, a day's rating, a daily total
 
 The developer's model, from an entry to tracked fields, is [concepts.md](concepts.md).

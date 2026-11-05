@@ -103,6 +103,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "card",
     "remark",
     "note",
+    "allday",
     "tail",
     "head",
     "now",

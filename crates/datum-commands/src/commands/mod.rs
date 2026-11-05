@@ -6,6 +6,7 @@
 
 pub mod add;
 pub mod alias;
+pub mod allday;
 #[cfg(feature = "net")]
 pub mod backup_daemon;
 pub mod backup_restore;

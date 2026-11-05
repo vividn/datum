@@ -271,6 +271,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "change" | "switch" => Command::Switch(parse_log_args(rest)?),
         "record" | "add" | "card" => Command::Add(parse_log_args(rest)?),
         "remark" | "note" => Command::Note(parse_log_args(rest)?),
+        "allday" => Command::AllDay(parse_log_args(rest)?),
 
         "tail" => Command::Tail(parse_tail_args(rest)?),
         "head" => {
@@ -511,7 +512,8 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         | Command::Stop(a)
         | Command::Switch(a)
         | Command::Add(a)
-        | Command::Note(a) => a.output.show = Some(named),
+        | Command::Note(a)
+        | Command::AllDay(a) => a.output.show = Some(named),
         Command::Tail(a) | Command::Head(a) => a.output.show = Some(named),
         Command::Get(a) => a.output.show = Some(named),
         Command::Delete(a) => a.output.show = Some(named),

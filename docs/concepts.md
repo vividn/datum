@@ -13,6 +13,7 @@ and help that have not moved to a word yet say the old one until they do.
 | a stretch with a length | **period** | none: `on <field> <length>` makes one | PERIOD | block, span |
 | one state among several | **change** | `change` | CHANGE | switch, states |
 | an untimed, keyed entry | **record** | `record` | RECORD | add, card |
+| a value for a whole day | **all day** | `allday` | ALLDAY | |
 | untimed data on a timed field, not a field kind | **remark** | `remark` | REMARK | note |
 | one written row of data | **entry** | | | record (noun), row, doc |
 | writing one | **log** | | | record (verb), write, enter |

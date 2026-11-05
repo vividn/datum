@@ -28,6 +28,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 ## LOGGING
 
 - `moment` — A point in time (alias: occur)
+- `allday` — A value for a whole day
 - `on` — Turn a field on, until an off (alias: start)
 - `off` — Turn a field off (alias: end, stop)
 - `change` — Put a field in a new state (alias: switch)

@@ -40,7 +40,8 @@ pub const NOT_A_DECLARATION_SQL: &str =
 
 /// The six-character action word a TRACK row renders as: `TRACK` plus one
 /// glyph naming the verb — a dot for a moment, a filled block for a span,
-/// the switch hatch, and `¢` for the timeless jot. Six characters wide,
+/// the switch hatch, `¢` for the timeless jot and a ruled square for a
+/// whole day. Six characters wide,
 /// like `CREATE`, and each glyph is one display column.
 pub fn track_action_label(verb: Action) -> &'static str {
     match verb {
@@ -48,6 +49,7 @@ pub fn track_action_label(verb: Action) -> &'static str {
         Action::Switch => "TRACK▞",
         Action::Add | Action::Note => "TRACK¢",
         Action::Occur => "TRACK●",
+        Action::AllDay => "TRACK▤",
     }
 }
 
@@ -63,7 +65,7 @@ pub fn track_verb(entry: &Entry) -> Option<Action> {
 }
 
 /// The verb a field is declared with when its first log used `action` —
-/// the four canonical choices, reached from any command word. `end` on a
+/// the five canonical choices, reached from any command word. `end` on a
 /// never-started field declares it a `start` field (vividn, 2026-09-15): an
 /// end is evidence of a span, and the span is what the field is for.
 pub fn verb_for_action(action: Action) -> Action {
@@ -72,6 +74,7 @@ pub fn verb_for_action(action: Action) -> Action {
         Action::Switch => Action::Switch,
         Action::Add | Action::Note => Action::Add,
         Action::Occur => Action::Occur,
+        Action::AllDay => Action::AllDay,
     }
 }
 
