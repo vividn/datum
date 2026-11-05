@@ -18,10 +18,13 @@ organized:
 
 Every `bash` block below is run against the built binary by
 `crates/datum-cli/tests/readme_snippets.rs`, each in its own throwaway
-database — that test asserts the exit code, so a block that stops working
-fails CI. The transcript under each block is what a run of it printed,
-pasted rather than described; hids and timestamps differ per run, and
-nothing checks those.
+database, in UTC. The transcript under each block is what a run of it
+printed, pasted rather than described, and the test holds it to that: a
+block's one transcript is the whole of what it printed, and one of several,
+or one after prose, a run of lines in it. Hids, instants, clocks and dates
+differ per run, and are masked; anything else that changes fails CI until
+it is pasted again (`DATUM_REPASTE=1` on that test re-pastes each whole
+one).
 
 ## 1. Whole argv tokens
 
@@ -44,33 +47,35 @@ is made of them. The full contract is
 ### `,` — one write, N sides
 
 ```bash
-datum switch body vertical , switch project gardening
+datum change body vertical , change project gardening
 ```
 
 ```
-SWITCH m29u1 body:2026-09-22T15:59:03.422Z
-17:59:03+2  body  vertical
-SWITCH t45xa project:2026-09-22T15:59:03.422Z
-17:59:03+2  project  gardening
+CHANGE g5ug0 body:2026-11-05T20:01:08.065Z
+20:01:08+0  body   vertical
+CHANGE ss64b project:2026-11-05T20:01:08.065Z
+20:01:08+0  project   gardening
 ```
 
 Both rows carry the same `at` and are written atomically. The
-comma must be its own token — whitespace on both sides — so `vertical,`
-and `,sit` are single values and `vertical,sit` is one word. There is no
-escape syntax; whitespace is the whole trigger. See the README's "Atomic
-multi-entry aliases" for what the sides share.
+comma must be its own token — whitespace on both sides — so `vertical,sit`
+is one value, a parallel state, and a comma touching one side only
+(`vertical, sit`) is refused. There is no
+escape syntax; whitespace is the whole trigger. See
+[`aliases.md`](aliases.md) (`datum help alias`, ATOMIC MULTI-ENTRY ALIASES)
+for what the sides share.
 
 ### `,,` — bind a value to every side to its left
 
 ```bash
-datum start run , start bike ,, 30m
+datum on run , on bike ,, 30m
 ```
 
 ```
-PERIOD t7dho run:2026-09-22T15:59:03.470Z
-17:59:03+2  run  start  30m
-PERIOD knn04 bike:2026-09-22T15:59:03.470Z
-17:59:03+2  bike  start  30m
+PERIOD 4pw23 run:2026-11-05T20:01:08.142Z
+20:01:08+0  run   on   30m
+PERIOD 92wcq bike:2026-11-05T20:01:08.142Z
+20:01:08+0  bike   on   30m
 ```
 
 One `30m`, both sides. Without the `,,` the `30m` would belong to `bike`
@@ -86,13 +91,13 @@ datum moment a , '(' moment b , moment c ,, k=1 ')'
 ```
 
 ```
-MOMENT l6mpc a:2026-09-22T15:59:03.522Z
-17:59:03+2  a ∅●
-MOMENT 3vgr2 b:2026-09-22T15:59:03.522Z
-17:59:03+2  b ∅●
+MOMENT b9hil a:2026-11-05T20:01:08.216Z
+20:01:08+0  a ∅●
+MOMENT ceo10 b:2026-11-05T20:01:08.216Z
+20:01:08+0  b ∅●
   k: 1
-MOMENT xbijk c:2026-09-22T15:59:03.522Z
-17:59:03+2  c ∅●
+MOMENT 06k45 c:2026-11-05T20:01:08.216Z
+20:01:08+0  c ∅●
   k: 1
 ```
 
@@ -109,8 +114,8 @@ datum moment f -k expr ,, '\('
 ```
 
 ```
-MOMENT qf416 f:2026-09-22T15:59:03.584Z
-17:59:03+2  f ∅●
+MOMENT nwpeh f:2026-11-05T20:01:08.293Z
+20:01:08+0  f ∅●
   expr: "("
 ```
 
@@ -141,8 +146,8 @@ datum moment f -k note -- --verbose
 ```
 
 ```
-MOMENT wnlyu f:2026-09-22T15:59:03.648Z
-17:59:03+2  f ∅●
+MOMENT 01lfb f:2026-11-05T20:01:08.376Z
+20:01:08+0  f ∅●
   note: "--verbose"
 ```
 
@@ -152,15 +157,16 @@ never leaks to the call site.
 ### `.` — skip a slot, and `\.` — a dot that is data
 
 ```bash
-datum alias set scaff "switch body sit , moment caffeine -k doseMg="
+datum alias set scaff "change body sit , moment caffeine -k doseMg="
 datum scaff .
 ```
 
 ```
-SWITCH ljz13 body:2026-09-22T15:59:03.750Z
-17:59:03+2  body  sit
-MOMENT za2rq caffeine:2026-09-22T15:59:03.750Z
-17:59:03+2  caffeine ∅●
+✓ Alias 'scaff' saved.
+CHANGE 0cak0 body:2026-11-05T20:01:08.457Z
+20:01:08+0  body   sit
+MOMENT 6yyor caffeine:2026-11-05T20:01:08.457Z
+20:01:08+0  caffeine ∅●
 ```
 
 The `.` consumed the first unfilled slot and wrote nothing into it, so
@@ -170,12 +176,12 @@ side that declares it.
 `\.` is the way to say the character:
 
 ```bash
-datum switch tv -I the end '\.'
+datum change tv -I the end '\.'
 ```
 
 ```
-SWITCH mz3aa tv:2026-09-22T15:59:03.816Z
-17:59:03+2  tv  the end .
+CHANGE n0too tv:2026-11-05T20:01:08.534Z
+20:01:08+0  tv   the end .
 ```
 
 ### `-` — stdin or stdout instead of a file
@@ -186,10 +192,10 @@ datum db backup -
 ```
 
 The backup goes to stdout rather than to a file, so the first bytes after
-the `moment`'s own MOMENT line are the archive itself:
+the `moment`'s own echo are the archive itself:
 
 ```
-{"type":"daydumb_backup","schema_version":37,"ba…
+{"type":"daydumb_backup",…
 ```
 
 `db restore -` and `db import --from -` read the same way. A bare `-` is
@@ -198,25 +204,26 @@ dot (`-5`, `-5.3` are values).
 
 ### `ISLAST` — what `--if-changed` answers instead of writing
 
-`switch`, `start` and `end` take `--if-changed`: when the field already
+`change`, `on` and `off` take `--if-changed`: when the field already
 holds that state at the entry's time (`-t`, or now), nothing is written
 and the entry that set it prints as `ISLAST`, exit 0. It is a flag like
 any other, so an alias body can carry it:
 
 ```bash
-datum alias set act "switch activity --if-changed"
+datum alias set act "change activity --if-changed"
 datum act reading
 datum act reading
 datum act cooking
 ```
 
 ```
-SWITCH vs2yj activity:2026-09-24T14:47:29.896Z
-16:47:29+2  activity  reading
-ISLAST vs2yj activity:2026-09-24T14:47:29.896Z
-16:47:29+2  activity  reading
-SWITCH 19zx6 activity:2026-09-24T14:47:29.927Z
-16:47:29+2  activity  cooking
+✓ Alias 'act' saved.
+CHANGE gzvr8 activity:2026-11-05T20:01:08.685Z
+20:01:08+0  activity   reading
+ISLAST gzvr8 activity:2026-11-05T20:01:08.685Z
+20:01:08+0  activity   reading
+CHANGE dz0m3 activity:2026-11-05T20:01:08.756Z
+20:01:08+0  activity   cooking
 ```
 
 ## 2. Inside a value
@@ -249,8 +256,8 @@ shorthand for `state.id` — so `state=happy` and a bare positional
 `happy` put the same value in the same place.
 
 ```bash
-datum switch mood happy .intensity=7
-datum switch mood state=happy .intensity=7
+datum change mood happy .intensity=7
+datum change mood state=happy .intensity=7
 datum get mood -A
 ```
 
@@ -258,11 +265,11 @@ Two writes, one state — the `!` on the second only marks that the field
 was already in it:
 
 ```
-SWITCH kymo7 mood:2026-09-22T16:08:44.707Z
-18:08:44+2  mood  {happy}
+CHANGE avm03 mood:2026-11-05T20:02:07.250Z
+20:02:07+0  mood   {happy}
   { .id: "happy", .intensity: 7 }
-SWITCH or5mr mood:2026-09-22T16:08:44.738Z
-18:08:44+2  mood !{happy}
+CHANGE ujlzn mood:2026-11-05T20:02:07.278Z
+20:02:07+0  mood  !{happy}
   { .id: "happy", .intensity: 7 }
 ```
 
@@ -287,8 +294,8 @@ datum moment run gear.shoes=trail
 ```
 
 ```
-MOMENT odafg run:2026-09-22T15:59:04.026Z
-17:59:04+2  run ∅●
+MOMENT so79z run:2026-11-05T20:01:08.922Z
+20:01:08+0  run ∅●
   gear: {"shoes":"trail"}
 ```
 
@@ -318,20 +325,20 @@ datum moment cleared 'tags=[]'
 ```
 
 ```
-MOMENT dxtmj tagged:2026-10-07T12:13:40.762Z
-14:13:40+2  tagged ∅●
+MOMENT c2vko tagged:2026-11-05T20:01:08.985Z
+20:01:08+0  tagged ∅●
   tags: ["work","home"]
-MOMENT veslm one:2026-10-07T12:13:40.783Z
-14:13:40+2  one ∅●
+MOMENT qgg0t one:2026-11-05T20:01:09.031Z
+20:01:09+0  one ∅●
   tags: ["work"]
-MOMENT t8ti1 gappy:2026-10-07T12:13:40.804Z
-14:13:40+2  gappy ∅●
+MOMENT zoie9 gappy:2026-11-05T20:01:09.072Z
+20:01:09+0  gappy ∅●
   tags: ["x",null,"y"]
-MOMENT eehnx prose:2026-10-07T12:13:40.825Z
-14:13:40+2  prose ∅●
+MOMENT jzdci prose:2026-11-05T20:01:09.114Z
+20:01:09+0  prose ∅●
   left: "Anna,", note: "met Anna, Ben"
-MOMENT 0m1wk cleared:2026-10-07T12:13:40.843Z
-14:13:40+2  cleared ∅●
+MOMENT ygwgc cleared:2026-11-05T20:01:09.150Z
+20:01:09+0  cleared ∅●
   tags: []
 ```
 
@@ -350,14 +357,14 @@ datum moment n k=null j=undefined s='"null"'
 ```
 
 ```
-MOMENT zlpeh n:2026-09-28T13:22:34.918Z
-15:22:34+2  n ∅●
+MOMENT i19xd n:2026-11-05T20:01:09.211Z
+20:01:09+0  n ∅●
   k: null, s: "null"
 ```
 
 A null is how a chore is retired: `next_date=null` overrides the date
-before it. A `null` switch STATE is IGNORED, which is what it meant in
-v2 — `datum switch mood null` is `datum ignore mood`.
+before it. A `null` STATE of a change is IGNORED, which is what it meant in
+v2 — `datum change mood null` is `datum ignore mood`.
 
 ### JSON shapes, and the two escapes around them
 
@@ -369,8 +376,8 @@ datum moment shapes flag=true obj='{"a":1}' empty="''"
 ```
 
 ```
-MOMENT k4opv shapes:2026-09-22T16:06:14.598Z
-18:06:14+2  shapes ∅●
+MOMENT 1xew8 shapes:2026-11-05T20:01:09.272Z
+20:01:09+0  shapes ∅●
   empty: "", flag: true, obj: {"a":1}
 ```
 
@@ -387,8 +394,8 @@ datum moment quoted -k key "',,'" "v='a,b'" "l=['a', 'b']"
 ```
 
 ```
-MOMENT mfqdd quoted:2026-10-07T17:39:46.343Z
-19:39:46+2  quoted ∅●
+MOMENT x31lg quoted:2026-11-05T20:01:09.323Z
+20:01:09+0  quoted ∅●
   key: ",,", l: ["a","b"], v: "a,b"
 ```
 
@@ -400,8 +407,8 @@ datum moment f -k raw ,, '=2'
 ```
 
 ```
-MOMENT qe1ts f:2026-09-22T16:06:14.628Z
-18:06:14+2  f ∅●
+MOMENT n5amn f:2026-11-05T20:01:09.392Z
+20:01:09+0  f ∅●
   raw: "=2"
 ```
 
@@ -416,8 +423,8 @@ datum moment lift weight=75.2kg reps=10 set=4th
 ```
 
 ```
-MOMENT f2f8i lift:2026-09-22T15:59:04.152Z
-17:59:04+2  lift ∅●
+MOMENT 0zi1x lift:2026-11-05T20:01:09.497Z
+20:01:09+0  lift ∅●
   reps: 10, set: "4th", weight: "75.2kg"
 ```
 
@@ -429,7 +436,7 @@ that kind first. So `dur=5m` stores the duration `PT5M`, while
 ### `comment` — an array, only ever appended to
 
 `-c`/`--comment` and `-C`/`--comment-remainder` each APPEND one string to
-`data.comment`, on every logging verb and on `update`; nothing replaces
+`data.comment`, on every logging command and on `update`; nothing replaces
 one. The key is an array however many it holds (one prints as itself), and
 a comment is kept as typed: `-c 42` is `"42"`. `delete -c WHY` appends
 `deleted: WHY` in the same write that deletes the row, to every row of a
@@ -442,16 +449,33 @@ datum delete coffee:_ -c "wrong day"
 ```
 
 ```
-MOMENT dtgnq coffee:2026-09-24T14:54:52.113Z
-16:54:52+2  coffee ∅●
+MOMENT 3kd5j coffee:2026-11-05T20:01:09.564Z
+20:01:09+0  coffee ∅●
   comment: "decaf"
-UPDATE dtgnq coffee:2026-09-24T14:54:52.113Z
-16:54:52+2  coffee ●
+UPDATE 3kd5j coffee:2026-11-05T20:01:09.564Z
+20:01:09+0  coffee  ●
   comment: "decaf" → ["decaf","second cup"]
-DELETE dtgnq coffee:2026-09-24T14:54:52.113Z
-16:54:52+2  coffee ●
+DELETE 3kd5j coffee:2026-11-05T20:01:09.564Z
+20:01:09+0  coffee  ●
   comment: ["decaf","second cup","deleted: wrong day"]
+DELETE rjf33 spec:coffee
+1970-01-01 00:00:00+0  spec  ●
+   allowed_states: null
+            color: null
+        data_keys: []
+  derived_aliases: [{"expands_to":"occur coffee","kind":"bare_field","state":"coffee"}]
+      description: null
+            field: "coffee"
+          id_keys: []
+      id_template: null
+     no_autoalias: false
+     state_colors: {}
+        subfields: {}
+             verb: "occur"
 ```
+
+The row was `coffee`'s only entry, so the delete takes the spec its first
+log made with it, and prints that too.
 
 ### `ref://` — a reference, and `str://ref://` — a literal one
 
@@ -470,7 +494,7 @@ stored as typed; a marker there is accepted and reads alike.
 
 `get <id>::<key>::<name>` follows a reference as it follows a state (§4
 `::`), and `datum check refs` names each one that finds no live entry, one
-line per field, key and slug. A reference to an entry is never refused at
+warning per field, key and slug, listing its entries. A reference to an entry is never refused at
 write.
 
 A slug with nothing after its `::`, `ref://issue__k7f2a9x3::`, refers to a
@@ -485,7 +509,7 @@ hop through one reads the record, and `get <field> --backlinks` lists each
 record that refers to the field's, with the keys that do.
 
 ```bash
-datum add book --id dune title=Dune
+datum record book --id dune title=Dune
 datum moment read what=ref://book:dune
 datum moment quote said='"ref://book:dune"'
 datum get read:_::what::title
@@ -497,32 +521,31 @@ datum check refs
 ```
 
 ```
-RECORD rp2sb book:dune
-c21:40:09+2  book ¢
+RECORD zms7v book:dune
+c20:01:09+0  book ¢
   title: "Dune"
-MOMENT 54ii3 read:2026-09-28T19:40:09.998Z
-21:40:09+2  read ∅●
+MOMENT hyszo read:2026-11-05T20:01:09.715Z
+20:01:09+0  read ∅●
   what: "ref://book:dune"
-MOMENT p41in quote:2026-09-28T19:40:10.013Z
-21:40:10+2  quote ∅●
+MOMENT sqlcy quote:2026-11-05T20:01:09.760Z
+20:01:09+0  quote ∅●
   said: "ref://book:dune"
 Dune
 ref://book:dune
-✓ Spec saved for 'task'
-MOMENT bdd2a task:2026-09-28T19:40:10.066Z
-21:40:10+2  task ∅●
+MOMENT aigp4 spec:task
+task  moment  tracked
+  keys    -k blocker=
+MOMENT ed9x6 task:2026-11-05T20:01:09.872Z
+20:01:09+0  task ∅●
   blocker: "issue:k7f2a"
-MOMENT j285u plan:2026-09-28T19:40:10.083Z
-21:40:10+2  plan ∅●
+MOMENT ea05c plan:2026-11-05T20:01:09.900Z
+20:01:09+0  plan ∅●
   needs: ["ref://book:dune","ref://book:emma"]
+entries:
 [WARN ] dangling_data_ref (x1): 1 plan entry refers to book:emma, which is no live entry (key needs)
-    example: j285u
-    example field: plan
-    hids: j285u
+    ea05c  20:01:09+0  plan  ∅●
 [WARN ] dangling_data_ref (x1): 1 task entry refers to issue:k7f2a, which is no live entry (key blocker)
-    example: bdd2a
-    example field: task
-    hids: bdd2a
+    ed9x6  20:01:09+0  task  ∅● issue:k7f2a
 
 Summary: 0 errors, 2 warnings.
 ```
@@ -547,8 +570,8 @@ datum get coffee -A
 ```
 
 ```
-MOMENT 6r55f coffee:2026-09-22T12:00:00.000Z
-14:00:± +2  coffee ∅●
+MOMENT pbutc coffee:2026-11-05T14:00:00.000Z
+14:00:± +0  coffee ∅●
 ```
 
 A gray `±` takes the seconds' place after the colon, false precision on a
@@ -557,9 +580,9 @@ as an exact one and no column shifts. The amount is not printed there; `get -A` 
 instant, in a column of its own, as `--json` carries it:
 
 ```
-  at                        2026-09-22T12:00:00+00:00
-  at_offset                 120 min
-  at_tz                     Europe/Berlin
+  at                        2026-11-05T14:00:00+00:00
+  at_offset                 0 min
+  at_tz                     UTC
   at_uncertainty            PT15M
 ```
 
@@ -571,28 +594,31 @@ stored as `PT5M` whichever form it is typed in, and `at_uncertainty=` or
 something precedes it, so a leading-sign offset like `-t +5` is still an
 offset. A bare number defaults to minutes; `s`/`m`/`h`/`d` and ISO
 (`PT5M`) are accepted. A duration takes it too, `dur=` or the trailing
-positional, in the same forms (`dur=90m+-5`, `end task 90m±5m`):
+positional, in the same forms (`dur=90m+-5`, `off task 90m±5m`):
 
 ```bash
-datum start task dur=PT1H30M±PT5M
+datum on task dur=PT1H30M±PT5M
 datum get task -A
 ```
 
-Two lines of `get -A`, from different sections of it — the span and how
-precisely it is known are separate columns:
+Two lines of `get -A` — the span and how precisely it is known are
+separate columns, the first in its What section and the second in its When:
 
 ```
   dur                       PT1H30M
+```
+
+```
   dur_uncertainty           PT5M
 ```
 
 `update` takes the same `dur_uncertainty=`, and `dur_uncertainty=` or
 `dur_uncertainty=null` drops it. `dur=` or `dur=null` drops the duration, and
-the trailing state that ended it: `start task 30m`, so updated, is `start task`.
+the trailing state that ended it: `on task 30m`, so updated, is `on task`.
 
 Wherever the duration is printed — the echo, `get`, `tail`'s dur column —
 a gray `±` and its amount follow it:
-`21:17:33+2  task  start  1h30m±5m`.
+`20:02:08+0  task   on   1h30m±5m`.
 
 Uncertainty is deliberately outside the content hash — `coffee ±5m` and
 `coffee ±1m` at the same instant are one coffee, and hashing the
@@ -606,11 +632,14 @@ datum moment probe -d sunday+
 ```
 
 ```
-MOMENT e3h0w probe:2026-09-20
-MOMENT qty4x probe:2026-09-27
+ALLDAY xr027 probe:2026-11-01
+2026-11-01  probe ∅●
+ALLDAY 28quf probe:2026-11-08
+2026-11-08  probe  ●
 ```
 
-(Run on a Tuesday: the Sunday before, then the Sunday after.) Without a
+(Run on Thursday 2026-11-05: the Sunday before, then the Sunday after.)
+`-d` and no clock names the whole day, so each is an ALLDAY entry. Without a
 marker the command's own default direction decides. Fully pinned forms —
 an ISO date, a compact date with a year — ignore it.
 
@@ -624,10 +653,14 @@ datum moment probe -d oct10,2022
 ```
 
 ```
-MOMENT eoe38 probe:2026-04-29
-MOMENT 6wm5i probe:2025-04-29
-MOMENT zkkr4 probe:2024-04-29
-MOMENT gtudw probe:2022-10-10
+ALLDAY c6vyo probe:2027-04-29
+2027-04-29  probe ∅●
+ALLDAY qgokn probe:2025-04-29
+2025-04-29  probe ∅●
+ALLDAY nu17l probe:2024-04-29
+2024-04-29  probe ∅●
+ALLDAY 549vh probe:2022-10-10
+2022-10-10  probe ∅●
 ```
 
 The first is the nearest April 29; the other three are pinned. All three
@@ -678,7 +711,7 @@ datum get 'a:*'
 `datum tail`:
 
 ```
-ref  time (+2)  f  s
+ref  time (+0)  f  s
 _4    17:59:04  a  ∅●
 _3    17:59:04  b  ∅●
 _2    17:59:04  c  ∅●
@@ -689,9 +722,9 @@ _1    17:59:04  d  ∅●
 
 ```
 EXISTS 78gwx c:2026-09-22T15:59:04.623Z
-17:59:04+2  c ∅●
+17:59:04+0  c ∅●
 EXISTS rtzbg b:2026-09-22T15:59:04.598Z
-17:59:04+2  b ∅●
+17:59:04+0  b ∅●
 ```
 
 Ordinals count every live entry, so a field-filtered listing shows gaps —
@@ -700,11 +733,11 @@ instead, and `datum get b:_` gives that field's newest row:
 
 ```
 EXISTS rtzbg b:2026-09-22T15:59:04.598Z
-17:59:04+2  b ∅●
+17:59:04+0  b ∅●
 ```
 
 `body:run:_` counts only the `body` entries whose state is `run`, or holds
-it among parallel states: after `switch body run -t 9:30` and `switch body
+it among parallel states: after `change body run -t 9:30` and `change body
 lift -t 9:50 3`, `body:_` is the lift and `body:run:_` the run. The state
 is everything between the field and the last `:`, so `media:book:gatsby:_`
 reads the state `book:gatsby`. A slug spelled the same still wins.
@@ -713,9 +746,9 @@ reads the state `book:gatsby`. A slug spelled the same still wins.
 
 ```
 EXISTS giwrb d:2026-09-22T15:59:04.643Z
-17:59:04+2  d ∅●
+17:59:04+0  d ∅●
 EXISTS rtzbg b:2026-09-22T15:59:04.598Z
-17:59:04+2  b ∅●
+17:59:04+0  b ∅●
 ```
 
 `datum get 'a:*'` — `*` and `?` glob, against the WHOLE slug or hid
@@ -724,23 +757,28 @@ hid needs eleven other characters beside it):
 
 ```
 EXISTS wvf06 a:2026-09-22T15:59:04.574Z
-17:59:04+2  a ∅●
+17:59:04+0  a ∅●
 ```
 
 `_LAST` is every entry the last invocation wrote, which after a
 multi-entry write is more than one — that is the point of it:
 
 ```bash
-datum alias set oov "switch environment outside , switch body vertical"
+datum alias set oov "change environment outside , change body vertical"
 datum oov
 datum get _LAST
 ```
 
 ```
-EXISTS 1dkhw environment:2026-09-22T16:03:12.118Z
-18:03:12+2  environment  outside
-EXISTS 5jcj6 body:2026-09-22T16:03:12.118Z
-18:03:12+2  body  vertical
+✓ Alias 'oov' saved.
+CHANGE qtti0 environment:2026-11-05T20:01:10.728Z
+20:01:10+0  environment   outside
+CHANGE mnnq1 body:2026-11-05T20:01:10.728Z
+20:01:10+0  body   vertical
+EXISTS qtti0 environment:2026-11-05T20:01:10.728Z
+20:01:10+0  environment   outside
+EXISTS mnnq1 body:2026-11-05T20:01:10.728Z
+20:01:10+0  body   vertical
 ```
 
 A command that can only act on one entry says so rather than picking —
@@ -763,13 +801,15 @@ its value is a reference (§2 `ref://`): `<id>::needs::<name>`. A value that ref
 array, a missing entry or a loop is an error naming it.
 
 ```bash
-datum switch media book
+datum change media book
 datum get _::hid
 datum get ::state
 ```
 
 ```
-t91w30mlcq32
+CHANGE 9vywg media:2026-11-05T20:01:10.815Z
+20:01:10+0  media   book
+9vywg9wu94x7
 book
 ```
 
@@ -791,26 +831,34 @@ number, and the TRACKED and IGNORED sentinels never refer.
 
 Nothing is refused at write — the entry named may yet arrive by sync —
 and `datum check refs` names each reference that finds no live entry, one
-line per field and slug:
+warning per field and slug, listing its entries:
 
 ```bash
-datum add book --id great_gatsby
-datum switch media book:great_gatsby
-datum setup issue --verb switch --state-lookup-field issue_state
-datum switch issue queued
-datum switch clock 12:30
+datum record book --id great_gatsby
+datum change media book:great_gatsby
+datum setup issue --kind change --state-lookup-field issue_state
+datum change issue queued
+datum change clock 12:30
 datum check refs
 ```
 
 ```
+RECORD 6tuuh book:great_gatsby
+c20:01:10+0  book ¢
+CHANGE mkf9g media:2026-11-05T20:01:10.936Z
+20:01:10+0  media   book:great_gatsby
+MOMENT oi572 spec:issue
+issue  change  tracked
+  state lookup  issue_state
+CHANGE 9bq9e issue:2026-11-05T20:01:11.010Z
+20:01:11+0  issue   queued
+CHANGE ur8ty clock:2026-11-05T20:01:11.062Z
+20:01:11+0  clock   12:30
+entries:
 [WARN ] dangling_state_ref (x1): 1 clock entry refers to 12:30, which is no live entry
-    example: z90mo
-    example field: clock
-    hids: z90mo
+    ur8ty  20:01:11+0  clock    12:30
 [WARN ] dangling_state_ref (x1): 1 issue entry refers to issue_state:queued, which is no live entry
-    example: emfed
-    example field: issue
-    hids: emfed
+    9bq9e  20:01:11+0  issue    queued
 
 Summary: 0 errors, 2 warnings.
 ```
@@ -840,24 +888,34 @@ or holds one of `, [ ] { } :`. Two comments give `tx:[electricity,paid]`,
 an object `{a:1,b:x}`; one comment is just itself.
 
 ```bash
-datum note word correr --id '%field%:%srcLang%:%pos%' srcLang=pt pos=verb
+datum remark word correr --id '%field%:%srcLang%:%pos%' srcLang=pt pos=verb
 ```
 
 ```
-REMARK rvpcn word:word:pt:verb
+REMARK 0l8ug word:word:pt:verb
+c20:01:11+0  word ¢
+  comment: "correr"
+      pos: "verb"
+  srcLang: "pt"
 ```
 
 A missing key renders empty and the delimiters around it collapse, so a
 template need not know which keys a given entry has:
 
 ```bash
-datum note word correr --id '%?srcLang%:%pos%' srcLang=pt pos=verb
-datum note word andar --id '%?srcLang%:%pos%' pos=verb
+datum remark word correr --id '%?srcLang%:%pos%' srcLang=pt pos=verb
+datum remark word andar --id '%?srcLang%:%pos%' pos=verb
 ```
 
 ```
-REMARK tof44 word:pt:verb
-REMARK aiye2 word:verb
+REMARK 2v15s word:pt:verb
+c20:01:11+0  word ¢
+  comment: "correr"
+      pos: "verb"
+  srcLang: "pt"
+REMARK zvyp0 word:verb
+c20:01:11+0  word ¢
+  comment: "andar", pos: "verb"
 ```
 
 `%?key%` and `%key%` behave identically today — the `?` records that the
@@ -865,31 +923,40 @@ key is expected to be absent sometimes, and reserves the spelling for a
 future strict mode. `--id-delimiter` changes which character collapses:
 
 ```bash
-datum note w3 x --id '%field%-%pos%' --id-delimiter - pos=verb
+datum remark w3 x --id '%field%-%pos%' --id-delimiter - pos=verb
 ```
 
 ```
-REMARK 9ad7v w3:w3-verb
+REMARK xbb0r w3:w3-verb
+c20:01:11+0  w3 ¢
+  comment: "x", pos: "verb"
 ```
 
 `\%` is a literal percent:
 
 ```bash
-datum note pct y --id '100\%-%field%'
+datum remark pct y --id '100\%-%field%'
 ```
 
 ```
-REMARK ow8wk pct:100%-pct
+REMARK ova3y pct:100%-pct
+c20:01:11+0  pct ¢
+  comment: "y"
 ```
 
 `-o` reads the same way, against each row a read command prints:
 
 ```bash
-datum note word correr --id '%field%:%srcLang%:%pos%' srcLang=pt pos=verb
+datum remark word correr --id '%field%:%srcLang%:%pos%' srcLang=pt pos=verb
 datum tail -o '%slug% %field%'
 ```
 
 ```
+REMARK 1bxsq word:word:pt:verb
+c20:01:11+0  word ¢
+  comment: "correr"
+      pos: "verb"
+  srcLang: "pt"
 word:word:pt:verb word
 ```
 

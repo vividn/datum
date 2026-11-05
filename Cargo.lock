@@ -590,6 +590,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "libc",
  "p256",
+ "regex-lite",
  "rusqlite",
  "rustyline",
  "serde",

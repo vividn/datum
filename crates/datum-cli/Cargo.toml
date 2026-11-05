@@ -65,6 +65,8 @@ chrono-tz = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3"
+# Masks what a run mints in the docs' transcripts (da-2i4fd).
+regex-lite = { workspace = true }
 # A software passkey for the sync chain tests (da-odwc7).
 p256 = { workspace = true }
 # Signs a forged chain op as a member would (da-rcb5m).

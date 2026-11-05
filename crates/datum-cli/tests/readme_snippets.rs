@@ -21,6 +21,18 @@
 //!   and outside quotes) is stripped.
 //! - A line ending in `\` is joined with the next line — multi-line commands.
 //!
+//! ## Transcripts
+//!
+//! In a doc `TRANSCRIPT_DOCS` lists, a plain fence (no info string) after a
+//! bash block is what that block printed, stdout then stderr of each command
+//! in turn, and is checked (da-2i4fd). A block's only transcript, with
+//! nothing but blank lines between them, is the WHOLE output; any other is
+//! an excerpt, a run of lines found together in it, where a line ending in
+//! `…` matches any line it starts. What a run mints — hids, timestamps,
+//! clocks, dates — is masked on both sides, and the blocks run in UTC.
+//! `DATUM_REPASTE=1` writes each whole transcript that drifted with what
+//! was printed; an excerpt is chosen by hand, so it is re-pasted by hand.
+//!
 //! ## Isolation
 //!
 //! Each block runs against its own `tempfile::TempDir`, exported as
@@ -58,11 +70,23 @@ const SNIPPET_DOCS: &[&str] = &[
     "web/static/agents.md",
 ];
 
+/// The docs whose plain fences under a bash block are its transcript.
+const TRANSCRIPT_DOCS: &[&str] = &["docs/grammar-tokens.md"];
+
 #[derive(Debug)]
 struct Block {
     info: String,
     body: String,
     line_no: usize,
+    transcripts: Vec<Transcript>,
+}
+
+#[derive(Debug)]
+struct Transcript {
+    body: String,
+    line_no: usize,
+    /// Nothing but blank lines between it and the block.
+    direct: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -99,29 +123,101 @@ fn parse_info(info: &str) -> Mode {
 
 fn extract_bash_blocks(readme: &str) -> Vec<Block> {
     let cleaned = strip_autogen_regions(readme);
-    let mut blocks = Vec::new();
-    let mut current: Option<Block> = None;
+    let mut blocks: Vec<Block> = Vec::new();
+    let mut open: Option<(String, String, usize)> = None;
+    // Prose since the last fence closed, and whether that fence was a bash
+    // block or one of its transcripts, with no heading since.
+    let (mut prose, mut under_bash) = (false, false);
     for (idx, line) in cleaned.lines().enumerate() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("```") {
-            let info = trimmed.trim_start_matches('`').trim().to_string();
-            match current.take() {
-                Some(b) => blocks.push(b),
-                None if info.split(',').next().map(str::trim) == Some("bash") => {
-                    current = Some(Block {
-                        info,
-                        body: String::new(),
-                        line_no: idx + 1,
-                    });
+            match open.take() {
+                None => {
+                    let info = trimmed.trim_start_matches('`').trim().to_string();
+                    open = Some((info, String::new(), idx + 1));
                 }
-                None => {} // opening fence for a non-bash block — ignore until close
+                Some((info, body, line_no)) => {
+                    let bash = info.split(',').next().map(str::trim) == Some("bash");
+                    let plain = info.is_empty();
+                    if bash {
+                        blocks.push(Block {
+                            info,
+                            body,
+                            line_no,
+                            transcripts: Vec::new(),
+                        });
+                    } else if plain && under_bash {
+                        let block = blocks.last_mut().expect("a bash block");
+                        block.transcripts.push(Transcript {
+                            body,
+                            line_no,
+                            direct: !prose && block.transcripts.is_empty(),
+                        });
+                    }
+                    under_bash = bash || (plain && under_bash);
+                    prose = false;
+                }
             }
-        } else if let Some(b) = current.as_mut() {
-            b.body.push_str(line);
-            b.body.push('\n');
+        } else if let Some((_, body, _)) = open.as_mut() {
+            body.push_str(line);
+            body.push('\n');
+        } else if trimmed.starts_with('#') {
+            under_bash = false;
+        } else if !trimmed.is_empty() {
+            prose = true;
         }
     }
     blocks
+}
+
+/// A transcript's lines with what a run mints masked: hids, instants, clocks
+/// and dates, in this order, so the short hid's masks read `<clock>`. Both
+/// sides pass through it, so a mask can only hide what it covers: a value of
+/// twelve lowercase characters and digits reads as a hid. A short hid is
+/// masked where the echo puts one, after the action word, and where `check`
+/// lists an entry, before its time; a change to either format fails the test.
+fn masked(text: &str) -> Vec<String> {
+    use regex_lite::Regex;
+    use std::sync::LazyLock;
+    static MASKS: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
+        [
+            (r"\b[0-9a-z]{12}\b", "<hid>"),
+            (r"\d{4}-\d\d-\d\dT[0-9:.]+(Z|[+-]\d\d:\d\d)?", "<when>"),
+            (r"\d{4}-\d\d-\d\d", "<date>"),
+            (r"\d\d:\d\d:\d\d", "<clock>"),
+            (r"^([A-Z][A-Z/]+ )[0-9a-z]{4,11} ", "$1<id> "),
+            (r"^(\s+)[0-9a-z]{4,11}(  <clock>)", "$1<id>$2"),
+        ]
+        .into_iter()
+        .map(|(re, to)| (Regex::new(re).unwrap(), to))
+        .collect()
+    });
+    text.trim_end()
+        .lines()
+        .map(|line| {
+            let mut line = line.trim_end().to_string();
+            for (re, to) in MASKS.iter() {
+                line = re.replace_all(&line, *to).into_owned();
+            }
+            line
+        })
+        .collect()
+}
+
+/// Whether a transcript is what was printed: all of it, or a run of it.
+fn transcribes(t: &Transcript, whole: bool, printed: &str) -> bool {
+    let (want, got) = (masked(&t.body), masked(printed));
+    let same = |w: &String, g: &String| match w.strip_suffix('…') {
+        Some(head) => g.starts_with(head),
+        None => w == g,
+    };
+    if whole {
+        return want.len() == got.len() && want.iter().zip(&got).all(|(w, g)| same(w, g));
+    }
+    !want.is_empty()
+        && got
+            .windows(want.len())
+            .any(|run| run.iter().zip(&want).all(|(g, w)| same(w, g)))
 }
 
 /// Drop EVERY autogenerated region from a doc before scanning (a doc holds
@@ -269,6 +365,10 @@ impl TestEnv {
             .env("XDG_DATA_HOME", self.root.join(".local/share"))
             .env_remove("ZDOTDIR")
             .env("NO_COLOR", "1")
+            .env("TZ", "UTC")
+            // An error prints as a person sees it, without CI's backtrace.
+            .env_remove("RUST_BACKTRACE")
+            .env_remove("RUST_LIB_BACKTRACE")
     }
 }
 
@@ -328,6 +428,8 @@ fn run_snippets_in(rel: &str) {
     let mut ran_blocks = 0usize;
     let mut ran_commands = 0usize;
     let mut skipped = 0usize;
+    let mut drifted = Vec::new();
+    let mut repaste = Vec::new();
 
     for block in &blocks {
         let mode = parse_info(&block.info);
@@ -337,6 +439,7 @@ fn run_snippets_in(rel: &str) {
         }
         let env = TestEnv::new();
         ran_blocks += 1;
+        let mut printed = String::new();
         for cmd in split_commands(&block.body) {
             let argv = tokenize(&cmd);
             assert!(
@@ -374,9 +477,44 @@ fn run_snippets_in(rel: &str) {
                     String::from_utf8_lossy(&out.stderr),
                 );
             }
+            printed.push_str(&String::from_utf8_lossy(&out.stdout));
+            printed.push_str(&String::from_utf8_lossy(&out.stderr));
             ran_commands += 1;
         }
+        if TRANSCRIPT_DOCS.contains(&rel) {
+            let whole = |t: &Transcript| t.direct && block.transcripts.len() == 1;
+            for t in block.transcripts.iter() {
+                if transcribes(t, whole(t), &printed) {
+                    continue;
+                }
+                if whole(t) && std::env::var_os("DATUM_REPASTE").is_some() {
+                    repaste.push((t.line_no, t.body.lines().count(), printed.clone()));
+                    continue;
+                }
+                drifted.push(format!(
+                    "{rel} line {}: the transcript is not what the block at line {} printed{}:\n{printed}",
+                    t.line_no,
+                    block.line_no,
+                    if whole(t) { "" } else { " (an excerpt: a run of these lines)" },
+                ));
+            }
+        }
     }
+    if !repaste.is_empty() {
+        let mut lines: Vec<String> = doc.lines().map(String::from).collect();
+        for (fence, len, printed) in repaste.into_iter().rev() {
+            let pasted = printed.lines().map(|l| l.trim_end().to_string());
+            lines.splice(fence..fence + len, pasted);
+        }
+        std::fs::write(&doc_path, lines.join("\n") + "\n").expect("re-paste");
+    }
+    assert!(
+        drifted.is_empty(),
+        "{} transcript(s) drifted; paste what was printed \
+         (DATUM_REPASTE=1 re-pastes each whole one):\n\n{}",
+        drifted.len(),
+        drifted.join("\n"),
+    );
 
     assert!(
         ran_commands > 0,
@@ -480,6 +618,25 @@ cargo install --path crates/datum-cli
         assert_eq!(blocks[0].info, "bash");
         assert!(blocks[0].body.contains("datum switch"));
         assert_eq!(blocks[1].info, "bash,no_run");
+    }
+
+    #[test]
+    fn a_transcript_is_the_whole_output_or_a_run_of_it() {
+        let md = "```bash\ndatum moment a\n```\n\n```\nMOMENT x1y2z a:2026-01-01T00:00:00.000Z\n```\n\nprose\n\n```\nb\n```\n";
+        let block = &extract_bash_blocks(md)[0];
+        let (first, second) = (&block.transcripts[0], &block.transcripts[1]);
+        assert!(first.direct && !second.direct);
+        let printed = "MOMENT 9qq8w a:2026-11-05T20:01:08.065Z\nb\nc\n";
+        assert!(
+            !transcribes(first, true, printed),
+            "whole, so `b` and `c` are missing"
+        );
+        assert!(
+            transcribes(first, false, printed),
+            "the hid and instant are masked"
+        );
+        assert!(transcribes(second, false, printed));
+        assert!(!transcribes(second, false, "a\nc\n"));
     }
 
     #[test]
