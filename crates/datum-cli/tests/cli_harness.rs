@@ -123,8 +123,7 @@ fn log_with_update_flag_routes_to_update_strategy() {
     // Small delay so modified_at can strictly advance.
     std::thread::sleep(std::time::Duration::from_millis(5));
 
-    // Same field/time/value, another key's value: `--update` must mutate
-    // (the same content again changes nothing, NODIFF: da-wudrc).
+    // Same field/time/value/extra → same content_hash. `--update` must mutate.
     run_cli(
         &[
             "switch",
@@ -133,7 +132,7 @@ fn log_with_update_flag_routes_to_update_strategy() {
             "-t",
             "09:00",
             "-k",
-            "source=evening",
+            "source=morning",
             "--update",
         ],
         &db,
@@ -148,5 +147,4 @@ fn log_with_update_flag_routes_to_update_strategy() {
         after.modify_time > before.modify_time,
         "Update strategy must bump modified_at"
     );
-    assert_eq!(after.data, Some(serde_json::json!({ "source": "evening" })));
 }

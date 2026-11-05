@@ -325,23 +325,14 @@ fn identical_content_triggers_exists_outcome() {
 /// Daydumb divergence: slug uniqueness is the daydumb analog of datum's
 /// DocExistsError — "same id, different data" is essentially-duplicate data
 /// (the user explicitly asserted the same identity twice) and must error
-/// rather than silently store under a suffixed slug, where the field
-/// refuses (v2's `fail`; update is the default, da-wudrc). Only the first
-/// row survives.
+/// rather than silently store under a suffixed slug. Only the first row
+/// survives.
 #[test]
 fn same_id_different_data_errors_on_second() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "doug", "foo=bar"], &db).expect("first note");
-    let argv = [
-        "add",
-        "field",
-        "--id",
-        "doug",
-        "different=data",
-        "--conflict",
-        "refuse",
-    ];
-    let err = run_cli(&argv, &db).expect_err("second note at same --id must fail");
+    let err = run_cli(&["add", "field", "--id", "doug", "different=data"], &db)
+        .expect_err("second note at same --id must fail");
     let msg = format!("{err:#}");
     assert!(
         msg.to_lowercase().contains("duplicate") || msg.contains("doug"),
@@ -356,22 +347,14 @@ fn same_id_different_data_errors_on_second() {
 }
 
 /// da-2mn3k: a keyed record re-logged under `--update` changes in place;
-/// refused, the collision's hint names the flags, not another id template
-/// (one produced it).
+/// without a strategy the collision's hint names the flags, not another
+/// id template (one produced it).
 #[test]
 fn keyed_record_relogs_in_place_under_update() {
     let db = fresh_db();
     run_cli(&["occur", "battery", "level=80", "--id", "fixed"], &db).expect("first");
-    let refused = [
-        "occur",
-        "battery",
-        "level=70",
-        "--id",
-        "fixed",
-        "--conflict",
-        "refuse",
-    ];
-    let err = run_cli(&refused, &db).expect_err("refused: the slug is taken");
+    let err = run_cli(&["occur", "battery", "level=70", "--id", "fixed"], &db)
+        .expect_err("no strategy: the slug is taken");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("--update or --merge"),
@@ -396,17 +379,7 @@ fn keyed_record_relogs_in_place_under_update() {
     )
     .expect("tx");
     let err = run_cli(
-        &[
-            "occur",
-            "tx",
-            "-t",
-            "09:00",
-            "--id",
-            "%occurTime%",
-            "a=2",
-            "--conflict",
-            "refuse",
-        ],
+        &["occur", "tx", "-t", "09:00", "--id", "%occurTime%", "a=2"],
         &db,
     )
     .expect_err("same instant");
@@ -420,9 +393,7 @@ fn optional_time_placeholder_is_not_a_key() {
     let db = fresh_db();
     let argv = |a: &'static str| ["occur", "tx", "-t", "09:00", "--id", "%?at%", a];
     run_cli(&argv("a=1"), &db).expect("tx");
-    let mut refused = argv("a=2").to_vec();
-    refused.extend(["--conflict", "refuse"]);
-    let err = run_cli(&refused, &db).expect_err("same instant");
+    let err = run_cli(&argv("a=2"), &db).expect_err("same instant");
     let msg = format!("{err:#}");
     assert!(msg.contains("id template"), "{msg}");
     assert!(!msg.contains("--update or --merge"), "{msg}");

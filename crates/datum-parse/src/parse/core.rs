@@ -219,11 +219,10 @@ pub(crate) fn parse_conflict_strategy(
 ) -> Result<ConflictStrategyArg> {
     let v = s.to_ascii_lowercase();
     let arg = match v.as_str() {
-        "replace" => Some(ConflictStrategyArg::Replace),
         "update" => Some(ConflictStrategyArg::Update),
         "merge" => Some(ConflictStrategyArg::Merge),
         "rekey" => Some(ConflictStrategyArg::Rekey),
-        "refuse" => Some(ConflictStrategyArg::Refuse),
+        "ignore" => Some(ConflictStrategyArg::Ignore),
         _ => None,
     };
     match arg {

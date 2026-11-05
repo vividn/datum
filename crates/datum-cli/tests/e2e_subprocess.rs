@@ -194,8 +194,8 @@ fn subprocess_time_uncertainty_takes_the_seconds_place() {
     assert_eq!(water["time_uncertainty"], "PT5M");
 }
 
-/// da-9sfm: a content-identical re-log, refused (`--conflict refuse`,
-/// v2's `fail`), dedups to the existing row and must exit **11** — the distinct, scriptable code datum v2 reserved for
+/// da-9sfm: a content-identical re-log dedups to the existing row and must
+/// exit **11** — the distinct, scriptable code datum v2 reserved for
 /// "already have this" so idempotent loggers can skip the no-op. The first
 /// log exits 0 (CREATE); the second exits 11 (EXISTS) while still rendering
 /// the existing entry and writing no new row. Only the real process boundary
@@ -209,7 +209,7 @@ fn subprocess_duplicate_relog_exits_11() {
     assert_ok(&first, "first occur");
     assert_eq!(env.entry_count(), 1);
 
-    let second = env.run(&["occur", "coffee", "-t", "0900", "--conflict", "refuse"]);
+    let second = env.run(&["occur", "coffee", "-t", "0900"]);
     assert_eq!(
         second.status.code(),
         Some(11),
@@ -227,17 +227,10 @@ fn subprocess_duplicate_relog_exits_11() {
     // A subsequent distinct log exits 0 — the flag is per-invocation.
     let third = env.run(&["occur", "tea", "-t", "0900"]);
     assert_ok(&third, "distinct occur after duplicate");
-
-    // da-wudrc: by default a re-log updates, and an identical one is NODIFF,
-    // exit 0.
-    let default = env.run(&["occur", "coffee", "-t", "0900"]);
-    assert_ok(&default, "a re-log under update");
-    assert!(String::from_utf8_lossy(&default.stdout).contains("NODIFF"));
-    assert_eq!(env.entry_count(), 2);
 }
 
 /// da-9sfm: the other duplicate flavour — a slug collision with *conflicting*
-/// data (`--id` reused, different payload), refused — is a hard `Duplicate` error. It
+/// data (`--id` reused, different payload) — is a hard `Duplicate` error. It
 /// also exits 11 (v2 `DocExistsError` parity) but prints the error and writes
 /// nothing.
 #[test]
@@ -248,15 +241,7 @@ fn subprocess_conflicting_id_exits_11_with_error() {
         "first add",
     );
 
-    let collision = env.run(&[
-        "add",
-        "field",
-        "--id",
-        "doug",
-        "different=data",
-        "--conflict",
-        "refuse",
-    ]);
+    let collision = env.run(&["add", "field", "--id", "doug", "different=data"]);
     assert_eq!(
         collision.status.code(),
         Some(11),

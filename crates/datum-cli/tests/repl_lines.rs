@@ -199,7 +199,7 @@ fn a_failed_window_leaves_nothing_for_the_next_line() {
 fn a_dedup_is_that_lines_and_the_repl_exits_0() {
     let printed = second_line_as_alone(
         &["occur coffee -t 10:00"],
-        "occur coffee -t 10:00 --conflict refuse",
+        "occur coffee -t 10:00",
         "occur tea -t 9:00",
     );
     assert!(

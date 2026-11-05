@@ -1725,7 +1725,7 @@ describe('folded, a command still answers', () => {
 		}, held(AT));
 	});
 
-	test('a refused re-log exits 11, «not an error», and says EXISTS in its colour — a collision still says ERROR (da-97w7z)', async () => {
+	test('a re-log exits 11, «not an error», and says EXISTS in its colour — a collision still says ERROR (da-97w7z)', async () => {
 		const AT = todayAt(12, 0);
 		await withApp(async (app) => {
 			const { page } = app;
@@ -1746,16 +1746,15 @@ describe('folded, a command still answers', () => {
 				});
 			};
 
-			// A field resolves a collision by updating unless it refuses (da-wudrc).
-			await said('occur coffee --conflict refuse');
-			assert.equal((await app.run(['occur', 'coffee', '--conflict', 'refuse'])).code, 11, 'the second log is not a re-log');
-			const relog = await said('occur coffee --conflict refuse');
+			await said('occur coffee');
+			assert.equal((await app.run(['occur', 'coffee'])).code, 11, 'the second log is not a re-log');
+			const relog = await said('occur coffee');
 			// The colour is the one the same run's scrollback document drew.
 			const drawn = page.locator('.cli .doc .action[title="EXISTS"]').first();
 			assert.deepEqual(relog, [{ text: 'EXISTS', color: await drawn.evaluate((el) => getComputedStyle(el).color) }]);
 
 			// The same exit with nothing echoed is a slug collision: a failure.
-			assert.deepEqual(await said('occur coffee n=2 --conflict refuse'), { failed: 'ERROR!' });
+			assert.deepEqual(await said('occur coffee n=2'), { failed: 'ERROR!' });
 			assert.deepEqual(app.errors, []);
 		}, held(AT));
 	});

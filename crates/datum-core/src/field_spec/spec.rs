@@ -199,10 +199,6 @@ pub struct FieldSpec {
     /// sets it — a plain field's own spec already says it exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_setup: Option<bool>,
-    /// How a log that collides with one of the field's entries resolves
-    /// (da-wudrc): replace, update, merge or refuse. None is update.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub conflict: Option<datum_parse::cli::ConflictStrategyArg>,
 
     /// Only the keys the spec lists may be written to an entry's data
     /// (da-rcoi; da-eqb30 renamed it from `strict`, which a stored spec
@@ -354,7 +350,6 @@ impl FieldSpec {
             no_autoalias: false,
             never_false: false,
             auto_setup: None,
-            conflict: None,
             only_listed_keys: false,
             only_listed_states: false,
             remainder: None,

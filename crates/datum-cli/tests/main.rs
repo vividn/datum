@@ -70,7 +70,6 @@ mod edit_cmd;
 mod ensure_last_state;
 mod env_table_coverage;
 mod field_arrays;
-mod field_conflict;
 mod field_key_slot;
 mod field_lists;
 mod field_name_commas;

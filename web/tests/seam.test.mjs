@@ -123,17 +123,13 @@ describe('logging verbs', () => {
 		});
 	});
 
-	test('a state logged twice at the same minute updates the entry, or is refused where the field refuses (da-wudrc)', async () => {
+	test('a state logged twice at the same minute is a duplicate, not a second entry', async () => {
 		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0915'])).code, OK);
-			assert.equal((await run(['switch', 'mood', 'sad', '-t', '0915'])).code, OK);
-			const state = async () => (await run(['get', 'mood::state'])).stdout.trim();
-			assert.equal((await entries()).length, 1);
-			assert.equal(await state(), 'sad');
-			assert.equal((await run(['setup', 'mood', '--conflict', 'refuse'])).code, OK);
-			const again = await run(['switch', 'mood', 'calm', '-t', '0915']);
+			const again = await run(['switch', 'mood', 'sad', '-t', '0915']);
 			assert.equal(again.code, DUPLICATE, again.stderr);
-			assert.equal(await state(), 'sad');
+			assert.match(again.stderr, /Duplicate entry/);
+			assert.equal((await entries()).length, 1);
 		});
 	});
 });
