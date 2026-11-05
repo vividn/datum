@@ -557,7 +557,7 @@ export function defaultColor(name: string): string {
  */
 export type SwitchLabel = 'field' | 'state';
 
-/** What the collect widget offers its `fields` option (`offers`, layout/options.ts, da-gfy7w): every field, and any it names. */
+/** What the collect widget offers its `fields` option (`offers`, layout/options.ts, da-gfy7w): every field there is; each widget's menu adds the names it holds (da-jbqf5). */
 export const COLLECT_FIELDS_OFFER = 'collect:fields';
 
 export interface Look {

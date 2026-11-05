@@ -153,8 +153,7 @@
 		return only.length ? all.filter((f) => only.includes(f.field)) : all;
 	});
 	$effect.pre(() => {
-		const named = [...new Set([...$fields.map((f) => f.field), ...only])];
-		const offered = { [COLLECT_FIELDS_OFFER]: named.map((field) => ({ value: field, label: field })) };
+		const offered = { [COLLECT_FIELDS_OFFER]: $fields.map(({ field }) => ({ value: field, label: field })) };
 		untrack(() => offers.update((o) => ({ ...o, ...offered })));
 	});
 	// In 2-click mode a tap opens the field, and its screen leads with deleting the entry there (da-s8gr7).

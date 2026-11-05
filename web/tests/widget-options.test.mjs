@@ -725,6 +725,37 @@ describe('widget options', () => {
 		}, DESKTOP);
 	});
 
+	// From the review of #1718 (da-jbqf5): the page offers the fields there
+	// are, and each pane's menu adds the names it holds itself, so of two
+	// collect panes neither offers the other's missing name, nor loses its own.
+	test('collect: two panes each offer the missing names they hold, and not the other’s', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur coffee');
+			const holding = (id, fields) => ({
+				id,
+				active: 0,
+				bar: { edge: 'top', align: 'start' },
+				tabs: [{ id: `${id}-tab`, content: { id: `${id}-w`, kind: 'widgetbar', settings: { fields } } }]
+			});
+			await page.evaluate(
+				(panes) =>
+					window.datum.layout.apply((l) =>
+						JSON.parse(JSON.stringify(l), (_, v) =>
+							v?.content?.kind === 'widgetbar'
+								? { ...v, content: { id: 'bars', direction: 'row', ratios: [0.5, 0.5], children: panes } }
+								: v
+						)
+					),
+				[holding('bar-a', ['coffee', 'juice']), holding('bar-b', ['coffee', 'soda'])]
+			);
+			await pane(page, 'bar-b').locator('button[data-field="coffee"]').waitFor();
+			assert.deepEqual(await choiceLines(page, 'bar-a', 'fields'), ['✓ coffee', '✓ juice']);
+			assert.deepEqual(await choiceLines(page, 'bar-b', 'fields'), ['✓ coffee', '✓ soda']);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
 	// ⛔ `defaults.ts` mints tab ids from a literal name, so `main` and
 	// `mobile` both hold a `strip-tab` — and a session setting keyed by the
 	// bare tab id would have been one layout's AND the other's the moment

@@ -517,8 +517,22 @@ export const KINDS: Record<string, WidgetKind> = {
 			// vividn, 2026-11-05: «a widget option to filter a collect widget»
 			// (da-gfy7w): set, only these fields; empty, every field. A name no
 			// field has yet is offered and not drawn, so a layout may name a
-			// kit's fields before the kit is installed.
-			{ key: 'fields', label: 'fields', type: 'offered', many: true, choices: (_, offers) => offers[COLLECT_FIELDS_OFFER] ?? [] }
+			// kit's fields before the kit is installed. The page offers the
+			// fields there are; each widget adds the names it holds itself, so
+			// two collect panes never offer each other's (da-jbqf5).
+			{
+				key: 'fields',
+				label: 'fields',
+				type: 'offered',
+				many: true,
+				choices: (shown, offers) => {
+					const there = offers[COLLECT_FIELDS_OFFER] ?? [];
+					const own = (Array.isArray(shown.fields) ? shown.fields : []).filter(
+						(f): f is string => typeof f === 'string' && !there.some((c) => c.value === f)
+					);
+					return [...there, ...[...new Set(own)].map((f) => ({ value: f, label: f }))];
+				}
+			}
 		]),
 		component: CollectPane,
 		help: [
