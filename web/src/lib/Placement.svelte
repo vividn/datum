@@ -65,6 +65,13 @@
 	field with no name yet has no sample in any (da-y72v8). A click on it
 	lets go of a tapped mark's box, whose mark the new picture draws
 	elsewhere.
+
+	A pinch on the band sizes the field (da-t038c), vividn, 2026-11-05: «two
+	finger zoom on the placement tool should change the size of the
+	dot/bar»: an occur field's dot about its centre, its shape kept, or the
+	lane of any other about its middle. A selected bar's handles take a thumb,
+	44 px, each reaching a quarter of the bar in at most, so its middle half
+	still moves it.
 -->
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
@@ -102,7 +109,7 @@
 	/** The fields today's band draws, whose names label their lanes. */
 	let named: string[] = $state.raw([]);
 	let drag: {
-		mode: 'move' | 'top' | 'bottom' | 'dot';
+		mode: 'move' | 'top' | 'bottom' | 'dot' | 'pinch';
 		at: number;
 		y: number;
 		h: number;
@@ -116,6 +123,8 @@
 		/** For `move`: the mark pressed, selected if it is let go where it was; whether it has moved since. */
 		mark?: { x: number; w: number };
 		moved?: boolean;
+		/** For `pinch`: the fingers' distance apart as they landed. */
+		apart?: number;
 	} | null = $state(null);
 	/** Whether sizing the dot keeps its width over its height: on until turned off (da-y72v8). */
 	let locked = $state(true);
@@ -200,6 +209,8 @@
 	const EDGES = ['top', 'bottom'] as const;
 	/** A corner's cursor, by the sign of its sides' product. */
 	const CURSORS: Record<string, string> = { '1': 'nwse-resize', '-1': 'nesw-resize' };
+	/** A bar handle's reach, a thumb's (`.bar .handle`). */
+	const THUMB = 44;
 
 	const round = (n: number) => Math.round(n * 1000) / 1000;
 	const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -330,8 +341,32 @@
 		drag = { ...drag!, mode: 'dot', sx, sy, b: dotH, w: dotW };
 	}
 
+	const apart = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+	/** A second finger down pinches, whatever the first was doing; one on a mark does not scroll the dialog. */
+	function touched(e: TouchEvent) {
+		if (e.touches.length === 2) {
+			e.preventDefault();
+			// At least a pixel apart, so the ratio is never over nothing.
+			drag = { mode: 'pinch', at: 0, y: lane.y, h: lane.h, b: dotH, apart: Math.max(1, apart(e.touches)) };
+		} else if (markAt(e.touches[0].clientX, e.touches[0].clientY)) e.preventDefault();
+	}
+
+	/** Size by the pinch: the dot about its centre, its shape kept, or the lane about its middle. */
+	function pinched(e: TouchEvent) {
+		if (drag?.mode !== 'pinch' || e.touches.length < 2) return;
+		e.preventDefault();
+		const { y, h, b = 1, apart: from = 1 } = drag;
+		const k = apart(e.touches) / from;
+		if (occur) place = { ...place, symbol_scale: factor((clamp(b * k, MIN * H, H) * frame.h) / (STANDARD_DOT * H)) };
+		else {
+			const tall = clamp(h * k, MIN * frame.h, frame.h);
+			put(clamp(y + (h - tall) / 2, frame.y, frame.y + frame.h - tall), tall);
+		}
+	}
+
 	function slide(e: PointerEvent) {
-		if (!drag) return;
+		if (!drag || drag.mode === 'pinch') return;
 		// A tap's jitter moves nothing.
 		if (drag.mark && !drag.moved && Math.hypot(e.clientX - (drag.ax ?? 0), e.clientY - drag.at) < 4) return;
 		drag.moved = true;
@@ -434,7 +469,7 @@
 	</svg>
 {/snippet}
 
-<svelte:window onpointermove={slide} onpointerup={release} onpointercancel={() => (drag = null)} />
+<svelte:window onpointermove={slide} onpointerup={release} onpointercancel={() => drag?.mode !== 'pinch' && (drag = null)} />
 
 <!-- It drags itself: a sideways drag in it is never the pane's tab swipe (`data-pans`, PaneFrame.svelte; da-4t0yn). -->
 <div class="placement" data-pans="x">
@@ -458,10 +493,13 @@
 			onclick={() => ([around, sel] = [(around + 1) % AROUND.length, null])}
 		>
 			<!-- This field on top, and a layer for each thing more behind it. -->
+			<!-- Lowered by half of each layer not drawn, so the stack is centred at every level. -->
 			<svg viewBox="0 0 16 16" aria-hidden="true">
-				<path class="fill" d="M8 1.5 14.5 5 8 8.5 1.5 5Z" />
-				{#if around > 0}<path d="M1.5 8 8 11.5 14.5 8" />{/if}
-				{#if around > 1}<path d="M1.5 11 8 14.5 14.5 11" />{/if}
+				<g transform="translate(0 {(2 - around) * 1.5})">
+					<path class="fill" d="M8 1.5 14.5 5 8 8.5 1.5 5Z" />
+					{#if around > 0}<path d="M1.5 8 8 11.5 14.5 8" />{/if}
+					{#if around > 1}<path d="M1.5 11 8 14.5 14.5 11" />{/if}
+				</g>
 			</svg>
 			<!-- Every label in one cell, the others hidden, so the button is as wide whichever it reads. -->
 			<span class="labels">
@@ -501,8 +539,14 @@
 		bind:this={band}
 		style:height="{H}px"
 		onpointerdown={press}
-		{@attach (node) =>
-			on(node, 'touchstart', (e) => markAt(e.touches[0].clientX, e.touches[0].clientY) && e.preventDefault(), { passive: false })}
+		{@attach (node) => {
+			const off = [
+				on(node, 'touchstart', touched, { passive: false }),
+				on(node, 'touchmove', pinched, { passive: false }),
+				...(['touchend', 'touchcancel'] as const).map((t) => on(node, t, (e) => drag?.mode === 'pinch' && e.touches.length < 2 && (drag = null)))
+			];
+			return () => off.forEach((f) => f());
+		}}
 	>
 		{#each named.filter((n) => n !== field && lanes[n]) as name (name)}
 			<span class="name" style:top="{px(lanes[name].y)}px">{name}</span>
@@ -531,11 +575,14 @@
 				{/each}
 			</div>
 		{:else if sel}
+			{@const tall = (lane.h / frame.h) * H}
+			<!-- How far a handle stands outward: each reaches a quarter of the bar in at most, whose middle half still moves it. -->
+			{@const out = Math.max(0, THUMB / 2 - tall / 4)}
 			<div
 				class="box bar"
 				data-field={field}
 				style:top="{px(lane.y)}px"
-				style:height="{(lane.h / frame.h) * H}px"
+				style:height="{tall}px"
 				style:left="{sel.x}px"
 				style:width="{sel.w}px"
 			>
@@ -544,7 +591,8 @@
 						class="handle hint round"
 						data-handle={edge}
 						style:left="50%"
-						style:top={edge === 'top' ? '0' : '100%'}
+						style:top="{edge === 'top' ? -out : tall + out}px"
+						style:--edge="{THUMB / 2 + (edge === 'top' ? out : -out)}px"
 						onpointerdown={(e) => grab(edge, e)}
 					></span>
 				{/each}
@@ -811,8 +859,20 @@
 		border-radius: 50%;
 	}
 
+	/* A thumb's reach, its hint larger too, drawn on the edge (`--edge` down the handle). */
 	.bar .handle {
+		inline-size: 44px;
+		block-size: 44px;
 		cursor: ns-resize;
+	}
+
+	.bar .handle.hint::after {
+		inset: auto;
+		top: var(--edge);
+		left: 50%;
+		inline-size: 12px;
+		block-size: 12px;
+		transform: translate(-50%, -50%);
 	}
 
 </style>

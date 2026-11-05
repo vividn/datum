@@ -12,6 +12,7 @@ import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
 import { editedSpec, placeOf } from '../src/lib/track.ts';
 import { FIELD_FORM as MODAL, leaveField, openField } from './support/field.mjs';
+import { pinch } from './support/daystrip.mjs';
 
 /** The box a tap draws round a mark (da-r6wwe): none at rest. */
 const BOX = `${MODAL} .placement .box`;
@@ -173,7 +174,9 @@ describe('the Placement tab', () => {
 			const look = await page.locator(BOX).evaluate((box) => {
 				const hints = [...box.querySelectorAll('.handle')].map((h) => {
 					const r = h.getBoundingClientRect();
-					return { name: h.dataset.handle, x: r.x + r.width / 2, y: r.y + r.height / 2, drawn: parseFloat(getComputedStyle(h, '::after').width) };
+					const drawn = getComputedStyle(h, '::after');
+					// The hint is drawn centred on its `top` down the handle, which may stand outward of it.
+					return { name: h.dataset.handle, x: r.x + r.width / 2, y: r.y + parseFloat(drawn.top), drawn: parseFloat(drawn.width), hit: r };
 				});
 				const r = box.getBoundingClientRect();
 				return { border: parseFloat(getComputedStyle(box).borderTopWidth), x: r.x + r.width / 2, top: r.top, bottom: r.bottom, hints };
@@ -183,8 +186,13 @@ describe('the Placement tab', () => {
 			for (const [h, y] of [[look.hints[0], look.top], [look.hints[1], look.bottom]]) {
 				// Placed in the box's padding, inside its line: within the line's width of its edge.
 				assert.ok(Math.abs(h.x - look.x) < 1 && Math.abs(h.y - y) <= look.border + 0.5, `${h.name} at the centre of its edge: ${[h.x, h.y]} vs ${[look.x, y]}`);
-				assert.ok(h.drawn > 0 && h.drawn <= 8, `${h.name} drawn small: ${h.drawn}px`);
+				// da-t038c, vividn, 2026-11-05: «when a bar is selected make the handles both visually bigger and easier to grab with the thumb».
+				assert.ok(h.drawn >= 10 && h.drawn <= 16, `${h.name} drawn larger than the dot's, still a hint: ${h.drawn}px`);
+				assert.ok(h.hit.width >= 44 && h.hit.height >= 44, `${h.name} takes a thumb: ${h.hit.width}×${h.hit.height}`);
 			}
+			// The lane is 0.12 of the day, thinner than a thumb: each reaches a quarter of it in, its middle half still the bar's.
+			const quarter = (look.bottom - look.top) / 4;
+			assert.ok(look.hints[0].hit.bottom <= look.top + quarter + look.border + 0.5 && look.hints[1].hit.top >= look.bottom - quarter - look.border - 0.5, `the handles reach into the middle: ${[look.hints[0].hit.bottom, look.hints[1].hit.top]} in ${[look.top, look.bottom]}`);
 			await page.mouse.click(band.x + 4, band.y + (hashed.y < 0.5 ? H - 4 : 4));
 			assert.equal(await page.locator(BOX).count(), 0, 'a tap off the field clears it');
 
@@ -538,6 +546,34 @@ describe('the Placement tab', () => {
 		});
 	});
 
+	// da-t038c, vividn, 2026-11-05: «two finger zoom on the placement tool should change the size of the dot/bar».
+	test("a pinch sizes a moment's dot, which the size control reads, or an on/off's lane about its middle", async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			const D = 0.08 * H;
+			await app.run(['track', 'coffee', '--verb', 'occur']);
+			await setPlace(app, 'coffee', { y: 0.3, height: 0.2 });
+			let { saved } = await openPlacement(page, 'coffee');
+			const band = () => page.locator(`${MODAL} .placement .band`).boundingBox();
+			await pinch(page, await band(), 30, 90);
+			assert.deepEqual(numbers(await page.locator(`${MODAL} .placement .size .dims`).innerText()), [3, 3], 'three times the size, its shape kept');
+			await page.locator(`${MODAL} .placement .band[data-drawn]`).waitFor();
+			const tall = await page.locator(`${MODAL} .band g.field[data-field="coffee"] .point-fg`).last().evaluate((d) => d.getBoundingClientRect().height);
+			assert.ok(Math.abs(tall - 3 * D) < 1, `the dot drawn ${tall}px, three times ${D}`);
+			await done(page, saved);
+			const dot = await spec(app, 'coffee');
+			assert.deepEqual([dot.symbol_scale, dot.symbol_aspect, dot.y, dot.height], [3, undefined, 0.3, 0.2], 'kept as it lifted; the lane where it was');
+
+			await app.run(['track', 'work', '--verb', 'start']);
+			await setPlace(app, 'work', { y: 0.3, height: 0.2 });
+			({ saved } = await openPlacement(page, 'work'));
+			await pinch(page, await band(), 60, 30);
+			await done(page, saved);
+			const bar = await spec(app, 'work');
+			assert.deepEqual([bar.y, bar.height], [0.35, 0.1], 'half as tall about its middle');
+		});
+	});
+
 	// da-srrqd, vividn, 2026-10-22: «They should actually be inside the placement configuration tool, so that
 	// you can see the dots/states/bars and what they look like as real data as you're aligning it».
 	test('a field with nothing today is drawn as samples in its lane, as the form holds it; one with entries today, as those', async () => {
@@ -728,7 +764,7 @@ describe('the Placement tab', () => {
 
 	// da-y72v8, vividn, 2026-10-28: «make the placement widget about 2/3 of it's current height / move the now line
 	// always to the right edge of the placement widget».
-	test('the band is two thirds as tall, now at its right edge in every context, and the context button one width in each', async () => {
+	test('the band is two thirds as tall, now at its right edge in every context, and the context button one width in each, its icon centred down it', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['switch', 'mood', 'happy', '-t', '-300']);
@@ -747,6 +783,13 @@ describe('the Placement tab', () => {
 					assert.equal(at.height, H, `«${field}», ${label}: the band's height`);
 					assert.ok(at.now !== undefined && Math.abs(at.now - at.right) < 1.5, `«${field}», ${label}: now at ${at.now}, the edge at ${at.right}`);
 					widths.push(Math.round((await page.locator(`${MODAL} .placement button.around`).boundingBox()).width));
+					// da-t038c, vividn, 2026-11-05: «on the context button, vertically center the layers icon at all three levels».
+					const [icon, button] = await page.locator(`${MODAL} .placement button.around`).evaluate((b) => {
+						const ink = [...b.querySelectorAll('svg path')].map((p) => p.getBoundingClientRect());
+						const r = b.getBoundingClientRect();
+						return [(Math.min(...ink.map((i) => i.top)) + Math.max(...ink.map((i) => i.bottom))) / 2, r.top + r.height / 2];
+					});
+					assert.ok(Math.abs(icon - button) <= 1, `«${field}», ${label}: the icon's middle at ${icon}, the button's at ${button}`);
 				}
 				assert.equal(new Set(widths).size, 1, `the context button's widths: ${widths}`);
 				await leaveField(page);
