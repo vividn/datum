@@ -9,6 +9,7 @@ use std::collections::HashSet;
 
 use chrono::Utc;
 use datum_parse::combine::{combine, Combine};
+use datum_parse::entry_id::DATE_ONLY_PRECISION;
 use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value as JsonValue;
@@ -1315,10 +1316,31 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                             .unwrap_or_else(|| entry.create_time.to_rfc3339());
                         let collider = fetch_field_occur_collider(conn, &entry.field, &occur_str)?
                             .unwrap_or_else(|| "<unknown>".to_string());
-                        return Err(DatumError::Duplicate(format!(
-                            "entry collides with {collider} on field={}, at={occur_str}",
-                            entry.field,
-                        )));
+                        // da-6r9fp: name the way on, and a full-day entry's
+                        // day as its date: its instant is local midnight,
+                        // which in UTC reads as the evening before.
+                        let state = match &entry.state {
+                            Some(JsonValue::String(s)) => s.clone(),
+                            Some(v) => v.to_string(),
+                            None => "…".to_string(),
+                        };
+                        let way_on = format!(
+                            "change it with `datum update {collider} state={}`",
+                            datum_parse::alias::expand::sh_quote(&state)
+                        );
+                        let field = &entry.field;
+                        return Err(DatumError::Duplicate(match &entry.at {
+                            Some(t) if entry.at_uncertainty() == Some(DATE_ONLY_PRECISION) => {
+                                format!(
+                                    "{field} already has an entry on {}, {collider}; {way_on}",
+                                    t.local_time().format("%Y-%m-%d"),
+                                )
+                            }
+                            _ => format!(
+                                "entry collides with {collider} on field={field}, \
+                                 at={occur_str}; {way_on}",
+                            ),
+                        }));
                     }
                     Some(CollisionKind::Hid) => {
                         if hid_attempt >= 1 {

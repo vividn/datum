@@ -708,6 +708,39 @@ mod tests {
         assert_eq!(live_count, 1);
     }
 
+    /// da-6r9fp: a full-day entry's collision names its day as the local
+    /// date, not the UTC instant of its midnight (the evening before east of
+    /// UTC), and the `update` that changes the entry already there.
+    #[test]
+    fn full_day_collision_names_the_date_and_the_update() {
+        let db = Db::open_in_memory().unwrap();
+        let day = |state: JsonValue| {
+            let mut e = entry_at("mood", "2026-11-04T23:00:00Z", Some(state));
+            let at = e.at.as_mut().unwrap();
+            at.offset_minutes = 60;
+            at.uncertainty = Some("P1D".to_string());
+            e
+        };
+        let seed = day(json!("good"));
+        let seed_hid = seed.hid.0.clone();
+        db.insert_entry(&seed).unwrap();
+
+        let mut second = day(json!("so so"));
+        second.slug = Slug("custom-id-D".to_string());
+        let err = db.insert_entry(&second).unwrap_err();
+        assert!(matches!(err, DatumError::Duplicate(_)), "{err:?}");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("mood already has an entry on 2026-11-05"),
+            "the day as a date: {msg}"
+        );
+        assert!(
+            msg.contains(&format!("`datum update {seed_hid} state='so so'`")),
+            "the way on: {msg}"
+        );
+        assert!(!msg.contains("2026-11-04"), "no UTC evening: {msg}");
+    }
+
     /// Soft-deleting a row releases the (field, at) slot — a
     /// fresh insert at the same identity succeeds because the partial
     /// UNIQUE filters tombstones (`deleted_at IS NULL`).

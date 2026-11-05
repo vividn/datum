@@ -88,8 +88,10 @@ fn two_transactions_on_one_day_both_land() {
     );
 }
 
-/// da-ga8b's case, unchanged: two rows that DO assert a state at one instant
-/// are still refused, and still with the collider-naming message.
+/// da-ga8b's case: two rows that DO assert a state at one instant are still
+/// refused, naming the collider. Both are full-day (`-d DATE`), so the
+/// message names the day as a date and the `update` that changes it
+/// (da-6r9fp), not the UTC instant of its local midnight.
 #[test]
 fn two_state_changes_at_one_instant_are_still_refused() {
     let db = fresh_db();
@@ -110,9 +112,15 @@ fn two_state_changes_at_one_instant_are_still_refused() {
     .expect_err("the second state-change at one instant must be refused");
 
     let msg = format!("{err}");
+    let first = datum_core::test_util::logged_entries(&db, "project")[0]
+        .hid
+        .0
+        .clone();
     assert!(
-        msg.contains("collides with") && msg.contains("field=project"),
-        "the (field, at) diagnostic must survive: {msg}"
+        msg.contains("project already has an entry on 2026-09-03")
+            && msg.contains(&format!("`datum update {first} state=beta`"))
+            && !msg.contains("at="),
+        "the day as a date, and the way on: {msg}"
     );
     assert_eq!(live_slugs(&db, "project"), vec!["project:2026-09-03"]);
 }
