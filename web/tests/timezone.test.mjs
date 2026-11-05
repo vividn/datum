@@ -104,33 +104,21 @@ for (const [name, screen] of [['desktop', BERLIN], ['phone', PHONE]]) {
 	});
 }
 
-test('in the fields widget unless IGNORED', async () => {
+// vividn, 2026-11-05: «Let's not show the timezone field in the collect
+// widget, it is kind of a special field and wouldn't be manually changed»
+// (da-cyq92): no chip whatever it holds, a zone or IGNORED, while a field
+// beside it has one. It is still logged from the bar and Settings (above).
+test('no chip in collect, holding a zone or IGNORED', async () => {
 	await withApp(async (app) => {
 		const { page } = app;
 		const chip = page.locator('.bar [data-field="timezone"]');
-		assert.equal((await app.run(['timezone', 'Asia/Tokyo', '-t', '-100'])).code, 0);
-		await app.redraw();
-		await until(() => chip.count(), (n) => n > 0);
-		assert.equal((await app.run(['timezone', 'IGNORED', '-t', '-50'])).code, 0);
-		await app.redraw();
-		await until(() => chip.count(), (n) => n === 0);
-	}, BERLIN);
-});
-
-// Off is no state in collect (da-w6437): no field's view offers `end`,
-// which for this field the CLI refuses, and its zone is a state as any.
-test('its view in collect offers no `end`, which the CLI refuses, and the zone it holds is a state', async () => {
-	await withApp(async (app) => {
-		const { page } = app;
-		assert.equal((await app.run(['timezone', 'Asia/Tokyo'])).code, 0);
-		await app.redraw();
-		const chip = page.locator('.bar [data-field="timezone"]');
-		await chip.waitFor();
-		await chip.dispatchEvent('click');
-		const view = page.locator('.bar .collect.open');
-		await view.locator('[data-state="Asia/Tokyo"]').waitFor();
-		assert.equal(await view.locator('[data-state="false"]').count(), 0);
-		assert.equal(await view.locator('button', { hasText: /^end$/ }).count(), 0);
+		for (const zone of ['Asia/Tokyo', 'IGNORED']) {
+			assert.equal((await app.run(['timezone', zone, '-t', zone === 'IGNORED' ? '-50' : '-100'])).code, 0);
+			assert.equal((await app.run(['occur', 'coffee', '-t', zone === 'IGNORED' ? '-40' : '-90'])).code, 0);
+			await app.redraw();
+			await page.locator('.bar [data-field="coffee"]').waitFor();
+			assert.equal(await chip.count(), 0, zone);
+		}
 	}, BERLIN);
 });
 

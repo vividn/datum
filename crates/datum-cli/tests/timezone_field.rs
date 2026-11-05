@@ -693,6 +693,17 @@ fn fields_says_it_has_no_off() {
     assert_eq!(row.get("never_false"), None);
 }
 
+/// da-cyq92: it is datum's own, so the collect widget offers no button for it.
+#[test]
+fn fields_says_it_is_datums_own() {
+    let env = Env::new();
+    env.ok(&["timezone", "Asia/Tokyo"]);
+    assert_eq!(env.fields_row()["own"], json!(true));
+    env.ok(&["switch", "mood", "calm"]);
+    let row = &serde_json::from_str::<Value>(&env.ok(&["fields", "mood", "--json"])).unwrap()[0];
+    assert_eq!(row.get("own"), None);
+}
+
 /// An entry follows the field at its instant, and a device in another zone
 /// asks to move it (da-mvt5i).
 mod follow {

@@ -51,6 +51,8 @@ export interface FieldButton {
 	 * `end` would stand.
 	 */
 	neverFalse?: boolean;
+	/** `fields --json`'s `own`: datum logs it itself, so the collect widget draws no button (da-cyq92). */
+	own?: boolean;
 	/**
 	 * What the field is in now, by `datum now --json`: `true` for an open
 	 * block, the state's name for a switch; absent when it is off. Until
@@ -192,6 +194,8 @@ export interface FieldListing {
 	last_used?: string | null;
 	/** The field has no off whatever its spec says: `timezone`'s row alone. */
 	never_false?: boolean;
+	/** datum logs the field itself and no one taps it: `timezone`'s row alone (da-cyq92). */
+	own?: boolean;
 }
 
 /** One row of `datum now --json`'s `active`. */
@@ -219,7 +223,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 	const now = new Map(active.map((a) => [a.field, a.state]));
 	return [...listing]
 		.sort((a, b) => a.y - b.y)
-		.map(({ field, spec, states, color, state_colors, ignored, y, height, never_false }) => {
+		.map(({ field, spec, states, color, state_colors, ignored, y, height, never_false, own }) => {
 			return {
 				field,
 				shape: kindFor(spec ?? undefined, states),
@@ -228,6 +232,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				stateColors: state_colors,
 				glyph: spec?.symbol ?? undefined,
 				neverFalse: never_false || (!!spec?.never_false && !spec.allowed_states?.includes('false')),
+				...(own ? { own } : {}),
 				...standing(now, field),
 				y,
 				height,

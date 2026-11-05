@@ -219,10 +219,13 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
                     "height": positions[field].height,
                 });
                 // The zone it holds, so datum.day need not parse one (da-yw6o2),
-                // and that it has no off, whatever its spec row says.
+                // that it has no off, whatever its spec row says, and that it
+                // is datum's own, logged as the zone moves and never tapped,
+                // so the collect widget draws no button for it (da-cyq92).
                 if field == TIMEZONE_FIELD {
                     row["zone"] = json!(latest.get(field).and_then(state_zone));
                     row["never_false"] = json!(true);
+                    row["own"] = json!(true);
                 }
                 row
             })

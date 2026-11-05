@@ -147,13 +147,15 @@
 		});
 	});
 	const doc = $derived(layer?.doc());
+	/** Every field but datum's own (`timezone`), which it logs itself and no one taps (da-cyq92). */
+	const tappable = $derived($fields.filter((f) => !f.own));
 	/** The buttons at the selected time by the last `now -t` answered, kept while a moving instant rests, else as they stand now. */
 	const standing = $derived.by(() => {
-		const all = at !== null && then ? standingAt($fields, then.active, momentsAt(doc, then.at)) : $fields;
+		const all = at !== null && then ? standingAt(tappable, then.active, momentsAt(doc, then.at)) : tappable;
 		return only.length ? all.filter((f) => only.includes(f.field)) : all;
 	});
 	$effect.pre(() => {
-		const offered = { [COLLECT_FIELDS_OFFER]: $fields.map(({ field }) => ({ value: field, label: field })) };
+		const offered = { [COLLECT_FIELDS_OFFER]: tappable.map(({ field }) => ({ value: field, label: field })) };
 		untrack(() => offers.update((o) => ({ ...o, ...offered })));
 	});
 	// In 2-click mode a tap opens the field, and its screen leads with deleting the entry there (da-s8gr7).

@@ -12,7 +12,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
-import { pickOption } from './support/layout.mjs';
+import { choiceLines, pickOption } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -75,6 +75,23 @@ describe('collect', () => {
 			await page.locator(`${VIEW} [data-now-field="mood"]`).waitFor();
 			const sections = await page.$$eval(`${VIEW} .spot.shelf`, (spots) => spots.map((s) => s.dataset.section));
 			assert.equal(sections.filter((s) => s === 'active').length, 1, JSON.stringify(sections));
+		});
+	});
+
+	// vividn, 2026-11-05: «Let's not show the timezone field in the collect
+	// widget, it is kind of a special field and wouldn't be manually changed»
+	// (da-cyq92). `fields --json` says it is datum's own; the other widgets draw it.
+	test('the timezone field gets no button and is no choice of the fields menu, and the pictures still draw its band', async () => {
+		await collect(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['timezone', 'UTC', '-t', '08:00'])).code, 0);
+			await app.redraw();
+			await page.locator('section.pane:not([data-title="collect"]) svg [data-field="timezone"]').first().waitFor({ state: 'attached' });
+			await page.locator(`${VIEW} [data-field="mood"]`).waitFor();
+			assert.equal(await page.locator(`${VIEW} [data-field="timezone"], ${VIEW} [data-now-field="timezone"]`).count(), 0);
+			const choices = await choiceLines(page, 'bar', 'fields');
+			assert.ok(choices.some((c) => c.endsWith('coffee')), JSON.stringify(choices));
+			assert.ok(!choices.some((c) => c.endsWith('timezone')), JSON.stringify(choices));
 		});
 	});
 
