@@ -63,16 +63,22 @@ const toolchains = resolve(repoRoot, 'target', 'toolchains');
 const targetDir = resolve(repoRoot, process.env.CARGO_TARGET_DIR || 'target');
 const out = resolve(repoRoot, 'web', 'src', 'lib', 'wasm', 'datum-cli.wasm');
 
-/** `url`'s bytes, asking up to three times: one HTTP 500 from GitHub failed a CI run (da-wh359). */
+/**
+ * `url`'s bytes, asking up to eight times, 10 s more apart each time (4 min 40 s
+ * in all): one HTTP 500 from GitHub failed a CI run (da-wh359), and 30 s of 504s
+ * another (da-ui0ux). A 4xx is the URL's answer, so it is not asked again, but
+ * 408 and 429 say to wait and are.
+ */
 async function download(url) {
 	for (let attempt = 1; ; attempt++) {
 		console.log(`fetching ${url}`);
 		try {
 			const res = await fetch(url);
+			if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) throw Object.assign(new Error(`HTTP ${res.status}`), { final: true });
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			return Buffer.from(await res.arrayBuffer());
 		} catch (e) {
-			if (attempt === 3) throw new Error(`${url}: ${e.message}`);
+			if (e.final || attempt === 8) throw new Error(`${url}: ${e.message}`);
 			console.log(`${e.message}; again in ${attempt * 10}s`);
 			await new Promise((r) => setTimeout(r, attempt * 10_000));
 		}
