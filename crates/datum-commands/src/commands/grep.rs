@@ -17,9 +17,11 @@ use regex_lite::Regex;
 use crate::{
     args::{GrepArgs, OutputFlagsExt},
     commands::{
-        edit::UserEditableEntry, helpers::registry_of, render_helpers::build_table_contexts,
+        edit::UserEditableEntry,
+        helpers::registry_of,
+        render_helpers::{build_render_contexts, build_table_contexts},
     },
-    render::{print_table_with, TableArgs, TimeMetricCol},
+    render::{print_table_with, show_action_with_context, Outcome, Show, TableArgs, TimeMetricCol},
 };
 
 pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
@@ -32,8 +34,24 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
     let matches = grep_entries(db, &regexes, &args.fields)?;
 
     let registry = registry_of(db, &matches);
+    let output = args.output()?;
+    // `-A` shows each hit's whole document, as `datum get -A` does (v2's
+    // `showExists` under `--show-all`), in place of the table (da-j8m7s).
+    if output.show == Show::All {
+        let ctxs = build_render_contexts(&matches, db);
+        for (i, entry) in matches.iter().enumerate() {
+            show_action_with_context(
+                entry,
+                Outcome::Exists,
+                registry.as_ref(),
+                ctxs.get(i),
+                &output,
+            );
+        }
+        return Ok(());
+    }
     let tbl = TableArgs {
-        output: args.output()?,
+        output,
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
         suppress_header: false,

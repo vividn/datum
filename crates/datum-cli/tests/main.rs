@@ -80,6 +80,7 @@ mod flag_cluster_value;
 mod float_roundtrip;
 mod get_cmd;
 mod get_projection;
+mod grep_show_all;
 mod help_commands_dispatch;
 mod help_defined_names;
 mod help_fits_columns;
