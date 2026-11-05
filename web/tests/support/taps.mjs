@@ -134,11 +134,14 @@ const survey = (page, { within, mark, layer } = {}) =>
 				const chevron = getComputedStyle(b, '::after').content.includes('›');
 				const plus = b.textContent.trim().endsWith('+');
 				if (key === mark) b.dataset.tap = '';
-				// Past the edge of collect's room (da-w6437): clipped, and reached
-				// by a drag on the cluster, not by a scroll into view.
-				const room = b.closest('.room')?.getBoundingClientRect();
+				// Past the edge of collect's room (da-w6437), or under its now strip,
+				// which the rows pan beneath (da-1uvtg): clipped, and reached by a
+				// drag on the cluster, not by a scroll into view.
+				const room = b.closest('.room');
 				const [cx, cy] = [box.left + box.width / 2, box.top + box.height / 2];
-				const clipped = !!room && (cx < room.left || cx > room.right || cy < room.top || cy > room.bottom);
+				const over = (r) => !!r && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+				const clipped =
+					!!room && (!over(room.getBoundingClientRect()) || over(room.querySelector('[data-strip]')?.getBoundingClientRect()));
 				out.push({ key, double, chevron, plus, clipped, away: 'away' in b.dataset, kind: b.dataset.act ?? null });
 			}
 			return out;
@@ -258,6 +261,13 @@ async function reset(app, line, layout = false) {
 	}
 	if (layout) await page.evaluate(() => window.datum.mode.enter());
 	await app.idle();
+	// The rows' glide the line set off run out (`.spot.shelf.glide`): a survey
+	// reads where a button rests, and the room's pan, which no reset puts
+	// back, may rest it under the now strip (da-1uvtg).
+	await page.evaluate(async () => {
+		await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+		await Promise.all(document.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => {})));
+	});
 }
 
 /**
