@@ -295,114 +295,60 @@ describe('the swipe strip', () => {
 		await at('touchEnd', []);
 		await cdp.detach();
 	}
-	const REFRESH = '.refresh';
+	// A pull down the strip syncs at once (da-si4bw); outside a chain it says
+	// it does not, and a lift does nothing. The round itself is sync.test.mjs's.
+	const PULL = '.sync-pull';
 	const mark = (page) => page.evaluate(() => (window.__notReloaded = true));
-	const reloaded = (page) => page.waitForFunction(() => !window.__notReloaded);
 	const stillHere = async (page, why) => {
 		await page.waitForTimeout(400);
 		assert.equal(await page.evaluate(() => window.__notReloaded), true, why);
 	};
+	/** Whether the pull's mark is bright, read at each move. */
+	const brightAt = (page, seen) => async () => seen.push(await page.locator(PULL).evaluate((el) => el.classList.contains('bright')));
 
-	test('a long pull down reloads and says so on the way; a short one, or one taken back, does not', async () => {
+	test('a long pull down says «not syncing» outside a chain and reloads nothing; a short one, or one gone sideways, leaves no mark', async () => {
 		await withApp(
 			async ({ page }) => {
+				const input = page.locator('.prompt-bar input');
+				await input.fill('moment half');
 				await closeBar(page);
 				await mark(page);
 				await onStrip(page, [[0, 12], [0, 38]]);
-				await stillHere(page, 'a short pull reloaded');
-				assert.equal(await page.locator(REFRESH).count(), 0, 'a short pull left its mark');
+				assert.equal(await page.locator(PULL).count(), 0, 'a short pull left its mark');
 
 				const bright = [];
-				await onStrip(page, [[0, 30], [0, 50], [0, 30]], async () =>
-					bright.push(await page.locator(REFRESH).evaluate((el) => el.classList.contains('bright')))
-				);
-				assert.deepEqual(bright, [false, true, false]);
-				await stillHere(page, 'a pull taken back reloaded');
+				const words = [];
+				await onStrip(page, [[0, 30], [0, 50], [0, 30], [0, 50]], async () => {
+					await brightAt(page, bright)();
+					words.push(await page.locator(PULL).innerText());
+				});
+				assert.deepEqual(bright, [false, true, false, true]);
+				assert.deepEqual([...new Set(words)], ['not syncing']);
+				assert.equal(await page.locator(PULL).count(), 0, 'the lift left its mark');
+				await stillHere(page, 'a pull reloaded');
+				assert.equal(await input.inputValue(), 'moment half', 'a pull took the line');
 
 				// Begun down, gone sideways: past the line, and no longer a pull.
 				await onStrip(page, [[0, 30], [-150, 50]]);
-				await stillHere(page, 'a pull that went sideways reloaded');
-				assert.equal(await page.locator(REFRESH).count(), 0, 'a pull that went sideways left its mark');
+				assert.equal(await page.locator(PULL).count(), 0, 'a pull that went sideways left its mark');
 
 				const texture = () => page.locator(STRIP).evaluate((el) => el.style.backgroundPosition);
 				const before = await texture();
 				const moved = [];
 				await onStrip(page, [[0, 30], [0, 50]], async () => moved.push(await texture()));
 				assert.deepEqual(moved, [before, before], 'a pull moved the texture');
-				await reloaded(page);
-				await page.locator(STRIP).waitFor();
+				await stillHere(page, 'a pull reloaded');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);
 	});
 
-	test('with the output open a pull goes further: 60px refreshes nothing, 84px does', async () => {
+	test('with the output open a pull goes further: 60px is short of the line, 84px past it', async () => {
 		await withApp(
 			async ({ page }) => {
-				await mark(page);
 				const bright = [];
-				const look = async () => bright.push(await page.locator(REFRESH).evaluate((el) => el.classList.contains('bright')));
-				await onStrip(page, [[0, 40], [0, 60]], look);
-				assert.deepEqual(bright, [false, false]);
-				await stillHere(page, 'a pull that would do with the bar closed reloaded');
-				await onStrip(page, [[0, 60], [0, 84]], look);
-				assert.deepEqual(bright.slice(2), [false, true]);
-				await reloaded(page);
-				await page.locator(STRIP).waitFor();
-			},
-			{ ...PHONE, prepare: twoLayouts }
-		);
-	});
-
-	test('a pull keeps the line not yet sent, the caret at its end, and only until the next reload (da-3ok3j)', async () => {
-		await withApp(
-			async ({ page, entries }) => {
-				const input = page.locator('.prompt-bar input');
-				const enabled = () => page.locator('.prompt-bar input:enabled').waitFor();
-				const kept = async () => (await entries()).filter((e) => e.field === 'kept_line');
-				const line = `note kept_line ${'a long half-typed line '.repeat(4)}`;
-				await input.fill(line);
-				await closeBar(page);
-				await mark(page);
-				await onStrip(page, [[0, 30], [0, 50]]);
-				await reloaded(page);
-				await enabled();
-				assert.equal(await input.inputValue(), line);
-				await until(() => input.evaluate((el) => document.activeElement === el), Boolean);
-				const caret = await input.evaluate((el) => {
-					const port = el.closest('.field');
-					return {
-						start: el.selectionStart,
-						end: el.selectionEnd,
-						keyboard: el.inputMode,
-						// The end of the line is on screen, where a terminal keeps it.
-						gap: el.getBoundingClientRect().right - port.getBoundingClientRect().right
-					};
-				});
-				assert.deepEqual(
-					{ start: caret.start, end: caret.end, keyboard: caret.keyboard },
-					{ start: line.length, end: line.length, keyboard: 'none' }
-				);
-				assert.ok(caret.gap < 2, `the line's end is ${caret.gap}px off the box`);
-				assert.deepEqual(await kept(), [], 'a kept line ran');
-
-				await input.press('Enter');
-				await until(() => kept().then((all) => all.length), (n) => n === 1);
-				await page.reload();
-				await enabled();
-				assert.equal(await input.inputValue(), '');
-
-				// Taken once: a plain reload after a pull does not bring it back.
-				await input.fill('moment half');
-				await mark(page);
-				await closeBar(page);
-				await onStrip(page, [[0, 30], [0, 50]]);
-				await reloaded(page);
-				await enabled();
-				assert.equal(await input.inputValue(), 'moment half');
-				await page.reload();
-				await enabled();
-				assert.equal(await input.inputValue(), '');
+				await onStrip(page, [[0, 40], [0, 60], [0, 84]], brightAt(page, bright));
+				assert.deepEqual(bright, [false, false, true]);
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);
@@ -411,47 +357,19 @@ describe('the swipe strip', () => {
 	// The closed bar leaves the input's height under the strip on every screen,
 	// so the lowest place to begin, and the last pixel to reach, is the least room.
 	for (const viewport of [PHONE.device.viewport, { width: 412, height: 563 }, { width: 390, height: 844 }])
-		test(`closed at ${viewport.width}×${viewport.height}, a pull from the strip's foot to the screen's reloads`, async () => {
+		test(`closed at ${viewport.width}×${viewport.height}, a pull from the strip's foot to the screen's is past the line`, async () => {
 			await withApp(
 				async ({ page }) => {
 					await closeBar(page);
-					await mark(page);
 					const strip = await box(page, STRIP);
 					const foot = strip.y + strip.height - 1;
-					await onStrip(page, [[0, 20], [0, viewport.height - 1 - foot]], undefined, () => foot);
-					await reloaded(page);
+					const bright = [];
+					await onStrip(page, [[0, 20], [0, viewport.height - 1 - foot]], brightAt(page, bright), () => foot);
+					assert.equal(bright.at(-1), true);
 				},
 				{ ...PHONE, viewport, prepare: twoLayouts }
 			);
 		});
-
-	// A reload kills the process under a write, and the journal rolls it back:
-	// the write would be gone, with no word. So it waits for what is out.
-	test('a pull past the line waits for a write in flight, which lands', async () => {
-		await withApp(
-			async ({ page }) => {
-				await page.evaluate(() => {
-					const previous = window.datum.setRunner((argv, ...rest) =>
-						argv[0] === 'occur'
-							? new Promise((go) => (window.__letGo = go)).then(() => previous(argv, ...rest))
-							: previous(argv, ...rest)
-					);
-				});
-				await page.locator('.prompt-bar input').fill('occur inflight');
-				await page.locator('.prompt-bar input').press('Enter');
-				await page.waitForFunction(() => window.__letGo);
-				await mark(page);
-				await onStrip(page, [[0, 30], [0, 84]]);
-				await stillHere(page, 'the reload did not wait for the write');
-				await page.evaluate(() => window.__letGo());
-				await reloaded(page);
-				await page.waitForFunction(() => window.datum?.run);
-				const { stdout } = await page.evaluate(() => window.datum.run(['tail', 'inflight', '--json']));
-				assert.ok(stdout.includes('inflight'), `the write is gone: ${stdout}`);
-			},
-			{ ...PHONE, prepare: twoLayouts }
-		);
-	});
 
 	test('the texture is printed on the tab: it moves as far as the tab, in the glide too, and never up or down', async () => {
 		await withApp(

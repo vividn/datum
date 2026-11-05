@@ -176,7 +176,7 @@ export async function boot(): Promise<void> {
 	// The line takes the typing once it can (da-wnjkf): after the flush that
 	// enables it, once, and only where nothing has the focus yet and the
 	// pointer is fine — on a phone a focused box is a keyboard over the page.
-	// A line a pull kept takes the caret there too, with no keyboard (da-3ok3j).
+	// A line the upgrade kept takes the caret there too, with no keyboard (da-3ok3j).
 	setTimeout(() => {
 		if (document.activeElement !== document.body) return;
 		const fine = matchMedia('(pointer: fine)').matches;

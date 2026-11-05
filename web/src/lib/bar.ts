@@ -126,7 +126,7 @@ export const sectionsOf = (pill: Pill): PillSection[] => pill.sections ?? [{ tex
 /** Where the locked pills are kept (never synced: they are a screen's). */
 export const PILLS_KEY = 'datum.bar.pills.v1';
 
-/** Where a pull to refresh leaves the unsent line, in `sessionStorage` (`keepLine`). */
+/** Where the page's upgrade leaves the unsent line, in `sessionStorage` (`keepLine`). */
 const KEPT_LINE_KEY = 'datum.bar.line.v1';
 
 /** What is written: the lock is implied — only locked pills are stored. */
@@ -503,10 +503,11 @@ pills.subscribe((all) => {
 export const text = writable(takeKeptLine());
 
 /**
- * A pull to refresh keeps the line typed and not sent (da-3ok3j): `keepLine`
- * just before its reload, and the load after takes it once, so the next
- * reload finds an empty box. The pull's alone, so a plain reload still starts
- * empty. A tab's and not a device's, and the reload keeps the tab's `?db=`.
+ * The page's upgrade keeps the line typed and not sent (da-3ok3j, a pull
+ * to refresh's until da-si4bw): `keepLine` just before its reload, and the
+ * load after takes it once, so the next reload finds an empty box. The
+ * upgrade's alone, so a plain reload still starts empty. A tab's and not a
+ * device's, and the reload keeps the tab's `?db=`.
  */
 export function keepLine(): void {
 	const line = get(text);

@@ -200,10 +200,10 @@
 	import { getContext, setContext, tick, untrack, type Snippet } from 'svelte';
 	import { on } from 'svelte/events';
 	import { act } from '#lib/act.ts';
-	import { keepLine } from '#lib/bar.ts';
+	import { currentDb } from '#lib/database.ts';
 	import { ask } from '#lib/confirm.ts';
 	import { holds } from '#lib/hold.ts';
-	import { settled } from '#lib/run.ts';
+	import { syncNow, syncStates } from '#lib/sync.ts';
 	import { derived, writable, type Readable } from 'svelte/store';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
@@ -276,7 +276,7 @@
 	/** How long a tap on the swipe strip keeps its words up, their fade included. */
 	const TOLD_MS = 3000;
 	/**
-	 * How far down the swipe strip a finger goes before a lift refreshes, read
+	 * How far down the swipe strip a finger goes before a lift syncs, read
 	 * from the room under the strip as the pull begins (`pullLine`): 80 where
 	 * there is room, with the output open, and with the bar closed 44, what the
 	 * input's height leaves from the strip's foot on every screen, and still
@@ -686,10 +686,16 @@
 	/** A tap on the strip, counted so another restarts the fade; 0 while its words are gone. */
 	let told = $state(0);
 	let telling: ReturnType<typeof setTimeout> | undefined;
-	/** How far down the strip the finger has pulled, and kept at that once a refresh waits to reload. */
+	/** How far down the strip the finger has pulled. */
 	let pulled = $state(0);
 	/** How far this pull has to go. */
 	let pullAt = $state(PULL_PX);
+	/**
+	 * Whether a pull has a round to run (da-si4bw): the open database is in a
+	 * chain and not paused, as its leader says. Elsewhere `syncNow` does
+	 * nothing, and the pull says so rather than pretend.
+	 */
+	const syncing = $derived(Boolean($syncStates[currentDb()]?.endpoint && !$syncStates[currentDb()]?.paused));
 	/** A finger has hold of the tab: the strip's texture moves with it, with no transition. */
 	let gripped = $state(false);
 	/**
@@ -825,7 +831,7 @@
 		}
 		if (was.state === 'pull') {
 			event.preventDefault();
-			// Gone more sideways than down, it is no pull, and a lift refreshes nothing.
+			// Gone more sideways than down, it is no pull, and a lift syncs nothing.
 			pulled = across > Math.abs(along) ? across : 0;
 			return;
 		}
@@ -871,13 +877,9 @@
 		touch = null;
 		gripped = false;
 		if (was?.state === 'pull') {
-			// A reload kills the process under a write, so what is running or queued answers first.
-			if (pulled >= pullAt)
-				void settled().then(() => {
-					keepLine();
-					location.reload();
-				});
-			else pulled = 0;
+			// A round of the open database at once, as a bare `sync` asks (da-si4bw).
+			if (pulled >= pullAt && syncing) void syncNow(currentDb()).catch(() => {});
+			pulled = 0;
 			return;
 		}
 		if (was?.state === 'pending' && was.strip) tell();
@@ -1187,18 +1189,19 @@
 	{#if stripped}
 		<!-- THE ROUGH PATCH (da-sz4f6). vividn, 2026-10-31: «if you tap on the
 		     rough patch show that in white for a few seconds before fading
-		     away», «you should be able to drag down on the rough patch to
-		     refresh the page», and the texture is printed on the tab
-		     (`worn`). -->
+		     away», and the texture is printed on the tab (`worn`). A drag down
+		     on it syncs at once, 2026-11-05 (da-si4bw): «remove the down to
+		     refresh thing on the rough patch. It's no longer necessary with this
+		     new version button. Instead maybe it can trigger an immediate sync?» -->
 		{#if pulled > 0}
 			<div
-				class="refresh"
+				class="sync-pull"
 				class:bright={pulled >= pullAt}
 				style:opacity={Math.min(pulled / pullAt, 1)}
 				style:--grown={Math.min(pulled / pullAt, 1)}
 			>
-				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 1.5v3h-3" /></svg>
-				refresh
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6.5a5.5 5.5 0 0 1 10-2M13.5 1.5v3h-3M13.5 9.5a5.5 5.5 0 0 1-10 2M2.5 14.5v-3h3" /></svg>
+				{syncing ? 'sync' : 'not syncing'}
 			</div>
 		{/if}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1992,8 +1995,9 @@
 	}
 	/* What a pull down on the strip is about to do, over the widget above the
 	   strip since the finger hides what is under it: it grows with the pull,
-	   and is bright where a lift refreshes. As the output's × comes out (da-uqx7n). */
-	.refresh {
+	   and is bright past the line, where a lift syncs, or says it would not. As the
+	   output's × comes out (da-uqx7n). */
+	.sync-pull {
 		position: absolute;
 		left: 50%;
 		bottom: calc(var(--strip-rise) + 0.5rem);
@@ -2012,11 +2016,11 @@
 		font-size: 0.7rem;
 		pointer-events: none;
 	}
-	.refresh.bright {
+	.sync-pull.bright {
 		background: var(--accent);
 		color: var(--ground);
 	}
-	.refresh svg {
+	.sync-pull svg {
 		width: 1.2rem;
 		height: 1.2rem;
 		fill: none;

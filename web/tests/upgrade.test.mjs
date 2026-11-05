@@ -146,6 +146,9 @@ test('«↑ New version» shows for a newer build, and reloads onto the deployed
 		const input = page.locator('.prompt-bar input:not([disabled])');
 		await input.fill('moment upgradeprobe');
 		await input.press('Enter');
+		// A line typed and not sent comes back after the upgrade, once (da-3ok3j).
+		const unsent = 'note kept_line half typed';
+		await page.locator('.prompt-bar input').fill(unsent);
 		const asked = pages;
 		await upgrade.click();
 		// Long enough for an unguarded press to have unregistered and asked the
@@ -160,6 +163,10 @@ test('«↑ New version» shows for a newer build, and reloads onto the deployed
 		assert.ok((await served(page)) > asked, `served ${await served(page)}, the origin's last before the press ${asked}`);
 		const { stdout } = await page.evaluate(() => window.datum.runQuiet(['tail', 'upgradeprobe']));
 		assert.match(stdout, /upgradeprobe/, 'the write was lost to the upgrade');
+		assert.equal(await input.inputValue(), unsent, 'the upgrade lost the line not yet sent');
+		await page.reload({ waitUntil: 'load' });
+		await mounted(page);
+		assert.equal(await input.inputValue(), '', 'a plain reload after the upgrade brought the line back');
 	} finally {
 		slow = 0;
 		deployed = null;

@@ -16,6 +16,7 @@
 // long holds every other command too.
 
 import { get } from 'svelte/store';
+import { keepLine } from './bar.ts';
 import { dry } from './db.ts';
 import { settled } from './run.ts';
 import { syncStates } from './sync.ts';
@@ -31,11 +32,12 @@ async function idle(): Promise<void> {
 	}
 }
 
-/** Once the CLI is idle: unregister the service worker, drop its caches, and reload. */
+/** Once the CLI is idle: unregister the service worker, drop its caches, and reload, the line not yet sent kept. */
 export async function upgrade(): Promise<void> {
 	await idle();
 	await (await navigator.serviceWorker?.getRegistration())?.unregister();
 	for (const key of (await globalThis.caches?.keys()) ?? []) await caches.delete(key);
 	await idle();
+	keepLine();
 	location.reload();
 }

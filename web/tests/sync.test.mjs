@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
 import { countOf, nativeCopy, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
 import { until } from './support/until.mjs';
+import { PHONE } from './support/layout.mjs';
 
 let relay;
 before(async () => {
@@ -296,6 +297,80 @@ describe('two browsers', () => {
 				);
 			},
 			{ prepare: relayed(relay) }
+		);
+	});
+});
+
+// A pull down the rough patch, the swipe strip at the page's foot, runs a
+// round of the open database at once (da-si4bw): what it reloaded before.
+describe('a pull down the rough patch', () => {
+	/**
+	 * A phone with two root tabs, so the strip is drawn, and no leader's
+	 * pull every 30 s: what reaches `b` then is the push of a write, or the
+	 * round a pull asked for, and nothing on a timer that a slow pull could
+	 * have waited for.
+	 */
+	const phone = {
+		...PHONE,
+		home: { names: ['main', 'tail'], active: 0 },
+		prepare: async (context) => {
+			await relayed(relay)(context);
+			await context.addInitScript(() => {
+				const every = window.setInterval;
+				window.setInterval = (fn, ms, ...rest) => (ms === 30_000 ? 0 : every(fn, ms, ...rest));
+			});
+		}
+	};
+	/** A finger down the strip past its line, and the words its mark said there. */
+	async function pull(page) {
+		const strip = await page.locator('.swipe-strip').boundingBox();
+		const [x, y] = [195, strip.y + strip.height / 2];
+		const cdp = await page.context().newCDPSession(page);
+		const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+		await at('touchStart', [{ x, y }]);
+		await at('touchMove', [{ x, y: y + 30 }]);
+		await at('touchMove', [{ x, y: y + 100 }]);
+		const said = await page.locator('.sync-pull').innerText();
+		await at('touchEnd', []);
+		await cdp.detach();
+		return said;
+	}
+	const paused = (app) => app.page.evaluate(() => Boolean(window.datum.sync.states().datum?.paused));
+
+	test("brings the other device's write at once, with no reload; paused it says «not syncing» and brings nothing", async () => {
+		await withWallClock(
+			(a) =>
+				withWallClock(async (b) => {
+					const ticket = await a.page.evaluate(() => window.datum.sync.offer('datum'));
+					const report = await b.page.evaluate((t) => window.datum.sync.connect('datum', t), ticket);
+					assert.equal(report.verified, true, JSON.stringify(report));
+					await until(() => endpointOf(b), Boolean);
+
+					// Paused, `b` refuses the push of `a`'s write.
+					assert.equal((await b.run(['sync', 'pause'])).code, 0);
+					await until(() => paused(b), Boolean);
+					await a.run(['occur', 'pulled']);
+					await until(
+						() => a.page.evaluate(() => Object.values(window.datum.sync.states().datum?.peers ?? {}).some((p) => p.error)),
+						Boolean
+					);
+					await b.page.evaluate(() => (window.__notReloaded = true));
+					assert.equal(await pull(b.page), 'not syncing');
+					await b.page.waitForTimeout(3000);
+					assert.equal(await countOf(b, 'pulled'), 0, 'a pull while paused synced');
+
+					// Resumed, nothing brings it by itself: the CONTROL.
+					assert.equal((await b.run(['sync', 'resume'])).code, 0);
+					await until(() => paused(b), (p) => !p);
+					await b.page.waitForTimeout(3000);
+					assert.equal(await countOf(b, 'pulled'), 0, 'the write reached b with no pull');
+
+					assert.equal(await pull(b.page), 'sync');
+					await until(() => countOf(b, 'pulled'), (n) => n === 1);
+					assert.equal(await b.page.evaluate(() => window.__notReloaded), true, 'the pull reloaded the page');
+					assert.equal(await verifyOf(a), await verifyOf(b));
+				}, phone),
+			phone
 		);
 	});
 });
