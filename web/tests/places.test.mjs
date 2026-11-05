@@ -22,6 +22,7 @@ import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, along, atRest, chooseRoot, swipeOver, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { reach } from './support/commands.mjs';
+import { unfold } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -550,6 +551,23 @@ describe('the ways into Sync, on a fresh phone', () => {
 			await input.press('Enter');
 			await until(() => shown(page), (t) => t === 'sync');
 			await page.locator('.host[data-widget="sync"] .sync header').waitFor();
+			assert.deepEqual(errors, []);
+		}, fresh);
+	});
+
+	// da-6kddf: the tutorial's input-bar lesson names sync and backups side by side.
+	test('a typed bare `backups` opens the Backups place, and says so', async () => {
+		await withApp(async ({ page, errors }) => {
+			const input = page.locator('.prompt-bar input');
+			await input.fill('backups');
+			await input.press('Enter');
+			await until(() => shown(page), (t) => t === 'backups');
+			await page.locator('.host[data-widget="backups"] [data-backup="save"]').waitFor();
+			await unfold(page);
+			await until(
+				() => page.locator('.prompt-bar .section.output').innerText(),
+				(t) => /backups are in the backups widget/.test(t)
+			);
 			assert.deepEqual(errors, []);
 		}, fresh);
 	});

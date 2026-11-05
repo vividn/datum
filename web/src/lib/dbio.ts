@@ -9,7 +9,8 @@
 // which wants a TTY to ask on, asks in a dialog instead, and so do
 // `setup F --delete` (da-ez40f), `kit install`'s trust (da-axrk), a replacing `db restore`'s
 // deletions (da-jrbwc) and a `--hard` one's drops (da-qq7gb). Any other
-// question a command asks is `asking`'s, with no code here (da-jytnl).
+// question a command asks is `asking`'s, with no code here (da-jytnl). A
+// bare `backups` opens the Backups place, as a bare `sync` opens Sync (da-6kddf).
 //
 // Every line a person types consults it — the CLI widget's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
@@ -22,6 +23,7 @@
 
 import { writable } from 'svelte/store';
 import { saveFile } from './backup.js';
+import { openBackups } from './backups.js';
 import { backupArgv, chainListArgv, dbPurgeArgv, dbPurgeChainArgv, dbPurgeProbeArgv, restorePreviewArgv } from './calls.js';
 import { choose, confirm } from './confirm.js';
 import { runEchoed } from './echo.js';
@@ -31,6 +33,11 @@ import { approve } from './passkey.js';
 import { forget } from './cliStore.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 import type { ChainList } from './syncView.js';
+
+async function backupsHere(argv: string[]): Promise<RunResult> {
+	await openBackups();
+	return { argv, code: 0, stdout: 'backups are in the backups widget: save a file or restore one, and plans that back up to a bucket', stderr: '' };
+}
 
 /**
  * `argv` run the browser's way if it is one of the file commands, else
@@ -42,6 +49,7 @@ import type { ChainList } from './syncView.js';
  */
 export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	const [cmd, sub, ...flags] = argv;
+	if (argv.join(' ') === 'backups') return backupsHere(argv);
 	// `sync chain purge` purges this copy as it orders every other (da-pvoai).
 	const chained = cmd === 'sync' && sub === 'chain' && flags[0] === 'purge';
 	if ((cmd === 'db' && sub === 'purge') || chained) {
