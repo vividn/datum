@@ -68,6 +68,7 @@ import BackupsWidget from './BackupsWidget.svelte';
 import ConflictsWidget from './ConflictsWidget.svelte';
 import DayviewWidget from './DayviewWidget.svelte';
 import CollectPane from './CollectPane.svelte';
+import DocsWidget from './DocsWidget.svelte';
 import { COLLECT_FIELDS_OFFER } from '#lib/fields.ts';
 import HelpWidget from './HelpWidget.svelte';
 import InputWidget from './InputWidget.svelte';
@@ -604,10 +605,22 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('welcome', 'welcome'),
 		component: WelcomeWidget,
 		help: [
-			'What datum is, in a line; «Tutorial», where fields, their kinds, the input bar and tabs are taught; pointing an AI agent at datum.day; and links to the documentation and the source.',
+			'What datum is, in a line; «Tutorial», where fields, their kinds, the input bar and tabs are taught; «Read the docs», datum\'s docs in the page; pointing an AI agent at datum.day; and a link to the source.',
 			'The Help place\'s front page is these same words.'
 		].join('\n'),
 		legible: { width: 200, height: 100 }
+	},
+	// The docs widget (da-0d8l6), a place: the welcome's «Read the docs» opens
+	// it. Legible at its back row and two lines of a page (about 20px each,
+	// estimated) plus padding; the rest scrolls.
+	docs: {
+		meta: meta('docs', 'docs'),
+		component: DocsWidget,
+		help: [
+			"datum's docs, as the repo has them: the contents first, a page for each part of datum.",
+			'A link to another doc opens it here, and «← back» returns; a link elsewhere opens in a new tab.'
+		].join('\n'),
+		legible: { width: 200, height: 76 }
 	},
 	// The premade widget (da-36whg): fields ready to set up, by theme, each
 	// opening setup filled in. Legible at its sentence and one row of cards

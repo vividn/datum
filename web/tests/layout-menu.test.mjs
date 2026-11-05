@@ -194,6 +194,7 @@ describe('the menu the title opens', () => {
 				'sync',
 				'help',
 				'welcome',
+				'docs',
 				'premade',
 				'backups',
 				'settings',

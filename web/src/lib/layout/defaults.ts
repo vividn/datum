@@ -266,6 +266,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	sync: () => only('sync', 'sync'),
 	help: () => only('help', 'help'),
 	welcome: () => only('welcome', 'welcome'),
+	docs: () => only('docs', 'docs'),
 	premade: () => only('premade', 'premade'),
 	backups: () => only('backups', 'backups'),
 	settings: () => only('settings', 'settings'),

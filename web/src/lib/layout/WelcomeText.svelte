@@ -14,6 +14,7 @@
 <script lang="ts">
 	import { act } from '#lib/act.ts';
 	import { openTutorial } from '#lib/tutorial.ts';
+	import { openPlace } from './shell.js';
 
 	const REPO = 'https://github.com/vividn/datum';
 </script>
@@ -28,8 +29,11 @@
 	<p>
 		<button type="button" class="command" use:act={'open'} onclick={openTutorial}>Tutorial</button>
 	</p>
-	<!-- The docs' index, which lists every page for using datum, concepts first. -->
-	<p>Rather read than practice? <a href="{REPO}/blob/main/docs/README.md" target="_blank" rel="noopener">Read the docs</a>.</p>
+	<!-- The docs, read in the page (da-0d8l6): the docs place, on their contents. -->
+	<p>Rather read than practice?</p>
+	<p>
+		<button type="button" class="command" data-open="docs" use:act={'open'} onclick={() => void openPlace('docs')}>Read the docs</button>
+	</p>
 	<!-- vividn, 2026-10-21: «It should be clear on the front page of datum.day that you can point your agent there
 	     to help you get setup with your data.» The guide it reads is /agents.md; the public one, since the agent
 	     is not on this device. -->

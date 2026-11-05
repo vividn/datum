@@ -180,7 +180,8 @@ export default defineConfig({
 	// The DEBUG widget's sample kit is the repo's own `kits/sample.toml`
 	// (da-1mkej), imported `?raw` from outside `web/`, which the dev server
 	// refuses unless it is named — and naming anything drops the default.
+	// The docs widget's pages are the repo's `docs/` (da-0d8l6), the same way.
 	server: {
-		fs: { allow: [searchForWorkspaceRoot(process.cwd()), '../kits'] }
+		fs: { allow: [searchForWorkspaceRoot(process.cwd()), '../kits', '../docs'] }
 	}
 });

@@ -96,7 +96,8 @@ describe('a first visit', () => {
 
 	// What it HAS and DOES, not its sentences (vividn, 2026-10-28: «seems like tests that quote word for word are kind
 	// of useless»): the copy is his to change without a test following it.
-	const LINKS = ['https://github.com/vividn/datum/blob/main/docs/README.md', 'https://datum.day/agents.md', 'https://github.com/vividn/datum'];
+	// The docs are a button since da-0d8l6, opening the docs place: `docs.test.mjs`.
+	const LINKS = ['https://datum.day/agents.md', 'https://github.com/vividn/datum'];
 
 	test('what it has: the name, local first, the Tutorial button, the docs, the guide for agents and the repo, then «Close welcome»', async () => {
 		await withApp(async ({ page }) => {
@@ -107,7 +108,7 @@ describe('a first visit', () => {
 			const controls = await host.locator('div.welcome').locator('button, a').evaluateAll((all) =>
 				all.map((e) => (e.tagName === 'A' ? e.getAttribute('href') : e.textContent.trim()))
 			);
-			assert.deepEqual(controls, ['Tutorial', ...LINKS]);
+			assert.deepEqual(controls, ['Tutorial', 'Read the docs', ...LINKS]);
 			// «a button at the bottom of the welcome widget»: the last thing in it.
 			assert.equal((await host.getByRole('button').last().innerText()).trim(), 'Close welcome');
 			for (const link of await host.getByRole('link').all()) assert.equal(await link.getAttribute('target'), '_blank');
@@ -333,11 +334,19 @@ describe('a device that has been here', () => {
 // da-rgyq8, vividn: an early user «suggested we call it "setup" widget and I would
 // agree». What the app ships says «Track» nowhere but as the verb of the
 // sentence that says what a field is (WelcomeText.svelte) and of the gear's «Track timezone» (da-yw6o2,
-// vividn's word for it): no title, button, tab or help of the widget.
+// vividn's word for it): no title, button, tab or help of the widget. The docs the
+// docs widget bundles (da-0d8l6) are the repo's `docs/` as written, not the app's
+// words, so a chunk that is one (it holds a doc's title line) is not read.
 test('the built app says «Track» only as a verb', () => {
 	const build = fileURLToPath(new URL('../build', import.meta.url));
+	const docs = new URL('../../docs/', import.meta.url);
+	const titles = readdirSync(docs, { recursive: true })
+		.filter((f) => f.endsWith('.md'))
+		.map((f) => readFileSync(new URL(f, docs), 'utf8').split('\n')[0]);
 	const said = readdirSync(build, { recursive: true })
 		.filter((f) => /\.(js|html)$/.test(f))
-		.flatMap((f) => readFileSync(join(build, f), 'utf8').match(/\bTrack\b(?! timezone).{0,20}/g) ?? []);
+		.map((f) => readFileSync(join(build, f), 'utf8'))
+		.filter((text) => !titles.some((title) => text.includes(title)))
+		.flatMap((text) => text.match(/\bTrack\b(?! timezone).{0,20}/g) ?? []);
 	assert.deepEqual([...new Set(said)], ['Track what matters to you']);
 });
