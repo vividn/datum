@@ -215,7 +215,8 @@ export function compose(overlay: string, days: Layer[], now: number): SVGSVGElem
 	}
 
 	// The strip, as the CLI paints it: each lane in the state its block holds
-	// at now, where the overlay draws now.
+	// at now, where the overlay draws now. Clear: the nowview draws collect's
+	// now strip over it (da-d6vzq), and a press finds the chunk.
 	const holding = spans.find((s) => {
 		const a = axisOf(s);
 		return a.from <= now && now < a.to;
@@ -234,7 +235,8 @@ export function compose(overlay: string, days: Layer[], now: number): SVGSVGElem
 			[y ? 'width' : 'height']: num(block, y ? 'width' : 'height') * c,
 			[along]: num(slot!, along),
 			[length]: num(slot!, length),
-			fill: stripFill(block.getAttribute('fill') ?? 'none')
+			fill: stripFill(block.getAttribute('fill') ?? 'none'),
+			'fill-opacity': 0
 		});
 		const hid = block.getAttribute('data-id');
 		if (hid) chunk.setAttribute('data-id', hid);

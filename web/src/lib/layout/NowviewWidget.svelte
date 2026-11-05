@@ -149,23 +149,28 @@
 	picture's: a redraw replaces the picture, never them — it only re-places
 	them against the new picture's geometry.
 
-	A DOT LOGGED NOW ARRIVES (da-7257d, vividn: «appear in the middle of the
-	now section … and then slide to the left for maybe 500ms, after which it
-	locks onto its place»). It is in the picture at its place from the first,
-	whole over the section's edge (#lib/nowcrop.ts), and `arrive` only animates
-	it from the section's middle back to there, inside the slide of the flow,
-	so it lands where the history then has it. A picture landing meanwhile
-	takes the slide up where it was. One from another tab or by sync, or with
-	a time in the past, just appears, as it does with less motion asked for.
+	THE NOW SECTION IS COLLECT'S NOW STRIP (da-d6vzq, vividn, 2026-11-05: «the
+	now section in the nowview should behave the same way as this section, so
+	wipes on changing states, moment dots flowing in from the right. It should
+	be as responsive too»): NowStrip.svelte, mounted over the overlay's
+	`.now-strip` (`mountStrip`), the last half second of today's layer, a new
+	state wiping in from the right and a dot crossing it, and a tap's mark
+	from collect drawn at once (`taps`, #lib/nowStrip.ts) until this widget's
+	own layer holds it. The CLI's `.now-chunk`s stay as what a press finds,
+	drawn clear. A dot of the history younger than the strip waits, hidden,
+	for the strip's to reach the now-line (`holdBack`), where it stands whole
+	over the edge (#lib/nowcrop.ts).
 
 	The band carries its own `data-mode` — `press` between gestures, then
 	`hold`, `pan`, `range` or `now` — so someone driving it by hand can see
 	in devtools which gesture the machine took.
 -->
 <script lang="ts">
-	import { onDestroy, onMount, tick, untrack } from 'svelte';
+	import { mount, onDestroy, onMount, tick, unmount, untrack } from 'svelte';
 	import { on } from 'svelte/events';
 	import CliPane from '#lib/CliPane.svelte';
+	import NowStrip from '#lib/NowStrip.svelte';
+	import { STRIP_MS, taps, unheld, type Mark } from '#lib/nowStrip.ts';
 	import Pill from '#lib/Pill.svelte';
 	import { pills, removePill, selected } from '#lib/bar.ts';
 	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
@@ -175,11 +180,11 @@
 	import { readLanes } from '#lib/lanes.ts';
 	import { MAX_SPEED, speedOver, tracked, type Sample } from '#lib/grip.ts';
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
-	import { clockLabel, now as clockNow } from '#lib/clock.ts';
+	import { clockLabel, minute, now as clockNow } from '#lib/clock.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
 	import { clockAround, clockWord, historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
-	import { layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
-	import { run, writtenHere } from '#lib/run.ts';
+	import { dateBack, layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
+	import { run } from '#lib/run.ts';
 
 	interface Props {
 		/** How far back the window reaches: a step of NOWVIEW_STEPS, or any length a handle's drag left it at. */
@@ -577,6 +582,8 @@
 	 * failed is said over the band.
 	 */
 	let layer = $state.raw<{ days: Map<string, Layer>; failed: Map<string, Layer> }>({ days: new Map(), failed: new Map() });
+	/** The epoch today's layer held was asked at: a tap's mark it holds is its own (`unheld`). */
+	let todayAsked = $state(-1);
 	/** The days last asked, and at which epoch. */
 	let wanted = '';
 	/** The instants a picture asked for a coast's end will draw, until it does: their days are asked with it (da-vnfr3). */
@@ -597,6 +604,7 @@
 		const home = spanDates(Date.now() - (surround + 1) * minutes * 60_000, Date.now() + minutes * 60_000);
 		const dates = [...new Set([...spanDates(from, to), ...home])];
 		const key = `${vertical} ${epoch} ${dates.join(' ')}`;
+		const asking = epoch;
 		if (key === wanted) return;
 		wanted = key;
 		// A day not held is what the store has of it until its answer lands:
@@ -616,6 +624,7 @@
 				else {
 					days.set(dates[i], day);
 					failed.delete(dates[i]);
+					if (dates[i] === dateBack(0)) todayAsked = asking;
 				}
 				layer = { days, failed };
 			});
@@ -739,37 +748,55 @@
 		untrack(flow);
 	});
 
-	/** How long a dot logged now takes to reach its place, in ms. */
-	const ARRIVE_MS = 500;
-	/** The dots that have slid in: each one's start on the page's timeline, and how far off its place it starts, in units. */
-	const arrived = new Map<string, { at: number; off: number }>();
-	/** The dots of the picture last read, which a redraw brings nothing new by. */
-	let known = new Set<string>();
+	// ── the now section (da-d6vzq) ─────────────────────────────────────
 
-	/** Slide each dot just logged here in from the middle of the now section, as a new picture brings it. */
-	function arrive(svg: SVGSVGElement | null): void {
-		const strip = svg?.querySelector('.now-strip');
-		const dots = [...(svg?.querySelectorAll<SVGElement>('circle.point-bg[data-id]') ?? [])];
-		const now = Number(document.timeline.currentTime);
-		const scale = Math.abs((vertical ? svg?.getScreenCTM()?.d : svg?.getScreenCTM()?.a) ?? 0);
-		const centerOf = (el: Element) => {
-			const r = el.getBoundingClientRect();
-			return vertical ? r.top + r.height / 2 : r.left + r.width / 2;
-		};
-		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-		const offset = vertical ? (off: number) => `0 ${off}px` : (off: number) => `${off}px 0`;
-		for (const dot of dots) {
-			const id = dot.dataset.id!;
-			if (strip && scale && !arrived.has(id) && !known.has(id) && writtenHere(Date.parse(dot.dataset.at ?? '')))
-				arrived.set(id, { at: now, off: (centerOf(strip) - centerOf(dot)) / scale });
-			const slide = arrived.get(id);
-			if (!slide || now - slide.at >= ARRIVE_MS || reduced) continue;
-			for (const el of [dot, dot.nextElementSibling])
-				if (el) el.animate({ translate: [offset(slide.off), offset(0)] }, { duration: ARRIVE_MS, easing: 'ease-out' }).currentTime = now - slide.at;
+	/** What the now section's strip draws: today's layer, the taps it does not hold, the slot's size. */
+	const stripProps = $state<{ doc: Document | null | undefined; pending: Mark[]; width: number; height: number; vertical: boolean; prefix: string }>({
+		doc: null,
+		pending: [],
+		width: 0,
+		height: 0,
+		vertical: false,
+		prefix: 'nowstrip-'
+	});
+	$effect(() => {
+		void $minute;
+		stripProps.doc = layer.days.get(dateBack(0))?.doc();
+		stripProps.pending = unheld($taps, todayAsked);
+		stripProps.vertical = vertical;
+	});
+	/** The strip on screen, and the group of the picture it is mounted in. */
+	let strip: { host: SVGGElement; app: Record<string, unknown> } | null = null;
+
+	/** Mount the strip over the now section of a picture this widget composed, once a picture. */
+	function mountStrip(svg: SVGSVGElement | null): void {
+		const slot = svg?.querySelector('.at-now rect.now-strip');
+		if (strip && strip.host.previousElementSibling === slot) return;
+		if (strip) void unmount(strip.app);
+		strip = null;
+		if (!slot) return;
+		const host = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+		host.setAttribute('class', 'now-live');
+		host.setAttribute('transform', `translate(${slot.getAttribute('x')} ${slot.getAttribute('y')})`);
+		slot.after(host);
+		[stripProps.width, stripProps.height] = ['width', 'height'].map((n) => Number(slot.getAttribute(n)));
+		strip = { host, app: mount(NowStrip, { target: host, props: stripProps }) };
+	}
+
+	let unhide: ReturnType<typeof setTimeout> | undefined;
+	/** Hide each dot of the history the strip still draws, until the strip's reaches the now-line. */
+	function holdBack(svg: SVGSVGElement | null): void {
+		clearTimeout(unhide);
+		const now = Date.now();
+		let next = Infinity;
+		for (const dot of svg?.querySelectorAll<SVGElement>('.point-bg[data-at]') ?? []) {
+			const age = now - Date.parse(dot.dataset.at ?? '');
+			const wait = strip && !offNow && age >= 0 && age < STRIP_MS ? STRIP_MS - age : 0;
+			const symbol = dot.nextElementSibling as SVGElement | null;
+			for (const el of [dot, symbol?.matches('.point-bg') ? null : symbol]) if (el) el.style.visibility = wait ? 'hidden' : '';
+			if (wait) next = Math.min(next, wait);
 		}
-		known = new Set(dots.map((dot) => dot.dataset.id!));
-		// Far more than `writtenHere` remembers, so a dot let go of cannot qualify again.
-		for (const id of [...arrived.keys()].slice(0, -64)) arrived.delete(id);
+		if (next < Infinity) unhide = setTimeout(() => holdBack(svgEl()), next);
 	}
 
 	/**
@@ -1314,8 +1341,8 @@
 	 * the scale changed (da-rdiph).
 	 */
 	function unstretch(): void {
-		// Not the strip's own copies (`compose`): the strip is scaled back whole, below.
-		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern:not([id$="-strip"])') ?? []) {
+		// Not the strip's own copies, `compose`'s `…-strip` and `mountStrip`'s `nowstrip-…`: the strip is scaled back whole, below.
+		for (const pattern of el?.querySelectorAll<SVGPatternElement>('.nowview-band svg.svg pattern:not([id$="-strip"], [id^="nowstrip-"])') ?? []) {
 			const back = 1 / (zoom?.scale || 1);
 			const at = Number(pattern.getAttribute('data-origin') ?? 0);
 			pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
@@ -1916,7 +1943,8 @@
 		}
 		drawn = readDrawn(svg);
 		flow();
-		arrive(svg);
+		mountStrip(svg);
+		holdBack(svg);
 		const about = middleOf(middle);
 		view = !axis
 			? null
@@ -2370,6 +2398,8 @@
 	});
 
 	onDestroy(() => {
+		if (strip) void unmount(strip.app);
+		clearTimeout(unhide);
 		clearTimeout(wait);
 		clearTimeout(settle);
 		clearTimeout(held);

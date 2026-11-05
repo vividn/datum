@@ -339,7 +339,7 @@ describe('the now strip is the last half second', () => {
 			};
 			return {
 				taps: [...svg.querySelectorAll(`circle.pending[data-mark="${field}"]`)].map(at),
-				layer: [...svg.querySelectorAll(`g[data-mark="${field}"] circle.point-fg`)].map(at)
+				layer: [...svg.querySelectorAll(`g[data-mark="${field}"] circle.strip-point-fg`)].map(at)
 			};
 		}, field);
 
@@ -404,7 +404,7 @@ describe('the now strip is the last half second', () => {
 	const dots = (page, field) =>
 		page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => ({
 			taps: svg.querySelectorAll(`.pending[data-mark="${field}"]`).length,
-			layer: svg.querySelectorAll(`.point-bg[data-mark="${field}"]`).length
+			layer: svg.querySelectorAll(`.strip-point-bg[data-mark="${field}"]`).length
 		}), field);
 
 	// vremya on #1694: drawn exactly over the layer's own, a mark never dropped shows nowhere.
@@ -432,7 +432,7 @@ describe('the now strip is the last half second', () => {
 			const strip = () =>
 				page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => ({
 					secret: svg.querySelectorAll('[data-mark="secret"]').length,
-					mood: [...svg.querySelectorAll('rect.block[data-mark="mood"]')].map((b) => {
+					mood: [...svg.querySelectorAll('rect.strip-block[data-mark="mood"]')].map((b) => {
 						const id = /^url\(#(.+)\)$/.exec(b.getAttribute('fill') ?? '')?.[1];
 						return !!id && svg.querySelector(`defs > pattern[id="${id}"]`) !== null;
 					})

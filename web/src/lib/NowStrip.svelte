@@ -7,12 +7,16 @@
 	tap added before the database answered, drawn over the layer.
 
 	The marks are laid in px from `origin`, so their numbers stay small, and
-	one transform on `.flow` slides them: on each frame while an edge is in
+	one transform on `.strip-slide` slides them (not `.flow` or `.slide`, the nowview's own): on each frame while an edge is in
 	the strip or any part of a dot is (vividn, 2026-11-05: «they should go
 	completely off the left side and then be destroyed»), and otherwise not
 	until one comes or `origin` is laid again. A dot of the layer wholly past
 	the left edge is removed. At a selected instant `at` (da-0qdsp) the strip's
 	span about it is drawn, still, the instant at the center.
+
+	The nowview draws it too, in its now section (da-d6vzq): `vertical` where
+	time runs down the page, now at the strip's foot, and `prefix` naming its
+	copies of the stripes apart from collect's.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -25,8 +29,19 @@
 		at = null,
 		width,
 		height,
-		mirrored = false
-	}: { doc: Document | null | undefined; pending?: Mark[]; at?: number | null; width: number; height: number; mirrored?: boolean } = $props();
+		mirrored = false,
+		vertical = false,
+		prefix = 'collect-'
+	}: {
+		doc: Document | null | undefined;
+		pending?: Mark[];
+		at?: number | null;
+		width: number;
+		height: number;
+		mirrored?: boolean;
+		vertical?: boolean;
+		prefix?: string;
+	} = $props();
 
 	/** How far either side of `origin` a block is laid, and how often `origin` is laid again. */
 	const SPAN = 600_000;
@@ -34,11 +49,16 @@
 
 	let live = $state(Date.now());
 	const origin = $derived(at ?? live);
+	let svg = $state<SVGSVGElement>();
 	let flow = $state<SVGGElement>();
 	let layer = $state<SVGGElement>();
-	const k = $derived(width / STRIP_MS);
-	const y = $derived(height / LAYER_HEIGHT);
-	const drawn = $derived(laid(doc, origin, k, y, SPAN));
+	/** The strip's length along time, and across it. */
+	const [along, wide] = $derived(vertical ? [height, width] : [width, height]);
+	const k = $derived(along / STRIP_MS);
+	const y = $derived(wide / LAYER_HEIGHT);
+	const drawn = $derived(laid(doc, origin, k, y, SPAN, vertical, prefix));
+	/** `v` along time and `u` across, as x and y. */
+	const xy = (v: number, u: number) => (vertical ? [u, v] : [v, u]);
 	/** Each tap's mark as drawn: clamped to `SPAN` about `origin`, in px from it. */
 	const taps = $derived(
 		pending.map((m) => {
@@ -51,20 +71,24 @@
 
 	$effect(() => {
 		const edges = [...drawn.edges, ...taps.filter((m) => !m.dot).flatMap((m) => [m.from, m.to])];
-		/** Each dot from its instant to when it is wholly past the left edge: the strip's span and its half width later. */
-		const half = (els: Element[]) => Math.max(0, ...els.map((el) => el.getBoundingClientRect().width / 2));
+		/** Each dot from its instant to when it is wholly past the left edge: the strip's span and its half length later, in the strip's units. */
+		// Screen px a unit along time: a nested `<svg>`'s client rect is its content's.
+		const ctm = svg?.getScreenCTM();
+		const px = (ctm && (vertical ? Math.hypot(ctm.c, ctm.d) : Math.hypot(ctm.a, ctm.b))) || 1;
+		const half = (els: Element[]) => Math.max(0, ...els.map((el) => (vertical ? el.getBoundingClientRect().height : el.getBoundingClientRect().width) / 2 / px));
 		const dots = [
 			...drawn.dots.map((d) => ({ ...d, to: d.at + STRIP_MS + half(d.marks) / k })),
-			...taps.filter((m) => m.dot).map((m) => ({ at: m.from, marks: [], to: m.from + STRIP_MS + (m.h / 2) * y * (m.aspect ?? 1) / k }))
+			...taps.filter((m) => m.dot).map((m) => ({ at: m.from, marks: [], to: m.from + STRIP_MS + ((m.h / 2) * y * (vertical ? 1 : (m.aspect ?? 1))) / k }))
 		];
-		void width;
-		if (at !== null) return void flow?.setAttribute('transform', `translate(${width / 2} 0)`);
+		void along;
+		const to = (v: number) => (vertical ? `translate(0 ${v})` : `translate(${v} 0)`);
+		if (at !== null) return void flow?.setAttribute('transform', to(along / 2));
 		let frame = 0;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const slide = () => {
 			const now = Date.now();
 			if (now - origin > REBASE) return void (live = now);
-			flow?.setAttribute('transform', `translate(${width - (now - origin) * k} 0)`);
+			flow?.setAttribute('transform', to(along - (now - origin) * k));
 			for (const d of dots) if (d.to < now) d.marks.forEach((el) => el.remove());
 			if (edges.some((e) => e > now - STRIP_MS - 50 && e <= now) || dots.some((d) => d.at <= now && d.to + 50 > now)) frame = requestAnimationFrame(slide);
 			else timer = setTimeout(slide, Math.min(origin + REBASE, ...[...edges, ...dots.flatMap((d) => [d.at, d.to])].filter((e) => e > now)) - now + 1);
@@ -82,7 +106,7 @@
 			defs.replaceChildren(
 				...[...(of?.querySelectorAll('pattern[id]') ?? [])].map((p) => {
 					const copy = document.importNode(p, true);
-					copy.id = `collect-${p.id}`;
+					copy.id = `${prefix}${p.id}`;
 					return copy;
 				})
 			);
@@ -91,24 +115,27 @@
 	}
 </script>
 
-<svg class="now-strip" class:mirrored {width} {height} aria-hidden="true">
+<svg class="now-strip" class:mirrored {width} {height} aria-hidden="true" bind:this={svg}>
 	<defs use:patterns={doc}></defs>
-	<g class="flow" bind:this={flow}>
+	<g class="strip-slide" bind:this={flow}>
 		<g bind:this={layer}></g>
 		{#each taps as m}
 			{#if m.dot}
 				{@const a = m.aspect ?? 1}
+				{@const [cx, cy] = xy(m.x, (m.y + m.h / 2) * y)}
 				<circle
 					class="pending"
 					data-mark={m.field}
-					cx={m.x}
-					cy={(m.y + m.h / 2) * y}
+					{cx}
+					{cy}
 					r={(m.h / 2) * y}
 					fill={m.fill}
-					transform={a === 1 ? undefined : `matrix(${a} 0 0 1 ${m.x * (1 - a)} 0)`}
+					transform={a === 1 ? undefined : `matrix(${a} 0 0 1 ${cx * (1 - a)} 0)`}
 				/>
 			{:else}
-				<rect class="pending" class:ground={m.fill === null} data-mark={m.field} x={m.x} y={m.y * y} width={m.w} height={m.h * y} fill={m.fill} />
+				{@const [x, ry] = xy(m.x, m.y * y)}
+				{@const [w, h] = xy(m.w, m.h * y)}
+				<rect class="pending" class:ground={m.fill === null} data-mark={m.field} {x} y={ry} width={w} height={h} fill={m.fill} />
 			{/if}
 		{/each}
 	</g>

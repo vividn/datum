@@ -59,7 +59,7 @@
 	import { run as read } from '#lib/run.ts';
 	import { minute } from '#lib/clock.ts';
 	import { dateBack, daysBack, layers, standIn, type Layer } from '#lib/dayLayers.ts';
-	import { momentsAt, pendingOf, type Mark } from '#lib/nowStrip.ts';
+	import { momentsAt, pendingOf, tapped, taps, unheld } from '#lib/nowStrip.ts';
 	import { withPills } from '#lib/selection.ts';
 	import { flagLine, hasDuration } from '#lib/commands.ts';
 	import { advance } from '#lib/keyframes.ts';
@@ -135,9 +135,7 @@
 	});
 	let layer = $state.raw<Layer>();
 	/** The epoch the layer drawn was asked at. */
-	let shown = -1;
-	/** The taps' marks the layer does not hold yet: `after`, once the write landed, the epoch a layer must be asked at to hold it. */
-	let marks = $state.raw<{ mark: Mark; after?: number }[]>([]);
+	let shown = $state(-1);
 	$effect(() => {
 		const [date, at] = [today, epoch];
 		untrack(() => {
@@ -145,7 +143,6 @@
 			void layers([date], at)[0].then((got) => {
 				if (date !== today || at !== epoch) return;
 				if (!got.error) [layer, shown] = [got, at];
-				marks = marks.filter((m) => m.after === undefined || m.after > at);
 			});
 		});
 	});
@@ -179,15 +176,10 @@
 		const sent = line ? [...line, ...argv.slice(1)] : argv;
 		const at = gestureAt() ?? Date.now();
 		const mark = pendingOf(withPills($grammar, sent, $pills).argv, $fields, at);
-		const held: { mark: Mark; after?: number } | null = mark && { mark };
-		if (held) marks = [...marks, held];
-		void pressWithPills(sent).then((result) => {
-			if (!held) return;
-			if (result.code === 0) held.after = get(written);
-			if (result.code !== 0 || held.after! <= shown) marks = marks.filter((m) => m !== held);
-		});
+		const settle = mark && tapped(mark);
+		void pressWithPills(sent).then((result) => settle?.(result.code === 0 ? get(written) : null));
 	}
-	const nowPending = $derived(marks.map((m) => m.mark));
+	const nowPending = $derived(unheld($taps, shown));
 
 	/** The pending line's flags, when `argv` spends its command and it holds only flags. */
 	const pendingFlags = (argv: string[]): string[] | null =>

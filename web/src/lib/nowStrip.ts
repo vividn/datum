@@ -15,6 +15,7 @@
 // a write, never for the clock. A tap's mark is added at once (`pendingOf`),
 // at the tap's instant, the one the CLI's clock is frozen at (da-szzgy).
 
+import { writable } from 'svelte/store';
 import { pendingCommand } from './commands.js';
 import { layMarks } from './dayLayers.js';
 import type { FieldButton } from './fields.js';
@@ -32,6 +33,32 @@ export const STRIP_MS = 500;
  */
 export type Mark = { field: string; from: number; to: number; y: number; h: number; fill: string | null; dot?: boolean; aspect?: number };
 
+/** A tap's mark, and once its write landed, the epoch a layer must be asked at to hold it. */
+export type Tap = { mark: Mark; after?: number };
+
+/**
+ * Every tap's mark the layers may not hold yet, for each strip that draws
+ * now: collect's and the nowview's (da-d6vzq), so a tap shows in both in
+ * the same frame. Each strip leaves out those its own layer holds (`unheld`).
+ */
+export const taps = writable<Tap[]>([]);
+
+/**
+ * Add `mark` to `taps`, and the call that settles it: the epoch its write
+ * landed at, or null to take it back, refused. A tap still in flight stays
+ * whatever its age; one whose write landed over a minute before this tap
+ * goes, each strip asking its layer again at every write, so a minute on
+ * its own has long held it, and a strip mounted since asks at an epoch past it.
+ */
+export function tapped(mark: Mark): (after: number | null) => void {
+	const held: Tap = { mark };
+	taps.update((all) => [...all.filter((t) => t.after === undefined || t.mark.from > mark.from - 60_000), held]);
+	return (after) => taps.update((all) => all.flatMap((t) => (t !== held ? [t] : after === null ? [] : [{ mark, after }])));
+}
+
+/** The marks of `all` a layer asked at epoch `shown` does not hold. */
+export const unheld = (all: Tap[], shown: number): Mark[] => all.filter((t) => t.after === undefined || t.after > shown).map((t) => t.mark);
+
 const NS = 'http://www.w3.org/2000/svg';
 const num = (el: Element, name: string) => Number(el.getAttribute(name));
 const time = (el: Element, name: string) => Date.parse(el.getAttribute(name) ?? '');
@@ -45,14 +72,18 @@ const time = (el: Element, name: string) => Date.parse(el.getAttribute(name) ?? 
  * `data-mark`, so no selector of a button, a state or an entry finds them. With
  * the instants of the blocks' edges, for the slide to know when one is in
  * view, and each dot's instant and elements, for it to slide the dot wholly
- * past the left edge and then remove it.
+ * past the left edge and then remove it. `y`: time runs down, as the layer of
+ * a vertical nowview is drawn. `prefix` names the strip's copies of the
+ * layer's stripes, a page resolving an id to its first element.
  */
 export function laid(
 	doc: Document | null | undefined,
 	origin: number,
 	k: number,
 	across: number,
-	span: number
+	span: number,
+	y = false,
+	prefix = 'collect-'
 ): { node: SVGGElement; edges: number[]; dots: { at: number; marks: Element[] }[] } {
 	const node = document.createElementNS(NS, 'g');
 	const edges: number[] = [];
@@ -84,20 +115,22 @@ export function laid(
 			}
 			if (copy.firstChild) g.append(copy);
 		}
-		trim(g, unit(origin - span), unit(origin + span), unit(origin + span), to, false);
+		trim(g, unit(origin - span), unit(origin + span), unit(origin + span), to, y);
 		// Along time from `origin`, which `layMarks` then scales to px.
 		const at = unit(origin);
 		for (const el of g.querySelectorAll('*')) {
-			for (const name of ['x', 'cx', 'x1', 'x2']) if (el.hasAttribute(name)) el.setAttribute(name, String(num(el, name) - at));
+			for (const name of y ? ['y', 'cy', 'y1', 'y2'] : ['x', 'cx', 'x1', 'x2']) if (el.hasAttribute(name)) el.setAttribute(name, String(num(el, name) - at));
 			// The marks are a picture: no selector of the page's controls or its entries finds them.
 			const field = el.getAttribute('data-field');
 			for (const { name } of [...el.attributes]) if (name.startsWith('data-') || name.startsWith('aria-')) el.removeAttribute(name);
 			if (field !== null) el.setAttribute('data-mark', field);
 			if (el.localName === 'title') el.remove();
 			const fill = el.getAttribute('fill');
-			if (fill?.startsWith('url(#')) el.setAttribute('fill', `url(#collect-${fill.slice(5)}`);
+			if (fill?.startsWith('url(#')) el.setAttribute('fill', `url(#${prefix}${fill.slice(5)}`);
 		}
-		layMarks(g, k / rate, across);
+		layMarks(g, k / rate, across, y);
+		// Nor any selector of a picture's marks (`.point-fg`, `.block`): the nowview's strip stands in its picture (da-d6vzq).
+		for (const el of g.querySelectorAll('[class]')) el.setAttribute('class', el.getAttribute('class')!.replace(/\S+/g, 'strip-$&'));
 		node.append(g);
 	}
 	return { node, edges, dots };
