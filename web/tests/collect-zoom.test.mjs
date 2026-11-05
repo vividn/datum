@@ -45,6 +45,45 @@ async function rows(page) {
 	return JSON.parse(last);
 }
 
+/**
+ * Two fingers on two field buttons, lifted one and then the other, as a hand
+ * does (da-gh1ep): the first still, the second drawn `by` px away from it
+ * over 700 ms, past a hold's 450. Then, with `tap`, a third finger tapped on
+ * the first's spot at once, while the rows would still be gliding. Through
+ * CDP, as `pinch` is, and in one session, so nothing waits between them.
+ */
+async function pinchOver(page, [a, b], by, tap = false) {
+	const cdp = await page.context().newCDPSession(page);
+	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+	const spread = (k) => [
+		{ id: 1, x: a.x, y: a.y },
+		{ id: 2, x: b.x + k * by, y: b.y + k * by }
+	];
+	try {
+		await at('touchStart', [spread(0)[0]]);
+		await at('touchStart', spread(0));
+		for (let i = 1; i <= 7; i++) {
+			await page.waitForTimeout(100);
+			await at('touchMove', spread(i / 7));
+		}
+		await at('touchEnd', [spread(1)[0]]);
+		await page.waitForTimeout(80);
+		await at('touchEnd', []);
+		if (tap) {
+			await at('touchStart', [{ id: 3, x: a.x, y: a.y }]);
+			await at('touchEnd', []);
+		}
+	} finally {
+		await cdp.detach();
+	}
+}
+
+/** The middle of a field's button as drawn. */
+const middle = async (page, field) => {
+	const box = await page.locator(`${ROOM} [data-field="${field}"]`).boundingBox();
+	return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+
 const held = (page) => page.evaluate(() => Object.values(window.datum.layout.session()).map((s) => s.zoom));
 
 describe('collect zoom', () => {
@@ -76,6 +115,50 @@ describe('collect zoom', () => {
 			await app.reload();
 			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
 			assert.deepEqual(await rows(page), small, 'a reload keeps the zoom');
+		}, AT_REST);
+	});
+
+	test('two fingers on two fields, lifted one by one, log and open nothing, nor does a tap as the rows settle; the zoom outlives a reload, and a tap then logs', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
+			await app.reload();
+			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+			await app.idle();
+			const [a, b] = await page.locator(`${ROOM} .spot.shelf button[data-field]`).evaluateAll((all) => all.slice(0, 2).map((el) => el.dataset.field));
+			const start = await rows(page);
+			const opened = async (what) => {
+				await page.waitForTimeout(600);
+				await app.idle();
+				assert.deepEqual(await app.entries(), [], `${what} logged nothing`);
+				assert.equal(await page.locator('.collect [data-back]').count(), 0, `${what} opened no field`);
+				assert.equal(await page.locator(`${ROOM} [data-pilled]`).count(), 0, `${what} put no field pill on the bar`);
+			};
+
+			await pinchOver(page, [await middle(page, a), await middle(page, b)], 60);
+			const large = await rows(page);
+			assert.ok(large.height > start.height, `a button ${start.height}px tall became ${large.height}px`);
+			await opened('the pinch');
+			const [zoom] = await held(page);
+			assert.ok(zoom > 1, `the pinch held a zoom of ${zoom}`);
+
+			// Still, so the zoom stays and the tap lands on `a` (it logs there unguarded).
+			await pinchOver(page, [await middle(page, a), await middle(page, b)], 0, true);
+			await opened('a tap as the rows settle');
+			assert.deepEqual(await held(page), [zoom], 'two still fingers kept the zoom');
+
+			await app.reload();
+			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+			assert.deepEqual(await held(page), [zoom], 'a reload keeps the zoom held');
+			assert.deepEqual(await rows(page), large, 'and draws it');
+
+			const tapped = await middle(page, a);
+			await page.touchscreen.tap(tapped.x, tapped.y);
+			await until(
+				() => app.entries(),
+				(rows) => rows.length === 1
+			);
+			assert.deepEqual((await app.entries()).map((row) => row.field), [a], 'a tap afterwards logs');
 		}, AT_REST);
 	});
 

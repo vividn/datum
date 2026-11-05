@@ -530,7 +530,8 @@ export const KINDS: Record<string, WidgetKind> = {
 			showIgnored: showIgnored === true
 		}),
 		// A pinch on the rows (da-l1z6h) moves `zoom`, this session's as any
-		// setting a widget moves itself; not among the defaults, as the
+		// setting a widget moves itself, and so kept on this device across
+		// reloads (da-ray91, da-gh1ep); not among the defaults, as the
 		// strip's day height is not, so `Reset widget` is the way back to 1.
 		onChange: (settings, zoom) => ({ ...settings, zoom }),
 		legible: FIELDS_LEGIBLE

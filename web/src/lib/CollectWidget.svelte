@@ -34,8 +34,11 @@
 	ctrl+wheel, a trackpad's — zooms them (da-l1z6h): each field's button,
 	its font and its height together, so smaller fits more rows into the
 	widget and larger fewer, the rows still locked to the pictures' height.
-	The zoom is a setting the widget moves itself, this session's
-	(`onzoom`), between `ZOOM`'s bounds. A tutorial game's fields (`tapLogs`)
+	The zoom is a setting the widget moves itself (`onzoom`), between
+	`ZOOM`'s bounds, and kept on this device across reloads, by the layout,
+	tab and widget, as every option a widget moves is (da-ray91, da-gh1ep).
+	While two fingers are down, and until the rows have settled after the
+	last is up, no tap logs or opens anything (`untapped`). A tutorial game's fields (`tapLogs`)
 	keep the cluster: the first in the middle of the widget and the rest ring
 	by ring around it (`ringOf`).
 
@@ -247,7 +250,7 @@
 		nowAt = null,
 		/** How large the rows at rest are drawn, a button's font and height together (da-l1z6h). */
 		zoom = 1,
-		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep. */
+		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep on this device. */
 		onzoom,
 		/** Run a press's line. */
 		onrun,
@@ -281,14 +284,53 @@
 	let bar: HTMLElement | undefined = $state.raw();
 	// The hold's action (#lib/hold.ts) on the bar ButtonRows draws — an
 	// action cannot be handed through a component, so it is attached here.
-	// So are the picture layout's pinch, pan and wheel.
+	// So are the picture layout's pinch, pan and wheel, and, after the hold,
+	// what keeps two fingers from tapping.
 	onMount(() => {
 		const held = holds(bar!, { within: 'button[data-field], button[data-state]', run: holdField });
 		const unzoom = zooming(bar!);
+		const untap = untapped(bar!);
 		const box = new ResizeObserver(() => (tall = bar!.clientHeight));
 		box.observe(bar!);
-		return () => (held.destroy(), unzoom(), box.disconnect());
+		return () => (held.destroy(), unzoom(), untap(), box.disconnect());
 	});
+
+	/** How long the rows glide to a new zoom (`.spot.shelf.glide`): a tap in it is not a press. */
+	const SETTLE_MS = 300;
+	/**
+	 * No tap while two fingers are down (da-gh1ep, vividn, 2026-11-05: «If two
+	 * fingers are on the collect view or you're in the middle of the zoom
+	 * tapping action should not be registered»): from a second finger landing
+	 * until every finger is up, and `SETTLE_MS` on, no click on the bar is a
+	 * press, wherever it is, and a hold one of the fingers started is called
+	 * off. Registered after `holds`, on the same node, so its cancel comes
+	 * after the hold's own pointerdown has started a timer for the finger.
+	 */
+	function untapped(node: HTMLElement) {
+		const down = new Set<number>();
+		let [pinched, calm] = [false, -Infinity];
+		const land = (e: PointerEvent) => {
+			if (e.pointerType !== 'touch' || down.add(e.pointerId).size < 2) return;
+			pinched = true;
+			node.dispatchEvent(new PointerEvent('pointercancel'));
+		};
+		const lift = (e: PointerEvent) => {
+			if (down.delete(e.pointerId) && !down.size && pinched) [pinched, calm] = [false, e.timeStamp + SETTLE_MS];
+		};
+		const eat = (e: MouseEvent) => {
+			if (pinched || e.timeStamp < calm) (e.preventDefault(), e.stopPropagation());
+		};
+		node.addEventListener('pointerdown', land);
+		addEventListener('pointerup', lift);
+		addEventListener('pointercancel', lift);
+		node.addEventListener('click', eat, true);
+		return () => {
+			node.removeEventListener('pointerdown', land);
+			removeEventListener('pointerup', lift);
+			removeEventListener('pointercancel', lift);
+			node.removeEventListener('click', eat, true);
+		};
+	}
 
 	/**
 	 * The field tapped open, by name (da-w6437).
@@ -1017,11 +1059,8 @@
 		// outside the room never reaches `up` and would stay in the map, a finger
 		// for the next touch to pinch against. A mouse zooms by ctrl+wheel.
 		if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-		// A second finger at rest is a pinch: the pan stops, and a hold the first had started is called off.
-		if (fingers.size === 2 && resting && picked === null) {
-			bar?.dispatchEvent(new PointerEvent('pointercancel'));
-			[pinch, drag] = [{ d: apart(), from: scale }, null];
-		}
+		// A second finger at rest is a pinch: the pan stops. `untapped` calls off a hold and every tap.
+		if (fingers.size === 2 && resting && picked === null) [pinch, drag] = [{ d: apart(), from: scale }, null];
 		if (e.button === 0 && !pinch)
 			drag = {
 				id: e.pointerId,
@@ -1048,8 +1087,7 @@
 	function up(e: PointerEvent) {
 		fingers.delete(e.pointerId);
 		if (pinch && fingers.size < 2) {
-			// Its click, should one come, is not a press.
-			[pinch, dragged] = [null, true];
+			pinch = null;
 			onzoom?.(scale);
 		}
 		if (drag?.id !== e.pointerId) return;
