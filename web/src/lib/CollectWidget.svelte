@@ -416,6 +416,19 @@
 	let view: View = $state.raw(FULL);
 	/** Where the cluster is drawn from the center: the pan, or none at rest. */
 	const shift = $derived(pan ?? { x: 0, y: 0 });
+	/**
+	 * How far the cluster overruns the room's left and top, which the room is
+	 * kept scrolled by and the cluster drawn that much further in (da-u846n):
+	 * a reveal only scrolls toward a box's end, so a state left of the room
+	 * is in reach of one only with the room scrolled. None at rest; whole
+	 * pixels, as a scroll is.
+	 */
+	let roomEl: HTMLElement | undefined = $state();
+	const overrun = (a: number) => Math.max(0, Math.ceil(a));
+	const lead = $derived(picking || !resting ? { x: overrun(anchor.x - paneW / 2 - shift.x), y: overrun(anchor.y - paneH / 2 - shift.y) } : { x: 0, y: 0 });
+	$effect(() => {
+		if (roomEl) [roomEl.scrollLeft, roomEl.scrollTop] = [lead.x, lead.y];
+	});
 	const zoomedIn = $derived(view.to - view.from < 1);
 	const GAP = 6;
 	/** Where each slot stands. */
@@ -902,7 +915,7 @@
 	 * a state learned while it is open does.
 	 */
 	function around(box: HTMLElement) {
-		const room = box.parentElement!;
+		const room = box.closest('.room') as HTMLElement;
 		// Unrounded: `offsetWidth` rounds down.
 		const size = (el: HTMLElement) => el.getBoundingClientRect();
 		const place = () => {
@@ -1081,15 +1094,15 @@
 	$effect(() => () => cancelAnimationFrame(coast));
 	/**
 	 * A reveal — a focus, a scroll into view — scrolls the room itself (da-71p3u):
-	 * taken as the pan that shows the same, so the room stays unscrolled and a
-	 * drag starts from where the cluster is drawn.
+	 * taken as the pan that shows the same, so the room stays scrolled by its
+	 * `lead` alone and a drag starts from where the cluster is drawn.
 	 */
 	function fold(e: Event) {
 		const room = e.currentTarget as HTMLElement;
-		if (!(room.scrollLeft || room.scrollTop)) return;
-		const [x, y] = [shift.x - room.scrollLeft, shift.y - room.scrollTop];
-		flushSync(() => (pan = kept(x, y)));
-		room.scrollLeft = room.scrollTop = 0;
+		const [dx, dy] = [lead.x - room.scrollLeft, lead.y - room.scrollTop];
+		if (!(dx || dy)) return;
+		flushSync(() => (pan = kept(shift.x + dx, shift.y + dy)));
+		[room.scrollLeft, room.scrollTop] = [lead.x, lead.y];
 	}
 	function swallow(e: MouseEvent) {
 		if (!dragged) return;
@@ -1297,6 +1310,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="room"
+				bind:this={roomEl}
 				bind:clientWidth={paneW}
 				bind:clientHeight={paneH}
 				data-pans={pans || undefined}
@@ -1354,6 +1368,8 @@
 						</div>
 					{/each}
 				{:else}
+				<!-- The room's box, `lead` into its scroll: the cluster is drawn where it was, and nothing of it before the scroll's start. -->
+				<div class="lead" style:left="{lead.x}px" style:top="{lead.y}px" style:width="{paneW}px" style:height="{paneH}px">
 				<div
 					class="ring"
 					use:around
@@ -1387,6 +1403,7 @@
 							<div class="spot" data-role="field" data-promoted={promoted.has(button.field) ? '' : undefined}>{@render fieldButton(button)}</div>
 						{/each}
 					{/if}
+				</div>
 				</div>
 				{/if}
 			</div>
@@ -1778,6 +1795,7 @@
 		touch-action: none;
 	}
 
+	.lead,
 	.ring {
 		position: absolute;
 	}

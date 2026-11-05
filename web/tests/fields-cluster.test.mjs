@@ -256,7 +256,8 @@ describe('a switch field’s states in collect, the first in the middle', () => 
 
 	// da-71p3u: the ring overruns its room, which clips it; a reveal of a
 	// state it clips — a focus, a click's scroll into view — is a pan, so
-	// neither the room nor anything around the widget is left scrolled.
+	// nothing around the widget is left scrolled, and the room by its lead
+	// alone, how far the ring overruns its left and top (da-u846n).
 	test('22 states at 390px: focusing a state the room clips pans it toward sight, and the room does not scroll', async () => {
 		const many = Array.from({ length: 22 }, (_, i) => `a_rather_long_state_${String(i).padStart(2, '0')}`);
 		await withApp(async (app) => {
@@ -279,7 +280,11 @@ describe('a switch field’s states in collect, the first in the middle', () => 
 			await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 			const scrolled = await page.locator(ROOM).evaluate((el) => {
 				const out = [];
-				for (let e = el; e; e = e.parentElement) if (e.scrollTop || e.scrollLeft) out.push(`${e.className}: ${e.scrollLeft},${e.scrollTop}`);
+				const lead = el.querySelector('.lead');
+				for (let e = el; e; e = e.parentElement) {
+					const [x, y] = e === el ? [lead.offsetLeft, lead.offsetTop] : [0, 0];
+					if (e.scrollLeft !== x || e.scrollTop !== y) out.push(`${e.className}: ${e.scrollLeft},${e.scrollTop}`);
+				}
 				return out;
 			});
 			assert.deepEqual(scrolled, [], 'focusing scrolled');

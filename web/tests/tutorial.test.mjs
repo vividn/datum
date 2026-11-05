@@ -677,14 +677,6 @@ for (const [screen, options, centered] of [
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				// The switch game is started from its cue, by collect's own picker, which at 280 px leaves «garden» out
-				// of reach (da-u846n): a walk that starts elsewhere, seeded before its tab is first drawn.
-				await page.evaluate(() => {
-					const { house } = window.datum.tutorial;
-					let seed = 1;
-					while (house.scene(seed)[0].state === 'garden') seed++;
-					house.round.seed = seed;
-				});
 				for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['switch', 'svg.house']]) {
 					const pane = `[data-pane="${tab}-lesson"]`;
 					await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();

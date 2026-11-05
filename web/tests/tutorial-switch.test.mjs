@@ -331,27 +331,29 @@ test('a change of room typed in the bar starts the switch game, as a tap does', 
 // da-uzyih.4943: on a 280 px phone `room`'s states are dealt into one row
 // wider than the room, which pans, and a cue naming any of them must be
 // followable by a tap. The picker is collect's own now (da-2s9im), as in any
-// layout, whose states a drag pans. Every state is tapped here. Todo until
-// da-u846n: at 280 px «garden» is dealt off the page's left, where neither a
-// reveal nor a finger's drag on the states reaches it.
-test('on a 280 px phone every state of room is in reach of a tap', { todo: 'da-u846n: collect pans no state left of its room into reach' }, async () => {
+// layout, whose states a drag pans. Every state is tapped here. At 280 px
+// «garden» is dealt off the page's left, and a finger's drag that starts on a
+// state brings it in (da-u846n).
+test('on a 280 px phone every state of room is in reach of a tap', async () => {
 	await withApp(
 		async (app) => {
 			const { page } = app;
 			await seeded(app);
-			for (const { state } of ROOMS) {
+			// Twice round: by a finger, then by a click alone, whose reveal scrolls the room toward the state, left too.
+			for (const { state, by } of [...ROOMS.map((r) => ({ ...r, by: 'finger' })), ...ROOMS.map((r) => ({ ...r, by: 'reveal' }))]) {
 				await app.clock.forward(1000);
 				const before = (await rows(app)).length;
 				await page.locator(`${FIELDS} .fields button[data-field="room"]`).click();
 				const states = await page.locator(`${FIELDS} .ring button[data-state]`).evaluateAll((bs) => bs.map((b) => b.dataset.state));
 				assert.deepEqual(states.sort(), ROOMS.map((r) => r.state).sort());
-				// One left of the room is panned in as a learner does, by a finger's drag (a reveal scrolls the
-				// room only right and down), then tapped.
+				// One left of the room is panned in as a learner does, by a finger's drag along the states' row
+				// from the room's middle, once the room is scrolled into sight, then tapped.
 				const button = page.locator(`${FIELDS} .ring button[data-state="${state}"]`);
+				if (by === 'finger') await page.locator(`${FIELDS} .room`).evaluate((r) => r.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
 				const [room, at] = [await page.locator(`${FIELDS} .room`).boundingBox(), await button.boundingBox()];
 				const dx = room.x - at.x + 8;
-				const mid = { x: room.x + room.width / 2, y: room.y + room.height / 2 };
-				if (dx > 0) await finger(page, mid, { x: mid.x + dx, y: mid.y });
+				const mid = { x: room.x + room.width / 2, y: at.y + at.height / 2 };
+				if (by === 'finger' && dx > 0) await finger(page, mid, { x: mid.x + dx, y: mid.y });
 				await button.click();
 				await until(() => rows(app).then((r) => r.length), (n) => n === before + 1);
 			}
