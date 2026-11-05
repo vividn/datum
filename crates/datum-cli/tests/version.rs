@@ -1,4 +1,4 @@
-//! `datum --version` is `datum 3.0.<height>-beta (<sha7>)`, valid semver
+//! `datum --version` is `datum <major>.<minor>.<height>-beta (<sha7>)`, valid semver
 //! whose patch is the commit height, read from git at build time; a height
 //! git cannot say for certain is `0`, a commit `unknown` (da-5172a, da-cv118).
 
@@ -99,14 +99,19 @@ fn every_man_page_names_the_version_the_binary_prints() {
 
 #[test]
 fn the_version_is_cargos_with_the_height_for_patch() {
+    let mm = concat!(
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        ".",
+        env!("CARGO_PKG_VERSION_MINOR")
+    );
     assert_eq!(
         build_id::version("1263", "cdb0266"),
-        "3.0.1263-beta (cdb0266)"
+        format!("{mm}.1263-beta (cdb0266)")
     );
     // Semver needs a number: no whole history is patch 0.
     assert_eq!(
         build_id::version("unknown", "cdb0266"),
-        "3.0.0-beta (cdb0266)"
+        format!("{mm}.0-beta (cdb0266)")
     );
 }
 

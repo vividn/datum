@@ -190,19 +190,60 @@ pub(crate) fn parse_install_args(tail: &[&str]) -> Result<InstallArgs> {
 }
 
 pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
-    let (check, auto) = match tail.first().copied() {
-        None => (false, None),
-        // `status`, as `backup status` and `sync status` say it (da-tsna7).
-        Some("status" | "--check") => (true, None),
-        Some("--auto") => (false, Some(true)),
-        Some("--no-auto") => (false, Some(false)),
-        Some(tok) => return Err(unknown_flag(split_flag(tok))),
-    };
-    match tail.get(1) {
-        Some(extra) => Err(ParseError::InvalidArg(format!(
-            "unexpected argument: '{extra}'"
-        ))),
-        None => Ok(Command::Upgrade { check, auto }),
+    let (mut check, mut auto, mut to) = (false, None, None);
+    let mut words = tail.iter();
+    while let Some(tok) = words.next() {
+        let version = match split_flag(tok) {
+            // `status`, as `backup status` and `sync status` say it (da-tsna7).
+            FlagSplit::Long("check") | FlagSplit::Positional("status") => {
+                check = true;
+                continue;
+            }
+            // `--auto` and `--no-auto` stand alone (da-f7ckm).
+            FlagSplit::Long(on @ ("auto" | "no-auto")) => {
+                if let Some(extra) = tail.iter().find(|t| *t != tok) {
+                    return Err(ParseError::InvalidArg(format!(
+                        "unexpected argument: '{extra}'"
+                    )));
+                }
+                auto = Some(on == "auto");
+                continue;
+            }
+            FlagSplit::Long("to") => words.next().copied().ok_or_else(|| {
+                ParseError::InvalidArg(
+                    "--to takes a version: 3.<minor> or 3.<minor>.<height>".into(),
+                )
+            })?,
+            FlagSplit::LongAttached("to", v) => v,
+            FlagSplit::Positional(extra) => {
+                return Err(ParseError::InvalidArg(format!(
+                    "unexpected argument: '{extra}'"
+                )))
+            }
+            other => return Err(unknown_flag(other)),
+        };
+        to = Some(release_version(version)?);
+    }
+    Ok(Command::Upgrade { check, auto, to })
+}
+
+/// A kept release's version as `datum --version` prints it, `3.<minor>.<height>`,
+/// or `3.<minor>` alone for that minor's newest build, with or without its
+/// tag's `v` and its `-beta`: two numbers or three.
+fn release_version(v: &str) -> Result<String> {
+    let core = v.strip_prefix('v').unwrap_or(v);
+    let core = core.split_once('-').map_or(core, |(c, _)| c);
+    let parts: Vec<&str> = core.split('.').collect();
+    if (parts.len() == 2 || parts.len() == 3)
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        Ok(core.to_string())
+    } else {
+        Err(ParseError::InvalidArg(format!(
+            "--to takes a version, 3.<minor> or 3.<minor>.<height> as `datum --version` prints it: not '{v}'"
+        )))
     }
 }
 

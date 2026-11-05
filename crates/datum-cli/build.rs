@@ -1,5 +1,5 @@
-//! `DATUM_BUILD` — `3.0.<height>-beta (<sha7>)` — for `datum --version`
-//! (da-5172a, da-cv118). The `3.0` and `beta` are Cargo's `3.0.0-beta`, the
+//! `DATUM_BUILD` — `<major>.<minor>.<height>-beta (<sha7>)` — for `datum --version`
+//! (da-5172a, da-cv118). The `<major>.<minor>` and `beta` are Cargo's, the
 //! rest is git's; see `build_id.rs`.
 
 use std::path::Path;

@@ -1,0 +1,46 @@
+# The tags of the kept releases (da-ec8y8): each main commit that raises the
+# sync floor, and the one before it, the last datum that syncs with a copy
+# below it, tagged v<major>.<minor>.<height> as its build names itself
+# (release/kept-tags.sh). The tags are made here, on the forge, because its push
+# mirror deletes a tag GitHub alone holds (release/publish.sh). The mirror
+# carries each to GitHub, where release.yml publishes a release that stays and
+# deploy.yml puts that build of datum.day at /v/<version>/.
+#
+# workflow_dispatch walks the whole history: the floors from before this
+# workflow. A build of a commit from before release.yml built tags is
+# published by running release.yml from main with that tag (its `tag` input).
+name: kept-releases
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: kept-releases
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Full history, for the heights. The persisted job token is what the
+      # push below uses, as wasm.yml's does.
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Push a tag for each kept release
+        env:
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: |
+          set -euo pipefail
+          release/kept-tags.sh "$BEFORE" "$GITHUB_SHA" | while read -r tag sha floor; do
+            if have=$(git rev-parse -q --verify "refs/tags/$tag^{commit}"); then
+              [ "$have" = "$sha" ] || echo "::warning::$tag is already $have, not $sha (floor $floor): left as it is"
+              continue
+            fi
+            git push origin "$sha:refs/tags/$tag"
+            echo "$tag $sha: sync floor $floor"
+          done

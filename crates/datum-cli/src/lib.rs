@@ -27,7 +27,7 @@ use crate::args::{
     InfoArgs, Invocation, KitCommand, RotationAction, SpecCommand, SyncCommand,
 };
 
-/// `datum 3.0.<height>-beta (<sha7>)`, from git at build time (da-5172a,
+/// `datum <major>.<minor>.<height>-beta (<sha7>)`, from git at build time (da-5172a,
 /// da-cv118, `build.rs`).
 pub const VERSION_BANNER: &str = concat!("datum ", env!("DATUM_BUILD"));
 

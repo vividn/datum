@@ -64,6 +64,16 @@ or `--no` answers for a script. A binary cargo built gets no timer (`datum
 upgrade` moves it onto the release first), and with no systemd (macOS)
 nothing is installed.
 
+`datum upgrade --to 3.<minor>.<height>` installs that version instead, older or
+newer, checked the same way and refused unless it says it is that version.
+A release is kept for each build that raises the sync floor (the schema
+below which a copy can no longer sync, and each raises the minor
+version) and for the build before it, so those are the versions it can
+name. `--to 3.<minor>` alone installs that minor's newest build, the last
+that syncs at it: the latest while it is the current minor, and the last
+build before the next floor once one has come. An older datum does not open a
+database a newer one has migrated.
+
 datum makes no network call of its own unless you sync, upgrade, or turn
 on update checks: with `update_check = true` in `datumrc.toml` (in
 `~/.config/datum/`), `datum check` says when a newer release is out.
@@ -83,7 +93,7 @@ release's builds instead, verified with the release key that build
 carries, and says so; `scripts/install.sh` puts a checkout build back. A
 `--path` install always builds and installs, replacing the `datum` cargo
 installed before even at the same version, and `datum --version` shows
-the commit it was built from — `3.0.<height>-beta (<sha7>)` — to confirm
+the commit it was built from — `<major>.<minor>.<height>-beta (<sha7>)` — to confirm
 it. `--locked` builds exactly the dependency versions in `Cargo.lock`, the
 ones CI tested.
 

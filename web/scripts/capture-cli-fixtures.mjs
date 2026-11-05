@@ -123,7 +123,7 @@ try {
 				? { code, entry: comparable(fromBackupRow(onlyEntry(db, dir)), testCase.time) }
 				: { code, entry: null };
 	});
-	// `datum 3.0.x-beta`: the height (the patch) and the commit change with
+	// `datum <major>.<minor>.x-beta`: the height (the patch) and the commit change with
 	// every commit, and a fixture that did would never compare equal (da-5172a).
 	fixture.capturedWith =
 		cli(join(dir, 'version.db'), ['--version'])

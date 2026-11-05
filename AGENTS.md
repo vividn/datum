@@ -1650,6 +1650,19 @@ release, and is reinstalled with install.sh. A test build may trust a
 throwaway key (`DATUM_TEST_RELEASE_KEY`, read only under datum-commands'
 `test-util` feature); a release build has no such door.
 
+A release is KEPT, by version, at each build that raises the sync floor and
+the build before it (da-ec8y8): `release/kept-tags.sh` names them,
+`.forgejo/workflows/kept-releases.yml` tags each `v3.<minor>.<height>` on the forge
+(never moving a tag), and the mirror's tag runs `release.yml` into a release
+of that tag, never pruned, and `deploy.yml` into datum.day at
+`/v/3.<minor>.<height>/` (`DATUM_BASE`), whose service worker keeps a cache of its
+own. `datum upgrade --to 3.<minor>.<height>` installs one, verified as the latest is
+and refused unless it prints that version. Each floor raises the minor
+version (`Cargo.toml`'s minor is `SYNC_FLOORS.len()`, a test holds it), the
+patch staying the commit height. Where the minor moves, the build before is
+also tagged `v3.<minor>`, its minor's last, so `datum upgrade --to 3.<minor>`
+reads that release, or the latest while that minor is the current one.
+
 ## Web app dev
 
 ```bash

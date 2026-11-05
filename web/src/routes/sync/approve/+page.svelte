@@ -8,13 +8,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { withDb } from '#lib/database.ts';
 	import { openPlace } from '#lib/layout/shell.ts';
 	import { approving } from '#lib/syncView.ts';
 
 	onMount(async () => {
 		if (location.hash.length > 1) approving.set(`https://datum.day/sync/approve${location.hash}`);
-		await goto(withDb('/'), { replace: true });
+		await goto(withDb(resolve('/')), { replace: true });
 		await openPlace('sync');
 	});
 </script>

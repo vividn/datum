@@ -450,7 +450,7 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         #[cfg(feature = "net")]
         Command::Upgrade { auto: Some(on), .. } => commands::install::auto(on),
         #[cfg(feature = "net")]
-        Command::Upgrade { check, .. } => commands::install::upgrade(check),
+        Command::Upgrade { check, to, .. } => commands::install::upgrade(check, to.as_deref()),
         #[cfg(not(feature = "net"))]
         Command::Install(_) | Command::Uninstall | Command::Upgrade { .. } => {
             anyhow::bail!("install, uninstall and upgrade are the native datum's")

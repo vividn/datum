@@ -280,9 +280,9 @@ describe('the shell', () => {
 				['Backups', 'Sync', 'Settings', 'Reset default layouts', 'the build stamp', 'the beta note']
 			);
 			assert.deepEqual(gear.map((i) => i.disabled), [false, false, false, false, true, false]);
-			// The stamp is the web's build, `3.0.<height>-beta · <sha7>`, and
+			// The stamp is the web's build, `<major>.<minor>.<height>-beta · <sha7>`, and
 			// patch 0 where a shallow CI checkout cannot count (da-5172a, da-cv118).
-			assert.match(gear[4].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
+			assert.match(gear[4].label, /^\d+\.\d+\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			// The NAME's slice in normal mode: what the tab shows and what it

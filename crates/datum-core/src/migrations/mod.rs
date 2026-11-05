@@ -70,6 +70,11 @@ pub const CURRENT_SCHEMA_VERSION: u32 = 82;
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
 /// which an older copy would go on sending. Append-only, ascending: a copy
 /// has run every migration before it syncs, so its floor is the last.
+///
+/// Each raises the minor version: `[workspace.package] version`'s minor in
+/// Cargo.toml is how many there are, the patch staying the commit height
+/// (da-ec8y8; vividn, 2026-11-05: «let's bump the minor version on these
+/// sync floors as well, but keep commit height as the patch version»).
 pub const SYNC_FLOORS: &[u32] = &[
     // da-yc5vi: a spec's `glyph` keys are `symbol` keys, and a copy before
     // it would go on writing the old ones.

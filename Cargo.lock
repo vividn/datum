@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "datum-cli"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "anyhow",
  "blake2",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "datum-commands"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "anyhow",
  "chrono",
@@ -631,7 +631,7 @@ dependencies = [
 
 [[package]]
 name = "datum-core"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "aes-gcm",
  "chrono",
@@ -655,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "datum-layout"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "chrono",
  "roxmltree",
@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "datum-parity"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "chrono",
  "datum-cli",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "datum-parse"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "datum-sync"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "anyhow",
  "chrono",
@@ -713,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "datum-sync-wire"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "anyhow",
  "data-encoding",
@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "datum-test-util"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 
 [[package]]
 name = "der"
@@ -4918,7 +4918,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 dependencies = [
  "anyhow",
  "datum-parse",

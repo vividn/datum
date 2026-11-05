@@ -33,6 +33,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { arriving, open, openPreview } from '#lib/layout/shell.ts';
 	import { withDb } from '#lib/database.ts';
@@ -40,7 +41,7 @@
 	// Every way out of this page stays in the database the reader is in
 	// (da-vk1x): `?db` is the page's whole state, so a navigation that drops
 	// it is a navigation into another database.
-	const home = withDb('/');
+	const home = withDb(resolve('/'));
 
 	let unknown: string | null = $state(null);
 

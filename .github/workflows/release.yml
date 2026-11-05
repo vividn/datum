@@ -4,24 +4,41 @@
 # (da-0b55k), as the assets of one rolling release tagged `latest` (a tag
 # the forge holds, release/publish.sh). https://datum.day/install.sh (web/static/install.sh) installs
 # from it. `datum --version` names the commit, so the tag needs no version.
+#
+# A tag v<major>.<minor>.<height> is a release that STAYS (da-ec8y8): the forge
+# tags each commit that raises the sync floor, and the one before it, which is
+# also v<major>.<minor>, its minor's last build
+# (.forgejo/workflows/kept-releases.yml), and this builds that commit into a
+# release of that tag, which `datum upgrade --to <version>` installs from. Run
+# by hand with `tag`, it builds that tag's commit with this workflow: a tag of a
+# commit from before this file built tags.
 name: Release
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'A kept release to build, v<major>.<minor>.<height> (empty: the latest)'
+        required: false
+        default: ''
 
 # A newer push cancels the run in progress. A run cut short leaves the
 # previous build installable: release/publish.sh uploads each binary under its
-# build's name and moves SHA256SUMS, which names them, last (da-mzhau).
+# build's name and moves SHA256SUMS, which names them, last (da-mzhau). A kept
+# release has a group of its own, so no push to main cancels it.
 concurrency:
-  group: release-latest
+  group: release-${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || 'latest' }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
+  # The kept release this run builds, or empty for the rolling `latest`.
+  TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   CARGO_PROFILE_RELEASE_STRIP: symbols
@@ -43,12 +60,25 @@ jobs:
           - { asset: datum-aarch64-macos, target: aarch64-apple-darwin, os: macos-latest }
           - { asset: datum-x86_64-macos, target: x86_64-apple-darwin, os: macos-latest }
     runs-on: ${{ matrix.os }}
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
     steps:
       # Full history: build.rs counts every commit for the version's height,
       # and says `unknown` from a shallow clone.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ env.TAG || github.sha }}
+
+      # The commit built, which build.rs and publish.sh read from GITHUB_SHA:
+      # a run by hand has main's there and checked out the tag's. A workflow
+      # cannot set a GITHUB_* variable, so each command is handed it.
+      - name: Name the commit
+        id: sha
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "BUILD_SHA=$sha" >> "$GITHUB_ENV"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       # The arm64 Linux image may come without rustup.
       - name: Install the pinned Rust toolchain
@@ -76,7 +106,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked -p datum-cli --target ${{ matrix.target }}
+        run: GITHUB_SHA=$BUILD_SHA cargo build --release --locked -p datum-cli --target ${{ matrix.target }}
 
       # Not the x86_64 macOS build, cross-compiled on an arm64 runner.
       - name: Check it runs and names this commit
@@ -84,7 +114,10 @@ jobs:
         run: |
           out=$(target/${{ matrix.target }}/release/datum --version)
           echo "$out"
-          case "$out" in *"(${GITHUB_SHA:0:7})"*) ;; *) echo "::error::--version does not name ${GITHUB_SHA:0:7}"; exit 1 ;; esac
+          case "$out" in *"(${BUILD_SHA:0:7})"*) ;; *) echo "::error::--version does not name ${BUILD_SHA:0:7}"; exit 1 ;; esac
+          # A kept release is named for the version its build prints, or for its
+          # minor alone, the last build of it (v<major>.<minor>).
+          case "$out" in "datum ${TAG#v}-"* | "datum ${TAG#v} "*) ;; "datum ${TAG#v}."*) [ "${TAG//[^.]/}" = . ] || { echo "::error::--version is not $TAG's"; exit 1; } ;; *) [ -z "$TAG" ] || { echo "::error::--version is not $TAG's"; exit 1; } ;; esac
 
       - name: Name the binary
         run: |
@@ -98,7 +131,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish the latest release
+    name: Publish the release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -109,6 +142,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      BUILD_SHA: ${{ needs.build.outputs.sha }}
     steps:
       # release/: publish.sh, and minisign.pub for the signature's check.
       # Before the download, which a checkout's clean would remove.
@@ -131,4 +165,4 @@ jobs:
       - name: Write SHA256SUMS, sign it and publish
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-        run: release/publish.sh dist
+        run: GITHUB_SHA=$BUILD_SHA release/publish.sh dist "$TAG"

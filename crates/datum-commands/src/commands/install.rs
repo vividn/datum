@@ -3,7 +3,8 @@
 //! its own installer. `install` sets up tab completion, and the sync daemon
 //! when a database syncs, and records which binary it set up; `uninstall`
 //! undoes it and keeps the record; `upgrade` replaces that binary with the
-//! newest release. `datum check`'s install section reads the same record
+//! newest release, or with `--to` a kept one (da-ec8y8). `datum check`'s
+//! install section reads the same record
 //! ([`findings`]).
 //!
 //! `upgrade --auto` installs a systemd user timer that runs `datum upgrade`
@@ -28,12 +29,29 @@ use crate::args::SyncDaemonAct;
 use crate::config;
 
 /// The release `datum.day/install.sh` installs from; `DATUM_RELEASE_URL`
-/// names another, as it does there.
+/// names another, as it does there. A kept release, `v<version>`, is beside
+/// it (release/publish.sh).
 const RELEASE: &str = "https://github.com/vividn/datum/releases/download/latest";
 
 /// The daily upgrade's timer and service: not `datum-upgrade`, a name a
 /// machine may already give a timer of its own.
 const AUTO: &str = "datum-auto-upgrade";
+
+/// The release `upgrade` reads: the latest, or the kept one of `to`.
+fn release_url(to: Option<&str>) -> String {
+    let latest = std::env::var("DATUM_RELEASE_URL")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| RELEASE.into());
+    match to {
+        None => latest,
+        Some(v) => {
+            let latest = latest.trim_end_matches('/');
+            let dir = latest.rsplit_once('/').map_or(latest, |(dir, _)| dir);
+            format!("{dir}/v{v}")
+        }
+    }
+}
 
 /// The key a release's SHA256SUMS is signed with (da-0b55k). A binary
 /// trusts this one alone, whatever serves the download.
@@ -204,7 +222,7 @@ fn remove_binary(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn upgrade(check: bool) -> Result<()> {
+pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
     let exe = this_exe()?;
     // A datum cargo built from a checkout moves onto the release (da-1yc69;
     // vividn, 2026-11-04: «it uses the public key in the checkedout version,
@@ -220,9 +238,34 @@ pub fn upgrade(check: bool) -> Result<()> {
             println!("{said}");
         }
     }
-    let (url, want) = newest()?;
+    // `<major>.<minor>` alone is that minor's newest build (vividn,
+    // 2026-11-05: «you just get the latest compatible version this way»): its
+    // kept `v<major>.<minor>` once the next minor has begun, the latest while
+    // it is the current one; the version check below refuses a latest of
+    // another minor.
+    let minor_only = to.is_some_and(|v| v.matches('.').count() == 1);
+    let kept = release_url(to);
+    let found = newest(&kept).or_else(|e| {
+        let missing = e
+            .to_string()
+            .starts_with(&format!("could not download {kept}/SHA256SUMS"));
+        match minor_only && missing {
+            true => newest(&release_url(None)).map_err(|_| e),
+            false => Err(e),
+        }
+    });
+    let (url, want) = found.map_err(|e| match to {
+        Some(v) => e.context(format!(
+            "datum {v} has no kept release to install: one is kept for each build that raises \
+             the sync floor, and for the build before it"
+        )),
+        None => e,
+    })?;
     if sha256(&exe)? == want {
-        println!("datum is up to date");
+        match to {
+            Some(v) => println!("datum is {v} already"),
+            None => println!("datum is up to date"),
+        }
         return Ok(());
     }
     if cargo.is_some() {
@@ -232,7 +275,9 @@ pub fn upgrade(check: bool) -> Result<()> {
             exe.display()
         );
     }
-    if check {
+    // With `--to`, a check downloads it too, to say it is that version: a
+    // minor's newest build may be the latest, which says so only when run.
+    if check && to.is_none() {
         println!("a newer datum is released: `datum upgrade` installs it");
         return Ok(());
     }
@@ -257,6 +302,24 @@ pub fn upgrade(check: bool) -> Result<()> {
             .ok()
             .filter(|o| o.status.success())
             .with_context(|| format!("{url} does not run here: nothing changed"))?;
+        // A kept release is the version it is kept for, and a minor's
+        // newest build is of that minor.
+        let said = String::from_utf8_lossy(&version.stdout);
+        if let Some(v) = to {
+            let rest = said.strip_prefix(&format!("datum {v}")).unwrap_or("");
+            let of_it = match minor_only {
+                true => rest.starts_with('.'),
+                false => rest.starts_with(['-', ' ']),
+            };
+            ensure!(
+                of_it,
+                "{url} says it is {}, not datum {v}: nothing changed",
+                said.trim()
+            );
+        }
+        if check {
+            return Ok(said.trim().to_string());
+        }
         // Through cargo, so its record no longer claims the binary. It
         // goes first, since cargo would delete a release renamed in before
         // it: so this path alone has a moment with no datum in place.
@@ -275,8 +338,13 @@ pub fn upgrade(check: bool) -> Result<()> {
         })?;
         Ok(String::from_utf8_lossy(&version.stdout).trim().to_string())
     })();
-    if swapped.is_err() && !kept {
+    if (swapped.is_err() || check) && !kept {
         let _ = std::fs::remove_file(&part);
+    }
+    if let (true, Some(v)) = (check, to) {
+        let said = swapped?;
+        println!("{said} is released: `datum upgrade --to {v}` installs it");
+        return Ok(());
     }
     println!("upgraded {} to {}", exe.display(), swapped?);
     if recorded.is_none() {
@@ -496,8 +564,8 @@ fn ask(question: &str, label: &str) -> Result<Option<bool>> {
     Ok(Some(is_yes(&answer)))
 }
 
-/// This platform's binary in the newest release, and its SHA256SUMS line.
-fn newest() -> Result<(String, String)> {
+/// This platform's binary in `release`, and its SHA256SUMS line.
+fn newest(release: &str) -> Result<(String, String)> {
     let os = match std::env::consts::OS {
         "linux" | "macos" => std::env::consts::OS,
         _ => "",
@@ -511,10 +579,6 @@ fn newest() -> Result<(String, String)> {
         "no prebuilt datum for this platform: build it from a checkout"
     );
     let asset = format!("datum-{arch}-{os}");
-    let release = std::env::var("DATUM_RELEASE_URL")
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| RELEASE.into());
     let sums = curl(&format!("{release}/SHA256SUMS"), None)?;
     // The build's own name, `datum-<arch>-<os>-<sha7>`, signed by that
     // build's `SHA256SUMS-<sha7>.minisig`: a release cut short, or a cache
@@ -601,7 +665,7 @@ pub fn findings(syncs: bool) -> Option<Vec<(&'static str, String)>> {
     found.extend(sync_daemon::findings(&record.exe, syncs));
     let wanted = config::load_raw_config_or_default().is_ok_and(|c| c.update_check == Some(true));
     if wanted {
-        match newest().and_then(|(_, want)| Ok(sha256(&record.exe)? != want)) {
+        match newest(&release_url(None)).and_then(|(_, want)| Ok(sha256(&record.exe)? != want)) {
             Ok(false) => {}
             Ok(true) => found.push((
                 "install_update",

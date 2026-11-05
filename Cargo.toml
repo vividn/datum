@@ -14,7 +14,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "3.0.0-beta"
+version = "3.2.0-beta"
 edition = "2021"
 authors = ["vividn"]
 license = "AGPL-3.0-or-later"

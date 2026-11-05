@@ -185,7 +185,14 @@ impl Home {
     /// listed first, with a sum nothing matches, so an upgrade that read it
     /// would refuse.
     fn release(&self, binary: &[u8], sum: Option<&str>) {
-        let dir = self.path("release");
+        self.release_in("release", binary, sum);
+        self.sign(&TEST_KEY);
+    }
+
+    /// The same, as the release in `dir` beside the latest, unsigned: a
+    /// kept one is `v<version>` (da-ec8y8).
+    fn release_in(&self, dir: &str, binary: &[u8], sum: Option<&str>) {
+        let dir = self.path(dir);
         std::fs::create_dir_all(&dir).unwrap();
         let fixed = format!("datum-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
         let real = format!("{:x}", Sha256::digest(binary));
@@ -198,19 +205,26 @@ impl Home {
             format!("{zero}  {fixed}\n{sum}  {asset}\n"),
         )
         .unwrap();
-        self.sign(&TEST_KEY);
     }
 
     /// Signs the release's SHA256SUMS with `seed`'s key.
     fn sign(&self, seed: &[u8; 32]) {
-        let sums = std::fs::read(self.path("release/SHA256SUMS")).unwrap();
-        std::fs::write(self.sig(), minisign(seed, &sums)).unwrap();
+        self.sign_in("release", seed);
+    }
+
+    fn sign_in(&self, dir: &str, seed: &[u8; 32]) {
+        let sums = std::fs::read(self.path(&format!("{dir}/SHA256SUMS"))).unwrap();
+        std::fs::write(self.sig_in(dir), minisign(seed, &sums)).unwrap();
     }
 
     /// The signature an upgrade reads: the build's, `SHA256SUMS-<sha7>.minisig`,
     /// where SHA256SUMS names one, and `SHA256SUMS.minisig` where it does not.
     fn sig(&self) -> PathBuf {
-        let sums = std::fs::read_to_string(self.path("release/SHA256SUMS")).unwrap();
+        self.sig_in("release")
+    }
+
+    fn sig_in(&self, dir: &str) -> PathBuf {
+        let sums = std::fs::read_to_string(self.path(&format!("{dir}/SHA256SUMS"))).unwrap();
         let fixed = format!("datum-{}-{}-", std::env::consts::ARCH, std::env::consts::OS);
         let name = sums
             .split_whitespace()
@@ -218,8 +232,66 @@ impl Home {
             .map_or("SHA256SUMS.minisig".into(), |b| {
                 format!("SHA256SUMS-{b}.minisig")
             });
-        self.path(&format!("release/{name}"))
+        self.path(&format!("{dir}/{name}"))
     }
+}
+
+/// `upgrade --to` installs the kept release beside the latest, `v<version>`
+/// (da-ec8y8), verified as the latest is, and only a binary that says it is
+/// that version.
+#[test]
+fn upgrade_to_installs_a_kept_release_verified() {
+    let h = Home::new();
+    h.ok(&["install", "--no-completions"]);
+    let before = std::fs::read(h.exe()).unwrap();
+    h.release(b"#!/bin/sh\necho datum 9.9.9\n", None);
+    let unchanged = |said: String, why: &str| {
+        assert!(said.contains(why), "{said}");
+        assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+        assert!(!h.path("bin/.datum-upgrade").exists());
+    };
+
+    unchanged(
+        h.err(&["upgrade", "--to", "3.0.5"]),
+        "datum 3.0.5 has no kept release to install",
+    );
+
+    h.release_in("v3.0.5", &before, None);
+    h.sign_in("v3.0.5", &TEST_KEY);
+    assert!(h
+        .ok(&["upgrade", "--to", "3.0.5"])
+        .contains("datum is 3.0.5 already"));
+
+    let kept = b"#!/bin/sh\necho 'datum 3.0.5-beta (abcdef1)'\n";
+    h.release_in("v3.0.5", kept, None);
+    h.sign_in("v3.0.5", &OTHER_KEY);
+    unchanged(
+        h.err(&["upgrade", "--to", "3.0.5"]),
+        "does not verify with the key this datum was built with",
+    );
+
+    h.release_in(
+        "v3.0.5",
+        b"#!/bin/sh\necho 'datum 3.0.6-beta (abcdef1)'\n",
+        None,
+    );
+    h.sign_in("v3.0.5", &TEST_KEY);
+    unchanged(
+        h.err(&["upgrade", "--to", "3.0.5"]),
+        "says it is datum 3.0.6-beta (abcdef1), not datum 3.0.5",
+    );
+
+    h.release_in("v3.0.5", kept, None);
+    h.sign_in("v3.0.5", &TEST_KEY);
+    let said = h.ok(&["upgrade", "--check", "--to", "v3.0.5"]);
+    assert!(
+        said.contains("`datum upgrade --to 3.0.5` installs it"),
+        "{said}"
+    );
+    assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+    let said = h.ok(&["upgrade", "--to", "3.0.5"]);
+    assert!(said.contains("to datum 3.0.5-beta (abcdef1)"), "{said}");
+    assert_eq!(std::fs::read(h.exe()).unwrap(), kept);
 }
 
 #[test]
@@ -392,6 +464,47 @@ fn upgrade_refuses_a_mismatch_and_swaps_in_a_good_release() {
         "install, then upgrade: {}",
         h.log()
     );
+}
+
+/// `upgrade --to <major>.<minor>` is that minor's newest build (da-ec8y8):
+/// its kept `v<major>.<minor>` where one is, else the latest where the latest
+/// is of it, and nothing otherwise. `status --to` downloads it to say so.
+#[test]
+fn upgrade_to_a_minor_installs_its_newest_build() {
+    let h = Home::new();
+    h.ok(&["install", "--no-completions"]);
+    let before = std::fs::read(h.exe()).unwrap();
+    let unchanged = |said: String, why: &str| {
+        assert!(said.contains(why), "{said}");
+        assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+        assert!(!h.path("bin/.datum-upgrade").exists());
+    };
+    // The latest is of 3.5, a minor no release is kept for yet.
+    h.release(b"#!/bin/sh\necho 'datum 3.5.40-beta (abcdef1)'\n", None);
+
+    unchanged(
+        h.err(&["upgrade", "--to", "3.6"]),
+        "says it is datum 3.5.40-beta (abcdef1), not datum 3.6",
+    );
+    unchanged(
+        h.err(&["upgrade", "status", "--to", "3.6"]),
+        "not datum 3.6",
+    );
+    unchanged(
+        h.ok(&["upgrade", "status", "--to", "3.5"]),
+        "datum 3.5.40-beta (abcdef1) is released: `datum upgrade --to 3.5` installs it",
+    );
+
+    let kept = b"#!/bin/sh\necho 'datum 3.4.30-beta (abcdef1)'\n";
+    h.release_in("v3.4", kept, None);
+    h.sign_in("v3.4", &TEST_KEY);
+    unchanged(
+        h.ok(&["upgrade", "status", "--to", "3.4"]),
+        "datum 3.4.30-beta (abcdef1) is released",
+    );
+    let said = h.ok(&["upgrade", "--to", "v3.4"]);
+    assert!(said.contains("to datum 3.4.30-beta (abcdef1)"), "{said}");
+    assert_eq!(std::fs::read(h.exe()).unwrap(), kept);
 }
 
 /// A datum cargo installed uninstalls by cargo, so cargo's own record of

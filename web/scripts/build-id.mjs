@@ -1,4 +1,4 @@
-// Which build this is (da-5172a, da-cv118): `3.0.<height>-beta` and the
+// Which build this is (da-5172a, da-cv118): `<major>.<minor>.<height>-beta` and the
 // sha7, the same two things crates/datum-cli/build_id.rs gives `datum
 // --version`. The gear menu shows the WEB's build; the CLI module inside it is often reused from
 // an earlier main commit, and its own `datum --version` names that one.
@@ -31,8 +31,8 @@ function truncated(/** @type {string} */ dir) {
 }
 
 /**
- * `{ version: '3.0.<height>-beta', commit: '<sha7>[+]' }`: valid semver,
- * the workspace's Cargo `3.0.0-beta` with the patch the height — `git
+ * `{ version: '<major>.<minor>.<height>-beta', commit: '<sha7>[+]' }`: valid semver,
+ * the workspace's Cargo `<major>.<minor>.0-beta` with the patch the height — `git
  * rev-list --count`, the number the forge shows. CI's `GITHUB_SHA` names the
  * commit a run was for even when the checkout is a detached merge. Neither
  * is wrong where git cannot say: a shallow clone counts only its own

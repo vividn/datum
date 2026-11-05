@@ -11,13 +11,25 @@ name: Deploy datum.day
 # rather than waiting for the forge's wasm.yml to commit one to `wasm` and
 # deploying on THAT push, which queued every deploy behind a PR-CI lane and
 # made GITHUB_SHA, and so the gear menu's hash, the `wasm` commit's.
+#
+# A tag v<major>.<minor>.<height>, the forge's for each build that raises the
+# sync floor and the one before it (da-ec8y8, .forgejo/workflows/kept-releases.yml),
+# deploys that commit's datum.day at /v/<major>.<minor>.<height>/ too, a build
+# that stays, beside the root's; its minor's last build at /v/<major>.<minor>/. By hand with `tag`, this file builds it: a tag
+# of a commit from before this file built tags.
 on:
   push:
     branches: [main]
+    tags: ['v*']
   # A deploy is sometimes needed with no commit behind it. The bucket's error
   # document and its public-read policy are not in this repo, and the verify
   # step below is how you find out whether a change to either actually landed.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'A kept build to deploy at /v/<version>/, v<major>.<minor>.<height> (empty: the root)'
+        required: false
+        default: ''
 
 # A newer deploy cancels the one in progress. `aws s3 sync` is not atomic, so a
 # cancelled upload leaves the bucket holding part of each build — but the run
@@ -28,13 +40,17 @@ on:
 # cancelling changes is only that the deploy already in flight stops instead
 # of finishing first.
 concurrency:
-  group: deploy-datum-day
+  group: deploy-datum-day${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
   cancel-in-progress: true
 
 # Nothing here writes to the repo. The only credentials that matter are the
 # bucket's, and they come from the `production` environment below.
 permissions:
   contents: read
+
+env:
+  # The kept build this run deploys, or empty for the root.
+  TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
 
 jobs:
   deploy:
@@ -58,11 +74,17 @@ jobs:
       # Full history: ensure-wasm.mjs compares this commit's crates against
       # the SOURCE of each `wasm` commit, and needs origin/main and origin/wasm,
       # which a full-depth checkout fetches along with every other branch.
-      # And the gear's `3.0.<height>-beta` counts every commit, which a shallow
-      # checkout would cut short (it says `3.0.0-beta` there, da-5172a).
+      # And the gear's `<major>.<minor>.<height>-beta` counts every commit, which a shallow
+      # checkout would cut short (it says `<major>.<minor>.0-beta` there, da-5172a).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ env.TAG || github.sha }}
+
+      # A kept build is served, and so built, under /v/<version>.
+      - name: Name the path
+        if: ${{ env.TAG != '' }}
+        run: echo "DATUM_BASE=/v/${TAG#v}" >> "$GITHUB_ENV"
 
       # ubuntu-24.04 ships aws-cli 2.36.35 (checked 2026-09-08 against
       # actions/runner-images), but `ubuntu-latest` is a moving label and the
@@ -123,7 +145,19 @@ jobs:
           DATUM_DAY_ENDPOINT: ${{ vars.DATUM_DAY_ENDPOINT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./web/deploy.sh --yes
+        # The commit checked out, which the gear names: a run by hand has
+        # main's in GITHUB_SHA.
+        run: GITHUB_SHA=$(git rev-parse HEAD) ./web/deploy.sh --yes
+
+      # A kept build: its page at its path, its scripts under it.
+      - name: Verify the kept build
+        if: ${{ env.TAG != '' }}
+        run: |
+          body=$(curl -fsS -m 10 "https://datum.day$DATUM_BASE/") &&
+            grep -q "$DATUM_BASE/_app/immutable" <<< "$body" || {
+            echo "::error::https://datum.day$DATUM_BASE/ does not serve the build kept there."
+            exit 1
+          }
 
       # From outside, over the real CDN, because every failure this can catch
       # lives between the bucket and the browser and none of them are visible to
@@ -139,6 +173,7 @@ jobs:
       # so it fails the job rather than being tolerated — the fix is one
       # bucket setting, not a change to this file.
       - name: Verify the live site
+        if: ${{ env.TAG == '' }}
         run: |
           just verify || {
             echo "::error::datum.day is not serving 200 on both / and /nowview — the codes are printed above. 404 on /nowview only: the bucket error document is not index.html (web/DEPLOY.md step 1). 403: the objects are not publicly readable. 000: nothing answered at all."

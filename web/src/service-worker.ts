@@ -7,7 +7,19 @@ import { version } from '$app/env';
 import { assets, immutable } from '$app/manifest';
 import { workerAssets } from '#lib/workerAssets.generated.ts';
 
-const CACHE_NAME = `datum-${version}`;
+/**
+ * The path this build is served under: '' at the root, `/v/<version>` for a
+ * build kept at a sync floor (da-ec8y8, `DATUM_BASE` in vite.config.ts). Read
+ * from where this script is, since the worker is at the build's own root.
+ */
+const BASE = new URL('./', location.href).pathname.replace(/\/$/, '');
+
+/**
+ * Both builds' workers share the origin's caches, so each names its own by
+ * its base and clears only those: the root's never deletes a kept build's.
+ */
+const CACHE_PREFIX = `datum${BASE}-`;
+const CACHE_NAME = `${CACHE_PREFIX}${version}`;
 
 // `immutable` is derived from the client Vite manifest, which does not know
 // about Vite's separate worker bundle — the SQLite worker and sqlite3.wasm
@@ -17,11 +29,18 @@ const CACHE_NAME = `datum-${version}`;
 // so no page is prerendered and `$app/manifest`'s `prerendered` list is
 // empty. Without it the shell the fetch handler falls back to is never
 // there, and the app does not load offline at all.
-const SHELL = '/';
+const SHELL = `${BASE}/`;
 
-// `$app/manifest`'s paths are relative to the base, which is the root here.
-// It names the worker bundle's scripts too, which `workerAssets` repeats.
-const ASSETS = [...new Set([SHELL, ...[...immutable, ...assets].map(({ path }) => `/${path}`), ...workerAssets])];
+// `$app/manifest`'s paths are relative to the base, and `workerAssets` to the
+// build's root. It names the worker bundle's scripts too, which `workerAssets`
+// repeats.
+const ASSETS = [
+	...new Set([
+		SHELL,
+		...[...immutable, ...assets].map(({ path }) => `${BASE}/${path}`),
+		...workerAssets.map((path) => `${BASE}${path}`)
+	])
+];
 
 /**
  * The two headers that make a document cross-origin isolated, which is what
@@ -60,7 +79,7 @@ function isolated(response: Response): Response {
 }
 
 /** Everything under here is content-hashed, so it is safe to cache forever. */
-const IMMUTABLE = '/_app/immutable/';
+const IMMUTABLE = `${BASE}/_app/immutable/`;
 
 /**
  * A server's `Vary: Origin` (Vite's own since 6) keyed each entry to the
@@ -102,7 +121,7 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 	event.waitUntil(
 		caches.keys().then(async (keys) => {
 			for (const key of keys) {
-				if (key !== CACHE_NAME) await caches.delete(key);
+				if (key !== CACHE_NAME && key.startsWith(CACHE_PREFIX)) await caches.delete(key);
 			}
 		})
 	);

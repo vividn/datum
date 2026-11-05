@@ -158,6 +158,10 @@ pub enum Command {
         /// `--auto` installs the daily upgrade timer, `--no-auto` removes
         /// it (da-f7ckm).
         auto: Option<bool>,
+        /// `--to <version>`: the kept release of that version, `3.<minor>.<height>`,
+        /// or `3.<minor>` for that minor's newest build, in place of the
+        /// newest (da-ec8y8).
+        to: Option<String>,
     },
 }
 

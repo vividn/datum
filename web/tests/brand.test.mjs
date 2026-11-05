@@ -693,7 +693,7 @@ describe('the beta mark', () => {
 				width: document.documentElement.clientWidth,
 				height: document.documentElement.clientHeight
 			}));
-			const stamp = at.items.findIndex((t) => /^3\.0\.\d+-beta · /.test(t));
+			const stamp = at.items.findIndex((t) => /^\d+\.\d+\.\d+-beta · /.test(t));
 			assert.ok(stamp >= 0, `no version in ${at.items}`);
 			assert.equal(at.noteAt, stamp + 1, `the note is not under the version: ${at.items}`);
 			assert.ok(at.items[at.noteAt], 'the note says nothing');

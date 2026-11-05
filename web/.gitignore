@@ -1,6 +1,7 @@
 node_modules/
 build/
 .svelte-kit/
+.svelte-kit-kept/
 dist/
 
 # codegen output (the worker bundle's file names, written by vite.config.ts)

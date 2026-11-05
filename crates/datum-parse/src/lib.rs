@@ -72,7 +72,7 @@ pub use parse::{parse_argv, parse_argv_showing, parse_argv_string};
 pub use time::{DateArg, DatumTime, TimeArg, TimeBuilder, Uncertainty, UncertaintyUnit};
 pub use verb::{derive_verb, Verb};
 
-/// This build's version, `3.0.<height>-beta (<sha7>)`, which the `datum`
+/// This build's version, `<major>.<minor>.<height>-beta (<sha7>)`, which the `datum`
 /// binary sets as it starts: what `--version` prints, what a man page's
 /// header names (da-wg2dx), and what a copy says it runs to its sync peers
 /// (da-3zqyv). Cargo's version where nothing set it.

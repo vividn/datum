@@ -25,7 +25,13 @@ fn a_copy_behind_a_members_schema_syncs_and_warns_to_upgrade() {
     );
     assert!(out.contains("verify ok"), "{out}{err}");
     assert!(b.has("walk"));
-    for said in [&format!("⚠ {label} runs datum 3.0."), "(schema 999)", &mine] {
+    // The version is the build's, whose minor a sync floor moves (da-ec8y8).
+    let runs = format!(
+        "⚠ {label} runs datum {}.{}.",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR")
+    );
+    for said in [&runs, "(schema 999)", &mine] {
         assert!(err.contains(said), "{said} in: {err}");
     }
     assert!(err.contains("`git pull && scripts/install.sh`"), "{err}");

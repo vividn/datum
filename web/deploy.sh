@@ -6,6 +6,11 @@
 #   ./web/deploy.sh              # build + show exactly what would change
 #   ./web/deploy.sh --yes        # build + upload
 #
+# With DATUM_BASE=/v/<version> (or /v/<major>.<minor>, a minor's last build),
+# the build kept at a sync floor (da-ec8y8): built
+# to be served under that path and uploaded there, beside the root's build,
+# which never deletes it (no `sync --delete` below).
+#
 # Required environment (see DEPLOY.md):
 #   DATUM_DAY_BUCKET     bucket name, e.g. datum-day
 #   DATUM_DAY_ENDPOINT   S3 endpoint, e.g. https://s3.fr-par.scw.cloud
@@ -52,6 +57,13 @@ fi
 DRY="--dryrun"
 [ "${1:-}" = "--yes" ] && DRY=""
 
+# A base is a kept version's path and nothing else: anything wider would
+# upload over the root's files.
+if [ -n "${DATUM_BASE:-}" ] && ! [[ $DATUM_BASE =~ ^/v/[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+  echo "REFUSING: DATUM_BASE is /v/<major>.<minor>[.<height>] or unset, not '$DATUM_BASE'." >&2
+  exit 1
+fi
+
 : "${DATUM_DAY_BUCKET:?set DATUM_DAY_BUCKET (see web/DEPLOY.md)}"
 : "${DATUM_DAY_ENDPOINT:?set DATUM_DAY_ENDPOINT (see web/DEPLOY.md)}"
 command -v aws >/dev/null || { echo "aws CLI not found; see web/DEPLOY.md" >&2; exit 1; }
@@ -83,7 +95,7 @@ pnpm run build
 DIST=build
 [ -d "$DIST" ] || { echo "no $DIST/ — the build produced nothing" >&2; exit 1; }
 check_dist "$DIST"
-S3="s3://$DATUM_DAY_BUCKET"
+S3="s3://$DATUM_DAY_BUCKET${DATUM_BASE:-}"
 AWS=(aws s3 --endpoint-url "$DATUM_DAY_ENDPOINT")
 
 [ -n "$DRY" ] && echo "==> DRY RUN (pass --yes to write)"

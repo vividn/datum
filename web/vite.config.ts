@@ -14,7 +14,7 @@ import { buildId } from './scripts/build-id.mjs';
 import { kitsIndex, repoKits } from './scripts/kits.mjs';
 
 /**
- * What is actually running, injected at build time: `3.0.<height>-beta` and
+ * What is actually running, injected at build time: `<major>.<minor>.<height>-beta` and
  * the commit (da-5172a, da-cv118, `scripts/build-id.mjs`). A deployed static bundle is
  * otherwise anonymous — the only way to tell which commit is live would be to
  * compare hashed asset names against a local build.
@@ -147,7 +147,18 @@ export default defineConfig({
 	plugins: [
 		sveltekit({
 			preprocess: vitePreprocess(),
-			adapter: adapter({ fallback: 'index.html' }),
+			// DATUM_BUILD_DIR and DATUM_KIT_OUT: a build beside `build/` and its own
+			// `.svelte-kit`, which every other test's `vite preview` serves from
+			// (kept-build.test.mjs).
+			outDir: process.env.DATUM_KIT_OUT ?? '.svelte-kit',
+			adapter: adapter({
+				fallback: 'index.html',
+				pages: process.env.DATUM_BUILD_DIR ?? 'build',
+				assets: process.env.DATUM_BUILD_DIR ?? 'build'
+			}),
+			// '' at datum.day's root; `/v/<version>` for the build kept at a sync
+			// floor (da-ec8y8), which deploy.sh uploads under that path.
+			paths: { base: (process.env.DATUM_BASE ?? '') as '' | `/${string}` },
 			// Runes only: a component in Svelte 4 syntax fails to compile (da-ul23i).
 			compilerOptions: { runes: true },
 			// The browser's HTTP cache never answers for the worker script or its

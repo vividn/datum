@@ -631,7 +631,8 @@ mod tests {
             parse_argv(&argv(&["upgrade", "--check"])).unwrap().command,
             Command::Upgrade {
                 check: true,
-                auto: None
+                auto: None,
+                to: None
             }
         ));
         assert!(matches!(
@@ -640,12 +641,43 @@ mod tests {
                 .command,
             Command::Upgrade {
                 check: false,
-                auto: Some(false)
+                auto: Some(false),
+                to: None
             }
         ));
         assert!(e(&["upgrade", "--auto", "--check"]).contains("unexpected argument: '--check'"));
         assert!(e(&["upgrade", "--check", "x"]).contains("unexpected argument: 'x'"));
         assert!(e(&["upgrade", "--nope"]).contains("unexpected flag: --nope"));
+    }
+
+    /// da-ec8y8: `--to` names a kept release by the version `--version`
+    /// prints, its tag's `v` and its `-beta` read too.
+    #[test]
+    fn upgrade_to_names_a_version() {
+        let to = |w: &[&str]| match parse_argv(&argv(w)).unwrap().command {
+            Command::Upgrade { to, .. } => to,
+            _ => panic!("expected Upgrade"),
+        };
+        for w in ["3.0.2375", "v3.0.2375", "3.0.2375-beta"] {
+            assert_eq!(to(&["upgrade", "--to", w]).as_deref(), Some("3.0.2375"));
+        }
+        assert_eq!(
+            to(&["upgrade", "--check", "--to=3.0.7"]).as_deref(),
+            Some("3.0.7")
+        );
+        assert_eq!(
+            to(&["upgrade", "status", "--to", "3.0.7"]).as_deref(),
+            Some("3.0.7")
+        );
+        let e = |w: &[&str]| parse_argv(&argv(w)).unwrap_err().to_string();
+        assert!(e(&["upgrade", "--to"]).contains("--to takes a version"));
+        assert!(e(&["upgrade", "--to", "latest"]).contains("not 'latest'"));
+        // A minor alone is that minor's newest build (da-ec8y8).
+        for w in ["3.2", "v3.2", "3.2-beta"] {
+            assert_eq!(to(&["upgrade", "--to", w]).as_deref(), Some("3.2"));
+        }
+        assert!(e(&["upgrade", "--to", "3"]).contains("not '3'"));
+        assert!(e(&["upgrade", "--to", "3.2.1.0"]).contains("not '3.2.1.0'"));
     }
 
     #[test]

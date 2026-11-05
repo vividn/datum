@@ -18,11 +18,18 @@
 # the pointer, the binaries allowed to fail, and SHA256SUMS lists them: a
 # datum from before build names upgrades by them, once.
 #
+# `publish.sh <dist> <tag>` publishes a release that STAYS instead (da-ec8y8):
+# the release of the forge's tag v<major>.<minor>.<height> (kept-tags.sh), the
+# build-named binaries, SHA256SUMS and its signature alone, never pruned and
+# never GitHub's latest. `datum upgrade --to <version>` installs from it, and
+# install.sh with DATUM_RELEASE_URL=…/releases/download/<tag>.
+#
 # Needs gh (GH_TOKEN, GH_REPO), minisign, GITHUB_SHA and MINISIGN_SECRET_KEY.
 set -euo pipefail
 
 pub="$(cd "$(dirname "$0")" && pwd)/minisign.pub"
 cd "$1"
+tag=${2:-}
 build=${GITHUB_SHA:0:7}
 
 # The `latest` tag is the forge's: its push mirror pushes every tag with
@@ -30,13 +37,16 @@ build=${GITHUB_SHA:0:7}
 # release (the downloads 404). So this never creates or moves it, and refuses
 # to publish when the mirror has not brought it. Its commit is whatever the
 # forge's says; the notes and `datum --version` name the build's.
-gh api "repos/$GH_REPO/git/ref/tags/latest" > /dev/null || {
+gh api "repos/$GH_REPO/git/ref/tags/${tag:-latest}" > /dev/null || {
+  [ -z "$tag" ] || { echo "::error::No '$tag' tag on GitHub: kept tags come from the forge (.forgejo/workflows/kept-releases.yml) through its mirror."; exit 1; }
   echo "::error::No 'latest' tag on GitHub. It must come from the forge, whose push mirror deletes a tag only GitHub has: push it there (git push origin <main sha>:refs/tags/latest) and let the mirror sync."
   exit 1
 }
 
 fixed=(datum-*)
 for f in "${fixed[@]}"; do cp "$f" "$f-$build"; done
+# A kept release has no datum from before build names to serve.
+[ -z "$tag" ] || rm "${fixed[@]}"
 sha256sum datum-* > SHA256SUMS
 cat SHA256SUMS
 key=$(mktemp)
@@ -54,6 +64,17 @@ minisign -VHq -m SHA256SUMS -P "$(sed -n 2p "$pub")" || {
   exit 1
 }
 cp SHA256SUMS.minisig "SHA256SUMS-$build.minisig"
+
+if [ -n "$tag" ]; then
+  kept=(datum-*-"$build" SHA256SUMS "SHA256SUMS-$build.minisig")
+  if gh release view "$tag" > /dev/null 2>&1; then
+    gh release upload "$tag" "${kept[@]}" --clobber
+  else
+    gh release create "$tag" "${kept[@]}" --verify-tag --latest=false --title "datum ${tag#v}" \
+      --notes "The datum CLI built from ${GITHUB_SHA}, kept at a sync floor. Install: curl -fsSL https://datum.day/install.sh | DATUM_RELEASE_URL=https://github.com/$GH_REPO/releases/download/$tag sh, or datum upgrade --to ${tag#v}"
+  fi
+  exit 0
+fi
 
 # Each asset's id, state and name.
 assets() { gh api "repos/$GH_REPO/releases/tags/latest" --jq '.assets[] | [.id, .state, .name] | @tsv'; }

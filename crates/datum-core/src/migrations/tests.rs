@@ -31,6 +31,24 @@ fn sync_floors_name_migrations_in_order() {
     }
 }
 
+/// A floor appended here bumps the minor version with it (da-ec8y8): the
+/// workspace's minor is the number of floors, so the build that first
+/// syncs with no copy below a floor names a version of its own, and the
+/// kept release of it (release/kept-tags.sh) its tag.
+#[test]
+fn the_minor_version_counts_the_sync_floors() {
+    let minor: usize = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap();
+    assert_eq!(
+        minor,
+        SYNC_FLOORS.len(),
+        "SYNC_FLOORS holds {} floors: [workspace.package] version in Cargo.toml is {}.{}.0-{}",
+        SYNC_FLOORS.len(),
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        SYNC_FLOORS.len(),
+        env!("CARGO_PKG_VERSION_PRE"),
+    );
+}
+
 /// da-bq31: fresh `Db::open_in_memory` must materialize exactly the
 /// shape declared in `schema.sql` — no extra indexes from migration
 /// rebuilds, no missing tables. Locks down the new migrate() flow

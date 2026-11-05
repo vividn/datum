@@ -22,6 +22,7 @@
 -->
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
+	import { resolve } from '$app/paths';
 	import '../app.css';
 	import { schedule } from '#lib/backups.ts';
 	import { installConsole } from '#lib/console.ts';
@@ -84,7 +85,7 @@
 		// A join or approve link still waiting for its card (da-amhrv): the
 		// `/sync/…` route opens the place itself, but the isolation reload
 		// lands on `/` with the link held in the tab alone.
-		if (!location.pathname.startsWith('/sync/') && (get(joining) || get(approving))) void openPlace('sync');
+		if (!location.pathname.startsWith(`${resolve('/')}sync/`) && (get(joining) || get(approving))) void openPlace('sync');
 		return followViewport();
 	});
 
@@ -194,7 +195,7 @@
 					{refused === INTERNAL_DB
 						? `“${INTERNAL_DB}” is datum.day's own database — the saved layouts live there, not your entries.`
 						: `“${refused}” is not a database name.`}
-					showing <code>{DEFAULT_DB}</code> instead. <a href="/">home</a>
+					showing <code>{DEFAULT_DB}</code> instead. <a href={resolve('/')}>home</a>
 				</p>
 			{:else}
 				{@render children?.()}

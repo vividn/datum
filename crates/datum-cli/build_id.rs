@@ -1,5 +1,5 @@
 //! Which build this is: the commit height and the commit (da-5172a), and
-//! the version they make, `3.0.<height>-beta (<sha7>)` (da-cv118).
+//! the version they make, `<major>.<minor>.<height>-beta (<sha7>)` (da-cv118).
 //!
 //! Shared by `build.rs`, which hands it to the binary as `DATUM_BUILD`, and
 //! by `tests/version.rs`, which runs it against repos of a known shape, and by
