@@ -2025,7 +2025,7 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
     EnvVarSpec {
         name: "DATUM_HOME",
         key: "",
-        summary: "Override the data directory (default: the OS data dir).",
+        summary: "Override the data directory (default: `$XDG_DATA_HOME/datum`, or `~/.local/share/datum`).",
     },
     EnvVarSpec {
         name: "DATUM_CONFIG",
@@ -2035,7 +2035,7 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
     EnvVarSpec {
         name: "DATUM_CONFIG_HOME",
         key: "",
-        summary: "Override the directory `datumrc.toml` lives in.",
+        summary: "Override the directory `datumrc.toml` and `dbs.toml` live in.",
     },
     EnvVarSpec {
         name: "DATUM_CLIENT_ID",
