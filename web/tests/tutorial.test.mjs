@@ -393,6 +393,8 @@ test('a lesson’s game is a pane named «game widget» that runs a round; a tab
 				const title = await pane.getAttribute('data-title');
 				await pane.getByRole('button', { name: 'Start', exact: true }).click();
 				await pane.getByRole('button', { name: 'End now', exact: true }).waitFor();
+				// The begin's TRACKED landed before the clock moves: run after it, it would share End now's instant.
+				await settled(page, '[data-pane="moment-lesson"]');
 				await app.clock.forward(1000);
 				await pane.getByRole('button', { name: 'End now', exact: true }).click();
 				await pane.locator('.game[data-phase="done"][aria-busy="false"] .result').waitFor();
