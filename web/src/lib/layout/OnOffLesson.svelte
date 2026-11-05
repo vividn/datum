@@ -2,9 +2,9 @@
 	«On and off» (da-rru2t): a book, a TV and a phone (da-uzyih.4866) that go
 	on and off on a script, overlapping, played in the game box
 	(`GameBox.svelte`, da-uzyih.4864). At rest the book is closed and the TV
-	and the phone are off. Each thing is its field's button in the fields
-	widget itself (`CollectWidget.svelte`, the collect tab's, restricted to
-	the three), so logging here is logging anywhere: a tap starts the field,
+	and the phone are off. Each thing is its field's button in the collect
+	widget under it, filtered to the three (da-2s9im), so logging here is
+	logging anywhere: a tap starts the field,
 	the next ends it, at the tap's own instant (`press` freezes the CLI's
 	clock at the event, da-szzgy); `reading` is on while the book is
 	open. When the game ends the box shows its accuracy: the share of the
@@ -13,6 +13,7 @@
 	blocks as they happen.
 -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { agreement, blocksOf, DEN, isOn, type Thing } from '#lib/den.ts';
 	import { tailListing } from '#lib/tail.ts';
 	import { percent, type Outcome } from '#lib/tutorial.ts';
@@ -21,8 +22,9 @@
 
 	let { fields }: { fields: string[] } = $props();
 
-	/** The round as the fields' pane shares it: its taps and failures (LessonFields.svelte). */
+	/** The round as the collect pane's presses reach it: what is still landing. */
 	const shared = roundOf('on-off');
+	onMount(() => shared.watch(fields));
 	/** Read at each start: a test shortens the round. */
 	let duration = $state(DEN.length * 1000);
 	/** The round's start, on the wall. */

@@ -968,12 +968,12 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		// The tutorial's tabs (da-6cvrd): one per lesson, in order, each its
 		// lesson's widget once, wherever its split puts it (a nowview beside
 		// it, da-6xeqy), and a game's about over the nowview, its game the game
-		// widget (da-2chdp), and its fields under it (da-uzyih.4908),
-		// none a built-in's name.
+		// widget (da-2chdp), and under it the collect widget filtered to its
+		// fields, the ignored shown (da-uzyih.4908, da-2s9im), none a built-in's name.
 		const lessonsIn = (node) =>
 			!node || typeof node !== 'object'
 				? []
-				: ['tutorial', 'game'].includes(node.kind)
+				: ['tutorial', 'game', 'widgetbar'].includes(node.kind)
 					? [{ kind: node.kind, ...node.settings }]
 					: Object.values(node).flatMap(lessonsIn);
 		assert.deepEqual(TUTORIAL_LAYOUTS.map((l) => l.name), LESSONS.map((l) => l.name));
@@ -982,7 +982,8 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 			assert.ok(!BUILTIN_NAMES.includes(tree.name), `${tree.name} shadows a built-in`);
 			const game = ['moment', 'on-off', 'switch'].includes(tree.name);
 			const lesson = { kind: 'tutorial', lesson: tree.name };
-			const lessons = game ? [{ ...lesson, part: 'about' }, { kind: 'game', lesson: tree.name }, { ...lesson, part: 'fields' }] : [lesson];
+			const { fields } = LESSONS.find((l) => l.name === tree.name);
+			const lessons = game ? [{ ...lesson, part: 'about' }, { kind: 'game', lesson: tree.name }, { kind: 'widgetbar', fields, showIgnored: true }] : [lesson];
 			assert.deepEqual(lessonsIn(tree.root), lessons);
 		}
 	});

@@ -38,9 +38,7 @@
 	`ZOOM`'s bounds, and kept on this device across reloads, by the layout,
 	tab and widget, as every option a widget moves is (da-ray91, da-gh1ep).
 	While two fingers are down, and until the rows have settled after the
-	last is up, no tap logs or opens anything (`untapped`). A tutorial game's fields (`tapLogs`)
-	keep the cluster: the first in the middle of the widget and the rest ring
-	by ring around it (`ringOf`).
+	last is up, no tap logs or opens anything (`untapped`).
 
 	A TAP OPENS a field (vividn's frames, 2026-11-03), a switch alone in
 	1-click mode and every field in 2-click (below): its pill goes on the
@@ -228,16 +226,6 @@
 		 */
 		clicks = 'one',
 		/**
-		 * A tap logs at once, as before collect (da-uzyih.4940): a tutorial
-		 * game's fields alone (LessonFields.svelte) set it. The games score a
-		 * single tap — the moment game its reaction time — and re-teaching
-		 * them on collect's tap-then-state flow is vividn's call, not taken
-		 * yet. A moment or block logs on the tap, whatever `clicks` says; a
-		 * switch field opens its states, and a state logs `switch <field>
-		 * <state>` whole, with no pill on the app's bar.
-		 */
-		tapLogs = false,
-		/**
 		 * Which edge the strip and the active section stand at (da-lw7ue):
 		 * `right` is the mirror, recency running leftward and panning left.
 		 */
@@ -267,7 +255,6 @@
 		showIgnored?: boolean;
 		standings?: Standings;
 		clicks?: 'one' | 'two';
-		tapLogs?: boolean;
 		side?: 'left' | 'right';
 		nowDoc?: Document | null;
 		nowPending?: Mark[];
@@ -279,7 +266,7 @@
 	} = $props();
 
 	/** Does a bare tap log what needs nothing more (`pressKind`)? */
-	const oneTap = $derived(tapLogs || clicks === 'one');
+	const oneTap = $derived(clicks === 'one');
 
 	let bar: HTMLElement | undefined = $state.raw();
 	// The hold's action (#lib/hold.ts) on the bar ButtonRows draws — an
@@ -408,12 +395,12 @@
 	/**
 	 * The fields at rest, last used first, a press's fields ahead of them
 	 * (`rowsUnder`): the order they take their slots in collect's rows
-	 * (`atRest`, da-lw7ue), or in a tutorial game's ring.
+	 * (`atRest`, da-lw7ue).
 	 */
 	const under = $derived(buttons.length === 0 || picture ? [] : rowsUnder(buttons, 1, standings, shown));
 	const clustered = $derived(under.flatMap(({ lead, rest }) => [...lead, ...rest]));
-	/** Whether the fields stand in collect's rows at rest (`atRest`), and not a tutorial game's cluster. */
-	const resting = $derived(!tapLogs && clustered.length > 0);
+	/** Whether the fields stand in collect's rows at rest (`atRest`). */
+	const resting = $derived(clustered.length > 0);
 	/** The fields a press on a picture put first, marked so (da-qu16). */
 	const promoted = $derived(new Set(under.flatMap(({ lead }) => lead.map((b) => b.field))));
 	/** The fields in the order they claim their places: most recently used at the last sort first. */
@@ -610,14 +597,9 @@
 	 * other `oneTap`. Under a pending command, which a tap runs in either mode,
 	 * it opens the field. With the view open the field's button is not there
 	 * to hold again: Back or Escape takes the pill away, as for a tapped one.
-	 *
-	 * A tutorial game's fields (`tapLogs`) keep the TOGGLE (da-05oit): the
-	 * field's pill on the bar, the page narrowed to it, and held again the
-	 * pill goes, every other pill and the typed line staying.
 	 */
 	function hold(button: FieldButton) {
-		if (!tapLogs) return press(button, heldKind(button));
-		setFieldPill($fieldPill === button.field ? null : button.field, button.color);
+		press(button, heldKind(button));
 	}
 
 	/** What a hold does: the other mode's tap, or under a pending command, which a tap runs, the field opened. */
@@ -635,7 +617,7 @@
 		const kind = pressKind(button, pending, oneTap);
 		const does = (kind: PressKind) => (kind === 'run' ? 'log it' : kind === 'fill' ? 'fill the prompt' : 'collect it');
 		const press = record ? `${shellJoin(['record', button.field])} … — fills the prompt` : `press to ${does(kind)}`;
-		const held = tapLogs ? 'filter the page to it' : does(heldKind(button));
+		const held = does(heldKind(button));
 		return [...(record ? [] : [button.field]), ...(button.ignored ? ['ignored'] : []), press, `hold to ${held}`].join(' · ');
 	}
 
@@ -682,7 +664,7 @@
 	// takes it, and collect follows it (da-z45a6, below), so its field opens
 	// again when it returns, as on a reload, whose pill comes before its field.
 	$effect.pre(() => {
-		if (picked !== null && (picking === null || (!tapLogs && $fieldPill !== picked))) untrack(close);
+		if (picked !== null && (picking === null || $fieldPill !== picked)) untrack(close);
 	});
 
 	// ---- an ENTRY selected (da-xdz73) ------------------------------------
@@ -834,10 +816,6 @@
 	 * placed and nothing runs: the command pane's ready command logs it.
 	 */
 	function choose(button: FieldButton, state: string, logs = clicks === 'one') {
-		if (tapLogs) {
-			close();
-			return emit(pressArgv(button, state));
-		}
 		if (logs && typesKeys('change', button)) {
 			// Closed, not Back: the time pills made here stay for the line filled.
 			setFieldPill(null);
@@ -864,7 +842,6 @@
 		// A glide still going stops where it is, for Back to return to.
 		cancelAnimationFrame(coast);
 		coast = 0;
-		if (tapLogs) return void ((restPan = pan), (pan = null), (picked = button.field));
 		entered = { cursor: get(cursor), moment };
 		if ($fieldPill !== button.field) setFieldPill(button.field, button.color);
 		restPan = pan;
@@ -884,7 +861,7 @@
 	/** Back: the field's pill and the ones made since it was tapped go, and a time pill already there stays. */
 	function back() {
 		const was = entered;
-		if (!tapLogs) setFieldPill(null);
+		setFieldPill(null);
 		close();
 		if (!was) return;
 		if (get(cursor) !== was.cursor) cursor.set(was.cursor);
@@ -941,12 +918,7 @@
 			const { end, states } = deal ? dealt(w, h, GAP, room.clientHeight) : ring;
 			// The first is the middle of the room, whichever way they were stood:
 			// in a short box, half a row of `ringIn`'s rows past it, which pans.
-			// A tutorial game's fields are all in view instead, as before collect
-			// (`tapLogs`, da-uzyih.4940): `ringIn` stands the rows about the
-			// room's middle, the origin, so taking that as the middle, not the
-			// first button, keeps every row in the room with nothing to pan.
-			const mid = tapLogs && !deal ? { x: 0, y: 0 } : end;
-			const at = [end, ...states].map((p) => ({ x: p.x - mid.x, y: p.y - mid.y }));
+			const at = [end, ...states].map((p) => ({ x: p.x - end.x, y: p.y - end.y }));
 			const edges = spots.map((el, i) => ({ el, left: at[i].x - widths[i] / 2, top: at[i].y - h / 2 }));
 			const [left, top] = [Math.min(...edges.map((e) => e.left)), Math.min(...edges.map((e) => e.top))];
 			for (const e of edges) {
@@ -957,12 +929,7 @@
 				w: Math.max(...edges.map((e, i) => e.left + widths[i])) - left,
 				h: Math.max(...edges.map((e) => e.top + h)) - top
 			};
-			// A tutorial game's dealt rows, centered along an axis they fit and
-			// from the room's edge along one they overrun: a reveal scrolls the
-			// room only right and down (`fold`), so a state dealt past its left
-			// was out of reach (da-uzyih.4943, «garden» on a 280 px phone).
-			const [W, H] = [room.clientWidth, room.clientHeight];
-			anchor = tapLogs && deal ? { x: Math.min(extent.w, W) / 2, y: Math.min(extent.h, H) / 2 } : { x: -left, y: -top };
+			anchor = { x: -left, y: -top };
 		};
 		const observer = new ResizeObserver(place);
 		observer.observe(room);
@@ -1044,7 +1011,7 @@
 	// secondary menu as well»): a hold, the now strip, a reload, a script.
 	// Here, below what `open` reads, as it runs at init (da-1oi8w).
 	$effect.pre(() => {
-		const pilled = tapLogs || picked === $fieldPill ? null : fields.find((b) => b.field === $fieldPill);
+		const pilled = picked === $fieldPill ? null : fields.find((b) => b.field === $fieldPill);
 		if (pilled) untrack(() => open(pilled));
 	});
 	function down(e: PointerEvent) {

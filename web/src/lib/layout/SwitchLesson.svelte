@@ -3,15 +3,15 @@
 	person, a dot, wandering from room to room and out into the garden, and
 	about each room's furniture while there (`#lib/house.ts`), played in the game box
 	(`GameBox.svelte`, da-uzyih.4864). Where they are is one switch field,
-	`room`, logged through the collect widget itself
-	(`CollectWidget.svelte`, the collect tab's, restricted to it): a tap on the
-	field opens its states, a tap on a room switches it.
+	`room`, logged through the collect widget in the pane under it, filtered
+	to it (da-2s9im): a tap on the field opens its states, a tap on a room
+	logs the change, as in any layout.
 
 	The game starts itself (vividn, 2026-10-27 14:18: «to start the game, the
 	user should change the state to be where the person is»): at rest the dot
-	stands in a room, the box says in Start's place that switching
-	`room` there starts it, and the game begins once a tap has
-	switched it there. The room at rest is never the one already held, so it
+	stands in a room, the box says in Start's place that tapping `room`
+	and then that room starts it, and the game begins once an entry has
+	changed it there, whatever logged it (`roundOf`). The room at rest is never the one already held, so it
 	is a switch. The cue and the start it promises are the rest's alone: on
 	the game-over screen a switch starts nothing, until Reset.
 
@@ -24,12 +24,12 @@
 -->
 <script lang="ts">
 	import { tailArgv } from '#lib/calls.ts';
-	import { pendingCommand } from '#lib/commands.ts';
 	import { run } from '#lib/run.ts';
 	import { isStatus, percent, type Outcome } from '#lib/tutorial.ts';
 	import { FIELD, PLAN, ROOMS, ROUND_MS, WALLS, accuracy, dotAt, round, scene, stateAt, type Change, type Tap } from '#lib/house.ts';
 	import GameBox from './GameBox.svelte';
 	import { get } from 'svelte/store';
+	import { onMount } from 'svelte';
 	import { fields as buttons } from './engine.js';
 	import { roundOf } from './round.js';
 
@@ -49,13 +49,15 @@
 	let next: Change[] = $state.raw(fresh());
 	let changes: Change[] = $state.raw([]);
 	let start = 0;
-	/** The round as the fields' pane shares it: its taps and failures (LessonFields.svelte). */
+	/** The round as the collect pane's presses reach it: what is still landing. */
 	const shared = roundOf('switch');
 	const { phase } = shared;
-	/** At rest, a change to the dot's room starts the game. */
-	shared.wrote = (argv) => {
-		if (pendingCommand(argv[0] ?? '') === 'change' && argv[1] === FIELD && argv[2] === next[0].state && get(phase) === 'neutral') box.begin();
-	};
+	/** At rest, an entry changing `room` to the dot's room starts the game. */
+	onMount(() =>
+		shared.watch([FIELD], (docs) => {
+			if (docs.some((d) => d.state === next[0].state) && get(phase) === 'neutral') box.begin();
+		})
+	);
 
 	function begin(at: number): void {
 		changes = next;
@@ -109,7 +111,7 @@
 {/snippet}
 
 {#snippet cue()}
-	<p class="cue">Change <b>{FIELD}</b> to <b>{next[0].state}</b> to start ↓</p>
+	<p class="cue">Tap <b>{FIELD}</b>, then <b>{next[0].state}</b>, to start ↓</p>
 {/snippet}
 
 <div class="lesson">

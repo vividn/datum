@@ -25,7 +25,7 @@ const FIELDS = ['bagel', 'cake', 'coffee', 'croissant', 'tea'];
 const rows = (app, field, db) =>
 	app.run(['tail', field, '--json', '-n', '50', ...(db ? ['--db', db] : [])]).then((r) => JSON.parse(r.stdout).rows.filter((row) => !isStatus(row)));
 const MOMENT = '[data-pane="moment-lesson"]';
-const fieldButton = (field) => `.tutorial .fields button[data-field="${field}"]`;
+const fieldButton = (field) => `[data-pane$="-fields"] .fields button[data-field="${field}"]`;
 /** The box's result, name to value. */
 const result = async (page) => {
 	await page.locator('.game .result').waitFor();
@@ -115,28 +115,19 @@ test('a round of the moment game: each thing appears on the café table and goes
 	);
 });
 
-// vremya, on #1231's preview: the third café field was cut mid-word on a
-// 390 px phone, the row scrolling sideways. Every field's button is whole
-// inside the widget's visible box, the rows wrapped, nothing to scroll.
-test('on a phone every café field is in view, nothing scrolled sideways', async () => {
+// The moment lesson's fields are the collect widget filtered to the café's
+// (da-2s9im): a button for each, and none of any other field. Its rows pan
+// sideways in a short pane as anywhere; that game and collect are wholly in
+// view together on a phone is da-zb1dr's, which gives the lesson's tab its height.
+test("on a phone the moment lesson's collect widget holds the café fields alone", async () => {
 	await withApp(
 		async (app) => {
 			const { page } = app;
+			assert.equal((await app.run(['moment', 'other'])).code, 0);
 			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
-			for (const field of FIELDS) await page.locator(fieldButton(field)).waitFor();
-			const { box, scroll, buttons } = await page.locator('.tutorial .lesson .controls .bar').evaluate((bar) => ({
-				box: bar.getBoundingClientRect().toJSON(),
-				scroll: bar.scrollWidth - bar.clientWidth,
-				buttons: [...bar.querySelectorAll('button[data-field]')].map((b) => ({ field: b.dataset.field, ...b.getBoundingClientRect().toJSON() }))
-			}));
-			assert.equal(scroll, 0, 'nothing to scroll sideways');
-			assert.deepEqual(buttons.map((b) => b.field).sort(), FIELDS);
-			for (const b of buttons)
-				assert.ok(
-					b.left >= box.left - 0.5 && b.right <= box.right + 0.5 && b.top >= box.top - 0.5 && b.bottom <= box.bottom + 0.5,
-					`${b.field} at ${JSON.stringify(b)} is whole inside ${JSON.stringify(box)}`
-				);
-			assert.ok(new Set(buttons.map((b) => Math.round(b.top))).size > 1, 'wrapped onto more rows');
+			for (const field of FIELDS) await page.locator(fieldButton(field)).waitFor({ state: 'attached' });
+			const buttons = await page.locator('[data-pane="moment-fields"] .fields button[data-field]').evaluateAll((bs) => bs.map((b) => b.dataset.field));
+			assert.deepEqual(buttons.sort(), FIELDS);
 			assert.deepEqual(app.errors, []);
 		},
 		{ ...PHONE, query: '?db=tutorial' }

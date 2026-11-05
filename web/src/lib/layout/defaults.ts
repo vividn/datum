@@ -481,7 +481,7 @@ export const LESSONS: Lesson[] = [
  * and 1/4 for field widget. Let's have the game and the fields widgets be
  * separate widgets here»).
  */
-const withNowview = (name: string): Layout => ({
+const withNowview = ({ name, fields }: Lesson): Layout => ({
 	version: LAYOUT_VERSION,
 	name,
 	root: holder(
@@ -490,12 +490,15 @@ const withNowview = (name: string): Layout => ({
 			widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }),
 			widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
 			widgetPane(`${name}-lesson`, 'game', { lesson: name }),
-			widgetPane(`${name}-fields`, 'tutorial', { lesson: name, part: 'fields' })
+			// The collect widget a person uses, filtered to the game's fields (da-2s9im, vividn, 2026-11-05: «the
+			// widgets in the tutorial should actually use the collect widget … filtered to each game's set»), its
+			// ignored fields shown: a game's fields are IGNORED until it begins.
+			widgetPane(`${name}-fields`, 'widgetbar', { fields, showIgnored: true })
 		])
 	)
 });
 
 /** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, four panes, the game the game widget's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the switch lesson's, da-6xeqy). */
-export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map(({ name }) =>
-	name === 'moment' || name === 'on-off' || name === 'switch' ? withNowview(name) : only(name, 'tutorial', { lesson: name })
+export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map((lesson) =>
+	lesson.fields.length ? withNowview(lesson) : only(lesson.name, 'tutorial', { lesson: lesson.name })
 );

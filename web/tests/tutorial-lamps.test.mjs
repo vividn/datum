@@ -44,7 +44,7 @@ test('at rest the book is closed and the TV and phone off; a round of all three 
 				for (const thing of den.things) thing.on = round.on[thing.field];
 			}, ROUND);
 			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
-			const buttons = page.locator('.tutorial .fields button[data-field]');
+			const buttons = page.locator('[data-pane$="-fields"] .fields button[data-field]');
 			await buttons.nth(2).waitFor();
 			assert.deepEqual(
 				(await buttons.evaluateAll((bs) => bs.map((b) => b.dataset.field))).sort(),
@@ -73,10 +73,10 @@ test('at rest the book is closed and the TV and phone off; a round of all three 
 			for (const { field, on, at } of edges) {
 				await app.clock.set(start + at + LATE);
 				await page.locator(`.thing[data-field="${field}"][data-on="${on}"]`).waitFor();
-				await page.locator(`.tutorial .fields button[data-field="${field}"]`).click();
-				await page.locator(`.tutorial .fields button[data-field="${field}"]${on ? '.on' : ':not(.on)'}`).waitFor();
+				await page.locator(`[data-pane$="-fields"] .fields button[data-field="${field}"]`).click();
+				await page.locator(`[data-pane$="-fields"] .fields button[data-field="${field}"]${on ? '.on' : ':not(.on)'}`).waitFor();
 				if (field === 'phone' && on) {
-					const pressed = await page.$$eval('.tutorial .fields button[data-field].on', (on) => on.map((b) => b.dataset.field));
+					const pressed = await page.$$eval('[data-pane$="-fields"] .fields button[data-field].on', (on) => on.map((b) => b.dataset.field));
 					const active = JSON.parse((await app.run(['now', '--json'])).stdout).active.map((a) => a.field);
 					all = { pressed, active };
 				}
@@ -112,7 +112,7 @@ test('«End now» shows the accuracy; a game over leaves all three off, and Rese
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			const tap = (field) => page.locator(`.tutorial .fields button[data-field="${field}"]`).click();
+			const tap = (field) => page.locator(`[data-pane$="-fields"] .fields button[data-field="${field}"]`).click();
 			const hids = async () =>
 				(await Promise.all(DEN.map((f) => app.run(['tail', f, '--json', '-n', '50']).then((r) => JSON.parse(r.stdout).rows.map((row) => row.hid))))).flat();
 			const active = () => app.run(['now', '--json']).then((r) => JSON.parse(r.stdout).active.map((a) => a.field).sort());
@@ -161,8 +161,8 @@ test('at a 390 px phone width every field of the game is wholly in view, with no
 			const { page } = app;
 			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
 			// Attached, not visible: one cut off is the assertion's to say.
-			await page.locator('.tutorial .fields button[data-field]').nth(2).waitFor({ state: 'attached' });
-			const seen = await page.locator('.tutorial .fields .bar').evaluate((bar) => {
+			await page.locator('[data-pane$="-fields"] .fields button[data-field]').nth(2).waitFor({ state: 'attached' });
+			const seen = await page.locator('[data-pane="on-off-fields"] .fields .bar').evaluate((bar) => {
 				const box = bar.getBoundingClientRect();
 				const inside = [...bar.querySelectorAll('button[data-field]')].map((b) => {
 					const r = b.getBoundingClientRect();

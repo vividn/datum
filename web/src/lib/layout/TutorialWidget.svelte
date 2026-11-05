@@ -28,9 +28,10 @@
 	Instead it should be about what occur data is»; his whole words are
 	docs/basics.md), and its way on; the nowview; the game, the game widget
 	(GameWidget.svelte, da-2chdp), which this kind still draws for a lesson
-	with fields and no part, as a tab saved before that kind did; and its fields
-	with Undo (`part: 'fields'`, LessonFields.svelte), the two sharing the
-	round (`roundOf`).
+	with fields and no part, as a tab saved before that kind did; and the
+	collect widget filtered to its fields (da-2s9im), which this kind still
+	draws for `part: 'fields'`, as a tab saved before did. The game scores what
+	is logged, whatever logged it (`roundOf`).
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -41,7 +42,7 @@
 	import { LESSONS, type Lesson } from './defaults.js';
 	import { open, resetTutorial } from './shell.js';
 	import GameWidget from './GameWidget.svelte';
-	import LessonFields from './LessonFields.svelte';
+	import CollectPane from './CollectPane.svelte';
 
 	let { settings = {} }: { settings?: Record<string, unknown> } = $props();
 
@@ -127,7 +128,7 @@
 				{/if}
 			</p>
 		{:else if part === 'fields'}
-			<LessonFields {lesson} />
+			<CollectPane only={lesson.fields} showIgnored />
 		{:else if intro}
 			<h1>The tutorial</h1>
 			<p>

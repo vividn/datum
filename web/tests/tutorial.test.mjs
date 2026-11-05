@@ -122,7 +122,7 @@ test('a tutorial whose tabs are current still gets a kit field it lacks, at the 
 			await app.reload();
 			await tv(true);
 			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
-			await page.locator('.tutorial .fields button[data-field="tv"]').waitFor();
+			await page.locator('[data-pane$="-fields"] .fields button[data-field="tv"]').waitFor();
 			assert.deepEqual(app.errors, []);
 		},
 		{ ...PHONE, query: '?db=tutorial' }
@@ -406,7 +406,7 @@ test('a lesson’s game is a pane named «game widget» that runs a round; a tab
 
 			// The tab as a layout saved before the game was its own kind: the game pane the `tutorial` kind's.
 			const old = await page.evaluate(() => JSON.parse(JSON.stringify(window.datum.layouts.kitLayout('moment')).replaceAll('"kind":"game"', '"kind":"tutorial"')));
-			assert.equal(JSON.stringify(old).match(/"kind":"tutorial"/g).length, 3, 'the game pane is the tutorial kind again');
+			assert.equal(JSON.stringify(old).match(/"kind":"tutorial"/g).length, 2, 'the game pane is the tutorial kind again');
 			await page.evaluate((l) => window.datum.layouts.saveLayout(l), old);
 			await app.reload();
 			assert.deepEqual(await round(), ['tutorial', 'tutorial']);
@@ -677,6 +677,14 @@ for (const [screen, options, centered] of [
 		await withApp(
 			async (app) => {
 				const { page } = app;
+				// The switch game is started from its cue, by collect's own picker, which at 280 px leaves «garden» out
+				// of reach (da-u846n): a walk that starts elsewhere, seeded before its tab is first drawn.
+				await page.evaluate(() => {
+					const { house } = window.datum.tutorial;
+					let seed = 1;
+					while (house.scene(seed)[0].state === 'garden') seed++;
+					house.round.seed = seed;
+				});
 				for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['switch', 'svg.house']]) {
 					const pane = `[data-pane="${tab}-lesson"]`;
 					await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
@@ -754,14 +762,14 @@ test('each game reads title and shape, nowview, game, fields widget, in every ph
 						shape: box(pane('about').querySelector('p')),
 						now: box(pane('now')),
 						game: box(game),
-						act: box(pane('fields').querySelector('.inputs'))
+						act: box(pane('fields').querySelector('.fields'))
 					};
 					const above = [...root.querySelectorAll('*')]
 						.filter((el) => !el.contains(game) && !game.contains(el) && box(el).height > 0 && box(el).top < box(game).top - 0.5)
 						.map((el) => el.outerHTML.slice(0, 60));
 					/** How far each pane under the about is scrolled. */
 					const scrolled = ['lesson', 'fields'].map((part) => {
-						let scroller = pane(part).querySelector('.game-widget, .tutorial');
+						let scroller = pane(part).querySelector('.game-widget, .fields');
 						while (scroller && getComputedStyle(scroller).overflowY === 'visible') scroller = scroller.parentElement;
 						return scroller.scrollTop;
 					});
@@ -786,7 +794,7 @@ test('each game reads title and shape, nowview, game, fields widget, in every ph
 				if (tab === 'switch') await startSwitch(page);
 				else await page.getByRole('button', { name: 'Start', exact: true }).click();
 				await settled(page, `[data-pane="${tab}-lesson"]`);
-				await page.locator(`[data-pane="${tab}-fields"] .inputs button[data-field]`).first().waitFor();
+				await page.locator(`[data-pane="${tab}-fields"] .fields button[data-field]`).first().waitFor();
 				const during = await parts(tab);
 				inOrder(tab, 'during', during);
 				assert.deepEqual(during.scrolled, [0, 0], `${tab}: neither the game nor the fields is scrolled`);
@@ -828,7 +836,7 @@ test('on each lesson’s tab no two of its fields’ lanes in the nowview overla
 		async (app) => {
 			const { page } = app;
 			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
-			await page.locator('.tutorial .fields button[data-field]').first().waitFor();
+			await page.locator('[data-pane$="-fields"] .fields button[data-field]').first().waitFor();
 			for (const argv of SEED) assert.equal((await app.run(argv)).code, 0, argv.join(' '));
 			// A quiet run tells no pane: each draws them afresh.
 			await page.reload();

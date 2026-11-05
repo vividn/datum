@@ -13,8 +13,8 @@
 	`prefers-reduced-motion`, read as each round starts, it simply goes. All
 	of it is drawn from the game's own clock, `t`, so a held clock holds it.
 	Played in the game box (`GameBox.svelte`, da-uzyih.4864) and logged on
-	the collect widget in the pane under it (LessonFields.svelte), the café's fields alone: a tap logs `moment
-	coffee` and its like.
+	the collect widget in the pane under it, filtered to the café's fields (da-2s9im): a tap logs `moment
+	coffee` and its like, and so does the bar's line.
 
 	A tap is a `press` like any widget's, in its handler before any await,
 	so the CLI's clock is frozen at the tap (da-szzgy) and the bottom bar
@@ -26,6 +26,7 @@
 	thing appearing to its tap.
 -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { tailArgv } from '#lib/calls.ts';
 	import { run } from '#lib/run.ts';
 	import { isStatus, percent, type Outcome } from '#lib/tutorial.ts';
@@ -38,8 +39,9 @@
 	let items: Item[] = $state.raw([]);
 	let duration = $state(0);
 	let start = 0;
-	/** The round as the fields' pane shares it: its taps and failures (LessonFields.svelte). */
+	/** The round as the collect pane's presses reach it: what is still landing. */
 	const shared = roundOf('moment');
+	onMount(() => shared.watch(fields));
 
 	/** No bites and no wipe: a thing simply goes. */
 	let still = false;

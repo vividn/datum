@@ -331,7 +331,7 @@ export type PressKind = 'run' | 'fill' | 'show';
 export function pressKind(button: FieldButton, pending: LogCommand | null, oneTap = false): PressKind {
 	if (pending !== null && pendingPress(pending, button)) return typesKeys(pending, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
-	// One click (`clicks`, da-gra0z; a tutorial game's `tapLogs`) logs what
+	// One click (`clicks`, da-gra0z) logs what
 	// needs nothing more: a moment, or a block started or ended. vividn,
 	// 2026-11-04: «you can still record with 1 tap unless there is some extra
 	// data or whatever needed», so a change field opens to its states, which it needs.

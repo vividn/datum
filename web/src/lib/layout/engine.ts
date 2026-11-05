@@ -301,14 +301,26 @@ function guess(result: RunResult): void {
  * dispatched — the command runs on a clock frozen at that event's stamp
  * (`gesture`), so what it logs is when they acted.
  */
-export async function press(
-	argv: string[],
-	line?: string,
-	stdin?: string,
-	typed = false,
-	echo?: string,
-	env = gesture()
-): Promise<RunResult> {
+export function press(argv: string[], line?: string, stdin?: string, typed = false, echo?: string, env = gesture()): Promise<RunResult> {
+	const result = pressing(argv, line, stdin, typed, echo, env);
+	for (const hear of presses) hear(result);
+	return result;
+}
+
+const presses = new Set<(result: Promise<RunResult>) => void>();
+
+/**
+ * `hear` told of every press as it goes, until the function returned is
+ * called (da-2s9im): a tutorial game's round counts what is logged while it
+ * runs, whatever logged it — the collect widget, the bar, a typed line
+ * (`round.ts`).
+ */
+export function onPress(hear: (result: Promise<RunResult>) => void): () => void {
+	presses.add(hear);
+	return () => presses.delete(hear);
+}
+
+async function pressing(argv: string[], line: string | undefined, stdin: string | undefined, typed: boolean, echo: string | undefined, env: string[]): Promise<RunResult> {
 	// The argv the CALLER asked for, never the one the runner received: the
 	// web adds flags of its own on the way through (`--width`), and those
 	// are the web's, not a command anyone should be taught to type (da-xfa4).
