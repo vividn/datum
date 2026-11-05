@@ -58,6 +58,8 @@ we talk to each other»). Code that has not moved to a word yet says the old one
 | writing one | **log** | | | record (verb), write, enter |
 
 The command you type is the word the echo prints; a period alone has no command of its own.
+A full-day entry (`-D`, a date and no clock) echoes ALLDAY whatever its kind, and a run of whole
+days (`-D 3d`) PERIOD.
 The old words still run, as aliases (`occur`, `start`, `stop`, `end`, `switch`, `add`, `card`, `note`,
 `--verb`), and a spec still stores `occur`, `start`, `switch` or `add`, shown as its kind, until the
 data moves (da-gpz6m).

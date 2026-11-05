@@ -76,7 +76,7 @@ export interface EchoDoc {
 	action_color?: string;
 	/**
 	 * The shape of what the entry stores, six characters (da-hxjrk): `MOMENT`,
-	 * `PERIOD`, `ON/OFF`, `CHANGE` or `RECORD`. Absent from a module too old
+	 * `PERIOD`, `ON/OFF`, `CHANGE`, `ALLDAY` or `RECORD`. Absent from a module too old
 	 * to carry it. A new entry's `action` is it, or a note's REMARK (da-p01v9).
 	 */
 	shape?: string;

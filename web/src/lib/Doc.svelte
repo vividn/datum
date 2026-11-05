@@ -11,7 +11,7 @@
 	(da-hbpkw), vividn, 2026-10-31: «let's have the time be above the data
 	again, just like in the CLI». The label is the CLI's own action word, as
 	the terminal's header prints it (da-p01v9): a new entry's shape (MOMENT,
-	PERIOD, ON/OFF, CHANGE, RECORD, a note's REMARK), every other action its
+	PERIOD, ON/OFF, CHANGE, ALLDAY, RECORD, a note's REMARK), every other action its
 	own word (da-nafql), painted in the colour of what the command did
 	(`action_color`).
 

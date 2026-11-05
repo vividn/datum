@@ -520,9 +520,11 @@ pub struct Undid {
 /// is what we should call this shape in general».
 ///
 /// `RECORD` a timeless card (`add`, `note`); `PERIOD` anything with a duration,
-/// whatever its state, a hole's false block included; a change with no duration
-/// `ON/OFF` by a state of `true` or `false`, `CHANGE` by any other; and `MOMENT`
-/// a point, with a state or none.
+/// whatever its state, a hole's false block included, `-D 3d`'s whole days too;
+/// `ALLDAY` a full-day entry (`-D`, a date and no clock) of any field and kind
+/// (da-pcgoj, vividn, 2026-11-05: «-D entries should print ALLDAY for any
+/// field»); a change with no duration `ON/OFF` by a state of `true` or `false`,
+/// `CHANGE` by any other; and `MOMENT` a point, with a state or none.
 ///
 /// It is also the word a NEW entry's echo is headed with, in place of CREATE
 /// (da-p01v9), as [`created_word`] says.
@@ -537,6 +539,9 @@ pub fn shape(entry: &Entry) -> &'static str {
         .is_some_and(|s| s != 0)
     {
         return "PERIOD";
+    }
+    if entry.at_uncertainty() == Some(datum_parse::entry_id::DATE_ONLY_PRECISION) {
+        return "ALLDAY";
     }
     match (entry.verb, &entry.state) {
         (Verb::Switch, Some(JsonValue::Bool(_))) => "ON/OFF",
@@ -2756,6 +2761,19 @@ mod tests {
         let mut timeless = sample_entry("f", Verb::Point, named.clone());
         timeless.at = None;
         assert_eq!(shape(&timeless), "RECORD");
+        // da-pcgoj: a full-day entry is ALLDAY whatever its kind, and a run of
+        // whole days (`-D 3d`) stays the PERIOD it is.
+        for (verb, state, dur, want) in [
+            (Verb::Point, &None, Some("MOMENT"), "ALLDAY"),
+            (Verb::Switch, &named, None, "ALLDAY"),
+            (Verb::Switch, &on, None, "ALLDAY"),
+            (Verb::Block, &on, Some("P3D"), "PERIOD"),
+        ] {
+            let mut entry = sample_entry("f", verb, state.clone());
+            entry.dur = dur.map(|d| Dur::parse(d).unwrap());
+            entry.set_at_uncertainty(Some("P1D".to_string()));
+            assert_eq!(shape(&entry), want, "{verb:?} {dur:?}");
+        }
     }
 
     /// da-w149: the tail pane's state cell for a timeless note naming a

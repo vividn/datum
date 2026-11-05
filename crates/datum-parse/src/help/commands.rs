@@ -363,7 +363,7 @@ const FULL_DAY: FlagSpec = FlagSpec {
     takes_value: false,
     value_hint: None,
     value_optional: false,
-    summary: "Date-only entry (no clock time)",
+    summary: "Date-only entry (no clock time), echoed ALLDAY",
     long_description: None,
     left_override: None,
 };
