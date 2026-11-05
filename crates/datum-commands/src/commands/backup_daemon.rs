@@ -26,7 +26,9 @@ use anyhow::{bail, ensure, Context, Result};
 use sha2::{Digest, Sha256};
 
 use super::backup_restore::derive_source_db;
-use super::backup_rotation::{ago, label, newest, rename_rotation, set_schedule, Schedule};
+use super::backup_rotation::{
+    ago, canon, label, newest, rename_rotation, rotation_name, set_schedule, Schedule,
+};
 use super::sync_daemon::{ctl, linger_note, quoted, ENV};
 use crate::args::BackupDaemonAct;
 use crate::config;
@@ -161,19 +163,6 @@ fn dir() -> Result<PathBuf> {
         .join("systemd/user"))
 }
 
-/// A file or directory as the units name it: a symlink's target. One gone
-/// since is named by its directory's, so it still matches.
-fn canon(p: &Path) -> PathBuf {
-    let in_dir = || {
-        let dir = std::fs::canonicalize(p.parent()?.to_str().filter(|d| !d.is_empty())?).ok()?;
-        Some(dir.join(p.file_name()?))
-    };
-    (std::fs::canonicalize(p).ok())
-        .or_else(in_dir)
-        .or_else(|| std::path::absolute(p).ok())
-        .unwrap_or_else(|| p.into())
-}
-
 /// The databases `--db` names, one or a list (da-bw7ur); with none, the
 /// one datum opens by default.
 fn each(cli_db: Option<&str>) -> Result<Vec<Option<&str>>> {
@@ -248,8 +237,7 @@ fn planned(
         true => (None, "every database".to_string()),
         false => {
             let db = canon(&config::locate_db(cli_db).context("no data directory")?);
-            // The name a run by hand gives, so it keeps the rotation it began.
-            let source = config::active_db_name(cli_db).unwrap_or_else(|| db.display().to_string());
+            let source = rotation_name(cli_db, &db);
             (Some(db), source)
         }
     };

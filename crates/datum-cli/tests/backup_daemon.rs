@@ -802,6 +802,43 @@ fn the_step_reads_its_period_from_dir() {
     assert_eq!(restored["inserted"], listed["backups"][0]["entry_count"]);
 }
 
+/// A step run by hand with the relative `--db` the rotation was begun with
+/// takes it: `--auto` keys it by the file's absolute path, which `rel.db`
+/// and `./rel.db` name too (da-sqsfy).
+#[test]
+fn a_relative_db_steps_the_rotation_it_began() {
+    let h = Home::new();
+    let work = h.dir("work/sub");
+    let bk = h.dir("bk");
+    let at_work = |args: &[&str]| {
+        let out = (h.command(env!("CARGO_BIN_EXE_datum")).current_dir(&work))
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    at_work(&["--db", "rel.db", "moment", "coffee"]);
+    at_work(&["--db", "rel.db", "backup", "--to", &bk, "--auto"]);
+    for db in ["rel.db", "./rel.db"] {
+        let took: serde_json::Value = serde_json::from_str(&at_work(&[
+            "--db", db, "db", "backup", "--to", &bk, "--json",
+        ]))
+        .unwrap();
+        assert!(took.get("slot").is_some(), "{took}");
+    }
+
+    let file = format!("{work}/rel.db");
+    let index: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(format!("{bk}/rel/index.json")).unwrap())
+            .unwrap();
+    let keys: Vec<_> = index["dbs"].as_object().unwrap().keys().collect();
+    assert_eq!(keys, [&file], "{index}");
+    let backups = index["dbs"][&file]["backups"].as_array().unwrap();
+    assert_eq!(backups.len(), 1, "{index}");
+    assert_eq!(backups[0]["source_db"], file.as_str(), "{index}");
+}
+
 /// A unit installed before the step read DIR runs `--to DIR --every D`,
 /// which now installs a timer and would take no backup again. Run by
 /// systemd it rewrites itself to the step, takes the step, and leaves its

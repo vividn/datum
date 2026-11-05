@@ -28,7 +28,7 @@ use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::backup_restore::{create_private_file, derive_source_db, write_jsonl_gz, BackupHeader};
+use super::backup_restore::{create_private_file, write_jsonl_gz, BackupHeader};
 use crate::args::{BackupRotationArgs, RotationAction, ShowFlag};
 
 #[cfg(feature = "net")]
@@ -135,7 +135,8 @@ pub fn cmd_backup_rotation(args: BackupRotationArgs, cli_db: Option<&str>, db: &
             rotate_all(Path::new(dir), now, &mut failed)?
         }
         RotationAction::To(dir) => {
-            let source_db = derive_source_db(cli_db);
+            let file = crate::config::locate_db(cli_db).context("no data directory")?;
+            let source_db = rotation_name(cli_db, &file);
             rotate(db, Path::new(dir), &source_db, None, now)?
         }
         RotationAction::List(dir) => list(Path::new(dir), now)?,
@@ -351,6 +352,26 @@ fn rotate(
         "removed": removed,
     });
     Ok((doc, text))
+}
+
+/// A file or directory as the units name it: a symlink's target. One gone
+/// since is named by its directory's, so it still matches.
+pub(crate) fn canon(p: &Path) -> PathBuf {
+    let in_dir = || {
+        let dir = std::fs::canonicalize(p.parent()?.to_str().filter(|d| !d.is_empty())?).ok()?;
+        Some(dir.join(p.file_name()?))
+    };
+    (std::fs::canonicalize(p).ok())
+        .or_else(in_dir)
+        .or_else(|| std::path::absolute(p).ok())
+        .unwrap_or_else(|| p.into())
+}
+
+/// What a rotation knows the database `cli_db` names by, which a step run by
+/// hand gives too, so it keeps the rotation it began (da-sqsfy): its registry
+/// name, or `db`, its file, as the units name it, however `--db` spelled it.
+pub(crate) fn rotation_name(cli_db: Option<&str>, db: &Path) -> String {
+    crate::config::active_db_name(cli_db).unwrap_or_else(|| canon(db).display().to_string())
 }
 
 /// What a db's backup files are named by, and its backup daemon's units: a
