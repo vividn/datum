@@ -377,6 +377,43 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 	);
 });
 
+// da-2chdp, vividn, 2026-11-05: «nowview, game (should be called game widget) and collect widget». A lesson's game
+// is the `game` kind, its pane named «game widget»; a layout saved while the game was the `tutorial` kind's still
+// runs its game.
+test('a lesson’s game is a pane named «game widget» that runs a round; a tab saved with the old tutorial game pane still runs it', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			const pane = page.locator('[data-pane="moment-lesson"]');
+			/** The moment tab's game pane's kind and title, and a round played in it to its score. */
+			const round = async () => {
+				await page.locator('.root-bar [role="tab"]', { hasText: /^moment$/ }).click();
+				await pane.locator('.game').waitFor();
+				const kind = await page.locator('.host:has(> [data-pane="moment-lesson"])').getAttribute('data-widget');
+				const title = await pane.getAttribute('data-title');
+				await pane.getByRole('button', { name: 'Start', exact: true }).click();
+				await pane.getByRole('button', { name: 'End now', exact: true }).waitFor();
+				await app.clock.forward(1000);
+				await pane.getByRole('button', { name: 'End now', exact: true }).click();
+				await pane.locator('.game[data-phase="done"][aria-busy="false"] .result').waitFor();
+				await pane.getByRole('button', { name: 'Reset', exact: true }).click();
+				await pane.getByRole('button', { name: 'Start', exact: true }).waitFor();
+				return [kind, title];
+			};
+			assert.deepEqual(await round(), ['game', 'game widget']);
+
+			// The tab as a layout saved before the game was its own kind: the game pane the `tutorial` kind's.
+			const old = await page.evaluate(() => JSON.parse(JSON.stringify(window.datum.layouts.kitLayout('moment')).replaceAll('"kind":"game"', '"kind":"tutorial"')));
+			assert.equal(JSON.stringify(old).match(/"kind":"tutorial"/g).length, 3, 'the game pane is the tutorial kind again');
+			await page.evaluate((l) => window.datum.layouts.saveLayout(l), old);
+			await app.reload();
+			assert.deepEqual(await round(), ['tutorial', 'tutorial']);
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...PHONE, query: '?db=tutorial' }
+	);
+});
+
 // da-uzyih.4882, vividn, 2026-10-27 18:22: «the fields on the other tutorial
 // pages shoudl also be IGNORED after the game ends, and TRACKED when it
 // begins». Each game is played twice, ended by its time and by «End now»: its
@@ -706,7 +743,7 @@ test('each game reads title and shape, nowview, game, fields widget, in every ph
 			const { page } = app;
 			/** The tab's parts top to bottom, and whether any of the lesson is drawn above its game. */
 			const parts = (tab) =>
-				page.locator(`[data-pane="${tab}-lesson"] .tutorial`).evaluate((root, tab) => {
+				page.locator(`[data-pane="${tab}-lesson"] .game-widget`).evaluate((root, tab) => {
 					const box = (el) => el && el.getBoundingClientRect();
 					const pane = (part) => document.querySelector(`[data-pane="${tab}-${part}"]`);
 					const game = root.querySelector('.game');
@@ -722,7 +759,7 @@ test('each game reads title and shape, nowview, game, fields widget, in every ph
 						.map((el) => el.outerHTML.slice(0, 60));
 					/** How far each pane under the about is scrolled. */
 					const scrolled = ['lesson', 'fields'].map((part) => {
-						let scroller = pane(part).querySelector('.tutorial');
+						let scroller = pane(part).querySelector('.game-widget, .tutorial');
 						while (scroller && getComputedStyle(scroller).overflowY === 'visible') scroller = scroller.parentElement;
 						return scroller.scrollTop;
 					});

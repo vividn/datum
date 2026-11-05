@@ -79,6 +79,7 @@ import KitWidget from './KitWidget.svelte';
 import SettingsWidget from './SettingsWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
 import TutorialWidget from './TutorialWidget.svelte';
+import GameWidget from './GameWidget.svelte';
 import WelcomeWidget from './WelcomeWidget.svelte';
 
 export interface WidgetKind {
@@ -692,11 +693,20 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('tutorial', 'tutorial', { lesson: 'intro' }),
 		component: TutorialWidget,
 		help: [
-			'A lesson of the tutorial: its game, in a box with Start, «Reset» once it is over, and its fields; or, over a game\'s nowview, its title and what its kind of data is.',
+			'A lesson of the tutorial: its text, or a game\'s fields; over a game\'s nowview, its title and what its kind of data is.',
 			'The Introduction says how to go back to your own database, datum.'
 		].join('\n'),
 		db: TUTORIAL_DB,
 		legible: ({ part }) => (part === 'fields' ? FIELDS_LEGIBLE : { width: 200, height: 100 })
+	},
+	// A lesson's game (da-2chdp, vividn, 2026-11-05: «game (should be called
+	// game widget)»), in the tutorial's database alone, as its lesson is.
+	game: {
+		meta: meta('game', 'game widget', { lesson: 'moment' }),
+		component: GameWidget,
+		help: 'A lesson\'s game, in a box with Start, «End now» while a round runs, and its score and «Reset» once it is over.',
+		db: TUTORIAL_DB,
+		legible: { width: 200, height: 100 }
 	},
 	// A widget a KIT shipped (da-gh37k): `settings` name the kit and its
 	// widget, whose command and row action are in the kit's own entry in

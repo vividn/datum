@@ -947,7 +947,7 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		const { DEBUG_DB, DEBUG_LAYOUT, DEBUG_LAYOUT_TREE, BUILTIN_NAMES, LESSONS, TUTORIAL_DB, TUTORIAL_LAYOUTS } =
 			await import('../src/lib/layout/defaults.ts');
 		const gated = Object.keys(KINDS).filter((kind) => KINDS[kind].db);
-		assert.deepEqual(gated, ['debug', 'seed', 'tutorial'], 'a new gated kind wants its line here');
+		assert.deepEqual(gated, ['debug', 'seed', 'tutorial', 'game'], 'a new gated kind wants its line here');
 		for (const kind of gated) {
 			assert.ok(!PICKABLE.includes(kind), `${kind} is gated and still in PICKABLE`);
 			assert.ok(!BUILTIN_NAMES.includes(kind), `${kind} is gated and still has a built-in layout`);
@@ -967,17 +967,22 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		assert.ok(isCanonical(DEBUG_LAYOUT_TREE), 'the shipped DEBUG tree is not canonical');
 		// The tutorial's tabs (da-6cvrd): one per lesson, in order, each its
 		// lesson's widget once, wherever its split puts it (a nowview beside
-		// it, da-6xeqy), and a game's about over the nowview and its fields under
-		// it (da-uzyih.4908),
+		// it, da-6xeqy), and a game's about over the nowview, its game the game
+		// widget (da-2chdp), and its fields under it (da-uzyih.4908),
 		// none a built-in's name.
 		const lessonsIn = (node) =>
-			!node || typeof node !== 'object' ? [] : node.kind === 'tutorial' ? [node.settings] : Object.values(node).flatMap(lessonsIn);
+			!node || typeof node !== 'object'
+				? []
+				: ['tutorial', 'game'].includes(node.kind)
+					? [{ kind: node.kind, ...node.settings }]
+					: Object.values(node).flatMap(lessonsIn);
 		assert.deepEqual(TUTORIAL_LAYOUTS.map((l) => l.name), LESSONS.map((l) => l.name));
 		for (const tree of TUTORIAL_LAYOUTS) {
 			assert.ok(isCanonical(tree), `the tutorial's ${tree.name} is not canonical`);
 			assert.ok(!BUILTIN_NAMES.includes(tree.name), `${tree.name} shadows a built-in`);
 			const game = ['moment', 'on-off', 'switch'].includes(tree.name);
-			const lessons = game ? [{ lesson: tree.name, part: 'about' }, { lesson: tree.name }, { lesson: tree.name, part: 'fields' }] : [{ lesson: tree.name }];
+			const lesson = { kind: 'tutorial', lesson: tree.name };
+			const lessons = game ? [{ ...lesson, part: 'about' }, { kind: 'game', lesson: tree.name }, { ...lesson, part: 'fields' }] : [lesson];
 			assert.deepEqual(lessonsIn(tree.root), lessons);
 		}
 	});

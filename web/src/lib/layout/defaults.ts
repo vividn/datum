@@ -484,13 +484,13 @@ const withNowview = (name: string): Layout => ({
 		split(`${name}-split`, 'column', [1 / 3, 1 / 6, 1 / 4, 1 / 4], [
 			widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }),
 			widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
-			widgetPane(`${name}-lesson`, 'tutorial', { lesson: name }),
+			widgetPane(`${name}-lesson`, 'game', { lesson: name }),
 			widgetPane(`${name}-fields`, 'tutorial', { lesson: name, part: 'fields' })
 		])
 	)
 });
 
-/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, four panes (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the switch lesson's, da-6xeqy). */
+/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, four panes, the game the game widget's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the switch lesson's, da-6xeqy). */
 export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map(({ name }) =>
 	name === 'moment' || name === 'on-off' || name === 'switch' ? withNowview(name) : only(name, 'tutorial', { lesson: name })
 );

@@ -26,7 +26,9 @@
 	title and what its shape of data is (`part: 'about'`), short enough for
 	its third of the tab («it doesn't need to describe the game like this.
 	Instead it should be about what occur data is»; his whole words are
-	docs/basics.md), and its way on; the nowview; the game; and its fields
+	docs/basics.md), and its way on; the nowview; the game, the game widget
+	(GameWidget.svelte, da-2chdp), which this kind still draws for a lesson
+	with fields and no part, as a tab saved before that kind did; and its fields
 	with Undo (`part: 'fields'`, LessonFields.svelte), the two sharing the
 	round (`roundOf`).
 -->
@@ -38,10 +40,8 @@
 	import { lessonNamed } from '#lib/tutorial.ts';
 	import { LESSONS, type Lesson } from './defaults.js';
 	import { open, resetTutorial } from './shell.js';
+	import GameWidget from './GameWidget.svelte';
 	import LessonFields from './LessonFields.svelte';
-	import OccurLesson from './OccurLesson.svelte';
-	import SwitchLesson from './SwitchLesson.svelte';
-	import OnOffLesson from './OnOffLesson.svelte';
 
 	let { settings = {} }: { settings?: Record<string, unknown> } = $props();
 
@@ -105,8 +105,11 @@
 	}
 </script>
 
+{#if lesson.fields.length && !part}
+	<GameWidget {settings} />
+{:else}
 <Pane title={lesson.title}>
-	<div class="tutorial" class:fill={lesson.fields.length && part !== 'about'}>
+	<div class="tutorial" class:fill={part === 'fields'}>
 		{#if part === 'about'}
 			<!-- Short enough for its third of the tab; vividn's whole words on each shape are docs/basics.md. -->
 			<h1 class="title">{lesson.title}</h1>
@@ -163,20 +166,8 @@
 					<li>Leave by the tab's name: Accept, Save layout (every device), or Discard changes.</li>
 				</ul>
 			{/if}
-		{:else}
-			<!-- The game and its fields alone: the title and what the shape is stand over the nowview (da-uzyih.4908). -->
-			{#if lesson.name === 'moment'}
-				<OccurLesson fields={lesson.fields} />
-			{:else if lesson.name === 'switch'}
-				<SwitchLesson fields={lesson.fields} />
-			{:else if lesson.name === 'on-off'}
-				<OnOffLesson fields={lesson.fields} />
-			{:else}
-				<h1>{lesson.title}</h1>
-				<p>This lesson is coming soon.</p>
-			{/if}
 		{/if}
-		{#if next && !(lesson.fields.length && part !== 'about')}
+		{#if next && part !== 'fields'}
 			<button type="button" class="command next" use:act={'open'} onclick={() => void open(next.name)}
 				>Next: {label(next)}</button
 			>
@@ -187,6 +178,7 @@
 		{/if}
 	</div>
 </Pane>
+{/if}
 
 <style>
 	/* Clear of the frame's name over the pane's top edge: the game is the first thing under it. */
@@ -196,7 +188,7 @@
 		line-height: 1.45;
 	}
 
-	/* A game and its fields take their pane's height and no more, so each is wholly in sight (da-uzyih.4908): its
+	/* A game's fields take their pane's height and no more, so they are wholly in sight (da-uzyih.4908): its
 	   parts are sized from it (`cqb`). */
 	.fill {
 		box-sizing: border-box;
