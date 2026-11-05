@@ -163,8 +163,9 @@ fn a_sync_waits_for_no_relay_and_its_member_keeps_the_one_it_held() {
 }
 
 /// A relay iroh's probe finds, so it becomes this copy's home, and that
-/// holds every connection to it open unanswered, or refuses each with a 500.
-fn stub_relay(hold: bool) -> String {
+/// refuses its first `refused` connections with a 500 and holds every later
+/// one open unanswered.
+fn stub_relay(mut refused: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {
@@ -174,11 +175,14 @@ fn stub_relay(hold: bool) -> String {
             let read = stream.read(&mut request).unwrap_or(0);
             let reply = match request[..read].starts_with(b"GET /ping") {
                 true => "200 OK",
-                false if hold => {
+                false if refused == 0 => {
                     held.push(stream);
                     continue;
                 }
-                false => "500 Internal Server Error",
+                false => {
+                    refused -= 1;
+                    "500 Internal Server Error"
+                }
             };
             let reply =
                 format!("HTTP/1.1 {reply}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
@@ -206,10 +210,12 @@ fn offline_under_relay(url: &str) -> String {
 
 /// A dial goes before the relay is up (da-75rbi), so a relay not connected
 /// yet is no sign it is down: either side may be off, where it said this
-/// copy's relay was the cause (da-2vx8s). Only a relay that failed is.
+/// copy's relay was the cause (da-2vx8s). Only a relay that failed is, its
+/// retry still connecting included, which iroh shows with no error
+/// (da-y0x4d): so the second relay fails once and never answers again.
 #[test]
 fn a_relay_still_connecting_blames_neither_side_and_one_that_failed_this_one() {
-    let said = offline_under_relay(&stub_relay(true));
+    let said = offline_under_relay(&stub_relay(0));
     for words in [
         "still connecting to its relay",
         "`datum sync daemon status`",
@@ -217,7 +223,7 @@ fn a_relay_still_connecting_blames_neither_side_and_one_that_failed_this_one() {
         assert!(said.contains(words), "{words}: {said}");
     }
 
-    let said = offline_under_relay(&stub_relay(false));
+    let said = offline_under_relay(&stub_relay(1));
     assert!(said.contains("not connected to its relay"), "{said}");
     assert!(!said.contains("`datum sync daemon status`"), "{said}");
 }

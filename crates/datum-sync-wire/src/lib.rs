@@ -91,7 +91,7 @@
 //!   round carries and the rows [`Store::held`] returns are datum-core's,
 //!   opaque here.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
@@ -1721,6 +1721,8 @@ struct Keeper {
     /// Bound with relays to reach: its home relay's status, empty, says none
     /// was reached and not that there are none (da-bwi3a).
     relayed: bool,
+    /// Each home relay whose last attempt failed, until it connects.
+    relay_failed: BTreeSet<String>,
 }
 
 /// Every endpoint's [`Keeper`], by its id. One is never removed: a running
@@ -1991,7 +1993,12 @@ fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
     let why = match relays.first() {
         Some(r) if !relays.iter().any(|r| r.is_connected()) => {
             let url = r.url();
-            if relays.iter().all(|r| r.last_error().is_some()) {
+            let failed = keeper(&ep.id().to_string(), |k| {
+                relays.iter().all(|r| {
+                    r.last_error().is_some() || k.relay_failed.contains(&r.url().to_string())
+                })
+            });
+            if failed {
                 format!("could not reach {id}: this copy is not connected to its relay ({url}); is it online?")
             } else {
                 format!(
@@ -2389,7 +2396,34 @@ pub async fn bind_now(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
         .alpns(vec![ALPN.to_vec(), DIFF.to_vec()])
         .bind()
         .await?;
-    keeper(&ep.id().to_string(), |k| k.relayed = relayed(net));
+    keeper(&ep.id().to_string(), |k| {
+        k.relayed = relayed(net);
+        k.relay_failed.clear();
+    });
+    // A retry's dial clears the error iroh shows, so a relay failing over and
+    // over reads, for a moment each time, as one still connecting (da-y0x4d).
+    // Detached: it reads the status as it is now, then each change, and ends
+    // with the watch, once the last clone of the endpoint is dropped.
+    let (id, mut relays) = (ep.id().to_string(), ep.home_relay_status());
+    drop(n0_future::task::spawn(async move {
+        let mut now = relays.get();
+        loop {
+            keeper(&id, |k| {
+                for r in &now {
+                    let url = r.url().to_string();
+                    match (r.is_connected(), r.last_error()) {
+                        (true, _) => drop(k.relay_failed.remove(&url)),
+                        (false, Some(_)) => drop(k.relay_failed.insert(url)),
+                        _ => {}
+                    }
+                }
+            });
+            match relays.updated().await {
+                Ok(next) => now = next,
+                Err(_) => break,
+            }
+        }
+    }));
     Ok(ep)
 }
 
