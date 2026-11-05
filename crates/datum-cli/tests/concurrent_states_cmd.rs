@@ -385,8 +385,8 @@ fn update_refuses_a_sentinel_it_sets_but_edits_an_old_row() {
 /// da-cktfm: a state in brackets that is not JSON was split on its commas
 /// with the brackets kept (`[a,IGNORED]` → `["[a","IGNORED]"]`), which also
 /// slipped a sentinel past the refusal above. It is refused on every
-/// spelling of a state, naming the JSON form; the JSON forms and a data
-/// key's bracket text stand.
+/// spelling of a state, naming the JSON form; the JSON forms stand, and a
+/// data key reads it as v2 did.
 #[test]
 fn a_bracketed_state_that_is_not_json_is_refused() {
     let db = fresh_db();
@@ -424,5 +424,6 @@ fn a_bracketed_state_that_is_not_json_is_refused() {
     assert!(states.contains(&Some(json!(["a", "b"]))), "{states:?}");
     assert!(states.contains(&Some(json!(["c", "d"]))), "{states:?}");
     let memo = datum_core::test_util::logged_entries(&db, "memo");
-    assert_eq!(memo[0].data.as_ref().unwrap()["tags"], json!(["[a", "b]"]));
+    // A data key reads it as v2's relaxed JSON did (da-2wrzv).
+    assert_eq!(memo[0].data.as_ref().unwrap()["tags"], json!(["a", "b"]));
 }

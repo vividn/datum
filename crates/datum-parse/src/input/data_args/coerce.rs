@@ -166,7 +166,7 @@ pub(super) fn infer_typed_value(
     }
     if compat.literal {
         // Quotes still escape: `a='"b c"'` names the key `b c`.
-        let name = match json(value) {
+        let name = match json(value, false) {
             Some(Value::String(s)) => s,
             _ => value.to_string(),
         };
@@ -331,7 +331,7 @@ fn coerce_list(
     value: &str,
     compat: Compat,
 ) -> std::result::Result<Vec<Value>, String> {
-    let items: Vec<String> = match value.starts_with('[').then(|| json(value)) {
+    let items: Vec<String> = match value.starts_with('[').then(|| json(value, false)) {
         Some(Some(Value::Array(a))) => a
             .into_iter()
             .map(|v| match v {
@@ -426,9 +426,9 @@ fn resolve_date_arg(d: &DateArg, base: Option<NaiveDateTime>) -> Option<chrono::
 }
 
 /// Port of datum's `inferType`: turn a raw string into the most specific
-/// JSON shape we can. Of datum's relaxed-JSON we read the single-quoted
-/// string and the trailing comma (no dependency for them); values that aren't JSON in that sense
-/// or one of the recognised literals fall through unchanged.
+/// JSON shape we can. JSON is read as datum's relaxed-JSON read it, bare
+/// words in brackets and braces included (no dependency for it); values that
+/// aren't JSON in that sense or one of the recognized literals fall through unchanged.
 pub fn infer_type(value: &str) -> Option<Value> {
     if value.is_empty() {
         return None;
@@ -476,7 +476,7 @@ pub fn infer_type(value: &str) -> Option<Value> {
 
     // JSON, relaxed as v2 read it. A quoted `"ref://…"` is a literal,
     // which stores as `str://ref://…` (da-s5k2s).
-    if let Some(v) = json(value) {
+    if let Some(v) = json(value, true) {
         return Some(match v {
             Value::String(s) if s.starts_with(REF_MARK) => Value::String(format!("{STR_MARK}{s}")),
             v => v,
@@ -513,51 +513,119 @@ pub fn infer_type(value: &str) -> Option<Value> {
     Some(Value::String(value.to_string()))
 }
 
-/// Strict JSON — numbers, arrays, objects, quoted strings — or the same
-/// with single-quoted strings and a trailing comma in brackets, as v2's
-/// relaxed-json read them (da-qzfnb, da-igesg).
-fn json(value: &str) -> Option<Value> {
-    serde_json::from_str(value)
-        .ok()
-        .or_else(|| relaxed_json(value))
+/// Strict JSON — numbers, arrays, objects, quoted strings — or JSON as v2's
+/// relaxed-json read it: single-quoted strings and a trailing comma in
+/// brackets always (da-qzfnb, da-igesg), and bare words and comments where
+/// `loose` (da-2wrzv), which a list-typed key and a state are not.
+fn json(value: &str, loose: bool) -> Option<Value> {
+    serde_json::from_str(value).ok().or_else(|| {
+        let (v, read_loose) = relaxed_json(value)?;
+        (loose || !read_loose).then_some(v)
+    })
 }
 
-/// `value` as JSON once each single-quoted string in it is double-quoted
-/// and a trailing comma before `]` or `}` is dropped, as relaxed-json and
-/// JSON5 read it: `'a,b'` → «a,b», `['a', 'b',]` → `["a","b"]`, `[8,]` →
-/// `[8]`. Inside a string, `\'` is a quote and `"` needs no escape.
-/// `None` when the result is not JSON (`'unbalanced`, `'`, `it's`, `[,]`).
-fn relaxed_json(value: &str) -> Option<Value> {
-    if !value.contains(['\'', ',']) {
+/// A value starting with `[`, `{` or `'` as relaxed-json's `RJSON.parse`
+/// read it, its `transform` then JSON: a single-quoted string is
+/// double-quoted (`'a,b'` → «a,b»; `\'` is a quote, `"` needs no escape), a
+/// comment is whitespace, a comma before `]` or `}` is dropped where a value
+/// came before it (`[8,]` → `[8]`; not `[,]` or `[8,,]`), and a bare word, a
+/// run of `$a-zA-Z0-9_-+.*?!|&%^/#\` that starts no number and no `true`,
+/// `false` or `null`, is a string (`[a, null, 34]` → `["a",null,34]`). With
+/// whether it read a bare word or a comment. `None` when the result is not
+/// JSON (`'unbalanced`, `[3d]`, `[café]`).
+fn relaxed_json(value: &str) -> Option<(Value, bool)> {
+    if !value.trim_start().starts_with(['[', '{', '\'']) {
         return None;
     }
-    let mut out = String::with_capacity(value.len() + 2);
-    let mut quote = None;
-    let mut chars = value.chars();
-    while let Some(c) = chars.next() {
-        match (quote, c) {
-            (Some('\''), '\\') => match chars.next()? {
-                '\'' => out.push('\''),
+    let word = |c: char| c.is_ascii_alphanumeric() || "$_-+.*?!|&%^/#\\".contains(c);
+    let (mut out, mut loose, mut rest) = (String::with_capacity(value.len() + 8), false, value);
+    // The first character of the last token, and where the last comma was
+    // written when a token other than `[` or `{` came before it.
+    let (mut last, mut comma) = (None, None);
+    while let Some(c) = rest.chars().next() {
+        let comment = match rest.get(..2) {
+            Some("/*") => rest.find("*/").map(|i| i + 2),
+            Some("//") => rest.find(['\n', '\r']).map(|i| i + 1),
+            _ => None,
+        };
+        let space = rest.len() - rest.trim_start().len();
+        if let Some(n) = comment.or((space > 0).then_some(space)) {
+            loose |= comment.is_some();
+            out.push(' ');
+            rest = &rest[n..];
+            continue;
+        }
+        let keyword = ["true", "false", "null"]
+            .into_iter()
+            .find(|k| rest.starts_with(k));
+        let (n, text) = match c {
+            '[' | '{' | ']' | '}' | ',' | ':' => (1, c.to_string()),
+            '"' | '\'' => quoted(rest)?,
+            _ => match keyword.map(str::len).or_else(|| number(rest)) {
+                Some(n) => (n, rest[..n].to_string()),
+                None => {
+                    let n = rest.len() - rest.trim_start_matches(word).len();
+                    loose = true;
+                    (
+                        n,
+                        format!(
+                            "\"{}\"",
+                            rest.get(..n)
+                                .filter(|w| !w.is_empty())?
+                                .replace('\\', "\\\\")
+                        ),
+                    )
+                }
+            },
+        };
+        match (c, last, comma) {
+            (']' | '}', Some(','), Some(i)) => out.replace_range(i..=i, " "),
+            (',', Some(l), _) if l != '[' && l != '{' => comma = Some(out.len()),
+            (',', ..) => comma = None,
+            _ => {}
+        }
+        out.push_str(&text);
+        last = Some(c);
+        rest = &rest[n..];
+    }
+    Some((serde_json::from_str(&out).ok()?, loose))
+}
+
+/// The string at the head of `s`, in double or single quotes, as its length
+/// and as JSON: in single quotes `\'` is a quote and `"` is escaped.
+fn quoted(s: &str) -> Option<(usize, String)> {
+    let q = s.chars().next()?;
+    let mut out = String::from('"');
+    let mut chars = s.char_indices().skip(1);
+    while let Some((i, c)) = chars.next() {
+        match c {
+            _ if c == q => return Some((i + 1, out + "\"")),
+            '\\' => match chars.next()?.1 {
+                '\'' if q == '\'' => out.push('\''),
                 e => out.extend(['\\', e]),
             },
-            (Some(_), '\\') => out.extend(['\\', chars.next()?]),
-            (Some('\''), '"') => out.push_str("\\\""),
-            (Some(q), c) if c == q => {
-                quote = None;
-                out.push('"');
-            }
-            (None, '"' | '\'') => {
-                quote = Some(c);
-                out.push('"');
-            }
-            // A trailing comma, not one standing alone (`[,]`, `[8,,]`).
-            (None, ',')
-                if chars.as_str().trim_start().starts_with([']', '}'])
-                    && !out.trim_end().ends_with(['[', '{', ',']) => {}
-            _ => out.push(c),
+            '"' => out.push_str("\\\""),
+            c => out.push(c),
         }
     }
-    serde_json::from_str(&out).ok()
+    None
+}
+
+/// The length of the number at the head of `s` as relaxed-json lexes one,
+/// `-?\d+(\.\d+)?([eE][+-]?\d+)?`.
+fn number(s: &str) -> Option<usize> {
+    let digits = |s: &str| s.len() - s.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let sign = usize::from(s.starts_with('-'));
+    let mut n = sign + Some(digits(&s[sign..])).filter(|&d| d > 0)?;
+    if let Some(d) = s[n..].strip_prefix('.').map(digits).filter(|&d| d > 0) {
+        n += 1 + d;
+    }
+    if let Some(e) = s[n..].strip_prefix(['e', 'E']) {
+        let sign = usize::from(e.starts_with(['+', '-']));
+        let d = digits(&e[sign..]);
+        n += if d > 0 { 1 + sign + d } else { 0 };
+    }
+    Some(n)
 }
 
 /// da-cktfm: a state in brackets that is not JSON (`[a,b]`) would be split
@@ -566,7 +634,7 @@ fn relaxed_json(value: &str) -> Option<Value> {
 /// Refused as a typed list key's bracket text is, in its words.
 pub fn bracket_state_error(key: &str, value: &str) -> Option<ParseError> {
     // Any comma: a switch splits `[a, b]` too, where the comma rule would not.
-    if !value.starts_with('[') || !value.contains(',') || json(value).is_some() {
+    if !value.starts_with('[') || !value.contains(',') || json(value, false).is_some() {
         return None;
     }
     let items: Vec<&str> = value
@@ -860,10 +928,69 @@ mod tests {
             (r#"["a,]"]"#, json!(["a,]"])),
             ("[,]", json!(["[", "]"])),
             ("[8,,]", json!(["[8", null, "]"])),
-            ("[a,b]", json!(["[a", "b]"])),
+            ("[a,b]", json!(["a", "b"])),
         ] {
             assert_eq!(infer_type(typed), Some(want), "{typed}");
         }
+    }
+
+    /// da-2wrzv: a bracket or brace value that isn't strict JSON is read as
+    /// v2's relaxed-json read it, bare words as strings, each case of v2's
+    /// `inferType.test.ts`; what it cannot read either stays as before.
+    #[test]
+    fn infer_type_bare_words_in_brackets() {
+        for (typed, want) in [
+            ("[3, 4, 5]", json!([3, 4, 5])),
+            ("[a, b ,c]", json!(["a", "b", "c"])),
+            ("[calm,steady]", json!(["calm", "steady"])),
+            (r#"["calm","steady"]"#, json!(["calm", "steady"])),
+            (
+                "[a, 3, [mixed, [2], nested]]",
+                json!(["a", 3, ["mixed", [2], "nested"]]),
+            ),
+            ("[a, null, 34]", json!(["a", null, 34])),
+            ("{a: bcd, d: 3}", json!({"a": "bcd", "d": 3})),
+            (
+                "{turtles: {all: {the: {way: down}}}}",
+                json!({"turtles": {"all": {"the": {"way": "down"}}}}),
+            ),
+            (
+                "{flat: {earth: [or, 1, turtle, shell]}}",
+                json!({"flat": {"earth": ["or", 1, "turtle", "shell"]}}),
+            ),
+            ("[a,]", json!(["a"])),
+            (
+                "[-x, +1, a.b, c\\d, 1.5e3]",
+                json!(["-x", "+1", "a.b", "c\\d", 1500.0]),
+            ),
+            ("[a /* note */, b]", json!(["a", "b"])),
+            ("[a]", json!(["a"])),
+            (
+                "{what: even is this)) ]}",
+                json!("{what: even is this)) ]}"),
+            ),
+            ("NAN/null", json!("NAN/null")),
+            ("[3d]", json!("[3d]")),
+            ("[nullable]", json!("[nullable]")),
+            ("[café]", json!("[café]")),
+            ("[5pm, 6pm]", json!("[5pm, 6pm]")),
+        ] {
+            assert_eq!(infer_type(typed), Some(want), "{typed}");
+        }
+    }
+
+    /// A list-typed key and a state still refuse the bare-word bracket form
+    /// (da-igesg, da-cktfm) until vividn rules on them; its quoted and
+    /// trailing-comma forms they read.
+    #[test]
+    fn list_keys_and_states_keep_refusing_bare_words() {
+        assert!(coerce_list(KeyType::StringList, "[a,b]", Compat::default()).is_err());
+        assert_eq!(
+            coerce_list(KeyType::StringList, "['a','b',]", Compat::default()),
+            Ok(vec![json!("a"), json!("b")])
+        );
+        assert!(bracket_state_error("state", "[a,b]").is_some());
+        assert!(bracket_state_error("state", "['a','b']").is_none());
     }
 
     #[test]

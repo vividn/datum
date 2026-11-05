@@ -303,7 +303,10 @@ splits: `a,b, c` is `["a","b, c"]`. A trailing comma on a value that does
 not otherwise split, and a value of nothing but commas (`,`, `,,`), are
 text too: `Anna,` is `"Anna,"`. An
 item can't hold a glued comma — the bracket form can: `'["a,b", "c"]'`;
-`[]` is the empty array. This departs from v2, where a leading or trailing
+`[]` is the empty array. A bracket or brace value that isn't JSON is read
+as v2's relaxed JSON read it, a bare word a string: `[calm,steady]` is
+`["calm","steady"]` and `{a: [b, 1]}` is `{"a":["b",1]}` (da-2wrzv); a
+list-typed key and a state refuse it. This departs from v2, where a leading or trailing
 comma made the array — a trailing one alone, too — and `,` was `[]`.
 
 ```bash
