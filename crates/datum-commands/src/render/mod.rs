@@ -1798,16 +1798,20 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
             })
             .unwrap_or_default(),
         "verb" => entry.verb.to_string(),
-        other => entry
-            .data
-            .as_ref()
-            .and_then(|v| v.get(other))
-            .map(|v| {
+        // The rest of the columns (`at`, `uid`, `create_time`, …) as an
+        // `--id` renders them (da-noy6z); any other key is a data path.
+        other => datum_core::field_spec::column_value(
+            other,
+            &datum_core::field_spec::InterpolationContext::from_entry(entry),
+        )
+        .or_else(|| {
+            entry.data.as_ref().and_then(|v| v.get(other)).map(|v| {
                 render_extra_value(&datum_core::doc_ref::shown(
                     datum_core::entry::shown_data_value(other, v),
                 ))
             })
-            .unwrap_or_default(),
+        })
+        .unwrap_or_default(),
     }
 }
 

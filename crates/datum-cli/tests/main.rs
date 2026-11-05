@@ -79,6 +79,7 @@ mod fields_cmd;
 mod first_log_spec;
 mod flag_cluster_value;
 mod float_roundtrip;
+mod format_string_columns;
 mod get_cmd;
 mod get_projection;
 mod grep_show_all;

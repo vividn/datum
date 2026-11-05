@@ -319,7 +319,23 @@ pub fn names_time(template: &str) -> bool {
 
 fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
     let key = canonical_key(key);
-    match key {
+    if let Some(v) = column_value(key, ctx) {
+        return v;
+    }
+    if key.starts_with("::") {
+        return record_value(key, ctx)
+            .map(json_to_plain_string)
+            .unwrap_or_default();
+    }
+    lookup_extra_data(ctx.extra_data, key).unwrap_or_default()
+}
+
+/// What `key` names among the entry's own columns, as an id template
+/// renders it, or `None` for a key read from `data` or the record. `-o`
+/// reads the columns through it too (da-noy6z).
+pub fn column_value(key: &str, ctx: &InterpolationContext) -> Option<String> {
+    let key = canonical_key(key);
+    Some(match key {
         "" => String::new(),
         "field" => ctx.field.to_string(),
         "hid" => ctx.hid.to_string(),
@@ -330,7 +346,7 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             // post-pivot; the data-blob path is kept as a fallback for
             // legacy/in-flight entries that haven't been canonicalized yet.
             if let Some(s) = ctx.state {
-                return json_to_plain_string(s);
+                return Some(json_to_plain_string(s));
             }
             lookup_extra_data(ctx.extra_data, "state").unwrap_or_default()
         }
@@ -357,15 +373,12 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             .map(|t| format!("{}c", entry_id::render_stamp(t)))
             .unwrap_or_default(),
         "modify_time" => prefix_when_present(ctx.modify_time.map(entry_id::render_stamp), 'm'),
-        _ if key.starts_with("::") => record_value(key, ctx)
-            .map(json_to_plain_string)
-            .unwrap_or_default(),
         _ => match key.strip_prefix("hid:").map(str::parse::<usize>) {
             Some(Ok(n)) if n >= SHORT_HID_LEN => ctx.hid.chars().take(n).collect(),
             Some(_) => String::new(),
-            None => lookup_extra_data(ctx.extra_data, key).unwrap_or_default(),
+            None => return None,
         },
-    }
+    })
 }
 
 fn prefix_when_present(rendered: Option<String>, marker: char) -> String {
