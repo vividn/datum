@@ -17,11 +17,14 @@ use crate::commands::helpers::{load_registry_opt, registry_of, resolve_prefix_or
 use crate::commands::render_helpers::build_table_contexts;
 use crate::commands::time_bounds::parse_since;
 use crate::commands::watch::{data_version, Poll, Watched};
+use crate::render::colors::{paint, warning_fg, Rgb};
 use crate::render::tail_rows::{tail_rows, TailDocument};
 use crate::render::term_layout::{
     detect_cols, detect_rows, given_rows, is_stdout_tty, row_width, width_given,
 };
-use crate::render::{print_table_with, table_columns_with, TableArgs, TimeMetricCol};
+use crate::render::{
+    format_table_with, table_columns_with, visible_width, TableArgs, TimeMetricCol,
+};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     let json = args.output()?.show == crate::render::Show::Json;
@@ -93,15 +96,7 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         suppress_header: false,
         max_total_width,
     };
-    let now = DatumTime::now();
-    let ctxs = build_table_contexts(&entries, db);
-    print_table_with(
-        &entries,
-        Some(&ctxs),
-        Some(&now),
-        specs.registry.as_ref(),
-        &tbl,
-    );
+    print_tail_table(&entries, db, specs.registry.as_ref(), &tbl);
 
     if let Some(secs) = args.watch {
         let interval = watch_interval(secs);
@@ -369,16 +364,37 @@ fn watch_repaint_loop(
             suppress_header: false,
             max_total_width,
         };
-        let now = DatumTime::now();
-        let ctxs = build_table_contexts(&entries, db);
-        print_table_with(
-            &entries,
-            Some(&ctxs),
-            Some(&now),
-            specs.registry.as_ref(),
-            &tbl,
-        );
+        print_tail_table(&entries, db, specs.registry.as_ref(), &tbl);
     }
+}
+
+/// The tail table, and where it lists entries on both sides of now, a
+/// yellow dotted line between the last past row and the first future one,
+/// as wide as the table (da-99sz4, vividn, 2026-11-05: «in the CLI tail, if
+/// there are entries in the future separate the past and future entries
+/// with a yellow dotted line»). It is drawn, not data: `--show json` and a
+/// `--format` row never carry it. A row is ahead of now as its `_+N` is
+/// (`quick_ordinal_map`), and only a listing by when things happen has a
+/// now in it: a create or modify time is never ahead.
+fn print_tail_table(entries: &[Entry], db: &Db, registry: Option<&SpecRegistry>, tbl: &TableArgs) {
+    let now = DatumTime::now();
+    let ctxs = build_table_contexts(entries, db);
+    let Some(table) = format_table_with(entries, Some(&ctxs), Some(&now), registry, tbl) else {
+        return;
+    };
+    let ahead = |e: &Entry| e.at.as_ref().map_or(e.create_time, |t| t.utc) > now.utc;
+    let by_when = matches!(tbl.metric, TimeMetricCol::Occur | TimeMetricCol::Hybrid);
+    let flip = (1..entries.len()).find(|&i| ahead(&entries[i]) != ahead(&entries[i - 1]));
+    let (Some(flip), true, None) = (flip, by_when, &tbl.output.format_string) else {
+        print!("{table}");
+        return;
+    };
+    // A header, then one line per entry.
+    let mut lines: Vec<String> = table.lines().map(str::to_string).collect();
+    let width = lines.iter().map(|l| visible_width(l)).max().unwrap_or(0);
+    let yellow = warning_fg(Rgb::BLACK).fg();
+    lines.insert(flip + 1, paint(&yellow, &"┈".repeat(width)));
+    println!("{}", lines.join("\n"));
 }
 
 /// SIGWINCH-handling primitives (da-hsqd). The handler runs on the

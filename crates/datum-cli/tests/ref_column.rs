@@ -112,9 +112,13 @@ fn past_refs_count_back_from_now_and_future_ones_forward() {
         assert_eq!(got["docs"][0]["field"], field, "{r}: {got}");
     }
     let tail = datum(&dir, &["tail"]);
-    let rows: Vec<(String, String)> = tail
-        .lines()
+    // Past and future stand either side of the dotted line (da-99sz4).
+    let lines: Vec<&str> = tail.lines().collect();
+    assert!(lines[3].chars().all(|c| c == '┈'), "{tail}");
+    let rows: Vec<(String, String)> = lines
+        .iter()
         .skip(1)
+        .filter(|l| !l.starts_with('┈'))
         .map(|l| {
             let cells: Vec<&str> = l.split_whitespace().collect();
             let field = ["m2", "m1", "p1", "p2"]
