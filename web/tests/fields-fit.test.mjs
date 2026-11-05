@@ -1,4 +1,4 @@
-// The fields widget as it fits a screen, and as it reads on one (da-c7u8):
+// The collect widget as it fits a screen, and as it reads on one (da-c7u8):
 // four tests, each of which draws the whole widget at a size of its own.
 //
 // The five: `fields` (the pure logic, and the widget as it is drawn),

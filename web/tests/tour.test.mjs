@@ -6,7 +6,7 @@
 // So, on a phone and on a desktop, from a first visit's tabs with setup in
 // front: the first field's Save brings collect to the front and rings its
 // button, the nowview and the dayview in that order, each with its sentence;
-// a second field's Save shows none of it. Where a fields widget is on the
+// a second field's Save shows none of it. Where a collect widget is on the
 // page already, the tour stays there.
 
 import test, { before, after, describe } from 'node:test';

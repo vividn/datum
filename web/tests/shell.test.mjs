@@ -706,7 +706,7 @@ describe('the bottom bar', () => {
 			const { page } = app;
 			const echoed = (await app.echoes()).length;
 			const input = page.locator('.prompt-bar input');
-			// Tracked, so the fields widget has a button to press (da-c7u8).
+			// Tracked, so the collect widget has a button to press (da-c7u8).
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			await input.fill('occur coffee');
 			await input.press('Enter');
@@ -799,7 +799,7 @@ describe('the bottom bar', () => {
 			assert.equal(await repl.count(), 1);
 			assert.equal(await repl.locator('input, .line').count(), 0, 'the CLI widget still has a prompt of its own');
 
-			// Tracked, so the fields widget has a button to press (da-c7u8).
+			// Tracked, so the collect widget has a button to press (da-c7u8).
 			await app.run(['setup', 'coffee', '--verb', 'occur']);
 			const docs = await repl.locator('.doc').count();
 			await app.submit('occur coffee');

@@ -183,7 +183,7 @@ describe('a fresh phone', () => {
 	// every pane body shares. So the claim to assert is that ratio, against
 	// a pane that did not ask — not merely "smaller than its neighbour".
 	//
-	// The baseline has to be a plain widget pane. The fields widget draws
+	// The baseline has to be a plain widget pane. The collect widget draws
 	// its own 13px inside its bar, so measuring against it reads 0.89 and
 	// says nothing about the option; the nowview is at the shared 13.6px.
 	test("the tail's type is 0.85 of the rule every other pane body keeps", async () => {

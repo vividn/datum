@@ -1,4 +1,4 @@
-// The pane the fields widget lives in, and the size it keeps.
+// The pane the collect widget lives in, and the size it keeps.
 //
 // The five: `fields` (the pure logic, and the widget as it is drawn),
 // `fields-press` (what a press runs), `fields-fit` (at a screen's size,

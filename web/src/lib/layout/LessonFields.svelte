@@ -6,7 +6,7 @@
 	scores (`roundOf`). A tap that fails is said here (da-uzyih.52).
 -->
 <script lang="ts">
-	import FieldsWidget from '#lib/FieldsWidget.svelte';
+	import CollectWidget from '#lib/CollectWidget.svelte';
 	import type { Lesson } from './defaults.js';
 	import { fields as buttons, ready, standings } from './engine.js';
 	import { roundOf } from './round.js';
@@ -22,7 +22,7 @@
 	<div class="inputs">
 		<!-- At rest the switch game's cue points at its field. -->
 		<div class="controls" class:cued={lesson.name === 'switch' && $phase === 'neutral'}>
-			<FieldsWidget fields={shown} standings={$standings} showIgnored tapLogs disabled={!$ready} onrun={(argv) => round.tap(argv)} onfill={() => {}} />
+			<CollectWidget fields={shown} standings={$standings} showIgnored tapLogs disabled={!$ready} onrun={(argv) => round.tap(argv)} onfill={() => {}} />
 		</div>
 	</div>
 	{#if $failed}<p class="failed">{$failed}</p>{/if}

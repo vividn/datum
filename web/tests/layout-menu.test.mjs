@@ -409,7 +409,7 @@ describe('the menu the title opens', () => {
 					// `mobile` stopped shipping a tab stack in da-hkjp — its
 					// row 3 is a split of fields and a nowview now — so the
 					// stack this is about is BUILT: a nowview added as a
-					// second tab of the fields widget, the shape that layout
+					// second tab of the collect widget, the shape that layout
 					// had. `fields` names the holder of the split; `bar` is
 					// the widget pane inside it.
 					await addTab(page, 'bar', 'nowview');

@@ -1467,7 +1467,7 @@ function app(page, errors, query, clean, internal) {
 			const back = page.locator('.bar.commands button[data-back]');
 			while ((await back.count()) > 0) await back.first().click();
 			// And the bar's line empty: what a test left typed there filters
-			// the fields widget for the next one (#lib/bar.ts's `text`).
+			// the collect widget for the next one (#lib/bar.ts's `text`).
 			const line = page.locator('.prompt-bar input');
 			if ((await line.inputValue()) !== '') await line.fill('');
 			await line.blur();

@@ -1,4 +1,4 @@
-// The fields widget's shared fixtures and drivers (da-c7u8, da-lt0k).
+// The collect widget's shared fixtures and drivers (da-c7u8, da-lt0k).
 //
 // Split out when one `fields.test.mjs` outgrew node's 120 s per-FILE
 // timeout and started taking main's Web job red with it: node counts a

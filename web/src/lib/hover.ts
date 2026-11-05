@@ -836,7 +836,7 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	const timeOf = (e: MouseEvent) => (e.target instanceof Element ? timeAt(e.target, e.clientX, e.clientY) : null);
 
 	/**
-	 * The fields drawn at the height of `e` come first in the fields widget
+	 * The fields drawn at the height of `e` come first in the collect widget
 	 * (da-qu16) — published after the selection, which is what clears them
 	 * again.
 	 */

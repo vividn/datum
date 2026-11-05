@@ -8,7 +8,7 @@
 // text the reader typed and may edit.
 //
 // So: a TYPED line never returns to the box. A command the reader did NOT
-// type — a fields-widget press, the console — says what it ran as a ghost
+// type — a collect-widget press, the console — says what it ran as a ghost
 // where the placeholder goes, dim and fading within about a second, and is
 // never the value. The assertion that carries this file is `inputValue() ===
 // ''` WHILE the ghost is on screen; it is what fails against the old code.

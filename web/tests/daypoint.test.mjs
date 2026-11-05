@@ -656,7 +656,7 @@ describe('a range made in the strip is the page’s one selection', () => {
 	});
 });
 
-// ── the fields widget answers it, as it answers a nowview range ────────
+// ── the collect widget answers it, as it answers a nowview range ────────
 
 describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 	test('the bar filters down to the blocks, and dismissing `start_time=` brings the rest back', async () => {

@@ -237,7 +237,7 @@ describe('a focus nobody clicked', () => {
 	 *
 	 * The prefill this measures used to come from the hold panel's `note`;
 	 * da-e78x6 removed that panel, and a record's press is the same door on
-	 * the same `prefill` store — `line` in FieldsWidget.svelte — so what is
+	 * the same `prefill` store — `line` in CollectWidget.svelte — so what is
 	 * asserted below is unchanged.
 	 */
 	async function prefill(page) {

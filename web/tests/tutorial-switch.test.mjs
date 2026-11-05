@@ -1,6 +1,6 @@
 // The tutorial's switch lesson (da-uzyih.4867): a house seen from above, a
 // person, the dot, wandering between its rooms and the garden and about each
-// room's furniture (da-uzyih.4880), and where they are one switch field, `room`, logged through the fields widget
+// room's furniture (da-uzyih.4880), and where they are one switch field, `room`, logged through the collect widget
 // itself (da-uzyih.11): a tap on the field opens its states, a tap on a room
 // switches it. Played in the game box (da-uzyih.4864), and started, as its
 // cue says, by switching `room` to the room the dot stands in.

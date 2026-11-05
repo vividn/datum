@@ -83,7 +83,7 @@ describe('ringOf', () => {
 });
 
 describe('ringIn', () => {
-	// The tutorial's `room` on a phone (da-q0lcx): its fields widget's box at
+	// The tutorial's `room` on a phone (da-q0lcx): its collect widget's box at
 	// 390px, its buttons as drawn, and its back icon's corner.
 	const ROOM = { w: 351, h: 88.5, side: 41.6, lid: 36.8 };
 	const SIZES = { end: 54.8, states: [87.5, 120.2, 87.5, 95.7, 87.5] };

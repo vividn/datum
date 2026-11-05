@@ -88,7 +88,7 @@ describe('Escape that something else takes leaves the line alone', () => {
 			const { page } = app;
 			// Before the line is loaded: a command run spends its pills.
 			await prepare?.(app);
-			// No verb in it: a verb typed filters the fields widget, which
+			// No verb in it: a verb typed filters the collect widget, which
 			// would close a state list before the Escape ever came.
 			await load(page, 'coffee 2', [UNLOCKED, LOCKED]);
 			await open(app);

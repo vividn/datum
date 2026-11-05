@@ -3,8 +3,8 @@
 	person, a dot, wandering from room to room and out into the garden, and
 	about each room's furniture while there (`#lib/house.ts`), played in the game box
 	(`GameBox.svelte`, da-uzyih.4864). Where they are is one switch field,
-	`room`, logged through the fields widget itself
-	(`FieldsWidget.svelte`, the collect tab's, restricted to it): a tap on the
+	`room`, logged through the collect widget itself
+	(`CollectWidget.svelte`, the collect tab's, restricted to it): a tap on the
 	field opens its states, a tap on a room switches it.
 
 	The game starts itself (vividn, 2026-10-27 14:18: «to start the game, the

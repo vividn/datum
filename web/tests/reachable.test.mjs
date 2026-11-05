@@ -21,7 +21,7 @@
 // again (da-vyo2). So the cases here run against a POPULATED bar as well as
 // an empty one.
 //
-// The bar is the fields widget now (da-c7u8): a button per TRACKED field — so the handful here is declared with `setup F`,
+// The bar is the collect widget now (da-c7u8): a button per TRACKED field — so the handful here is declared with `setup F`,
 // which is what gives a field its button.
 //
 // And the count that wraps is not a constant: it is what fits across the

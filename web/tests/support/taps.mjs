@@ -196,7 +196,7 @@ async function reset(app, line, layout = false) {
 		await page.locator('.log.full').waitFor({ state: 'detached' });
 	}
 	// A widget option a tap set holds for the session, which `solo` keeps:
-	// forgotten, and the fields widget's own put back below.
+	// forgotten, and the collect widget's own put back below.
 	const session = () => page.evaluate(() => JSON.stringify(window.datum.layout.session()));
 	if (app.session !== undefined && (await session()) !== app.session)
 		await page.evaluate(() => window.datum.layout.forgetSession());

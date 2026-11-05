@@ -2,7 +2,7 @@
 	The aliases widget (da-x6yj): every alias `datum alias list --json`
 	lists, read again on every epoch — the user's own first, then the ones
 	a spec derives, grouped under their field and written in its colour
-	where the spec has one (the fields widget's colour, da-c7u8). Grouping
+	where the spec has one (the collect widget's colour, da-c7u8). Grouping
 	and reordering of the reader's own are not here: that idea is still
 	forming.
 -->

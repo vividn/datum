@@ -1,4 +1,4 @@
-// The fields widget answers the selection (da-qu16).
+// The collect widget answers the selection (da-qu16).
 //
 // vividn, 2026-09-17 16:44: «if a duration is selected, filter down to
 // start/switch based fields … I want to have a smart filter of fields

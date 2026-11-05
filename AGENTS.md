@@ -1085,7 +1085,7 @@ you also have the nowview close by so that you can see what is happening
 there without the explanation in between», and 2026-10-29: «move the title
 and description of each game above the nowview». So each game's tab is its
 title and what its shape of data is, over a nowview, over the game and the
-fields widget with Undo beside it (`withNowview`, `layout/defaults.ts`;
+collect widget with Undo beside it (`withNowview`, `layout/defaults.ts`;
 `web/tests/tutorial.test.mjs` holds the order); a new layout or widget is
 laid out the same way.
 

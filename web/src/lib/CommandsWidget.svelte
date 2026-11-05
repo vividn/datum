@@ -12,7 +12,7 @@
 
 	The widget itself runs none of its presses — it composes and dispatches,
 	and the page runs it through `run()` and echoes the executed argv,
-	exactly as the fields widget does:
+	exactly as the collect widget does:
 
 	- `undo` RUNS, at once. Undo never refuses on age any more (da-s6no:
 	  with a way forward the fifteen-minute gate cost more than it saved),
@@ -35,7 +35,7 @@
 	  acted on, and a second press on Help is `datum help`, and the answer
 	  opens in a modal. Armed, it is filled and its name asks «on what?».
 	- a LOG COMMAND puts `<command> ` on the command line and leaves the caret in
-	  it. That is the whole of pending a command: the fields widget reads the
+	  it. That is the whole of pending a command: the collect widget reads the
 	  line's first word, so tapping `moment` and typing `moment` reach the
 	  same state through the same buffer.
 	- anything else puts `<name> ` on the line too — a command with an
@@ -149,7 +149,7 @@
 		disabled = false,
 		grammar = null,
 		pills = [],
-		/** The fields widget's buttons: what a field pill's log commands are read off. */
+		/** The collect widget's buttons: what a field pill's log commands are read off. */
 		fields = [],
 		/** Would `redo` move anything? The CLI's own answer, from the pane. */
 		redoable = false,

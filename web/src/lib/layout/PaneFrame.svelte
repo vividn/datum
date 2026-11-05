@@ -1488,7 +1488,7 @@
 
 	/* The title and the tabs are HELD, not read (da-efr4i): a long press on
 	   one must not also select its words or raise the platform's text
-	   callout. The fields widget says the same of its buttons, for the same
+	   callout. The collect widget says the same of its buttons, for the same
 	   gesture. The pane's CONTENT is untouched — selecting and copying what
 	   a pane shows is the whole reason the web re-renders at all. */
 	.titlebox,

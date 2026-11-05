@@ -1,4 +1,4 @@
-// What a press on a fields-widget chip does (da-c7u8): the argv it runs,
+// What a press on a collect-widget chip does (da-c7u8): the argv it runs,
 // or the line it leaves in the prompt for a person to finish.
 //
 // The five: `fields` (the pure logic, and the widget as it is drawn),

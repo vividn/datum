@@ -13,7 +13,7 @@
 // The dashboard's own top-level tabs are simply the root pane's tabs, and a
 // saved layout can be embedded in any pane as a widget of kind `layout`.
 //
-// (The fields widget's own buttons were once called "widgets" too — the
+// (The collect widget's own buttons were once called "widgets" too — the
 // older sense, da-nz29; they are `FieldButton`s in `fields.ts` now, and the
 // widget as a whole is one widget KIND here.)
 

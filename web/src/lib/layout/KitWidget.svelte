@@ -20,7 +20,7 @@
 	filling its cache) does not count, and it is not run again. A tap runs the row
 	action with each `{column}` that row's value — substituted inside the
 	words the action splits into, so a value is one word whatever it holds —
-	through the bar's one path, so it lands as a press of the fields widget
+	through the bar's one path, so it lands as a press of the collect widget
 	does and the epoch it bumps redraws the list.
 -->
 <script lang="ts">

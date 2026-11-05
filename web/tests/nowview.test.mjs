@@ -820,7 +820,7 @@ describe('the nowview handles stay off the picture', () => {
 				await app.runLine('switch mood happy -t -1');
 				await page.evaluate(() => window.datum.run(['occur', 'coffee']));
 
-				// The full window stands BESIDE the fields widget now rather
+				// The full window stands BESIDE the collect widget now rather
 				// than behind a tab of it (da-hkjp), so there is nothing to
 				// tap: it is already drawn.
 				const where = await beside(page, `section[data-pane="nowview"]`);

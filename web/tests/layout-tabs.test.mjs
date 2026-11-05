@@ -155,7 +155,7 @@ describe('a tab behind takes no focus and no key', () => {
 		}, { ...DESKTOP, clock: todayAt(15) });
 	});
 
-	// A prefill (the fields widget's `record <field> `, a record's press) puts
+	// A prefill (the collect widget's `record <field> `, a record's press) puts
 	// the caret in the newest input widget: one mounted in a tab behind
 	// cannot take it, so it goes to the widget line in front, and with none
 	// there to the bar's. It was the hold panel's `note` until da-e78x6

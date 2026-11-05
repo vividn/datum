@@ -48,7 +48,7 @@
 	The eye (da-woyqh), vividn, 2026-10-30: «the placement widget should allow
 	completely hiding»: closed, the field is drawn on no picture, dayview or
 	nowview, its `render` false on the spec, so every copy agrees; it still
-	logs and is still in the tail, stats and the fields widget. Lanes are
+	logs and is still in the tail, stats and the collect widget. Lanes are
 	fractions of the day, so no other field moves: the room is simply no
 	longer drawn on. The fields hidden are listed under the band, each with
 	its eye closed: a click draws it again at once, a save of that field and

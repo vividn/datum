@@ -602,7 +602,7 @@ export const widgetPane = (id, kind, settings = {}, edge = 'top') => ({
  * the tab that holds it (shell.ts), and a lifted one-widget layout has no
  * inside: splitting the pane it draws in splits the tree AROUND it.
  *
- * The second is `widgetbar`, which is the fields widget's KIND: `fields`
+ * The second is `widgetbar`, which is the collect widget's KIND: `fields`
  * is what it is CALLED (da-850j, registry.ts), and a kind nothing is
  * registered under declares neither defaults nor options.
  */

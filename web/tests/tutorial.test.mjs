@@ -383,7 +383,7 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 // fields TRACKED once it has begun and IGNORED once it has ended, read back
 // from `datum now --json -A`. Reset then leaves them IGNORED and writes
 // nothing. The switch game begins again, after Reset brings its cue back
-// (da-uzyih.4880), by a tap on `room` while it is IGNORED: the fields widget
+// (da-uzyih.4880), by a tap on `room` while it is IGNORED: the collect widget
 // draws an IGNORED field, and a tap on it logs.
 test('each game’s fields are TRACKED once it begins and IGNORED once it ends, by its time and by «End now»', async () => {
 	await withApp(
@@ -699,7 +699,7 @@ for (const [screen, options, centered] of [
 // before, during and after a round: its title and what its shape is, then the
 // nowview, then its game box, with nothing of the lesson above it, then its
 // fields. And on a phone, while a round runs, the nowview, the game and the
-// fields widget are in sight together, unscrolled.
+// collect widget are in sight together, unscrolled.
 test('each game reads title and shape, nowview, game, fields widget, in every phase, all in sight while it runs', async () => {
 	await withApp(
 		async (app) => {

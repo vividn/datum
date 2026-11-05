@@ -771,7 +771,7 @@ describe('the field widget', () => {
 	});
 
 	// In a pane it is where someone chose to work: a field pill minted
-	// beside it — a hold on a field in the fields widget — brings that field.
+	// beside it — a hold on a field in the collect widget — brings that field.
 	test('in a pane, a field pill minted beside it brings that field, and a save stays', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;

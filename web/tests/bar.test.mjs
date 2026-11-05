@@ -1894,7 +1894,7 @@ describe('the pills ride with the text', () => {
 			);
 			assert.equal(await page.locator(`${BAR} .pill`).count(), 1, 'a locked pill was spent');
 			assert.deepEqual(app.errors, []);
-			// The day page: `withCoffee` presses the FIELDS widget, which is a
+			// The day page: `withCoffee` presses the COLLECT widget, which is a
 			// pane of the day frame and is not on the repl layout.
 		});
 	});
@@ -1949,7 +1949,7 @@ describe('the pills ride with the text', () => {
 			assert.equal(spent, 1);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
 			assert.deepEqual(app.errors, []);
-			// The day page, as above: the press is the fields widget's.
+			// The day page, as above: the press is the collect widget's.
 		});
 	});
 });

@@ -78,7 +78,7 @@ function had(): boolean {
 }
 
 /**
- * `field` was just saved, the first: go to where the fields widget is —
+ * `field` was just saved, the first: go to where the collect widget is —
  * the place left, and `collect` brought to the front unless a fields
  * widget is drawn already — and show the tour there.
  */

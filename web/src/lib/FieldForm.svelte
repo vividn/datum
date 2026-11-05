@@ -413,7 +413,7 @@
 										? 'false is one of its states, so the ring keeps off'
 										: !neverFalse && named.length === 0
 											? 'a change field needs another state before off can go'
-											: 'off disabled, the fields widget leaves a gap where off would stand'}
+											: 'off disabled, the collect widget leaves a gap where off would stand'}
 									disabled={listsFalse || (!neverFalse && named.length === 0)}
 									onclick={() => (neverFalse = !neverFalse)}>✕</button
 								>
@@ -422,7 +422,7 @@
 								{@const which = state.name || 'this state'}
 								<li class="state" class:held={held === state}>
 									<!-- The order is where each state stands around the tap in the
-									     fields widget (da-7q3ka): the first nearest the thumb. A drag on the
+									     collect widget (da-7q3ka): the first nearest the thumb. A drag on the
 									     handle reorders, and is never the pane's tab swipe (`data-pans`). -->
 									<button
 										type="button"
@@ -496,7 +496,7 @@
 						{@const off = ignored.includes(field)}
 						<p class="row tracking" data-tracking={off ? 'ignored' : 'tracked'}>
 							<span class="label">{off ? 'ignored' : 'tracked'}</span>
-							<span class="ask">{off ? 'no button and not in now; its entries stay' : 'a button in the fields widget'}</span>
+							<span class="ask">{off ? 'no button and not in now; its entries stay' : 'a button in the collect widget'}</span>
 							<button
 								type="button"
 								use:act={'run'}

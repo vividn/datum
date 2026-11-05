@@ -8,7 +8,7 @@
 // The grammar's own rules — which commands survive a field pill, and where
 // its word goes in an argv — are `selection-pure.test.mjs`, in node. This
 // file is what a reader does and sees, so the page is written down before
-// the app loads: the fields widget to hold from, the commands widget to be
+// the app loads: the collect widget to hold from, the commands widget to be
 // narrowed, a stats widget, a tail pane, a day strip, and a CLI widget for the
 // echoes.
 //
@@ -137,7 +137,7 @@ const ORANGE = 'rgb(255, 165, 0)';
 const BLUE = 'rgb(0, 0, 255)';
 
 /**
- * Seed, and wait until the fields widget has drawn both buttons AND every
+ * Seed, and wait until the collect widget has drawn both buttons AND every
  * refresh the seed set off has landed (da-ij6iy). A late one reorders the
  * bar — `mood` goes ahead of `coffee` — so a gesture aimed at a button that
  * merely EXISTS can land on its neighbour, or on a node already replaced.
@@ -497,7 +497,7 @@ describe('what narrows to it', () => {
 	});
 
 	// da-57j14: the verbs are narrowed by what the FIELD takes — the same
-	// rule the fields widget narrows by under a pending verb. mood is a
+	// rule the collect widget narrows by under a pending verb. mood is a
 	// switch in a state, so it can be switched or ended, not occurred,
 	// started or added; and taking the pill away brings the five back.
 	test('a change field leaves change and off of the log commands, and every one comes back without it', async () => {

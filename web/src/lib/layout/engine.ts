@@ -5,7 +5,7 @@
 // the tree as a prop; no pane subscribes to changes on its own, so there
 // is one refresh path and every pane is on it (the bead's trap list).
 //
-// `press` is the module-level dispatcher for the fields widget (da-nz29):
+// `press` is the module-level dispatcher for the collect widget (da-nz29):
 // the widget composes an argv and this decides where it runs. With a CLI widget on
 // screen the press goes THROUGH it — `runArgv` echoes the executed argv
 // into the scrollback and the recall history, which is the teach loop —
@@ -53,7 +53,7 @@ export const ready = writable(false);
 
 /**
  * The bar as it stood when this database was last left (da-ch6oc): the
- * fields widget is drawn from it, live, before the CLI has answered — a
+ * collect widget is drawn from it, live, before the CLI has answered — a
  * press then is taken, where a dimmed copy of the last visit waited out the
  * boot's queue — and the first refresh replaces it.
  */
@@ -82,7 +82,7 @@ if (typeof document !== 'undefined') {
 
 const last = lastBar();
 
-/** The fields widget's entries — `datum fields --json` and `now --json`, rebuilt on every beat. */
+/** The collect widget's entries — `datum fields --json` and `now --json`, rebuilt on every beat. */
 export const fields = writable<FieldButton[]>(last.fields);
 
 /**

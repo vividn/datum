@@ -321,7 +321,7 @@ export function pendingPress(command: LogCommand, button: FieldButton): string[]
  * logged at once — `fill` — a line is left in the prompt — or `show` —
  * the field opens in the collect widget (da-w6437).
  *
- * The fields widget's press is decided here and its outline is drawn from
+ * The collect widget's press is decided here and its outline is drawn from
  * the same answer (the `fires` pattern): a `run` is the double outline, so
  * a button cannot act without looking as if it does. A pending command runs
  * wherever `pendingPress` has an argv, but fills where it has keys to type
@@ -545,13 +545,13 @@ export function fits(takes: Takes | undefined, pill: Pill): boolean {
 /**
  * The commands the widget draws under `pills`: the ones whose grammar takes
  * every pill, in their usual order. The rest are HIDDEN (vividn, 09-17: «let's
- * do hidden»), as the fields widget hides what a pending command cannot be
+ * do hidden»), as the collect widget hides what a pending command cannot be
  * spent on. No pills is the whole list; with no grammar, an hid pill is
  * taken by nothing and hides every command until the grammar is read.
  *
  * A field pill narrows the LOG_COMMANDS too (da-57j14, vividn: «When an occur field
  * is selected, start, end, and switch should be filtered out»): `fields`
- * are the fields widget's buttons, and one stays only if it `commandFits`
+ * are the collect widget's buttons, and one stays only if it `commandFits`
  * the pill's field — an ARGUMENT field: a context one narrows no command. A field not among them — one not logged yet — keeps
  * every log command, as it has no kind to narrow by.
  */
@@ -798,10 +798,10 @@ export function flagLine(words: string[], takes: Takes | undefined): string[] | 
 //
 // vividn: «we should always maintain horizontal scrolling in the commands
 // widget, so when it is tall enough, do three rows that scroll
-// horizontally» — and the fields widget the same (da-vu7pi). So a bar is
+// horizontally» — and the collect widget the same (da-vu7pi). So a bar is
 // always reached along ONE axis, and a taller box buys it more rows, up
 // to `MAX_ROWS` unless the widget lifts it (`maxRows` on ButtonRows: the
-// fields widget takes every row its box fits, da-arms4), never a wrap
+// collect widget takes every row its box fits, da-arms4), never a wrap
 // onto the other axis. The rows are counted
 // from the BOX the pane's layout gave the bar and the size of one button
 // — never from what the bar is drawing, which is the answer and would
@@ -839,7 +839,7 @@ export function lanesOf<T>(items: T[], rows: number): T[][] {
  * The axis a bar is reached along: `x`, rows reached left and right, is
  * every bar today, the ❯'s commands over the bottom bar's output among them
  * (da-qzzox); `y`, columns reached up and down, is what a pivoted
- * dayview/nowview will want of the fields widget (da-a6guc).
+ * dayview/nowview will want of the collect widget (da-a6guc).
  */
 export type Axis = 'x' | 'y';
 

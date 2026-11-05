@@ -1,8 +1,8 @@
-// The fields widget's logic, kept pure and away from the markup: which
+// The collect widget's logic, kept pure and away from the markup: which
 // fields get a button, what shape each has, how it is painted, and the
 // exact argv a press composes (da-nz29, da-c7u8).
 //
-// The argv built here is the argv that runs — FieldsWidget.svelte hands it
+// The argv built here is the argv that runs — CollectWidget.svelte hands it
 // straight to `run()` and echoes the result's own `argv` back into the
 // CLI widget. Nothing reconstructs a "what you could have typed" string from the
 // press, because a reconstruction can drift from the command and the whole
@@ -313,7 +313,7 @@ export function fieldRows(buttons: FieldButton[], rows: number, standings: Stand
 }
 
 /**
- * Where the fields widget's buttons stand: in `fieldRows`' rows, or each
+ * Where the collect widget's buttons stand: in `fieldRows`' rows, or each
  * at the height its field is drawn in the pictures (`aligned`, da-omw4n).
  */
 export type Align = 'rows' | 'picture';
@@ -371,7 +371,7 @@ export interface Stand {
 }
 
 /**
- * The fields widget's second layout, «aligned to the picture» (da-omw4n):
+ * The collect widget's second layout, «aligned to the picture» (da-omw4n):
  * each button stands where its field is drawn: centred on its band —
  * zoomed by `view` over a box `height` tall — so a button as tall as its
  * band starts where the band does and a shorter one stands in its middle,

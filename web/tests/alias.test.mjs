@@ -143,7 +143,7 @@ describe('the aliases widget', () => {
 
 	test('picked into a pane, it lists every alias and grows a row on a typed alias set', async () => {
 		await withApp(async ({ page, run }) => { // alone at 1280x900
-			// Hex, not a CSS colour name: the fields widget's `color` is now
+			// Hex, not a CSS colour name: the collect widget's `color` is now
 			// resolved server-side by `crates/datum-commands/src/render/colors.rs`,
 			// which only understands `#rrggbb` (or a legacy ANSI-256 number) —
 			// a name like `orange` would fall through to `md5(field)` (da-yiyj).
@@ -160,7 +160,7 @@ describe('the aliases widget', () => {
 			await input.press('Enter');
 			await page.locator('section.pane[data-title="aliases"] li', { hasText: 'tea → occur tea' }).waitFor();
 			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'tea → occur tea', 'coffee → occur coffee']);
-			// In the field's colour: the fields widget's, read on the beat a typed line runs on.
+			// In the field's colour: the collect widget's, read on the beat a typed line runs on.
 			await page.waitForFunction(() =>
 				[...document.querySelectorAll('section.pane[data-title="aliases"] li')].some(
 					(li) => li.textContent === 'coffee → occur coffee' && getComputedStyle(li).color === 'rgb(255, 165, 0)'

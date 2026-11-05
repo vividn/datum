@@ -1,4 +1,4 @@
-// The fields widget never looks disabled while datum boots, syncs or draws
+// The collect widget never looks disabled while datum boots, syncs or draws
 // (da-ch6oc). vividn, 2026-10-25: «when switching back and forth between
 // collect and dayview tabs, while the new dayview is drawing and you switch
 // back to the collect tab. The fields widget is dimmed for some reason … It
@@ -9,7 +9,7 @@
 // at half opacity, laid over the widget until the worker's queue ran dry: on
 // the boot over a widget not yet mounted, and on every return to a root tab,
 // which mounts its layout afresh, over a live widget the copy hid. The
-// fields widget asks the CLI nothing of its own, so it takes no copy: it is
+// collect widget asks the CLI nothing of its own, so it takes no copy: it is
 // drawn live from the start, from the bar it last showed on this database,
 // and a press is run as soon as the queue gets to it.
 //

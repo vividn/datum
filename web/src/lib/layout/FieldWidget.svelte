@@ -25,7 +25,7 @@
 	Which field is `editing` (#lib/fieldWidget.ts), one store for every copy
 	of the widget, so anything that opens it on a field has one place to
 	say so. A field pill minted while this is on the page says so too: a
-	hold on a field in the fields widget brings that field here. A new field
+	hold on a field in the collect widget brings that field here. A new field
 	picked away from asks first where the form has edits nobody saved.
 
 	Save on a new field runs its one command (da-2pbvd) and STAYS, on the

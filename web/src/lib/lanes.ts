@@ -1,5 +1,5 @@
 // What the picture drew where a press landed, and so which fields the
-// fields widget puts FIRST (da-qu16): `nearest` reads the marks, `closer`
+// collect widget puts FIRST (da-qu16): `nearest` reads the marks, `closer`
 // is the one ordering over them, and `promoted` is what the bar does with
 // it — the whole rule in one file, geometry and all.
 //

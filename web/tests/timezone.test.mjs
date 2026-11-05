@@ -1,5 +1,5 @@
 // The `timezone` field on datum.day (da-yw6o2): opt in from the Settings place (da-99g5q), a very
-// thin band at the top of the day, and in the fields widget unless IGNORED.
+// thin band at the top of the day, and in the collect widget unless IGNORED.
 // What it accepts is the CLI's (`crates/datum-cli/tests/timezone_field.rs`).
 
 import test, { before, after } from 'node:test';

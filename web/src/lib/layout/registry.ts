@@ -1,7 +1,7 @@
 // The widget kinds: what the tree can name, and what draws each one.
 //
 // Everything on the page is a widget (vividn: "They are widgets like
-// anything else yes") — the day strip, the CLI and the fields widget
+// anything else yes") — the day strip, the CLI and the collect widget
 // included. A kind is its `WidgetKindMeta` (the contract in types.ts:
 // title and default settings) plus the Svelte component that draws
 // it and, where the component wants something other than `settings`, the
@@ -27,7 +27,7 @@
 // and a custom pane showing one: its header row and three rows (21.6px
 // each) plus padding, 102px — and the tail's follows its `type` option
 // (da-hkjp), the 16px of padding standing still while the text in it
-// scales. The fields widget: one row, as tall as the «Track +» it began
+// scales. The collect widget: one row, as tall as the «Track +» it began
 // with (33px; a field's button is no taller, da-y6jfb), plus padding. The aliases list: three of its lines
 // (18.4px each) plus padding, 72px. The input widget: its prompt row
 // (36.4px) and one document line of receipt (21.6px), 58px. nowview: datum draws it no shorter than a 50px band plus its
@@ -67,7 +67,7 @@ import ChartWidget from './ChartWidget.svelte';
 import BackupsWidget from './BackupsWidget.svelte';
 import ConflictsWidget from './ConflictsWidget.svelte';
 import DayviewWidget from './DayviewWidget.svelte';
-import FieldsPane from './FieldsPane.svelte';
+import CollectPane from './CollectPane.svelte';
 import HelpWidget from './HelpWidget.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
@@ -134,7 +134,7 @@ export interface WidgetKind {
  * canvas before any band is drawn.
  */
 const SVG_MARGIN_PX = 2;
-/** The fields widget's floor, and a tutorial game's fields part's, which draws it. */
+/** The collect widget's floor, and a tutorial game's fields part's, which draws it. */
 const FIELDS_LEGIBLE: Floor = { width: 160, height: 49 };
 
 /**
@@ -513,7 +513,7 @@ export const KINDS: Record<string, WidgetKind> = {
 				]
 			}
 		]),
-		component: FieldsPane,
+		component: CollectPane,
 		help: [
 			'Every field you log, as a button, at the height the pictures draw it: on the left the last second, a tap sweeping in from the right, then the fields that are on inside a dotted line, then the rest, last used first, which a swipe pans.',
 			'A tap logs a moment, or turns an on/off field on or off, at once; a change field, or a field with keys to type, opens to collect it: its time (−q, −m, 5m), its states and its keys, made as pills on the bar. Back takes the ones made there away.',
@@ -679,7 +679,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	),
 	// A lesson of the tutorial (da-6cvrd): offered in its database alone,
 	// where its tabs carry one each. Legible at a heading and two lines; its
-	// fields part draws the fields widget, and is legible where that is.
+	// fields part draws the collect widget, and is legible where that is.
 	tutorial: {
 		meta: meta('tutorial', 'tutorial', { lesson: 'intro' }),
 		component: TutorialWidget,

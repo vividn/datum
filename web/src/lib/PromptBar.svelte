@@ -281,7 +281,7 @@
 	 *      Sheet) — the browser's own cancel, which marks nothing, so it is
 	 *      asked for by looking;
 	 *   3. an open menu (PaneMenu), a custom pane's
-	 *      editor, a field's state list or its `+` (FieldsWidget), a
+	 *      editor, a field's state list or its `+` (CollectWidget), a
 	 *      command's subcommands (CommandsWidget);
 	 *   4. the log, here;
 	 *   5. layout mode asks how to leave it (RootBar.svelte, da-vvcxc);

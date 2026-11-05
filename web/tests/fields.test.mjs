@@ -1,4 +1,4 @@
-// The fields widget (da-c7u8): every field `datum fields` lists, each
+// The collect widget (da-c7u8): every field `datum fields` lists, each
 // tracked field shaped by its kind and filled by what it is now, the
 // untracked ones dim after them.
 //

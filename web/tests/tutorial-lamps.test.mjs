@@ -7,7 +7,7 @@
 // record's blocks are the taps — each edge at its tap's instant — and
 // the box shows one number. The clock is held and stepped past each edge, so
 // each tap is logged at the instant the test set, however loaded the runner
-// (da-uzyih.4907). The taps are on the fields widget's own buttons
+// (da-uzyih.4907). The taps are on the collect widget's own buttons
 // (da-uzyih.11), the three's alone in the lesson.
 
 import test, { before, after } from 'node:test';

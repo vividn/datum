@@ -491,7 +491,7 @@ describe('in the app', () => {
 
 	// da-ci85o: declaring is the spec's form on Basics, and it must stay as
 	// quick as the modal it absorbed: a shape, the name box (a shape stopped
-	// opening the keyboard, da-zz9rn), Save. The fields widget's (+) that
+	// opening the keyboard, da-zz9rn), Save. The collect widget's (+) that
 	// opened it, the fourth tap, is gone (da-myet1).
 	test('declaring a field in the open form is three taps: a shape, the name, Save', async () => {
 		await withApp(async (app) => { // a listener of its own, which `solo` would keep

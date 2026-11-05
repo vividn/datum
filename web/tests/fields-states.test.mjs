@@ -1,4 +1,4 @@
-// A state field's states, drawn in the fields widget in place of the
+// A state field's states, drawn in the collect widget in place of the
 // fields (da-g635, da-vg8vr).
 //
 // The five: `fields` (the pure logic, and the widget as it is drawn),

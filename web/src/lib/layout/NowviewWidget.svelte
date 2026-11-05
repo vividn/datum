@@ -1106,9 +1106,9 @@
 		lanesAt(x, y, at);
 	}
 
-	/** The fields drawn at this height, for the fields widget to put first. */
+	/** The fields drawn at this height, for the collect widget to put first. */
 	function lanesAt(x: number, y: number, at: number | null): void {
-		// The lanes the press crossed, for the fields widget to answer
+		// The lanes the press crossed, for the collect widget to answer
 		// (da-qu16, #lib/lanes.ts): the band takes the pointer itself, so
 		// nothing else on the page would hear the press.
 		//

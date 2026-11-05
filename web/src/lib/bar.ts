@@ -12,14 +12,14 @@
 // Pills are what the bar is built to receive and nothing here sets: the
 // shared time cursor vividn named next — a click on the dayview loading a
 // `-t 14:30` pill, x-able — puts them here, and a line submitted from the
-// bar, like a press in the fields widget, is what was typed followed by
+// bar, like a press in the collect widget, is what was typed followed by
 // the pills' text (`pressWithPills` in layout/engine.ts: the CLI takes no
 // flag before its verb). `setPills` and `removePill` are the whole of the
 // contract. A LOCKED pill outlives a press, and (da-1py00) a reload too —
 // see the section on `PILLS_KEY` below.
 //
 // `prefill` puts a line into the command line without running it — the
-// fields widget's `add <field> ` (da-c7u8), or a command button's `occur `;
+// collect widget's `add <field> ` (da-c7u8), or a command button's `occur `;
 // the bar takes the signal and clears it, and `focusLine` decides which box
 // the caret lands in and whether the phone's keyboard comes with it.
 //
@@ -550,7 +550,7 @@ export const submitLine = (line: string): Promise<RunResult> =>
  * bar's, and one per input widget on screen.
  *
  * `focusLine` is where a focus that is not a click goes — a `prefill` from
- * the fields widget today. It lands in the last WIDGET mounted, and in the
+ * the collect widget today. It lands in the last WIDGET mounted, and in the
  * bar when there is none: the box a reader put on the page is the one they
  * are looking at, and the bar is the fallback that is always there.
  */
@@ -588,13 +588,13 @@ export const focusLine = (keyboard = true): void => {
 
 /**
  * A line to put in the command line unrun, and whether the person is
- * expected to TYPE next: the fields widget's `add <field> ` is (the
+ * expected to TYPE next: the collect widget's `add <field> ` is (the
  * keyboard opens), a command button's `occur ` is not (da-k34p).
  */
 export const prefill = writable<{ line: string; keyboard: boolean } | null>(null);
 
 /**
- * The command the line is PENDING (da-ltux) — the fields widget
+ * The command the line is PENDING (da-ltux) — the collect widget
  * filters itself to what that command can be spent on.
  *
  * Derived from `text` and stored nowhere, so a tap on the commands
@@ -606,7 +606,7 @@ export const pending = derived(text, pendingCommand);
 
 /**
  * Spend the pending command: the word a tap put in the box has been used, so
- * the box is empty again and the fields widget is whole (C1).
+ * the box is empty again and the collect widget is whole (C1).
  *
  * Only when the line is that word ALONE. A box with more in it is a line
  * the reader is in the middle of typing, and a press must never take that

@@ -13,7 +13,7 @@
 	`prefers-reduced-motion`, read as each round starts, it simply goes. All
 	of it is drawn from the game's own clock, `t`, so a held clock holds it.
 	Played in the game box (`GameBox.svelte`, da-uzyih.4864) and logged on
-	the fields widget in the pane under it (LessonFields.svelte), the café's fields alone: a tap logs `moment
+	the collect widget in the pane under it (LessonFields.svelte), the café's fields alone: a tap logs `moment
 	coffee` and its like.
 
 	A tap is a `press` like any widget's, in its handler before any await,

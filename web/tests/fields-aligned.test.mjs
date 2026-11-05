@@ -1,4 +1,4 @@
-// The fields widget «aligned to the picture» (da-omw4n), in the built
+// The collect widget «aligned to the picture» (da-omw4n), in the built
 // app: each button stands at the height its field is drawn (`y`, and a
 // tall band's `height`), a crowded band scrolls sideways, a pinch zooms
 // and shows the range marker, a tap on the marker zooms out, and the

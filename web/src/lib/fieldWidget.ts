@@ -8,7 +8,7 @@
 // of each — so two copies on one page cannot be on two fields: a chip
 // pressed in one moves the other. Its chips write it, a field pill minted beside it writes it, and
 // `openField` writes it and brings the widget into view — which is what the
-// fields widget's `+`, the commands widget's `track` and `setup`, and the
+// collect widget's `+`, the commands widget's `track` and `setup`, and the
 // CLI's «which verb?» refusal (#lib/layout/engine.ts) all call. The empty
 // name is a NEW field, with its kind chosen when the door knew one.
 //

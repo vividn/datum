@@ -1,14 +1,14 @@
 <!--
-	The fields widget as a widget kind.
+	The collect widget as a widget kind.
 
 	Its own body rather than `Pane.svelte`'s, for the padding and nothing
-	else: the BAR is the scroller (FieldsWidget.svelte), so the pane keeps
+	else: the BAR is the scroller (CollectWidget.svelte), so the pane keeps
 	whatever height its split ratios give it and a bar with more buttons
 	than fit is reached by scrolling rather than by the pane growing
 	(da-mbz2) — sideways, on as many rows as fit (da-vu7pi, da-arms4,
 	`ButtonRows.svelte`). The widget's panels hang UPWARD out of the bar and a
 	scroller would clip them, so they are hung against the screen instead
-	(`hang` in FieldsWidget.svelte). A press goes, with the bottom bar's
+	(`hang` in CollectWidget.svelte). A press goes, with the bottom bar's
 	pills after it, to the engine's `press`, which routes it through
 	whichever CLI widget is on screen; a record's line, and a log with keys to
 	type (da-chml5), go to the bottom bar's prompt, unrun.
@@ -44,7 +44,7 @@
 	nor the widget below it knows the difference.
 -->
 <script lang="ts">
-	import FieldsWidget from '#lib/FieldsWidget.svelte';
+	import CollectWidget from '#lib/CollectWidget.svelte';
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import { clearPending, dropHids, pending, pills, prefill, text } from '#lib/bar.ts';
@@ -183,7 +183,7 @@
 </script>
 
 <div class="body">
-	<FieldsWidget
+	<CollectWidget
 		fields={standing}
 		pending={$pending}
 		duration={hasDuration($pills)}

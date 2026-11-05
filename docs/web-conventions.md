@@ -59,7 +59,7 @@ writing it down.
    at `4719c3a4` — the commit that wrote this line — either. An omission reads as a violation and
    an invention reads as a rule; neither end announces itself.*
 3. **One beat.** After a command that CHANGED a database, `engine.ran(result)` bumps `epoch` and
-   rebuilds the fields widget; every pane takes `export let epoch` and re-reads. Changed is the
+   rebuilds the collect widget; every pane takes `export let epoch` and re-reads. Changed is the
    worker's change counters (`result.changed`), so a read costs no pane a run (da-fprk0). A write in another tab arrives through
    `changes.ts` and joins the same beat — COALESCED (da-s3pt): while one such refresh is
    outstanding, a burst next door marks one more after it rather than one each, so the handler
@@ -76,7 +76,7 @@ writing it down.
    with an absolute `-t` or `--end-date` — and the day strip re-draws today's band and the geometry beside
    it. nowview's snapshot alone runs on `tenSeconds` instead, the same timer at ten seconds (da-fprk0);
    a nowview with a window is drawn `--ahead` of now and slid along with the clock by its widget, and
-   is not re-run by any tick (da-hklaz). The tail is not re-run and the fields widget is not rebuilt. A test that counts a drawn
+   is not re-run by any tick (da-hklaz). The tail is not re-run and the collect widget is not rebuilt. A test that counts a drawn
    pane's runs over a stretch of real time therefore pins the clock (`clock:` in `withApp`): a
    fixed `Date.now()` never turns a minute, or ten seconds.
 4. **The argv that runs is the argv that is echoed.** A widget composes an argv and dispatches it;
@@ -194,8 +194,8 @@ writing it down.
    part where it belongs is the convention kept, not broken.
 10. **One widget kind, one name.** A kind's id in `registry.ts` is a saved-layout key and cannot
    change without a migration; the title, the file names and the tests all read as the thing the
-   reader sees. (`fields` is `FieldsWidget.svelte`, `layout/FieldsPane.svelte`, `fields.ts` and
-   `fields.test.mjs` since da-850j; its id is `widgetbar` still, and a comment on the id says so.)
+   reader sees. (`collect` is `CollectWidget.svelte` and `layout/CollectPane.svelte` since da-luqce;
+   its id is `widgetbar` still, and a comment on the id says so.)
    The migration, when a kind GOES, is `RETIRED_KINDS` in `layout/shell.ts` — the id maps to the
    kind that took its work over, applied where layouts are read (`inline`) so a stored layout opens
    as the new kind rather than as an untitled empty pane, and is written back out by `extract`.
@@ -374,7 +374,7 @@ writing it down.
     - **`{ query: 'cli' }`** for a test the day page is only scenery for. The bottom bar is
       drawn by `+layout.svelte` above whatever tree is in front, so it is the same bar on every
       page; a test that reads the seam, the input or the banner does not need the frame behind it.
-      A test that reads a pane, the fields widget or the strip does, and says so. The CLI alone
+      A test that reads a pane, the collect widget or the strip does, and says so. The CLI alone
       draws NO output section (da-mwp4m), so a test of the bar's output opens `prepare: withBar`
       (`tests/support/layout.mjs`), the CLI beside one static pane.
     - **`atEachScreen(t, page, screens, body)`** (`tests/support/app.mjs`) for a size matrix: a
@@ -415,7 +415,7 @@ rule is decided but not yet everywhere, it names the bead.
 22. **The outline says what a tap does.** DOUBLE: the tap acts at once (it writes or runs).
     SINGLE: it arms, opens, or fills the line without running. NONE: display. The outline is
     DERIVED from the same answer the press itself takes, never chosen by hand: `fires()` for
-    the commands widget and `pressKind()` for the fields widget, both in `commands.ts`, so a
+    the commands widget and `pressKind()` for the collect widget, both in `commands.ts`, so a
     button cannot act without looking as if it does. An ignored field that runs keeps its
     dashes and doubles them (da-nmna0). A button says its kind through one door, `use:act`
     (`#lib/act.ts`, held by `act-guard.test.mjs`); a menu item says it as its `Item`'s `act`

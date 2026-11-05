@@ -1,11 +1,11 @@
 <!--
 	A bar of buttons, laid out the one way every button-bearing widget
-	lays them out (da-vu7pi) — the commands widget and the fields widget
+	lays them out (da-vu7pi) — the commands widget and the collect widget
 	today, and the next one by using this rather than copying its CSS.
 
 	THE SCROLL RULE (vividn, 2026-09-22): the bar is always reached along
 	one axis — `axis`, left and right wherever a bar stands today — and a taller box buys it more rows,
-	up to `maxRows` (three, MAX_ROWS, unless the widget lifts it: the fields
+	up to `maxRows` (three, MAX_ROWS, unless the widget lifts it: the collect
 	widget takes all its box fits, da-arms4), never a wrap onto the other axis. The rows are counted
 	from the box the layout gave the bar and the size of the `probe` snippet
 	— one of the widget's own buttons, drawn and hidden — so the bar's own
@@ -18,7 +18,7 @@
 	padded out to the widest in a column, as the grid this replaced did.
 	The first few items still start the rows, so the widget's order is the
 	reader's. A widget whose rows MEAN something passes its own `arrange`
-	instead — the fields widget's rows are bands of height (da-xtkcp). TAB
+	instead — the collect widget's rows are bands of height (da-xtkcp). TAB
 	ORDER follows the drawing — along the first row, then the second.
 
 	CENTERED (da-syu4f, vividn, 2026-10-27: «fields should appear more in
@@ -55,7 +55,7 @@
 		onpointerleave?: (e: PointerEvent) => void;
 		/** One of the widget's own buttons, drawn hidden: what the rows are counted by. */
 		probe?: Snippet;
-		/** Drawn inside the bar after its buttons, out of their rows: the fields widget's states. */
+		/** Drawn inside the bar after its buttons, out of their rows: the collect widget's states. */
 		overlay?: Snippet;
 		children?: Snippet<[{ item: T }]>;
 	}
@@ -119,7 +119,7 @@
 
 <style>
 	.bar {
-		/* What an item placed over the whole box is placed in — the fields
+		/* What an item placed over the whole box is placed in — the collect
 		   widget's buttons standing where their fields are drawn. */
 		position: relative;
 		flex: 1;

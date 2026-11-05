@@ -1,4 +1,4 @@
-// The fields widget's «aligned to the picture» layout, as pure geometry
+// The collect widget's «aligned to the picture» layout, as pure geometry
 // (da-omw4n): where a button stands (`aligned`), and the zoom a pinch
 // moves (`zoomed`, `panned`, `yIn`, `yOut`). The built app is
 // fields-aligned.test.mjs.

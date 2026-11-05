@@ -3,7 +3,7 @@
 	on and off on a script, overlapping, played in the game box
 	(`GameBox.svelte`, da-uzyih.4864). At rest the book is closed and the TV
 	and the phone are off. Each thing is its field's button in the fields
-	widget itself (`FieldsWidget.svelte`, the collect tab's, restricted to
+	widget itself (`CollectWidget.svelte`, the collect tab's, restricted to
 	the three), so logging here is logging anywhere: a tap starts the field,
 	the next ends it, at the tap's own instant (`press` freezes the CLI's
 	clock at the event, da-szzgy); `reading` is on while the book is

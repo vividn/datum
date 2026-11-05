@@ -5,7 +5,7 @@
 //
 // No browser here can show a virtual keyboard, so this file holds the
 // MECHANISM: after a command tap the box is focused with `inputmode="none"`;
-// a tap on the box, the fields widget's `record <field> ` prefill, and every
+// a tap on the box, the collect widget's `record <field> ` prefill, and every
 // way out of the quiet state (run, clear, blur, verb spent) leave it with
 // its normal input mode — a `none` left behind is a prompt nobody can type
 // in on a phone. The phone is the real check.

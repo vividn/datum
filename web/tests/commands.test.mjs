@@ -1,5 +1,5 @@
 // The commands widget, in a browser (da-ltux): the buttons as they are
-// drawn, a verb filling the command line and filtering the fields widget,
+// drawn, a verb filling the command line and filtering the collect widget,
 // a field tap running at once, the `+` at the end, the scroll rule, and
 // Undo.
 //
@@ -83,7 +83,7 @@ const fieldsBar = (page) => page.locator('section[data-pane="bar"] .bar');
 const drawn = async (page) => (await listed(commands(page), 'button[data-command]')).map((b) => b.text);
 
 /**
- * The fields the fields widget is showing, by name: WHICH fields a verb
+ * The fields the collect widget is showing, by name: WHICH fields a verb
  * leaves is the claim here — the order they come in is `fields.test.mjs`'s.
  */
 const showing = async (page) => (await listed(fieldsBar(page), '[data-field]')).map((b) => b.field).sort();
@@ -819,7 +819,7 @@ describe('the scroll rule', () => {
 					);
 				assert.ok(await lastReached(commands(page), 'button[data-command]'), `${want} rows: the last command is not reached`);
 
-				// The fields widget alike — the same component, the same rule.
+				// The collect widget alike — the same component, the same rule.
 				const short = await axes(fieldsBar(page));
 				assert.deepEqual([short.x, short.y, short.display, short.fits], ['auto', 'hidden', 'flex', true]);
 			}

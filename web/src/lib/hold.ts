@@ -1,7 +1,7 @@
 // THE ONE HOLD (da-efr4i).
 //
 // The app has one long press and it had one implementation, written
-// inside the fields widget (da-8810n): a timer armed on `pointerdown`,
+// inside the collect widget (da-8810n): a timer armed on `pointerdown`,
 // cleared by the lift, with `contextmenu` — the right button, and the
 // menu key — and shift+click as the fine pointer's ways of saying the
 // same thing. Since the widget TITLES want the gesture too (da-efr4i),
