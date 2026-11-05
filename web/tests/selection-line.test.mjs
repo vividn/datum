@@ -47,11 +47,19 @@ const accentOf = (page) =>
 		return painted;
 	});
 
-/** The computed stroke of the cursor line in `scope`, once it is drawn. */
+/**
+ * The computed stroke of the cursor line in `scope`, once it is drawn.
+ *
+ * Found and read in one step: a redraw replaces the line, and a handle
+ * found before it reads the detached old one, whose every style is ''
+ * (da-wkuj6).
+ */
 async function strokeIn(page, scope) {
-	const line = page.locator(`${scope} line.cursor`);
-	await line.waitFor({ state: 'attached' });
-	return line.evaluate((l) => getComputedStyle(l).stroke);
+	const stroke = await page.waitForFunction((sel) => {
+		const line = document.querySelector(sel);
+		return line && getComputedStyle(line).stroke;
+	}, `${scope} line.cursor`);
+	return stroke.jsonValue();
 }
 
 const WHITE = 'rgb(255, 255, 255)';
