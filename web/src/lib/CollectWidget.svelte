@@ -1008,7 +1008,12 @@
 	const bounded = (z: number) => Math.min(ZOOM.max, Math.max(ZOOM.min, z));
 	/** The rows' zoom as drawn: `zoom`, inside the bounds whatever was stored, or a pinch's while it moves. */
 	let scale = $derived(bounded(zoom));
-	/** The fingers down on the room, and a pinch of two of them at rest: how far apart they began, and the zoom then. */
+	/**
+	 * The fingers down on the room, and a pinch of two of them at rest: how far apart they began, and the zoom then.
+	 * A finger lifts on the window (da-yn6my): one whose button went from under it,
+	 * a hold opening its field, lifts outside the room, and kept here it made every
+	 * later touch a pinch against it, so a drag zoomed and a pinch did nothing.
+	 */
 	const fingers = new Map<number, { x: number; y: number }>();
 	let pinch: { d: number; from: number } | null = null;
 	const apart = () => {
@@ -1035,9 +1040,7 @@
 		// A finger put down stops a glide where it is.
 		cancelAnimationFrame(coast);
 		coast = 0;
-		// Touch alone: a mouse or a pen is captured by nothing, so one let go of
-		// outside the room never reaches `up` and would stay in the map, a finger
-		// for the next touch to pinch against. A mouse zooms by ctrl+wheel.
+		// Touch alone: a mouse zooms by ctrl+wheel.
 		if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		// A second finger at rest is a pinch: the pan stops. `untapped` calls off a hold and every tap.
 		if (fingers.size === 2 && resting && picked === null) [pinch, drag] = [{ d: apart(), from: scale }, null];
@@ -1134,7 +1137,7 @@
 	};
 </script>
 
-<svelte:window onkeydown={onWindowKeyDown} />
+<svelte:window onkeydown={onWindowKeyDown} onpointerup={up} onpointercancel={up} />
 
 <!-- One field's button, wherever it stands: in the cluster, or aligned to the picture. -->
 {#snippet fieldButton(button: FieldButton)}
@@ -1317,8 +1320,6 @@
 				style:--zoom={scale}
 				onpointerdown={down}
 				onpointermove={move}
-				onpointerup={up}
-				onpointercancel={up}
 				onscroll={fold}
 				onclickcapture={swallow}
 			>
