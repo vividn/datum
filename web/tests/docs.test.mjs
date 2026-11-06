@@ -6,7 +6,7 @@
 // So the welcome's «Read the docs» opens the docs place on the contents (a
 // modal on a desktop), a link to another doc opens it there and «← back»
 // returns, a link out of the docs opens in a new tab, and every doc the
-// contents names opens.
+// contents names opens, the widgets' guides under them among them.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -62,9 +62,12 @@ describe('the docs place', () => {
 			await readTheDocs(page);
 			const named = await doc(page, 'README.md').locator('a[data-doc]').evaluateAll((all) => all.map((a) => a.dataset.doc));
 			assert.ok(named.includes('basics.md') && named.length >= 10, `the contents name ${named}`);
+			// Under them the guides (da-oefd0): the page's, and each widget's from its registry entry.
+			assert.ok(named.includes('widgets/page.md') && named.includes('widgets/widgetbar.md'), `the contents name ${named}`);
 			for (const name of new Set(named)) {
 				await doc(page, 'README.md').locator(`a[data-doc="${name}"]`).first().click();
 				await doc(page, name).locator('h1').waitFor();
+				if (name === 'widgets/widgetbar.md') assert.equal(await doc(page, name).locator('h1').innerText(), 'collect', 'a guide is titled as its widget');
 				assert.equal(await modal(page).locator('.quiet', { hasText: 'could not be read' }).count(), 0, name);
 				await modal(page).locator('button.back').click();
 				await doc(page, 'README.md').waitFor();

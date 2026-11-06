@@ -5,9 +5,10 @@
 	page has one in view, else wherever `openPlace('help')` hosts it — a tab
 	on a phone, a modal on a desktop (da-jozgv).
 
-	The explanation is TEXT, painted as the CLI painted it: a widget's or a
-	pill's is plain prose, the general help `datum help`'s stdout — but a
-	GUIDE (#lib/help.ts `GUIDES`), which is a page of its own. A command's
+	The explanation is TEXT, painted as the CLI painted it: a pill's is plain
+	prose, `datum help`'s its stdout — but a GUIDE (#lib/guides.ts, da-oefd0),
+	a widget's or the page's, the general help, which is a page of its own,
+	drawn by Guide.svelte. A command's
 	or a topic's is its PAGE, `datum help <name> --json` (da-efruz), drawn
 	intro first: its usage forms and flag tables fold into <details>, closed
 	until opened, and an opened one stays open on every page after, on this
@@ -26,7 +27,7 @@
 	import { explained, fitHelp } from '#lib/help.ts';
 	import { charactersIn } from '#lib/panes.ts';
 	import Pane from '#lib/Pane.svelte';
-	import SyncGuide from './SyncGuide.svelte';
+	import Guide from './Guide.svelte';
 	import WelcomeText from './WelcomeText.svelte';
 
 	/** The headings of the folds this device keeps open: a per-viewer convenience. */
@@ -64,8 +65,8 @@
 		<div bind:this={box} bind:clientWidth={width}>
 			<button type="button" class="front" onclick={() => explained.set(null)}>← front page</button>
 			<h3 class="asked">{$explained.title}</h3>
-			{#if $explained.guide === 'sync'}
-				<SyncGuide widget={$explained.text} />
+			{#if $explained.guide}
+				<Guide name={$explained.guide} />
 			{:else if $explained.page}
 				{@const page = $explained.page}
 				<pre class="help">{page.title}{page.intro ? `\n\n${page.intro}` : ''}</pre>

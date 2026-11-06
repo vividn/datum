@@ -55,6 +55,7 @@ we talk to each other»). Code that has not moved to a word yet says the old one
 | an untimed, keyed entry | **record** | `record` | RECORD | add, card |
 | a value for a whole day | **all day** | `allday` | ALLDAY | |
 | untimed data on a timed field, not a field kind | **remark** | `remark` | REMARK | note |
+| what an entry holds: a field's state, a moment's quantity | **state** | | | value |
 | one written row of data | **entry** | | | record (noun), row, doc |
 | writing one | **log** | | | record (verb), write, enter |
 

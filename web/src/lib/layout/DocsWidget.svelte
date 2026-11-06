@@ -10,10 +10,14 @@
 	drift from the repo's; `docs/README.md` is the contents. They are drawn by
 	#lib/markdown.ts. A link to another doc opens it here, «← back» returning;
 	any other link opens in a new tab, a file of the repo on GitHub.
+
+	Under the contents, the guides (da-oefd0, #lib/guides.ts): the page's and
+	each widget's, from the registry, as pages `widgets/<kind>.md` of their own.
 -->
 <script lang="ts">
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
+	import { PAGE, guideOf, guided } from '#lib/guides.ts';
 	import { markdown } from '#lib/markdown.ts';
 
 	const REPO = 'https://github.com/vividn/datum/blob/main';
@@ -25,6 +29,22 @@
 			load
 		])
 	);
+	/** Each guide, as a doc of its own. */
+	const guidePage = (name: string) => {
+		const guide = guideOf(name);
+		return `# ${guide?.title ?? name}\n\n${guide?.text ?? ''}\n`;
+	};
+	for (const name of [PAGE, ...guided()]) DOCS[`widgets/${name}.md`] = async () => guidePage(name);
+	/** The contents, and the guides under them. */
+	const GUIDES = [
+		'',
+		'## Using the page',
+		'',
+		`- [${guideOf(PAGE)?.title}](widgets/${PAGE}.md): tabs and layouts, widgets and their menus, the bar.`,
+		...guided().map((name) => `- [${guideOf(name)?.title}](widgets/${name}.md)`),
+		''
+	].join('\n');
+
 	/** The docs' pictures, by the same paths: URLs of the build's own copies. */
 	const IMAGES = Object.fromEntries(
 		Object.entries(import.meta.glob<string>('../../../../docs/**/*.{svg,png}', { query: '?url', import: 'default', eager: true })).map(
@@ -70,7 +90,7 @@
 		const at = ++asked;
 		let drawn: string | null = null;
 		try {
-			drawn = markdown(await DOCS[doc](), { link: (href) => link(href, doc), image: (src) => image(src, doc) });
+			drawn = markdown((await DOCS[doc]()) + (doc === CONTENTS ? GUIDES : ''), { link: (href) => link(href, doc), image: (src) => image(src, doc) });
 		} catch {
 			// Not fetched (offline before it was cached), or not drawn (a target `decodeURIComponent` refuses).
 			drawn = null;

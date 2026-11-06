@@ -7,8 +7,9 @@
 // devices» was a third until the welcome became short (da-uzyih.19). Then
 // a walk through the widget as a person takes it — the gear's Sync, Turn on
 // sync, a device connecting, its notice, More, and a join link opened in a
-// browser — and every control the guide names (a `b.ui`) is one the walk
-// saw, in those words.
+// browser — and every control the guide names (in bold) is one the walk
+// saw, in those words. The guide is the sync kind's, in its registry entry
+// (da-oefd0).
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,15 +38,15 @@ const place = (page) => page.locator('dialog.sheet[open][data-place="help"]');
 /** The guide, once the Help place shows it: its words outside the reference, and the reference. */
 async function guide(page) {
 	const modal = place(page);
-	await until(() => modal.locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === 'Syncing your devices');
-	const body = modal.locator('.guide');
+	await until(() => modal.locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === 'sync');
+	const body = modal.locator('.guide[data-guide="sync"]');
 	const words = await body.evaluate((el) => {
 		const copy = el.cloneNode(true);
 		copy.querySelector('details')?.remove();
 		return copy.textContent;
 	});
-	const sections = await body.locator('h3').count();
-	const widget = await body.locator('p.widget').innerText();
+	const sections = await body.locator('h2').count();
+	const widget = await body.locator('h2', { hasText: 'Reading the widget' }).count();
 	const details = body.locator('details.reference');
 	assert.equal(await details.getAttribute('open'), null, 'the reference is open');
 	await details.locator('summary').click();
@@ -55,10 +56,10 @@ async function guide(page) {
 	return { words, sections, widget, reference };
 }
 
-/** What every entrance must open: the guide's own words, the widget's help in it, the subcommands only folded. */
+/** What every entrance must open: the guide's own words, how to read the widget among them, the subcommands only folded. */
 function isTheGuide({ words, sections, widget, reference }) {
 	assert.ok(sections > 1, `${sections} sections`);
-	assert.notEqual(widget.trim(), '', 'the widget’s help');
+	assert.equal(widget, 1, 'how to read the widget');
 	assert.doesNotMatch(words, /datum sync|sync chain (invite|connect|list|leave)|sync (status|pause|resume|admin|diff|refold)\b/, 'a subcommand in the body');
 	assert.match(reference, /^datum sync/m);
 }
@@ -102,7 +103,7 @@ test('every control the guide names is one the widget shows, walked as a person 
 				// The guide, from the widget it is about.
 				await widget.getByRole('button', { name: 'how to sync' }).click();
 				await place(page).locator('.guide').waitFor();
-				named = await place(page).locator('.guide b.ui').allInnerTexts();
+				named = await place(page).locator('.guide strong').allInnerTexts();
 				await page.keyboard.press('Escape');
 				await place(page).waitFor({ state: 'detached' });
 				await page.locator('.root-bar button.gear').click();

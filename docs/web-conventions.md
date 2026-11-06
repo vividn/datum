@@ -459,9 +459,11 @@ rule is decided but not yet everywhere, it names the bead.
     comment, `PromptBar.svelte`'s `onKey`. Every handler that takes the key marks it with
     `preventDefault`, and the input peels only if none did. The × clears the whole input at
     once (`clearLine`).
-28. **Help explains anything tappable.** Every widget kind carries its `help`, and
-    `tree.test.mjs`'s «widget help» fails on a kind without one. A command's help is the CLI's
-    own, and a flag's comes with da-st2xl.
+28. **Help explains anything tappable.** Every widget kind carries its `guide` in its registry
+    entry (da-oefd0): what it is for, then every feature in the page's words, each option by its
+    label, which `guides-pure.test.mjs` holds it to. The general help is the page's guide
+    (`#lib/guides.ts`), `datum help` one line down. A command's help is the CLI's own, and a
+    flag's comes with da-st2xl.
 29. **The current choice is SOLID and bold, the other choices a tint, and actions hollow**
     (on trial in da-7q3ka's state ring). Not a dot, which reads as an occur dot. Not an
     underline, which reads as a link. Not a border, because rule 22 owns those. Not a size,

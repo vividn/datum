@@ -895,18 +895,7 @@ describe('a layout tab', () => {
 	});
 });
 
-// EVERY KIND SAYS WHAT IT IS (da-vjwid): the Help button explains a widget
-// with its kind's `help`, so a kind added without one would be a widget the
-// button has nothing to say about.
-describe('widget help', () => {
-	test('every registered kind has help', async () => {
-		const { KINDS } = await import('../src/lib/layout/registry.ts');
-		for (const [kind, { help }] of Object.entries(KINDS)) {
-			assert.equal(typeof help, 'string', `${kind} has no help`);
-			assert.ok(help.trim().length > 0, `${kind}'s help is empty`);
-		}
-	});
-});
+// Every kind's guide, and what it names: guides-pure.test.mjs (da-oefd0).
 
 // Every pickable kind has a built-in one-widget layout (da-y2f6).
 //

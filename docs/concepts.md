@@ -15,6 +15,7 @@ and help that have not moved to a word yet say the old one until they do.
 | an untimed, keyed entry | **record** | `record` | RECORD | add, card |
 | a value for a whole day | **all day** | `allday` | ALLDAY | |
 | untimed data on a timed field, not a field kind | **remark** | `remark` | REMARK | note |
+| what an entry holds: a field's state, a moment's quantity | **state** | | | value |
 | one written row of data | **entry** | | | record (noun), row, doc |
 | writing one | **log** | | | record (verb), write, enter |
 
@@ -52,7 +53,7 @@ One-line summaries of the model:
 - **State** — derived from state-bearing entries (`Switch`,
   `BlockSwitch`, `PointSwitch`, `Block` with state=set, `Point` as a
   false-event marker): at any past instant we can reconstruct a
-  field's value. `datum now` consults this.
+  field's state. `datum now` consults this.
 - **Tracked** — a field's standing claim about its own GAPS. A tracked
   field is one you are actively recording, so a stretch of it with no
   entries is not missing data, it is evidence: it says the events did

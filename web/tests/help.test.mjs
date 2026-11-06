@@ -11,7 +11,6 @@ import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
 import { DESKTOP, PHONE, along, atRest, widgetPane } from './support/layout.mjs';
 import { reach } from './support/commands.mjs';
 import { until } from './support/until.mjs';
-import { resolveLibAsSource } from './support/libhook.mjs';
 
 before(startApp);
 after(stopApp);
@@ -49,10 +48,11 @@ const shown = (page) =>
 /** The Help widget, wherever it is. */
 const place = (page) => page.locator('.host[data-widget="help"]');
 
-/** What the Help widget shows: its title and its lines, once it shows `title`. */
+/** What the Help widget shows: its title and its lines, once it shows `title`, and (`guide`) the guide they are. */
 async function read(page, title) {
 	await until(() => place(page).locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === title);
-	return (await place(page).locator('pre.help').innerText()).split('\n');
+	const shown = place(page).locator('pre.help, .guide').first();
+	return Object.defineProperty((await shown.innerText()).split('\n'), 'guide', { value: await shown.getAttribute('data-guide') });
 }
 
 /**
@@ -101,17 +101,6 @@ async function cliHelp(page, ...name) {
 
 /** Text as it reads, whatever width it was wrapped at. */
 const flat = (text) => text.replace(/\s+/g, ' ').trim();
-
-let kinds;
-/** A widget kind's own help (`#lib/layout/registry.ts`), which the Help place shows for it. */
-async function kindHelp(kind) {
-	if (!kinds) {
-		// registry.ts reaches Svelte components node cannot load; the hook stubs them.
-		resolveLibAsSource();
-		({ KINDS: kinds } = await import('../src/lib/layout/registry.ts'));
-	}
-	return kinds[kind].help;
-}
 
 /** What Help says while armed, on both buttons (da-okj8i). */
 const ARMED = '(click on something)';
@@ -189,25 +178,25 @@ describe('the Help button', () => {
 		});
 	});
 
-	test('then a widget: its kind\'s help, and a press inside it does nothing else', async () => {
+	test('then a widget: its kind\'s guide, and a press inside it does nothing else', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, ['setup coffee --verb moment']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
 			const lines = await explain(page, coffee, 'collect');
-			assert.equal(lines.join('\n'), await kindHelp('widgetbar'));
+			assert.equal(lines.guide, 'widgetbar');
 			assert.equal((await app.entries(5)).length, 0, 'the press logged coffee');
 		});
 	});
 
-	// da-6i6dx: the setup widget's help speaks the form's words — its shapes
+	// da-6i6dx: the setup widget's guide speaks the form's words — its kinds
 	// and its data, and a new field's save, one `setup F --track` and one Undo (da-2pbvd).
-	test('then the setup widget: its help in the words its form uses', async () => {
+	test('then the setup widget: its guide in the words its form uses', async () => {
 		const withField = JSON.stringify(along('column', widgetPane('setup', 'setup'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')));
 		await onPage(async ({ page }) => {
 			const lines = await explain(page, page.locator('.host[data-widget="setup"] .name-line .label'), 'setup');
-			assert.equal(lines.join('\n'), await kindHelp('setup'));
-			assert.ok(lines.join('\n').includes('`setup F --track`'), 'it names the command a new field\'s Save runs');
+			assert.equal(lines.guide, 'setup');
+			assert.ok(lines.join('\n').includes('setup F --track'), 'it names the command a new field\'s Save runs');
 			// A field's kind is the glossary's word (da-kjkpx), the old «shape» gone; its keys are its data.
 			assert.doesNotMatch(lines.join('\n'), /\bshapes?\b|\bkeys\b/);
 		}, withField);
@@ -223,13 +212,23 @@ describe('the Help button', () => {
 		});
 	});
 
-	test('then Help again: general help, `datum help`; a tap back on the tab it left closes it too', async () => {
+	// da-oefd0: the general help leads with the page, `datum help` one line down.
+	test('then Help again: general help, the page\'s guide, with `datum help` one line down; a tap back on the tab it left closes it too', async () => {
 		await onPage(async ({ page }) => {
 			const from = await shown(page);
 			const tap = () => page.locator('.root-bar [role="tab"]', { hasText: from }).click();
-			const lines = await explain(page, command(page, 'help'), 'datum help', tap);
-			assert.equal(lines[0], (await cliHelp(page)).split('\n')[0]);
+			const lines = await explain(page, command(page, 'help'), 'Using datum.day', tap);
+			assert.equal(lines.guide, 'page');
 			assert.equal(await label(page), 'help');
+			// Its second line is `datum help`, which opens the CLI's own.
+			await armHelp(page);
+			await (await command(page, 'help')()).click();
+			const cli = place(page).locator('.guide[data-guide="page"] > :nth-child(2) button.cli-help');
+			await cli.click();
+			const general = await read(page, 'datum help');
+			assert.equal(general[0], (await cliHelp(page)).split('\n')[0]);
+			await tap();
+			await until(() => shown(page), (t) => t === from);
 		});
 	});
 
@@ -432,11 +431,11 @@ describe('the root bar (?)', () => {
 			assert.equal(await says(), '?');
 			const title = page.locator('section.pane[data-title="welcome"] .titlebox');
 			const lines = await explain(page, title, 'welcome', undefined, q);
-			assert.equal(lines.join('\n'), await kindHelp('welcome'));
+			assert.equal(lines.guide, 'welcome');
 			// The tap on the widget disarmed it.
 			assert.equal(await says(), '?');
-			const general = await explain(page, q, 'datum help', undefined, q);
-			assert.equal(general[0], (await cliHelp(page)).split('\n')[0]);
+			const general = await explain(page, q, 'Using datum.day', undefined, q);
+			assert.equal(general.guide, 'page');
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');
 		}, bare);
 	});
