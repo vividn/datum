@@ -271,11 +271,12 @@ export function layMarks(root: Element, along: number, across: number, y = false
 			scaleAll(el, y ? ['x', 'width'] : ['y', 'height'], across);
 			stretch(el, num(el, 'x') + num(el, 'width') / 2);
 		} else if (el.localName === 'text' && el.matches('.error-label')) {
-			// As datum sizes it: a twelfth of the day, between 7 and 11.
+			// As datum sizes it: a twelfth of the day, between 7 and 11. Placed
+			// from its own x and y, which datum set 2 and `fs` off its line's
+			// start, and not from the line, which this loop may have scaled (da-2nxxv).
 			const fs = Math.min(11, Math.max(7, LAYER_HEIGHT * across * 0.12));
-			const line = el.parentElement!.querySelector('line')!;
-			set(el, 'x', num(line, 'x1') * kx + 2);
-			set(el, 'y', y ? num(line, 'y1') * ky - 2 : num(line, 'y1') * ky + fs);
+			set(el, 'x', (num(el, 'x') - 2) * kx + 2);
+			set(el, 'y', y ? (num(el, 'y') + 2) * ky - 2 : (num(el, 'y') - num(el, 'font-size')) * ky + fs);
 			set(el, 'font-size', fs);
 		} else if (el.localName === 'text') {
 			stretch(el, num(el, 'x') * kx);
