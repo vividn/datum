@@ -475,6 +475,41 @@ describe('the now strip is the last half second', () => {
 			assert.equal((await app.runLine('get work::state')).stdout.trim(), 'true', 'the end was refused');
 		}, AT_REST);
 	});
+
+	// vividn, 2026-11-05 22:36 (da-efw3a): «the wipe animation for a changing state will draw on top of other fields that are normally on top of it, please keep z ordering during this animation».
+	test("a tap's sweep is drawn at its field's place in the stacking: under the field the layer draws over it", async () => {
+		await withApp(async (app) => {
+			// `under`'s last entry is out of the strip's reach, so its lane holds nothing the strip draws.
+			await seeded(app, [
+				at('over', 'start', 0.4, { height: 0.2, z_index: 2 }),
+				at('under', 'start', 0.45, { height: 0.1, z_index: 1 }),
+				'start under -t -30',
+				'stop under -t -25',
+				'start over'
+			]);
+			const { page } = app;
+			const fill = await colorOf(app, 'over');
+			await until(() => drawn(page, 'over'), (marks) => marks.some((m) => m.fill === fill && m.left <= 0.5 && m.right >= m.of - 0.5));
+			const stacking = () =>
+				page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => {
+					const tap = svg.querySelector('.pending[data-mark="under"]');
+					const over = [...svg.querySelectorAll('g[data-mark="over"] rect.strip-block')];
+					const [t, o] = [tap?.getBoundingClientRect(), over.map((b) => b.getBoundingClientRect())];
+					return {
+						tap: !!tap,
+						lane: tap?.parentElement?.getAttribute('data-mark') ?? null,
+						overlaps: !!t && o.some((r) => r.left < t.right && t.left < r.right && r.top < t.bottom && t.top < r.bottom),
+						under: !!tap && over.some((b) => tap.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+					};
+				});
+			await holdFiles(page);
+			await page.locator(`${ROOM} [data-field="under"]`).click();
+			await app.clock.forward(250);
+			const mid = await stacking();
+			await release(page);
+			assert.deepEqual(mid, { tap: true, lane: 'under', overlaps: true, under: true }, "the sweep is drawn over the field above it");
+		}, AT_REST);
+	});
 });
 
 describe('collect at rest on a phone', () => {

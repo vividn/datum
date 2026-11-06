@@ -113,7 +113,8 @@ export function laid(
 				copy.append(mark);
 				dot?.push(mark);
 			}
-			if (copy.firstChild) g.append(copy);
+			// Kept with nothing in view: a tap's mark is drawn in it, at the field's place in the stacking.
+			g.append(copy);
 		}
 		trim(g, unit(origin - span), unit(origin + span), unit(origin + span), to, y);
 		// Along time from `origin`, which `layMarks` then scales to px.

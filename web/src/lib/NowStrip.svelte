@@ -4,7 +4,10 @@
 	does, its marks laid as the nowview lays them (`laid`, #lib/nowStrip.ts).
 	A state that began within the strip's half second sweeps in from the
 	right, and a dot crosses the strip in half a second. `pending` is what a
-	tap added before the database answered, drawn over the layer.
+	tap added before the database answered, drawn in its field's lane of the
+	layer, so at its place in the stacking as the layer's own mark is
+	(vividn, 2026-11-05: «please keep z ordering during this animation»), and
+	over the layer where the layer has no lane of it.
 
 	The marks are laid in px from `origin`, so their numbers stay small, and
 	one transform on `.strip-slide` slides them (not `.flow` or `.slide`, the nowview's own): on each frame while an edge is in
@@ -67,7 +70,34 @@
 		})
 	);
 
-	$effect(() => void layer?.replaceChildren(drawn.node));
+	const NS = 'http://www.w3.org/2000/svg';
+	/** A tap's mark: a dot, or a block whose fill null is the strip's ground. */
+	function tapMark(m: (typeof taps)[number]): SVGElement {
+		const el = document.createElementNS(NS, m.dot ? 'circle' : 'rect');
+		const set = (attrs: Record<string, string | number | undefined>) =>
+			Object.entries(attrs).forEach(([name, v]) => v !== undefined && el.setAttribute(name, String(v)));
+		if (m.dot) {
+			const a = m.aspect ?? 1;
+			const [cx, cy] = xy(m.x, (m.y + m.h / 2) * y);
+			set({ cx, cy, r: (m.h / 2) * y, transform: a === 1 ? undefined : `matrix(${a} 0 0 1 ${cx * (1 - a)} 0)` });
+		} else {
+			const [x, ry] = xy(m.x, m.y * y);
+			const [w, h] = xy(m.w, m.h * y);
+			set({ x, y: ry, width: w, height: h });
+		}
+		set({ class: m.fill === null ? 'pending ground' : 'pending', 'data-mark': m.field, fill: m.fill ?? undefined });
+		return el;
+	}
+
+	// The layer, and each tap's mark at the end of its field's lane in the stretch holding now, the last.
+	$effect(() => {
+		const root = layer;
+		if (!root) return;
+		root.replaceChildren(drawn.node);
+		const lanes = new Map([...root.querySelectorAll('g.strip-field[data-mark]')].map((g) => [g.getAttribute('data-mark'), g]));
+		const marks = taps.map((m) => (lanes.get(m.field) ?? root).appendChild(tapMark(m)));
+		return () => marks.forEach((el) => el.remove());
+	});
 
 	$effect(() => {
 		const edges = [...drawn.edges, ...taps.filter((m) => !m.dot).flatMap((m) => [m.from, m.to])];
@@ -119,25 +149,6 @@
 	<defs use:patterns={doc}></defs>
 	<g class="strip-slide" bind:this={flow}>
 		<g bind:this={layer}></g>
-		{#each taps as m}
-			{#if m.dot}
-				{@const a = m.aspect ?? 1}
-				{@const [cx, cy] = xy(m.x, (m.y + m.h / 2) * y)}
-				<circle
-					class="pending"
-					data-mark={m.field}
-					{cx}
-					{cy}
-					r={(m.h / 2) * y}
-					fill={m.fill}
-					transform={a === 1 ? undefined : `matrix(${a} 0 0 1 ${cx * (1 - a)} 0)`}
-				/>
-			{:else}
-				{@const [x, ry] = xy(m.x, m.y * y)}
-				{@const [w, h] = xy(m.w, m.h * y)}
-				<rect class="pending" class:ground={m.fill === null} data-mark={m.field} {x} y={ry} width={w} height={h} fill={m.fill} />
-			{/if}
-		{/each}
 	</g>
 </svg>
 
@@ -154,7 +165,7 @@
 		transform: scaleX(-1);
 	}
 
-	.ground {
+	.now-strip :global(.ground) {
 		fill: var(--ground);
 	}
 </style>
