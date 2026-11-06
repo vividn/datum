@@ -320,6 +320,8 @@ fn a_list_typed_key_parses_each_element_or_refuses() {
         ),
         ("tags=a,b", Ok(json!(["a", "b"]))),
         ("tags=a, b", Ok(json!(["a, b"]))),
+        ("tags='a,b'", Ok(json!(["a,b"]))),
+        (r#"tags="a,b""#, Ok(json!(["a,b"]))),
         ("tags=007", Ok(json!(["007"]))),
         (r#"tags=["a,b", 1]"#, Ok(json!(["a,b", "1"]))),
         ("done=true,FALSE", Ok(json!([true, false]))),

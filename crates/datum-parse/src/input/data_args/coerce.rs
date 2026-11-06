@@ -326,7 +326,8 @@ fn instant(value: &str, compat: Compat, later: bool) -> Option<(DatumTime, bool)
 /// «4]». The bracket form gives its elements, read as every value is
 /// ([`json`], da-0d7e1: `[a,b]` is «a» and «b»); otherwise the value is a list already,
 /// as if marked with a leading comma: `8,8,6` and `8` split as `,8,8,6`
-/// and `,8` would, and `a, b` is the one element «a, b».
+/// and `,8` would, and `a, b` is the one element «a, b». A quoted string is
+/// one element, `'a,b'` «a,b», as [`json`] reads it.
 fn coerce_list(
     ty: KeyType,
     value: &str,
@@ -352,16 +353,21 @@ fn coerce_list(
                 ": the bracket form is JSON: {bracket}, or write {plain}"
             ));
         }
-        None => {
-            let marked = if value.starts_with(',') {
-                value.to_string()
-            } else {
-                format!(",{value}")
-            };
-            comma_items(&marked)
-                .map(|items| items.into_iter().map(str::to_string).collect())
-                .unwrap_or_else(|| vec![value.to_string()])
-        }
+        // A quoted string is one element, read as an untyped key reads it:
+        // `'a,b'` is «a,b» (da-zv7qy).
+        None => match value.starts_with(['\'', '"']).then(|| json(value)) {
+            Some(Some(Value::String(s))) => vec![s],
+            _ => {
+                let marked = if value.starts_with(',') {
+                    value.to_string()
+                } else {
+                    format!(",{value}")
+                };
+                comma_items(&marked)
+                    .map(|items| items.into_iter().map(str::to_string).collect())
+                    .unwrap_or_else(|| vec![value.to_string()])
+            }
+        },
     };
     items
         .into_iter()
@@ -1024,6 +1030,22 @@ mod tests {
         assert!(bracket_value("state", "a,b").is_none());
         assert!(bracket_value("state", "a,b]").unwrap().is_err());
         assert!(bracket_value("state", "'a,b]'").is_none());
+    }
+
+    /// da-zv7qy: a quoted string on a list-typed key is one element, read
+    /// as an untyped key reads it, never split with its quotes kept.
+    #[test]
+    fn a_quoted_value_is_one_list_element() {
+        let list = |ty, v| coerce_list(ty, v, Compat::default());
+        for v in ["'a,b'", r#""a,b""#] {
+            assert_eq!(infer_type(v), Some(json!("a,b")), "{v}");
+            assert_eq!(list(KeyType::StringList, v), Ok(vec![json!("a,b")]), "{v}");
+        }
+        assert_eq!(list(KeyType::NumberList, "'8'"), Ok(vec![json!(8)]));
+        assert_eq!(
+            list(KeyType::StringList, "'a,b"),
+            Ok(vec![json!("'a"), json!("b")])
+        );
     }
 
     #[test]

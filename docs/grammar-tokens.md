@@ -399,7 +399,8 @@ in v2 (relaxed-json) and JSON5, inside brackets too: `'a,b'` is the text
 one, `\'` is a quote and `"` needs no escape. There is no shell-style
 difference between the two, since datum expands nothing in a value. The
 shell takes one layer of quotes itself, so on a command line it is
-`"'a,b'"` or `'"a,b"'`. A lone or unbalanced `'` is text.
+`"'a,b'"` or `'"a,b"'`. A lone or unbalanced `'` is text. On a list-typed
+key a quoted string is one element: `"tags='a,b'"` is `["a,b"]` (da-zv7qy).
 
 ```bash
 datum moment quoted -k key "',,'" "v='a,b'" "l=['a', 'b']"
