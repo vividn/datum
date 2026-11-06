@@ -32,3 +32,9 @@ A copy of the file at another path mints its own key the first time it
 signs, so `cp a.db b.db` gives two copies that sync. Two copies found
 signing with one key are refused by name; `datum sync chain rekey` gives one of
 them a new key (and it joins the chain again).
+
+A copy a newer datum migrated while the rest of its chain stayed behind is
+brought back by the chain's datum with `datum sync chain reenter`: it keeps
+the file whole beside it, refetches the chain under the same key, and replays
+what it made that the chain never had. A change the older datum cannot hold
+is named and stays in that backup.

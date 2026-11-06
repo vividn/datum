@@ -25,6 +25,7 @@ mod identity;
 mod invite;
 mod purge;
 mod readers;
+mod reenter;
 mod run;
 mod schema;
 mod upgrade;

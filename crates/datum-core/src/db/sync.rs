@@ -99,6 +99,7 @@ mod versions;
 use chain::{Chain, Filter, Role, CHAIN_HID};
 pub use debug::DebugConflicts;
 pub use diagnose::{row_diff, FoldCheck, Named, Orphan, Stale};
+pub use rejoin::Reentry;
 pub use status::Apart;
 use summed::{add, summed};
 #[cfg(test)]
@@ -882,7 +883,11 @@ fn sign(
         .prepare_cached("SELECT COALESCE(MAX(seq), 0) + 1 FROM ops WHERE endpoint = ?1")?
         .query_row(params![ep.id], |r| r.get(0))?;
     if seq <= rejoin::signed_before(conn, &ep.id)? {
-        return Err(DatumError::Other(rejoin::REJOINING.into()));
+        // A re-entry's mark comes down once its chain is back (da-vcu8a).
+        rejoin::settle_reentry(conn)?;
+        if seq <= rejoin::signed_before(conn, &ep.id)? {
+            return Err(DatumError::Other(rejoin::REJOINING.into()));
+        }
     }
     let hlc = next_hlc(conn)?;
     let mut v = json!({
@@ -1727,6 +1732,18 @@ pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<bool> {
         })
         .collect::<Result<Vec<_>>>()?;
     ops.retain(|op| wiped.as_deref().is_none_or(|w| op.hlc.as_str() >= w));
+    // A re-entry's replay of an op a member held all along (da-vcu8a): the
+    // chain brought the op itself back, at its seq and clock.
+    let mut held =
+        conn.prepare_cached("SELECT 1 FROM ops WHERE endpoint = ?1 AND seq = ?2 AND hlc = ?3")?;
+    let mut kept = Vec::new();
+    for op in ops {
+        if !held.exists(params![op.endpoint, op.seq, op.hlc])? {
+            kept.push(op);
+        }
+    }
+    drop(held);
+    let ops = kept;
     if ops.is_empty() {
         return Ok(false);
     }

@@ -101,7 +101,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
         complete(&["chain"]),
         [
             "invite", "join", "leave", "list", "rename", "expel", "purge", "role", "ack", "rekey",
-            "upgrade"
+            "reenter", "upgrade"
         ]
     );
     // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut

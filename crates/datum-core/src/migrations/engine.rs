@@ -189,7 +189,8 @@ pub fn apply_migrations(
     if current > target {
         return Err(DatumError::IncompatibleSchema(format!(
             "database schema version {current} is newer than this binary supports \
-             (expected ≤ {target}); upgrade datum"
+             (expected ≤ {target}); {}",
+            newer_schema_remedy(conn)
         )));
     }
     // Every step in one transaction, by design: a migration is all or nothing.
@@ -212,6 +213,26 @@ pub fn apply_migrations(
         }
         Ok(applied)
     })
+}
+
+/// What a file a newer datum migrated is refused with (da-vcu8a): upgrade
+/// datum, or, where it is in a sync chain, re-enter the chain at this
+/// datum's version.
+pub fn newer_schema_remedy(conn: &Connection) -> &'static str {
+    let chained = conn
+        .query_row(
+            "SELECT 1 FROM ops WHERE hid = ?1 LIMIT 1",
+            [crate::db::chain::CHAIN_HID],
+            |_| Ok(()),
+        )
+        .is_ok();
+    match chained {
+        true => {
+            "upgrade datum, or re-enter its sync chain at this datum's version: \
+                 `datum sync chain reenter`"
+        }
+        false => "upgrade datum",
+    }
 }
 
 /// Status row reported by [`migration_status`].
@@ -447,9 +468,36 @@ fn backups_by_stamp(
         .collect()
 }
 
-/// Every pre-migration snapshot taken for this database, oldest first:
-/// each a whole copy of an earlier state of it.
+/// Every whole copy of an earlier state of this database beside it: each
+/// pre-migration snapshot, oldest first, then each file a `sync chain
+/// reenter` kept (da-vcu8a), which a purge removes as it does them.
 pub fn pre_migration_backups(db_path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = migration_snapshots(db_path);
+    let (Some(dir), Some(name)) = (db_path.parent(), db_path.file_name()) else {
+        return found;
+    };
+    let kept = format!("{}.reentered-from-v", name.to_string_lossy());
+    let dir = if dir.as_os_str().is_empty() {
+        std::path::Path::new(".")
+    } else {
+        dir
+    };
+    let mut reentered: Vec<_> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(&kept))
+        .map(|e| e.path())
+        .collect();
+    reentered.sort();
+    found.extend(reentered);
+    found
+}
+
+/// The pre-migration snapshots alone, oldest first: what retention prunes.
+/// A re-entry's file is never pruned, holding what its chain's datum could
+/// not.
+fn migration_snapshots(db_path: &std::path::Path) -> Vec<std::path::PathBuf> {
     let (Some(dir), Some(name)) = (db_path.parent(), db_path.file_name()) else {
         return Vec::new();
     };
@@ -469,7 +517,7 @@ pub fn pre_migration_backups(db_path: &std::path::Path) -> Vec<std::path::PathBu
 /// left alone, since failing to prune is harmless and refusing to open the
 /// database over it would not be.
 pub fn prune_pre_migration_backups(db_path: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let found = pre_migration_backups(db_path);
+    let found = migration_snapshots(db_path);
     let extra = found.len().saturating_sub(MAX_PRE_MIGRATION_BACKUPS);
     found
         .into_iter()

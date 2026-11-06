@@ -262,6 +262,12 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 }
             }
         }
+        // Run before the database opens (`datum-cli`), as no open here reads
+        // the file it is for: on a line of several, or in the REPL, it is not.
+        SyncCommand::Reenter => bail!(
+            "sync chain reenter runs alone, on a file a newer datum migrated: \
+             `datum sync chain reenter`"
+        ),
         SyncCommand::Rekey => {
             println!("new endpoint key {}", db.sync_rekey()?);
             println!(
@@ -852,6 +858,47 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
 
 #[cfg(not(feature = "net"))]
 const NO_NET: &str = "peer-to-peer sync is not in this build (no networking)";
+
+/// `datum sync chain reenter` (da-vcu8a) of the file at `path`, which a newer
+/// datum migrated past this one's schema and so no handle opens.
+pub fn reenter(path: &std::path::Path) -> Result<()> {
+    let r = Db::sync_reenter(path)?;
+    println!(
+        "sync chain reenter: {} was at schema v{}, past this datum's v{CURRENT_SCHEMA_VERSION}",
+        path.display(),
+        r.schema
+    );
+    println!(
+        "  kept: the file as it was, whole, at {}",
+        r.backup.display()
+    );
+    println!("  kept: this copy's endpoint key, so it stays the member it was");
+    for kept in &r.kept {
+        println!("  in the backup alone, which this datum cannot hold: {kept}");
+    }
+    let db = Db::open(&path.to_string_lossy())?;
+    super::db::refetch(&db, &r.sources);
+    let drained = db.drain_spool()?;
+    match drained.stuck {
+        None if r.queued > 0 => {
+            println!(
+                "replayed {} change(s) made there that no member held",
+                r.queued
+            );
+            #[cfg(feature = "net")]
+            if let Err(e) = datum_sync::now_all(&db, false) {
+                println!("not sent yet ({e:#}): `datum sync` sends them");
+            }
+        }
+        None => {}
+        Some(e) => println!(
+            "{} change(s) made there that no member held wait to land once its own are back \
+             ({e}): `datum sync`",
+            r.queued
+        ),
+    }
+    Ok(())
+}
 
 /// Bare `datum sync`'s one line: how the members stand after it (none
 /// when there are none: the sync has said so).

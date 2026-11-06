@@ -241,7 +241,7 @@ fn a_purge_between_an_open_sessions_rounds_leaves_the_file_empty() {
 
 /// Stamp `copy`'s file one schema on, as a newer datum's migration leaves
 /// it. What an older build then says of the two versions.
-fn migrate_under(copy: &Copy) -> String {
+pub(super) fn migrate_under(copy: &Copy) -> String {
     let now = CURRENT_SCHEMA_VERSION + 1;
     let stamped = rusqlite::Connection::open(copy.db())
         .unwrap()

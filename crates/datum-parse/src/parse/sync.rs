@@ -207,7 +207,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|join|leave|list|rename|expel|purge|role|ack|rekey|upgrade";
+    const SET: &str = "invite|join|leave|list|rename|expel|purge|role|ack|rekey|reenter|upgrade";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = [
@@ -410,6 +410,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             SyncCommand::Ack { who, all }
         }
         Some("rekey") => SyncCommand::Rekey,
+        Some("reenter") => SyncCommand::Reenter,
         Some("upgrade") => SyncCommand::Upgrade,
         Some(other) => return Err(unknown("sync chain", other, SET)),
         None => return Err(missing("sync chain", SET)),
@@ -1043,6 +1044,7 @@ mod tests {
             assert!(parse_sync_cmd(bad).is_err(), "{bad:?}");
         }
         assert_eq!(p(&["chain", "rekey"]), SyncCommand::Rekey);
+        assert_eq!(p(&["chain", "reenter"]), SyncCommand::Reenter);
         assert_eq!(
             p(&["chain", "leave", "--dry-run"]),
             SyncCommand::Leave {

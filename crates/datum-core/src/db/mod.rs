@@ -135,7 +135,7 @@ pub(crate) use sync::derive_all_conflicts;
 pub use sync::{
     canonical_json, chain, device_id, forget_invocation, peers, row_diff, set_client_source,
     set_device_source, set_invocation, Apart, ApplySummary, DebugConflicts, FoldCheck, Named,
-    Orphan, Stale, Version,
+    Orphan, Reentry, Stale, Version,
 };
 pub use tombstone::{revert_in_tx, soft_delete_in_tx, take_back_in_tx};
 pub use types::{
@@ -519,7 +519,8 @@ impl Db {
                  once to upgrade"
             ))),
             std::cmp::Ordering::Greater => Err(DatumError::IncompatibleSchema(format!(
-                "{path} is at schema v{at}, newer than this datum's v{reads}: upgrade datum"
+                "{path} is at schema v{at}, newer than this datum's v{reads}: {}",
+                crate::migrations::newer_schema_remedy(&db.conn)
             ))),
         }
     }

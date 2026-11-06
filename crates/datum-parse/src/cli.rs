@@ -1151,6 +1151,12 @@ pub enum SyncCommand {
     },
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
+    /// `datum sync chain reenter` (da-vcu8a) — a copy a newer datum migrated
+    /// past its chain made a copy at this datum's version again: its file
+    /// kept whole beside it, the chain refetched, and what it made that no
+    /// member held replayed, what this datum cannot hold named. Run before the
+    /// database opens, as it will not.
+    Reenter,
     /// `datum sync chain expel <WHO> [--unjoin] [--wipe] [--yes]`,
     /// `datum sync chain role <WHO> member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
     /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,

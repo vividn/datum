@@ -902,6 +902,25 @@ counts as signed until its ops are back — so it takes them back and serves a
 member's vector without reading itself as a copy sharing its key, and signs
 nothing meanwhile. Refused while a change made here has reached no member.
 
+A copy a newer datum migrated past its chain (an upgrade by mistake, the chain
+staying behind) comes back by `sync chain reenter`, run by the chain's datum,
+never by a down migration (da-vcu8a, vividn, 2026-11-06): those run in tests,
+and nothing checks that they keep data. The newer file is kept whole beside
+it (`<db>.reentered-from-v<N>-<time>.bak`, its log checkpointed in), a fresh
+copy at this datum's schema keeps what `--rejoin` keeps and refetches the
+chain, and the ops it signed that no member held, by their last vectors, wait
+in its spool, its own deps dropped, to land as this copy's next once its own
+are back, as any spooled change does. Until the chain's records are back,
+every seq the key signed counts as signed (`sync_rejoin` with `reentry`), so a
+member holding more than its vector said is no second copy of the key; then
+the mark goes, and a replayed op the refetch brought back itself (its
+endpoint, seq and HLC held) lands nothing. What this datum cannot hold (a chain
+record, an op kind, an effect, a column or a value it does not read) is
+named in what it prints and stays in the backup alone, as do the entries no
+op covers yet. That file is never pruned, and a purge removes it as it does
+the snapshots. It runs only when asked; the newer-schema refusal of a chained
+file names it.
+
 Redeeming another chain's invite leaves on its own only a copy holding nothing
 but its own data (no other live member, no other endpoint's op), keeping its
 key.

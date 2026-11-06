@@ -216,7 +216,7 @@ pub fn purge_with_io(
 
 /// A rejoined copy's first sync, with the members it refetches from. One
 /// that does not finish is for `datum sync` to resume, or the daemon.
-fn refetch(db: &Db, sources: &[String]) {
+pub(crate) fn refetch(db: &Db, sources: &[String]) {
     println!("refetching from {}…", sources.join(", "));
     #[cfg(feature = "net")]
     let done = datum_sync::now_all(db, false);

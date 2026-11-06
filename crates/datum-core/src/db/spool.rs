@@ -151,7 +151,7 @@ fn pieces(bytes: &[u8]) -> impl Iterator<Item = (&[u8], Option<Line>, bool)> {
 /// Append `line` to `path`, fsynced, on a line of its own. Its callers hold
 /// the spool's lock, so nothing appends between reading the last byte and
 /// writing after it.
-fn append_line(path: &Path, line: &[u8]) -> Result<()> {
+pub(crate) fn append_line(path: &Path, line: &[u8]) -> Result<()> {
     let created = !path.exists();
     let mut f = OpenOptions::new()
         .create(true)

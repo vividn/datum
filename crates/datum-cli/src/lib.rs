@@ -949,6 +949,13 @@ fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
         return cmd::dispatch(cli, &placeholder);
     }
 
+    // A file a newer datum migrated, which no open here reads (da-vcu8a).
+    if matches!(&cli.command, Command::Sync(SyncCommand::Reenter)) {
+        drop(opened);
+        refuse_missing(cli.db.as_deref())?;
+        let path = config::resolve_db(cli.db.as_deref())?.path;
+        return datum_commands::commands::sync::reenter(&path);
+    }
     if reads(&cli.command) {
         refuse_missing(cli.db.as_deref())?;
     }
