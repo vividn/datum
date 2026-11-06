@@ -420,18 +420,21 @@ describe('the output is a strip of commands, the newest at the right', () => {
 					return slide;
 				};
 			});
-			await app.submit('occur bread');
-			await page.waitForFunction(() => window.__played.length === 1);
-			await page.waitForTimeout(500);
-			const state = await page.evaluate(() => {
-				const slide = window.__played[0];
-				const was = slide.playState;
-				slide.cancel();
+			let state;
+			try {
+				await app.submit('occur bread');
+				await page.waitForFunction(() => window.__played.length === 1);
+				await page.waitForTimeout(500);
+				state = await page.evaluate(() => window.__played[0].playState);
+			} finally {
 				// The app is shared: left stretched, the next test's slides
-				// each took a minute, and its `strip` waited them out (da-5rpcr).
-				Element.prototype.animate = window.__animate;
-				return was;
-			});
+				// each took a minute, and its `strip` waited them out (da-5rpcr),
+				// so this runs however the test above it ends (da-roixa).
+				await page.evaluate(() => {
+					for (const slide of window.__played) slide.cancel();
+					Element.prototype.animate = window.__animate;
+				});
+			}
 			assert.equal(state, 'running', 'the slide was taken off before it ended');
 			assert.deepEqual(app.errors, []);
 		});
