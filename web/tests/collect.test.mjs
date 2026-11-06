@@ -201,17 +201,32 @@ describe('collect', () => {
 
 	// vividn, 2026-11-06 (da-iunoo): «Let's actually hide it by default. But a
 	// little clock button in the middle between the fields section and the now
-	// secttion, clicking it toggles whether this time panel is open.»
-	test('at rest the section is a clock alone between the strip and the rows; a tap opens it, kept for the session, and a second closes it', async () => {
+	// secttion, clicking it toggles whether this time panel is open.» And
+	// (da-s2hht): «instead, put it right on the boundary line between the now
+	// section and the fields section.»
+	test('at rest the section is a clock alone on the boundary between the strip and the rows; a tap opens it, kept for the session, and a second closes it', async () => {
 		await collect(async ({ page }) => {
 			const clock = page.locator(`${WHEN} [data-when-clock]`);
 			const parts = page.locator(`${WHEN} [data-part], ${WHEN} button.step`);
 			assert.equal(await clock.getAttribute('aria-expanded'), 'false');
 			assert.equal(await parts.count(), 0, 'the section is out at rest');
-			const [strip, when, rows] = await Promise.all([`${WIDGET} [data-strip]`, WHEN, `${VIEW} [data-field="coffee"]`].map((s) => page.locator(s).first().boundingBox()));
-			assert.ok(strip.x + strip.width <= when.x + 1 && when.x + when.width <= rows.x + 1, JSON.stringify({ strip, when, rows }));
+			const [strip, when] = await Promise.all([`${WIDGET} [data-strip]`, WHEN].map((s) => page.locator(s).first().boundingBox()));
+			// The field nearest the strip.
+			const rows = { x: Math.min(...(await page.locator(`${VIEW} [data-field]`).evaluateAll((bs) => bs.map((b) => b.getBoundingClientRect().x)))) };
+			const boundary = strip.x + strip.width;
 			const box = await clock.boundingBox();
-			assert.ok(Math.abs(box.y + box.height / 2 - (when.y + when.height / 2)) <= 2, `the clock is not in the middle: ${JSON.stringify({ box, when })}`);
+			const geometry = JSON.stringify({ strip, when, rows, box });
+			// On the boundary, half over the strip, at a finger's size, in the middle of the height.
+			assert.ok(Math.abs(box.x + box.width / 2 - boundary) <= 2, `the clock is not on the boundary: ${geometry}`);
+			assert.ok(box.width >= 24 && box.height >= 24, `the clock is under a finger's 24px: ${geometry}`);
+			assert.ok(Math.abs(box.y + box.height / 2 - (when.y + when.height / 2)) <= 2, `the clock is not in the middle: ${geometry}`);
+			// No column of its own: the rows start right past the clock's far half, clear of its press.
+			assert.ok(rows.x >= box.x + box.width - 1 && rows.x - boundary <= box.width / 2 + 2 * 6 + 1, `the rows do not start at the strip: ${geometry}`);
+			const hit = await clock.evaluate((b) => {
+				const r = b.getBoundingClientRect();
+				return b.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+			});
+			assert.ok(hit, 'a press at the clock lands on something else');
 			const held = () => page.evaluate(() => Object.values(window.datum.layout.session()).map((s) => s.timeOpen).filter((o) => o !== undefined));
 
 			await clock.click();

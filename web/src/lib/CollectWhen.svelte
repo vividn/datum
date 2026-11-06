@@ -1,6 +1,6 @@
 <!--
-	Collect's time and duration section (da-us1n1), a column between the now
-	strip and the rows, at rest and beside a field's view alike. vividn,
+	Collect's time and duration section (da-us1n1), open a column between the
+	now strip and the rows, at rest and beside a field's view alike. vividn,
 	2026-11-05: «two sections: (time) (-1m) (-5m) ---- (dur) (1m) (5m).
 	clicking time or dur gives you more advanced options … these more
 	advanced options appear by expanding out this section to reveal more
@@ -24,8 +24,9 @@
 	moment with no length, its own pill as the length's other face. A moment
 	field open has no length to give, so the dur half is off beside it.
 
-	At rest it is a clock alone, between the strip and the rows, and a tap on
-	the clock opens it, the clock then standing between its halves (vividn,
+	At rest it is a clock alone, on the boundary between the strip and the
+	rows (da-s2hht), and a tap on the clock opens it into its column, the
+	clock then standing between its halves (vividn,
 	2026-11-06: «hide it by default. But a little clock button in the middle
 	between the fields section and the now section, clicking it toggles
 	whether this time panel is open»); whether it is open is the session's,
@@ -438,10 +439,29 @@
 		font-size: 0.75rem;
 	}
 
-	/* Closed, the clock alone, in the middle. */
+	/*
+	 * Closed, the clock alone, halfway down ON the strip's edge (vividn,
+	 * 11-06: «put it right on the boundary line between the now section and
+	 * the fields section»): the section keeps only the clock's far half past
+	 * the strip, so the rows stand clear of its press and have the column back.
+	 */
+	.when.closed {
+		width: 12px;
+		background: none;
+		border: none;
+	}
+
 	.when.closed .column {
-		padding: 0 0.15rem;
+		position: absolute;
+		inset: 0 auto 0 -12px;
+		width: 24px;
+		padding: 0;
+		overflow: visible;
 		justify-content: center;
+	}
+
+	.when.right.closed .column {
+		inset: 0 -12px 0 auto;
 	}
 
 	/* Too short for a column: the halves side by side, the clock between them; shorter still, a row. */

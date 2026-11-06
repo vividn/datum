@@ -54,7 +54,8 @@
 	the line, with `+ data` taking the caret there. Its time and
 	length are the TIME AND DURATION SECTION's (CollectWhen.svelte, da-us1n1),
 	a column between the now strip and the rows, at rest and beside a field's
-	view alike, a clock alone until it is tapped open (da-iunoo, the session's
+	view alike, a clock alone on the strip's edge until it is tapped open
+	(da-iunoo, da-s2hht, the session's
 	`timeOpen`): `time −1m −5m · dur 1m 5m`, summing into the page's selection
 	(#lib/cursor.ts), so they are the nowview's own pills. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
 	click); any other field runs from the commands, which take the pills.
@@ -471,7 +472,7 @@
 
 	/** The strip's width at rest: about a fifth of the widget (vividn: «maybe 20%»). */
 	const strip = $derived(Math.round(boxW / 5));
-	/** The time and duration section's width, beside the strip (da-us1n1); the rows stand past both. */
+	/** The time and duration section's width past the strip (da-us1n1), its clock's far half while closed (da-s2hht); the rows stand past both. */
 	let whenW = $state(0);
 	const edge = $derived(strip + whenW);
 	/** Where each field stands at rest, and the active section's outline. */
