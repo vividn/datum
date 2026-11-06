@@ -174,6 +174,24 @@ fn an_untyped_key_is_guessed_as_before() {
     assert_eq!(log(&db, "f", "ref_num=0042x"), Ok(json!("0042x")));
 }
 
+/// A data key's malformed bracket is refused as a state's is, naming the
+/// JSON form, never split with its bracket kept; with no comma it is text
+/// (da-kbdlg).
+#[test]
+fn a_malformed_bracket_on_a_data_key_is_refused() {
+    let db = fresh_db();
+    for kv in ["tags=[a,b", "tags=a,b]"] {
+        let err = log(&db, "x", kv).expect_err(kv);
+        assert!(
+            err.contains(r#"is not a list: the bracket form is JSON: ["a","b"]"#),
+            "{kv}: {err}"
+        );
+    }
+    assert_eq!(log(&db, "x", "tags=[a"), Ok(json!("[a")));
+    assert_eq!(log(&db, "x", "tags=[a,b]"), Ok(json!(["a", "b"])));
+    assert_eq!(log(&db, "x", "tags='a,b]'"), Ok(json!("a,b]")));
+}
+
 /// The entry's own keys keep their own parsers: `dur=` takes an
 /// uncertainty no data duration does.
 #[test]
@@ -269,6 +287,12 @@ fn a_list_typed_key_parses_each_element_or_refuses() {
             ),
         ),
         ("tags=[work,home]", Ok(json!(["work", "home"]))),
+        (
+            "tags=work,home]",
+            Err(
+                r#"tags: "work,home]" is not a string[]: the bracket form is JSON: ["a","b"], or write a,b"#,
+            ),
+        ),
         (
             "needs=[issue:a]",
             Err(

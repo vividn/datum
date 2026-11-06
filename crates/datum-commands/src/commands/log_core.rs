@@ -1923,9 +1923,9 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
 /// commas are stripped (da-lvvp / da-5z01: tolerate `,a,b`, `a,b,`,
 /// `,a,b,`); interior empty segments are still rejected so users
 /// don't silently lose a state they meant to type; `[a,b]` is read as any
-/// value is (`bracket_state`, da-0d7e1).
+/// value is (`bracket_value`, da-0d7e1).
 fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
-    if let Some(state) = datum_parse::input::data_args::bracket_state("state", s) {
+    if let Some(state) = datum_parse::input::data_args::bracket_value("state", s) {
         return Ok(state?);
     }
     if !s.contains(',') {

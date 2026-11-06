@@ -315,9 +315,18 @@ as v2's relaxed JSON read it, a bare word a string: `[calm,steady]` is
 `["calm","steady"]` and `{a: [b, 1]}` is `{"a":["b",1]}` (da-2wrzv). A
 list-typed key and a state read it the same way, each element then
 checked as its type (`change mood [calm,steady]` is the states calm and
-steady, da-0d7e1), and refuse a bracket value that does not read as a
-list (`[5pm,6pm]`) rather than split it. This departs from v2, where a leading or trailing
+steady, da-0d7e1). An untyped key, a list-typed key and a state refuse a
+value that begins with `[` or ends with `]`, holds a comma and does not
+read as a list (`[5pm,6pm]`, `[a,b`, `a,b]`) rather than split it with a
+bracket kept; with no comma (`[a`) an untyped key and a state take it as
+text, and a list-typed key refuses it too (da-kbdlg). A text-typed key
+takes the value as written. This departs from v2, where a leading or trailing
 comma made the array — a trailing one alone, too — and `,` was `[]`.
+
+Quote a bracket value for the shell: zsh reads an unquoted `[` as a glob,
+so `datum change mood [calm,steady]` stops at «zsh: no matches found»
+before datum sees it, and bash passes it on only while no file matches.
+Write `'[calm,steady]'`, or in zsh `alias datum='noglob datum'`.
 
 ```bash
 datum moment tagged tags=work,home

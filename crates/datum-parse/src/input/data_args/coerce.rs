@@ -178,7 +178,7 @@ pub(super) fn infer_typed_value(
         "following_state" => Some(path),
         _ => None,
     };
-    if let Some(state) = state_key.and_then(|key| bracket_state(key, value)) {
+    if let Some(state) = state_key.and_then(|key| bracket_value(key, value)) {
         return state.map(Some);
     }
 
@@ -189,7 +189,7 @@ pub(super) fn infer_typed_value(
         .and_then(|t| t.get(path))
         .copied();
     let Some(ty) = declared.or_else(|| KeyType::of_suffix(path)) else {
-        return Ok(infer_type(value));
+        return bracket_value(path, value).map_or_else(|| Ok(infer_type(value)), |v| v.map(Some));
     };
     if ty.is_list() {
         return match coerce_list(ty, value, compat) {
@@ -526,11 +526,12 @@ fn json(value: &str) -> Option<Value> {
         .or_else(|| relaxed_json(value))
 }
 
-/// A value in brackets as [`json`] reads it, for a state and a list-typed
-/// key: its elements, or `Some(None)` when the text does not read as a list
-/// (`[3d,4]`, `[a,b`). `None` when it is not in brackets.
+/// A value that begins with `[` or ends with `]` as [`json`] reads it, for
+/// a state, an untyped key and a list-typed key: its elements, or
+/// `Some(None)` when the text does not read as a list (`[3d,4]`, `[a,b`,
+/// `a,b]`). `None` when it is not in brackets.
 fn bracket_list(value: &str) -> Option<Option<Vec<Value>>> {
-    value.starts_with('[').then(|| match json(value) {
+    (value.starts_with('[') || value.ends_with(']')).then(|| match json(value) {
         Some(Value::Array(a)) => Some(a),
         _ => None,
     })
@@ -637,14 +638,15 @@ fn number(s: &str) -> Option<usize> {
     Some(n)
 }
 
-/// A state in brackets (`state`, `following_state`, `-l`), read as any
-/// value is ([`json`], da-0d7e1): `[calm,steady]` is the states «calm» and
-/// «steady», as `["calm","steady"]` is. Text that does not read as a list and
-/// holds a comma is refused, naming the JSON form: split by the comma rule
-/// it would keep its brackets, `["[5pm","6pm]"]`, no state anyone meant and
-/// one that hides a sentinel from da-z9efl's refusal (da-cktfm). `None` for
-/// a state not in brackets, or one with no comma, a state as typed.
-pub fn bracket_state(key: &str, value: &str) -> Option<Result<Value>> {
+/// A value in brackets, a state's (`state`, `following_state`, `-l`) or an
+/// untyped data key's, read as any value is ([`json`], da-0d7e1):
+/// `[calm,steady]` is the states «calm» and «steady», as `["calm","steady"]`
+/// is. Text that begins with `[` or ends with `]`, holds a comma and does not
+/// read as a list is refused, naming the JSON form: split by the comma rule
+/// it would keep its brackets, `["[5pm","6pm]"]`, no value anyone meant and
+/// one that hides a sentinel from da-z9efl's refusal (da-cktfm, da-kbdlg).
+/// `None` for a value not in brackets, or one with no comma, a value as typed.
+pub fn bracket_value(key: &str, value: &str) -> Option<Result<Value>> {
     // Any comma: a switch splits `[a, b]` too, where the comma rule would not.
     match bracket_list(value)? {
         Some(items) => Some(Ok(Value::Array(items))),
@@ -1008,7 +1010,7 @@ mod tests {
                 Ok(vec![json!("a"), json!("b")])
             );
             assert_eq!(
-                bracket_state("state", v).unwrap().unwrap(),
+                bracket_value("state", v).unwrap().unwrap(),
                 json!(["a", "b"])
             );
         }
@@ -1017,9 +1019,11 @@ mod tests {
             Err(r#": element 2 "x" is not a number"#.to_string())
         );
         assert!(list(KeyType::NumberList, "[3d,4]").is_err());
-        assert!(bracket_state("state", "[5pm,6pm]").unwrap().is_err());
-        assert!(bracket_state("state", "[5pm]").is_none());
-        assert!(bracket_state("state", "a,b").is_none());
+        assert!(bracket_value("state", "[5pm,6pm]").unwrap().is_err());
+        assert!(bracket_value("state", "[5pm]").is_none());
+        assert!(bracket_value("state", "a,b").is_none());
+        assert!(bracket_value("state", "a,b]").unwrap().is_err());
+        assert!(bracket_value("state", "'a,b]'").is_none());
     }
 
     #[test]
