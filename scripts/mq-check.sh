@@ -51,8 +51,8 @@ for arg in "$@"; do
 done
 
 # Who runs it decides how hard it may press on the box. The refinery's verdict
-# (role `<kiez>/alchemiter`) is the one run that must not wait behind the cans',
-# so it names its own numbers. A can sharing the box runs the same gate before
+# (role `<kiez>/alchemiter`) names its own numbers, so its files are not the
+# cans'; its whole web suite still takes a slot below, as any does. A can sharing the box runs the same gate before
 # `ct done`. Reading the load left it at one file for hours, so cans pinned six
 # and read nothing (da-5f20z, da-9az39), so it runs six files whatever it pinned,
 # at nice 10 so the refinery and the sessions go first, and its nextest takes a
@@ -182,6 +182,40 @@ web_selection() {
   echo "mq-check: web tests: $(wc -l <"$sel/web.tests") files"
   sed 's/^/  /' "$sel/web.tests"
 }
+
+# At most two whole web suites run on the box at once (da-83eub): four cans'
+# `--full` at once took it to load 45 on 24 cores, where the timing tests flake.
+# So the full web run, the refinery's too, takes one of two box-wide slots, a
+# lock file in /tmp, not $TMPDIR, which a caller may make its own (MQ_SLOT_DIR is
+# the tests'), held by `flock` on an fd every child inherits, and the rest wait.
+# The integration permit's list is a selection, as CI (integration) runs it, and
+# takes none. The
+# wait comes HERE, before anything mq-check times starts (the Rust half, the
+# suite, the gate log's `ran=`); a caller's timeout around the whole script still
+# counts it. The slot is held to the script's end, the Rust half included. The
+# file is opened to read, which another uid may do where /tmp's
+# protected_regular refuses it an append.
+web_slot() {
+  command -v flock >/dev/null || { echo "mq-check: no flock here: the web suite runs without a slot"; return 0; }
+  local n f since=$SECONDS said=
+  while :; do
+    for n in 1 2; do
+      f="${MQ_SLOT_DIR:-/tmp}/datum-web-suite.slot$n"
+      [ -e "$f" ] || : >>"$f" || true
+      exec {slot}<"$f" || { echo "mq-check: cannot open $f: the web suite runs without a slot"; return 0; }
+      if flock -n "$slot"; then
+        echo "mq-check: took web suite slot $n of 2${said:+ after waiting $((SECONDS - since))s}"
+        return 0
+      fi
+      exec {slot}>&-
+    done
+    [ -n "$said" ] || { said=1; echo "mq-check: both web suite slots are taken; waiting for one, since $(date +%H:%M:%S)"; }
+    sleep 2
+  done
+}
+if [ -n "$full" ] && [ -n "$web" ]; then
+  if [ -n "$dry" ]; then echo "mq-check: the web suite would take one of two box-wide slots"; else web_slot; fi
+fi
 
 if [ -n "$can" ] && [ -z "$dry" ] && [ -n "$rust$web" ]; then
   renice -n 10 -p $$ >/dev/null || true

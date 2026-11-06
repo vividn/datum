@@ -382,6 +382,10 @@ fn the_flag_and_the_refinery_run_the_whole_web_suite() {
 /// and then runs `then`: its child, for the test to signal its bash, and the path
 /// of what the stub said.
 fn gate(repo: &Repo, then: &str) -> (std::process::Child, PathBuf) {
+    gate_with(repo, then, &[])
+}
+
+fn gate_with(repo: &Repo, then: &str, flags: &[&str]) -> (std::process::Child, PathBuf) {
     let stubs = repo.dir.join(".git/stubs");
     std::fs::create_dir_all(&stubs).unwrap();
     let said = repo.dir.join(".git/said");
@@ -408,8 +412,10 @@ fn gate(repo: &Repo, then: &str) -> (std::process::Child, PathBuf) {
     let child = repo
         .cmd("bash")
         .arg("scripts/mq-check.sh")
+        .args(flags)
         .env("PATH", path)
         .env("TMPDIR", repo.dir.join(".git"))
+        .env("MQ_SLOT_DIR", repo.dir.join(".git"))
         .env("CT_ROLE", "daydumb/cans/x")
         .env("DATUM_TEST_CONCURRENCY", "3")
         .env_remove("GT_ROLE")
@@ -482,4 +488,71 @@ fn a_dry_run_logs_nothing() {
     repo.commit("the change");
     repo.can_plan();
     assert_eq!(gate_log(&repo), "");
+}
+
+/// A process holding `file`'s flock until it is dropped.
+struct Hold(std::process::Child);
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn hold(repo: &Repo, file: &Path) -> Hold {
+    use std::io::BufRead;
+    let mut child = repo
+        .cmd("bash")
+        .arg("-c")
+        .arg("exec 9>>\"$0\"; flock 9; echo held; exec sleep 600")
+        .arg(file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    assert_eq!(line, "held\n");
+    Hold(child)
+}
+
+#[test]
+fn a_full_web_run_waits_for_one_of_two_slots_and_says_so() {
+    let repo = Repo::new("slots", 0);
+    repo.write("web/src/a.ts", "changed\n");
+    repo.commit("the change");
+    let slot = |n| repo.dir.join(format!(".git/datum-web-suite.slot{n}"));
+    let (_one, two) = (hold(&repo, &slot(1)), hold(&repo, &slot(2)));
+    // The suite, a child of the gate, finds slot 2 held: by the gate, for good.
+    let then = format!(
+        "if flock -n {} true; then echo slot=free; else echo slot=held; fi >>{}",
+        slot(2).display(),
+        repo.dir.join(".git/said").display()
+    );
+    let (mut child, said) = gate_with(&repo, &then, &["--full"]);
+    let out = || std::fs::read_to_string(repo.dir.join(".git/gate.out")).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !out().contains("waiting for one, since") {
+        assert!(child.try_wait().unwrap().is_none(), "{}", out());
+        assert!(std::time::Instant::now() < deadline, "no wait:\n{}", out());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    assert!(!said.exists(), "it ran with both slots taken:\n{}", out());
+    drop(two);
+    let ok = child.wait().unwrap().success();
+    let out = out();
+    assert!(ok, "{out}");
+    assert!(
+        out.contains("took web suite slot 2 of 2 after waiting "),
+        "{out}"
+    );
+    let said = std::fs::read_to_string(said).unwrap();
+    assert!(
+        said.contains("slot=held") && !said.contains("slot=free"),
+        "{said}"
+    );
 }
