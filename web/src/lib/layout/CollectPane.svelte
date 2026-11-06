@@ -85,6 +85,8 @@
 		side = 'left',
 		/** How large the rows are drawn, which a pinch moves (da-l1z6h); `onchange` hands it to the session. */
 		zoom = 1,
+		/** The time and duration section open, or its clock alone (da-iunoo); `onchange` hands it to the session. */
+		timeOpen = false,
 		/** The fields shown, or every field where empty (da-gfy7w). */
 		only = [],
 		epoch = 0,
@@ -97,8 +99,10 @@
 		clicks?: 'one' | 'two';
 		side?: 'left' | 'right';
 		zoom?: number;
+		timeOpen?: boolean;
 		epoch?: number;
-		onchange?: (zoom: number) => void;
+		/** What the widget moved itself, for the session to keep: its zoom, its time section open. */
+		onchange?: (moved: { zoom?: number; timeOpen?: boolean }) => void;
 	} = $props();
 
 	/** The selected instant, or null at now: a length ending now selects no time. */
@@ -223,7 +227,9 @@
 		{clicks}
 		{side}
 		{zoom}
-		onzoom={onchange}
+		onzoom={(zoom) => onchange?.({ zoom })}
+		{timeOpen}
+		ontime={(timeOpen) => onchange?.({ timeOpen })}
 		nowDoc={doc}
 		nowAt={at}
 		{nowPending}
