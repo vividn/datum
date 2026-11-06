@@ -28,6 +28,10 @@
 //   widget and gets both (da-ze1x). A layout of several widgets arrives
 //   under a split and gets neither — its panes have their own. Same rule
 //   either menu, as ever.
+// - `? help` and `Documentation` (da-7dflk) are on a tab that shows one
+//   widget, any kind, after its options: its tour, and its guide in the
+//   docs widget (`helpItems`). vividn, 2026-11-05: «In the widget menu for
+//   every widget there should be a "? help" and a documentation line».
 // - `Keep tab` (da-xamd) is the root's alone: only a root tab can be a
 //   PREVIEW, and only a preview has a keeping left to do. (`export
 //   backup…` rode here once; it is the gear's «Backups» now, da-9ow8m.)
@@ -180,6 +184,15 @@ export const layoutActs = (a: Acts): Item[] => [
 	{ label: 'Save layout as', act: 'open' as const, run: a.saveAs }
 ];
 
+/** A widget's tour and its guide (da-7dflk): what `? help` and `Documentation` do. */
+export type Helps = { tour: () => void; docs: () => void };
+
+/** `? help` and `Documentation`, after a widget's options, in either menu. */
+export const helpItems = (h: Helps): Item[] => [
+	{ label: '? help', run: h.tour },
+	{ label: 'Documentation', act: 'open' as const, run: h.docs }
+];
+
 /** The glyph Close wears (da-ygc9) — the multiplication sign, not the letter x. */
 export const CLOSE = '\u00d7';
 
@@ -225,6 +238,8 @@ export function menuItems(spec: {
 	 * widget, or its kind declares nothing and nothing is held.
 	 */
 	options?: Item[];
+	/** The widget in front's tour and guide (da-7dflk): left out where the tab shows no one widget. */
+	help?: Helps;
 	/**
 	 * `Rename…` (da-6ji5, da-s7sdm): the name the thing wears, typed. Only
 	 * where the tab holds no layout — a layout tab wears its layout's name.
@@ -248,6 +263,7 @@ export function menuItems(spec: {
 		{ label: CHANGE, act: 'open' as const, run: spec.choose, manage: true as const },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
 		...(spec.options ?? []),
+		...(spec.help ? helpItems(spec.help) : []),
 		...(spec.rename ? [{ label: spec.rename.label, act: 'open' as const, run: spec.rename.run, manage: true as const }] : []),
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run), manage: true as const }] : []),
 		...(spec.breakOut

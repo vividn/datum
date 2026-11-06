@@ -35,7 +35,8 @@ import {
 	rootMenuButton,
 	settled,
 	titledPane,
-	titles
+	titles,
+	HELP
 } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
@@ -73,7 +74,7 @@ describe('the menu the title opens', () => {
 	 * modal (da-vhwq): a choice is a submenu of its values, opened from the
 	 * row that names the setting.
 	 */
-	const TAIL_MENU = ['Reset widget', 'type'];
+	const TAIL_MENU = ['Reset widget', 'type', ...HELP];
 	const TAIL_MANAGE = ['Change Widget', 'Rename pane', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Widget options', '× Close pane'];
 
 	test('the title is the button: what the pane IS in normal mode, what is done to it in layout mode', async () => {
@@ -448,9 +449,9 @@ describe('the menu the title opens', () => {
 			await leaveLayoutMode(page);
 			const tabs = pane(page, 'tail').locator('[role="tab"]');
 			// `aliases` declares neither defaults nor options and holds no
-			// layout, so in normal mode its slice is empty and the tab in
-			// front carries no menu at all (da-z8klv).
-			assert.equal(await tabs.nth(1).getAttribute('aria-haspopup'), null);
+			// layout, so in normal mode its slice is its tour and guide alone
+			// (da-z8klv, da-7dflk): the tab in front carries the menu.
+			assert.equal(await tabs.nth(1).getAttribute('aria-haspopup'), 'menu');
 			await tabs.nth(0).click();
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'switching opened the menu');
 			assert.equal(await activeTab(page, 'tail'), 'tail');

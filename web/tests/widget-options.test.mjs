@@ -53,7 +53,8 @@ import {
 	switchItem,
 	titledMenuButton,
 	titledPane,
-	toggleOption
+	toggleOption,
+	HELP
 } from './support/layout.mjs';
 
 before(startApp);
@@ -133,8 +134,8 @@ describe('widget options', () => {
 	// which kind makes it.
 	test('the options are items of the name’s menu; a kind with none has none', async () => {
 		await shared.solo(async ({ page }) => {
-			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST]);
-			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'show history', 'orientation', 'labels']);
+			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST, ...HELP]);
+			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'show history', 'orientation', 'labels', ...HELP]);
 			assert.deepEqual(await linesOf(page, 'bar'), [
 				'Reset widget',
 				'the buttons stand',
@@ -142,12 +143,14 @@ describe('widget options', () => {
 				'show ignored fields',
 				'a tap',
 				'side',
-				'fields'
+				'fields',
+				...HELP
 			]);
 			// The freeze wears its icon before its words (da-2hd21).
-			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', '⤓ today frozen at the bottom', 'orientation']);
-			assert.deepEqual(await linesOf(page, 'tail'), ['Reset widget', 'type']);
-			assert.equal(await menuButton(page, 'custom').count(), 0, 'a kind that declares nothing has a name menu');
+			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', '⤓ today frozen at the bottom', 'orientation', ...HELP]);
+			assert.deepEqual(await linesOf(page, 'tail'), ['Reset widget', 'type', ...HELP]);
+			// A kind that declares nothing has its tour and guide alone (da-7dflk).
+			assert.deepEqual(await linesOf(page, 'custom'), HELP);
 			// No modal is left anywhere in the app.
 			assert.equal(await page.locator('dialog.options').count(), 0);
 
@@ -156,12 +159,11 @@ describe('widget options', () => {
 			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
 			// `aliases` declares neither options nor defaults, holds nothing
-			// in this session and holds no layout, so the NAME's slice is
-			// empty and no menu is drawn at all in normal mode (da-z8klv,
-			// da-vvcxc). `command` stood here until it declared an option
-			// (da-u79wl).
+			// in this session and holds no layout, so the NAME's slice is its
+			// tour and guide alone (da-z8klv, da-vvcxc, da-7dflk). `command`
+			// stood here until it declared an option (da-u79wl).
 			await leaveLayoutMode(page);
-			assert.equal(await menuButton(page, 'custom').count(), 0, 'aliases has a name menu');
+			assert.deepEqual(await linesOf(page, 'custom'), HELP);
 		});
 	});
 
@@ -283,7 +285,7 @@ describe('widget options', () => {
 			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 			assert.ok((await tree(page)).includes('"reversed":true'), 'the save did not reach the tree');
 			// And the session let go of it, so the menu no longer offers a save.
-			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST]);
+			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST, ...HELP]);
 			assert.equal(await optionChecked(page, 'repl', NEWEST), true);
 
 			await chooseRoot(page, 'Save layout');
@@ -537,9 +539,9 @@ describe('widget options', () => {
 			// The menu of a PANE that holds no layout of its own is the widget's
 			// reset and options — no acts, which belong to the tab that HOLDS a
 			// layout (da-crp5), and no Change Widget, which is layout mode's.
-			assert.deepEqual(await linesOf(page, inRoom(room, 'repl')), ['Reset widget', NEWEST]);
-			// A kind that declares NO options has no menu at all in normal mode.
-			assert.equal(await pane(page, inRoom(room, 'custom')).locator('button.title').count(), 0, 'a kind with no options kept a menu');
+			assert.deepEqual(await linesOf(page, inRoom(room, 'repl')), ['Reset widget', NEWEST, ...HELP]);
+			// A kind that declares NO options has its tour and guide alone in normal mode (da-7dflk).
+			assert.deepEqual(await linesOf(page, inRoom(room, 'custom')), HELP);
 
 			// The option works, and is the session's.
 			await toggleOption(page, inRoom(room, 'repl'), NEWEST);

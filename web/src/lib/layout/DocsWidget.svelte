@@ -17,7 +17,7 @@
 <script lang="ts">
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
-	import { PAGE, guideOf, guided } from '#lib/guides.ts';
+	import { PAGE, docsAsked, guideOf, guidePath, guided } from '#lib/guides.ts';
 	import { markdown } from '#lib/markdown.ts';
 
 	const REPO = 'https://github.com/vividn/datum/blob/main';
@@ -34,7 +34,7 @@
 		const guide = guideOf(name);
 		return `# ${guide?.title ?? name}\n\n${guide?.text ?? ''}\n`;
 	};
-	for (const name of [PAGE, ...guided()]) DOCS[`widgets/${name}.md`] = async () => guidePage(name);
+	for (const name of [PAGE, ...guided()]) DOCS[guidePath(name)] = async () => guidePage(name);
 	/** The contents, and the guides under them. */
 	const GUIDES = [
 		'',
@@ -132,7 +132,14 @@
 		else go(doc, a.dataset.anchor ?? '');
 	}
 
-	void show(CONTENTS);
+	// A guide asked for (a widget's «Documentation», its tour's «read more»), else the contents.
+	$effect(() => {
+		const asked = $docsAsked;
+		if (asked === null) return;
+		docsAsked.set(null);
+		if (asked in DOCS && asked !== path) go(asked, '');
+	});
+	if ($docsAsked === null) void show(CONTENTS);
 </script>
 
 <Pane title="docs" bind:body>

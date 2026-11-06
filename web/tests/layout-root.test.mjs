@@ -35,7 +35,8 @@ import {
 	pastTheWindow,
 	swipe,
 	titles,
-	widgetPane
+	widgetPane,
+	HELP
 } from './support/layout.mjs';
 
 before(startApp);
@@ -492,7 +493,7 @@ describe('normal mode', () => {
 				// tabbed pane shows `tail`, which declares none.
 				assert.equal(await page.locator('section.root button.title').count(), 1);
 				await pane(page, 'repl').locator('button.title').click();
-				assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first']);
+				assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first', ...HELP]);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				// The gap is still there, as a static border, and dragging across it moves nothing.

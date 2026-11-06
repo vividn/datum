@@ -25,9 +25,10 @@
 //   - a long press by a FINGER does what the right click does, over real
 //     milliseconds — the gesture is a timer (#lib/hold.ts), so a
 //     synthesised pair would be a test of the test.
-//   - a pane whose widget declares no options has NO title menu in normal
-//     mode (`custom`, `aliases` — da-z8klv), and the hold works there in
-//     layout mode: the gesture is on the title's box.
+//   - a pane whose widget declares no options has only its tour and guide
+//     in its title menu in normal mode (`custom`, `aliases` — da-z8klv,
+//     da-7dflk), and the hold works there in layout mode: the gesture is on
+//     the title's box.
 //   - the press the title already had still opens what the pane IS in
 //     normal mode, and `Change Widget` leads it in layout mode.
 
@@ -48,16 +49,17 @@ import {
 	rootMenuButton,
 	settled,
 	titles,
-	widgetPane
+	widgetPane,
+	HELP
 } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
 /**
- * Two panes, and the second one deliberately has NO title menu: the
- * `aliases` widget declares neither defaults nor options, so its name
- * opens nothing (da-z8klv). The hold has to reach it anyway. (`command`
+ * Two panes, and the second one deliberately declares nothing: the
+ * `aliases` widget has neither defaults nor options, so its name opens
+ * only its tour and guide (da-z8klv, da-7dflk). The hold has to reach it anyway. (`command`
  * stood here until it declared an option, da-u79wl.)
  */
 const PAGE = JSON.stringify(along('row', widgetPane('repl', 'cli'), widgetPane('cmd', 'aliases')));
@@ -220,11 +222,14 @@ describe('the hold on the widget title', () => {
 		});
 	});
 
-	test('a pane with no title menu in normal mode is held in layout mode', async () => {
+	test('a pane whose widget declares nothing is held in layout mode', async () => {
 		await onPage(async ({ page }) => {
 			// The premise: `aliases` declares neither defaults nor options, so
-			// in normal mode its name opens nothing (da-z8klv).
-			assert.equal(await pane(page, 'cmd').locator('> .titlebar button.title').count(), 0);
+			// in normal mode its name opens its tour and guide alone (da-z8klv, da-7dflk).
+			await pane(page, 'cmd').locator('> .titlebar button.title').click();
+			assert.deepEqual(await menuLines(page), HELP);
+			await page.keyboard.press('Escape');
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			await enterLayoutMode(page);
 
 			await titleBox(page, 'cmd').click({ button: 'right' });
@@ -300,7 +305,7 @@ describe('the hold on the widget title', () => {
 		await onPage(async ({ page }) => {
 			// In normal mode a press on the title opens what the pane IS.
 			await titleBox(page, 'repl').click();
-			assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first']);
+			assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first', ...HELP]);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 

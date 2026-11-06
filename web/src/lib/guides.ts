@@ -9,9 +9,20 @@
 // (layout/Guide.svelte), and the docs widget lists them all under its
 // contents, as pages of their own.
 
+import { writable } from 'svelte/store';
 import { builtinLayout } from './layout/defaults.js';
 import { KINDS, titleOf } from './layout/registry.js';
 import { markdown } from './markdown.js';
+
+/**
+ * The doc a docs widget is asked to show (da-7dflk): a widget's guide, from its
+ * menu's «Documentation» or its tour's «read more» (`openGuide`, help.ts). The
+ * docs widget drawn, or the one that opens, goes to it and clears it.
+ */
+export const docsAsked = writable<string | null>(null);
+
+/** A guide's page in the docs widget. */
+export const guidePath = (name: string) => `widgets/${name}.md`;
 
 /** The page's guide, by the name a kind's goes by. */
 export const PAGE = 'page';
@@ -36,13 +47,13 @@ The tabs along the top are your pages. Tap one to open it; on a phone, swipe sid
 
 The gear holds **Backups**, **Sync** and **Settings**, each opening a place of its own (a modal on a desktop, a tab on a phone), then **Reset default layouts**, which puts datum's own tabs back as they shipped and leaves the layouts you saved alone, and the version.
 
-**(?)** is Help. Press it, then tap anything: a widget, a command, a pill or a control is explained instead of used, here. Press it twice for this page. Escape lets it go.
+**(?)** is Help. Press it, then tap anything: a command, a pill or a control is explained instead of used, here, and a widget starts its tour. Press it twice for this page. Escape lets it go.
 
 On the right of the top bar, sync says what it is doing: «syncing», «sync paused» (tap to resume), and a ⚠ when a device joined or something needs you.
 
 ## Widgets and their menus
 
-Each pane shows a widget, named in its title bar. Tap the name for its menu: **Reset widget** puts its options back as it started, then its options, a line each. An option changes what this tab shows on this device, and is kept across a reload; **Save options with layout**, there once you have changed one, writes them into the layout. The square before the name maximizes the pane to the whole page, and again restores it.
+Each pane shows a widget, named in its title bar. Tap the name for its menu: **Reset widget** puts its options back as it started, then its options, a line each. An option changes what this tab shows on this device, and is kept across a reload; **Save options with layout**, there once you have changed one, writes them into the layout. Then **? help**, the widget's tour: its parts lit one by one, each inviting you to tap, scroll or type there, and how it works with the widgets beside it, ending in **read more**; and **Documentation**, its guide in the docs. In a tour, **skip** goes on without doing what it asks, and **leave** or Escape ends it. The square before the name maximizes the pane to the whole page, and again restores it.
 
 ## Layout mode
 

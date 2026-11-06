@@ -335,6 +335,9 @@ export async function addTab(page, id, name) {
 	await chooser(page).waitFor({ state: 'detached' });
 }
 
+/** The two lines every widget's menu ends its own slice with (da-7dflk): its tour, and its guide in the docs. */
+export const HELP = ['? help', 'Documentation'];
+
 /** The open menu, one string per line: an item's words, or a row's label and its buttons. */
 export const menuLines = (page) =>
 	page.locator('[role="menu"]').first().evaluate((menu) =>

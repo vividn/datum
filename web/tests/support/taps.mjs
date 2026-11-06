@@ -177,6 +177,11 @@ async function putBack(app) {
  */
 async function reset(app, line, layout = false) {
 	const { page } = app;
+	// A tour a menu's «? help» started (da-7dflk) stands over the page: Escape ends it.
+	if ((await page.locator('.tour').count()) > 0) {
+		await page.keyboard.press('Escape');
+		await page.locator('.tour').waitFor({ state: 'detached' });
+	}
 	await app.home();
 	// Out of layout mode with the page as it was when the mode was entered.
 	await page.evaluate(() => window.datum.mode.discard());

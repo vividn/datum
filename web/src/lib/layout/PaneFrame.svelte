@@ -151,6 +151,7 @@
 	import { readable } from 'svelte/store';
 	import type { BarAlign, BarEdge, Pane, Tab } from './types.js';
 	import { isSplit } from './types.js';
+	import { helpsOf } from '#lib/help.ts';
 
 	/**
 	 * The bar's row, in pixels: the title's words (0.75rem at a line of
@@ -425,6 +426,8 @@
 		// About the widget in front.
 		reset: resetWidget(active),
 		options,
+		// Its tour and its guide (da-7dflk), on this pane's widget.
+		help: isSplit(active.content) ? undefined : helpsOf(active.content.kind, () => section?.parentElement),
 		// A PANE IS RENAMEABLE TOO (da-s7sdm), not just a tab of a
 		// strip: with one tab the tab IS the pane, and the name on the
 		// frame is that tab's. Named after whichever it is, as `close`

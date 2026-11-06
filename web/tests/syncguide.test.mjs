@@ -2,8 +2,8 @@
 // the Help place. vividn, 2026-10-15: «a nice sync widget web help text should
 // be made as well to describe how to use it».
 //
-// Two entrances open it, a test each: the Help button on the Sync widget
-// (its kind's help), and the widget's own `?`. The welcome's «Syncing your
+// The widget's own `?` opens it; the Help button on the Sync widget tours the
+// widget instead (da-7dflk), the tour ending in the guide. The welcome's «Syncing your
 // devices» was a third until the welcome became short (da-uzyih.19). Then
 // a walk through the widget as a person takes it — the gear's Sync, Turn on
 // sync, a device connecting, its notice, More, and a join link opened in a
@@ -65,11 +65,15 @@ function isTheGuide({ words, sections, widget, reference }) {
 }
 
 describe('the sync guide opens from', () => {
-	test('the Help button, then the Sync widget; nothing in the widget runs', async () => {
+	// Since da-7dflk the Help button, then the widget, tours it, and the tour's «read more» is its guide in the docs.
+	test('the Help button, then the Sync widget: its tour, and nothing in the widget runs', async () => {
 		await shared.solo(async ({ page }) => {
 			await page.locator('.root-bar button.help[data-command="help"]').click();
 			await page.locator(`${WIDGET} .actions`).getByRole('button', { name: 'Turn on sync' }).click();
-			isTheGuide(await guide(page));
+			await page.locator('.tour .say').waitFor();
+			assert.equal(await page.locator('.tour').getAttribute('data-do'), null, 'it opened on a step that invites');
+			await page.keyboard.press('Escape');
+			await page.locator('.tour').waitFor({ state: 'detached' });
 			assert.equal(await page.locator(`${WIDGET} .offer, ${WIDGET} .start`).count(), 0, 'Turn on sync ran');
 		}, PAGE);
 	});

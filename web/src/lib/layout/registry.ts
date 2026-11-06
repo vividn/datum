@@ -84,6 +84,24 @@ import TutorialWidget from './TutorialWidget.svelte';
 import GameWidget from './GameWidget.svelte';
 import WelcomeWidget from './WelcomeWidget.svelte';
 
+/** What a tour's step invites the person to do on its element (#lib/tour.ts). */
+export type Invite = 'tap' | 'hold' | 'drag' | 'scroll' | 'type';
+
+/**
+ * A step of a kind's tour: `at` inside its widget, `WHOLE` the widget itself,
+ * or, `with` a kind, inside that widget where one is drawn on the page too, and
+ * left out where none is.
+ */
+export interface Step {
+	at: string;
+	say: string;
+	do?: Invite;
+	with?: string;
+}
+
+/** A tour step's widget itself: its pane's section under the host. */
+export const WHOLE = ':scope > section';
+
 export interface WidgetKind {
 	meta: WidgetKindMeta;
 	component: Component<any>;
@@ -113,6 +131,14 @@ export interface WidgetKind {
 	guide: string;
 	/** The `datum help` page its guide folds at its end, for a terminal. */
 	commands?: string;
+	/**
+	 * Its tour (da-7dflk, #lib/tour.ts): steps on its parts, each a sentence,
+	 * one that invites (`do`) going on once the person has done it there, and
+	 * steps `with` a kind drawn beside it on how the two work together. The
+	 * runner ends it on the widget whole, with «read more», this guide.
+	 * `widget-tour.test.mjs` runs every kind's to its end.
+	 */
+	tour: Step[];
 	/** The pane's title from the settings, where it is not the kind's own. */
 	title?: (settings: Record<string, unknown>) => string | undefined;
 	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
@@ -236,6 +262,7 @@ const meta = (
 const debugKind = (kind: 'debug' | 'seed', legible: Floor, guide: string): WidgetKind => ({
 	meta: meta(kind, kind),
 	guide,
+	tour: [{ at: WHOLE, say: kind === 'debug' ? "The DEBUG database's knobs, to tune the bar's glide." : 'A week of sample entries, logged and cleared in a tap.' }],
 	component: DebugPane,
 	props: () => ({ kind }),
 	db: DEBUG_DB,
@@ -308,6 +335,14 @@ The strip keeps the hours and sizes you move it to, until **Reset widget**.`,
 		// day, so there is no one height to be drawn to.
 		snap: (settings) =>
 			typeof settings.dayHeight === 'number' ? { height: [oneDay(settings)] } : {},
+		tour: [
+			{ at: WHOLE, say: 'Your days as bands of color, a field a lane: today at the bottom, the days before it above.' },
+			{ at: '.row.now .band', say: "Tap the ground between entries in today's band: that time becomes a pill on the bar, and the next entry is logged then. Tap an entry to select it.", do: 'tap' },
+			{ at: '.row.now .band', say: 'Hold still for that time even over an entry: a ring closes over the wait.', do: 'hold' },
+			{ at: '.stack', say: 'Scroll up, a drag or the wheel, for the days before.', do: 'scroll' },
+			{ at: '.axis', say: 'The hour ruler: press or drag along it to scrub a time. Pinch, or ctrl and the wheel, zooms onto hours.' },
+			{ at: WHOLE, say: 'The tail follows what you choose here: an entry selected is scrolled to, and a time with a dotted line at it.', with: 'tail' }
+		],
 		legible: (settings) => ({ width: 240, height: oneDay(settings) })
 	},
 	// The REPL until da-mwp4m (vividn, 2026-10-27: «let's rename the REPL to
@@ -329,6 +364,12 @@ The strip keeps the hours and sizes you move it to, until **Reset widget**.`,
 
 - **newest first**: the newest command at the top, and the view kept there; off, it reads as a terminal does, the newest last.`,
 		props: ({ reversed }) => ({ reversed: reversed === true }),
+		tour: [
+			{ at: WHOLE, say: 'Every command run on this page and what datum answered, a frame each. The bar is its prompt.' },
+			{ at: '.doc', say: "Tap an entry's answer to select it: an id pill on the bar, for the next command.", do: 'tap' },
+			{ at: 'button.undo', say: '↶ takes back what that command wrote, and ↷ then puts it back.' },
+			{ at: WHOLE, say: 'What you log on collect is run here too, its answer a frame.', with: 'widgetbar' }
+		],
 		legible: { width: 200, height: 71 }
 	},
 	// How far back nowview reaches is its setting, which its − / + step
@@ -387,6 +428,13 @@ Each axis has a diamond: tap or hold it for the lengths it can show, and tap one
 		onChange: (settings, history) => ({ ...settings, history }),
 		// Turned on its side with the picture: the time axis wants the 160,
 		// the lanes across it the 108.
+		tour: [
+			{ at: WHOLE, say: 'What each field is doing now, and over the last half hour how it got there, now at the edge.' },
+			{ at: '.picture', say: 'Tap the ground for that time, or an entry to select it: a pill on the bar, for the next command. Nothing is logged here.', do: 'tap' },
+			{ at: '.picture', say: 'Drag sideways to look back in time; let go and it coasts, stopping at now.', do: 'drag' },
+			{ at: '.nowview-handles button.handle', say: "An axis's diamond: tap or hold it for the lengths it can show, or drag it along the axis to stretch the window." },
+			{ at: WHOLE, say: 'A field you log on collect lands here, at now.', with: 'widgetbar' }
+		],
 		legible: ({ history, showHistory, orientation }) => {
 			const along = showHistory === false || history === '0' ? SNAPSHOT_WIDTH : 160;
 			return orientation === 'vertical' ? { width: 108, height: along } : { width: along, height: 108 };
@@ -423,6 +471,13 @@ It follows what is chosen elsewhere: a field shows that field alone, an entry se
 
 - **type**: **normal**, or **small**, more rows in the same room.`,
 		props: (settings) => ({ spec: TAIL, scale: tailScale(settings) }),
+		tour: [
+			{ at: WHOLE, say: 'The newest entries, a row each, the newest at the bottom.' },
+			{ at: 'tbody tr', say: 'Tap a row to select it: an id pill on the bar. Shift adds a run of rows, ctrl or ⌘ one more.', do: 'tap' },
+			{ at: 'tbody', say: 'Scroll up for older entries, which load as you go.', do: 'scroll' },
+			{ at: WHOLE, say: 'Choose a field on collect, a field pill, and the tail shows that field alone.', with: 'widgetbar' },
+			{ at: WHOLE, say: 'A time or a stretch chosen on the dayview is scrolled to here, with a dotted line at it.', with: 'daystrip' }
+		],
 		legible: (settings) => {
 			const s = tailScale(settings);
 			return { width: Math.round(200 * s), height: Math.round(16 + 86 * s) };
@@ -440,6 +495,10 @@ It follows what is chosen elsewhere: a field shows that field alone, an entry se
 ## Choosing the command
 
 **✎** in its title opens a box: type the command (\`tail -n 5\`, \`stats --week\`, \`nowview\`) and press Enter; Escape keeps the one before. A command that only reads runs again each time your data changes. One that writes runs once, and then only when you press **▶**.`,
+		tour: [
+			{ at: WHOLE, say: 'Any datum command you choose, run again whenever your data changes, its answer as the CLI printed it.' },
+			{ at: 'button.edit', say: 'Tap ✎ to type its command, tail -n 5 or stats --week, and press Enter.', do: 'tap' }
+		],
 		legible: { width: 200, height: 102 }
 	},
 	// The commands widget (da-ltux): every command as a round button, undo
@@ -474,6 +533,12 @@ With pills on the bar, only the commands that can take them are shown. A command
 Hold a command for its flags: back, help, then -t, -d, -y, -q and the rest, each added to the line by a tap. Escape steps back, out of the flags and then the group.
 
 The ❯ on the bar opens these same buttons, one row, over the bar.`,
+		tour: [
+			{ at: WHOLE, say: 'Every datum command, a round button each: tap one to run it, or to start writing it on the bar.' },
+			{ at: '.undo', say: 'undo takes back the last command; the small ↷ joined to it is redo.' },
+			{ at: 'button[data-menu]', say: 'Tap a group to open its commands; back returns. Hold a command for its flags.', do: 'tap' },
+			{ at: WHOLE, say: 'A logging command, moment or on, written on the bar narrows collect to the fields it fits: tap one to log it.', with: 'widgetbar' }
+		],
 		legible: { width: 160, height: 72 }
 	},
 	// The stats widget (da-n7r0): its settings ARE the widget's settings, and
@@ -500,6 +565,12 @@ With a field selected (a field pill on the bar, from the collect widget), it sho
 It runs \`stats\`, and its table is the CLI's own.`,
 		props: ({ range }) => ({ settings: { range: (range ?? DEFAULT_STATS.range) as StatsRange } }),
 		onChange: (_, settings) => settings as Record<string, unknown>,
+		tour: [
+			{ at: WHOLE, say: 'How much of each field there is over a window of time: its entries, how long it ran, its share of the time tracked.' },
+			{ at: '.chips.range button', say: 'Choose the window: all time, today, week, month, or custom.', do: 'tap' },
+			{ at: '.share', say: 'The bar of shares, a slice a field: hover one for its share.' },
+			{ at: WHOLE, say: 'Choose a field on collect, a field pill, and stats shows that field alone, its states one by one.', with: 'widgetbar' }
+		],
 		legible: { width: 240, height: 140 }
 	},
 	// The chart widget (da-xv7ti): one key of some fields' entries over time,
@@ -546,6 +617,10 @@ It starts empty: tap its name, and choose in its menu.
 
 It reads each field's entries with \`tail F --json\`.`,
 		props: (settings) => ({ settings: chartSettings(settings) }),
+		tour: [
+			{ at: WHOLE, say: 'One key of the fields you choose, over time: points and a line of their mean, or counts stacked.' },
+			{ at: 'button.title', say: 'It starts empty: tap its name, and choose its fields and key in the menu.' }
+		],
 		legible: { width: 200, height: 120 }
 	},
 	// The collect widget (da-w6437), the fields widget until then (da-c7u8,
@@ -680,6 +755,16 @@ Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		p
 		// reloads (da-ray91, da-gh1ep); not among the defaults, as the
 		// strip's day height is not, so `Reset widget` is the way back to 1.
 		onChange: (settings, zoom) => ({ ...settings, zoom }),
+		tour: [
+			{ at: WHOLE, say: 'Every field you log, a button each.' },
+			{ at: '.room button.widget', say: 'A tap on a field logs it: a moment at once, an on/off field turned on or off; a change field opens its states.' },
+			{ at: '.when button.step', say: 'Tap −1m: the next field you log is logged a minute back. Each press adds up.', do: 'tap' },
+			{ at: '.room', say: 'Drag the rows sideways to see more; pinch, or ctrl and the wheel, to zoom.' },
+			// A hold opens the field and logs nothing: a tour asks for no entry that did not happen.
+			{ at: '.room button.widget', say: 'Hold a field to open it: its states, its time and its data, and nothing logged until you choose.', do: 'hold' },
+			{ at: WHOLE, say: 'What you log lands in the nowview, at now.', with: 'nowview' },
+			{ at: WHOLE, say: "And in today's band of the dayview.", with: 'daystrip' }
+		],
 		legible: FIELDS_LEGIBLE
 	},
 	// The aliases widget (da-x6yj): every alias, listed.
@@ -691,6 +776,9 @@ Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		p
 ## Adding one
 
 It lists them and changes nothing. Type \`alias set <word> "<command>"\` in the bar to make one; a field's own come from its aliases tab in setup.`,
+		tour: [
+			{ at: WHOLE, say: "Every alias, a word that stands for a command: your own first, then the ones a field's setup gives it. Type alias set in the bar to make one." }
+		],
 		legible: { width: 160, height: 72 }
 	},
 	// The sync widget (da-x4t0a, da-yoef7): the page's database's devices,
@@ -735,6 +823,11 @@ Give each device a name you will know it by with **Rename this device**, which a
 
 Every device syncing this database, each CLI install and browser, a line each, this one first, with when it was last seen; then your other databases, a tap each to open it. ✓ synced, ↻ syncing, ◔ pending, ! error (its reason under it), — not syncing. A device not reachable now is drawn gray, as it was when last seen. Its ? opens this guide.`,
 		commands: 'sync',
+		tour: [
+			{ at: WHOLE, say: 'Sync keeps the same data on each of your devices, sent from one to another directly, encrypted end to end.' },
+			{ at: '.actions button.command', say: 'Turn on sync, here, to connect a second device: it shows a QR code for the other to scan.' },
+			{ at: 'button.guide', say: 'Its ? opens the guide to syncing, step by step.' }
+		],
 		legible: { width: 140, height: 100 }
 	},
 	// The Help place (da-z955f): the Help button's last answer (#lib/help.ts).
@@ -747,9 +840,12 @@ Every device syncing this database, each CLI install and browser, a line each, t
 
 ## Asking
 
-Press **(?)** in the top bar (or **help** among the commands), then tap anything: it is explained here instead of used. Press it twice for how to use the page. **← front page** goes back to the welcome's words, the front page.
+Press **(?)** in the top bar (or **help** among the commands), then tap anything: it is explained here instead of used, and a widget starts its tour. Press it twice for how to use the page. **← front page** goes back to the welcome's words, the front page.
 
 A command's page leads with what it does; its usage and options are folded under it, a tap to open each, and stay open on this device.`,
+		tour: [
+			{ at: WHOLE, say: 'What Help was last asked about, explained: press (?) in the top bar, then tap anything.' }
+		],
 		legible: { width: 200, height: 72 }
 	},
 	// The welcome widget (da-u7vz8): what datum is, the tutorial, and where
@@ -767,6 +863,11 @@ A command's page leads with what it does; its usage and options are folded under
 - **Read the docs** opens datum's docs here, in the page.
 - The links point an AI agent at datum.day, and open datum's source.
 - **Close welcome**, where the pane can close, closes it.`,
+		tour: [
+			{ at: WHOLE, say: 'What datum is, and where to start.' },
+			{ at: 'button.command', say: 'Tutorial teaches fields, their kinds and the bar by small games, in a database of its own.' },
+			{ at: '[data-open="docs"]', say: "Read the docs opens datum's docs, here in the page." }
+		],
 		legible: { width: 200, height: 100 }
 	},
 	// The docs widget (da-0d8l6), a place: the welcome's «Read the docs» opens
@@ -780,6 +881,11 @@ A command's page leads with what it does; its usage and options are folded under
 ## Reading
 
 A link to another doc opens it here; **← back** returns, and **contents** goes to the contents. A link out of the docs opens in a new tab, as does a link pressed with ctrl, ⌘ or shift.`,
+		tour: [
+			{ at: WHOLE, say: "datum's docs, read in the page." },
+			{ at: 'article.doc a[data-doc]', say: 'Tap a link to another doc: it opens here.', do: 'tap' },
+			{ at: 'button.back', say: '← back returns to the doc before.', do: 'tap' }
+		],
 		legible: { width: 200, height: 76 }
 	},
 	// The premade widget (da-36whg): fields ready to set up, by theme, each
@@ -795,6 +901,11 @@ A link to another doc opens it here; **← back** returns, and **contents** goes
 Tap one to open setup with that field filled in: its kind, color, symbol, states and data. Nothing is saved until you save it there. A field you have already says **set up**, and a tap opens setup on it. Weight asks first which you weigh in, **lbs** or **kg**.
 
 Under home & chores, **Install the chores kit** adds chores on a schedule; it says what it installs, and **install** installs it.`,
+		tour: [
+			{ at: WHOLE, say: 'Fields ready to set up, by theme.' },
+			{ at: 'button.card', say: 'Tap one to open setup with that field filled in; nothing is saved until you save it there.' },
+			{ at: 'button.install', say: 'Install the chores kit adds chores on a schedule; it says what it installs first.' }
+		],
 		legible: { width: 200, height: 100 }
 	},
 	// «Backups» (da-9ow8m), a place (da-ea5q2): the gear's Backups and the
@@ -815,6 +926,11 @@ Under home & chores, **Install the chores kit** adds chores on a schedule; it sa
 A plan backs up while a datum.day tab is open: every 15 minutes, hourly, every 6 hours or daily, into a set of slots kept as a rotation, so older backups stay. Backups are not encrypted.
 
 **New plan** asks a name, where to (a bucket and its keys, with **Test connection** and **Look for backups there**), which databases, how often and how many slots; **Add plan** adds it. Each plan says when each database last backed up, and lists its backups, newest first, each with **Restore**, which says what it would change and asks first. **Back up now** backs up at once, **Back up all now** every plan, and **Delete plan** deletes it.`,
+		tour: [
+			{ at: WHOLE, say: 'Backups of your data: a file on this device, and plans that back up to a bucket of your own.' },
+			{ at: 'section.local', say: 'Save a backup file saves everything in this database as a file; Restore from a file brings one back.' },
+			{ at: 'section.add input', say: 'A new plan: give it a name, then a bucket and its keys, the databases, how often and how many slots.', do: 'type' }
+		],
 		legible: { width: 206, height: 99 }
 	},
 	// «Settings» (da-99g5q), a place: the gear's «Settings» opens it
@@ -830,6 +946,9 @@ A plan backs up while a datum.day tab is open: every 15 minutes, hourly, every 6
 
 - **Track timezone** logs this device's zone to the timezone field, so each day is drawn in the zone you lived it in; pressed again, as **Stop tracking timezone**, it stops.
 - **Wrap tabs when swiping**, on this device: a swipe past the last tab goes to the first, and past the first to the last.`,
+		tour: [
+			{ at: WHOLE, say: "The page's settings, each with a line saying what it does." }
+		],
 		legible: { width: 200, height: 86 }
 	},
 	// The conflicts widget (da-6cutb), a place: the commands widget's
@@ -844,6 +963,9 @@ A plan backs up while a datum.day tab is open: every 15 minutes, hourly, every 6
 ## Settling one
 
 Tap a side to keep it for that key, or type a side's letter or what the key should hold. For the keys you did not pick, choose **keep as shown**, or one side over the other, or a merge. **Resolve** settles the entry on every device; beside it is the command it runs, \`conflicts resolve\`.`,
+		tour: [
+			{ at: WHOLE, say: 'Every entry two of your devices changed without seeing each other. Tap a side to keep it; Resolve settles it on every device.' }
+		],
 		legible: { width: 220, height: 120 }
 	},
 	// The setup widget (da-fu29p, named `field` until da-rgyq8): where a field
@@ -881,6 +1003,10 @@ Three tabs, under the form; tap one or use ← and →.
 A new field has **start tracking**, which makes it and puts it on the collect widget (\`setup F --track\`, which one Undo takes back), **save without tracking**, which makes it ignored (\`--ignore\`), and **cancel**, which makes nothing.
 
 A field already made has **Save** (one \`setup F\`; leaving it saves too), **Revert**, which drops what is not saved, or with nothing to drop steps the field back a version, through its whole history, and **Redo**, forward again.`,
+		tour: [
+			{ at: WHOLE, say: 'A field is one thing you track: mood, coffee, sleep. This is where one is made, or changed.' },
+			{ at: 'button.track-something', say: 'Tap to name a field: a new one, or one you have. Then its kind, its states and data, and Save.' }
+		],
 		legible: { width: 240, height: 180 }
 	},
 	// The input widget (da-0dhc, back as da-3zon): the bottom bar's command
@@ -902,6 +1028,11 @@ Type a command and press Enter, or **➤**; ↑ and ↓ walk back through what y
 
 - **prompt on top**: the line above, and the answer under it.`,
 		props: ({ reversed }) => ({ reversed: reversed === true }),
+		tour: [
+			{ at: WHOLE, say: 'The command line, in a pane: the same line, pills and Enter as the bar.' },
+			{ at: 'form.line input', say: 'Type a command, tail say, and press Enter; ↑ and ↓ walk back through what you ran.', do: 'type' },
+			{ at: '.receipt', say: 'What the last command answered.' }
+		],
 		legible: { width: 200, height: 58 }
 	},
 	// The debug widget (da-o2wm8), offered in the DEBUG database alone: the
@@ -944,6 +1075,9 @@ Type a command and press Enter, or **➤**; ↑ and ↓ walk back through what y
 
 The Introduction, then a game for a moment, for on/off, and for a change, then the bar and tabs. **Next** at the foot of each goes to the next. The Introduction's **where?** shows where to go back to your own database, datum; **Reset the tutorial** empties the tutorial's database and puts its tabs back, to start again.`,
 		db: TUTORIAL_DB,
+		tour: [
+			{ at: WHOLE, say: 'A lesson of the tutorial, in a database of its own.' }
+		],
 		legible: ({ part }) => (part === 'fields' ? FIELDS_LEGIBLE : { width: 200, height: 100 })
 	},
 	// A lesson's game (da-2chdp, vividn, 2026-11-05: «game (should be called
@@ -957,6 +1091,9 @@ The Introduction, then a game for a moment, for on/off, and for a change, then t
 
 You log what happens in the collect widget beside it, as the game asks. When the round is over it reads back what you logged and says your score; **Reset** starts again. The change game starts with your first tap.`,
 		db: TUTORIAL_DB,
+		tour: [
+			{ at: WHOLE, say: "A lesson's game: Start begins a round, End now ends it early." }
+		],
 		legible: { width: 200, height: 100 }
 	},
 	// A widget a KIT shipped (da-gh37k): `settings` name the kit and its
@@ -975,6 +1112,9 @@ You log what happens in the collect widget beside it, as the game asks. When the
 
 Tap a row to do what the kit says a tap does: the chores kit's logs that chore done. A kit's widget only reads, and a tap only logs.`,
 		title: ({ title, widget }) => [title, widget].find((t): t is string => typeof t === 'string'),
+		tour: [
+			{ at: WHOLE, say: 'A widget a kit installed: the rows its command lists. Tap a row to run what the kit gives it.' }
+		],
 		legible: { width: 160, height: 102 }
 	},
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
@@ -987,6 +1127,9 @@ Tap a row to do what the kit says a tap does: the chores kit's logs that chore d
 ## What to do
 
 It says what was wrong. Change the tab's widget, or close it, in layout mode; or **Reset default layouts** in the gear puts datum's own tabs back.`,
+		tour: [
+			{ at: WHOLE, say: 'A tab whose layout could not be drawn here, and why.' }
+		],
 		legible: { width: 120, height: 40 }
 	}
 };

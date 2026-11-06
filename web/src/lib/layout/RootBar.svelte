@@ -148,12 +148,12 @@
 	import { storageSentence } from '#lib/storageState.ts';
 	import { openBackups } from '#lib/backups.ts';
 	import { ask, choose as chooseAnswer, confirm } from '#lib/confirm.ts';
-	import { ARMED, arm, helping } from '#lib/help.ts';
+	import { ARMED, arm, helping, helpsOf } from '#lib/help.ts';
 	import { upgrade } from '#lib/upgrade.ts';
 	import { updated } from '$app/state';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
-	import { CHANGE, CLOSE, aimed, layoutActs, type Item } from './menu.js';
+	import { CHANGE, CLOSE, aimed, helpItems, layoutActs, type Item } from './menu.js';
 	import { accept, discard, enter, isAsking, leave, save as saveMode } from './mode.js';
 	import { offers, widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
@@ -164,6 +164,7 @@
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab, setTall } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
+	import { isSplit } from './types.js';
 	import type { Toward } from './tree.js';
 
 	let busy = $state(false);
@@ -341,9 +342,11 @@
 	] satisfies Item[]);
 
 	const reset = $derived(resetWidget(active));
+	/** A bare widget's tour and guide (da-7dflk), after its options, as a pane's menu has them. */
+	const helps = $derived(active && !isSplit(active.content) ? helpItems(helpsOf(active.content.kind)) : []);
 	const items = $derived($editing
 		? arrange
-		: [...(reset ? [{ label: 'Reset widget', run: reset }] : []), ...options, ...(acts ? layoutActs(acts) : []), ...keep]);
+		: [...(reset ? [{ label: 'Reset widget', run: reset }] : []), ...options, ...helps, ...(acts ? layoutActs(acts) : []), ...keep]);
 
 	/**
 	 * Escape in layout mode asks how to leave it (vividn: «Esc Esc reverts,

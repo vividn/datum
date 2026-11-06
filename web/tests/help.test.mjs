@@ -45,6 +45,14 @@ const rootTabs = (page) =>
 const shown = (page) =>
 	page.locator('.root-bar [role="tab"][aria-selected="true"]').evaluate((b) => b.textContent.replace('•', '').trim());
 
+/** Whether the tour's ring stands round the drawn element `selector` names. */
+const ringRound = (page, selector) =>
+	page.evaluate((selector) => {
+		const ring = document.querySelector('.tour .ring')?.getBoundingClientRect();
+		const el = [...document.querySelectorAll(selector)].map((e) => e.getBoundingClientRect()).find((r) => r.width > 0);
+		return !!ring && !!el && [ring.left - el.left, ring.top - el.top, el.right - ring.right, el.bottom - ring.bottom].every((d) => Math.abs(d + 4) < 1);
+	}, selector);
+
 /** The Help widget, wherever it is. */
 const place = (page) => page.locator('.host[data-widget="help"]');
 
@@ -178,28 +186,20 @@ describe('the Help button', () => {
 		});
 	});
 
-	test('then a widget: its kind\'s guide, and a press inside it does nothing else', async () => {
+	// da-7dflk: a widget tapped is toured, on that widget, and its guide is the tour's «read more».
+	test('then a widget: its tour on that widget, and a press inside it does nothing else', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, ['setup coffee --verb moment']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
-			const lines = await explain(page, coffee, 'collect');
-			assert.equal(lines.guide, 'widgetbar');
+			await armHelp(page);
+			await coffee.click();
+			await until(() => ringRound(page, 'section[data-pane="bar"]'), Boolean);
+			assert.equal(await page.locator('.tour').getAttribute('data-do'), null, 'it opened on a step that invites');
+			await page.keyboard.press('Escape');
+			await page.locator('.tour').waitFor({ state: 'detached' });
 			assert.equal((await app.entries(5)).length, 0, 'the press logged coffee');
 		});
-	});
-
-	// da-6i6dx: the setup widget's guide speaks the form's words — its kinds
-	// and its data, and a new field's save, one `setup F --track` and one Undo (da-2pbvd).
-	test('then the setup widget: its guide in the words its form uses', async () => {
-		const withField = JSON.stringify(along('column', widgetPane('setup', 'setup'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')));
-		await onPage(async ({ page }) => {
-			const lines = await explain(page, page.locator('.host[data-widget="setup"] .name-line .label'), 'setup');
-			assert.equal(lines.guide, 'setup');
-			assert.ok(lines.join('\n').includes('setup F --track'), 'it names the command a new field\'s Save runs');
-			// A field's kind is the glossary's word (da-kjkpx), the old «shape» gone; its keys are its data.
-			assert.doesNotMatch(lines.join('\n'), /\bshapes?\b|\bkeys\b/);
-		}, withField);
 	});
 
 	test('then a pill: what that kind of pill does, with its value; the pill stays', async () => {
@@ -429,11 +429,13 @@ describe('the root bar (?)', () => {
 			await page.keyboard.press('Escape');
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');
 			assert.equal(await says(), '?');
-			const title = page.locator('section.pane[data-title="welcome"] .titlebox');
-			const lines = await explain(page, title, 'welcome', undefined, q);
-			assert.equal(lines.guide, 'welcome');
-			// The tap on the widget disarmed it.
+			// A tap on a pane's title tours its widget (da-7dflk), and disarms it.
+			await q.click();
+			await page.locator('section.pane[data-title="welcome"] .titlebox').click();
+			await until(() => ringRound(page, 'section.pane[data-title="welcome"]'), Boolean);
 			assert.equal(await says(), '?');
+			await page.keyboard.press('Escape');
+			await page.locator('.tour').waitFor({ state: 'detached' });
 			const general = await explain(page, q, 'Using datum.day', undefined, q);
 			assert.equal(general.guide, 'page');
 			assert.equal(await q.getAttribute('aria-pressed'), 'false');

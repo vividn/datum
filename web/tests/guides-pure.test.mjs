@@ -135,3 +135,31 @@ describe('the retired words', () => {
 		assert.deepEqual(retired('a JSON shape, a key=value, `switch`\n```\nswitch\n```\n| switch |\n- `change` (alias: switch)'), []);
 	});
 });
+
+// da-6i6dx: the setup widget's guide speaks the form's words — its kinds and
+// its data, and a new field's save, one `setup F --track` and one Undo
+// (da-2pbvd). Read here since da-7dflk: Help then a tap on the widget tours it.
+test("the setup widget's guide is in the words its form uses", () => {
+	const text = KINDS.setup.guide;
+	assert.ok(text.includes('setup F --track'), "it names the command a new field's Save runs");
+	// A field's kind is the glossary's word (da-kjkpx), the old «shape» gone; its keys are its data.
+	assert.doesNotMatch(text, /\bshapes?\b|\bkeys\b/);
+});
+
+// da-7dflk: every kind has a tour, each step a sentence on one part of it,
+// inviting only what the runner can see done, and naming a real other kind
+// where it is about one. A kind no browser test opens alone (gated by a
+// database, or hidden) tours only its widget whole, which is always drawn.
+test('every kind has a tour; a kind no test opens alone tours its widget whole', async () => {
+	const { WHOLE } = await import('../src/lib/layout/registry.ts');
+	const opened = guided().filter((kind) => kind !== 'kit');
+	for (const [kind, { tour }] of Object.entries(KINDS)) {
+		assert.ok(tour.length > 0, `${kind} has no tour`);
+		for (const step of tour) {
+			assert.ok(step.say.trim().length > 0 && step.at.trim().length > 0, `${kind}: ${JSON.stringify(step)}`);
+			assert.ok(!step.do || ['tap', 'hold', 'drag', 'scroll', 'type'].includes(step.do), `${kind}: ${step.do}`);
+			assert.ok(!step.with || (step.with !== kind && KINDS[step.with]), `${kind}: with ${step.with}`);
+		}
+		if (!opened.includes(kind)) assert.deepEqual(tour.map((s) => s.at), [WHOLE], `${kind} tours a part no test opens`);
+	}
+});

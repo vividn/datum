@@ -21,7 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, addTab, chooseRoot, chooser, choose, exactly, leaveLayoutMode, manage, menuButton, menuLines, pane } from './support/layout.mjs';
+import { DESKTOP, HELP, addTab, chooseRoot, chooser, choose, exactly, leaveLayoutMode, manage, menuButton, menuLines, pane } from './support/layout.mjs';
 
 /** «Save options with layout» (da-vhwq): what makes a widget's own move the layout's. */
 const SAVE = 'Save options with layout';
@@ -98,7 +98,7 @@ describe('Reset widget', () => {
 			// is Change Widget (da-z8klv).
 			const lines = await linesOf(page, 'strip');
 			// The freeze wears its icon before its words (da-2hd21).
-			assert.deepEqual(lines, [RESET, '⤓ today frozen at the bottom', 'orientation']);
+			assert.deepEqual(lines, [RESET, '⤓ today frozen at the bottom', 'orientation', ...HELP]);
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);
@@ -150,9 +150,8 @@ describe('Reset widget', () => {
 			// `custom` declares no settings, so there is nothing to put back.
 			// It is the example since da-hkjp gave `tail` a declared `type`,
 			// which puts both items in that kind's NAME menu. Neither item
-			// and no layout leaves it with NO name menu at all, Change
-			// Widget having moved to the `▾` (da-z8klv).
-			assert.equal(await menuButton(page, 'custom').count(), 0);
+			// and no layout leaves its tour and guide alone (da-z8klv, da-7dflk).
+			assert.deepEqual(await linesOf(page, 'custom'), HELP);
 
 			// The root tab holds the `main` layout, so the root menu has none
 			// either — the same rule, not a second one.

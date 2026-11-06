@@ -24,8 +24,8 @@
 // - Help itself: the general help, the PAGE's guide (#lib/guides.ts,
 //   da-oefd0): tabs and layouts, widgets and their menus, the bar, with
 //   `datum help`, the commands, one line down.
-// - a widget: its kind's GUIDE, carried in its registry entry, where kinds
-//   are declared: what it is for and every feature it has.
+// - a widget: its kind's TOUR (da-7dflk, #lib/tour.ts), on that widget,
+//   which ends in «read more», its GUIDE in the docs widget.
 // - a pill: what its KIND is and does, with its own value in it (below).
 // - a flag of a held command (da-st2xl): its line of the CLI's own flag
 //   table, carried on the button from `datum help --json`.
@@ -41,7 +41,9 @@
 import { get, writable } from 'svelte/store';
 import { pills, spent, type Pill } from './bar.js';
 import { KINDS } from './layout/registry.js';
-import { PAGE, guideOf } from './guides.js';
+import { PAGE, docsAsked, guideOf, guidePath } from './guides.js';
+import { tourWidget } from './tour.js';
+import type { Helps } from './layout/menu.js';
 import { openPlace } from './layout/shell.js';
 import { helpArgv } from './calls.js';
 import { run } from './run.js';
@@ -131,7 +133,7 @@ async function explain(target: Element | null): Promise<void> {
 	if (flag) return show(`datum ${flag.dataset.flag}`, flag.dataset.help ?? '');
 	// A control's own help before its widget's: the setup widget's tracked/ignored (da-iggnd).
 	if (!command && helped) return show(helped.title, helped.dataset.help ?? '');
-	if (!command && kind && KINDS[kind]) return explainGuide(kind);
+	if (!command && kind && KINDS[kind]) return tourWidget(kind, target?.closest('.host[data-widget]'));
 	if (!command || command === 'help') return explainGuide(PAGE);
 	return explainCommand(command);
 }
@@ -140,6 +142,18 @@ async function explain(target: Element | null): Promise<void> {
 export function explainGuide(name: string): void {
 	const guide = guideOf(name);
 	if (guide) show(guide.title, '', { guide: name });
+}
+
+/** What a widget's `? help` and `Documentation` do (da-7dflk): its tour on `host` (the first drawn where none), its guide. */
+export const helpsOf = (kind: string, host?: () => Element | null | undefined): Helps => ({
+	tour: () => tourWidget(kind, host?.()),
+	docs: () => void openGuide(kind)
+});
+
+/** A widget's guide in the docs widget (da-7dflk): its menu's «Documentation», its tour's «read more». */
+export function openGuide(kind: string): Promise<void> {
+	docsAsked.set(guidePath(kind));
+	return openPlace('docs');
 }
 
 /**
