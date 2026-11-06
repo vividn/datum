@@ -78,7 +78,7 @@ fn builds(db: &Db, chain: &Chain) -> Result<Vec<(String, Option<String>)>> {
         .collect())
 }
 
-fn label(chain: &Chain, endpoint: &str) -> String {
+pub(crate) fn label(chain: &Chain, endpoint: &str) -> String {
     chain.member(endpoint).map_or_else(
         || endpoint[..10.min(endpoint.len())].into(),
         |m| m.label.clone(),
@@ -153,7 +153,7 @@ fn on_clock(at: &str) -> String {
 }
 
 #[cfg(feature = "net")]
-pub use net::{ask, follow};
+pub use net::{ask, asked, follow, runs};
 
 #[cfg(feature = "net")]
 mod net {
@@ -169,8 +169,7 @@ mod net {
     /// `datum sync chain upgrade`: this copy upgrades as far as the pin, then
     /// asks every member to, naming the version it now runs, and syncs the ask.
     pub fn ask(db: &Db) -> Result<()> {
-        let chain = db.sync_chain()?;
-        ensure!(chain.exists(), super::super::sync::NO_CHAIN);
+        ensure!(db.sync_chain()?.exists(), super::super::sync::NO_CHAIN);
         let datum = match install::managed() {
             Ok(exe) => {
                 let ran = Command::new(&exe).arg("upgrade").status()?;
@@ -178,15 +177,29 @@ mod net {
                     ran.success(),
                     "this copy did not upgrade, so nothing was asked"
                 );
-                let said = Command::new(&exe).arg("--version").output()?;
-                let said = String::from_utf8_lossy(&said.stdout);
-                Some(said.trim().trim_start_matches("datum ").to_string())
+                Some(runs(&exe)?)
             }
             Err(why) => {
                 eprintln!("warning: this copy does not upgrade itself: {why}");
                 None
             }
         };
+        asked(db, datum)
+    }
+
+    /// The version the datum at `exe` says it is.
+    pub fn runs(exe: &std::path::Path) -> Result<String> {
+        let said = Command::new(exe).arg("--version").output()?;
+        let said = String::from_utf8_lossy(&said.stdout);
+        Ok(said.trim().trim_start_matches("datum ").to_string())
+    }
+
+    /// The ask itself, naming `datum`, the version this copy now runs, and
+    /// its sync: [`ask`] once this copy has upgraded, and `datum upgrade
+    /// --force-upgrade` (da-kf328).
+    pub fn asked(db: &Db, datum: Option<String>) -> Result<()> {
+        let chain = db.sync_chain()?;
+        ensure!(chain.exists(), super::super::sync::NO_CHAIN);
         let record = json!({
             "type": "upgrade", "chain": chain.id, "datum": datum,
             "created": Utc::now().to_rfc3339(),
@@ -227,7 +240,34 @@ mod net {
             .sync_floors_apart()?
             .into_iter()
             .find(|(_, a)| a.this_updates);
-        Ok(apart.map(|(ep, a)| (format!("floor {}", a.floor), a.words(&label(chain, &ep)))))
+        if let Some((ep, a)) = apart {
+            return Ok(Some((
+                format!("floor {}", a.floor),
+                a.words(&label(chain, &ep)),
+            )));
+        }
+        // A member that went past the pin with `datum upgrade --leave-behind`
+        // (da-kf328), told to a copy held there, once per build it says: a
+        // prompt alone, so a copy below the pin is not moved by it.
+        let Some(pin) = chain.pin.as_ref().and_then(|p| p.version.as_deref()) else {
+            return Ok(None);
+        };
+        let build = said_build();
+        if !held_at(&build, pin) {
+            return Ok(None);
+        }
+        let versions = db.sync_versions()?;
+        Ok(chain
+            .members
+            .iter()
+            .filter(|m| m.revoked.is_none() && m.endpoint != me)
+            .find_map(|m| {
+                let (d, _) = versions.get(&m.endpoint)?;
+                (!d.is_empty() && past_pin(d, pin) && !at_least(&build, d)).then(|| {
+                    let words = format!("{} upgraded past the pin to datum {d}", m.label);
+                    (format!("left {} {d}", m.endpoint), words)
+                })
+            }))
     }
 
     /// The reason last acted on, `_meta` `upgrade_tried`: its key, and
@@ -311,7 +351,8 @@ mod net {
                     ),
                     false => eprintln!(
                         "⚠ {why}, and this copy runs datum {build}, held at the sync chain's pin \
-                         (datum {p}): `datum sync unpin` lets it upgrade"
+                         (datum {p}): `datum upgrade --leave-behind` upgrades it past the pin, \
+                         `datum sync unpin` lets it upgrade"
                     ),
                 }
                 return Ok(());

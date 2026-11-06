@@ -742,8 +742,25 @@ fn upgrade_auto_installs_a_daily_timer_and_no_auto_removes_it() {
     assert!(said.contains("datum-auto-upgrade.timer"), "{said}");
     let service = std::fs::read_to_string(h.auto("service")).unwrap();
     assert!(
-        service.contains(&format!("\nExecStart=\"{}\" upgrade\n", h.exe().display())),
+        service.contains(&format!(
+            "\nExecStart=\"{}\" upgrade --daily\n",
+            h.exe().display()
+        )),
         "{service}"
+    );
+    // A unit from before `--daily` (da-kf328) is written again with it by
+    // the next upgrade, for the next day's run to hold at a pin.
+    std::fs::write(
+        h.auto("service"),
+        service.replace(" upgrade --daily\n", " upgrade\n"),
+    )
+    .unwrap();
+    h.ok(&["upgrade", "--check"]);
+    assert_eq!(std::fs::read_to_string(h.auto("service")).unwrap(), service);
+    assert!(
+        h.log().contains("systemctl --user daemon-reload"),
+        "{}",
+        h.log()
     );
     assert!(
         service.contains(&format!(

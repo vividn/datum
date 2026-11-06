@@ -160,3 +160,86 @@ fn chain_upgrade_asks_every_member_and_status_says_who_followed() {
         .ok(&["sync", "status"])
         .contains("asked every member to upgrade to datum"));
 }
+
+/// Two copies at datum 3.2.5, `a` pinning its chain there, `b` installed
+/// and holding the pin from a sync with `a`, which is up.
+fn pinned_by_a() -> (Copy, Copy, Serving) {
+    const AT: (&str, &str) = ("DATUM_SYNC_TEST_BUILD", "3.2.5-beta (abcdef1)");
+    let (mut a, mut b) = paired();
+    a.env.push(AT);
+    b.installed(RELEASE);
+    b.env.push(AT);
+    a.ok(&["sync", "pin", "3.2.5"]);
+    let (a_runs, _) = up(&a);
+    b.ok(&["sync"]);
+    assert!(b.ok(&["sync", "status"]).contains("pinned at datum 3.2.5"));
+    (a, b, a_runs)
+}
+
+/// da-kf328: another member's pin refuses an upgrade, naming the pin, who
+/// set it and both ways past; `--force-upgrade` lifts it, upgrades this copy
+/// and asks every member to follow.
+#[test]
+fn another_members_pin_refuses_and_force_upgrade_lifts_it_for_everyone() {
+    let (a, mut b, _a_runs) = pinned_by_a();
+    let refused = b.fails(&["upgrade"], "");
+    let by = format!("pinned at datum 3.2.5 by {}", member_label(&b, &a.id()));
+    for said in [&by, "--force-upgrade", "--leave-behind"] {
+        assert!(refused.contains(said), "{said}: {refused}");
+    }
+    let past = b.fails(&["upgrade", "--to", "9.9"], "");
+    assert!(past.contains(&by), "{past}");
+    // The daily timer's run holds there, as at this copy's own pin, saying so.
+    let held = b.ok(&["upgrade", "--daily"]);
+    for said in ["datum is held", &by, "--force-upgrade", "--leave-behind"] {
+        assert!(held.contains(said), "{said}: {held}");
+    }
+    assert!(b.exe_holds(&datum()));
+
+    // An upgrade that fails lifts no pin.
+    b.env.push(("DATUM_RELEASE_URL", "file:///nonexistent"));
+    b.fails(&["upgrade", "--force-upgrade"], "");
+    b.env.pop();
+    assert!(b.ok(&["sync", "status"]).contains("pinned at datum 3.2.5"));
+
+    let said = b.ok(&["upgrade", "--force-upgrade"]);
+    assert!(said.contains("unpinned sync chain"), "{said}");
+    assert!(said.contains("asked every member of sync chain"), "{said}");
+    assert!(b.exe_holds(RELEASE));
+    eventually("a holds no pin and the ask", || {
+        let status: serde_json::Value =
+            serde_json::from_str(&a.ok(&["sync", "status", "--json"])).unwrap();
+        status["pin"].is_null() && status["asked"]["datum"] == "9.9.9-beta (abcdef1)"
+    });
+}
+
+/// da-kf328: `--leave-behind` upgrades this copy past another member's pin
+/// and leaves the pin; the member held there is told at its next sync, once
+/// for each build past it.
+#[test]
+fn leave_behind_upgrades_this_copy_and_the_member_held_is_told() {
+    let (a, mut b, a_runs) = pinned_by_a();
+    let said = b.ok(&["upgrade", "--leave-behind"]);
+    assert!(
+        said.contains("leaving the members held there behind"),
+        "{said}"
+    );
+    assert!(b.exe_holds(RELEASE));
+    drop(a_runs);
+
+    // `b` now says the release's build, past the pin, which stays.
+    b.exe = None;
+    b.env
+        .push(("DATUM_SYNC_TEST_BUILD", "9.9.9-beta (abcdef1)"));
+    let (_b_runs, _) = up(&b);
+    let told = |c: &Copy| String::from_utf8(c.run(&["sync"]).stderr).unwrap();
+    let err = told(&a);
+    let past = format!(
+        "{} upgraded past the pin to datum 9.9.9-beta (abcdef1)",
+        member_label(&a, &b.id())
+    );
+    assert!(err.contains(&past), "{err}");
+    assert!(err.contains("`datum upgrade --leave-behind`"), "{err}");
+    assert!(!told(&a).contains("upgraded past the pin"), "once");
+    assert!(a.ok(&["sync", "status"]).contains("pinned at datum 3.2.5"));
+}

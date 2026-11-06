@@ -1,0 +1,66 @@
+//! `datum upgrade`'s flags, carved from `commands.rs` for its size cap.
+
+use super::spec::FlagSpec;
+
+pub(super) const UPGRADE_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: None,
+        long: "check",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "`upgrade status`'s other name",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "auto",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "upgrade daily: install a systemd user timer that runs `datum upgrade`",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "no-auto",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "remove that timer",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "to",
+        takes_value: true,
+        value_hint: Some("VERSION"),
+        value_optional: false,
+        summary: "install that version: 3.<minor>.<height>, or 3.<minor> for its newest",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "force-upgrade",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "past another member's pin: lift it, and ask every member to upgrade",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "leave-behind",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "past another member's pin: this copy alone, the others told as they sync",
+        long_description: None,
+        left_override: None,
+    },
+];

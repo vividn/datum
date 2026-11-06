@@ -89,7 +89,12 @@ cargo built from a checkout, say) only says the chain has moved on.
 `datum sync pin 3.<minor>[.<height>]` holds the whole chain there: no
 member's upgrade, by hand, daily or asked, goes past it, so the floor
 cannot rise above it, and a member already past it stays where it is.
-`datum sync unpin` takes it away.
+`datum sync unpin` takes it away. Under another member's pin, `datum
+upgrade` refuses an upgrade past it, naming the pin and who set it:
+`datum upgrade --force-upgrade` lifts the pin and asks every member to
+upgrade, and `datum upgrade --leave-behind` upgrades this copy alone,
+each member held at the pin told so as it next syncs. The daily upgrade
+is held at a pin instead, saying so in its log.
 
 datum makes no network call of its own unless you sync, upgrade, or turn
 on update checks: with `update_check = true` in `datumrc.toml` (in

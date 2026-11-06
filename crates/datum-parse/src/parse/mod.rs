@@ -632,7 +632,8 @@ mod tests {
             Command::Upgrade {
                 check: true,
                 auto: None,
-                to: None
+                to: None,
+                past_pin: None
             }
         ));
         assert!(matches!(
@@ -642,12 +643,34 @@ mod tests {
             Command::Upgrade {
                 check: false,
                 auto: Some(false),
-                to: None
+                to: None,
+                past_pin: None
             }
         ));
         assert!(e(&["upgrade", "--auto", "--check"]).contains("unexpected argument: '--check'"));
         assert!(e(&["upgrade", "--check", "x"]).contains("unexpected argument: 'x'"));
         assert!(e(&["upgrade", "--nope"]).contains("unexpected flag: --nope"));
+    }
+
+    /// da-kf328: past a pin by `--force-upgrade` or `--leave-behind`, one of
+    /// the two; the force names the newest, so no `--check` or `--to`.
+    #[test]
+    fn upgrade_past_a_pin_takes_one_way() {
+        let past = |w: &[&str]| match parse_argv(&argv(w)).unwrap().command {
+            Command::Upgrade { past_pin, .. } => past_pin,
+            _ => panic!("expected Upgrade"),
+        };
+        let e = |w: &[&str]| parse_argv(&argv(w)).unwrap_err().to_string();
+        assert_eq!(past(&["upgrade"]), None);
+        assert_eq!(past(&["upgrade", "--force-upgrade"]), Some(PastPin::Force));
+        assert_eq!(
+            past(&["upgrade", "--leave-behind", "--to", "3.2"]),
+            Some(PastPin::LeaveBehind)
+        );
+        assert_eq!(past(&["upgrade", "--daily"]), Some(PastPin::Daily));
+        assert!(e(&["upgrade", "--force-upgrade", "--leave-behind"]).contains("not both"));
+        assert!(e(&["upgrade", "--force-upgrade", "--to", "3.2"]).contains("not with --to"));
+        assert!(e(&["upgrade", "--check", "--force-upgrade"]).contains("not with --check"));
     }
 
     /// da-ec8y8: `--to` names a kept release by the version `--version`

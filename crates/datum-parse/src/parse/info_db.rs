@@ -190,7 +190,7 @@ pub(crate) fn parse_install_args(tail: &[&str]) -> Result<InstallArgs> {
 }
 
 pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
-    let (mut check, mut auto, mut to) = (false, None, None);
+    let (mut check, mut auto, mut to, mut past_pin) = (false, None, None, None);
     let mut words = tail.iter();
     while let Some(tok) = words.next() {
         let version = match split_flag(tok) {
@@ -209,6 +209,20 @@ pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
                 auto = Some(on == "auto");
                 continue;
             }
+            FlagSplit::Long(how @ ("force-upgrade" | "leave-behind" | "daily")) => {
+                let how = match how {
+                    "force-upgrade" => PastPin::Force,
+                    "leave-behind" => PastPin::LeaveBehind,
+                    _ => PastPin::Daily,
+                };
+                if past_pin.is_some_and(|was| was != how) {
+                    return Err(ParseError::InvalidArg(
+                        "--force-upgrade or --leave-behind, not both".into(),
+                    ));
+                }
+                past_pin = Some(how);
+                continue;
+            }
             FlagSplit::Long("to") => words.next().copied().ok_or_else(|| {
                 ParseError::InvalidArg(
                     "--to takes a version: 3.<minor> or 3.<minor>.<height>".into(),
@@ -224,7 +238,24 @@ pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
         };
         to = Some(release_version("--to takes", version)?);
     }
-    Ok(Command::Upgrade { check, auto, to })
+    // The chain's ask, which `--force-upgrade` writes, names the newest.
+    let with = match (check, to.is_some()) {
+        (true, true) => "--check or --to",
+        (true, false) => "--check",
+        (false, true) => "--to",
+        (false, false) => "",
+    };
+    if past_pin == Some(PastPin::Force) && !with.is_empty() {
+        return Err(ParseError::InvalidArg(format!(
+            "--force-upgrade upgrades the whole chain to the newest release: not with {with}"
+        )));
+    }
+    Ok(Command::Upgrade {
+        check,
+        auto,
+        to,
+        past_pin,
+    })
 }
 
 /// A kept release's version as `datum --version` prints it, `3.<minor>.<height>`,

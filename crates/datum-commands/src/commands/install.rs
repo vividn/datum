@@ -18,14 +18,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use datum_parse::cli::{InstallArgs, Shell};
+use datum_parse::cli::{InstallArgs, PastPin, Shell};
 use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::question::{is_yes, Question};
 use super::sync_daemon::{ctl, linger_note, quoted, ENV};
-use super::{alias, backup_daemon, completions, sync_daemon};
+use super::{alias, backup_daemon, completions, sync_daemon, sync_upgrade};
 use crate::args::SyncDaemonAct;
 use crate::config;
 use datum_core::db::{chain, Db};
@@ -225,11 +225,19 @@ fn remove_binary(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
-    let ControlFlow::Continue(to) = within_pin(to)? else {
+pub fn upgrade(check: bool, to: Option<&str>, past_pin: Option<PastPin>) -> Result<()> {
+    if past_pin == Some(PastPin::Force) {
+        return force_upgrade();
+    }
+    daily_unit_flagged();
+    let ControlFlow::Continue(to) = within_pin(to, past_pin)? else {
         return Ok(());
     };
-    let to = to.as_deref();
+    replace(check, to.as_deref())
+}
+
+/// The upgrade itself, past whatever pin [`within_pin`] let through.
+fn replace(check: bool, to: Option<&str>) -> Result<()> {
     let exe = this_exe()?;
     // A datum cargo built from a checkout moves onto the release (da-1yc69;
     // vividn, 2026-11-04: «it uses the public key in the checkedout version,
@@ -317,19 +325,98 @@ pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// The lowest pin of the sync chains this install's databases are in
-/// (da-w8zp5), and the database it is read in: a `3.<minor>` pin is its
-/// minor's newest, so above every full version of it.
-fn pinned() -> Option<(String, String)> {
-    config::known_dbs()
+/// A daily timer's unit written before `--daily` (da-kf328) runs a plain
+/// `upgrade`, which another member's pin refuses: any upgrade writes it
+/// again with the flag, for the next day's run to hold.
+fn daily_unit_flagged() {
+    let Ok(path) = units_dir().map(|d| d.join(format!("{AUTO}.service"))) else {
+        return;
+    };
+    let Ok(was) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let now = was.replace("\" upgrade\n", "\" upgrade --daily\n");
+    if now != was && std::fs::write(&path, now).is_ok() {
+        let _ = ctl("systemctl", &["--user", "daemon-reload"]);
+    }
+}
+
+/// A pin of a sync chain one of this install's databases is in (da-w8zp5).
+struct Pinned {
+    version: String,
+    /// The database it is read in, and its path.
+    db: String,
+    path: PathBuf,
+    /// Who set it, and whether that is this copy (da-kf328).
+    by: String,
+    mine: bool,
+}
+
+/// Every pin of the sync chains this install's databases are in, the lowest
+/// first: a `3.<minor>` pin is its minor's newest, so above every full
+/// version of it.
+fn pins() -> Vec<Pinned> {
+    let mut pins: Vec<Pinned> = config::known_dbs()
         .into_iter()
         .filter_map(|(name, path)| {
             let db = Db::open_read_only(&path.to_string_lossy()).ok()?;
-            Some((db.sync_chain_served().ok()?.pin?.version?, name))
+            let chain = db.sync_chain_served().ok()?;
+            let pin = chain.pin.as_ref()?;
+            Some(Pinned {
+                version: pin.version.clone()?,
+                db: name,
+                path,
+                by: sync_upgrade::label(&chain, &pin.by),
+                mine: db.sync_endpoint_id().is_ok_and(|me| me == pin.by),
+            })
         })
-        .min_by_key(|(pin, _)| {
-            chain::version_parts(pin).map(|(m, n, h)| (m, n, h.unwrap_or(u32::MAX)))
-        })
+        .collect();
+    pins.sort_by_key(|p| {
+        chain::version_parts(&p.version).map(|(m, n, h)| (m, n, h.unwrap_or(u32::MAX)))
+    });
+    pins
+}
+
+/// `datum upgrade --force-upgrade` (da-kf328; vividn, 2026-11-06: «which will
+/// then remove the pin and upgrade everyone»): this copy upgrades to the
+/// newest, then each pin is lifted and each of those chains asked to follow,
+/// as `datum sync chain upgrade` asks. In that order, so an upgrade that
+/// fails lifts no pin.
+fn force_upgrade() -> Result<()> {
+    let pins = pins();
+    let dbs = pins
+        .iter()
+        .map(|p| Db::open(&p.path.to_string_lossy()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    // Read before the rename, which leaves this process's own path deleted.
+    let exe = this_exe()?;
+    replace(false, None)?;
+    let datum = match sync_upgrade::runs(&exe) {
+        Ok(d) => Some(d),
+        Err(e) => {
+            eprintln!(
+                "warning: the new datum does not say its version ({e:#}): the ask names none"
+            );
+            None
+        }
+    };
+    for (db, p) in dbs.iter().zip(&pins) {
+        let kept = || match p.mine {
+            true => format!(
+                "this copy upgraded, but the sync chain of «{}» is still pinned at datum {} by \
+                 this copy: `datum sync unpin` there takes it away",
+                p.db, p.version
+            ),
+            false => format!(
+                "this copy upgraded, but the sync chain of «{}» is still pinned at datum {}, \
+                 as `--leave-behind` leaves it",
+                p.db, p.version
+            ),
+        };
+        sync_upgrade::pin(db, None, None).with_context(kept)?;
+        sync_upgrade::asked(db, datum.clone())?;
+    }
+    Ok(())
 }
 
 /// This datum, where it upgrades itself (da-w8zp5): `datum install` set it
@@ -351,32 +438,73 @@ pub fn managed() -> std::result::Result<PathBuf, String> {
 
 /// Where a sync chain's pin lets `upgrade` go (da-w8zp5): no upgrade goes
 /// past it, so a plain one, the daily timer's or a chain's ask, goes as far
-/// as it, and an exact one held there does nothing (`Break`). The `--to`
-/// the upgrade then reads.
-fn within_pin(to: Option<&str>) -> Result<ControlFlow<(), Option<String>>> {
-    let Some((pin, db)) = pinned() else {
+/// as it. Past another member's pin it is refused, naming both ways past
+/// (da-kf328), and under this copy's own an exact one held there does
+/// nothing (`Break`). `leave`, `--leave-behind`, goes past every pin. The
+/// `--to` the upgrade then reads.
+fn within_pin(to: Option<&str>, how: Option<PastPin>) -> Result<ControlFlow<(), Option<String>>> {
+    let leave = how == Some(PastPin::LeaveBehind);
+    let pins = pins();
+    let named = |p: &Pinned| {
+        format!(
+            "the sync chain of «{}» is pinned at datum {}",
+            p.db, p.version
+        )
+    };
+    // Past it: a plain upgrade's newest is, from at or past it.
+    let past = |pin: &str| match to {
+        Some(v) => chain::past_pin(v, pin),
+        None => leave || chain::held_at(&said_build(), pin),
+    };
+    for p in pins.iter().filter(|p| !p.mine && past(&p.version)) {
+        let chain = named(p);
+        // The daily timer's run holds, as under this copy's own pin, so the
+        // unit fails no run for a pin that is no fault (vremya on #1801).
+        if how == Some(PastPin::Daily) {
+            println!(
+                "datum is held: {chain} by {}; `datum upgrade --force-upgrade` lifts the pin \
+                 and asks every member to upgrade, `datum upgrade --leave-behind` upgrades \
+                 this copy alone",
+                p.by
+            );
+            return Ok(ControlFlow::Break(()));
+        }
+        ensure!(
+            leave,
+            "{chain} by {}, and this copy does not upgrade past another member's pin: \
+             `datum upgrade --force-upgrade` lifts the pin and asks every member to upgrade, \
+             `datum upgrade --leave-behind` upgrades this copy alone and leaves the others there",
+            p.by
+        );
+        println!(
+            "{chain} by {}: upgrading this copy past it, and leaving the members held there \
+             behind, each told so as it next syncs",
+            p.by
+        );
+    }
+    let Some(lowest) = pins.first().filter(|_| !leave) else {
         return Ok(ControlFlow::Continue(to.map(str::to_string)));
     };
-    let chain = format!("the sync chain of «{db}» is pinned at datum {pin}");
+    let (pin, chain) = (&lowest.version, named(lowest));
     match to {
         Some(v) => ensure!(
-            !chain::past_pin(v, &pin),
+            !chain::past_pin(v, pin),
             "{chain}, and no upgrade goes past it: `datum sync unpin` there takes it away"
         ),
-        None if chain::past_pin(&said_build(), &pin) => {
+        None if chain::past_pin(&said_build(), pin) => {
             println!(
                 "datum {} is past the pin: {chain}, and it stays where it is",
                 said_build()
             );
             return Ok(ControlFlow::Break(()));
         }
-        None if chain::held_at(&said_build(), &pin) => {
+        None if chain::held_at(&said_build(), pin) => {
             println!("datum is held at {pin}: {chain}; `datum sync unpin` there lets it upgrade");
             return Ok(ControlFlow::Break(()));
         }
         None => println!("{chain}: upgrading as far as it"),
     }
-    Ok(ControlFlow::Continue(Some(to.unwrap_or(&pin).to_string())))
+    Ok(ControlFlow::Continue(Some(to.unwrap_or(pin).to_string())))
 }
 
 /// The binary `upgrade` installs and the SHA-256 SHA256SUMS gives it: the
@@ -573,7 +701,7 @@ pub fn auto(on: bool) -> Result<()> {
     std::fs::write(
         &service,
         format!(
-            "{described}\n[Service]\nType=oneshot\nExecStart=\"{}\" upgrade\n{env}",
+            "{described}\n[Service]\nType=oneshot\nExecStart=\"{}\" upgrade --daily\n{env}",
             quoted(&exe.display().to_string())
         ),
     )

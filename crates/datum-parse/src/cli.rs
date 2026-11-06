@@ -162,7 +162,23 @@ pub enum Command {
         /// or `3.<minor>` for that minor's newest build, in place of the
         /// newest (da-ec8y8).
         to: Option<String>,
+        /// `--force-upgrade` or `--leave-behind`: past a pin another member
+        /// set, which a plain upgrade refuses (da-kf328).
+        past_pin: Option<PastPin>,
     },
+}
+
+/// How `datum upgrade` goes past its sync chain's pin (da-kf328).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PastPin {
+    /// `--force-upgrade`: lift the pin, and ask every member to upgrade.
+    Force,
+    /// `--leave-behind`: this copy alone, the members told as they sync.
+    LeaveBehind,
+    /// `--daily`, hidden: the daily timer's run, which holds at another
+    /// member's pin as at this copy's own, saying so, where a person's
+    /// upgrade is refused.
+    Daily,
 }
 
 impl Command {

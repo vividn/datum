@@ -871,7 +871,13 @@ A chain's `pin {version}` record (`datum sync pin <VERSION> | unpin`, an admin
 act; da-w8zp5) is the version no member's `datum upgrade` goes past: a plain
 one, the daily timer's or a follow, goes as far as the lowest pin of the
 install's databases, `--to` past it is refused, and a copy past it stays (a pin
-moves no copy back). Its `upgrade {datum}` record (`datum sync chain upgrade`,
+moves no copy back). Another member's pin refuses an upgrade past it, plain or
+`--to`, naming the pin and who set it (da-kf328): `--force-upgrade` unpins each
+pinned chain, upgrades, and writes each an ask, and `--leave-behind` upgrades
+this copy alone, a copy held at the pin told once per build of a member past it
+as it follows. The daily timer's unit runs the hidden `upgrade --daily`, which
+holds at another member's pin as at this copy's own, exit 0 and a line; any
+upgrade writes a unit from before it again with the flag. Its `upgrade {datum}` record (`datum sync chain upgrade`,
 a member's message) asks every member to upgrade now. After a bare `sync`, and
 in `sync run` as a chain record comes or once a minute, a copy behind the ask's
 version, or below a member's sync floor, runs `datum upgrade` itself
