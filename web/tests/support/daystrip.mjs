@@ -579,7 +579,7 @@ export const PHONE = { device: devices['Pixel 5'], viewport: { width: 390, heigh
 
 /**
  * Two fingers over `box`'s middle, `from` px apart, drawn to `to` px apart:
- * side by side, or one over the other with `axis` 'y'.
+ * side by side, one over the other with `axis` 'y', or diagonally with 'xy'.
  *
  * Through CDP, as every other touch in this suite: Playwright's
  * touchscreen only taps, and a pinch made of mouse events would be a test
@@ -590,16 +590,13 @@ export async function pinch(page, box, from, to, midway, axis = 'x') {
 	const y = box.y + box.height / 2;
 	const x = box.x + box.width / 2;
 	const cdp = await page.context().newCDPSession(page);
-	const both = (apart) =>
-		axis === 'x'
-			? [
-					{ id: 1, x: x - apart / 2, y },
-					{ id: 2, x: x + apart / 2, y }
-				]
-			: [
-					{ id: 1, x, y: y - apart / 2 },
-					{ id: 2, x, y: y + apart / 2 }
-				];
+	// `xy` is a diagonal pair, as far apart across as down (da-r7h0m).
+	const across = axis !== 'y' ? 1 : 0;
+	const down = axis !== 'x' ? 1 : 0;
+	const both = (apart) => [
+		{ id: 1, x: x - (across * apart) / 2, y: y - (down * apart) / 2 },
+		{ id: 2, x: x + (across * apart) / 2, y: y + (down * apart) / 2 }
+	];
 	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
 	try {
 		await at('touchStart', [both(from)[0]]);

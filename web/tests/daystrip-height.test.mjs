@@ -52,7 +52,9 @@ import {
 	FREEZE,
 	frozen,
 	toggleFreeze,
-	storeKeys
+	storeKeys,
+	pinch,
+	PHONE
 } from './support/daystrip.mjs';
 
 before(startApp);
@@ -545,6 +547,31 @@ describe("the day strip's day height and its pin", () => {
 			assert.deepEqual(inTree(await tree()), [], 'the kept sizes reached the layout');
 			assert.deepEqual(app.errors, []);
 		});
+	});
+
+	// A pinch's day height is the moment's (da-r7h0m), vividn, 2026-11-06:
+	// «this should just be a tempoary thing … only dragging the handles
+	// between days changes the dayheight in a persistent way». So nothing of
+	// it is kept, and a reload draws the set height again.
+	test('a pinch down the strip is not kept: a reload is back on the set day height', async () => {
+		await withApp(async (app) => { // own app: it reloads
+			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
+			await app.idle();
+			const [set, kept] = [await valueOf(app), await heard(app)];
+			const stack = await app.page.locator('.stack').boundingBox();
+			const box = { ...(await app.page.locator('.band[data-days-ago="0"]').boundingBox()), y: stack.y, height: stack.height };
+			const want = Math.min(MAX_DAY, set * 2);
+			assert.notEqual(want, set, `the strip sets ${set}px, which a pinch cannot grow`);
+
+			await pinch(app.page, box, 60, 120, undefined, 'y');
+			await until(() => valueOf(app), (v) => v === want);
+			assert.equal(await heard(app), kept, 'a pinch stored the day height');
+
+			await app.reload();
+			await settledAt(app, set);
+			assert.equal(await heard(app), kept, 'a reload kept the pinch');
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
 	});
 
 	// A layout that HOLDS a day height (the dayview tab's 47, da-cp8pv): the

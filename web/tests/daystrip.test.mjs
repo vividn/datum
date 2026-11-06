@@ -88,6 +88,7 @@ import {
 	stackScroll,
 	jagged,
 	pinch,
+	dragBy,
 	PHONE
 } from './support/daystrip.mjs';
 
@@ -882,7 +883,9 @@ describe('the day strip zooms onto an hour range', () => {
 			// The stamps are beside the pictures, not in them: nothing the
 			// window does moves them.
 			assert.deepEqual(await stampXs(app), stamps, 'the date stamps moved');
-			// And a pinch across the strip is the hours alone (da-hm1j7).
+			// And a pinch across the strip is the hours alone (da-hm1j7):
+			// two fingers side by side are no spread down it (da-r7h0m).
+			await settledAt(app, 40);
 			assert.equal(await heard(app), 40, 'a sideways pinch moved the day height');
 			assert.deepEqual(app.errors, []);
 		});
@@ -933,13 +936,58 @@ describe('the day strip zooms onto an hour range', () => {
 				'y'
 			);
 
-			// The release writes the height it was previewing, once, and
-			// leaves the hours as they were.
+			// The release draws the height it was previewing, for the moment
+			// alone (da-r7h0m): the owner hears nothing of it, and the hours
+			// are as they were.
 			await settledAt(app, 120);
-			assert.equal(await heard(app), 120);
+			assert.equal(await heard(app), 60, 'a pinch stored the day height');
 			assert.deepEqual(await windowHeard(app), window, 'a vertical pinch moved the hours');
 			await app.idle();
 			assert.equal((await under()).day, was.day, 'the drawn days moved under the fingers');
+
+			// The ⊖ is the way back to the set height, with no window to undo.
+			await page.locator(UNZOOM).click();
+			await settledAt(app, 60);
+			assert.equal(await heard(app), 60);
+			assert.equal(await page.locator(UNZOOM).count(), 0, 'the ⊖ outlived the zoom');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// vividn, 2026-11-06: «right now zoom is constrained to one axis or the
+	// other. Please allow it to do both at once … only dragging the handles
+	// between days changes the dayheight in a persistent way» (da-r7h0m).
+	test('a diagonal pinch zooms the hours and the days at once, and only a line stores the height', async () => {
+		await settledRoom(phone, 'both', async (app) => {
+			const { page } = app;
+			await say(app, { dayHeight: 60 });
+			await settledAt(app, 60);
+			await app.idle();
+			const stack = await page.locator('.stack').boundingBox();
+			const box = { ...(await bandBox(app)), y: stack.y, height: stack.height };
+
+			// Twice as far apart across and down: half the hours, twice the day.
+			await pinch(page, box, 60, 120, undefined, 'xy');
+			await untilWindow(app, 'w[1] - w[0] < 24');
+			const [from, to] = await windowHeard(app);
+			assert.ok(Math.abs(to - from - 12) < 0.05, `the hours are ${from}–${to}, not half the day`);
+			await settledAt(app, 120);
+			assert.equal(await heard(app), 60, 'a pinch stored the day height');
+
+			// A line moves from the height drawn, and what it leaves is kept:
+			// the divider's, which is on screen at any height.
+			await app.idle();
+			await dragBy(app, '.today-line', 0, -20);
+			await until(() => valueOf(app), (v) => v === 140);
+			assert.equal(await heard(app), 140, 'a line did not store the day height');
+
+			// The ⊖ gives the whole day back and keeps the height the line set.
+			await page.locator(UNZOOM).click();
+			await untilWindow(app, 'w[0] === 0 && w[1] === 24');
+			await app.idle();
+			assert.equal(await valueOf(app), 140, 'the ⊖ undid the height a line set');
+			assert.equal(await heard(app), 140);
+			assert.equal(await page.locator(UNZOOM).count(), 0, 'the ⊖ outlived the zoom');
 			assert.deepEqual(app.errors, []);
 		});
 	});

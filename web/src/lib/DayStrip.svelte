@@ -69,15 +69,20 @@
 
 	A pinch DOWN the strip is the day height (da-hm1j7, vividn: «vertical
 	zoom should affect the day height in an appropriate way so you really
-	can just zoom in on data»). Each pinch is ONE axis, the DOMINANT one of
-	where the two fingers landed: further apart down the strip than across
-	it is the day height, otherwise the hours — so a sideways pinch never
-	jitters the height, nor a vertical one the window. The height scales
-	with the fingers' vertical spread, clamped to the strip's floor and
-	ceiling, and is previewed exactly as the `+`'s drag is (the bands
-	scaled); the stack scrolls with it so the point of the day the pinch
-	began on stays under the fingers' middle (`fixed`), and the height
-	is written once, on the release.
+	can just zoom in on data»), and a pinch zooms BOTH axes at once
+	(da-r7h0m, vividn, 2026-11-06: «right now zoom is constrained to one
+	axis or the other. Please allow it to do both at once»): the hours by
+	the fingers' spread across the strip, the day height by their spread
+	down it, each read only once the pair is `PINCH_FLOOR` apart on its
+	axis, so two fingers side by side never jitter the height. The height
+	is clamped to the strip's floor and ceiling and previewed exactly as a
+	line's drag is (the bands scaled); the stack scrolls with it so the
+	point of the day the pinch began on stays under the fingers' middle
+	(`fixed`). On the release the height is THE MOMENT'S (`zoomDay`) and
+	is written nowhere: «this should just be a tempoary thing. clicking the
+	restore zoom button should then restore to the set day height. only
+	dragging the handles between days changes the dayheight in a
+	persistent way».
 
 	How many days the box SHOWS: as many as it holds (da-zb0d). The strip
 	fills its container and the pane it sits in is what says how tall it
@@ -102,8 +107,9 @@
 	belongs to whom is written down before the code:
 
 	  down on a band
-	    ├─ two fingers, side by side ──────► PINCH: the hour window (da-ukcf)
-	    ├─ two fingers, one over the other ► PINCH: the day height (da-hm1j7)
+	    ├─ two fingers ────────────────────► PINCH: the hour window across
+	    │                                   (da-ukcf), the moment's day height
+	    │                                   down (da-hm1j7, da-r7h0m)
 	    └─ one finger or the mouse
 	         ├─ mostly DOWNWARD, held or not ► the STACK's scroll, never ours
 	         ├─ sideways, zoomed in ────────► PAN: the hour window follows the
@@ -411,8 +417,16 @@
 	 * on a width the same measurement supplies.
 	 */
 	const boxDay = $derived.by(() => (height > 0 ? dayUnderSliver(height) : DEFAULT_DAY_HEIGHT));
-	/** The day DRAWN: the reader's held height when there is one, else the box's. */
-	const day = $derived(heldDay ?? boxDay);
+	/** The day height SET: the reader's held height when there is one, else the box's. */
+	const setDay = $derived(heldDay ?? boxDay);
+	/**
+	 * The day height a pinch left, for the moment alone (da-r7h0m): drawn
+	 * until the `⊖` or a line's drag, and handed to nobody, so a reload or a
+	 * new widget is back on the set height.
+	 */
+	let zoomDay = $state<number | null>(null);
+	/** The day DRAWN: the moment's, else the set one. */
+	const day = $derived(zoomDay ?? setDay);
 	/** The label width drawn: the owner's made drawable, or a handle's until the owner's changes (`setSizes`). */
 	let labelWidth = $derived(
 		clamp(Math.round(givenLabelWidth) || DEFAULT_LABEL_WIDTH, MIN_LABEL_WIDTH, MAX_LABEL_WIDTH)
@@ -1392,7 +1406,11 @@
 	 */
 	function setSizes(px: number, wide: number): void {
 		const next = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
-		if (next !== day) dayHeight = next === boxDay ? undefined : next;
+		// A line moved from the moment's height, and the height it leaves is the set one.
+		if (next !== day) {
+			dayHeight = next === boxDay ? undefined : next;
+			zoomDay = null;
+		}
 		labelWidth = clamp(Math.round(wide), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH);
 		onchange?.({ dayHeight, labelWidth });
 	}
@@ -1550,6 +1568,10 @@
 	 */
 	function resetZoom(): void {
 		setWindow([HOUR_FROM, HOUR_TO]);
+		if (zoomDay == null) return;
+		holdEdge();
+		zoomDay = null;
+		void tick().then(letGo);
 	}
 
 	/** Ask the owner for `next`, and show it meanwhile. */
@@ -1569,13 +1591,16 @@
 
 	/**
 	 * Let go of the gesture: the window it was previewing becomes the ask,
-	 * or the day height a vertical pinch was previewing is written.
+	 * and the day height a pinch was previewing the moment's (`zoomDay`).
 	 */
 	function commit(): void {
 		const next = live ?? slid;
-		const tall = pinching?.axis === 'y';
+		if (pinching) {
+			if (sizing) zoomDay = sizing.height === setDay ? null : sizing.height;
+			sizing = null;
+			void tick().then(letGo);
+		}
 		pinching = null;
-		if (tall) return drop();
 		if (next) setWindow(next);
 		live = null;
 		slide(null);
@@ -1584,13 +1609,14 @@
 	/** The fingers down on the strip, by pointer id, and where they are. */
 	const fingers = new Map<number, { x: number; y: number }>();
 	/**
-	 * The pinch in hand: its axis, where it began, the band it began over.
-	 * A vertical one holds the point under the fingers (`fixed`).
+	 * The pinch in hand: where it began, the band it began over, and how
+	 * far apart the fingers were on each axis. It holds the point under the
+	 * fingers (`fixed`).
 	 */
 	let pinching: {
-		axis: 'x' | 'y';
 		window: [number, number];
-		apart: number;
+		day: number;
+		apart: { x: number; y: number };
 		mid: number;
 		box: DOMRect;
 	} | null = null;
@@ -1656,27 +1682,26 @@
 		if (!box) return;
 		// A wheel's pause commits it; the fingers are the gesture now.
 		clearTimeout(settling);
-		// The axis is the pair's: two fingers further apart down the strip
-		// than across it pinch the day height, and otherwise the hours.
-		const axis = spread('y') > spread('x') ? 'y' : 'x';
-		const found = axis === 'y' ? document.elementFromPoint(middle('x'), middle('y'))?.closest('.band') : null;
+		const found = document.elementFromPoint(middle('x'), middle('y'))?.closest('.band');
 		const under = found && stackEl?.contains(found) ? found : null;
 		const was = under?.getBoundingClientRect();
 		// A pinched point in the stack, or over a pinned today, the stack's edge.
 		if (under && was) fixed = { band: under, down: (middle('y') - was.top) / was.height, y: middle('y') };
-		else if (axis === 'y') holdEdge();
-		pinching = { axis, window: view, apart: spread(axis), mid: middle(), box };
+		else holdEdge();
+		pinching = { window: view, day, apart: { x: spread('x'), y: spread('y') }, mid: middle(), box };
 	}
 
 	/**
-	 * The vertical pinch: the day height scaled by the fingers' spread, as
-	 * the handle's drag previews one (`sizing`), with the day under the
-	 * fingers kept under them.
+	 * Both axes of the pinch: the hours by the fingers' spread across, and
+	 * the day height by their spread down, previewed as a line's drag is
+	 * (`sizing`), with the day under the fingers kept under them.
 	 */
-	function pinchHeight(): void {
-		const { apart } = pinching!;
-		const by = apart >= PINCH_FLOOR ? spread('y') / apart : 1;
-		const height = clamp(Math.round(day * by), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
+	function pinchTo(): void {
+		const { window: was, day: from, apart, mid, box } = pinching!;
+		const by = (axis: 'x' | 'y') => (apart[axis] >= PINCH_FLOOR ? spread(axis) / apart[axis] : 1);
+		live = zoomWindow(was, by('x'), (mid - box.x) / box.width, (middle() - box.x) / box.width);
+		const height = clamp(Math.round(from * by('y')), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
+		if (height === day && !sizing) return;
 		sizing = { x: 0, y: 0, height, width: labelWidth, axes: 'y' };
 		if (fixed?.y != null) fixed.y = middle('y');
 		void tick().then(hold);
@@ -1685,13 +1710,7 @@
 	function onPointerMove(event: PointerEvent): void {
 		if (fingers.has(event.pointerId)) {
 			fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-			if (pinching?.axis === 'y' && fingers.size === 2) return pinchHeight();
-			if (pinching && fingers.size === 2) {
-				const { window: was, apart, mid, box } = pinching;
-				const by = apart >= PINCH_FLOOR ? spread() / apart : 1;
-				live = zoomWindow(was, by, (mid - box.x) / box.width, (middle() - box.x) / box.width);
-				return;
-			}
+			if (pinching && fingers.size === 2) return pinchTo();
 		}
 		if (!press) return;
 		last = { x: event.clientX, y: event.clientY };
@@ -2188,7 +2207,7 @@
 			use:resizes={'x'}
 		></div>
 
-		{#if zoomed}
+		{#if zoomed || zoomDay != null}
 			<!--
 				The way back from a window, now that the double tap is the
 				inspect's alone (da-8rqb9): a magnifier with a zero in it, at
@@ -2207,7 +2226,7 @@
 				class="unzoom"
 				type="button"
 				title="the whole day back"
-				aria-label="reset the zoom to the whole day"
+				aria-label="reset the zoom to the whole day and the set day height"
 				onclick={resetZoom}
 			>
 				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
