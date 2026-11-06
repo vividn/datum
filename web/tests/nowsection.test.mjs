@@ -91,14 +91,25 @@ describe('the now section is collect’s now strip', () => {
 					const { page } = app;
 					const seeds = await page.locator(HISTORY_DOT('coffee')).count();
 					await holdFiles(page);
+					// The tap's instant is the held now less the click's age as its handler reads it (`gestureAt`), real time,
+					// so a busy page lays the dot that much short of now's edge (da-kzm2v). The age read before every handler and after.
+					await page.evaluate(() => {
+						const age = (e) => performance.now() - e.timeStamp;
+						addEventListener('click', (e) => (window.ageBefore = age(e)), { capture: true, once: true });
+						addEventListener('click', (e) => (window.ageAfter = age(e)), { once: true });
+					});
 					await page.locator(`${COLLECT} [data-field="coffee"]`).first().click();
 					const dots = (seen) => Object.fromEntries(Object.entries(seen).map(([name, marks]) => [name, marks?.filter((m) => m.kind === 'circle') ?? []]));
 					// One read of both: whichever drew it first, the other drew it in the same frame.
 					const first = dots(await until(() => both(page, 'coffee'), (seen) => Object.values(dots(seen)).some((d) => d.length)));
 					await release(page);
+					const [before, after] = await page.evaluate(() => [window.ageBefore, window.ageAfter]);
+					assert.ok(before !== undefined && after !== undefined, `the click's age was not read on both sides of the handlers (before=${before}, after=${after})`);
 					for (const [name, [dot]] of Object.entries(first)) {
 						assert.ok(dot, `the ${name} strip has no dot in the frame the other has it`);
-						assert.ok(Math.abs(dot.mid - dot.of) <= 0.05 * dot.of, `the ${name} dot enters at ${dot.mid} of ${dot.of}, not at now's edge`);
+						// Half a second a strip: the dot's instant is between the two ages short of now's edge.
+						const [lo, hi] = [after, before].map((ms) => dot.of * (1 - ms / 500));
+						assert.ok(dot.mid >= lo - 0.02 * dot.of && dot.mid <= hi + 0.02 * dot.of, `the ${name} dot enters at ${dot.mid} of ${dot.of}, not at the tap's instant (${hi.toFixed(2)}, ${before.toFixed(1)} ms short of now's edge)`);
 					}
 					// The layer holding the write landed: its dot in the history waits for the strip's.
 					await until(() => page.locator(HISTORY_DOT('coffee')).count(), (n) => n === seeds + 1);
