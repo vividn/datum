@@ -884,7 +884,13 @@ fn build_day_fields(
             day_end_ms,
         );
         let day = day_start_ms..day_end_ms;
-        allday_marks(&mut points, &entries_for_field, &field, spec.as_ref(), day);
+        allday_marks(
+            &mut points,
+            &entries_for_field,
+            &field,
+            spec.as_ref(),
+            day.clone(),
+        );
         name_marks(&field, &mut blocks, &mut points, &entries_for_field);
         // The setup form's preview (da-srrqd): nothing of the field on the
         // day, so entries in its shape that no database holds, drawn as
@@ -904,6 +910,7 @@ fn build_day_fields(
                 day_start_ms,
                 day_end_ms,
             );
+            allday_marks(&mut points, &made, &field, spec.as_ref(), day);
             // Named as its entries would be; but no entry is behind a
             // sample's mark (da-jc8ic), so it carries no `data-id` and no
             // log time: which is how a reader tells it from a real one.
@@ -984,7 +991,7 @@ fn parse_context(s: &str) -> Result<Around> {
 /// What `--sample` draws of a field with nothing on the day: an occurrence's
 /// dots spread through it, on/off turning on and off, a switch's states in
 /// turn and off among them unless it is never off (with none named, on and
-/// off). The changes fall at fixed fractions of the day, so a sample stays
+/// off), an all-day field's one entry in the all-day band. The changes fall at fixed fractions of the day, so a sample stays
 /// put while the form changes how it looks.
 fn sample_entries(spec: &FieldSpec, start_ms: i64, end_ms: i64) -> Vec<Entry> {
     // Hours of a 24-hour day, so a sample's changes fall on whole minutes;
@@ -1020,6 +1027,20 @@ fn sample_entries(spec: &FieldSpec, start_ms: i64, end_ms: i64) -> Vec<Entry> {
                 )
             };
             return DOTS.into_iter().map(dot).collect();
+        }
+        // One entry for the whole day, its mark in the all-day band (da-0cf4z).
+        Action::AllDay => {
+            let mut day = Entry::new(
+                &spec.field,
+                Verb::Point,
+                Some(true.into()),
+                None,
+                Some(at(0.0)),
+                Some(Dur::moment()),
+                "",
+            );
+            day.set_at_uncertainty(Some(datum_parse::entry_id::DATE_ONLY_PRECISION.into()));
+            return vec![day];
         }
         Action::Start => vec![true.into(), false.into()],
         Action::Switch => named.map(|s| state(s)).collect(),

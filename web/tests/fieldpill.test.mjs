@@ -499,12 +499,12 @@ describe('what narrows to it', () => {
 	// da-57j14: the verbs are narrowed by what the FIELD takes — the same
 	// rule the collect widget narrows by under a pending verb. mood is a
 	// switch in a state, so it can be switched or ended, not occurred,
-	// started or added; and taking the pill away brings the five back.
+	// started or added; and taking the pill away brings the six back.
 	test('a change field leaves change and off of the log commands, and every one comes back without it', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			const verbs = async () =>
-				(await commands(page)).filter((name) => ['moment', 'on', 'off', 'change', 'record'].includes(name));
+				(await commands(page)).filter((name) => ['moment', 'on', 'off', 'change', 'record', 'allday'].includes(name));
 
 			await hold(page, 'mood');
 			await pane(page, 'cmd').locator('[data-command="change"]').waitFor();
@@ -512,7 +512,7 @@ describe('what narrows to it', () => {
 
 			await fieldPill(page).locator('button.remove').click();
 			await reach(pane(page, 'cmd').locator('.bar'), 'moment');
-			assert.deepEqual(await verbs(), ['moment', 'on', 'off', 'change', 'record']);
+			assert.deepEqual(await verbs(), ['moment', 'on', 'off', 'change', 'record', 'allday']);
 			assert.deepEqual(app.errors, []);
 		});
 	});

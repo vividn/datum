@@ -525,7 +525,7 @@ It follows what is chosen elsewhere: a field shows that field alone, an entry se
 
 First **undo**, which takes back the last command; the small **↷** joined to it is **redo**, lit when there is something to redo. Then the groups, each opening its commands, with **back** to return:
 
-- **write**: moment, on, off, change, record, remark, flag, update, retime, delete, revert
+- **write**: moment, on, off, change, record, allday, remark, flag, update, retime, delete, revert
 - **read**: tail, now, stats, get, history, grep, fields, count, info, check
 - **fields**: setup, track, ignore, alias, rename
 - **kit**, **db**: their subcommands. **db backup** and **db restore** open Backups.

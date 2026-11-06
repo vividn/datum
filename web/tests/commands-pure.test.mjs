@@ -49,7 +49,7 @@ import {
  */
 const ROW = ['undo', 'write', 'read', 'fields', 'kit', 'db', 'sync', 'settings'];
 const SUBMENUS = {
-	write: ['moment', 'on', 'off', 'change', 'record', 'remark', 'flag', 'update', 'retime', 'delete', 'revert'],
+	write: ['moment', 'on', 'off', 'change', 'record', 'allday', 'remark', 'flag', 'update', 'retime', 'delete', 'revert'],
 	read: ['tail', 'now', 'stats', 'get', 'history', 'grep', 'fields', 'count', 'info', 'check'],
 	fields: ['setup', 'track', 'ignore', 'alias', 'rename'],
 	settings: ['config', 'help'],
@@ -92,7 +92,7 @@ describe('the commands, in order', () => {
 		});
 	});
 
-	test('undo runs; the five log commands pend; everything else writes a line', () => {
+	test('undo runs; the six log commands pend; everything else writes a line', () => {
 		const pressOf = (name) => COMMANDS.find((c) => c.name === name).press;
 		assert.equal(pressOf('undo'), 'run');
 		assert.equal(pressOf('help'), 'help');
@@ -122,10 +122,10 @@ describe('the icons', () => {
 	});
 
 	test('a verb wears the glyph the CLI prints for the row it writes', () => {
-		// track.ts's table is the one track.test.mjs holds to the CLI's render.
-		// All day has no command button yet (da-0cf4z).
-		const command = { occur: 'moment', start: 'on', switch: 'change', add: 'record' };
-		for (const { verb, glyph } of TRACK_VERBS.filter((v) => v.verb in command)) assert.equal(ICONS[command[verb]], glyph, verb);
+		// track.ts's table is the one track.test.mjs holds to the CLI's render; every kind has its button (da-0cf4z).
+		const command = { occur: 'moment', start: 'on', switch: 'change', add: 'record', allday: 'allday' };
+		assert.deepEqual(TRACK_VERBS.map((v) => v.verb).filter((verb) => !(verb in command)), [], 'a kind with no button');
+		for (const { verb, glyph } of TRACK_VERBS) assert.equal(ICONS[command[verb]], glyph, verb);
 	});
 });
 
@@ -144,6 +144,7 @@ describe('the command a line is pending', () => {
 		assert.equal(pendingCommand('occur coffee'), 'moment', 'its old word is the same command pending');
 		assert.equal(pendingCommand('  change mood happy'), 'change');
 		assert.equal(pendingCommand('off work'), 'off');
+		assert.equal(pendingCommand('allday steps'), 'allday');
 	});
 
 	test('an old word pends its command, as the CLI runs it', () => {
@@ -163,7 +164,8 @@ const offBlock = { field: 'sleep', shape: { kind: 'on/off' }, required: [] };
 const onBlock = { field: 'work', shape: { kind: 'on/off' }, current: true, required: [] };
 const boolSwitch = { field: 'light', shape: { kind: 'change', states: ['false', 'true'] }, required: [] };
 const onSwitch = { field: 'mood', shape: { kind: 'change', states: ['bad', 'good'] }, current: 'good', required: [] };
-const ALL = [point, record, offBlock, onBlock, boolSwitch, onSwitch];
+const day = { field: 'steps', shape: { kind: 'allday' }, required: [] };
+const ALL = [point, record, offBlock, onBlock, boolSwitch, onSwitch, day];
 
 const under = (verb) => fieldsUnder(ALL, verb).map((b) => b.field);
 
@@ -172,6 +174,7 @@ describe('what a pending command leaves showing', () => {
 		assert.deepEqual(under('moment'), ['coffee']);
 		assert.deepEqual(under('change'), ['light', 'mood']);
 		assert.deepEqual(under('record'), ['rec']);
+		assert.deepEqual(under('allday'), ['steps']);
 	});
 
 	// A block takes start and end whatever its state (da-vpzbv): re-logging
@@ -194,7 +197,7 @@ describe('what a pending command leaves showing', () => {
 // verb narrows the fields with (`commandFits`). Every verb names its field at
 // slot 1, as `datum help --json` says, so the pill itself hides none.
 const GRAMMAR = grammarOf(
-	['moment', 'on', 'off', 'change', 'record'].map((name) => ({
+	LOG_COMMANDS.map((name) => ({
 		name,
 		aliases: [],
 		usage: [`datum ${name} <FIELD>`],
@@ -210,6 +213,13 @@ const verbsUnder = (pills) =>
 describe('what a loaded field leaves of the verbs', () => {
 	test('a moment field leaves moment, and not start, end or switch', () => {
 		assert.deepEqual(verbsUnder([pill(point)]), ['moment']);
+	});
+
+	// da-0cf4z: an all-day field leaves allday, which a press under it runs.
+	test('an all-day field leaves allday alone', () => {
+		assert.deepEqual(verbsUnder([pill(day)]), ['allday']);
+		assert.deepEqual(pendingPress('allday', day), ['allday', 'steps']);
+		assert.equal(pressKind(day, 'allday'), 'run');
 	});
 
 	// `end` only while it is on: off, there is nothing to end.
@@ -279,6 +289,7 @@ describe('a verb under a field pill', () => {
 	test('moment, start and end run a field that needs nothing typed', () => {
 		assert.deepEqual(fieldCommand('moment', [pill(point)], fields), { field: pill(point), runs: true });
 		for (const verb of ['on', 'off']) assert.equal(fieldCommand(verb, [pill(onBlock)], fields)?.runs, true, verb);
+		assert.equal(fieldCommand('allday', [pill(day)], [day])?.runs, true, 'allday');
 	});
 
 	test('a key with no default fills instead, with the pill to go on the line', () => {

@@ -74,7 +74,7 @@ test('a fresh datum.day, its commands and its tutorial say no old word', async (
 			await bar.locator('button.prompt').click();
 			await bar.locator('button[data-menu="write"]').click();
 			const written = await bar.locator('#bar-commands button[data-command]').evaluateAll((buttons) => buttons.map((b) => b.dataset.command));
-			assert.deepEqual(written.slice(0, 6), ['moment', 'on', 'off', 'change', 'record', 'remark'], 'the write submenu leads with the log commands');
+			assert.deepEqual(written.slice(0, 7), ['moment', 'on', 'off', 'change', 'record', 'allday', 'remark'], 'the write submenu leads with the log commands');
 			found.push(...(await oldWords(page, 'commands')));
 			await bar.locator('button.prompt').click();
 

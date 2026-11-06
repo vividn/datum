@@ -19,11 +19,10 @@
 import type { Pill } from './bar.js';
 import type { FieldButton } from './fields.js';
 
-/** A command the line can be PENDING: the five a field is logged with, by the glossary's words (AGENTS.md). */
-/** `allday` is no pending command (`LOG_COMMANDS`): it is what a tap on an all-day field runs (da-x3l9n). */
+/** A command the line can be PENDING: the six a field is logged with, by the glossary's words (AGENTS.md); `allday` since da-0cf4z. */
 export type LogCommand = 'moment' | 'on' | 'off' | 'change' | 'record' | 'allday';
 
-export const LOG_COMMANDS: LogCommand[] = ['moment', 'on', 'off', 'change', 'record'];
+export const LOG_COMMANDS: LogCommand[] = ['moment', 'on', 'off', 'change', 'record', 'allday'];
 
 /** Each one's old words, which the CLI still runs as aliases: typed, they pend the same command. */
 const ALIASES: Record<string, LogCommand> = { occur: 'moment', start: 'on', end: 'off', stop: 'off', switch: 'change', add: 'record', card: 'record' };
@@ -142,7 +141,7 @@ export const COMMANDS: CommandButton[] = [
  *
  * One character is a GLYPH, drawn as text: a log command's is the CLI's own, so
  * the button shows the shape the row it writes will show (`TRACK●`/`█`/
- * `▞`/`¢` in datum-core's track.rs; `■` is the end of a `█`). No two share
+ * `▞`/`¢`/`▤` in datum-core's track.rs; `■` is the end of a `█`). No two share
  * a mark; a subcommand wears its command's. Anything longer is the path of
  * a 16×16 line DRAWING, for the shapes no font every device carries.
  */
@@ -153,6 +152,7 @@ export const ICONS: Record<string, string> = {
 	off: '■',
 	change: '▞',
 	record: '¢',
+	allday: '▤',
 	remark: '✎',
 	flag: '⚑',
 	update: 'Δ',
@@ -165,7 +165,7 @@ export const ICONS: Record<string, string> = {
 	get: '#',
 	history: 'M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5V5H5M8 5v3l2 1.5',
 	grep: 'M7 2.5a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9zM10.3 10.3l3.2 3.2',
-	fields: '▤',
+	fields: '≡',
 	count: 'Σ',
 	info: 'i',
 	check: '✓',
@@ -598,7 +598,7 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
  * selected, then the start/end/occur buttons should … auto trigger entry
  * (unless there are extra keys to be filled in, in which case the input
  * line should automatically be selected for typing in those fields». So
- * `moment`, `on` and `off` with a known field's pill as an argument
+ * `moment`, `on`, `off` and `allday` with a known field's pill as an argument
  * RUN, unless that field has a key with no default (`required`); then the
  * tap writes `<command> <field> ` for the keys to be typed after. `off`
  * always runs (da-o4jaa), vividn, 09-27: «generally speaking I don't save
@@ -609,7 +609,7 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
 export function fieldCommand(name: string, all: Pill[], fields: FieldButton[]): { field: Pill; runs: boolean } | null {
 	const field = argumentsOf(all).find((p) => p.kind === 'field');
 	const button = fields.find((b) => b.field === field?.text);
-	if (!field || !button || !['moment', 'on', 'off'].includes(name)) return null;
+	if (!field || !button || !['moment', 'on', 'off', 'allday'].includes(name)) return null;
 	return { field, runs: !typesKeys(name, button) };
 }
 

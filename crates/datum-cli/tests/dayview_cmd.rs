@@ -967,7 +967,7 @@ fn day_svg(db: &datum_core::db::Db, extra: &[&str]) -> String {
 #[test]
 fn a_sample_is_drawn_as_its_entries_would_be() {
     let at = |t: &str| format!("2026-01-10 {t}");
-    let shapes: [(&str, &str, Vec<Vec<String>>); 4] = [
+    let shapes: [(&str, &str, Vec<Vec<String>>); 5] = [
         (
             "pill",
             r##"{"field":"pill","verb":"occur","color":"#00aa00","symbol":"★","symbol_scale":1.5,"allowed_states":null,"state_colors":{}}"##,
@@ -1019,6 +1019,17 @@ fn a_sample_is_drawn_as_its_entries_would_be() {
                 "env".into(),
                 "-t".into(),
                 at("01:00"),
+            ]],
+        ),
+        // An all-day field: its one entry for the day, in the all-day band (da-0cf4z).
+        (
+            "steps",
+            r#"{"field":"steps","verb":"allday","allowed_states":null,"state_colors":{}}"#,
+            vec![vec![
+                "allday".into(),
+                "steps".into(),
+                "-d".into(),
+                "2026-01-10".into(),
             ]],
         ),
     ];
