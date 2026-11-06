@@ -134,7 +134,8 @@ describe('the echo is painted in datum’s colours', () => {
 			// The runs, inside the parts the line is cut into (da-7xp82).
 			[...el.querySelectorAll('span > span')].map((s) => ({
 				text: s.textContent,
-				color: getComputedStyle(s).color
+				color: getComputedStyle(s).color,
+				background: getComputedStyle(s).backgroundColor
 			}))
 		);
 
@@ -148,6 +149,23 @@ describe('the echo is painted in datum’s colours', () => {
 	const asRgb = (hex) => {
 		const n = parseInt(hex.slice(1), 16);
 		return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+	};
+
+	/** No background, as `getComputedStyle` gives it back. */
+	const NONE = 'rgba(0, 0, 0, 0)';
+
+	/**
+	 * A chip is painted as the CLI paints it (da-dpvub): its colour the
+	 * background, its `fg` the text, both the run's in the SAME document.
+	 */
+	const isChip = (drawn, run) => {
+		assert.ok(run?.fg, `the CLI painted ${JSON.stringify(run)} on no background`);
+		assert.equal(drawn?.text, run.text);
+		assert.deepEqual(
+			{ background: drawn.background, color: drawn.color },
+			{ background: asRgb(run.color), color: asRgb(run.fg) },
+			`${JSON.stringify(run.text)} is not a chip in its colours`
+		);
 	};
 
 	// The CLI beside a static pane, not alone: the CLI alone draws no output
@@ -165,36 +183,45 @@ describe('the echo is painted in datum’s colours', () => {
 					drawnAs(doc),
 					`${root}: the painted line is not the line the CLI printed`
 				);
+				assert.equal(
+					doc.info_segments.find((s) => s.text === doc.field)?.color,
+					doc.field_color,
+					'the field is not in its own colour'
+				);
 				const field = drawn.filter((r) => r.text === doc.field);
 				assert.equal(field.length, 1, `${root}: ${JSON.stringify(drawn)}`);
-				assert.equal(
-					field[0].color,
-					asRgb(doc.field_color),
-					`${root}: the field is not in its own colour`
-				);
+				isChip(field[0], doc.info_segments.find((s) => s.text === doc.field));
+				// The line's first run is its clock, which the CLI leaves unpainted.
+				assert.equal(doc.info_segments[0].color, null);
+				assert.equal(drawn[0].background, NONE, `${root}: the time is painted on a background`);
 			}
 			assert.deepEqual(app.errors, []);
 		}, CLI_BESIDE);
 	});
 
-	test('a state gets its own colour, which is not the field’s', async () => {
+	test('a state is a chip in its own colour, which is not the field’s', async () => {
 		await onSeam(async (app) => {
 			// The field exists first, so the echo is its own entry alone.
 			await app.declare('mood', 'switch');
 			await app.submit('switch mood happy');
+			// A change from one state to another: the state left is a chip too.
+			await app.submit('switch mood sad');
 			// The entry's document: `get` answers with the field's declaration
 			// (da-c8mh) first.
 			const doc = parseEcho((await app.run(['get', 'mood', '--show', 'json'])).stdout).at(-1);
+			assert.equal(doc.state, 'sad');
 			assert.notEqual(doc.state_color, doc.field_color);
 
 			const drawn = await runs(app.page, '.cli');
 			assert.equal(drawn.map((r) => r.text).join(''), drawnAs(doc));
-			assert.ok(
-				drawn.some(
-					(r) => r.text.startsWith(doc.state) && r.color === asRgb(doc.state_color)
-				),
-				`the state is not in its own colour: ${JSON.stringify(drawn)}`
-			);
+			const state = doc.info_segments.find((s) => s.text.startsWith(doc.state));
+			assert.equal(state?.color, doc.state_color, 'the state is not in its own colour');
+			const at = drawn.findIndex((r) => r.text === state.text);
+			isChip(drawn[at], state);
+			// The edge before it, the state left, a chip in happy's colour.
+			const edge = doc.info_segments[doc.info_segments.indexOf(state) - 1];
+			assert.ok(edge.fg && edge.color !== doc.state_color, JSON.stringify(doc.info_segments));
+			isChip(drawn[at - 1], edge);
 			assert.deepEqual(app.errors, []);
 		});
 	});

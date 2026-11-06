@@ -32,6 +32,8 @@
 	its hex — so the line is PLACED painted rather than searched for a
 	field name (`switch mood mood` has it twice, and only the CLI knows
 	which is which). A document without them falls back to the plain line.
+	A run with an `fg` is a chip, as the terminal paints it (da-dpvub):
+	`color` is its background and `fg` its text.
 
 	The full id is behind the hid — vividn: "don't show full id (rather
 	showing that on hover over the hid)" — as a `title` for a pointer and,
@@ -134,8 +136,8 @@
 	     in AnsiText.svelte. -->
 	<div class="info">{#each parts as { part, runs }}<span class={part}
 				>{#each runs as segment}{@const fill = splitFill(segment.text, segment.color, segment.fg)}<span
-						style:color={segment.color}
-						style:background={fill}>{fill ? ' ' : segment.text}</span
+						style:color={segment.fg ?? segment.color}
+						style:background={fill ?? (segment.fg && segment.color)}>{fill ? ' ' : segment.text}</span
 					>{/each}</span
 			>{/each}</div>
 	{#if rows.length}
