@@ -68,9 +68,9 @@ export interface Cursor {
 	/** Whole minutes of range ENDING at the selection — the length pill. */
 	span?: number;
 	/**
-	 * What made it. The nowview does not re-centre its own window on its
-	 * own click; the day strip is how a range comes to be spelled with the
-	 * CLI's two keys rather than with a length.
+	 * What made it. The nowview centres its window on a dayview's instant
+	 * alone (da-nwf1h); the day strip is how a range comes to be spelled
+	 * with the CLI's two keys rather than with a length.
 	 */
 	from?: 'nowview' | 'daystrip';
 }
@@ -283,8 +283,8 @@ export function pointDay(arg: string): void {
 	pills.update((all) => [...all.filter((p) => p.kind !== 'time'), ...(again ? [] : [{ id: DATE_ID, kind: 'time', text: arg }])]);
 }
 
-/** Point the page at `at`, to the minute; `null` clears it. */
-export const setCursor = (at: Date | null): void => pointAt(at && { at });
+/** Point the page at `at`, to the minute, as a dayview's click does, which the nowview centres on; `null` clears it. */
+export const setCursor = (at: Date | null): void => pointAt(at && { at, from: 'daystrip' });
 
 /**
  * WHERE the page is pointed, now: the selection with its instant resolved

@@ -119,13 +119,19 @@
 	});
 	const durLabel = $derived(moment ? '−m' : span ? lengthArg(span) : null);
 
+	/**
+	 * What made a time once this section has moved it: a range keeps it, its
+	 * spelling, and an instant is no longer the dayview's click, which alone
+	 * the nowview centres on (da-nwf1h).
+	 */
+	const moved = (c: Cursor) => (c.span ? c.from : undefined);
 	/** Where a selection is, without its length. */
-	const where = (c: Cursor) => (c.rel !== undefined ? { rel: c.rel, from: c.from } : { at: c.at, step: 1, from: c.from });
+	const where = (c: Cursor) => (c.rel !== undefined ? { rel: c.rel, from: moved(c) } : { at: c.at, step: 1, from: moved(c) });
 
 	/** `−1m`, `−5m`: that much earlier, summing. */
 	function earlier(by: number) {
 		const c = get(cursor);
-		if (c && c.rel === undefined) return pointAt({ at: new Date(+c.at - by * MINUTE), step: 1, span: c.span, from: c.from });
+		if (c && c.rel === undefined) return pointAt({ at: new Date(+c.at - by * MINUTE), step: 1, span: c.span, from: moved(c) });
 		pointAt({ rel: (c?.rel ?? 0) + by, span: c?.span, from: c?.from });
 	}
 	/** `1m`, `5m`: that much longer, summing, in place of `-m`. */
@@ -271,7 +277,7 @@
 		jog.moved = true;
 		const by = Math.sign(dx) * Math.round((Math.abs(dx) / JOG_PX) ** 1.4);
 		const c = jog.was;
-		if (jog.kind === 'time') return pointAt({ at: new Date(+c.at + by * MINUTE), span: c.span, from: c.from });
+		if (jog.kind === 'time') return pointAt({ at: new Date(+c.at + by * MINUTE), span: c.span, from: moved(c) });
 		setMoment(false);
 		pointAt({ ...where(c), span: Math.max(1, (c.span ?? 0) - by) });
 	}

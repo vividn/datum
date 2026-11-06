@@ -8,6 +8,11 @@
 //
 // What is asserted is the window the picture on screen draws, read off its
 // own attributes, never the widget's state.
+//
+// Only a dayview click centres it (da-nwf1h, vividn, 2026-11-06: «If the
+// selected time is still visible in the nowview set now mode, it can just
+// show up without centering it … So now stays on the right side of the
+// screen.»): a time from collect's section moves it only to show the time.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -53,6 +58,39 @@ const back = (page, w) =>
 		() => shown(page),
 		(now) => Math.abs(now.from - w.from) < (w.to - w.from) / 30 && Math.abs(now.to - w.to) < (w.to - w.from) / 30
 	);
+
+const WHEN = 'section.pane[data-title="collect"] .bar [data-when]';
+
+/** A field on, which collect's time section waits for: it stands at rest beside one (`resting`). */
+async function oneOn(app) {
+	const logged = await app.run(['switch', 'mood', 'bad', '-t', '2026-09-10T14:00:00+00:00']);
+	assert.equal(logged.code, 0, logged.stderr);
+	await app.redraw();
+}
+
+/** Collect's `time` dragged `dx` px sideways, its section opened first, as a reader would: the instant it then points at. */
+async function dragTime(app, dx) {
+	const { page } = app;
+	const clock = page.locator(`${WHEN} [data-when-clock][aria-expanded="false"]`);
+	if ((await clock.count()) > 0) await clock.click();
+	const r = await page.locator(`${WHEN} [data-part="time"]`).first().boundingBox();
+	const [x, y] = [r.x + r.width / 2, r.y + r.height / 2];
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	for (let d = 4; d <= Math.abs(dx); d += 4) await page.mouse.move(x + Math.sign(dx) * d, y);
+	await page.mouse.up();
+	const c = await page.evaluate(() => window.datum.cursor.of());
+	assert.ok(c && c.rel === undefined, `an absolute time: ${JSON.stringify(c)}`);
+	return Date.parse(c.at);
+}
+
+/** What the window shows once a fly it may have started has landed. */
+async function rested(app) {
+	await app.idle();
+	await app.page.waitForTimeout(400);
+	await app.idle();
+	return shown(app.page);
+}
 
 async function ready(app) {
 	await app.page.locator(`${NOWVIEW} svg.svg .gridline`).first().waitFor({ state: 'attached' });
@@ -164,6 +202,62 @@ describe('the nowview follows the bar’s pills', () => {
 			await page.waitForTimeout(400);
 			const after = await shown(page);
 			assert.ok(Math.abs(after.from - panned.from) < MINUTE, `the window moved ${(after.from - panned.from) / MINUTE}m when the pill went`);
+		});
+	});
+
+	test('a time dragged in collect to where the window shows already leaves it on now, now at its right edge', async () => {
+		await desktop.fresh(async (app) => {
+			const { page } = app;
+			await oneOn(app);
+			await ready(app);
+			const was = await shown(page);
+			const at = await dragTime(app, -24);
+			assert.ok(at > was.from + MINUTE && at < NOW - MINUTE, `in view: ${new Date(at).toISOString()}`);
+			const after = await rested(app);
+			// The same left edge at the same scale is the same window, on now: a time pill hides the flow `to` is read off, so it is not compared.
+			assert.ok(Math.abs(was.to - NOW) < MINUTE, 'the window was on now');
+			assert.ok(Math.abs(after.from - was.from) < MINUTE, `the window moved ${(after.from - was.from) / MINUTE}m`);
+			assert.ok(Math.abs(after.pxPerMin / was.pxPerMin - 1) < 0.01, `the window was zoomed: ${was.pxPerMin} → ${after.pxPerMin} px a minute`);
+		});
+	});
+
+	test('a time dragged in collect out of the window brings it into view', async () => {
+		await desktop.fresh(async (app) => {
+			const { page } = app;
+			await oneOn(app);
+			await ready(app);
+			const was = await shown(page);
+			const at = await dragTime(app, -150);
+			assert.ok(at < was.from - MINUTE, `out of view: ${new Date(at).toISOString()}`);
+			await showing(page, at, at);
+		});
+	});
+
+	test('a dayview click centres the window on its instant, in view or not', async () => {
+		await desktop.fresh(async (app) => {
+			const { page } = app;
+			await ready(app);
+			const was = await shown(page);
+			const g = await page.locator('.strip .band[data-days-ago="0"]').evaluate((band) => {
+				const day = band.querySelector('svg.svg [data-lo]');
+				const ctm = band.querySelector('svg.svg').getScreenCTM();
+				const px = (u) => new DOMPoint(u, 0).matrixTransform(ctm).x;
+				const box = band.getBoundingClientRect();
+				return { from: Date.parse(day.getAttribute('data-from')), to: Date.parse(day.getAttribute('data-to')), lo: px(Number(day.getAttribute('data-lo'))), hi: px(Number(day.getAttribute('data-hi'))), y: box.top + box.height / 2 };
+			});
+			const x = Math.round(g.lo + ((NOW - 7 * MINUTE - g.from) / (g.to - g.from)) * (g.hi - g.lo));
+			await page.mouse.click(x, g.y);
+			const c = await until(
+				() => page.evaluate(() => window.datum.cursor.of()),
+				(c) => c !== null
+			);
+			const at = Date.parse(c.at);
+			assert.ok(at > was.from && at < NOW, `in view: ${new Date(at).toISOString()}`);
+			const length = was.to - was.from;
+			await until(
+				() => shown(page),
+				(w) => Math.abs(w.from - (at - length / 2)) < length / 30
+			);
 		});
 	});
 });

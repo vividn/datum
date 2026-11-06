@@ -96,8 +96,10 @@
 	has always made (vividn, 17:01: «off-now, yes use absolute time»).
 
 	A click on the DAYVIEW still centres this window on the instant, which
-	is what it has always done; a click in a nowview does not, and says so
-	by marking the selection `from: 'nowview'`. `data-points="own"` is the
+	is what it has always done; any other time, a click in a nowview or
+	collect's drag, moves the window only when it does not show it, so in
+	now mode now stays at the right edge (da-nwf1h, vividn, 2026-11-06).
+	A click in a nowview marks its selection `from: 'nowview'`. `data-points="own"` is the
 	other half of that: it tells the `picture` action to leave the band's
 	clicks alone, the same idiom as `data-pans`.
 
@@ -2531,7 +2533,8 @@
 		// A tap on a mark clears the time on its way to the entry: asked once both have settled.
 		if (!c) return void queueMicrotask(dismiss);
 		if (press || grip) return;
-		aim(+c.at - (c.span ?? 0) * 60_000, +c.at, c.rel === undefined && !c.span && c.from !== 'nowview');
+		// Only a dayview click centres: any other time, collect's among them, moves the window only to show it (da-nwf1h).
+		aim(+c.at - (c.span ?? 0) * 60_000, +c.at, c.from === 'daystrip' && !c.span);
 	}
 
 	/** Follow the entry selected last, from its time and length as datum reads them. */
