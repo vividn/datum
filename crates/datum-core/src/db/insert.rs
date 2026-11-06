@@ -1160,6 +1160,8 @@ fn write_entry_in_tx(
             };
             (outcome, Some(inserted))
         }
+        // Not through `resolve_collision`: its content-hash check would skip an
+        // equal row, and `db restore --force` rewrites the metadata even then.
         (Some((slug, hid, _)), ConflictStrategy::Overwrite) => {
             let pre = fetch_entry_any(conn, &hid.0)?;
             history::record(conn, &pre, ChangeKind::UserEdit)?;

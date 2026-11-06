@@ -1230,6 +1230,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             }
         }
         InsertOutcome::Unchanged { slug } => {
+            // NODIFF exits 0: the entry already holds what the line asks, no duplicate.
             let held = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
             crate::render::show_nodiff(&held, registry.as_ref(), &output);
         }
