@@ -8,7 +8,11 @@
 // Everything is escaped before any markup is added, so a doc's text is never
 // HTML: `<file>` in a code span reads as written. A link's and an image's
 // target go through the caller's `link` and `image`, which decide where they
-// lead; a heading gets GitHub's anchor, so `#a-heading` lands on it.
+// lead, and only for a scheme it keeps: a link http, https or mailto, an image
+// http or https, read as the browser reads it, a relative one as https. Any
+// other is drawn as its text, so no doc carries a `javascript:` URL into the
+// page however it is written (da-hse1u). A heading gets GitHub's anchor, so
+// `#a-heading` lands on it.
 
 export interface Targets {
 	/** The attributes of a link to `href`, as written in the doc: `href="…"` and whatever else. */
@@ -30,14 +34,30 @@ export const anchor = (heading: string): string =>
 		.trim()
 		.replace(/\s/g, '-');
 
+const LINKS = ['http:', 'https:', 'mailto:'];
+const IMAGES = ['http:', 'https:'];
+
+/** Whether `target`, read as the browser reads it, has one of `schemes`. */
+function keeps(target: string, schemes: string[]): boolean {
+	try {
+		return schemes.includes(new URL(target, 'https://doc/').protocol);
+	} catch {
+		return false;
+	}
+}
+
 /** One line's inline markup. */
 function inline(text: string, to: Targets): string {
 	const held: string[] = [];
 	const hold = (html: string) => `\u0000${held.push(html) - 1}\u0000`;
 	let out = escape(text).replace(/(`+)(.+?)\1/g, (_, __, code: string) => hold(`<code>${code.trim() || code}</code>`));
 	out = out
-		.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt: string, src: string) => hold(`<img alt="${alt}" src="${escape(to.image(unescaped(src)))}">`))
-		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) => `<a ${to.link(unescaped(href))}>${label}</a>`)
+		.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt: string, src: string) =>
+			hold(keeps(unescaped(src), IMAGES) ? `<img alt="${alt}" src="${escape(to.image(unescaped(src)))}">` : alt)
+		)
+		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) =>
+			keeps(unescaped(href), LINKS) ? `<a ${to.link(unescaped(href))}>${label}</a>` : label
+		)
 		.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 		.replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, '$1<em>$2</em>');
 	return out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => held[Number(i)]);

@@ -23,6 +23,15 @@ test('inline: links, images, bold, italics, and a link around code', () => {
 	);
 });
 
+test('a link keeps http, https or mailto, an image http or https; any other is its text', () => {
+	assert.equal(md('[y](https://example.org) [m](mailto:a@b.c) [r](a.md) ![i](http://x/p.png)'), '<p><a href="https://example.org">y</a> <a href="mailto:a@b.c">m</a> <a href="a.md">r</a> <img alt="i" src="/img/http://x/p.png"></p>');
+	for (const bad of ['javascript:alert(1)', 'JavaScript:alert(1)', '\u0001javascript:alert(1)', 'data:text/html,x', 'vbscript:x']) {
+		assert.equal(md(`[x](${bad})`).replace(/\)/g, ''), '<p>x</p>', bad);
+		assert.equal(md(`![x](${bad})`).replace(/\)/g, ''), '<p>x</p>', bad);
+	}
+	assert.equal(md('![x](data:image/png;base64,AA) ![](mailto:a@b.c)'), '<p>x </p>');
+});
+
 test('a paragraph joins its lines; a code block keeps them, escaped', () => {
 	assert.equal(md('one\ntwo\n\n```bash\na < b\n  c\n```'), '<p>one two</p>\n<pre><code>a &lt; b\n  c</code></pre>');
 });
