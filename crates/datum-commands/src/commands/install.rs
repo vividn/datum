@@ -12,6 +12,7 @@
 //! vividn, 2026-11-04: «offered»).
 
 use std::io::IsTerminal;
+use std::ops::ControlFlow;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -225,34 +226,10 @@ fn remove_binary(exe: &Path) -> Result<()> {
 }
 
 pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
-    // No upgrade goes past a sync chain's pin (da-w8zp5): a plain one, the
-    // daily timer's or a chain's ask, goes as far as it, and an exact one
-    // held there does nothing.
-    let pinned = pinned();
-    if let Some((pin, db)) = &pinned {
-        let chain = format!("the sync chain of «{db}» is pinned at datum {pin}");
-        match to {
-            Some(v) => ensure!(
-                !chain::past_pin(v, pin),
-                "{chain}, and no upgrade goes past it: `datum sync unpin` there takes it away"
-            ),
-            None if chain::past_pin(&said_build(), pin) => {
-                println!(
-                    "datum {} is past the pin: {chain}, and it stays where it is",
-                    said_build()
-                );
-                return Ok(());
-            }
-            None if chain::held_at(&said_build(), pin) => {
-                println!(
-                    "datum is held at {pin}: {chain}; `datum sync unpin` there lets it upgrade"
-                );
-                return Ok(());
-            }
-            None => println!("{chain}: upgrading as far as it"),
-        }
-    }
-    let to = to.or(pinned.as_ref().map(|(p, _)| p.as_str()));
+    let ControlFlow::Continue(to) = within_pin(to)? else {
+        return Ok(());
+    };
+    let to = to.as_deref();
     let exe = this_exe()?;
     // A datum cargo built from a checkout moves onto the release (da-1yc69;
     // vividn, 2026-11-04: «it uses the public key in the checkedout version,
@@ -268,29 +245,7 @@ pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
             println!("{said}");
         }
     }
-    // `<major>.<minor>` alone is that minor's newest build (vividn,
-    // 2026-11-05: «you just get the latest compatible version this way»): its
-    // kept `v<major>.<minor>` once the next minor has begun, the latest while
-    // it is the current one; the version check below refuses a latest of
-    // another minor.
-    let minor_only = to.is_some_and(|v| v.matches('.').count() == 1);
-    let kept = release_url(to);
-    let found = newest(&kept).or_else(|e| {
-        let missing = e
-            .to_string()
-            .starts_with(&format!("could not download {kept}/SHA256SUMS"));
-        match minor_only && missing {
-            true => newest(&release_url(None)).map_err(|_| e),
-            false => Err(e),
-        }
-    });
-    let (url, want) = found.map_err(|e| match to {
-        Some(v) => e.context(format!(
-            "datum {v} has no kept release to install: one is kept for each build that raises \
-             the sync floor, and for the build before it"
-        )),
-        None => e,
-    })?;
+    let (url, want) = resolve(to)?;
     if sha256(&exe)? == want {
         match to {
             Some(v) => println!("datum is {v} already"),
@@ -316,39 +271,10 @@ pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
     // Set once cargo has removed the old datum: the release is then the
     // only one left, and a failed rename keeps it.
     let mut kept = false;
-    let swapped = (|| {
-        curl(&url, Some(&part))?;
-        let got = sha256(&part)?;
-        ensure!(
-            got == want,
-            "{url} does not match SHA256SUMS (sha256 {got}, expected {want}): nothing changed"
-        );
-        std::fs::set_permissions(&part, std::fs::Permissions::from_mode(0o755))?;
-        // A release can list a binary that does not run here: it is not
-        // put in place of one that does.
-        let version = Command::new(&part)
-            .arg("--version")
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .with_context(|| format!("{url} does not run here: nothing changed"))?;
-        // A kept release is the version it is kept for, and a minor's
-        // newest build is of that minor.
-        let said = String::from_utf8_lossy(&version.stdout);
-        if let Some(v) = to {
-            let rest = said.strip_prefix(&format!("datum {v}")).unwrap_or("");
-            let of_it = match minor_only {
-                true => rest.starts_with('.'),
-                false => rest.starts_with(['-', ' ']),
-            };
-            ensure!(
-                of_it,
-                "{url} says it is {}, not datum {v}: nothing changed",
-                said.trim()
-            );
-        }
+    let swapped: Result<String> = (|| {
+        let said = fetch(&url, &want, &part, to)?;
         if check {
-            return Ok(said.trim().to_string());
+            return Ok(said);
         }
         // Through cargo, so its record no longer claims the binary. It
         // goes first, since cargo would delete a release renamed in before
@@ -366,7 +292,7 @@ pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
             ),
             false => format!("replacing {}", exe.display()),
         })?;
-        Ok(String::from_utf8_lossy(&version.stdout).trim().to_string())
+        Ok(said)
     })();
     if (swapped.is_err() || check) && !kept {
         let _ = std::fs::remove_file(&part);
@@ -421,6 +347,104 @@ pub fn managed() -> std::result::Result<PathBuf, String> {
         .and_then(|_| replaceable(&exe))
         .map_err(|e| format!("{e:#}"))?;
     Ok(exe)
+}
+
+/// Where a sync chain's pin lets `upgrade` go (da-w8zp5): no upgrade goes
+/// past it, so a plain one, the daily timer's or a chain's ask, goes as far
+/// as it, and an exact one held there does nothing (`Break`). The `--to`
+/// the upgrade then reads.
+fn within_pin(to: Option<&str>) -> Result<ControlFlow<(), Option<String>>> {
+    let Some((pin, db)) = pinned() else {
+        return Ok(ControlFlow::Continue(to.map(str::to_string)));
+    };
+    let chain = format!("the sync chain of «{db}» is pinned at datum {pin}");
+    match to {
+        Some(v) => ensure!(
+            !chain::past_pin(v, &pin),
+            "{chain}, and no upgrade goes past it: `datum sync unpin` there takes it away"
+        ),
+        None if chain::past_pin(&said_build(), &pin) => {
+            println!(
+                "datum {} is past the pin: {chain}, and it stays where it is",
+                said_build()
+            );
+            return Ok(ControlFlow::Break(()));
+        }
+        None if chain::held_at(&said_build(), &pin) => {
+            println!("datum is held at {pin}: {chain}; `datum sync unpin` there lets it upgrade");
+            return Ok(ControlFlow::Break(()));
+        }
+        None => println!("{chain}: upgrading as far as it"),
+    }
+    Ok(ControlFlow::Continue(Some(to.unwrap_or(&pin).to_string())))
+}
+
+/// The binary `upgrade` installs and the SHA-256 SHA256SUMS gives it: the
+/// latest's, or the kept release's of `to`. `<major>.<minor>` alone is that
+/// minor's newest build (vividn, 2026-11-05: «you just get the latest
+/// compatible version this way»): its kept `v<major>.<minor>` once the next
+/// minor has begun, the latest while it is the current one; [`fetch`]
+/// refuses a latest of another minor.
+fn resolve(to: Option<&str>) -> Result<(String, String)> {
+    let kept = release_url(to);
+    let found = newest(&kept).or_else(|e| {
+        let missing = e
+            .to_string()
+            .starts_with(&format!("could not download {kept}/SHA256SUMS"));
+        match to.is_some_and(minor_only) && missing {
+            true => newest(&release_url(None)).map_err(|_| e),
+            false => Err(e),
+        }
+    });
+    found.map_err(|e| match to {
+        Some(v) => e.context(format!(
+            "datum {v} has no kept release to install: one is kept for each build that raises \
+             the sync floor, and for the build before it"
+        )),
+        None => e,
+    })
+}
+
+/// `--to` naming a minor alone, `<major>.<minor>`.
+fn minor_only(to: &str) -> bool {
+    to.matches('.').count() == 1
+}
+
+/// Downloads `url` to `part` and checks it is the build [`resolve`] named:
+/// its SHA-256 `want`, a binary that runs here, and of `to` where `upgrade`
+/// was given one. What its `--version` says.
+fn fetch(url: &str, want: &str, part: &Path, to: Option<&str>) -> Result<String> {
+    curl(url, Some(part))?;
+    let got = sha256(part)?;
+    ensure!(
+        got == want,
+        "{url} does not match SHA256SUMS (sha256 {got}, expected {want}): nothing changed"
+    );
+    std::fs::set_permissions(part, std::fs::Permissions::from_mode(0o755))?;
+    // A release can list a binary that does not run here: it is not
+    // put in place of one that does.
+    let version = Command::new(part)
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .with_context(|| format!("{url} does not run here: nothing changed"))?;
+    // A kept release is the version it is kept for, and a minor's
+    // newest build is of that minor.
+    let said = String::from_utf8_lossy(&version.stdout);
+    if let Some(v) = to {
+        let rest = said.strip_prefix(&format!("datum {v}")).unwrap_or("");
+        let of_it = match minor_only(v) {
+            true => rest.starts_with('.'),
+            false => rest.starts_with(['-', ' ']),
+        };
+        ensure!(
+            of_it,
+            "{url} says it is {}, not datum {v}: nothing changed",
+            said.trim()
+        );
+    }
+    Ok(said.trim().to_string())
 }
 
 /// What `datum install` recorded of `exe`, which `upgrade` upgrades; `None`
