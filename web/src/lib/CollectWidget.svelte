@@ -42,7 +42,10 @@
 
 	A TAP OPENS a field (vividn's frames, 2026-11-03), a switch alone in
 	1-click mode and every field in 2-click (below): its pill goes on the
-	bar and its view takes the widget, top to bottom with no labels —
+	bar and its view takes the widget beside the now strip, which stays where
+	it stands at rest, so a state tapped is seen sweeping in at now's edge
+	(da-u7tij, vividn, 2026-11-05: «still show the now section so you can see
+	the animation right after changing states»), top to bottom with no labels —
 	‹ back and the field; its TIME, `−q` (five minutes earlier), and for a
 	field with a length `−m` (a moment) and `5m` (five minutes long), each
 	becoming a two-part pill whose left part adds another five where it
@@ -343,6 +346,9 @@
 	/** The size of the room the cluster stands in, and of the cluster's own box. */
 	let paneW = $state(0);
 	let paneH = $state(0);
+	/** The widget's own size, which the strip is measured by: the room narrows beside it while a field is open. */
+	let boxW = $state(0);
+	let boxH = $state(0);
 	let extent = $state.raw({ w: 0, h: 0 });
 	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
 	let over = $state(false);
@@ -456,7 +462,7 @@
 	});
 
 	/** The strip's width at rest: about a fifth of the widget (vividn: «maybe 20%»). */
-	const strip = $derived(Math.round(paneW / 5));
+	const strip = $derived(Math.round(boxW / 5));
 	/** Where each field stands at rest, and the active section's outline. */
 	const shelves = $derived.by(() => {
 		const hs = [...sizes.values()].map((s) => s.h);
@@ -1204,7 +1210,27 @@
 	</span>
 {/snippet}
 
-<div class="fields" class:picture data-align={picture ? 'picture' : 'rows'}>
+<!-- The now strip (da-lw7ue), `height` tall: at rest the room's, beside a field's view the widget's (da-u7tij). -->
+{#snippet present(height: number)}
+<div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
+	<NowStrip doc={nowDoc} pending={nowPending} at={nowAt} width={strip} {height} mirrored={side === 'right'} />
+	{#each nowBands as band (band.field)}
+		<button
+			class="now-state"
+			data-now-field={band.field}
+			tabindex="-1"
+			style:top="{band.y * height}px"
+			style:height="{Math.max(3, band.height * height)}px"
+			{disabled}
+			title="{band.field}{typeof band.current === 'string' ? ` · ${band.current}` : ''} · tap to select the field"
+			aria-label="select {band.field}"
+			onclick={() => setFieldPill(band.field, band.color)}
+		></button>
+	{/each}
+</div>
+{/snippet}
+
+<div class="fields" class:picture data-align={picture ? 'picture' : 'rows'} bind:clientWidth={boxW} bind:clientHeight={boxH}>
 <ButtonRows
 	items={entries}
 	{arrange}
@@ -1275,7 +1301,8 @@
 		<!-- The fields' place (da-w6437): at rest the fields in their rows
 		     (da-lw7ue); a field tapped, its time at the top, its states in the
 		     middle and its keys at the bottom, the fields hidden under it. -->
-		<div class="collect" class:open={!!here}>
+		{#if here && resting}{@render present(boxH)}{/if}
+		<div class="collect" class:open={!!here} style:left={here && resting && side === 'left' ? `${strip}px` : null} style:right={here && resting && side === 'right' ? `${strip}px` : null}>
 			{#if here}
 				<div class="top">
 				<div class="head">
@@ -1328,22 +1355,7 @@
 					<svg class="backing" aria-hidden="true">
 						<path d={frozen ? shelves.backing : `M0 0H${strip}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
 					</svg>
-					<div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
-						<NowStrip doc={nowDoc} pending={nowPending} at={nowAt} width={strip} height={paneH} mirrored={side === 'right'} />
-						{#each nowBands as band (band.field)}
-							<button
-								class="now-state"
-								data-now-field={band.field}
-								tabindex="-1"
-								style:top="{band.y * paneH}px"
-								style:height="{Math.max(3, band.height * paneH)}px"
-								{disabled}
-								title="{band.field}{typeof band.current === 'string' ? ` · ${band.current}` : ''} · tap to select the field"
-								aria-label="select {band.field}"
-								onclick={() => setFieldPill(band.field, band.color)}
-							></button>
-						{/each}
-					</div>
+					{@render present(paneH)}
 					{#if shelves.outline}
 						<svg class="dotted" class:frozen style:transform={frozen ? null : `translateX(${shift.x}px)`} aria-hidden="true">
 							<path d={shelves.outline} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />

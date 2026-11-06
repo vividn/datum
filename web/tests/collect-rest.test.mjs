@@ -54,15 +54,16 @@ async function logs(app, line) {
  * stands inside the strip, cut to it (`left`, `right`, `mid`, from the strip's
  * left), and the strip's width (`of`). A mark wholly outside it is left out;
  * one that only touches its edge, as a tap's block does at once, is not.
+ * `strip` is the one at rest unless named.
  */
-const drawn = (page, field) =>
-	page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => {
+const drawn = (page, field, strip = `${ROOM} svg.now-strip`) =>
+	page.locator(strip).evaluate((svg, field) => {
 		const box = svg.getBoundingClientRect();
 		return [...svg.querySelectorAll(`[data-mark="${field}"]`)]
 			.map((el) => {
 				const r = el.getBoundingClientRect();
 				const [left, right] = [Math.max(r.left, box.left) - box.left, Math.min(r.right, box.right) - box.left];
-				return { kind: el.localName, ground: el.classList.contains('ground'), fill: getComputedStyle(el).fill, left, right, mid: (r.left + r.right) / 2 - box.left, of: box.width };
+				return { kind: el.localName, ground: el.classList.contains('ground'), pending: el.classList.contains('pending'), fill: getComputedStyle(el).fill, left, right, mid: (r.left + r.right) / 2 - box.left, of: box.width };
 			})
 			.filter((m) => m.right >= m.left);
 	}, field);
@@ -451,6 +452,45 @@ describe('the now strip is the last half second', () => {
 			);
 		}, AT_REST);
 	});
+
+	// vividn, 2026-11-05 (da-u7tij): «in the secondary view of the collect widget, still show the now section so you can see the animation right after changing states».
+	for (const side of ['left', 'right'])
+		test(`side: ${side}: a field's view keeps the now strip at the widget's edge beside it, and a state tapped there sweeps in at now's edge while the view is up`, async () => {
+			await withApp(async (app) => {
+				await seeded(app, [...SEED, 'switch mood good']);
+				const { page } = app;
+				if (side === 'right') await pickOption(page, 'bar', 'side', 'right');
+				const BAR = 'section.pane[data-title="collect"] .bar';
+				await page.locator(`${ROOM} [data-field="mood"]`).click();
+				const bad = page.locator(`${BAR} .collect.open [data-state="bad"]`);
+				await bad.waitFor();
+				const strip = await page.locator(`${BAR} > [data-strip]`).boundingBox();
+				const view = await page.locator(`${BAR} .collect.open`).boundingBox();
+				const widget = await page.locator(`${BAR}`).boundingBox();
+				assert.ok(strip && strip.width > 0, 'no now strip in the view');
+				const edge = side === 'left' ? strip.x - widget.x : widget.x + widget.width - (strip.x + strip.width);
+				assert.ok(Math.abs(edge) <= 1 && Math.abs(strip.height - widget.height) <= 1, `the strip is ${edge}px off the widget's ${side} edge, or short of its height`);
+				const clear = side === 'left' ? view.x - (strip.x + strip.width) : strip.x - (view.x + view.width);
+				assert.ok(clear >= -0.5, `the view overlaps the strip by ${-clear}px`);
+				// Now is the strip's inner edge: its right on the left, its left mirrored.
+				const atNow = (m) => (side === 'left' ? Math.abs(m.right - m.of) : Math.abs(m.left)) <= 0.5;
+				const VIEW_STRIP = `${BAR} > [data-strip] svg.now-strip`;
+				const swept = (want, slack = 3) =>
+					until(
+						async () => (await drawn(page, 'mood', VIEW_STRIP)).filter((m) => m.kind === 'rect' && m.pending && !m.ground),
+						(marks) => marks.some((m) => atNow(m) && Math.abs(m.right - m.left - want) <= slack)
+					);
+				// The files held, the change waits and the view stays: its sweep is drawn on the view's strip at the tap.
+				await holdFiles(page);
+				await bad.click();
+				await swept(0);
+				await app.clock.forward(250);
+				await swept(strip.width / 2);
+				assert.equal(await bad.count(), 1, 'the view closed before the change was answered');
+				await release(page);
+				await until(async () => (await app.runLine('get mood::state')).stdout.trim(), (s) => s === 'bad');
+			}, AT_REST);
+		});
 
 	test('a refused press takes its sweep back: the row is as it was', async () => {
 		await withApp(async (app) => {
