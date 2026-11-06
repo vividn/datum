@@ -19,19 +19,6 @@
 #   web_tests  the web test files the light job runs, `tests/<file>` each
 #   web_tests_glob  optional, `tests/<pattern>`: a file it matches that
 #              web_tests does not name turns the light job red (da-s8x24)
-
-[[branch]]
-name = "integration/tutorial"
-epic = "da-uzyih"
-review = "light"
-web_tests_glob = "tests/tutorial*.test.mjs"
-# calls-pure and tree are repo-wide rules every lesson can break, and nothing
-# else on the epic's PRs runs them (da-uzyih.3).
-web_tests = [
-  "tests/calls-pure.test.mjs",
-  "tests/tree.test.mjs",
-  "tests/tutorial.test.mjs",
-  "tests/tutorial-occur.test.mjs",
-  "tests/tutorial-lamps.test.mjs",
-  "tests/tutorial-switch.test.mjs",
-]
+#
+# None is listed now: the first, integration/tutorial (epic da-uzyih), was
+# retired on 2026-11-06, its work on staging.

@@ -1525,7 +1525,8 @@ Add tests for new behavior.
 
 Work too big for one PR, many beads under one epic that should land on staging together, is built on a branch of
 its own, `integration/<name>`, so it can move fast, and lands on staging in one PR at the end, squashed. The first was the
-tutorial (epic da-uzyih, `integration/tutorial`); the rules below are for any such branch. vividn, 2026-10-22:
+tutorial (epic da-uzyih, `integration/tutorial`), landed by #1616 and retired on 2026-11-06; no branch is open now, and
+the rules below are for the next one. vividn, 2026-10-22:
 «shorten the turn around time for integration branch work … we'll do one big PR at the end to merge the integration
 branch into staging later, that will go through a deeper check», and «I want this integration procedure to be
 generally applicable in the future, not just for this tutorial development».
