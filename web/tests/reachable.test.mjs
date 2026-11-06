@@ -366,6 +366,9 @@ describe('on a phone-sized screen', () => {
 			await chip.dispatchEvent('click');
 			await assertOnScreen(page, '.bar [data-back]', 'the way back to the fields');
 			await assertOnScreen(page, '.bar [data-state="happy"]', "mood's happy");
+			// The time section, closed behind its clock (da-iunoo), opened.
+			await assertOnScreen(page, '.bar [data-when] [data-when-clock]', "the time section's clock");
+			await page.locator('.bar [data-when] [data-when-clock]').dispatchEvent('click');
 			await assertOnScreen(page, '.bar [data-when] [data-part="time"]', 'the time');
 		});
 	});

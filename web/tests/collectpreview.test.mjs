@@ -20,6 +20,13 @@ const WHEN = 'section.pane[data-title="collect"] .bar [data-when]';
 const EARLIER = `${WHEN} [data-earlier="5"]`;
 const LONGER = `${WHEN} [data-longer="5"]`;
 const pillOf = (kind) => `${WHEN} .pill[data-pill="${kind}"] .said`;
+/** The time section opened by its clock, where it is closed, as a reader would (da-iunoo). */
+const openWhen = async (page, when = WHEN) => {
+	const clock = page.locator(`${when} [data-when-clock][aria-expanded="false"]`);
+	if ((await clock.count()) > 0) await clock.click();
+};
+/** A button of the section pressed, the section opened first. */
+const press = async (page, at) => (await openWhen(page), page.locator(at).click());
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const PREVIEW = `${NOWVIEW} svg.svg .preview`;
 
@@ -107,7 +114,7 @@ async function settled(page, minutes, { atHead = false, before = Infinity } = {}
 describe('collect previews on the nowview', () => {
 	test('−qq and ←10m: a white dotted block in the lane for the ten minutes ending at −qq, the pills on the relative axis', async () => {
 		await opened('mood', async ({ page }) => {
-			for (const at of [EARLIER, EARLIER, LONGER, LONGER]) await page.locator(at).click();
+			for (const at of [EARLIER, EARLIER, LONGER, LONGER]) await press(page, at);
 			// Each press draws a picture of its own: read the one of ten minutes, all in one frame (da-yozs7).
 			const seen = await settled(page, 10, { atHead: true });
 			assert.ok(seen, 'a preview drawn');
@@ -131,7 +138,7 @@ describe('collect previews on the nowview', () => {
 	test('a length longer than the window zooms the window out to hold it', async () => {
 		await opened('mood', async ({ page }) => {
 			// The default window is 30m: 45m does not fit it.
-			for (let i = 0; i < 9; i++) await page.locator(LONGER).click();
+			for (let i = 0; i < 9; i++) await press(page, LONGER);
 			await page.waitForFunction((s) => document.querySelector(s)?.innerText === '45m', pillOf('dur'));
 			const seen = await settled(page, 45);
 			// The picture is drawn past the window either side: the window is the band on screen.
@@ -144,7 +151,7 @@ describe('collect previews on the nowview', () => {
 
 	test('−qq dragged in collect turns into an absolute −t pill on the clock axis, and the block moves with it', async () => {
 		await opened('mood', async ({ page }) => {
-			for (const at of [EARLIER, EARLIER, LONGER]) await page.locator(at).click();
+			for (const at of [EARLIER, EARLIER, LONGER]) await press(page, at);
 			const before = await settled(page, 5, { atHead: true });
 			const pill = await box(page, pillOf('time'));
 			const [x, y] = [(pill.left + pill.right) / 2, (pill.top + pill.bottom) / 2];
@@ -179,7 +186,7 @@ describe('collect previews on the nowview', () => {
 
 	test('the block is what the CLI says, a length the spec assigns included', async () => {
 		await opened('run', async ({ page }) => {
-			await page.locator(EARLIER).click();
+			await press(page, EARLIER);
 			// `start run -q`, and run's spec assigns dur=20m: twenty minutes, though collect set no length.
 			const seen = await settled(page, 20, { atHead: true });
 			assert.ok(seen, 'the block and the selection on one picture');
@@ -190,7 +197,7 @@ describe('collect previews on the nowview', () => {
 
 	test('back takes the preview away', async () => {
 		await opened('mood', async ({ page }) => {
-			await page.locator(EARLIER).click();
+			await press(page, EARLIER);
 			await page.waitForFunction((s) => document.querySelector(s), PREVIEW);
 			await page.locator(`${COLLECT} [data-back]`).click();
 			await page.waitForFunction((s) => !document.querySelector(s), PREVIEW);
