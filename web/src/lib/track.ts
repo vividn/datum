@@ -1,17 +1,17 @@
-// The web's «which kind?» — the four field kinds, as data.
+// The web's «which kind?» — the five field kinds, as data.
 //
 // A field cannot be born without a kind (da-c8mh): `track <field>` on a field
-// with neither a spec nor a log refuses and names the four choices. The
+// with neither a spec nor a log refuses and names the five choices. The
 // CLI asks with that sentence; the web asks with `FieldForm.svelte`, and
-// this module is the one place that knows what the four are, what they
+// this module is the one place that knows what the five are, what they
 // look like, and what answering one runs — or, on a field that already
 // has a spec, what saving the edited one runs (da-ci85o).
 //
 // The GLYPHS are the CLI's, not the web's: `track_action_label` in
-// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢` beside the
+// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢`/`▤` beside the
 // declaration on every surface that has an action column, so a pictogram
 // here that drifted from it would teach the wrong shape for the row the
-// press is about to write. `tests/track.test.mjs` runs all four through
+// press is about to write. `tests/track.test.mjs` runs all five through
 // the real CLI and holds this table to what it renders.
 //
 // Pure, and away from the markup as `fields.ts` is: node loads this file
@@ -23,9 +23,9 @@ import type { SpecKey } from './fields.js';
 import type { RunResult } from './run.js';
 
 /** The values a spec STORES for its kind — `VERB_CHOICES` in datum-core's field_spec (phase 2 of the vocabulary migrates them). */
-export type Verb = 'occur' | 'start' | 'switch' | 'add';
+export type Verb = 'occur' | 'start' | 'switch' | 'add' | 'allday';
 
-/** One of the four, as the modal draws it. */
+/** One of the five, as the modal draws it. */
 export interface VerbChoice {
 	verb: Verb;
 	/** The glyph the CLI prints after `TRACK` for a field declared this way. */
@@ -37,14 +37,15 @@ export interface VerbChoice {
 }
 
 /**
- * The four, in the CLI's order (`VERB_CHOICES`): a moment (stored `occur`)
+ * The five, in the CLI's order (`VERB_CHOICES`): a moment (stored `occur`)
  * first, the smallest claim a field can make.
  */
 export const VERBS: VerbChoice[] = [
 	{ verb: 'occur', glyph: '●', what: 'moment', line: 'a single point in time (no state)' },
 	{ verb: 'start', glyph: '█', what: 'on/off', line: 'on for a while, then off' },
 	{ verb: 'switch', glyph: '▞', what: 'change', line: 'one state until the next (custom states)' },
-	{ verb: 'add', glyph: '¢', what: 'record', line: 'keys and values, with no time' }
+	{ verb: 'add', glyph: '¢', what: 'record', line: 'keys and values, with no time' },
+	{ verb: 'allday', glyph: '▤', what: 'all day', line: 'one value for a whole day' }
 ];
 
 /** A key an example declares: the key row's name, kind, place in the slug, and whether it takes the rest of the line. */

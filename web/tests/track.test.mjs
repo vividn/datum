@@ -7,9 +7,9 @@
 // pictograms for each of the verbs». What a newcomer meets there — the
 // sentence, the examples, the chips — is `fieldwidget.test.mjs`'s.
 //
-// The claim that rots if nobody watches it is the first one: the four
+// The claim that rots if nobody watches it is the first one: the five
 // glyphs are the CLI's, not the web's. `track_action_label` in
-// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢` where a
+// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢`/`▤` where a
 // SINGLE document names itself — the write echo and `get` — so a pictogram
 // here that drifted from it would teach the wrong shape for the row the
 // press is about to write. The test below declares one field per verb
@@ -337,8 +337,8 @@ describe('in the app', () => {
 
 	// The claim this file exists for. One field per verb, declared through
 	// the real CLI, and the action cell `tail` paints for each declaration
-	// read back: the web's table has to BE those four glyphs.
-	test('the four pictograms are the glyphs the CLI prints for the row each one writes', async () => {
+	// read back: the web's table has to BE those five glyphs.
+	test('the five pictograms are the glyphs the CLI prints for the row each one writes', async () => {
 		await withApp(async (app) => {
 			for (const { verb } of VERBS) await app.run(declareArgv(`f_${verb}`, { verb, color: '', description: '', states: [] }));
 			for (const { verb, glyph } of VERBS) {
@@ -353,7 +353,7 @@ describe('in the app', () => {
 		}, { query: 'cli' });
 	});
 
-	test('a new field opens the form on the four pictograms once named, start tracking shut until a verb', async () => {
+	test('a new field opens the form on the five pictograms once named, start tracking shut until a verb', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -450,6 +450,28 @@ describe('in the app', () => {
 			assert.equal((await typed).code, 0);
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
 			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).verb, 'start');
+		});
+	});
+
+	// da-9hq0k: all day is a kind of its own, one value for a whole day
+	// (`allday steps 8000`): data as a moment has, and no lane to place, its
+	// mark being in the day's all-day band, which no sample draws.
+	test('all day is offered, and a field made with it saves the all-day kind, with a data tab and no placement', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await openIt(page);
+			await fill(page, 'steps', 'allday');
+			await page.locator(`${MODAL} [data-tab="data"]`).waitFor();
+			assert.equal(await page.locator(`${MODAL} .placement`).count(), 0, 'an all-day field has no lane to place');
+			// Nor a size beside its kind, which nothing here sets.
+			await page.locator(`${MODAL} [data-tab="data"]`).click();
+			assert.equal((await page.locator(`${MODAL} [data-summary="basics"]`).innerText()).trim(), '▤ all day');
+			await page.locator(`${MODAL} button.commit`).click();
+			await app.idle();
+			assert.equal(declared((await app.echoes()).at(-1)).spec.verb, 'allday');
+			assert.equal(JSON.parse((await app.run(['setup', 'steps', '--json'])).stdout).verb, 'allday');
+			assert.equal(await actionWord(app, 'steps'), 'TRACK▤');
+			assert.deepEqual(app.errors, []);
 		});
 	});
 

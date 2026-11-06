@@ -123,7 +123,9 @@ describe('the icons', () => {
 
 	test('a verb wears the glyph the CLI prints for the row it writes', () => {
 		// track.ts's table is the one track.test.mjs holds to the CLI's render.
-		for (const { verb, glyph } of TRACK_VERBS) assert.equal(ICONS[{ occur: 'moment', start: 'on', switch: 'change', add: 'record' }[verb]], glyph, verb);
+		// All day has no command button yet (da-0cf4z).
+		const command = { occur: 'moment', start: 'on', switch: 'change', add: 'record' };
+		for (const { verb, glyph } of TRACK_VERBS.filter((v) => v.verb in command)) assert.equal(ICONS[command[verb]], glyph, verb);
 	});
 });
 

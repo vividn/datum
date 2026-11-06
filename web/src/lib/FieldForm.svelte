@@ -4,13 +4,13 @@
 	2026-10-08 — «let's fully combine track/spec widgets into just 1».
 	There is no dialog: a field is made and edited in a place.
 
-	A field cannot be born without a kind (da-c8mh), and the four pictograms
+	A field cannot be born without a kind (da-c8mh), and the five pictograms
 	are the whole of that question. The glyphs are the CLI's own (`VERBS` in
 	#lib/track.ts, `track_action_label` in datum-core): the row this form
 	is about to write will print `TRACK●` in every action column there is,
 	so what a person presses here is the shape they will meet again. Each is
 	named as the tutorial's games name it (`VERBS`, docs/basics.md) —
-	moment, on/off, change, record — the field kinds of the glossary (AGENTS.md) — with a line of what it is beside it.
+	moment, on/off, change, record, all day — the field kinds of the glossary (AGENTS.md) — with a line of what it is beside it.
 
 	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
 	name, start with the shape buttons. I think that ends up being the most
@@ -229,7 +229,7 @@
 	const five = (names: string[]) => names.slice(0, 5).join(', ') + (names.length > 5 ? ` +${names.length - 5} more` : '');
 	const kind = $derived(VERBS.find((v) => v.verb === verb));
 	const size = $derived(
-		verb === 'add'
+		verb === 'add' || verb === 'allday'
 			? ''
 			: verb === 'occur'
 				? `dot ×${(place.symbol_scale ?? 1).toFixed(2)}`
@@ -532,7 +532,9 @@
 							<input class="lookup" bind:value={lookup} placeholder="field, e.g. book" spellcheck="false" autocapitalize="none" />
 						</label>
 					{/if}
-					{#if verb && verb !== 'add'}
+					<!-- An all-day field's mark is in the day's all-day band, which `dayview --sample` does not draw (da-0cf4z).
+					     Its lane keys are kept, as a record's are: the band draws the mark at the lane's height and size. -->
+					{#if verb && verb !== 'add' && verb !== 'allday'}
 						{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={drafted} {onopen} />{/key}
 					{/if}
 					{#if verb === 'add'}
@@ -563,7 +565,7 @@
 									<input
 										class="expands"
 										bind:value={alias.expands_to}
-										placeholder="{(verb === 'start' ? 'on' : VERBS.find((v) => v.verb === verb)?.what) ?? 'moment'} {field}"
+										placeholder="{(verb === 'start' ? 'on' : verb === 'allday' ? 'allday' : VERBS.find((v) => v.verb === verb)?.what) ?? 'moment'} {field}"
 										aria-label="what {alias.state || 'it'} runs"
 										spellcheck="false"
 										autocapitalize="none"
@@ -808,7 +810,7 @@
 		font: inherit;
 	}
 
-	/* Two across where two fit a shape's line, else one: four fingertips,
+	/* Two across where two fit a shape's line, else one: five fingertips,
 	   not a list of words with a picture beside each. */
 	.verbs {
 		display: grid;
@@ -816,7 +818,7 @@
 		gap: 0.4rem;
 	}
 
-	/* The pictogram beside the shape's name and line, so four fit over the
+	/* The pictogram beside the shape's name and line, so five fit over the
 	   name box on a phone. */
 	.verb {
 		display: grid;
