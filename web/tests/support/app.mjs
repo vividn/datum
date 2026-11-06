@@ -212,9 +212,12 @@ function holdDate(context, at, pin = true) {
 			// First in line, ahead of the app's listener and the import's buffer.
 			self.addEventListener('message', (e) => {
 				// A held clock is the CLI's clock, a tap's too: the instant a
-				// gesture froze it at (da-szzgy) is the page's \`Date\`, which
-				// Playwright's timers move apart from this one.
-				if (Array.isArray(e.data?.env)) e.data.env = e.data.env.filter((v) => !v.startsWith('DATUM_WEB_FROZEN_AT='));
+				// gesture froze it at (da-szzgy) is the page's \`Date\` less the
+				// event's real age, which Playwright's timers move apart from this
+				// one. So a frozen command runs at the held instant it reached the
+				// worker at, the press's, and not at the one it gets to run at
+				// once the files are free (da-4stcb).
+				if (Array.isArray(e.data?.env)) e.data.env = e.data.env.map((v) => (v.startsWith('DATUM_WEB_FROZEN_AT=') ? 'DATUM_WEB_FROZEN_AT=' + fixed : v));
 				if (e.data?.datumTestClock === undefined) return;
 				fixed = e.data.datumTestClock;
 				e.stopImmediatePropagation();

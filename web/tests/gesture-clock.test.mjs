@@ -7,7 +7,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -157,6 +158,32 @@ describe('the clock frozen at the gesture', () => {
 				assert.ok(near(fifth.create, entered.at), `Enter at ${entered.at}, stamped ${fifth.create}`);
 			},
 			{ clock: null }
+		);
+	});
+
+	// Under a held clock the harness hands the CLI the held instant the press
+	// reached the worker at (`holdDate`), so a press that waits on the files
+	// is still logged at the tap (da-4stcb): another tab holding them, the
+	// clock moving on meanwhile.
+	test('a collect tap that waits on the files is logged at the tap, on a held clock', async () => {
+		const tapped = todayAt(15, 6);
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				assert.equal((await app.runLine('occur coffee')).code, 0);
+				await app.clock.set(tapped);
+				await app.reload();
+				const coffee = page.locator('section.pane[data-title="collect"] [data-field="coffee"]').first();
+				await coffee.waitFor();
+				await app.idle();
+				await page.evaluate(() => new Promise((granted) => navigator.locks.request('datum-cli-files', () => (granted(), new Promise((release) => (window.release = release))))));
+				await coffee.click();
+				await app.clock.forward(750);
+				await page.evaluate(() => window.release());
+				const { occur } = await until(() => stamped(app, 'coffee'), (s) => s.occur > tapped - 60_000);
+				assert.equal(new Date(occur).toISOString(), new Date(tapped).toISOString());
+			},
+			{ clock: todayAt(15, 5) }
 		);
 	});
 });
