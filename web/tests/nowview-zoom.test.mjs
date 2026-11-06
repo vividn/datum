@@ -307,25 +307,40 @@ describe('the nowview draws past its box', () => {
 		}, phone);
 	});
 
-	test('the clock stands over the now section, «now» under it, and the clock keeps the time', async () => {
+	// vividn, 2026-11-06 (da-un684): «make the "now" and the current time,
+	// the same font weight and size as the other axis labels. Add seconds to
+	// the absolute time.»
+	test('the clock stands over the now section, «now» under it, both in the axis labels’ font, and the clock keeps the time to the second', async () => {
 		await withApp(
 			async ({ page, clock }) => {
 				const clockAt = () =>
 					page.locator(BAND).evaluate((band) => {
 						const box = (selector) => band.querySelector(`svg.svg ${selector}`)?.getBoundingClientRect();
 						const [time, strip, word] = [box('.now-clock'), box('.now-strip'), box('.now-label')];
+						const font = (selector) => {
+							const el = band.querySelector(`svg.svg ${selector}`);
+							if (!el) return null;
+							const c = getComputedStyle(el);
+							return { size: c.fontSize, weight: c.fontWeight, family: c.fontFamily, stroked: c.stroke === c.fill };
+						};
 						return {
 							text: band.querySelector('svg.svg .now-clock')?.textContent,
 							order: time && strip && word && time.bottom <= strip.top + 0.5 && strip.bottom <= word.top + 0.5,
-							within: time && strip && time.left >= strip.left - 0.5 && time.right <= strip.right + 0.5
+							within: time && strip && time.left >= strip.left - 0.5 && time.right <= strip.right + 0.5,
+							fonts: [font('.tick-label'), font('.now-clock'), font('.now-label')]
 						};
 					});
-				const at = await until(clockAt, (c) => c.text === '14:30');
+				const at = await until(clockAt, (c) => c.text === '14:30:00');
 				assert.ok(at.order, `clock, strip, «now» from the top: ${JSON.stringify(at)}`);
 				assert.ok(at.within, `the clock lies in the strip's width: ${JSON.stringify(at)}`);
-				// Well short of what the picture drew ahead being half spent.
-				await clock.forward(60_000);
-				await until(clockAt, (c) => c.text === '14:31');
+				const [tick, ...ours] = at.fonts;
+				assert.ok(tick?.stroked, `a tick label is stroked: ${JSON.stringify(at)}`);
+				assert.deepEqual(ours, [tick, tick], `the clock and «now» in a tick label's font: ${JSON.stringify(at)}`);
+				// It ticks, well short of what the picture drew ahead being half spent.
+				await clock.forward(1_000);
+				await until(clockAt, (c) => c.text === '14:30:01');
+				await clock.forward(59_000);
+				await until(clockAt, (c) => /^14:31:\d\d$/.test(c.text ?? ''));
 			},
 			{ ...phone, clock: todayAt(14, 30) }
 		);

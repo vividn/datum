@@ -104,7 +104,8 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     // da-nk84: 60m history → 400 px, now strip included.
     assert!(svg.contains(r#"width="400""#));
 
-    // The clock's text over «now», in the SVG (da-slzde).
+    // The clock's text over «now», in the SVG (da-slzde), to the second
+    // (da-un684).
     let (clock, word) = (
         tags(&svg, r#"<text class="now-clock""#),
         tags(&svg, r#"<text class="now-label""#),
@@ -116,8 +117,9 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     let time = svg.split(r#"<text class="now-clock""#).nth(1).unwrap();
     let time = &time[time.find('>').unwrap() + 1..time.find("</text>").unwrap()];
     assert!(
-        time.len() == 5
+        time.len() == 8
             && time.as_bytes()[2] == b':'
+            && time.as_bytes()[5] == b':'
             && time.replace(':', "").parse::<u32>().is_ok(),
         "{time}"
     );

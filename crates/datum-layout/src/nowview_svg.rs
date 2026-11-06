@@ -15,7 +15,7 @@ use std::fmt::Write;
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
     axis_label_size, icon_id, now_chunk, render_dayview_svg_with, text_width, ClockMark,
-    DayviewSvgOpts, RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR, TICK_LENGTH,
+    DayviewSvgOpts, RightPanelFill, AXIS_LABEL_FONT, AXIS_LABEL_GAP, NOW_LINE_COLOR, TICK_LENGTH,
     VERTICAL_AXIS_LABEL_INSET,
 };
 use crate::nowview::NowviewCurrentState;
@@ -179,9 +179,9 @@ const NOW: StripLabel<'static> = StripLabel {
     above: false,
 };
 
-/// `label` at the strip's chunk, in its axis's strip, and sized to lie wholly
-/// between the chunk's two ends. Nothing when there is no strip, or no room
-/// in it or in the axis's strip to write it legibly.
+/// `label` at the strip's chunk, in its axis's strip, in its axis labels'
+/// size, face and stroke (da-un684). Nothing when there is no strip, or no
+/// room in the axis's strip to write it legibly.
 fn strip_label_overlay(layout: &DayviewLayout, label: &StripLabel) -> String {
     let Some((middle, size)) = strip_label_at(layout, label) else {
         return String::new();
@@ -207,7 +207,7 @@ fn strip_label_overlay(layout: &DayviewLayout, label: &StripLabel) -> String {
         ),
     };
     format!(
-        r#"<text class="{class}" x="{x}" y="{y}" {anchor} fill="{fill}" font-size="{size}">{text}</text>"#,
+        r#"<text class="{class}" x="{x}" y="{y}" {anchor} fill="{fill}" stroke="{fill}" font-size="{size}" font-family="{AXIS_LABEL_FONT}">{text}</text>"#,
         class = label.class,
         fill = label.fill,
         text = escape_xml(label.text),
@@ -242,18 +242,18 @@ pub fn strip_slot(layout: &DayviewLayout) -> String {
 fn strip_label_at(layout: &DayviewLayout, label: &StripLabel) -> Option<(f64, f64)> {
     let c = (!label.text.is_empty())
         .then(|| layout.days.iter().find_map(|d| now_chunk(layout, d)))??;
-    let room = c.to - c.from;
     let strip = if label.above {
         layout.clock_axis_height
     } else {
         layout.time_axis_height
     };
+    // The axis labels' size, not the chunk's (vividn, 2026-11-06: «make the
+    // "now" and the current time, the same font weight and size as the
+    // other axis labels»), held only within a vertical strip's width.
     let size = axis_label_size(layout.orientation, strip);
     let size = match layout.orientation {
-        Orientation::Horizontal => size.min(room / text_width(label.text, 1.0)),
-        Orientation::Vertical => size
-            .min(room)
-            .min((strip - 2.0) / text_width(label.text, 1.0)),
+        Orientation::Horizontal => size,
+        Orientation::Vertical => size.min((strip - 2.0) / text_width(label.text, 1.0)),
     };
     // Smaller than any text datum draws is too small to read: none.
     (size >= 6.0).then_some(((c.from + c.to) / 2.0, size))
@@ -1624,6 +1624,33 @@ mod tests {
             assert!(!ticks.is_empty() && clock.len() == 1, "{svg}");
             for size in ticks.iter().chain(&clock) {
                 assert_eq!(*size, AXIS_LABEL_MAX, "{strip:?}: {svg}");
+            }
+        }
+    }
+
+    /// vividn, 2026-11-06 (da-un684): «make the "now" and the current time,
+    /// the same font weight and size as the other axis labels. Add seconds to
+    /// the absolute time.» However narrow the strip, the two are written in
+    /// the tick labels' size, face and stroke, and the clock as it is given.
+    #[test]
+    fn the_now_and_the_clock_are_written_as_the_axis_labels_are() {
+        for strip in [80.0, 30.0] {
+            let (layout, _) = gap_picture_with(false, |l| l.right_panel_width = strip);
+            let svg = render_nowview_svg(&layout, "12:34:56", &[], false);
+            assert!(svg.contains(">12:34:56</text>"), "{svg}");
+            for class in ["now-label", "now-clock"] {
+                for name in ["font-size", "font-family"] {
+                    assert_eq!(
+                        attr(&svg, "text", class, name),
+                        attr(&svg, "text", "tick-label", name),
+                        "{strip}: {class} {name}: {svg}"
+                    );
+                }
+                assert_eq!(
+                    attr(&svg, "text", class, "stroke"),
+                    attr(&svg, "text", class, "fill"),
+                    "{strip}: {class}: {svg}"
+                );
             }
         }
     }

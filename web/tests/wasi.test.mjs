@@ -187,7 +187,7 @@ describe('the wasi CLI', () => {
 				assert.equal(view.code, 0, view.stderr);
 				// Written over the now section (da-slzde).
 				const labels = [...view.stdout.matchAll(/class="now-clock"[^>]*>([^<]*)</g)].map((m) => m[1]);
-				assert.deepEqual(labels, ['12:26']);
+				assert.deepEqual(labels, ['12:26:00']);
 			},
 			{ clock: Date.parse('2026-09-11T10:26:00Z'), timezone: 'Europe/Berlin' }
 		);

@@ -5,7 +5,7 @@
 //! pipeline ([`datum_layout::dayview::compute_dayview`] +
 //! [`datum_layout::dayview_svg::render_dayview_svg`]) — a single-day
 //! window scoped to the last `history_minutes`, with a relative-minute
-//! axis. Nowview-specific overlay (the `HH:MM` clock label) layers on top
+//! axis. Nowview-specific overlay (the `HH:MM:SS` clock label) layers on top
 //! via [`datum_layout::nowview_svg::render_nowview_svg`]. This file is the
 //! thin CLI wrapper: it pulls entries from SQLite, resolves field-spec
 //! positions and colors the same way `datum dayview` does, and writes the
@@ -293,7 +293,7 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         };
         render_nowview_at_svg(
             &c.layout,
-            &format_local_hh_mm(now),
+            &format_local_hh_mm_ss(now),
             c.at.map(|t| t.timestamp_millis()),
             &states,
             args.labels,
@@ -302,7 +302,7 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     } else {
         render_nowview_svg_with(
             &c.layout,
-            &format_local_hh_mm(c.anchor),
+            &format_local_hh_mm_ss(c.anchor),
             &c.current_states,
             args.labels,
             c.flow,
@@ -839,6 +839,16 @@ fn clock_marks(layout: &datum_layout::dayview::DayviewLayout) -> Vec<ClockMark> 
 
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
     crate::render::action::clock_label(&Zone::host().local_naive(t))
+}
+
+/// The clock over the now strip, `HH:MM:SS` on the host's (da-un684).
+fn format_local_hh_mm_ss(t: DateTime<Utc>) -> String {
+    let local = Zone::host().local_naive(t);
+    format!(
+        "{}:{:02}",
+        crate::render::action::clock_label(&local),
+        chrono::Timelike::second(&local)
+    )
 }
 
 #[cfg(test)]

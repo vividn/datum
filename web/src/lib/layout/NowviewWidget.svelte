@@ -184,7 +184,7 @@
 	import { readLanes } from '#lib/lanes.ts';
 	import { MAX_SPEED, speedOver, tracked, type Sample } from '#lib/grip.ts';
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
-	import { clockLabel, minute, now as clockNow } from '#lib/clock.ts';
+	import { clockSecondsLabel, minute, now as clockNow } from '#lib/clock.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
 	import { clockAround, clockWord, historyArg, ladderAround, NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
 	import { dateBack, layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
@@ -357,14 +357,18 @@
 	const svgEl = () => el?.querySelector<SVGSVGElement>('svg.svg') ?? null;
 
 	/**
-	 * The clock over the now strip, to the minute (da-slzde): a picture on now
-	 * is asked for again only once what it drew ahead is half spent, so datum's
-	 * word in it goes stale. The zone is the one the page hands datum.
+	 * The clock over the now strip, to the second (da-slzde, da-un684): a
+	 * picture on now is asked for again only once what it drew ahead is half
+	 * spent, so datum's word in it goes stale. The zone is the one the page
+	 * hands datum.
 	 */
-	const clockTime = $derived(clockLabel($clockNow));
+	const clockTime = $derived(clockSecondsLabel($clockNow));
 	function tellTime(): void {
-		const time = svgEl()?.querySelector('.now-clock');
-		if (time && time.textContent !== clockTime) time.textContent = clockTime;
+		// Into its text node: a new node, as `textContent` makes, is a
+		// `childList` change, which the picture's observer answers with a
+		// `place` each second, off the slide's pixel steps.
+		const text = svgEl()?.querySelector('.now-clock')?.firstChild;
+		if (text instanceof Text && text.data !== clockTime) text.data = clockTime;
 	}
 	$effect(() => {
 		void clockTime;

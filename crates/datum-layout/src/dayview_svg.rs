@@ -67,7 +67,7 @@ const DATE_LABEL_FONT: &str = "'Times New Roman', 'Liberation Serif', serif";
 /// The hour axis's face, as v2's (d3's `sans-serif`), named for the same
 /// reason. Its labels are stroked as v2's are, which thickens the ink
 /// without moving the advance [`text_width`] estimates, as bold would.
-const AXIS_LABEL_FONT: &str = "Arial, 'Liberation Sans', Helvetica, sans-serif";
+pub(crate) const AXIS_LABEL_FONT: &str = "Arial, 'Liberation Sans', Helvetica, sans-serif";
 /// A digit's height as a fraction of the font size (0.716 in Arial).
 const DIGIT_HEIGHT_RATIO: f64 = 0.72;
 /// How far a tick, and each of the axis's end hooks, reaches out of the
