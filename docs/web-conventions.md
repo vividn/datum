@@ -424,7 +424,7 @@ rule is decided but not yet everywhere, it names the bead.
     tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz, and `act-taps-commands` for the
     commands widget, which no shipped tree holds since da-mwp4m, da-0o5z9) and in every
     sheet, dialog and menu a tap opens from it (`act-taps-dialogs*`, da-juku7).
-    And a tap that OPENS a modal, a sheet, a confirm or a place (rule 31) — or the browser's own
+    And a tap that OPENS a modal, a sheet, a confirm or a place (rule 32) — or the browser's own
     prompt or file picker — wears a trailing chevron `›`, and nothing else does (da-vteda; vividn:
     «yes I like the chevron much better» than the `…` such a label ended in, which is gone). It
     is the kind `open`, drawn once in `app.css`; a list or a form that takes a widget's place, or
@@ -471,10 +471,27 @@ rule is decided but not yet everywhere, it names the bead.
 30. **Logging the current state again is a record, not a duplicate.** A tap on the state a
     field is already in logs it again: that's someone confirming it after a forgotten record
     (vividn, 2026-09-25: «it happens all the time»). Never suppress it.
+31. **A gesture hears its lift wherever the pointer lifts** (da-ukyq4). A `pointerup` goes to the
+    element under the pointer, or to the one capturing it, so a lift away from the element that
+    heard the press need not reach it, and a gesture that missed its lift stays pressed: a finger
+    still counted down (da-yn6my), a drag still set under the mouse's one id (#1769's close drag).
+    Each gesture takes one of three idioms, and clears on `pointercancel` as on `pointerup`:
+    - a ONE-POINTER DRAG calls `setPointerCapture` at its press, so its lift comes to it wherever
+      the pointer goes: the jog in `CollectWidget.svelte` (`jogDown`), `Layout.svelte`'s split
+      borders (`down`), `PaneFrame.svelte`'s bar handle (`grabBar`);
+    - a TRACKER OF SEVERAL POINTERS (a pinch's map, a two-finger guard) adds a pointer on the
+      element's `pointerdown` and removes it on the WINDOW's `pointerup` and `pointercancel`:
+      `CollectWidget.svelte`'s `untapped`, `zooming` and the rows' `fingers`, and
+      `Placement.svelte`'s drag;
+    - a HOLD TIMER clears on the element's `pointerleave` too, since a lift elsewhere left it
+      first: `TailTable.svelte`'s row (`press`, `unpress`).
+
+    `pointer-lift.test.mjs` holds every `onpointerup=` in `web/src` to one of the three, and to
+    an `onpointercancel=` beside it, from the source.
 
 ## Places and questions
 
-31. **A modal asks; a place is a widget** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
+32. **A modal asks; a place is a widget** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
     widget that can be put into a layout or as its own tab»). A QUESTION — `Confirm`, `Ask`, the
     passkey prompt — blocks until it is answered, and nobody pins one in a layout, so it stays a
     modal. A PLACE — Sync, Help (da-z955f), Backups (da-ea5q2), the field editor (da-hbrfg) and
