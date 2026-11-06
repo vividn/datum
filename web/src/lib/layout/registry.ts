@@ -720,7 +720,7 @@ With a time chosen in another widget, the buttons show how each field stood then
 
 ## Time and duration
 
-Between the now strip and the rows, at rest and beside an open field, stands a small **clock**. Tap it to open the time and duration section there, **time −1m −5m** and **dur 1m 5m** (a column, or a row in a short pane), with the clock between them; tap it again to hide them. Each press adds up: −1m and then −5m log six minutes back, shown as a **−6m** pill, and 1m and then 5m a length of six minutes; the nowview and the day pictures show it as any chosen time. **time** and **dur** wear two small triangles: drag either sideways, or its pill, to move it a minute at a time, **time** from now and **dur** from no length; a pill's × takes it away.
+Between the now strip and the rows, at rest and beside an open field, stand **time −1m −5m** and **dur 1m 5m** (a column, or a row in a short pane). Each press adds up: −1m and then −5m log six minutes back, shown as a **−6m** pill, and 1m and then 5m a length of six minutes; the nowview and the day pictures show it as any chosen time. Drag a pill sideways to move it a minute at a time; its × takes it away.
 
 A tap on **time** opens more ways to say it: a time typed as \`-t\` takes it (9:15am, yesterday 10am), **-y** goes a day back, **-d** to a date, and **-D** logs the whole day. A tap on **dur** opens a length typed (1h30m, 1.5h) and **-m**, a moment with no length. Drag them back toward the strip to close them.
 
@@ -751,11 +751,10 @@ An open field shows its name, then its states, its time and length being the sec
 
 With an entry selected in a list (the CLI widget, the tail), it shows that entry instead: its field, state, time and data, **−A** for all of it, and **back**.
 
-Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, timeOpen, fields }) => ({
+Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, fields }) => ({
 			only: Array.isArray(fields) ? fields.filter((f): f is string => typeof f === 'string') : [],
 			align: align === 'picture' ? 'picture' : 'rows',
 			zoom: typeof zoom === 'number' ? zoom : 1,
-			timeOpen: timeOpen === true,
 			clicks: clicks === 'two' ? 'two' : 'one',
 			side: side === 'right' ? 'right' : 'left',
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
@@ -765,8 +764,7 @@ Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		p
 		// setting a widget moves itself, and so kept on this device across
 		// reloads (da-ray91, da-gh1ep); not among the defaults, as the
 		// strip's day height is not, so `Reset widget` is the way back to 1.
-		// The time section's clock (da-iunoo) moves `timeOpen` the same way.
-		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
+		onChange: (settings, zoom) => ({ ...settings, zoom }),
 		demos: {
 			tap: {
 				title: 'a tap logs a field',
@@ -783,12 +781,10 @@ Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		p
 		tour: [
 			{ at: WHOLE, say: 'Every field you log, a button each.' },
 			{ at: '.room button.widget', say: 'A tap on a field logs it: a moment at once, an on/off field turned on or off; a change field opens its states.' },
+			{ at: '.when button.step', say: 'Tap −1m: the next field you log is logged a minute back. Each press adds up.', do: 'tap' },
 			{ at: '.room', say: 'Drag the rows sideways to see more; pinch, or ctrl and the wheel, to zoom.' },
 			// A hold opens the field and logs nothing: a tour asks for no entry that did not happen.
 			{ at: '.room button.widget', say: 'Hold a field to open it: its states, its time and its data, and nothing logged until you choose.', do: 'hold' },
-			// One step: a tour keeps only the steps whose element is drawn as it starts, and the section is closed at rest;
-			// after the hold, since it opens wider and moves the rows (da-iunoo).
-			{ at: '.when [data-when-clock]', say: 'Tap the clock: the time and duration section opens. There −1m logs what you log next a minute back, and each press adds up; the clock again hides it.', do: 'tap' },
 			{ at: WHOLE, say: 'What you log lands in the nowview, at now.', with: 'nowview' },
 			{ at: WHOLE, say: "And in today's band of the dayview.", with: 'daystrip' }
 		],

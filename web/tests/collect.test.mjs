@@ -45,8 +45,6 @@ const shared = sharedApp({ clock: todayAt(15) });
  */
 const collect = (fn, { twoClicks = false } = {}) =>
 	shared.solo(async (app) => {
-		// The session a test before left (its time section open, da-iunoo) forgotten, as a fresh device has none.
-		await app.page.evaluate(() => window.datum.layout.forgetSession());
 		if (twoClicks) await pickOption(app.page, 'bar', 'a tap', 'opens and chooses, 2-click');
 		for (const line of SEED) {
 			const logged = await app.run(line.split(' '));
@@ -72,13 +70,7 @@ const barPills = (page) =>
 
 /** The time and duration section (da-us1n1), its buttons, and its pill of `kind` (`time`, `dur`). */
 const WHEN = `${WIDGET} [data-when]`;
-/** The time section opened by its clock, where it is closed, as a reader would (da-iunoo). */
-const openWhen = async (page, when = WHEN) => {
-	const clock = page.locator(`${when} [data-when-clock][aria-expanded="false"]`);
-	if ((await clock.count()) > 0) await clock.click();
-};
-/** A part of the section tapped, the section opened by its clock first. */
-const tap = async (page, what) => (await openWhen(page), page.locator(`${WHEN} ${what}`).click());
+const tap = (page, what) => page.locator(`${WHEN} ${what}`).click();
 const whenPill = (page, kind) => page.locator(`${WHEN} .pill[data-pill="${kind}"] .said`);
 const saysPill = (page, kind, text) =>
 	page.waitForFunction(([w, k, t]) => document.querySelector(`${w} .pill[data-pill="${k}"] .said`)?.innerText === t, [WHEN, kind, text]);
@@ -198,123 +190,11 @@ describe('collect', () => {
 		});
 	});
 
-	// vividn, 2026-11-06 (da-iunoo): «Let's actually hide it by default. But a
-	// little clock button in the middle between the fields section and the now
-	// secttion, clicking it toggles whether this time panel is open.»
-	test('at rest the section is a clock alone between the strip and the rows; a tap opens it, kept for the session, and a second closes it', async () => {
-		await collect(async ({ page }) => {
-			const clock = page.locator(`${WHEN} [data-when-clock]`);
-			const parts = page.locator(`${WHEN} [data-part], ${WHEN} button.step`);
-			assert.equal(await clock.getAttribute('aria-expanded'), 'false');
-			assert.equal(await parts.count(), 0, 'the section is out at rest');
-			const [strip, when, rows] = await Promise.all([`${WIDGET} [data-strip]`, WHEN, `${VIEW} [data-field="coffee"]`].map((s) => page.locator(s).first().boundingBox()));
-			assert.ok(strip.x + strip.width <= when.x + 1 && when.x + when.width <= rows.x + 1, JSON.stringify({ strip, when, rows }));
-			const box = await clock.boundingBox();
-			assert.ok(Math.abs(box.y + box.height / 2 - (when.y + when.height / 2)) <= 2, `the clock is not in the middle: ${JSON.stringify({ box, when })}`);
-			const held = () => page.evaluate(() => Object.values(window.datum.layout.session()).map((s) => s.timeOpen).filter((o) => o !== undefined));
-
-			await clock.click();
-			assert.equal(await clock.getAttribute('aria-expanded'), 'true');
-			assert.deepEqual(await parts.evaluateAll((bs) => bs.map((b) => b.dataset.part ?? b.innerText)), ['time', '−1m', '−5m', 'dur', '1m', '5m']);
-			assert.deepEqual(await held(), [true]);
-
-			await clock.click();
-			await page.locator(`${WHEN} [data-part]`).first().waitFor({ state: 'detached' });
-			assert.equal(await parts.count(), 0);
-			assert.deepEqual(await held(), [false]);
-		});
-	});
-
-	// «when you click on time or dur the styling on the panel that opens looks really jarringly off, lots of white».
-	test("time's and dur's options are in the page's colors: no input or button there has a light ground", async () => {
-		await collect(async ({ page }) => {
-			for (const kind of ['time', 'dur']) {
-				await tap(page, `[data-part="${kind}"]`);
-				const more = page.locator(`${WHEN} [data-when-more="${kind}"]`);
-				await more.waitFor();
-				const grounds = await more.locator('input, button').evaluateAll((els) =>
-					els.map((el) => {
-						const [r, g, b, a = 1] = getComputedStyle(el).backgroundColor.match(/[\d.]+/g).map(Number);
-						return { what: el.dataset ? Object.keys(el.dataset).join() : el.tagName, light: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255, a };
-					})
-				);
-				assert.ok(grounds.length >= (kind === 'time' ? 4 : 2), JSON.stringify(grounds));
-				for (const g of grounds) assert.ok(g.a === 0 || g.light < 0.3, `${kind}: ${g.what} has a light ground: ${JSON.stringify(g)}`);
-				await tap(page, `[data-part="${kind}"]`);
-				await more.waitFor({ state: 'detached' });
-			}
-		});
-	});
-
-	// «add a little triangle arrow to the time and dur buttons so that you know you
-	// can drag them. Allow dragging them left and right, even when there is nothing yet selected».
-	test('time and dur wear their triangles, and a drag on either with no pill makes one: a time from now, a length', async () => {
-		await collect(async ({ page }) => {
-			await openWhen(page);
-			for (const kind of ['time', 'dur']) assert.equal(await page.locator(`${WHEN} [data-part="${kind}"] [data-drags]`).count(), 1, `${kind} wears no triangles`);
-			assert.deepEqual(await barPills(page), []);
-
-			const from = await center(page, `${WHEN} [data-part="time"]`);
-			await drag(page, from, { x: from.x - 40, y: from.y });
-			await whenPill(page, 'time').waitFor();
-			const at = await page.evaluate(() => +window.datum.cursor.at());
-			assert.ok(at < todayAt(15), `the drag left chose ${new Date(at).toISOString()}, not a time before now`);
-			assert.equal(await page.locator(`${WHEN} [data-when-more]`).count(), 0, 'the drag opened the options');
-			assert.equal(await whenPill(page, 'time').locator('[data-drags]').count(), 1, 'the pill wears no triangles');
-			// The word the drag began on is gone under it, the pill in its place (canary on #1792): the drag
-			// ended at its lift, so the mouse passing over the pill after, no button down, moves nothing.
-			const pill = await whenPill(page, 'time').boundingBox();
-			for (let x = pill.x - 30; x <= pill.x + pill.width + 30; x += 6) await page.mouse.move(x, pill.y + pill.height / 2);
-			assert.equal(await page.evaluate(() => +window.datum.cursor.at()), at, 'a move with no button down dragged the pill');
-
-			const dur = await center(page, `${WHEN} [data-part="dur"]`);
-			await drag(page, dur, { x: dur.x - 40, y: dur.y });
-			await whenPill(page, 'dur').waitFor();
-			assert.match(await whenPill(page, 'dur').innerText(), /^\d+m$/);
-			assert.ok((await barPills(page)).some((p) => p.startsWith('dur:')), JSON.stringify(await barPills(page)));
-			assert.equal(await page.locator(`${WHEN} [data-when-more]`).count(), 0, 'the drag opened the options');
-		});
-	});
-
-	// «space out the buttons a little more in this time section. right now they overlap some».
-	test('no two of the section\'s buttons meet, their ×s among them, at any height: a column, halves and a row', async () => {
-		await collect(async ({ page }) => {
-			await tap(page, '[data-earlier="5"]');
-			await tap(page, '[data-longer="5"]');
-			await whenPill(page, 'dur').waitFor();
-			const seen = new Set();
-			for (const h of [36, 50, 64, 80, 100, 111, 112, 120, 150, 180, 220, 255, 256, 320, 420]) {
-				const m = await page.locator(WHEN).evaluate(async (when, h) => {
-					when.style.bottom = 'auto';
-					when.style.height = `${h}px`;
-					await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 80))));
-					const column = when.querySelector('.column');
-					const boxes = [...column.querySelectorAll('button')].map((b) => {
-						const r = b.getBoundingClientRect();
-						// A pill's × stands over its own corner, clear of its text (da-rtsun): one pill is one button here.
-						return { b: b.dataset.part ?? b.getAttribute('aria-label') ?? b.innerText, pill: b.closest('.pill')?.dataset.pill, l: r.left, r: r.right, t: r.top, d: r.bottom };
-					});
-					const c = column.getBoundingClientRect();
-					const past = [...column.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.right > c.right - 2.4 + 0.5 || r.left < c.left + 2.4 - 0.5; }).map((e) => `${e.tagName}.${e.className.baseVal ?? e.className}:${Math.round(e.getBoundingClientRect().left - c.left)}-${Math.round(e.getBoundingClientRect().right - c.left)}`);
-					return { need: `${column.scrollWidth}×${column.scrollHeight} in ${column.clientWidth}×${column.clientHeight} ${past.join(' ')}`, mode: when.classList.contains('row') ? 'row' : when.classList.contains('halves') ? 'halves' : 'column', boxes, scrolls: column.scrollHeight > column.clientHeight + 1 || column.scrollWidth > column.clientWidth + 1, column: { l: c.left, r: c.right, t: c.top, d: c.bottom } };
-				}, h);
-				seen.add(m.mode);
-				const say = `${h}px, ${m.mode}: ${JSON.stringify(m.boxes)}`;
-				assert.equal(m.boxes.length, 9, say);
-				for (const [i, a] of m.boxes.entries())
-					for (const b of m.boxes.slice(i + 1).filter((b) => !a.pill || b.pill !== a.pill)) assert.ok(a.r <= b.l || b.r <= a.l || a.d <= b.t || b.d <= a.t, `${a.b} meets ${b.b} at ${say}`);
-				assert.ok(!m.scrolls, `${h}px, ${m.mode}: the section scrolls, ${m.need}`);
-			}
-			assert.deepEqual([...seen].sort(), ['column', 'halves', 'row']);
-		});
-	});
-
 	// vividn, 2026-11-05: «clicking -1m, -5m, 1m or 5m doesn't expand the
 	// section either, it changes the dur or time button to be the time or dur
 	// pill, and keeps summing up. Also updates the nowview with the proper selection».
 	test('−1m then −5m is a −6m time pill, the selection six minutes back, and the section stays closed', async () => {
 		await collect(async ({ page }) => {
-			await openWhen(page);
 			assert.equal(await page.locator(`${WHEN} [data-part="time"]`).innerText(), 'time');
 			await tap(page, '[data-earlier="1"]');
 			await saysPill(page, 'time', '−1m');
@@ -516,7 +396,6 @@ describe('collect', () => {
 			assert.deepEqual(await page.locator(`${DRAWER} .panel button`).allInnerTexts(), ['+ data']);
 			assert.match(await page.locator(`${VIEW} .head`).innerText(), /back\s*coffee/);
 			// A moment has no length to give: the dur half is off beside it.
-			await openWhen(page);
 			for (const at of ['[data-part="dur"]', '[data-longer="1"]', '[data-longer="5"]']) assert.ok(await page.locator(`${WHEN} ${at}`).isDisabled(), at);
 			// The section, between the strip and the view.
 			const [strip, when, view] = await Promise.all([`${WIDGET} [data-strip]`, WHEN, VIEW].map((s) => page.locator(s).first().boundingBox()));

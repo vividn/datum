@@ -44,19 +44,17 @@ describe('a state field fills the widget with its states', () => {
 	// scroll test keeps an app of its own, the one on its screen.
 	const shared = sharedApp({ clock: todayAt(15) });
 
-	/** Every button under `selector`, in order, by the word on it, the back icon and the time section's clock by their names, a state on collect's strip by its field's (da-lw7ue). */
+	/** Every button under `selector`, in order, by the word on it, the back icon by its name, a state on collect's strip by its field's (da-lw7ue). */
 	const words = (page, selector) =>
 		page
 			.locator(selector)
 			.evaluate((el) =>
-				[...el.querySelectorAll('button')].map((b) =>
-					b.dataset.back !== undefined ? 'back' : b.dataset.whenClock !== undefined ? 'clock' : b.dataset.nowField ? `now:${b.dataset.nowField}` : b.textContent.trim()
-				)
+				[...el.querySelectorAll('button')].map((b) => (b.dataset.back !== undefined ? 'back' : b.dataset.nowField ? `now:${b.dataset.nowField}` : b.textContent.trim()))
 			);
 	/** Every button collect is showing. */
 	const bar = (page) => words(page, 'section.pane[data-title="collect"] .bar');
-	/** The time and duration section, after the fields in the Tab order (da-us1n1): a clock alone, closed by default (da-iunoo). */
-	const WHEN = ['clock'];
+	/** The time and duration section's buttons, after the fields in the Tab order (da-us1n1). */
+	const WHEN = ['time', '−1m', '−5m', 'dur', '1m', '5m'];
 	/** The buttons of a field's view: back, its states; its time is the section's (da-us1n1), its keys the drawer's (da-igqs2). */
 	const ring = (page) => words(page, '.bar .collect.open');
 	const closed = (page) => page.locator('.bar .collect.open').waitFor({ state: 'detached' });
@@ -177,18 +175,15 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-state="happy"]').waitFor();
 
 			const focused = () =>
-				page.evaluate(() => {
-					const at = document.activeElement;
-					return at?.dataset.back !== undefined ? 'back' : at?.dataset.whenClock !== undefined ? 'clock' : at?.textContent.trim();
-				});
+				page.evaluate(() => (document.activeElement?.dataset.back !== undefined ? 'back' : document.activeElement?.textContent.trim()));
 			await page.locator('.bar [data-back]').focus();
 			const order = [await focused()];
 			for (let i = 0; i < 4; i++) {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			// The view, the closed drawer's handle (da-igqs2), then the time and duration section's clock (da-us1n1, da-iunoo).
-			assert.deepEqual(order, ['back', 'calm', 'happy', 'data', 'clock']);
+			// The view, the closed drawer's handle (da-igqs2), then the time and duration section (da-us1n1).
+			assert.deepEqual(order, ['back', 'calm', 'happy', 'data', 'time']);
 
 			await page.keyboard.press('Escape');
 			await closed(page);

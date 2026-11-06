@@ -54,8 +54,7 @@
 	the line, with `+ data` taking the caret there. Its time and
 	length are the TIME AND DURATION SECTION's (CollectWhen.svelte, da-us1n1),
 	a column between the now strip and the rows, at rest and beside a field's
-	view alike, a clock alone until it is tapped open (da-iunoo, the session's
-	`timeOpen`): `time −1m −5m · dur 1m 5m`, summing into the page's selection
+	view alike: `time −1m −5m · dur 1m 5m`, summing into the page's selection
 	(#lib/cursor.ts), so they are the nowview's own pills. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
 	click); any other field runs from the commands, which take the pills.
 	In 1-click mode, the default, a field that needs nothing more is not
@@ -245,10 +244,6 @@
 		zoom = 1,
 		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep on this device. */
 		onzoom,
-		/** The time and duration section open, or its clock alone (da-iunoo); the session's, as the zoom is. */
-		timeOpen = false,
-		/** The section's clock tapped: whether it is open now, for the session to keep. */
-		ontime,
 		/** Run a press's line. */
 		onrun,
 		/** Put a press's line in the command line, unrun, for the rest to be typed. */
@@ -270,8 +265,6 @@
 		nowAt?: number | null;
 		zoom?: number;
 		onzoom?: (zoom: number) => void;
-		timeOpen?: boolean;
-		ontime?: (open: boolean) => void;
 		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
@@ -1298,7 +1291,7 @@
 			{#key here.field}<CollectDrawer keys={here.keys} {disabled} edge={side === 'right' ? 'left' : 'right'} onkey={putKey} onmore={() => focusLine(true)} />{/key}
 		{/if}
 		<!-- After the rows and the view, so a field comes first in the Tab order; it stands between them and the strip. -->
-		{#if resting}<CollectWhen {disabled} {side} offset={strip} noLength={here?.shape.kind === 'moment'} shown={timeOpen} onshown={ontime} bind:width={whenW} />{/if}
+		{#if resting}<CollectWhen {disabled} {side} offset={strip} noLength={here?.shape.kind === 'moment'} bind:width={whenW} />{/if}
 	{/if}
 	{/snippet}
 </ButtonRows>

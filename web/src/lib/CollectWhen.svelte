@@ -23,17 +23,6 @@
 	one (`--context`: `1.5h` is 90 minutes, `1h30` refused), and `-m`, a
 	moment with no length, its own pill as the length's other face. A moment
 	field open has no length to give, so the dur half is off beside it.
-
-	At rest it is a clock alone, between the strip and the rows, and a tap on
-	the clock opens it, the clock then standing between its halves (vividn,
-	2026-11-06: «hide it by default. But a little clock button in the middle
-	between the fields section and the now section, clicking it toggles
-	whether this time panel is open»); whether it is open is the session's,
-	as collect's zoom is. `time` and `dur` wear a pair of triangles, and drag
-	sideways with no pill yet too: `time` from now, `dur` from no length
-	(«add a little triangle arrow to the time and dur buttons so that you
-	know you can drag them. Allow dragging them left and right, even when
-	there is nothing yet selected»).
 -->
 <script module lang="ts">
 	import { pills } from './bar.js';
@@ -70,37 +59,18 @@
 		/** The section's own width, for the rows to stand past it. */
 		width = $bindable(0),
 		/** No length to give: a moment field is open, so the dur half is off (vividn, 11-03 16:07). */
-		noLength = false,
-		/** Open, or a clock alone (da-iunoo): the session's, as collect's zoom is. */
-		shown = false,
-		/** The clock tapped: whether it is open now, for the session to keep. */
-		onshown
-	}: { disabled?: boolean; side?: 'left' | 'right'; offset?: number; width?: number; noLength?: boolean; shown?: boolean; onshown?: (shown: boolean) => void } = $props();
+		noLength = false
+	}: { disabled?: boolean; side?: 'left' | 'right'; offset?: number; width?: number; noLength?: boolean } = $props();
 	const lengthOff = $derived(disabled || noLength);
-
-	/**
-	 * Open: the setting, until the clock is tapped (a widget with no session to
-	 * keep it, the tutorial's, keeps it here). A `$derived` assigned to holds
-	 * the value assigned until `shown` changes (Svelte 5.25's overridable
-	 * derived; this is 5.57).
-	 */
-	let expanded = $derived(shown);
-	function toggleShown() {
-		expanded = !expanded;
-		if (!expanded) open = null;
-		onshown?.(expanded);
-	}
 
 	const MINUTE = 60_000;
 	/**
 	 * How tall the section must be to stand as one column; shorter, its two
 	 * halves stand side by side, each a column; and in a pane one row of
 	 * buttons tall (the desktop's) it is a row, `time −1m −5m | dur 1m 5m`.
-	 * Each is a little over the height its buttons take, spaced (da-iunoo:
-	 * 247px and 104px measured), so neither scrolls.
 	 */
-	const COLUMN_PX = 256;
-	const HALVES_PX = 112;
+	const COLUMN_PX = 150;
+	const HALVES_PX = 76;
 	let tall = $state(COLUMN_PX);
 
 	/** Which part's advanced options are out, or none. */
@@ -241,28 +211,11 @@
 	const JOG_CLICK_MS = 300;
 	let jog: { kind: 'time' | 'dur'; x: number; was: Cursor; moved: boolean } | null = null;
 	let jogged = -Infinity;
-	/**
-	 * A press on `time` or `dur`, or its pill, followed on the window until it
-	 * lifts, as the options' drag is: the word it began on is a pill after its
-	 * first move, another element, so a capture on it ended with it and the
-	 * lift went elsewhere, leaving a drag a later hover moved (canary on #1792).
-	 */
-	function jogDown(kind: 'time' | 'dur', down: PointerEvent) {
-		if (kind === 'dur' ? lengthOff : disabled) return;
-		// Nothing chosen yet: a time from now, a length from none.
-		const was = get(pointed) ?? { at: new Date(), rel: 0 };
-		jog = { kind, x: down.clientX, was, moved: false };
-		const move = (e: PointerEvent) => e.pointerId === down.pointerId && jogMove(e);
-		const end = (e: PointerEvent) => {
-			if (e.pointerId !== down.pointerId) return;
-			jogUp();
-			removeEventListener('pointermove', move);
-			removeEventListener('pointerup', end);
-			removeEventListener('pointercancel', end);
-		};
-		addEventListener('pointermove', move);
-		addEventListener('pointerup', end);
-		addEventListener('pointercancel', end);
+	function jogDown(kind: 'time' | 'dur', e: PointerEvent) {
+		const was = get(pointed);
+		if (!was || disabled || (kind === 'dur' && !span)) return;
+		jog = { kind, x: e.clientX, was, moved: false };
+		(e.currentTarget as Element).setPointerCapture(e.pointerId);
 	}
 	function jogMove(e: PointerEvent) {
 		if (!jog) return;
@@ -272,7 +225,6 @@
 		const by = Math.sign(dx) * Math.round((Math.abs(dx) / JOG_PX) ** 1.4);
 		const c = jog.was;
 		if (jog.kind === 'time') return pointAt({ at: new Date(+c.at + by * MINUTE), span: c.span, from: c.from });
-		setMoment(false);
 		pointAt({ ...where(c), span: Math.max(1, (c.span ?? 0) - by) });
 	}
 	function jogUp() {
@@ -295,28 +247,9 @@
 
 <svelte:window onkeydowncapture={onKey} />
 
-<!-- Two triangles, apart: it drags sideways. -->
-{#snippet drags()}<svg class="drags" data-drags viewBox="0 0 14 8" aria-hidden="true" focusable="false"><path d="M0 4 4 0.8v6.4zM14 4 10 0.8v6.4z" /></svg>{/snippet}
-
-{#snippet clock()}
-	<button class="clock" data-when-clock use:act={'show'} aria-expanded={expanded} aria-label={expanded ? 'hide the time and duration' : 'time and duration'} title={expanded ? 'hide the time and duration' : 'time and duration'} onclick={toggleShown}
-		><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" /><path d="M8 4.2V8l2.6 1.6" /></svg></button
-	>
-{/snippet}
-
 {#snippet part(kind: 'time' | 'dur', label: string | null)}
 	{#if label === null}
-		<button
-			class="word"
-			use:act={'show'}
-			class:out={open === kind}
-			data-part={kind}
-			data-pans="x"
-			disabled={kind === 'dur' ? lengthOff : disabled}
-			aria-expanded={open === kind}
-			onpointerdown={(e) => jogDown(kind, e)}
-			onclick={() => tapped(kind)}>{kind}{@render drags()}</button
-		>
+		<button class="word" use:act={'show'} class:out={open === kind} data-part={kind} disabled={kind === 'dur' ? lengthOff : disabled} aria-expanded={open === kind} onclick={() => toggle(kind)}>{kind}</button>
 	{:else}
 		<span class="pill" class:out={open === kind} data-pill={kind}>
 			<button
@@ -327,8 +260,11 @@
 				{disabled}
 				aria-expanded={open === kind}
 				onpointerdown={(e) => jogDown(kind, e)}
+				onpointermove={jogMove}
+				onpointerup={jogUp}
+				onpointercancel={jogUp}
 				onclick={() => tapped(kind)}
-				>{#if kind === 'dur' && span}<LengthArrow />{/if}{label}{@render drags()}</button
+				>{#if kind === 'dur' && span}<LengthArrow />{/if}{label}</button
 			><button class="clear" {disabled} aria-label="clear {label}" onclick={kind === 'time' ? clearTime : clearDur}>×</button>
 		</span>
 	{/if}
@@ -337,7 +273,6 @@
 <div
 	class="when"
 	class:right={side === 'right'}
-	class:closed={!expanded}
 	class:halves={tall < COLUMN_PX && tall >= HALVES_PX}
 	class:row={tall < HALVES_PX}
 	bind:clientHeight={tall}
@@ -347,23 +282,19 @@
 	data-when
 >
 	<div class="column">
-		{#if expanded}
 		<div class="half">
 			{@render part('time', timeLabel)}
 			<button class="step" use:act={'arm'} data-earlier="1" {disabled} title="a minute earlier" onclick={() => earlier(1)}>−1m</button>
 			<button class="step" use:act={'arm'} data-earlier="5" {disabled} title="five minutes earlier" onclick={() => earlier(5)}>−5m</button>
 		</div>
-		{@render clock()}
+		<hr />
 		<div class="half">
 			{@render part('dur', durLabel)}
 			<button class="step" use:act={'arm'} data-longer="1" disabled={lengthOff} title="a minute longer" onclick={() => longer(1)}>1m</button>
 			<button class="step" use:act={'arm'} data-longer="5" disabled={lengthOff} title="five minutes longer" onclick={() => longer(5)}>5m</button>
 		</div>
-		{:else}
-			{@render clock()}
-		{/if}
 	</div>
-	{#if expanded && open}
+	{#if open}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="more" data-when-more={open} onpointerdown={closeDown}>
 			{#if open === 'time'}
@@ -402,94 +333,53 @@
 		border-left: 1px solid var(--rule);
 	}
 
-	/*
-	 * Spaced so no two buttons meet (vividn, 11-06: «space out the buttons a
-	 * little more in this time section. right now they overlap some»): a
-	 * pill's × stands 0.7rem above its top right corner and 0.35rem past it,
-	 * so a gap it can reach, above a pill or to its right, is wider than that.
-	 */
 	.column,
 	.half {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: space-evenly;
-		gap: 0.8rem;
-	}
-
-	.half {
-		/* A pill's 3.6rem, and its × out of its corner. */
-		width: 4.3rem;
-		gap: 0.4rem;
+		gap: 0;
 	}
 
 	.column {
 		height: 100%;
-		/* The × out of a pill's top corner, inside the column. */
-		padding: 0.75rem 0.15rem 0.3rem;
+		padding: 0 0.15rem;
 		box-sizing: border-box;
 		overflow: hidden auto;
 		font-size: 0.75rem;
 	}
 
-	/* Closed, the clock alone, in the middle. */
-	.when.closed .column {
-		padding: 0 0.15rem;
-		justify-content: center;
+	.half {
+		width: 3.4rem;
 	}
 
-	/* Too short for a column: the halves side by side, the clock between them; shorter still, a row. */
+	hr {
+		width: 70%;
+		margin: 0;
+		border: none;
+		border-top: 1px solid var(--rule);
+	}
+
+	/* Too short for a column: the halves side by side, the rule between them; shorter still, a row. */
 	:is(.halves, .row) .column {
 		flex-direction: row;
-		gap: 0.8rem;
-		padding: 0.75rem 0.3rem 0.3rem;
-	}
-
-	.row .column {
+		gap: 0.3rem;
 		padding: 0 0.3rem;
 	}
 
 	.row .half {
 		width: auto;
 		flex-direction: row;
-		gap: 0.8rem;
+		gap: 0.3rem;
 	}
 
-	.clock {
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: 24px;
-		height: 24px;
-		padding: 0;
-		border: 1px solid var(--rule);
-		border-radius: 999px;
-		background: var(--ground);
-		color: var(--muted);
-	}
-
-	.clock[aria-expanded='true'] {
-		color: var(--ink-bright);
-		border-color: var(--accent);
-	}
-
-	.clock svg {
-		width: 14px;
-		height: 14px;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-	}
-
-	/* The two triangles: it drags sideways. */
-	.drags {
-		flex: none;
-		width: 0.85em;
-		height: 0.5em;
-		margin-left: 0.25em;
-		fill: currentColor;
-		opacity: 0.7;
+	:is(.halves, .row) hr {
+		width: auto;
+		height: 60%;
+		margin: 0 0.1rem;
+		border-top: none;
+		border-left: 1px solid var(--rule);
 	}
 
 	.row .pill {
@@ -529,13 +419,8 @@
 	}
 
 	.word {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
 		font-style: italic;
 		color: var(--muted);
-		/* Held and dragged sideways, as its pill is. */
-		touch-action: none;
 	}
 
 	.out {
@@ -546,9 +431,7 @@
 	.pill {
 		position: relative;
 		display: flex;
-		/* Centered, with its × 0.35rem out of its right corner, inside the half. */
-		max-width: calc(100% - 0.7rem);
-		box-sizing: border-box;
+		max-width: 100%;
 		border: 1.5px solid var(--accent);
 		border-radius: 0.6rem;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -570,8 +453,8 @@
 		min-width: 0;
 		flex-wrap: wrap;
 		text-align: center;
-		/* Its own padding, and on the right what the × overlaps (24px less its 0.35rem out). */
-		padding-right: calc(24px - 0.1rem);
+		/* Its own padding, and on the right what the × overlaps (24px less its 0.7rem out). */
+		padding-right: calc(24px - 0.45rem);
 		/* Held and dragged sideways. */
 		touch-action: none;
 	}
@@ -579,7 +462,7 @@
 	.pill .clear {
 		position: absolute;
 		top: -0.7rem;
-		right: -0.35rem;
+		right: -0.7rem;
 		width: 24px;
 		height: 24px;
 		padding: 0;
@@ -624,30 +507,10 @@
 		gap: 0.3rem;
 	}
 
-	/* In the page's colors, as the rest of collect is (vividn, 11-06: «really jarringly off, lots of white»). */
-	.more input,
-	.more .pair button {
-		background: var(--raised);
-		color: var(--ink);
-		border: 1px solid var(--rule);
-		color-scheme: dark;
-	}
-
 	.more input {
 		min-width: 0;
 		flex: 1;
 		font: inherit;
-		border-radius: 0.3rem;
-		padding: 0.15rem 0.3rem;
-	}
-
-	.more input::placeholder {
-		color: var(--quiet);
-	}
-
-	.more input:focus {
-		outline: 1px solid var(--accent);
-		outline-offset: -1px;
 	}
 
 	.more input[aria-invalid] {

@@ -177,12 +177,6 @@ for (const [device, options] of [
 describe('collect: 1-click and 2-click', () => {
 	const VIEW = 'main section.pane[data-pane="bar"] .collect';
 	const WHEN = 'main section.pane[data-pane="bar"] [data-when]';
-	/** −5m pressed, the time section opened by its clock first where it is closed (da-iunoo). */
-	const earlier = async (page) => {
-		const clock = page.locator(`${WHEN} [data-when-clock][aria-expanded="false"]`);
-		if ((await clock.count()) > 0) await clock.click();
-		await page.locator(`${WHEN} [data-earlier="5"]`).click();
-	};
 	const open = (page, name) => page.locator(`${VIEW} [data-field="${name}"]`).click();
 	const chip = (page, state) => page.locator(`${VIEW} [data-state="${state}"]`);
 	const kinds = (page) => page.evaluate(() => window.datum.bar.pills().map((p) => `${p.kind}:${p.text}`));
@@ -217,13 +211,13 @@ describe('collect: 1-click and 2-click', () => {
 			await seedLines(app, [...SEED, 'moment coffee']);
 			let seen = await app.spyOnRunner();
 			await open(page, 'mood');
-			await earlier(page);
+			await page.locator(`${WHEN} [data-earlier="5"]`).click();
 			await chip(page, 'bad').click();
 			await logged(app, seen, 'bad');
 
 			seen = await app.spyOnRunner();
 			await open(page, 'mood');
-			await earlier(page);
+			await page.locator(`${WHEN} [data-earlier="5"]`).click();
 			await chip(page, 'good').click({ button: 'right' });
 			await chosen(app, seen, 'good');
 		});
@@ -278,7 +272,7 @@ describe('collect: 1-click and 2-click', () => {
 
 				seen = await app.spyOnRunner();
 				await open(page, 'mood');
-				await earlier(page);
+				await page.locator(`${WHEN} [data-earlier="5"]`).click();
 				await chip(page, 'bad').click();
 				await chosen(app, seen, 'bad');
 				await lead(page).click();
@@ -288,7 +282,7 @@ describe('collect: 1-click and 2-click', () => {
 				await app.clock.forward(60_000);
 				seen = await app.spyOnRunner();
 				await open(page, 'mood');
-				await earlier(page);
+				await page.locator(`${WHEN} [data-earlier="5"]`).click();
 				await chip(page, 'good').click({ button: 'right' });
 				await logged(app, seen, 'good');
 				assert.deepEqual(app.errors, []);
