@@ -1,4 +1,4 @@
-// The page's own upgrade (da-ylkin): the root bar's «↑ New version», shown once
+// The page's own upgrade (da-ylkin): the root bar's «↑ new», shown once
 // SvelteKit's `updated` has read a `/_app/version.json` naming another build,
 // loads the deployed one past every cache. vividn, 2026-11-04: «This does a
 // forced refresh without cache and should always go to the latest version».

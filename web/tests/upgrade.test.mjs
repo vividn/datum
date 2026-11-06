@@ -1,4 +1,4 @@
-// The page's own upgrade (da-ylkin): «↑ New version» left of the gear (da-qob64)
+// The page's own upgrade (da-ylkin): «↑ new» left of the gear (da-qob64, da-jq1g1)
 // once `/_app/version.json` names another build, and pressed, a reload that
 // reaches the deployed page past the service worker and its caches.
 //
@@ -80,7 +80,7 @@ async function check(page) {
 	await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
-test('«↑ New version» shows for a newer build, and reloads onto the deployed page past the worker', async () => {
+test('«↑ new» shows for a newer build, and reloads onto the deployed page past the worker', async () => {
 	const context = await chromium.launchPersistentContext(profile, {});
 	try {
 		const page = context.pages()[0] ?? (await context.newPage());
@@ -88,7 +88,7 @@ test('«↑ New version» shows for a newer build, and reloads onto the deployed
 		await mounted(page);
 		await page.waitForFunction(() => !!navigator.serviceWorker.controller);
 		const bar = page.locator('nav.root-bar');
-		const upgrade = bar.getByRole('button', { name: '↑ New version', exact: true });
+		const upgrade = bar.getByRole('button', { name: 'New version: reload to update', exact: true });
 
 		// The (?) is filled with the accent.
 		const [fill, accent] = await page.evaluate(() => {
@@ -114,6 +114,7 @@ test('«↑ New version» shows for a newer build, and reloads onto the deployed
 		deployed = 'newer';
 		await check(page);
 		await upgrade.waitFor();
+		assert.equal((await upgrade.textContent()).trim(), '↑ new', 'the button does not read «↑ new»');
 		assert.ok(await upgrade.evaluate((b) => b.parentElement.firstElementChild === b), 'the button is not the bar\'s first item');
 		const [up, gear, help] = await Promise.all([upgrade, bar.locator('.gear'), bar.locator('button.help')].map((l) => l.boundingBox()));
 		assert.ok(up.x + up.width <= gear.x && gear.x + gear.width <= help.x, `upgrade ${up.x}, gear ${gear.x}, help ${help.x}`);

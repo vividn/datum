@@ -111,7 +111,7 @@
 	(da-ylkin), vividn, 2026-11-04: «Let's fill in the (?) button with the
 	primary color so that it is a bit more visible».
 
-	Left of the gear, an orange «↑ New version» once a newer build of the
+	Left of the gear, an orange «↑ new» once a newer build of the
 	page is deployed (da-ylkin, `#lib/upgrade.ts`): SvelteKit's `updated`,
 	which reads `/_app/version.json` as the tab shows or takes focus, and
 	hourly. vividn, 2026-11-04: «an orange colored button […] so that users
@@ -119,6 +119,9 @@
 	button in the header looks like for premium features and I think
 	":uparrow: New version" will read better. Let's also move it to the left
 	of the gear menu». A tap reloads at once, so it wears the double outline.
+	It reads «↑ new», its full words its accessible name and title (da-jq1g1),
+	vividn, 2026-11-06: «just be an arrow and "new" so that it doesnt take up
+	quite so much space».
 
 	At the right end, a ⚠ (da-8fucg) while a sync notice — a new device,
 	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
@@ -478,7 +481,7 @@
 			.filter(Boolean)
 			.join(' ');
 
-	/** Pressed «↑ New version», waiting for the CLI to be idle to reload; false again if it failed. */
+	/** Pressed «↑ new», waiting for the CLI to be idle to reload; false again if it failed. */
 	let upgrading = $state(false);
 
 	/** The gear's eight teeth, by the angle each is turned to. */
@@ -494,11 +497,13 @@
 		class="control upgrade"
 		use:act={'run'}
 		disabled={upgrading}
+		aria-label="New version: reload to update"
+		title="New version: reload to update"
 		data-help="A newer datum.day is out. Loads it, past every cache, once nothing is running or syncing; your data stays as it is."
 		onclick={() => {
 			upgrading = true;
 			upgrade().catch(() => (upgrading = false));
-		}}>↑ New version</button
+		}}>↑ new</button
 	>
 	{/if}
 	<PaneMenu
@@ -804,7 +809,7 @@
 		white-space: nowrap;
 	}
 
-	/* «↑ New version» (da-ylkin, da-qob64): orange, vividn's color for it, which is the
+	/* «↑ new» (da-ylkin, da-qob64, da-jq1g1): orange, vividn's color for it, which is the
 	   palette's `--alarm`; filled, and its double outline drawn round the
 	   fill with the bar's ground between the two lines. */
 	.upgrade {
