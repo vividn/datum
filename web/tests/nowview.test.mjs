@@ -401,6 +401,64 @@ describe('the nowview widget', () => {
 		);
 	});
 
+	// da-2x9eq, vividn: «Let's always keep them where they are when the
+	// nowsection is visible. Let's have them scale from the right edge too, so
+	// that when you are panned far in the past they still have a nice zoooming
+	// effect».
+	test('panned an hour back, the diamonds stand where they do on now, and a drag scales about the right edge', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const rel = page.locator(`${PANE} .nowview-handles .handle[data-axis="rel"]`);
+				await rel.waitFor();
+				const xOf = async () => {
+					const b = await rel.boundingBox();
+					return b.x + b.width / 2;
+				};
+				/** The instant at the picture's right edge, by its own axis, and that edge on screen. */
+				const rightEdge = () =>
+					page.locator(PANE).evaluate((p) => {
+						const right = p.querySelector('svg.svg').closest('.picture').getBoundingClientRect().right;
+						const g = p.querySelector('svg.svg [data-lo]');
+						const [lo, hi] = ['lo', 'hi'].map((k) => new DOMPoint(Number(g.dataset[k]), 0).matrixTransform(g.getScreenCTM()).x);
+						const [from, to] = ['from', 'to'].map((k) => Date.parse(g.dataset[k]));
+						return { right, at: from + ((right - lo) / (hi - lo)) * (to - from) };
+					});
+				const panned = await xOf();
+				const edge = await rightEdge();
+				await app.spyOnRunner();
+
+				// Halfway from the diamond to the right edge halves its distance: twice the window, the edge's instant kept.
+				const y = await rel.boundingBox().then((b) => b.y + b.height / 2);
+				await page.mouse.move(panned, y);
+				await page.mouse.down();
+				await page.mouse.move((panned + edge.right) / 2, y, { steps: 6 });
+				await page.mouse.up();
+				await asked(page, '60m');
+				const argv = (await page.evaluate(() => window.__datumSeen)).filter((a) => a[0] === 'nowview').at(-1);
+				assert.ok(argv.includes('--center'), `a drag panned back went home: ${argv.join(' ')}`);
+				const kept = await until(rightEdge, (e) => Math.abs(e.at - edge.at) <= 15_000);
+				assert.ok(Math.abs(kept.at - edge.at) <= 15_000, `the right edge moved ${(kept.at - edge.at) / 1000}s`);
+				assert.ok(Math.abs((await xOf()) - panned) <= 1, 'the diamond moved with the window');
+
+				// On now, the diamonds stand where they stood panned back.
+				await page.locator(`${PANE} .nowview-now`).click();
+				await until(
+					() => page.locator(`${PANE} .nowview-now`).count(),
+					(n) => n === 0
+				);
+				await app.idle();
+				assert.ok(Math.abs((await xOf()) - panned) <= 1, `on now at ${await xOf()}, panned back at ${panned}`);
+				assert.deepEqual(app.errors, []);
+			},
+			{
+				...DESKTOP,
+				clock: todayAt(12, 0),
+				prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m', at: '11:00' }))
+			}
+		);
+	});
+
 	// da-byzc0, vividn: «the handles on the nowview should have their text
 	// set to non selectable, right now when trying to drag it often just
 	// selects the text which is annoying».

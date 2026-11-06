@@ -123,8 +123,8 @@
 	relative one they stay on now (`--axis-now`, da-tglm6). The pill sits over
 	the line. A tap here moves the line and not the window: one on now stops
 	where it is for as long as the pill lasts. A handle's stretch scales about
-	an absolute pill's instant, or now, wherever the window is; a pinch, about
-	the fingers (da-3zpdx).
+	an absolute pill's instant, or now, or the window's right edge once now
+	is past it (da-2x9eq); a pinch, about the fingers (da-3zpdx).
 	vividn: «any time the view is panned off the default, the "now" label
 	under the now section becomes a filled in yellow button with black now
 	written on it. Clicking that button restores the default.» So off now
@@ -664,7 +664,8 @@
 	 * where they landed, and `shift` how far the band is slid since, so
 	 * the instant stays under their middle and, by the scale, each finger's
 	 * under it. A handle's drag has neither, nor a ctrl+wheel on now
-	 * (da-89vsn): it scales about the anchor.
+	 * (da-89vsn): it scales about the anchor, or about the window's right
+	 * edge, `at` the instant there, once now is past it (da-2x9eq).
 	 */
 	let zoom = $state.raw<{ origin: number; scale: number; raw: number; held?: string; at?: number; shift?: number } | null>(null);
 
@@ -1378,9 +1379,13 @@
 	 * edge.
 	 */
 	function anchorX(svg: SVGSVGElement): number {
+		return xOf(svg, offNow || pill || !drawn ? instantMs() : drawn.now);
+	}
+
+	/** Where the instant `at` is drawn, in px across the picture's own box: the right edge where no stretch holds it. */
+	function xOf(svg: SVGSVGElement, at: number): number {
 		const box = svg.getBoundingClientRect();
 		const start = axis?.y ? box.y : box.x;
-		const at = offNow || pill || !drawn ? instantMs() : drawn.now;
 		const own = timeAxis(svg, at);
 		return own ? own.lo + (at - own.from) / msPerPx(own) - start : ends()[1] - start;
 	}
@@ -1703,7 +1708,8 @@
 	 * A diamond HANDLE on each axis's line (da-tglm6): halfway from the
 	 * window's far end to the anchor, so a drag has room both ways and a
 	 * centered anchor is not under it, or the window's middle where the anchor
-	 * is off the window or next to its far end. Its words (`-15m`, or a clock's
+	 * is off the window or next to its far end. With no pill the anchor's place is the window's
+	 * end, where now is on now, so a pan leaves the diamonds put (da-2x9eq). Its words (`-15m`, or a clock's
 	 * `14:40`, none of which it draws) say the time at the diamond, its
 	 * `minutes` how far that is from the anchor, and `x`, `y` where it stands
 	 * across and down the widget's box. It belongs to the window and not to
@@ -1756,14 +1762,19 @@
 		const [svg, home, [lo, hi]] = [svgEl(), el.getBoundingClientRect(), ends()];
 		const was = middleOf(middle);
 		const far = Number.isFinite(was) ? was - minutes * 30_000 : axis ? instantAlong(lo) : NaN;
+		// Halfway to the window's end, where now is on now, whether or not now
+		// is in view (da-2x9eq, vividn: «always keep them where they are when
+		// the nowsection is visible»); to a pill's instant, with one.
+		const toEnd = !pill && offNow && Number.isFinite(far);
+		const endMs = toEnd ? far + minutes * 60_000 : instantMs();
 		// Read at rest: a pan in hand moves the picture under the handles, and not them.
 		if (svg && !panned) {
-			const anchor = (axis?.y ? svg.getBoundingClientRect().y : svg.getBoundingClientRect().x) + anchorX(svg);
-			handleHalfway = anchor > lo + 2 * HANDLE_PX && anchor <= hi;
-			handleAt = (handleHalfway ? (lo + anchor) / 2 : (lo + hi) / 2) - (axis?.y ? home.y : home.x);
+			const end = (axis?.y ? svg.getBoundingClientRect().y : svg.getBoundingClientRect().x) + (toEnd ? xOf(svg, endMs) : anchorX(svg));
+			handleHalfway = end > lo + 2 * HANDLE_PX && end <= hi;
+			handleAt = (handleHalfway ? (lo + end) / 2 : (lo + hi) / 2) - (axis?.y ? home.y : home.x);
 		}
 		// The time at the diamond, which the handle's words and numbers name.
-		const here = handleHalfway ? (far + instantMs()) / 2 : Number.isFinite(was) ? was : axis ? instantAlong((lo + hi) / 2) : NaN;
+		const here = handleHalfway ? (far + endMs) / 2 : Number.isFinite(was) ? was : axis ? instantAlong((lo + hi) / 2) : NaN;
 		// To the second: the flow's now is a few ms off the clock, and 15.0001m has 15m as a step below it.
 		const off = Math.round((instantMs() - here) / 1000) / 60;
 		const none = !svg || !axis || zoom || !(Math.abs(off) >= 1 / 60);
@@ -2240,6 +2251,8 @@
 		at: number;
 		cross: number;
 		anchor: number;
+		/** Whether the anchor is the window's right edge, now being past it. */
+		edge: boolean;
 		/** The handle pressed, none on the numbers. */
 		on: Handle | null;
 		/** Whether its numbers were open as it was pressed. */
@@ -2259,9 +2272,14 @@
 		event.preventDefault();
 		const box = svg.getBoundingClientRect();
 		const at = vertical ? boxAt.y + h.y : boxAt.x + h.x;
-		const anchor = (vertical ? box.y : box.x) + anchorX(svg);
+		// Panned into the past, a drag scales about the view's right edge, not
+		// about a now far past it (da-2x9eq, vividn: «so that when you are
+		// panned far in the past they still have a nice zoooming effect»).
+		const right = ends()[1];
+		const edge = !counted && (vertical ? box.y : box.x) + anchorX(svg) > right;
+		const anchor = edge ? right : (vertical ? box.y : box.x) + anchorX(svg);
 		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
-		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, on: h, was: isOpenOn(h), mode: 'press', touch: event.pointerType !== 'mouse' };
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, edge, on: h, was: isOpenOn(h), mode: 'press', touch: event.pointerType !== 'mouse' };
 		dragged = at;
 		holding = setTimeout(() => open(h), LONG_MS);
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
@@ -2270,7 +2288,7 @@
 	/** A press on the numbers: a tap is the number's own click, and one that travels swipes them. */
 	function grabNumbers(event: PointerEvent): void {
 		if (event.button > 0 || !wheel) return;
-		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, on: null, was: true, mode: 'press', touch: event.pointerType !== 'mouse' };
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, edge: false, on: null, was: true, mode: 'press', touch: event.pointerType !== 'mouse' };
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
 	}
 
@@ -2282,7 +2300,7 @@
 			grip.mode = grip.on && Math.abs(vertical ? dy : dx) >= Math.abs(vertical ? dx : dy) ? 'scale' : 'wheel';
 			if (grip.mode === 'scale') {
 				wheel = null;
-				start();
+				start(grip.edge ? grip.anchor : undefined);
 			} else {
 				if (grip.on) open(grip.on);
 				// Whichever number a finger began on may go as the pick moves.
