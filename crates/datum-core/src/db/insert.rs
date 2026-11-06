@@ -459,7 +459,9 @@ impl Db {
                             InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => {
                                 counts.changed += 1
                             }
-                            InsertOutcome::Ignored { .. } => counts.unchanged += 1,
+                            InsertOutcome::Ignored { .. } | InsertOutcome::Unchanged { .. } => {
+                                counts.unchanged += 1
+                            }
                         }
                     }
                 }
@@ -903,25 +905,6 @@ fn fetch_field_occur_collider(conn: &Connection, field: &str, at: &str) -> Resul
     Ok(hid)
 }
 
-/// Merge `incoming` into `existing` for [`ConflictStrategy::Merge`]: datum's
-/// `merge`, as `datum merge` (da-scdm3), so a key both hold differently
-/// collects both values into one list without duplicates (da-l9qwb).
-/// A side that is no object is replaced by the incoming one. Errs, as
-/// `datum merge` does, when a key's values cannot be one list (a bool, an
-/// object against a scalar).
-fn merge_extra_data(
-    existing: Option<&JsonValue>,
-    incoming: Option<&JsonValue>,
-) -> Result<Option<JsonValue>> {
-    Ok(match (existing, incoming) {
-        (Some(JsonValue::Object(e)), Some(JsonValue::Object(n))) => {
-            Some(JsonValue::Object(combine(e, n, Combine::MERGE)?))
-        }
-        (e, None) => e.cloned(),
-        (_, n) => n.cloned(),
-    })
-}
-
 // --- Free-function mutators ---------------------------------------------------
 //
 // These take an explicit `&Connection` so they can run inside caller-owned
@@ -1023,14 +1006,22 @@ fn write_entry_in_tx(
     // addDoc did so on `_id`, which v3's slug is. That is how a keyed
     // record (`--id %client_id%`) is re-logged in place.
     let existing = match existing {
-        None if matches!(strategy, ConflictStrategy::Update | ConflictStrategy::Merge) => conn
-            .query_row(
+        None if matches!(
+            strategy,
+            ConflictStrategy::Replace
+                | ConflictStrategy::Overwrite
+                | ConflictStrategy::Update
+                | ConflictStrategy::Merge
+        ) =>
+        {
+            conn.query_row(
                 "SELECT slug, hid, data FROM entries
                  WHERE slug = ?1 AND deleted_at IS NULL AND superseded_by IS NULL",
                 params![entry.slug],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .optional()?,
+            .optional()?
+        }
         found => found,
     };
 
@@ -1109,24 +1100,6 @@ fn write_entry_in_tx(
             }
         }
         (Some((slug, _, _)), ConflictStrategy::Ignore) => (InsertOutcome::Ignored { slug }, None),
-        (Some((slug, hid, _)), ConflictStrategy::Update) => {
-            let pre = fetch_entry_any(conn, &hid.0)?;
-            history::record(conn, &pre, ChangeKind::UserEdit)?;
-            raw_overwrite_mutables(conn, &hid, &slug, entry, None)?;
-            super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
-            (InsertOutcome::Updated { slug }, None)
-        }
-        (Some((slug, hid, existing_data_json)), ConflictStrategy::Merge) => {
-            let pre = fetch_entry_any(conn, &hid.0)?;
-            history::record(conn, &pre, ChangeKind::UserEdit)?;
-            let existing_data: Option<JsonValue> = existing_data_json
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok());
-            let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref())?;
-            raw_overwrite_mutables(conn, &hid, &slug, entry, Some(merged))?;
-            super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
-            (InsertOutcome::Merged { slug }, None)
-        }
         (Some((old_slug, _, _)), ConflictStrategy::Rekey) => {
             // Rekey: insert the incoming row with its own slug. Both rows
             // share a content_hash — the content_hash column is not UNIQUE.
@@ -1160,9 +1133,78 @@ fn write_entry_in_tx(
             };
             (outcome, Some(inserted))
         }
+        (Some((slug, hid, _)), ConflictStrategy::Overwrite) => {
+            let pre = fetch_entry_any(conn, &hid.0)?;
+            history::record(conn, &pre, ChangeKind::UserEdit)?;
+            raw_overwrite_mutables(conn, &hid, &slug, entry, None)?;
+            super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
+            (InsertOutcome::Updated { slug }, None)
+        }
+        // Replace, Update and Merge: the two rows combined.
+        (Some((slug, hid, _)), how) => (resolve_collision(conn, slug, &hid, entry, how)?, None),
     };
 
     Ok(written)
+}
+
+/// A log colliding with the live row `hid` (da-wudrc): the row `strategy`
+/// makes of the two, v2's combineData over their keys, the state among
+/// them, written in place — or nothing, where that row is the one held. The
+/// duration and the following state, no keys, are the new entry's where it
+/// has one, so a re-log keeps the edge that declared its field.
+fn resolve_collision(
+    conn: &Connection,
+    slug: Slug,
+    hid: &Hid,
+    entry: &Entry,
+    strategy: ConflictStrategy,
+) -> Result<InsertOutcome> {
+    let how = match strategy {
+        ConflictStrategy::Replace => Combine::USE_B,
+        ConflictStrategy::Merge => Combine::MERGE,
+        _ => Combine::PREFER_B,
+    };
+    let pre = fetch_entry_any(conn, &hid.0)?;
+    let key = |a: &Option<JsonValue>, b: &Option<JsonValue>| -> Result<Option<JsonValue>> {
+        let one = |v: &Option<JsonValue>| v.iter().map(|v| (String::new(), v.clone())).collect();
+        Ok(combine(&one(a), &one(b), how)?.remove(""))
+    };
+    let mut next = entry.clone();
+    next.state = key(&pre.state, &entry.state)?;
+    next.following_state = entry
+        .following_state
+        .clone()
+        .or(pre.following_state.clone());
+    next.dur = entry.dur.clone().or(pre.dur.clone());
+    next.data = match (&pre.data, &entry.data) {
+        (None | Some(JsonValue::Object(_)), None | Some(JsonValue::Object(_))) => {
+            let obj = |v: &Option<JsonValue>| match v {
+                Some(JsonValue::Object(m)) => m.clone(),
+                _ => Default::default(),
+            };
+            Some(combine(&obj(&pre.data), &obj(&entry.data), how)?)
+                .filter(|m| !m.is_empty())
+                .map(JsonValue::Object)
+        }
+        (a, b) => key(a, b)?,
+    };
+    let (_, _, state) = derive_verb_for_storage(&next)?;
+    let hash = storage_content_hash(
+        &next,
+        &hash_occur_str(&next),
+        state.as_ref(),
+        next.data.as_ref(),
+    );
+    if hash == pre.content_hash {
+        return Ok(InsertOutcome::Unchanged { slug });
+    }
+    history::record(conn, &pre, ChangeKind::UserEdit)?;
+    raw_overwrite_mutables(conn, hid, &slug, &next, None)?;
+    super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
+    Ok(match strategy {
+        ConflictStrategy::Merge => InsertOutcome::Merged { slug },
+        _ => InsertOutcome::Updated { slug },
+    })
 }
 
 /// Bulk-load fast path: dedup-by-content-hash + raw_insert only. Skips
@@ -1873,8 +1915,9 @@ mod tests {
         let outcome = db
             .insert_entry_with_strategy(&second, ConflictStrategy::Update)
             .unwrap();
+        // Found by the dedup, through Update, which changes nothing (da-wudrc).
         assert!(
-            matches!(outcome, InsertOutcome::Updated { .. }),
+            matches!(outcome, InsertOutcome::Unchanged { .. }),
             "identical content must route through Update, got {outcome:?}"
         );
     }

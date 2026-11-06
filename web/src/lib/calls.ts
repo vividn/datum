@@ -358,7 +358,8 @@ export function layoutsArgv(): string[] {
 }
 
 export function newLayoutArgv(layout: Layout, kit?: string): string[] {
-	return ['moment', 'layout', '--id', '%name', '-k', `name=${JSON.stringify(layout.name)}`, ...layoutKeys(layout, kit)];
+	// A new layout: a name already taken is refused, never updated (da-wudrc).
+	return ['moment', 'layout', '--id', '%name', '--conflict', 'refuse', '-k', `name=${JSON.stringify(layout.name)}`, ...layoutKeys(layout, kit)];
 }
 
 export function updateLayoutArgv(layout: Layout, kit?: string): string[] {

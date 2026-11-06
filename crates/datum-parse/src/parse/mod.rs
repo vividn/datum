@@ -1552,13 +1552,13 @@ mod tests {
             ),
             (
                 &["add", "doc", "--conflict", "xor", "foo=bar"][..],
-                "invalid --conflict value: 'xor' (expected update|merge|rekey|ignore)",
+                "invalid --conflict value: 'xor' (expected replace|update|merge|refuse|rekey)",
             ),
         ] {
             let msg = format!("{}", parse_argv(&argv(words)).unwrap_err());
             assert!(msg.ends_with(want), "{words:?} got: {msg}");
         }
-        assert!(parse_argv(&argv(&["add", "doc", "--conflict", "ignore"])).is_ok());
+        assert!(parse_argv(&argv(&["add", "doc", "--conflict", "refuse"])).is_ok());
     }
 
     /// da-scdm3: merge is datum's merge and preferNew its own combine row,

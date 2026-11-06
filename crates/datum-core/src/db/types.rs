@@ -294,19 +294,29 @@ pub struct TimeOrderIssue {
 ///
 /// Rows are mutable: `Update` / `Merge` / `Rekey` all bump `modify_time`.
 /// CRDT/sync reconciliation is deferred.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// `Replace`, `Update` and `Merge` are v2's `useNew`, `preferNew` and
+/// `merge` over the entry's keys, its state among them (da-wudrc); one
+/// that changes nothing writes nothing ([`InsertOutcome::Unchanged`]).
+///
+/// No strategy is the default: a log's, when neither its line nor its field
+/// names one, is [`ConflictStrategy::Update`] (`LogArgsExt::conflict_strategy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictStrategy {
-    /// Silently skip the new row and return [`InsertOutcome::Ignored`] with
-    /// the existing id. Current default.
-    #[default]
+    /// Skip a new row identical to a live one and return
+    /// [`InsertOutcome::Ignored`] with the existing id; refuse one that
+    /// differs. A log's `refuse`, and what a restore without `--force`, an
+    /// import, a multi-entry line and a spec's write take.
     Ignore,
-    /// Overwrite the existing row's mutable fields with the incoming entry's
-    /// values (bumps `modify_time`).
+    /// The incoming entry's keys alone replace the existing row's.
+    Replace,
+    /// Write the incoming row over the existing one whatever it holds, its
+    /// metadata too: `db restore --force`.
+    Overwrite,
+    /// Both rows' keys, the incoming value where they differ.
     Update,
-    /// Merge incoming `data` into the existing row's `data` as `datum
-    /// merge` does — a key both hold differently collects both values into
-    /// one list without duplicates — and otherwise behave like
-    /// [`ConflictStrategy::Update`].
+    /// Both rows' keys; a key both hold differently collects both values
+    /// into one list without duplicates, as `datum merge` does.
     Merge,
     /// Insert the incoming row anyway with its new ULID, leaving the existing
     /// row untouched. Both rows end up with the same `content_hash`.
@@ -316,10 +326,11 @@ pub enum ConflictStrategy {
 impl From<datum_parse::cli::ConflictStrategyArg> for ConflictStrategy {
     fn from(v: datum_parse::cli::ConflictStrategyArg) -> Self {
         match v {
+            datum_parse::cli::ConflictStrategyArg::Replace => ConflictStrategy::Replace,
             datum_parse::cli::ConflictStrategyArg::Update => ConflictStrategy::Update,
             datum_parse::cli::ConflictStrategyArg::Merge => ConflictStrategy::Merge,
             datum_parse::cli::ConflictStrategyArg::Rekey => ConflictStrategy::Rekey,
-            datum_parse::cli::ConflictStrategyArg::Ignore => ConflictStrategy::Ignore,
+            datum_parse::cli::ConflictStrategyArg::Refuse => ConflictStrategy::Ignore,
         }
     }
 }
@@ -349,6 +360,23 @@ pub enum InsertOutcome {
     },
     /// Collision left the existing row untouched.
     Ignored { slug: Slug },
+    /// Collision resolved by a strategy whose row is the existing one: no
+    /// write, and NODIFF (da-wudrc).
+    Unchanged { slug: Slug },
+}
+
+impl InsertOutcome {
+    /// The slug of the row the write left: a rekey's new one.
+    pub fn slug(&self) -> &str {
+        match self {
+            InsertOutcome::Inserted { slug, .. }
+            | InsertOutcome::Updated { slug }
+            | InsertOutcome::Merged { slug }
+            | InsertOutcome::Ignored { slug }
+            | InsertOutcome::Unchanged { slug } => slug.as_str(),
+            InsertOutcome::Rekeyed { new_slug, .. } => new_slug.as_str(),
+        }
+    }
 }
 
 /// What [`super::Db::replace_entries`] did to the live set — or, rolled

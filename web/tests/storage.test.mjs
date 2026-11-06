@@ -285,15 +285,16 @@ describe('two tabs', () => {
 
 	// Both tabs logging the same field in the same minute is the one case
 	// where one connection can refuse a write, and it must refuse it the way
-	// the CLI does: the slug is UNIQUE, so the second is a benign duplicate
+	// the CLI does: the slug is UNIQUE, so under `--conflict refuse` (a
+	// collision updates by default, da-wudrc) the second is a benign duplicate
 	// (exit 11) of a row that is already there — never a row that went
 	// missing. Two tabs must not make this any worse than one tab does.
 	test('the same field in the same minute is a duplicate, not a loss', async () => {
 		await alone(async (first) => {
 			const second = await first.newTab();
 			const both = await Promise.all([
-				first.run(['occur', 'coffee', '-t', '0700']),
-				second.run(['occur', 'coffee', '-t', '0700'])
+				first.run(['occur', 'coffee', '-t', '0700', '--conflict', 'refuse']),
+				second.run(['occur', 'coffee', '-t', '0700', '--conflict', 'refuse'])
 			]);
 			assert.deepEqual(
 				both.map((r) => r.code).sort(),

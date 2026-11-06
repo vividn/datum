@@ -3,7 +3,8 @@
 // A seed line the CLI refused used to vanish: the quiet door's RunResult
 // was dropped and the bar's echo looks the same either way, so the missing
 // row surfaced tests later as a pane that "failed to draw" (da-edr7t). A
-// duplicate `occur` at one `-t` is a refusal that says nothing on stderr —
+// duplicate `occur` at one `-t`, under `--conflict refuse` (a collision
+// updates by default, da-wudrc), is a refusal that says nothing on stderr —
 // it exits 11 — which is why the message is built from the code. Both
 // doors are held to it: the quiet one for every line but the last, and
 // the bar, through its receipt, for the last.
@@ -21,7 +22,7 @@ const shared = sharedApp(DESKTOP);
 // and drawing it costs what a boot did (da-m1m9a).
 const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
-const TWICE = 'occur coffee -t 0900';
+const TWICE = 'occur coffee -t 0900 --conflict refuse';
 
 describe('seedLines — a refused line throws', () => {
 	test('through the quiet door: names the line and its code', async () => {

@@ -363,7 +363,8 @@ fn re_running_the_declaring_log_is_the_benign_no_op() {
     env.run(&["occur", "coffee", "-t", "0900", "--show", "none"]);
     // A pinned time: a bare log lands on a fresh millisecond and never
     // collides, so only an explicit `-t` can reproduce the shape.
-    let (code, stdout) = env.try_run(&["occur", "coffee", "-t", "0900"]);
+    // Refused: the default, update, has it NODIFF (da-wudrc).
+    let (code, stdout) = env.try_run(&["occur", "coffee", "-t", "0900", "--conflict", "refuse"]);
     assert_eq!(code, Some(11), "the duplicate exit code: {stdout:?}");
     assert!(
         stdout.contains("EXISTS"),
@@ -393,7 +394,7 @@ fn a_backfill_in_front_of_the_declaring_log_does_not_unmake_it() {
     // declared the field.
     env.run(&["occur", "foo", "-t", "0800", "--show", "none"]);
 
-    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0900"]);
+    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0900", "--conflict", "refuse"]);
     assert_eq!(code, Some(11), "the duplicate exit code: {stdout:?}");
     assert!(
         stdout.contains("EXISTS"),
@@ -413,7 +414,7 @@ fn a_backfill_in_front_of_the_declaring_log_does_not_unmake_it() {
     // the 0800 row carries no declaration. If the rule ever started
     // recognising non-declaring rows this would still pass, so it is the
     // row count that carries the claim.
-    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0800"]);
+    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0800", "--conflict", "refuse"]);
     assert_eq!(
         code,
         Some(11),
@@ -478,7 +479,15 @@ fn a_failed_first_log_leaves_no_spec_behind() {
 fn a_different_event_at_the_declaring_rows_instant_still_refuses() {
     let env = Env::new();
     env.run(&["occur", "coffee", "-t", "0900", "--show", "none"]);
-    let (code, stdout) = env.try_run(&["occur", "coffee", "-t", "0900", "cups=2"]);
+    let (code, stdout) = env.try_run(&[
+        "occur",
+        "coffee",
+        "-t",
+        "0900",
+        "cups=2",
+        "--conflict",
+        "refuse",
+    ]);
     assert_eq!(code, Some(11), "still exit 11: {stdout:?}");
     assert!(
         !stdout.contains("EXISTS"),

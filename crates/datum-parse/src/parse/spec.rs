@@ -349,6 +349,15 @@ pub(crate) fn parse_spec_set(tail: &[&str], timed: bool) -> Result<(SpecSetArgs,
                 out.auto_setup = Some(parse_auto_setup(v)?);
                 i += 1;
             }
+            FlagSplit::Long("conflict") => {
+                let (v, ni) = take_value(tail, i, None, "--conflict")?;
+                out.conflict = Some(parse_field_conflict(v)?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("conflict", v) => {
+                out.conflict = Some(parse_field_conflict(v)?);
+                i += 1;
+            }
             FlagSplit::Long("y") => {
                 let (v, ni) = take_value(tail, i, None, "--y")?;
                 out.y = Some(parse_position_f64(v, "--y")?);
@@ -526,6 +535,16 @@ fn parse_auto_setup(s: &str) -> Result<Option<bool>> {
         _ => Err(ParseError::InvalidArg(format!(
             "--auto-setup expects true, false or '' (clears it), got '{s}'"
         ))),
+    }
+}
+
+/// `setup --conflict`'s value (da-wudrc): how a log colliding with one of
+/// the field's entries resolves, or `''` to clear it (update again).
+fn parse_field_conflict(s: &str) -> Result<Option<ConflictStrategyArg>> {
+    match s {
+        "" => Ok(None),
+        _ => parse_conflict_strategy("conflict", &["replace", "update", "merge", "refuse"], s)
+            .map(Some),
     }
 }
 

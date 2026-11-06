@@ -102,7 +102,7 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     r.push(local_value(None, Some("conflict"), |p, v| {
         p.conflict = Some(parse_conflict_strategy(
             "conflict",
-            &["update", "merge", "rekey", "ignore"],
+            &["replace", "update", "merge", "refuse", "rekey"],
             v,
         )?);
         Ok(())

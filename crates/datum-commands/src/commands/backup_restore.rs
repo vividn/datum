@@ -731,7 +731,7 @@ impl Mode {
     fn of(args: &RestoreArgs) -> Self {
         Mode {
             strategy: if args.force {
-                ConflictStrategy::Update
+                ConflictStrategy::Overwrite
             } else {
                 ConflictStrategy::Ignore
             },
@@ -1012,7 +1012,9 @@ fn restore_from_reader<R: std::io::BufRead>(
                 }
                 InsertOutcome::Updated { .. } => report.updated += 1,
                 InsertOutcome::Merged { slug } => report.merged.push(slug.0),
-                InsertOutcome::Ignored { .. } => report.skipped += 1,
+                InsertOutcome::Ignored { .. } | InsertOutcome::Unchanged { .. } => {
+                    report.skipped += 1
+                }
             }
         }
     }
@@ -1406,7 +1408,7 @@ mod tests {
         dst.insert_entry(&dup).unwrap();
         let old_modified = dst.get_entry(&dup.slug).unwrap().modify_time;
 
-        // --force → ConflictStrategy::Update overwrites client_id from "d1" in backup.
+        // --force → ConflictStrategy::Overwrite overwrites client_id from "d1" in backup.
         cmd_restore(
             RestoreArgs {
                 path: path.to_string_lossy().into_owned(),

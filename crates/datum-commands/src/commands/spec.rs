@@ -380,6 +380,9 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(a) = args.auto_setup {
         spec.auto_setup = a;
     }
+    if let Some(c) = args.conflict {
+        spec.conflict = c;
+    }
     if let Some(hide) = args.hide {
         spec.presentation.render = match hide {
             true => Some(Render::All(false)),
@@ -1052,6 +1055,9 @@ impl Block {
         }
         if let Some(r) = &spec.remainder {
             line("remainder", r.clone());
+        }
+        if let Some(c) = spec.conflict {
+            line("conflict", c.word().into());
         }
         if !spec.tags.is_empty() {
             line("tags", spec.tags.join(" · "));

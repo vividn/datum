@@ -711,20 +711,24 @@ pub fn resolve_parse_output_args(o: &datum_parse::input::OutputArgs) -> anyhow::
 /// structs. Imported wherever callers used the pre-R2 inherent methods.
 pub trait LogArgsExt {
     fn output(&self) -> anyhow::Result<OutputArgs>;
-    fn conflict_strategy(&self) -> ConflictStrategy;
+    fn conflict_strategy(&self, field: Option<ConflictStrategyArg>) -> ConflictStrategy;
 }
 
 impl LogArgsExt for LogArgs {
     fn output(&self) -> anyhow::Result<OutputArgs> {
         resolve_parse_output_args(&self.output)
     }
-    fn conflict_strategy(&self) -> ConflictStrategy {
+    /// The line's own `--update`, `--merge` or `--conflict`, else the
+    /// field's (`field`, da-wudrc), else update.
+    fn conflict_strategy(&self, field: Option<ConflictStrategyArg>) -> ConflictStrategy {
         if self.update {
             ConflictStrategy::Update
         } else if self.merge {
             ConflictStrategy::Merge
         } else {
-            self.conflict.map(Into::into).unwrap_or_default()
+            self.conflict
+                .or(field)
+                .map_or(ConflictStrategy::Update, Into::into)
         }
     }
 }

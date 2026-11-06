@@ -91,6 +91,15 @@ One-line summaries of the model:
   range running off the end acts on the rows that exist). The command
   prints one action record per entry it touched, so you see exactly what
   the range caught.
+- **Collision** — a log landing on an entry its field holds (the same
+  slug, or the same instant) changes that entry by the field's conflict
+  strategy, `datum setup <field> --conflict S` (vividn, 2026-11-05):
+  `update`, the default, keeps both entries' keys and takes the new value
+  where they differ; `replace` keeps the new entry's keys alone; `merge`
+  makes a key both hold differently, the state too, a list of both; and
+  `refuse` writes nothing. These are v2's `preferNew`, `useNew`, `merge`
+  and `fail`. One that changes nothing echoes NODIFF, and a line's own
+  `--conflict`, `--update` or `--merge` wins over the field's.
 - **Intent** — the original argv is captured and replayed under a
   pinned `parser_version`, so a future parser fix can retroactively
   correct old entries without losing what the user actually typed.

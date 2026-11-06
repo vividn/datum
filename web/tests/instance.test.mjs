@@ -69,8 +69,8 @@ describe('one instance', () => {
 			[['occur', 'tea', '-t', day('06:00')]],
 			[['occur', 'coffee', '-t', day('07:00')]],
 			[['start', 'walk', '-t', day('08:00')], { env: ['TZ=Europe/Berlin'] }],
-			// A re-log of the same entry: EXISTS, exit 11, on a clean run.
-			[['occur', 'coffee', '-t', day('07:00')]],
+			// A refused re-log of the same entry: EXISTS, exit 11, on a clean run.
+			[['occur', 'coffee', '-t', day('07:00'), '--conflict', 'refuse']],
 			[['tail'], { env: ['TZ=America/Chicago'] }],
 			[['now', '--json']],
 			[['fields', '--json']],

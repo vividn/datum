@@ -514,13 +514,33 @@ pub fn slug_key_part(spec: &str) -> String {
 
 /// Mirrors `datum_core::db::ConflictStrategy`; lives here so `datum-parse`
 /// stays `datum-core`-free. The `From<ConflictStrategyArg> for
-/// ConflictStrategy` conversion lives in `datum-commands::args`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// ConflictStrategy` conversion lives in `datum-core::db::types`.
+///
+/// How a log that collides with an entry resolves (da-wudrc): `replace`,
+/// `update`, `merge` are v2's `useNew`, `preferNew`, `merge`, and `refuse`
+/// its `fail`. A field's spec stores one as `conflict`; `rekey` is a
+/// line's alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ConflictStrategyArg {
+    Replace,
     Update,
     Merge,
     Rekey,
-    Ignore,
+    Refuse,
+}
+
+impl ConflictStrategyArg {
+    /// The word `--conflict` takes for it, and a spec stores.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Replace => "replace",
+            Self::Update => "update",
+            Self::Merge => "merge",
+            Self::Rekey => "rekey",
+            Self::Refuse => "refuse",
+        }
+    }
 }
 
 /// `update --strategy`: daydumb's update | merge | rekey, or a row of the
@@ -911,6 +931,9 @@ pub struct SpecSetArgs {
     /// `--auto-setup true|false|''` (da-j04cq): a template's
     /// `auto_setup`, `''` clearing it; `None` leaves the existing value.
     pub auto_setup: Option<Option<bool>>,
+    /// `--conflict replace|update|merge|refuse|''` (da-wudrc): the spec's
+    /// `conflict`, `''` clearing it; `None` leaves the existing value.
+    pub conflict: Option<Option<ConflictStrategyArg>>,
     /// `--symbol <CHAR>` — what the field's occur dots draw instead of a
     /// circle (da-gzowt). An empty value clears it.
     pub symbol: Option<String>,
