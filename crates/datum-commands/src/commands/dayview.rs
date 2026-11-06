@@ -27,7 +27,7 @@ use datum_core::integrity::Finding;
 use datum_core::time::{DatumTime, Zone, ZoneTimeline};
 use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewError,
-    DayviewFieldInput, DayviewLayout, DayviewSpan, GlyphSize, Orientation,
+    DayviewFieldInput, DayviewLayout, DayviewPoint, DayviewSpan, GlyphSize, Orientation,
 };
 use datum_layout::dayview_svg::{
     render_dayview_svg_with, wrap_dayview_svg_in_html, DayviewSvgOpts,
@@ -37,7 +37,7 @@ use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
 use crate::args::{DayviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    at_ms, leading_edge_ms, name_marks, render_field_visuals, switch_regions,
+    at_ms, at_ms_opt, dot_of, leading_edge_ms, name_marks, render_field_visuals, switch_regions,
 };
 use datum_core::state::FieldStateRows;
 use serde_json::Value as JsonValue;
@@ -452,7 +452,11 @@ fn layout_of(
                 .as_ref()
                 .map(|s| (s, !matches!(context, Some(Around::Window(_))))),
         )?;
-        fields.retain(|f| drawn(&f.field));
+        // A window has no date label to put an ALLDAY band beside.
+        fields
+            .iter_mut()
+            .for_each(|f| f.points.retain(|p| !p.allday));
+        fields.retain(|f| drawn(&f.field) && !(f.blocks.is_empty() && f.points.is_empty()));
         // `none`: the sample's field and nothing else.
         if context == Some(Around::None) {
             fields.retain(|f| sample.as_ref().is_some_and(|s| s.field == f.field));
@@ -755,6 +759,40 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
 /// How far either side of a day [`build_day_fields`] reads its rows.
 const FETCH_BUFFER: Duration = Duration::days(2);
 
+/// A full-day entry's mark (`-D`, ALLDAY, da-bz9pb, vividn, 2026-11-05: «a
+/// special band between the date label and the start of the day strip that
+/// shows the field's symbol at its y position»). One of the day `day` has no
+/// instant to stand at on the time axis, so a moment's dot moves to the band,
+/// and a change or an on/off, whose state still runs from the day's start, is
+/// its state's dot there too.
+fn allday_marks(
+    points: &mut Vec<DayviewPoint>,
+    entries: &[Entry],
+    field: &str,
+    spec: Option<&FieldSpec>,
+    day: std::ops::Range<i64>,
+) {
+    for e in entries
+        .iter()
+        .filter(|e| crate::render::shape(e) == "ALLDAY")
+    {
+        let hid = e.hid.to_string();
+        let mine = |p: &DayviewPoint| p.id.as_deref() == Some(&hid);
+        // The next day's, at this one's end, is none of this day's marks.
+        let Some(at) = at_ms_opt(e).filter(|at| day.contains(at)) else {
+            points.retain(|p| !mine(p));
+            continue;
+        };
+        match points.iter_mut().find(|p| mine(p)) {
+            Some(p) => (p.allday, p.moment) = (true, false),
+            None => points.push(DayviewPoint {
+                allday: true,
+                ..dot_of(e, at, field, spec, false)
+            }),
+        }
+    }
+}
+
 fn build_day_fields(
     db: &Db,
     day_start_ms: i64,
@@ -845,6 +883,8 @@ fn build_day_fields(
             day_start_ms,
             day_end_ms,
         );
+        let day = day_start_ms..day_end_ms;
+        allday_marks(&mut points, &entries_for_field, &field, spec.as_ref(), day);
         name_marks(&field, &mut blocks, &mut points, &entries_for_field);
         // The setup form's preview (da-srrqd): nothing of the field on the
         // day, so entries in its shape that no database holds, drawn as

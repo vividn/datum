@@ -243,6 +243,8 @@
 		height: number;
 		geometry: Geometry | null;
 		geometryBox: number;
+		seen: number[];
+		shares: Record<string, { epoch: number; share: number }>;
 	};
 	const held = new Map<string, Held>();
 	/**
@@ -272,6 +274,7 @@
 	import { currentDb } from './database.js';
 	import { keptDays, keptNow, type Kept } from './heldDays.js';
 	import { bandOf, heldLayer, layers, oneClock, standIn, type Layer } from './dayLayers.js';
+	import { sanitizeSvg } from './svgSafe.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import IntegrityMark from './IntegrityMark.svelte';
@@ -431,8 +434,22 @@
 	/** Is the newest day the bottom-most band in view? */
 	let atBottom = $state(true);
 
-	/** The band's own width on screen: the box less the stamp column. */
-	const bandWidth = $derived(Math.max(0, width - labelWidth));
+	/** The days on screen, today's always among them, as `refreshVisible` last read them. */
+	let seen: number[] = $state.raw(was?.seen ?? [0]);
+	/**
+	 * The ALLDAY column between the stamps and the bands (da-bz9pb, vividn,
+	 * 2026-11-05: «this section can grow or shrink as necessary to show all
+	 * the symbols so they don't overlap. If there is no ALLDAY data visible,
+	 * then this strip disappears»): as wide as the widest the days on screen
+	 * need, and none where none has one. The CLI decides where each mark goes
+	 * (`g.allday`, before its picture); the strip only gives it the room.
+	 * Read from `shares`, not from the pictures shown: the column moves the
+	 * size, and a size held from before may show a day as it was before its
+	 * ALLDAY entry, which took the column back, and so on, every frame.
+	 */
+	const allday = $derived(Math.ceil(day * Math.max(0, ...seen.map((end) => shares[dateOf(end)]?.share ?? 0))));
+	/** The band's own width on screen: the box less the stamp and ALLDAY columns. */
+	const bandWidth = $derived(Math.max(0, width - labelWidth - allday));
 
 	// ── the hour window ────────────────────────────────────────────────
 	//
@@ -577,7 +594,7 @@
 	 * hover label's containing block (see `.shot.previewing`).
 	 */
 	const stand = (end: number) => day / (drawn[end]?.dayHeight ?? day);
-	const scaleX = $derived(bandWidth > 0 ? Math.max(0, width - shownLabelWidth) / bandWidth : 1);
+	const scaleX = $derived(bandWidth > 0 ? Math.max(0, width - shownLabelWidth - allday) / bandWidth : 1);
 	/**
 	 * Is band `end`'s picture stretched, so that its marks are scaled back to
 	 * their size (the CSS below)? Under a gesture, or while a picture drawn at
@@ -650,6 +667,46 @@
 
 	/** Each band on screen, by how many days back it is. 0 is today's. */
 	let shown: Record<number, Band> = $state.raw(was?.shown ?? {});
+	/** Each day's ALLDAY share (`alldayOf`), by date, from the newest epoch drawn. */
+	let shares: Record<string, { epoch: number; share: number }> = $state.raw(was?.shares ?? {});
+	/** `band`, drawn for `end` as of `epoch`: its share, unless one of a newer epoch is held. */
+	function noteShare(end: number, epoch: number, band: Band): void {
+		const [date, share] = [dateOf(end), alldayOf(band)?.share ?? 0];
+		const prior = shares[date];
+		if (prior && (prior.epoch > epoch || (prior.epoch === epoch && prior.share === share))) return;
+		shares = { ...shares, [date]: { epoch, share } };
+	}
+	/** A picture drawn by a run, as text, parsed once for its ALLDAY marks. */
+	const parsed = new WeakMap<Band, Element | null>();
+	/**
+	 * A band's ALLDAY marks (da-bz9pb): its `g.allday`, back from where its
+	 * picture starts, how far back they reach as a share of its day height,
+	 * and that height. A share, so a picture standing in at another size gives
+	 * the column this day height gives.
+	 */
+	function alldayOf(band: Band | undefined): { g: Element; share: number; height: number } | null {
+		if (!band) return null;
+		if (!parsed.has(band)) {
+			const svg = band.svg ?? new DOMParser().parseFromString(band.stdout, 'image/svg+xml').querySelector('svg');
+			if (svg && !band.svg) sanitizeSvg(svg);
+			parsed.set(band, svg?.querySelector('g.allday') ? svg : null);
+		}
+		const svg = parsed.get(band);
+		const g = svg?.querySelector('g.allday');
+		const height = Number(svg?.getAttribute('height')) || 0;
+		return svg && g && height ? { g, share: (Number(g.getAttribute('data-width')) || 0) / height, height } : null;
+	}
+	/** Draw `band`'s ALLDAY marks into its column, `wide` px by `tall`, against the band's start. */
+	const alldayMarks = (band: Band | undefined, wide: number, tall: number) => (el: HTMLElement) => {
+		const marks = alldayOf(band);
+		if (!marks || wide <= 0) return void el.replaceChildren();
+		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		const back = (wide * marks.height) / tall;
+		for (const [name, value] of [['width', wide], ['height', tall], ['viewBox', `${-back} 0 ${back} ${marks.height}`]])
+			svg.setAttribute(String(name), String(value));
+		svg.append(marks.g.cloneNode(true));
+		el.replaceChildren(svg);
+	};
 	/**
 	 * And the size each of those pictures was drawn at: its width is what
 	 * it is mapped by (`mapFor`), its day height what it is stretched by
@@ -938,6 +995,7 @@
 				// Every kept today is this CLI's, which says when it drew it: NaN dims nothing.
 				standing = Date.now() - since > UNSYNCED_MS ? Math.min(since, unsynced ?? since) : undefined;
 				shown = { ...shown, 0: result };
+				noteShare(0, -1, result);
 				drawn = { ...drawn, 0: { width: at.wide, dayHeight: at.dayHeight, midnights: at.midnights } };
 				void anchor();
 			});
@@ -965,7 +1023,8 @@
 		});
 
 		for (const end of ends) {
-			void cache.runs.get(id(end))!.run.then((result) => {
+			const asked = cache.runs.get(id(end))!;
+			void asked.run.then((result) => {
 				// A resize while a draw is in flight and two draws overlap;
 				// they can finish out of order, and the loser would paint the
 				// older answer over the newer one. Last started wins, band by
@@ -974,6 +1033,7 @@
 				from[end] = token;
 				if (end === 0) standing = undefined;
 				shown = { ...shown, [end]: result };
+				noteShare(end, asked.epoch, result);
 				drawn = { ...drawn, [end]: { width: at.wide, dayHeight: at.dayHeight, midnights: at.midnights } };
 				void anchor();
 			});
@@ -1187,6 +1247,7 @@
 			if (at.width <= 0 || !measured || !stored) return;
 			const id = (end: number) => bandArgv(at.wide, at.dayHeight, end).join(' ');
 			const visible = visibleDays() ?? [];
+			if (visible.join() !== seen.join()) seen = visible.length ? visible : [0];
 			const stale = (end: number) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch;
 			if (stale(0)) cache.runs.delete(id(0));
 			const unseen = visible.filter((end) => !shown[end] || !cache.runs.has(id(end)));
@@ -1905,7 +1966,7 @@
 	// band's picture, the window, the box. After `tick`, so the placing
 	// reads the marks this change drew and not the ones it replaced.
 	$effect.pre(() => {
-		void [$pointed, shown, view, width, shownDayHeight, shownLabelWidth];
+		void [$pointed, shown, view, width, shownDayHeight, shownLabelWidth, allday];
 		void placePills();
 	});
 
@@ -2007,7 +2068,9 @@
 			width,
 			height,
 			geometry,
-			geometryBox
+			geometryBox,
+			seen,
+			shares
 		};
 	}
 
@@ -2034,6 +2097,7 @@
 		style:--pitch="{dayPitch(shownDayHeight)}px"
 		style:--today="{todayBox(shownDayHeight)}px"
 		style:--label="{shownLabelWidth}px"
+		style:--allday="{allday}px"
 		style:--axis="{AXIS_HEIGHT}px"
 		style:--divider="{DIVIDER}px"
 		style:--tear="{freezeToday ? seamAt : AXIS_HEIGHT}px"
@@ -2053,6 +2117,7 @@
 							{#each stamp(geometry?.today ?? null, end, stampLines) as line}<span>{line}</span
 								>{/each}
 						</div>
+						{#if allday > 0}<div class="allday" {@attach alldayMarks(shown[end], allday, day)}></div>{/if}
 						<div
 							class="band"
 							class:past={end > 0}
@@ -2170,6 +2235,7 @@
 					{#if flagged[0]?.length}<IntegrityMark fields={flagged[0]} />{/if}
 					{#each stamp(geometry?.today ?? null, 0, stampLines) as line}<span>{line}</span>{/each}
 				</div>
+				{#if allday > 0}<div class="allday" {@attach alldayMarks(shown[0], allday, day)}></div>{/if}
 				<div
 					class="band"
 					data-days-ago="0"
@@ -2296,6 +2362,8 @@
 	   days but the divider. */
 	.strip {
 		--picture: #000;
+		/* Where the bands start: after the stamps and the ALLDAY column. */
+		--start: calc(var(--label) + var(--allday));
 		position: relative;
 		height: 100%;
 		display: flex;
@@ -2343,7 +2411,7 @@
 	/* Above the oldest band once it is the first entry's: nothing older. */
 	.first {
 		flex: none;
-		padding: 6px 0 4px var(--label);
+		padding: 6px 0 4px var(--start);
 		font-size: 11px;
 	}
 
@@ -2406,6 +2474,16 @@
 		color: var(--ink-bright);
 		line-height: 1.15;
 		white-space: nowrap;
+	}
+
+	/* A day's ALLDAY marks, the CLI's, beside its band (da-bz9pb). */
+	.allday {
+		flex: 0 0 var(--allday);
+		width: var(--allday);
+		overflow: hidden;
+	}
+	.allday :global(svg) {
+		display: block;
 	}
 
 	/* `clip`, not `hidden`: a hidden box can still be scrolled, and focusing a
@@ -2519,7 +2597,7 @@
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		left: var(--label);
+		left: var(--start);
 		width: var(--divider);
 		background: var(--rule);
 		z-index: 2;
@@ -2627,7 +2705,7 @@
 		transform: translateY(50%);
 		z-index: 3;
 		bottom: min(var(--tear), calc(100% - 13px));
-		left: calc(var(--label) + 16px);
+		left: calc(var(--start) + 16px);
 		right: 0;
 		height: 6px;
 		padding: 0;
@@ -2656,7 +2734,7 @@
 	.axis {
 		flex: none;
 		height: var(--axis);
-		margin-left: var(--label);
+		margin-left: var(--start);
 		overflow: hidden;
 		/* The time axis: a finger on it scrubs the time (da-xg1vi), so the
 		   browser gets no scroll and the pane no swipe out of it. */
@@ -2779,7 +2857,7 @@
 		position: absolute;
 		top: 0;
 		bottom: var(--axis);
-		left: var(--label);
+		left: var(--start);
 		right: 0;
 		overflow: hidden;
 		pointer-events: none;

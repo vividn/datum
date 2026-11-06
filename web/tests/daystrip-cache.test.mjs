@@ -138,7 +138,7 @@ const todayOf = (app) => app.page.evaluate(() => new Date().toLocaleDateString('
 describe('the day strip across a swipe', () => {
 	test('back from another layout, the strip shows what it drew and asks for none of it again', async () => {
 		await open(async (app) => {
-			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3', 'switch mood happy -t 10']);
+			await seedLines(app, ['occur coffee -d -1 -t 12:00', 'occur coffee -d -3 -t 12:00', 'switch mood happy -t 10']);
 			const before = await pictures(app);
 			await app.idle();
 			const seen = await app.spyOnRunner();
@@ -158,7 +158,7 @@ describe('the day strip across a swipe', () => {
 
 	test('a write while away re-draws the days on screen and only them', async () => {
 		await open(async (app) => {
-			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
+			await seedLines(app, ['occur coffee -d -1 -t 12:00', 'occur coffee -d -3 -t 12:00']);
 			const before = await pictures(app);
 			await app.idle();
 			const held = Object.keys(before).length;
@@ -196,7 +196,7 @@ describe('the day strip across a swipe', () => {
 	// the day's whole data already, a running state drawn to its end.
 	test('a midnight while away draws today, and moves every held day back one', async () => {
 		await open(async (app) => {
-			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
+			await seedLines(app, ['occur coffee -d -1 -t 12:00', 'occur coffee -d -3 -t 12:00']);
 			const before = await pictures(app);
 			await app.idle();
 			await allKept(app, before);
@@ -227,7 +227,7 @@ describe('the day strip across a swipe', () => {
 
 	test('the strip holds a month of its days, and draws the days before it from the held layers', async () => {
 		await open(async (app) => {
-			await seedLines(app, ['occur coffee -d -40']);
+			await seedLines(app, ['occur coffee -d -40 -t 12:00']);
 			await pictures(app);
 			await drawBackTo(app, 40);
 
@@ -246,7 +246,7 @@ describe('the day strip across a swipe', () => {
 	test('a box that changed while the strip was away is the box it draws at', async () => {
 		await withApp(
 			async (app) => {
-				await seedLines(app, ['occur coffee -d -1']);
+				await seedLines(app, ['occur coffee -d -1 -t 12:00']);
 				await pictures(app);
 				await app.idle();
 				// Back from over its tail: the nowview in collect's middle pans under a finger.
@@ -282,7 +282,7 @@ describe('the day strip across a write (da-efxk5)', () => {
 
 	test('a write into today redraws today and keeps yesterday, its element and all', async () => {
 		await open(async (app) => {
-			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
+			await seedLines(app, ['occur coffee -d -1 -t 12:00', 'occur coffee -d -3 -t 12:00']);
 			await pictures(app);
 			await app.idle();
 			assert.ok((await inView(app)).includes(1), 'yesterday is not on screen to be kept');
@@ -301,7 +301,7 @@ describe('the day strip across a write (da-efxk5)', () => {
 
 	test('a write backdated into yesterday redraws yesterday', async () => {
 		await open(async (app) => {
-			await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3']);
+			await seedLines(app, ['occur coffee -d -1 -t 12:00', 'occur coffee -d -3 -t 12:00']);
 			await pictures(app);
 			await app.idle();
 			await mark(app, 1);
@@ -355,7 +355,7 @@ describe('the day strip across a reload (da-crq76)', () => {
 
 	/** Draw the strip, and wait for every day but today to be kept. */
 	async function drawnAndKept(app) {
-		await seedLines(app, ['occur coffee -d -1', 'occur coffee -d -3', 'switch mood happy -y -t 10']);
+		await seedLines(app, ['occur coffee -d -1 -t 12:00', 'occur coffee -d -3 -t 12:00', 'switch mood happy -y -t 10']);
 		const before = await pictures(app);
 		await app.idle();
 		await allKept(app, before);

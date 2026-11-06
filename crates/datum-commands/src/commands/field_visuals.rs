@@ -258,33 +258,13 @@ pub(crate) fn render_field_visuals(
             RenderShape::Region => {}
             RenderShape::Dot => {
                 if occur_ms >= day_start_ms && occur_ms <= day_end_ms {
-                    // A moment's dot is its state's colour (da-22750); an
-                    // occur's, with no state or `true`, the field's.
-                    let fg = entry
-                        .state
-                        .as_ref()
-                        .and_then(|v| state_value_rgb(v, field, spec))
-                        .unwrap_or_else(|| field_rgb(field, spec));
-                    points.push(DayviewPoint {
-                        time_ms: occur_ms,
-                        fg_color: rgb_to_hex(fg),
-                        state_label: mark_state(entry.state.as_ref()),
-                        id: Some(entry.hid.to_string()),
-                        title: None,
-                        created_ms: None,
-                        glyph: dot_glyph(entry, spec),
-                        icon: spec.is_some_and(|s| {
-                            (s.presentation)
-                                .icon_for(entry.state.as_ref(), entry.data.as_ref())
-                                .is_some()
-                        }),
-                        // A moment is a dotted line where the field holds an
-                        // active state at its instant, whatever the moment
-                        // says, and a dot where it does not (da-xo58u). An
-                        // occur is a dot.
-                        moment: entry.state.is_some()
-                            && !is_inactive_state(rows.at(occur_dt.utc, None).as_ref()),
-                    });
+                    // A moment is a dotted line where the field holds an
+                    // active state at its instant, whatever the moment
+                    // says, and a dot where it does not (da-xo58u). An
+                    // occur is a dot.
+                    let moment = entry.state.is_some()
+                        && !is_inactive_state(rows.at(occur_dt.utc, None).as_ref());
+                    points.push(dot_of(entry, occur_ms, field, spec, moment));
                 }
             }
         }
@@ -293,6 +273,36 @@ pub(crate) fn render_field_visuals(
         punch_holes(blocks, &holes, dayview_block_span, set_dayview_block_span),
         points,
     )
+}
+
+/// `entry`'s dot at `occur_ms`: a moment's is its state's colour (da-22750);
+/// an occur's, with no state or `true`, the field's.
+pub(crate) fn dot_of(
+    entry: &Entry,
+    occur_ms: i64,
+    field: &str,
+    spec: Option<&FieldSpec>,
+    moment: bool,
+) -> DayviewPoint {
+    let fg = (entry.state.as_ref())
+        .and_then(|v| state_value_rgb(v, field, spec))
+        .unwrap_or_else(|| field_rgb(field, spec));
+    DayviewPoint {
+        time_ms: occur_ms,
+        fg_color: rgb_to_hex(fg),
+        state_label: mark_state(entry.state.as_ref()),
+        id: Some(entry.hid.to_string()),
+        title: None,
+        created_ms: None,
+        glyph: dot_glyph(entry, spec),
+        icon: spec.is_some_and(|s| {
+            (s.presentation)
+                .icon_for(entry.state.as_ref(), entry.data.as_ref())
+                .is_some()
+        }),
+        moment,
+        allday: false,
+    }
 }
 
 /// The glyph an occur dot of `entry` draws (da-gzowt), `None` for the

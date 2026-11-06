@@ -258,6 +258,11 @@ pub struct DayviewPoint {
     /// as an occur is, and `false -m` inside an active state a line.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub moment: bool,
+    /// A full-day entry's mark (`-D`, ALLDAY, da-bz9pb): no instant to stand
+    /// at, so it is drawn in the day's ALLDAY band, before the time axis, at
+    /// its field's height, and `time_ms` is not read.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allday: bool,
 }
 
 /// Top-level dayview knobs. Per-day data is in `days`. The `now_ms` field
@@ -344,6 +349,11 @@ pub struct DayviewLayout {
     /// Resolved date-label strip size (in the dimension perpendicular to
     /// the day-stack axis).
     pub label_width: f64,
+    /// The ALLDAY band between the date labels and the time axis (da-bz9pb):
+    /// as wide as the widest day's ALLDAY marks need, and 0, no band, where
+    /// no day has one or there are no date labels to put it beside.
+    #[serde(default, skip_serializing_if = "no_strip")]
+    pub allday_width: f64,
     pub day_height: f64,
     /// Band + gap: what one day advances the day-stack axis by.
     #[serde(default)]
@@ -431,6 +441,10 @@ pub struct RenderedDay {
     /// The day's stretches, placed; each mark names its own by index.
     #[serde(default)]
     pub spans: Vec<RenderedSpan>,
+    /// How wide this day's ALLDAY marks are, back from the time axis's start
+    /// (da-bz9pb): [`DayviewLayout::allday_width`] where it reserves a band.
+    #[serde(default, skip_serializing_if = "no_strip")]
+    pub allday_width: f64,
     /// The clock times that never happened, each `[time_offset,
     /// time_extent]` in pixels: the renderer hatches them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -576,6 +590,10 @@ pub struct RenderedPoint {
     /// As [`DayviewPoint::moment`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub moment: bool,
+    /// As [`DayviewPoint::allday`]: `time_pos` is its column's in the ALLDAY
+    /// band, back from the time axis's start, so below 0.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allday: bool,
     /// As [`RenderedBlock::span`].
     #[serde(default, skip_serializing_if = "is_zero")]
     pub span: usize,
@@ -791,6 +809,56 @@ fn place_spans(
     (placed, dead, labels)
 }
 
+/// Air between two ALLDAY marks, and between them and the band's ends, a
+/// share of the day (da-bz9pb).
+const ALLDAY_GAP: f64 = 0.02;
+
+/// Each ALLDAY mark of `day` placed in the band before the time axis
+/// (da-bz9pb), by field and point as `day` holds them: its column's center
+/// along the time axis, back from its start, so below 0; and how far back
+/// the band reaches. A mark is at its field's height, as the field's dots
+/// are, in the first column, the nearest the time axis, where it overlaps
+/// no mark across it: the band is as wide as the overlaps make it.
+fn allday_columns(day: &DayviewDayInput, day_height: f64) -> (Vec<Vec<f64>>, f64) {
+    let gap = ALLDAY_GAP * day_height;
+    // Its field, its point, its center and radius across, its half width along.
+    let mut marks = Vec::new();
+    for (fi, f) in day.fields.iter().enumerate() {
+        let r = STANDARD_DOT * day_height / 2.0 * f.glyph_size.scale;
+        let c = f.y_frac * day_height + (f.height_frac * day_height).ceil() / 2.0;
+        for (pi, _) in f.points.iter().enumerate().filter(|(_, p)| p.allday) {
+            marks.push((fi, pi, c, r, r * f.glyph_size.aspect));
+        }
+    }
+    marks.sort_by(|a, b| (a.2 - a.3).total_cmp(&(b.2 - b.3)));
+    // Each column's reach across, and its widest mark's half width.
+    let mut columns: Vec<(f64, f64)> = Vec::new();
+    let mut out: Vec<Vec<f64>> = day
+        .fields
+        .iter()
+        .map(|f| vec![0.0; f.points.len()])
+        .collect();
+    let mut placed = Vec::with_capacity(marks.len());
+    for &(fi, pi, c, r, half) in &marks {
+        let k = (columns.iter().position(|col| col.0 + gap <= c - r)).unwrap_or(columns.len());
+        if k == columns.len() {
+            columns.push((c + r, half));
+        }
+        columns[k] = (c + r, columns[k].1.max(half));
+        placed.push((fi, pi, k));
+    }
+    let mut back = gap;
+    let mut centers = Vec::with_capacity(columns.len());
+    for &(_, half) in &columns {
+        centers.push(-(back + half));
+        back += 2.0 * half + gap;
+    }
+    for (fi, pi, k) in placed {
+        out[fi][pi] = centers[k];
+    }
+    (out, if columns.is_empty() { 0.0 } else { back })
+}
+
 /// Compute the dayview layout.
 pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     let n_days = config.days.len().max(1);
@@ -811,6 +879,17 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     // A negative strip would draw the bands left of the margin; 0 is the
     // floor, and it means no date labels at all (da-55ru).
     let label_width = config.label_width.unwrap_or(label_font_size * 4.0).max(0.0);
+    // The ALLDAY band (da-bz9pb), beside the date labels: as wide as the
+    // widest day's. With none, a caller drawing its own labels lifts the
+    // marks out from before the data area.
+    let allday: Vec<_> = (config.days.iter())
+        .map(|d| allday_columns(d, config.day_height))
+        .collect();
+    let allday_width = match label_width > 0.0 {
+        true => allday.iter().map(|a| a.1).fold(0.0, f64::max),
+        false => 0.0,
+    };
+    let before_data = label_width + allday_width;
 
     let data_rows_extent =
         n_days as f64 * config.day_height + (n_days - 1) as f64 * config.interday_margin;
@@ -823,7 +902,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         Orientation::Horizontal => {
             let plot_width = (config.width - 2.0 * config.margin).max(0.0);
             let time_axis_extent =
-                (plot_width - label_width - config.right_panel_width.max(0.0)).max(0.0);
+                (plot_width - before_data - config.right_panel_width.max(0.0)).max(0.0);
             let plot_height = data_rows_extent + config.time_axis_height;
             let height = plot_height + clock + 2.0 * config.margin;
             let plot = Rect {
@@ -845,10 +924,10 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             let _ = plot_width;
             let total_height_resolved = config
                 .height
-                .unwrap_or(DEFAULT_VERTICAL_TIME_EXTENT + label_width + 2.0 * config.margin);
+                .unwrap_or(DEFAULT_VERTICAL_TIME_EXTENT + before_data + 2.0 * config.margin);
             let plot_height = (total_height_resolved - 2.0 * config.margin).max(0.0);
             let time_axis_extent =
-                (plot_height - label_width - config.right_panel_width.max(0.0)).max(0.0);
+                (plot_height - before_data - config.right_panel_width.max(0.0)).max(0.0);
             // Recompute total width from the day-stack data plus axis strip.
             let resolved_plot_width = config.time_axis_height + data_rows_extent + clock;
             let width = resolved_plot_width + 2.0 * config.margin;
@@ -873,10 +952,10 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     // SVG origin of the data area: the plot's translate plus the strips
     // the renderer puts before it (`dayview_svg::PlotGeom`).
     let (data_x, data_y) = match config.orientation {
-        Orientation::Horizontal => (config.margin + label_width, config.margin + clock),
+        Orientation::Horizontal => (config.margin + before_data, config.margin + clock),
         Orientation::Vertical => (
             config.margin + config.time_axis_height,
-            config.margin + label_width,
+            config.margin + before_data,
         ),
     };
     let hours: Vec<DayviewHourMark> = axis_ticks
@@ -965,8 +1044,9 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         };
 
         // Sort fields by z_index ascending (low first → renders below).
-        let mut field_order: Vec<&DayviewFieldInput> = day.fields.iter().collect();
-        field_order.sort_by(|a, b| {
+        let mut field_order: Vec<(usize, &DayviewFieldInput)> =
+            day.fields.iter().enumerate().collect();
+        field_order.sort_by(|(_, a), (_, b)| {
             a.z_index
                 .partial_cmp(&b.z_index)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -974,7 +1054,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
 
         let mut fields: Vec<RenderedField> = Vec::with_capacity(field_order.len());
 
-        for f in field_order {
+        for (fi, f) in field_order {
             // Skip empty fields per spec ("Empty fields are SKIPPED").
             if f.blocks.is_empty() && f.points.is_empty() {
                 continue;
@@ -1015,11 +1095,16 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             // (da-ijjjn): a fraction of the day, never pixels (da-c1b6m).
             let r = STANDARD_DOT * config.day_height / 2.0 * f.glyph_size.scale;
 
-            for p in &f.points {
-                let Some((span, within)) = span_of(p.time_ms) else {
-                    continue;
+            for (pi, p) in f.points.iter().enumerate() {
+                let (span, t) = match p.allday {
+                    true => (0, allday[i].0[fi][pi]),
+                    false => {
+                        let Some((span, within)) = span_of(p.time_ms) else {
+                            continue;
+                        };
+                        (span, time_to_pos(within, p.time_ms))
+                    }
                 };
-                let t = time_to_pos(within, p.time_ms);
                 let c = cross_offset + cross_extent / 2.0;
                 points.push(RenderedPoint {
                     time_pos: t,
@@ -1034,6 +1119,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     glyph: p.glyph.clone(),
                     icon: p.icon,
                     moment: p.moment,
+                    allday: p.allday,
                     span,
                 });
             }
@@ -1097,6 +1183,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             end_ms: day.end_ms,
             now_extent_near: day_offset + now_near * config.day_height,
             spans,
+            allday_width: allday[i].1,
             dead_zones,
             zone_labels,
         });
@@ -1108,6 +1195,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         height,
         margin: config.margin,
         label_width,
+        allday_width,
         day_height: config.day_height,
         day_pitch: config.day_height + config.interday_margin,
         interday_margin: config.interday_margin,
@@ -1171,6 +1259,99 @@ mod tests {
             orientation: Orientation::Horizontal,
             ..cfg
         }
+    }
+
+    /// A day whose fields at `ys` each hold one ALLDAY mark (da-bz9pb).
+    fn allday_layout(ys: &[f64], label_width: Option<f64>) -> DayviewLayout {
+        let mut day = empty_day(&["Mon"]);
+        day.fields = (ys.iter().enumerate())
+            .map(|(i, &y)| DayviewFieldInput {
+                field: format!("f{i}"),
+                y_frac: y,
+                height_frac: 0.1,
+                z_index: y,
+                blocks: vec![],
+                points: vec![DayviewPoint {
+                    time_ms: DAY_START,
+                    fg_color: "#ff0000".into(),
+                    state_label: None,
+                    id: None,
+                    title: None,
+                    created_ms: None,
+                    glyph: None,
+                    icon: false,
+                    moment: false,
+                    allday: true,
+                }],
+                icon: None,
+                glyph_size: Default::default(),
+            })
+            .collect();
+        compute_dayview(&horizontal(DayviewConfig {
+            days: vec![day],
+            width: 800.0,
+            day_height: 100.0,
+            label_width,
+            ..Default::default()
+        }))
+    }
+
+    /// Each field's ALLDAY mark: its time position and its cross position.
+    fn allday_marks(layout: &DayviewLayout) -> Vec<(f64, f64)> {
+        let day = &layout.days[0];
+        (day.fields.iter())
+            .flat_map(|f| f.points.iter().filter(|p| p.allday))
+            .map(|p| (p.time_pos, p.cross_pos))
+            .collect()
+    }
+
+    #[test]
+    fn allday_marks_stand_at_their_fields_heights_in_a_band_before_the_time_axis() {
+        let layout = allday_layout(&[0.1, 0.6], Some(80.0));
+        let marks = allday_marks(&layout);
+        let r = STANDARD_DOT * 100.0 / 2.0;
+        // At each field's height, as its dots are: the middle of its lane.
+        assert_eq!(marks.iter().map(|m| m.1).collect::<Vec<_>>(), [15.0, 65.0]);
+        // Apart across, so in one column, and the band one column wide.
+        assert_eq!(marks[0].0, marks[1].0);
+        assert!(marks[0].0 < 0.0 && marks[0].0 - r >= -layout.allday_width);
+        assert_eq!(layout.allday_width, 2.0 * r + 2.0 * ALLDAY_GAP * 100.0);
+        // The time axis starts after the label and the band, and is shorter by both.
+        assert_eq!(
+            layout.hours[0].x,
+            layout.margin + 80.0 + layout.allday_width
+        );
+        assert_eq!(
+            layout.time_axis_extent,
+            800.0 - 2.0 * layout.margin - 80.0 - layout.allday_width
+        );
+    }
+
+    #[test]
+    fn allday_marks_that_would_overlap_take_a_column_each() {
+        let apart = allday_layout(&[0.1, 0.6], Some(80.0));
+        let layout = allday_layout(&[0.3, 0.32], Some(80.0));
+        let marks = allday_marks(&layout);
+        let r = STANDARD_DOT * 100.0 / 2.0;
+        assert!(
+            (marks[0].0 - marks[1].0).abs() >= 2.0 * r,
+            "side by side: {marks:?}"
+        );
+        assert!(marks.iter().all(|m| m.0 - r >= -layout.allday_width));
+        assert!(layout.allday_width > apart.allday_width);
+    }
+
+    #[test]
+    fn a_day_with_no_allday_mark_has_no_band() {
+        let layout = allday_layout(&[], Some(80.0));
+        assert_eq!(layout.allday_width, 0.0);
+        assert_eq!(layout.hours[0].x, layout.margin + 80.0);
+        // With no date label there is no band to put beside it: the marks
+        // stand before the data area, for a viewer drawing its own to lift.
+        let unlabelled = allday_layout(&[0.1], Some(0.0));
+        assert_eq!(unlabelled.allday_width, 0.0);
+        assert!(unlabelled.days[0].allday_width > 0.0);
+        assert!(allday_marks(&unlabelled)[0].0 < 0.0);
     }
 
     #[test]
@@ -1364,6 +1545,7 @@ mod tests {
                         glyph: None,
                         icon: false,
                         moment: false,
+                        allday: false,
                     }],
                     icon: None,
                     glyph_size: Default::default(),
@@ -1582,6 +1764,7 @@ mod tests {
                 glyph: None,
                 icon: false,
                 moment: false,
+                allday: false,
             }],
             icon: None,
             glyph_size: Default::default(),
@@ -1784,6 +1967,7 @@ mod tests {
                     glyph: None,
                     icon: false,
                     moment: false,
+                    allday: false,
                 }],
                 icon: None,
                 glyph_size: Default::default(),

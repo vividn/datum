@@ -217,6 +217,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
                 glyph: None,
                 icon: false,
                 moment: false,
+                allday: false,
             }],
             icon: None,
             glyph_size: Default::default(),

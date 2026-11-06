@@ -304,7 +304,16 @@ export function bandOf(layer: Layer, width: number, dayHeight: number, now?: num
 	const [from, to] = ['data-from', 'data-to'].map((name) => Date.parse(span.getAttribute(name) ?? ''));
 	const num = (el: Element, name: string) => Number(el.getAttribute(name));
 	const set = (el: Element, name: string, value: number) => el.setAttribute(name, String(value));
+	// The ALLDAY marks before the picture (da-bz9pb), the day height's size
+	// both ways: the strip draws them in a column of its own.
+	const allday = root.querySelector('g.allday');
+	allday?.remove();
 	layMarks(root, width / num(span, 'data-hi'), dayHeight / LAYER_HEIGHT);
+	if (allday) {
+		layMarks(allday, dayHeight / LAYER_HEIGHT, dayHeight / LAYER_HEIGHT);
+		set(allday, 'data-width', (num(allday, 'data-width') * dayHeight) / LAYER_HEIGHT);
+		root.querySelector('.plot')!.append(allday);
+	}
 	set(span, 'data-hi', width);
 	for (const [n, v] of [['width', width], ['height', dayHeight]] as const) set(root, n, v);
 	root.setAttribute('viewBox', `0 0 ${width} ${dayHeight}`);

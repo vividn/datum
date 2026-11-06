@@ -28,7 +28,7 @@ use std::fmt::Write;
 
 use crate::dayview::{
     BlockFill, DayviewAxisTick, DayviewLayout, Orientation, RenderedBlock, RenderedDay,
-    RenderedField, RenderedSpan,
+    RenderedField, RenderedPoint, RenderedSpan,
 };
 
 pub(crate) const NOW_LINE_COLOR: &str = "#ffcc00";
@@ -255,14 +255,14 @@ impl PlotGeom {
         match layout.orientation {
             // Date-label strip on the left, time-axis strip at the bottom.
             Orientation::Horizontal => Self {
-                data_x: layout.label_width,
+                data_x: layout.label_width + layout.allday_width,
                 data_y: 0.0,
                 cross_total,
             },
             // Date-label strip on top, time-axis strip on the left.
             Orientation::Vertical => Self {
                 data_x: layout.time_axis_height,
-                data_y: layout.label_width,
+                data_y: layout.label_width + layout.allday_width,
                 cross_total,
             },
         }
@@ -420,7 +420,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     .filter(|r| r.field == field.field && chunk_span == Some(si))
                     .collect();
                 let here = field.blocks.iter().any(|b| b.span == si)
-                    || field.points.iter().any(|p| p.span == si);
+                    || field.points.iter().any(|p| p.span == si && !p.allday);
                 if day.spans.len() > 1 && !here && fills.is_empty() {
                     continue;
                 }
@@ -489,7 +489,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     out.push_str(&std::mem::take(&mut strip));
                 }
                 let mut whole = String::new();
-                for p in field.points.iter().filter(|p| p.span == si) {
+                for p in field.points.iter().filter(|p| p.span == si && !p.allday) {
                     // A mark up to now stands past the clip, whole over the
                     // edge between the history and the now strip (da-7257d);
                     // one still to come waits behind the clip.
@@ -539,81 +539,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         );
                         continue;
                     }
-                    // The disc is the mark — the pointer target, the title, the
-                    // data attributes — but it is never painted: a dot is its
-                    // symbol alone, in its own colour (da-qietq). The symbol
-                    // lets the pointer through to it.
-                    // da-c05v1: a mark wider or narrower than it is tall is
-                    // stretched along x about its own centre; the disc under it,
-                    // the pointer target, is not.
-                    let a = field.glyph_aspect;
-                    let stretch = if a == 1.0 {
-                        String::new()
-                    } else {
-                        format!(
-                            r#" transform="matrix({a} 0 0 1 {dx} 0)""#,
-                            dx = cx * (1.0 - a)
-                        )
-                    };
-                    let _ = write!(
-                        sink,
-                        r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" fill-opacity="0"{close}"#,
-                        cx = cx,
-                        cy = cy,
-                        r = outer_r,
-                        c = p.fg_color,
-                        close = mark_close(
-                            "circle",
-                            &field.field,
-                            p.state_label.as_deref(),
-                            p.id.as_deref(),
-                            &[("at", Some(p.time_ms)), ("created", p.created_ms)],
-                            p.title.as_deref(),
-                        ),
-                    );
-                    // da-45wgz: an icon is written ONCE, in `<defs>`, under an
-                    // id named for its field — the same in every band the page
-                    // stacks, so a reference can never find another field's —
-                    // and each dot `<use>`s it, sized to the disc and handed the
-                    // dot's colour as `currentColor`.
-                    if let Some(svg) = icon {
-                        let id = icon_id(&field.field);
-                        if icons.insert(&field.field) {
-                            let rest = &scope_ids(svg, &id)["<svg".len()..];
-                            let _ = write!(&mut defs, r#"<svg id="{id}"{rest}"#);
-                        }
-                        let _ = write!(
-                            sink,
-                            r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"{stretch}/>"##,
-                            x = cx - outer_r,
-                            y = cy - outer_r,
-                            d = outer_r * 2.0,
-                            c = p.fg_color,
-                        );
-                        continue;
-                    }
-                    // da-gzowt: a glyph stands where the circle would, centred
-                    // on the same point, in the same colour. Sized to the disc
-                    // so it reads as the mark rather than as a label on it.
-                    let _ = match p.glyph.as_deref() {
-                        None => write!(
-                            sink,
-                            r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"{stretch}/>"#,
-                            cx = cx,
-                            cy = cy,
-                            r = outer_r,
-                            c = p.fg_color,
-                        ),
-                        Some(g) => write!(
-                            sink,
-                            r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none"{stretch}>{g}</text>"#,
-                            cx = cx,
-                            cy = cy,
-                            fs = outer_r * 1.6,
-                            c = p.fg_color,
-                            g = escape_xml(g),
-                        ),
-                    };
+                    push_dot(sink, &mut defs, &mut icons, field, p, (cx, cy), outer_r);
                 }
                 out.push_str(flow_close);
                 out.push_str(&strip);
@@ -624,6 +550,35 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             }
             if !span.lane.is_empty() {
                 out.push_str(&lane_edges(layout, &geom, day, span));
+            }
+            out.push_str("</g>");
+        }
+
+        // The ALLDAY band (da-bz9pb): each full-day mark at its field's
+        // height, in its column before the time axis. `data-width` is how far
+        // back it reaches, for a viewer that lifts it out from before a
+        // picture with no band of its own (datum.day's strip).
+        if day.allday_width > 0.0 {
+            let _ = write!(
+                &mut out,
+                r#"<g class="allday" data-day="{i}" data-width="{w}">"#,
+                w = day.allday_width,
+            );
+            for field in &day.fields {
+                let marks: Vec<_> = field.points.iter().filter(|p| p.allday).collect();
+                if marks.is_empty() {
+                    continue;
+                }
+                let _ = write!(
+                    &mut out,
+                    r#"<g class="field" data-field="{f}">"#,
+                    f = escape_xml(&field.field),
+                );
+                for p in marks {
+                    let xy = to_xy(layout, &geom, p.time_pos, day.day_offset + p.cross_pos);
+                    push_dot(&mut out, &mut defs, &mut icons, field, p, xy, p.r);
+                }
+                out.push_str("</g>");
             }
             out.push_str("</g>");
         }
@@ -877,6 +832,95 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
     out.push_str("</svg>");
     out
+}
+
+/// A dot of `field` at `(cx, cy)`, `outer_r` its radius: the disc, which is
+/// the mark, and over it its icon, its glyph or its circle.
+fn push_dot<'a>(
+    sink: &mut String,
+    defs: &mut String,
+    icons: &mut HashSet<&'a str>,
+    field: &'a RenderedField,
+    p: &RenderedPoint,
+    (cx, cy): (f64, f64),
+    outer_r: f64,
+) {
+    let icon = (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
+    // The disc is the mark — the pointer target, the title, the
+    // data attributes — but it is never painted: a dot is its
+    // symbol alone, in its own colour (da-qietq). The symbol
+    // lets the pointer through to it.
+    // da-c05v1: a mark wider or narrower than it is tall is
+    // stretched along x about its own centre; the disc under it,
+    // the pointer target, is not.
+    let a = field.glyph_aspect;
+    let stretch = if a == 1.0 {
+        String::new()
+    } else {
+        format!(
+            r#" transform="matrix({a} 0 0 1 {dx} 0)""#,
+            dx = cx * (1.0 - a)
+        )
+    };
+    let _ = write!(
+        sink,
+        r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" fill-opacity="0"{close}"#,
+        cx = cx,
+        cy = cy,
+        r = outer_r,
+        c = p.fg_color,
+        close = mark_close(
+            "circle",
+            &field.field,
+            p.state_label.as_deref(),
+            p.id.as_deref(),
+            &[("at", Some(p.time_ms)), ("created", p.created_ms)],
+            p.title.as_deref(),
+        ),
+    );
+    // da-45wgz: an icon is written ONCE, in `<defs>`, under an
+    // id named for its field — the same in every band the page
+    // stacks, so a reference can never find another field's —
+    // and each dot `<use>`s it, sized to the disc and handed the
+    // dot's colour as `currentColor`.
+    if let Some(svg) = icon {
+        let id = icon_id(&field.field);
+        if icons.insert(&field.field) {
+            let rest = &scope_ids(svg, &id)["<svg".len()..];
+            let _ = write!(defs, r#"<svg id="{id}"{rest}"#);
+        }
+        let _ = write!(
+            sink,
+            r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"{stretch}/>"##,
+            x = cx - outer_r,
+            y = cy - outer_r,
+            d = outer_r * 2.0,
+            c = p.fg_color,
+        );
+        return;
+    }
+    // da-gzowt: a glyph stands where the circle would, centred
+    // on the same point, in the same colour. Sized to the disc
+    // so it reads as the mark rather than as a label on it.
+    let _ = match p.glyph.as_deref() {
+        None => write!(
+            sink,
+            r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"{stretch}/>"#,
+            cx = cx,
+            cy = cy,
+            r = outer_r,
+            c = p.fg_color,
+        ),
+        Some(g) => write!(
+            sink,
+            r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none"{stretch}>{g}</text>"#,
+            cx = cx,
+            cy = cy,
+            fs = outer_r * 1.6,
+            c = p.fg_color,
+            g = escape_xml(g),
+        ),
+    };
 }
 
 /// The `<defs>` id of `field`'s icon: the name with anything an id or a
@@ -1773,6 +1817,7 @@ mod tests {
                         glyph: None,
                         icon: false,
                         moment: false,
+                        allday: false,
                     }],
                     icon: None,
                     glyph_size: Default::default(),

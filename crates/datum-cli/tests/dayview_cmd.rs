@@ -1612,3 +1612,91 @@ fn a_check_answers_a_day_no_write_reached_from_what_it_kept() {
         "after the row ending it"
     );
 }
+
+/// `datum dayview --show json` of `db`, as JSON.
+fn dayview_json(db: &datum_core::db::Db, extra: &[&str]) -> serde_json::Value {
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    let argv: Vec<&str> = ["dayview", "--show", "json", "-o", &path]
+        .into_iter()
+        .chain(extra.iter().copied())
+        .collect();
+    run_cli(&argv, db).expect("dayview --show json");
+    serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+}
+
+/// da-bz9pb, vividn, 2026-11-05: «a special band between the date label and
+/// the start of the day strip that shows the field's symbol at its y
+/// position … If there is no ALLDAY data visible, then this strip
+/// disappears». A full-day entry of any kind is a mark in that band at its
+/// field's height, and none on the time axis.
+#[test]
+fn allday_entries_are_their_fields_symbols_in_a_band_before_the_time_axis() {
+    let db = fresh_db();
+    run_cli(&["moment", "tea", "-t", "10:00"], &db).unwrap();
+    let plain = dayview_json(&db, &[]);
+    assert!(
+        plain.get("allday_width").is_none(),
+        "no ALLDAY entry, no band"
+    );
+    let start = plain["margin"].as_f64().unwrap() + plain["label_width"].as_f64().unwrap();
+    assert_eq!(
+        plain["hours"][0]["x"].as_f64(),
+        Some(start),
+        "the time axis starts at the label"
+    );
+
+    run_cli(&["moment", "coffee", "-D"], &db).unwrap();
+    run_cli(&["change", "mood", "happy", "-D"], &db).unwrap();
+    let layout = dayview_json(&db, &[]);
+    let band = layout["allday_width"].as_f64().expect("a band");
+    assert!(band > 0.0);
+    assert_eq!(
+        layout["hours"][0]["x"].as_f64(),
+        Some(start + band),
+        "the time axis starts after it"
+    );
+
+    let fields = layout["days"][0]["fields"].as_array().unwrap();
+    let marks = |name: &str| -> Vec<serde_json::Value> {
+        let field = fields.iter().find(|f| f["field"] == name).expect(name);
+        let lane =
+            field["cross_offset"].as_f64().unwrap() + field["cross_extent"].as_f64().unwrap() / 2.0;
+        let points = field["points"].as_array().unwrap().clone();
+        for p in points.iter().filter(|p| p["allday"] == true) {
+            assert_eq!(
+                p["cross_pos"].as_f64(),
+                Some(lane),
+                "{name}'s mark is at its field's height"
+            );
+            let (at, r) = (p["time_pos"].as_f64().unwrap(), p["r"].as_f64().unwrap());
+            assert!(
+                at + r <= 0.0 && at - r >= -band,
+                "{name}'s mark is inside the band: {at}"
+            );
+        }
+        points
+    };
+    // A moment's dot moves into the band; a change keeps its block and has
+    // its mark there too.
+    assert!(marks("coffee").iter().all(|p| p["allday"] == true));
+    assert_eq!(
+        marks("mood").iter().filter(|p| p["allday"] == true).count(),
+        1
+    );
+    assert!(marks("tea").iter().all(|p| p.get("allday").is_none()));
+
+    // The data layer, which the day strip draws its own labels beside, has
+    // no band: the marks stand before its picture, in `g.allday`, to lift.
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    run_cli(&["dayview", "--data-layer", "-o", &path], &db).unwrap();
+    let svg = std::fs::read_to_string(&path).unwrap();
+    let allday = &svg[svg.find(r#"<g class="allday""#).expect("an ALLDAY group")..];
+    assert!(allday.contains(r#"data-field="coffee""#) && allday.contains(r#"data-field="mood""#));
+    let on_axis = &svg[..svg.find(r#"<g class="allday""#).unwrap()];
+    assert!(
+        !on_axis.contains(r#"<circle class="point-bg" cx="0""#),
+        "no dot at midnight: {on_axis}"
+    );
+}

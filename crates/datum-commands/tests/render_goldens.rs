@@ -509,6 +509,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 glyph: None,
                 icon: false,
                 moment: false,
+                allday: false,
             }],
             icon: None,
             glyph_size: Default::default(),
@@ -692,6 +693,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 glyph: None,
                 icon: false,
                 moment: false,
+                allday: false,
             }],
             icon: None,
             glyph_size: Default::default(),
@@ -813,6 +815,7 @@ fn nowview_scene_at_instant() -> DayviewLayoutResult {
         glyph: None,
         icon: false,
         moment: false,
+        allday: false,
     };
     let block = |from: i64, to: i64, c: &str| DayviewBlock {
         start_ms: from,
