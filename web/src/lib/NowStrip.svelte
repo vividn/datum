@@ -21,6 +21,11 @@
 	time runs down the page, now at the strip's foot, and `prefix` naming its
 	copies of the stripes apart from collect's.
 -->
+<script lang="ts" module>
+	/** Each end's clip, by an id no other strip's takes. */
+	let ends = 0;
+</script>
+
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { LAYER_HEIGHT } from './panes.js';
@@ -49,6 +54,8 @@
 	/** How far either side of `origin` a block is laid, and how often `origin` is laid again. */
 	const SPAN = 600_000;
 	const REBASE = 60_000;
+	/** Past anything a lane draws, either way: an end's clip keeps all before its instant. */
+	const FAR = 1e6;
 
 	let live = $state(Date.now());
 	const origin = $derived(at ?? live);
@@ -71,32 +78,48 @@
 	);
 
 	const NS = 'http://www.w3.org/2000/svg';
-	/** A tap's mark: a dot, or a block whose fill null is the strip's ground. */
+	const put = <E extends Element>(el: E, attrs: Record<string, string | number | undefined>) => (Object.entries(attrs).forEach(([name, v]) => v !== undefined && el.setAttribute(name, String(v))), el);
+	/** A tap's mark: a dot, or a block. */
 	function tapMark(m: (typeof taps)[number]): SVGElement {
 		const el = document.createElementNS(NS, m.dot ? 'circle' : 'rect');
-		const set = (attrs: Record<string, string | number | undefined>) =>
-			Object.entries(attrs).forEach(([name, v]) => v !== undefined && el.setAttribute(name, String(v)));
 		if (m.dot) {
 			const a = m.aspect ?? 1;
 			const [cx, cy] = xy(m.x, (m.y + m.h / 2) * y);
-			set({ cx, cy, r: (m.h / 2) * y, transform: a === 1 ? undefined : `matrix(${a} 0 0 1 ${cx * (1 - a)} 0)` });
+			put(el, { cx, cy, r: (m.h / 2) * y, transform: a === 1 ? undefined : `matrix(${a} 0 0 1 ${cx * (1 - a)} 0)` });
 		} else {
 			const [x, ry] = xy(m.x, m.y * y);
 			const [w, h] = xy(m.w, m.h * y);
-			set({ x, y: ry, width: w, height: h });
+			put(el, { x, y: ry, width: w, height: h });
 		}
-		set({ class: m.fill === null ? 'pending ground' : 'pending', 'data-mark': m.field, fill: m.fill ?? undefined });
+		put(el, { class: 'pending', 'data-mark': m.field, fill: m.fill ?? undefined });
 		return el;
 	}
 
-	// The layer, and each tap's mark at the end of its field's lane in the stretch holding now, the last.
+	// The layer, and each tap's mark at the end of its field's lane in the stretch holding now, the last, a lane of
+	// its own over the layer where the layer has none. An end draws nothing: what its lane holds so far is clipped to
+	// before its instant, so a bar beneath shows through (da-kqloo, vividn, 2026-11-06: «it should wipe transparent instead»).
 	$effect(() => {
 		const root = layer;
 		if (!root) return;
 		root.replaceChildren(drawn.node);
 		const lanes = new Map([...root.querySelectorAll('g.strip-field[data-mark]')].map((g) => [g.getAttribute('data-mark'), g]));
-		const marks = taps.map((m) => (lanes.get(m.field) ?? root).appendChild(tapMark(m)));
-		return () => marks.forEach((el) => el.remove());
+		const lane = (field: string) => lanes.get(field) ?? lanes.set(field, root.appendChild(document.createElementNS(NS, 'g'))).get(field)!;
+		const undo = taps.map((m) => {
+			const into = lane(m.field);
+			if (m.fill !== null) {
+				const el = into.appendChild(tapMark(m));
+				return () => el.remove();
+			}
+			const clip = document.createElementNS(NS, 'clipPath');
+			clip.id = `${prefix}end-${++ends}`;
+			const [[x, ry], [w, h]] = [xy(-FAR, -FAR), xy(m.x + FAR, 2 * FAR)];
+			clip.append(put(document.createElementNS(NS, 'rect'), { x, y: ry, width: w, height: h }));
+			const before = put(document.createElementNS(NS, 'g'), { 'clip-path': `url(#${clip.id})` });
+			before.append(...into.childNodes);
+			into.append(clip, before);
+			return () => (clip.remove(), before.replaceWith(...before.childNodes));
+		});
+		return () => undo.reverse().forEach((f) => f());
 	});
 
 	$effect(() => {
@@ -163,9 +186,5 @@
 
 	.mirrored {
 		transform: scaleX(-1);
-	}
-
-	.now-strip :global(.ground) {
-		fill: var(--ground);
 	}
 </style>

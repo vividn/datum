@@ -63,7 +63,7 @@ const drawn = (page, field, strip = `${ROOM} svg.now-strip`) =>
 			.map((el) => {
 				const r = el.getBoundingClientRect();
 				const [left, right] = [Math.max(r.left, box.left) - box.left, Math.min(r.right, box.right) - box.left];
-				return { kind: el.localName, ground: el.classList.contains('ground'), pending: el.classList.contains('pending'), fill: getComputedStyle(el).fill, left, right, mid: (r.left + r.right) / 2 - box.left, of: box.width };
+				return { kind: el.localName, pending: el.classList.contains('pending'), fill: getComputedStyle(el).fill, left, right, mid: (r.left + r.right) / 2 - box.left, of: box.width };
 			})
 			.filter((m) => m.right >= m.left);
 	}, field);
@@ -485,7 +485,7 @@ describe('the now strip is the last half second', () => {
 				const VIEW_STRIP = `${BAR} > [data-strip] svg.now-strip`;
 				const swept = (want, slack = 3) =>
 					until(
-						async () => (await drawn(page, 'mood', VIEW_STRIP)).filter((m) => m.kind === 'rect' && m.pending && !m.ground),
+						async () => (await drawn(page, 'mood', VIEW_STRIP)).filter((m) => m.kind === 'rect' && m.pending),
 						(marks) => marks.some((m) => atNow(m) && Math.abs(m.right - m.left - want) <= slack)
 					);
 				// The files held, the change waits and the view stays: its sweep is drawn on the view's strip at the tap.
@@ -515,13 +515,15 @@ describe('the now strip is the last half second', () => {
 			const fill = await fillOf(page, 'work');
 			const whole = (marks) => marks.some((m) => m.fill === fill && m.left <= 0.5 && m.right >= m.of - 0.5);
 			await until(() => drawn(page, 'work'), whole);
-			// The database's files held, so the end waits: its ground is drawn at the tap, before any answer.
+			// The database's files held, so the end waits: its sweep is drawn at the tap, before any answer.
 			await holdFiles(page);
 			await page.locator(`${ROOM} [data-field="work"]`).click();
-			const atTap = await drawn(page, 'work');
+			// An end's sweep is its lane clipped to before the tap (NowStrip.svelte, da-kqloo).
+			const wiped = () => page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => svg.querySelector('g[data-mark="work"] > g[clip-path]') !== null);
+			const atTap = await wiped();
 			await release(page);
-			assert.ok(atTap.some((m) => m.ground), 'no sweep at the tap');
-			await until(() => drawn(page, 'work'), (marks) => !marks.some((m) => m.ground) && whole(marks));
+			assert.ok(atTap, 'no sweep at the tap');
+			await until(async () => !(await wiped()) && whole(await drawn(page, 'work')), Boolean);
 			assert.equal((await app.runLine('get work::state')).stdout.trim(), 'true', 'the end was refused');
 		}, AT_REST);
 	});

@@ -178,6 +178,84 @@ describe('the now section is collect’s now strip', () => {
 	});
 });
 
+// vividn, 2026-11-06 (da-kqloo): «when turning a bar(on/off,change) off, that is drawn over another bar, the wipe in
+// nowview and now section of collect widget make the bar drawn black, which is then visible on the bar beneath it. it
+// should wipe transparent instead».
+describe('an end wipes its own bar transparent', () => {
+	/** `over` drawn across the middle of `under`, both on. */
+	const STACKED = [
+		at('under', 'start', 0.5, { height: 0.3, z_index: 1, color: '#2050e0' }),
+		at('over', 'start', 0.55, { height: 0.1, z_index: 2, color: '#e03020' }),
+		'start under',
+		'start over'
+	];
+
+	/**
+	 * What each strip paints three quarters of the way to now's edge, as `[r, g, b]` read from a screenshot: in
+	 * `over`'s band, and in `under`'s alone.
+	 */
+	async function painted(page) {
+		const points = await page.evaluate(
+			(strips) =>
+				Object.entries(strips).map(([name, [selector, of]]) => {
+					const svg = document.querySelector(selector);
+					const box = document.querySelector(of).getBoundingClientRect();
+					const band = (field) => svg.querySelector(`g[data-mark="${field}"] rect.strip-block`).getBoundingClientRect();
+					const [o, u] = [band('over'), band('under')];
+					const x = box.left + 0.75 * box.width;
+					return { name, over: [x, (o.top + o.bottom) / 2], under: [x, u.top + 0.85 * u.height] };
+				}),
+			STRIPS
+		);
+		const png = await page.screenshot();
+		return page.evaluate(
+			async ({ b64, points }) => {
+				const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+				const ctx = new OffscreenCanvas(img.width, img.height).getContext('2d');
+				ctx.drawImage(img, 0, 0);
+				const scale = img.width / innerWidth;
+				const at = ([x, y]) => [...ctx.getImageData(Math.round(x * scale), Math.round(y * scale), 1, 1).data.slice(0, 3)];
+				return Object.fromEntries(points.map(({ name, over, under }) => [name, { over: at(over), under: at(under) }]));
+			},
+			{ b64: png.toString('base64'), points }
+		);
+	}
+	const apart = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+	/** Each strip paints `under`'s colour in `over`'s band, or, `shows` false, does not. */
+	const through = async (page, when, shows = true) => {
+		for (const [name, { over, under }] of Object.entries(await painted(page)))
+			assert.equal(apart(over, under) <= 12, shows, `${when}, the ${name} strip paints ${over} in over's band, under's being ${under}`);
+	};
+
+	test('in both strips, during the wipe and after it, the bar beneath shows where the ended bar was', async () => {
+		await withApp(
+			async (app) => {
+				for (const line of STACKED) {
+					assert.equal((await app.runLine(line)).code, 0, line);
+					await app.clock.forward(60_000);
+				}
+				await app.reload();
+				const { page } = app;
+				await page.locator(STRIPS.nowview[0]).waitFor({ state: 'attached' });
+				await page.locator(`${COLLECT} [data-field="over"]`).first().waitFor();
+				await app.idle();
+				await through(page, 'before the end', false);
+				// The files held, the end waits: what is drawn is the tap's own.
+				await holdFiles(page);
+				await page.locator(`${COLLECT} [data-field="over"]`).first().click();
+				await app.clock.forward(250);
+				await through(page, 'halfway through the wipe');
+				await app.clock.forward(500);
+				await through(page, 'the wipe past');
+				await release(page);
+				await until(async () => (await app.runLine('get over::state')).stdout.trim(), (s) => s === 'false');
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: todayAt(15), desk: desk(), viewport: { width: 1000, height: 800 } }
+		);
+	});
+});
+
 describe('a dot at the newest instant of the history', () => {
 	/** Log `line` on the bar, and wait for `field`'s dot in the history. */
 	async function log(app, line, field) {
