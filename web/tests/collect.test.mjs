@@ -8,12 +8,14 @@
 // `time −1m −5m · dur 1m 5m`, summing into pills, `time` or `dur` opening its
 // options. A tap opens a field: back, its name and chosen state on the first
 // row; a switch field's states, the first of its spec in the middle; its keys
-// and `+ data` at the bottom. Every pill it makes is on the input bar too.
+// and `+ data` in a drawer on the far edge (da-igqs2), closed unless a key is
+// required or it is dragged open. Every pill it makes is on the input bar too.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
 import { choiceLines, pickOption } from './support/layout.mjs';
+import { drag } from './support/press.mjs';
 
 before(startApp);
 after(stopApp);
@@ -21,6 +23,7 @@ after(stopApp);
 const WIDGET = 'section.pane[data-title="collect"]';
 const VIEW = `${WIDGET} .bar .collect`;
 const BAR_PILLS = '.prompt-bar .pill';
+const DRAWER = `${WIDGET} [data-drawer]`;
 
 const SEED = [
 	'setup mood --verb switch --states good,bad,meh -k why= -k with=',
@@ -100,7 +103,7 @@ describe('collect', () => {
 		});
 	});
 
-	test('a switch field tapped: the time row, its states with the first in the middle, its keys and + data at the bottom', async () => {
+	test('a switch field tapped: back over its states with the first in the middle, its keys and + data in a closed drawer on the right a drag opens', async () => {
 		await collect(async ({ page }) => {
 			await page.locator(`${VIEW} [data-field="mood"]`).click();
 			await page.locator(`${VIEW} [data-state="good"]`).waitFor();
@@ -111,11 +114,26 @@ describe('collect', () => {
 			assert.ok(Math.abs(room.x - good.x) <= 2 && Math.abs(room.y - good.y) <= 2, `good at ${JSON.stringify(good)}, the middle at ${JSON.stringify(room)}`);
 
 			const tops = await page.locator(VIEW).evaluate((view) =>
-				Object.fromEntries(['.head', '.room', '[data-data-row]'].map((s) => [s, view.querySelector(s).getBoundingClientRect().top]))
+				Object.fromEntries(['.head', '.room'].map((s) => [s, view.querySelector(s).getBoundingClientRect().top]))
 			);
-			// Back above the states, the keys below.
-			assert.ok(tops['.head'] < tops['.room'] && tops['.room'] < tops['[data-data-row]'], JSON.stringify(tops));
-			assert.deepEqual(await page.locator(`${VIEW} [data-data-row] button`).allInnerTexts(), ['why=', 'with=', '+ data']);
+			// Back above the states, and no keys of the view's own.
+			assert.ok(tops['.head'] < tops['.room'], JSON.stringify(tops));
+			assert.equal(await page.locator(`${VIEW} [data-key]`).count(), 0);
+
+			// mood's keys are optional: the drawer is closed, its handle on the right edge, its keys out of view.
+			assert.equal(await page.locator(DRAWER).getAttribute('data-drawer'), 'closed');
+			const [box, handle] = await Promise.all([page.locator(VIEW).boundingBox(), page.locator(`${DRAWER} [data-drawer-handle]`).boundingBox()]);
+			assert.ok(Math.abs(handle.x + handle.width - (box.x + box.width)) <= 2, JSON.stringify({ box, handle }));
+			assert.ok((await page.locator(`${DRAWER} [data-key="why"]`).boundingBox()).x >= box.x + box.width - 1, 'a closed drawer\'s keys are past the edge');
+			// A drag out of the edge opens it.
+			const from = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
+			await drag(page, from, { x: from.x - 200, y: from.y });
+			await page.locator(`${DRAWER}[data-drawer="open"]`).waitFor();
+			// Its swing done: the drawer no longer moved off the edge.
+			await page.waitForFunction((s) => new DOMMatrix(getComputedStyle(document.querySelector(s)).transform).m41 === 0, DRAWER);
+			assert.deepEqual(await page.locator(`${DRAWER} .panel button`).allInnerTexts(), ['why=', 'with=', '+ data']);
+			const why = await page.locator(`${DRAWER} [data-key="why"]`).boundingBox();
+			assert.ok(why.x >= box.x && why.x + why.width <= box.x + box.width + 1, JSON.stringify({ box, why }));
 			assert.deepEqual(await barPills(page), ['field:mood'], 'the field is a pill on the bar');
 
 			// mood is in `bad`: its chip says so with the CLI's yellow `!`.
@@ -125,8 +143,30 @@ describe('collect', () => {
 			);
 
 			// A key's chip writes `key=` on the line.
-			await page.locator(`${VIEW} [data-key="why"]`).click();
+			await page.locator(`${DRAWER} [data-key="why"]`).click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input')?.value === 'why=');
+		});
+	});
+
+	test('a field with a required key opens with its drawer open, and a drag back closes it', async () => {
+		await collect(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['setup', 'body', '--verb', 'switch', '--states', 'sit,stand', '-k', 'how', '-k', 'note='])).code, 0);
+			await app.redraw();
+			await page.locator(`${VIEW} [data-field="body"]`).click();
+			await page.locator(`${DRAWER}[data-drawer="open"]`).waitFor();
+			assert.deepEqual(await page.locator(`${DRAWER} .panel button`).allInnerTexts(), ['how=', 'note=', '+ data']);
+			assert.deepEqual(await page.locator(`${DRAWER} .key.required`).allInnerTexts(), ['how=']);
+			const handle = await page.locator(`${DRAWER} [data-drawer-handle]`).boundingBox();
+			const from = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
+			await drag(page, from, { x: from.x + 200, y: from.y });
+			await page.locator(`${DRAWER}[data-drawer="closed"]`).waitFor();
+			// Back, and mood, whose keys are optional, opens with it closed.
+			await page.locator(`${VIEW} [data-back]`).click();
+			await page.locator(`${VIEW} [data-field="mood"]`).click();
+			await page.locator(`${VIEW} [data-open-field="mood"]`).waitFor();
+			await page.waitForTimeout(100);
+			assert.equal(await page.locator(DRAWER).getAttribute('data-drawer'), 'closed');
 		});
 	});
 
@@ -329,7 +369,7 @@ describe('collect', () => {
 			await page.locator(`${VIEW} [data-open-field="coffee"]`).waitFor();
 			assert.equal(await page.locator(`${VIEW} [data-state]`).count(), 0);
 			assert.deepEqual(await page.locator(`${VIEW} .top button`).allInnerTexts(), ['back']);
-			assert.deepEqual(await page.locator(`${VIEW} [data-data-row] button`).allInnerTexts(), ['+ data']);
+			assert.deepEqual(await page.locator(`${DRAWER} .panel button`).allInnerTexts(), ['+ data']);
 			assert.match(await page.locator(`${VIEW} .head`).innerText(), /back\s*coffee/);
 			// A moment has no length to give: the dur half is off beside it.
 			for (const at of ['[data-part="dur"]', '[data-longer="1"]', '[data-longer="5"]']) assert.ok(await page.locator(`${WHEN} ${at}`).isDisabled(), at);

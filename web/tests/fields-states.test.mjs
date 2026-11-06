@@ -55,7 +55,7 @@ describe('a state field fills the widget with its states', () => {
 	const bar = (page) => words(page, 'section.pane[data-title="collect"] .bar');
 	/** The time and duration section's buttons, after the fields in the Tab order (da-us1n1). */
 	const WHEN = ['time', '−1m', '−5m', 'dur', '1m', '5m'];
-	/** The buttons of a field's view: back, its states, its keys; its time is the section's (da-us1n1). */
+	/** The buttons of a field's view: back, its states; its time is the section's (da-us1n1), its keys the drawer's (da-igqs2). */
 	const ring = (page) => words(page, '.bar .collect.open');
 	const closed = (page) => page.locator('.bar .collect.open').waitFor({ state: 'detached' });
 
@@ -69,7 +69,7 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			assert.deepEqual(await ring(page), ['back', 'calm', 'happy', '+ data']);
+			assert.deepEqual(await ring(page), ['back', 'calm', 'happy']);
 			assert.equal(await page.locator('.bar [data-field="mood"]').count(), 0, 'the field is still drawn under its states');
 
 			// A state logs at once (vividn, 16:07: one click).
@@ -182,8 +182,8 @@ describe('a state field fills the widget with its states', () => {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			// The view, then the time and duration section after it (da-us1n1).
-			assert.deepEqual(order, ['back', 'calm', 'happy', '+ data', 'time']);
+			// The view, the closed drawer's handle (da-igqs2), then the time and duration section (da-us1n1).
+			assert.deepEqual(order, ['back', 'calm', 'happy', 'data', 'time']);
 
 			await page.keyboard.press('Escape');
 			await closed(page);

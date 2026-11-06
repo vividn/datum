@@ -48,8 +48,10 @@
 	the animation right after changing states»), top to bottom with no labels —
 	‹ back and the field; a switch field's STATES, the first of its spec in the middle and
 	the rest ring by ring, the one it is in marked with the CLI's yellow `!`
-	and off left to the commands; and its KEYS at the bottom, a tap putting
-	`key=` on the line, with `+ data` taking the caret there. Its time and
+	and off left to the commands. Its KEYS are a drawer on the far edge,
+	opposite the strip (CollectDrawer.svelte, da-igqs2), closed unless the
+	field has a required key or it is dragged open: a tap putting `key=` on
+	the line, with `+ data` taking the caret there. Its time and
 	length are the TIME AND DURATION SECTION's (CollectWhen.svelte, da-us1n1),
 	a column between the now strip and the rows, at rest and beside a field's
 	view alike: `time −1m −5m · dur 1m 5m`, summing into the page's selection
@@ -119,6 +121,7 @@
 <script lang="ts">
 	import { flushSync, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
+	import CollectDrawer from './CollectDrawer.svelte';
 	import CollectWhen, { MOMENT_ID, setMoment } from './CollectWhen.svelte';
 	import { CLICK_SLOP } from './inspect.js';
 	import NowStrip from './NowStrip.svelte';
@@ -1185,7 +1188,7 @@
 		{@const states = here ? statesOf(here.shape).filter((s) => s !== 'false') : []}
 		<!-- The fields' place (da-w6437): at rest the fields in their rows
 		     (da-lw7ue); a field tapped, its name at the top, its states in the
-		     middle and its keys at the bottom, the fields hidden under it. -->
+		     middle, its keys in the drawer, the fields hidden under it. -->
 		{#if here && resting}{@render present(boxH)}{/if}
 		<div class="collect" class:open={!!here} style:left={here && resting && side === 'left' ? `${edge}px` : null} style:right={here && resting && side === 'right' ? `${edge}px` : null}>
 			{#if here}
@@ -1282,15 +1285,11 @@
 				</div>
 				{/if}
 			</div>
-			{#if here}
-				<div class="data" data-data-row>
-					{#each here.keys as key (key.name)}
-						<button class="key" class:required={key.required} data-key={key.name} {disabled} onclick={() => putKey(key.name)}>{key.name}=</button>
-					{/each}
-					<button class="nav more-data" data-more-data {disabled} onclick={() => focusLine(true)}>+ data</button>
-				</div>
-			{/if}
 		</div>
+		<!-- Its data, a drawer on the far edge (da-igqs2): one per field, so it opens again for a field with a required key. -->
+		{#if here}
+			{#key here.field}<CollectDrawer keys={here.keys} {disabled} edge={side === 'right' ? 'left' : 'right'} onkey={putKey} onmore={() => focusLine(true)} />{/key}
+		{/if}
 		<!-- After the rows and the view, so a field comes first in the Tab order; it stands between them and the strip. -->
 		{#if resting}<CollectWhen {disabled} {side} offset={strip} noLength={here?.shape.kind === 'moment'} bind:width={whenW} />{/if}
 	{/if}
@@ -1532,8 +1531,7 @@
 	}
 
 	/* The fields' place (da-w6437): a field's view top to bottom — back and
-	   its name, its states in the room, its keys — or at rest the room
-	   alone. */
+	   its name, its states in the room — or at rest the room alone. */
 	.collect {
 		position: absolute;
 		inset: 0;
@@ -1581,18 +1579,11 @@
 		}
 	}
 
-	.head,
-	.data {
+	.head {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		flex-wrap: wrap;
-	}
-
-	.data {
-		justify-content: center;
-		padding-top: 0.4rem;
-		border-top: 1px dashed var(--rule);
 	}
 
 	.head .name,
@@ -1798,25 +1789,6 @@
 		min-height: 2.4rem;
 		border-radius: 999px;
 		padding: 0;
-	}
-
-	.key {
-		background: none;
-		border: 1px dashed var(--rule);
-		border-radius: 999px;
-		padding: 0.25rem 0.6rem;
-		color: var(--ink);
-		font: inherit;
-		font-size: 0.8rem;
-		cursor: pointer;
-	}
-
-	.key.required {
-		border-style: solid;
-	}
-
-	.more-data {
-		border-radius: 999px;
 	}
 
 	/* The state whose run is pending or failed: ringed. */

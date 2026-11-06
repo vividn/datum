@@ -728,7 +728,7 @@ A hold, a right click or a shift click does what a tap does in the other mode. W
 An open field shows its name, then its states, its time and length being the section's beside it (a moment field has no length to give):
 
 - A state logs the change at once (in 2-click mode, it is chosen, and the commands' larger button logs it).
-- **key=** puts that key on the bar for you to type; **+ data** goes to the bar.
+- Its data is a drawer on the far edge, away from the strip, closed unless the field has a key you must give: tap or drag its **data** handle to open or close it. In it, **key=** puts that key on the bar for you to type; **+ data** goes to the bar.
 - **‹ back**, or Escape, closes it, and takes away the pills it made.
 
 ## Its options
