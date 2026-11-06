@@ -822,8 +822,8 @@ describe('in the app', () => {
 
 	// da-h119q: vividn, «when tracking something new something users
 	// immediately want to do is to add in keys they care about». So Basics
-	// asks for them, in place of the field-level unit nothing read — a line
-	// that goes to the Data tab (da-i9upr) — and a field being declared
+	// asks for them, in place of the field-level unit nothing read — the Data
+	// tab, its keys over its button (da-i9upr, da-eh4dl) — and a field being declared
 	// carries them in its one `setup F --track` (da-2pbvd).
 	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its one `setup F --track`', async () => {
 		await shared.solo(async (app) => {
@@ -832,8 +832,8 @@ describe('in the app', () => {
 			await fill(page, 'coffee', 'occur');
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a new field');
 			assert.equal(await page.locator(`${MODAL} [data-panel="basics"] ul.data`).count(), 0, 'the keys are on Basics');
-			assert.ok((await page.locator(`${MODAL} .data-line .ask`).innerText()).trim(), 'Basics asks nothing about data');
-			await page.locator(`${MODAL} button[data-to-tab="data"]`).click();
+			assert.equal((await page.locator(`${MODAL} [data-summary="data"]`).innerText()).trim(), 'log extra data with each entry');
+			await page.locator(`${MODAL} [data-tab="data"]`).click();
 			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), 'data');
 			await page.locator(`${MODAL} ul.data + button.add`).click();
 			const row = page.locator(`${MODAL} ul.data li.key`).last();
@@ -854,14 +854,14 @@ describe('in the app', () => {
 			const shown = JSON.parse((await app.run(['setup', 'coffee', '--json'])).stdout);
 			assert.deepEqual(shown.keys, [{ name: 'cups', kind: 'default', value: '2', in_slug: false }]);
 
-			// Saved, Basics names its keys, and there is still no unit; and so it opens again.
+			// Saved, the Data tab's button names its keys, and there is still no unit; and so it opens again.
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.match(await page.locator(`${MODAL} .data-line .ask`).innerText(), /\bcups\b/);
+			assert.equal((await page.locator(`${MODAL} [data-summary="data"]`).innerText()).trim(), 'cups');
 			await leave(page);
 			const { saved: shut } = await openField(page, 'coffee');
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
-			await page.locator(`${MODAL} button[data-to-tab="data"]`).click();
+			await page.locator(`${MODAL} [data-tab="data"]`).click();
 			assert.deepEqual(await page.locator(`${MODAL} ul.data input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
 			await leaveField(page);
 			assert.equal(await shut, null);

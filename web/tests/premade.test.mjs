@@ -72,7 +72,7 @@ describe('a first visit', () => {
 			await until(() => fieldNamed(page), (v) => v === 'medication');
 			assert.equal(await typing(page), false, 'the example opened the keyboard');
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'occur');
-			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
+			await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
 			assert.deepEqual(await keyRows(page), [['-k', 'name', 'false'], ['-k', 'dose', 'true']]);
 			// Setup itself offers no examples.
 			assert.equal(await page.locator(`${FIELD_FORM} [data-examples], ${FIELD_FORM} [data-example]`).count(), 0);
@@ -93,7 +93,7 @@ describe('a first visit', () => {
 			await page.locator(`${PREMADE} [data-example="weight"] [data-choice="kg"]`).click();
 			await until(() => front(page), (name) => name === 'setup');
 			await until(() => fieldNamed(page), (v) => v === 'weight');
-			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
+			await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
 			assert.deepEqual(await keyRows(page), [['-k', 'kg', 'true']]);
 
 			await rootTab(page, 'premade').click();
@@ -200,7 +200,7 @@ describe('each example', () => {
 				await until(() => fieldNamed(page), (v) => v === example.field);
 				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
 				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(example.states ?? {}));
-				if (example.verb !== 'add') await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
+				if (example.verb !== 'add') await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
 				assert.deepEqual(await keyRows(page), rowsOf(example.keys));
 				await app.idle();
 				assert.deepEqual(await app.allEntries(), []);

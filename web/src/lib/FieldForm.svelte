@@ -36,7 +36,8 @@
 	tracking» (`track F`), each handed up as `run` and leaving the form open.
 
 	Every field, a new one too, has the three tabs — basics · data · aliases —
-	none of them required (da-i9upr), their bar under the panel and over the
+	none of them required (da-i9upr), but a record's data is on basics, so it
+	has no data tab (da-eh4dl), their bar under the panel and over the
 	buttons (da-nmhf2), changed by a tap or the arrow keys and never by a
 	swipe (da-ooflv), vividn, 2026-10-28: «bring the data and aliases tabs
 	back on the setup widget, but no swipe action between them»; a swipe
@@ -44,8 +45,11 @@
 	swipe as they did with no tabs (da-4t0yn). Basics shows a switch's states,
 	off first and disabled (`never_false`) only once there is another, and
 	where its lane sits in the day (`Placement.svelte`), its entries drawn
-	there as the form holds them (da-srrqd); a line that goes to data, or on
-	a card the data rows themselves. Its colour and the
+	there as the form holds them (da-srrqd), and on a record the data rows
+	themselves. Over each tab's button but the open one's is what it holds
+	(da-eh4dl, vividn, 2026-11-05): basics its kind, color and size, data its
+	keys and aliases its aliases, five and «+n more», which a press opens into
+	the tab, not under `prefers-reduced-motion`. Its color and the
 	SYMBOL its dots draw (da-ogyxa) stand on one line, the symbol in the
 	colour, each a popup (da-rpfws); the symbol is a character or an .svg
 	(the spec's `icon`); a state is told apart by its colour alone, its own
@@ -76,6 +80,7 @@
 -->
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import { cubicOut } from 'svelte/easing';
 	import { act } from './act.js';
 	import DataKeys from './DataKeys.svelte';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
@@ -172,10 +177,15 @@
 	let icon = $state(opening?.icon ?? '');
 	/** The field a bare state names an entry of (`state_lookup_field`), or none. */
 	let lookup = $state(opening?.state_lookup_field ?? '');
-	const TABS = ['basics', 'data', 'aliases'] as const;
-	let tab: (typeof TABS)[number] = $state('basics');
+	type Tab = 'basics' | 'data' | 'aliases';
+	let tab: Tab = $state('basics');
 	let bar: HTMLElement | undefined = $state();
 	if (opening) verb = opening.verb;
+	// A record's data is on basics: it has no data tab (da-eh4dl).
+	const TABS: Tab[] = $derived(verb === 'add' ? ['basics', 'aliases'] : ['basics', 'data', 'aliases']);
+	$effect.pre(() => {
+		if (!TABS.includes(tab)) tab = 'basics';
+	});
 
 	// What the name would do if it were submitted, before the press rather
 	// than after it: `my coffee` is what a person naturally types and the
@@ -213,6 +223,53 @@
 	const auto = $derived(field.trim() ? defaultColor(field.trim()) : 'transparent');
 	const named = $derived(states.filter((s) => s.name.trim()));
 	const keyed = $derived(keys.map((k) => k.name.trim()).filter(Boolean));
+
+	// ---- what each tab holds, over its button while another is open (da-eh4dl) ----
+	/** Five names, and how many more. */
+	const five = (names: string[]) => names.slice(0, 5).join(', ') + (names.length > 5 ? ` +${names.length - 5} more` : '');
+	const kind = $derived(VERBS.find((v) => v.verb === verb));
+	const size = $derived(
+		verb === 'add'
+			? ''
+			: verb === 'occur'
+				? `dot ×${(place.symbol_scale ?? 1).toFixed(2)}`
+				: place.relative_to
+					? `×${place.anchor_size_ratio ?? 1} of ${place.relative_to}`
+					: place.height !== undefined
+						? `h ${place.height.toFixed(2)}`
+						: ''
+	);
+	const aliasNames = $derived(aliases.map((a) => a.state.trim()).filter(Boolean));
+	const summary = $derived({
+		data: keyed.length ? five(keyed) : 'log extra data with each entry',
+		aliases: aliasNames.length ? five(aliasNames) : autoalias ? 'made from the kind and states' : 'none'
+	});
+	const summaries: Record<Tab, HTMLElement | undefined> = $state({ basics: undefined, data: undefined, aliases: undefined });
+	/** Where the tab being opened unfolds from: its summary, as it was when pressed. */
+	let unfoldFrom: DOMRect | null = null;
+	const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	/** Open a tab, its summary unfolding into it. */
+	function choose(name: Tab) {
+		if (name === tab) return;
+		unfoldFrom = summaries[name]?.getBoundingClientRect() ?? null;
+		tab = name;
+	}
+
+	/** The panel grows out of the summary pressed into its own place (FLIP), and at once under reduced motion. */
+	function unfold(node: HTMLElement) {
+		const from = unfoldFrom;
+		unfoldFrom = null;
+		if (!from || from.width === 0 || still()) return { duration: 0 };
+		const to = node.getBoundingClientRect();
+		const [dx, dy, sx, sy] = [from.left - to.left, from.top - to.top, from.width / to.width, from.height / (to.height || 1)];
+		return {
+			duration: 200,
+			easing: cubicOut,
+			css: (t: number, u: number) =>
+				`transform-origin: 0 0; transform: translate(${u * dx}px, ${u * dy}px) scale(${t + u * sx}, ${t + u * sy}); opacity: ${0.3 + 0.7 * t}`
+		};
+	}
 
 	// A new field opened on an example is that example, every tab of it; nothing is written until it is saved.
 	const given = untrack(() => (opening ? null : example));
@@ -274,7 +331,7 @@
 		const to = i + ({ ArrowLeft: -1, ArrowRight: 1 }[e.key] ?? 0);
 		if (to === i || to < 0 || to >= TABS.length) return;
 		e.preventDefault();
-		tab = TABS[to];
+		choose(TABS[to]);
 		await tick();
 		bar?.querySelectorAll<HTMLElement>('[role="tab"]')[to]?.focus();
 	}
@@ -378,7 +435,8 @@
 			<!-- The tab in front (da-ooflv), changed by a tap or the arrow keys in the bar under it and never by a swipe:
 			     vividn, 2026-10-28, «bring the data and aliases tabs back on the setup widget, but no swipe action between
 			     them». A swipe across the form is the pane's (PaneFrame.svelte), so the super tabs swipe as they did. -->
-			<div class="body" role="tabpanel" id="spec-panel-{tab}" aria-labelledby="spec-tab-{tab}" data-panel={tab}>
+			{#key tab}
+			<div class="body" role="tabpanel" id="spec-panel-{tab}" aria-labelledby="spec-tab-{tab}" data-panel={tab} in:unfold>
 				{#if tab === 'basics'}
 					<!-- vividn, 2026-10-19: «move description to the very top of the basics tab». -->
 					<label class="row">
@@ -481,16 +539,9 @@
 						<!-- vividn: «for card, embed the data widget directly on the basics»; the data tab shows the same rows. -->
 						<span class="label">data</span>
 						<DataKeys bind:keys card detail />
-					{:else}
-						<!-- vividn: «want to record extra data with each entry? [switch to data tab]». -->
-						<p class="row data-line">
-							<span class="label">data</span>
-							<span class="ask">{keyed.length ? `each entry records ${keyed.join(', ')}` : 'want to record extra data with each entry?'}</span>
-							<button type="button" class="to-data" data-to-tab="data" onclick={() => (tab = 'data')}>data tab</button>
-						</p>
 					{/if}
 				{:else if tab === 'data'}
-					<DataKeys bind:keys card={verb === 'add'} detail />
+					<DataKeys bind:keys detail />
 				{:else}
 					<label class="auto"
 						><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the kind and states</label
@@ -538,22 +589,39 @@
 					{/if}
 				{/if}
 			</div>
+			{/key}
 			{/if}
 		</div>
 
 		{#if !empty}
+		<!-- What each tab holds, over its button while another is open (da-eh4dl). -->
+		<div class="summaries" style:--n={TABS.length}>
+			{#each TABS as name (name)}
+				<p class="summary" id="spec-summary-{name}" data-summary={name} bind:this={summaries[name]}>
+					{#if name === tab}
+						<!-- The open tab says it in full above. -->
+					{:else if name === 'basics'}
+						<span class="mark" style:color={color || auto}>{symbol || kind?.glyph || '·'}</span>
+						{kind?.what ?? 'no kind yet'}{#if size}{' · '}{size}{/if}
+					{:else}
+						{summary[name]}
+					{/if}
+				</p>
+			{/each}
+		</div>
 		<!-- Under the panel, over the buttons (da-nmhf2). -->
-		<div class="tabs" role="tablist" bind:this={bar}>
+		<div class="tabs" role="tablist" bind:this={bar} style:--n={TABS.length}>
 			{#each TABS as name, i (name)}
 				<button
 					type="button"
 					role="tab"
 					id="spec-tab-{name}"
 					aria-controls="spec-panel-{name}"
+					aria-describedby={tab === name ? undefined : `spec-summary-${name}`}
 					data-tab={name}
 					aria-selected={tab === name}
 					tabindex={tab === name ? 0 : -1}
-					onclick={() => (tab = name)}
+					onclick={() => choose(name)}
 					onkeydown={(e) => onTabKey(e, i)}>{name}</button
 				>
 			{/each}
@@ -668,14 +736,14 @@
 	   out the rest, with next to no padding of its own, so the words fit
 	   a 320px screen (tests/track.test.mjs). */
 	.tabs {
-		display: flex;
+		display: grid;
+		grid-template-columns: repeat(var(--n), minmax(0, 1fr));
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		overflow: hidden;
 	}
 
 	.tabs button {
-		flex: 1 1 auto;
 		min-block-size: 28px;
 		padding-inline: 0.1rem;
 		background: var(--raised);
@@ -696,6 +764,28 @@
 	.tabs button[aria-selected='true'] {
 		color: var(--ink-bright);
 		border-block-start-color: var(--accent);
+	}
+
+	/* Each over its button, in the same columns, its last line on the bar. */
+	.summaries {
+		display: grid;
+		grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+		gap: 0.3rem;
+		margin-block-end: -0.3rem;
+	}
+
+	.summary {
+		align-self: end;
+		margin: 0;
+		padding-inline: 0.2rem;
+		color: var(--muted);
+		font-size: 0.65rem;
+		line-height: 1.25;
+		overflow-wrap: anywhere;
+	}
+
+	.summary .mark {
+		font-size: 0.85rem;
 	}
 
 	h2 {
@@ -1051,12 +1141,6 @@
 		margin: 0;
 	}
 
-	.ask {
-		flex: 1;
-		color: var(--muted);
-		font-size: 0.75rem;
-	}
-
 	.buttons {
 		display: flex;
 		flex-wrap: wrap;
@@ -1068,7 +1152,6 @@
 	.buttons button,
 	.track-something,
 	.status button,
-	.to-data,
 	.fix,
 	.remove,
 	.add {

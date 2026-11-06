@@ -399,14 +399,14 @@ describe('the field widget', () => {
 			assert.equal(await off.isDisabled(), false);
 			await off.click();
 			await drawn('calm with no off: one stretch', ({ blocks }) => blocks.length === 1 && blocks[0] === 'calm');
-			// The line names the keys and goes to the Data tab.
-			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
+			// The Data tab's button opens it.
+			await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
 			assert.equal(await page.locator(PANEL).getAttribute('data-panel'), 'data');
 			await page.locator(`${FIELD_FORM} [data-tab="basics"]`).click();
 
 			// A card has no time: no placement, so no sample, and the Data tab's rows, typed, on Basics.
 			await page.locator(`${FIELD_FORM} button[data-verb="add"]`).click();
-			for (const gone of ['.placement', '.data-line', '.states']) assert.equal(await at(gone).count(), 0, gone);
+			for (const gone of ['.placement', '[data-tab="data"]', '.states']) assert.equal(await page.locator(`${FIELD_FORM} ${gone}`).count(), 0, gone);
 			await at('ul.data + button.add').click();
 			assert.equal(await at('ul.data li.key select.type').count(), 1, 'not the Data tab\'s rows');
 
@@ -422,7 +422,7 @@ describe('the field widget', () => {
 
 	// da-ooflv, vividn, 2026-10-28: «let's bring the data and aliases tabs back on the setup widget, but no swipe action
 	// between them». A tap on a tab or an arrow key in its bar changes it; a swipe never does (fieldswipe.test.mjs).
-	test('basics, data and aliases are tabs, each shown by a tap or the arrow keys; a card\'s data is on basics and on data', async () => {
+	test('basics, data and aliases are tabs, each shown by a tap or the arrow keys; a record has no data tab, its data on basics', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
@@ -448,14 +448,80 @@ describe('the field widget', () => {
 				assert.equal(await shown(), name, key);
 				assert.equal(await page.evaluate(() => document.activeElement?.dataset.tab), name, `${key}: the focus`);
 			}
-			// A card: its rows on basics, where another shape's line to data stands, and on data.
+			// A record, opened on data: its rows are on basics, and there is no data tab (da-eh4dl).
+			await tab('data').click();
 			await page.locator(`${FIELD_FORM} button[data-verb="add"]`).click();
-			for (const name of ['basics', 'data']) {
-				await tab(name).click();
-				assert.equal(await page.locator(`${PANEL} ul.data + button.add`).count(), 1, `a card's data is not on ${name}`);
-			}
+			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), ['basics', 'aliases']);
+			assert.equal(await shown(), 'basics');
+			assert.equal(await page.locator(`${PANEL} ul.data + button.add`).count(), 1, "a record's data is not on basics");
 			await leaveField(page);
 			assert.equal(await saved, null);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-eh4dl, vividn, 2026-11-05: over the data and aliases buttons what each tab holds, five and «+n more», which a
+	// press opens into the tab, not under `prefers-reduced-motion`; off basics, its kind and color; a record has no data tab.
+	test('the data and aliases buttons say what their tabs hold and unfold into them; off basics, its kind and color; a record has no data tab', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const key = { required: false, value_type: 'any', in_slug: false, default: null };
+			const withKeys = async (field, names) => {
+				const spec = JSON.parse((await app.run(['setup', field, '--json'])).stdout);
+				const r = await app.run(['setup', field, '--from-json', JSON.stringify({ ...spec, subfields: Object.fromEntries(names.map((n) => [n, key])) })]);
+				assert.equal(r.code, 0, r.stderr);
+			};
+			await app.run(['track', 'sleep', '--verb', 'start', '--color', '#3366cc']);
+			await withKeys('sleep', ['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			await app.run(['track', 'book', '--verb', 'add']);
+			await withKeys('book', ['title']);
+			const summary = (name) => page.locator(`${FIELD_FORM} [data-summary="${name}"]`);
+			const said = async (name) => (await summary(name).innerText()).trim();
+			const tab = (name) => page.locator(`${FIELD_FORM} [role="tab"][data-tab="${name}"]`);
+			const tabs = () => page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab));
+			const open = async (field) => {
+				await openField(page, field);
+				await until(() => page.locator(`${FIELD_FORM} h2`).innerText(), (t) => t.trim() === field);
+			};
+
+			await open('sleep');
+			assert.equal(await said('data'), 'a, b, c, d, e +2 more');
+			assert.equal(await said('aliases'), 'sleep, sleepe');
+			assert.equal(await said('basics'), '', 'the open tab says it in full');
+			assert.equal(await page.getByText('want to record extra data').count(), 0);
+			for (const name of ['data', 'aliases']) {
+				await tab(name).click();
+				assert.equal(await page.locator(PANEL).getAttribute('data-panel'), name);
+				assert.equal(await said(name), '');
+				assert.match(await said('basics'), /^█\s*on\/off/);
+				assert.equal(await summary('basics').locator('.mark').evaluate((m) => getComputedStyle(m).color), rgb('#3366cc'));
+			}
+
+			// The press unfolds the summary into the tab: the panel starts at the summary's box.
+			const unfolding = () =>
+				page.locator(PANEL).evaluate((p) => p.getAnimations().map((a) => a.effect.getKeyframes()[0]?.transform ?? 'none'));
+			await tab('basics').click();
+			await tab('data').click();
+			const [from] = await unfolding();
+			assert.match(from ?? '', /translate\(.*scale\(/, 'no unfolding');
+			await page.emulateMedia({ reducedMotion: 'reduce' });
+			await tab('basics').click();
+			assert.deepEqual(await unfolding(), [], 'it moved under reduced motion');
+			await page.emulateMedia({ reducedMotion: null });
+
+			await leaveField(page);
+			await open('tea');
+			assert.equal(await said('data'), 'log extra data with each entry');
+
+			// A record: basics and aliases, its keys on basics.
+			await leaveField(page);
+			await open('book');
+			assert.deepEqual(await tabs(), ['basics', 'aliases']);
+			assert.deepEqual(await page.locator(`${PANEL} ul.data input.name`).evaluateAll((all) => all.map((i) => i.value)), ['title']);
+			await tab('aliases').click();
+			assert.match(await said('basics'), /^¢\s*record/);
+			await leaveField(page);
 			assert.deepEqual(app.errors, []);
 		});
 	});
