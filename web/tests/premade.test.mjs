@@ -82,6 +82,21 @@ describe('a first visit', () => {
 		}, { ...PHONE, home: null });
 	});
 
+	test('steps is listed under movement, and a tap opens setup with the all-day kind chosen', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await toPremade(page);
+			assert.equal(await page.locator(`${PREMADE} section[data-theme="movement"] [data-example="steps"]`).count(), 1);
+			await card(page, 'steps').click();
+			await until(() => front(page), (name) => name === 'setup');
+			await until(() => fieldNamed(page), (v) => v === 'steps');
+			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'allday');
+			await app.idle();
+			assert.deepEqual(await app.allEntries(), []);
+			assert.deepEqual(app.errors, []);
+		}, { ...DESKTOP, home: null, desk: null });
+	});
+
 	test("weight's lbs or kg names its key, and an example already a field says «set up» and opens it", async () => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -132,7 +147,7 @@ test('the chores kit button shows what the kit brings; cancel installs nothing, 
 	}, { ...DESKTOP, home: null, desk: null });
 });
 
-/** A line the bar logs each example with, once it is saved, and the data that line stores. */
+/** A line the bar logs each example with, once it is saved, the data that line stores, and the state where it stores one. */
 const LOGGED = {
 	sleep: ['sleep', null],
 	weight: ['weight 160', { lbs: 160 }],
@@ -151,6 +166,7 @@ const LOGGED = {
 	energy: ['energy 7', { level: 7 }],
 	run: ['run 5', { distanceKm: 5 }],
 	workout: ['workout swim', null],
+	steps: ['steps 8000', null, 8000],
 	work: ['work', null],
 	project: ['project datum', null],
 	meeting: ['meeting', null],
@@ -228,13 +244,15 @@ describe('each example', () => {
 				await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 
 				// A working field: the bar logs one entry of it.
-				const [line, data] = LOGGED[example.field];
+				const [line, data, state] = LOGGED[example.field];
 				await app.clock.forward(1000);
 				await app.submit(line);
 				assert.deepEqual(app.errors, []);
 				const logged = (await app.entries()).filter((e) => e.field === example.field);
 				assert.equal(logged.length, 1, JSON.stringify(await app.allEntries()));
 				if (data) assert.deepEqual(logged[0].data, data);
+				// An all-day entry's count is its state, on the day (da-uykff).
+				if (state !== undefined) assert.equal(logged[0].state, state);
 
 				// Undo takes back the entry, and one more the field whole.
 				for (const _ of [1, 2]) assert.equal((await app.run(['undo'])).code, 0);

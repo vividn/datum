@@ -137,6 +137,8 @@ export const EXAMPLES: Example[] = [
 		verb: 'switch',
 		states: { lift: '#d4a35a', swim: '#5ab4e8', bike: '#7bd389', yoga: '#c39bd3' }
 	},
+	// vividn, 2026-11-05: «steps should be an ALLDAY kind of data» (da-uykff): `steps 8000`, the day's count as its state.
+	{ ...moment('movement', 'steps', 'the day\'s count: steps 8000', '#f2a65a', '👣'), verb: 'allday' },
 	onOff('work', 'work', 'on when you start, off when you stop', '#d4a35a', '💼'),
 	{ ...moment('work', 'project', 'the project you are on, until the next', '#9b7fd4', '📁'), verb: 'switch' },
 	onOff('work', 'meeting', 'on as it starts, off as it ends', '#d48788', '👥'),
