@@ -12,12 +12,14 @@
 	any other link opens in a new tab, a file of the repo on GitHub.
 
 	Under the contents, the guides (da-oefd0, #lib/guides.ts): the page's and
-	each widget's, from the registry, as pages `widgets/<kind>.md` of their own.
+	each widget's, from the registry, as pages `widgets/<kind>.md` of their own,
+	a guide's demos (da-2fxiz) drawn in them as frames of the `/demo` page.
 -->
 <script lang="ts">
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
-	import { PAGE, docsAsked, guideOf, guidePath, guided } from '#lib/guides.ts';
+	import { resolve as route } from '$app/paths';
+	import { PAGE, docsAsked, guideOf, guidePath, guided, withDemos } from '#lib/guides.ts';
 	import { markdown } from '#lib/markdown.ts';
 
 	const REPO = 'https://github.com/vividn/datum/blob/main';
@@ -90,7 +92,10 @@
 		const at = ++asked;
 		let drawn: string | null = null;
 		try {
-			drawn = markdown((await DOCS[doc]()) + (doc === CONTENTS ? GUIDES : ''), { link: (href) => link(href, doc), image: (src) => image(src, doc) });
+			const text = (await DOCS[doc]()) + (doc === CONTENTS ? GUIDES : '');
+			const draw = (text: string) => markdown(text, { link: (href) => link(href, doc), image: (src) => image(src, doc) });
+			// A guide's demos are frames playing them (da-2fxiz).
+			drawn = withDemos(text, doc.replace(/^widgets\/(.*)\.md$/, '$1'), route('/demo'), draw);
 		} catch {
 			// Not fetched (offline before it was cached), or not drawn (a target `decodeURIComponent` refuses).
 			drawn = null;
@@ -243,6 +248,12 @@
 		border: 1px solid var(--rule);
 		text-align: start;
 		vertical-align: top;
+	}
+	.doc :global(iframe.demo) {
+		display: block;
+		max-inline-size: 100%;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
 	}
 	.doc :global(img) {
 		max-inline-size: 100%;

@@ -58,8 +58,11 @@ export interface CliResult {
 }
 
 export type DbCommand =
-	/** Find out where the database lives, and say. */
-	| { op: 'open' }
+	/**
+	 * Find out where the database lives, and say. `memory`: in memory, for
+	 * the worker's life, never the files: a widget's demo (#lib/demo.ts).
+	 */
+	| { op: 'open'; memory?: boolean }
 	/**
 	 * Run `datum <argv>` under WASI, with `stdin` on its standard input.
 	 * A `key` lets a newer command with the same key drop this one while it

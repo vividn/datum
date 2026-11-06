@@ -73,8 +73,12 @@ function moves(): { from: string; to: string; at: number }[] {
 	}
 }
 
-/** Follow every move of this tab's database it missed, one after another, to where they lead. */
+/**
+ * Follow every move of this tab's database it missed, one after another, to where they lead.
+ * Not in a frame (a guide's demo, da-2fxiz), which is no tab and shares the tab's record.
+ */
 function catchUp(): void {
+	if (window !== window.top) return;
 	const db = currentDb();
 	let since = Date.now() - MOVED_SLACK_MS;
 	try {

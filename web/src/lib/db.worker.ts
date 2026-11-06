@@ -25,7 +25,7 @@ const ctx = self as unknown as {
 
 async function serve(request: DbRequest): Promise<DbResponse> {
 	try {
-		if (request.op === 'open') return { id: request.id, ok: true, storage: await probe() };
+		if (request.op === 'open') return { id: request.id, ok: true, storage: await probe(request.memory) };
 		if (request.op === 'hidden') {
 			setHidden(request.hidden);
 			return { id: request.id, ok: true, storage: storageNow() };

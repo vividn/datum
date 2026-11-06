@@ -12,6 +12,7 @@
 import { writable } from 'svelte/store';
 import { builtinLayout } from './layout/defaults.js';
 import { KINDS, titleOf } from './layout/registry.js';
+import { demoSrc } from './demo.js';
 import { markdown } from './markdown.js';
 
 /**
@@ -90,19 +91,40 @@ export const guided = (): string[] => Object.keys(KINDS).filter((kind) => !KINDS
 
 const OUT = { link: (href: string) => `href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener"`, image: (src: string) => src };
 const PLACE = /\[([^\]]+)\]\(place:([\w-]+)\)/g;
+/** A line of a guide that is one of its kind's demos (da-2fxiz): `[what it shows](demo:<name>)`. */
+export const DEMO = /^\[([^\]]+)\]\(demo:([\w-]+)\)$/gm;
 const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const attr = (text: string) => escape(text).replace(/"/g, '&quot;');
+
+/** The frame that plays `name` of `kind`'s demos from the `/demo` page at `page`; its words where the kind has none by that name. */
+function demoFrame(kind: string, name: string, label: string, page: string): string {
+	const demo = KINDS[kind]?.demos?.[name];
+	if (!demo) return escape(label);
+	return `<iframe class="demo" src="${attr(demoSrc(page, kind, name))}" title="${attr(label)}" width="${demo.width}" height="${demo.height}" loading="lazy"></iframe>`;
+}
 
 /**
- * A guide's Markdown as the Help place draws it (#lib/markdown.ts). A link to a place,
- * `[Open Sync](place:sync)`, is a `button.command[data-place]`, which Guide.svelte makes
- * open it (da-7s7xc); one to a name no place has is its text. The scheme is the page's
- * own, so it is held out before markdown, which keeps no link but http, https or mailto
- * (da-hse1u).
+ * `text` drawn by `draw`, what each of `swaps` matches held out of it and put back as
+ * its maker makes it: markdown keeps no link but http, https or mailto (da-hse1u), nor HTML.
  */
-export function guideHtml(text: string): string {
+function holding(text: string, swaps: [RegExp, (...m: string[]) => string][], draw: (text: string) => string): string {
 	const held: string[] = [];
+	for (const [pattern, make] of swaps) text = text.replace(pattern, (...m: string[]) => `\u0001${held.push(make(...m)) - 1}\u0001`);
+	return draw(text).replace(/\u0001(\d+)\u0001/g, (_, i: string) => held[Number(i)]);
+}
+
+/** `text`, the guide of `kind`, drawn by `draw`, each demo line a frame playing it (`demoFrame`). */
+export const withDemos = (text: string, kind: string, page: string, draw: (text: string) => string): string =>
+	holding(text, [[DEMO, (_, label, name) => demoFrame(kind, name, label, page)]], draw);
+
+/**
+ * A guide's Markdown as the Help place draws it (#lib/markdown.ts), the guide of `kind`.
+ * A link to a place, `[Open Sync](place:sync)`, is a `button.command[data-place]`, which
+ * Guide.svelte makes open it (da-7s7xc); one to a name no place has is its text. A demo
+ * line is a frame playing it, from the `/demo` page at `page` (`withDemos`).
+ */
+export function guideHtml(text: string, kind = '', page = ''): string {
 	const button = (label: string, place: string) =>
 		builtinLayout(place, false) ? `<button type="button" class="command" data-place="${place}">${escape(label)}</button>` : escape(label);
-	const out = markdown(text.replace(PLACE, (_, label: string, place: string) => `\u0001${held.push(button(label, place)) - 1}\u0001`), OUT);
-	return out.replace(/\u0001(\d+)\u0001/g, (_, i: string) => held[Number(i)]);
+	return withDemos(text, kind, page, (text) => holding(text, [[PLACE, (_, label, place) => button(label, place)]], (text) => markdown(text, OUT)));
 }

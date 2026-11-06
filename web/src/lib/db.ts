@@ -147,9 +147,13 @@ function request(
 	});
 }
 
-/** Find out where the database lives (idempotent). */
-export function initDb(): Promise<void> {
-	opened ??= request({ op: 'open' }).then(
+/**
+ * Find out where the database lives (idempotent). `memory`, asked first: every
+ * database this tab opens is held in memory and never touches the files, which
+ * a widget's demo plays on (#lib/demo.ts).
+ */
+export function initDb(memory = false): Promise<void> {
+	opened ??= request({ op: 'open', memory }).then(
 		() => {},
 		(e) => {
 			opened = null;

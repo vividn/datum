@@ -51,6 +51,8 @@
 	const url = toStore(() => page.url);
 	const db = $derived($url ? currentDb() : DEFAULT_DB);
 	const refused = $derived($url ? refusedDb() : null);
+	/** A widget's demo (da-2fxiz): its page alone, which boots what it needs itself (DemoPlayer.svelte). */
+	const demo = page.route.id === '/demo';
 
 	// The page's base color says which database it is (da-y992): a hue, a
 	// saturation and a lightness derived from the name (da-wikou), and every
@@ -76,6 +78,7 @@
 	// (the database, the bar's fields) and the shell's (the root tabs),
 	// which every route needs — a `/<name>` opens a tab into a booted shell.
 	onMount(() => {
+		if (demo) return;
 		installConsole(window as unknown as Record<string, unknown>);
 		void bootEngine();
 		void bootShell();
@@ -175,6 +178,9 @@
 	<title>{db === DEFAULT_DB ? 'datum' : `datum · ${db}`}</title>
 </svelte:head>
 
+{#if demo}
+	{@render children?.()}
+{:else}
 <div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px" data-glide-ends={$glideEnds}>
 	<RootBar />
 	{#if $damaged !== null}<Damaged db={$damaged} />{:else}<Waiting />{/if}
@@ -209,6 +215,7 @@
 </div>
 <!-- Outside the shell, a size container, which would be its fixed boxes' frame. -->
 <Tour />
+{/if}
 
 <style>
 	/* See the note above. `100%` is the layout viewport the shell is fixed

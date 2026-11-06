@@ -657,14 +657,16 @@ async function keep(handles: Map<string, Handle>, data: PreopenDirectory): Promi
 }
 
 /**
- * Where the database lives, found by asking for the files once.
+ * Where the database lives, found by asking for the files once; `inMemory`,
+ * in memory without asking, and never going back for them (a demo's).
  *
  * Also starts compiling the module, so the first command does not pay for
  * it — without holding up the answer, which is what enables the prompt.
  */
-export function probe(): Promise<StorageKind> {
+export function probe(inMemory = false): Promise<StorageKind> {
 	void compile().catch((e) => console.warn('datum-cli.wasm did not compile:', e));
 	return enqueue(async () => {
+		if (inMemory && !memory) fallToMemory(false);
 		if (memory) return 'memory';
 		try {
 			await withFiles(async () => {});
@@ -677,10 +679,10 @@ export function probe(): Promise<StorageKind> {
 	});
 }
 
-function fallToMemory(): void {
+function fallToMemory(retry = true): void {
 	live = null;
 	memory = new Map(dbFiles(databases).map((name) => [name, new MemoryHandle()]));
-	keepTrying(RETRY_FIRST_MS);
+	if (retry) keepTrying(RETRY_FIRST_MS);
 }
 
 /**

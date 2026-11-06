@@ -40,6 +40,7 @@
 // sees these numbers.
 
 import type { Component } from 'svelte';
+import type { Demo } from '#lib/demo.ts';
 import type { Tab, WidgetKindMeta, WidgetOption } from './types.js';
 import { nameOf, type Floor } from './tree.js';
 import CliPane from '#lib/CliPane.svelte';
@@ -139,6 +140,13 @@ export interface WidgetKind {
 	 * `widget-tour.test.mjs` runs every kind's to its end.
 	 */
 	tour: Step[];
+	/**
+	 * Its demos (da-2fxiz, #lib/demo.ts), by name: this kind's own component on
+	 * a sample database, played a script of taps and drags. Its guide places
+	 * each as a line of its own, `[what it shows](demo:<name>)`, and the docs
+	 * draw it there; `demos.test.mjs` plays every one to its end.
+	 */
+	demos?: Record<string, Demo>;
 	/** The pane's title from the settings, where it is not the kind's own. */
 	title?: (settings: Record<string, unknown>) => string | undefined;
 	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
@@ -702,6 +710,8 @@ It reads each field's entries with \`tail F --json\`.`,
 		component: CollectPane,
 		guide: `Every field you log, as a button: tap one to log it. A moment's button is an empty pill, an on/off field's fills while it is on, a change field's is filled with its state's color, and a record's name is underlined.
 
+[A tap turns work on, logs a coffee, and turns work off](demo:tap)
+
 ## At rest
 
 The fields stand in rows. At the left edge is the last half second of today, a now strip, where what you tap is seen sweeping in at now; tap a field's band there to open that field. Then the fields that are on, inside a dotted line, then the rest, the last used first. Drag the rows sideways to see more. Pinch them, or ctrl and the wheel, to zoom: smaller fits more rows, larger fewer.
@@ -755,6 +765,19 @@ Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		p
 		// reloads (da-ray91, da-gh1ep); not among the defaults, as the
 		// strip's day height is not, so `Reset widget` is the way back to 1.
 		onChange: (settings, zoom) => ({ ...settings, zoom }),
+		demos: {
+			tap: {
+				title: 'a tap logs a field',
+				seed: ['on work -t -50', 'moment coffee -t -45', 'change mood calm -t -40', 'off work -t -20'],
+				width: 360,
+				height: 150,
+				script: [
+					{ do: 'tap', at: 'button.widget[data-field="work"]' },
+					{ do: 'tap', at: 'button.widget[data-field="coffee"]' },
+					{ do: 'tap', at: 'button.widget[data-field="work"]' }
+				]
+			}
+		},
 		tour: [
 			{ at: WHOLE, say: 'Every field you log, a button each.' },
 			{ at: '.room button.widget', say: 'A tap on a field logs it: a moment at once, an on/off field turned on or off; a change field opens its states.' },

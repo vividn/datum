@@ -10,9 +10,10 @@
 	end, closed, for a terminal (the sync guide's, da-oyvsz).
 
 	A link to a place is a button (`guideHtml`), which a press opens
-	(`openPlace`, da-7s7xc).
+	(`openPlace`, da-7s7xc), and a demo line a frame playing it (da-2fxiz).
 -->
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { act } from '#lib/act.ts';
 	import { openPlace } from './shell.js';
 	import { ansiSpans } from '#lib/ansi.ts';
@@ -26,8 +27,8 @@
 
 	const guide = $derived(guideOf(name));
 	const blocks = $derived((guide?.text ?? '').split(/\n\s*\n/));
-	const lead = $derived(guideHtml(blocks[0] ?? ''));
-	const rest = $derived(guideHtml(blocks.slice(1).join('\n\n')));
+	const lead = $derived(guideHtml(blocks[0] ?? '', name, resolve('/demo')));
+	const rest = $derived(guideHtml(blocks.slice(1).join('\n\n'), name, resolve('/demo')));
 
 	let body: HTMLElement;
 	$effect(() => {
@@ -87,6 +88,12 @@
 	}
 	.guide :global(strong) {
 		color: var(--ink-bright);
+	}
+	.guide :global(iframe.demo) {
+		display: block;
+		max-inline-size: 100%;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
 	}
 	.guide :global(code) {
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
