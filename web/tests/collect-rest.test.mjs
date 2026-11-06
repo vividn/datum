@@ -191,21 +191,28 @@ describe('collect at rest', () => {
 				const near = (s) => (side === 'left' ? s.left : -s.right);
 				const far = (s) => (side === 'left' ? s.right : -s.left);
 				const room = await page.locator(ROOM).boundingBox();
-				const mid = room.x + room.width / 2;
+				// On its side: past the time and duration section beside the strip (da-us1n1).
+				const by = await page.locator('section.pane[data-title="collect"] .bar [data-when]').boundingBox();
 				const spots = await until(
 					() => settled(page),
-					(spots) => spots.filter((s) => s.section === 'active').length === 3 && (side === 'left') === spots.find((s) => s.field === 'work').left < mid
+					(spots) => {
+						const work = spots.find((s) => s.field === 'work');
+						return spots.filter((s) => s.section === 'active').length === 3 && (side === 'left' ? work.left >= by.x + by.width - 1 : work.right <= by.x + 1);
+					}
 				);
 				const work = spots.find((s) => s.field === 'work');
 				const wide = Math.max(...spots.filter((s) => s.section === 'active' && s.row !== work.row).map(far));
 				const next = spots.filter((s) => s.section === 'recent' && s.row === work.row).sort((a, b) => near(a) - near(b))[0];
 				assert.ok(far(work) < wide, `work's row is the narrower: ${far(work)} against ${wide}`);
 				// Narrow enough to stay while the rows pan under it, so the backing is the section's and not the strip's.
-				assert.ok(wide - far(side === 'left' ? { right: room.x } : { left: room.x + room.width }) <= room.width / 2, `the section is not frozen: ${wide}`);
+				// The time and duration section beside the strip (da-us1n1) is not counted against the half.
+				const when = (await page.locator('section.pane[data-title="collect"] .bar [data-when]').boundingBox()).width;
+				assert.ok(wide - far(side === 'left' ? { right: room.x } : { left: room.x + room.width }) - when <= room.width / 2, `the section is not frozen: ${wide}`);
 				assert.ok(near(next) - far(work) <= 2 * 6 + 1, `${next.field} ${near(next) - far(work)}px past work, the widest row ending at ${wide}`);
-				// Drawn, not under the backing the panned rows go under: each in the room, read and walk among them.
+				// Drawn, not under the backing the panned rows go under: each in the room, read among them (walk
+				// past the room's edge since the time and duration section, da-us1n1, stands beside the strip).
 				const shown = spots.filter((s) => s.section === 'recent' && s.left >= room.x && s.right <= room.x + room.width);
-				assert.ok(['read', 'walk'].every((f) => shown.some((s) => s.field === f)), JSON.stringify(shown));
+				assert.ok(shown.some((s) => s.field === 'read'), JSON.stringify(shown));
 				for (const s of shown) {
 					// Its edge toward the section, where a backing too wide would lie over it.
 					const hit = await page.locator(`${ROOM} [data-field="${s.field}"]`).evaluate((b, side) => {
@@ -217,7 +224,8 @@ describe('collect at rest', () => {
 
 				// Panned toward the section, a slow swipe the finger's length: work's row goes under
 				// its own part of the section, and shows past it where the widest row's part is wider.
-				const strip = await page.locator(`${ROOM} [data-strip]`).boundingBox();
+				// The strip's edge and past it the time and duration section's (da-us1n1), which no panned row goes under.
+				const strip = await page.locator(`section.pane[data-title="collect"] .bar [data-when]`).boundingBox();
 				const [edge, wideEdge, stripEdge] = [far(work) + 6, wide + 6, far(side === 'left' ? { right: strip.x + strip.width } : { left: strip.x })];
 				const y = (work.top + work.bottom) / 2;
 				await swipe(page, room.x + room.width * (side === 'left' ? 0.85 : 0.15), y, side === 'left' ? -80 : 80, 0, 8, 60, 200);

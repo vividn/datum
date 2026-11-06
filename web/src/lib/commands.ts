@@ -525,7 +525,7 @@ export const argumentsOf = (all: Pill[]): Pill[] => all.filter((p) => roleOf(p, 
 
 /**
  * Can a command whose grammar is `takes` spend this pill? A `time` pill
- * wants `-t`; an `hid` pill wants an id, and more than one hid wants a
+ * wants `-t`; `-D`'s `allday` wants a command listing `--full-day` (da-us1n1); an `hid` pill wants an id, and more than one hid wants a
  * command that takes several; a `field` pill wants a command that names a
  * field. A kind this does not know is let through.
  *
@@ -539,6 +539,7 @@ export const argumentsOf = (all: Pill[]): Pill[] => all.filter((p) => roleOf(p, 
 export function fits(takes: Takes | undefined, pill: Pill): boolean {
 	if (!takes) return pill.kind !== 'hid' && pill.kind !== 'field';
 	if (pill.kind === 'time') return takes.time;
+	if (pill.kind === 'allday') return takes.flags.some((f) => f.long === 'full-day');
 	if (pill.kind === 'hid') return hidsOf(pill).length > 1 ? takes.id === 'list' : !!takes.id;
 	if (pill.kind === 'field') return takes.field !== false;
 	return true;

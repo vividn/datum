@@ -19,7 +19,8 @@ import { until } from './support/until.mjs';
 const outlines = (page, selector = 'section.pane[data-title="collect"] .bar') =>
 	page.locator(selector).evaluate((el) =>
 		Object.fromEntries(
-			[...el.querySelectorAll('button:not([data-now-field])')].map((b) => [
+			// The fields' and their views', not the time and duration section's (da-us1n1).
+			[...el.querySelectorAll('button:not([data-now-field])')].filter((b) => !b.closest('[data-when]')).map((b) => [
 				b.dataset.field ?? (b.dataset.state ? `=${b.dataset.state}` : b.dataset.back !== undefined ? 'back' : b.textContent.trim()),
 				getComputedStyle(b).borderTopStyle
 			])

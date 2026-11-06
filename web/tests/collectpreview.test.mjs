@@ -15,6 +15,11 @@ before(startApp);
 after(stopApp);
 
 const COLLECT = 'section.pane[data-title="collect"] .bar .collect';
+/** The time and duration section beside it (da-us1n1), and its pill of `kind`. */
+const WHEN = 'section.pane[data-title="collect"] .bar [data-when]';
+const EARLIER = `${WHEN} [data-earlier="5"]`;
+const LONGER = `${WHEN} [data-longer="5"]`;
+const pillOf = (kind) => `${WHEN} .pill[data-pill="${kind}"] .said`;
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const PREVIEW = `${NOWVIEW} svg.svg .preview`;
 
@@ -32,7 +37,7 @@ const opened = (field, fn) =>
 		}
 		await app.redraw();
 		await app.page.locator(`${COLLECT} [data-field="${field}"]`).click();
-		await app.page.locator(`${COLLECT} [data-time-row]`).waitFor();
+		await app.page.locator(`${COLLECT} [data-open-field]`).waitFor();
 		await fn(app);
 	});
 
@@ -102,10 +107,7 @@ async function settled(page, minutes, { atHead = false, before = Infinity } = {}
 describe('collect previews on the nowview', () => {
 	test('−qq and ←10m: a white dotted block in the lane for the ten minutes ending at −qq, the pills on the relative axis', async () => {
 		await opened('mood', async ({ page }) => {
-			await page.locator(`${COLLECT} [data-q]`).click();
-			await page.locator(`${COLLECT} .part-pill[data-pill="time"] .more`).click();
-			await page.locator(`${COLLECT} [data-five]`).click();
-			await page.locator(`${COLLECT} .part-pill[data-pill="length"] .more`).click();
+			for (const at of [EARLIER, EARLIER, LONGER, LONGER]) await page.locator(at).click();
 			// Each press draws a picture of its own: read the one of ten minutes, all in one frame (da-yozs7).
 			const seen = await settled(page, 10, { atHead: true });
 			assert.ok(seen, 'a preview drawn');
@@ -129,8 +131,8 @@ describe('collect previews on the nowview', () => {
 	test('a length longer than the window zooms the window out to hold it', async () => {
 		await opened('mood', async ({ page }) => {
 			// The default window is 30m: 45m does not fit it.
-			for (let i = 0; i < 9; i++) await page.locator(`${COLLECT} ${i ? '.part-pill[data-pill="length"] .more' : '[data-five]'}`).click();
-			await page.waitForFunction((s) => document.querySelector(`${s} .part-pill[data-pill="length"] .more`)?.innerText === '45m', COLLECT);
+			for (let i = 0; i < 9; i++) await page.locator(LONGER).click();
+			await page.waitForFunction((s) => document.querySelector(s)?.innerText === '45m', pillOf('dur'));
 			const seen = await settled(page, 45);
 			// The picture is drawn past the window either side: the window is the band on screen.
 			const band = await box(page, `${NOWVIEW} .nowview-band`);
@@ -142,20 +144,18 @@ describe('collect previews on the nowview', () => {
 
 	test('−qq dragged in collect turns into an absolute −t pill on the clock axis, and the block moves with it', async () => {
 		await opened('mood', async ({ page }) => {
-			for (let i = 0; i < 2; i++) await page.locator(`${COLLECT} ${i ? '.part-pill[data-pill="time"] .more' : '[data-q]'}`).click();
-			await page.locator(`${COLLECT} [data-five]`).click();
+			for (const at of [EARLIER, EARLIER, LONGER]) await page.locator(at).click();
 			const before = await settled(page, 5, { atHead: true });
-			const pill = await box(page, `${COLLECT} .part-pill[data-pill="time"] .more`);
+			const pill = await box(page, pillOf('time'));
 			const [x, y] = [(pill.left + pill.right) / 2, (pill.top + pill.bottom) / 2];
 			await page.mouse.move(x, y);
 			await page.mouse.down();
 			for (let dx = 4; dx <= 24; dx += 4) await page.mouse.move(x - dx, y);
 			await page.mouse.up();
 
-			const said = await page.locator(`${COLLECT} .part-pill[data-pill="time"] .more`).innerText();
-			assert.match(said, /^-t \d\d:\d\d$/, 'plain: an absolute time');
-			assert.equal(await page.locator(`${COLLECT} .part-pill[data-pill="time"] .more`).getAttribute('aria-disabled'), 'true', 'it adds no q');
-			assert.ok((await page.locator('.prompt-bar .pill.time').innerText()).includes(said.slice(3)), 'the bar holds it');
+			const said = await page.locator(pillOf('time')).innerText();
+			assert.match(said, /^\d\d:\d\d$/, 'plain: an absolute time');
+			assert.ok((await page.locator('.prompt-bar .pill.time').innerText()).includes(said), 'the bar holds it');
 			// Earlier, on the clock's axis now, over the line it names.
 			const after = await settled(page, 5, { atHead: true, before: before.right - 2 });
 			assert.ok(after.right < before.right - 2, `earlier: ${after.right} left of ${before.right}`);
@@ -163,8 +163,8 @@ describe('collect previews on the nowview', () => {
 			assert.ok(after.pill.y < after.middle, 'on the top axis');
 			near(after.pill.x, after.right, 1.5, 'at its line');
 
-			// The length dragged left grows, plain: it adds no five on a tap.
-			const length = `${COLLECT} .part-pill[data-pill="length"] .more`;
+			// The length dragged left grows.
+			const length = pillOf('dur');
 			const grip = await box(page, length);
 			const [lx, ly] = [(grip.left + grip.right) / 2, (grip.top + grip.bottom) / 2];
 			await page.mouse.move(lx, ly);
@@ -173,14 +173,13 @@ describe('collect previews on the nowview', () => {
 			await page.mouse.up();
 			const grown = Number((await page.locator(length).innerText()).replace(/\D/g, ''));
 			assert.ok(grown > 5, `longer than 5m: ${grown}m`);
-			assert.equal(await page.locator(length).getAttribute('aria-disabled'), 'true', 'it adds no five');
 			near((await settled(page, grown)).long, grown, 0.3, 'the block as long');
 		});
 	});
 
 	test('the block is what the CLI says, a length the spec assigns included', async () => {
 		await opened('run', async ({ page }) => {
-			await page.locator(`${COLLECT} [data-q]`).click();
+			await page.locator(EARLIER).click();
 			// `start run -q`, and run's spec assigns dur=20m: twenty minutes, though collect set no length.
 			const seen = await settled(page, 20, { atHead: true });
 			assert.ok(seen, 'the block and the selection on one picture');
@@ -191,7 +190,7 @@ describe('collect previews on the nowview', () => {
 
 	test('back takes the preview away', async () => {
 		await opened('mood', async ({ page }) => {
-			await page.locator(`${COLLECT} [data-q]`).click();
+			await page.locator(EARLIER).click();
 			await page.waitForFunction((s) => document.querySelector(s), PREVIEW);
 			await page.locator(`${COLLECT} [data-back]`).click();
 			await page.waitForFunction((s) => !document.querySelector(s), PREVIEW);

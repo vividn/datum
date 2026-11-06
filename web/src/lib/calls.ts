@@ -118,6 +118,19 @@ export function stepArgv(hids: string[]): string[] {
 	return ['revert', hids.join(',')];
 }
 
+/**
+ * A time as `-t` reads it, and a length as `dur=` does, read by the CLI with no
+ * database: the nowview's empty overlay, whose `--json` says the instant
+ * (`at_ms`) and the window's length (`history_minutes`). Collect's time
+ * section types them (da-us1n1).
+ */
+export function timeReadArgv(time: string): string[] {
+	return ['nowview', '--overlay', '--json', '-t', time];
+}
+export function lengthReadArgv(length: string): string[] {
+	return ['nowview', '--overlay', '--json', '--context', length];
+}
+
 /** One entry, every column, as collect's entry card reads it (da-xdz73). */
 export function entryArgv(hid: string): string[] {
 	return ['get', hid, '--pretty'];
@@ -505,4 +518,7 @@ export interface Reads {
 	kitsArgv: { rows: KitRow[] };
 	kitWidgetArgv: KitWidgetRow[];
 	layoutHistoryArgv: LayoutVersion[];
+	/** The instant `-t` names, and the length a duration reads as (collect's time section, da-us1n1). */
+	timeReadArgv: { at_ms: number };
+	lengthReadArgv: { history_minutes: number };
 }

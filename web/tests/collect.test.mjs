@@ -3,11 +3,12 @@
 // collect pane … this widget really adapts to whatever you're doing».
 //
 // At rest its fields stand in rows by height, those on in a section of their
-// own (collect-rest.test.mjs). A tap
-// opens a field: back, its name and chosen state on the first row; its time
-// (`−q`, `−m`, `5m`, which become pills); a switch field's states, the first
-// of its spec in the middle; its keys and `+ data` at the bottom. Every pill
-// it makes is on the input bar too, and nothing here runs a command.
+// own (collect-rest.test.mjs). Between the now strip and the rows, at rest
+// and beside a field's view, the time and duration section (da-us1n1):
+// `time −1m −5m · dur 1m 5m`, summing into pills, `time` or `dur` opening its
+// options. A tap opens a field: back, its name and chosen state on the first
+// row; a switch field's states, the first of its spec in the middle; its keys
+// and `+ data` at the bottom. Every pill it makes is on the input bar too.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -64,8 +65,12 @@ const center = (page, selector) =>
 const barPills = (page) =>
 	page.locator(BAR_PILLS).evaluateAll((ps) => ps.map((p) => `${[...p.classList].find((c) => c !== 'pill')}:${p.innerText.replace(/[×\s]+$/, '').trim()}`));
 
-/** The view's own pill of `kind`: what its left part says. */
-const partPill = (page, kind) => page.locator(`${VIEW} .part-pill[data-pill="${kind}"] .more`);
+/** The time and duration section (da-us1n1), its buttons, and its pill of `kind` (`time`, `dur`). */
+const WHEN = `${WIDGET} [data-when]`;
+const tap = (page, what) => page.locator(`${WHEN} ${what}`).click();
+const whenPill = (page, kind) => page.locator(`${WHEN} .pill[data-pill="${kind}"] .said`);
+const saysPill = (page, kind, text) =>
+	page.waitForFunction(([w, k, t]) => document.querySelector(`${w} .pill[data-pill="${k}"] .said`)?.innerText === t, [WHEN, kind, text]);
 
 describe('collect', () => {
 	test('at rest the widget is titled collect, and the field that is on stands in the active section, its state on the strip', async () => {
@@ -106,10 +111,10 @@ describe('collect', () => {
 			assert.ok(Math.abs(room.x - good.x) <= 2 && Math.abs(room.y - good.y) <= 2, `good at ${JSON.stringify(good)}, the middle at ${JSON.stringify(room)}`);
 
 			const tops = await page.locator(VIEW).evaluate((view) =>
-				Object.fromEntries(['.head', '[data-time-row]', '.room', '[data-data-row]'].map((s) => [s, view.querySelector(s).getBoundingClientRect().top]))
+				Object.fromEntries(['.head', '.room', '[data-data-row]'].map((s) => [s, view.querySelector(s).getBoundingClientRect().top]))
 			);
-			// Back and the time above the states (on one row in a short pane), the keys below.
-			assert.ok(tops['.head'] < tops['.room'] && tops['[data-time-row]'] < tops['.room'] && tops['.room'] < tops['[data-data-row]'], JSON.stringify(tops));
+			// Back above the states, the keys below.
+			assert.ok(tops['.head'] < tops['.room'] && tops['.room'] < tops['[data-data-row]'], JSON.stringify(tops));
 			assert.deepEqual(await page.locator(`${VIEW} [data-data-row] button`).allInnerTexts(), ['why=', 'with=', '+ data']);
 			assert.deepEqual(await barPills(page), ['field:mood'], 'the field is a pill on the bar');
 
@@ -131,8 +136,8 @@ describe('collect', () => {
 		await collect(async (app) => {
 			const { page } = app;
 			await page.locator(`${VIEW} [data-field="mood"]`).click();
-			await page.locator(`${VIEW} [data-q]`).click();
-			await partPill(page, 'time').waitFor();
+			await tap(page, '[data-earlier="5"]');
+			await whenPill(page, 'time').waitFor();
 			const seen = await app.spyOnRunner();
 			await page.locator(`${VIEW} [data-state="meh"]`).click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'change'));
@@ -145,77 +150,172 @@ describe('collect', () => {
 		});
 	});
 
-	test('−q tapped twice is one −qq pill, on the bar too', async () => {
+	// vividn, 2026-11-05: «clicking -1m, -5m, 1m or 5m doesn't expand the
+	// section either, it changes the dur or time button to be the time or dur
+	// pill, and keeps summing up. Also updates the nowview with the proper selection».
+	test('−1m then −5m is a −6m time pill, the selection six minutes back, and the section stays closed', async () => {
 		await collect(async ({ page }) => {
-			await page.locator(`${VIEW} [data-field="coffee"]`).click();
-			await page.locator(`${VIEW} [data-q]`).click();
-			await partPill(page, 'time').waitFor();
-			assert.equal(await partPill(page, 'time').innerText(), '-q');
-			await partPill(page, 'time').click();
-			await page.waitForFunction((v) => document.querySelector(`${v} .part-pill[data-pill="time"] .more`)?.innerText === '-qq', VIEW);
-			assert.equal(await page.locator(`${VIEW} .part-pill`).count(), 1, 'a second pill');
-			assert.deepEqual(await barPills(page), ['field:coffee', 'time:-qq']);
-		}, { twoClicks: true });
+			assert.equal(await page.locator(`${WHEN} [data-part="time"]`).innerText(), 'time');
+			await tap(page, '[data-earlier="1"]');
+			await saysPill(page, 'time', '−1m');
+			await tap(page, '[data-earlier="5"]');
+			await saysPill(page, 'time', '−6m');
+			assert.deepEqual(await barPills(page), ['time:-t -6']);
+			assert.equal(await page.evaluate(() => window.datum.cursor.at()?.toISOString()), new Date(todayAt(14, 54)).toISOString());
+			await page.locator('section.pane[data-title="nowview"] line.cursor').waitFor({ state: 'attached' });
+			assert.equal(await page.locator(`${WHEN} [data-when-more]`).count(), 0, 'the section opened');
+		});
 	});
 
-	test('5m tapped twice is ←10m, −m after it replaces the length, and 5m −m', async () => {
+	test('1m then 5m is a 6m dur pill, and −m in its options replaces it', async () => {
 		await collect(async ({ page }) => {
-			await page.locator(`${VIEW} [data-field="work"]`).click();
-			await page.locator(`${VIEW} [data-five]`).click();
-			await partPill(page, 'length').waitFor();
-			assert.equal(await page.locator(`${VIEW} [data-five]`).count(), 0, 'its button stood beside the length');
-			await partPill(page, 'length').click();
-			await page.waitForFunction((v) => document.querySelector(`${v} .part-pill[data-pill="length"] .more`)?.innerText === '10m', VIEW);
-			assert.equal(await page.locator(`${BAR_PILLS}.dur`).count(), 1, 'the bar has no length');
+			await tap(page, '[data-longer="1"]');
+			await tap(page, '[data-longer="5"]');
+			await saysPill(page, 'dur', '6m');
+			assert.equal(await whenPill(page, 'dur').locator('svg.length-arrow').count(), 1, 'the length wears no arrow');
+			assert.deepEqual(await barPills(page), ['dur:6m']);
+			assert.equal(await page.locator(`${WHEN} [data-when-more]`).count(), 0, 'the section opened');
 
-			await page.locator(`${VIEW} [data-m]`).click();
-			await partPill(page, 'moment').waitFor();
-			assert.equal(await page.locator(`${VIEW} .part-pill[data-pill="length"]`).count(), 0, 'the length stood beside −m');
-			assert.deepEqual(await barPills(page), ['field:work', 'moment:-m']);
+			await whenPill(page, 'dur').click();
+			await tap(page, '[data-when-more="dur"] [data-moment]');
+			await saysPill(page, 'dur', '−m');
+			assert.deepEqual(await barPills(page), ['moment:-m']);
+			await tap(page, '[data-longer="5"]');
+			await saysPill(page, 'dur', '5m');
+			assert.deepEqual(await barPills(page), ['dur:5m']);
+		});
+	});
 
-			await page.locator(`${VIEW} [data-five]`).click();
-			await partPill(page, 'length').waitFor();
-			assert.equal(await page.locator(`${VIEW} .part-pill[data-pill="moment"]`).count(), 0, '−m stood beside the length');
-			assert.equal(await partPill(page, 'length').innerText(), '5m');
-			assert.equal(await partPill(page, 'length').locator('svg.length-arrow').count(), 1, 'the length wears no arrow');
-			assert.equal(await page.locator(`${BAR_PILLS}.moment`).count(), 0);
-			assert.equal(await page.locator(`${BAR_PILLS}.dur`).count(), 1);
-		}, { twoClicks: true });
+	test('a tap on time opens its options, a typed time and all day among them, and a drag closes it', async () => {
+		await collect(async ({ page }) => {
+			await tap(page, '[data-part="time"]');
+			const more = page.locator(`${WHEN} [data-when-more="time"]`);
+			await more.waitFor();
+			await more.locator('[data-type-time]').fill('9:15am');
+			await more.locator('[data-type-time]').press('Enter');
+			await saysPill(page, 'time', '09:15');
+			assert.equal(await page.evaluate(() => window.datum.cursor.at()?.toISOString()), new Date(todayAt(9, 15)).toISOString());
+			await more.locator('[data-allday]').click();
+			await saysPill(page, 'time', '09:15 -D');
+			assert.deepEqual((await barPills(page)).sort(), ['allday:-D', 'time:09:15']);
+
+			// A drag toward the strip closes it, the pills kept.
+			const box = await more.boundingBox();
+			const [x, y] = [box.x + box.width / 2, box.y + box.height - 8];
+			await page.mouse.move(x, y);
+			await page.mouse.down();
+			for (let dx = 10; dx <= 60; dx += 10) await page.mouse.move(x - dx, y);
+			await page.mouse.up();
+			await more.waitFor({ state: 'detached' });
+			assert.deepEqual((await barPills(page)).sort(), ['allday:-D', 'time:09:15']);
+		});
+	});
+
+	// vremya on #1769: Escape takes the options in before the field's view under them.
+	test('with a field open and the time options out, Escape closes the options, and a second the view', async () => {
+		await collect(async ({ page }) => {
+			// Opened by a hold, which a right click is: in 1-click mode a tap would log it.
+			await page.locator(`${VIEW} [data-field="coffee"]`).click({ button: 'right' });
+			await page.locator(`${VIEW} [data-open-field="coffee"]`).waitFor();
+			await tap(page, '[data-part="time"]');
+			const more = page.locator(`${WHEN} [data-when-more="time"]`);
+			await more.waitFor();
+			await page.keyboard.press('Escape');
+			await more.waitFor({ state: 'detached' });
+			assert.equal(await page.locator(`${VIEW} [data-open-field="coffee"]`).count(), 1, 'Escape closed the view under the options');
+			await page.keyboard.press('Escape');
+			await page.locator(`${VIEW} [data-open-field]`).waitFor({ state: 'detached' });
+			await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
+		});
+	});
+
+	// vremya on #1769: a press dragged out of the options and lifted outside
+	// them is over; the mouse passing across them after, no button down, is no drag.
+	test('a press dragged out of the options and lifted outside them leaves no drag behind', async () => {
+		await collect(async ({ page }) => {
+			await tap(page, '[data-part="time"]');
+			const more = page.locator(`${WHEN} [data-when-more="time"]`);
+			await more.waitFor();
+			const box = await more.boundingBox();
+			const y = box.y + box.height - 8;
+			await page.mouse.move(box.x + box.width / 2, y);
+			await page.mouse.down();
+			for (let x = box.x + box.width / 2; x <= box.x + box.width + 60; x += 10) await page.mouse.move(x, y);
+			await page.mouse.up();
+			for (let x = box.x + box.width - 4; x >= box.x + 4; x -= 10) await page.mouse.move(x, y);
+			await page.waitForTimeout(100);
+			assert.equal(await more.count(), 1, 'a move with no button down closed the options');
+		});
+	});
+
+	// vremya on #1769: a typed length is read as the CLI reads `dur=`.
+	test("a typed length is the CLI's reading: 1.5h is 1h30m, and 1h30 is refused", async () => {
+		await collect(async ({ page }) => {
+			await tap(page, '[data-part="dur"]');
+			const typed = page.locator(`${WHEN} [data-when-more="dur"] [data-type-dur]`);
+			await typed.fill('1.5h');
+			await typed.press('Enter');
+			await saysPill(page, 'dur', '1h30m');
+			await typed.fill('1h30');
+			await typed.press('Enter');
+			await page.waitForFunction((s) => document.querySelector(s)?.getAttribute('aria-invalid') === 'true', `${WHEN} [data-type-dur]`);
+			assert.equal(await whenPill(page, 'dur').innerText(), '1h30m', 'the refused length changed it');
+		});
+	});
+
+	test('a moment tapped with the time pill logs six minutes back', async () => {
+		await collect(async (app) => {
+			const { page } = app;
+			await tap(page, '[data-earlier="1"]');
+			await tap(page, '[data-earlier="5"]');
+			await saysPill(page, 'time', '−6m');
+			const seen = await app.spyOnRunner();
+			await page.locator(`${VIEW} [data-field="coffee"]`).click();
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'moment' && !a.includes('--dry-run')));
+			assert.deepEqual((await seen()).find((a) => a[0] === 'moment' && !a.includes('--dry-run')), ['moment', 'coffee', '-t', '-6']);
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
+			await app.idle();
+			const ats = (await app.entries()).filter((e) => e.field === 'coffee').map((e) => Date.parse(e.at.utc));
+			assert.ok(ats.includes(todayAt(14, 54)), JSON.stringify(ats));
+		});
 	});
 
 	test('× clears its own pill and no other', async () => {
 		await collect(async ({ page }) => {
-			await page.locator(`${VIEW} [data-field="work"]`).click();
-			await page.locator(`${VIEW} [data-q]`).click();
-			await page.locator(`${VIEW} [data-five]`).click();
-			await partPill(page, 'length').waitFor();
-			await page.locator(`${VIEW} .part-pill[data-pill="length"] .clear`).click();
-			await page.locator(`${VIEW} [data-five]`).waitFor();
-			assert.equal(await partPill(page, 'time').innerText(), '-q');
-			assert.deepEqual(await barPills(page), ['field:work', 'time:-q']);
+			await tap(page, '[data-earlier="5"]');
+			await tap(page, '[data-longer="5"]');
+			await whenPill(page, 'dur').waitFor();
+			await tap(page, '.pill[data-pill="dur"] .clear');
+			await page.locator(`${WHEN} [data-part="dur"]:not(.said)`).waitFor();
+			assert.equal(await whenPill(page, 'time').innerText(), '−5m');
+			assert.deepEqual(await barPills(page), ['time:-q']);
 
-			await page.locator(`${VIEW} .part-pill[data-pill="time"] .clear`).click();
-			await page.locator(`${VIEW} [data-q]`).waitFor();
-			assert.deepEqual(await barPills(page), ['field:work']);
-		}, { twoClicks: true });
+			await tap(page, '.pill[data-pill="time"] .clear');
+			await page.locator(`${WHEN} [data-part="time"]:not(.said)`).waitFor();
+			assert.deepEqual(await barPills(page), []);
+		});
 	});
 
 	test('back takes the field and the pills made since the tap, and keeps a time pill already there', async () => {
 		await collect(async ({ page }) => {
-			// A −q made in one field's view, its field's pill then taken off the
-			// bar: the view closes and the −q stays, made before the next tap.
+			// A −5m made in one field's view, its field's pill then taken off the
+			// bar: the view closes and the −5m stays, made before the next tap.
 			await page.locator(`${VIEW} [data-field="coffee"]`).click();
-			await page.locator(`${VIEW} [data-q]`).click();
-			await partPill(page, 'time').waitFor();
+			await tap(page, '[data-earlier="5"]');
+			await whenPill(page, 'time').waitFor();
 			await page.locator(`${BAR_PILLS}.field button.remove`).click();
 			await page.locator(`${VIEW} [data-field="mood"]`).waitFor();
 			assert.deepEqual(await barPills(page), ['time:-q']);
 
 			await page.locator(`${VIEW} [data-field="mood"]`).click();
-			await partPill(page, 'time').click();
-			await page.locator(`${VIEW} [data-m]`).click();
-			await page.waitForFunction((v) => document.querySelector(`${v} .part-pill[data-pill="time"] .more`)?.innerText === '-qq', VIEW);
+			await tap(page, '[data-earlier="5"]');
+			await tap(page, '[data-part="dur"]');
+			await tap(page, '[data-when-more="dur"] [data-moment]');
+			await saysPill(page, 'time', '−10m');
 			assert.deepEqual((await barPills(page)).sort(), ['field:mood', 'moment:-m', 'time:-qq']);
+			// Its options closed again, as a second tap on dur does.
+			await tap(page, '.pill[data-pill="dur"] .said');
+			await page.locator(`${WHEN} [data-when-more]`).waitFor({ state: 'detached' });
 
 			await page.locator(`${VIEW} [data-back]`).click();
 			await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
@@ -223,14 +323,19 @@ describe('collect', () => {
 		}, { twoClicks: true });
 	});
 
-	test('a moment field shows no states, and of its time −q alone', async () => {
+	test("a field's view has no time parts at its top, the section standing beside it", async () => {
 		await collect(async ({ page }) => {
 			await page.locator(`${VIEW} [data-field="coffee"]`).click();
-			await page.locator(`${VIEW} [data-time-row]`).waitFor();
+			await page.locator(`${VIEW} [data-open-field="coffee"]`).waitFor();
 			assert.equal(await page.locator(`${VIEW} [data-state]`).count(), 0);
-			assert.deepEqual(await page.locator(`${VIEW} [data-time-row] button`).allInnerTexts(), ['−q']);
+			assert.deepEqual(await page.locator(`${VIEW} .top button`).allInnerTexts(), ['back']);
 			assert.deepEqual(await page.locator(`${VIEW} [data-data-row] button`).allInnerTexts(), ['+ data']);
 			assert.match(await page.locator(`${VIEW} .head`).innerText(), /back\s*coffee/);
+			// A moment has no length to give: the dur half is off beside it.
+			for (const at of ['[data-part="dur"]', '[data-longer="1"]', '[data-longer="5"]']) assert.ok(await page.locator(`${WHEN} ${at}`).isDisabled(), at);
+			// The section, between the strip and the view.
+			const [strip, when, view] = await Promise.all([`${WIDGET} [data-strip]`, WHEN, VIEW].map((s) => page.locator(s).first().boundingBox()));
+			assert.ok(strip.x + strip.width <= when.x + 1 && when.x + when.width <= view.x + 1, JSON.stringify({ strip, when, view }));
 		}, { twoClicks: true });
 	});
 

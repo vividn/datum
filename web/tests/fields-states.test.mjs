@@ -53,7 +53,9 @@ describe('a state field fills the widget with its states', () => {
 			);
 	/** Every button collect is showing. */
 	const bar = (page) => words(page, 'section.pane[data-title="collect"] .bar');
-	/** The buttons of a field's view: back, its time, its states, its keys. */
+	/** The time and duration section's buttons, after the fields in the Tab order (da-us1n1). */
+	const WHEN = ['time', '−1m', '−5m', 'dur', '1m', '5m'];
+	/** The buttons of a field's view: back, its states, its keys; its time is the section's (da-us1n1). */
 	const ring = (page) => words(page, '.bar .collect.open');
 	const closed = (page) => page.locator('.bar .collect.open').waitFor({ state: 'detached' });
 
@@ -67,7 +69,7 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			assert.deepEqual(await ring(page), ['back', '−q', '−m', '5m', 'calm', 'happy', '+ data']);
+			assert.deepEqual(await ring(page), ['back', 'calm', 'happy', '+ data']);
 			assert.equal(await page.locator('.bar [data-field="mood"]').count(), 0, 'the field is still drawn under its states');
 
 			// A state logs at once (vividn, 16:07: one click).
@@ -78,7 +80,7 @@ describe('a state field fills the widget with its states', () => {
 			assert.deepEqual((await app.tailRows()).rows.at(-1).state, 'happy');
 			// The run spent the pills, and the view closes with them.
 			await closed(page);
-			assert.deepEqual(await bar(page), ['now:mood', 'mood:']);
+			assert.deepEqual(await bar(page), ['now:mood', 'mood:', ...WHEN]);
 		});
 	});
 
@@ -92,7 +94,7 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-back]').click();
 
 			await closed(page);
-			assert.deepEqual(await bar(page), ['now:mood', 'mood:']);
+			assert.deepEqual(await bar(page), ['now:mood', 'mood:', ...WHEN]);
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 0, 'Back left a pill');
 			assert.equal((await app.echoes()).length, before, 'Back logged something');
 		});
@@ -176,11 +178,12 @@ describe('a state field fills the widget with its states', () => {
 				page.evaluate(() => (document.activeElement?.dataset.back !== undefined ? 'back' : document.activeElement?.textContent.trim()));
 			await page.locator('.bar [data-back]').focus();
 			const order = [await focused()];
-			for (let i = 0; i < 6; i++) {
+			for (let i = 0; i < 4; i++) {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			assert.deepEqual(order, ['back', '−q', '−m', '5m', 'calm', 'happy', '+ data']);
+			// The view, then the time and duration section after it (da-us1n1).
+			assert.deepEqual(order, ['back', 'calm', 'happy', '+ data', 'time']);
 
 			await page.keyboard.press('Escape');
 			await closed(page);

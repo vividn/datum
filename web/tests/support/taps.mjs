@@ -208,6 +208,14 @@ async function reset(app, line, layout = false) {
 	// A bar a tap drilled into — a field's states, a command's subcommands
 	// or flags — backed out of, as a reader would.
 	for (let back; (back = page.locator('.bar [data-back]')), (await back.count()) > 0; ) await back.first().click();
+	// A pill a tap made and wrote nothing with (collect's time section, da-us1n1)
+	// taken off, as its × would: a length left on the bar hides the moments.
+	await page.evaluate(() => (window.datum.bar.setPills([]), window.datum.cursor.set(null)));
+	// Its options a tap left open, closed as Escape closes them.
+	if ((await page.locator('[data-when-more]').count()) > 0) {
+		await page.keyboard.press('Escape');
+		await page.locator('[data-when-more]').waitFor({ state: 'detached' });
+	}
 	// Once seeded, the layout goes back without the database: whether the
 	// tap wrote is the counter's to say, below. The world the first `solo`
 	// left is put straight back (da-vop9n), and `solo` taken again only

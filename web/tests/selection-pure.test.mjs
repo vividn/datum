@@ -308,6 +308,14 @@ describe('which commands are active under the pills', () => {
 			assert.ok(!names.includes(n), `${n} takes no field and was not hidden`);
 	});
 
+	// da-us1n1: collect's `-D` is no `-t`: only a command listing `--full-day` takes it.
+	test('a -D pill: a command listing --full-day, not every command taking -t', () => {
+		const D = { short: 'D', long: 'full-day', takes_value: false };
+		const allday = { id: 'allday', kind: 'allday', text: '-D' };
+		const grammar = grammarOf([entry('moment', ['datum moment <FIELD>'], [T, D]), entry('tail', ['datum tail [FIELD]'], [T]), entry('get', ['datum get <ID_OR_SLUG>'])]);
+		assert.deepEqual([...grammar.keys()].filter((name) => fits(grammar.get(name), allday)), ['moment']);
+	});
+
 	test('a field pill and a -t pill compose: both filters apply', () => {
 		const names = active([mood, time]);
 		for (const n of ['moment', 'off', 'tail']) assert.ok(names.includes(n), n);

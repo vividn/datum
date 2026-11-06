@@ -360,10 +360,13 @@ describe('on a phone-sized screen', () => {
 			await track(app, FIELDS.filter((f) => f !== 'mood'));
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();
-			await chip.click();
+			// Pressed where it stands: the rows pan sideways, and past the time and
+			// duration section (da-us1n1) it may stand past the edge, which a
+			// scroll into view would move under the section.
+			await chip.dispatchEvent('click');
 			await assertOnScreen(page, '.bar [data-back]', 'the way back to the fields');
 			await assertOnScreen(page, '.bar [data-state="happy"]', "mood's happy");
-			await assertOnScreen(page, '.bar [data-q]', 'the time');
+			await assertOnScreen(page, '.bar [data-when] [data-part="time"]', 'the time');
 		});
 	});
 

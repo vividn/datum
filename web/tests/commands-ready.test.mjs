@@ -176,6 +176,7 @@ for (const [device, options] of [
 // chooses it, its pill placed for the ready command at the bottom to log.
 describe('collect: 1-click and 2-click', () => {
 	const VIEW = 'main section.pane[data-pane="bar"] .collect';
+	const WHEN = 'main section.pane[data-pane="bar"] [data-when]';
 	const open = (page, name) => page.locator(`${VIEW} [data-field="${name}"]`).click();
 	const chip = (page, state) => page.locator(`${VIEW} [data-state="${state}"]`);
 	const kinds = (page) => page.evaluate(() => window.datum.bar.pills().map((p) => `${p.kind}:${p.text}`));
@@ -210,13 +211,13 @@ describe('collect: 1-click and 2-click', () => {
 			await seedLines(app, [...SEED, 'moment coffee']);
 			let seen = await app.spyOnRunner();
 			await open(page, 'mood');
-			await page.locator(`${VIEW} [data-q]`).click();
+			await page.locator(`${WHEN} [data-earlier="5"]`).click();
 			await chip(page, 'bad').click();
 			await logged(app, seen, 'bad');
 
 			seen = await app.spyOnRunner();
 			await open(page, 'mood');
-			await page.locator(`${VIEW} [data-q]`).click();
+			await page.locator(`${WHEN} [data-earlier="5"]`).click();
 			await chip(page, 'good').click({ button: 'right' });
 			await chosen(app, seen, 'good');
 		});
@@ -242,7 +243,7 @@ describe('collect: 1-click and 2-click', () => {
 				await until(runs, (r) => r.length === before + 1);
 				assert.deepEqual((await runs()).at(-1), line);
 				await app.idle();
-				assert.equal(await page.locator(`${VIEW} [data-time-row]`).count(), 0, `${name} opened`);
+				assert.equal(await page.locator(`${VIEW} [data-open-field]`).count(), 0, `${name} opened`);
 				// The clock is held: a minute on, so the next has an instant of its own.
 				await app.clock.forward(60_000);
 			}
@@ -264,14 +265,14 @@ describe('collect: 1-click and 2-click', () => {
 				// A moment opens, to collect it, and logs nothing.
 				let seen = await app.spyOnRunner();
 				await open(page, 'coffee');
-				await page.locator(`${VIEW} [data-time-row]`).waitFor();
+				await page.locator(`${VIEW} [data-open-field]`).waitFor();
 				await app.idle();
 				assert.deepEqual((await seen()).filter((a) => a[0] === 'moment' && !a.includes('--dry-run')), [], 'the tap logged');
 				await page.locator(`${VIEW} [data-back]`).click();
 
 				seen = await app.spyOnRunner();
 				await open(page, 'mood');
-				await page.locator(`${VIEW} [data-q]`).click();
+				await page.locator(`${WHEN} [data-earlier="5"]`).click();
 				await chip(page, 'bad').click();
 				await chosen(app, seen, 'bad');
 				await lead(page).click();
@@ -281,7 +282,7 @@ describe('collect: 1-click and 2-click', () => {
 				await app.clock.forward(60_000);
 				seen = await app.spyOnRunner();
 				await open(page, 'mood');
-				await page.locator(`${VIEW} [data-q]`).click();
+				await page.locator(`${WHEN} [data-earlier="5"]`).click();
 				await chip(page, 'good').click({ button: 'right' });
 				await logged(app, seen, 'good');
 				assert.deepEqual(app.errors, []);
@@ -311,7 +312,7 @@ describe('collect: 1-click and 2-click', () => {
 				const { page } = app;
 				await seedLines(app, [...SEED, 'moment coffee']);
 				const seen = await app.spyOnRunner();
-				const opened = () => page.locator(`${VIEW} [data-time-row]`).waitFor();
+				const opened = () => page.locator(`${VIEW} [data-open-field]`).waitFor();
 				await hold(page, 'coffee', how, opened);
 				await opened();
 				assert.deepEqual(await kinds(page), ['field:coffee']);
@@ -338,7 +339,7 @@ describe('collect: 1-click and 2-click', () => {
 					await until(() => runs(seen, 'moment'), (r) => r.length === 1);
 					assert.deepEqual(await runs(seen, 'moment'), [['moment', 'coffee']]);
 					await app.idle();
-					assert.equal(await page.locator(`${VIEW} [data-time-row]`).count(), 0, 'the hold opened coffee');
+					assert.equal(await page.locator(`${VIEW} [data-open-field]`).count(), 0, 'the hold opened coffee');
 
 					await hold(page, 'tea', how, () => page.waitForFunction(() => document.querySelector('.prompt-bar input').value !== ''));
 					await page.waitForFunction(() => document.querySelector('.prompt-bar input').value.startsWith('moment tea'));

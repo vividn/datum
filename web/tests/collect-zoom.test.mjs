@@ -108,9 +108,21 @@ const scaleOf = (page) => page.locator(ROOM).evaluate((el) => Number(getComputed
 /** Where the first row's first field stands across the room. */
 const firstX = (page) => page.locator(`${ROOM} .spot.shelf`).first().evaluate((el) => el.getBoundingClientRect().x);
 
-/** One finger drawn `by` px across the room's middle, then the rows let settle: how far the first field moved. */
-async function swipe(page, by) {
+/**
+ * The room's part the rows stand in: past the time and duration section beside
+ * the strip (da-us1n1), and a finger's width clear of it, which a touch landing
+ * nearer is snapped onto (the browser's touch adjustment).
+ */
+async function rowsBox(page) {
 	const room = await page.locator(ROOM).boundingBox();
+	const when = await page.locator('section.pane[data-title="collect"] .bar [data-when]').boundingBox();
+	const x = when.x + when.width + 16;
+	return { ...room, x, width: room.x + room.width - x };
+}
+
+/** One finger drawn `by` px across the rows' middle, then the rows let settle: how far the first field moved. */
+async function swipe(page, by) {
+	const room = await rowsBox(page);
 	const [x, y] = [room.x + room.width / 2 - by / 2, room.y + room.height / 2];
 	const at = (k) => [{ id: 9, x: x + k * by, y }];
 	const was = await firstX(page);
@@ -128,7 +140,7 @@ describe('collect zoom', () => {
 			await app.reload();
 			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
 			await app.idle();
-			const room = await page.locator(ROOM).boundingBox();
+			const room = await rowsBox(page);
 
 			const start = await rows(page);
 			assert.ok(start.rows > 4, `only ${start.rows} rows to begin with`);
@@ -139,7 +151,7 @@ describe('collect zoom', () => {
 			assert.ok(large.font > start.font * 1.5, `a font of ${start.font}px became ${large.font}px`);
 			assert.ok(large.rows < start.rows, `${start.rows} rows became ${large.rows}`);
 
-			await pinch(page, room, 200, 40);
+			await pinch(page, room, 160, 32);
 			const small = await rows(page);
 			assert.ok(small.height < start.height, `a button ${start.height}px tall became ${small.height}px`);
 			assert.ok(small.font >= 8, `a font of ${small.font}px is past legible`);
@@ -242,7 +254,7 @@ describe('collect zoom', () => {
 				const moved = [await swipe(page, -150), await swipe(page, 150)];
 				assert.ok(moved[0] <= 0 && moved[1] >= 0 && moved[1] - moved[0] > 100, `${when}: a finger's swipes moved the rows ${moved.map(Math.round)} px`);
 				assert.equal(await scaleOf(page), scale, `${when}: a finger's swipes left the zoom alone`);
-				const room = await page.locator(ROOM).boundingBox();
+				const room = await rowsBox(page);
 				await pinch(page, room, 60, 180);
 				await page.waitForTimeout(300);
 				assert.ok((await scaleOf(page)) > scale * 1.5, `${when}: a pinch out took the zoom from ${scale} to ${await scaleOf(page)}`);

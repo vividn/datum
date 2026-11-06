@@ -46,16 +46,14 @@
 	it stands at rest, so a state tapped is seen sweeping in at now's edge
 	(da-u7tij, vividn, 2026-11-05: «still show the now section so you can see
 	the animation right after changing states»), top to bottom with no labels —
-	‹ back and the field; its TIME, `−q` (five minutes earlier), and for a
-	field with a length `−m` (a moment) and `5m` (five minutes long), each
-	becoming a two-part pill whose left part adds another five where it
-	still can and whose × clears it, `−m` and the length one pill and never
-	both; a switch field's STATES, the first of its spec in the middle and
+	‹ back and the field; a switch field's STATES, the first of its spec in the middle and
 	the rest ring by ring, the one it is in marked with the CLI's yellow `!`
 	and off left to the commands; and its KEYS at the bottom, a tap putting
-	`key=` on the line, with `+ data` taking the caret there. Its time is the
-	page's selection (#lib/cursor.ts), so the `-qq` and length pills are the
-	nowview's own. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
+	`key=` on the line, with `+ data` taking the caret there. Its time and
+	length are the TIME AND DURATION SECTION's (CollectWhen.svelte, da-us1n1),
+	a column between the now strip and the rows, at rest and beside a field's
+	view alike: `time −1m −5m · dur 1m 5m`, summing into the page's selection
+	(#lib/cursor.ts), so they are the nowview's own pills. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
 	click); any other field runs from the commands, which take the pills.
 	In 1-click mode, the default, a field that needs nothing more is not
 	opened at all (da-gra0z, `pressKind`): a tap on a moment logs it, on a
@@ -121,10 +119,10 @@
 <script lang="ts">
 	import { flushSync, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
-	import LengthArrow from './LengthArrow.svelte';
+	import CollectWhen, { MOMENT_ID, setMoment } from './CollectWhen.svelte';
+	import { CLICK_SLOP } from './inspect.js';
 	import NowStrip from './NowStrip.svelte';
 	import type { Mark } from './nowStrip.js';
-	import { CLICK_SLOP } from './inspect.js';
 	import { TAU } from './detent.js';
 	import { speedOver, tracked, type Sample } from './grip.js';
 	import {
@@ -155,7 +153,7 @@
 	import { currentDb } from './database.js';
 	import { run } from './run.js';
 	import { entryArgv } from './calls.js';
-	import { SPAN_ID, cursor, pointAt, pointed, type Cursor } from './cursor.js';
+	import { cursor, pointed, type Cursor } from './cursor.js';
 	import { grammar } from '#lib/layout/engine.ts';
 	import { previewOf } from './preview.js';
 	import { labelOf, withPills } from './selection.js';
@@ -463,16 +461,19 @@
 
 	/** The strip's width at rest: about a fifth of the widget (vividn: «maybe 20%»). */
 	const strip = $derived(Math.round(boxW / 5));
+	/** The time and duration section's width, beside the strip (da-us1n1); the rows stand past both. */
+	let whenW = $state(0);
+	const edge = $derived(strip + whenW);
 	/** Where each field stands at rest, and the active section's outline. */
 	const shelves = $derived.by(() => {
 		const hs = [...sizes.values()].map((s) => s.h);
 		return atRest(
 			clustered.map((b) => ({ ...b, w: sizes.get(`f:${b.field}`)?.w ?? 0 })),
-			{ height: paneH, rowH: hs.length ? Math.max(...hs) : 30, gap: GAP, strip }
+			{ height: paneH, rowH: hs.length ? Math.max(...hs) : 30, gap: GAP, strip: edge }
 		);
 	});
-	/** The strip and the active section stay while the section is under half the widget; past it the section pans too. */
-	const frozen = $derived(shelves.section <= paneW / 2);
+	/** The strip and the active section stay while the section is under half the widget, the time section beside the strip not counted; past it the section pans too. */
+	const frozen = $derived(shelves.section - whenW <= paneW / 2);
 	/** Each active field's band on the strip, a tap's target over its picture. */
 	const nowBands = $derived(fields.filter((b) => b.active && !b.ignored));
 	// The other side pans the other way: a pan kept from the last starts again at the strip.
@@ -642,27 +643,13 @@
 
 	// ---- the PILLS a field's view makes (da-w6437) ----------------------
 	//
-	// Its time is the page's selection (#lib/cursor.ts), so `−q` and `5m` are
-	// the very `-qq` and length pills the nowview makes and draws, and the
-	// cursor's reconciler is what a × on the bar goes through. A state and
-	// `-m` are pills of their own.
+	// Its time and length are the section's (CollectWhen.svelte); a state is
+	// a pill of its own.
 
 	const STATE_ID = 'state';
-	const MOMENT_ID = 'moment';
-	/** Each `−q` and each `5m` a tap adds, in minutes. */
-	const STEP = 5;
-
-	/** The length a collect drag left, which a tap adds no five to; a length set anywhere else adds them again. */
-	let draggedTo = $state<number | null>(null);
 	/** The state pill's state, and whether `-m` is on the bar. */
 	const chosen = $derived($pills.find((p) => p.id === STATE_ID)?.text ?? null);
 	const moment = $derived($pills.some((p) => p.id === MOMENT_ID));
-	/** The time pill and the length the bar holds. */
-	const timePill = $derived($pills.find((p) => p.kind === 'time') ?? null);
-	const span = $derived($pills.some((p) => p.id === SPAN_ID) ? ($cursor?.span ?? null) : null);
-	/** A tap adds a `q` while the time is so many fives before now, and five minutes while the length is fives: a drag leaves neither. */
-	const addsQ = $derived(!!timePill && $cursor?.rel !== undefined && $cursor.rel > 0 && $cursor.rel % STEP === 0);
-	const addsM = $derived(span !== null && span % STEP === 0 && span !== draggedTo);
 
 	// What the open field would log, drawn on the nowview before it is
 	// (da-axrdv): its line as a state's tap or the bar would run it, the
@@ -748,82 +735,6 @@
 	/** Back from an entry: its pill goes. */
 	function unselect() {
 		pills.update((all) => all.filter((p) => p.kind !== 'hid'));
-	}
-
-	/** Where a selection is, without its length. */
-	const where = (c: Cursor) => (c.rel !== undefined ? { rel: c.rel, from: c.from } : { at: c.at, step: 1, from: c.from });
-
-	/** `−q`: five minutes earlier. */
-	function earlier() {
-		const c = get(cursor);
-		pointAt({ ...(c ? where(c) : {}), rel: (c?.rel ?? 0) + STEP, span: c?.span });
-	}
-	/** The time pill's ×: the length, if any, ends at now again. */
-	function clearTime() {
-		const c = get(cursor);
-		pointAt(c?.span ? { rel: 0, span: c.span } : null);
-	}
-	/** `5m`: five minutes more, in place of `-m`. */
-	function longer() {
-		draggedTo = null;
-		setMoment(false);
-		const c = get(cursor);
-		pointAt({ ...(c ? where(c) : { rel: 0 }), span: (c?.span ?? 0) + STEP });
-	}
-	/** The length's ×. */
-	function clearLength() {
-		draggedTo = null;
-		const c = get(cursor);
-		if (c) pointAt(where(c));
-	}
-	// ---- a pill DRAGGED (da-axrdv) ------------------------------------------
-	//
-	// vividn: «you can grab and hold them and nudge them or drag them to the
-	// left and right to make quick adjustments to the relative time and
-	// duration. For precise seeking you can still use the nowview.» Sideways,
-	// a minute for every few pixels and faster the further it goes, along
-	// the nowview's time: right is later, so the length, whose far edge is
-	// to the left, grows to the left. A dragged pill goes plain and adds no
-	// more fives: `−qq` is `-t 13:41`, the length `12m`.
-
-	/** Px of drag for the first minute. */
-	const JOG_PX = 6;
-	/** How a click right after a drag is told from one: it is the drag's own. */
-	const JOG_CLICK_MS = 300;
-	let jog: { kind: string; x: number; was: Cursor; moved: boolean } | null = null;
-	let jogged = -Infinity;
-
-	function jogDown(kind: string, e: PointerEvent) {
-		const was = kind === 'time' || kind === 'length' ? get(pointed) : null;
-		if (!was || disabled) return;
-		jog = { kind, x: e.clientX, was, moved: false };
-		(e.currentTarget as Element).setPointerCapture(e.pointerId);
-	}
-	function jogMove(e: PointerEvent) {
-		if (!jog) return;
-		const dx = e.clientX - jog.x;
-		if (!jog.moved && Math.abs(dx) < CLICK_SLOP) return;
-		jog.moved = true;
-		const by = Math.sign(dx) * Math.round((Math.abs(dx) / JOG_PX) ** 1.4);
-		const c = jog.was;
-		if (jog.kind === 'time') return pointAt({ at: new Date(+c.at + by * 60_000), span: c.span, from: c.from });
-		pointAt({ ...where(c), span: (draggedTo = Math.max(1, (c.span ?? 0) - by)) });
-	}
-	function jogUp() {
-		if (jog?.moved) jogged = performance.now();
-		jog = null;
-	}
-
-	/** `−m` is a toggle, and a moment has no length. */
-	function toggleMoment() {
-		if (!moment) clearLength();
-		setMoment(!moment);
-	}
-	function setMoment(on: boolean) {
-		pills.update((all) => [
-			...all.filter((p) => p.id !== MOMENT_ID),
-			...(on ? [{ id: MOMENT_ID, kind: 'moment', text: '-m' }] : [])
-		]);
 	}
 
 	/**
@@ -1184,32 +1095,6 @@
 	{/if}
 {/snippet}
 
-<!-- A pill of the view's own, two parts: the left one presses `more` (none: it only says), the × clears it.
-     A time's or a length's jogs sideways, so a drag across it is never the pane's tab swipe (`data-pans`, da-ut8e5). -->
-{#snippet twoPart(kind: string, label: string, more: (() => void) | null, clear: () => void)}
-	<span class="part-pill" data-pill={kind}>
-		<!-- Not `disabled` with nothing to add: a drag goes on holding it. -->
-		<button
-			class="more"
-			data-more
-			data-pans={kind === 'moment' ? undefined : 'x'}
-			{disabled}
-			aria-disabled={!more || undefined}
-			onpointerdown={(e) => jogDown(kind, e)}
-			onpointermove={jogMove}
-			onpointerup={jogUp}
-			onpointercancel={jogUp}
-			onclick={() => performance.now() - jogged > JOG_CLICK_MS && more?.()}
-			>{#if kind === 'length'}<LengthArrow />{/if}{label}</button
-		><button
-			class="clear"
-			{disabled}
-			aria-label="clear {label}"
-			onclick={clear}>×</button
-		>
-	</span>
-{/snippet}
-
 <!-- The now strip (da-lw7ue), `height` tall: at rest the room's, beside a field's view the widget's (da-u7tij). -->
 {#snippet present(height: number)}
 <div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
@@ -1299,10 +1184,10 @@
 		{@const here = picking}
 		{@const states = here ? statesOf(here.shape).filter((s) => s !== 'false') : []}
 		<!-- The fields' place (da-w6437): at rest the fields in their rows
-		     (da-lw7ue); a field tapped, its time at the top, its states in the
+		     (da-lw7ue); a field tapped, its name at the top, its states in the
 		     middle and its keys at the bottom, the fields hidden under it. -->
 		{#if here && resting}{@render present(boxH)}{/if}
-		<div class="collect" class:open={!!here} style:left={here && resting && side === 'left' ? `${strip}px` : null} style:right={here && resting && side === 'right' ? `${strip}px` : null}>
+		<div class="collect" class:open={!!here} style:left={here && resting && side === 'left' ? `${edge}px` : null} style:right={here && resting && side === 'right' ? `${edge}px` : null}>
 			{#if here}
 				<div class="top">
 				<div class="head">
@@ -1311,29 +1196,6 @@
 					</button>
 					<span class="name" style:color={here.color} data-open-field={here.field}>{here.field}</span>
 					{#if chosen !== null}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
-				</div>
-				<div class="time" data-time-row>
-					{#if timePill}
-						{@render twoPart('time', timePill.text, addsQ ? earlier : null, clearTime)}
-					{:else}
-						<button class="nav round" data-q {disabled} title="five minutes earlier" onclick={earlier}>−q</button>
-					{/if}
-					<!-- `−m` and the length are one pill, never both (vividn: «they don't
-					     make sense in conjunction»); the other's button stays to swap. A
-					     moment field has no length to give: `−q` alone (vividn, 16:07). -->
-					{#if here.shape.kind === 'moment'}
-						<!-- nothing more -->
-					{:else if moment}
-						{@render twoPart('moment', '−m', toggleMoment, toggleMoment)}
-					{:else if span !== null}
-						{@render twoPart('length', `${span}m`, addsM ? longer : null, clearLength)}
-					{/if}
-					{#if here.shape.kind !== 'moment' && !moment}
-						<button class="nav round" data-m {disabled} title="a moment, no length" onclick={toggleMoment}>−m</button>
-					{/if}
-					{#if here.shape.kind !== 'moment' && span === null}
-						<button class="nav round" data-five {disabled} title="five minutes long" onclick={longer}>5m</button>
-					{/if}
 				</div>
 				</div>
 			{/if}
@@ -1353,7 +1215,7 @@
 				{#if !here && resting}
 					<!-- At rest (da-lw7ue): the strip, the active section, then each row by recency. -->
 					<svg class="backing" aria-hidden="true">
-						<path d={frozen ? shelves.backing : `M0 0H${strip}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
+						<path d={frozen ? shelves.backing : `M0 0H${edge}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
 					</svg>
 					{@render present(paneH)}
 					{#if shelves.outline}
@@ -1429,6 +1291,8 @@
 				</div>
 			{/if}
 		</div>
+		<!-- After the rows and the view, so a field comes first in the Tab order; it stands between them and the strip. -->
+		{#if resting}<CollectWhen {disabled} {side} offset={strip} noLength={here?.shape.kind === 'moment'} bind:width={whenW} />{/if}
 	{/if}
 	{/snippet}
 </ButtonRows>
@@ -1668,8 +1532,8 @@
 	}
 
 	/* The fields' place (da-w6437): a field's view top to bottom — back and
-	   its name, its time, its states in the room, its keys — or at rest the
-	   room alone. */
+	   its name, its states in the room, its keys — or at rest the room
+	   alone. */
 	.collect {
 		position: absolute;
 		inset: 0;
@@ -1697,18 +1561,14 @@
 		min-height: 7.5rem;
 	}
 
-	/* A pane a few rows tall, a phone's main tab: back, the field and its
-	   time share one row, a little smaller, so a row of states stands under
-	   them in the pane and not below it. */
+	/* A pane a few rows tall, a phone's main tab: back and the field share
+	   one row, a little smaller, so a row of states stands under them in the
+	   pane and not below it. */
 	@container collect (max-height: 140px) {
 		.top {
 			flex-direction: row;
 			align-items: center;
 			flex-wrap: wrap;
-		}
-
-		.top .time {
-			justify-content: flex-start;
 		}
 
 		.nav.round {
@@ -1722,16 +1582,11 @@
 	}
 
 	.head,
-	.time,
 	.data {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		flex-wrap: wrap;
-	}
-
-	.time {
-		justify-content: center;
 	}
 
 	.data {
@@ -1936,51 +1791,13 @@
 		stroke-width: 2;
 	}
 
-	/* `−q`, `−m`, `5m`: round, before a tap makes them pills. */
+	/* `−A`: round. */
 	.nav.round {
 		justify-content: center;
 		min-width: 2.4rem;
 		min-height: 2.4rem;
 		border-radius: 999px;
 		padding: 0;
-	}
-
-	/* A pill of the view's own, two parts (vividn, 14:25: «-q|x so that you
-	   can either add more qs or clear the pill»). */
-	.part-pill {
-		display: inline-flex;
-		border: 1.5px solid var(--accent);
-		border-radius: 999px;
-		overflow: hidden;
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	}
-
-	.part-pill button {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.15em;
-		background: none;
-		border: none;
-		color: var(--ink-bright);
-		font: inherit;
-		font-size: 0.95rem;
-		padding: 0.35rem 0.7rem;
-		cursor: pointer;
-	}
-
-	.part-pill .more:disabled,
-	.part-pill .more[aria-disabled] {
-		cursor: default;
-	}
-
-	/* A time or a length is held and dragged sideways. */
-	.part-pill:is([data-pill='time'], [data-pill='length']) .more {
-		touch-action: none;
-	}
-
-	.part-pill .clear {
-		border-left: 1.5px solid var(--accent);
-		padding: 0.35rem 0.55rem;
 	}
 
 	.key {

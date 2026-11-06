@@ -633,6 +633,12 @@ The fields stand in rows. At the left edge is the last half second of today, a n
 
 With a time chosen in another widget, the buttons show how each field stood then, and a moment logged at that instant is tinted: a tap on it deletes it.
 
+## Time and duration
+
+Between the now strip and the rows, at rest and beside an open field, stand **time −1m −5m** and **dur 1m 5m** (a column, or a row in a short pane). Each press adds up: −1m and then −5m log six minutes back, shown as a **−6m** pill, and 1m and then 5m a length of six minutes; the nowview and the day pictures show it as any chosen time. Drag a pill sideways to move it a minute at a time; its × takes it away.
+
+A tap on **time** opens more ways to say it: a time typed as \`-t\` takes it (9:15am, yesterday 10am), **-y** goes a day back, **-d** to a date, and **-D** logs the whole day. A tap on **dur** opens a length typed (1h30m, 1.5h) and **-m**, a moment with no length. Drag them back toward the strip to close them.
+
 ## A tap, and a hold
 
 **a tap**, in the menu, chooses what a tap does:
@@ -644,10 +650,8 @@ A hold, a right click or a shift click does what a tap does in the other mode. W
 
 ## An open field
 
-An open field shows its name, then its time and states:
+An open field shows its name, then its states, its time and length being the section's beside it (a moment field has no length to give):
 
-- **−q** logs it five minutes earlier, and again five more; its × takes that away. Drag the time sideways to move it a minute at a time.
-- **−m** logs a moment, with no length; **5m** a length of five minutes, five more a tap.
 - A state logs the change at once (in 2-click mode, it is chosen, and the commands' larger button logs it).
 - **key=** puts that key on the bar for you to type; **+ data** goes to the bar.
 - **‹ back**, or Escape, closes it, and takes away the pills it made.
@@ -662,8 +666,7 @@ An open field shows its name, then its time and states:
 
 With an entry selected in a list (the CLI widget, the tail), it shows that entry instead: its field, state, time and data, **−A** for all of it, and **back**.
 
-Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,
-		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, fields }) => ({
+Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, fields }) => ({
 			only: Array.isArray(fields) ? fields.filter((f): f is string => typeof f === 'string') : [],
 			align: align === 'picture' ? 'picture' : 'rows',
 			zoom: typeof zoom === 'number' ? zoom : 1,
