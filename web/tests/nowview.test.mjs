@@ -101,7 +101,7 @@ async function beside(page, pane) {
 			const line = r(svg.querySelector(h.dataset.axis === 'rel' ? 'path.axis' : 'path.clock-axis'));
 			const off = across - (h.dataset.axis === 'rel' ? line.top : line.bottom);
 			if (Math.abs(off) > 1) wrong.push(`${h.dataset.at} is ${off}px off its axis's line`);
-			const diamond = { left: middle - 8, right: middle + 8, top: across - 4, bottom: across + 4 };
+			const diamond = { left: middle - 10, right: middle + 10, top: across - 5, bottom: across + 5 };
 			for (const l of labels) if (over(diamond, r(l))) wrong.push(`${h.dataset.at} lies over ${l.textContent}`);
 		}
 		return { far: handles.find((h) => h.dataset.axis === 'rel')?.dataset.at, wrong };

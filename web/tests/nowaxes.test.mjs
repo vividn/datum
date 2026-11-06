@@ -249,8 +249,8 @@ for (const vertical of [false, true]) {
 				assert.deepEqual(seen.cut, [], 'the window\'s far end cuts a label in two');
 				assert.deepEqual(seen.handles.map((h) => [h.axis, h.at]), [['abs', '14:47:30'], ['rel', '-15m']]);
 				for (const h of seen.handles) {
-					assert.equal(h.along, 2 * h.out, `${h.axis}: ${h.along} along, ${h.out} out`);
-					assert.ok(h.out <= 8, `${h.axis} sticks out ${h.out}px`);
+					// da-6i27j: «a just a tiny bit bigger», 20 × 10 from 16 × 8.
+					assert.deepEqual([h.along, h.out], [20, 10], `${h.axis}: ${h.along} along, ${h.out} out`);
 					assert.match(h.clip, /^polygon/);
 					assert.equal(h.fill, seen.stroke === 'white' ? 'rgb(255, 255, 255)' : seen.stroke);
 					assert.ok(h.place > 0.3 && h.place < 0.55, `${h.axis} stands ${h.place} along`);
@@ -276,6 +276,43 @@ for (const vertical of [false, true]) {
 					await finger(page, vertical ? { x: x - by, y } : { x, y: y + by });
 					await until(() => pillsOf(page), (p) => p.length === 1);
 					assert.equal(await page.locator('.nowview-wheel').count(), 0, 'the press opened the numbers');
+				});
+			});
+
+		// vividn, 2026-11-05: «the hit box should extend into the data section a
+		// bit more--this way it is easy to add a time pill on the axis side right
+		// by it but still comfortably grab and drag the diamond» (da-6i27j).
+		for (const kind of ['rel', 'abs'])
+			test(`the ${kind} handle is grabbed well into the band, and a tap on the axis past its diamond's end is a pill`, async () => {
+				await withAxes(vertical, async (app) => {
+					const { page } = app;
+					const h = await page.locator(`${NOWVIEW} .handle[data-axis="${kind}"]`).boundingBox();
+					const g = await read(page);
+					const [along, across] = vertical ? [h.y + h.height / 2, h.x + h.width / 2] : [h.x + h.width / 2, h.y + h.height / 2];
+					// Into the band: up from the relative axis and down from the clock's,
+					// or right of the relative one and left of the clock's.
+					const inward = (kind === 'rel') === vertical ? 1 : -1;
+					// The diamond is 10 across: 14px from the line is 9px clear of it, and 8px past the button.
+					const deep = pt(g, along, across + inward * 14);
+					const taken = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.handle')?.dataset.axis ?? null, deep);
+					assert.equal(taken, kind, `a press 14px into the band is not the ${kind} handle's`);
+					// On the line, 10px past the diamond's end along it: the axis's.
+					await finger(page, pt(g, along + 20, across));
+					await until(() => pillsOf(page), (p) => p.length === 1 && p[0].startsWith('time:'));
+					assert.equal(await page.locator('.nowview-wheel').count(), 0, 'the tap opened the numbers');
+					await page.locator(`${NOWVIEW} .nowview-now`).click();
+					await until(() => pillsOf(page), (p) => p.length === 0);
+					await page.locator(`${NOWVIEW} svg.svg .instant-line`).first().waitFor({ state: 'detached' });
+					await app.idle();
+					await app.spyOnRunner();
+					const at = await page.locator(`${NOWVIEW} .handle[data-axis="${kind}"]`).boundingBox();
+					const from = pt(g, vertical ? at.y + at.height / 2 : at.x + at.width / 2, (vertical ? at.x + at.width / 2 : at.y + at.height / 2) + inward * 14);
+					await finger(page, from, pt(g, (vertical ? from.y : from.x) + 37, vertical ? from.x : from.y));
+					await until(
+						() => page.evaluate(() => window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1)),
+						(a) => a && a[a.indexOf('--history') + 1] !== '30m'
+					);
+					assert.deepEqual(await pillsOf(page), [], 'the drag made a pill');
 				});
 			});
 

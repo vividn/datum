@@ -2729,12 +2729,16 @@
 		pointer-events: auto;
 	}
 
-	/* THE HANDLES (da-tglm6): a white diamond on the axis's line, twice as long
-	   along it as across (`::before`), white as datum draws the axis, in a
-	   fingertip's target (the button, HANDLE_PX along) little wider than it, so
-	   a press just off the diamond still makes a pill. vividn, on #1445:
-	   «small white diamonds, 2:1 ratio … it shouldn't stick out too far». A
-	   drag on it is the handle's, never the page's (da-byzc0). */
+	/* THE HANDLES (da-tglm6): a white diamond on the axis's line, 20 × 10,
+	   twice as long along it as across (`::before`), white as datum draws the
+	   axis, in a target (the button, HANDLE_PX along) little bigger than it on
+	   the axis's side, so a press on the axis just off the diamond still makes
+	   a pill, and reaching 20px from the line into the band (`::after`), where
+	   a press grabs it (da-6i27j, vividn: «the hit box should extend into the
+	   data section a bit more--this way it is easy to add a time pill on the
+	   axis side right by it»). vividn, on #1445: «small white diamonds, 2:1
+	   ratio … it shouldn't stick out too far». A drag on it is the handle's,
+	   never the page's (da-byzc0). */
 	.handle {
 		position: absolute;
 		box-sizing: border-box;
@@ -2757,12 +2761,31 @@
 	.handle::before {
 		content: '';
 		position: absolute;
-		inset: 2px 6px;
+		inset: 1px 4px;
 		background: white;
 		clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 	}
 	.vertical .handle::before {
-		inset: 6px 2px;
+		inset: 4px 1px;
+	}
+	/* Toward the band: under the clock's axis and over the relative one, or,
+	   time running down, right of the relative axis and left of the clock's. */
+	.handle[data-axis]::after {
+		content: '';
+		position: absolute;
+		inset: 100% 0 auto;
+		height: 14px;
+	}
+	.handle[data-axis='rel']::after {
+		inset: auto 0 100%;
+	}
+	.vertical .handle[data-axis]::after {
+		inset: 0 auto 0 100%;
+		width: 14px;
+		height: auto;
+	}
+	.vertical .handle[data-axis='abs']::after {
+		inset: 0 100% 0 auto;
 	}
 	.handle:focus-visible {
 		outline: 1px solid var(--ink);
