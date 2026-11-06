@@ -172,7 +172,9 @@
 	import NowStrip from '#lib/NowStrip.svelte';
 	import { STRIP_MS, taps, unheld, type Mark } from '#lib/nowStrip.ts';
 	import Pill from '#lib/Pill.svelte';
+	import { get } from 'svelte/store';
 	import { pills, removePill, selected } from '#lib/bar.ts';
+	import { entrySpanArgv } from '#lib/calls.ts';
 	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
 	import { preview } from '#lib/preview.ts';
 	import { DOUBLE_MS, inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
@@ -182,7 +184,7 @@
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { clockLabel, minute, now as clockNow } from '#lib/clock.ts';
 	import { compose, graftAxis } from '#lib/nowcrop.ts';
-	import { clockAround, clockWord, historyArg, ladderAround, NOWVIEW_HISTORY, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
+	import { clockAround, clockWord, historyArg, ladderAround, NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, stepMinutes, SURROUND, zoomHistory } from '#lib/panes.ts';
 	import { dateBack, layers, spanDates, standIn, type Layer } from '#lib/dayLayers.ts';
 	import { run } from '#lib/run.ts';
 
@@ -412,55 +414,16 @@
 	/** Whether the window has left now — and so whether a tap makes an absolute pill. */
 	const offNow = $derived(!!middle);
 
-	// A selection made somewhere ELSE points this window; one made here does
-	// not, and neither does a RELATIVE one — that is measured from now, and
-	// the window it was dropped on is the one on now. A selection CLEARED
-	// takes back only the window it was pointing.
-	//
-	// A subscription rather than an effect, because this ASSIGNS the window
-	// and an effect that both reads and writes one value re-runs itself for
-	// ever.
-	//
-	// And of `cursor`, NOT of `pointed` — plus a guard on the instant it
-	// last acted on. `pointed` is derived over the minute clock, and a
-	// Svelte store calls its subscribers for every value it is given, the
-	// same object included, so this ran once a minute and re-centred a
-	// window a hand had panned away: asked at 12:00, panned to 11:45, back
-	// at 12:00 a minute later (vremya on PR #48, da-rskp). The header above
-	// says only «now» brings a hand-moved window home, and now it is
-	// true. The guard is for the other door into the same bug: the pills
-	// reconciler re-points the cursor at the SAME instant when a length
-	// pill is dropped, and that is not a new selection either.
-	/**
-	 * The instant `follow` last pointed the window at; `null` after a clear.
-	 *
-	 * Declared BEFORE the subscription below, which calls `follow` at once
-	 * with the value the store holds — a `let` under that line is still in
-	 * its dead zone when that first call reads it, and the whole page throws.
-	 */
-	let followed: number | null = null;
-
-	onDestroy(cursor.subscribe(follow));
-
-	function follow(c: Cursor | null): void {
-		if (!c) {
-			followed = null;
-			centre = centre?.by === 'pan' ? centre : null;
-			ask();
-			return;
-		}
-		if (c.rel !== undefined || c.from === 'nowview') return;
-		if (+c.at === followed) return;
-		followed = +c.at;
-		centre = { arg: c.at.toISOString(), by: 'sel' };
-		ask();
-	}
-
 	/** Back to now, and the time-based pills — and so the selection — with it: the «now» button, and the «reset» one at a pill. */
 	function toNow(): void {
 		// Whatever is in hand stops where it is, and nothing of it is committed (da-y6jzs).
 		cancelAnimationFrame(coasting);
 		coasting = 0;
+		cancelAnimationFrame(flying);
+		flying = 0;
+		inFlight = false;
+		arriving = null;
+		back = flew = null;
 		clearTimeout(settle);
 		ungrip();
 		drop();
@@ -668,6 +631,10 @@
 	 * edge, `at` the instant there, once now is past it (da-2x9eq).
 	 */
 	let zoom = $state.raw<{ origin: number; scale: number; raw: number; held?: string; at?: number; shift?: number } | null>(null);
+	/** The frame a follow of the pills waits on, while it flies (`go`): it asks for no rule. */
+	let flying = 0;
+	/** Whether it flies, as the band says (`data-flying`), for a hand driving it to wait on. */
+	let inFlight = $state(false);
 
 	// ── the flow ───────────────────────────────────────────────────────
 
@@ -1303,7 +1270,9 @@
 		// lands. One that traveled is a scroll the browser took, and points
 		// nowhere. One that stopped a coast was only that.
 		if (!caught && !pressSpent() && still && undecided(mode)) {
+			picking = true;
 			const entry = mode === 'press' && inspectMark(markOf(event.target) ?? onMark, event, svgEl());
+			picking = false;
 			if (entry) lanesAt(press.x, press.y, axis ? instantAt(press.x, press.y) : null);
 			else if (mode === 'hold') holdAt(press.x, press.y);
 			else tap(press.x, press.y);
@@ -1534,7 +1503,8 @@
 	}
 
 	function onPointerDown(event: PointerEvent): void {
-		// A press stops a coast where it is.
+		// A press lands a follow's fly, and stops a coast, where it is.
+		arriving?.();
 		if (coasting) {
 			land();
 			caught = true;
@@ -1664,6 +1634,7 @@
 	function onWheel(event: WheelEvent): void {
 		if (!event.ctrlKey) return;
 		event.preventDefault();
+		arriving?.();
 		turnedAt = along(event.clientX, event.clientY);
 		if (zoom?.held) owed += event.deltaY;
 		else turn(event.deltaY);
@@ -2071,7 +2042,7 @@
 		const z = zoom;
 		untrack(() => {
 			if (!z) ruled = null;
-			if (!z?.held) ruleFor = z ? JSON.stringify(landingArgv(z)) : 'null';
+			if (!z?.held) ruleFor = z && !flying ? JSON.stringify(landingArgv(z)) : 'null';
 			void tick().then(rule);
 		});
 	});
@@ -2270,6 +2241,7 @@
 		const svg = svgEl();
 		if (event.button > 0 || !svg || !axis) return;
 		event.preventDefault();
+		arriving?.();
 		const box = svg.getBoundingClientRect();
 		const at = vertical ? boxAt.y + h.y : boxAt.x + h.x;
 		// Panned into the past, a drag scales about the view's right edge, not
@@ -2415,6 +2387,173 @@
 		};
 	});
 
+	// ── following the bar's pills (da-2v3mr) ───────────────────────────
+	//
+	// vividn, 2026-11-06: «when you are entering in time or duration pills,
+	// the nowview should automatically pan and zoom (smoothly animated, but
+	// quick) so that you can see the time or the full extent of the
+	// duration. if the pills are dismissed, then return the previous zoom
+	// level and pan position», and «likewise if you add a quickid pill … pan
+	// to where that entry was logged. If the entry has a duration also zoom
+	// out (if needed) so that you can see the full duration block».
+	//
+	// A selection made somewhere else, absolute and with no length, centres
+	// the window on its instant, as a click on the dayview always has. Any
+	// other — relative, a range, an entry — moves it only where the window
+	// does not show it all: to show it, the window's length kept where it
+	// fits and on now where the window about it would reach past now. A
+	// selection made in this window is in it, and moves nothing. The window
+	// from before is kept, and the pills' going returns it — unless a hand
+	// moved the window since the follow left it: that is kept, and nothing
+	// returns. So: no pill, no `back`; pills up and followed, `back` the
+	// window before and `flew` where the follow left it; moved by hand since,
+	// `asFlown` false, and their going leaves it. Subscriptions, not effects,
+	// since this assigns the window; down here, under everything they read,
+	// since a store calls them at once.
+
+	/** The window the pills found, which their going returns to, and the one the follow left. */
+	let back: { history: string; centre: typeof centre } | null = null;
+	let flew: { history: string; centre: string | null } | null = null;
+	/** The span last followed: a selection inside it moves nothing again (a length dropped, the same instant re-pointed). */
+	let aimed: [number, number] | null = null;
+	/** The entry last followed, and the read of it in flight. */
+	let aimedHid: string | null = null;
+	let hidAsked = 0;
+	/** The fly's end, while one runs: landed at once by anything that takes the window. */
+	let arriving: (() => void) | null = null;
+	/** A tap on a mark here selects its entry: that is the reader's own pointing, and moves nothing. */
+	let picking = false;
+	/** How long a follow's pan and zoom takes. */
+	const FLY_MS = 250;
+
+	/** Whether the window is where the follow left it: no hand has moved it since. */
+	const asFlown = () => !!flew && flew.history === kept && flew.centre === (centre?.arg ?? null);
+
+	/**
+	 * The window that shows `a` … `b`, or none where this one does: centred
+	 * on them, long enough for them and a fifth to spare, on now where that
+	 * reaches past now. `exact` centres it on `b` whatever, as a dayview click.
+	 */
+	function windowFor(a: number, b: number, exact = false): { history: string; centre: typeof centre } | null {
+		const [lo, hi] = windowAbout(middleOf(middle));
+		if (!exact && a >= lo - EDGE_MS && b <= hi + EDGE_MS) return null;
+		const need = ((b - a) / 60_000) * 1.25;
+		const next = need > minutes ? (NOWVIEW_STEPS.find((s) => stepMinutes(s) >= need) ?? historyArg(Math.ceil(need))) : kept;
+		const mid = (a + b) / 2;
+		if (!exact && mid + stepMinutes(next) * 30_000 >= Date.now()) return { history: next, centre: null };
+		return { history: next, centre: { arg: new Date(mid).toISOString(), by: 'sel' } };
+	}
+
+	/**
+	 * Take the window to `to`, the band scaled and slid there over FLY_MS as a
+	 * pinch would be, and held so until datum's picture of it lands; at once
+	 * under `prefers-reduced-motion`, or with no picture yet.
+	 */
+	function go(to: { history: string; centre: typeof centre }, returning = false): void {
+		// A fly still in the air was moved by no hand: the window before it stays the one to return to.
+		if (!returning && (!back || (!arriving && !asFlown()))) back = { history: kept, centre };
+		abandon();
+		const svg = svgEl();
+		const land = () => {
+			// The band as the fly left it, if it flew: held, or slid at rest.
+			const z = arriving ? zoom : null;
+			cancelAnimationFrame(flying);
+			flying = 0;
+			inFlight = false;
+			arriving = null;
+			centre = to.centre;
+			flew = returning ? null : { history: to.history, centre: to.centre?.arg ?? null };
+			if (to.history !== history) {
+				if (z) zoom = { ...z, held: to.history };
+				return void onchange?.(to.history);
+			}
+			if (z) {
+				rest += z.shift ?? 0;
+				zoom = null;
+			}
+			ask();
+			// Placed now, so a press that landed it is read off the band where it landed, under the finger.
+			if (z) place();
+		};
+		if (!svg || !axis || zoom || press || matchMedia('(prefers-reduced-motion: reduce)').matches) return land();
+		const was = middleOf(middle);
+		const scale = minutes / stepMinutes(to.history);
+		const shift = ((was - (to.centre ? middleOf(to.centre.arg) : nowMs() - stepMinutes(to.history) * 30_000)) * scale) / msPerPx(axis);
+		const box = svg.getBoundingClientRect();
+		const origin = posOf(was) - (axis.y ? box.y : box.x);
+		const from = performance.now();
+		arriving = land;
+		inFlight = true;
+		const frame = (t: number) => {
+			const k = Math.min(1, (t - from) / FLY_MS);
+			const e = 1 - (1 - k) ** 3;
+			zoom = { origin, scale: scale ** e, raw: scale ** e, shift: shift * e };
+			if (k < 1) flying = requestAnimationFrame(frame);
+			else land();
+		};
+		flying = requestAnimationFrame(frame);
+	}
+
+	/** Drop a fly still in the air, committing nothing of it: what comes next was aimed from the window before it. */
+	function abandon(): void {
+		if (!arriving) return;
+		cancelAnimationFrame(flying);
+		flying = 0;
+		inFlight = false;
+		arriving = null;
+		zoom = null;
+	}
+
+	/** The pills are gone: the window they found, unless a hand has moved it since; one the selection pointed otherwise goes home. */
+	function dismiss(): void {
+		if (get(cursor) || get(selected).length) return;
+		aimed = null;
+		aimedHid = null;
+		// A fly still in the air has been moved by no hand: it is dropped, and the window returns.
+		const [to, unmoved] = [back, !!arriving || asFlown()];
+		abandon();
+		back = flew = null;
+		if (to && unmoved) return go(to, true);
+		if (to) return void (centre = centre && { ...centre, by: 'pan' });
+		centre = centre?.by === 'pan' ? centre : null;
+		ask();
+	}
+
+	/** Follow the span `a` … `b`, unless it is inside the one last followed. */
+	function aim(a: number, b: number, exact = false): void {
+		if (aimed && a >= aimed[0] && b <= aimed[1] + 60_000) return;
+		aimed = [a, b];
+		const to = windowFor(a, b, exact);
+		if (to) go(to);
+	}
+
+	function follow(c: Cursor | null): void {
+		// A tap on a mark clears the time on its way to the entry: asked once both have settled.
+		if (!c) return void queueMicrotask(dismiss);
+		if (press || grip) return;
+		aim(+c.at - (c.span ?? 0) * 60_000, +c.at, c.rel === undefined && !c.span && c.from !== 'nowview');
+	}
+
+	/** Follow the entry selected last, from its time and length as datum reads them. */
+	async function followEntry(hids: string[]): Promise<void> {
+		const hid = hids.at(-1) ?? null;
+		if (hid === aimedHid) return;
+		aimedHid = hid;
+		const mine = ++hidAsked;
+		if (!hid) return void queueMicrotask(dismiss);
+		if (picking) return;
+		const [at, dur = ''] = (await run(entrySpanArgv(hid))).stdout.split('\n');
+		const end = Date.parse(at);
+		if (mine !== hidAsked) return;
+		// One datum could not read (gone since) is followed again when it is next selected.
+		if (!Number.isFinite(end)) return void (aimedHid = null);
+		const [d = 0, h = 0, m = 0, sec = 0] = (/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?)?$/.exec(dur) ?? []).slice(1).map((n) => Number(n ?? 0));
+		aim(end - (((d * 24 + h) * 60 + m) * 60 + sec) * 1000, end);
+	}
+
+	onDestroy(cursor.subscribe(follow));
+	onDestroy(selected.subscribe((hids) => void followEntry(hids)));
+
 	onDestroy(() => {
 		if (strip) void unmount(strip.app);
 		clearTimeout(unhide);
@@ -2422,6 +2561,7 @@
 		clearTimeout(settle);
 		clearTimeout(held);
 		cancelAnimationFrame(coasting);
+		cancelAnimationFrame(flying);
 		listen(false);
 		ungrip();
 	});
@@ -2439,6 +2579,7 @@
 		data-points="own"
 		data-slides
 		data-mode={mode}
+		data-flying={inFlight || undefined}
 		onpointerdown={onPointerDown}
 		oncontextmenu={onContextMenu}
 		{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}

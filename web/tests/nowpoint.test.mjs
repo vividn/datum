@@ -669,6 +669,8 @@ describe('a drag along the band pans the window', () => {
 
 				// As a click on the dayview does: the window centres on it.
 				await page.evaluate(() => window.datum.cursor.set(new Date(Date.UTC(2026, 8, 10, 12, 0))));
+				// It flies there over a few frames (da-2v3mr), which held timers hold too.
+				await page.clock.runFor(400);
 				await until(
 					() => asked(page),
 					(t) => t === '2026-09-10T12:00:00.000Z'

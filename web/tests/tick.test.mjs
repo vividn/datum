@@ -275,6 +275,9 @@ describe('the minute tick', () => {
 				// The cursor's own dotted line, drawn by datum where the
 				// instant falls, is the picture saying it is pinned.
 				await page.locator(`${NOWVIEW} svg.svg line.cursor`).waitFor({ state: 'attached' });
+				// The click flies the nowview there over a few frames (da-2v3mr), which held
+				// timers hold too: run them, so its landed picture is asked before the count.
+				await page.clock.runFor(400);
 				await page.clock.runFor(SETTLE);
 				await app.idle();
 				const seen = await app.spyOnRunner();

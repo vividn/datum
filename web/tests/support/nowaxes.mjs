@@ -149,6 +149,9 @@ export async function timePill(page, want) {
 /** Wait for the picture a time pill draws: its dashed line at the instant. */
 export async function drewPill(app) {
 	await app.page.locator(`${NOWVIEW} svg.svg .instant-line`).first().waitFor({ state: 'attached' });
+	// A pill from outside the nowview flies it to show the pill (da-2v3mr), and the picture
+	// of the window it lands on is asked once it lands: the first with the line is the one before.
+	await app.page.locator(`${NOWVIEW} .nowview-band:not([data-flying])`).waitFor({ state: 'attached' });
 	await app.idle();
 }
 

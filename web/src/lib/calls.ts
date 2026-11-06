@@ -136,6 +136,11 @@ export function entryArgv(hid: string): string[] {
 	return ['get', hid, '--pretty'];
 }
 
+/** An entry's time and its length, a line each (none where it has none): what the nowview follows an `hid` pill to (da-2v3mr). */
+export function entrySpanArgv(hid: string): string[] {
+	return ['get', `${hid}::at,${hid}::dur`];
+}
+
 /** The entries' trails, newest version first: one hid's alone, or each under its own hid. */
 export function entriesHistoryArgv(hids: string[]): string[] {
 	return ['history', hids.join(','), '--json'];
