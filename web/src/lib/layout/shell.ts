@@ -156,10 +156,11 @@ const phone = () =>
  * on the next load, and so does one a newer app added — the lessons are the
  * tutorial. It comes back after the lesson before it (da-uzyih.4898), so a
  * lesson added second is second. A lesson that left is the tab it led to:
- * the shapes, the café (da-uzyih.4908).
+ * the shapes, the café (da-uzyih.4908); the change lesson, `switch` until the
+ * glossary's word (da-e3rdf), its own.
  */
 const lessons = (): string[] => TUTORIAL_LAYOUTS.map((l) => l.name);
-const LEFT: Record<string, string> = { shapes: 'moment', occur: 'moment' };
+const LEFT: Record<string, string> = { shapes: 'moment', occur: 'moment', switch: 'change' };
 const lessonName = (name: string): string => LEFT[name] ?? canonicalName(name);
 
 /** `state` with every lesson open, each missing one after the lesson before it, and the same tab in front. */

@@ -8,6 +8,7 @@
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { HELD_AT, ready, startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
 import { cuedRoom, isStatus, settled, startSwitch, statuses } from './support/tutorial.mjs';
@@ -16,11 +17,8 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-// The lessons' layouts, by name; the change lesson's is named `switch`, and its tab says its kind (`LAYOUT_TITLES`, da-kjkpx).
-const LESSON_NAMES = ['intro', 'moment', 'on-off', 'switch', 'input-bar', 'tabs'];
-/** What a lesson's tab says. */
-const tabLabel = (name) => (name === 'switch' ? 'change' : name);
-const LESSON_TABS = LESSON_NAMES.map(tabLabel);
+// The lessons' layouts, by name, which their tabs say: the change lesson's is `change`, the glossary's word (da-e3rdf).
+const LESSON_NAMES = ['intro', 'moment', 'on-off', 'change', 'input-bar', 'tabs'];
 const tabs = (page) => page.locator('.root-bar [role="tab"]').allInnerTexts();
 const front = (page) => page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText();
 const hue = (page) => page.evaluate(() => document.documentElement.style.getPropertyValue('--hue'));
@@ -56,7 +54,7 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 			await press(page, 'Tutorial', 'tutorial');
 			assert.equal(await db(page), 'tutorial');
 			assert.notEqual(await hue(page), datumHue, 'the app is recolored');
-			assert.deepEqual(await tabs(page), LESSON_TABS, 'its lessons, in order');
+			assert.deepEqual(await tabs(page), LESSON_NAMES, 'its lessons, in order');
 			const named = await page.locator('section.pane').first().locator('p b').allInnerTexts();
 			assert.ok(named.includes('datum'), `the Introduction names the database to go back to: ${named}`);
 
@@ -82,7 +80,7 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 
 			// A second visit keeps the practice, its tabs, and one copy of each.
 			await press(page, 'Tutorial', 'tutorial');
-			assert.deepEqual(await tabs(page), LESSON_TABS, "the tutorial's, not datum's");
+			assert.deepEqual(await tabs(page), LESSON_NAMES, "the tutorial's, not datum's");
 			const kept = JSON.parse((await app.run(['tail', 'practice', '--json'])).stdout).rows;
 			assert.equal(kept.length, 1, 'the practice entry is kept');
 			const layouts = JSON.parse((await app.run(['tail', 'layout', '--json', '-n', '50'])).stdout).rows;
@@ -93,7 +91,7 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 			);
 			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
 			await app.reload();
-			assert.deepEqual(await tabs(page), LESSON_TABS, "a reload keeps the tutorial's");
+			assert.deepEqual(await tabs(page), LESSON_NAMES, "a reload keeps the tutorial's");
 			assert.equal(await front(page), 'moment');
 
 			// And the way the Introduction teaches, the switcher, there and back.
@@ -177,7 +175,7 @@ test('the Introduction ends on the next tab, the café, and not on the way back 
 			);
 			await page.locator('[data-pane="moment-lesson"] .game').waitFor();
 			assert.equal(await db(page), 'tutorial', 'the same database, another tab');
-			assert.deepEqual(await tabs(page), LESSON_TABS);
+			assert.deepEqual(await tabs(page), LESSON_NAMES);
 		},
 		{ ...PHONE, home: null }
 	);
@@ -191,7 +189,7 @@ test('every lesson ends on a button to the next, from the Introduction to the la
 			await press(page, 'Tutorial', 'tutorial');
 			const labels = ['moment', 'on/off', 'change', 'The input bar', 'Tabs and widgets'];
 			for (const [i, label] of labels.entries()) {
-				assert.equal(await front(page), LESSON_TABS[i]);
+				assert.equal(await front(page), LESSON_NAMES[i]);
 				const next = page.getByRole('button', { name: `Next: ${label}`, exact: true });
 				// The Introduction's Next has its reset under it (da-uzyih.4893), and nothing after that.
 				const atEnd = await next.evaluate(
@@ -200,11 +198,11 @@ test('every lesson ends on a button to the next, from the Introduction to the la
 						(intro ? b.nextElementSibling?.textContent === 'Reset the tutorial' && !b.nextElementSibling.nextElementSibling : !b.nextElementSibling),
 					i === 0
 				);
-				assert.ok(atEnd, `${LESSON_TABS[i]} ends on the next lesson, ${label}`);
+				assert.ok(atEnd, `${LESSON_NAMES[i]} ends on the next lesson, ${label}`);
 				await next.click();
 				await page.waitForFunction(
 					(name) => document.querySelector('.root-bar [role="tab"][aria-selected="true"]')?.textContent.trim() === name,
-					LESSON_TABS[i + 1]
+					LESSON_NAMES[i + 1]
 				);
 			}
 			assert.equal(await front(page), 'tabs');
@@ -246,7 +244,7 @@ test('the Introduction is its three paragraphs and its way on; no tab holds why 
 			await intro.getByRole('button', { name: 'Next: moment', exact: true }).waitFor();
 			const parts = await intro.evaluate((root) => [...root.children].map((el) => (el.tagName === 'BUTTON' ? el.textContent.trim() : el.tagName)));
 			assert.deepEqual(parts, ['H1', 'P', 'P', 'P', 'Next: moment', 'Reset the tutorial']);
-			for (const tab of LESSON_TABS) {
+			for (const tab of LESSON_NAMES) {
 				await page.locator('.root-bar [role="tab"]', { hasText: new RegExp(`^${tab}$`) }).click();
 				await until(() => front(page), (f) => f === tab);
 				await page.locator('.host[data-widget="tutorial"]:visible h1').first().waitFor();
@@ -280,7 +278,7 @@ test('a tutorial opened before: «introduction» is «intro», «occur» is «mo
 				);
 				await page.reload();
 				await ready(page);
-				await until(() => tabs(page), (t) => JSON.stringify(t) === JSON.stringify(LESSON_TABS));
+				await until(() => tabs(page), (t) => JSON.stringify(t) === JSON.stringify(LESSON_NAMES));
 				assert.equal(await front(page), expected, `${names[active]} in front of ${names}`);
 			}
 		},
@@ -325,7 +323,7 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 			// A field of no game's, running all along.
 			assert.equal((await app.run(['start', 'other', '-t', '-5'])).code, 0);
 
-			for (const tab of ['moment', 'on-off', 'switch']) {
+			for (const tab of ['moment', 'on-off', 'change']) {
 				const lesson = await page.evaluate((tab) => window.datum.tutorial.lessons.find((l) => l.name === tab), tab);
 				const pane = `[data-pane="${tab}-lesson"]`;
 				const game = page.locator(`${pane} .game`);
@@ -336,9 +334,9 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 					assert.equal(await panes.count(), 2, `${tab}: both panes`);
 					for (const name of ['Start over', '↶ Undo', 'Undo']) assert.equal(await panes.getByRole('button', { name, exact: true }).count(), 0, `${tab}, ${when}: no ${name}`);
 				};
-				await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
+				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
 				await gone('at rest');
-				if (tab === 'switch') await startSwitch(page);
+				if (tab === 'change') await startSwitch(page);
 				else await named('Start').click();
 				await named('End now').waitFor();
 				await settled(page, pane);
@@ -351,9 +349,9 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 
 				// After the game, the reader logs on: Reset ends what is active of the game's fields.
 				await app.clock.forward(1000);
-				const logs = { moment: [], 'on-off': [['start', 'tv'], ['start', 'reading']], switch: [['switch', 'room', 'kitchen']] }[tab];
+				const logs = { moment: [], 'on-off': [['start', 'tv'], ['start', 'reading']], change: [['change', 'room', 'kitchen']] }[tab];
 				for (const argv of logs) assert.equal((await app.run(argv)).code, 0);
-				const states = { moment: [], 'on-off': ['reading=true', 'tv=true'], switch: ['room=kitchen'] }[tab];
+				const states = { moment: [], 'on-off': ['reading=true', 'tv=true'], change: ['room=kitchen'] }[tab];
 				assert.deepEqual((await active()).filter((a) => !a.startsWith('other')), states, `${tab}: the states logged after it active`);
 				const before = (await listed(lesson.fields)).map((row) => row.hid);
 
@@ -361,7 +359,7 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 				await named('Reset').click();
 				await game.and(page.locator('[aria-busy="true"]')).waitFor({ state: 'detached' });
 				assert.equal(await game.getAttribute('data-phase'), 'neutral', `${tab}: the game at rest again`);
-				if (tab === 'switch') await game.locator('.cue').waitFor();
+				if (tab === 'change') await game.locator('.cue').waitFor();
 				else await named('Start').waitFor();
 				assert.equal(await named('Reset').count(), 0, `${tab}: at rest, no Reset`);
 				assert.equal(await page.locator('[role="dialog"], [role="alertdialog"]').count(), 0, `${tab}: nothing asked`);
@@ -431,18 +429,18 @@ test('each game’s fields are TRACKED once it begins and IGNORED once it ends, 
 			const { page } = app;
 			const count = async (fields) =>
 				(await Promise.all(fields.map((f) => app.run(['tail', f, '--json', '-n', '200']).then((r) => JSON.parse(r.stdout).rows.length)))).reduce((a, b) => a + b);
-			for (const tab of ['moment', 'on-off', 'switch']) {
+			for (const tab of ['moment', 'on-off', 'change']) {
 				const { fields } = await page.evaluate((tab) => window.datum.tutorial.lessons.find((l) => l.name === tab), tab);
 				const pane = `[data-pane="${tab}-lesson"]`;
 				const game = page.locator(`${pane} .game`);
 				const all = (status) => Object.fromEntries(fields.map((f) => [f, status]));
-				await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
+				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
 				for (const how of ['time', 'End now']) {
 					if ((await game.getAttribute('data-phase')) === 'done') {
 						await page.getByRole('button', { name: 'Reset', exact: true }).click();
 						await settled(page, pane);
 					}
-					if (tab === 'switch') await startSwitch(page);
+					if (tab === 'change') await startSwitch(page);
 					else await page.getByRole('button', { name: 'Start', exact: true }).click();
 					await settled(page, pane);
 					assert.deepEqual(await statuses(app, fields), all('TRACKED'), `${tab}, before ${how}: TRACKED once it begins`);
@@ -487,16 +485,16 @@ test('the fields log outside a game too, and no game starts or scores by it', as
 			};
 			/** A room neither the cue's, where it is drawn (at rest alone, da-uzyih.4880), nor `held`. */
 			const another = async (held) => {
-				const cue = (await page.locator('[data-pane="switch-lesson"] .game .cue').count()) ? await cuedRoom(page) : null;
+				const cue = (await page.locator('[data-pane="change-lesson"] .game .cue').count()) ? await cuedRoom(page) : null;
 				return ['kitchen', 'bedroom', 'bathroom'].find((r) => r !== cue && r !== held);
 			};
 			await page.evaluate(() => (window.datum.tutorial.cafe.round.seed = 7));
 			for (const { tab, first, then } of [
 				{ tab: 'moment', first: async () => ['tea'], then: async () => ['coffee'] },
 				{ tab: 'on-off', first: async () => ['tv'], then: async () => ['phone'] },
-				{ tab: 'switch', first: async () => ['room', await another()], then: async (held) => ['room', await another(held)] }
+				{ tab: 'change', first: async () => ['room', await another()], then: async (held) => ['room', await another(held)] }
 			]) {
-				await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
+				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
 				const game = page.locator(`[data-pane="${tab}-lesson"] .game`);
 				const result = () => game.locator('.result').innerText();
 				// At their own instants: the clock is held, and two writes at one would collide.
@@ -505,7 +503,7 @@ test('the fields log outside a game too, and no game starts or scores by it', as
 				assert.equal(await game.getAttribute('data-phase'), 'neutral', `${tab}: a tap before Start starts no game`);
 
 				await app.clock.forward(1000);
-				const held = tab === 'switch' ? await startSwitch(page) : await page.getByRole('button', { name: 'Start', exact: true }).click();
+				const held = tab === 'change' ? await startSwitch(page) : await page.getByRole('button', { name: 'Start', exact: true }).click();
 				await settled(page, `[data-pane="${tab}-lesson"]`);
 				await app.clock.forward(500);
 				await page.getByRole('button', { name: 'End now', exact: true }).click();
@@ -582,11 +580,11 @@ test('at phone size each lesson’s start button is in sight without scrolling, 
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			for (const tab of ['moment', 'on-off', 'switch']) {
-				await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
-				const name = tab === 'switch' ? 'its cue' : 'Start';
+			for (const tab of ['moment', 'on-off', 'change']) {
+				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+				const name = tab === 'change' ? 'its cue' : 'Start';
 				const button =
-					tab === 'switch' ? page.locator('[data-pane="switch-lesson"] .game .cue') : page.getByRole('button', { name, exact: true });
+					tab === 'change' ? page.locator('[data-pane="change-lesson"] .game .cue') : page.getByRole('button', { name, exact: true });
 				await button.waitFor();
 				// What is drawn at each corner is the button itself: inside the viewport, and covered by no pane.
 				const hits = await button.evaluate((el) => {
@@ -624,12 +622,12 @@ test('on a phone each game draws a picture a finger can read, the control beside
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['switch', 'svg.house']]) {
+			for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['change', 'svg.house']]) {
 				const pane = `[data-pane="${tab}-lesson"]`;
-				await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
+				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
 				await page.locator(`${pane} ${picture}`).first().waitFor();
 				const pictures = await Promise.all((await page.locator(`${pane} ${picture}`).all()).map(drawn));
-				const control = page.locator(`${pane} .game ${tab === 'switch' ? '.cue' : '.go'}`);
+				const control = page.locator(`${pane} .game ${tab === 'change' ? '.cue' : '.go'}`);
 				const at = await control.boundingBox();
 				for (const p of pictures) {
 					assert.ok(p.height >= 50, `${tab}: its picture is drawn ${p.height} px tall`);
@@ -640,14 +638,14 @@ test('on a phone each game draws a picture a finger can read, the control beside
 				// The other states of one control stand where Start stands: «End now» as the game runs, «Reset» once over. The
 				// switch game has no Start, its cue standing there at rest, so they stand where each other does, clear of the house.
 				const start = app.clock.at();
-				if (tab === 'switch') await startSwitch(page);
+				if (tab === 'change') await startSwitch(page);
 				else await page.getByRole('button', { name: 'Start', exact: true }).click();
 				await settled(page, pane);
 				await app.clock.set(start + 1500);
 				const ending = page.getByRole('button', { name: 'End now', exact: true });
 				await page.waitForFunction((pane) => parseFloat(document.querySelector(`${pane} .game .go .spent`)?.style.inlineSize) > 0, pane);
 				const place = await ending.boundingBox();
-				if (tab !== 'switch') assert.deepEqual(place, at, `${tab}: «End now» is where Start was`);
+				if (tab !== 'change') assert.deepEqual(place, at, `${tab}: «End now» is where Start was`);
 				for (const p of pictures) assert.ok(p.right <= place.x, `${tab}: the picture (right ${p.right}) is clear of «End now» (left ${place.x})`);
 				await ending.click();
 				const reset = page.getByRole('button', { name: 'Reset', exact: true });
@@ -674,9 +672,9 @@ for (const [screen, options, centered] of [
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['switch', 'svg.house']]) {
+				for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['change', 'svg.house']]) {
 					const pane = `[data-pane="${tab}-lesson"]`;
-					await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
+					await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
 					await page.locator(`${pane} ${picture}`).first().waitFor();
 					const stage = await page.locator(`${pane} .stage`).boundingBox();
 					const middle = stage.x + stage.width / 2;
@@ -688,7 +686,7 @@ for (const [screen, options, centered] of [
 						return { left, right, center: (left + right) / 2 };
 					};
 					const rest = await scene();
-					const control = await page.locator(`${pane} .game ${tab === 'switch' ? '.cue' : '.go'}`).boundingBox();
+					const control = await page.locator(`${pane} .game ${tab === 'change' ? '.cue' : '.go'}`).boundingBox();
 					const column = await page.locator(`${pane} .controls`).boundingBox();
 					assert.ok(rest.right <= control.x, `${tab}: the picture (right ${rest.right}) is clear of the control (left ${control.x})`);
 					assert.ok(rest.right <= column.x, `${tab}: the picture (right ${rest.right}) is clear of the controls' column (left ${column.x})`);
@@ -700,7 +698,7 @@ for (const [screen, options, centered] of [
 					if (screen === '280 px') assert.ok(rest.center < middle - 2, `${tab}: the picture (center ${rest.center}) has moved left of the middle (${middle})`);
 
 					const start = app.clock.at();
-					if (tab === 'switch') await startSwitch(page);
+					if (tab === 'change') await startSwitch(page);
 					else await page.getByRole('button', { name: 'Start', exact: true }).click();
 					await settled(page, pane);
 					await app.clock.set(start + 1500);
@@ -773,17 +771,17 @@ test('each game reads title and shape, nowview, game, fields widget, discussion,
 				assert.deepEqual(p.above, [], `${tab}, ${phase}: nothing of the lesson above the game`);
 			};
 			// Each game's shape, by the name the setup widget gives it, and the term its discussion names.
-			const words = { moment: ['moment', 'entry'], 'on-off': ['on/off', 'state'], switch: ['change', 'state'] };
+			const words = { moment: ['moment', 'entry'], 'on-off': ['on/off', 'state'], change: ['change', 'state'] };
 
-			for (const tab of ['moment', 'switch', 'on-off']) {
-				await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
+			for (const tab of ['moment', 'change', 'on-off']) {
+				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
 				await page.locator(`[data-pane="${tab}-lesson"] .game`).waitFor();
 				inOrder(tab, 'before', await parts(tab));
 				assert.deepEqual(await page.locator(`[data-pane="${tab}-about"] p b`).allInnerTexts(), words[tab].slice(0, 1));
 				assert.deepEqual(await page.locator(`[data-pane="${tab}-discuss"] p b`).allInnerTexts(), words[tab].slice(1));
 
 				const start = app.clock.at();
-				if (tab === 'switch') await startSwitch(page);
+				if (tab === 'change') await startSwitch(page);
 				else await page.getByRole('button', { name: 'Start', exact: true }).click();
 				await settled(page, `[data-pane="${tab}-lesson"]`);
 				await page.locator(`[data-pane="${tab}-fields"] .fields button[data-field]`).first().waitFor();
@@ -834,7 +832,7 @@ test('on each lesson’s tab no two of its fields’ lanes in the nowview overla
 			const lessons = await page.evaluate(() => window.datum.tutorial.lessons.filter((l) => l.fields.length));
 			assert.deepEqual([...new Set(SEED.map((argv) => argv[1]))].sort(), lessons.flatMap((l) => l.fields).sort(), 'every lesson field is seeded');
 			for (const { name, fields } of lessons) {
-				const tab = page.locator('.root-bar [role="tab"]', { hasText: tabLabel(name) });
+				const tab = page.locator('.root-bar [role="tab"]', { hasText: name });
 				// The open tab's name opens its menu: click only another.
 				if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
 				const now = `[data-pane="${name}-now"]`;
@@ -888,9 +886,9 @@ test('a first open shows its setup as one command, in the CLI and the output; a 
 			await press(page, 'Tutorial', 'tutorial');
 			const first = await until(() => history(page), (h) => h.length > 0);
 			await assertSetup(app, first);
-			await until(() => tabs(page), (t) => JSON.stringify(t) === JSON.stringify(LESSON_TABS));
+			await until(() => tabs(page), (t) => JSON.stringify(t) === JSON.stringify(LESSON_NAMES));
 			await app.reload();
-			await until(() => tabs(page), (t) => JSON.stringify(t) === JSON.stringify(LESSON_TABS));
+			await until(() => tabs(page), (t) => JSON.stringify(t) === JSON.stringify(LESSON_NAMES));
 			assert.deepEqual(await history(page), first);
 			assert.deepEqual(app.errors, []);
 		},
@@ -924,7 +922,7 @@ test('a fresh tutorial’s output section holds one setup block, off the undo st
 			assert.notEqual((await app.run(['del'])).code, 0, 'nor is the setup _LAST');
 			assert.notEqual((await app.run(['retime', '-t', '9:00'])).code, 0, 'nor is the setup _LAST');
 			const layouts = async () => JSON.parse((await app.run(['tail', 'layout', '--json', '-n', '50'])).stdout).rows.length;
-			assert.equal(await layouts(), LESSON_TABS.length);
+			assert.equal(await layouts(), LESSON_NAMES.length);
 
 			await page.locator('[data-pane] button', { hasText: 'coffee' }).first().click();
 			await until(() => groups.count(), (n) => n === 2);
@@ -935,7 +933,42 @@ test('a fresh tutorial’s output section holds one setup block, off the undo st
 			assert.equal((await app.run(['undo'])).code, 0, 'a bare undo takes the tap');
 			assert.deepEqual(JSON.parse((await app.run(['tail', 'coffee', '--json'])).stdout).rows, []);
 			assert.notEqual((await app.run(['undo'])).code, 0, 'past the tap, the setup still stands');
-			assert.equal(await layouts(), LESSON_TABS.length);
+			assert.equal(await layouts(), LESSON_NAMES.length);
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...PHONE, home: null }
+	);
+});
+
+// da-e3rdf: the change lesson's layout is `change`, the glossary's word, so the setup a newcomer first reads names it
+// so. A tutorial set up while it was `switch` holds that row still, as the kit install leaves a layout the kit no
+// longer lists; its open `switch` tab is the change tab, so it ends with one change tab and no switch.
+test('the setup names the change lesson `change`, and a tutorial set up when it was `switch` has one change tab', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await press(page, 'Tutorial', 'tutorial');
+			await until(() => history(page), (h) => h.length === 1);
+			const output = page.locator('.prompt-bar .section.output');
+			const setup = () => output.innerText();
+			await until(setup, (t) => /\+ change\b/.test(t));
+			assert.doesNotMatch(await setup(), /\bswitch\b/);
+
+			// As it was: the lesson's row is `switch`, its tab open under that name, and no `change` row.
+			const layouts = async () => JSON.parse((await app.run(['tail', 'layout', '--json', '-n', '50'])).stdout).rows;
+			const { root } = (await layouts()).find((r) => r.data.name === 'change').data;
+			const kit = readFileSync(new URL('../../kits/tutorial.toml', import.meta.url), 'utf8');
+			const old = `${kit}\n[[layout]]\nname = "switch"\nroot = ${JSON.stringify(JSON.stringify(root))}\n`;
+			assert.equal((await app.run(['kit', 'install', '-', '--force', '--yes'], old)).code, 0);
+			assert.equal((await app.run(['delete', 'layout:change'])).code, 0);
+			const names = LESSON_NAMES.map((n) => (n === 'change' ? 'switch' : n));
+			await page.evaluate((names) => localStorage.setItem('datum.layout.root.v1.tutorial', JSON.stringify({ names, active: 3 })), names);
+
+			await page.reload();
+			await ready(page);
+			await until(() => layouts(), (rows) => rows.some((r) => r.data.name === 'change'));
+			await until(() => tabs(page), (t) => JSON.stringify(t) === JSON.stringify(LESSON_NAMES));
+			assert.equal(await front(page), 'change', 'the tab it was on, in front');
 			assert.deepEqual(app.errors, []);
 		},
 		{ ...PHONE, home: null }
@@ -1000,7 +1033,7 @@ test('«Reset the tutorial» purges it, clears the CLI, and sets it up as a firs
 			assert.match((await app.run(['fields', '--json'])).stdout, /"field": "tv"/, "the kit's fields are back");
 			const layouts = JSON.parse((await app.run(['tail', 'layout', '--json', '-n', '50'])).stdout).rows;
 			assert.deepEqual(layouts.map((r) => r.data.name).sort(), [...LESSON_NAMES].sort(), 'each tab installed once');
-			assert.deepEqual(await tabs(page), LESSON_TABS);
+			assert.deepEqual(await tabs(page), LESSON_NAMES);
 			assert.equal(await front(page), 'intro');
 
 			// Anywhere else, the reset is refused and purges nothing.

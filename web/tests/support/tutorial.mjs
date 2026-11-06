@@ -3,9 +3,9 @@
 
 import { until } from './until.mjs';
 
-const SWITCH = '[data-pane="switch-lesson"]';
+const SWITCH = '[data-pane="change-lesson"]';
 /** Its fields, a pane of their own under the game (da-uzyih.4908). */
-const FIELDS = '[data-pane="switch-fields"]';
+const FIELDS = '[data-pane="change-fields"]';
 
 /** How many entries `room` holds. */
 export const roomEntries = (page) =>

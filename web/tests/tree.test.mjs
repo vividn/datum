@@ -969,7 +969,7 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		for (const tree of TUTORIAL_LAYOUTS) {
 			assert.ok(isCanonical(tree), `the tutorial's ${tree.name} is not canonical`);
 			assert.ok(!BUILTIN_NAMES.includes(tree.name), `${tree.name} shadows a built-in`);
-			const game = ['moment', 'on-off', 'switch'].includes(tree.name);
+			const game = ['moment', 'on-off', 'change'].includes(tree.name);
 			const lesson = { kind: 'tutorial', lesson: tree.name };
 			const { fields } = LESSONS.find((l) => l.name === tree.name);
 			const lessons = game

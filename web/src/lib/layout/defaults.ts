@@ -311,7 +311,7 @@ export const ALIASES: Record<string, string> = {
  * widget kind stayed `widgetbar`, so nothing saved or open migrates; a
  * layout saved under another name is called that.
  */
-export const LAYOUT_TITLES: Record<string, string> = { collect: 'collection', switch: 'change' };
+export const LAYOUT_TITLES: Record<string, string> = { collect: 'collection' };
 
 /** What the layout `name` is called on the page (`LAYOUT_TITLES`). */
 export const layoutTitle = (name: string): string => LAYOUT_TITLES[name] ?? name;
@@ -465,7 +465,7 @@ export const LESSONS: Lesson[] = [
 		fields: ['tv', 'phone', 'reading']
 	},
 	{
-		name: 'switch',
+		name: 'change',
 		title: 'change: record how the state of something changes over time',
 		fields: ['room']
 	},
@@ -507,7 +507,7 @@ const withNowview = ({ name, fields }: Lesson): Layout => ({
 	}
 });
 
-/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, five panes, the game the game widget's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the switch lesson's, da-6xeqy). */
+/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, five panes, the game the game widget's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the change lesson's, da-6xeqy). */
 export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map((lesson) =>
 	lesson.fields.length ? withNowview(lesson) : only(lesson.name, 'tutorial', { lesson: lesson.name })
 );

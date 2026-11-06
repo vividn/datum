@@ -24,18 +24,18 @@ after(stopApp);
 
 const ROUND_MS = 60_000;
 const SEED = 3;
-const PANE = '[data-pane="switch-lesson"]';
+const PANE = '[data-pane="change-lesson"]';
 /** Its fields, a pane of their own (da-uzyih.4908). */
-const FIELDS = '[data-pane="switch-fields"]';
+const FIELDS = '[data-pane="change-fields"]';
 const rows = (app, db) =>
 	app.run(['tail', 'room', '--json', '-n', '50', ...(db ? ['--db', db] : [])]).then((r) => JSON.parse(r.stdout).rows);
 /** The state a timeline in time order holds at `t`, null before its first. */
 const at = (timeline, t) => timeline.filter((c) => c.at <= t).at(-1)?.state ?? null;
 
-/** The switch tab, its walk seeded before the tab is first drawn, which draws the scene at rest. The walk. */
+/** The change tab, its walk seeded before the tab is first drawn, which draws the scene at rest. The walk. */
 async function seeded(app) {
 	const { page } = app;
-	assert.equal(await page.locator(PANE).count(), 0, 'the switch tab not drawn yet');
+	assert.equal(await page.locator(PANE).count(), 0, 'the change tab not drawn yet');
 	const walk = await page.evaluate((seed) => {
 		window.datum.tutorial.house.round.seed = seed;
 		return window.datum.tutorial.house.scene(seed);

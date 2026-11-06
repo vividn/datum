@@ -13,10 +13,8 @@ import { settled, startSwitch } from './support/tutorial.mjs';
 before(startApp);
 after(stopApp);
 
-const GAMES = ['moment', 'on-off', 'switch'];
-const NEXT = { moment: 'on/off', 'on-off': 'change', switch: 'The input bar' };
-/** What a lesson's tab says; the change lesson's layout is named `switch`. */
-const tabLabel = (name) => (name === 'switch' ? 'change' : name);
+const GAMES = ['moment', 'on-off', 'change'];
+const NEXT = { moment: 'on/off', 'on-off': 'change', change: 'The input bar' };
 
 /** The rects that matter, against the page's scroller: the part of the screen the tab is drawn in. */
 const measure = (page, tab) =>
@@ -71,7 +69,7 @@ for (const [screen, device] of [
 					house.round.seed = seed;
 				});
 				for (const tab of GAMES) {
-					await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
+					await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
 					await page.locator(`[data-pane="${tab}-lesson"] .game`).waitFor();
 					await scrollTo(page, 0);
 					await page.locator(`[data-pane="${tab}-fields"] .fields button[data-field]`).first().waitFor();
@@ -90,7 +88,7 @@ for (const [screen, device] of [
 					assert.ok(inside(past.now, past.screen), `${tab}: the nowview is in sight past the intro`);
 					assert.ok(inside(past.game, past.screen), `${tab}: the game is in sight past the intro`);
 					assert.ok(inside(past.collect, past.screen), `${tab}: collect is in sight past the intro`);
-					if (tab === 'switch') await startSwitch(page);
+					if (tab === 'change') await startSwitch(page);
 					else await page.getByRole('button', { name: 'Start', exact: true }).click();
 					await settled(page, `[data-pane="${tab}-lesson"]`);
 					const during = await measure(page, tab);

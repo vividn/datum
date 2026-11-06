@@ -24,7 +24,7 @@
 	<div class="game-widget">
 		{#if lesson.name === 'moment'}
 			<OccurLesson fields={lesson.fields} />
-		{:else if lesson.name === 'switch'}
+		{:else if lesson.name === 'change'}
 			<SwitchLesson fields={lesson.fields} />
 		{:else if lesson.name === 'on-off'}
 			<OnOffLesson fields={lesson.fields} />
