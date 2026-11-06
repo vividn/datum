@@ -270,10 +270,10 @@ following are deliberate divergences and **not** regressions:
   an *alignment*, not a divergence: datum's `inferType` reads values with
   `relaxed-json` (`RJSON.parse`), so `'a,b'` is «a,b» and `['a', 'b']` is
   `["a","b"]`. Daydumb reads the single-quoted string the same way, and
-  the trailing comma inside brackets (`[8,]` → `[8]`, da-igesg)
+  the trailing comma inside brackets (`[8,]` → `[8]`, da-igesg), bare
+  words and unquoted keys (`[a, b]`, `{a: 1}`, da-2wrzv) and comments
   (`relaxed_json` in `crates/datum-parse/src/input/data_args/coerce.rs`),
-  and nothing else of relaxed-json — not unquoted keys, not bare words
-  inside brackets.
+  one reading for a data key, a list-typed key and a state (da-0d7e1).
 
 * **`switch F off`** (da-9e02u, vividn's B9, 10-15). Datum stores a running
   state named «off»; daydumb ends the field, as `switch F end` and `stop`

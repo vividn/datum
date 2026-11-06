@@ -1925,12 +1925,16 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
 /// concurrent states. A single state (no comma) stays scalar. Edge
 /// commas are stripped (da-lvvp / da-5z01: tolerate `,a,b`, `a,b,`,
 /// `,a,b,`); interior empty segments are still rejected so users
-/// don't silently lose a state they meant to type.
+/// don't silently lose a state they meant to type; `[a,b]` is read as any
+/// value is (`bracket_state`, da-0d7e1).
 fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
-    validate_switch_state_token(s)?;
+    if let Some(state) = datum_parse::input::data_args::bracket_state("state", s) {
+        return Ok(state?);
+    }
     if !s.contains(',') {
         return Ok(parse_value_token(s));
     }
+    validate_switch_state_token(s)?;
     let trimmed = s.trim_matches(',');
     if trimmed.is_empty() {
         return Ok(JsonValue::Array(vec![]));
@@ -1953,9 +1957,6 @@ fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
 /// this pre-check, an interior `,,` inside a comma token would
 /// silently become a `null` array element.
 pub(crate) fn validate_switch_state_token(s: &str) -> Result<()> {
-    if let Some(e) = datum_parse::input::data_args::bracket_state_error("state", s) {
-        return Err(e.into());
-    }
     if !s.contains(',') {
         return Ok(());
     }

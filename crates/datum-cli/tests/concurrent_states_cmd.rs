@@ -382,48 +382,68 @@ fn update_refuses_a_sentinel_it_sets_but_edits_an_old_row() {
     assert_eq!(task[0].state, Some(json!(["reading", "TRACKED"])));
 }
 
-/// da-cktfm: a state in brackets that is not JSON was split on its commas
-/// with the brackets kept (`[a,IGNORED]` → `["[a","IGNORED]"]`), which also
-/// slipped a sentinel past the refusal above. It is refused on every
-/// spelling of a state, naming the JSON form; the JSON forms stand, and a
-/// data key reads it as v2 did.
+/// da-0d7e1: a state in brackets is read as a data key's value is, v2's
+/// relaxed JSON, on every spelling of a state: `change mood [calm,steady]` is
+/// `change mood '["calm","steady"]'`, and a sentinel among its states meets
+/// da-z9efl's refusal. Text that does not read as a list is refused rather
+/// than split with its brackets kept (da-cktfm), naming the JSON form.
 #[test]
-fn a_bracketed_state_that_is_not_json_is_refused() {
+fn a_bracketed_state_reads_as_any_value() {
     let db = fresh_db();
-    for argv in [
-        &["switch", "task", "[a,IGNORED]"][..],
-        &["switch", "task", "[a, IGNORED]"],
+    let states = |field| -> Vec<_> {
+        datum_core::test_util::logged_entries(&db, field)
+            .into_iter()
+            .map(|e| e.state)
+            .collect()
+    };
+    run_cli(&["change", "mood", "[calm,steady]"], &db).expect("bare words");
+    run_cli(&["change", "feel", r#"["calm","steady"]"#], &db).expect("JSON");
+    assert_eq!(states("mood"), vec![Some(json!(["calm", "steady"]))]);
+    assert_eq!(states("mood"), states("feel"));
+
+    for (i, argv) in [
+        &["switch", "task", "[a, b]"][..],
         &["switch", "task", "state=[a,b]"],
-        &["switch", "task", "state=[a, b]"],
-        &["start", "task", "state=[a,b]"],
-        &["switch", "task", "a", "5m", "following_state=[a,b]"],
-        &["switch", "task", "a", "-L", "[a,b]"],
+        &["start", "task", "state=['a','b',]"],
+        &["switch", "task", "c", "5m", "following_state=[a,b]"],
+        &["switch", "task", "c", "-l", "[a,b]"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let t = format!("+{}", i + 1);
+        run_cli(&[argv, &["-t", &t]].concat(), &db).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+    }
+    let by_time = || {
+        let mut task = datum_core::test_util::logged_entries(&db, "task");
+        task.sort_by_key(|e| e.at.as_ref().map(|t| t.utc));
+        task
+    };
+    let task = by_time();
+    let ab = Some(json!(["a", "b"]));
+    assert!(task[..3].iter().all(|e| e.state == ab), "{task:?}");
+    assert_eq!(task[3].following_state, ab);
+    assert_eq!(task[4].user_asserted_last_state, ab);
+    let hid = task[4].hid.to_string();
+    run_cli(&["update", &hid, "state=[d,e]"], &db).expect("update reads it too");
+    assert_eq!(by_time()[4].state, Some(json!(["d", "e"])));
+
+    let err = run_cli(&["switch", "task", "[a,IGNORED]"], &db).expect_err("a sentinel");
+    assert!(
+        err.to_string()
+            .starts_with("IGNORED cannot be one of several"),
+        "{err}"
+    );
+    for argv in [
+        &["switch", "task", "[5pm,6pm]"][..],
+        &["switch", "task", "[5pm, IGNORED]"],
+        &["switch", "task", "c", "-l", "[5pm,6pm]"],
     ] {
-        let err = run_cli(argv, &db).expect_err("refused").to_string();
+        let err = run_cli(argv, &db).expect_err("unreadable").to_string();
         assert!(
-            err.contains(r#"" is not a list: the bracket form is JSON: ["a","#),
+            err.contains(r#"" is not a list: the bracket form is JSON: ["5pm","#),
             "{argv:?}: {err}"
         );
     }
-    assert!(datum_core::test_util::logged_all(&db).is_empty());
-
-    run_cli(&["switch", "task", "a"], &db).expect("a plain state");
-    let hid = datum_core::test_util::logged_entries(&db, "task")[0]
-        .hid
-        .to_string();
-    let err = run_cli(&["update", &hid, "state=[a,b]"], &db).expect_err("refused");
-    assert!(err.to_string().contains("is not a list"), "{err}");
-
-    run_cli(&["switch", "task", r#"["a","b"]"#], &db).expect("JSON");
-    run_cli(&["switch", "task", "state=['c','d']", "-t", "+1"], &db).expect("relaxed JSON");
-    run_cli(&["note", "memo", "tags=[a,b]"], &db).expect("a data key");
-    let states: Vec<_> = datum_core::test_util::logged_entries(&db, "task")
-        .into_iter()
-        .map(|e| e.state)
-        .collect();
-    assert!(states.contains(&Some(json!(["a", "b"]))), "{states:?}");
-    assert!(states.contains(&Some(json!(["c", "d"]))), "{states:?}");
-    let memo = datum_core::test_util::logged_entries(&db, "memo");
-    // A data key reads it as v2's relaxed JSON did (da-2wrzv).
-    assert_eq!(memo[0].data.as_ref().unwrap()["tags"], json!(["a", "b"]));
+    assert_eq!(datum_core::test_util::logged_entries(&db, "task").len(), 5);
 }

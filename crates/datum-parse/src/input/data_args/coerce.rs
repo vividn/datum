@@ -166,7 +166,7 @@ pub(super) fn infer_typed_value(
     }
     if compat.literal {
         // Quotes still escape: `a='"b c"'` names the key `b c`.
-        let name = match json(value, false) {
+        let name = match json(value) {
             Some(Value::String(s)) => s,
             _ => value.to_string(),
         };
@@ -178,8 +178,8 @@ pub(super) fn infer_typed_value(
         "following_state" => Some(path),
         _ => None,
     };
-    if let Some(e) = state_key.and_then(|key| bracket_state_error(key, value)) {
-        return Err(e);
+    if let Some(state) = state_key.and_then(|key| bracket_state(key, value)) {
+        return state.map(Some);
     }
 
     // `at` is the entry's time whatever a spec declares of a key by that name.
@@ -321,9 +321,10 @@ fn instant(value: &str, compat: Compat, later: bool) -> Option<(DatumTime, bool)
 }
 
 /// A list-typed value's elements (da-jhi0x), or the refusal's hint: the
-/// first element that is not its element type, or a bracket value that is
-/// not JSON (da-igesg) — `[a,b]` is never the fragments «[a» and «b]». The
-/// bracket form gives its elements; otherwise the value is a list already,
+/// first element that is not its element type, or a bracket value that does
+/// not read as a list (da-igesg) — `[3d,4]` is never the fragments «[3d» and
+/// «4]». The bracket form gives its elements, read as every value is
+/// ([`json`], da-0d7e1: `[a,b]` is «a» and «b»); otherwise the value is a list already,
 /// as if marked with a leading comma: `8,8,6` and `8` split as `,8,8,6`
 /// and `,8` would, and `a, b` is the one element «a, b».
 fn coerce_list(
@@ -331,8 +332,8 @@ fn coerce_list(
     value: &str,
     compat: Compat,
 ) -> std::result::Result<Vec<Value>, String> {
-    let items: Vec<String> = match value.starts_with('[').then(|| json(value, false)) {
-        Some(Some(Value::Array(a))) => a
+    let items: Vec<String> = match bracket_list(value) {
+        Some(Some(a)) => a
             .into_iter()
             .map(|v| match v {
                 Value::String(s) => s,
@@ -476,7 +477,7 @@ pub fn infer_type(value: &str) -> Option<Value> {
 
     // JSON, relaxed as v2 read it. A quoted `"ref://…"` is a literal,
     // which stores as `str://ref://…` (da-s5k2s).
-    if let Some(v) = json(value, true) {
+    if let Some(v) = json(value) {
         return Some(match v {
             Value::String(s) if s.starts_with(REF_MARK) => Value::String(format!("{STR_MARK}{s}")),
             v => v,
@@ -513,14 +514,25 @@ pub fn infer_type(value: &str) -> Option<Value> {
     Some(Value::String(value.to_string()))
 }
 
-/// Strict JSON — numbers, arrays, objects, quoted strings — or JSON as v2's
-/// relaxed-json read it: single-quoted strings and a trailing comma in
-/// brackets always (da-qzfnb, da-igesg), and bare words and comments where
-/// `loose` (da-2wrzv), which a list-typed key and a state are not.
-fn json(value: &str, loose: bool) -> Option<Value> {
-    serde_json::from_str(value).ok().or_else(|| {
-        let (v, read_loose) = relaxed_json(value)?;
-        (loose || !read_loose).then_some(v)
+/// The one reading of a value's text as JSON, for a data key, a list-typed
+/// key and a state alike (da-0d7e1): strict JSON — numbers, arrays,
+/// objects, quoted strings — or JSON as v2's relaxed-json read it,
+/// single-quoted strings, a trailing comma in brackets, bare words and
+/// comments (da-qzfnb, da-igesg, da-2wrzv). Each place's type then checks
+/// what it read.
+fn json(value: &str) -> Option<Value> {
+    serde_json::from_str(value)
+        .ok()
+        .or_else(|| relaxed_json(value))
+}
+
+/// A value in brackets as [`json`] reads it, for a state and a list-typed
+/// key: its elements, or `Some(None)` when the text does not read as a list
+/// (`[3d,4]`, `[a,b`). `None` when it is not in brackets.
+fn bracket_list(value: &str) -> Option<Option<Vec<Value>>> {
+    value.starts_with('[').then(|| match json(value) {
+        Some(Value::Array(a)) => Some(a),
+        _ => None,
     })
 }
 
@@ -531,14 +543,13 @@ fn json(value: &str, loose: bool) -> Option<Value> {
 /// came before it (`[8,]` → `[8]`; not `[,]` or `[8,,]`), and a bare word, a
 /// run of `$a-zA-Z0-9_-+.*?!|&%^/#\` that starts no number and no `true`,
 /// `false` or `null`, is a string (`[a, null, 34]` → `["a",null,34]`). With
-/// whether it read a bare word or a comment. `None` when the result is not
-/// JSON (`'unbalanced`, `[3d]`, `[café]`).
-fn relaxed_json(value: &str) -> Option<(Value, bool)> {
+/// `None` when the result is not JSON (`'unbalanced`, `[3d]`, `[café]`).
+fn relaxed_json(value: &str) -> Option<Value> {
     if !value.trim_start().starts_with(['[', '{', '\'']) {
         return None;
     }
     let word = |c: char| c.is_ascii_alphanumeric() || "$_-+.*?!|&%^/#\\".contains(c);
-    let (mut out, mut loose, mut rest) = (String::with_capacity(value.len() + 8), false, value);
+    let (mut out, mut rest) = (String::with_capacity(value.len() + 8), value);
     // The first character of the last token, and where the last comma was
     // written when a token other than `[` or `{` came before it.
     let (mut last, mut comma) = (None, None);
@@ -550,7 +561,6 @@ fn relaxed_json(value: &str) -> Option<(Value, bool)> {
         };
         let space = rest.len() - rest.trim_start().len();
         if let Some(n) = comment.or((space > 0).then_some(space)) {
-            loose |= comment.is_some();
             out.push(' ');
             rest = &rest[n..];
             continue;
@@ -565,7 +575,6 @@ fn relaxed_json(value: &str) -> Option<(Value, bool)> {
                 Some(n) => (n, rest[..n].to_string()),
                 None => {
                     let n = rest.len() - rest.trim_start_matches(word).len();
-                    loose = true;
                     (
                         n,
                         format!(
@@ -588,7 +597,7 @@ fn relaxed_json(value: &str) -> Option<(Value, bool)> {
         last = Some(c);
         rest = &rest[n..];
     }
-    Some((serde_json::from_str(&out).ok()?, loose))
+    serde_json::from_str(&out).ok()
 }
 
 /// The string at the head of `s`, in double or single quotes, as its length
@@ -628,30 +637,36 @@ fn number(s: &str) -> Option<usize> {
     Some(n)
 }
 
-/// da-cktfm: a state in brackets that is not JSON (`[a,b]`) would be split
-/// by the comma rule with its brackets kept, `["[a","b]"]` — no state
-/// anyone meant, and one that hides a sentinel from da-z9efl's refusal.
-/// Refused as a typed list key's bracket text is, in its words.
-pub fn bracket_state_error(key: &str, value: &str) -> Option<ParseError> {
+/// A state in brackets (`state`, `following_state`, `-l`), read as any
+/// value is ([`json`], da-0d7e1): `[calm,steady]` is the states «calm» and
+/// «steady», as `["calm","steady"]` is. Text that does not read as a list and
+/// holds a comma is refused, naming the JSON form: split by the comma rule
+/// it would keep its brackets, `["[5pm","6pm]"]`, no state anyone meant and
+/// one that hides a sentinel from da-z9efl's refusal (da-cktfm). `None` for
+/// a state not in brackets, or one with no comma, a state as typed.
+pub fn bracket_state(key: &str, value: &str) -> Option<Result<Value>> {
     // Any comma: a switch splits `[a, b]` too, where the comma rule would not.
-    if !value.starts_with('[') || !value.contains(',') || json(value, false).is_some() {
-        return None;
+    match bracket_list(value)? {
+        Some(items) => Some(Ok(Value::Array(items))),
+        None if !value.contains(',') => None,
+        None => {
+            let items: Vec<&str> = value
+                .trim_matches(['[', ']'])
+                .split(',')
+                .map(str::trim)
+                .collect();
+            Some(Err(ParseError::WrongType {
+                key: key.to_string(),
+                ty: "list",
+                value: value.to_string(),
+                hint: format!(
+                    ": the bracket form is JSON: {}, or write {}",
+                    Value::from(items.clone()),
+                    items.join(",")
+                ),
+            }))
+        }
     }
-    let items: Vec<&str> = value
-        .trim_matches(['[', ']'])
-        .split(',')
-        .map(str::trim)
-        .collect();
-    Some(ParseError::WrongType {
-        key: key.to_string(),
-        ty: "list",
-        value: value.to_string(),
-        hint: format!(
-            ": the bracket form is JSON: {}, or write {}",
-            Value::from(items.clone()),
-            items.join(",")
-        ),
-    })
 }
 
 /// The items of a comma list, or `None` when `value` is not one: split
@@ -979,18 +994,32 @@ mod tests {
         }
     }
 
-    /// A list-typed key and a state still refuse the bare-word bracket form
-    /// (da-igesg, da-cktfm) until vividn rules on them; its quoted and
-    /// trailing-comma forms they read.
+    /// da-0d7e1: a data key, a list-typed key and a state read a bracket
+    /// value one way, bare words and all, and each type checks what it
+    /// read; text that does not read as a list is refused by a list key and
+    /// a state rather than split into fragments.
     #[test]
-    fn list_keys_and_states_keep_refusing_bare_words() {
-        assert!(coerce_list(KeyType::StringList, "[a,b]", Compat::default()).is_err());
+    fn a_bracket_value_reads_one_way_for_every_key() {
+        let list = |ty, v| coerce_list(ty, v, Compat::default());
+        for v in ["[a,b]", "['a','b',]", r#"["a","b"]"#, "[a, /* c */ b]"] {
+            assert_eq!(infer_type(v), Some(json!(["a", "b"])), "{v}");
+            assert_eq!(
+                list(KeyType::StringList, v),
+                Ok(vec![json!("a"), json!("b")])
+            );
+            assert_eq!(
+                bracket_state("state", v).unwrap().unwrap(),
+                json!(["a", "b"])
+            );
+        }
         assert_eq!(
-            coerce_list(KeyType::StringList, "['a','b',]", Compat::default()),
-            Ok(vec![json!("a"), json!("b")])
+            list(KeyType::NumberList, "[3,x]"),
+            Err(r#": element 2 "x" is not a number"#.to_string())
         );
-        assert!(bracket_state_error("state", "[a,b]").is_some());
-        assert!(bracket_state_error("state", "['a','b']").is_none());
+        assert!(list(KeyType::NumberList, "[3d,4]").is_err());
+        assert!(bracket_state("state", "[5pm,6pm]").unwrap().is_err());
+        assert!(bracket_state("state", "[5pm]").is_none());
+        assert!(bracket_state("state", "a,b").is_none());
     }
 
     #[test]

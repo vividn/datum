@@ -312,8 +312,11 @@ text too: `Anna,` is `"Anna,"`. An
 item can't hold a glued comma — the bracket form can: `'["a,b", "c"]'`;
 `[]` is the empty array. A bracket or brace value that isn't JSON is read
 as v2's relaxed JSON read it, a bare word a string: `[calm,steady]` is
-`["calm","steady"]` and `{a: [b, 1]}` is `{"a":["b",1]}` (da-2wrzv); a
-list-typed key and a state refuse it. This departs from v2, where a leading or trailing
+`["calm","steady"]` and `{a: [b, 1]}` is `{"a":["b",1]}` (da-2wrzv). A
+list-typed key and a state read it the same way, each element then
+checked as its type (`change mood [calm,steady]` is the states calm and
+steady, da-0d7e1), and refuse a bracket value that does not read as a
+list (`[5pm,6pm]`) rather than split it. This departs from v2, where a leading or trailing
 comma made the array — a trailing one alone, too — and `,` was `[]`.
 
 ```bash
