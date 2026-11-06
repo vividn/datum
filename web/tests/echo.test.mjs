@@ -227,6 +227,24 @@ describe('the echo is painted in datum’s colours', () => {
 	});
 });
 
+// A setup's document is what the terminal prints for it, the field, its kind
+// and its states, and not the spec entry, which is timed at the epoch and
+// holds the spec's raw keys (da-a3u8x).
+describe('a setup echoes its summary', () => {
+	test('the bar and the CLI draw the field and its states, not 1970', async () => {
+		await shared.solo(async (app) => {
+			await app.submit('setup mood --kind change --states happy,sad');
+			for (const root of ['.prompt-bar', '.cli']) {
+				const text = await app.page.locator(`${root} .doc`).last().innerText();
+				assert.match(text, /mood\s+change\s+tracked/, `${root}: ${text}`);
+				assert.match(text, /states\s+happy · sad/, `${root}: ${text}`);
+				assert.doesNotMatch(text, /1970|allowed_states/, `${root}: ${text}`);
+			}
+			assert.deepEqual(app.errors, []);
+		}, CLI_BESIDE);
+	});
+});
+
 /**
  * The argvs `echoEnv` leaves alone, with arguments that make each one a
  * command the CLI will actually try to run.

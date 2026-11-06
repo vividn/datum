@@ -121,6 +121,24 @@ fn echo(db: &Db, entry: &Entry, action: Outcome, show: Show) -> Result<()> {
     Ok(())
 }
 
+/// Under `--show json`, the block the terminal prints in place of the spec
+/// entry's own line and data (da-a3u8x): its head the info line, with no
+/// time, as no clock means anything for a spec, and each line under it a row.
+fn in_place_of_entry(block: &str) {
+    let mut lines = block.lines();
+    let info = lines.next().unwrap_or_default();
+    let rows: Vec<&str> = lines.map(|l| l.strip_prefix("  ").unwrap_or(l)).collect();
+    for (key, value) in [
+        ("info", serde_json::json!(info)),
+        ("info_time", serde_json::json!("")),
+        ("info_segments", serde_json::json!([])),
+        ("data_inline", serde_json::json!(rows.join(", "))),
+        ("data", serde_json::json!(rows)),
+    ] {
+        render::json_echo::annotate_last(key, value);
+    }
+}
+
 /// `field`'s spec from `--from-json`'s JSON, read as a save reads it:
 /// what `dayview --sample` draws is what saving it would store.
 pub(crate) fn spec_from_json(field: &str, json: &str, db: &Db) -> Result<FieldSpec> {
@@ -453,8 +471,11 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if status.is_none()
         && old.as_ref().map(serde_json::to_value).transpose()? == Some(serde_json::to_value(&spec)?)
     {
-        match (&before, args.show) {
-            (Some(row), Show::Json) => echo(db, row, Outcome::NoDiff, Show::Json)?,
+        match (&before, &old, args.show) {
+            (Some(row), Some(old), Show::Json) => {
+                echo(db, row, Outcome::NoDiff, Show::Json)?;
+                in_place_of_entry(&Block::of(old, ignored(db, &old.field)?).render(None));
+            }
             _ => println!("no change"),
         }
         return Ok(());
@@ -471,11 +492,12 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         None => Outcome::Create,
     };
     echo(db, &row, action, args.show)?;
-    if args.show != Show::Json {
-        // Read back: a covered field's own keys are what was stored.
-        let saved = db.load_spec(&spec.field)?.unwrap_or(spec);
-        let now = Block::of(&saved, ignored(db, &saved.field)?);
-        print!("{}", now.render(was.as_ref()));
+    // Read back: a covered field's own keys are what was stored.
+    let saved = db.load_spec(&spec.field)?.unwrap_or(spec);
+    let block = Block::of(&saved, ignored(db, &saved.field)?).render(was.as_ref());
+    match args.show {
+        Show::Json => in_place_of_entry(&block),
+        _ => print!("{block}"),
     }
     if let Some(row) = &status {
         super::track::echo_status(db, row, args.show)?;
