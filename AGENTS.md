@@ -864,6 +864,22 @@ wipe is dropped as it syncs, and not lost. A `wipe` notice names the file and
 «purged» or «restored to a backup»; datum.day keeps the file in OPFS. A later
 wipe leaves an earlier one's file.
 
+### Upgrading together: the pin and the ask
+
+A chain's `pin {version}` record (`datum sync pin <VERSION> | unpin`, an admin
+act; da-w8zp5) is the version no member's `datum upgrade` goes past: a plain
+one, the daily timer's or a follow, goes as far as the lowest pin of the
+install's databases, `--to` past it is refused, and a copy past it stays (a pin
+moves no copy back). Its `upgrade {datum}` record (`datum sync chain upgrade`,
+a member's message) asks every member to upgrade now. After a bare `sync`, and
+in `sync run` as a chain record comes or once a minute, a copy behind the ask's
+version, or below a member's sync floor, runs `datum upgrade` itself
+(`commands/sync_upgrade.rs`), once per reason (`_meta` `upgrade_tried`); one
+`datum install` did not set up warns. `sync status` shows the pin and who has
+followed, by the build each member last said in a handshake
+(`DATUM_SYNC_TEST_BUILD` says another, the tests'). A build before them holds
+both records and refuses them, as any record it cannot read.
+
 ### Leaving, joining and rejoining
 
 A copy belongs to one chain — its apply refuses another chain's records

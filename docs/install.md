@@ -75,6 +75,22 @@ that syncs at it: the latest while it is the current minor, and the last
 build before the next floor once one has come. An older datum does not open a
 database a newer one has migrated.
 
+### A sync chain upgrades together
+
+A copy in a sync chain upgrades on its own where the chain needs it: once
+a member runs a build whose sync floor is above this copy's schema, its
+next sync runs `datum upgrade`, which fetches and verifies the release as
+above, never anything a member sent. Between floors nothing moves.
+`datum sync chain upgrade` asks every member to upgrade to the newest
+release now, floor or no floor; each follows as it next syncs, and `datum
+sync status` says who has. A datum `datum install` did not set up (one
+cargo built from a checkout, say) only says the chain has moved on.
+
+`datum sync pin 3.<minor>[.<height>]` holds the whole chain there: no
+member's upgrade, by hand, daily or asked, goes past it, so the floor
+cannot rise above it, and a member already past it stays where it is.
+`datum sync unpin` takes it away.
+
 datum makes no network call of its own unless you sync, upgrade, or turn
 on update checks: with `update_check = true` in `datumrc.toml` (in
 `~/.config/datum/`), `datum check` says when a newer release is out.

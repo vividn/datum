@@ -59,7 +59,7 @@ fn a_copy_behind_a_members_schema_syncs_and_warns_to_upgrade() {
 
 /// The knobs that make a copy say it runs schema 999 with its floor there:
 /// every copy that does not say so is below its floor.
-const OVER: [(&str, &str); 2] = [
+pub(super) const OVER: [(&str, &str); 2] = [
     ("DATUM_SYNC_TEST_SCHEMA", "999"),
     ("DATUM_SYNC_TEST_FLOOR", "999"),
 ];
@@ -75,7 +75,7 @@ fn ops_of(copy: &Copy, of: &Copy, records: bool) -> usize {
 }
 
 /// `copy`'s `sync run`, up, and a wait for a line of its stderr.
-fn up(copy: &Copy) -> (Serving, impl Fn(&str)) {
+pub(super) fn up(copy: &Copy) -> (Serving, impl Fn(&str)) {
     let mut run = copy.serve(&["sync", "run"]);
     let err = lines(run.child.stderr.take().unwrap());
     let until = move |needle: &str| loop {

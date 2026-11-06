@@ -41,6 +41,18 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 no_grants: flags.on("no-grants"),
             }
         }
+        // The chain's pin (da-w8zp5): no member upgrades past it.
+        "pin" | "unpin" => {
+            let n = usize::from(*sub == "pin");
+            let mut o = opts(&mut rest, &["admin-key"], &[], n..=n)?;
+            SyncCommand::Pin {
+                version: match o.positional.pop() {
+                    Some(v) => Some(super::info_db::release_version("sync pin takes", &v)?),
+                    None => None,
+                },
+                admin_key: o.get("admin-key"),
+            }
+        }
         "pause" => SyncCommand::Pause,
         "grid" => {
             opts(&mut rest, &[], &[], 0..=0)?;
@@ -179,7 +191,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             return Err(unknown(
                 "sync",
                 other,
-                "status|grid|diff|refold|chain|admin|daemon|pause|resume|help",
+                "status|grid|diff|refold|chain|admin|daemon|pause|resume|pin|unpin|help",
             ))
         }
     };
@@ -195,7 +207,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|join|leave|list|rename|expel|purge|role|ack|rekey";
+    const SET: &str = "invite|join|leave|list|rename|expel|purge|role|ack|rekey|upgrade";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = [
@@ -398,6 +410,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             SyncCommand::Ack { who, all }
         }
         Some("rekey") => SyncCommand::Rekey,
+        Some("upgrade") => SyncCommand::Upgrade,
         Some(other) => return Err(unknown("sync chain", other, SET)),
         None => return Err(missing("sync chain", SET)),
     })
@@ -1011,6 +1024,24 @@ mod tests {
             }
         );
         assert!(parse_sync_cmd(&["chain", "ack", "abc", "--all"]).is_err());
+        assert_eq!(p(&["chain", "upgrade"]), SyncCommand::Upgrade);
+        assert_eq!(
+            p(&["pin", "v3.2", "--admin-key", "k"]),
+            SyncCommand::Pin {
+                version: Some("3.2".into()),
+                admin_key: Some("k".into())
+            }
+        );
+        assert_eq!(
+            p(&["unpin"]),
+            SyncCommand::Pin {
+                version: None,
+                admin_key: None
+            }
+        );
+        for bad in [&["pin"][..], &["pin", "latest"], &["unpin", "3.2"]] {
+            assert!(parse_sync_cmd(bad).is_err(), "{bad:?}");
+        }
         assert_eq!(p(&["chain", "rekey"]), SyncCommand::Rekey);
         assert_eq!(
             p(&["chain", "leave", "--dry-run"]),

@@ -1041,6 +1041,17 @@ pub enum SyncCommand {
         /// grid` and open no other database for them (da-pofki).
         no_grants: bool,
     },
+    /// `datum sync pin <VERSION> | unpin [--admin-key <FILE>]` (da-w8zp5): the
+    /// version no member of the chain upgrades past, recorded in the chain;
+    /// `None` unpins.
+    Pin {
+        version: Option<String>,
+        admin_key: Option<String>,
+    },
+    /// `datum sync chain upgrade` (da-w8zp5): ask every member to upgrade to
+    /// the newest release now, each fetching and verifying it itself, as far
+    /// as the pin.
+    Upgrade,
     /// `datum sync pause | resume` (da-wlbyx): this copy's, never synced.
     Pause,
     Resume,

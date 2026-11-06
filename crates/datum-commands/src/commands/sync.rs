@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
 use crate::commands::check::{Domain, Issue, Severity, Source};
 
-const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain join <TICKET>` joins one with a ticket from another";
+pub(super) const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain join <TICKET>` joins one with a ticket from another";
 
 /// What a copy of a chain a purge dissolved says (da-qzrj9): it is in none,
 /// though it keeps the chain's records to pass the order on.
@@ -142,8 +142,16 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             // whichever session failed, and the sync's error stays (da-ogje9).
             #[cfg(feature = "net")]
             let synced = synced.and(super::sync_grant::redeem(db, records));
+            // What the chain asks of this copy's datum (da-w8zp5), the same.
+            #[cfg(feature = "net")]
+            super::sync_upgrade::follow(db, false);
             synced?
         }
+        SyncCommand::Pin { version, admin_key } => {
+            super::sync_upgrade::pin(db, version, admin_key.as_deref())?
+        }
+        #[cfg(feature = "net")]
+        SyncCommand::Upgrade => super::sync_upgrade::ask(db)?,
         SyncCommand::Pause => {
             ensure!(db.sync_chain()?.exists(), NO_CHAIN);
             match db.sync_set_paused(true)? {
@@ -829,6 +837,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             };
             datum_sync::run_aside(db, up, || {
                 grants.tick(db);
+                super::sync_upgrade::follow(db, true);
                 path.as_deref()
                     .is_some_and(super::sync_daemon::in_first_sync)
             })?
@@ -1742,6 +1751,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
     let unlocks: Vec<_> = notices.iter().filter(|n| n.kind == "unlock").collect();
     let clock = db.sync_clock_waits()?;
     let upgrade = db.sync_upgrade_warnings()?;
+    let (asked, asked_json) = super::sync_upgrade::shown(db, &chain)?;
     let unsent = db.sync_unsent()?;
     // A grant this database carries or grants (da-pofki): only with one
     // possible are the install's other databases opened to read them.
@@ -1812,6 +1822,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
                 "ahead_ms": w.ahead_ms, "text": w.to_string(),
             })).collect::<Vec<_>>(),
             "upgrade": upgrade, "unsent": unsent, "spool": spool,
+            "pin": asked_json["pin"], "asked": asked_json["asked"],
             "grants": grants.iter().map(|g| g.json()).collect::<Vec<_>>(),
         });
         println!("{out}");
@@ -1880,6 +1891,9 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
     // What `datum check` shows of sync too, from the same source (da-nq07y).
     for w in upgrade.iter().chain(&unsent) {
         println!("⚠ {w}");
+    }
+    for line in asked {
+        println!("{line}");
     }
     for (n, text) in said(db, notices) {
         println!("{}", notice_line(&n, &text));

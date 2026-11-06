@@ -532,7 +532,7 @@ impl Store for DbStore<'_> {
     fn version(&self) -> Version {
         let (schema, floor) = datum_core::migrations::said_version();
         Version {
-            datum: datum_core::build().into(),
+            datum: datum_core::migrations::said_build(),
             schema,
             floor: Some(floor),
         }

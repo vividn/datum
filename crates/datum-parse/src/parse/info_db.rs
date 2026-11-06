@@ -222,15 +222,15 @@ pub(crate) fn parse_upgrade_args(tail: &[&str]) -> Result<Command> {
             }
             other => return Err(unknown_flag(other)),
         };
-        to = Some(release_version(version)?);
+        to = Some(release_version("--to takes", version)?);
     }
     Ok(Command::Upgrade { check, auto, to })
 }
 
 /// A kept release's version as `datum --version` prints it, `3.<minor>.<height>`,
 /// or `3.<minor>` alone for that minor's newest build, with or without its
-/// tag's `v` and its `-beta`: two numbers or three.
-fn release_version(v: &str) -> Result<String> {
+/// tag's `v` and its `-beta`: two numbers or three. `what` begins the refusal.
+pub(crate) fn release_version(what: &str, v: &str) -> Result<String> {
     let core = v.strip_prefix('v').unwrap_or(v);
     let core = core.split_once('-').map_or(core, |(c, _)| c);
     let parts: Vec<&str> = core.split('.').collect();
@@ -242,7 +242,7 @@ fn release_version(v: &str) -> Result<String> {
         Ok(core.to_string())
     } else {
         Err(ParseError::InvalidArg(format!(
-            "--to takes a version, 3.<minor> or 3.<minor>.<height> as `datum --version` prints it: not '{v}'"
+            "{what} a version, 3.<minor> or 3.<minor>.<height> as `datum --version` prints it: not '{v}'"
         )))
     }
 }

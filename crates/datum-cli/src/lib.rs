@@ -300,6 +300,7 @@ fn dry_runs_on_a_copy(command: &Command) -> bool {
             c,
             SyncCommand::Pause
                 | SyncCommand::Resume
+                | SyncCommand::Pin { .. }
                 | SyncCommand::Ack { .. }
                 | SyncCommand::Rekey
                 | SyncCommand::Admin { .. }

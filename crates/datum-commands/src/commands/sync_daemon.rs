@@ -547,6 +547,7 @@ fn run() -> Result<()> {
                     let grants = super::sync_grant::Watch::default();
                     let aside = || {
                         grants.tick(&db);
+                        super::sync_upgrade::follow(&db, true);
                         ensure!(!in_first_sync(&path), ASIDE);
                         Ok(())
                     };

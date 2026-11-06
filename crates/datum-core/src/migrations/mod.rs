@@ -102,6 +102,16 @@ pub fn said_version() -> (u32, u32) {
     )
 }
 
+/// The build a copy says it runs in a sync handshake, and that a pin or an
+/// ask to upgrade is weighed against (da-w8zp5): this build, or what
+/// `DATUM_SYNC_TEST_BUILD` says (the tests).
+pub fn said_build() -> String {
+    std::env::var("DATUM_SYNC_TEST_BUILD")
+        .ok()
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| crate::build().into())
+}
+
 /// A single forward migration between two adjacent schema versions.
 ///
 /// Migrations run inside a transaction opened by the caller. `apply` must

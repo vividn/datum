@@ -19,12 +19,12 @@ use tempfile::TempDir;
 use crate::sync_net::claim_port;
 
 /// The key the test build trusts, and one it does not.
-const TEST_KEY: [u8; 32] = [7; 32];
+pub(crate) const TEST_KEY: [u8; 32] = [7; 32];
 const OTHER_KEY: [u8; 32] = [8; 32];
 
 /// `seed`'s key as minisign writes it: `Ed`, its id (here the public key's
 /// first 8 bytes), the public key.
-fn minisign_key(seed: &[u8; 32]) -> String {
+pub(crate) fn minisign_key(seed: &[u8; 32]) -> String {
     let public = SigningKey::from_bytes(seed).verifying_key().to_bytes();
     BASE64.encode(&[b"Ed", &public[..8], &public[..]].concat())
 }
@@ -192,19 +192,7 @@ impl Home {
     /// The same, as the release in `dir` beside the latest, unsigned: a
     /// kept one is `v<version>` (da-ec8y8).
     fn release_in(&self, dir: &str, binary: &[u8], sum: Option<&str>) {
-        let dir = self.path(dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let fixed = format!("datum-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
-        let real = format!("{:x}", Sha256::digest(binary));
-        let asset = format!("{fixed}-{}", &real[..7]);
-        std::fs::write(dir.join(&asset), binary).unwrap();
-        let sum = sum.unwrap_or(&real);
-        let zero = "0".repeat(64);
-        std::fs::write(
-            dir.join("SHA256SUMS"),
-            format!("{zero}  {fixed}\n{sum}  {asset}\n"),
-        )
-        .unwrap();
+        write_release(&self.path(dir), binary, sum);
     }
 
     /// Signs the release's SHA256SUMS with `seed`'s key.
@@ -213,8 +201,7 @@ impl Home {
     }
 
     fn sign_in(&self, dir: &str, seed: &[u8; 32]) {
-        let sums = std::fs::read(self.path(&format!("{dir}/SHA256SUMS"))).unwrap();
-        std::fs::write(self.sig_in(dir), minisign(seed, &sums)).unwrap();
+        sign_release(&self.path(dir), seed);
     }
 
     /// The signature an upgrade reads: the build's, `SHA256SUMS-<sha7>.minisig`,
@@ -224,16 +211,42 @@ impl Home {
     }
 
     fn sig_in(&self, dir: &str) -> PathBuf {
-        let sums = std::fs::read_to_string(self.path(&format!("{dir}/SHA256SUMS"))).unwrap();
-        let fixed = format!("datum-{}-{}-", std::env::consts::ARCH, std::env::consts::OS);
-        let name = sums
-            .split_whitespace()
-            .find_map(|w| w.strip_prefix(&fixed))
-            .map_or("SHA256SUMS.minisig".into(), |b| {
-                format!("SHA256SUMS-{b}.minisig")
-            });
-        self.path(&format!("{dir}/{name}"))
+        signature(&self.path(dir))
     }
+}
+
+/// [`Home::release_in`] at `dir`, which the sync tests' installed copies
+/// upgrade from too (da-w8zp5).
+pub(crate) fn write_release(dir: &std::path::Path, binary: &[u8], sum: Option<&str>) {
+    std::fs::create_dir_all(dir).unwrap();
+    let fixed = format!("datum-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
+    let real = format!("{:x}", Sha256::digest(binary));
+    let asset = format!("{fixed}-{}", &real[..7]);
+    std::fs::write(dir.join(&asset), binary).unwrap();
+    let sum = sum.unwrap_or(&real);
+    let zero = "0".repeat(64);
+    std::fs::write(
+        dir.join("SHA256SUMS"),
+        format!("{zero}  {fixed}\n{sum}  {asset}\n"),
+    )
+    .unwrap();
+}
+
+pub(crate) fn sign_release(dir: &std::path::Path, seed: &[u8; 32]) {
+    let sums = std::fs::read(dir.join("SHA256SUMS")).unwrap();
+    std::fs::write(signature(dir), minisign(seed, &sums)).unwrap();
+}
+
+fn signature(dir: &std::path::Path) -> PathBuf {
+    let sums = std::fs::read_to_string(dir.join("SHA256SUMS")).unwrap();
+    let fixed = format!("datum-{}-{}-", std::env::consts::ARCH, std::env::consts::OS);
+    let name = sums
+        .split_whitespace()
+        .find_map(|w| w.strip_prefix(&fixed))
+        .map_or("SHA256SUMS.minisig".into(), |b| {
+            format!("SHA256SUMS-{b}.minisig")
+        });
+    dir.join(name)
 }
 
 /// `upgrade --to` installs the kept release beside the latest, `v<version>`

@@ -69,7 +69,7 @@ const DRY_RUNS_ON_A_COPY: &[(&str, &str)] = &[
     ("meta", "Of add: "),
     (
         "sync",
-        "Of pause, resume, ack, rekey, rename and the admin acts: ",
+        "Of pause, resume, pin, unpin, ack, rekey, rename and the admin acts: ",
     ),
 ];
 

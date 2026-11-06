@@ -107,6 +107,14 @@
 //!     is out as a revoked one is: dialled by no one, served nothing, and
 //!     its ops before it stand. No copy leaves for another.
 //!
+//!   - `pin {version}` (da-w8zp5): the version, `3.<minor>` or
+//!     `3.<minor>.<height>`, no member's upgrade goes past; an empty one
+//!     unpins. The latest stands. An admin act, as a revoke is.
+//!   - `upgrade {datum}`: a member asks every member to upgrade to the newest
+//!     release now, `datum` the version it named, where it knew one. A
+//!     message, as a grant is: each member fetches and verifies the release
+//!     itself, and a pin still holds. The latest stands.
+//!
 //!   An `admit` of an endpoint the chain lists already RE-ADMITS it
 //!   (da-j8c4l): a revoked device rejoins by a fresh invite as a new one
 //!   joins, keeping its endpoint, its first admission and its label, its
@@ -764,6 +772,58 @@ pub struct Wipe {
     pub restore: bool,
 }
 
+/// A `pin` or an `upgrade` record (da-w8zp5): who wrote it, when, and the
+/// version it names, where it names one.
+#[derive(Debug, Clone)]
+pub struct Asked {
+    pub version: Option<String>,
+    pub hlc: String,
+    pub by: String,
+}
+
+/// `(major, minor, height)` of a version as `datum --version` prints it
+/// (`3.2.2503-beta (abc1234)`, a leading `datum ` or `v` read too) or as a pin
+/// names it, the height `None` for `3.<minor>`.
+pub fn version_parts(v: &str) -> Option<(u32, u32, Option<u32>)> {
+    let v = v
+        .trim()
+        .trim_start_matches("datum ")
+        .trim_start_matches('v');
+    let core = v.split(['-', ' ']).next()?;
+    let mut n = core.split('.').map(|p| p.parse::<u32>().ok());
+    let (major, minor) = (n.next()??, n.next()??);
+    let height = match n.next() {
+        None => None,
+        Some(h) => Some(h?),
+    };
+    n.next().is_none().then_some((major, minor, height))
+}
+
+/// Whether the build `datum` is past `pin`, which no upgrade moves a copy
+/// to: a `3.<minor>` pin takes any build of that minor, so only a later minor
+/// is past it. A version with no height is its minor's newest, and one that
+/// does not read is past every pin.
+pub fn past_pin(datum: &str, pin: &str) -> bool {
+    match (version_parts(datum), version_parts(pin)) {
+        (Some((m, n, _)), Some((pm, pn, None))) => (m, n) > (pm, pn),
+        (Some((m, n, h)), Some((pm, pn, Some(ph)))) => (m, n, h.unwrap_or(u32::MAX)) > (pm, pn, ph),
+        _ => true,
+    }
+}
+
+/// Whether the build `datum` is `version` or newer; one that does not read
+/// is neither.
+pub fn at_least(datum: &str, version: &str) -> bool {
+    version_parts(datum).is_some() && !past_pin(version, datum)
+}
+
+/// Whether no upgrade under `pin` moves the build `datum`: it is past the
+/// pin, or at a pin that names a full version.
+pub fn held_at(datum: &str, pin: &str) -> bool {
+    let full = version_parts(pin).is_some_and(|(_, _, h)| h.is_some());
+    past_pin(datum, pin) || full && at_least(datum, pin)
+}
+
 /// A `grant` record (da-n0uj1.4): sealed to the device key `to`.
 #[derive(Debug, Clone)]
 pub struct Grant {
@@ -811,6 +871,10 @@ pub struct Chain {
     pub wipes: Vec<Wipe>,
     /// The grants taken, oldest first (da-n0uj1.4).
     pub grants: Vec<Grant>,
+    /// The version no member upgrades past, and the last ask to upgrade
+    /// (da-w8zp5).
+    pub pin: Option<Asked>,
+    pub upgrade: Option<Asked>,
 }
 
 /// The wall time of an HLC, as RFC 3339.
@@ -1145,10 +1209,10 @@ impl Chain {
                 filter,
             );
         }
-        // An endpoint describes itself and leaves unsigned, and a grant or
-        // an erased is a message; anything else takes an admin, once there
+        // An endpoint describes itself and leaves unsigned, and a grant, an
+        // erased or an upgrade is a message; anything else takes an admin, once there
         // is one: its writer is a live member already.
-        if !self.is_open() && !own && kind != "grant" && kind != "erased" {
+        if !self.is_open() && !own && !matches!(kind.as_str(), "grant" | "erased" | "upgrade") {
             approved(&self.admins, r, &d)?;
         }
         match kind.as_str() {
@@ -1224,6 +1288,27 @@ impl Chain {
                         .zip(r["own_sealed"].as_str())
                         .map(|(e, s)| (e.to_string(), s.to_string())),
                 });
+                Ok(())
+            }
+            "pin" | "upgrade" => {
+                let version = Some(s(if kind == "pin" { "version" } else { "datum" }))
+                    .filter(|v| !v.is_empty());
+                if kind == "pin"
+                    && version
+                        .as_deref()
+                        .is_some_and(|v| version_parts(v).is_none())
+                {
+                    return Err("a pin is a version, 3.<minor> or 3.<minor>.<height>".into());
+                }
+                let asked = Asked {
+                    version,
+                    hlc: op.hlc.clone(),
+                    by: op.endpoint.clone(),
+                };
+                match kind.as_str() {
+                    "pin" => self.pin = asked.version.is_some().then_some(asked),
+                    _ => self.upgrade = Some(asked),
+                }
                 Ok(())
             }
             "role" => {
@@ -2503,6 +2588,89 @@ mod tests {
             json!({"type": "admit", "endpoint": b, "label": "b", "via": "j", "secret": "t"});
         assert_eq!(step(13, admit), (Ok(()), Some((false, false)), true));
         assert_eq!(chain_err(&step(14, it("unpurge", &b))), "not purged");
+    }
+
+    /// A pin is an admin act in a locked chain, the latest standing and an
+    /// empty one unpinning; an ask to upgrade is a member's message,
+    /// unsigned, which a reader cannot write (da-w8zp5).
+    #[test]
+    fn a_pin_takes_an_admin_and_an_ask_to_upgrade_a_member() {
+        let [a, b, r] = ["ab", "cd", "01"].map(|h| h.repeat(32));
+        let at = |t: u32| format!("2026-11-05T00:00:{t:02}.000Z/0000");
+        let secret = [5u8; 32];
+        let mut chain = Chain::default();
+        let mut step = |t: u32, by: &str, signed: bool, mut rec: Value| {
+            rec["chain"] = "c1".into();
+            rec["created"] = at(t).into();
+            if signed {
+                rec["sig"] = sign_ed25519(&rec, &secret).into();
+            }
+            let op = json!({
+                "endpoint": by, "seq": t, "hlc": at(t), "hid": CHAIN_HID,
+                "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+            });
+            let done = chain.step(&Op::parse(&op.to_string()).unwrap());
+            let shown = |a: &Option<Asked>| a.as_ref().map(|a| (a.version.clone(), a.by.clone()));
+            (done, shown(&chain.pin), shown(&chain.upgrade))
+        };
+        let admins = json!([{"key": ed25519_admin_key(&secret), "label": "k"}]);
+        let genesis = json!({"type": "genesis", "admins": admins, "label": "a"});
+        assert_eq!(step(1, &a, true, genesis).0, Ok(()));
+        for (t, who, role) in [(2, &b, "member"), (4, &r, "reader")] {
+            let invite = json!({"type": "invite", "invite_id": who, "secret_hash": sha256_hex(who),
+                "expires": "2099-01-01T00:00:00Z", "caps": {"role": role}});
+            assert_eq!(step(t, &a, true, invite).0, Ok(()));
+            let admit =
+                json!({"type": "admit", "endpoint": who, "label": role, "via": who, "secret": who});
+            assert_eq!(step(t + 1, &a, false, admit).0, Ok(()));
+        }
+        let pin = |v: &str| json!({"type": "pin", "version": v});
+        assert!(step(6, &b, false, pin("3.2"))
+            .0
+            .unwrap_err()
+            .contains("not signed by an admin"));
+        assert!(step(7, &b, true, pin("three"))
+            .0
+            .unwrap_err()
+            .contains("a pin is a version"));
+        let pinned = Some((Some("3.2".to_string()), b.clone()));
+        assert_eq!(
+            step(8, &b, true, pin("3.2")),
+            (Ok(()), pinned.clone(), None)
+        );
+        let ask = json!({"type": "upgrade", "datum": "3.2.9-beta (abc1234)"});
+        assert!(step(9, &r, false, ask.clone())
+            .0
+            .unwrap_err()
+            .contains("reader"));
+        let asked = Some((Some("3.2.9-beta (abc1234)".to_string()), b.clone()));
+        assert_eq!(step(10, &b, false, ask), (Ok(()), pinned, asked.clone()));
+        assert_eq!(step(11, &a, true, pin("")), (Ok(()), None, asked));
+    }
+
+    /// A `3.<minor>` pin takes every build of its minor; a full one only the
+    /// builds up to it.
+    #[test]
+    fn a_build_past_a_pin() {
+        for (build, pin, past) in [
+            ("3.2.2503-beta (abc1234)", "3.2", false),
+            ("datum 3.3.0-beta (abc1234)", "3.2", true),
+            ("3.1.9", "3.2", false),
+            ("3.2.2503-beta", "3.2.2503", false),
+            ("3.2.2504-beta", "3.2.2503", true),
+            ("4.0.1", "3.9.9", true),
+            ("nonsense", "3.2", true),
+        ] {
+            assert_eq!(past_pin(build, pin), past, "{build} past {pin}");
+        }
+        // `--to 3.2` is the minor's newest, which may be past a full pin.
+        assert!(past_pin("3.2", "3.2.2503"));
+        assert!(at_least("3.2.9-beta", "3.2.9") && !at_least("3.2.8", "3.2.9"));
+        assert!(held_at("3.2.9", "3.2.9") && !held_at("3.2.9", "3.2"));
+        assert!(held_at("3.3.1", "3.2") && !held_at("3.2.8", "3.2.9"));
+        assert_eq!(version_parts("v3.2"), Some((3, 2, None)));
+        assert_eq!(version_parts("3.2.x"), None);
+        assert_eq!(version_parts("3.2.5x"), None);
     }
 
     /// In a locked chain an order that a member delete its copy takes an

@@ -27,6 +27,8 @@ use super::sync_daemon::{ctl, linger_note, quoted, ENV};
 use super::{alias, backup_daemon, completions, sync_daemon};
 use crate::args::SyncDaemonAct;
 use crate::config;
+use datum_core::db::{chain, Db};
+use datum_core::migrations::said_build;
 
 /// The release `datum.day/install.sh` installs from; `DATUM_RELEASE_URL`
 /// names another, as it does there. A kept release, `v<version>`, is beside
@@ -223,6 +225,34 @@ fn remove_binary(exe: &Path) -> Result<()> {
 }
 
 pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
+    // No upgrade goes past a sync chain's pin (da-w8zp5): a plain one, the
+    // daily timer's or a chain's ask, goes as far as it, and an exact one
+    // held there does nothing.
+    let pinned = pinned();
+    if let Some((pin, db)) = &pinned {
+        let chain = format!("the sync chain of «{db}» is pinned at datum {pin}");
+        match to {
+            Some(v) => ensure!(
+                !chain::past_pin(v, pin),
+                "{chain}, and no upgrade goes past it: `datum sync unpin` there takes it away"
+            ),
+            None if chain::past_pin(&said_build(), pin) => {
+                println!(
+                    "datum {} is past the pin: {chain}, and it stays where it is",
+                    said_build()
+                );
+                return Ok(());
+            }
+            None if chain::held_at(&said_build(), pin) => {
+                println!(
+                    "datum is held at {pin}: {chain}; `datum sync unpin` there lets it upgrade"
+                );
+                return Ok(());
+            }
+            None => println!("{chain}: upgrading as far as it"),
+        }
+    }
+    let to = to.or(pinned.as_ref().map(|(p, _)| p.as_str()));
     let exe = this_exe()?;
     // A datum cargo built from a checkout moves onto the release (da-1yc69;
     // vividn, 2026-11-04: «it uses the public key in the checkedout version,
@@ -359,6 +389,38 @@ pub fn upgrade(check: bool, to: Option<&str>) -> Result<()> {
         Err(e) => eprintln!("warning: the sync daemon still runs the old datum: {e:#}"),
     }
     Ok(())
+}
+
+/// The lowest pin of the sync chains this install's databases are in
+/// (da-w8zp5), and the database it is read in: a `3.<minor>` pin is its
+/// minor's newest, so above every full version of it.
+fn pinned() -> Option<(String, String)> {
+    config::known_dbs()
+        .into_iter()
+        .filter_map(|(name, path)| {
+            let db = Db::open_read_only(&path.to_string_lossy()).ok()?;
+            Some((db.sync_chain_served().ok()?.pin?.version?, name))
+        })
+        .min_by_key(|(pin, _)| {
+            chain::version_parts(pin).map(|(m, n, h)| (m, n, h.unwrap_or(u32::MAX)))
+        })
+}
+
+/// This datum, where it upgrades itself (da-w8zp5): `datum install` set it
+/// up, from a release, and this user may replace it. Else why not.
+pub fn managed() -> std::result::Result<PathBuf, String> {
+    let exe = this_exe().map_err(|e| format!("{e:#}"))?;
+    if cargo_root(&exe).is_some() {
+        return Err(format!(
+            "this datum ({}) was built by cargo from a checkout, and upgrades only by hand: \
+             `datum upgrade` moves it onto the release",
+            exe.display()
+        ));
+    }
+    upgradable(&exe, false)
+        .and_then(|_| replaceable(&exe))
+        .map_err(|e| format!("{e:#}"))?;
+    Ok(exe)
 }
 
 /// What `datum install` recorded of `exe`, which `upgrade` upgrades; `None`

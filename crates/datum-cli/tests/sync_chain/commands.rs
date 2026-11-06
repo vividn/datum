@@ -92,11 +92,17 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     }
     assert_eq!(
         top,
-        ["status", "grid", "pause", "resume", "diff", "refold", "chain", "admin", "daemon"]
+        [
+            "status", "grid", "pause", "resume", "pin", "unpin", "diff", "refold", "chain",
+            "admin", "daemon"
+        ]
     );
     assert_eq!(
         complete(&["chain"]),
-        ["invite", "join", "leave", "list", "rename", "expel", "purge", "role", "ack", "rekey"]
+        [
+            "invite", "join", "leave", "list", "rename", "expel", "purge", "role", "ack", "rekey",
+            "upgrade"
+        ]
     );
     // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut
     // (da-n0uj1.1): each is unknown, naming the verbs there are.

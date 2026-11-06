@@ -27,6 +27,7 @@ mod purge;
 mod readers;
 mod run;
 mod schema;
+mod upgrade;
 
 /// A copy's UDP port, and the claim that holds it for as long as the copy
 /// lives (da-nuxm6). A port read off a probe bound to `:0` is free the moment
@@ -55,6 +56,8 @@ struct Copy {
     env: Vec<(&'static str, &'static str)>,
     /// Its database's file name.
     file: &'static str,
+    /// Its own datum, where `datum install` set one up ([`Copy::installed`]).
+    exe: Option<PathBuf>,
 }
 
 impl Copy {
@@ -69,6 +72,7 @@ impl Copy {
             _claim,
             env: vec![("USER", user)],
             file: "data.db",
+            exe: None,
         }
     }
 
@@ -85,7 +89,8 @@ impl Copy {
     }
 
     fn cmd(&self, args: &[&str]) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_datum"));
+        let exe = self.exe.clone();
+        let mut c = Command::new(exe.unwrap_or(env!("CARGO_BIN_EXE_datum").into()));
         c.env("DATUM_DB", self.db())
             .env("DATUM_HOME", self.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
