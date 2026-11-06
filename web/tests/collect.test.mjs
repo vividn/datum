@@ -226,6 +226,30 @@ describe('collect', () => {
 		});
 	});
 
+	// da-rtsun: the 24px × sat over the end of «−6m», reading «−6».
+	test("each pill's × stands clear of its label's text, and is 24px", async () => {
+		await collect(async ({ page }) => {
+			await tap(page, '[data-earlier="1"]');
+			await tap(page, '[data-earlier="5"]');
+			await saysPill(page, 'time', '−6m');
+			await tap(page, '[data-longer="1"]');
+			await tap(page, '[data-longer="5"]');
+			await saysPill(page, 'dur', '6m');
+			for (const kind of ['time', 'dur']) {
+				const { text, clear } = await page.locator(`${WHEN} .pill[data-pill="${kind}"]`).evaluate((pill) => {
+					const range = document.createRange();
+					range.selectNodeContents(pill.querySelector('.said'));
+					const box = (r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height });
+					return { text: box(range.getBoundingClientRect()), clear: box(pill.querySelector('.clear').getBoundingClientRect()) };
+				});
+				const meet = text.left < clear.right && clear.left < text.right && text.top < clear.bottom && clear.top < text.bottom;
+				assert.ok(!meet, `${kind}: the × ${JSON.stringify(clear)} is over its text ${JSON.stringify(text)}`);
+				assert.equal(clear.width, 24, `${kind}: the × is ${clear.width}px wide`);
+				assert.equal(clear.height, 24, `${kind}: the × is ${clear.height}px tall`);
+			}
+		});
+	});
+
 	test('a tap on time opens its options, a typed time and all day among them, and a drag closes it', async () => {
 		await collect(async ({ page }) => {
 			await tap(page, '[data-part="time"]');

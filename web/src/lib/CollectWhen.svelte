@@ -453,6 +453,8 @@
 		min-width: 0;
 		flex-wrap: wrap;
 		text-align: center;
+		/* Its own padding, and on the right what the × overlaps (24px less its 0.7rem out). */
+		padding-right: calc(24px - 0.45rem);
 		/* Held and dragged sideways. */
 		touch-action: none;
 	}
