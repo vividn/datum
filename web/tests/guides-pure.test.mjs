@@ -47,11 +47,11 @@ function prose(text) {
 /** Each retired word `text` says, as `old: line`. */
 const retired = (text) => prose(text).flatMap((line) => RETIRED.filter(({ said }) => said.test(line)).map(({ old }) => `${old}: ${line.trim()}`));
 
-let KINDS, guideOf, guided, PAGE;
+let KINDS, guideHtml, guideOf, guided, PAGE;
 before(async () => {
 	resolveLibAsSource();
 	({ KINDS } = await import('../src/lib/layout/registry.ts'));
-	({ guideOf, guided, PAGE } = await import('../src/lib/guides.ts'));
+	({ guideHtml, guideOf, guided, PAGE } = await import('../src/lib/guides.ts'));
 });
 
 test('the docs list the guide of every kind a person can open, and no other', () => {
@@ -81,6 +81,23 @@ describe('the guides', () => {
 	test('no guide says a retired word for a kind', () => {
 		const said = [PAGE, ...Object.keys(KINDS)].flatMap((name) => retired(guideOf(name).text).map((s) => `${name} ${s}`));
 		assert.deepEqual(said, []);
+	});
+});
+
+// A guide links to a place by the page's own scheme (da-7s7xc): the sync
+// guide's «Open Sync». syncguide.test.mjs presses it.
+describe('a place link', () => {
+	test('is a button for a place, and its text for a name no place has', () => {
+		const html = guideHtml('[Open Sync](place:sync) or [Nowhere <b>](place:nowhere)');
+		assert.match(html, /<button type="button" class="command" data-place="sync">Open Sync<\/button>/);
+		assert.match(html, /or Nowhere &lt;b&gt;<\/p>$/);
+		assert.equal((html.match(/<button/g) ?? []).length, 1, html);
+	});
+
+	test('in every guide names a place', () => {
+		const links = [PAGE, ...Object.keys(KINDS)].flatMap((name) => [...guideOf(name).text.matchAll(/\]\(place:([^)]*)\)/g)].map((m) => ({ name, place: m[1] })));
+		assert.ok(links.some((l) => l.name === 'sync' && l.place === 'sync'), 'the sync guide links to no place');
+		for (const { name, place } of links) assert.match(guideHtml(`[x](place:${place})`), /data-place=/, `${name}'s guide links to ${place}, no place`);
 	});
 });
 

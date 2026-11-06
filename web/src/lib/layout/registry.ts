@@ -702,7 +702,7 @@ It lists them and changes nothing. Type \`alias set <word> "<command>"\` in the 
 
 ## Where it is
 
-The gear at the top of the page, then **Sync**; or type \`sync\` in the bar.
+The gear at the top of the page, then **Sync**; or type \`sync\` in the bar. [Open Sync](place:sync)
 
 ## Connect a second device
 

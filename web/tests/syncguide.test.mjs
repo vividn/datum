@@ -82,6 +82,19 @@ describe('the sync guide opens from', () => {
 	});
 });
 
+// «Where it is» ends in Open Sync, a link to the place (da-7s7xc), which the
+// guide lost when it became Markdown.
+test('the guide’s Open Sync opens the sync place', async () => {
+	await shared.solo(async ({ page }) => {
+		await page.locator(`${WIDGET} header`).getByRole('button', { name: 'how to sync' }).click();
+		const open = place(page).locator('.guide[data-guide="sync"] p').getByRole('button', { name: 'Open Sync', exact: true });
+		assert.equal(await open.getAttribute('data-act'), 'open', 'Open Sync wears no ›');
+		await open.click();
+		await page.locator('dialog.sheet[open][data-place="sync"]').waitFor();
+		await place(page).waitFor({ state: 'detached' });
+	}, PAGE);
+});
+
 test('every control the guide names is one the widget shows, walked as a person walks it', async () => {
 	const native = await nativeCopy(relay);
 	const seen = [];

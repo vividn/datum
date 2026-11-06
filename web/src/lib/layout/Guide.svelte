@@ -8,24 +8,35 @@
 	The page's leads with its first paragraph and then `datum help`, one line
 	down, for the commands. A kind naming `commands` folds that CLI page at the
 	end, closed, for a terminal (the sync guide's, da-oyvsz).
+
+	A link to a place is a button (`guideHtml`), which a press opens
+	(`openPlace`, da-7s7xc).
 -->
 <script lang="ts">
 	import { act } from '#lib/act.ts';
+	import { openPlace } from './shell.js';
 	import { ansiSpans } from '#lib/ansi.ts';
 	import AnsiText from '#lib/AnsiText.svelte';
 	import { helpArgv } from '#lib/calls.ts';
-	import { PAGE, guideOf } from '#lib/guides.ts';
+	import { PAGE, guideHtml, guideOf } from '#lib/guides.ts';
 	import { explainCommand } from '#lib/help.ts';
-	import { markdown } from '#lib/markdown.ts';
 	import { run } from '#lib/run.ts';
 
 	let { name }: { name: string } = $props();
 
-	const OUT = { link: (href: string) => `href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener"`, image: (src: string) => src };
 	const guide = $derived(guideOf(name));
 	const blocks = $derived((guide?.text ?? '').split(/\n\s*\n/));
-	const lead = $derived(markdown(blocks[0] ?? '', OUT));
-	const rest = $derived(markdown(blocks.slice(1).join('\n\n'), OUT));
+	const lead = $derived(guideHtml(blocks[0] ?? ''));
+	const rest = $derived(guideHtml(blocks.slice(1).join('\n\n')));
+
+	let body: HTMLElement;
+	$effect(() => {
+		void [lead, rest];
+		for (const button of body.querySelectorAll<HTMLButtonElement>('button[data-place]')) {
+			act(button, 'open');
+			button.onclick = () => void openPlace(button.dataset.place!);
+		}
+	});
 
 	let reference = $state('');
 	$effect(() => {
@@ -35,7 +46,7 @@
 	});
 </script>
 
-<div class="guide" data-guide={name}>
+<div class="guide" data-guide={name} bind:this={body}>
 	{@html lead}
 	{#if name === PAGE}
 		<p class="commands">

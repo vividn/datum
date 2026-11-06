@@ -9,7 +9,9 @@
 // (layout/Guide.svelte), and the docs widget lists them all under its
 // contents, as pages of their own.
 
+import { builtinLayout } from './layout/defaults.js';
 import { KINDS, titleOf } from './layout/registry.js';
+import { markdown } from './markdown.js';
 
 /** The page's guide, by the name a kind's goes by. */
 export const PAGE = 'page';
@@ -74,3 +76,22 @@ export const guideOf = (name: string): Guide | undefined =>
  * A function, read once the registry is: the registry imports the docs widget, which reads this.
  */
 export const guided = (): string[] => Object.keys(KINDS).filter((kind) => !KINDS[kind].db && (!KINDS[kind].hidden || kind === 'kit'));
+
+const OUT = { link: (href: string) => `href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener"`, image: (src: string) => src };
+const PLACE = /\[([^\]]+)\]\(place:([\w-]+)\)/g;
+const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * A guide's Markdown as the Help place draws it (#lib/markdown.ts). A link to a place,
+ * `[Open Sync](place:sync)`, is a `button.command[data-place]`, which Guide.svelte makes
+ * open it (da-7s7xc); one to a name no place has is its text. The scheme is the page's
+ * own, so it is held out before markdown, which keeps no link but http, https or mailto
+ * (da-hse1u).
+ */
+export function guideHtml(text: string): string {
+	const held: string[] = [];
+	const button = (label: string, place: string) =>
+		builtinLayout(place, false) ? `<button type="button" class="command" data-place="${place}">${escape(label)}</button>` : escape(label);
+	const out = markdown(text.replace(PLACE, (_, label: string, place: string) => `\u0001${held.push(button(label, place)) - 1}\u0001`), OUT);
+	return out.replace(/\u0001(\d+)\u0001/g, (_, i: string) => held[Number(i)]);
+}
