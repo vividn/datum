@@ -1327,7 +1327,7 @@ describe('a layout saved with the spec or the field widget', () => {
 			});
 			await pick(page, 'old');
 			await until(() => rootTabs(page), (t) => t.includes('old'));
-			await page.locator('section.pane[data-title="setup"] .field-form input.field').waitFor();
+			await page.locator('section.pane[data-title="setup"] .field-form button.track-something').waitFor();
 			assert.deepEqual(await dotted(page), [], 'reading a retired kind is not an edit');
 			assert.deepEqual(app.errors, []);
 		});

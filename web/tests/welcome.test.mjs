@@ -83,7 +83,7 @@ describe('a first visit', () => {
 				await until(() => front(page), ([name]) => name === 'setup');
 				assert.deepEqual(await front(page), ['setup', 'setup']);
 				// The setup widget, on a new field.
-				await page.locator('.host.setup .field-form input.field').waitFor();
+				await page.locator('.host.setup .field-form button.track-something').waitFor();
 				assert.deepEqual(await rootNames(page), FIRST);
 
 				await page.locator('.root-bar [role="tab"]', { hasText: exactly('collection') }).click();

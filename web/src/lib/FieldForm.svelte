@@ -22,10 +22,18 @@
 	changed and saved or not. Neither a shape nor an
 	example takes the focus (da-zz9rn), vividn, 2026-10-19: «after selecting
 	an example don't enter text edit mode and open the keyboard, that is
-	jarring». The name line reads `field:` with «fields» beside it, the
-	widget's (`pick` slot), which goes to another field, and on a field
-	«rename». The box keeps its placeholder whole: the buttons wrap under it
-	first (da-qimwi).
+	jarring».
+
+	The `field:` line is first, over the shapes (da-4ta1k, vividn,
+	2026-11-05). With no field it holds «track something» and nothing else is
+	drawn: a press opens a modal that says what a field is, takes a name,
+	pilled in its hash color as it is typed, and lists the fields there are,
+	narrowed by it, to edit one instead. A field entered or chosen is a pill
+	in its color on the line, whose × starts over, beside the widget's
+	«rename» on a spec (`pick` slot). Under it the status line: NOT SET UP
+	until a new field is saved, TRACKED with its current state where it has
+	one and «stop tracking» (`ignore F`, at once), IGNORED with «start
+	tracking» (`track F`), each handed up as `run` and leaving the form open.
 
 	Every field, a new one too, has the three tabs — basics · data · aliases —
 	none of them required (da-i9upr), their bar under the panel and over the
@@ -60,21 +68,21 @@
 	the widget to run; null runs nothing. A field's is `pending` too while it
 	differs, which the widget runs when the form is left, and its buttons are
 	Revert · Save · Redo, Revert and Redo handed up for the widget to walk the
-	spec's history (da-hda4j); a new field's are Cancel · Save. Brought from
+	spec's history (da-hda4j); a new field's are cancel · save without
+	tracking (`--ignore`) · start tracking (`--track`). Brought from
 	another pane (`away`, da-wz84y), a spec's row starts with Cancel, and
 	Cancel and a spec's Save wear the chevron, for they go back there; a Save
-	that stays says «saved» under it for a moment. At the foot of a field's form,
-	tracked or ignored, on basics, whose button runs `ignore F` or `track F` at once,
-	handed up as `run` and leaving the form open.
+	that stays says «saved» under it for a moment.
 -->
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { act } from './act.js';
 	import DataKeys from './DataKeys.svelte';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
-	import { defaultColor } from './fields.js';
+	import { defaultColor, type FieldButton } from './fields.js';
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
+	import Sheet from './Sheet.svelte';
 	import { shellJoin } from './shellSplit.js';
 	import Swatch from './Swatch.svelte';
 	import {
@@ -103,8 +111,8 @@
 		field = '',
 		/** The verb it opens with, chosen; none unless the door that opened it preset one. */
 		verb = null,
-		/** The ignored fields (`fields --json`), which get no button until they are re-tracked. */
-		ignored = [],
+		/** The fields there are (`fields --json`): the modal's list, and whether this one is ignored. */
+		fields = [],
 		/** The spec to edit (`setup F --json`); null declares a new field instead. */
 		spec = null,
 		/** The example a new field's form opens filled with (the premade widget's), or none. */
@@ -120,7 +128,7 @@
 		away = false,
 		/** Whether a save that stayed is being said under Save. */
 		saved = false,
-		/** Beside the field's name: the widget's own buttons. */
+		/** Beside the field's pill: the widget's own buttons. */
 		pick,
 		/** Hand a save up to run, or null to run nothing and leave. */
 		onclose,
@@ -128,12 +136,12 @@
 		onrun,
 		onrevert,
 		onredo,
-		/** Go to another field: an anchor's link in the placement. */
+		/** Go to another field, `''` a new one: the pill's ×, the modal's list, an anchor's link in the placement. */
 		onopen
 	}: {
 		field?: string;
 		verb?: Verb | null;
-		ignored?: string[];
+		fields?: FieldButton[];
 		spec?: Spec | null;
 		example?: Example | null;
 		dirty?: boolean;
@@ -281,6 +289,27 @@
 
 	/** Hand `next` up to run, or null to run nothing. */
 	const finish = (next: Save | null) => onclose(next);
+
+	// ---- the field line (da-4ta1k): «track something» with no field, its pill with one ----
+	const empty = $derived(!spec && field.trim() === '');
+	const here = $derived(fields.find((f) => f.field === field));
+	const off = $derived(!!here?.ignored);
+	/** The modal open, and the name typed in it. */
+	let asking = $state(false);
+	let typed = $state('');
+	const draft = $derived(typed.trim());
+	const draftHint = $derived(draft === '' ? null : fieldNameHint(draft));
+	const draftFix = $derived(draftHint === null ? null : suggestFieldName(draft));
+	const glyphOf = (f: FieldButton) => f.glyph ?? VERBS.find((v) => v.what === f.shape.kind)?.glyph;
+
+	/** A name entered: a field there is opens, a new one is this form's, and what it is is measured from it, so its × asks nothing. */
+	function enter(name = draft): void {
+		if (name === '' || fieldNameHint(name) !== null) return;
+		asking = false;
+		if (fields.some((f) => f.field === name)) return onopen(name);
+		field = name;
+		opened = undefined;
+	}
 </script>
 
 <div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
@@ -293,6 +322,42 @@
 		<!-- vividn, 2026-10-28: «don't freeze the shapes at the top of the setup widget allow them to scroll with
 		     everything else» (da-uz2td): the shapes, name and tab in front scroll as one, over the tabs and buttons. -->
 		<div class="scroll">
+			<div class="row name-line">
+				<span class="label">field:</span>
+				{#if empty}
+					<button type="button" class="track-something" use:act={'open'} aria-haspopup="dialog" onclick={() => ((typed = ''), (asking = true))}
+						>track something</button
+					>
+				{:else}
+					<span class="pill" style:--c={color || auto} data-field={field}>
+						{#if spec}<h2>{field}</h2>{:else}<span class="named">{field}</span>{/if}
+						<button type="button" class="clear" aria-label="clear {field}" onclick={() => onopen('')}>×</button>
+					</span>
+					{@render pick?.()}
+				{/if}
+			</div>
+			{#if !empty}
+			{#if hint}
+				<p class="hint">
+					{hint}{#if fixed}
+						{' '}<button type="button" class="fix" onclick={() => (field = fixed ?? '')}>use {fixed}</button
+						>{/if}
+				</p>
+			{/if}
+			<p class="row status" data-status={!spec ? 'new' : off ? 'ignored' : 'tracked'}>
+				<span class="word">{!spec ? 'NOT SET UP' : off ? 'IGNORED' : 'TRACKED'}</span>
+				{#if spec && !off && (verb === 'switch' || verb === 'start')}
+					<span class="now">current state: <b>{here?.current === true ? 'on' : (here?.current ?? 'off')}</b></span>
+				{/if}
+				{#if spec}
+					<button
+						type="button"
+						use:act={'run'}
+						title={shellJoin([off ? 'track' : 'ignore', field])}
+						onclick={() => onrun({ argv: [off ? 'track' : 'ignore', field] })}>{off ? 'start tracking' : 'stop tracking'}</button
+					>
+				{/if}
+			</p>
 			<div class="verbs" role="radiogroup" aria-label="what a press logs">
 				{#each VERBS as choice (choice.verb)}
 					<button
@@ -310,34 +375,6 @@
 					</button>
 				{/each}
 			</div>
-			<!-- A field's name is over its shapes, a new one's under them (da-uipyt): one line, moved by `order`. -->
-			<div class="row name-line" class:over={spec}>
-				<span class="label">field:</span>
-				{#if spec}
-					<h2>{field}</h2>
-				{:else}
-					<input
-						class="field"
-						bind:value={field}
-						placeholder="what do you want to track?"
-						aria-label="field:"
-						spellcheck="false"
-						autocapitalize="none"
-						autocomplete="off"
-						enterkeyhint="done"
-						onkeydown={putDown}
-					/>
-				{/if}
-				{@render pick?.()}
-			</div>
-			{#if hint}
-				<p class="hint">
-					{hint}{#if fixed}
-						{' '}<button type="button" class="fix" onclick={() => (field = fixed ?? '')}>use {fixed}</button
-						>{/if}
-				</p>
-			{/if}
-
 			<!-- The tab in front (da-ooflv), changed by a tap or the arrow keys in the bar under it and never by a swipe:
 			     vividn, 2026-10-28, «bring the data and aliases tabs back on the setup widget, but no swipe action between
 			     them». A swipe across the form is the pane's (PaneFrame.svelte), so the super tabs swipe as they did. -->
@@ -452,21 +489,6 @@
 							<button type="button" class="to-data" data-to-tab="data" onclick={() => (tab = 'data')}>data tab</button>
 						</p>
 					{/if}
-					{#if spec}
-						<!-- vividn, 2026-10-19: «put them back at the very bottom of the basics tab». Run at once, as the
-						     ignored list's buttons are; a new field saves with `--track`. -->
-						{@const off = ignored.includes(field)}
-						<p class="row tracking" data-tracking={off ? 'ignored' : 'tracked'}>
-							<span class="label">{off ? 'ignored' : 'tracked'}</span>
-							<span class="ask">{off ? 'no button and not in now; its entries stay' : 'a button in the collect widget'}</span>
-							<button
-								type="button"
-								use:act={'run'}
-								title={shellJoin([off ? 'track' : 'ignore', field])}
-								onclick={() => onrun({ argv: [off ? 'track' : 'ignore', field] })}>{off ? 'track' : 'ignore'}</button
-							>
-						</p>
-					{/if}
 				{:else if tab === 'data'}
 					<DataKeys bind:keys card={verb === 'add'} detail />
 				{:else}
@@ -516,8 +538,10 @@
 					{/if}
 				{/if}
 			</div>
+			{/if}
 		</div>
 
+		{#if !empty}
 		<!-- Under the panel, over the buttons (da-nmhf2). -->
 		<div class="tabs" role="tablist" bind:this={bar}>
 			{#each TABS as name, i (name)}
@@ -547,23 +571,58 @@
 				</span>
 				<button type="button" class="redo" use:act={'run'} disabled={dirty || !ahead} onclick={onredo}>Redo</button>
 			{:else}
-				<button type="button" class="cancel" data-away={away || undefined} onclick={() => finish(null)}>Cancel</button>
-				<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Save</button>
+				<button type="button" class="cancel" data-away={away || undefined} onclick={() => finish(null)}>cancel</button>
+				<button
+					type="button"
+					class="untracked"
+					use:act={'run'}
+					disabled={!ready}
+					onclick={() => finish({ argv: declareArgv(field.trim(), edits, true) })}>save without tracking</button
+				>
+				<button class="commit" use:act={'run'} type="submit" disabled={!ready}>start tracking</button>
 			{/if}
 		</div>
+		{/if}
+	</form>
 
-		{#if ignored.length > 0}
-			<!-- Ignored fields get no button in the bar; this is the way back (da-d08c). -->
-			<div class="ignored">
-				<span class="label">ignored</span>
-				{#each ignored as name (name)}
-					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} onclick={() => finish({ argv: ['track', name] })}
-						>{name}</button
+	<!-- What a field is, a name for a new one, or one there is to edit (da-4ta1k). -->
+	<Sheet title="track something" open={asking} onclose={() => (asking = false)} data-picker>
+		<p class="what">A field is one thing you track. For example mood, coffee, or sleep.</p>
+		<div class="row naming">
+			<span class="label">field name:</span>
+			<span class="pill" style:--c={draft ? defaultColor(draft) : 'var(--rule)'}>
+				<!-- svelte-ignore a11y_autofocus -->
+				<input
+					class="field"
+					bind:value={typed}
+					aria-label="field name:"
+					spellcheck="false"
+					autocapitalize="none"
+					autocomplete="off"
+					enterkeyhint="enter"
+					autofocus
+					onkeydown={(e) => e.key === 'Enter' && !e.isComposing && (e.preventDefault(), enter())}
+				/>
+				<button type="button" class="enter" aria-label="enter" disabled={draft === '' || draftHint !== null} onclick={() => enter()}>⏎</button>
+			</span>
+		</div>
+		{#if draftHint}
+			<p class="hint">
+				{draftHint}{#if draftFix}
+					{' '}<button type="button" class="fix" onclick={() => (typed = draftFix ?? '')}>use {draftFix}</button>{/if}
+			</p>
+		{/if}
+		{#if fields.length > 0}
+			<p class="or">or edit an existing field</p>
+			<div class="chips" role="group" aria-label="fields">
+				{#each fields.filter((f) => f.field.toLowerCase().includes(draft.toLowerCase())) as f (f.field)}
+					<button type="button" data-chip={f.field} data-ignored={f.ignored || undefined} style:--c={f.color} onclick={() => enter(f.field)}
+						><span aria-hidden="true">{glyphOf(f)}</span> {f.field}</button
 					>
 				{/each}
 			</div>
 		{/if}
-	</form>
+	</Sheet>
 </div>
 
 <style>
@@ -740,7 +799,7 @@
 		letter-spacing: 0.06em;
 	}
 
-	/* `field:`, the name, and the widget's buttons at its end; over the shapes on a field that is. */
+	/* `field:`, the pill, and the widget's buttons at its end, over the shapes (da-4ta1k). */
 	.name-line .label {
 		inline-size: auto;
 	}
@@ -755,19 +814,115 @@
 		flex-wrap: wrap;
 	}
 
-	/* As wide as «what do you want to track?», or the buttons beside it wrap under it. */
-	.name-line .field {
-		flex: 1 1 27ch;
+	/* A field's name in its color, its × at its end; in the modal, the box typed in. */
+	.pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		min-inline-size: 0;
+		box-sizing: border-box;
+		min-block-size: 28px;
+		border: 1px solid var(--c);
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--c) 30%, var(--raised));
+		padding-inline: 0.6rem 0.15rem;
 	}
 
-	.name-line h2 {
-		flex: 1;
+	.pill h2,
+	.pill .named {
 		min-inline-size: 0;
 		overflow-wrap: anywhere;
+		font-size: 0.9rem;
+		letter-spacing: 0.06em;
+		color: var(--ink-bright);
 	}
 
-	.name-line.over {
-		order: -1;
+	.pill input {
+		flex: 1;
+		min-inline-size: 0;
+		border: 0;
+		background: none;
+		padding-inline: 0;
+	}
+
+	.naming .pill {
+		flex: 1;
+	}
+
+	.pill button {
+		flex: none;
+		min-block-size: 24px;
+		min-inline-size: 24px;
+		border: 0;
+		border-radius: 999px;
+		background: none;
+		color: var(--ink-bright);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.pill button:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	/* NOT SET UP, TRACKED or IGNORED, and its button at the right. */
+	.status {
+		flex-wrap: wrap;
+	}
+
+	.status .word {
+		color: var(--ink-bright);
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+	}
+
+	.status .now {
+		color: var(--muted);
+		font-size: 0.75rem;
+	}
+
+	.status button {
+		margin-inline-start: auto;
+	}
+
+	.what,
+	.or {
+		margin: 0 0 0.5rem;
+		color: var(--quiet);
+	}
+
+	.or {
+		margin-block-start: 0.75rem;
+		font-size: 0.75rem;
+	}
+
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+
+	.chips button {
+		box-sizing: border-box;
+		min-block-size: 28px;
+		background: var(--raised);
+		border: 1px solid var(--c, var(--rule));
+		border-radius: 999px;
+		padding: 0.1rem 0.6rem;
+		color: var(--ink);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.chips span {
+		color: var(--c);
+	}
+
+	/* An ignored field, offered to edit and start tracking again. */
+	.chips [data-ignored] {
+		border-style: dashed;
+		color: var(--muted);
 	}
 
 	/* Handle, swatch, name, …, ✕ on one line, off's too; a state's options
@@ -904,14 +1059,15 @@
 
 	.buttons {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: flex-start;
 		justify-content: flex-end;
 		gap: 0.5rem;
 	}
 
 	.buttons button,
-	.ignored button,
-	.tracking button,
+	.track-something,
+	.status button,
 	.to-data,
 	.fix,
 	.remove,
@@ -988,29 +1144,11 @@
 		cursor: default;
 	}
 
-	.ignored {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem;
-	}
-
-	.ignored button {
-		border-radius: 999px;
-		padding: 0.2rem 0.55rem;
-		font-size: 0.8rem;
-	}
-
-	/* An ignored field's button runs `track <field>` at once (da-juku7), and so does tracked / ignored. */
-	.tracking button:global([data-act='run']),
-	.ignored button:global([data-act='run']) {
+	/* Stop and start tracking run `ignore F` and `track F` at once (da-juku7), and save without tracking its one `setup F`. */
+	.status button:global([data-act='run']),
+	.untracked:global([data-act='run']) {
 		border: 3px double var(--rule);
-		padding: calc(0.2rem - 2px) calc(0.55rem - 2px);
-	}
-
-	.ignored .label {
-		inline-size: auto;
-		font-size: 0.7rem;
+		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
 	}
 
 	.hint {

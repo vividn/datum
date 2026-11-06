@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { along, widgetPane } from './support/layout.mjs';
-import { FIELD_FORM, openField } from './support/field.mjs';
+import { FIELD_FORM, NAMING, fieldNamed, openField, trackSomething } from './support/field.mjs';
 const { cases } = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL('../../tests/fixtures/field-name.json', import.meta.url)),
@@ -67,21 +67,17 @@ const BAR = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane
 const onBar = (fn) => shared.solo(fn, BAR);
 
 /**
- * Open the field widget on a new field and type `field` into it, without
- * submitting.
- *
- * A verb is chosen at the same time: Done needs both (da-94q1), so a
- * test about the NAME has to answer the other half or every case would
- * read as refused for the wrong reason.
+ * Open the field widget on a new field and type `field` into the modal its
+ * «track something» opens (da-4ta1k), without entering it: whether its enter
+ * button takes it, and what the hint under it says.
  */
 async function typeIntoTheForm(page, field) {
-	const form = page.locator(FIELD_FORM);
-	if ((await form.count()) === 0) await openField(page);
-	await form.locator('input.field').fill(field);
-	await form.locator('button[data-verb="occur"]').click();
-	const hint = form.locator('p.hint');
+	if ((await page.locator(FIELD_FORM).count()) === 0) await openField(page);
+	if ((await page.locator(`${NAMING} input.field`).count()) === 0) await trackSomething(page);
+	await page.locator(`${NAMING} input.field`).fill(field);
+	const hint = page.locator(`${NAMING} p.hint`);
 	return {
-		submittable: await form.locator('button.commit').isEnabled(),
+		submittable: await page.locator(`${NAMING} button.enter`).isEnabled(),
 		hint: (await hint.count()) ? (await hint.innerText()).trim() : null
 	};
 }
@@ -167,8 +163,11 @@ describe('a field name the new-field form accepts', () => {
 	test('one press of the offered name gets you a usable one', async () => {
 		await onBar(async (app) => {
 			await typeIntoTheForm(app.page, 'cups=2');
-			await app.page.locator(`${FIELD_FORM} p.hint button.fix`).click();
-			assert.equal(await app.page.locator(`${FIELD_FORM} input.field`).inputValue(), 'cups_2');
+			await app.page.locator(`${NAMING} p.hint button.fix`).click();
+			assert.equal(await app.page.locator(`${NAMING} input.field`).inputValue(), 'cups_2');
+			await app.page.locator(`${NAMING} button.enter`).click();
+			assert.equal(await fieldNamed(app.page), 'cups_2');
+			await app.page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 
 			await trackIt(app, 'cups_2');
 			await pressChip(app, 'cups_2');
@@ -209,6 +208,8 @@ describe('a field name the new-field form accepts', () => {
 			};
 			for (const [i, testCase] of acceptable.entries()) {
 				await typeIntoTheForm(app.page, testCase.field);
+				await app.page.locator(`${NAMING} button.enter`).click();
+				await app.page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 				await trackIt(app, testCase.field);
 
 				// Surface one: the chip the app just drew.

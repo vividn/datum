@@ -32,7 +32,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESK } from './support/desk.mjs';
-import { FIELD_FORM, openField } from './support/field.mjs';
+import { FIELD_FORM, NAMING, openField, trackSomething } from './support/field.mjs';
 import {
 	DESKTOP,
 	choiceLines,
@@ -652,9 +652,12 @@ describe('widget options', () => {
 			assert.equal(await tracked.evaluate((b) => parseFloat(getComputedStyle(b).opacity)), 1);
 
 			// It is a SECOND way to see them, not a replacement for the one that
-			// exists: a new field's form still offers `run` back.
+			// exists: the setup widget's modal still offers `run` back.
 			await openField(page);
-			await page.locator(`${FIELD_FORM} [data-ignored="run"]`).waitFor();
+			await trackSomething(page);
+			await page.locator(`${NAMING} [data-chip="run"][data-ignored]`).waitFor();
+			await page.keyboard.press('Escape');
+			await page.locator(NAMING).waitFor({ state: 'detached' });
 			await page.keyboard.press('Escape');
 			await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 

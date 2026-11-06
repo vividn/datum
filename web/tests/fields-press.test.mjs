@@ -24,7 +24,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
-import { FIELD_FORM, declared, openField } from './support/field.mjs';
+import { FIELD_FORM, declared, nameField, openField } from './support/field.mjs';
 
 describe('a press', () => {
 	before(startApp);
@@ -68,7 +68,7 @@ describe('a press', () => {
 			const { page } = app;
 			await openField(page);
 			const modal = page.locator(FIELD_FORM);
-			await modal.locator('input.field').fill('sleep');
+			await nameField(page, 'sleep');
 			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');
 
 			await modal.locator('button[data-verb="start"]').click();

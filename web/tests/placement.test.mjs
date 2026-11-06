@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
 import { editedSpec, placeOf } from '../src/lib/track.ts';
-import { FIELD_FORM as MODAL, leaveField, openField } from './support/field.mjs';
+import { FIELD_FORM as MODAL, leaveField, nameField, openField } from './support/field.mjs';
 import { pinch } from './support/daystrip.mjs';
 
 /** The box a tap draws round a mark (da-r6wwe): none at rest. */
@@ -246,7 +246,7 @@ describe('the Placement tab', () => {
 
 	// da-gq232: a field the database knows nothing of has no row in `fields
 	// --json`, and its box stood at the top of the day.
-	test('a new field is boxed where its name will put it, and follows the name as it is typed', async () => {
+	test('a new field is boxed where its name will put it, and a name entered after it where that one will', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page, 'brandnew', 'start');
@@ -268,7 +268,9 @@ describe('the Placement tab', () => {
 				return row.y;
 			};
 			assert.ok((await boxedAt('brandnew')) > 0.05, 'not the top of the day');
-			await page.locator(`${MODAL} input.field`).fill('walkabout');
+			// Its × starts over (da-4ta1k): a new name, its shape chosen again.
+			await nameField(page, 'walkabout');
+			await page.locator(`${MODAL} button[data-verb="start"]`).click();
 			const y = await boxedAt('walkabout');
 			assert.equal(await page.locator(LANE_RESET).isDisabled(), true, 'nobody chose its lane');
 
@@ -742,8 +744,9 @@ describe('the Placement tab', () => {
 					marks: [...svg.querySelectorAll('g.field')].map((g) => `${g.dataset.field}:${g.querySelectorAll('rect.block, .point-fg').length}`).sort()
 				}));
 
-			for (const [field, verb] of [['coffee'], ['', 'occur']]) {
-				const { saved } = await (field ? openPlacement(page, field) : openField(page, '', verb));
+			// The new one named, as a field is before its shapes show (da-4ta1k).
+			for (const [field, verb] of [['coffee'], ['fresh', 'occur']]) {
+				const { saved } = await (verb ? openField(page, field, verb) : openPlacement(page, field));
 				await page.locator(`${MODAL} .placement .band[data-drawn] svg`).waitFor();
 				let last = await picture();
 				assert.equal(last.context, 'none', `«${field}» opens on context`);
@@ -752,10 +755,9 @@ describe('the Placement tab', () => {
 					const seen = await picture();
 					assert.equal(seen.context, context);
 					assert.notDeepEqual(seen.marks, last.marks, `«${field}», ${label}: the band changed`);
-					if (!field) assert.deepEqual(seen.marks.filter((m) => m.startsWith(':')), [], `${label}: no sample with no name`);
 					last = seen;
 				}
-				assert.deepEqual(last.marks, field ? [`${field}:8`] : [], `«${field}»: the sample alone, none with no name`);
+				assert.deepEqual(last.marks, [`${field}:8`], `«${field}»: the sample alone`);
 				await leaveField(page);
 				assert.equal(await saved, null);
 			}
@@ -770,7 +772,7 @@ describe('the Placement tab', () => {
 			await app.run(['switch', 'mood', 'happy', '-t', '-300']);
 			await app.run(['track', 'pill', '--verb', 'occur']);
 			for (const [field, verb] of [['pill'], ['', 'occur']]) {
-				const { saved } = await (field ? openPlacement(page, field) : openField(page, '', verb));
+				const { saved } = await (field ? openPlacement(page, field) : openField(page, 'fresh', verb));
 				await page.locator(`${MODAL} .placement .band[data-drawn] svg`).waitFor();
 				const widths = [];
 				for (const label of ['context', 'current', '6 hours']) {

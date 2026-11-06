@@ -5,11 +5,12 @@
 // editing inside of it more easy and intuitive … It should also be clearer
 // what "field" actually is and means.»
 //
-// So what is held here is what a newcomer meets: the sentence, the shapes
-// first (da-uipyt) and no examples, which are the premade widget's
-// (da-36whg, premade.test.mjs), the `field:` line
-// and its «fields» (da-zz9rn), a save that leaves a field the
-// bar can log, and the sheet of fields that goes from one to the next.
+// So what is held here is what a newcomer meets: the `field:` line and
+// «track something» alone, whose modal says what a field is, takes a name and
+// lists the fields there are (da-4ta1k); a field's pill, whose × starts over;
+// its status line, NOT SET UP, TRACKED or IGNORED; no examples, which are the
+// premade widget's (da-36whg, premade.test.mjs); and a save that leaves a field
+// the bar can log.
 // The form's own tabs are `track.test.mjs`'s, the place's coming and going
 // `specplace.test.mjs`'s.
 
@@ -18,7 +19,8 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, PANEL, leaveField, declared, openField } from './support/field.mjs';
+import { FIELD_FORM, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, trackSomething } from './support/field.mjs';
+import { defaultColor } from '../src/lib/fields.ts';
 import { until } from './support/until.mjs';
 import { shellJoin } from '../src/lib/shellSplit.ts';
 import { reach as reachCommand } from './support/commands.mjs';
@@ -28,12 +30,18 @@ after(stopApp);
 
 /** The widget, wherever it is drawn: the place modal on a desktop, or a pane. */
 const WIDGET = ':is(dialog.sheet[data-place="setup"], section.pane[data-title="setup"])';
-/** The sheet «fields» opens, and the fields in it. */
-const PICKER = 'dialog.sheet[data-picker]';
-const pick = (page) => page.locator(`${FIELD_FORM} button.pick`);
+/** The modal «track something» opens, and the fields in it. */
+const PICKER = NAMING;
 const chips = (page) => page.locator(`${PICKER} .chips button`);
 const chipTexts = async (page) => (await chips(page).allInnerTexts()).map((t) => t.trim());
-const marked = async (page) => (await page.locator(`${PICKER} .chips [aria-current="true"]`).allInnerTexts()).map((t) => t.trim());
+/** The status line: its word, and its button's, or none. */
+const status = async (page) => {
+	const line = page.locator(`${FIELD_FORM} [data-status]`);
+	const button = line.locator('button');
+	return [(await line.locator('.word').innerText()).trim(), (await button.count()) ? (await button.innerText()).trim() : null];
+};
+/** `#rrggbb` as the browser computes it. */
+const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 /** The field the form is on: its name line's h2. */
 const heading = async (page) => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim();
 
@@ -44,31 +52,119 @@ const typing = (page) => page.evaluate(() => !!document.activeElement?.matches('
 describe('the field widget', () => {
 	const shared = sharedApp(DESKTOP);
 
-	test('with no fields: what a field is, the four shapes first, a name box, and every tab', async () => {
+	// vividn, 2026-11-05 (da-4ta1k): «the widget is empty but for its top line, field:, and a track something button».
+	test('with no field: `field:` and «track something» alone; its modal pills the name and narrows the fields there are', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
+			for (const [name, verb] of [['tea', 'occur'], ['team', 'occur'], ['nap', 'start']]) await app.run(['track', name, '--verb', verb]);
+			await app.redraw();
 			await openField(page);
-			await page.locator(FIELD_FORM).waitFor();
-			// It says what a field is, before anything else is asked.
-			assert.ok((await page.locator(`${WIDGET} p.what`).innerText()).trim());
-			// No «+ new field», and nothing to edit yet, so no «fields».
-			assert.equal(await page.locator(`${WIDGET} button.new`).count(), 0);
-			assert.equal(await pick(page).count(), 0);
-			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
-			// The shapes come first, above the name, each named and lined as the tutorial's shapes tab has it.
-			const said = await page.locator(`${FIELD_FORM} .verb`).evaluateAll((all) =>
-				all.map((b) => [...b.children].map((c) => c.textContent.trim()))
-			);
-			assert.deepEqual(said, VERBS.map((v) => [v.glyph, v.what, v.line]));
-			const top = async (sel) => (await page.locator(`${FIELD_FORM} ${sel}`).first().boundingBox()).y;
-			assert.ok((await top('.verb')) < (await top('input.field')), 'the name comes before the shapes');
-			// None chosen, and every tab there before a save, none of them required.
-			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
-			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
+			const line = page.locator(`${FIELD_FORM} .name-line`);
+			await line.waitFor();
+			assert.equal((await line.locator('.label').innerText()).trim(), 'field:');
+			// The one button in the form, and none of the rest: no shapes, tabs, status or buttons.
+			assert.deepEqual(await page.locator(`${FIELD_FORM} button`).evaluateAll((all) => all.map((b) => b.className.split(' ')[0])), ['track-something']);
+			for (const gone of ['.verbs', '[role="tab"]', '[data-status]', '.buttons', '.body']) assert.equal(await page.locator(`${FIELD_FORM} ${gone}`).count(), 0, gone);
 			// No examples: they are the premade widget's (da-36whg).
 			for (const gone of ['[data-example]', '[data-examples]', 'button.ex']) assert.equal(await page.locator(`${WIDGET} ${gone}`).count(), 0, gone);
 			assert.equal(await page.locator('dialog.sheet[data-catalog]').count(), 0);
+
+			// The modal says what a field is, has the keys, and lists the fields there are, in their colors and glyphs.
+			await trackSomething(page);
+			assert.ok((await page.locator(`${PICKER} p.what`).innerText()).trim(), 'it does not say what a field is');
+			assert.equal(await typing(page), true, 'the name box does not have the keys');
+			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '● team', '█ nap'].sort());
+			const pill = page.locator(`${PICKER} .pill`);
+			const border = () => pill.evaluate((el) => getComputedStyle(el).borderTopColor);
+			// As it is typed, the name is a pill in its own color, and the list narrows to it, whatever the case.
+			const box = page.locator(`${PICKER} input.field`);
+			await box.fill('TE');
+			assert.equal(await border(), rgb(defaultColor('TE')));
+			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '● team'].sort());
+			await box.fill('walk');
+			assert.equal(await border(), rgb(defaultColor('walk')));
+			assert.equal(await chips(page).count(), 0);
+			// A name that is a field goes to it.
+			await box.fill('tea');
+			await page.locator(`${PICKER} button.enter`).click();
+			await until(() => heading(page), (t) => t === 'tea');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a new name is a pill reading NOT SET UP, with cancel, save without tracking and start tracking; its × starts over', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const { saved } = await openField(page);
+			await nameField(page, 'tea');
+			assert.equal(await fieldNamed(page), 'tea');
+			const pill = page.locator(`${FIELD_FORM} .name-line .pill`);
+			assert.equal(await pill.evaluate((el) => getComputedStyle(el).borderTopColor), rgb(defaultColor('tea')));
+			assert.deepEqual(await status(page), ['NOT SET UP', null]);
+			// The line goes above the shapes.
+			const top = async (sel) => (await page.locator(`${FIELD_FORM} ${sel}`).first().boundingBox()).y;
+			assert.ok((await top('.name-line')) < (await top('[data-status]')) && (await top('[data-status]')) < (await top('.verb')), 'not field, status, shapes');
+			assert.deepEqual(await page.locator(`${FIELD_FORM} .buttons button`).allInnerTexts(), ['cancel', 'save without tracking', 'start tracking']);
+			// None chosen, and every tab there before a save, none of them required; nothing saves without a shape.
+			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
+			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
 			assert.equal(await page.locator(`${FIELD_FORM} button.commit`).isEnabled(), false);
+			assert.equal(await page.locator(`${FIELD_FORM} button.untracked`).isEnabled(), false);
+
+			// The × starts over: the line is «track something» again, asking nothing for a name alone.
+			await pill.locator('button.clear').click();
+			await page.locator(`${FIELD_FORM} button.track-something`).waitFor();
+			assert.equal(await page.locator('dialog.confirm').count(), 0, 'a name alone asked');
+			assert.equal(await fieldNamed(page), '');
+
+			// Saved without tracking, the spec is there and the field ignored, in one `setup F --ignore`.
+			await nameField(page, 'tea');
+			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
+			await page.locator(`${FIELD_FORM} button.untracked`).click();
+			const result = await saved;
+			assert.equal(declared(shellJoin(result.argv)).line, 'setup tea --from-json --ignore');
+			await until(() => status(page), (s) => s[0] === 'IGNORED');
+			assert.deepEqual(await status(page), ['IGNORED', 'start tracking']);
+			assert.equal(JSON.parse((await app.run(['fields', '--json'])).stdout).find((f) => f.field === 'tea')?.ignored, true);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('start tracking makes it TRACKED, with its current state; stop tracking makes it IGNORED at once, start tracking beside it', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await openField(page);
+			await nameField(page, 'mood');
+			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
+			await page.locator(`${FIELD_FORM} .states + button.add`).click();
+			await page.locator(`${FIELD_FORM} .state input.name`).fill('good');
+			await page.locator(`${FIELD_FORM} button.commit`).click();
+			await until(() => heading(page), (t) => t === 'mood');
+			const current = page.locator(`${FIELD_FORM} [data-status] .now b`);
+			await until(() => status(page), (s) => s[0] === 'TRACKED');
+			assert.deepEqual(await status(page), ['TRACKED', 'stop tracking']);
+			assert.equal((await current.innerText()).trim(), 'off');
+			await app.clock.forward(1000);
+			await app.run(['switch', 'mood', 'good']);
+			await app.redraw();
+			await until(() => current.innerText(), (t) => t.trim() === 'good');
+
+			await page.locator(`${FIELD_FORM} input.description`).fill('kept');
+			for (const [said, verb, now] of [
+				['stop tracking', 'ignore', ['IGNORED', 'start tracking']],
+				['start tracking', 'track', ['TRACKED', 'stop tracking']]
+			]) {
+				// The app's clock is held, and two rows of one field at one instant collide.
+				await app.clock.forward(1000);
+				const before = (await app.echoes()).length;
+				await page.locator(`${FIELD_FORM} [data-status] button`, { hasText: said }).click();
+				await until(() => status(page), (seen) => seen[0] === now[0]);
+				assert.deepEqual(await status(page), now);
+				assert.deepEqual((await app.echoes()).slice(before), [`${verb} mood`]);
+			}
+			// The form stayed, with what was typed in it.
+			assert.equal(await heading(page), 'mood');
+			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'kept');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -79,14 +175,9 @@ describe('the field widget', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
-			// `field:`, its box asking what to track, and nothing to edit yet.
-			const line = page.locator(`${FIELD_FORM} .name-line`);
-			assert.equal((await line.locator('.label').innerText()).trim(), 'field:');
-			assert.ok(await line.locator('input.field').getAttribute('placeholder'), 'the box asks nothing');
-			assert.equal(await page.locator(`${WIDGET} button.new`).count(), 0, 'a «+ new field» line');
-			assert.equal(await pick(page).count(), 0);
-			// No tracked / ignored control, no command preview, no paragraph explaining the data.
-			for (const gone of ['[data-tracking]', 'button.info', '.preview', 'p.about']) {
+			await nameField(page, 'coffee');
+			// No tracked / ignored control before it is saved, no command preview, no paragraph explaining the data.
+			for (const gone of ['[data-status] button', 'button.info', '.preview', 'p.about']) {
 				assert.equal(await page.locator(`${FIELD_FORM} ${gone}`).count(), 0, gone);
 			}
 			// The description is the first thing on Basics.
@@ -97,7 +188,6 @@ describe('the field widget', () => {
 			// A shape does not put the focus in a text box (an example neither: premade.test.mjs).
 			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 			assert.equal(await typing(page), false, 'a shape opened the keyboard');
-			await page.locator(`${FIELD_FORM} input.field`).fill('coffee');
 
 			// Saved, it is tracked: one `setup F --track`. (A phone's CLI widget is folded away: the save says what it ran.)
 			await page.locator(`${FIELD_FORM} button.commit`).click();
@@ -109,53 +199,44 @@ describe('the field widget', () => {
 		}, PHONE);
 	});
 
-	test('on a phone, «fields» beside the name opens the fields, and one goes to that field', async () => {
+	test('on a phone, a field chosen in the modal is its pill over its shapes, and its × starts over', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			await app.run(['track', 'nap', '--verb', 'start']);
 			await app.redraw();
 			await openField(page);
-			await page.locator(`${FIELD_FORM} input.field`).waitFor();
-			const button = pick(page);
-			assert.equal((await button.innerText()).trim(), 'fields');
-			// At 390 px the box's placeholder takes the line, and «fields» wraps under it (da-qimwi).
-			const [box, name] = [await button.boundingBox(), await page.locator(`${FIELD_FORM} input.field`).boundingBox()];
-			assert.ok(box.y >= name.y + name.height && box.x < name.x, 'the button is not under the name');
-			await button.click();
-			await page.locator(PICKER).waitFor();
-			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '█ nap'].sort());
+			await trackSomething(page);
 			await page.locator(`${PICKER} [data-chip="nap"]`).click();
 			await page.locator(PICKER).waitFor({ state: 'detached' });
 			await until(() => heading(page), (t) => t === 'nap');
-			// On a field, the line is `field: nap` over its shapes, the button still beside it.
+			// On a field, the line is `field: nap` over its shapes.
 			const top = async (sel) => (await page.locator(`${FIELD_FORM} ${sel}`).first().boundingBox()).y;
 			assert.ok((await top('.name-line')) < (await top('.verb')), 'a field\'s name is not over its shapes');
 			assert.equal((await page.locator(`${FIELD_FORM} .name-line .label`).innerText()).trim(), 'field:');
-			// On a field, the sheet's first entry goes back to a new one.
-			await pick(page).click();
-			assert.deepEqual(await marked(page), ['█ nap']);
-			assert.equal((await chips(page).first().innerText()).trim(), '+ new field');
-			await page.locator(`${PICKER} button.new`).click();
-			await page.locator(`${FIELD_FORM} input.field`).waitFor();
-			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
+			await page.locator(`${FIELD_FORM} .name-line .pill button.clear`).click();
+			await page.locator(`${FIELD_FORM} button.track-something`).waitFor();
+			assert.equal(await fieldNamed(page), '');
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
 
-	test('the sheet of fields is every tracked field in its own colour and glyph, and a tap goes to that field', async () => {
+	test('the modal lists every field in its own color and glyph, an ignored one too, and a tap goes to that field', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur', '--color', '#884400']);
 			await app.run(['track', 'sleep', '--verb', 'start']);
 			await app.run(['track', 'mood', '--verb', 'switch', '--add-state', 'good']);
 			await app.run(['track', 'person', '--verb', 'add']);
+			await app.run(['track', 'run', '--verb', 'occur']);
+			await app.clock.forward(1000);
+			await app.run(['ignore', 'run']);
 			await app.redraw();
 			await openField(page, 'coffee');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
-			await pick(page).click();
-			assert.deepEqual([...(await chipTexts(page))].sort(), ['+ new field', '¢ person', '█ sleep', '▞ mood', '● coffee'].sort());
-			assert.deepEqual(await marked(page), ['● coffee']);
+			await trackSomething(page);
+			assert.deepEqual([...(await chipTexts(page))].sort(), ['¢ person', '█ sleep', '▞ mood', '● coffee', '● run'].sort());
+			assert.equal(await page.locator(`${PICKER} [data-chip="run"]`).getAttribute('data-ignored'), 'true');
 			assert.equal(
 				await page.locator(`${PICKER} [data-chip="coffee"] span`).evaluate((el) => getComputedStyle(el).color),
 				'rgb(136, 68, 0)'
@@ -165,56 +246,27 @@ describe('the field widget', () => {
 			await until(() => heading(page), (t) => t === 'sleep');
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'start');
 
-			// A spec's edits are saved by going to another field, with nothing asked (da-hda4j).
+			// A spec's edits are saved by its ×, with nothing asked (da-hda4j).
 			await page.locator(`${FIELD_FORM} input.description`).fill('nights');
-			await pick(page).click();
+			await trackSomething(page);
+			assert.equal(await page.locator('dialog.confirm').count(), 0, 'leaving a spec asked');
+			await until(async () => JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).description, (d) => d === 'nights');
 			await page.locator(`${PICKER} [data-chip="coffee"]`).click();
 			await until(() => heading(page), (t) => t === 'coffee');
-			assert.equal(await page.locator('dialog.confirm').count(), 0, 'leaving a spec asked');
-			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).description, 'nights', 'leaving did not save');
 
-			// And «+ new field» in the sheet is the way back to an empty form.
-			await pick(page).click();
-			await page.locator(`${PICKER} button.new`).click();
-			await page.locator(`${FIELD_FORM} input.field`).waitFor();
-			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
-
-			// A new field is not made by leaving it: the pick asks, and cancel keeps what was typed and the sheet.
+			// A new field is not made by leaving it: its × asks once it holds more than its name, and cancel keeps it.
 			const asks = (answer) => page.locator('dialog.confirm').getByRole('button', { name: answer, exact: true }).click();
-			await page.locator(`${FIELD_FORM} input.field`).fill('tea');
-			await pick(page).click();
-			await page.locator(`${PICKER} [data-chip="coffee"]`).click();
+			await nameField(page, 'tea');
+			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
+			await page.locator(`${FIELD_FORM} .name-line .pill button.clear`).click();
 			await page.locator('dialog.confirm').waitFor();
 			await asks('cancel');
-			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'tea', 'cancel lost the edit');
-			assert.equal(await page.locator(PICKER).isVisible(), true, 'cancel shut the sheet');
-			await page.locator(`${PICKER} [data-chip="coffee"]`).click();
+			assert.equal(await fieldNamed(page), 'tea', 'cancel lost the edit');
+			await page.locator(`${FIELD_FORM} .name-line .pill button.clear`).click();
 			await asks('leave');
-			await until(() => heading(page), (t) => t === 'coffee');
+			await page.locator(`${FIELD_FORM} button.track-something`).waitFor();
 			assert.match((await app.run(['setup', 'tea', '--json'])).stdout, /No spec defined/, 'leaving made the new field');
 			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	test('typing narrows the sheet of fields once there are more than a glance takes in', async () => {
-		await shared.solo(async (app) => {
-			const { page } = app;
-			const names = ['tea', 'team', 'run', 'walk', 'read', 'nap'];
-			for (const name of names) await app.run(['track', name, '--verb', 'occur']);
-			await app.redraw();
-			await openField(page);
-			await pick(page).click();
-			await until(() => chips(page).count(), (n) => n === names.length);
-			assert.equal(await page.locator(`${PICKER} .find`).count(), 0, 'six fields are a glance');
-
-			await app.run(['track', 'swim', '--verb', 'occur']);
-			await app.redraw();
-			const find = page.locator(`${PICKER} .find`);
-			// Whatever the case it is typed in.
-			await find.fill('TEA');
-			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '● team'].sort());
-			await find.fill('');
-			assert.equal(await chips(page).count(), names.length + 1);
 		});
 	});
 
@@ -223,8 +275,8 @@ describe('the field widget', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
+			await nameField(page, 'mood');
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
-			await page.locator(`${FIELD_FORM} input.field`).fill('mood');
 			await page.locator(`${FIELD_FORM} .states + button.add`).click();
 			await page.locator(`${FIELD_FORM} .state input.name`).fill('good');
 			await page.locator(`${FIELD_FORM} .state button.more`).click();
@@ -257,13 +309,11 @@ describe('the field widget', () => {
 			await openField(page, 'nap');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
 			await page.locator(`${FIELD_FORM} input.description`).fill('short');
-			await pick(page).click();
-			await page.locator(`${PICKER} [data-chip="tea"]`).waitFor();
 			const before = (await app.echoes()).length;
-			// Save and the pick in one turn of the page, so the save is in flight when the pick lands.
+			// Save and another field asked for in one turn of the page, so the save is in flight when it lands.
 			await page.evaluate((form) => {
 				document.querySelector(`${form} button.commit`).click();
-				document.querySelector('[data-chip="tea"]').click();
+				void window.datum.field('tea');
 			}, FIELD_FORM);
 			await until(async () => (await app.echoes()).length, (n) => n === before + 1);
 			await app.idle();
@@ -328,7 +378,7 @@ describe('the field widget', () => {
 			};
 			const off = at('.states li.off button.off-state');
 			const struck = async () => [await off.getAttribute('aria-pressed'), await off.isDisabled()];
-			await page.locator(`${FIELD_FORM} input.field`).fill('thing');
+			await nameField(page, 'thing');
 			// No shape yet, nothing to draw.
 			assert.equal(await at('.placement').count(), 0);
 			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
@@ -376,7 +426,7 @@ describe('the field widget', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
-			await page.locator(`${FIELD_FORM} input.field`).fill('thing');
+			await nameField(page, 'thing');
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
 			const tab = (name) => page.locator(`${FIELD_FORM} [role="tab"][data-tab="${name}"]`);
 			const shown = () => page.locator(PANEL).getAttribute('data-panel');
@@ -551,42 +601,6 @@ describe('the field widget', () => {
 			}, size);
 		});
 
-	// vremya, for vividn, 2026-10-19: «put them back at the very bottom of the basics tab» (da-i9upr).
-	test('a field\'s Basics ends with tracked or ignored, whose button runs `ignore F` or `track F` and stays', async () => {
-		await shared.solo(async (app) => {
-			const { page } = app;
-			await app.run(['track', 'tea', '--verb', 'occur']);
-			await app.redraw();
-			await openField(page, 'tea');
-			const tracking = page.locator(`${FIELD_FORM} [data-tracking]`);
-			// Its state, and the button naming the command it runs.
-			const said = async () => [await tracking.getAttribute('data-tracking'), (await tracking.locator('button').innerText()).trim()];
-			assert.deepEqual(await said(), ['tracked', 'ignore']);
-			assert.equal(
-				await page.locator(`${FIELD_FORM} [data-panel="basics"]`).evaluate((el) => el.lastElementChild?.dataset.tracking),
-				'tracked',
-				'not at the very bottom'
-			);
-			await page.locator(`${FIELD_FORM} input.description`).fill('kept');
-			for (const [verb, now] of [
-				['ignore', ['ignored', 'track']],
-				['track', ['tracked', 'ignore']]
-			]) {
-				// The app's clock is held, and two rows of one field at one instant collide.
-				await app.clock.forward(1000);
-				const before = (await app.echoes()).length;
-				await tracking.locator('button').click();
-				await until(said, (seen) => seen[0] === now[0]);
-				assert.deepEqual(await said(), now);
-				assert.deepEqual((await app.echoes()).slice(before), [`${verb} tea`]);
-			}
-			// The form stayed, with what was typed in it.
-			assert.equal(await heading(page), 'tea');
-			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'kept');
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
 	// `setup`, in the fields submenu (da-fg4w4): `track` writes its word on the line now, as any command does.
 	test('`setup` in the commands widget opens it on a new field, and writes no line', async () => {
 		await shared.solo(async (app) => {
@@ -594,9 +608,9 @@ describe('the field widget', () => {
 			const setup = await reachCommand((await put(page, 'command')).locator('.bar.commands'), 'setup');
 			assert.equal(await setup.getAttribute('data-act'), 'open');
 			await setup.click();
-			await page.locator(`${FIELD_FORM} input.field`).waitFor();
+			await page.locator(`${FIELD_FORM} button.track-something`).waitFor();
 			assert.equal(await page.locator('.prompt-bar input').first().inputValue(), '', 'the tap wrote a line as well');
-			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
+			assert.equal(await fieldNamed(page), '');
 		});
 	});
 
@@ -607,7 +621,7 @@ describe('the field widget', () => {
 			const { page } = app;
 			await app.submit('track tea --verb occur');
 			const pane = await put(page, 'setup');
-			await pane.locator(`${FIELD_FORM} input.field`).waitFor();
+			await pane.locator(`${FIELD_FORM} button.track-something`).waitFor();
 
 			await page.locator('.bar button[data-field="tea"]').click({ modifiers: ['Shift'] });
 			await pane.locator(`${FIELD_FORM} h2`).waitFor();
@@ -616,7 +630,7 @@ describe('the field widget', () => {
 
 			// And a new field goes to the pane, not to a place of its own.
 			await page.evaluate(() => void window.datum.field());
-			await pane.locator(`${FIELD_FORM} input.field`).fill('nap');
+			await nameField(pane, 'nap');
 			await pane.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
 			await pane.locator(`${FIELD_FORM} button.commit`).click();
 			await until(async () => (await pane.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), (t) => t === 'nap');
@@ -679,7 +693,7 @@ describe('the field widget', () => {
 			await until(() => tail.innerText(), (t) => t.includes('mood'));
 			// No rename on a new field: nothing to rename yet.
 			await openField(page);
-			await page.locator(`${FIELD_FORM} input.field`).waitFor();
+			await nameField(page, 'thing');
 			assert.equal(await page.locator(`${FIELD_FORM} button.rename`).count(), 0);
 			await leaveField(page);
 			await openField(page, 'mood');
@@ -720,30 +734,24 @@ describe('the field widget', () => {
 		});
 	});
 
-	// jasper on #944: at 390 px the placeholder was cut beside «fields» (da-qimwi).
-	test('on a phone the name line keeps its placeholder whole, and a field\'s rename stands beside «fields»', async () => {
+	// jasper on #944: at 390 px the placeholder was cut beside «fields» (da-qimwi); the line is a pill and its buttons now (da-4ta1k).
+	test('on a phone a field\'s pill and its rename stand on one line', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			await app.redraw();
 			await openField(page);
-			const input = page.locator(`${FIELD_FORM} input.field`);
-			await input.waitFor();
-			await pick(page).waitFor();
-			const [needs, has] = await input.evaluate((el) => {
-				const cs = getComputedStyle(el);
-				const ctx = document.createElement('canvas').getContext('2d');
-				ctx.font = cs.font;
-				return [ctx.measureText(el.placeholder).width, el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)];
-			});
-			assert.ok(needs <= has, `the placeholder needs ${needs}px and has ${has}px`);
+			await page.locator(`${FIELD_FORM} button.track-something`).waitFor();
 			await page.screenshot({ path: process.env.DATUM_SHOT ? `${process.env.DATUM_SHOT}/new.png` : undefined });
 			await leaveField(page);
 
 			await openField(page, 'tea');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
-			const [fields, rename] = [await pick(page).boundingBox(), await page.locator(`${FIELD_FORM} button.rename`).boundingBox()];
-			assert.ok(Math.abs(fields.y - rename.y) < 2 && rename.x > fields.x, 'rename does not stand next to «fields»');
+			const [pill, rename] = [
+				await page.locator(`${FIELD_FORM} .name-line .pill`).boundingBox(),
+				await page.locator(`${FIELD_FORM} button.rename`).boundingBox()
+			];
+			assert.ok(Math.abs(pill.y + pill.height / 2 - (rename.y + rename.height / 2)) < 4 && rename.x > pill.x, 'rename does not stand next to the pill');
 			await page.screenshot({ path: process.env.DATUM_SHOT ? `${process.env.DATUM_SHOT}/field.png` : undefined });
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
@@ -784,19 +792,19 @@ describe('the field widget', () => {
 		}, PHONE);
 	});
 
-	for (const box of ['input.field', 'input.description'])
+	for (const box of ['input.description'])
 		test(`on a phone Enter in ${box} puts the keyboard away, and neither moves on nor saves`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				const { saved } = await openField(page);
 				let answered = false;
 				saved.then(() => (answered = true), () => {});
-				await page.locator(`${FIELD_FORM} input.field`).fill('tea');
+				await nameField(page, 'tea');
 				const input = page.locator(`${FIELD_FORM} ${box}`);
 				await input.click();
 				await input.press('Enter');
 				assert.equal(await typing(page), false, 'the focus is in a box still');
-				assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'tea', 'the form is not the new field');
+				assert.equal(await fieldNamed(page), 'tea', 'the form is not the new field');
 				assert.equal(JSON.parse((await app.run(['fields', '--json'])).stdout).some((f) => f.field === 'tea'), false, 'Enter saved tea');
 				assert.equal(answered, false, 'Enter closed the place');
 				// A phone's key reads Done, and is Enter: «next» would move the focus without one.
@@ -833,7 +841,7 @@ const description = (page) => page.locator(`${FIELD_FORM} input.description`);
 /** The widget opened, then `field` picked in its own list of fields: reached by the person themselves (da-wz84y). */
 async function reach(page, field) {
 	await openField(page);
-	await pick(page).click();
+	await trackSomething(page);
 	await page.locator(`${PICKER} [data-chip="${field}"]`).click();
 	await until(() => heading(page), (t) => t === field);
 	await description(page).waitFor();
@@ -853,7 +861,7 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 			await openField(page, 'tea');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
 			await description(page).fill('green');
-			await pick(page).click();
+			await trackSomething(page);
 			await page.locator(`${PICKER} [data-chip="nap"]`).click();
 			await until(() => heading(page), (t) => t === 'nap');
 			await until(() => described(app, 'tea'), (d) => d === 'green');
@@ -966,7 +974,7 @@ describe('the bottom row by how the person came', () => {
 			await description(page).fill('black');
 			await button(page, 'commit').click();
 			await saved(page).waitFor();
-			await pick(page).click();
+			await trackSomething(page);
 			await page.locator(`${PICKER} [data-chip="nap"]`).click();
 			await until(() => heading(page), (t) => t === 'nap');
 			assert.equal(await saved(page).count(), 0, '«saved» followed to nap');
@@ -1004,7 +1012,7 @@ describe('the bottom row by how the person came', () => {
 
 			// A pick in its own list is reaching it: the row is the person's own again.
 			await openField(page, '', undefined, true);
-			await pick(page).click();
+			await trackSomething(page);
 			await page.locator(`${PICKER} [data-chip="tea"]`).click();
 			await until(() => row(page), (r) => r.length === 3);
 			assert.deepEqual(await row(page), [['Revert', false], ['Save', false], ['Redo', false]]);
@@ -1012,12 +1020,13 @@ describe('the bottom row by how the person came', () => {
 		});
 	});
 
-	test('a new field keeps Cancel · Save; brought, its Cancel wears the chevron and goes back, and its Save stays', async () => {
+	test('a new field keeps cancel · save without tracking · start tracking; brought, its cancel wears the chevron and goes back', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
 			await openField(page, undefined, undefined, true);
-			await page.locator(`${FIELD_FORM} input.field`).waitFor();
-			assert.deepEqual(await row(page), [['Cancel', true], ['Save', false]]);
+			await nameField(page, 'tea');
+			assert.deepEqual(await row(page), [['cancel', true], ['save without tracking', false], ['start tracking', false]]);
+			assert.equal(await button(page, 'cancel').getAttribute('data-away'), 'true');
 			await button(page, 'cancel').click();
 			await place(page).waitFor({ state: 'detached' });
 			assert.deepEqual(app.errors, []);
@@ -1065,6 +1074,7 @@ describe("the setup widget in the database's colors", () => {
 		let seen;
 		await withApp(async ({ page }) => {
 			await openField(page);
+			await nameField(page, 'thing');
 			await page.locator(`${FIELD_FORM} .verb`).first().waitFor();
 			seen = {
 				page: await page.evaluate(() => getComputedStyle(document.body).backgroundColor),

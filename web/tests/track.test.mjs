@@ -24,7 +24,9 @@ import {
 	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, kindAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
-import { FIELD_FORM as MODAL, PANEL, leaveField, declared, openField, pickImage } from './support/field.mjs';
+import {
+	FIELD_FORM as MODAL, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, pickImage, trackSomething
+} from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
 
@@ -50,9 +52,9 @@ async function leave(page) {
 	await page.locator(MODAL).waitFor({ state: 'detached' });
 }
 
-/** Fill the name box and choose a verb, as a person does. */
+/** Name the field and choose a verb, as a person does. */
 async function fill(page, field, verb) {
-	await page.locator(`${MODAL} input.field`).fill(field);
+	await nameField(page, field);
 	if (verb) await page.locator(`${MODAL} button[data-verb="${verb}"]`).click();
 }
 
@@ -351,12 +353,12 @@ describe('in the app', () => {
 		}, { query: 'cli' });
 	});
 
-	test('a new field opens the form on the four pictograms, Save shut until a name and a verb', async () => {
+	test('a new field opens the form on the four pictograms once named, start tracking shut until a verb', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
 			const commit = page.locator(`${MODAL} button.commit`);
-			assert.equal(await commit.isEnabled(), false, 'nothing named, nothing chosen');
+			assert.equal(await commit.count(), 0, 'nothing named, and a button to save it');
 			await fill(page, 'mood', null);
 			assert.equal(await commit.isEnabled(), false, 'a name alone is not a field');
 			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
@@ -365,9 +367,6 @@ describe('in the app', () => {
 			assert.deepEqual(await page.locator(`${MODAL} .verb .name`).allInnerTexts(), VERBS.map((v) => v.what));
 			assert.deepEqual(await page.locator(`${MODAL} .verb .line`).allInnerTexts(), VERBS.map((v) => v.line));
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
-			await fill(page, '', null);
-			assert.equal(await commit.isEnabled(), false, 'a verb alone is not a field');
-			await fill(page, 'mood', null);
 			assert.equal(await commit.isEnabled(), true);
 
 			// The states belong to the switch, and to nothing else.
@@ -423,11 +422,12 @@ describe('in the app', () => {
 			const { page } = app;
 			const { saved: ran } = await openField(page, '', 'occur');
 			await page.locator(MODAL).waitFor();
+			// Kept through the name, which the shapes wait for (da-4ta1k).
+			await fill(page, 'coffee', null);
 			assert.deepEqual(
 				await page.locator(`${MODAL} .verb[aria-checked="true"]`).evaluateAll((all) => all.map((b) => b.dataset.verb)),
 				['occur']
 			);
-			await fill(page, 'coffee', null);
 			await page.locator(`${MODAL} button.commit`).click();
 			const result = await ran;
 			assert.equal(result.code, 0, result.stderr);
@@ -444,7 +444,7 @@ describe('in the app', () => {
 			const { page } = app;
 			const typed = page.evaluate(() => window.datum.runLine('track sleep'));
 			await page.locator(MODAL).waitFor();
-			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), 'sleep');
+			assert.equal(await fieldNamed(page), 'sleep');
 			await page.locator(`${MODAL} button[data-verb="start"]`).click();
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await typed).code, 0);
@@ -453,7 +453,7 @@ describe('in the app', () => {
 		});
 	});
 
-	test('an ignored field is offered back, and a press re-tracks it', async () => {
+	test('an ignored field is offered back in the modal, and its start tracking re-tracks it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.submit('track run --verb occur');
@@ -468,7 +468,11 @@ describe('in the app', () => {
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
 			await app.clock.forward(1000);
 			await openIt(page);
-			await page.locator(`${MODAL} [data-ignored="run"]`).click();
+			await trackSomething(page);
+			await page.locator(`${NAMING} [data-chip="run"][data-ignored]`).click();
+			const status = page.locator(`${MODAL} [data-status="ignored"]`);
+			assert.equal((await status.locator('.word').innerText()).trim(), 'IGNORED');
+			await status.locator('button', { hasText: 'start tracking' }).click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
 		});
@@ -484,16 +488,16 @@ describe('in the app', () => {
 			await app.submit('ignore "my x"');
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="my x"]'));
 			await app.clock.forward(1000);
-			await openIt(page);
-			assert.equal(await page.locator(`${MODAL} [data-ignored="my x"]`).getAttribute('title'), 'track "my x"');
+			await openField(page, 'my x');
+			assert.equal(await page.locator(`${MODAL} [data-status="ignored"] button`).getAttribute('title'), 'track "my x"');
 		});
 	});
 
 	// da-ci85o: declaring is the spec's form on Basics, and it must stay as
-	// quick as the modal it absorbed: a shape, the name box (a shape stopped
-	// opening the keyboard, da-zz9rn), Save. The collect widget's (+) that
-	// opened it, the fourth tap, is gone (da-myet1).
-	test('declaring a field in the open form is three taps: a shape, the name, Save', async () => {
+	// quick as the modal it absorbed: «track something», whose box has the
+	// keys, the name typed and entered (da-4ta1k), a shape, start tracking. The
+	// collect widget's (+) that opened it, a fourth tap, is gone (da-myet1).
+	test('declaring a field in the open form is three taps: track something, a shape, start tracking', async () => {
 		await withApp(async (app) => { // a listener of its own, which `solo` would keep
 			const { page } = app;
 			await page.evaluate(() => {
@@ -501,9 +505,11 @@ describe('in the app', () => {
 				document.addEventListener('pointerdown', (e) => e.isTrusted && window.__taps++, true);
 			});
 			await openIt(page);
-			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
-			await page.locator(`${MODAL} input.field`).click();
+			await page.locator(`${MODAL} button.track-something`).click();
+			await page.locator(`${NAMING} input.field`).waitFor();
 			await page.keyboard.type('coffee');
+			await page.keyboard.press('Enter');
+			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
 			assert.equal(await page.evaluate(() => window.__taps), 3);
@@ -741,17 +747,22 @@ describe('in the app', () => {
 		});
 	});
 
-	// vividn, 2026-10-19: «when field is blank, have the color just be nothing (transparent) rather than the pink by default».
-	test('a field with no name yet has no colour: the swatch is transparent until it is named', async () => {
+	// vividn, 2026-10-19: «when field is blank, have the color just be nothing (transparent) rather than the pink by default»;
+	// 2026-11-05 (da-4ta1k): as the name is typed it becomes a pill in its hash color, the pill the line then wears.
+	test('a name being typed has no color until there is one, then the color its pill on the line wears', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
+			await trackSomething(page);
+			const border = (pill) => pill.evaluate((el) => getComputedStyle(el).borderTopColor);
+			const blank = await border(page.locator(`${NAMING} .pill`));
+			await page.locator(`${NAMING} input.field`).fill('tea');
+			const typed = await border(page.locator(`${NAMING} .pill`));
+			assert.notEqual(typed, blank);
+			await page.locator(`${NAMING} button.enter`).click();
+			assert.equal(await border(page.locator(`${MODAL} .name-line .pill[data-field="tea"]`)), typed);
 			const swatch = page.locator(`${MODAL} .row .swatch[aria-expanded]`);
-			const fill = () => swatch.evaluate((el) => getComputedStyle(el).backgroundColor);
-			assert.equal(await fill(), 'rgba(0, 0, 0, 0)');
-			assert.match(await swatch.getAttribute('aria-label'), /auto, transparent$/);
-			await page.locator(`${MODAL} input.field`).fill('tea');
-			assert.notEqual(await fill(), 'rgba(0, 0, 0, 0)');
+			assert.doesNotMatch(await swatch.getAttribute('aria-label'), /transparent$/);
 			await leave(page);
 		});
 	});
@@ -801,7 +812,7 @@ describe('in the app', () => {
 			const { page } = app;
 			const { saved: ran } = await openField(page, 'walk');
 			await page.locator(MODAL).waitFor();
-			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), 'walk');
+			assert.equal(await fieldNamed(page), 'walk');
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await ran).code, 0);
@@ -863,8 +874,9 @@ describe('in the app', () => {
 			const { page } = app;
 			const tabs = async () => (await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase());
 			await openIt(page);
+			await fill(page, 'coffee', null);
 			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
-			await fill(page, 'coffee', 'occur');
+			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
 			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
@@ -1247,7 +1259,7 @@ describe('in the app', () => {
 				assert.ok(item.width >= 24, `${VERBS[i].verb} is ${item.width}px wide`);
 				assert.ok(item.x >= 0 && item.x + item.width <= screen.width + 1, `${VERBS[i].verb} is off the screen`);
 			}
-			for (const control of ['.verb', 'input.field', 'button.commit']) {
+			for (const control of ['.verb', '.name-line .pill', 'button.commit']) {
 				if (control === 'button.commit') await page.locator(`${MODAL} ${control}`).scrollIntoViewIfNeeded();
 				const item = await page.locator(`${MODAL} ${control}`).last().boundingBox();
 				assert.ok(item.y >= 0 && item.y + item.height <= screen.height + 1, `${control} is off the screen`);

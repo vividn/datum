@@ -14,7 +14,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, exactly } from './support/layout.mjs';
-import { FIELD_FORM, PANEL, declared, leaveField } from './support/field.mjs';
+import { FIELD_FORM, PANEL, declared, fieldNamed, leaveField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 import { EXAMPLES, THEMES, VERBS, chosen } from '../src/lib/track.ts';
 
@@ -69,8 +69,7 @@ describe('a first visit', () => {
 			await toPremade(page);
 			await card(page, 'medication').click();
 			await until(() => front(page), (name) => name === 'setup');
-			const field = page.locator(`${FIELD_FORM} input.field`);
-			await until(() => field.inputValue(), (v) => v === 'medication');
+			await until(() => fieldNamed(page), (v) => v === 'medication');
 			assert.equal(await typing(page), false, 'the example opened the keyboard');
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'occur');
 			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
@@ -93,7 +92,7 @@ describe('a first visit', () => {
 			assert.deepEqual(await page.locator(`${PREMADE} [data-example="weight"] [data-choice]`).allInnerTexts(), ['lbs', 'kg']);
 			await page.locator(`${PREMADE} [data-example="weight"] [data-choice="kg"]`).click();
 			await until(() => front(page), (name) => name === 'setup');
-			await until(() => page.locator(`${FIELD_FORM} input.field`).inputValue(), (v) => v === 'weight');
+			await until(() => fieldNamed(page), (v) => v === 'weight');
 			await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();
 			assert.deepEqual(await keyRows(page), [['-k', 'kg', 'true']]);
 
@@ -198,7 +197,7 @@ describe('each example', () => {
 			await shared.solo(async (app) => {
 				const { page } = app;
 				const { saved } = await openExample(page, example);
-				await until(() => page.locator(`${FIELD_FORM} input.field`).inputValue(), (v) => v === example.field);
+				await until(() => fieldNamed(page), (v) => v === example.field);
 				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
 				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(example.states ?? {}));
 				if (example.verb !== 'add') await page.locator(`${FIELD_FORM} button[data-to-tab="data"]`).click();

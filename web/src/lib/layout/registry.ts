@@ -684,8 +684,9 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('setup', 'setup'),
 		component: FieldWidget,
 		help: [
-			'A field is one thing you track. Make one here, or pick one to change: its kind, states, data, aliases and placement.',
-			'Save makes a new field with one `setup F --track`, which one Undo takes back; Cancel leaves it unmade.',
+			'A field is one thing you track. «track something» names a new one or picks one to change: its kind, states, data, aliases and placement. Its × starts over.',
+			'Start tracking makes a new field with one `setup F --track`, which one Undo takes back; save without tracking makes it ignored, with `--ignore`; cancel leaves it unmade.',
+			"Under its name it says NOT SET UP, TRACKED or IGNORED; stop tracking runs `ignore F` and start tracking `track F`, at once.",
 			"A field's changes save in one `setup F`, by Save or by leaving it. Revert drops what is not saved, or steps the spec back to its version before, through its whole history; Redo steps forward again."
 		].join('\n'),
 		legible: { width: 240, height: 180 }

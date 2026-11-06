@@ -33,7 +33,7 @@ import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, kindFor, button
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
-import { FIELD_FORM, openField } from './support/field.mjs';
+import { FIELD_FORM, NAMING, openField, trackSomething } from './support/field.mjs';
 
 const spec = (field, rest = {}) => ({ field, ...rest });
 
@@ -450,7 +450,9 @@ describe('in the app', () => {
 			// of the ignore would share its slug.
 			await app.clock.forward(1000);
 			await openField(page);
-			await page.locator(`${FIELD_FORM} [data-ignored="run"]`).click();
+			await trackSomething(page);
+			await page.locator(`${NAMING} [data-chip="run"][data-ignored]`).click();
+			await page.locator(`${FIELD_FORM} [data-status="ignored"] button`).click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
 			assert.deepEqual(await drawn(), ['BUTTON:run', 'BUTTON:tea', 'BUTTON:walk']);

@@ -66,8 +66,8 @@
 	Back takes the field's pill and every pill made since the tap, and puts
 	back the time and `-m` there were before it; Escape is Back.
 
-	Ignored fields get no button: the setup widget lists them under a new
-	field, and a press runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
+	Ignored fields get no button: the setup widget's «track something» lists
+	them, and its start tracking runs `track <field>` (da-4ta1k). `showIgnored` (da-xhio) is the way to SEE them
 	without the setup widget — a switch in the menu the pane's NAME
 	opens (da-vhwq), this session's and off by default. It adds them to the
 	list; it does not change what they are, so each is drawn faint and

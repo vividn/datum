@@ -7,17 +7,11 @@
 	can switch the field you're editing inside of it more easy and
 	intuitive … It should also be clearer what "field" actually is».
 
-	So, top to bottom: what a field IS, in one sentence, always; and the form
-	(#lib/FieldForm.svelte) for whichever is chosen. Beside its `field:` line,
-	once there is a field, «fields» opens a sheet of every tracked field in
-	its own colour and glyph, the one being edited marked, narrowed by typing
-	once there are more than a glance takes in. One word, vividn on #944:
-	«"edit existing field" takes up an enormous amount of space. maybe just
-	have it be "fields"». There is no «+ new field» line (da-zz9rn), vividn, 2026-10-19: «The (+ new field)
-	button at the top is confusing, especially when this is the very first
-	field being added»: on a field, the sheet's first entry is the way back
-	to a new one, since a setup tab has no (+) of its own. Beside it on a
-	field with a spec, «rename» (da-qimwi), vividn: «there should probably be an
+	So it is the form (#lib/FieldForm.svelte) for whichever is chosen. With
+	none, its `field:` line and «track something» alone, whose modal says what
+	a field is, takes a new one's name and lists every field there is to edit
+	(da-4ta1k, vividn, 2026-11-05); with one, its pill, whose × starts over.
+	Beside the pill on a field with a spec, «rename» (da-qimwi), vividn: «there should probably be an
 	explicit rename button though»: it asks for the new name, shows `rename
 	OLD NEW --dry-run`'s counts (a refusal asks again, saying why), runs
 	`rename OLD NEW` and reopens the form on NEW.
@@ -67,17 +61,12 @@
 	import { renameFieldArgv, specHistoryArgv, specShowArgv, revertToVersionArgv, type SpecVersion } from '#lib/calls.ts';
 	import { stripAnsi } from '#lib/ansi.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
-	import type { FieldButton } from '#lib/fields.ts';
 	import { answerField, away, editing } from '#lib/fieldWidget.ts';
 	import { run } from '#lib/run.ts';
-	import Sheet from '#lib/Sheet.svelte';
 	import { begin } from '#lib/tour.ts';
-	import { VERBS, type Save, type Spec } from '#lib/track.ts';
+	import type { Save, Spec } from '#lib/track.ts';
 	import { fields, press } from './engine.js';
 	import { leavePlace } from './shell.js';
-
-	/** The glyph of the field's kind, which its chip wears where its spec names none. */
-	const glyphOf = (f: FieldButton) => f.glyph ?? VERBS.find((v) => v.what === f.shape.kind)?.glyph;
 
 	/** The spec as read: undefined while reading, null for a field without one (made here instead). */
 	let spec: Spec | null | undefined = $state.raw();
@@ -85,9 +74,6 @@
 	let read = $state(0);
 	/** What the spec was read for: the form's field and verb change with its spec, not before it. */
 	let readFor = $state.raw($editing);
-	/** Whether the sheet of fields is open, and what it is narrowed to. */
-	let picking = $state(false);
-	let find = $state('');
 	/** Whether the form holds edits nobody saved (`dirty`, FieldForm.svelte), and a spec's save of them. */
 	let dirty = $state(false);
 	let pending: Save | null = $state.raw(null);
@@ -172,10 +158,9 @@
 		if (asked === $editing) void load(asked, result.code === 0 ? { ...from, at: to } : null);
 	}
 
-	/** A field picked: to `field`, the spec's edits saved, a new field's once the reader agrees to lose them; the sheet stays open on a no. */
+	/** A field picked, `''` a new one: the spec's edits saved, a new field's once the reader agrees to lose them. */
 	async function go(field: string): Promise<void> {
 		if (dirty && !spec && !(await confirm(`Leave ${$editing.field || 'the new field'} without saving what you changed?`, 'leave'))) return;
-		picking = false;
 		$away = false;
 		$editing = { field };
 	}
@@ -242,14 +227,13 @@
 
 <Pane title="setup">
 	<div class="field">
-		<p class="what">A field is one thing you track: mood, coffee, sleep. Each time you log it, that's an entry.</p>
 		{#if spec !== undefined}
 			{#key read}
 				<FieldForm
 					field={readFor.field}
 					verb={readFor.verb ?? null}
 					{spec}
-					ignored={$fields.filter((f) => f.ignored).map((f) => f.field)}
+					fields={$fields}
 					example={readFor.example ?? null}
 					bind:dirty
 					bind:pending
@@ -264,11 +248,6 @@
 					onopen={go}
 				>
 					{#snippet pick()}
-						{#if $editing.field !== '' || tracked.length > 0}
-							<button type="button" class="pick" use:act={'open'} aria-haspopup="dialog" onclick={() => ((find = ''), (picking = true))}
-								>fields</button
-							>
-						{/if}
 						{#if spec}
 							<button type="button" class="rename" use:act={'open'} aria-haspopup="dialog" onclick={rename}>rename</button>
 						{/if}
@@ -277,25 +256,6 @@
 			{/key}
 		{/if}
 	</div>
-	<Sheet title="fields" open={picking} onclose={() => (picking = false)} data-picker>
-		{#if tracked.length > 6}
-			<input class="find" bind:value={find} placeholder="find" aria-label="find a field" spellcheck="false" autocapitalize="none" />
-		{/if}
-		<div class="chips" role="group" aria-label="fields">
-			{#if $editing.field !== ''}
-				<button type="button" class="new" onclick={() => go('')}>+ new field</button>
-			{/if}
-			{#each tracked.filter((f) => f.field.toLowerCase().includes(find.trim().toLowerCase())) as f (f.field)}
-				<button
-					type="button"
-					data-chip={f.field}
-					aria-current={f.field === $editing.field}
-					style:--c={f.color}
-					onclick={() => go(f.field)}><span aria-hidden="true">{glyphOf(f)}</span> {f.field}</button
-				>
-			{/each}
-		</div>
-	</Sheet>
 </Pane>
 
 <style>
@@ -306,61 +266,17 @@
 		min-block-size: 100%;
 	}
 
-	.what {
-		margin: 0;
-		color: var(--quiet);
-	}
-
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-	}
-
-	.pick,
-	.rename,
-	.chips button,
-	.find {
+	.rename {
+		flex: none;
 		box-sizing: border-box;
 		min-block-size: 28px;
 		background: var(--raised);
-		border: 1px solid var(--c, var(--rule));
+		border: 1px solid var(--rule);
 		border-radius: 999px;
 		padding: 0.1rem 0.6rem;
 		color: var(--ink);
 		font: inherit;
-	}
-
-	.pick,
-	.rename,
-	.chips button {
-		cursor: pointer;
-	}
-
-	.pick,
-	.rename {
-		flex: none;
-		border-color: var(--rule);
 		font-size: 0.75rem;
-	}
-
-	.chips span {
-		color: var(--c);
-	}
-
-	.chips [aria-current='true'] {
-		background: color-mix(in srgb, var(--c, var(--accent)) 30%, var(--raised));
-		color: var(--ink-bright);
-		box-shadow: inset 0 0 0 1px var(--c, var(--accent));
-	}
-
-	.new {
-		border-style: dashed;
-	}
-
-	.find {
-		inline-size: 100%;
-		margin-block-end: 0.5rem;
-		border-radius: 4px;
+		cursor: pointer;
 	}
 </style>

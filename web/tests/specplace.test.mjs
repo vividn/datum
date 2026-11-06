@@ -8,7 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, leaveField, openField, pickImage } from './support/field.mjs';
+import { FIELD_FORM, NAMING, leaveField, openField, pickImage } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -219,8 +219,8 @@ describe('the field widget in a pane', () => {
 			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'setup'), tab);
 			const pane = page.locator('section.pane[data-title="setup"]');
 
-			await pane.locator('button.pick').click();
-			await page.locator('dialog.sheet[data-picker] button[data-chip="tea"]').click();
+			await pane.locator('button.track-something').click();
+			await page.locator(`${NAMING} button[data-chip="tea"]`).click();
 			await pane.locator(`${FIELD_FORM} h2`).waitFor();
 			assert.equal((await pane.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 			await pane.locator(`${FIELD_FORM} input.description`).fill('green');

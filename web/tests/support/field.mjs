@@ -66,3 +66,29 @@ export async function pickImage(page, name, svg) {
 	const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 	await page.locator(`${FIELD_FORM} .tile[aria-label="the field's symbol: image"][data-icon] img[src="${src}"]`).waitFor();
 }
+
+/** The `field:` line's modal (da-4ta1k): what a field is, a new one's name, and the fields there are. */
+export const NAMING = `${FIELD_FORM} dialog[data-picker]`;
+
+/** Open the modal from the `field:` line, as «track something» does; the × of a field's pill first, to start over. */
+export async function trackSomething(page) {
+	const clear = page.locator(`${FIELD_FORM} .name-line .pill button.clear`);
+	if (await clear.count()) await clear.click();
+	await page.locator(`${FIELD_FORM} button.track-something`).click();
+	await page.locator(`${NAMING} input.field`).waitFor();
+}
+
+/** Name a field as a person does: «track something», the name typed into its modal, Enter. A field there is opens. */
+export async function nameField(page, field) {
+	await trackSomething(page);
+	await page.locator(`${NAMING} input.field`).fill(field);
+	await page.locator(`${NAMING} input.field`).press('Enter');
+	await page.locator(NAMING).waitFor({ state: 'detached' });
+}
+
+/** The field the form is on, as its pill names it: `''` while the line says «track something». */
+export async function fieldNamed(page) {
+	await page.locator(`${FIELD_FORM} .name-line`).waitFor();
+	const pill = page.locator(`${FIELD_FORM} .name-line .pill`);
+	return (await pill.count()) ? pill.getAttribute('data-field') : '';
+}

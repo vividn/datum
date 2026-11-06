@@ -205,7 +205,7 @@ describe('the Help button', () => {
 	test('then the setup widget: its help in the words its form uses', async () => {
 		const withField = JSON.stringify(along('column', widgetPane('setup', 'setup'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')));
 		await onPage(async ({ page }) => {
-			const lines = await explain(page, page.locator('.host[data-widget="setup"] p.what'), 'setup');
+			const lines = await explain(page, page.locator('.host[data-widget="setup"] .name-line .label'), 'setup');
 			assert.equal(lines.join('\n'), await kindHelp('setup'));
 			assert.ok(lines.join('\n').includes('`setup F --track`'), 'it names the command a new field\'s Save runs');
 			// A field's kind is the glossary's word (da-kjkpx), the old «shape» gone; its keys are its data.

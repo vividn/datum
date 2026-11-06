@@ -12,7 +12,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { FIELD_FORM, openField } from './support/field.mjs';
+import { FIELD_FORM, nameField, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -39,9 +39,9 @@ const stop = (page, selector) =>
 		return { say: document.querySelector('.tour .say p')?.textContent ?? null, round };
 	}, selector);
 
-/** Make a new field in the field widget: its name, its shape, Save. */
+/** Make a new field in the field widget: its name, its shape, start tracking. */
 async function make(page, field, verb) {
-	await page.locator(`${FIELD_FORM} input.field`).fill(field);
+	await nameField(page, field);
 	await page.locator(`${FIELD_FORM} .verb[data-verb="${verb}"]`).click();
 	await page.locator(`${FIELD_FORM} button.commit`).click();
 }
@@ -91,8 +91,6 @@ describe('the first field\'s tour', () => {
 
 				// A second field: saved, and no tour.
 				await page.evaluate(() => window.datum.shell.activate(2));
-				await page.locator('[data-widget="setup"] button.pick').click();
-				await page.locator('dialog.sheet[data-picker] button.new').click();
 				await make(page, 'tea', 'occur');
 				await page.locator('[data-widget="setup"] h2', { hasText: 'tea' }).waitFor();
 				await app.idle();

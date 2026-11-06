@@ -14,7 +14,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE, swipe, swipeOver } from './support/layout.mjs';
-import { FIELD_FORM, PANEL, openField } from './support/field.mjs';
+import { FIELD_FORM, PANEL, nameField, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -26,7 +26,7 @@ const body = (page) => page.locator(`${FIELD_FORM} .scroll`);
 /** A new occur field's form, its placement drawn, in its place: the root's tab `setup`. */
 async function open(page) {
 	await openField(page);
-	await page.locator(`${FIELD_FORM} input.field`).fill('thing');
+	await nameField(page, 'thing');
 	await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 	await page.locator(`${FIELD_FORM} .placement .band[data-drawn] svg`).waitFor();
 	await until(() => rootShown(page), (t) => t === 'setup');

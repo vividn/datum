@@ -26,7 +26,7 @@ import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 import { reach } from './support/commands.mjs';
 import { COMMANDS } from '../src/lib/commands.ts';
-import { FIELD_FORM } from './support/field.mjs';
+import { FIELD_FORM, fieldNamed } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -873,7 +873,7 @@ describe('`setup` under the pill', () => {
 
 			await specButton(page).click();
 			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
-			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), 'tea');
+			assert.equal(await fieldNamed(page), 'tea');
 			assert.equal(await page.locator(`${MODAL} [data-verb][aria-checked="true"]`).count(), 0);
 			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
 
@@ -896,7 +896,7 @@ describe('`setup` under the pill', () => {
 			const { page } = app;
 			await app.submit('setup');
 			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
-			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), '');
+			assert.equal(await fieldNamed(page), '');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -916,7 +916,7 @@ describe('`setup` under the pill', () => {
 			const { page } = app;
 			await (await reach(pane(page, 'cmd').locator('.bar'), 'setup')).click();
 			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
-			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), '');
+			assert.equal(await fieldNamed(page), '');
 			assert.deepEqual(app.errors, []);
 		});
 	});
