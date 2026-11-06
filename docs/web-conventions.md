@@ -487,7 +487,8 @@ rule is decided but not yet everywhere, it names the bead.
       first: `TailTable.svelte`'s row (`press`, `unpress`).
 
     `pointer-lift.test.mjs` holds every `onpointerup=` in `web/src` to one of the three, and to
-    an `onpointercancel=` beside it, from the source.
+    an `onpointercancel=` beside it, from the source, and an action's `pointerup` on an element
+    (`node.addEventListener`, `grip.ts`, `hold.ts`) the same way (da-c4u45).
 
 ## Places and questions
 
