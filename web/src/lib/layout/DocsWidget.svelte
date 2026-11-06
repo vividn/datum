@@ -149,9 +149,9 @@
 
 <Pane title="docs" bind:body>
 	<nav class="docs-nav">
-		<button type="button" class="back" use:act={'show'} disabled={trail.length === 0} onclick={back}>← back</button>
+		<button type="button" class="command back" use:act={'show'} disabled={trail.length === 0} onclick={back}>← back</button>
 		{#if path !== CONTENTS}
-			<button type="button" class="contents" use:act={'show'} onclick={() => go(CONTENTS, '')}>contents</button>
+			<button type="button" class="command contents" use:act={'show'} onclick={() => go(CONTENTS, '')}>contents</button>
 		{/if}
 		<span class="path">docs/{path}</span>
 	</nav>
