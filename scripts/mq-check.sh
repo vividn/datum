@@ -195,9 +195,26 @@ web_selection() {
 # counts it. The slot is held to the script's end, the Rust half included. The
 # file is opened to read, which another uid may do where /tmp's
 # protected_regular refuses it an append.
+# Who holds slot file $1, said as mq-check waits on it (da-8vead): a process a
+# suite leaked keeps the slot after its mq-check is gone, so each one with the
+# file open, oldest first and five at most, by pid, start, cwd and command, and
+# what the last mq-check to take it wrote beside it (`<slot>.who`).
+slot_holders() {
+  local f pids p n=0
+  f=$(realpath -m "$1")
+  [ -r "$f.who" ] && echo "  slot $2 last taken by mq-check $(cat "$f.who")"
+  pids=$(find /proc/[0-9]*/fd -lname "$f" 2>/dev/null | cut -d/ -f3 | sort -u | paste -sd,) || true
+  [ -n "$pids" ] || { echo "  slot $2: held by no process this user can see"; return 0; }
+  for p in $(ps -o pid= --sort=start_time -p "$pids"); do
+    n=$((n + 1))
+    [ "$n" -le 5 ] || continue
+    echo "  slot $2: pid $p since $(ps -o lstart= -p "$p"), in $(readlink "/proc/$p/cwd" || echo ?): $(ps -o args= -p "$p" | cut -c1-160)"
+  done
+  [ "$n" -le 5 ] || echo "  slot $2: and $((n - 5)) more"
+}
 web_slot() {
   command -v flock >/dev/null || { echo "mq-check: no flock here: the web suite runs without a slot"; return 0; }
-  local n f since=$SECONDS said=
+  local n f since=$SECONDS said= told=
   while :; do
     for n in 1 2; do
       f="${MQ_SLOT_DIR:-/tmp}/datum-web-suite.slot$n"
@@ -205,11 +222,16 @@ web_slot() {
       exec {slot}<"$f" || { echo "mq-check: cannot open $f: the web suite runs without a slot"; return 0; }
       if flock -n "$slot"; then
         echo "mq-check: took web suite slot $n of 2${said:+ after waiting $((SECONDS - since))s}"
+        echo "$$ ($role, $(git branch --show-current)) since $(date +%H:%M:%S)" 2>/dev/null >"$f.who" || true
         return 0
       fi
       exec {slot}>&-
     done
     [ -n "$said" ] || { said=1; echo "mq-check: both web suite slots are taken; waiting for one, since $(date +%H:%M:%S)"; }
+    if [ -z "$told" ] || [ $((SECONDS - told)) -ge 300 ]; then
+      told=$SECONDS
+      for n in 1 2; do slot_holders "${MQ_SLOT_DIR:-/tmp}/datum-web-suite.slot$n" "$n"; done
+    fi
     sleep 2
   done
 }

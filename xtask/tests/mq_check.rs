@@ -525,7 +525,7 @@ fn a_full_web_run_waits_for_one_of_two_slots_and_says_so() {
     repo.write("web/src/a.ts", "changed\n");
     repo.commit("the change");
     let slot = |n| repo.dir.join(format!(".git/datum-web-suite.slot{n}"));
-    let (_one, two) = (hold(&repo, &slot(1)), hold(&repo, &slot(2)));
+    let (one, two) = (hold(&repo, &slot(1)), hold(&repo, &slot(2)));
     // The suite, a child of the gate, finds slot 2 held: by the gate, for good.
     let then = format!(
         "if flock -n {} true; then echo slot=free; else echo slot=held; fi >>{}",
@@ -542,6 +542,11 @@ fn a_full_web_run_waits_for_one_of_two_slots_and_says_so() {
     }
     std::thread::sleep(std::time::Duration::from_secs(3));
     assert!(!said.exists(), "it ran with both slots taken:\n{}", out());
+    // It names who holds each slot, so a leaked holder can be found (da-8vead).
+    for (n, held) in [(1, &one), (2, &two)] {
+        let named = format!("  slot {n}: pid {} since ", held.0.id());
+        assert!(out().contains(&named), "no {named:?}:\n{}", out());
+    }
     drop(two);
     let ok = child.wait().unwrap().success();
     let out = out();
