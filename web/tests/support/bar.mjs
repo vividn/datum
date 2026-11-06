@@ -24,7 +24,10 @@
 // (da-7nkdb). So every event carries its pointerdown's stamp, and the
 // speed is zero by construction rather than by the box being quick.
 
-const BAR = '.prompt-bar';
+import assert from 'node:assert/strict';
+import { withBar } from './layout.mjs';
+
+export const BAR = '.prompt-bar';
 
 /** Drag `selector` by `dy` px (negative opens), as a finger without a flick. */
 export function dragOn(page, selector, dy, steps = 10) {
@@ -156,3 +159,83 @@ export function timedDrag(page, dy, steps = 6, gap = 16) {
 		[dy, steps, gap]
 	);
 }
+
+// The bar*.test.mjs files' screens and readers of the output (da-5rpcr).
+
+/**
+ * Both screens open `CLI_BESIDE`, the CLI widget over a note, rather than the day page.
+ *
+ * The bar is drawn by the app's own layout, above whatever tree is in
+ * front (`+layout.svelte`), so it is the same bar on every page — and
+ * every one of these reads it alone. Opening the day frame for them draws
+ * a fortnight of `dayview` bands first, better than a second a test and
+ * twenty-odd tests over (da-x6ea).
+ *
+ * `DAY` is for the one claim that is ABOUT the page behind the bar: that
+ * a taller receipt does not reflow the dashboard. That one wants a
+ * dashboard.
+ */
+export const DESKTOP = { viewport: { width: 1280, height: 800 }, prepare: withBar };
+
+/** A phone, which is where this is judged (da-ckw3). */
+export const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, prepare: withBar };
+
+export const DAY = { viewport: DESKTOP.viewport };
+
+
+/** The newest command's group in the output strip (da-qua5g): what a command just answered. */
+export const OUT = `${BAR} .group:last-child`;
+
+export const DOC = `${OUT} .doc`;
+
+// ONE APP per screen for most of this file (da-6b3dj, sharedApp in
+// support/app.mjs): the database is emptied between tests and every claim
+// reads the bar's own last answer. The repl-page apps are tidied by hand
+// rather than by `solo`, which would close the repl tab and draw `main`
+// behind the bar: a sheet left open, a half-typed line, the page and the
+// pills. What still opens an app of its own is a fresh device (`home:
+// null`), a held clock, a runner a test installs, a fold (which the device
+// remembers), and a screen only one test asks for.
+export const repl = (shared) => async (fn) => {
+	const app = await shared();
+	await app.page.evaluate(() => document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+	await app.page.locator(`${BAR} input`).fill('');
+	await app.home();
+	await app.empty();
+	return fn(app);
+};
+
+/** The bar's height on screen, to the pixel it is drawn at. */
+export const barHeight = (page) =>
+	page.locator(BAR).evaluate((el) => el.getBoundingClientRect().height);
+
+/** One document section's lines, as the reader sees them. */
+export const section = (page, i = 0) =>
+	page
+		.locator(DOC)
+		.nth(i)
+		.evaluate((el) => ({
+			receipt: el.querySelector('.receipt')?.textContent.trim(),
+			// What the command did to the entry, whatever its label says (da-hxjrk).
+			did: el.querySelector('.action')?.title,
+			// The line the CLI printed, in the lines the frame cuts it into
+			// (da-7xp82): the time, then the field and state.
+			info: el.querySelector('.info')?.textContent,
+			what: el.querySelector('.what')?.textContent,
+			when: el.querySelector('.when')?.textContent,
+			rows: [...el.querySelectorAll('.rows .row')].map((r) => r.innerText),
+			hid: el.querySelector('.hid')?.textContent,
+			id: el.querySelector('.hid')?.getAttribute('title'),
+			size: parseFloat(getComputedStyle(el).fontSize),
+			lines: [...el.querySelector('.info').children].length
+		}));
+
+/** The CLI's own documents for `argv`, straight off the seam. */
+export const cliDocs = async (app, argv) => {
+	const result = await app.run([...argv, '--show', 'json']);
+	assert.equal(result.code, 0, result.stderr);
+	return JSON.parse(result.stdout.trim().split('\n').at(-1)).docs;
+};
+
+/** The ENTRY's document: a field's declaration (da-c8mh) reads first. */
+export const cliDoc = async (app, argv) => (await cliDocs(app, argv)).at(-1);

@@ -1,6 +1,7 @@
 // The switch lesson's game starts itself (da-uzyih.4867): as its cue says,
 // by switching `room` to the room the person stands in.
 
+import { ready } from './app.mjs';
 import { until } from './until.mjs';
 
 const SWITCH = '[data-pane="change-lesson"]';
@@ -50,4 +51,32 @@ export async function statuses(app, fields) {
 			has(ignored, f) ? 'IGNORED' : has(active, f) || tracked_false.some((t) => t.field === f && t.since) ? 'TRACKED' : 'untracked'
 		])
 	);
+}
+
+// The tutorial*.test.mjs files' lessons, tabs and ways between databases (da-5rpcr).
+
+// The lessons' layouts, by name, which their tabs say: the change lesson's is `change`, the glossary's word (da-e3rdf).
+export const LESSON_NAMES = ['intro', 'moment', 'on-off', 'change', 'input-bar', 'tabs'];
+
+export const tabs = (page) => page.locator('.root-bar [role="tab"]').allInnerTexts();
+
+export const front = (page) => page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText();
+
+/** Press `name` and wait for the page it loads, on database `to` (null: datum). */
+export async function press(page, name, to) {
+	await Promise.all([
+		page.waitForURL((url) => url.searchParams.get('db') === to),
+		page.getByRole('button', { name, exact: true }).click()
+	]);
+	await ready(page);
+}
+
+/** Choose `name` in the database switcher, the bottom bar's name, and wait for its page. */
+export async function viaSwitcher(page, name, to) {
+	await page.getByRole('button', { name: /choose a database/ }).click();
+	await Promise.all([
+		page.waitForURL((url) => url.searchParams.get('db') === to),
+		page.getByRole('menuitemradio', { name, exact: true }).click()
+	]);
+	await ready(page);
 }
