@@ -474,32 +474,40 @@ export const LESSONS: Lesson[] = [
 ];
 
 /**
- * A game under a two-minute nowview, where its taps land as they are made:
- * what is watched while tapping, right above what is tapped (vividn, 2026-10-22).
- * Over both, its title and what its shape of data is, read before playing;
- * the game and its fields are panes of their own (da-uzyih.4908, vividn,
- * 2026-10-29: «Maybe 1/3 for the description, 1/6 for nowview, … 1/4 for game
- * and 1/4 for field widget. Let's have the game and the fields widgets be
- * separate widgets here»).
+ * A game's tab, taller than the screen (da-py6pl) and read top to bottom (da-zb1dr, vividn, 2026-11-05: «we keep
+ * a small intro text and then the nowview, game … and collect widget …, and then we can have a more in depth
+ * discussion below the collect widget of what just happened. … The next button would then be on the very
+ * bottom»): its title and what its shape of data is; the two-minute nowview, where its taps land as they are
+ * made, right above what is tapped (vividn, 2026-10-22); the game; the collect widget filtered to its fields; and
+ * under them the discussion and the way on. Each pane's height is a share of a screen: the nowview, the game and
+ * collect take under one, so past the intro they are in sight together while a round runs, on an iPhone SE too; the
+ * intro's share holds its two lines there, and the discussion's its text and Next (tutorial-scroll.test.mjs).
  */
+const LESSON_SCREENS = [0.3, 0.16, 0.27, 0.4, 1];
+const LESSON_TALL = LESSON_SCREENS.reduce((a, b) => a + b, 0);
+
 const withNowview = ({ name, fields }: Lesson): Layout => ({
 	version: LAYOUT_VERSION,
 	name,
-	root: holder(
-		name,
-		split(`${name}-split`, 'column', [1 / 3, 1 / 6, 1 / 4, 1 / 4], [
-			widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }),
-			widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
-			widgetPane(`${name}-lesson`, 'game', { lesson: name }),
-			// The collect widget a person uses, filtered to the game's fields (da-2s9im, vividn, 2026-11-05: «the
-			// widgets in the tutorial should actually use the collect widget … filtered to each game's set»), its
-			// ignored fields shown: a game's fields are IGNORED until it begins.
-			widgetPane(`${name}-fields`, 'widgetbar', { fields, showIgnored: true })
-		])
-	)
+	root: {
+		...holder(
+			name,
+			split(`${name}-split`, 'column', LESSON_SCREENS.map((s) => s / LESSON_TALL), [
+				widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }),
+				widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
+				widgetPane(`${name}-lesson`, 'game', { lesson: name }),
+				// The collect widget a person uses, filtered to the game's fields (da-2s9im, vividn, 2026-11-05: «the
+				// widgets in the tutorial should actually use the collect widget … filtered to each game's set»), its
+				// ignored fields shown: a game's fields are IGNORED until it begins.
+				widgetPane(`${name}-fields`, 'widgetbar', { fields, showIgnored: true }),
+				widgetPane(`${name}-discuss`, 'tutorial', { lesson: name, part: 'discuss' })
+			])
+		),
+		tall: LESSON_TALL
+	}
 });
 
-/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, four panes, the game the game widget's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the switch lesson's, da-6xeqy). */
+/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, five panes, the game the game widget's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the switch lesson's, da-6xeqy). */
 export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map((lesson) =>
 	lesson.fields.length ? withNowview(lesson) : only(lesson.name, 'tutorial', { lesson: lesson.name })
 );

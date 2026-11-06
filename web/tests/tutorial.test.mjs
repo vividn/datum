@@ -406,7 +406,8 @@ test('a lesson’s game is a pane named «game widget» that runs a round; a tab
 
 			// The tab as a layout saved before the game was its own kind: the game pane the `tutorial` kind's.
 			const old = await page.evaluate(() => JSON.parse(JSON.stringify(window.datum.layouts.kitLayout('moment')).replaceAll('"kind":"game"', '"kind":"tutorial"')));
-			assert.equal(JSON.stringify(old).match(/"kind":"tutorial"/g).length, 2, 'the game pane is the tutorial kind again');
+			// The about, the discussion (da-zb1dr), and the game pane, the tutorial kind again.
+			assert.equal(JSON.stringify(old).match(/"kind":"tutorial"/g).length, 3, 'the game pane is the tutorial kind again');
 			await page.evaluate((l) => window.datum.layouts.saveLayout(l), old);
 			await app.reload();
 			assert.deepEqual(await round(), ['tutorial', 'tutorial']);
@@ -619,7 +620,7 @@ const drawn = (svg) =>
 
 // da-uzyih.4917: a game's picture was 20 px tall on a phone, the den's 1.9, under a row of controls; Playwright counts
 // 1.9 px as visible. vividn, 2026-10-30: Start is smaller and part of the game, on its right, the scene on its left.
-test('on a phone each game draws a picture a finger can read, the control beside it in every phase, and the tab fits', async () => {
+test('on a phone each game draws a picture a finger can read, the control beside it in every phase', async () => {
 	await withApp(
 		async (app) => {
 			const { page } = app;
@@ -636,10 +637,6 @@ test('on a phone each game draws a picture a finger can read, the control beside
 				}
 				const game = await page.locator(`${pane} .game`).boundingBox();
 				assert.ok(at.y >= game.y && at.y + at.height <= game.y + game.height, `${tab}: the control is inside the box`);
-				assert.ok(
-					await page.locator('section.holder.root > .content').evaluate((c) => c.scrollHeight <= c.clientHeight),
-					`${tab}: the tab fits, unscrolled`
-				);
 				// The other states of one control stand where Start stands: «End now» as the game runs, «Reset» once over. The
 				// switch game has no Start, its cue standing there at rest, so they stand where each other does, clear of the house.
 				const start = app.clock.at();
@@ -737,9 +734,10 @@ for (const [screen, options, centered] of [
 // have the game and the fields widgets be separate widgets here». Each game,
 // before, during and after a round: its title and what its shape is, then the
 // nowview, then its game box, with nothing of the lesson above it, then its
-// fields. And on a phone, while a round runs, the nowview, the game and the
-// collect widget are in sight together, unscrolled.
-test('each game reads title and shape, nowview, game, fields widget, in every phase, all in sight while it runs', async () => {
+// fields, then what just happened, its terms (da-zb1dr). That the nowview,
+// the game and collect are in sight together past the intro is
+// tutorial-scroll.test.mjs's.
+test('each game reads title and shape, nowview, game, fields widget, discussion, in every phase', async () => {
 	await withApp(
 		async (app) => {
 			const { page } = app;
@@ -754,7 +752,8 @@ test('each game reads title and shape, nowview, game, fields widget, in every ph
 						shape: box(pane('about').querySelector('p')),
 						now: box(pane('now')),
 						game: box(game),
-						act: box(pane('fields').querySelector('.fields'))
+						act: box(pane('fields').querySelector('.fields')),
+						discuss: box(pane('discuss').querySelector('h2'))
 					};
 					const above = [...root.querySelectorAll('*')]
 						.filter((el) => !el.contains(game) && !game.contains(el) && box(el).height > 0 && box(el).top < box(game).top - 0.5)
@@ -768,19 +767,20 @@ test('each game reads title and shape, nowview, game, fields widget, in every ph
 					return { ...named, above, scrolled };
 				}, tab);
 			const inOrder = (tab, phase, p) => {
-				const order = ['title', 'shape', 'now', 'game', 'act'];
+				const order = ['title', 'shape', 'now', 'game', 'act', 'discuss'];
 				for (const [a, b] of order.slice(1).map((b, i) => [order[i], b]))
 					assert.ok(p[a].bottom <= p[b].top + 0.5, `${tab}, ${phase}: ${a} (bottom ${p[a].bottom}) above ${b} (top ${p[b].top})`);
 				assert.deepEqual(p.above, [], `${tab}, ${phase}: nothing of the lesson above the game`);
 			};
-			// Each game's shape, by the name the setup widget gives it, and the term met there first.
+			// Each game's shape, by the name the setup widget gives it, and the term its discussion names.
 			const words = { moment: ['moment', 'entry'], 'on-off': ['on/off', 'state'], switch: ['change', 'state'] };
 
 			for (const tab of ['moment', 'switch', 'on-off']) {
 				await page.locator('.root-bar [role="tab"]', { hasText: tabLabel(tab) }).click();
 				await page.locator(`[data-pane="${tab}-lesson"] .game`).waitFor();
 				inOrder(tab, 'before', await parts(tab));
-				assert.deepEqual(await page.locator(`[data-pane="${tab}-about"] p b`).allInnerTexts(), words[tab]);
+				assert.deepEqual(await page.locator(`[data-pane="${tab}-about"] p b`).allInnerTexts(), words[tab].slice(0, 1));
+				assert.deepEqual(await page.locator(`[data-pane="${tab}-discuss"] p b`).allInnerTexts(), words[tab].slice(1));
 
 				const start = app.clock.at();
 				if (tab === 'switch') await startSwitch(page);
@@ -790,8 +790,6 @@ test('each game reads title and shape, nowview, game, fields widget, in every ph
 				const during = await parts(tab);
 				inOrder(tab, 'during', during);
 				assert.deepEqual(during.scrolled, [0, 0], `${tab}: neither the game nor the fields is scrolled`);
-				assert.ok(during.now.top >= 0 && during.act.bottom <= page.viewportSize().height,
-					`${tab}: the nowview, the game and the fields widget are in sight together (${during.act.bottom} of ${page.viewportSize().height})`);
 				// Past the longest round: the café's, 3 s + 11 gaps of at most 6 s + MATCH_MS + 1 s.
 				await app.clock.set(start + 75_000);
 				await page.locator(`[data-pane="${tab}-lesson"] .game .result`).waitFor();

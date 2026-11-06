@@ -734,7 +734,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('tutorial', 'tutorial', { lesson: 'intro' }),
 		component: TutorialWidget,
 		help: [
-			'A lesson of the tutorial: its text, or a game\'s fields; over a game\'s nowview, its title and what its kind of data is.',
+			'A lesson of the tutorial: its text, or a game\'s fields; over a game\'s nowview, its title and what its kind of data is; under its collect, what just happened.',
 			'The Introduction says how to go back to your own database, datum.'
 		].join('\n'),
 		db: TUTORIAL_DB,

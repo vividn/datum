@@ -22,16 +22,17 @@
 
 	A lesson with no fields is a page of text, with nothing to start over.
 
-	A game's tab is four panes (da-uzyih.4908, vividn, 2026-10-29): its
-	title and what its shape of data is (`part: 'about'`), short enough for
-	its third of the tab («it doesn't need to describe the game like this.
-	Instead it should be about what occur data is»; his whole words are
-	docs/basics.md), and its way on; the nowview; the game, the game widget
+	A game's tab is five panes, taller than the screen (da-zb1dr): its
+	title and what its shape of data is (`part: 'about'`), short enough to
+	leave the game and collect in sight («it doesn't need to describe the
+	game like this. Instead it should be about what occur data is»; his
+	whole words are docs/basics.md); the nowview; the game, the game widget
 	(GameWidget.svelte, da-2chdp), which this kind still draws for a lesson
 	with fields and no part, as a tab saved before that kind did; and the
 	collect widget filtered to its fields (da-2s9im), which this kind still
-	draws for `part: 'fields'`, as a tab saved before did. The game scores what
-	is logged, whatever logged it (`roundOf`).
+	draws for `part: 'fields'`, as a tab saved before did; and under them what
+	just happened, at more length, and the way on (`part: 'discuss'`). The game
+	scores what is logged, whatever logged it (`roundOf`).
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -112,23 +113,42 @@
 <Pane title={lesson.title}>
 	<div class="tutorial" class:fill={part === 'fields'}>
 		{#if part === 'about'}
-			<!-- Short enough for its third of the tab; vividn's whole words on each shape are docs/basics.md. -->
+			<!-- A line, so the game and collect keep the screen under it; the terms are the discussion's, vividn's whole words on each shape docs/basics.md. -->
 			<h1 class="title">{lesson.title}</h1>
 			<p>
 				<span class="glyph" aria-hidden="true">{shape?.glyph}</span> <b>{shape?.what}</b>:
 				{#if lesson.name === 'moment'}
-					something that happens or is measured at a single point in time, a dot on the timeline. Each one logged is an
-					<b>entry</b>, a timestamped log of the field.
+					a dot on the timeline.
 				{:else if lesson.name === 'on-off'}
-					something that happens for a while and then stops, a period on the timeline. Its <b>state</b> is true or false, and
-					lasts until an entry changes it.
+					a period of time.
 				{:else}
-					something that passes through phases or modes, periods that change color on the timeline. Each <b>state</b> is
-					one you name, and lasts until the next.
+					a color per state.
 				{/if}
 			</p>
 		{:else if part === 'fields'}
 			<CollectPane only={lesson.fields} showIgnored />
+		{:else if part === 'discuss'}
+			<!-- Under the game and collect, scrolled to once a round is played: what it logged, and why. -->
+			<h2>What just happened</h2>
+			{#if lesson.name === 'moment'}
+				<p>
+					Each tap logged an <b>entry</b> of its field at that instant, a dot on the timeline. A moment has no state and no
+					duration: it says that something happened, and when.
+				</p>
+				<p>Later, datum counts them: how often, at what hours, how many a day. Ex. medication, weight, coffee.</p>
+			{:else if lesson.name === 'on-off'}
+				<p>
+					Each tap turned its field on or off. While on, its <b>state</b> is true and its period grows on the timeline, so
+					the period's length is how long it lasted. You log only the changes, and several fields can be on at once.
+				</p>
+				<p>Later, datum adds the periods up: how long, how often, at what hours. Ex. sleep, screen time, work.</p>
+			{:else}
+				<p>
+					Each tap changed the field to a <b>state</b> you named, and its period changed color. It is in one state at a
+					time, until the next entry: entering a room leaves the last, so you log only the changes.
+				</p>
+				<p>Later, datum says how long you spent in each state, and when. Ex. where you are, your project.</p>
+			{/if}
 		{:else if intro}
 			<h1>The tutorial</h1>
 			<p>
@@ -168,7 +188,8 @@
 				</ul>
 			{/if}
 		{/if}
-		{#if next && part !== 'fields'}
+		<!-- A game's way on is at the very bottom of its tab, under its discussion (da-zb1dr). -->
+		{#if next && part !== 'fields' && part !== 'about'}
 			<button type="button" class="command next" use:act={'open'} onclick={() => void open(next.name)}
 				>Next: {label(next)}</button
 			>
@@ -197,7 +218,8 @@
 		container-type: size;
 	}
 
-	h1 {
+	h1,
+	h2 {
 		margin: 0 0 0.3rem;
 		color: var(--ink-bright);
 		font-size: 1.4rem;
@@ -212,13 +234,19 @@
 		color: var(--accent-bright);
 	}
 
-	/* A game's title, small over its description (vividn, 2026-10-29: «make the title text a lot smaller»). */
-	h1.title {
+	/* A game's title, small over its description (vividn, 2026-10-29: «make the title text a lot smaller»), and its discussion's. */
+	h1.title,
+	h2 {
 		font-size: 0.95rem;
 	}
 
 	ul {
 		padding-inline-start: 1.4rem;
+	}
+
+	/* The intro's line is its last: no margin under it to scroll to. */
+	h1.title + p {
+		margin-block-end: 0;
 	}
 
 	/* «where?» reads as a link in the sentence; it acts on this page, so it is a button. */
