@@ -711,7 +711,10 @@ pub fn resolve_parse_output_args(o: &datum_parse::input::OutputArgs) -> anyhow::
 /// structs. Imported wherever callers used the pre-R2 inherent methods.
 pub trait LogArgsExt {
     fn output(&self) -> anyhow::Result<OutputArgs>;
-    fn conflict_strategy(&self, field: Option<ConflictStrategyArg>) -> ConflictStrategy;
+    fn conflict_strategy(
+        &self,
+        spec: Option<&datum_core::field_spec::FieldSpec>,
+    ) -> (ConflictStrategy, datum_core::db::KeyStrategies);
 }
 
 impl LogArgsExt for LogArgs {
@@ -719,17 +722,30 @@ impl LogArgsExt for LogArgs {
         resolve_parse_output_args(&self.output)
     }
     /// The line's own `--update`, `--merge` or `--conflict`, else the
-    /// field's (`field`, da-wudrc), else update.
-    fn conflict_strategy(&self, field: Option<ConflictStrategyArg>) -> ConflictStrategy {
-        if self.update {
-            ConflictStrategy::Update
-        } else if self.merge {
-            ConflictStrategy::Merge
-        } else {
-            self.conflict
-                .or(field)
-                .map_or(ConflictStrategy::Update, Into::into)
-        }
+    /// field's (its `spec`, da-wudrc), else update; and with none on the
+    /// line, the spec's keys' own (da-c2nwv).
+    fn conflict_strategy(
+        &self,
+        spec: Option<&datum_core::field_spec::FieldSpec>,
+    ) -> (ConflictStrategy, datum_core::db::KeyStrategies) {
+        let line = match (self.update, self.merge) {
+            (true, _) => Some(ConflictStrategyArg::Update),
+            (_, true) => Some(ConflictStrategyArg::Merge),
+            _ => self.conflict,
+        };
+        let keys = match (line, spec) {
+            (None, Some(s)) => s
+                .key_conflict
+                .iter()
+                .map(|(k, c)| (k.clone(), (*c).into()))
+                .collect(),
+            _ => Default::default(),
+        };
+        let field = spec.and_then(|s| s.conflict);
+        (
+            line.or(field).map_or(ConflictStrategy::Update, Into::into),
+            keys,
+        )
     }
 }
 

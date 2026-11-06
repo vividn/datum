@@ -934,6 +934,9 @@ pub struct SpecSetArgs {
     /// `--conflict replace|update|merge|refuse|''` (da-wudrc): the spec's
     /// `conflict`, `''` clearing it; `None` leaves the existing value.
     pub conflict: Option<Option<ConflictStrategyArg>>,
+    /// `--key-conflict KEY=S` (da-c2nwv): a data key's own strategy over
+    /// the field's, `None` clearing it.
+    pub key_conflicts: Vec<(String, Option<ConflictStrategyArg>)>,
     /// `--symbol <CHAR>` — what the field's occur dots draw instead of a
     /// circle (da-gzowt). An empty value clears it.
     pub symbol: Option<String>,

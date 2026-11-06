@@ -140,7 +140,7 @@ pub use sync::{
 pub use tombstone::{revert_in_tx, soft_delete_in_tx, take_back_in_tx};
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,
-    InsertOutcome, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,
+    InsertOutcome, KeyStrategies, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,
     SpecAliasCollision, SpecAliasIndex, TimeMetric, TimeOrderIssue, TimelineEntry, TrackedField,
     IGNORED_STATE_VALUE, NOT_FLAG_OR_META_SQL,
 };

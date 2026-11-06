@@ -358,6 +358,15 @@ pub(crate) fn parse_spec_set(tail: &[&str], timed: bool) -> Result<(SpecSetArgs,
                 out.conflict = Some(parse_field_conflict(v)?);
                 i += 1;
             }
+            FlagSplit::Long("key-conflict") => {
+                let (v, ni) = take_value(tail, i, None, "--key-conflict")?;
+                out.key_conflicts.push(parse_key_conflict(v)?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("key-conflict", v) => {
+                out.key_conflicts.push(parse_key_conflict(v)?);
+                i += 1;
+            }
             FlagSplit::Long("y") => {
                 let (v, ni) = take_value(tail, i, None, "--y")?;
                 out.y = Some(parse_position_f64(v, "--y")?);
@@ -546,6 +555,19 @@ fn parse_field_conflict(s: &str) -> Result<Option<ConflictStrategyArg>> {
         _ => parse_conflict_strategy("conflict", &["replace", "update", "merge", "refuse"], s)
             .map(Some),
     }
+}
+
+/// `setup --key-conflict KEY=S` (da-c2nwv): one data key's own strategy,
+/// `KEY=` clearing it.
+fn parse_key_conflict(s: &str) -> Result<(String, Option<ConflictStrategyArg>)> {
+    s.split_once('=')
+        .filter(|(key, _)| !key.is_empty())
+        .and_then(|(key, v)| Some((key.to_string(), parse_field_conflict(v).ok()?)))
+        .ok_or_else(|| {
+            ParseError::InvalidArg(format!(
+                "--key-conflict expects KEY=replace|update|merge|refuse (KEY= clears it), got '{s}'"
+            ))
+        })
 }
 
 /// A size factor (da-c05v1): a number above zero.

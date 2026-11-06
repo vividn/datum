@@ -130,7 +130,7 @@ fn merge_values(a: &Value, b: &Value, unique: bool) -> Result<Value> {
 }
 
 /// Equal as JSON: numbers by value, so `1` is `1.0`.
-fn same(a: &Value, b: &Value) -> bool {
+pub fn same(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
         (Value::Array(x), Value::Array(y)) => {

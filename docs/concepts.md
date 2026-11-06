@@ -99,8 +99,10 @@ One-line summaries of the model:
   where they differ; `replace` keeps the new entry's keys alone; `merge`
   makes a key both hold differently, the state too, a list of both; and
   `refuse` writes nothing. These are v2's `preferNew`, `useNew`, `merge`
-  and `fail`. One that changes nothing echoes NODIFF, and a line's own
-  `--conflict`, `--update` or `--merge` wins over the field's.
+  and `fail`. A data key may take its own, over the field's for that key
+  alone (`setup <field> --key-conflict K=S`). One that changes nothing
+  echoes NODIFF, and a line's own `--conflict`, `--update` or `--merge`
+  wins over the field's and the keys'.
 - **Intent** — the original argv is captured and replayed under a
   pinned `parser_version`, so a future parser fix can retroactively
   correct old entries without losing what the user actually typed.

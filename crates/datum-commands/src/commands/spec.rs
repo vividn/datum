@@ -383,6 +383,12 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(c) = args.conflict {
         spec.conflict = c;
     }
+    for (key, c) in &args.key_conflicts {
+        match c {
+            Some(c) => spec.key_conflict.insert(key.clone(), *c),
+            None => spec.key_conflict.remove(key),
+        };
+    }
     if let Some(hide) = args.hide {
         spec.presentation.render = match hide {
             true => Some(Render::All(false)),
@@ -1058,6 +1064,14 @@ impl Block {
         }
         if let Some(c) = spec.conflict {
             line("conflict", c.word().into());
+        }
+        if !spec.key_conflict.is_empty() {
+            let keys: Vec<String> = spec
+                .key_conflict
+                .iter()
+                .map(|(k, c)| format!("{k}={}", c.word()))
+                .collect();
+            line("key conflict", keys.join(" "));
         }
         if !spec.tags.is_empty() {
             line("tags", spec.tags.join(" · "));

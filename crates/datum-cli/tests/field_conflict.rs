@@ -96,3 +96,87 @@ fn replace_merge_and_refuse_resolve_as_set() {
     assert!(!ok(&dir, &["setup", "mood"]).contains("conflict"));
     assert_eq!(mood(&dir, &["calm"])["action"], "UPDATE");
 }
+
+/// da-c2nwv: a data key's own strategy, over the field's for that key alone.
+#[test]
+fn a_key_takes_its_own_strategy_over_the_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    ok(&dir, &["setup", "mood", "--kind", "change"]);
+    assert!(!ok(&dir, &["setup", "mood"]).contains("key conflict"));
+    let bad = run(&dir, &["setup", "mood", "--key-conflict", "tag=bogus"]);
+    assert!(!bad.status.success());
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        stderr.contains("--key-conflict") && stderr.contains("tag=bogus"),
+        "{stderr}"
+    );
+    ok(&dir, &["setup", "mood", "--key-conflict", "tag=merge"]);
+    assert!(ok(&dir, &["setup", "mood"]).contains("key conflict  tag=merge"));
+
+    // The field updates; its key `tag` merges.
+    mood(&dir, &["good", "tag=a", "x=1"]);
+    assert_eq!(mood(&dir, &["bad", "tag=b", "x=2"])["action"], "UPDATE");
+    assert_eq!(
+        moods(&dir),
+        [(json!("bad"), json!({"tag": ["a", "b"], "x": 2}))]
+    );
+
+    // The field refuses, but not a change to `tag`.
+    ok(&dir, &["setup", "mood", "--conflict", "refuse"]);
+    mood(&dir, &["bad", "tag=c", "x=2"]);
+    assert_eq!(
+        moods(&dir),
+        [(json!("bad"), json!({"tag": ["a", "b", "c"], "x": 2}))]
+    );
+    let argv = [
+        "change",
+        "mood",
+        "bad",
+        "tag=d",
+        "x=3",
+        "-m",
+        "-D",
+        "-d",
+        "2026-11-01",
+    ];
+    let out = run(&dir, &argv);
+    assert_eq!(out.status.code(), Some(11), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("its key x"));
+
+    // A key on refuse refuses a change to it on a field that updates.
+    ok(
+        &dir,
+        &[
+            "setup",
+            "mood",
+            "--conflict",
+            "",
+            "--key-conflict",
+            "x=refuse",
+        ],
+    );
+    let out = run(&dir, &argv);
+    assert_eq!(out.status.code(), Some(11), "{out:?}");
+    assert_eq!(
+        moods(&dir),
+        [(json!("bad"), json!({"tag": ["a", "b", "c"], "x": 2}))]
+    );
+
+    // A line's own flag wins over the keys' too; `KEY=` clears one.
+    let mut over = argv.to_vec();
+    over.push("--update");
+    ok(&dir, &over);
+    assert_eq!(moods(&dir), [(json!("bad"), json!({"tag": "d", "x": 3}))]);
+    ok(
+        &dir,
+        &[
+            "setup",
+            "mood",
+            "--key-conflict",
+            "tag=",
+            "--key-conflict",
+            "x=",
+        ],
+    );
+    assert!(!ok(&dir, &["setup", "mood"]).contains("key conflict"));
+}

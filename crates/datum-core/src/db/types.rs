@@ -323,6 +323,10 @@ pub enum ConflictStrategy {
     Rekey,
 }
 
+/// A data key's own conflict strategy, over its field's for that key alone
+/// (da-c2nwv): a spec's `key_conflict`.
+pub type KeyStrategies = std::collections::BTreeMap<String, ConflictStrategy>;
+
 impl From<datum_parse::cli::ConflictStrategyArg> for ConflictStrategy {
     fn from(v: datum_parse::cli::ConflictStrategyArg) -> Self {
         match v {

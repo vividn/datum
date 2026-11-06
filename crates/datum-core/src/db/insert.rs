@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use chrono::Utc;
-use datum_parse::combine::{combine, Combine};
+use datum_parse::combine::{combine, same, Combine};
 use datum_parse::entry_id::DATE_ONLY_PRECISION;
 use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -23,7 +23,9 @@ use crate::verb::derive_verb;
 use super::lookup::fetch_entry_any;
 use super::row_mapper::row_to_entry;
 use super::tombstone::soft_delete_in_tx;
-use super::types::{ConflictStrategy, HardReplaceCounts, InsertOutcome, ReplaceCounts, LIVE_SQL};
+use super::types::{
+    ConflictStrategy, HardReplaceCounts, InsertOutcome, KeyStrategies, ReplaceCounts, LIVE_SQL,
+};
 use super::{Db, View};
 
 /// Derive the storage-layer verb string and canonical state JSON for an
@@ -247,7 +249,7 @@ impl Db {
         entry: &Entry,
         strategy: ConflictStrategy,
     ) -> Result<InsertOutcome> {
-        self.insert_entry_declaring(entry, strategy, None, None)
+        self.insert_entry_declaring(entry, strategy, &KeyStrategies::new(), None, None)
     }
 
     /// [`Self::insert_entry_with_strategy`], and — when the entry lands —
@@ -256,11 +258,13 @@ impl Db {
     /// so a failure (a full disk) leaves the database as it was. `prepare`
     /// reads and finishes a copy of the entry in that transaction before it
     /// is written: a `-L` claim ([`crate::integrity::ensure_last_state`]), the
-    /// set a `+=` changes.
+    /// set a `+=` changes. `keys` are data keys' own strategies over
+    /// `strategy` (da-c2nwv).
     pub fn insert_entry_declaring(
         &self,
         entry: &Entry,
         strategy: ConflictStrategy,
+        keys: &KeyStrategies,
         declare: Option<&crate::field_spec::FieldSpec>,
         prepare: Option<Prepare<'_>>,
     ) -> Result<InsertOutcome> {
@@ -284,7 +288,7 @@ impl Db {
                 }
                 None => entry,
             };
-            let outcome = insert_entry_in_tx(tx, entry, strategy)?;
+            let outcome = insert_keyed_in_tx(tx, entry, strategy, keys)?;
             let landed = matches!(
                 outcome,
                 InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. }
@@ -351,7 +355,8 @@ impl Db {
             let mut outcomes = Vec::with_capacity(entries.len());
             let mut written = Vec::new();
             for entry in entries {
-                let (outcome, row) = write_entry_in_tx(tx, entry, strategy, merge)?;
+                let none = KeyStrategies::new();
+                let (outcome, row) = write_entry_in_tx(tx, entry, strategy, &none, merge)?;
                 outcomes.push(outcome);
                 written.extend(row);
                 on_row(outcomes.len());
@@ -445,7 +450,8 @@ impl Db {
                         }
                     }
                     None => {
-                        let (outcome, row) = write_entry_in_tx(tx, entry, strategy, false)?;
+                        let none = KeyStrategies::new();
+                        let (outcome, row) = write_entry_in_tx(tx, entry, strategy, &none, false)?;
                         written.extend(row);
                         match outcome {
                             // A tombstone at the slug revives in place, keeping
@@ -945,7 +951,17 @@ fn insert_entry_in_tx(
     entry: &Entry,
     strategy: ConflictStrategy,
 ) -> Result<InsertOutcome> {
-    let (outcome, written) = write_entry_in_tx(conn, entry, strategy, false)?;
+    insert_keyed_in_tx(conn, entry, strategy, &KeyStrategies::new())
+}
+
+/// [`insert_entry_in_tx`], with data keys' own strategies (da-c2nwv).
+fn insert_keyed_in_tx(
+    conn: &Connection,
+    entry: &Entry,
+    strategy: ConflictStrategy,
+    keys: &KeyStrategies,
+) -> Result<InsertOutcome> {
+    let (outcome, written) = write_entry_in_tx(conn, entry, strategy, keys, false)?;
     // D5: post-write conflict detection. Runs inside the same
     // transaction so the conflict row is atomic with the insert.
     if let Some(written) = written {
@@ -968,6 +984,7 @@ fn write_entry_in_tx(
     conn: &Connection,
     entry: &Entry,
     strategy: ConflictStrategy,
+    keys: &KeyStrategies,
     merge: bool,
 ) -> Result<(InsertOutcome, Option<Entry>)> {
     crate::slug::validate_field_name(&entry.field)?;
@@ -1004,24 +1021,28 @@ fn write_entry_in_tx(
     // da-2mn3k: Update / Merge also resolve a SLUG collision, applying the
     // strategy to the live row that holds the slug — the original datum's
     // addDoc did so on `_id`, which v3's slug is. That is how a keyed
-    // record (`--id %client_id%`) is re-logged in place.
+    // record (`--id %client_id%`) is re-logged in place. Refuse does too
+    // where a key has its own strategy (da-c2nwv).
+    // Refuse with no key of its own looks up no slug, so under it a row
+    // found is always one matching by hash, which the arm below ignores.
+    let by_hash = existing.is_some();
+    let by_slug = match strategy {
+        ConflictStrategy::Replace
+        | ConflictStrategy::Overwrite
+        | ConflictStrategy::Update
+        | ConflictStrategy::Merge => true,
+        ConflictStrategy::Ignore => !keys.is_empty(),
+        ConflictStrategy::Rekey => false,
+    };
     let existing = match existing {
-        None if matches!(
-            strategy,
-            ConflictStrategy::Replace
-                | ConflictStrategy::Overwrite
-                | ConflictStrategy::Update
-                | ConflictStrategy::Merge
-        ) =>
-        {
-            conn.query_row(
+        None if by_slug => conn
+            .query_row(
                 "SELECT slug, hid, data FROM entries
                  WHERE slug = ?1 AND deleted_at IS NULL AND superseded_by IS NULL",
                 params![entry.slug],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .optional()?
-        }
+            .optional()?,
         found => found,
     };
 
@@ -1099,7 +1120,13 @@ fn write_entry_in_tx(
                 (outcome, Some(inserted))
             }
         }
-        (Some((slug, _, _)), ConflictStrategy::Ignore) => (InsertOutcome::Ignored { slug }, None),
+        (Some((slug, _, _)), ConflictStrategy::Ignore) if by_hash => {
+            (InsertOutcome::Ignored { slug }, None)
+        }
+        (Some(_), ConflictStrategy::Ignore) if is_relog_of_a_declaring_row(conn, entry) => {
+            let slug = entry.slug.clone();
+            (InsertOutcome::Ignored { slug }, None)
+        }
         (Some((old_slug, _, _)), ConflictStrategy::Rekey) => {
             // Rekey: insert the incoming row with its own slug. Both rows
             // share a content_hash — the content_hash column is not UNIQUE.
@@ -1140,8 +1167,11 @@ fn write_entry_in_tx(
             super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
             (InsertOutcome::Updated { slug }, None)
         }
-        // Replace, Update and Merge: the two rows combined.
-        (Some((slug, hid, _)), how) => (resolve_collision(conn, slug, &hid, entry, how)?, None),
+        // Replace, Update and Merge, and Refuse with a key's own: the two
+        // rows combined.
+        (Some((slug, hid, _)), how) => {
+            (resolve_collision(conn, slug, &hid, entry, how, keys)?, None)
+        }
     };
 
     Ok(written)
@@ -1149,28 +1179,60 @@ fn write_entry_in_tx(
 
 /// A log colliding with the live row `hid` (da-wudrc): the row `strategy`
 /// makes of the two, v2's combineData over their keys, the state among
-/// them, written in place — or nothing, where that row is the one held. The
-/// duration and the following state, no keys, are the new entry's where it
-/// has one, so a re-log keeps the edge that declared its field.
+/// them, written in place — or nothing, where that row is the one held. A
+/// data key in `keys` takes its own strategy (da-c2nwv). The duration and
+/// the following state, no keys, are the new entry's where it has one, so a
+/// re-log keeps the edge that declared its field. Refuse (`Ignore`) errs on
+/// any value the two hold differently, one only one holds included.
 fn resolve_collision(
     conn: &Connection,
     slug: Slug,
     hid: &Hid,
     entry: &Entry,
     strategy: ConflictStrategy,
+    keys: &KeyStrategies,
 ) -> Result<InsertOutcome> {
-    let how = match strategy {
-        ConflictStrategy::Replace => Combine::USE_B,
-        ConflictStrategy::Merge => Combine::MERGE,
-        _ => Combine::PREFER_B,
-    };
     let pre = fetch_entry_any(conn, &hid.0)?;
-    let key = |a: &Option<JsonValue>, b: &Option<JsonValue>| -> Result<Option<JsonValue>> {
-        let one = |v: &Option<JsonValue>| v.iter().map(|v| (String::new(), v.clone())).collect();
-        Ok(combine(&one(a), &one(b), how)?.remove(""))
+    let field = &entry.field;
+    let refused = |what: &str| {
+        DatumError::Duplicate(format!(
+            "entry collides with {slug} on field={field}, which refuses a change to {what}"
+        ))
     };
+    let value =
+        |how: ConflictStrategy, what: &str, a: Option<&JsonValue>, b: Option<&JsonValue>| {
+            let row = match how {
+                ConflictStrategy::Replace => Combine::USE_B,
+                ConflictStrategy::Merge => Combine::MERGE,
+                ConflictStrategy::Ignore => {
+                    return match (a, b) {
+                        (None, None) => Ok(None),
+                        (Some(x), Some(y)) if same(x, y) => Ok(a.cloned()),
+                        _ => Err(refused(what)),
+                    }
+                }
+                _ => Combine::PREFER_B,
+            };
+            let one =
+                |v: Option<&JsonValue>| v.map(|v| (String::new(), v.clone())).into_iter().collect();
+            Ok(combine(&one(a), &one(b), row)?.remove(""))
+        };
     let mut next = entry.clone();
-    next.state = key(&pre.state, &entry.state)?;
+    next.state = value(
+        strategy,
+        "its state",
+        pre.state.as_ref(),
+        entry.state.as_ref(),
+    )?;
+    let edge_differs = entry
+        .dur
+        .as_ref()
+        .is_some_and(|d| pre.dur.as_ref() != Some(d))
+        || (entry.following_state.as_ref())
+            .is_some_and(|s| pre.following_state.as_ref() != Some(s));
+    if strategy == ConflictStrategy::Ignore && edge_differs {
+        return Err(refused("its time"));
+    }
     next.following_state = entry
         .following_state
         .clone()
@@ -1182,11 +1244,17 @@ fn resolve_collision(
                 Some(JsonValue::Object(m)) => m.clone(),
                 _ => Default::default(),
             };
-            Some(combine(&obj(&pre.data), &obj(&entry.data), how)?)
-                .filter(|m| !m.is_empty())
-                .map(JsonValue::Object)
+            let (a, b) = (obj(&pre.data), obj(&entry.data));
+            let mut out = serde_json::Map::new();
+            for k in a.keys().chain(b.keys().filter(|k| !a.contains_key(*k))) {
+                let how = keys.get(k).copied().unwrap_or(strategy);
+                if let Some(v) = value(how, &format!("its key {k}"), a.get(k), b.get(k))? {
+                    out.insert(k.clone(), v);
+                }
+            }
+            Some(out).filter(|m| !m.is_empty()).map(JsonValue::Object)
         }
-        (a, b) => key(a, b)?,
+        (a, b) => value(strategy, "its data", a.as_ref(), b.as_ref())?,
     };
     let (_, _, state) = derive_verb_for_storage(&next)?;
     let hash = storage_content_hash(

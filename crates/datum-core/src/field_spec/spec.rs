@@ -203,6 +203,10 @@ pub struct FieldSpec {
     /// (da-wudrc): replace, update, merge or refuse. None is update.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conflict: Option<datum_parse::cli::ConflictStrategyArg>,
+    /// A data key's own conflict strategy, over [`conflict`](Self::conflict)
+    /// for that key alone (da-c2nwv). Absent in JSON when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub key_conflict: BTreeMap<String, datum_parse::cli::ConflictStrategyArg>,
 
     /// Only the keys the spec lists may be written to an entry's data
     /// (da-rcoi; da-eqb30 renamed it from `strict`, which a stored spec
@@ -355,6 +359,7 @@ impl FieldSpec {
             never_false: false,
             auto_setup: None,
             conflict: None,
+            key_conflict: BTreeMap::new(),
             only_listed_keys: false,
             only_listed_states: false,
             remainder: None,

@@ -1120,7 +1120,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return Ok(());
     }
 
-    let strategy = args.conflict_strategy(db.load_spec(&entry.field)?.and_then(|s| s.conflict));
+    let (strategy, keys) = args.conflict_strategy(db.load_spec(&entry.field)?.as_ref());
     // The spec is written only if the entry lands, and in its transaction.
     let declare = match declares_field {
         true => crate::commands::helpers::track_spec(db, &entry.field, kind)?,
@@ -1136,6 +1136,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let outcome = db.insert_entry_declaring(
             &entry,
             strategy,
+            &keys,
             declare.as_ref(),
             Some(&|tx, e| {
                 if let (true, Some(t)) = (edit_at_now, e.at.as_mut()) {

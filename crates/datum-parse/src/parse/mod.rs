@@ -1554,6 +1554,11 @@ mod tests {
                 &["add", "doc", "--conflict", "xor", "foo=bar"][..],
                 "invalid --conflict value: 'xor' (expected replace|update|merge|refuse|rekey)",
             ),
+            (
+                &["setup", "mood", "--key-conflict", "tag=bogus"][..],
+                "--key-conflict expects KEY=replace|update|merge|refuse (KEY= clears it), \
+                 got 'tag=bogus'",
+            ),
         ] {
             let msg = format!("{}", parse_argv(&argv(words)).unwrap_err());
             assert!(msg.ends_with(want), "{words:?} got: {msg}");
