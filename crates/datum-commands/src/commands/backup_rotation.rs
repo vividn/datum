@@ -848,6 +848,14 @@ mod tests {
     /// over a database's own.
     #[test]
     fn a_step_takes_the_schedule_dir_records() {
+        // `rotate_all` opens every database `known_dbs` lists, writable: a
+        // home of its own, so a run never reaches the real ones (da-ajuza).
+        let _lock = datum_test_util::env_lock();
+        let home = tempfile::tempdir().unwrap();
+        let _data = datum_test_util::ScopedEnv::set("DATUM_HOME", home.path().join("data"));
+        let _config =
+            datum_test_util::ScopedEnv::set("DATUM_CONFIG_HOME", home.path().join("config"));
+        assert!(crate::config::known_dbs().is_empty());
         let (db, dir) = setup();
         let err = rotate(&db, dir.path(), "main", None, t0()).unwrap_err();
         assert!(
