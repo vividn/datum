@@ -104,7 +104,7 @@
 	import CommandPane from '#lib/layout/CommandPane.svelte';
 	import { epoch } from '#lib/layout/engine.ts';
 	import { clockSecondsLabel, now } from '#lib/clock.ts';
-	import { closeLog, inLog, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
+	import { closeLog, inLog, lifted, lowering, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
 	import { layout } from '#lib/layout/current.ts';
 	import { soleWidgetOf } from '#lib/layout/tree.ts';
 	import { grip } from '#lib/grip.ts';
@@ -420,12 +420,14 @@
 		title={degraded ? $storageSentence : undefined}
 	use:grip
 >
-	{#if $shown > 0}
+	{#if $shown > 0 || ($lowering && $lifted)}
 		<!-- It OPENS: its height is the first slice of how far the bar is
 		     pulled (#lib/log.ts), so a drag grows it smoothly and the notch
 		     is where it has finished. Clipped while it is part-way, from the
-		     top: what shows first is the foot of the row, next to the input. -->
-		<div class="section output">
+		     top: what shows first is the foot of the row, next to the input.
+		     While the log closes it is laid out unseen where it will rest
+		     (`unseen`), for the log's commands to flow to (da-jzvrp). -->
+		<div class="section output" class:unseen={$shown === 0}>
 			<!-- The × and the strip, with ONE right edge: the section's padding
 			     is outside it, so nothing of the × shows past the strip at rest. -->
 			<div class="pull">
@@ -672,6 +674,16 @@
 		height: var(--shown, 0px);
 		overflow: hidden;
 		border-bottom: 1px solid var(--tint);
+	}
+
+	/* Where it rests at the notch, over the input, and not drawn. */
+	.section.output.unseen {
+		position: absolute;
+		inset-inline: 0;
+		bottom: var(--input-height);
+		height: var(--output-height);
+		visibility: hidden;
+		pointer-events: none;
 	}
 
 	.pull {

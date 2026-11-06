@@ -45,7 +45,7 @@
 	import { tick, untrack } from 'svelte';
 	import CliScrollback from '#lib/CliScrollback.svelte';
 	import { cli, stepped } from '#lib/cliStore.ts';
-	import { armed, closeLog, full, inLog, lifted } from '#lib/log.ts';
+	import { armed, closeLog, full, inLog, lifted, logHeight, lowering } from '#lib/log.ts';
 
 	let body: HTMLDivElement | undefined = $state();
 
@@ -90,6 +90,16 @@
 	// Past the notch, the log has one more row, the newest: back to it.
 	$effect(() => {
 		if ($lifted && body) body.scrollTop = body.scrollHeight;
+	});
+	// Closing, the log stands on its foot as it shrinks, as it does as it
+	// grows: its edge falls over the rows, and none slides down out of it
+	// while the newest flow to the strip (da-jzvrp, #lib/log.ts's `lower`).
+	let foot: number | null = null;
+	$effect(() => {
+		void $logHeight;
+		if (!$lowering || !body) return void (foot = null);
+		foot ??= body.scrollHeight - body.clientHeight - body.scrollTop;
+		body.scrollTop = body.scrollHeight - body.clientHeight - foot;
 	});
 	// A command that lands is the newest row, at the bottom: the list comes
 	// back to it, wherever the reader had scrolled.

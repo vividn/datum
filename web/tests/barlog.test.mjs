@@ -1248,4 +1248,105 @@ describe('the three states and the full screen', () => {
 				assert.deepEqual(app.errors, []);
 			});
 		});
+
+	// The close is the open played backward (da-jzvrp). vividn, 2026-11-06:
+	// «The closing animation is not as nice. It should basically just be the
+	// reverse. Also as fast, and having the entires then reanimate themselves
+	// in a horizontal line». So each way of closing — `close history`, a wheel
+	// up at the top, a finger swiping down from it — flows each command the log
+	// and the strip both show from its line to its place in the row, over
+	// `FLOW_MS` (#lib/log.ts), and the log stands on its foot as it shrinks:
+	// a row that does not flow stays where it was until the edge covers it.
+	// Its own phone: a history short enough to be at its top and at its foot.
+	test('closing, each command flows from its line back into the row, however it closes', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['occur coffee', 'occur tea', 'occur water', 'occur juice']) await app.submit(line);
+			await app.idle();
+			const seen = (boxes) =>
+				page.evaluate((boxes) => {
+					const at = {};
+					for (const box of document.querySelectorAll(boxes)) {
+						const frame = box.getBoundingClientRect();
+						for (const el of box.querySelectorAll('[data-ran]')) {
+							const r = el.getBoundingClientRect();
+							if (r.bottom > frame.top && r.top < frame.bottom && r.right > frame.left && r.left < frame.right)
+								at[el.dataset.ran] = { left: r.left, bottom: r.bottom };
+						}
+					}
+					return at;
+				}, boxes);
+			const ways = {
+				'close history': () => page.locator('.log .top').click(),
+				'a wheel up at the top': () => wheelOver(page, '.log', -120),
+				'a swipe down from the top': async () => {
+					const box = await page.locator('.log').boundingBox();
+					await swipe(page, box.x + box.width / 2, box.y + box.height / 3, 0, 120, 6, 16);
+				}
+			};
+			for (const [way, close] of Object.entries(ways)) {
+				await dragBy(page, BAR, -900);
+				assert.equal(await state(page), 'full');
+				await page.waitForFunction(() => ![...document.querySelectorAll('[data-ran]')].some((el) => el.getAnimations().length));
+				const log = await seen('.log');
+				await page.evaluate(() => {
+					window.__flows = [];
+					window.__still = {};
+					const animate = (window.__animate = Element.prototype.animate);
+					Element.prototype.animate = function (keyframes, options) {
+						if (this.dataset?.ran) {
+							const r = this.getBoundingClientRect();
+							const shift = (frame) => {
+								const m = /translate\((-?[\d.e-]+)px, (-?[\d.e-]+)px\)/.exec(frame.transform);
+								return m ? [Number(m[1]), Number(m[2])] : [0, 0];
+							};
+							const [a, b] = [shift(keyframes[0]), shift(keyframes.at(-1))];
+							window.__flows.push({
+								ran: this.dataset.ran,
+								duration: options.duration,
+								from: { left: r.left + a[0], bottom: r.bottom + a[1] },
+								to: { left: r.left + b[0], bottom: r.bottom + b[1] }
+							});
+						}
+						return animate.call(this, keyframes, options);
+					};
+					// Each frame the log is open, where its rows that are not flowing stand.
+					const watch = () => {
+						const box = document.querySelector('.log');
+						if (box.getBoundingClientRect().height < 1) return;
+						for (const el of box.querySelectorAll('[data-ran]'))
+							if (!el.getAnimations().length)
+								(window.__still[el.dataset.ran] ??= []).push(el.getBoundingClientRect().bottom);
+						requestAnimationFrame(watch);
+					};
+					watch();
+				});
+				await close();
+				assert.equal(await state(page), 'row', `${way} did not close the log`);
+				const strip = await seen('.prompt-bar .roll');
+				const { flows, still } = await page.evaluate(() => {
+					Element.prototype.animate = window.__animate;
+					return { flows: window.__flows, still: window.__still };
+				});
+				const both = Object.keys(log).filter((ran) => strip[ran]);
+				assert.ok(both.length >= 2, `${way}: only ${both.length} commands in both the log and the row`);
+				const near = (a, b) => Math.abs(a.left - b.left) <= 2 && Math.abs(a.bottom - b.bottom) <= 2;
+				for (const ran of both) {
+					const flow = flows.find((f) => near(f.from, log[ran]) && near(f.to, strip[ran]) && f.ran === ran);
+					assert.ok(
+						flow,
+						`${way}: command ${ran} did not flow from its line ${JSON.stringify(log[ran])} to its place in the row ${JSON.stringify(strip[ran])}: ${JSON.stringify(flows.filter((f) => f.ran === ran))}`
+					);
+					// FLOW_MS, the open's own (#lib/log.ts).
+					assert.equal(flow.duration, 200, `${way}: command ${ran} flowed over ${flow.duration}ms`);
+				}
+				for (const [ran, bottoms] of Object.entries(still))
+					assert.ok(
+						Math.max(...bottoms) - Math.min(...bottoms) <= 2,
+						`${way}: the log's row ${ran} slid from ${Math.min(...bottoms)} to ${Math.max(...bottoms)} as it shrank`
+					);
+			}
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
 });

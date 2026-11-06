@@ -245,6 +245,9 @@ function put(px: number): void {
 	const was = get(lifted);
 	reveal.set(px);
 	if (get(lifted) === was || reduced()) return;
+	// A close that flowed as it began (`lower`) arrives with every command
+	// already where the strip draws it: the flow below finds nothing to move.
+	if (was) land();
 	// A finger held at the notch can cross it back and forth by a pixel: one
 	// flow while the last still plays, and the crossings in between jump.
 	const now = performance.now();
@@ -259,9 +262,9 @@ const FLOW_MS = 200;
 let flowed = -Infinity;
 
 /** Each command on screen, by when it ran: the strip's over the log's when both draw it. */
-function places(): Map<string, DOMRect> {
+function places(boxes = '.log, .prompt-bar .roll'): Map<string, DOMRect> {
 	const seen = new Map<string, DOMRect>();
-	for (const box of document.querySelectorAll('.log, .prompt-bar .roll')) {
+	for (const box of document.querySelectorAll(boxes)) {
 		const frame = box.getBoundingClientRect();
 		for (const el of box.querySelectorAll<HTMLElement>('[data-ran]')) {
 			const at = el.getBoundingClientRect();
@@ -270,6 +273,57 @@ function places(): Map<string, DOMRect> {
 		}
 	}
 	return seen;
+}
+
+/**
+ * A close under way (da-jzvrp): the strip is laid out, unseen, where it will
+ * rest (PromptBar.svelte), and the log stands on its foot as it shrinks
+ * (BarLog.svelte), so each command can flow to the strip as the close begins.
+ */
+export const lowering = writable(false);
+/** The flows a close began, taken off once the strip is drawn. */
+let lowered: Animation[] = [];
+
+/**
+ * The open played backward (da-jzvrp). vividn, 2026-11-06: «The closing
+ * animation is not as nice. It should basically just be the reverse. Also
+ * as fast, and having the entires then reanimate themselves in a horizontal
+ * line». The open flows as it begins, since it crosses the notch at its first
+ * pixel; a close crosses it only as it arrives, when the log is a sliver. So
+ * a glide down to the notch flows at its start instead: each command the log
+ * shows goes from its line to its place in the strip, over FLOW_MS, while the
+ * log's edge falls over the rest, as it rose over them.
+ */
+function lower(): void {
+	lowering.set(true);
+	flowed = performance.now();
+	void tick().then(() => {
+		if (!get(lowering)) return;
+		const strip = places('.prompt-bar .roll');
+		const log = places('.log');
+		for (const el of document.querySelectorAll<HTMLElement>('.log [data-ran]')) {
+			const from = log.get(el.dataset.ran!);
+			const to = strip.get(el.dataset.ran!);
+			if (!from || !to) continue;
+			const dx = to.left - from.left;
+			const dy = to.bottom - from.bottom;
+			lowered.push(
+				el.animate([{ transform: 'none' }, { transform: `translate(${dx}px, ${dy}px)` }], {
+					duration: FLOW_MS,
+					easing: 'ease-out',
+					fill: 'forwards'
+				})
+			);
+		}
+	});
+}
+
+/** The close is over, arrived or stopped: the log's commands go back to their lines. */
+function land(): void {
+	if (!get(lowering)) return;
+	lowering.set(false);
+	for (const flow of lowered) flow.cancel();
+	lowered = [];
 }
 
 function flow(wasLifted: boolean): void {
@@ -363,6 +417,7 @@ export function resume(): void {
 export function stop(): void {
 	if (frame) cancelAnimationFrame(frame);
 	frame = 0;
+	land();
 }
 
 /**
@@ -397,6 +452,7 @@ function glide(target: number, speed = 0): void {
 		return put(to);
 	}
 	aim = to;
+	if (get(lifted) && to <= out() + 0.5) lower();
 	const step = (now: number): void => {
 		// A frame's stamp is when the frame began, which can be before
 		// `started`: under 0 the curve runs backwards, below where it began.
@@ -408,6 +464,7 @@ function glide(target: number, speed = 0): void {
 		} else {
 			frame = 0;
 			aim = null;
+			land();
 		}
 	};
 	frame = requestAnimationFrame(step);
