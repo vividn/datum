@@ -21,7 +21,7 @@ const day = sharedApp(DAY);
  * Wait until the pills have stopped moving.
  *
  * Two lags to outlast, and neither is a keystroke: the mirror's width is
- * measured by a resize observer, and `.pills` transitions its `left` so a
+ * measured by a resize observer, and an empty box transitions its `width` so a
  * pill left behind by a ghost is seen going back. Measured before both, a
  * pill is still standing where the previous line put it.
  */
@@ -127,7 +127,8 @@ describe('the pills ride with the text', () => {
 			await setPill(page, { text: '-t 14:30', locked: true });
 			await page.locator(`${BAR} .pill`).waitFor();
 			const waiting = (await pillAt(page)).pill;
-			const placed = await page.evaluate(() => parseFloat(document.querySelector('.prompt-bar .pills').style.left));
+			// The box's width, which the pills follow (da-0eqgg): the ghost watch records it too.
+			const placed = await page.evaluate(() => parseFloat(document.querySelector('.prompt-bar input').style.width));
 
 			// A press nobody typed — the widget bar's, which is the press that
 			// carries the pills (`pressWithPills`). Watched from before it:
@@ -446,16 +447,16 @@ describe('the pills are prominent', () => {
 				// held whole by the test above.) Riding after the `❯` is the
 				// FIRST case's claim, made where the pills fit.
 				await page.locator(`${BAR} input`).fill('occur coffee');
-				await settled(page, `${BAR} .pills`, 'occur coffee');
+				await settled(page, `${BAR} .pill`, 'occur coffee');
 				const after = await page.evaluate(() => {
 					const at = (s) => document.querySelector(`.prompt-bar ${s}`).getBoundingClientRect();
-					const pills = at('.pills');
+					const all = [...document.querySelectorAll('.prompt-bar .pill')].map((p) => p.getBoundingClientRect());
 					return {
 						pill: at('.pill').left,
 						caret: at('.line > .prompt').right,
 						text: at('.mirror').right,
-						pillsRight: pills.right,
-						pillsWidth: pills.width,
+						pillsRight: all.at(-1).right,
+						pillsWidth: all.at(-1).right - all[0].left,
 						box: at('.field').right,
 						boxWidth: at('.field').width,
 						screen: document.documentElement.clientWidth

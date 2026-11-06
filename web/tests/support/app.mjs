@@ -1059,13 +1059,14 @@ function app(page, errors, query, clean, internal) {
 				};
 				window.__datumGhostWatch = new MutationObserver(() => {
 					const ghost = document.querySelector('.prompt-bar .ghost');
-					const pills = document.querySelector('.prompt-bar .pills');
 					const input = document.querySelector('.prompt-bar input');
 					if (!ghost) return;
 					if (!looks.has(ghost)) looks.set(ghost, lookOf(ghost, input));
 					seen.push({
 						line: ghost.textContent,
-						left: parseFloat(pills?.style.left),
+						// Where the pills after the box start: the box is as wide as the
+						// ghost it holds (da-0eqgg), and the pills follow it.
+						left: parseFloat(input?.style.width),
 						value: input?.value,
 						count: document.querySelectorAll('.prompt-bar .ghost').length,
 						look: looks.get(ghost)

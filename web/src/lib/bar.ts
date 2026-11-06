@@ -38,13 +38,13 @@ import { browser } from '$app/env';
 import { derived, get, writable } from 'svelte/store';
 import { refsArgv } from './calls.js';
 import { onAnyChange } from './changes.js';
-import { hidsOf, pendingCommand, roleOf, type LogCommand } from './commands.js';
+import { argumentsOf, hidsOf, pendingCommand, pillWord, roleOf, type LogCommand } from './commands.js';
 import { currentDb } from './database.js';
 import { parseEcho } from './echo.js';
 import { pressWithPills } from './layout/engine.js';
 import { run, type RunResult } from './run.js';
 import { hidPill, pickOf, picked, same, type Refs } from './selection.js';
-import { shellSplit } from './shellSplit.js';
+import { shellJoin, shellSplit } from './shellSplit.js';
 
 /**
  * How long a ghost is on screen, and so how long a spent pill takes to
@@ -345,6 +345,7 @@ export function peel(): void {
 export function clearLine(): void {
 	pills.set([]);
 	text.set('');
+	after.set({});
 }
 
 /**
@@ -502,6 +503,89 @@ pills.subscribe((all) => {
  */
 export const text = writable(takeKeptLine());
 
+// ---- THE PILLS ARE ELEMENTS OF THE LINE (da-0eqgg) ---------------------
+//
+// vividn, 2026-11-06: «you should be able to put text on any side of or in
+// between the pills, like the pills are just elements in the text. So if I
+// click after all the pills the cursor should go there».
+//
+// So the line is a SEQUENCE: `text`, then each argument pill followed by
+// what is typed after it, `after[pill.id]`. `text` stays what it was — the
+// line before the first pill, where a command's verb is typed and every
+// reader of `text` looks — and `pills` stays which pills there are and in
+// what order; the one new thing is the text between and after them. An id
+// rather than an index, because the pills are rewritten in place (the time
+// cursor) and taken away from anywhere (a ×, a press, another widget).
+
+/** What is typed after each argument pill, by its id. */
+export const after = writable<Record<string, string>>({});
+
+/** The line's text segments in order: `text`, then what follows each argument pill. */
+export const segments = derived([text, after, pills], ([line, tails, all]) => [
+	line,
+	...argumentsOf(all).map((p) => tails[p.id] ?? '')
+]);
+
+/** What is typed, every segment in order and no pill: what a reader of the line's WORDS reads. */
+export const typed = derived(segments, (segs) => segs.filter((s) => s.trim()).join(' '));
+
+/** Empty what is typed, every segment, and leave the pills. */
+export function clearTyped(): void {
+	text.set('');
+	after.set({});
+}
+
+/**
+ * Two segments joined where a pill stood: the pill was a word boundary in the
+ * line it sent (`lineOf`), so a space stands there unless one side already
+ * has one or is empty — `occur`, a pill, `coffee` is `occur coffee` with the
+ * pill gone, never `occurcoffee`.
+ */
+export const joinAt = (before: string, next: string): string =>
+	before && next && !/\s$/.test(before) && !/^\s/.test(next) ? `${before} ${next}` : before + next;
+
+// A pill taken away gives its text to the segment before it, as deleting one
+// character joins the two runs either side of it.
+let standing = argumentsOf(get(pills)).map((p) => p.id);
+pills.subscribe((all) => {
+	const ids = argumentsOf(all).map((p) => p.id);
+	const tails = { ...get(after) };
+	let joined = false;
+	standing.forEach((id, i) => {
+		if (ids.includes(id) || !(id in tails)) return;
+		const before = standing.slice(0, i).findLast((b) => ids.includes(b));
+		const tail = tails[id];
+		delete tails[id];
+		if (before) tails[before] = joinAt(tails[before] ?? '', tail);
+		else if (tail) text.update((line) => joinAt(line, tail));
+		joined = true;
+	});
+	standing = ids;
+	if (joined) after.set(tails);
+});
+
+/**
+ * The line Enter runs, from `head` (what is typed before the first pill), and
+ * the pills it carries as WORDS: each one with typed text on both sides of it,
+ * in the order the reader gave them. A pill with nothing typed before it or
+ * after it is placed by `withPills`, as every pill was before — so a pill
+ * before the verb follows it (the CLI takes no flag before its verb), and one
+ * at the end goes where the command takes it.
+ */
+export function lineOf(head: string): { line: string; inline: Pill[] } {
+	const args = argumentsOf(get(pills));
+	const segs = [head, ...get(segments).slice(1)];
+	const written = segs.map((s) => s.trim() !== '');
+	// Pill i stands between segments i and i + 1: inline when something is typed
+	// at or before i and at or after i + 1. Nothing typed anywhere, none is.
+	const inline = args.filter((_, i) => i >= written.indexOf(true) && i < written.lastIndexOf(true));
+	const words = segs.flatMap((s, i) => {
+		const p = args[i];
+		return [s.trim(), p && inline.includes(p) ? (p.kind === 'field' ? shellJoin([p.text]) : pillWord(p)) : ''];
+	});
+	return { line: words.filter(Boolean).join(' '), inline };
+}
+
 /**
  * The page's upgrade keeps the line typed and not sent (da-3ok3j, a pull
  * to refresh's until da-si4bw): `keepLine` just before its reload, and the
@@ -543,8 +627,8 @@ function takeKeptLine(): string {
  * the pills from here — which ESM allows because neither module CALLS the
  * other while it is loading.
  */
-export const submitLine = (line: string): Promise<RunResult> =>
-	pressWithPills(shellSplit(line), line);
+export const submitLine = (line: string, inline: Pill[] = []): Promise<RunResult> =>
+	pressWithPills(shellSplit(line), line, inline);
 
 /**
  * The boxes the command line is drawn in, in the order they mounted: the
@@ -603,7 +687,7 @@ export const prefill = writable<{ line: string; keyboard: boolean } | null>(null
  * put the word in the one buffer, and this reads it back. A second store
  * a tap had to remember to set is a second store to fall out of step.
  */
-export const pending = derived(text, pendingCommand);
+export const pending = derived(typed, pendingCommand);
 
 /**
  * Spend the pending command: the word a tap put in the box has been used, so
@@ -616,8 +700,9 @@ export const pending = derived(text, pendingCommand);
  * while the box still says it, which is the same rule read the same way.
  */
 export const clearPending = (): void => {
-	const line = get(text).trim();
-	if (pendingCommand(line) !== null && !/\s/.test(line)) text.set('');
+	// The line as `pending` reads it, so a word typed after a pill is spent too (da-0eqgg).
+	const line = get(typed).trim();
+	if (pendingCommand(line) !== null && !/\s/.test(line)) clearTyped();
 };
 
 export type { LogCommand };

@@ -54,7 +54,7 @@
 	import CollectWidget from '#lib/CollectWidget.svelte';
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { clearPending, dropHids, pending, pills, prefill, text } from '#lib/bar.ts';
+	import { clearPending, clearTyped, dropHids, pending, pills, prefill, typed } from '#lib/bar.ts';
 	import { DATE_ID, pointed } from '#lib/cursor.ts';
 	import { run as read } from '#lib/run.ts';
 	import { minute } from '#lib/clock.ts';
@@ -187,7 +187,7 @@
 	function run(argv: string[]) {
 		if (argv[0] === 'delete') return void press(argv).then((r) => r.code === 0 && dropHids(argv.slice(1)));
 		const line = pendingFlags(argv);
-		if (line) $text = '';
+		if (line) clearTyped();
 		else clearPending();
 		const sent = line ? [...line, ...argv.slice(1)] : argv;
 		const at = gestureAt() ?? Date.now();
@@ -199,7 +199,7 @@
 
 	/** The pending line's flags, when `argv` spends its command and it holds only flags. */
 	const pendingFlags = (argv: string[]): string[] | null =>
-		argv[0] === $pending ? flagLine(shellSplit($text), $grammar?.get(argv[0])) : null;
+		argv[0] === $pending ? flagLine(shellSplit($typed), $grammar?.get(argv[0])) : null;
 
 	/**
 	 * The same line, left unrun and straight into its first key's frame

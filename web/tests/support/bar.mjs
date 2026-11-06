@@ -239,3 +239,25 @@ export const cliDocs = async (app, argv) => {
 
 /** The ENTRY's document: a field's declaration (da-c8mh) reads first. */
 export const cliDoc = async (app, argv) => (await cliDocs(app, argv)).at(-1);
+/**
+ * The command line as `frame` draws it (da-0eqgg): its text segments and its
+ * pills in the order they stand, a pill as `[its label]` and an empty
+ * segment left out. The box is the segment the caret is in, put in its place
+ * by its flex `order`, so the order read is the drawn one, not the markup's.
+ */
+export const drawnLine = (page, frame = BAR) =>
+	page.locator(`${frame} .run`).evaluate((run) =>
+		[...run.children]
+			.map((el, i) => ({ el, i, order: Number(getComputedStyle(el).order) }))
+			.sort((a, b) => a.order - b.order || a.i - b.i)
+			.map(({ el }) =>
+				el.tagName === 'INPUT'
+					? el.value
+					: el.classList.contains('segment')
+						? el.firstElementChild.textContent
+						: el.querySelector('.pill')
+							? `[${el.querySelector('.pill .label').textContent}]`
+							: ''
+			)
+			.filter(Boolean)
+	);

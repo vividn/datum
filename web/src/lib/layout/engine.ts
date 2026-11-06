@@ -16,7 +16,7 @@
 
 import { tick } from 'svelte';
 import { get, writable } from 'svelte/store';
-import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost, text } from '#lib/bar.ts';
+import { clearUnlockedPills, commandsOpen, dropHids, focusLine, pills, showGhost, text, type Pill } from '#lib/bar.ts';
 import { openOutput } from '#lib/log.ts';
 import { grammarOf, pillWord, type Grammar, type GrammarEntry } from '#lib/commands.ts';
 import { withPills } from '#lib/selection.ts';
@@ -514,7 +514,7 @@ async function ours(entry: Command, hids: string[]): Promise<boolean> {
  * The GHOST is the argv alone: the pills that went with it are drawn as
  * pills beside it and fade with it (da-xfa4, `spent` in #lib/bar.ts).
  */
-export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
+export const pressWithPills = async (argv: string[], line?: string, inline: Pill[] = []): Promise<RunResult> => {
 	// A run closes the command widget over the output, which then shows it (da-xw655).
 	if (get(commandsOpen)) {
 		commandsOpen.set(false);
@@ -524,7 +524,8 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 	// grammar that places them; on the clock it was pressed at, either way.
 	const env = gesture();
 	if (get(pills).length) await booted;
-	const { argv: full, used } = withPills(get(grammar), argv, get(pills));
+	// A pill the line already says as a word (`inline`, `lineOf` in #lib/bar.ts) is placed by no one else.
+	const { argv: full, used } = withPills(get(grammar), argv, get(pills), inline);
 	const pressed = Date.now();
 	const result = await press(
 		full,
@@ -537,7 +538,7 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 	if (result.code === 0) {
 		// A press nobody typed ghosted when it was pressed, and its pills
 		// fade on that ghost's clock; a typed line has no ghost to keep time.
-		clearUnlockedPills(used, line === undefined ? pressed : Date.now());
+		clearUnlockedPills([...inline, ...used], line === undefined ? pressed : Date.now());
 	}
 	// Whatever the exit: a run that wrote and then failed still echoes its
 	// writes (da-0uvyr), and `del <good>,<bad>` has deleted the good one.

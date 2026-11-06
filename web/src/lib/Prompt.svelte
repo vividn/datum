@@ -49,6 +49,20 @@
 	when it fades. Each instance measures its OWN text, so a widget's pills
 	sit past what was typed in the widget.
 
+	THE PILLS ARE ELEMENTS OF THE LINE (da-0eqgg). vividn, 2026-11-06: «you
+	should be able to put text on any side of or in between the pills, like
+	the pills are just elements in the text. So if I click after all the
+	pills the cursor should go there», and «pressing backspace when the cursor
+	is immediately after a pill should delete it». The line is `text`, then
+	each argument pill and what is typed after it (`after`, #lib/bar.ts). ONE
+	box still holds the caret, wherever it stands: it is the segment the caret
+	is in, put among the pills by its flex `order`, and every other segment is
+	drawn as text that a press moves the box into. One element, so every
+	caller of the box — `focusLine`, a test's `.prompt-bar input` — keeps
+	finding the one it found. A pill is one character to the caret: an arrow
+	at a segment's edge crosses it, Backspace after it takes it, and its text
+	joins the segment before. A selection stays within one segment.
+
 	When text and pills outgrow the box the pills KEEP following: they go
 	off the right edge, and the reader scrolls the line rightward to reach
 	them, exactly as they would to read the end of what they typed. vividn,
@@ -88,7 +102,21 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { act } from '#lib/act.ts';
-	import { clearLine, commandsOpen, ghost, pills, registerLine, spent, submitLine, text } from '#lib/bar.ts';
+	import {
+		after,
+		clearLine,
+		commandsOpen,
+		ghost,
+		joinAt,
+		lineOf,
+		pills,
+		registerLine,
+		removePill,
+		segments,
+		spent,
+		submitLine,
+		text
+	} from '#lib/bar.ts';
 	import { isLength, roleOf, saysKey, valuedFlags } from '#lib/commands.ts';
 	import LengthArrow from '#lib/LengthArrow.svelte';
 	import Pill from '#lib/Pill.svelte';
@@ -118,10 +146,7 @@
 	let box: HTMLInputElement;
 	/** The scrollport: `.field`, which the run is longer than. */
 	let port: HTMLElement;
-	/** The scrollport's width: what the run has before it goes off the edge. */
-	let boxWidth = $state(0);
 	let textWidth = $state(0);
-	let pillsWidth = $state(0);
 
 	onMount(() => registerLine(box, widget));
 
@@ -148,6 +173,65 @@
 	const context = $derived($pills.filter((p) => roleOf(p, $pills) === 'context'));
 	const args = $derived($pills.filter((p) => !context.includes(p)));
 
+	/**
+	 * Where the box stands (da-0eqgg): after the pill with this id, or before
+	 * every pill. An id, so a pill taken away elsewhere does not move the
+	 * caret to another segment; one gone puts it back before them all.
+	 */
+	let seatId: string | null = $state(null);
+	const seat = $derived(seatId === null ? 0 : args.findIndex((p) => p.id === seatId) + 1);
+	const idOf = (i: number): string | null => (i ? args[i - 1].id : null);
+	const segOf = (i: number): string => $segments[i] ?? '';
+	function setSeg(i: number, value: string): void {
+		if (!i) $text = value;
+		else after.update((tails) => ({ ...tails, [args[i - 1].id]: value }));
+	}
+
+	/** Put the caret `offset` into segment `i`. Focused at once, so a phone's keyboard comes with the tap. */
+	async function moveTo(i: number, offset: number): Promise<void> {
+		seatId = idOf(i);
+		box.focus();
+		await tick();
+		box.setSelectionRange(offset, offset);
+	}
+
+	/** A press on a segment drawn as text: the box moves there, the caret under the press. */
+	function press(i: number, event: PointerEvent): void {
+		event.preventDefault();
+		keyboard();
+		const typed = (event.currentTarget as HTMLElement).firstElementChild!.getBoundingClientRect();
+		const length = segOf(i).length;
+		// One face, so every character is one width.
+		const at = length ? Math.round(((event.clientX - typed.left) / typed.width) * length) : 0;
+		void moveTo(i, Math.max(0, Math.min(length, at)));
+	}
+
+	/** A pill is one character to the caret: the arrows cross it, Backspace after it takes it. */
+	function keys(event: KeyboardEvent): void {
+		recall(event);
+		if (event.defaultPrevented || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+		const at = box.selectionStart;
+		if (at !== box.selectionEnd) return;
+		const start = at === 0 && seat > 0;
+		const end = at === box.value.length && seat < args.length;
+		if (event.key === 'ArrowLeft' && start) void moveTo(seat - 1, segOf(seat - 1).length);
+		else if (event.key === 'ArrowRight' && end) void moveTo(seat + 1, 0);
+		else if (event.key === 'Backspace' && start) drop(seat - 1);
+		else return;
+		event.preventDefault();
+	}
+
+	/**
+	 * Take the pill after segment `i`; what followed it joins `i` (`joinAt`),
+	 * and the caret stays just before that text, where it stood after the pill.
+	 */
+	function drop(i: number): void {
+		const tail = segOf(i + 1);
+		const seam = joinAt(segOf(i), tail).length - tail.length;
+		removePill(args[i].id);
+		void moveTo(i, seam);
+	}
+
 	/** The flags whose next word is their value, which no key's frame takes. */
 	const valued = $derived(valuedFlags($grammar?.get($text.trimStart().split(/\s/)[0])));
 	const frames = $derived(framesOf($text, $fields, valued));
@@ -171,7 +255,7 @@
 	/** Space advances to the next key's frame — at the end of the line, outside quotes. */
 	async function space(event: InputEvent): Promise<void> {
 		if (event.inputType !== 'insertText' || event.data !== ' ') return;
-		if (box.selectionStart !== $text.length || box.selectionEnd !== $text.length) return;
+		if (seat || box.selectionStart !== $text.length || box.selectionEnd !== $text.length) return;
 		const next = advance($text, $fields, valued);
 		if (next === null) return;
 		event.preventDefault();
@@ -180,8 +264,10 @@
 		box.setSelectionRange(next.length, next.length);
 	}
 
-	/** What the pills follow: what is typed, or the ghost while one is up. */
-	const mirrored = $derived($text ? $text + (trailing?.default ?? '') : $ghost ? $ghost.line : '');
+	/** What the box is as wide as: what is typed in its segment, or the ghost while one is up. */
+	const mirrored = $derived(
+		seat ? segOf(seat) : $text ? $text + (trailing?.default ?? '') : $ghost ? $ghost.line : ''
+	);
 	/**
 	 * THE LINE IS ONE SCROLLING RUN: the box, a gap, then the pills.
 	 *
@@ -211,20 +297,17 @@
 	 * asked for and he overruled) letting them reach leftward over the `❯`.
 	 */
 	/**
-	 * The box: the whole visible row, and never narrower than what is in it.
-	 *
-	 * The row, so a press anywhere in it puts the caret there. Never under
-	 * the text, so the caret is always inside the box and the box itself
-	 * never scrolls — the ONE scroll is the run's, which is what makes the
-	 * pills part of the same gesture.
+	 * The box: as wide as what is in it, and the LAST segment takes what is
+	 * left of the row (`.last`), so a press past every pill is a press in it.
+	 * Never under the text, so the caret is always inside the box and the box
+	 * itself never scrolls — the ONE scroll is the run's, which is what makes
+	 * the pills part of the same gesture.
 	 */
-	const inputWidth = $derived(Math.max(textWidth + CARET, boxWidth));
-	/** The pills, straight after the typed text, and the run they end. */
-	const pillsLeft = $derived(textWidth + GAP);
-	const runWidth = $derived(pillsWidth ? Math.max(inputWidth, pillsLeft + pillsWidth) : inputWidth);
+	const inputWidth = $derived(textWidth + CARET);
 	$effect.pre(() => {
-		const width = inputWidth;
-		untrack(() => void follow(width));
+		void inputWidth;
+		void seat;
+		untrack(() => void follow());
 	});
 
 	/**
@@ -243,44 +326,50 @@
 	 * character and invisible. Nothing happens unless this box has the focus,
 	 * so a pill appearing beside an idle prompt moves nothing.
 	 */
-	async function follow(width: number): Promise<void> {
+	async function follow(): Promise<void> {
 		await tick();
 		if (!port || !box || document.activeElement !== box) return;
 		if (box.selectionStart !== box.value.length) return;
-		// An EMPTY box is at its start, whatever the run is long: a ghost is
-		// what widens it there (the mirror carries the ghost's line), and a
-		// ghost the reader did not type is no reason to scroll their caret
-		// off the left edge (canary on PR #46).
-		port.scrollLeft = box.value ? Math.max(0, width + CARET - port.clientWidth) : 0;
+		// An EMPTY box before the pills is at its start, whatever the run is
+		// long: a ghost is what widens it there (the mirror carries the
+		// ghost's line), and a ghost the reader did not type is no reason to
+		// scroll their caret off the left edge (canary on PR #46).
+		if (!box.value) return void (seat || (port.scrollLeft = 0));
+		const caret = box.offsetLeft + parseFloat(getComputedStyle(box).paddingLeft) + inputWidth + CARET;
+		port.scrollLeft = Math.max(0, caret - port.clientWidth);
 	}
 
 	function submit(): void {
-		const line = complete($text, $fields, valued);
+		const { line, inline } = lineOf(complete($text, $fields, valued));
 		if (!line.trim()) return;
-		if (held.length) return void runLines([line, ...held]);
+		if (held.length) return void runLines([line, ...held], inline);
 		$text = '';
+		after.set({});
+		seatId = null;
 		draft = '';
 		cursor = -1;
-		void submitLine(line);
+		void submitLine(line, inline);
 	}
 
 	/** A paste with a line break in it is a block of commands, put where the caret is. */
 	function paste(event: ClipboardEvent): void {
 		const pasted = event.clipboardData?.getData('text/plain') ?? '';
-		if (!/[\r\n]/.test(pasted)) return;
+		if (!/[\r\n]/.test(pasted) || seat) return;
 		event.preventDefault();
 		const block = $text.slice(0, box.selectionStart ?? $text.length) + pasted + $text.slice(box.selectionEnd ?? $text.length);
 		void runLines(block.split(/\r\n|\r|\n/));
 	}
 
 	/** Run each line in turn; the first that fails stays in the box, the rest held behind it. */
-	async function runLines(lines: string[]): Promise<void> {
+	async function runLines(lines: string[], inline: typeof args = []): Promise<void> {
 		const todo = lines.filter((l) => l.trim() && !l.trimStart().startsWith('#'));
 		$text = '';
+		after.set({});
+		seatId = null;
 		draft = '';
 		cursor = -1;
 		for (const [i, line] of todo.entries()) {
-			if ((await submitLine(line)).code === 0) continue;
+			if ((await submitLine(line, i ? [] : inline)).code === 0) continue;
 			$text = line;
 			held = todo.slice(i + 1);
 			return;
@@ -296,6 +385,7 @@
 			if (next < 0) return;
 			if (cursor === -1) draft = $text;
 			event.preventDefault();
+			seatId = null;
 			cursor = next;
 			$text = history[cursor];
 		} else if (event.key === 'ArrowDown') {
@@ -329,7 +419,7 @@
 	}
 </script>
 
-<form class="line" onsubmit={(event) => (event.preventDefault(), submit())}>
+<form class="line" style:--gap="{GAP}px" style:--caret="{CARET}px" onsubmit={(event) => (event.preventDefault(), submit())}>
 	{#if widget}
 		<span class="prompt">❯</span>
 	{:else}
@@ -355,14 +445,19 @@
 			<span class="crumb" aria-hidden="true">›</span>
 		</span>
 	{/if}
-	<span class="field" bind:this={port} bind:clientWidth={boxWidth}>
-		<span class="run" style="width: {runWidth}px">
+	<span class="field" bind:this={port}>
+		<!-- A segment's `order` is twice its index and a pill's one more, so
+		     the box, wherever it is in the markup, stands where its segment is. -->
+		<span class="run">
 		<input
 			type="text"
-			style="width: {inputWidth}px"
+			style="width: {inputWidth}px; order: {2 * seat}"
+			class:after={seat > 0}
+			class:last={seat === args.length}
+			class:easing={!segOf(seat)}
 			bind:this={box}
-			bind:value={$text}
-			onkeydown={recall}
+			bind:value={() => segOf(seat), (value) => setSeg(seat, value)}
+			onkeydown={keys}
 			onbeforeinput={space}
 			onpaste={paste}
 			onpointerdown={keyboard}
@@ -391,21 +486,37 @@
 				<span class="ghost" aria-hidden="true">{$ghost.line}</span>
 			{/key}
 		{/if}
-		<span class="pills" style="left: {pillsLeft}px" bind:clientWidth={pillsWidth}>
+		{#each $segments as segment, i}
+			{#if i !== seat}
+				<!-- The press is the box's to take: the caret goes where it lands. -->
+				<span
+					class="segment"
+					class:after={i > 0}
+					class:last={i === args.length}
+					style:order={2 * i}
+					aria-hidden="true"
+					onpointerdown={(event) => press(i, event)}
+					><span>{segment}</span>{#if !i && trailing}<span class="pad">{trailing.default}</span>{/if}</span
+				>
+			{/if}
+			{#if !i}
+				{#if held.length}
+					<span class="held" title={held.join('\n')}>+{held.length}</span>
+				{/if}
+				{#each waiting as key (key.name)}
+					<span class="key" class:required={key.required} data-key={key.name}
+						>{key.name}{#if key.default !== undefined}<span class="default">{key.default}</span>{/if}</span
+					>
+				{/each}
+			{/if}
 			<!-- One pill is `Pill.svelte`, which the nowview's margin draws
 			     too (da-rskp): one store, two places to see it, and the same
 			     press in either. -->
-			{#if held.length}
-				<span class="held" title={held.join('\n')}>+{held.length}</span>
+			{#if args[i]}
+				<span class="slot" style:order={2 * i + 1}><Pill pill={args[i]} /></span>
 			{/if}
-			{#each waiting as key (key.name)}
-				<span class="key" class:required={key.required} data-key={key.name}
-					>{key.name}{#if key.default !== undefined}<span class="default">{key.default}</span>{/if}</span
-				>
-			{/each}
-			{#each args as pill (pill.id)}
-				<Pill {pill} />
-			{/each}
+		{/each}
+		<span class="slot" style:order={2 * args.length + 1}>
 			<!-- Spent, not live: no × and no lock, out of the argv and out of
 			     the time cursor, fading with the ghost of the command it went
 			     into. A different class for a different thing, so a reader of
@@ -462,7 +573,7 @@
 			type="button"
 			class="send"
 			use:act={'run'}
-			class:idle={!$text.trim()}
+			class:idle={!$segments.some((segment) => segment.trim())}
 			aria-label="run the line"
 			title="run the line"
 			onmousedown={(event) => event.preventDefault()}
@@ -627,28 +738,77 @@
 		display: none;
 	}
 
-	/* THE LINE ITSELF, as long as it is: the box, a gap, the pills. The
-	   ghost and the mirror hang off it too, so they scroll with the text
-	   they belong to rather than standing still over it. */
+	/* THE LINE ITSELF, as long as it is: its segments and its pills, and
+	   never shorter than the row. The ghost and the mirror hang off it too,
+	   so they scroll with the text they belong to rather than standing still
+	   over it. */
 	.run {
 		position: relative;
 		display: flex;
 		align-items: center;
+		min-width: 100%;
+		width: max-content;
 	}
 
-	/* Its width is the run's to give (`inputWidth`), so `flex: none`: a box
-	   that grew to the scrollport would put the caret past the right edge on
-	   every long line, which is the fault this shape replaced. */
-	input {
+	/* A segment, the box's or one drawn as text: half the air between text
+	   and a pill on each side of it, so an empty one between two pills is
+	   still somewhere to press. Only the last grows, to the end of the row:
+	   a box that grew to the scrollport before its pills would put them past
+	   the right edge. */
+	input,
+	.segment {
 		flex: none;
+		box-sizing: content-box;
+		padding: 0 calc(var(--gap) / 2) 0 0;
+		font: inherit;
+		font-size: var(--input-font);
+	}
+
+	input.after,
+	.segment.after {
+		padding-left: calc(var(--gap) / 2);
+	}
+
+	input.last,
+	.segment.last {
+		flex: 1 0 auto;
+	}
+
+	input {
 		min-width: 0;
 		background: transparent;
 		border: none;
 		outline: none;
-		padding: 0;
 		color: var(--ink-bright);
-		font: inherit;
-		font-size: var(--input-font);
+	}
+
+	/* Drawn as the box draws it, with room for the caret it would hold, and
+	   the row's whole height: an empty one has no line box to be tall by. */
+	.segment {
+		align-self: stretch;
+		display: flex;
+		align-items: center;
+		padding-right: calc(var(--gap) / 2 + var(--caret));
+		color: var(--ink-bright);
+		white-space: pre;
+		cursor: text;
+	}
+
+	.segment .pad {
+		visibility: hidden;
+	}
+
+	.slot {
+		display: inline-flex;
+		gap: 0.3rem;
+	}
+
+	/* An EMPTY box changes width only as a ghost comes or goes, and is SEEN
+	   doing it, the pills after it going back leftward with it (vividn: "then
+	   they can go to the left back towards the start of the input box"); a
+	   box being typed in follows the text at once. */
+	input.easing {
+		transition: width 120ms ease-out;
 	}
 
 	/* Where the placeholder is, in the placeholder's font — the same
@@ -734,21 +894,6 @@
 		font-size: var(--input-font);
 	}
 
-	/* On top of the box, following the text. `left` is animated so a pill
-	   left behind by a ghost is SEEN going back to its waiting place rather
-	   than teleporting (vividn: "then they can go to the left back towards
-	   the start of the input box"); at 120ms it still reads as following
-	   while someone types. */
-	.pills {
-		position: absolute;
-		top: 50%;
-		transform: translateY(-50%);
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-		transition: left 120ms ease-out;
-	}
-
 	/* SOLID, and the size of what is typed beside them. vividn, on the
 	   deployed build: "We need to make the pills much more prominent, they
 	   are almost invisible right now. Solid background color… increase
@@ -821,10 +966,15 @@
 		.spent {
 			animation: none;
 		}
-		.pills,
+		input.easing,
 		button.prompt {
 			transition: none;
 		}
+	}
+
+	.held,
+	.key {
+		margin-right: 0.3rem;
 	}
 
 	.held {

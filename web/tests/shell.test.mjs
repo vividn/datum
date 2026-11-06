@@ -1269,10 +1269,15 @@ describe('on a phone', () => {
 			const input = await page.locator('.prompt-bar input').boundingBox();
 			assert.ok(input.width >= 100, `the prompt is ${input.width}px wide`);
 
-			// A pill after the input must not squeeze it away at phone width.
+			// A pill must not squeeze the line away at phone width: the scrollport
+			// keeps its room, and past the pill is the line's last segment, a
+			// fingertip's room (conventions #12) a press puts the caret in (da-0eqgg).
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 09:00', kind: 'time' }]));
-			const withPill = await page.locator('.prompt-bar input').boundingBox();
-			assert.ok(withPill.width >= 100, `the prompt is ${withPill.width}px wide with a pill`);
+			await page.locator('.prompt-bar .pill').waitFor();
+			const line = await page.locator('.prompt-bar .field').boundingBox();
+			assert.ok(line.width >= 100, `the line is ${line.width}px wide with a pill`);
+			const past = await page.locator('.prompt-bar .segment.last').boundingBox();
+			assert.ok(past.width >= 24, `the room past a pill is ${past.width}px wide`);
 			await page.evaluate(() => window.datum.bar.removePill('when'));
 
 			// Six through the shell's own door in one go rather than six trips

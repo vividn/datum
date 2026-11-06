@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import { choose, chooser, exactly, inRoom, manage, toggleOption } from './support/layout.mjs';
+import { drawnLine } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -53,9 +54,9 @@ const receipt = async (page, frame) =>
 
 /**
  * Type into a box the way a person does, one key at a time — tapping the
- * EMPTY end of what is on screen of it, since the pills ride over its left
- * (Prompt.svelte): the centre was under a `-t` pill once Send held its
- * place beside the ×.
+ * EMPTY end of what is on screen of it, which is past every pill
+ * (Prompt.svelte, da-0eqgg): the centre was under a `-t` pill once Send held
+ * its place beside the ×.
  */
 async function typeIn(page, selector, line) {
 	// The FIELD's end, which is what is on screen: the input can run wider.
@@ -321,7 +322,8 @@ describe('reversed', () => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 14:30', kind: 'time' }]));
 			await page.locator('.input-widget .pill').waitFor();
 			await typeIn(page, WIDGET, 'occur coffee');
-			assert.equal(await valueOf(page, BAR), 'occur coffee');
+			// A press past the pill puts the caret after it (da-0eqgg), and the bar draws the same line.
+			assert.deepEqual(await drawnLine(page), ['[-t 14:30]', 'occur coffee']);
 			await page.locator(WIDGET).press('Enter');
 			await until(app.entries, (es) => es.some((e) => e.field === 'coffee'));
 			const entry = (await app.entries()).find((e) => e.field === 'coffee');
