@@ -111,3 +111,67 @@ test('scrolled to a day whose ALLDAY entry came while it was off screen, the col
 		assert.deepEqual((await seen()).filter((argv) => argv[0] === 'dayview'), [], 'the strip kept asking');
 	});
 });
+
+// A day's pill (da-x3l9n). vividn, 2026-11-05: «if you tap the date label or
+// this allday band in the dayview it should add a -D pill (or -y, -yy, -yyy,
+// -d <date>) pill for other days, and then filter for ALLDAY kind entries in
+// the collect widget», and «or actually show moment data there as well, but
+// show the ALLDAY data first».
+/** Tall enough that collect's pane has room for its buttons beside the strip. */
+const tall = sharedApp({ clock: todayAt(12), viewport: { width: 1280, height: 1100 } });
+
+test('a tap on a day’s date label or ALLDAY column is its pill, and collect shows its all-day fields, then its moments', async () => {
+	await tall.solo(async (app) => {
+		const { page } = app;
+		// steps is used first, so the moments stand ahead of it until a day is on the bar.
+		for (const line of [
+			'setup steps --kind allday',
+			'allday steps 8000 -y',
+			'allday steps 7000',
+			'moment coffee -t 10:00',
+			'moment tea -t 10:30',
+			'on work -t 09:00',
+			'change mood happy -t 09:00'
+		])
+			await app.submit(line);
+		await app.idle();
+		const SPOTS = 'section.pane[data-title="collect"] .bar .room .spot.shelf';
+		const collect = () =>
+			page.$$eval(SPOTS, (spots) => spots.map((s) => `${s.querySelector('[data-field]').dataset.field}${s.hasAttribute('data-promoted') ? '*' : ''}`));
+		const pills = () => page.evaluate(() => window.datum.bar.pills().map((p) => p.text));
+		const tap = (back, what = '.stamp') => page.locator(`.row:has(> .band[data-days-ago="${back}"]) > ${what}`).click();
+		const every = await until(collect, (c) => c.length === 5);
+		assert.notEqual(every[0], 'steps', `steps already stands first: ${every}`);
+		const day = ['steps*', ...every.filter((f) => ['coffee', 'tea'].includes(f))];
+
+		await tap(0);
+		assert.deepEqual(await until(pills, (p) => p.length === 1), ['-D']);
+		await until(collect, (c) => c.join() === day.join());
+
+		await tap(1, 'div.allday');
+		assert.deepEqual(await until(pills, (p) => p[0] !== '-D'), ['-y'], 'yesterday’s ALLDAY column');
+		await tap(1, 'div.allday');
+		await until(pills, (p) => p.length === 0);
+		await until(collect, (c) => c.join() === every.join());
+
+		await tap(1);
+		assert.deepEqual(await until(pills, (p) => p.length === 1), ['-y'], 'yesterday’s date label');
+		await scrollToDay(app, 7);
+		await tap(7);
+		const week = new Date(todayAt(12) - 7 * 86_400_000).toISOString().slice(0, 10);
+		assert.deepEqual(await until(pills, (p) => p[0] !== '-y'), [`-d ${week}`], 'a week back');
+		await until(collect, (c) => c.join() === day.join());
+
+		// The next tap logs that day's full-day entry, and the pill's × gives every field back.
+		await page.locator(`${SPOTS} [data-field="coffee"]`).click();
+		await until(
+			async () => JSON.parse((await app.runLine('tail coffee --json')).stdout).rows.map((r) => r.time),
+			(t) => t.some((time) => time?.startsWith(week))
+		);
+		await until(pills, (p) => p.length === 0);
+		await tap(0);
+		await until(collect, (c) => c.join() === day.join());
+		await page.locator('.prompt-bar .pill[data-pill="date"] button.remove').click();
+		await until(collect, (c) => c.join() === every.join());
+	});
+});

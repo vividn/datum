@@ -262,6 +262,27 @@ export function pointAt(sel: (Partial<Cursor> & { at?: Date; step?: number }) | 
 	cursor.set({ at, ...(rel === undefined ? {} : { rel }), ...(span ? { span } : {}), ...(sel.from ? { from: sel.from } : {}) });
 }
 
+/**
+ * The pill naming a whole day (da-x3l9n), a tap on its date label or its
+ * ALLDAY band in the day strip: `-D` today, the CLI's stacked `-y` for the
+ * three days before it («each y is a day»), and `-d <date>` for any other.
+ */
+export const DATE_ID = 'date';
+export const dayArg = (back: number, iso: string): string =>
+	back === 0 ? '-D' : back <= 3 ? `-${'y'.repeat(back)}` : `-d ${iso}`;
+
+/**
+ * Put a day's pill on the bar, or take it off when it is already there, as
+ * a second tap on a time does. It is a `time` pill, the bar's one «when»:
+ * it clears the cursor, and a cursor set later takes it away (below).
+ */
+export function pointDay(arg: string): void {
+	const again = get(pills).some((p) => p.id === DATE_ID && p.text === arg);
+	// First: a cleared cursor takes every time pill away, which would take this one too.
+	cursor.set(null);
+	pills.update((all) => [...all.filter((p) => p.kind !== 'time'), ...(again ? [] : [{ id: DATE_ID, kind: 'time', text: arg }])]);
+}
+
 /** Point the page at `at`, to the minute; `null` clears it. */
 export const setCursor = (at: Date | null): void => pointAt(at && { at });
 

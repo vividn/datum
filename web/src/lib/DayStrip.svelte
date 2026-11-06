@@ -281,7 +281,7 @@
 	import Pill from './Pill.svelte';
 	import { pills } from './bar.js';
 	import { minute } from './clock.js';
-	import { pointAt, pointed, setCursor, SPAN_ID } from './cursor.js';
+	import { dayArg, pointAt, pointDay, pointed, setCursor, SPAN_ID } from './cursor.js';
 	import { outlineSelected, timeAt } from './hover.js';
 	import { spendPress } from './inspect.js';
 	import { advance, LONG_MS, SLOP_PX, undecided, type Mode, type Press } from './nowpoint.js';
@@ -1620,6 +1620,18 @@
 		}
 	}
 
+	/**
+	 * A tap on a day's date label or its ALLDAY column puts that day's pill
+	 * on the bar, and a second takes it off (`pointDay`, da-x3l9n). Before,
+	 * the date column was the pane's alone and a tap there did nothing.
+	 */
+	function onDayClick(event: MouseEvent): void {
+		const el = event.target as HTMLElement;
+		if (el.closest('button') || !el.closest('.stamp, div.allday')) return;
+		const back = Number(el.closest('.row')?.querySelector<HTMLElement>(':scope > .band')?.dataset.daysAgo);
+		if (Number.isInteger(back)) pointDay(dayArg(back, dateOf(back)));
+	}
+
 	function onPointerDown(event: PointerEvent): void {
 		// The strip's own controls are not the picture: the lines, the `⊖` and the jagged line have the pointer when it is on
 		// them, and a press on one is not the start of a gesture.
@@ -2083,7 +2095,7 @@
 </script>
 
 <Pane title="dayview" bind:body>
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 	<div
 		class="strip"
 		data-labels="entry"
@@ -2091,6 +2103,7 @@
 		data-mode={mode}
 		data-height={height}
 		onpointerdown={onPointerDown}
+		onclick={onDayClick}
 		{@attach (el) => on(el, 'touchmove', onTouchMove, { passive: false })}
 		{@attach (el) => on(el, 'wheel', onWheel, { passive: false })}
 		style:--band="{bandBox(shownDayHeight)}px"
@@ -2474,6 +2487,11 @@
 		color: var(--ink-bright);
 		line-height: 1.15;
 		white-space: nowrap;
+	}
+	/* A tap on either is that day's pill (`onDayClick`). */
+	.stamp,
+	.allday {
+		cursor: pointer;
 	}
 
 	/* A day's ALLDAY marks, the CLI's, beside its band (da-bz9pb). */

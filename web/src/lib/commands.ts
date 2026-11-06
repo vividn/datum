@@ -20,7 +20,8 @@ import type { Pill } from './bar.js';
 import type { FieldButton } from './fields.js';
 
 /** A command the line can be PENDING: the five a field is logged with, by the glossary's words (AGENTS.md). */
-export type LogCommand = 'moment' | 'on' | 'off' | 'change' | 'record';
+/** `allday` is no pending command (`LOG_COMMANDS`): it is what a tap on an all-day field runs (da-x3l9n). */
+export type LogCommand = 'moment' | 'on' | 'off' | 'change' | 'record' | 'allday';
 
 export const LOG_COMMANDS: LogCommand[] = ['moment', 'on', 'off', 'change', 'record'];
 
@@ -226,6 +227,7 @@ export function commandFits(command: LogCommand, button: FieldButton): boolean {
 		case 'moment':
 		case 'record':
 		case 'change':
+		case 'allday':
 			return button.shape.kind === command;
 		// An on/off field takes both whatever its state (da-vpzbv, vividn: «this
 		// would be how a user might enter in a repeated state because of

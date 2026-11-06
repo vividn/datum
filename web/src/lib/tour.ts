@@ -39,7 +39,8 @@ const TAP: Record<FieldButton['shape']['kind'], (f: string) => string> = {
 	moment: (f) => `A tap on ${f} opens it: set its time and data, then log it.`,
 	'on/off': (f) => `A tap on ${f} opens it: set its time and data, then turn it on or off.`,
 	change: (f) => `A tap on ${f} opens it: choose what it is now, its time and data.`,
-	record: (f) => `A tap on ${f} starts a ${f} entry in the bar below.`
+	record: (f) => `A tap on ${f} starts a ${f} entry in the bar below.`,
+	allday: (f) => `A tap on ${f} opens it: set its day and data, then log it.`
 };
 
 // The section and not its host: the host is `display: contents`, never drawn.

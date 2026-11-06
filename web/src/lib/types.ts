@@ -17,7 +17,7 @@ export interface DatumTime {
  * first log of a field writes the spec that says what a press of it means,
  * so a spec without a verb does not exist.
  */
-export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'add' | 'note';
+export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'add' | 'note' | 'allday';
 
 /**
  * The slice of a field spec the web app reads, as `datum fields --json`

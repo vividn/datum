@@ -18,12 +18,14 @@ import type { FieldSpec } from './types.js';
  *   on/off — on for a while, then off: `on <field>` / `off <field>`
  *   change — one state among several: `change <field> <state>`
  *   record — a keyed record:          `record <field> …`, typed, never pressed
+ *   allday — a value for a whole day: `allday <field>` (da-rvvce)
  */
 export type FieldKind =
 	| { kind: 'moment' }
 	| { kind: 'on/off' }
 	| { kind: 'change'; states: string[] }
-	| { kind: 'record' };
+	| { kind: 'record' }
+	| { kind: 'allday' };
 
 export interface FieldButton {
 	field: string;
@@ -97,7 +99,7 @@ export interface FieldButton {
 /**
  * Decide a field's kind.
  *
- * The spec says it: its stored `verb` (`switch`, `start`, `add`, `occur`,
+ * The spec says it: its stored `verb` (`switch`, `start`, `add`, `occur`, `allday`,
  * which phase 2 of the vocabulary migrates) says what a press means
  * regardless of how the field has been logged so far, and every spec has one
  * (da-c8mh). Only a field with NO spec is read off its log — a field the next
@@ -119,6 +121,8 @@ export function kindFor(spec: FieldSpec | undefined, observed: unknown[] = []): 
 			return { kind: 'record' };
 		case 'occur':
 			return { kind: 'moment' };
+		case 'allday':
+			return { kind: 'allday' };
 	}
 
 	if (strings.length > 0) return { kind: 'change', states: strings };
@@ -606,7 +610,7 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
 	const filled = (fill: string, label: string): Look => ({ fill, line: field, text: inkOver(fill), label });
 	// A moment there at the selected time is filled a little (da-0qdsp): «somehow filled in a bit more».
 	const tint = button.here ? `color-mix(in srgb, ${field} 35%, transparent)` : null;
-	if (shape.kind === 'moment') return { fill: tint, line: field, text: 'var(--ink)', label: button.field, glyph: button.glyph ?? '●' };
+	if (shape.kind === 'moment' || shape.kind === 'allday') return { fill: tint, line: field, text: 'var(--ink)', label: button.field, glyph: button.glyph ?? '●' };
 	if (shape.kind === 'record' || current === undefined) return { fill: null, line: field, text: field, label: button.field };
 	if (current === true || shape.kind === 'on/off') return filled(field, button.field);
 	const fill = button.stateColors[current] ?? button.color;

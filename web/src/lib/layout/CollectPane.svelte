@@ -55,7 +55,7 @@
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import { clearPending, dropHids, pending, pills, prefill, text } from '#lib/bar.ts';
-	import { pointed } from '#lib/cursor.ts';
+	import { DATE_ID, pointed } from '#lib/cursor.ts';
 	import { run as read } from '#lib/run.ts';
 	import { minute } from '#lib/clock.ts';
 	import { dateBack, daysBack, layers, standIn, type Layer } from '#lib/dayLayers.ts';
@@ -149,11 +149,22 @@
 	const doc = $derived(layer?.doc());
 	/** Every field but datum's own (`timezone`), which it logs itself and no one taps (da-cyq92). */
 	const tappable = $derived($fields.filter((f) => !f.own));
+	/**
+	 * A day's pill on the bar (`pointDay`, da-x3l9n) leaves the fields a whole
+	 * day is logged on, the all-day ones first, as a press's lanes stand
+	 * theirs (vividn, 2026-11-05: «show moment data there as well, but show
+	 * the ALLDAY data first»).
+	 */
+	const onDay = $derived($pills.some((p) => p.id === DATE_ID));
 	/** The buttons at the selected time by the last `now -t` answered, kept while a moving instant rests, else as they stand now. */
 	const standing = $derived.by(() => {
 		const all = at !== null && then ? standingAt(tappable, then.active, momentsAt(doc, then.at)) : tappable;
-		return only.length ? all.filter((f) => only.includes(f.field)) : all;
+		const some = only.length ? all.filter((f) => only.includes(f.field)) : all;
+		return onDay ? some.filter((f) => f.shape.kind === 'allday' || f.shape.kind === 'moment') : some;
 	});
+	const rank = $derived(
+		onDay ? new Map(standing.filter((f) => f.shape.kind === 'allday').map((f) => [f.field, { rank: 0, dy: 0, dx: 0 }])) : $lanes
+	);
 	$effect.pre(() => {
 		const offered = { [COLLECT_FIELDS_OFFER]: tappable.map(({ field }) => ({ value: field, label: field })) };
 		untrack(() => offers.update((o) => ({ ...o, ...offered })));
@@ -204,7 +215,7 @@
 		fields={standing}
 		pending={$pending}
 		duration={hasDuration($pills)}
-		rank={$lanes}
+		{rank}
 		standings={$standings}
 		{align}
 		{switchLabel}
