@@ -131,9 +131,9 @@ export function lengthReadArgv(length: string): string[] {
 	return ['nowview', '--overlay', '--json', '--context', length];
 }
 
-/** One entry, every column, as collect's entry card reads it (da-xdz73). */
-export function entryArgv(hid: string): string[] {
-	return ['get', hid, '--pretty'];
+/** Entries, `a,b,…`, every column, one document each, as collect's entry cards read them (da-xdz73, da-ug56t). */
+export function entryArgv(hids: string): string[] {
+	return ['get', hids, '--pretty'];
 }
 
 /** An entry's time and its length, a line each (none where it has none): what the nowview follows an `hid` pill to (da-2v3mr). */

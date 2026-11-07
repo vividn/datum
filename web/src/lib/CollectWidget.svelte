@@ -689,20 +689,26 @@
 	// vividn, 2026-11-03: «if you select an hid pill, it could show
 	// information about this individual datum … no need to show by metadata
 	// here, just the data / put a -A button which toggles showing all the
-	// data». The bar's `hid` pill, its last entry, while no field is open
+	// data». The bar's `hid` pill, each of its entries, while no field is open
 	// and it was not selected on a picture, whose press ranks the fields
 	// instead (da-qu16) until vividn rules between the two. A field pill on
 	// the bar keeps the fields too, its hold being theirs (da-05oit):
 	// its field and time, then its data; `−A` adds every other column, as
 	// `get -A` prints them. Its actions are the command pane's (da-fg4w4).
 
-	/** The entry shown: the hid pill's last, read again on every write. */
-	const hid = $derived($pictured ? null : ($selected.at(-1) ?? null));
-	let entry: Record<string, unknown> | null = $state.raw(null);
-	/** `−A`: every column, metadata included. */
-	let everything = $state(false);
+	/**
+	 * The entries shown: every one the hid pill selects, oldest first
+	 * (da-ug56t), read again on every write. vividn, 2026-11-07: «if there
+	 * are multiple entries selected show all of them (in chronological order)».
+	 */
+	const hids = $derived($pictured ? '' : $selected.join(','));
+	let cards: { hid: string; entry: Record<string, unknown> }[] = $state.raw([]);
+	/** `−A`, each entry's own: every column, metadata included. */
+	let everything: string[] = $state([]);
+	/** Where an entry falls in time: its `at`, or with none its create time. */
+	const when = (e: Record<string, unknown>) => Date.parse(((e.at as { utc: string } | null)?.utc ?? e.create_time) as string) || 0;
 	$effect(() => {
-		if (!hid) return void ((entry = null), (everything = false));
+		if (!hids) return void ((cards = []), (everything = []));
 		// One read at a time, and one more if a write came meanwhile: a burst
 		// of writes is one read, not one each (`onAnyChange` coalesces nothing).
 		let live = true;
@@ -713,14 +719,20 @@
 			reading = true;
 			do {
 				again = false;
-				const got = await run(entryArgv(hid));
-				let next = null;
-				try {
-					next = got.code === 0 ? JSON.parse(got.stdout) : null;
-				} catch {
-					// Not a document: no card.
+				// One `get` of them all, which points `_LAST` at the same set every read,
+				// as the one card's did: a `get` each moved it between them, and each move
+				// set off another read, forever. A hid gone fails it after the others print.
+				const got = await run(entryArgv(hids));
+				const next: typeof cards = [];
+				for (const doc of got.stdout.split(/\n(?=\{)/)) {
+					try {
+						const entry = JSON.parse(doc);
+						next.push({ hid: entry.hid, entry });
+					} catch {
+						// Not a document: no card.
+					}
 				}
-				if (live) entry = next;
+				if (live) cards = next.sort((a, b) => when(a.entry) - when(b.entry));
 			} while (again && live);
 			reading = false;
 		};
@@ -728,8 +740,8 @@
 		const unhear = onAnyChange(() => void read(), currentDb());
 		return () => ((live = false), unhear());
 	});
-	/** Whether the entry's card is up, in place of the fields. */
-	const card = $derived(!!entry && !!hid && !$fieldPill);
+	/** Whether the entries' cards are up, in place of the fields. */
+	const card = $derived(cards.length > 0 && !!hids && !$fieldPill);
 	/** The entry's own clock, `13:23`, at the offset it was logged at. */
 	function clockOf(e: Record<string, unknown>): string {
 		const at = e.at as { utc: string; offset_minutes: number } | null;
@@ -737,12 +749,13 @@
 	}
 	/** A value as it reads: a string bare, anything else its JSON. */
 	const said = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v));
-	/** The rows shown: the data's keys, and with `−A` every other column too. */
-	const rows = $derived.by((): [string, unknown][] => {
-		if (!entry) return [];
+	/** An entry's rows: its data's keys, and with `−A` every other column too. */
+	function rowsOf(hid: string, entry: Record<string, unknown>): [string, unknown][] {
 		const data = Object.entries((entry.data as Record<string, unknown> | null) ?? {});
-		return everything ? [...data, ...Object.entries(entry).filter(([k]) => k !== 'data')] : data;
-	});
+		return everything.includes(hid) ? [...data, ...Object.entries(entry).filter(([k]) => k !== 'data')] : data;
+	}
+	/** `−A` on one entry's card. */
+	const toggleAll = (hid: string) => (everything = everything.includes(hid) ? everything.filter((h) => h !== hid) : [...everything, hid]);
 	/** Back from an entry: its pill goes. */
 	function unselect() {
 		pills.update((all) => all.filter((p) => p.kind !== 'hid'));
@@ -1177,32 +1190,35 @@
 		{/if}
 	{/snippet}
 	{#snippet overlay()}
-	{#if card && entry && hid}
-		{@const button = fields.find((b) => b.field === entry!.field)}
-		{@const state = entry.state}
-		<!-- An entry selected (da-xdz73): its field and time, then its data. -->
-		<div class="collect open entry" data-entry={hid}>
+	{#if card}
+		<!-- The entries selected (da-xdz73), oldest first (da-ug56t), beside the now strip: each its field and time, then its data. -->
+		{@render present(boxH)}
+		<div class="collect open entry" data-entry={hids} style:left={side === 'left' ? `${strip}px` : null} style:right={side === 'right' ? `${strip}px` : null}>
 			<div class="head">
 				<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={unselect}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg> back
 				</button>
-				<span class="ref">{labelOf(hid, $refs)}</span>
 			</div>
-			<div class="card">
-				<div class="title">
-					<!-- A field with no button (`timezone`, one deleted) has no view to open: its name is text. -->
-					{#if button}<button class="name link" style:color={button.color} data-entry-field title="collect {entry.field}" onclick={() => toField(button.field, button.color)}>{entry.field}</button>{:else}<span class="name">{entry.field}</span>{/if}
-					{#if state !== null && state !== undefined}<span style:color={button?.stateColors[said(state)]}>{said(state)}</span>{/if}
-					{#if entry.at}<button class="clock link" data-entry-time title="put this time on the bar" onclick={() => toTime(entry!)}>{clockOf(entry)}</button>{/if}
-					<button class="nav round all" class:on={everything} data-all aria-pressed={everything} title="show all of it, as get -A" onclick={() => (everything = !everything)}>−A</button>
+			{#each cards as { hid, entry } (hid)}
+				{@const button = fields.find((b) => b.field === entry.field)}
+				{@const state = entry.state}
+				<div class="card" data-card={hid}>
+					<div class="title">
+						<!-- A field with no button (`timezone`, one deleted) has no view to open: its name is text. -->
+						{#if button}<button class="name link" style:color={button.color} data-entry-field title="collect {entry.field}" onclick={() => toField(button.field, button.color)}>{entry.field}</button>{:else}<span class="name">{entry.field}</span>{/if}
+						{#if state !== null && state !== undefined}<span style:color={button?.stateColors[said(state)]}>{said(state)}</span>{/if}
+						{#if entry.at}<button class="clock link" data-entry-time title="put this time on the bar" onclick={() => toTime(entry)}>{clockOf(entry)}</button>{/if}
+						<span class="ref">{labelOf(hid, $refs)}</span>
+						<button class="nav round all" class:on={everything.includes(hid)} data-all aria-pressed={everything.includes(hid)} title="show all of it, as get -A" onclick={() => toggleAll(hid)}>−A</button>
+					</div>
+					<dl>
+						<!-- Unkeyed: under −A a data key may share a column's name (an import's `data.at`). -->
+						{#each rowsOf(hid, entry) as [key, value]}
+							<div data-row={key}><dt>{key}</dt><dd>{said(value)}</dd></div>
+						{/each}
+					</dl>
 				</div>
-				<dl>
-					<!-- Unkeyed: under −A a data key may share a column's name (an import's `data.at`). -->
-					{#each rows as [key, value]}
-						<div data-row={key}><dt>{key}</dt><dd>{said(value)}</dd></div>
-					{/each}
-				</dl>
-			</div>
+			{/each}
 		</div>
 	{:else if picking || clustered.length}
 		{@const here = picking}
@@ -1612,14 +1628,23 @@
 		font-weight: 600;
 	}
 
-	/* An entry selected (da-xdz73): a card in the middle of the widget. */
+	/* The entries selected (da-xdz73): their cards one under another, in the middle of the widget. */
 	.entry .card {
-		margin: auto;
+		margin: 0 auto;
+		flex: none;
 		max-width: 100%;
 		padding: 0.6rem 0.8rem;
 		border: 1px solid var(--rule);
 		border-radius: 6px;
 		font-size: 0.85rem;
+	}
+
+	.head + .card {
+		margin-top: auto;
+	}
+
+	.entry .card:last-child {
+		margin-bottom: auto;
 	}
 
 	.card .title {

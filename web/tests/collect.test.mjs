@@ -654,6 +654,53 @@ describe('collect', () => {
 			});
 		});
 
+		// da-ug56t. vividn, 2026-11-07: «if there are multiple entries selected
+		// show all of them (in chronological order). still show the now section
+		// even when the entry view is open».
+		test('several selected, each has its card, oldest first whatever the order they were picked in', async () => {
+			await selected(async (app, mood) => {
+				const { page } = app;
+				// tail's rows oldest first: coffee's 09:00, 10:00, 11:00.
+				const coffee = JSON.parse((await app.run(['tail', 'coffee', '-n', '3', '--json'])).stdout).rows;
+				// mood's at 14:00 first, then coffee's 11:00, then its 09:00.
+				for (const { hid } of [coffee[2], coffee[0]]) {
+					await page.locator(`section[data-title="tail"] tbody tr[data-hid^="${hid.slice(0, 5)}"]`).click({ modifiers: ['Control'] });
+				}
+				await until(
+					() => page.locator(`${ENTRY} [data-card]`).count(),
+					(n) => n === 3
+				);
+				assert.deepEqual(await page.locator(`${ENTRY} [data-entry-time]`).allInnerTexts(), ['09:00', '11:00', '14:00']);
+				assert.equal(await page.locator(`${ENTRY} [data-card]`).last().getAttribute('data-card'), mood);
+				// Each card's −A is its own.
+				await page.locator(`${ENTRY} [data-card="${mood}"] [data-all]`).click();
+				await page.locator(`${ENTRY} [data-card="${mood}"] [data-row="hid"]`).waitFor();
+				assert.equal(await page.locator(`${ENTRY} [data-row="hid"]`).count(), 1);
+				// And the cards' reads come to rest: a read of each entry alone moved `_LAST`, a write, which read them again, forever.
+				await app.idle();
+			});
+		});
+
+		test('one or several selected, the now strip stands beside the cards', async () => {
+			await selected(async (app) => {
+				const { page } = app;
+				const beside = async () => {
+					const [strip, view] = await Promise.all([`${WIDGET} [data-strip]`, ENTRY].map((s) => page.locator(s).first().boundingBox()));
+					assert.ok(strip && strip.width > 0 && strip.height > 0, `strip: ${JSON.stringify(strip)}`);
+					assert.ok(strip.x + strip.width <= view.x + 1, `strip ${JSON.stringify(strip)} beside the cards ${JSON.stringify(view)}`);
+					assert.ok(await page.locator(`${WIDGET} [data-strip] svg.now-strip`).isVisible());
+				};
+				await beside();
+				const [coffee] = JSON.parse((await app.run(['tail', 'coffee', '-n', '1', '--json'])).stdout).rows;
+				await page.locator(`section[data-title="tail"] tbody tr[data-hid^="${coffee.hid.slice(0, 5)}"]`).click({ modifiers: ['Control'] });
+				await until(
+					() => page.locator(`${ENTRY} [data-card]`).count(),
+					(n) => n === 2
+				);
+				await beside();
+			});
+		});
+
 		test('its field and time take the keyboard, with a visible ring', async () => {
 			await selected(async ({ page }) => {
 				await page.locator(`${ENTRY} [data-back]`).focus();
