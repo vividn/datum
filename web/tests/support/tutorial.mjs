@@ -16,7 +16,7 @@ export const roomEntries = (page) =>
 export async function switchRoom(page, room, pane = FIELDS) {
 	const before = await roomEntries(page);
 	await page.locator(`${pane} .fields button[data-field="room"]`).click();
-	await page.locator(`${pane} .fields .ring button[data-state="${room}"]`).click();
+	await page.locator(`${pane} .fields .room button[data-state="${room}"]`).click();
 	await until(() => roomEntries(page), (n) => n === before + 1);
 }
 
