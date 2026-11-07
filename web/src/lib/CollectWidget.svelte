@@ -46,14 +46,10 @@
 	bar and its view takes the widget beside the now strip, which stays where
 	it stands at rest, so a state tapped is seen sweeping in at now's edge
 	(da-u7tij, vividn, 2026-11-05: «still show the now section so you can see
-	the animation right after changing states»), in the rows the fields stand
-	in at rest and at their zoom (da-r48y9, vividn, 2026-11-07: «looks and
-	behaves much more like the field view»): the first row in a dotted outline,
-	‹ back, the field, the state it is in painted as the CLI paints one, and off
-	where the spec allows it, a yellow `!` before it while the field is off; then
-	a change field's STATES, its spec's in their order and every other it has
-	used, the last used first (`datum states`), each to the row whose end is
-	furthest left (`opened`), the one it is in outlined with the `!` too. Its KEYS are a drawer on the far edge,
+	the animation right after changing states»), top to bottom with no labels —
+	‹ back and the field; a switch field's STATES, the first of its spec in the middle and
+	the rest ring by ring, the one it is in marked with the CLI's yellow `!`
+	and off left to the commands. Its KEYS are a drawer on the far edge,
 	opposite the strip (CollectDrawer.svelte, da-igqs2), closed unless the
 	field has a required key or it is dragged open: a tap putting `key=` on
 	the line, with `+ data` taking the caret there. Its time and
@@ -140,8 +136,8 @@
 		aligned,
 		atRest,
 		panned,
-		opened,
-		inkOver,
+		ringIn,
+		dealt,
 		lookOf,
 		yIn,
 		zoomed,
@@ -150,6 +146,7 @@
 		type Look,
 		type SwitchLabel,
 		type FieldButton,
+		type FieldKind,
 		type Standings,
 		type Align,
 		type View
@@ -161,7 +158,7 @@
 	import { onAnyChange } from './changes.js';
 	import { currentDb } from './database.js';
 	import { run } from './run.js';
-	import { entryArgv, statesArgv, type StateUse } from './calls.js';
+	import { entryArgv } from './calls.js';
 	import { cursor, pointAt, pointed, type Cursor } from './cursor.js';
 	import { grammar } from '#lib/layout/engine.ts';
 	import { previewOf } from './preview.js';
@@ -296,7 +293,7 @@
 	// So are the picture layout's pinch, pan and wheel, and, after the hold,
 	// what keeps two fingers from tapping.
 	onMount(() => {
-		const held = holds(bar!, { within: 'button[data-field], button[data-state], button[data-off]', run: holdField });
+		const held = holds(bar!, { within: 'button[data-field], button[data-state]', run: holdField });
 		const unzoom = zooming(bar!);
 		const untap = untapped(bar!);
 		const box = new ResizeObserver(() => (tall = bar!.clientHeight));
@@ -356,7 +353,9 @@
 	 * stays and one made since goes (vividn, 14:49).
 	 */
 	let entered: { cursor: Cursor | null; moment: boolean } | null = null;
-	/** How far a drag has panned the rows sideways, kept so they cannot leave the room; none at rest. */
+	/** Where the first of the cluster stands in its box, from the box's top left corner (`around`). */
+	let anchor = $state.raw({ x: 0, y: 0 });
+	/** How far a drag has panned the cluster from the center, kept so it cannot leave the room; none at rest. */
 	let pan: { x: number; y: number } | null = $state.raw(null);
 	/** The fields' pan while a field is open, for its view to close back to. */
 	let restPan: { x: number; y: number } | null = null;
@@ -366,6 +365,7 @@
 	/** The widget's own size, which the strip is measured by: the room narrows beside it while a field is open. */
 	let boxW = $state(0);
 	let boxH = $state(0);
+	let extent = $state.raw({ w: 0, h: 0 });
 	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
 	let over = $state(false);
 	/**
@@ -438,6 +438,19 @@
 	let view: View = $state.raw(FULL);
 	/** Where the cluster is drawn from the center: the pan, or none at rest. */
 	const shift = $derived(pan ?? { x: 0, y: 0 });
+	/**
+	 * How far the cluster overruns the room's left and top, which the room is
+	 * kept scrolled by and the cluster drawn that much further in (da-u846n):
+	 * a reveal only scrolls toward a box's end, so a state left of the room
+	 * is in reach of one only with the room scrolled. None at rest; whole
+	 * pixels, as a scroll is.
+	 */
+	let roomEl: HTMLElement | undefined = $state();
+	const overrun = (a: number) => Math.max(0, Math.ceil(a));
+	const lead = $derived(picking || !resting ? { x: overrun(anchor.x - paneW / 2 - shift.x), y: overrun(anchor.y - paneH / 2 - shift.y) } : { x: 0, y: 0 });
+	$effect(() => {
+		if (roomEl) [roomEl.scrollLeft, roomEl.scrollTop] = [lead.x, lead.y];
+	});
 	const zoomedIn = $derived(view.to - view.from < 1);
 	const GAP = 6;
 	/** Where each slot stands. */
@@ -471,7 +484,7 @@
 	const edge = $derived(strip + whenW);
 	/** Where each field stands at rest, and the active section's outline. */
 	const shelves = $derived.by(() => {
-		const hs = [...sizes].filter(([key]) => key.startsWith('f:')).map(([, s]) => s.h);
+		const hs = [...sizes.values()].map((s) => s.h);
 		return atRest(
 			clustered.map((b) => ({ ...b, w: sizes.get(`f:${b.field}`)?.w ?? 0 })),
 			{ height: paneH, rowH: hs.length ? Math.max(...hs) : 30, gap: GAP, strip: edge }
@@ -605,6 +618,10 @@
 	/** A look as the custom properties every button below is painted from. */
 	function vars(look: Look) {
 		return `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}`;
+	}
+
+	function statesOf(shape: FieldKind): string[] {
+		return shape.kind === 'change' ? shape.states : [];
 	}
 
 	/**
@@ -775,87 +792,6 @@
 		pointAt({ at: new Date((e.at as { utc: string }).utc), step: 1 });
 	}
 
-	// ---- a field OPEN, in collect's rows (da-r48y9) ------------------------
-	//
-	// vividn, 2026-11-07: «so that it looks and behaves much more like the field
-	// view»: its first row in a dotted outline, ‹ back, the field, the state it
-	// is in as the CLI paints one, and off where the spec allows it; then the
-	// spec's states in its order, and every other it has used, most recent
-	// first, placed as the fields are (`opened`).
-
-	/** `datum states <field>` for the open change field: which states its spec declares, and when each was last used; null where it gave no listing. */
-	let uses: { field: string; states: StateUse[] | null } | null = $state.raw(null);
-	const asked = $derived(picking?.shape.kind === 'change' ? picking.field : null);
-	$effect(() => {
-		const field = asked;
-		if (field === null) return void (uses = null);
-		let [live, n] = [true, 0];
-		const read = async () => {
-			const me = ++n;
-			const got = await run(statesArgv(field));
-			let states: StateUse[] | null = null;
-			try {
-				states = JSON.parse(got.stdout).states;
-			} catch {
-				// No listing: the field's own states alone.
-			}
-			if (live && me === n) uses = { field, states };
-		};
-		void read();
-		const unhear = onAnyChange(() => void read(), currentDb());
-		return () => ((live = false), unhear());
-	});
-	/** Off is no state of the list: it is the first row's. */
-	const isOff = (s: unknown) => s === false || s === 'false';
-	/** The open field's states: the spec's in its order, then every other it has used, the last used first, none twice. */
-	const listed = $derived.by((): string[] => {
-		if (picking?.shape.kind !== 'change') return [];
-		// None until it answers, so nothing moves once drawn; with no listing, the field's own.
-		if (uses?.field !== picking.field) return [];
-		const rows = uses.states;
-		// A field whose spec lists none has no spec order: every state is a used one.
-		const declared = new Set(rows?.filter((r) => r.declared).map((r) => said(r.state)));
-		const spec = picking.shape.states.filter((s) => !isOff(s) && (!rows || declared.has(s)));
-		const at = (r: StateUse) => (r.last_used ? Date.parse(r.last_used) : -Infinity);
-		const used = (rows ?? [])
-			.filter((r) => r.count > 0 && ['string', 'number', 'boolean'].includes(typeof r.state) && !isOff(r.state))
-			.sort((a, b) => at(b) - at(a) || 0)
-			.map((r) => said(r.state));
-		return [...new Set([...spec, ...used])];
-	});
-	/** Whether off is offered: a change field its spec lets be off, or an on/off field. */
-	const offable = $derived(picking?.shape.kind === 'on/off' || (picking?.shape.kind === 'change' && !picking.neverFalse));
-	/** Where the open view stands: its first row, then each state, by `sized`'s keys. */
-	const laid = $derived.by(() => {
-		// The first row's key is `open`, with no colon, so no state's `o:` key can be it.
-		const keys = picking ? ['open', ...listed.map((s) => `o:${s}`)] : [];
-		const rowH = Math.max(24, ...keys.map((k) => sizes.get(k)?.h ?? 0));
-		const on = (i: number) => i === 0 || (!!picking?.active && picking.current === listed[i - 1]);
-		// Every item measured: until then the states stand where a width of 0 puts them, and are hidden.
-		const ready = keys.every((k) => sizes.has(k));
-		return { keys, ready, ...opened(keys.map((k, i) => ({ w: sizes.get(k)?.w ?? 0, outlined: on(i) })), { height: paneH, rowH, gap: GAP }) };
-	});
-	/** Where an open item stands across the room: mirrored on the right. */
-	const openAt = (x: number, key: string) => (side === 'right' ? paneW - x - (sizes.get(key)?.w ?? 0) : x) + shift.x;
-	/**
-	 * How far an open field's rows overrun the room's left, which the room is
-	 * kept scrolled by and the rows drawn that much further in (da-u846n): a
-	 * reveal only scrolls toward a box's end, so a state left of the room is in
-	 * reach of one only with the room scrolled. None at rest; whole pixels, as
-	 * a scroll is.
-	 */
-	let roomEl: HTMLElement | undefined = $state();
-	const overrun = (a: number) => Math.max(0, Math.ceil(a));
-	const lead = $derived(picking ? { x: overrun(side === 'left' ? -shift.x : laid.end + GAP - paneW - shift.x), y: 0 } : { x: 0, y: 0 });
-	$effect(() => {
-		if (roomEl) [roomEl.scrollLeft, roomEl.scrollTop] = [lead.x, lead.y];
-	});
-	/** Off pressed: a change field switched off as a state is, an on/off field ended. */
-	function off(button: FieldButton) {
-		if (button.shape.kind === 'change') choose(button, 'false');
-		else onrun(['off']);
-	}
-
 	/**
 	 * A state tapped LOGS AT ONCE (vividn, 2026-11-03 16:07: one click), with
 	 * the time pills set: its pill goes beside the field's and `switch` takes
@@ -944,13 +880,74 @@
 	}
 
 	/**
-	 * `pan` kept to what the rows need, sideways alone: at rest or open, as far
-	 * as brings the furthest field or state into the room and no further, like
-	 * a scroll.
+	 * Stand the cluster's buttons around the first (da-vg8vr): `ringIn` gives
+	 * the spots from their measured sizes and the room's, and the box is
+	 * cropped to them, the first's center the `anchor`. Measured again
+	 * whenever the room or a button is resized or a button comes or goes, as
+	 * a state learned while it is open does.
 	 */
-	function kept(x: number, _y: number) {
-		const most = Math.max(0, (picked === null ? shelves.end : laid.end) + GAP - paneW);
-		return { x: side === 'right' ? Math.min(most, Math.max(x, 0)) : Math.min(0, Math.max(x, -most)), y: 0 };
+	function around(box: HTMLElement) {
+		const room = box.closest('.room') as HTMLElement;
+		// Unrounded: `offsetWidth` rounds down.
+		const size = (el: HTMLElement) => el.getBoundingClientRect();
+		const place = () => {
+			const spots = [...box.children] as HTMLElement[];
+			if (spots.length === 0) return void ((extent = { w: 0, h: 0 }), (anchor = { x: 0, y: 0 }));
+			const h = Math.max(...spots.map((s) => size(s).height));
+			const widths = spots.map((s) => size(s).width);
+			const w = { end: widths[0], states: widths.slice(1) };
+			const ring = ringIn(w, h, GAP, { w: room.clientWidth, h: room.clientHeight, side: 0, lid: 0 });
+			const ys = [ring.end, ...ring.states].map((p) => p.y);
+			// Taller than the room, it is dealt into the room's rows instead, which run past its sides.
+			const deal = Math.max(...ys) - Math.min(...ys) + h > room.clientHeight;
+			const { end, states } = deal ? dealt(w, h, GAP, room.clientHeight) : ring;
+			// The first is the middle of the room, whichever way they were stood:
+			// in a short box, half a row of `ringIn`'s rows past it, which pans.
+			const at = [end, ...states].map((p) => ({ x: p.x - end.x, y: p.y - end.y }));
+			const edges = spots.map((el, i) => ({ el, left: at[i].x - widths[i] / 2, top: at[i].y - h / 2 }));
+			const [left, top] = [Math.min(...edges.map((e) => e.left)), Math.min(...edges.map((e) => e.top))];
+			for (const e of edges) {
+				e.el.style.left = `${e.left - left}px`;
+				e.el.style.top = `${e.top - top}px`;
+			}
+			extent = {
+				w: Math.max(...edges.map((e, i) => e.left + widths[i])) - left,
+				h: Math.max(...edges.map((e) => e.top + h)) - top
+			};
+			anchor = { x: -left, y: -top };
+		};
+		const observer = new ResizeObserver(place);
+		observer.observe(room);
+		const watch = () => {
+			for (const spot of box.children) observer.observe(spot);
+			// Placed now as well, not a frame later: the buttons are in the
+			// DOM when an action runs, and measuring them lays them out.
+			place();
+		};
+		const children = new MutationObserver(watch);
+		children.observe(box, { childList: true });
+		watch();
+		return { destroy: () => (observer.disconnect(), children.disconnect()) };
+	}
+
+	/**
+	 * `pan` kept to what the cluster needs (da-vg8vr) — vividn: «allow
+	 * panning in 2 dimensions if states run off the sides»: along an axis it
+	 * fits, none; along one it overruns, as far as brings its far edge to
+	 * the room's and no further, like a scroll.
+	 */
+	function kept(x: number, y: number) {
+		// At rest the rows pan sideways alone, as far as brings the furthest field into the room.
+		if (resting && picked === null) {
+			const most = Math.max(0, shelves.end + GAP - paneW);
+			return { x: side === 'right' ? Math.min(most, Math.max(x, 0)) : Math.min(0, Math.max(x, -most)), y: 0 };
+		}
+		const axis = (at: number, to: number, start: number, size: number) =>
+			Math.min(Math.max(at, Math.min(0, to - start - size)), Math.max(0, -start));
+		return {
+			x: axis(x, paneW, paneW / 2 - anchor.x, extent.w),
+			y: axis(y, paneH, paneH / 2 - anchor.y, extent.h)
+		};
 	}
 
 	/**
@@ -1107,7 +1104,6 @@
 	const holdField = (el: HTMLElement) => {
 		// A state held does the other mode's tap (da-u017i).
 		if (el.dataset.state !== undefined && picking) return choose(picking, el.dataset.state, clicks !== 'one');
-		if (el.dataset.off !== undefined && picking?.shape.kind === 'change') return choose(picking, 'false', clicks !== 'one');
 		const button = buttons.find((b) => b.field === el.dataset.field);
 		if (button) hold(button);
 	};
@@ -1245,11 +1241,23 @@
 		</div>
 	{:else if picking || clustered.length}
 		{@const here = picking}
+		{@const states = here ? statesOf(here.shape).filter((s) => s !== 'false') : []}
 		<!-- The fields' place (da-w6437): at rest the fields in their rows
 		     (da-lw7ue); a field tapped, its name at the top, its states in the
 		     middle, its keys in the drawer, the fields hidden under it. -->
 		{#if here && resting}{@render present(boxH)}{/if}
 		<div class="collect" class:open={!!here} style:left={here && resting && side === 'left' ? `${edge}px` : null} style:right={here && resting && side === 'right' ? `${edge}px` : null}>
+			{#if here}
+				<div class="top">
+				<div class="head">
+					<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={back}>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg> back
+					</button>
+					<span class="name" style:color={here.color} data-open-field={here.field}>{here.field}</span>
+					{#if chosen !== null}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
+				</div>
+				</div>
+			{/if}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="room"
@@ -1263,71 +1271,7 @@
 				onscroll={fold}
 				onclickcapture={swallow}
 			>
-				{#if here}
-				<!-- The room's box, `lead` into its scroll: the rows are drawn where they were, and nothing of them before the scroll's start. -->
-				<div class="lead" style:left="{lead.x}px" style:width="{paneW}px" style:height="{paneH}px">
-					<svg class="dotted" aria-hidden="true">
-						<path
-							d={laid.stands.flatMap((s) => s.outline ?? []).join('')}
-							transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW + shift.x} 0)` : `translate(${shift.x} 0)`}
-						/>
-					</svg>
-					{#each laid.keys as key, i (key)}
-						{@const stand = laid.stands[i]}
-						{@const state = listed[i - 1]}
-						<!-- A state is not shown, nor tapped, before it stands where it stays: the first row's place depends on no other's. -->
-						<div
-							class="spot open"
-							data-role={i ? 'state' : 'head'}
-							data-row={stand?.row}
-							style:left="{openAt(stand?.x ?? 0, key)}px"
-							style:top="{stand?.top ?? 0}px"
-							style:visibility={i === 0 || laid.ready ? null : 'hidden'}
-							use:sized={key}
-						>
-							{#if i === 0}
-								<!-- The first row (vividn, 2026-11-07): back, the field in its colour, the state it is in drawn as the CLI paints one, and off. -->
-								<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={back}>
-									<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg> back
-								</button>
-								<span class="name" style:color={here.color} data-open-field={here.field}>{here.field}</span>
-								{#if here.active && here.current !== undefined}
-									{@const color = here.current === true ? here.color : (here.stateColors[here.current] ?? here.color)}
-									<span class="current" data-current style:background={color} style:color={inkOver(color)}>{here.current === true ? 'on' : here.current}</span>
-								{/if}
-								{#if offable}
-									<button
-										class="widget states"
-										use:act={clicks === 'two' && here.shape.kind === 'change' ? 'arm' : 'run'}
-										class:chosen={chosen === 'false'}
-										style={vars(stateLook(here, 'false'))}
-										{disabled}
-										data-off
-										title={shellJoin(['off', here.field])}
-										onclick={() => off(here)}
-									>{#if !here.active}<span class="repeat" data-repeat>!</span>{/if}off</button>
-								{/if}
-								{#if chosen !== null && chosen !== 'false'}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
-							{:else}
-								{@const look = stateLook(here, state)}
-								{@const on = here.active && here.current === state}
-								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type, or a tap only chooses it (2-click, da-u017i). -->
-								<button
-									class="widget states"
-									use:act={clicks === 'two' ? 'arm' : typesKeys('change', here) ? 'fill' : 'run'}
-									class:on
-									class:chosen={chosen === shellJoin([state])}
-									style={vars(look)}
-									{disabled}
-									data-state={state}
-									title={shellJoin(['change', here.field, state])}
-									onclick={() => choose(here, state)}
-								>{#if on}<span class="repeat" data-repeat>!</span>{/if}{state}</button>
-							{/if}
-						</div>
-					{/each}
-				</div>
-				{:else if resting}
+				{#if !here && resting}
 					<!-- At rest (da-lw7ue): the strip, the active section, then each row by recency. -->
 					<svg class="backing" aria-hidden="true">
 						<path d={frozen ? shelves.backing : `M0 0H${edge}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
@@ -1357,6 +1301,44 @@
 							{@render fieldButton(button)}
 						</div>
 					{/each}
+				{:else}
+				<!-- The room's box, `lead` into its scroll: the cluster is drawn where it was, and nothing of it before the scroll's start. -->
+				<div class="lead" style:left="{lead.x}px" style:top="{lead.y}px" style:width="{paneW}px" style:height="{paneH}px">
+				<div
+					class="ring"
+					use:around
+					style:left="{paneW / 2 - anchor.x + shift.x}px"
+					style:top="{paneH / 2 - anchor.y + shift.y}px"
+					style:width="{extent.w}px"
+					style:height="{extent.h}px"
+				>
+					{#if here}
+						{#each states as state (state)}
+							{@const look = stateLook(here, state)}
+							<div class="spot" data-role="state">
+								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type, or a tap only chooses it (2-click, da-u017i). -->
+								<button
+									class="widget states"
+									use:act={clicks === 'two' ? 'arm' : typesKeys('change', here) ? 'fill' : 'run'}
+									class:on={here.current === state}
+									class:chosen={chosen === shellJoin([state])}
+									style={vars(look)}
+									{disabled}
+									data-state={state}
+									title={shellJoin(['change', here.field, state])}
+									onclick={() => choose(here, state)}
+								>
+									{state}
+								</button>
+							</div>
+						{/each}
+					{:else}
+						{#each clustered as button (button.field)}
+							<div class="spot" data-role="field" data-promoted={promoted.has(button.field) ? '' : undefined}>{@render fieldButton(button)}</div>
+						{/each}
+					{/if}
+				</div>
+				</div>
 				{/if}
 			</div>
 		</div>
@@ -1615,17 +1597,40 @@
 		container: collect / size;
 	}
 
-	/* The entries' cards scroll where they do not fit; a field's view is the
-	   room alone, its rows the room's height as at rest (da-r48y9). */
-	.collect.entry {
+	.top {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	/* A pane too short for the whole view scrolls it, the room holding a
+	   few rows of states whatever the pane (the desktop's is one row). */
+	.collect.open {
 		padding: 0.25rem;
 		overflow: hidden auto;
 	}
 
-	/* A pane a few rows tall, a phone's main tab: `−A` a little smaller. */
+	.collect.open .room {
+		flex: 1 0 auto;
+		min-height: 7.5rem;
+	}
+
+	/* A pane a few rows tall, a phone's main tab: back and the field share
+	   one row, a little smaller, so a row of states stands under them in the
+	   pane and not below it. */
 	@container collect (max-height: 140px) {
+		.top {
+			flex-direction: row;
+			align-items: center;
+			flex-wrap: wrap;
+		}
+
 		.nav.round {
 			min-width: 2rem;
+			min-height: 2rem;
+		}
+
+		.collect.open .room {
 			min-height: 2rem;
 		}
 	}
@@ -1637,7 +1642,7 @@
 		flex-wrap: wrap;
 	}
 
-	.spot.open .name,
+	.head .name,
 	.card .name {
 		font-weight: 600;
 	}
@@ -1715,7 +1720,7 @@
 		overflow-wrap: anywhere;
 	}
 
-	.spot.open .to {
+	.head .to {
 		color: var(--muted);
 	}
 
@@ -1729,9 +1734,9 @@
 		touch-action: none;
 	}
 
-	.lead {
+	.lead,
+	.ring {
 		position: absolute;
-		top: 0;
 	}
 
 	/* At rest (da-lw7ue): the strip and, while it is frozen, the active
@@ -1871,28 +1876,20 @@
 		box-shadow: 0 0 0 2px var(--ink-bright);
 	}
 
-	/* The state the field is in already, and off while it is off: a switch to
-	   it is the CLI's yellow ! of a repeat, in front (vividn, 2026-11-07). */
-	.repeat {
-		margin-right: 0.3em;
+	/* The state the field is in already: a switch to it is the CLI's yellow
+	   ! (vividn, 16:07). */
+	.states[data-state] {
+		position: relative;
+	}
+
+	/* Over the chip's corner, so marking a state moves none of them. */
+	.states[data-state].on::after {
+		content: '!';
+		position: absolute;
+		top: 0;
+		right: 0.25rem;
 		color: var(--warn);
 		font-weight: 700;
-	}
-
-	/* An open field's first row (da-r48y9), at the rows' zoom as each state is. */
-	.spot.open {
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.spot.open > * {
-		zoom: var(--zoom);
-	}
-
-	/* The state it is in, painted as the CLI paints a state: its colour, the CLI's ink over it. */
-	.current {
-		padding: 0 0.3em;
-		font-size: 0.85rem;
 	}
 
 	/* A flex box, so it is exactly its button's size and nothing of a line box. */

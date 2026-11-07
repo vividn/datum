@@ -221,9 +221,9 @@ export const rowsOf = (locator, selector, name = (el) => el.field) =>
 	locator
 		.evaluate(
 			(bar, selector) =>
-				// A field open in collect is one row, first to last (da-r48y9), and
+				// The collect widget's cluster is one row, first to last (da-w6437), and
 				// so is collect at rest, in the order its fields take their slots (da-lw7ue).
-				[...bar.querySelectorAll('.lane'), ...[bar.querySelector('.room > .lead') ?? bar.querySelector('.room:has(> .spot.shelf)')].filter(Boolean)].map((lane) =>
+				[...bar.querySelectorAll('.lane'), ...[bar.querySelector('.room .ring') ?? bar.querySelector('.room:has(> .spot.shelf)')].filter(Boolean)].map((lane) =>
 					[...lane.children]
 						.flatMap((item) => (item.matches(selector) ? [item] : [...item.querySelectorAll(selector)]))
 						.map((el) => ({ ...el.dataset, text: el.textContent.trim(), tag: el.tagName }))

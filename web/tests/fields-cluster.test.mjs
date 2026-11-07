@@ -1,14 +1,116 @@
 // A switch field's states, opened in the collect widget (da-vg8vr,
-// da-w6437, da-r48y9): in collect's rows, the first row back and the field,
-// then the spec's states column by column, panned sideways as the fields at
-// rest are. What the first row holds and the order the states come in is
-// `collect-open.test.mjs`; the view as a whole is `collect.test.mjs`.
+// da-w6437): the first of its spec in the middle of the room between its
+// time and its keys, and the rest ring by ring, nearest first. vividn,
+// 2026-11-03: «highest ranked states are in the middle, and then start
+// building in circles, still pannable like the current infrastructure».
+//
+// The spec's order is a rank by distance (`ringOf` in fields.ts); the
+// setup widget's ↑ / ↓ beside each state is what reorders them, and
+// logging never does. The view as a whole is `collect.test.mjs`.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { ringIn, ringOf } from '../src/lib/fields.ts';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 import { FIELD_FORM, leaveField, openField } from './support/field.mjs';
+
+const H = 30;
+const GAP = 6;
+
+/** Every button of a ring as a box. */
+function boxes(ring, w) {
+	return [
+		{ name: 'end', ...ring.end, w: w.end },
+		...ring.states.map((s, i) => ({ name: i, ...s, w: w.states[i] }))
+	];
+}
+
+/** Whether two boxes stand closer than `GAP`. */
+const touch = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + GAP - 1e-9 && Math.abs(a.y - b.y) < H + GAP - 1e-9;
+/** The pairs that stand closer than `GAP`. */
+const overlaps = (list) => list.flatMap((a, i) => list.slice(i + 1).filter((b) => touch(a, b)).map((b) => [a.name, b.name]));
+/** How far the centre is from the nearest point of a box. */
+const near = (p, wide) => Math.hypot(Math.max(0, Math.abs(p.x) - wide / 2), Math.max(0, Math.abs(p.y) - H / 2));
+
+describe('ringOf', () => {
+	const sizes = (n, end = 50, wide = (i) => 40 + 7 * (i % 3)) => ({
+		end,
+		states: Array.from({ length: n }, (_, i) => wide(i))
+	});
+
+	test('`end` the centre; the first state straight up, then down, right and left', () => {
+		const ring = ringOf(sizes(4, 50, () => 40), H, GAP);
+		assert.deepEqual(ring.end, { x: 0, y: 0 });
+		const [up, down, right, left] = ring.states;
+		assert.ok(up.x === 0 && up.y < 0, `the first is at ${up.x},${up.y}`);
+		assert.ok(down.x === 0 && down.y > 0, `the second is at ${down.x},${down.y}`);
+		assert.ok(right.y === 0 && right.x > 0, `the third is at ${right.x},${right.y}`);
+		assert.ok(left.y === 0 && left.x < 0, `the fourth is at ${left.x},${left.y}`);
+	});
+
+	test('no two buttons touch, for none to forty states', () => {
+		for (const end of [50, 30])
+			for (let n = 0; n <= 40; n++) {
+				const w = sizes(n, end);
+				assert.deepEqual(overlaps(boxes(ringOf(w, H, GAP), w)), [], `${n} states, end ${end}`);
+			}
+	});
+
+	// «a later-ranked state never nearer than an earlier one could have
+	// stood»: no spot on the 2px grid that was free when a state was placed
+	// is nearer the centre than the one it took.
+	test('each state takes the nearest spot free when its turn came', () => {
+		const w = sizes(16, 54.75, (i) => (i % 4 === 3 ? 90 : 46.6));
+		const ring = ringOf(w, H, GAP);
+		const all = boxes(ring, w);
+		ring.states.forEach((s, i) => {
+			const wide = w.states[i];
+			const before = all.filter((b) => b.name === 'end' || (typeof b.name === 'number' && b.name < i));
+			const took = near(s, wide);
+			for (let x = -2 * Math.ceil(took + wide); x <= 2 * Math.ceil(took + wide); x += 2)
+				for (let y = -2 * Math.ceil(took + H); y <= 2 * Math.ceil(took + H); y += 2) {
+					const p = { x, y, w: wide };
+					if (before.every((b) => !touch(b, p))) assert.ok(near(p, wide) >= took - 1e-9, `state ${i} took ${took}, ${x},${y} was free at ${near(p, wide)}`);
+				}
+			// And so no later state stands where it would have been nearer.
+			for (const later of ring.states.slice(i + 1)) {
+				const p = { ...later, w: wide };
+				if (before.every((b) => !touch(b, p))) assert.ok(near(p, wide) >= took - 1e-9, `state ${i} at ${took}, a later one at ${near(p, wide)}`);
+			}
+		});
+	});
+});
+
+describe('ringIn', () => {
+	// The tutorial's `room` on a phone (da-q0lcx): its collect widget's box at
+	// 390px, its buttons as drawn, and its back icon's corner.
+	const ROOM = { w: 351, h: 88.5, side: 41.6, lid: 36.8 };
+	const SIZES = { end: 54.8, states: [87.5, 120.2, 87.5, 95.7, 87.5] };
+	const TALL = 33.9;
+	/** Whether a ring stands wholly in the room, none under a corner. */
+	const held = (ring, room) =>
+		[{ ...ring.end, w: SIZES.end }, ...ring.states.map((s, i) => ({ ...s, w: SIZES.states[i] }))].every((b) => {
+			const [left, top] = [room.w / 2 + b.x - b.w / 2, room.h / 2 + b.y - TALL / 2];
+			return left >= 0 && left + b.w <= room.w && top >= 0 && top + TALL <= room.h && (top >= room.lid || (left >= room.side && left + b.w <= room.w - room.side));
+		});
+
+	test('a box too short for the ring holds every state in its rows, between the corners on the top one', () => {
+		assert.equal(held(ringOf(SIZES, TALL, GAP), ROOM), false, 'the ring fits: the case is not tested');
+		const ring = ringIn(SIZES, TALL, GAP, ROOM);
+		assert.ok(held(ring, ROOM), JSON.stringify(ring));
+		assert.ok(Math.abs(ring.end.x) < 1, `end moved across, to ${ring.end.x}`);
+		// The old corner, «+ Add state» a third of the row: no packing holds them.
+		const old = { ...ROOM, side: 129.2, lid: 42.9 };
+		assert.equal(held(ringIn(SIZES, TALL, GAP, old), old), false, 'they fit beside the old corner: this test says nothing of it');
+	});
+
+	test('a box the ring fits keeps the ring; one nothing fits keeps it too, and pans', () => {
+		assert.deepEqual(ringIn(SIZES, TALL, GAP, { ...ROOM, h: 240 }), ringOf(SIZES, TALL, GAP));
+		const narrow = { ...ROOM, w: 200 };
+		assert.deepEqual(ringIn(SIZES, TALL, GAP, narrow), ringOf(SIZES, TALL, GAP));
+	});
+});
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
@@ -19,19 +121,17 @@ const STATES = ['a', 'b', 'c', 'd'];
 const FIELDS = 'alfa bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra mood'.split(' ');
 const SEED = FIELDS.map((f) => `setup ${f} --verb switch --states false,${STATES.join(',')}`);
 
-/** What the open view draws: the room, the box round all it holds, and each state's box, by name. */
+/** What the open states draw: the room, the box of states, and each state's box, by name. */
 const seen = (page) =>
 	page.locator(ROOM).evaluate((room) => {
 		const box = (el) => {
 			const r = el.getBoundingClientRect();
 			return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, x: r.left + r.width / 2, y: r.top + r.height / 2 };
 		};
-		const spots = [...room.querySelectorAll('.spot.open')].map(box);
-		const ring = { left: Math.min(...spots.map((s) => s.left)), right: Math.max(...spots.map((s) => s.right)), top: Math.min(...spots.map((s) => s.top)), bottom: Math.max(...spots.map((s) => s.bottom)) };
 		return {
 			pane: box(room),
-			ring,
-			buttons: [...room.querySelectorAll('[data-state]')].map((b) => ({ name: b.dataset.state, row: Number(b.closest('.spot').dataset.row), ...box(b) }))
+			ring: box(room.querySelector('.ring')),
+			buttons: [...room.querySelectorAll('[data-state]')].map((b) => ({ name: b.dataset.state, ...box(b) }))
 		};
 	});
 
@@ -71,16 +171,16 @@ const pills = (page) => page.locator('.prompt-bar .pill').evaluateAll((ps) => ps
 
 const options = (width = 390) => ({ viewport: { width, height: 640 }, clock: todayAt(15), prepare: (context) => context.addInitScript(draft, PAGE) });
 
-// da-r48y9: a field opened in collect stands its states in the room between
-// its time and its keys, in the rows the fields stand in at rest — vividn,
-// 2026-11-07: «then top to bottom, left to right list the states in order
-// defined by the spec».
-describe('a switch field’s states in collect, in the rows', () => {
+// da-w6437: a field opened in collect stands its states in the room between
+// its time and its keys, the first of the spec in the middle — vividn:
+// «highest ranked states are in the middle, and then start building in
+// circles, still pannable like the current infrastructure».
+describe('a switch field’s states in collect, the first in the middle', () => {
 	before(startApp);
 	after(stopApp);
 
 	for (const width of [390, 1280])
-		test(`${width}px: the same picture whichever field is pressed and wherever it stands, the spec's states down the rows under the first`, async () => {
+		test(`${width}px: the same picture whichever field is pressed and wherever it stands, the first state in the middle`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await seedLines(app, SEED);
@@ -88,12 +188,13 @@ describe('a switch field’s states in collect, in the rows', () => {
 				const fields = await page.locator(BAR).evaluate((bar) => [...bar.querySelectorAll('[data-field]')].map((b) => b.dataset.field));
 				const picked = [fields[0], fields[Math.floor(fields.length / 2)], fields.at(-1)];
 				const first = await open(page, picked[0]);
-				assert.deepEqual(first.buttons.map((b) => b.name), STATES, 'off is the first row’s, not a state');
-				// The rows hold them all in one column, a row each under the first row, at the room's left.
-				assert.deepEqual(first.buttons.map((b) => b.row), [1, 2, 3, 4]);
+				assert.deepEqual(first.buttons.map((b) => b.name), STATES, '`end` is the commands’, not a state');
 				const a = first.find('a');
-				assert.ok(first.buttons.every((b) => Math.abs(b.left - a.left) < 0.5 && b.left - first.pane.left < 20), JSON.stringify(first.buttons));
-				assert.ok(first.buttons.every((b, i) => i === 0 || b.top > first.buttons[i - 1].bottom), 'not top to bottom');
+				assert.ok(Math.abs(a.x - first.pane.x) <= 1 && Math.abs(a.y - first.pane.y) <= 1, `a at ${a.x},${a.y}, the room's center at ${first.pane.x},${first.pane.y}`);
+				// The rank: b no further from a than c, c than d, to the nearest point of each.
+				const reach = (b) => Math.hypot(Math.max(0, b.left - a.x, a.x - b.right), Math.max(0, b.top - a.y, a.y - b.bottom));
+				const d = STATES.slice(1).map((s) => reach(first.find(s)));
+				assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1] - 1), `a higher rank stands further: ${d}`);
 				for (const field of picked.slice(1)) assert.deepEqual(offsets(await open(page, field)), offsets(first), `${field}: not ${picked[0]}'s picture`);
 				// A key's press opens the same.
 				await page.locator(`${BAR} [data-field="mood"]`).focus();
@@ -113,7 +214,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 			await field.click();
 			await page.locator(`${ROOM} [data-state="${many[0]}"]`).waitFor();
 			const was = await seen(page);
-			assert.ok(was.ring.right > was.pane.right, 'the states fit across: the case is not tested');
+			assert.ok(was.ring.left < was.pane.left && was.ring.right > was.pane.right, 'the states fit across: the case is not tested');
 			const before = (await app.echoes()).length;
 			// Started ON the middle state, well past the slop: to the left.
 			const moved = await dragBy(page, -30, 0);
@@ -123,9 +224,8 @@ describe('a switch field’s states in collect, in the rows', () => {
 			assert.equal((await app.echoes()).length, before, 'a drag pressed the state it started on');
 			assert.deepEqual(await pills(page), ['field'], 'a drag chose a state');
 
-			// Past their extent either way, their far edge stops a gap inside the
-			// room's, as the fields' do at rest, and the near one back where it
-			// began, like a scroll; down they fit, so a drag there moves nothing.
+			// Past their extent either way, their far edge stops at the room's,
+			// like a scroll; down they fit, so a drag there moves nothing.
 			const strokes = async (dx, dy) => {
 				const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 150));
 				let t;
@@ -134,12 +234,13 @@ describe('a switch field’s states in collect, in the rows', () => {
 			};
 			const span = was.ring.right - was.ring.left;
 			const left = await strokes(-span, 0);
-			assert.ok(Math.abs(left.ring.right + 6 - left.pane.right) <= 1, `panned past the states: their right ${left.ring.right}, the room's ${left.pane.right}`);
+			assert.ok(Math.abs(left.ring.right - left.pane.right) <= 1, `panned past the states: their right ${left.ring.right}, the room's ${left.pane.right}`);
 			const right = await strokes(2 * span, 0);
-			assert.ok(Math.abs(right.ring.left - was.ring.left) <= 1, `panned past the states the other way: their left ${right.ring.left}, where they began ${was.ring.left}`);
+			assert.ok(Math.abs(right.ring.left - right.pane.left) <= 1, `panned past the states the other way: their left ${right.ring.left}, the room's ${right.pane.left}`);
 			assert.ok(right.ring.bottom - right.ring.top <= right.pane.bottom - right.pane.top, 'the states do not fit down: the case below is not tested');
 			const down = await strokes(0, 80);
 			assert.equal(down.ring.top, right.ring.top, 'states that fit down were panned down');
+			await strokes(was.ring.left - right.ring.left, 0);
 			await app.idle();
 			assert.equal((await app.echoes()).length, before, 'a pan pressed something');
 
@@ -227,8 +328,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 			for (const [s, t] of [['d', '1400'], ['d', '1410'], ['c', '1420'], ['d', '1430']]) await app.submit(`switch mood ${s} -t ${t}`);
 			await app.idle();
 			const logged = await open(page, 'mood');
-			const rows = (t) => Object.fromEntries(t.buttons.map((b) => [b.name, b.row]));
-			assert.deepEqual(rows(logged), rows(first), 'logging moved a state');
+			assert.deepEqual(offsets(logged), offsets(first), 'logging moved a state');
 
 			const { saved } = await openField(page, 'mood');
 			await page.locator(`${FIELD_FORM} [aria-label="move d: drag, or the arrow keys"]`).focus();
@@ -239,14 +339,13 @@ describe('a switch field’s states in collect, in the rows', () => {
 			await leaveField(page);
 			await field.waitFor();
 			await app.idle();
-			// d took the row a had, and so on round: rows, not pixels, as mood
-			// is in d and its outline and `!` widen it.
-			const [now, was] = [rows(await open(page, 'mood')), rows(logged)];
+			// d took the place a had, and so on round.
+			const [now, was] = [offsets(await open(page, 'mood')), offsets(logged)];
 			assert.deepEqual(['d', 'a', 'b', 'c'].map((s) => now[s]), STATES.map((s) => was[s]));
 
 			const offset = () =>
-				page.locator(ROOM).evaluate((room) => {
-					const at = (sel) => room.querySelector(sel).getBoundingClientRect();
+				page.locator(`${ROOM} .ring`).evaluate((ring) => {
+					const at = (sel) => ring.querySelector(sel).getBoundingClientRect();
 					const [e, d] = [at('[data-state="e"]'), at('[data-state="d"]')];
 					return [Math.round(e.x - d.x), Math.round(e.y - d.y)];
 				});

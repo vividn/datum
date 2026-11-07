@@ -29,7 +29,8 @@ import { until } from './support/until.mjs';
 
 // A state field asks WHICH, so its button reads `name:` and a press puts
 // that field's states in place of the fields — the back icon first, then
-// off, then its states in collect's rows (da-r48y9). They are written inside the bar, over its hidden
+// `end` (da-cwieh), the `+` last (da-g635), the states around `end`
+// (da-7q3ka, da-vg8vr). They are written inside the bar, over its hidden
 // rows, so these tests read them out of `.bar` as they read the fields;
 // where they stand is `fields-cluster.test.mjs`.
 describe('a state field fills the widget with its states', () => {
@@ -70,8 +71,7 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			// Off on the first row, then mood's states by recency, its spec listing none (da-r48y9), the one it is in marked.
-			assert.deepEqual(await ring(page), ['back', 'off', '!happy', 'calm']);
+			assert.deepEqual(await ring(page), ['back', 'calm', 'happy']);
 			assert.equal(await page.locator('.bar [data-field="mood"]').count(), 0, 'the field is still drawn under its states');
 
 			// A state logs at once (vividn, 16:07: one click).
@@ -141,7 +141,6 @@ describe('a state field fills the widget with its states', () => {
 			// which state mood is in — which is what the list marks.
 			await untilFieldStyle(page, 'mood', 'backgroundColor', GREEN);
 			await page.locator('.bar [data-field="mood"]').click();
-			await page.locator('.bar [data-state="bad"]').waitFor();
 			const ink = (page) =>
 				page.evaluate(() => {
 					const probe = document.body.appendChild(document.createElement('span'));
@@ -184,12 +183,12 @@ describe('a state field fills the widget with its states', () => {
 				});
 			await page.locator('.bar [data-back]').focus();
 			const order = [await focused()];
-			for (let i = 0; i < 5; i++) {
+			for (let i = 0; i < 4; i++) {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
 			// The view, the closed drawer's handle (da-igqs2), then the time and duration section's clock (da-us1n1, da-iunoo).
-			assert.deepEqual(order, ['back', 'off', '!happy', 'calm', 'data', 'clock']);
+			assert.deepEqual(order, ['back', 'calm', 'happy', 'data', 'clock']);
 
 			await page.keyboard.press('Escape');
 			await closed(page);

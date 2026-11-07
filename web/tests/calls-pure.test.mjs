@@ -202,7 +202,6 @@ const SAMPLES = {
 	specShowArgv: [['coffee'], ['mood']],
 	specHistoryArgv: [['coffee'], ['mood']],
 	entryArgv: [[HID]],
-	statesArgv: [['mood']],
 	entrySpanArgv: [[HID]],
 	timeReadArgv: [['9:15am'], ['yesterday 10am']],
 	lengthReadArgv: [['1.5h'], ['1:30']],

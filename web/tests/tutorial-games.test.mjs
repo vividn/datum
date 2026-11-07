@@ -187,7 +187,7 @@ test('the fields log outside a game too, and no game starts or scores by it', as
 			const tap = async (tab, field, state) => {
 				const before = await count(field);
 				await page.locator(`[data-pane="${tab}-fields"] .fields button[data-field="${field}"]`).click();
-				if (state) await page.locator(`[data-pane="${tab}-fields"] .fields .room button[data-state="${state}"]`).click();
+				if (state) await page.locator(`[data-pane="${tab}-fields"] .fields .ring button[data-state="${state}"]`).click();
 				await until(() => count(field), (n) => n === before + 1);
 			};
 			/** A room neither the cue's, where it is drawn (at rest alone, da-uzyih.4880), nor `held`. */

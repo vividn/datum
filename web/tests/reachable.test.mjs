@@ -364,8 +364,6 @@ describe('on a phone-sized screen', () => {
 			// duration section (da-us1n1) it may stand past the edge, which a
 			// scroll into view would move under the section.
 			await chip.dispatchEvent('click');
-			// Its states come with `datum states`' answer (da-r48y9).
-			await page.locator('.bar [data-state="happy"]').waitFor();
 			await assertOnScreen(page, '.bar [data-back]', 'the way back to the fields');
 			await assertOnScreen(page, '.bar [data-state="happy"]', "mood's happy");
 			// The time section, closed behind its clock (da-iunoo), opened.

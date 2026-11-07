@@ -153,8 +153,8 @@ test("on a phone a sideways drag in collect's room pans the states it overruns a
 		assert.equal(await page.locator(ROOM).getAttribute('data-pans'), null, 'one field overruns the room: the last case is not tested');
 		await field.click();
 		await page.locator(`${ROOM} [data-state="${many[0]}"]`).waitFor();
-		const left = () => page.locator(`${ROOM} [data-state="${many[0]}"]`).evaluate((el) => el.getBoundingClientRect().left);
-		const fits = await page.locator(ROOM).evaluate((room) => Math.max(...[...room.querySelectorAll('.spot.open')].map((s) => s.getBoundingClientRect().right)) <= room.getBoundingClientRect().right);
+		const left = () => page.locator(`${ROOM} .ring`).evaluate((el) => el.getBoundingClientRect().left);
+		const fits = await page.locator(ROOM).evaluate((room) => room.querySelector('.ring').getBoundingClientRect().width <= room.clientWidth);
 		assert.equal(fits, false, 'the states fit across: the case is not tested');
 		for (const dx of [-80, 80]) {
 			const was = await left();
