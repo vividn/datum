@@ -23,6 +23,19 @@ after(stopApp);
 
 const ROOM = 'section.pane[data-title="collect"] .bar .collect .room';
 
+/**
+ * What the time and duration section (da-us1n1) takes past the strip, as a
+ * box: closed, its clock's far half, the clock standing on the strip's edge
+ * (da-qjq60); open, the section.
+ */
+const beside = (page, side) =>
+	page.locator('section.pane[data-title="collect"] .bar [data-when]').evaluate((when, side) => {
+		const [w, c] = [when, when.querySelector('[data-when-clock]')].map((e) => e.getBoundingClientRect());
+		const strip = when.closest('section.pane').querySelector('[data-strip]').getBoundingClientRect();
+		const [from, to] = side === 'right' ? [Math.min(w.left, c.left), strip.left] : [strip.right, Math.max(w.right, c.right)];
+		return { x: from, width: to - from };
+	}, side);
+
 /** A phone on collect, its main tab, tall enough for rows. */
 const AT_REST = { ...PHONE, home: ON_COLLECT, clock: todayAt(15) };
 
@@ -192,7 +205,7 @@ describe('collect at rest', () => {
 				const far = (s) => (side === 'left' ? s.right : -s.left);
 				const room = await page.locator(ROOM).boundingBox();
 				// On its side: past the time and duration section beside the strip (da-us1n1).
-				const by = await page.locator('section.pane[data-title="collect"] .bar [data-when]').boundingBox();
+				const by = await beside(page, side);
 				const spots = await until(
 					() => settled(page),
 					(spots) => {
@@ -206,7 +219,7 @@ describe('collect at rest', () => {
 				assert.ok(far(work) < wide, `work's row is the narrower: ${far(work)} against ${wide}`);
 				// Narrow enough to stay while the rows pan under it, so the backing is the section's and not the strip's.
 				// The time and duration section beside the strip (da-us1n1) is not counted against the half.
-				const when = (await page.locator('section.pane[data-title="collect"] .bar [data-when]').boundingBox()).width;
+				const when = (await beside(page, side)).width;
 				assert.ok(wide - far(side === 'left' ? { right: room.x } : { left: room.x + room.width }) - when <= room.width / 2, `the section is not frozen: ${wide}`);
 				assert.ok(near(next) - far(work) <= 2 * 6 + 1, `${next.field} ${near(next) - far(work)}px past work, the widest row ending at ${wide}`);
 				// Drawn, not under the backing the panned rows go under: each in the room, read among them (walk
@@ -225,7 +238,7 @@ describe('collect at rest', () => {
 				// Panned toward the section, a slow swipe the finger's length: work's row goes under
 				// its own part of the section, and shows past it where the widest row's part is wider.
 				// The strip's edge and past it the time and duration section's (da-us1n1), which no panned row goes under.
-				const strip = await page.locator(`section.pane[data-title="collect"] .bar [data-when]`).boundingBox();
+				const strip = await beside(page, side);
 				const [edge, wideEdge, stripEdge] = [far(work) + 6, wide + 6, far(side === 'left' ? { right: strip.x + strip.width } : { left: strip.x })];
 				const y = (work.top + work.bottom) / 2;
 				await swipe(page, room.x + room.width * (side === 'left' ? 0.85 : 0.15), y, side === 'left' ? -80 : 80, 0, 8, 60, 200);

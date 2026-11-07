@@ -73,6 +73,10 @@ async function dragTime(app, dx) {
 	const { page } = app;
 	const clock = page.locator(`${WHEN} [data-when-clock][aria-expanded="false"]`);
 	if ((await clock.count()) > 0) await clock.click();
+	// Done opening (da-qjq60): a press while it glides lands where `time` was.
+	await page.locator(WHEN).evaluate(async (w) => {
+		for (let a; (a = w.getAnimations({ subtree: true })).length; ) await Promise.allSettled(a.map((x) => x.finished));
+	});
 	const r = await page.locator(`${WHEN} [data-part="time"]`).first().boundingBox();
 	const [x, y] = [r.x + r.width / 2, r.y + r.height / 2];
 	await page.mouse.move(x, y);

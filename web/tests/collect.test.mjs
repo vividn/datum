@@ -73,10 +73,13 @@ const barPills = (page) =>
 
 /** The time and duration section (da-us1n1), its buttons, and its pill of `kind` (`time`, `dur`). */
 const WHEN = `${WIDGET} [data-when]`;
-/** The time section opened by its clock, where it is closed, as a reader would (da-iunoo). */
+/** The time section opened by its clock, where it is closed, as a reader would (da-iunoo), and done opening (da-qjq60). */
 const openWhen = async (page, when = WHEN) => {
 	const clock = page.locator(`${when} [data-when-clock][aria-expanded="false"]`);
 	if ((await clock.count()) > 0) await clock.click();
+	await page.locator(when).evaluate(async (w) => {
+		for (let a; (a = w.getAnimations({ subtree: true })).length; ) await Promise.allSettled(a.map((x) => x.finished));
+	});
 };
 /** A part of the section tapped, the section opened by its clock first. */
 const tap = async (page, what) => (await openWhen(page), page.locator(`${WHEN} ${what}`).click());
@@ -304,8 +307,10 @@ describe('collect', () => {
 					when.style.bottom = 'auto';
 					when.style.height = `${h}px`;
 					await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 80))));
+					for (let a; (a = when.getAnimations({ subtree: true })).length; ) await Promise.allSettled(a.map((x) => x.finished));
 					const column = when.querySelector('.column');
-					const boxes = [...column.querySelectorAll('button')].map((b) => {
+					// The clock stands over the column's gap, outside it (da-qjq60).
+					const boxes = [...column.querySelectorAll('button'), when.querySelector('[data-when-clock]')].map((b) => {
 						const r = b.getBoundingClientRect();
 						// A pill's × stands over its own corner, clear of its text (da-rtsun): one pill is one button here.
 						return { b: b.dataset.part ?? b.getAttribute('aria-label') ?? b.innerText, pill: b.closest('.pill')?.dataset.pill, l: r.left, r: r.right, t: r.top, d: r.bottom };

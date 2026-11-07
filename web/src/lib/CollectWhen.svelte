@@ -35,6 +35,14 @@
 	(«add a little triangle arrow to the time and dur buttons so that you
 	know you can drag them. Allow dragging them left and right, even when
 	there is nothing yet selected»).
+
+	A line runs on each side of it open, between it and the strip and between
+	it and the rows, and closed one line between the strip and the rows, the
+	clock on it (da-qjq60, vividn, 2026-11-07: «put another one separating the
+	time section from the now section. When the time section is closed also
+	put that line between the fields section and the now section, and put the
+	clock button directly on that line»). It opens and closes over the rows'
+	own glide, so its edge and the rows move together.
 -->
 <script module lang="ts">
 	import { pills } from './bar.js';
@@ -55,6 +63,7 @@
 
 <script lang="ts">
 	import { get } from 'svelte/store';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import LengthArrow from './LengthArrow.svelte';
 	import { act } from './act.js';
 	import { CLICK_SLOP } from './inspect.js';
@@ -86,7 +95,10 @@
 	 * derived; this is 5.57).
 	 */
 	let expanded = $derived(shown);
+	/** Tapped once: from then it opens and closes over time, as it does not when it first draws. */
+	let toggled = $state(false);
 	function toggleShown() {
+		toggled = true;
 		expanded = !expanded;
 		if (!expanded) open = null;
 		onshown?.(expanded);
@@ -103,6 +115,26 @@
 	const COLUMN_PX = 256;
 	const HALVES_PX = 112;
 	let tall = $state(COLUMN_PX);
+
+	/** The rows' glide (CollectWidget's `.spot.shelf.glide`, 0.3s ease-out), which the section opens and closes over. */
+	const GLIDE_MS = 300;
+	/** Its two lines, one on each edge. */
+	const LINES_PX = 2;
+	/**
+	 * The near line lies on the strip's own border, over its picture, which
+	 * covers that border where it draws: one line, as wide as the far one.
+	 */
+	const ON_STRIP_PX = 1;
+	/** The clock's size, as `.clock`'s. */
+	const CLOCK_PX = 24;
+	/** The column's width open, which the section's grows to. */
+	let natural = $state(0);
+	// The rows stand past where the section is going, gliding as it does; closed, past the clock's far half.
+	$effect(() => {
+		width = expanded ? natural + LINES_PX - ON_STRIP_PX : CLOCK_PX / 2;
+	});
+	/** The halves stay while the section closes over them. */
+	const closing = (_: Element) => ({ duration: prefersReducedMotion.current ? 0 : GLIDE_MS });
 
 	/** Which part's advanced options are out, or none. */
 	let open: 'time' | 'dur' | null = $state(null);
@@ -348,27 +380,30 @@
 	class:halves={tall < COLUMN_PX && tall >= HALVES_PX}
 	class:row={tall < HALVES_PX}
 	bind:clientHeight={tall}
-	style:left={side === 'left' ? `${offset}px` : null}
-	style:right={side === 'right' ? `${offset}px` : null}
-	bind:offsetWidth={width}
+	style:left={side === 'left' ? `${offset - ON_STRIP_PX}px` : null}
+	style:right={side === 'right' ? `${offset - ON_STRIP_PX}px` : null}
+	style:width="{expanded ? natural + LINES_PX : LINES_PX}px"
+	class:glides={toggled}
 	data-when
 >
-	<div class="column">
-		{#if expanded}
-		<div class="half">
-			{@render part('time', timeLabel)}
-			<button class="step" use:act={'arm'} data-earlier="1" {disabled} title="a minute earlier" onclick={() => earlier(1)}>−1m</button>
-			<button class="step" use:act={'arm'} data-earlier="5" {disabled} title="five minutes earlier" onclick={() => earlier(5)}>−5m</button>
+	{@render clock()}
+	<!-- At its open width, centered and cut to the section's as it opens and closes; the clock stands in its gap. -->
+	<div class="reveal">
+		<div class="column" bind:offsetWidth={natural}>
+			{#if expanded}
+				<div class="half" out:closing>
+					{@render part('time', timeLabel)}
+					<button class="step" use:act={'arm'} data-earlier="1" {disabled} title="a minute earlier" onclick={() => earlier(1)}>−1m</button>
+					<button class="step" use:act={'arm'} data-earlier="5" {disabled} title="five minutes earlier" onclick={() => earlier(5)}>−5m</button>
+				</div>
+				<i class="gap"></i>
+				<div class="half" out:closing>
+					{@render part('dur', durLabel)}
+					<button class="step" use:act={'arm'} data-longer="1" disabled={lengthOff} title="a minute longer" onclick={() => longer(1)}>1m</button>
+					<button class="step" use:act={'arm'} data-longer="5" disabled={lengthOff} title="five minutes longer" onclick={() => longer(5)}>5m</button>
+				</div>
+			{/if}
 		</div>
-		{@render clock()}
-		<div class="half">
-			{@render part('dur', durLabel)}
-			<button class="step" use:act={'arm'} data-longer="1" disabled={lengthOff} title="a minute longer" onclick={() => longer(1)}>1m</button>
-			<button class="step" use:act={'arm'} data-longer="5" disabled={lengthOff} title="five minutes longer" onclick={() => longer(5)}>5m</button>
-		</div>
-		{:else}
-			{@render clock()}
-		{/if}
 	</div>
 	{#if expanded && open}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -395,18 +430,43 @@
 </div>
 
 <style>
+	/*
+	 * A line on each edge (da-qjq60): open, between it and the strip and
+	 * between it and the rows; closed, it is two lines' width on the strip's
+	 * edge, the far line gone, and the clock stands on the one left.
+	 */
 	.when {
 		position: absolute;
 		top: 0;
 		bottom: 0;
 		z-index: 3;
 		background: var(--ground);
-		border-right: 1px solid var(--rule);
+		border: 1px solid var(--rule);
+		border-block: none;
 	}
 
-	.when.right {
-		border-right: none;
-		border-left: 1px solid var(--rule);
+	.when.closed {
+		border-right-color: transparent;
+	}
+
+	.when.right.closed {
+		border-right-color: var(--rule);
+		border-left-color: transparent;
+	}
+
+	.when.glides {
+		transition:
+			width 0.3s ease-out,
+			border-color 0.3s ease-out;
+	}
+
+	/* The open column, at its own width and cut to the section's. */
+	.reveal {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		justify-content: center;
+		overflow: hidden;
 	}
 
 	/*
@@ -414,60 +474,42 @@
 	 * little more in this time section. right now they overlap some»): a
 	 * pill's × stands 0.7rem above its top right corner and 0.35rem past it,
 	 * so a gap it can reach, above a pill or to its right, is wider than that.
+	 * The halves are as tall (as wide, side by side) as each other, so the
+	 * clock's gap is in the middle.
 	 */
-	.column,
+	.column {
+		flex: none;
+		display: grid;
+		grid-template-rows: 1fr auto 1fr;
+		place-items: center;
+		gap: 0.8rem;
+		width: max-content;
+		height: 100%;
+		/* The × out of a pill's top corner, inside the column. */
+		padding: 0.75rem 0.15rem 0.3rem;
+		font-size: 0.75rem;
+	}
+
 	.half {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: space-evenly;
-		gap: 0.8rem;
-	}
-
-	.half {
 		/* A pill's 3.6rem, and its × out of its corner. */
 		width: 4.3rem;
 		gap: 0.4rem;
 	}
 
-	.column {
-		height: 100%;
-		/* The × out of a pill's top corner, inside the column. */
-		padding: 0.75rem 0.15rem 0.3rem;
-		box-sizing: border-box;
-		overflow: hidden auto;
-		font-size: 0.75rem;
-	}
-
-	/*
-	 * Closed, the clock alone, halfway down ON the strip's edge (vividn,
-	 * 11-06: «put it right on the boundary line between the now section and
-	 * the fields section»): the section keeps only the clock's far half past
-	 * the strip, so the rows stand clear of its press and have the column back.
-	 */
-	.when.closed {
-		width: 12px;
-		background: none;
-		border: none;
-	}
-
-	.when.closed .column {
-		position: absolute;
-		inset: 0 auto 0 -12px;
+	.gap {
 		width: 24px;
-		padding: 0;
-		overflow: visible;
-		justify-content: center;
-	}
-
-	.when.right.closed .column {
-		inset: 0 -12px 0 auto;
+		height: 24px;
 	}
 
 	/* Too short for a column: the halves side by side, the clock between them; shorter still, a row. */
 	:is(.halves, .row) .column {
-		flex-direction: row;
-		gap: 0.8rem;
+		grid-template-rows: none;
+		grid-template-columns: 1fr auto 1fr;
+		grid-auto-flow: column;
 		padding: 0.75rem 0.3rem 0.3rem;
 	}
 
@@ -481,8 +523,19 @@
 		gap: 0.8rem;
 	}
 
+	/*
+	 * In the middle of the section, so closed it is ON the strip's edge
+	 * (vividn, 11-06: «put it right on the boundary line between the now
+	 * section and the fields section»), the rows standing clear of its far
+	 * half, and open in the gap between the halves: the column's padding
+	 * puts that gap 0.225rem under the middle.
+	 */
 	.clock {
-		flex: none;
+		position: absolute;
+		z-index: 1;
+		left: 50%;
+		top: 50%;
+		translate: -50% -50%;
 		display: grid;
 		place-items: center;
 		width: 24px;
@@ -492,6 +545,21 @@
 		border-radius: 999px;
 		background: var(--ground);
 		color: var(--muted);
+	}
+
+	.when:not(.closed, .row) .clock {
+		top: calc(50% + 0.225rem);
+	}
+
+	.glides .clock {
+		transition: top 0.3s ease-out;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.when.glides,
+		.glides .clock {
+			transition: none;
+		}
 	}
 
 	.clock[aria-expanded='true'] {
