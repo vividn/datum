@@ -111,9 +111,10 @@
 	    │                                   (da-ukcf), the moment's day height
 	    │                                   down (da-hm1j7, da-r7h0m)
 	    └─ one finger or the mouse
-	         ├─ mostly DOWNWARD, held or not ► the STACK's scroll, never ours
-	         ├─ sideways, zoomed in ────────► PAN: the hour window follows the
-	         │                               finger, as shift+wheel does
+	         ├─ zoomed in, any way ─────────► PAN: the picture follows the
+	         │                               finger in both axes at once, the
+	         │                               hours across and the days down
+	         ├─ mostly DOWNWARD, whole day ─► the STACK's scroll, never ours
 	         ├─ sideways, at an END ────────► the PANE's swipe, to the next tab:
 	         │    (the whole day: both)      nothing to pan to, and a swipe
 	         │                               never selects time
@@ -138,6 +139,21 @@
 	selecting a time, a user can touch in the time axis». The machine is
 	#lib/nowpoint.ts; a tap and a right click are the `picture` action's
 	(#lib/hover.ts), because every drawn picture has it.
+
+	ONE GESTURE, HOWEVER MANY FINGERS (da-wekrr, vividn, 2026-11-07: «when
+	zooming you should be able to release one finger and keep panning.
+	similarly, when panning around if you add another finger it should
+	gracefully allow you to just zoom. all very fluid and uninterrupted»).
+	A pinch that loses a finger commits where it stands and goes on as a
+	pan under the finger left; a pan that gains one commits where it stands
+	and goes on as a pinch, its anchor the fingers' middle.
+
+	Zoomed in, the bands take the vertical from the browser too
+	(`touch-action: none`), so a pan's own hand scrolls the stack: a scroll
+	event as the browser's is, which `onScroll` reads as ever (what is on
+	screen, `atBottom`, the past grown above, held from the bottom), and a
+	flick goes on after the lift by its own momentum (`fling`). At the
+	whole day the stack's scroll is the browser's, as it was.
 
 	The 400ms does not COMMIT (da-pzzoz): a still long press is a time and
 	only a travelling one is a range. `.hold-mark` — a ring closing over
@@ -1676,9 +1692,11 @@
 			listen(true);
 			return begin(event);
 		}
-		// A second finger is a pinch, and the first finger's gesture was
-		// never one: whatever it had become is dropped before the scale
-		// starts, so nothing of it is committed on the way out.
+		// A second finger is a pinch. A pan goes on as it, from the window
+		// it has reached (da-wekrr); any other gesture of the first finger's
+		// is dropped before the scale starts, so nothing of it is committed.
+		stopFling();
+		if (mode === 'pan') commit();
 		dropPress();
 		if (fingers.size !== 2) return;
 		const box = bandBoxNow();
@@ -1727,6 +1745,9 @@
 		if (pinching && fingers.size < 2) {
 			commit();
 			dropPress();
+			// The finger left goes on as a pan from where the pinch stands (da-wekrr).
+			const [left] = at();
+			if (left) panFrom(left.x, left.y);
 		} else finish(event);
 		if (fingers.size === 0 && !press) listen(false);
 	}
@@ -1736,6 +1757,7 @@
 	 * most often. Nothing of a pan is kept: the preview goes with it.
 	 */
 	function onPointerCancel(event: PointerEvent): void {
+		stopFling();
 		fingers.delete(event.pointerId);
 		if (pinching && fingers.size < 2) commit();
 		dropPress();
@@ -1790,10 +1812,27 @@
 	 * midnights when it runs off an end.
 	 */
 	let pressDay: Element | null = null;
-	/** The window a pan began from, and the band it began over. */
-	let panning: { window: [number, number]; box: DOMRect } | null = null;
+	/**
+	 * The window a pan began from, the band it began over, the `y` its
+	 * scroll of the stack has reached, and its last moves, which a flick's
+	 * speed is read from.
+	 */
+	let panning: { window: [number, number]; box: DOMRect; y: number; trail: { t: number; y: number }[] } | null = null;
+
+	/** Pan from (`x`, `y`): what a pinch's remaining finger goes on as. */
+	function panFrom(x: number, y: number): void {
+		const box = bandBoxNow();
+		if (!box) return;
+		press = { x, y, inNow: false, atOnce: false };
+		// Committed: `advance` never asks a pan again, so `long` cannot turn it into a range.
+		mode = 'pan';
+		pressedAt = performance.now();
+		carry = 0;
+		panning = { window: committed, box, y, trail: [] };
+	}
 
 	function begin(event: PointerEvent): void {
+		stopFling();
 		if (event.button > 0) return;
 		if ((event.target as HTMLElement).closest('.axis')) return scrubFrom(event);
 		const day = (event.target as HTMLElement)
@@ -1841,12 +1880,15 @@
 		if (mode === 'scrub') return scrubTo(x);
 		const [dx, dy] = [x - press.x, y - press.y];
 		// A mostly-vertical finger is the STACK's scroll, held first or not
-		// (da-xg1vi: «a vertical drag on the data area scrolls, always»). It
-		// is dropped rather than merely ignored, so the timer cannot take a
-		// slow scroll away from the reader 400ms in.
-		if (undecided(mode) && Math.abs(dy) > SLOP_PX && Math.abs(dy) > Math.abs(dx)) return dropPress();
+		// (da-xg1vi: «a vertical drag on the data area scrolls, always»): at
+		// the whole day the browser's, so it is dropped rather than merely
+		// ignored, and the timer cannot take a slow scroll away from the
+		// reader 400ms in; zoomed in, the pan's, which scrolls it (da-wekrr),
+		// a hold that starts to travel down included.
+		const down = undecided(mode) && Math.abs(dy) > SLOP_PX && Math.abs(dy) > Math.abs(dx);
+		if (down && !zoomed) return dropPress();
 		const was = mode;
-		mode = advance(mode, press, x, y, long);
+		mode = down ? 'pan' : advance(mode, press, x, y, long);
 		// The wait's mark belongs to a press that is still undecided.
 		if (mode !== 'press' && mode !== 'hold') waiting = null;
 		if (mode === 'range' && was !== 'range') {
@@ -1858,12 +1900,14 @@
 		if (mode === 'pan' && was !== 'pan') {
 			// At the end it is pushing past, the swipe is the pane's: there is
 			// nothing to pan to, and nothing of this press happens.
-			if (panStop.includes(dx > 0 ? 'start' : 'end')) return dropPress();
+			// A pan begun downward is the stack's, so no end hands it to the pane.
+			if (!down && panStop.includes(dx > 0 ? 'start' : 'end')) return dropPress();
 			const box = bandBoxNow();
 			if (!box) return dropPress();
-			panning = { window: committed, box };
+			carry = 0;
+			panning = { window: committed, box, y: press.y, trail: [] };
 		}
-		if (mode === 'pan') panTo(x);
+		if (mode === 'pan') panTo(x, y);
 		if (mode === 'range') range(x, y);
 	}
 
@@ -1896,10 +1940,62 @@
 	 * content follows the finger, so the hours move against it. Nothing is
 	 * asked of datum until the release (`commit`).
 	 */
-	function panTo(x: number): void {
+	function panTo(x: number, y: number): void {
 		if (!panning) return;
 		const f = (x - press!.x) / panning.box.width;
 		slide(zoomWindow(panning.window, 1, 0.5, 0.5 + f));
+		// Down the stack by the step, not to a place: the stack grown above,
+		// or a pinch's hold, moves its scroll under the pan.
+		scrollBy(panning.y - y);
+		panning.y = y;
+		const t = performance.now();
+		panning.trail = [...panning.trail.filter((s) => t - s.t < FLICK_MS), { t, y }];
+	}
+
+	/**
+	 * Scroll the stack by `dy`, carrying what a whole pixel rounds away;
+	 * false once it is at an end.
+	 */
+	let carry = 0;
+	function scrollBy(dy: number): boolean {
+		if (!stackEl) return false;
+		const end = stackEl.scrollHeight - stackEl.clientHeight;
+		const want = clamp(stackEl.scrollTop + dy + carry, 0, end);
+		stackEl.scrollTop = want;
+		carry = want - stackEl.scrollTop;
+		return want > 0 && want < end;
+	}
+
+	/** How far back a flick's speed is read, in ms. */
+	const FLICK_MS = 100;
+	/** How long a finger may rest before its lift, in ms, and still flick: longer, it stopped first. */
+	const REST_MS = 50;
+	/** How long a flick's speed takes to fall by e, in ms: a native scroll's feel. */
+	const FLING_TAU = 325;
+	let flinging = 0;
+
+	/**
+	 * The momentum a native scroll gave after a flick, which the stack lost
+	 * when the pan took its vertical (da-wekrr): the pan's last speed down,
+	 * decaying, until it is slow or an end stops it.
+	 */
+	function fling(): void {
+		const trail = panning?.trail ?? [];
+		const [a, b] = [trail[0], trail.at(-1)];
+		let then = performance.now();
+		if (!a || !b || b.t === a.t || then - b.t > REST_MS) return;
+		let v = (a.y - b.y) / (b.t - a.t);
+		const go = (now: number) => {
+			const dt = Math.max(0, now - then);
+			then = now;
+			v *= Math.exp(-dt / FLING_TAU);
+			flinging = Math.abs(v) > 0.02 && scrollBy(v * dt) ? requestAnimationFrame(go) : 0;
+		};
+		flinging = requestAnimationFrame(go);
+	}
+	function stopFling(): void {
+		cancelAnimationFrame(flinging);
+		flinging = 0;
 	}
 
 	/**
@@ -1967,7 +2063,10 @@
 			if (at) setCursor(at);
 			spendPress();
 		}
-		if (mode === 'pan') commit();
+		if (mode === 'pan') {
+			fling();
+			commit();
+		}
 		dropPress();
 	}
 
@@ -2076,6 +2175,7 @@
 		cancelIdle(relaying);
 		clearTimeout(settling);
 		clearTimeout(longTimer);
+		stopFling();
 		listen(false);
 		if (mounted.get(heldAs) === holding) mounted.delete(heldAs);
 		held.delete(heldAs);
@@ -2120,6 +2220,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 	<div
 		class="strip"
+		class:zoomed
 		data-labels="entry"
 		bind:this={stripEl}
 		data-mode={mode}
@@ -2533,6 +2634,12 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		overflow: clip;
+	}
+	/* Zoomed in, a finger down a band is the pan's, both axes (da-wekrr): the
+	   stack scrolls by its hand. The date column keeps the browser's scroll,
+	   and the ruler, a scrub, has `touch-action: none` of its own. */
+	.strip.zoomed .band {
+		touch-action: none;
 	}
 	/* The picture at the size it was drawn, scaled only WHILE the handle is
 	   being dragged — the preview.

@@ -575,6 +575,182 @@ describe('zoomed in, a drag pans and a long press selects', () => {
 	});
 });
 
+// ── one gesture, however many fingers (da-wekrr) ───────────────────────
+//
+// vividn, 2026-11-07: «on the dayview, right now panning is locked to one
+// axis or the other, it should be free to pan in both at once. Also, when
+// zooming you should be able to release one finger and keep panning.
+// similarly, when panning around if you add another finger it should
+// gracefully allow you to just zoom. all very fluid and uninterrupted».
+//
+// Each is read off the PICTURE: the instant and the place down its band
+// under a finger, found again after the finger moved. A gesture that
+// jumped, restarted or locked to one axis leaves that point somewhere else.
+
+/** Touches as a finger makes them, by CDP: `send(type, points)`, each point `{ id, x, y }`. */
+async function touches(page) {
+	const cdp = await page.context().newCDPSession(page);
+	return {
+		send: (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints }),
+		done: () => cdp.detach()
+	};
+}
+
+/** The picture's point at (`x`, `y`): its band, the instant there, how far down the band. */
+const pointUnder = (page, at) =>
+	page.evaluate(({ x, y }) => {
+		const band = document.elementFromPoint(x, y)?.closest('.band');
+		const day = band.querySelector('svg.svg [data-lo]');
+		const ctm = band.querySelector('svg.svg').getScreenCTM();
+		const px = (u) => new DOMPoint(u, 0).matrixTransform(ctm).x;
+		const [lo, hi] = [px(Number(day.dataset.lo)), px(Number(day.dataset.hi))];
+		const [from, to] = [Date.parse(day.dataset.from), Date.parse(day.dataset.to)];
+		return { daysAgo: band.dataset.daysAgo, ms: from + ((x - lo) / (hi - lo)) * (to - from), down: y - band.getBoundingClientRect().top };
+	}, at);
+
+/** Where that point is on screen now. */
+const screenOf = (page, point) =>
+	page.evaluate(({ daysAgo, ms, down }) => {
+		const band = document.querySelector(`.band[data-days-ago="${daysAgo}"]`);
+		const day = band.querySelector('svg.svg [data-lo]');
+		const ctm = band.querySelector('svg.svg').getScreenCTM();
+		const px = (u) => new DOMPoint(u, 0).matrixTransform(ctm).x;
+		const [lo, hi] = [px(Number(day.dataset.lo)), px(Number(day.dataset.hi))];
+		const [from, to] = [Date.parse(day.dataset.from), Date.parse(day.dataset.to)];
+		return { x: lo + ((ms - from) / (to - from)) * (hi - lo), y: band.getBoundingClientRect().top + down };
+	}, point);
+
+/** `point` is under `finger`, to a few px. */
+async function staysUnder(page, point, finger, what) {
+	const seen = await screenOf(page, point);
+	assert.ok(
+		Math.abs(seen.x - finger.x) <= 3 && Math.abs(seen.y - finger.y) <= 3,
+		`${what}: the point is at ${seen.x.toFixed(1)},${seen.y.toFixed(1)}, the finger at ${finger.x},${finger.y}`
+	);
+}
+
+const stackTop = (page) => page.locator('.stack').evaluate((el) => el.scrollTop);
+
+/** A spot in the stack's middle, over a band with its day drawn. */
+async function midStack(page) {
+	const box = await page.locator('.stack').boundingBox();
+	const g = await geom(page);
+	const at = { x: Math.round(g.left + g.width / 2), y: Math.round(box.y + box.height / 2) };
+	assert.ok(
+		await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.stack .band')?.querySelector('svg.svg [data-lo]'), at),
+		'the spot is not over a day in the stack'
+	);
+	return at;
+}
+
+describe('one gesture, however many fingers (da-wekrr)', () => {
+	test('zoomed in, a diagonal drag moves the hours and the days at once, and selects nothing', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				await zoomIn(app, await geom(page));
+				const window0 = await windowHeard(app);
+				const top0 = await stackTop(page);
+				const a = await midStack(page);
+				const point = await pointUnder(page, a);
+				const { send, done } = await touches(page);
+				try {
+					await send('touchStart', [{ id: 1, ...a }]);
+					let b = a;
+					for (let i = 1; i <= 10; i++) {
+						b = { x: a.x + 6 * i, y: a.y + 12 * i };
+						await send('touchMove', [{ id: 1, ...b }]);
+					}
+					await staysUnder(page, point, b, 'under a diagonal pan');
+					await send('touchEnd', []);
+				} finally {
+					await done();
+				}
+				await untilWindow(app, `w[0] < ${window0[0] - 0.25}`);
+				assert.ok((await stackTop(page)) <= top0 - 100, `the days did not scroll: ${top0} → ${await stackTop(page)}`);
+				assert.deepEqual(await pillsOf(page), [], 'the pan selected something');
+			},
+			PHONE
+		);
+	});
+
+	test('a pinch whose one finger lifts goes on as a pan under the finger left', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				const window0 = await windowHeard(app);
+				const top0 = await stackTop(page);
+				const mid = await midStack(page);
+				const pair = (apart) => [
+					{ id: 1, x: mid.x - apart / 2, y: mid.y },
+					{ id: 2, x: mid.x + apart / 2, y: mid.y }
+				];
+				const { send, done } = await touches(page);
+				try {
+					await send('touchStart', [pair(100)[0]]);
+					await send('touchStart', pair(100));
+					for (let i = 1; i <= 6; i++) await send('touchMove', pair(100 + (200 * i) / 6));
+					const [left, right] = pair(300);
+					const point = await pointUnder(page, left);
+					// A `touchEnd` releases the points it names.
+					await send('touchEnd', [right]);
+					await staysUnder(page, point, left, 'as the other finger lifts');
+					let b = left;
+					for (let i = 1; i <= 8; i++) {
+						b = { id: 1, x: left.x + 5 * i, y: left.y + 12 * i };
+						await send('touchMove', [b]);
+					}
+					await staysUnder(page, point, b, 'panning on from the pinch');
+					await send('touchEnd', []);
+					await untilWindow(app, `w[1] - w[0] < ${(window0[1] - window0[0]) / 2}`);
+					await app.idle();
+					// The hours stay where the finger left them; the days may go on
+					// down by the flick's momentum, never back.
+					const seen = await screenOf(page, point);
+					assert.ok(Math.abs(seen.x - b.x) <= 3 && seen.y >= b.y - 3, `after the lift: ${seen.x},${seen.y} for ${b.x},${b.y}`);
+				} finally {
+					await done();
+				}
+				assert.ok((await stackTop(page)) <= top0 - 60, `the days did not scroll: ${top0} → ${await stackTop(page)}`);
+				assert.deepEqual(await pillsOf(page), [], 'the gesture selected something');
+			},
+			PHONE
+		);
+	});
+
+	test('a pan that gains a second finger zooms from where it stands', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				await zoomIn(app, await geom(page));
+				const window0 = await windowHeard(app);
+				const a = await midStack(page);
+				const { send, done } = await touches(page);
+				try {
+					await send('touchStart', [{ id: 1, ...a }]);
+					let b = a;
+					for (let i = 1; i <= 6; i++) {
+						b = { id: 1, x: a.x - 10 * i, y: a.y + 8 * i };
+						await send('touchMove', [b]);
+					}
+					const point = await pointUnder(page, b);
+					const other = (apart) => ({ id: 2, x: b.x + apart, y: b.y });
+					await send('touchStart', [b, other(80)]);
+					await send('touchMove', [b, other(80)]);
+					await staysUnder(page, point, b, 'as the second finger lands');
+					for (let i = 1; i <= 6; i++) await send('touchMove', [b, other(80 + 20 * i)]);
+					await send('touchEnd', []);
+				} finally {
+					await done();
+				}
+				await untilWindow(app, `w[1] - w[0] < ${(window0[1] - window0[0]) * 0.75}`);
+				assert.deepEqual(await pillsOf(page), [], 'the gesture selected something');
+			},
+			PHONE
+		);
+	});
+});
+
 // ── one selection, two views ───────────────────────────────────────────
 
 describe('a range made in the strip is the page’s one selection', () => {
