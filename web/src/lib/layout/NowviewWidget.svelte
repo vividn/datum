@@ -2100,9 +2100,10 @@
 	/**
 	 * How clear a number is, by how many steps it is from the one picked
 	 * (da-x9mzc): the pick and the next either way clear, the rest fading,
-	 * so a turn past the third still shows where it is.
+	 * so a turn past the third still shows where it is; slowly, so the
+	 * fourth is faint but readable (da-n22c5).
 	 */
-	const FADE = [1, 1, 0.45, 0.18];
+	const FADE = [1, 1, 0.7, 0.5, 0.3];
 	/** How many of the numbers show either side of the one picked: as many as fade. */
 	const SHOWN = FADE.length - 1;
 
@@ -2143,6 +2144,9 @@
 	});
 	/** The rung `k` steps from the handle: up is longer. */
 	const rungAt = (k: number) => (k > 0 ? around.up[k - 1] : k < 0 ? around.down[-k - 1] : undefined);
+
+	/** A pick on the ladder: no further either way than it has numbers. */
+	const clampPick = (pick: number) => Math.max(-around.down.length, Math.min(around.up.length, pick));
 	/** The numbers as drawn around the pick: how many steps from the handle, the rung, how clear. */
 	const notches = $derived.by(() => {
 		const pick = wheel?.pick ?? 0;
@@ -2197,14 +2201,18 @@
 	/** What a mouse wheel has turned the open numbers short of a step. */
 	let turnedNumbers = 0;
 
-	/** A notch of a mouse wheel is a number, up the longer; a trackpad's small deltas add up to one. */
+	/**
+	 * A notch of a mouse wheel turns the pick a number, up the longer, as a
+	 * swipe does; a trackpad's small deltas add up to one. A tap on a number
+	 * takes it (da-n22c5).
+	 */
 	function onNumbersWheel(event: WheelEvent): void {
 		if (!wheel) return;
 		event.preventDefault();
 		turnedNumbers += event.deltaY;
 		const steps = Math.trunc(turnedNumbers / (NOTCH / 2));
 		turnedNumbers -= (steps * NOTCH) / 2;
-		if (steps) stepTo(rungAt(-steps));
+		if (steps) wheel = { ...wheel, pick: clampPick(wheel.pick - steps) };
 	}
 
 	function onWheelKey(event: KeyboardEvent): void {
@@ -2232,8 +2240,9 @@
 		edge: boolean;
 		/** The handle pressed, none on the numbers. */
 		on: Handle | null;
-		/** Whether its numbers were open as it was pressed. */
+		/** Whether its numbers were open as it was pressed, and where a wheel had turned them. */
 		was: boolean;
+		turned: number;
 		mode: 'press' | 'wheel' | 'scale';
 		touch: boolean;
 	} | null = $state(null);
@@ -2257,7 +2266,7 @@
 		const edge = !counted && (vertical ? box.y : box.x) + anchorX(svg) > right;
 		const anchor = edge ? right : (vertical ? box.y : box.x) + anchorX(svg);
 		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
-		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, edge, on: h, was: isOpenOn(h), mode: 'press', touch: event.pointerType !== 'mouse' };
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, edge, on: h, was: isOpenOn(h), turned: isOpenOn(h) ? (wheel?.pick ?? 0) : 0, mode: 'press', touch: event.pointerType !== 'mouse' };
 		dragged = at;
 		holding = setTimeout(() => open(h), LONG_MS);
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
@@ -2266,7 +2275,7 @@
 	/** A press on the numbers: a tap is the number's own click, and one that travels swipes them. */
 	function grabNumbers(event: PointerEvent): void {
 		if (event.button > 0 || !wheel) return;
-		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, edge: false, on: null, was: true, mode: 'press', touch: event.pointerType !== 'mouse' };
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, edge: false, on: null, was: true, turned: wheel.pick, mode: 'press', touch: event.pointerType !== 'mouse' };
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
 	}
 
@@ -2302,8 +2311,7 @@
 		}
 		if (grip.mode === 'wheel' && wheel) {
 			const notch = vertical ? NOTCH_PX.y : NOTCH_PX.x;
-			const pick = Math.round(across(dx, dy) / notch);
-			wheel = { ...wheel, pick: Math.max(-around.down.length, Math.min(around.up.length, pick)) };
+			wheel = { ...wheel, pick: clampPick(grip.turned + Math.round(across(dx, dy) / notch)) };
 		}
 	}
 
@@ -2324,9 +2332,10 @@
 
 	function onGripCancel(event: PointerEvent): void {
 		if (!grip || event.pointerId !== grip.id) return;
+		const turned = grip.turned;
 		ungrip();
 		zoom = null;
-		if (wheel) wheel = { ...wheel, pick: 0 };
+		if (wheel) wheel = { ...wheel, pick: turned };
 	}
 
 	function ungrip(): void {

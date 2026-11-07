@@ -126,11 +126,11 @@ describe('the nowview widget', () => {
 			await hover(page, '-30m');
 			// The next step either way clear, those beyond it fading.
 			const wheel = await wheelOf(page);
-			assert.deepEqual(wheel.up.map(([s]) => s), ['20m', '30m', '45m']);
-			assert.deepEqual(wheel.down.map(([s]) => s), ['10m', '5m', '2m']);
+			assert.deepEqual(wheel.up.map(([s]) => s), ['20m', '30m', '45m', '60m']);
+			assert.deepEqual(wheel.down.map(([s]) => s), ['10m', '5m', '2m', '1m']);
 			for (const side of [wheel.up, wheel.down]) {
 				assert.equal(side[0][1], 1, `the next step is not clear: ${JSON.stringify(side)}`);
-				assert.ok(side[1][1] < 1 && side[2][1] < side[1][1], `the steps beyond do not fade: ${JSON.stringify(side)}`);
+				assert.ok(side[1][1] < 1 && side[2][1] < side[1][1] && side[3][1] < side[2][1], `the steps beyond do not fade: ${JSON.stringify(side)}`);
 			}
 			const seen = await app.spyOnRunner();
 
@@ -139,7 +139,7 @@ describe('the nowview widget', () => {
 			assert.equal((await wheelOf(page)).at, '-20m', 'the wheel closed or did not move on');
 			await notch(page, '30m').click();
 			await asked(page, '60m');
-			assert.deepEqual((await wheelOf(page)).up.map(([s]) => s), ['45m', '60m', '90m']);
+			assert.deepEqual((await wheelOf(page)).up.map(([s]) => s), ['45m', '60m', '90m', '2h']);
 
 			// Leaving the handle closes the wheel.
 			await page.mouse.move(1, 1);
@@ -163,8 +163,8 @@ describe('the nowview widget', () => {
 				assert.equal(await page.locator(`${PANE} .nowview-handles .handle[data-axis="abs"]`).getAttribute('data-at'), '14:45');
 				await hover(page, '14:45');
 				const wheel = await wheelOf(page);
-				assert.deepEqual(wheel.up.map(([s]) => s), ['14:40', '14:30', '14:15']);
-				assert.deepEqual(wheel.down.map(([s]) => s), ['14:50', '14:55', '14:58']);
+				assert.deepEqual(wheel.up.map(([s]) => s), ['14:40', '14:30', '14:15', '14:00']);
+				assert.deepEqual(wheel.down.map(([s]) => s), ['14:50', '14:55', '14:58', '14:59']);
 				await notch(page, '14:40').click();
 				await asked(page, '40m');
 				await app.idle();
@@ -228,7 +228,7 @@ describe('the nowview widget', () => {
 				const { up, down } = await wheelOf(page);
 				const clear = Object.fromEntries([...up, ...down]);
 				// -15m's longer steps, as many as show around the pick: picked 60m.
-				assert.deepEqual(up.map(([s]) => s), ['20m', '30m', '45m', '60m', '90m', '2h', '3h']);
+				assert.deepEqual(up.map(([s]) => s), ['20m', '30m', '45m', '60m', '90m', '2h', '3h', '6h']);
 				assert.equal(clear['60m'], 1, `the pick is not clear: ${JSON.stringify(up)}`);
 				assert.ok(clear['45m'] === 1 && clear['90m'] === 1, `its neighbours are not clear: ${JSON.stringify(up)}`);
 				assert.ok(clear['30m'] < 1 && clear['20m'] < clear['30m'], `no fade below the pick: ${JSON.stringify(up)}`);
@@ -256,9 +256,18 @@ describe('the nowview widget', () => {
 					const all = [...document.querySelectorAll('.nowview-wheel .notch')];
 					return { off: all.map((n) => n.getBoundingClientRect().left - h.right), size: parseFloat(getComputedStyle(all[0]).fontSize), n: all.length };
 				});
-				assert.equal(seen.n, 7);
+				assert.equal(seen.n, 9);
 				assert.ok(seen.off.every((o) => o >= 0), `a number lies over the handle: ${seen.off}`);
 				assert.ok(seen.size >= 20, `the numbers' words are ${seen.size}px`);
+				// Four either side of the pick, fading slowly outward and none gone
+				// (da-n22c5, vividn: «decrease the rate at which it becomes
+				// transparent so that one more level in each direction can be seen»).
+				for (const side of Object.values(await wheelOf(page)).slice(1)) {
+					const clear = side.map(([, o]) => o);
+					assert.equal(clear.length, 4, `not four a side: ${JSON.stringify(side)}`);
+					assert.ok(clear.every((o, i) => o > 0 && (i === 0 || o < clear[i - 1])), `not fading outward: ${JSON.stringify(side)}`);
+					assert.ok(clear[3] >= 0.25 && clear[2] > 0.45, `faded too fast: ${JSON.stringify(side)}`);
+				}
 
 				await handle(page, '-30m').tap();
 				await page.locator('.nowview-wheel').waitFor({ state: 'detached' });

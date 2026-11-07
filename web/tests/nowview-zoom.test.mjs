@@ -114,10 +114,14 @@ describe('the nowview widget zooms', () => {
 		);
 	});
 
-	// vividn, on #1445: «when you click on the handle, have the new times scrollable by mouse wheel».
+	// vividn, on #1445: «when you click on the handle, have the new times
+	// scrollable by mouse wheel», and 2026-11-07 (da-n22c5): «after opening
+	// the white diamond scale picker by clicking on the white diamond, you
+	// should be able to scroll through the list of times». A notch turns the
+	// pick, as a swipe does; a click takes a time.
 	const inMinutes = (h) => parseFloat(h) * (h.endsWith('h') ? 60 : h.endsWith('s') ? 1 / 60 : 1);
 	for (const kind of ['rel', 'abs'])
-		test(`a click opens the ${kind} handle's numbers, a hover does not, and a mouse wheel scrolls them`, async () => {
+		test(`a click opens the ${kind} handle's numbers, a hover does not, a mouse wheel turns the pick through them, and a click takes it`, async () => {
 			await withApp(
 				async (app) => {
 					const { page } = app;
@@ -134,6 +138,8 @@ describe('the nowview widget zooms', () => {
 							const a = window.__datumSeen.filter((c) => c[0] === 'nowview').at(-1);
 							return a?.[a.indexOf('--history') + 1];
 						});
+					const picked = () => page.locator('.nowview-wheel .notch.picked').evaluate((n) => ({ k: Number(n.dataset.k ?? 0), word: n.textContent.trim() }));
+					const pickIs = (k) => page.locator(`.nowview-wheel .notch.picked${k ? `[data-k="${k}"]` : '.held'}`).waitFor();
 					// What a closed set of numbers was turned short of a step is gone with them.
 					await page.mouse.wheel(0, -60);
 					await page.mouse.down();
@@ -144,14 +150,30 @@ describe('the nowview widget zooms', () => {
 					await page.locator('.nowview-wheel .notch.held').waitFor();
 					await page.mouse.wheel(0, -60);
 					await page.waitForTimeout(300);
-					assert.equal(await page.locator(`${PANE} .handle.dragged`).count(), 0);
-					assert.ok(!(await history()) || inMinutes(await history()) === 30, 'two short turns made a step across a close');
-					await page.mouse.wheel(0, -100);
-					const longer = await until(history, (m) => m && inMinutes(m) > 30);
-					await page.locator('.nowview-wheel .notch.held').waitFor();
-					// Past what that turn left short of a step, the other way.
+					assert.equal((await picked()).k, 0, 'two short turns made a step across a close');
+					// A notch a number, up the longer, and the window waits for a click.
+					for (let i = 0; i < 3; i++) await page.mouse.wheel(0, -100);
+					await pickIs(3);
+					// Past what those turns left short of a step, the other way.
 					await page.mouse.wheel(0, 160);
-					await until(history, (m) => m && inMinutes(m) < inMinutes(longer));
+					await pickIs(2);
+					await page.waitForTimeout(300);
+					assert.equal(await page.locator(`${PANE} .handle.dragged`).count(), 0);
+					assert.ok(!(await history()) || inMinutes(await history()) === 30, `the wheel took a time: ${await history()}`);
+					// The time taken is the one picked.
+					const { word } = await picked();
+					await page.locator('.nowview-wheel .notch.picked').click();
+					await page.locator(`.nowview-wheel .notch.held[data-at="${word}"]`).waitFor();
+					const longer = await until(history, (m) => m && inMinutes(m) > 30);
+					// The pick stops at the ladder's end.
+					for (let i = 0; i < 30; i++) await page.mouse.wheel(0, -100);
+					await page.waitForTimeout(300);
+					const end = await page.locator('.nowview-wheel').evaluate((w) => {
+						const ks = [...w.querySelectorAll('.notch[data-k]')].map((n) => Number(n.dataset.k));
+						return { picked: Number(w.querySelector('.notch.picked').dataset.k), top: Math.max(...ks) };
+					});
+					assert.ok(end.picked > 2 && end.picked === end.top, `the pick ran past the ladder: ${JSON.stringify(end)}`);
+					assert.equal(await history(), longer, 'turning the pick took a time');
 					assert.equal(await page.locator('.nowview-wheel').count(), 1, 'the wheel closed the numbers');
 					assert.deepEqual(app.errors, []);
 				},
