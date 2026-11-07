@@ -324,11 +324,11 @@ fn tail_normal_transition_has_no_warning_glyph() {
     );
 }
 
-/// When the prior slot has no concrete colour (e.g. the field has been
-/// closed — `Bool(false)`), the repeat flag falls through to the default
-/// blank slot rather than painting `!` onto a non-existent prior block.
+/// A repeated `off` (the prior slot `Bool(false)`, uncoloured) still gets
+/// the `!`, on the terminal's own background (da-jvnrm, vividn, 2026-11-07:
+/// «a repeated 'off' no longer gets a yellow ! and it should»).
 #[test]
-fn tail_state_repeat_no_marker_when_prior_field_ended() {
+fn tail_state_repeat_marker_when_prior_field_ended() {
     let _g = no_color_scope();
     let e = entry_at(
         "workout",
@@ -343,10 +343,7 @@ fn tail_state_repeat_no_marker_when_prior_field_ended() {
         ..Default::default()
     };
     let stripped = strip_ansi(&format_state_group(&e, None, &ctx).expect("state group"));
-    assert!(
-        !stripped.contains('!'),
-        "FieldEnded slot suppresses the marker: {stripped:?}"
-    );
+    assert!(stripped.contains("!off"), "{stripped:?}");
 }
 
 // ─── da-8sx8: the `_N` quickId column ───────────────────────────────────────

@@ -130,6 +130,7 @@ mod ref_column;
 mod rename_merge;
 mod render_state_group;
 mod reparse_cmd;
+mod repeat_marker;
 mod repl_lines;
 mod restore_hard;
 mod restore_merge_collision;

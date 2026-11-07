@@ -686,10 +686,10 @@ fn render_state_transition_group(
 }
 
 /// Render the LEAD slot, optionally substituting the `!` warning marker
-/// (per da-qfv0) when [`RenderContext::is_state_repeat`] is set. The marker
-/// only attaches to a slot with a concrete state colour — `Ignored` /
-/// `FieldEnded` slots have no "prior block" to paint the glyph over, so
-/// they fall through to the default slot rendering.
+/// (per da-qfv0) when [`RenderContext::is_state_repeat`] is set. Every
+/// repeat gets it, over whatever the slot would have drawn: a state's
+/// colour, IGNORED's grey, and an ended field's bare slot, so a repeated
+/// `off` reads `!off` as a repeated `on` reads `!on` (da-jvnrm).
 pub(crate) fn render_lead_slot(
     previous: Option<&JsonValue>,
     is_state_repeat: bool,
@@ -700,23 +700,26 @@ pub(crate) fn render_lead_slot(
         return render_slot(previous, field, spec);
     }
     match resolve_slot(previous, field, spec) {
-        SlotKind::State(rgb) => paint_warning(rgb, WARNING_GLYPH),
-        SlotKind::Parallel(colors) => paint_warning(colors[0], WARNING_GLYPH),
-        SlotKind::Ignored | SlotKind::FieldEnded => render_slot(previous, field, spec),
+        SlotKind::State(rgb) => paint_warning(Some(rgb), WARNING_GLYPH),
+        SlotKind::Parallel(colors) => paint_warning(Some(colors[0]), WARNING_GLYPH),
+        SlotKind::Ignored => paint_warning(Some(Rgb::GREY), WARNING_GLYPH),
+        SlotKind::FieldEnded => paint_warning(None, WARNING_GLYPH),
     }
 }
 
-/// Paint `body` in bold warning-yellow over `bg`, in the slot's second
-/// column, beside the state. With color disabled the raw glyph is still
-/// emitted so non-TTY consumers (pipes, tests, log scrapes) can detect the
-/// marker by substring rather than by ANSI escape.
-fn paint_warning(bg: Rgb, body: &str) -> String {
+/// Paint `body` in bold warning-yellow over `bg` (the terminal's own with
+/// `None`), in the slot's second column, beside the state. With color
+/// disabled the raw glyph is still emitted so non-TTY consumers (pipes,
+/// tests, log scrapes) can detect the marker by substring rather than by
+/// ANSI escape.
+fn paint_warning(bg: Option<Rgb>, body: &str) -> String {
     let body = format!(" {body}");
     if !color_enabled() {
         return body;
     }
-    let fg = warning_fg(bg);
-    format!("{}{}{}{}{}", BOLD, bg.bg(), fg.fg(), body, RESET)
+    let bg_esc = bg.map(|b| b.bg()).unwrap_or_default();
+    let fg = warning_fg(bg.unwrap_or(Rgb { r: 0, g: 0, b: 0 }));
+    format!("{}{}{}{}{}", BOLD, bg_esc, fg.fg(), body, RESET)
 }
 
 /// Render a LEAD or TRAIL slot — two bg-coloured spaces. Per da-25l
@@ -1646,8 +1649,8 @@ mod tests {
         assert!(!compute_is_state_repeat(Some(&prior), &row));
     }
 
-    // The rendered-output tests for `render_lead_slot` (warning glyph,
-    // FieldEnded fallback, NO_COLOR survival) live in
-    // `tests/render_fixtures.rs`; all env mutation serializes on the
+    // The rendered-output tests for `render_lead_slot` (warning glyph, a
+    // repeated `off`, NO_COLOR survival) live in `tests/tail_render.rs`, the
+    // CLI's in datum-cli's `tests/repeat_marker.rs`; all env mutation serializes on the
     // process-wide `datum_test_util::env_lock` (da-3ywd).
 }
