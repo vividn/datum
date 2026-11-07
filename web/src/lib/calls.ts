@@ -159,9 +159,10 @@ export function refsArgv(): string[] {
 	return ['ids', '--ref', '--json'];
 }
 
+/** As many days as the pane's width holds: `paneArgv` names them (da-nopcd). */
 export const DAYVIEW_VERTICAL: PaneSpec = {
 	title: 'dayview',
-	argv: ['dayview', '--orientation', 'vertical', '--days', '7']
+	argv: ['dayview', '--orientation', 'vertical']
 };
 
 // ---- sync ------------------------------------------------------------------------

@@ -198,10 +198,11 @@ describe('widget options', () => {
 	});
 
 	// The pivot (da-a6guc): `vertical` swaps the strip for datum's own
-	// `dayview --orientation vertical`, a week asked for at the pane's size.
+	// `dayview --orientation vertical`, as many days as the pane's width holds
+	// (da-nopcd, `dayview-vertical.test.mjs`), asked for at the pane's size.
 	// Which way time runs is read off the renderer's own `data-axis` on each
 	// day — `y` is time down a column — and not off the picture's shape,
-	// which is the pane's: the default strip pane is short, so the week
+	// which is the pane's: the default strip pane is short, so the days
 	// comes back wider than tall. Back to `horizontal` is the strip again.
 	for (const [name, options] of [['desktop', DESKTOP], ['phone', PHONE]]) {
 		test(`orientation pivots the dayview to columns, and back (${name})`, async () => {
@@ -212,15 +213,12 @@ describe('widget options', () => {
 				assert.equal(await days('y').count(), 0, 'the strip drew time down a column');
 
 				await pickOption(page, strip, 'orientation', 'vertical');
-				await page.waitForFunction(
-					(id) => document.querySelectorAll(`section[data-pane="${id}"] svg.svg g.day-data[data-axis="y"]`).length === 7,
-					strip
-				);
+				await days('y').first().waitFor({ state: 'attached' });
 				assert.equal(await days('x').count(), 0, 'a band is left beside the columns');
 				const [drawn, box] = await Promise.all(
 					[pane(page, strip).locator('svg.svg'), pane(page, strip)].map((l) => l.evaluate((e) => e.getBoundingClientRect().width))
 				);
-				assert.ok(drawn <= box, `the week overflows the pane: ${drawn} > ${box}`);
+				assert.ok(drawn <= box, `the days overflow the pane: ${drawn} > ${box}`);
 				assert.equal(await dotted(page, room ?? 'main'), false, 'the pivot dirtied the layout');
 
 				await pickOption(page, strip, 'orientation', 'horizontal');

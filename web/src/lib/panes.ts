@@ -58,8 +58,36 @@ export interface PaneBox {
 export function paneArgv(argv: string[], box: PaneBox | null): string[] | null {
 	if (!wantsBox(argv)) return argv;
 	if (!box || box.width <= 0 || box.height <= 0) return null;
-	return [...argv, '--width', String(box.width), '--height', String(box.height)];
+	return [...argv, ...daysAcross(argv, box), '--width', String(box.width), '--height', String(box.height)];
 }
+
+/**
+ * The width a vertical dayview gives each day, its 15px gap to the next
+ * included (`DEFAULT_INTERDAY_MARGIN`): about 80px of column, which holds
+ * a date label and three or four lanes side by side, and at 700px a week.
+ * A phone's narrow strip holds one (da-nopcd).
+ */
+export const DAY_COLUMN = 95;
+
+/**
+ * A vertical dayview naming no day count is asked for as many days as its
+ * box's width holds, at least today: each column's time then runs the
+ * box's whole height, where a fixed week across a narrow strip came back
+ * wider than the box and was scaled into a sliver at its top.
+ */
+function daysAcross(argv: string[], box: PaneBox): string[] {
+	// Every spelling the CLI reads (`parse_dayview_args`), its last orientation winning.
+	let vertical = false;
+	argv.forEach((word, i) => {
+		const named = word === '--orientation' ? argv[i + 1] : ORIENTED.exec(word)?.slice(1).find(Boolean);
+		if (named && /^(h|v|horizontal|vertical)$/.test(named)) vertical = named[0] === 'v';
+	});
+	if (argv[0] !== 'dayview' || !vertical || argv.some((word) => COUNTED.test(word))) return [];
+	return ['--days', String(Math.max(1, Math.floor(box.width / DAY_COLUMN)))];
+}
+const ORIENTED = /^--(?:orientation=(.*)|(horizontal|vertical))$/;
+/** The flags that already say how many days: `--start-date` does, with its end. */
+const COUNTED = /^(--(days|n-days|start-date)(=|$)|-n)/;
 
 /**
  * The commands whose output must be asked for at the size it is shown at.
