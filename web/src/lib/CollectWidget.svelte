@@ -158,7 +158,7 @@
 	import { currentDb } from './database.js';
 	import { run } from './run.js';
 	import { entryArgv } from './calls.js';
-	import { cursor, pointed, type Cursor } from './cursor.js';
+	import { cursor, pointAt, pointed, type Cursor } from './cursor.js';
 	import { grammar } from '#lib/layout/engine.ts';
 	import { previewOf } from './preview.js';
 	import { labelOf, withPills } from './selection.js';
@@ -747,6 +747,18 @@
 	function unselect() {
 		pills.update((all) => all.filter((p) => p.kind !== 'hid'));
 	}
+	/** The entry's field tapped: its pill in the entry's place, which opens the field (below). */
+	function toField(field: string, color?: string) {
+		unselect();
+		setFieldPill(field, color);
+	}
+	/**
+	 * The entry's time tapped: the cursor pointed at its `at`, to the second,
+	 * so the bar holds its absolute time pill. A period's `at` is its END.
+	 */
+	function toTime(e: Record<string, unknown>) {
+		pointAt({ at: new Date((e.at as { utc: string }).utc), step: 1 });
+	}
 
 	/**
 	 * A state tapped LOGS AT ONCE (vividn, 2026-11-03 16:07: one click), with
@@ -1178,9 +1190,10 @@
 			</div>
 			<div class="card">
 				<div class="title">
-					<span class="name" style:color={button?.color}>{entry.field}</span>
+					<!-- A field with no button (`timezone`, one deleted) has no view to open: its name is text. -->
+					{#if button}<button class="name link" style:color={button.color} data-entry-field title="collect {entry.field}" onclick={() => toField(button.field, button.color)}>{entry.field}</button>{:else}<span class="name">{entry.field}</span>{/if}
 					{#if state !== null && state !== undefined}<span style:color={button?.stateColors[said(state)]}>{said(state)}</span>{/if}
-					<span class="clock">{clockOf(entry)}</span>
+					{#if entry.at}<button class="clock link" data-entry-time title="put this time on the bar" onclick={() => toTime(entry!)}>{clockOf(entry)}</button>{/if}
 					<button class="nav round all" class:on={everything} data-all aria-pressed={everything} title="show all of it, as get -A" onclick={() => (everything = !everything)}>−A</button>
 				</div>
 				<dl>
@@ -1615,8 +1628,23 @@
 		gap: 0.6rem;
 	}
 
-	.card .name {
+	/* The field and the time are links (da-ffwmw): buttons drawn as the words. */
+	.card .link {
+		background: none;
+		border: none;
+		padding: 0;
+		font-family: inherit;
+		font-size: inherit;
+		line-height: inherit;
+		color: inherit;
 		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	/* The browser's own ring is near-black, no ring on this page. */
+	.card .link:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 
 	.card .all {

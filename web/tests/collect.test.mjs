@@ -603,5 +603,61 @@ describe('collect', () => {
 				assert.equal(await page.locator(`${BAR_PILLS}.hid`).count(), 0);
 			});
 		});
+
+		// da-ffwmw. vividn, 2026-11-07: «the occur time in the entry view of the
+		// collect widget should also be a link which adds that as a time pill. the
+		// field should also be a link which changes to the field pill».
+		test('its field is a link: the entry pill becomes the field pill, and collect opens the field', async () => {
+			await selected(async ({ page }) => {
+				await page.locator(`${ENTRY} [data-entry-field]`).click();
+				await page.locator(`${VIEW} [data-open-field="mood"]`).waitFor();
+				assert.equal(await page.locator(ENTRY).count(), 0);
+				assert.deepEqual(await barPills(page), ['field:mood']);
+			});
+		});
+
+		test('its time is a link: a period\'s time pill is its end, to the second, and the next entry is logged at it', async () => {
+			await selected(async (app) => {
+				const { page } = app;
+				// A period ending at 14:20:30, selected in mood's place.
+				assert.equal((await app.run(['start', 'work', '20m', '-t', '14:20:30'])).code, 0);
+				await app.redraw();
+				const [work] = JSON.parse((await app.run(['tail', 'work', '-n', '1', '--json'])).stdout).rows;
+				await page.locator(`section[data-title="tail"] tbody tr[data-hid^="${work.hid.slice(0, 5)}"]`).click();
+				await page.locator(`${ENTRY}[data-entry="${work.hid}"]`).waitFor();
+				await page.locator(`${ENTRY} [data-entry-time]`).click();
+				await page.waitForFunction(() => document.querySelector('.prompt-bar .pill.time')?.innerText.includes('14:20:30'));
+				// Back takes the entry's pill and leaves the time's; a coffee tap logs at once with it.
+				await page.locator(`${ENTRY} [data-back]`).click();
+				await page.locator(`${VIEW} [data-field="coffee"]`).click();
+				await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
+				await app.idle();
+				const [coffee] = JSON.parse((await app.run(['tail', 'coffee', '-n', '1', '--json'])).stdout).rows;
+				assert.deepEqual(coffee.at, work.at);
+			});
+		});
+
+		test('a field with no button of its own, as timezone, is named as text and no link', async () => {
+			await selected(async (app) => {
+				assert.equal((await app.run(['switch', 'timezone', 'Etc/UTC', '-t', '14:30'])).code, 0);
+				await app.redraw();
+				const [tz] = JSON.parse((await app.run(['tail', 'timezone', '-n', '1', '--json'])).stdout).rows;
+				await app.page.locator(`section[data-title="tail"] tbody tr[data-hid^="${tz.hid.slice(0, 5)}"]`).click();
+				// The hid is on the card at once, its entry read after it.
+				await app.page.locator(`${ENTRY} .title .name`, { hasText: 'timezone' }).waitFor();
+				assert.equal(await app.page.locator(`${ENTRY} [data-entry-field]`).count(), 0);
+			});
+		});
+
+		test('its field and time take the keyboard, with a visible ring', async () => {
+			await selected(async ({ page }) => {
+				await page.locator(`${ENTRY} [data-back]`).focus();
+				for (const link of ['data-entry-field', 'data-entry-time']) {
+					await page.keyboard.press('Tab');
+					const ring = await page.locator(`${ENTRY} [${link}]`).evaluate((el) => el === document.activeElement && el.matches(':focus-visible') && getComputedStyle(el).outlineStyle);
+					assert.equal(ring, 'solid', link);
+				}
+			});
+		});
 	});
 });
