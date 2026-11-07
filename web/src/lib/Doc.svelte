@@ -60,11 +60,18 @@
 	/**
 	 * The line's runs, or the unpainted line as its one run. A run of split
 	 * slot cells is a run per cell, since each fills its own (`splitFill`).
+	 * A moment's dot is a run of its own (`●lo` is `●`, `lo`), so `textColor`
+	 * lifts the state and leaves the dot the field's colour (da-1a50i), as the
+	 * tail's separate runs do. The dot alone: a state's own leading `-` or `(`
+	 * (`●-5`) is its text, and lifts with it.
 	 */
 	const segments: InfoSegment[] = $derived(
-		(doc.info_segments?.length ? doc.info_segments : [{ text: doc.info, color: null }]).flatMap((s) =>
-			s.fg && /^[◢◤]{2,}$/.test(s.text) ? [...s.text].map((text) => ({ ...s, text })) : [s]
-		)
+		(doc.info_segments?.length ? doc.info_segments : [{ text: doc.info, color: null }]).flatMap((s) => {
+			if (s.fg && /^[◢◤]{2,}$/.test(s.text)) return [...s.text].map((text) => ({ ...s, text }));
+			return !s.fg && s.color && s.text.length > 1 && s.text.startsWith('●')
+				? [{ ...s, text: '●' }, { ...s, text: s.text.slice(1) }]
+				: [s];
+		})
 	);
 
 	/**

@@ -269,7 +269,52 @@ describe('the spans one component paints', () => {
 			}
 		});
 	});
+
+	// da-1a50i: the echo's frame (Doc.svelte's info line) paints through the
+	// same `textColor`, so it lifts as the tail does, and the two cannot part.
+	test("lift a dark colour's text in the echo's frame, the bar's and the CLI widget's, and leave its dot", async () => {
+		await shared.solo(async (app) => {
+			await seedLines(app, ['setup ink --kind moment --states lo --state-color lo=#202020 --color #202020']);
+			// `●-5` too: the state's own `-` is its text, not the dot's, and lifts with it.
+			for (const state of ['lo', '-5']) {
+				await seedLines(app, [`setup ink --state-color=${state}=#202020`, `switch ink ${state} --moment -t 0700`]);
+				await echoLifts(app, state);
+			}
+		});
+	});
 });
+
+/** The echo of `switch ink <state>` in the bar and the CLI widget: its dot the field's colour, its state lifted. */
+async function echoLifts(app, state) {
+	const ground = await app.page.evaluate(() => {
+		const probe = document.body.appendChild(document.createElement('i'));
+		probe.style.background = 'var(--ground)';
+		const color = getComputedStyle(probe).backgroundColor;
+		probe.remove();
+		return color;
+	});
+	const frames = await app.page.evaluate(() => {
+		const spans = (doc) =>
+			[...(doc?.querySelectorAll('.info span') ?? [])]
+				.filter((s) => !s.querySelector('span'))
+				.map((s) => ({ text: s.textContent, color: getComputedStyle(s).color }));
+		return {
+			bar: spans(document.querySelector('.prompt-bar .group:last-child .doc')),
+			'CLI widget': spans([...document.querySelectorAll('.cli .doc')].at(-1))
+		};
+	});
+	for (const [surface, spans] of Object.entries(frames)) {
+		const at = spans.findIndex((s) => s.text === '●');
+		assert.ok(at >= 0, `the ${surface}'s frame paints no dot of its own: ${JSON.stringify(spans)}`);
+		const [dot, name] = spans.slice(at, at + 2);
+		assert.equal(name?.text, state, `the ${surface}'s frame splits ${state} from its dot wrongly: ${JSON.stringify(spans)}`);
+		assert.equal(dot.color, 'rgb(32, 32, 32)', `the ${surface}'s frame lifted the dot, not only the text`);
+		assert.ok(
+			contrast(name.color, ground) >= 4.5,
+			`the ${surface}'s frame paints ${state} ${name.color} on ${ground}, ${contrast(name.color, ground).toFixed(2)}:1`
+		);
+	}
+}
 
 /** WCAG's contrast ratio of two computed `rgb(r, g, b)` colours. */
 function contrast(a, b) {
