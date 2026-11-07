@@ -178,6 +178,70 @@ describe('the now section is collect’s now strip', () => {
 	});
 });
 
+// vividn, 2026-11-07 (da-5yemo): «when a new state is starting somewhere and a different field has a stripey multi
+// state, the new field swiping in causes also the stripes of the other field to sweep with it when they should remain
+// stationary».
+describe('a sweep moves nothing but what is new', () => {
+	/**
+	 * Where each strip draws `field`'s stripes, in screen px: the origin of the pattern its block is filled with, through
+	 * the block's own transform and the pattern's. Null for a strip with no striped block of it.
+	 */
+	const stripes = (page, field) =>
+		page.evaluate(
+			({ strips, field }) =>
+				Object.fromEntries(
+					Object.entries(strips).map(([name, [selector]]) => {
+						const svg = document.querySelector(selector);
+						const block = [...(svg?.querySelectorAll(`rect[data-mark="${field}"]`) ?? [])].find((b) => b.getAttribute('fill')?.startsWith('url(#'));
+						const pattern = block && svg.querySelector(`pattern[id="${block.getAttribute('fill').slice(5, -1)}"]`);
+						if (!pattern) return [name, null];
+						const own = pattern.patternTransform.baseVal.consolidate()?.matrix ?? new DOMMatrix();
+						const at = new DOMPoint(0, 0).matrixTransform(block.getScreenCTM().multiply(own));
+						return [name, [at.x, at.y]];
+					})
+				),
+			{ strips: STRIPS, field }
+		);
+
+	test("in both strips, a field's stripes stand still while another field's new state sweeps in", async () => {
+		await withApp(
+			async (app) => {
+				for (const line of [at('mood', 'switch', 0.2), at('work', 'start', 0.6), 'switch mood good,bad', 'start work', 'end work']) {
+					assert.equal((await app.runLine(line)).code, 0, line);
+					await app.clock.forward(60_000);
+				}
+				await app.reload();
+				const { page } = app;
+				await page.locator(STRIPS.nowview[0]).waitFor({ state: 'attached' });
+				await page.locator(`${COLLECT} [data-field="work"]`).first().waitFor();
+				await app.idle();
+				const still = await until(() => stripes(page, 'mood'), (seen) => Object.values(seen).every(Boolean));
+				// The files held, the start waits: what sweeps in is the tap's own mark, and the strips slide every frame.
+				await holdFiles(page);
+				await page.locator(`${COLLECT} [data-field="work"]`).first().click();
+				await until(
+					() => both(page, 'work'),
+					(seen) => Object.values(seen).every((marks) => marks?.some((m) => m.kind === 'rect' && Math.abs(m.to - m.of) <= 0.5))
+				);
+				for (const [when, ms] of [['a quarter of the way in', 125], ['halfway', 125], ['past it', 400]]) {
+					await app.clock.forward(ms);
+					// Work's state has swept on, so the marks did move: the stripes are held against a slide that happened.
+					const swept = await until(
+						() => both(page, 'work'),
+						(seen) => Object.values(seen).every((marks) => marks?.some((m) => m.kind === 'rect' && m.to - m.from > 0.2 * m.of))
+					);
+					const seen = await stripes(page, 'mood');
+					for (const [name, [x, y]] of Object.entries(seen))
+						assert.ok(Math.hypot(x - still[name][0], y - still[name][1]) <= 0.5, `${when}, the ${name} strip's stripes stand at ${[x, y]}, not ${still[name]} (work: ${JSON.stringify(swept[name])})`);
+				}
+				await release(page);
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: todayAt(15), desk: desk(), viewport: { width: 1000, height: 800 } }
+		);
+	});
+});
+
 // vividn, 2026-11-06 (da-kqloo): «when turning a bar(on/off,change) off, that is drawn over another bar, the wipe in
 // nowview and now section of collect widget make the bar drawn black, which is then visible on the bar beneath it. it
 // should wipe transparent instead».

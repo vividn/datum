@@ -13,7 +13,10 @@
 	one transform on `.strip-slide` slides them (not `.flow` or `.slide`, the nowview's own): on each frame while an edge is in
 	the strip or any part of a dot is (vividn, 2026-11-05: «they should go
 	completely off the left side and then be destroyed»), and otherwise not
-	until one comes or `origin` is laid again. A dot of the layer wholly past
+	until one comes or `origin` is laid again. The stripes do not slide: each
+	pattern's copy is moved back as far as the marks move on, so a field's
+	stripes stand still on screen while another's state sweeps in (da-5yemo).
+	A dot of the layer wholly past
 	the left edge is removed. At a selected instant `at` (da-0qdsp) the strip's
 	span about it is drawn, still, the instant at the center.
 
@@ -77,6 +80,18 @@
 		})
 	);
 
+	/** `v` along time, as a translation. */
+	const to = (v: number) => (vertical ? `translate(0 ${v})` : `translate(${v} 0)`);
+	/** The strip's copies of the stripes, and how far `.strip-slide` has moved its marks. */
+	let stripes: SVGDefsElement | undefined;
+	let slid = 0;
+	/** The marks moved `v` along time, and every stripe moved back as far, so it stands where the layer drew it. */
+	function slideTo(v: number) {
+		slid = v;
+		flow?.setAttribute('transform', to(v));
+		for (const p of stripes?.children ?? []) p.setAttribute('patternTransform', `${to(-v)} ${(p as SVGElement).dataset.drawn}`);
+	}
+
 	const NS = 'http://www.w3.org/2000/svg';
 	const put = <E extends Element>(el: E, attrs: Record<string, string | number | undefined>) => (Object.entries(attrs).forEach(([name, v]) => v !== undefined && el.setAttribute(name, String(v))), el);
 	/** A tap's mark: a dot, or a block. */
@@ -134,14 +149,13 @@
 			...taps.filter((m) => m.dot).map((m) => ({ at: m.from, marks: [], to: m.from + STRIP_MS + ((m.h / 2) * y * (vertical ? 1 : (m.aspect ?? 1))) / k }))
 		];
 		void along;
-		const to = (v: number) => (vertical ? `translate(0 ${v})` : `translate(${v} 0)`);
-		if (at !== null) return void flow?.setAttribute('transform', to(along / 2));
+		if (at !== null) return void slideTo(along / 2);
 		let frame = 0;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const slide = () => {
 			const now = Date.now();
 			if (now - origin > REBASE) return void (live = now);
-			flow?.setAttribute('transform', to(along - (now - origin) * k));
+			slideTo(along - (now - origin) * k);
 			for (const d of dots) if (d.to < now) d.marks.forEach((el) => el.remove());
 			if (edges.some((e) => e > now - STRIP_MS - 50 && e <= now) || dots.some((d) => d.at <= now && d.to + 50 > now)) frame = requestAnimationFrame(slide);
 			else timer = setTimeout(slide, Math.min(origin + REBASE, ...[...edges, ...dots.flatMap((d) => [d.at, d.to])].filter((e) => e > now)) - now + 1);
@@ -155,14 +169,18 @@
 
 	/** The layer's stripes, under ids of the strip's own. */
 	function patterns(defs: SVGDefsElement, of: Document | null | undefined) {
-		const lay = (of: Document | null | undefined) =>
+		stripes = defs;
+		const lay = (of: Document | null | undefined) => {
 			defs.replaceChildren(
 				...[...(of?.querySelectorAll('pattern[id]') ?? [])].map((p) => {
-					const copy = document.importNode(p, true);
+					const copy = document.importNode(p, true) as SVGElement;
 					copy.id = `${prefix}${p.id}`;
+					copy.dataset.drawn = p.getAttribute('patternTransform') ?? '';
 					return copy;
 				})
 			);
+			slideTo(slid);
+		};
 		lay(of);
 		return { update: lay };
 	}
