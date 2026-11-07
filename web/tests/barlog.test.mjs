@@ -1070,7 +1070,7 @@ describe('the three states and the full screen', () => {
 			assert.equal(pressed, 'show the output', 'the tab is not a fingertip tall');
 			// With a line typed, the box's own controls take their whole box.
 			await page.locator(`${BAR} input`).fill('occur tea');
-			const missed = await page.locator(`${BAR} .send, ${BAR} .clear`).evaluateAll((all) =>
+			const missed = await page.locator(`${BAR} .send`).evaluateAll((all) =>
 				all.flatMap((el) => {
 					const r = el.getBoundingClientRect();
 					const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 1);

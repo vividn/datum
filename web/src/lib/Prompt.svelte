@@ -98,6 +98,18 @@
 	the chevron is empty), and the command widget slides up overtop the
 	output section» (`commandsOpen`, PromptBar.svelte). An input widget's
 	`❯` stays the mark it was: the widget is over nothing.
+
+	WITH INPUT ON THE LINE IT IS THE × (da-gf5xx), and a tap clears the
+	text and every pill, locked too (`clearLine`, da-al892). vividn,
+	2026-11-07: «I want the ^ to then unfold into an x, same weight and
+	style as the chevron. clicking it then clears any input text and pills.
+	Similarly when you start typing text into the input bar without the
+	command window open, the > should unfold into an x (horizontally this
+	time and keeping its dark background) … Then we can remove the clearing
+	x on the right side». So: the commands up, any text or pill; the
+	commands down, text (a pill alone leaves the ❯, which opens them). The
+	chevron is the ×'s two strokes drawn to their middles, so the strokes
+	grow on through it — rightward, or up once the button has turned.
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
@@ -131,6 +143,9 @@
 		 */
 		widget = false
 	}: { widget?: boolean } = $props();
+
+	/** The ❯ is the × (da-gf5xx): the commands up, any input; down, text. */
+	const clears = $derived(!widget && ($commandsOpen ? !!$text || $pills.length > 0 : !!$text));
 
 	/** The air between what is typed and the first pill. */
 	const GAP = 10;
@@ -424,15 +439,22 @@
 		<span class="prompt">❯</span>
 	{:else}
 		<!-- Not the box's: a press here never takes the caret, so a phone's
-		     keyboard stays down while the commands are up. -->
+		     keyboard stays down while the commands are up. As the ×, its
+		     mousedown's default is the focus moving, so preventing it leaves
+		     the focus — and a phone's keyboard, open or shut — where it was. -->
 		<button
 			type="button"
 			class="prompt"
 			class:open={$commandsOpen}
-			aria-label="Commands"
+			class:clears
+			use:act={clears ? 'fill' : undefined}
+			aria-label={clears ? 'clear the input' : 'Commands'}
+			title={clears ? 'clear the input' : undefined}
 			aria-expanded={$commandsOpen}
 			aria-controls="bar-commands"
-			onclick={() => commandsOpen.update((open) => !open)}><span>❯</span></button
+			onmousedown={(event) => clears && event.preventDefault()}
+			onclick={() => (clears ? clearLine() : commandsOpen.update((open) => !open))}
+			><svg viewBox="0 0 16 16" aria-hidden="true"><g><path d="M4 4 12 12" /><path d="M4 12 12 4" /></g></svg></button
 		>
 	{/if}
 	<!-- After the `❯`, not before it: the `❯` stays where it always stood,
@@ -531,24 +553,6 @@
 		</span>
 		</span>
 	</span>
-	<!-- THE ×: the whole input in one tap — the text and every pill, locked
-	     too (da-al892). vividn: «x shows when any text or pills are in the
-	     input bar and clears it». Not staged the way Escape is: it is the
-	     phone's reset, and a phone has no Escape. Outside the scrollport,
-	     so it stays put however long the line runs, just before Send. The
-	     mousedown's default is the focus moving, so preventing it leaves the
-	     focus — and a phone's keyboard, open or shut — where it was. -->
-	{#if $text || $pills.length}
-		<button
-			type="button"
-			class="clear"
-			use:act={'fill'}
-			aria-label="clear the input"
-			title="clear the input"
-			onmousedown={(event) => event.preventDefault()}
-			onclick={clearLine}>×</button
-		>
-	{/if}
 	<!-- SEND (da-1pzwl): Enter without a keyboard. vividn: «Let's add a
 	     Enter/Send button on the right side of the input box so that you
 	     don't have to open the keyboard and hit enter». It calls Enter's own
@@ -559,11 +563,8 @@
 	     something — the verb is always typed, so pills alone are not a
 	     line. It acts at once, so the DOUBLE outline; the mousedown
 	     is prevented as the ×'s is, so the focus and the keyboard stay put.
-	     After the ×, a gap between, so a thumb meant for it clears nothing.
-	     And it holds the ×'s place: drawn, HIDDEN, while the × is up and
-	     there is nothing to run, so the × never slides right into the spot
-	     Send was just pressed in — a locked pill outlives the run, and a
-	     second tap there would clear it (vremya on PR #213).
+	     It is drawn, HIDDEN, while a pill is up and there is nothing to
+	     run, so the line keeps its width as a run leaves a locked pill.
 	     Like the ×, it is inside the bar's drag handle, so a tap within
 	     300ms of letting go of a drag is taken as that drag's click and
 	     does nothing (#lib/grip.ts). Every input widget draws one too: it
@@ -644,6 +645,44 @@
 		color: var(--ground);
 	}
 
+	/* The ×'s two strokes, each dashed to its first half: the chevron,
+	   moved over to the middle. As the × they run their whole length — on
+	   from the chevron's point, rightward, or up once the button has turned —
+	   and, the commands up, only once the turn is done. 11.32 is a stroke's
+	   length, 8√2. */
+	button.prompt svg {
+		width: 1rem;
+		height: 1rem;
+		overflow: visible;
+	}
+
+	button.prompt g {
+		transform: translateX(2px);
+		transition: transform 160ms ease-out;
+	}
+
+	button.prompt path {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2.25;
+		stroke-linecap: round;
+		stroke-dasharray: 5.66 12;
+		transition: stroke-dasharray 160ms ease-out;
+	}
+
+	button.prompt.clears g {
+		transform: none;
+	}
+
+	button.prompt.clears path {
+		stroke-dasharray: 11.32 12;
+	}
+
+	button.prompt.open.clears g,
+	button.prompt.open.clears path {
+		transition-delay: 160ms;
+	}
+
 	/* Its own size, out of the scrollport: it stays put while the line
 	   scrolls under what is typed. */
 	.context {
@@ -665,30 +704,10 @@
 		}
 	}
 
-	/* Grey, and quiet until it is wanted: it is a way out, not an action. */
 	/* Over the foot of the closed output's tab (PromptBar.svelte). */
-	.clear,
 	.send {
 		position: relative;
 		z-index: 22;
-	}
-	.clear {
-		flex: none;
-		min-width: 24px;
-		min-height: 24px;
-		padding: 0;
-		border: none;
-		background: transparent;
-		color: var(--quiet);
-		font: inherit;
-		font-size: var(--input-font);
-		line-height: 1;
-		cursor: pointer;
-	}
-
-	.clear:hover,
-	.clear:focus-visible {
-		color: var(--ink);
 	}
 
 	.send {
@@ -967,7 +986,9 @@
 			animation: none;
 		}
 		input.easing,
-		button.prompt {
+		button.prompt,
+		button.prompt g,
+		button.prompt path {
 			transition: none;
 		}
 	}

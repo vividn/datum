@@ -1,5 +1,5 @@
-// Send runs the line without a keyboard, and the × stands just before it
-// (da-1pzwl).
+// Send runs the line without a keyboard (da-1pzwl). The × that stood just
+// before it is the ❯ now, at the line's other end (da-gf5xx).
 //
 // vividn, 2026-09-25: «Let's add a Enter/Send button on the right side of the
 // input box so that you don't have to open the keyboard and hit enter when
@@ -60,11 +60,11 @@ describe('Send', () => {
 		await onSeam(async ({ page }) => {
 			assert.equal(await page.locator(SEND).count(), 0, 'drawn over an empty line');
 			// Pills alone are not a line: Enter runs nothing. Send holds its
-			// place beside the × there, but is not there to be pressed.
+			// place there, but is not there to be pressed.
 			await load(page, '', [TIME]);
 			await page.locator(CLEAR).waitFor();
 			await page.locator(SEND).waitFor({ state: 'hidden' });
-			assert.equal(await page.locator(SEND).count(), 1, 'Send left the ×’s side');
+			assert.equal(await page.locator(SEND).count(), 1, 'Send left its place');
 			await load(page, '   ', [TIME]);
 			await page.evaluate(() => new Promise(requestAnimationFrame));
 			assert.equal(await page.locator(SEND).isVisible(), false, 'shown over blanks');
@@ -75,21 +75,17 @@ describe('Send', () => {
 		});
 	});
 
-	// vremya on PR #213: a locked pill outlives the run, so the × stays — and
-	// it must not slide into the spot Send was just pressed in, where a
-	// second tap would clear the locked pill.
-	test('after a run that leaves a locked pill, the × holds still and Send’s spot clears nothing', async () => {
+	// vremya on PR #213: a locked pill outlives the run, and a second tap in
+	// the spot Send was just pressed in must not clear it.
+	test('after a run that leaves a locked pill, Send’s spot clears nothing', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;
 			const LOCKED = { id: 'k', kind: 'note', text: 'cups=3', locked: true };
 			await load(page, 'occur sendhold', [LOCKED]);
-			const before = await page.locator(CLEAR).boundingBox();
 			const send = await page.locator(SEND).boundingBox();
 			await page.locator(SEND).click();
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar input').value);
 			await page.locator(SEND).waitFor({ state: 'hidden' });
-			const after = await page.locator(CLEAR).boundingBox();
-			assert.equal(after.x, before.x, 'the × moved after the run');
 			// The same thumb, the same spot, a moment later.
 			await page.mouse.click(send.x + send.width / 2, send.y + send.height / 2);
 			await page.evaluate(() => new Promise(requestAnimationFrame));
@@ -104,7 +100,7 @@ describe('Send', () => {
 		});
 	});
 
-	test('the × stands left of it, both 24px targets or more, with a gap between', async () => {
+	test('it is a 24px target or more, the × at the line’s other end', async () => {
 		await onSeam(async ({ page }) => {
 			await load(page, 'occur coffee', []);
 			const send = await page.locator(SEND).boundingBox();
@@ -112,9 +108,8 @@ describe('Send', () => {
 			for (const [name, b] of [['send', send], ['×', clear]]) {
 				assert.ok(b.width >= 24 && b.height >= 24, `${name} is ${b.width}×${b.height}`);
 			}
-			const gap = send.x - (clear.x + clear.width);
-			assert.ok(gap >= 8, `the gap between × and Send is ${gap}px`);
-			// Double: a thumb for Send is not a thumb for the ×.
+			assert.ok(clear.x + clear.width < send.x - 100, `the × ends at ${clear.x + clear.width}, Send starts at ${send.x}`);
+			// Double: it runs at once.
 			assert.equal(await page.locator(SEND).evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
 			await load(page, '', []);
 		});

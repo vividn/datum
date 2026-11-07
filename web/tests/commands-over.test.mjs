@@ -218,11 +218,12 @@ describe('the ❯ opens the commands over the output', () => {
 			await page.locator(OVER).waitFor({ state: 'detached' });
 			assert.equal((await chevron(page)).expanded, 'false');
 
-			// Closed by the ❯ with a pill loaded, a pill rewritten in place does
-			// not open them again; one added does.
+			// Closed with a pill loaded (Escape: with a pill up the ❯ is the ×,
+			// da-gf5xx), a pill rewritten in place does not open them again; one
+			// added does.
 			await set([TIME]);
 			await open();
-			await page.locator(CHEVRON).click();
+			await page.keyboard.press('Escape');
 			await page.locator(OVER).waitFor({ state: 'detached' });
 			await set([{ ...TIME, text: '-t 15:00' }]);
 			await page.waitForTimeout(50);
@@ -252,6 +253,138 @@ describe('the ❯ opens the commands over the output', () => {
 			} finally {
 				await page.emulateMedia({ reducedMotion: null });
 			}
+			assert.deepEqual(errors, []);
+		});
+	});
+});
+
+// vividn, 2026-11-07 (da-gf5xx): «I want the ^ to then unfold into an x,
+// same weight and style as the chevron. clicking it then clears any input
+// text and pills. Similarly when you start typing text into the input bar
+// without the command window open, the > should unfold into an x
+// (horizontally this time and keeping its dark background) and then also
+// clear the input when clicked. Then we can remove the clearing x on the
+// right side». The chevron is the ×'s two strokes, each dashed to its first
+// half; the × runs them their whole length (8√2, 11.32).
+describe('with input on the line, the ❯ is the ×', () => {
+	const BOX = `${BAR} input`;
+	const NOTE = { id: 'c', kind: 'note', text: '-c two' };
+
+	/** The button once it has come to rest: what it says, how it is drawn, how much of each stroke shows, and where the focus is. */
+	const face = (page) =>
+		page.locator(CHEVRON).evaluate(async (el) => {
+			for (let moving = el.getAnimations({ subtree: true }); moving.length; moving = el.getAnimations({ subtree: true }))
+				await Promise.all(moving.map((a) => a.finished));
+			const style = getComputedStyle(el);
+			const [a, b] = style.transform === 'none' ? [1, 0] : style.transform.match(/-?[\d.e-]+/g).map(Number);
+			return {
+				label: el.getAttribute('aria-label'),
+				title: el.getAttribute('title'),
+				act: el.dataset.act ?? null,
+				expanded: el.getAttribute('aria-expanded'),
+				up: Math.round(a) === 0 && Math.round(b) === -1,
+				filled: style.backgroundColor !== 'rgba(0, 0, 0, 0)',
+				strokes: [...el.querySelectorAll('path')].map((p) => parseFloat(getComputedStyle(p).strokeDasharray)),
+				focus: document.activeElement?.tagName
+			};
+		});
+	const CHEVRON_FACE = { label: 'Commands', title: null, act: null, strokes: [5.66, 5.66] };
+	const CROSS = { label: 'clear the input', title: 'clear the input', act: 'fill', strokes: [11.32, 11.32] };
+	const line = (page) => page.evaluate(() => ({ text: document.querySelector('.prompt-bar input').value, pills: window.datum.bar.pills().length }));
+	const pick = (f, keys) => Object.fromEntries(keys.map((k) => [k, f[k]]));
+	const KEYS = ['label', 'title', 'act', 'strokes'];
+
+	test('the commands up with a pill: the ^ unfolds, filled, and a tap clears the pill and the text, the focus staying in the box', async () => {
+		await onPage(async ({ page, errors }) => {
+			await page.locator(BOX).focus();
+			await page.evaluate((pill) => window.datum.bar.setPills([pill]), NOTE);
+			await page.locator(OVER).waitFor();
+			await page.locator(BOX).fill('occur tea');
+			const cross = await face(page);
+			assert.deepEqual(pick(cross, KEYS), CROSS);
+			assert.deepEqual([cross.up, cross.filled, cross.expanded], [true, true, 'true'], 'the × is not on the turned, filled button');
+			assert.equal(await page.locator(`${BAR} .clear`).count(), 0, 'the × on the right is still drawn');
+
+			await page.locator(CHEVRON).click();
+			assert.deepEqual(await line(page), { text: '', pills: 0 });
+			// The last pill gone closes the commands (da-lnirx), so it folds and turns back.
+			await page.locator(OVER).waitFor({ state: 'detached' });
+			const after = await face(page);
+			assert.deepEqual(pick(after, KEYS), CHEVRON_FACE);
+			assert.equal(after.focus, 'INPUT', 'the × took the focus from the box');
+			assert.deepEqual(errors, []);
+		});
+	});
+
+	test('the commands up with text alone: a tap clears it and folds back to the ^, the commands staying up', async () => {
+		await onPage(async ({ page, errors }) => {
+			await page.locator(CHEVRON).click();
+			await page.locator(OVER).waitFor();
+			assert.deepEqual(pick(await face(page), KEYS), CHEVRON_FACE, 'the commands up over an empty line drew the ×');
+			await page.locator(BOX).fill('occur');
+			assert.deepEqual(pick(await face(page), KEYS), CROSS);
+			await page.locator(CHEVRON).click();
+			assert.deepEqual(await line(page), { text: '', pills: 0 });
+			const after = await face(page);
+			assert.deepEqual(pick(after, KEYS), CHEVRON_FACE);
+			assert.deepEqual([after.up, after.filled, after.expanded], [true, true, 'true'], 'the commands went with the text');
+			assert.equal(await page.locator(OVER).count(), 1);
+			assert.deepEqual(errors, []);
+		});
+	});
+
+	test('the commands down with text typed: the ❯ unfolds on its own ground, and a tap clears the line, the focus staying in the box', async () => {
+		await onPage(async ({ page, errors }) => {
+			await page.locator(BOX).fill('occur tea');
+			const cross = await face(page);
+			assert.deepEqual(pick(cross, KEYS), CROSS);
+			assert.deepEqual([cross.up, cross.filled, cross.expanded], [false, false, 'false'], 'the closed × turned or filled');
+			assert.equal(await page.locator(`${BAR} .clear`).count(), 0, 'the × on the right is still drawn');
+			await page.locator(CHEVRON).click();
+			assert.deepEqual(await line(page), { text: '', pills: 0 });
+			const after = await face(page);
+			assert.deepEqual(pick(after, KEYS), CHEVRON_FACE);
+			assert.equal(after.focus, 'INPUT', 'the × took the focus from the box');
+			assert.equal(await page.locator(OVER).count(), 0, 'the × opened the commands');
+			assert.deepEqual(errors, []);
+		});
+	});
+
+	// A pill alone, the commands put away: the ❯ is what opens them again.
+	test('the commands down with a pill alone: it is the ❯, and a tap opens them', async () => {
+		await onPage(async ({ page, errors }) => {
+			await page.evaluate((pill) => window.datum.bar.setPills([pill]), NOTE);
+			await page.locator(OVER).waitFor();
+			await page.keyboard.press('Escape');
+			await page.locator(OVER).waitFor({ state: 'detached' });
+			assert.deepEqual(pick(await face(page), KEYS), CHEVRON_FACE);
+			await page.locator(CHEVRON).click();
+			await page.locator(OVER).waitFor();
+			assert.equal(await page.evaluate(() => window.datum.bar.pills().length), 1, 'the ❯ cleared the pill');
+			await page.evaluate(() => window.datum.bar.setPills([]));
+			await page.locator(OVER).waitFor({ state: 'detached' });
+			assert.deepEqual(errors, []);
+		});
+	});
+
+	test('the strokes unfold after the turn, and with no motion asked for they swap at once', async () => {
+		await onPage(async ({ page, errors }) => {
+			const timing = () =>
+				page.locator(`${CHEVRON} path`).first().evaluate((p) => {
+					const style = getComputedStyle(p);
+					return [style.transitionDuration, style.transitionDelay];
+				});
+			await page.evaluate((pill) => window.datum.bar.setPills([pill]), NOTE);
+			await page.locator(OVER).waitFor();
+			assert.deepEqual(await timing(), ['0.16s', '0.16s'], 'the × does not wait for the turn');
+			await page.emulateMedia({ reducedMotion: 'reduce' });
+			try {
+				assert.equal((await timing())[0], '0s');
+			} finally {
+				await page.emulateMedia({ reducedMotion: null });
+			}
+			await page.evaluate(() => window.datum.bar.setPills([]));
+			await page.locator(OVER).waitFor({ state: 'detached' });
 			assert.deepEqual(errors, []);
 		});
 	});

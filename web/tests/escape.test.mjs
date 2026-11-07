@@ -1,4 +1,5 @@
-// Escape peels the command line, and a grey × clears it (da-al892).
+// Escape peels the command line, and the × clears it (da-al892): the ❯ with
+// input on the line, since da-gf5xx.
 //
 // vividn, 2026-09-25: «escape should then clear unlocked pills -> clear locked
 // pills too -> clear typed in text, in that progression», and «x shows when
@@ -158,7 +159,11 @@ describe('the ×', () => {
 			assert.equal(await page.locator(CLEAR).count(), 0, 'drawn over an empty line');
 			await load(page, 'occur', []);
 			await page.locator(CLEAR).waitFor();
+			// A pill alone with the commands down is the ❯, which opens them
+			// (da-gf5xx); up, it is the ×.
 			await load(page, '', [UNLOCKED]);
+			assert.equal(await page.locator(CLEAR).count(), 0, 'drawn over a pill with the commands down');
+			await page.locator('.prompt-bar button.prompt').click();
 			await page.locator(CLEAR).waitFor();
 			await load(page, '', []);
 			await page.locator(CLEAR).waitFor({ state: 'detached' });
@@ -184,6 +189,7 @@ describe('the ×', () => {
 		await withApp(async (app) => { // reloads
 			const { page } = app;
 			await load(page, '', [UNLOCKED, LOCKED]);
+			await page.locator('.prompt-bar button.prompt').click();
 			await page.locator(CLEAR).click();
 			assert.deepEqual(await line(page), { text: '', pills: [] });
 			await app.reload();
