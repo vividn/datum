@@ -5,12 +5,21 @@
 use std::path::Path;
 use std::process::Command;
 
+/// `datum` on `db`, with its home, config, `HOME` and `TZ` in the db's scratch dir.
+fn datum(db: &Path) -> Command {
+    let dir = db.parent().unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
+    cmd.env("DATUM_DB", db)
+        .env("DATUM_HOME", dir)
+        .env("DATUM_CONFIG_HOME", dir)
+        .env("HOME", dir)
+        .env("TZ", "UTC");
+    cmd
+}
+
 /// The echo's info line (its second) of `datum <args>`, color off.
 fn echo(db: &Path, args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_datum"))
-        .env("DATUM_DB", db)
-        .env("DATUM_HOME", db.parent().unwrap())
-        .env("DATUM_CONFIG_HOME", db.parent().unwrap())
+    let out = datum(db)
         .env("NO_COLOR", "1")
         .args(args)
         .output()
@@ -59,13 +68,7 @@ fn a_repeated_on_off_and_state_carry_the_mark() {
     );
 
     for field in ["nap", "mood"] {
-        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
-            .env("DATUM_DB", &db)
-            .env("DATUM_HOME", dir.path())
-            .env("DATUM_CONFIG_HOME", dir.path())
-            .args(["tail", field, "--json"])
-            .output()
-            .unwrap();
+        let out = datum(&db).args(["tail", field, "--json"]).output().unwrap();
         let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         let rows = rows["rows"].as_array().unwrap().clone();
         let repeats: Vec<bool> = rows
@@ -76,10 +79,7 @@ fn a_repeated_on_off_and_state_carry_the_mark() {
     }
 
     // datum.day's echo chip draws `--show json`'s segments: the mark is one.
-    let out = Command::new(env!("CARGO_BIN_EXE_datum"))
-        .env("DATUM_DB", &db)
-        .env("DATUM_HOME", dir.path())
-        .env("DATUM_CONFIG_HOME", dir.path())
+    let out = datum(&db)
         .args(["end", "nap", "--show", "json"])
         .output()
         .unwrap();
