@@ -473,4 +473,68 @@ fn retime_echoes_the_header_then_the_moved_line() {
     let doc = &doc["docs"][0];
     assert_eq!(doc["action"], "RETIME");
     assert_eq!(doc["info_time"], "09:30:00+0 → 09:40:00+0");
+    // da-bjxr6: `-y` keeps the clock, so the new side says it, dated; it
+    // was the date alone, a whole day.
+    let doc: serde_json::Value =
+        serde_json::from_str(&datum(&["retime", "coffee", "-y", "--show", "json"])).unwrap();
+    let moved = doc["docs"][0]["info_time"].as_str().unwrap().to_string();
+    let (_, new) = moved.split_once(" → ").unwrap();
+    assert!(new.ends_with(" 09:40:00+0"), "{moved}");
+}
+
+/// da-bjxr6: on an entry, `-y` and `-d` with no clock move it that many days
+/// at its own clock, a calendar day in its zone (vividn, 2026-11-07: «retime
+/// -y would work to move an entry to the same time, just a day in the
+/// past»), and `-yD` makes it the whole day before. These were all `P1D`.
+#[test]
+fn retime_a_day_back_keeps_the_entrys_clock_and_d_makes_it_all_day() {
+    // 14:20 in Berlin on 2026-10-26, the day after the clocks went back, so
+    // `-yy` taken as 48 h would land at 15:20.
+    let retimed = |argv: &[&str]| {
+        let db = fresh_db();
+        let hid = point_in(&db, "coffee", "2026-10-26T13:20:00Z", "Europe/Berlin");
+        run_cli(&[&["retime", &hid][..], argv].concat(), &db).unwrap();
+        time_of(&db, &hid)
+    };
+    for (argv, want) in [
+        (&["-y"][..], "2026-10-25T13:20:00Z"),
+        (&["-yy"], "2026-10-24T12:20:00Z"),
+        (&["-d", "-1"], "2026-10-25T13:20:00Z"),
+        (&["-d", "2026-10-01"], "2026-10-01T12:20:00Z"),
+    ] {
+        let after = retimed(argv);
+        assert_eq!(after.utc, utc(want), "{argv:?}");
+        assert_eq!(after.uncertainty, None, "{argv:?}");
+        assert_eq!(after.timezone.as_deref(), Some("Europe/Berlin"));
+    }
+    for argv in [&["-yD"][..], &["-y", "-D"]] {
+        let after = retimed(argv);
+        assert_eq!(after.utc, utc("2026-10-24T22:00:00Z"), "{argv:?}");
+        assert_eq!(after.uncertainty.as_deref(), Some("P1D"), "{argv:?}");
+    }
+
+    // A period keeps its length, ending at its own clock a day back.
+    let db = fresh_db();
+    let tz = |at: &str| datum_core::time::DatumTime::from_utc_and_tz(utc(at), "Europe/Berlin");
+    let walk = entry_builder("walk")
+        .time_start(tz("2026-10-26T13:00:00Z").unwrap())
+        .time_end(tz("2026-10-26T13:30:00Z").unwrap())
+        .state(json!(true))
+        .insert(&db);
+    let (hid, dur) = (walk.hid.to_string(), walk.dur.clone());
+    let before = walk.at.unwrap().utc;
+    run_cli(&["retime", &hid, "-y"], &db).unwrap();
+    let after = db.get_entry(&hid).unwrap();
+    let at = after.at.unwrap();
+    assert_eq!(at.utc, before - chrono::Duration::days(1));
+    assert_eq!((after.dur, at.uncertainty), (dur, None));
+
+    // An entry that is a whole day stays a whole day, the day before.
+    let db = fresh_db();
+    let hid = point_in(&db, "coffee", "2026-10-26T13:20:00Z", "Europe/Berlin");
+    run_cli(&["retime", &hid, "-D"], &db).unwrap();
+    run_cli(&["retime", &hid, "-y"], &db).unwrap();
+    let after = time_of(&db, &hid);
+    assert_eq!(after.utc, utc("2026-10-24T22:00:00Z"));
+    assert_eq!(after.uncertainty.as_deref(), Some("P1D"));
 }

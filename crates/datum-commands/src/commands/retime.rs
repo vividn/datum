@@ -9,7 +9,8 @@
 //!   more `-t` value (`retime <id> 1040`, `retime <id> -5`) — resolved
 //!   against each entry's OWN at, in its own zone (da-jix52).
 //! * With `-r/--relative` the same args are a pure shift of the entry's
-//!   at: `-y` moves it a calendar day and keeps its clock.
+//!   at: `-y` moves it a calendar day and keeps its clock. So does `-y`
+//!   or `-d` alone without it, `-D` making the whole day (da-bjxr6).
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -184,6 +185,15 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
     // no time-args is no shift, and the entry stays where it is.
     let now = DatumTime::now().utc;
     let placed = args.relative || args.time != Default::default();
+    // da-bjxr6: a day alone, `-y` or `-d` with no clock and no `-D`, moves
+    // the entry that many days at its own clock as `-r` does (vividn,
+    // 2026-11-07: «retime -y would work to move an entry to the same time,
+    // just a day in the past»). A day `-t` names stays the whole day.
+    let shift = args.relative
+        || !args.time.full_day
+            && args.time.time_values().next().is_none()
+            && args.time.quick == 0
+            && (args.time.yesterday > 0 || args.time.date.is_some());
     // `+5`, `-y -t +5`, `-z` alone, anything under `-r`: no clock time is
     // stated, so how well the entry's time is known stays as it was.
     let shifted = args.relative
@@ -197,7 +207,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
                 later,
                 ..args.time.clone()
             };
-            build_time_anchored(&time, own.utc, Some(own), args.relative).ok()
+            build_time_anchored(&time, own.utc, Some(own), shift).ok()
         };
         let mut owns = Vec::new();
         for filter in &filters {
@@ -225,7 +235,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
                 } else {
                     (now, None)
                 };
-                let mut t = build_time_anchored(&args.time, at, anchor, args.relative)
+                let mut t = build_time_anchored(&args.time, at, anchor, shift)
                     .map_err(|e| datum_core::error::DatumError::Other(format!("{e:#}")))?;
                 if shifted && t.uncertainty.is_none() {
                     t.uncertainty.clone_from(&own.uncertainty);
