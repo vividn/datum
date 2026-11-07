@@ -33,7 +33,7 @@ impl Db {
     /// ([`crate::state::resolve_effective`], da-u5l1o).
     ///
     /// da-2i8g: when the winning row is a block-switch / point-switch
-    /// whose trailing edge (`at + dur`) is at or before `t`, the
+    /// whose trailing edge (`at` itself) is at or before `t`, the
     /// row's `following_state` is the effective value — same rule as
     /// `now`.
     ///
