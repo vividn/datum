@@ -345,3 +345,122 @@ test('a pinch down the strip with an entry selected leaves its day where the day
 		assert.deepEqual(app.errors, []);
 	});
 });
+
+// da-o0r1o: vividn, 2026-11-07: «when zooming in/out on the dayview first the
+// stripes seem to dance around quite a bit … after releasing the thumbs, the
+// stripes change their visual frequency so when you're very zoomed in the
+// stripes get super tiny and no longer resemble stripes. They should maintain
+// the same visual frequency across zoom levels.» A block's stripes are a
+// texture of the screen, laid from the block's own corner: so read where
+// across its tile that corner falls, which a gesture must not move, and the
+// tile on the screen at rest at two windows far apart, with the same stripes
+// on days the window leaves off screen, whose patterns share today's id.
+const desk = sharedApp({ clock: todayAt(12), prepare: holdLift });
+
+/** Where across its tile today's striped block's corner lies, in the tile's units; the tile on the screen as a 2×2; the block's width. */
+const stripes = ({ page }) =>
+	page.locator(TODAY).evaluate((band) => {
+		const block = band.querySelector('rect.multi-state');
+		// The page's pattern of that id, which is the one drawn (da-8kryw).
+		const pattern = document.getElementById(block.getAttribute('fill').slice('url(#'.length, -1));
+		const m = block.getScreenCTM().multiply(pattern.patternTransform.baseVal.consolidate().matrix);
+		const r = block.getBoundingClientRect();
+		const at = new DOMPoint(r.x, r.y).matrixTransform(m.inverse());
+		const [w, h] = ['width', 'height'].map((n) => Number(pattern.getAttribute(n)));
+		return { phase: ((at.x % w) + w) % w, w, h, tile: [m.a, m.b, m.c, m.d], block: r.width };
+	});
+
+/** The corner where it was across the tile, to a tenth of a unit, either way round. */
+function samePhase(at, rest, when) {
+	const d = Math.abs(at.phase - rest.phase);
+	assert.ok(Math.min(d, rest.w - d) < 0.1, `the stripes slid across the block ${when}: ${at.phase} of ${rest.w}, was ${rest.phase}`);
+}
+
+const STRIPED = ['switch posture vertical,sit -t 6:00', 'switch posture standing -t 11:00'];
+
+for (const [name, on] of [['phone', phone], ['desktop', desk]]) {
+	test(`${name}: a zoom in hand keeps the stripes still on their block`, async () => {
+		await settledRoom(on, `still stripes ${name}`, async (app) => {
+			const { page } = app;
+			await say(app, { dayHeight: 60 });
+			await settledAt(app, 60);
+			await seedLines(app, STRIPED);
+			const rest = await stripes(app);
+			// Each block's own, once a picture: none made again as the zoom moves.
+			const patterns = () => page.evaluate(() => document.querySelectorAll('.strip pattern').length);
+			const made = await patterns();
+			let during;
+			if (on === phone) {
+				const box = await page.locator(TODAY).boundingBox();
+				await pinch(page, box, 100, 300, async () => (during = await stripes(app)));
+			} else {
+				// ctrl+wheel, read before its pause commits it: the picture is still the one at rest.
+				during = await page.locator(TODAY).evaluate(async (band) => {
+					const svg = band.querySelector('svg.svg');
+					const r = band.getBoundingClientRect();
+					band.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -400, clientX: r.x + r.width / 3, clientY: r.y + r.height / 2, bubbles: true, cancelable: true }));
+					await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+					return band.querySelector('svg.svg') === svg;
+				});
+				assert.ok(during, 'the wheel committed before the stripes were read');
+				during = await stripes(app);
+			}
+			// The control: the zoom happened.
+			assert.ok(during.block / rest.block > 2.5, `the block is ${during.block}px, was ${rest.block}`);
+			samePhase(during, rest, 'under the zoom');
+			assert.equal(await patterns(), made, 'the zoom made patterns');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test(`${name}: the stripes stay as wide and as steep through a zoom and after it, under another day's alike`, async () => {
+		await settledRoom(on, `rest stripes ${name}`, async (app) => {
+			const { page } = app;
+			await say(app, { dayHeight: 60 });
+			await settledAt(app, 60);
+			// Yesterday striped as today, above it on the page: one pattern id.
+			await seedLines(app, [...STRIPED, ...STRIPED.map((line) => `${line} -d -1`)]);
+			await app.idle();
+			const whole = await stripes(app);
+			// Today's tile on the screen at every change to the strip and every
+			// frame, through the zoom and the redraws after it: the band itself
+			// is laid out again first, the others as the page is idle.
+			await page.locator(TODAY).evaluate((band) => {
+				const edges = () => {
+					const block = document.querySelector('.band[data-days-ago="0"] rect.multi-state');
+					const pattern = block && document.getElementById(block.getAttribute('fill').slice('url(#'.length, -1));
+					if (!pattern) return;
+					const m = block.getScreenCTM().multiply(pattern.patternTransform.baseVal.consolidate().matrix);
+					const [w, h] = ['width', 'height'].map((n) => Number(pattern.getAttribute(n)));
+					window.__edges.push([Math.hypot(m.a, m.b) * w, Math.hypot(m.c, m.d) * h]);
+				};
+				window.__edges = [];
+				window.__sampling = new MutationObserver(edges);
+				window.__sampling.observe(band.closest('.strip'), { subtree: true, childList: true, attributes: true });
+				const frame = () => (edges(), window.__sampling && requestAnimationFrame(frame));
+				frame();
+			});
+			// Ten times and more, as a reader lets go: a pinch's fingers, diagonal as a thumb's are, or the wheel's notches.
+			if (on === phone) await pinch(page, await page.locator(TODAY).boundingBox(), 30, 330, undefined, 'xy');
+			else {
+				const r = await page.locator(TODAY).boundingBox();
+				await page.mouse.move(r.x + r.width / 3, r.y + r.height / 2);
+				await page.keyboard.down('Control');
+				await page.mouse.wheel(0, -900);
+				await page.keyboard.up('Control');
+			}
+			await until(() => stripes(app), (s) => s.block / whole.block > 8);
+			await until(() => scaled(app), (n) => n === 0);
+			await app.idle();
+			const seen = await page.evaluate(() => (window.__sampling.disconnect(), (window.__sampling = null), window.__edges));
+			const zoomed = await stripes(app);
+			const rest = [Math.hypot(whole.tile[0], whole.tile[1]) * whole.w, Math.hypot(whole.tile[2], whole.tile[3]) * whole.h];
+			const off = seen.filter((e) => e.some((v, i) => Math.abs(v - rest[i]) >= 1));
+			assert.deepEqual(off, [], `of ${seen.length} looks, these were not ${rest}`);
+			// And at rest, as steep: the tile the same within a pixel along each edge.
+			const at = (s) => [s.tile[0] * s.w, s.tile[1] * s.w, s.tile[2] * s.h, s.tile[3] * s.h];
+			assert.ok(at(zoomed).every((v, i) => Math.abs(v - at(whole)[i]) < 1), `the tile zoomed: ${zoomed.tile}, at the whole day: ${whole.tile}`);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+}

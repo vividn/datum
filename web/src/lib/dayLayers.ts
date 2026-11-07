@@ -290,6 +290,35 @@ export function layMarks(root: Element, along: number, across: number, y = false
 	}
 }
 
+/** The patterns `anchorStripes` has made, page-wide, so each id names one. */
+let anchors = 0;
+
+/**
+ * Every mark a pattern fills in `svg` — a multi-state block's stripes, a clock
+ * change's hatch — gets a copy of its own, at an id no other on the page has,
+ * its `data-origin` the mark's corner (da-o0r1o). A page resolves `url(#…)` to
+ * its first element of that id, so a band took the stripes of another band
+ * drawn for another window, scaled for that one: tiny at an hour. And laid
+ * from the corner, the day strip scales them back about it, so a zoom moves
+ * them with the block and never across it, as the nowview's (da-rdiph). Once a picture.
+ */
+export function anchorStripes(svg: SVGElement): void {
+	if ('anchored' in svg.dataset) return;
+	svg.dataset.anchored = '';
+	for (const el of svg.querySelectorAll('[fill^="url(#"]:not(defs *)')) {
+		const id = el.getAttribute('fill')!.slice('url(#'.length, -1);
+		const pattern = svg.querySelector(`pattern[id="${CSS.escape(id)}"]`);
+		if (!pattern) continue;
+		const copy = pattern.cloneNode(true) as Element;
+		copy.id = `${id}-a${++anchors}`;
+		// A lane a clock change bent is a path: its first point.
+		const corner = el.localName === 'path' ? /M\s*([-\d.e]+)[\s,]+([-\d.e]+)/.exec(el.getAttribute('d') ?? '')?.slice(1) : [el.getAttribute('x'), el.getAttribute('y')];
+		copy.setAttribute('data-origin', [0, 1].map((i) => Number(corner?.[i]) || 0).join(' '));
+		pattern.after(copy);
+		el.setAttribute('fill', `url(#${copy.id})`);
+	}
+}
+
 /**
  * A day's layer as the day strip's row: `width` by `dayHeight`, as `dayview
  * --days 1` draws a band at that size — its blocks as long as their hours,

@@ -279,7 +279,7 @@
 	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
 	import { keptDays, keptNow, type Kept } from './heldDays.js';
-	import { bandOf, heldLayer, layers, oneClock, standIn, type Layer } from './dayLayers.js';
+	import { anchorStripes, bandOf, heldLayer, layers, oneClock, standIn, type Layer } from './dayLayers.js';
 	import { sanitizeSvg } from './svgSafe.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
@@ -527,7 +527,9 @@
 	 * and a previewed size stretched it with the block: wider stripes at a
 	 * shallower angle (da-hmtoq). Scaled back ahead of datum's own
 	 * transform, it is the same on screen at every zoom, as a mark is
-	 * (da-dqbso, the CSS below). On the attribute after every update,
+	 * (da-dqbso, the CSS below): each mark's own copy, about its corner
+	 * (`anchorStripes`), so a zoom moves the stripes with the block and
+	 * never across it (da-o0r1o). On the attribute after every update,
 	 * when a new picture is in its band too: WebKit computes a CSS
 	 * `transform` on a pattern and draws it without. A label previewed as
 	 * wide as the pane leaves the bands no width (`scaleX` 0): the pattern
@@ -540,9 +542,10 @@
 		for (const band of stripEl?.querySelectorAll<HTMLElement>('.band') ?? []) {
 			const across = 1 / (bandZoom(Number(band.dataset.daysAgo)).scale * scaleX);
 			if (!Number.isFinite(across)) continue;
-			for (const pattern of band.querySelectorAll<SVGPatternElement>('svg.svg pattern')) {
+			for (const svg of band.querySelectorAll<SVGSVGElement>('svg.svg')) anchorStripes(svg);
+			for (const pattern of band.querySelectorAll<SVGPatternElement>('svg.svg pattern[data-origin]')) {
 				pattern.dataset.drawn ??= pattern.getAttribute('patternTransform') ?? '';
-				const t = `scale(${across} ${1 / (scaleY * stand(Number(band.dataset.daysAgo)))}) ${pattern.dataset.drawn}`;
+				const t = `translate(${pattern.dataset.origin}) scale(${across} ${1 / (scaleY * stand(Number(band.dataset.daysAgo)))}) ${pattern.dataset.drawn}`;
 				if (pattern.getAttribute('patternTransform') !== t) pattern.setAttribute('patternTransform', t);
 			}
 		}
