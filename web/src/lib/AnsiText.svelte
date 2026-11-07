@@ -12,6 +12,8 @@
 	 * One run is drawn other than as its text: a parallel slot's split cell,
 	 * `◢` or `◤` (da-pc7x7), is a space its two colours fill (`splitFill`),
 	 * since a font draws the triangle smaller than its cell, or at another width.
+	 * Text in a colour with no ground of its own is lifted until it reads
+	 * (`textColor`, da-2rgwy); a mark keeps its colour.
 	 *
 	 * Nothing may come between the spans, or before or after them. The
 	 * CLI widget's output and the tail's columns are monospace and column-aligned,
@@ -24,7 +26,7 @@
 	 * script tag survives as a text node and every painted cell would gain a
 	 * leading space.
 	 */
-	import { splitFill, type AnsiSpan } from './ansi.js';
+	import { splitFill, textColor, type AnsiSpan } from './ansi.js';
 
 	interface Props {
 		/**
@@ -39,7 +41,7 @@
 </script>
 
 {#each spans as span}{@const fill = splitFill(span.text, span.bg, span.fg)}<span
-		style:color={span.fg}
+		style:color={textColor(span.text, span.fg, span.bg)}
 		style:background={fill ?? span.bg}
 		style:font-weight={span.bold ? 'bold' : null}
 		style:opacity={span.dim ? '0.6' : null}

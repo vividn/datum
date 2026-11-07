@@ -41,7 +41,7 @@
 	until it is tapped again.
 -->
 <script lang="ts">
-	import { splitFill } from '#lib/ansi.ts';
+	import { splitFill, textColor } from '#lib/ansi.ts';
 	import type { EchoDoc, InfoSegment } from '#lib/echo.ts';
 	import { select, selected } from '#lib/bar.ts';
 	import { isSelected } from '#lib/selection.ts';
@@ -136,7 +136,7 @@
 	     in AnsiText.svelte. -->
 	<div class="info">{#each parts as { part, runs }}<span class={part}
 				>{#each runs as segment}{@const fill = splitFill(segment.text, segment.color, segment.fg)}<span
-						style:color={segment.fg ?? segment.color}
+						style:color={segment.fg ?? textColor(segment.text, segment.color)}
 						style:background={fill ?? (segment.fg && segment.color)}>{fill ? ' ' : segment.text}</span
 					>{/each}</span
 			>{/each}</div>

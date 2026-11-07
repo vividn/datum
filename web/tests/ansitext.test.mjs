@@ -226,4 +226,57 @@ describe('the spans one component paints', () => {
 			);
 		});
 	});
+
+	// da-2rgwy, vividn: «for particularly dark moment fields or anything else
+	// that is rendered as fg colored text on no background, let's bump up the
+	// brightness so that it is still readable. The moment dot itself can still
+	// be rendered in the field's actual color». A moment's state is its dot and
+	// then its name, both in the state's colour and on no ground of their own.
+	test("lift a dark colour's text until it reads on the ground, and leave its dot and a colour that reads", async () => {
+		await shared.solo(async (app) => {
+			await seedLines(app, [
+				'setup ink --kind moment --states lo --state-color lo=#202020 --color #202020',
+				'setup tea --kind moment --states hot --state-color hot=#f08c00 --color #f08c00',
+				'switch ink lo --moment -t 0700',
+				'switch tea hot --moment -t 0800'
+			]);
+			await app.submit('tail');
+			await app.idle();
+			const ground = await app.page.evaluate(() => {
+				const probe = document.body.appendChild(document.createElement('i'));
+				probe.style.background = 'var(--ground)';
+				const color = getComputedStyle(probe).backgroundColor;
+				probe.remove();
+				return color;
+			});
+			const tail = (await tailSpans(app.page)).rows.flat().flatMap((cell) => cell.spans);
+			const repl = (await replSpans(app.page)).spans;
+			for (const [surface, spans] of [['tail pane', tail], ['CLI widget', repl]]) {
+				const at = (text) => {
+					const i = spans.findIndex((s) => s.text === text);
+					assert.ok(i > 0, `the ${surface} drew no ${text}`);
+					return [spans[i - 1], spans[i]];
+				};
+				const [inkDot, lo] = at('lo');
+				assert.equal(inkDot.text, '●');
+				assert.equal(inkDot.color, 'rgb(32, 32, 32)', `the ${surface} lifted the dot, not only the text`);
+				assert.ok(
+					contrast(lo.color, ground) >= 4.5,
+					`the ${surface} paints lo ${lo.color} on ${ground}, ${contrast(lo.color, ground).toFixed(2)}:1`
+				);
+				const [teaDot, hot] = at('hot');
+				assert.deepEqual([teaDot.color, hot.color], ['rgb(240, 140, 0)', 'rgb(240, 140, 0)'], `the ${surface} moved a colour that reads`);
+			}
+		});
+	});
 });
+
+/** WCAG's contrast ratio of two computed `rgb(r, g, b)` colours. */
+function contrast(a, b) {
+	const luminance = (color) => {
+		const [r, g, b] = color.match(/\d+/g).slice(0, 3).map((v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+	};
+	const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
+	return (x + 0.05) / (y + 0.05);
+}
