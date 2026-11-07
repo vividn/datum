@@ -643,7 +643,66 @@ async function midStack(page) {
 	return at;
 }
 
+/**
+ * A finger's touch drag straight down from `at`, `steps` moves of `dy` a frame apart, lifted
+ * after `rest` ms still, as one page task: no CDP round trip between the last move and the
+ * lift, which a loaded runner can stretch past `fling`'s REST_MS (da-v3t0u). Where it lifts.
+ */
+const flick = (page, at, { steps = 8, dy = 12, rest = 0 } = {}) =>
+	page.evaluate(
+		async ({ x, y, steps, dy, rest }) => {
+			const target = document.elementFromPoint(x, y);
+			const fire = (type, clientY) =>
+				target.dispatchEvent(
+					new PointerEvent(type, { pointerId: 41, pointerType: 'touch', isPrimary: true, bubbles: true, clientX: x, clientY })
+				);
+			fire('pointerdown', y);
+			for (let i = 1; i <= steps; i++) {
+				await new Promise(requestAnimationFrame);
+				fire('pointermove', y + dy * i);
+			}
+			if (rest) await new Promise((r) => setTimeout(r, rest));
+			fire('pointerup', y + dy * steps);
+			return { x, y: y + dy * steps };
+		},
+		{ ...at, steps, dy, rest }
+	);
+
+/** Once the stack's scroll has stood still for 200 ms. */
+async function scrollSettled(page) {
+	let [was, now] = [NaN, await stackTop(page)];
+	while (was !== now) {
+		await page.waitForTimeout(200);
+		[was, now] = [now, await stackTop(page)];
+	}
+}
+
 describe('one gesture, however many fingers (da-wekrr)', () => {
+	test('zoomed in, a flick down goes on by its own momentum after the lift; a finger that rested first stops there (da-v3t0u)', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				await zoomIn(app, await geom(page));
+				for (const [rest, what] of [
+					[0, 'flicked'],
+					[150, 'rested first']
+				]) {
+					const a = await midStack(page);
+					const point = await pointUnder(page, a);
+					const lift = await flick(page, a, { rest });
+					await scrollSettled(page);
+					const seen = await screenOf(page, point);
+					assert.ok(Math.abs(seen.x - lift.x) <= 3, `${what}: the hours moved, ${seen.x} for ${lift.x}`);
+					// A native scroll's momentum: about v·τ, 0.75 px/ms × 325 ms, past the lift.
+					if (rest) assert.ok(Math.abs(seen.y - lift.y) <= 3, `${what}: the days went on, ${seen.y} for ${lift.y}`);
+					else assert.ok(seen.y - lift.y >= 60, `${what}: the days stopped at the lift, ${seen.y} for ${lift.y}`);
+				}
+				assert.deepEqual(await pillsOf(page), [], 'the flick selected something');
+			},
+			PHONE
+		);
+	});
+
 	test('zoomed in, a diagonal drag moves the hours and the days at once, and selects nothing', async () => {
 		await withStrip(
 			async (app) => {
