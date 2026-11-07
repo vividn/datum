@@ -18,14 +18,13 @@ use datum_core::{
 };
 use datum_parse::input::TimeArgs;
 use datum_parse::spec_keys::{parse_key_decl, KeyKind, SpecKeyWords};
-use datum_parse::{ParseError, Readings};
 use serde_json::{json, Value as JsonValue};
 use std::collections::BTreeMap;
 
 use crate::commands::follow_zone::{
     declared_zone, following, may_name_timezone, neighbours_zone, timezone_line,
 };
-use crate::commands::question::Question;
+use crate::commands::reading::{asking, far_ahead, which_reading};
 use crate::{
     args::{LogArgs, LogArgsExt},
     config::client_id,
@@ -179,6 +178,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if inferred_zone.is_some() {
         args.time.timezone = inferred_zone.clone();
     }
+    // Said as the line said it: a lifted key is no `-t` on it.
+    let option = lifted
+        .anchor()
+        .map_or("-t ".into(), |(key, _)| format!("{key}="));
     // da-6i7l1: a wall time a fall-back night repeats is asked about, once,
     // and every build below reads the answer.
     if !args.time.omit_timestamp {
@@ -192,10 +195,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             )
             .ok()
         };
-        // Said as the line said it: a lifted key is no `-t` on it.
-        let option = lifted
-            .anchor()
-            .map_or("-t ".into(), |(key, _)| format!("{key}="));
         // The names of an array are one line, at one instant: one question.
         // The answer is to these two readings alone, so another array on the
         // line, naming another hour, is asked its own.
@@ -714,6 +713,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         if !args.output()?.silent() {
             eprintln!("⚠ no -z given: used {zone}, the zone of the entries around it");
         }
+    }
+    if let (Some(note), false) = (
+        far_ahead(&args.time, &entry, now.utc, &option),
+        args.output()?.silent(),
+    ) {
+        eprintln!("{note}");
     }
 
     // da-ju71.2: stamp `Dur::moment()` ("MOMENT") to lock the entry to
@@ -2685,72 +2690,6 @@ pub(crate) fn build_time_from_flags(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DatumTime> {
     build_time_anchored(time, now, None, false)
-}
-
-/// Which of the two instants the flags name the line means, where they name
-/// a wall time a fall-back night repeats (da-6i7l1): `Some(later)`, `false`
-/// when there is one, or `None` when the person asked declined. `read` is
-/// the line's build with `TimeArgs::later` as given. No reading is a safe
-/// default, so with no answer the question is [`Unanswered`], naming both
-/// full spellings, each after `option`, how the line gave the time (`-t `,
-/// `end_time=`).
-///
-/// [`Unanswered`]: crate::commands::question::Unanswered
-pub(crate) fn which_reading(
-    read: impl Fn(bool) -> Option<DatumTime>,
-    option: &str,
-) -> Result<Option<bool>> {
-    let (Some(first), Some(second)) = (read(false), read(true)) else {
-        return Ok(Some(false));
-    };
-    if first.utc == second.utc {
-        return Ok(Some(false));
-    }
-    ask_reading(&Readings::new(option, &first, &second))
-}
-
-/// [`which_reading`]'s question, of a `*_time` key too (da-job98): `None`
-/// when the person asked declined.
-fn ask_reading(readings: &Readings) -> Result<Option<bool>> {
-    let [a, b] = readings.options();
-    let question = Question::choose(
-        format!("{}. Which one?", readings.said()),
-        vec![a.clone(), b.clone()],
-    );
-    let answer = question.ask()?;
-    let option = readings.option.trim_end();
-    let spelled = |o: &str| o.strip_prefix(option).unwrap_or(o).trim().to_string();
-    let answer = spelled(&answer);
-    Ok(match answer.as_str() {
-        "1" => Some(false),
-        "2" => Some(true),
-        _ if answer == spelled(&a) => Some(false),
-        _ if answer == spelled(&b) => Some(true),
-        _ => None,
-    })
-}
-
-/// `parse` again until every `*_time` key naming a wall time a fall-back
-/// night repeats has its reading in `later`, asking of each as `-t` is
-/// asked (da-job98): `None` when the person asked declined.
-pub(crate) fn asking<T>(
-    later: &mut BTreeMap<String, bool>,
-    mut parse: impl FnMut(&BTreeMap<String, bool>) -> Result<T>,
-) -> Result<Option<T>> {
-    loop {
-        let err = match parse(later) {
-            Ok(parsed) => return Ok(Some(parsed)),
-            Err(err) => err,
-        };
-        let Some(ParseError::RepeatedTime(readings)) = err.downcast_ref() else {
-            return Err(err);
-        };
-        let key = readings.option.trim_end_matches('=').to_string();
-        match ask_reading(readings)? {
-            Some(reading) => later.insert(key, reading),
-            None => return Ok(None),
-        };
-    }
 }
 
 /// A `-z` on a `timezone` entry names the zone the entry does (da-yw6o2).

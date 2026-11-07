@@ -85,6 +85,21 @@ impl TimeArgs {
             || self.full_day
     }
 
+    /// Whether the flags are one bare clock (`-t 23:50`): no day, no shift,
+    /// no `+`/`-`. Today's, as v2's is, so typed just after midnight for a
+    /// moment ago it lands almost a day ahead (da-qo5in).
+    pub fn bare_clock(&self) -> bool {
+        self.time.is_some()
+            && self.time_offsets.is_empty()
+            && self.date.is_none()
+            && self.yesterday == 0
+            && self.quick == 0
+            && !self.full_day
+            && self
+                .builder(TimeCtx::now())
+                .is_ok_and(|b| b.time_override.is_some() && b.time_direction.is_none())
+    }
+
     /// Every `-t` value, in the order it applies: `time`, then the offsets.
     pub fn time_values(&self) -> impl Iterator<Item = &String> {
         self.time.iter().chain(&self.time_offsets)

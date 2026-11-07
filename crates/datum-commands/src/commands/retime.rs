@@ -22,7 +22,8 @@ use datum_core::{
 
 use crate::args::{OutputFlagsExt, RetimeArgs};
 use crate::commands::helpers::{registry_of, resolve_batch, BatchMode};
-use crate::commands::log_core::{build_time_anchored, which_reading, zone_agrees};
+use crate::commands::log_core::{build_time_anchored, zone_agrees};
+use crate::commands::reading::which_reading;
 use crate::commands::time_bounds::{parse_after, parse_before};
 use crate::render::{show_retime, OutputArgs};
 

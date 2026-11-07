@@ -69,6 +69,7 @@ mod e2e_subprocess;
 mod edit_cmd;
 mod ensure_last_state;
 mod env_table_coverage;
+mod far_ahead_hint;
 mod field_arrays;
 mod field_conflict;
 mod field_key_slot;

@@ -259,7 +259,7 @@ pub fn update_batch_from_args(
             let types = types[&e.field].clone();
             parse_update_payload(&args, strategy, types, Some(base.clone()), Some(later))
         };
-        let Some(p) = crate::commands::log_core::asking(&mut later, parse)? else {
+        let Some(p) = crate::commands::reading::asking(&mut later, parse)? else {
             println!("Aborted.");
             return Ok(());
         };
