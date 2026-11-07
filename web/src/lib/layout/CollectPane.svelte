@@ -32,8 +32,9 @@
 	one that wrote keeps it until a layer asked after the write has come.
 
 	At a SELECTED TIME (da-0qdsp, the cursor's instant, not a length ending
-	now) the strip is that day's layer centered on it, still, and the buttons
-	stand as `now --json -t <time>` says the fields stood then, a moment
+	now) the strip is that day's layer centered on it, still, zoomed out to
+	hold a length or the entries selected in its inner 80% (da-xqae2), and
+	the buttons stand as `now --json -t <time>` says the fields stood then, a moment
 	field whose entry is at that instant among the active ones (`standingAt`,
 	`momentsAt`). A tap on that field deletes the entry, with no pill: an hid
 	pill on the bar would be deleted too. In 2-click mode the tap opens the
@@ -107,10 +108,15 @@
 
 	/** The selected instant, or null at now: a length ending now selects no time. */
 	const at = $derived($pointed && $pointed.rel !== 0 ? +$pointed.at : null);
-	/** The day the strip draws: the selected instant's, else today. */
+	/** The selected time's length, in ms, which the strip frames with it (da-xqae2). */
+	const span = $derived(at !== null && $pointed?.span ? $pointed.span * 60_000 : 0);
+	/** The instant the strip frames at its center: the entries selected, or the selected time and its length. */
+	let framedAt = $state<number | null>(null);
+	/** The day the strip draws: the framed instant's, else today. */
 	const today = $derived.by(() => {
 		void $minute;
-		return dateBack(at === null ? 0 : daysBack(at));
+		const t = framedAt ?? at;
+		return dateBack(t === null ? 0 : daysBack(t));
 	});
 	/** `now --json -t <at>`'s active fields, and the instant and epoch they answer. */
 	let then = $state.raw<{ at: number; epoch: number; active: NowActive[] } | null>(null);
@@ -232,6 +238,8 @@
 		ontime={(timeOpen) => onchange?.({ timeOpen })}
 		nowDoc={doc}
 		nowAt={at}
+		nowSpan={span}
+		onframe={(t) => (framedAt = t)}
 		{nowPending}
 		onrun={run}
 		onfill={fill}

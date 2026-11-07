@@ -18,7 +18,8 @@
 	stripes stand still on screen while another's state sweeps in (da-5yemo).
 	A dot of the layer wholly past
 	the left edge is removed. At a selected instant `at` (da-0qdsp) the strip's
-	span about it is drawn, still, the instant at the center.
+	span about it is drawn, still, the instant at the center, the strip `span`
+	ms long, which collect zooms out to frame a span selected (da-xqae2).
 
 	The nowview draws it too, in its now section (da-d6vzq): `vertical` where
 	time runs down the page, now at the strip's foot, and `prefix` naming its
@@ -38,6 +39,7 @@
 		doc,
 		pending = [],
 		at = null,
+		span = STRIP_MS,
 		width,
 		height,
 		mirrored = false,
@@ -47,6 +49,7 @@
 		doc: Document | null | undefined;
 		pending?: Mark[];
 		at?: number | null;
+		span?: number;
 		width: number;
 		height: number;
 		mirrored?: boolean;
@@ -67,15 +70,17 @@
 	let layer = $state<SVGGElement>();
 	/** The strip's length along time, and across it. */
 	const [along, wide] = $derived(vertical ? [height, width] : [width, height]);
-	const k = $derived(along / STRIP_MS);
+	const k = $derived(along / span);
 	const y = $derived(wide / LAYER_HEIGHT);
-	const drawn = $derived(laid(doc, origin, k, y, SPAN, vertical, prefix));
+	/** How far either side of `origin` is laid: past the strip's half, however far it is zoomed out. */
+	const reach = $derived(Math.max(SPAN, span));
+	const drawn = $derived(laid(doc, origin, k, y, reach, vertical, prefix));
 	/** `v` along time and `u` across, as x and y. */
 	const xy = (v: number, u: number) => (vertical ? [u, v] : [v, u]);
-	/** Each tap's mark as drawn: clamped to `SPAN` about `origin`, in px from it. */
+	/** Each tap's mark as drawn: clamped to `reach` about `origin`, in px from it. */
 	const taps = $derived(
 		pending.map((m) => {
-			const [from, to] = [Math.max(m.from, origin - SPAN), Math.min(m.to, origin + SPAN)];
+			const [from, to] = [Math.max(m.from, origin - reach), Math.min(m.to, origin + reach)];
 			return { ...m, from, to, x: (from - origin) * k, w: (to - from) * k };
 		})
 	);

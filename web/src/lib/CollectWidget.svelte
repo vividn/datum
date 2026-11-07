@@ -19,7 +19,8 @@
 	its right edge and sliding with the clock, so a change sweeps in from the
 	right and a dot crosses it in half a second (NowStrip.svelte, da-uuzu6); a tap
 	adds its own mark there before the database answers (`nowPending`). At a
-	selected time the strip is centered on it, still, and the fields stand as
+	selected time the strip is centered on it, still, zoomed out to hold a
+	length or the entries selected in its inner 80% (`frame`, da-xqae2), and the fields stand as
 	they stood then, a moment there in the active section and a tap taking it
 	away (`nowAt`, `here`, da-0qdsp). And a
 	tap on an active field's band puts that field's pill on the bar; then the ACTIVE SECTION, every field in an active state
@@ -127,7 +128,7 @@
 	import CollectWhen, { MOMENT_ID, setMoment } from './CollectWhen.svelte';
 	import { CLICK_SLOP } from './inspect.js';
 	import NowStrip from './NowStrip.svelte';
-	import type { Mark } from './nowStrip.js';
+	import { framed, isoMs, type Mark } from './nowStrip.js';
 	import { TAU } from './detent.js';
 	import { speedOver, tracked, type Sample } from './grip.js';
 	import {
@@ -242,6 +243,10 @@
 		nowPending = [],
 		/** The selected instant the strip is centered on, still (da-0qdsp); null slides with now. */
 		nowAt = null,
+		/** The selected time's length before `nowAt`, in ms: 0 for none. */
+		nowSpan = 0,
+		/** The instant the strip frames, at its center (da-xqae2): for the pane to draw that day's layer. */
+		onframe,
 		/** How large the rows at rest are drawn, a button's font and height together (da-l1z6h). */
 		zoom = 1,
 		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep on this device. */
@@ -269,6 +274,8 @@
 		nowDoc?: Document | null;
 		nowPending?: Mark[];
 		nowAt?: number | null;
+		nowSpan?: number;
+		onframe?: (at: number | null) => void;
 		zoom?: number;
 		onzoom?: (zoom: number) => void;
 		timeOpen?: boolean;
@@ -742,6 +749,18 @@
 	});
 	/** Whether the entries' cards are up, in place of the fields. */
 	const card = $derived(cards.length > 0 && !!hids && !$fieldPill);
+	/** What the now strip frames (da-xqae2): the entries the cards show, each `at − dur` to `at`, else the selected time and its length. */
+	const frame = $derived(
+		framed(
+			card
+				? cards.flatMap(({ entry }): [number, number][] => {
+						const end = Date.parse((entry.at as { utc: string } | null)?.utc ?? '');
+						return Number.isFinite(end) ? [[end - isoMs(entry.dur), end]] : [];
+					})
+				: []
+		) ?? (nowAt === null ? null : framed([[nowAt - nowSpan, nowAt]]))
+	);
+	$effect(() => onframe?.(frame?.at ?? null));
 	/** The entry's own clock, `13:23`, at the offset it was logged at. */
 	function clockOf(e: Record<string, unknown>): string {
 		const at = e.at as { utc: string; offset_minutes: number } | null;
@@ -1134,7 +1153,7 @@
 <!-- The now strip (da-lw7ue), `height` tall: at rest the room's, beside a field's view the widget's (da-u7tij). -->
 {#snippet present(height: number)}
 <div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
-	<NowStrip doc={nowDoc} pending={nowPending} at={nowAt} width={strip} {height} mirrored={side === 'right'} />
+	<NowStrip doc={nowDoc} pending={nowPending} at={frame?.at ?? null} span={frame?.span} width={strip} {height} mirrored={side === 'right'} />
 	{#each nowBands as band (band.field)}
 		<button
 			class="now-state"

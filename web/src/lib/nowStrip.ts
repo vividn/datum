@@ -25,6 +25,26 @@ import { LAYER_HEIGHT, STANDARD_DOT } from './panes.js';
 /** How much time the strip spans, now at its edge. */
 export const STRIP_MS = 500;
 
+/** An ISO length, `PT30M` or `P1DT2H`, in ms: 0 for `MOMENT`, none, or one it cannot read. */
+export function isoMs(dur: unknown): number {
+	const [d = 0, h = 0, m = 0, s = 0] = (/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?)?$/.exec(String(dur)) ?? []).slice(1).map((n) => Number(n ?? 0));
+	return (((d * 24 + h) * 60 + m) * 60 + s) * 1000;
+}
+
+/**
+ * What the strip frames, the selection's spans, each `[start, end]` (da-xqae2). vividn, 2026-11-07: «if one entry
+ * is selected show the time in the middle (if moment or no dur). if it has a dur, or there are multiple entries
+ * selected, zoom this now section out to show all the selected data (or dur range) in the inner 80%». So one instant
+ * is the strip's center at its own `STRIP_MS`, and a span from the earliest start to the latest end fills `span`'s
+ * inner 80%, a tenth either side. None: null, the strip at now.
+ */
+export function framed(spans: [number, number][]): { at: number; span: number } | null {
+	if (!spans.length) return null;
+	const from = Math.min(...spans.map(([a]) => a));
+	const to = Math.max(...spans.map(([, b]) => b));
+	return to > from ? { at: (from + to) / 2, span: (to - from) / 0.8 } : { at: to, span: STRIP_MS };
+}
+
 /**
  * A tap's mark on the strip before the layer has it: a block from `from` to
  * `to`, or a dot at `from`, on its band (`y`, `h` in the layer's units,

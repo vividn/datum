@@ -172,7 +172,7 @@
 	import { on } from 'svelte/events';
 	import CliPane from '#lib/CliPane.svelte';
 	import NowStrip from '#lib/NowStrip.svelte';
-	import { STRIP_MS, taps, unheld, type Mark } from '#lib/nowStrip.ts';
+	import { STRIP_MS, isoMs, taps, unheld, type Mark } from '#lib/nowStrip.ts';
 	import Pill from '#lib/Pill.svelte';
 	import { get } from 'svelte/store';
 	import { pills, removePill, selected } from '#lib/bar.ts';
@@ -2563,8 +2563,7 @@
 		if (mine !== hidAsked) return;
 		// One datum could not read (gone since) is followed again when it is next selected.
 		if (!Number.isFinite(end)) return void (aimedHid = null);
-		const [d = 0, h = 0, m = 0, sec = 0] = (/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?)?$/.exec(dur) ?? []).slice(1).map((n) => Number(n ?? 0));
-		aim(end - (((d * 24 + h) * 60 + m) * 60 + sec) * 1000, end);
+		aim(end - isoMs(dur), end);
 	}
 
 	onDestroy(cursor.subscribe(follow));
