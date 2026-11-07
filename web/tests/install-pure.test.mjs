@@ -243,6 +243,13 @@ if (args[0] === 'api') {
     now.assets.push({ id, name, state: 'uploaded' });
     fs.writeFileSync(file, JSON.stringify(now));
   }
+  // gh's own retry meeting an asset GitHub already took, FAKE_GH_TAKEN_TIMES times.
+  const taken = process.env.FAKE_GH_TAKEN, count = path.join(dir, 'taken');
+  const times = fs.existsSync(count) ? Number(fs.readFileSync(count, 'utf8')) : 0;
+  if (taken && args.slice(3).some((f) => path.basename(f) === taken) && times < Number(process.env.FAKE_GH_TAKEN_TIMES ?? 1)) {
+    fs.writeFileSync(count, String(times + 1));
+    exit(1, 'HTTP 422: Validation Failed (ReleaseAsset.name already exists: ' + taken + ')');
+  }
   exit(0);
 }
 exit(1, 'fake gh: ' + args.join(' '));
@@ -326,6 +333,26 @@ describe('release/publish.sh moves installs to a build only once it is all up', 
 		published(box, B);
 		writeFileSync(join(box.release, 'SHA256SUMS'), stale);
 		assert.equal(installs(box), built(A));
+	});
+
+	test("gh's retry meeting an asset already taken is run once more, and a second failure moves nothing", () => {
+		const box = releaseBox();
+		published(box, A);
+		const taken = `datum-aarch64-macos-${B.slice(0, 7)}`;
+		published(box, B, { FAKE_GH_TAKEN: taken });
+		const ids = assetsOf(box);
+		const id = (name) => ids.find((a) => a.name === name).id;
+		const own = ids.filter((a) => a.name.endsWith(`-${B.slice(0, 7)}`)).map((a) => a.id);
+		assert.equal(own.length, ASSETS.length, `this build's binaries: ${ids.map((a) => a.name)}`);
+		assert.ok(Math.max(...own, id(`SHA256SUMS-${B.slice(0, 7)}.minisig`)) < id('SHA256SUMS'), 'SHA256SUMS after the build-named assets');
+		assert.ok(id('SHA256SUMS') < id('SHA256SUMS.minisig'), 'and its signature after it');
+		assert.equal(installs(box), built(B));
+
+		const run = publish(box, C, { FAKE_GH_TAKEN: `datum-aarch64-macos-${C.slice(0, 7)}`, FAKE_GH_TAKEN_TIMES: '3' });
+		assert.notEqual(run.status, 0);
+		assert.match(run.stderr, /already exists/);
+		assert.equal(readFileSync(join(box.fake, 'taken'), 'utf8'), '3', 'the upload ran twice more, and stopped');
+		assert.equal(installs(box), built(B));
 	});
 
 	test("a 'starter' asset a run leaves blocks no later run", () => {

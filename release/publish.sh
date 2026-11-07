@@ -87,7 +87,12 @@ if gh release view latest > /dev/null 2>&1; then
   # A run again at the same commit clobbers the binaries SHA256SUMS names:
   # gh deletes each before its upload, so an install meanwhile 404s and is
   # run again. Any other run uploads names no SHA256SUMS holds.
-  gh release upload latest datum-*-"$build" "SHA256SUMS-$build.minisig" --clobber
+  # gh retries an upload itself, and its retry can meet an asset GitHub
+  # already took: HTTP 422 «already exists», which --clobber, looked at once
+  # before, does not see (da-c1gef). A second pass sees it and clobbers it.
+  # Once, not a loop: what fails a second time is not that collision.
+  up=(datum-*-"$build" "SHA256SUMS-$build.minisig")
+  gh release upload latest "${up[@]}" --clobber || gh release upload latest "${up[@]}" --clobber
   gh release upload latest SHA256SUMS --clobber
   # A datum from before build names reads this one, and refuses the new
   # SHA256SUMS until it is up and both are served.
