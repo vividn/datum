@@ -46,9 +46,10 @@
 // pair the CLI lifts onto at and dur (da-mjwq). The other view
 // DRAWS the range all the same; it does not re-spell it.
 
+import { browser } from '$app/env';
 import { derived, get, writable } from 'svelte/store';
 import { pills, selected, type Pill, type PillSection } from './bar.js';
-import { minute } from './clock.js';
+import { minute, now as clockNow } from './clock.js';
 import { lanes } from './lanes.js';
 import { relArg } from './nowpoint.js';
 
@@ -76,6 +77,9 @@ export interface Cursor {
 }
 
 export const cursor = writable<Cursor | null>(null);
+
+/** When the cursor's pills were last written, which a bare `-t HH:MM` is the day of. */
+let spelled = new Date();
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * 60_000;
@@ -221,8 +225,8 @@ const spanArg = (c: Cursor, now = new Date()): string =>
  * that is the order a person says a block in and the order the two words
  * teach best.
  */
-function cursorPills(c: Cursor): Pill[] {
-	const arg = cursorArg(c);
+function cursorPills(c: Cursor, now: Date): Pill[] {
+	const arg = cursorArg(c, now);
 	const time =
 		arg === null
 			? []
@@ -234,10 +238,10 @@ function cursorPills(c: Cursor): Pill[] {
 						// A relative pill is one short word already, and a keyed
 						// one says which edge it is in the word itself; only the
 						// bare absolute pill wants dividing (da-ui4i).
-						...(c.rel === undefined && !edged(c) ? { sections: pillSections(c.at) } : {})
+						...(c.rel === undefined && !edged(c) ? { sections: pillSections(c.at, now) } : {})
 					}
 				];
-	const span = c.span ? [{ id: SPAN_ID, kind: 'dur', text: spanArg(c) }] : [];
+	const span = c.span ? [{ id: SPAN_ID, kind: 'dur', text: spanArg(c, now) }] : [];
 	return edged(c) ? [...span, ...time] : [...time, ...span];
 }
 
@@ -314,8 +318,23 @@ cursor.subscribe((c) => {
 	// selection and still re-orders — which is why the pictures publish
 	// their lanes AFTER they point.
 	if (!c && !get(selected).length) lanes.set(null);
-	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== SPAN_ID), ...(c ? cursorPills(c) : [])]);
+	spelled = new Date();
+	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== SPAN_ID), ...(c ? cursorPills(c, spelled) : [])]);
 });
+
+// An absolute selection is spelled against the day it was spelled on: a bare
+// `-t 23:55` means today's (da-2s8kq). So when the day turns, it is spelled
+// again, or a line sent after midnight would be logged on the new day at a
+// time picked on the old one. A relative one says nothing of the day. The
+// SAME object is set on purpose: the store calls its subscribers for any
+// object (`safe_not_equal`, see `pointed`), and a copy or an identity guard
+// would only hide that. The clock ticks in a page alone (node and the
+// prerender have no document).
+if (browser)
+	clockNow.subscribe((t) => {
+		const c = get(cursor);
+		if (c && c.rel === undefined && t.toDateString() !== spelled.toDateString()) cursor.set(c);
+	});
 
 // And an ENTRY selected by a tap publishes them too (da-xg1vi: a tap on a
 // mark is its entry, and its height still orders the fields), so the last
@@ -346,7 +365,9 @@ selected.subscribe((hids) => {
 pills.subscribe((all) => {
 	const c = get(cursor);
 	if (!c) return;
-	const want = cursorArg(c);
+	// Against the day the pills were spelled on, so a pill the day tick has
+	// not yet spelled again is not read as a move to the new day.
+	const want = cursorArg(c, spelled);
 	const pill = all.find((p) => p.kind === 'time');
 	if (want !== null && !pill) return void cursor.set(null);
 	if (c.span !== undefined && !all.some((p) => p.id === SPAN_ID))
@@ -355,7 +376,7 @@ pills.subscribe((all) => {
 	// A relative pill has one section and no other text it can become, so
 	// a press on it is the press that takes it away — already handled
 	// above. Only the absolute pill's date section leaves something behind.
-	const at = c.rel === undefined && pill.text.startsWith('-t ') ? timeArgAt(pill.text.slice(3)) : null;
+	const at = c.rel === undefined && pill.text.startsWith('-t ') ? timeArgAt(pill.text.slice(3), spelled) : null;
 	if (at) pointAt({ ...c, at, rel: undefined, step: 1 });
 	else cursor.set(null);
 });

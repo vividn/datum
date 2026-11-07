@@ -496,3 +496,56 @@ describe('a clock time the day reads twice', () => {
 		);
 	});
 });
+
+// da-2s8kq. A time picked before midnight and sent after it is the time
+// picked: the pill was spelled once, a bare `-t 23:50` for today, and after
+// midnight the CLI read that as the new day's 23:50. The day turning spells
+// an absolute selection again, its face gaining the `-y` its argv now says;
+// a relative one says nothing of the day and is left as it was.
+describe('a time picked before midnight and sent after it', () => {
+	const PICKED = '2026-11-07T22:50:00.000Z'; // 23:50 in Berlin
+	const AFTER = Date.UTC(2026, 10, 7, 23, 7, 0); // 00:07 on 11-08
+
+	test('the pill gains its date and the entry is logged on the day picked; a range dates both edges; a relative pill is unchanged', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await pointAt(page, PICKED);
+				await saysPill(page, ['23:50']);
+				assert.equal(await pillText(page), '-t 23:50');
+
+				await app.clock.set(AFTER);
+				await saysPill(page, ['-y', '23:50']);
+				assert.equal(await pillText(page), '-t 2026-11-07T23:50');
+				assert.equal(await page.evaluate(() => window.datum.cursor.at().toISOString()), PICKED, 'the cursor did not move');
+				assert.match(await barRun(page, 'occur coffee'), /^MOMENT$/);
+				const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
+				assert.equal(new Date(coffee.at.utc).toISOString(), PICKED, JSON.stringify(coffee.at));
+
+				// The day strip's range, spelled by its two edges.
+				await app.clock.set(AFTER - 12 * 60_000);
+				const edges = () =>
+					page.evaluate(() =>
+						window.datum.bar
+							.pills()
+							.filter((p) => p.kind === 'time' || p.id === 'cursor-span')
+							.map((p) => p.text)
+					);
+				await page.evaluate((iso) => window.datum.cursor.point({ at: new Date(iso), span: 30, from: 'daystrip' }), PICKED);
+				await until(edges, (e) => e.join(' ') === 'start_time=23:20 end_time=23:50');
+				await app.clock.set(AFTER);
+				await until(edges, (e) => e.join(' ') === 'start_time=2026-11-07T23:20 end_time=2026-11-07T23:50');
+
+				// Relative: five minutes back from whenever it is sent, on any day.
+				await app.clock.set(AFTER - 12 * 60_000);
+				await page.evaluate(() => window.datum.cursor.point({ rel: 5, from: 'nowview' }));
+				await until(() => pillText(page), (t) => t === '-q');
+				await app.clock.set(AFTER);
+				// The bar's clock reads the same tick the cursor's day is checked on.
+				await until(() => page.locator('.stamp .clock').first().textContent(), (t) => t === '00:07:00');
+				assert.equal(await pillText(page), '-q');
+			},
+			{ clock: AFTER - 12 * 60_000, timezone: 'Europe/Berlin' }
+		);
+	});
+});
