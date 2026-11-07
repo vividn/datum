@@ -82,7 +82,9 @@
 	is written nowhere: «this should just be a tempoary thing. clicking the
 	restore zoom button should then restore to the set day height. only
 	dragging the handles between days changes the dayheight in a
-	persistent way».
+	persistent way». The hours are held for the visit alone (da-8gf5i,
+	vividn, 2026-11-07: «pinch zooms should reset on refresh»): a reload
+	opens on the whole day (`passing`, layout/session.ts).
 
 	How many days the box SHOWS: as many as it holds (da-zb0d). The strip
 	fills its container and the pane it sits in is what says how tall it
@@ -2329,7 +2331,7 @@
 			<button
 				class="unzoom"
 				type="button"
-				title="the whole day back"
+				title="reset the zoom: the whole day, at the set day height"
 				aria-label="reset the zoom to the whole day and the set day height"
 				onclick={resetZoom}
 			>
@@ -2806,8 +2808,11 @@
 	/* The zoom reset, in the bottom corner of the date column (da-8rqb9).
 	   Right-aligned inside that column.
 
-	   A fingertip's 26px over a 16px
-	   glyph: §12's box is not the drawing (the old beta ⓘ's pattern). */
+	   A fingertip's 26px over a 16px glyph: §12's box is not the drawing
+	   (the old beta ⓘ's pattern). A raised control in body ink, which its
+	   `--quiet` with no ground was not (da-8gf5i, vividn: «right now it is
+	   almost invisible»). Its corners rounded no further than a finger's
+	   box survives: a rounded corner is no hit area. */
 	.unzoom {
 		position: absolute;
 		bottom: 0;
@@ -2815,18 +2820,20 @@
 		width: 26px;
 		height: 26px;
 		padding: 0;
-		border: 0;
-		background: none;
+		border: 1px solid var(--rule);
+		border-radius: 3px;
+		background: var(--raised);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--quiet);
+		color: var(--ink);
 		cursor: pointer;
 		z-index: 4;
 	}
 	.unzoom:hover,
 	.unzoom:focus-visible {
-		color: var(--accent);
+		color: var(--accent-bright);
+		border-color: var(--accent);
 	}
 	.unzoom:focus-visible {
 		outline: 1px solid var(--accent);

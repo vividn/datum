@@ -24,7 +24,8 @@
 // setting moved and moved back leaves nothing behind, and «Save options
 // with layout» is offered exactly when there is something to save.
 //
-// The lifetime: a reload keeps what was set — vividn, 2026-10-20 (da-ray91):
+// The lifetime: a reload keeps what was set, but for what a kind names as
+// passing (`passing` below, da-8gf5i) — vividn, 2026-10-20 (da-ray91):
 // «widget options should survive reloads in general» — so the store is
 // mirrored to this device's `localStorage` (`KEPT`), never synced, as a
 // draft is; closing a tab forgets it (`pruneSession`); and restoring a
@@ -74,7 +75,34 @@ const each = (all: Record<string, Settings>, to: (value: unknown) => unknown): R
 		])
 	);
 
-const store = writable<Record<string, Settings>>(stored() ?? {});
+/** What is written down: this device's copy, or the visit's where storage is refused. */
+let kept: Record<string, Settings> = stored() ?? {};
+
+/**
+ * What is held for the VISIT alone and never written down (da-8gf5i): a
+ * view a widget passes through, the day strip's pinched hours — vividn,
+ * 2026-11-07: «pinch zooms should reset on refresh». A setting like any
+ * other within the visit, over the page's panes and root tabs; gone with
+ * the page, and never another browser tab's, which a fresh one never had. A key is
+ * passing where the kind says so (`passing` in registry.ts) or is held
+ * here already, so the menu writing the settings shown does not write it
+ * down.
+ */
+let passing: Record<string, Settings> = {};
+
+const joined = (): Record<string, Settings> => {
+	const all = { ...kept };
+	for (const [key, settings] of Object.entries(passing)) all[key] = { ...all[key], ...settings };
+	return all;
+};
+
+const store = writable<Record<string, Settings>>(joined());
+
+/** `all` with `key` holding `settings`, or holding nothing where they are empty. */
+const put = (all: Record<string, Settings>, key: string, settings: Settings): Record<string, Settings> => {
+	const { [key]: _was, ...rest } = all;
+	return Object.keys(settings).length > 0 ? { ...rest, [key]: settings } : rest;
+};
 
 /**
  * Every write is ONE edit, made to the map as stored now and not to what
@@ -82,22 +110,23 @@ const store = writable<Record<string, Settings>>(stored() ?? {});
  * back from either erased every key the other set since (da-btdu5).
  */
 function change(edit: (all: Record<string, Settings>) => Record<string, Settings>): void {
-	store.update((mine) => {
-		const all = edit(stored() ?? mine);
-		try {
-			if (Object.keys(all).length > 0) localStorage.setItem(KEPT, JSON.stringify(each(all, (value) => value ?? null)));
-			else localStorage.removeItem(KEPT);
-		} catch {
-			// Refused or full: the setting holds for the visit, as it always did.
-		}
-		return all;
-	});
+	const all = edit(stored() ?? kept);
+	try {
+		if (Object.keys(all).length > 0) localStorage.setItem(KEPT, JSON.stringify(each(all, (value) => value ?? null)));
+		else localStorage.removeItem(KEPT);
+	} catch {
+		// Refused or full: the setting holds for the visit, as it always did.
+	}
+	kept = all;
+	store.set(joined());
 }
 
 // And what another tab writes is shown here too, without a reload.
 if (typeof window !== 'undefined')
 	window.addEventListener('storage', (event) => {
-		if (event.key === KEPT || event.key === null) store.set(stored() ?? {});
+		if (event.key !== KEPT && event.key !== null) return;
+		kept = stored() ?? {};
+		store.set(joined());
 	});
 
 /** What this session has set, key by key: read by the renderer and the menu. */
@@ -141,11 +170,11 @@ export const overlay = (base: Settings, next: Settings): Settings =>
  * leaves nothing held — and «Save options with layout» is offered exactly
  * when there is something to save.
  */
-export function setSession(key: string, base: Settings, next: Settings): void {
-	const over = overlay(base, next);
-	change(({ [key]: _was, ...rest }) =>
-		Object.keys(over).length > 0 ? { ...rest, [key]: over } : rest
-	);
+export function setSession(key: string, base: Settings, next: Settings, passes: readonly string[] = []): void {
+	const over = Object.entries(overlay(base, next));
+	const goes = ([name]: [string, unknown]) => passes.includes(name) || name in (passing[key] ?? {});
+	passing = put(passing, key, Object.fromEntries(over.filter(goes)));
+	change((all) => put(all, key, Object.fromEntries(over.filter((entry) => !goes(entry)))));
 }
 
 /**
@@ -159,12 +188,14 @@ export const inProgress = new Map<string, Record<string, unknown>>();
 /** Forget everything this session set against `key`: `Reset widget`'s half of the act. */
 export function clearSession(key: string): void {
 	inProgress.delete(key);
+	passing = put(passing, key, {});
 	change(({ [key]: _dropped, ...rest }) => rest);
 }
 
 /** Forget everything this session set, here and on this device: a test's way back to the layout (da-juku7). */
 export function forgetSession(): void {
 	inProgress.clear();
+	passing = {};
 	change(() => ({}));
 }
 
@@ -196,7 +227,10 @@ export function pruneSession(layout: Layout): void {
 	const gone = [...(shown ?? [])].filter((key) => !live.has(key));
 	shown = live;
 	if (gone.length === 0) return;
-	for (const key of gone) inProgress.delete(key);
+	for (const key of gone) {
+		inProgress.delete(key);
+		passing = put(passing, key, {});
+	}
 	change((all) => {
 		const kept = Object.keys(all).filter((key) => !gone.includes(key));
 		return kept.length === Object.keys(all).length ? all : Object.fromEntries(kept.map((key) => [key, all[key]]));

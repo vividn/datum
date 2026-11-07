@@ -118,6 +118,8 @@ export interface WidgetKind {
 	 * mode.
 	 */
 	onChange?: (settings: Record<string, unknown>, moved: unknown) => Record<string, unknown>;
+	/** The settings a reload forgets: held for the visit alone (`passing`, session.ts, da-8gf5i). */
+	passing?: readonly string[];
 	/**
 	 * How to use it (da-oefd0), in Markdown, the person's words and not the
 	 * CLI's: what it is for, then each of its features — what you tap, hold,
@@ -282,9 +284,9 @@ export const KINDS: Record<string, WidgetKind> = {
 	// today (da-zb0d). Its settings are what the reader has moved on it:
 	// the day height (the day line) and the date column (the spine), each
 	// dragged or moved as the keyboard's slider, whether today is frozen
-	// at the bottom, and the hour range it is zoomed onto — so a saved
-	// layout keeps a zoomed strip zoomed, and `Reset widget` is the way
-	// back to the whole day (da-ukcf).
+	// at the bottom, and the hour range it is zoomed onto — for the visit
+	// alone (da-8gf5i), though a layout saved while zoomed keeps it, and
+	// `Reset widget` is the way back to the whole day (da-ukcf).
 	daystrip: {
 		// No `dayHeight` among the defaults: its default is DERIVED from the
 		// pane's height (da-r0ydu), and a declared one would be what a
@@ -321,7 +323,7 @@ Drag up and down, or the wheel, to scroll back through the days. Pinch sideways,
 - **today frozen at the bottom**: today stays at the foot while the days above it scroll.
 - **orientation**: **horizontal**, or **vertical**, a week of columns, time down the page.
 
-The strip keeps the hours and sizes you move it to, until **Reset widget**.`,
+The strip keeps the sizes you move it to, until **Reset widget**, and the hours you zoom onto until you reload.`,
 		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
 			orientation: orientation === 'vertical' ? 'vertical' : 'horizontal',
 			// Undefined on purpose: the strip derives its day from its own
@@ -337,6 +339,9 @@ The strip keeps the hours and sizes you move it to, until **Reset widget**.`,
 		// the day height and the label width, a zoom both ends of its hour
 		// range — so the fold is the same one for all of them.
 		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
+		// A pinch's hours are the visit's: a reload opens on the whole day
+		// (da-8gf5i), as its day height already does (da-r7h0m).
+		passing: ['hourFrom', 'hourTo'],
 		// A notch, not a wall: shorter, the strip clips today's band from
 		// the top and keeps its axis. Only while the reader HOLDS a day
 		// height — following its box (da-r0ydu) every height is one whole

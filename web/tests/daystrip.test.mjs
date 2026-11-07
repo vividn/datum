@@ -48,6 +48,7 @@ import {
 	sharedApp,
 	startApp,
 	stopApp,
+	withApp,
 	seedLines,
 	todayAt
 } from './support/app.mjs';
@@ -113,6 +114,24 @@ const clocked = sharedApp({ clock: todayAt(12) });
 /** A screen tall enough for sixteen of the shortest days above today. */
 const desk = sharedApp({ viewport: { width: 1280, height: 1400 } });
 const phone = sharedApp(PHONE);
+
+/**
+ * The contrast of `el`'s ink on the ground it is drawn on: its own
+ * background, or the nearest ancestor's that is painted (WCAG's ratio).
+ */
+const contrastOf = (el) => {
+	const rgb = (css) => css.match(/[\d.]+/g).map(Number);
+	const lum = ([r, g, b]) => {
+		const lin = (c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+		return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+	};
+	let ground = el;
+	while (ground && rgb(getComputedStyle(ground).backgroundColor)[3] === 0) ground = ground.parentElement;
+	const [a, b] = [rgb(getComputedStyle(el).color), rgb(getComputedStyle(ground ?? document.body).backgroundColor)]
+		.map(lum)
+		.sort((x, y) => y - x);
+	return (a + 0.05) / (b + 0.05);
+};
 
 describe('the day strip', () => {
 	test('the box says how many days: today, and the past that fits above it, a picture each', async () => {
@@ -1226,8 +1245,48 @@ describe('the day strip zooms onto an hour range', () => {
 				return document.elementFromPoint(r.left + 4, (r.top + r.bottom) / 2) === el;
 			});
 			assert.ok(hit, 'the ⊖ covers the whole day line');
+
+			// Plainly visible (da-8gf5i, vividn: «right now it is almost
+			// invisible»): its glyph at 3:1 or more on its ground, under
+			// either color scheme the browser asks for, and its purpose in
+			// its name and its title.
+			for (const colorScheme of ['dark', 'light']) {
+				await page.emulateMedia({ colorScheme });
+				const ratio = await page.locator(UNZOOM).evaluate(contrastOf);
+				assert.ok(ratio >= 3, `the ⊖ is ${ratio.toFixed(2)}:1 on its ground under ${colorScheme}`);
+			}
+			await page.emulateMedia({ colorScheme: null });
+			for (const attr of ['aria-label', 'title'])
+				assert.match((await page.locator(UNZOOM).getAttribute(attr)) ?? '', /reset the zoom/, `its ${attr}`);
+
+			// And a tap on it is the whole day.
+			await page.locator(UNZOOM).tap();
+			await untilWindow(app, 'w[0] === 0 && w[1] === 24');
+			await app.idle();
+			assert.equal(await hoursShown(app), 25);
 			assert.deepEqual(app.errors, []);
 		});
+	});
+
+	// vividn, 2026-11-07: «pinch zooms should reset on refresh» (da-8gf5i).
+	test('a reload opens on the whole day, whatever the pinch had zoomed onto', async () => {
+		// An app of its own: a reload is a boot no later test should share.
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.idle();
+			await pinch(page, await bandBox(app), 100, 300);
+			await untilWindow(app, 'w[1] - w[0] < 24');
+			await app.idle();
+			assert.ok((await hoursShown(app)) < 25, 'the pinch did not zoom');
+
+			await app.reload();
+			await app.idle();
+			assert.deepEqual(await windowHeard(app), [0, 24], 'the hours outlived the reload');
+			assert.equal(await hoursShown(app), 25);
+			assert.deepEqual([...new Set(await bandTransforms(app))], [WHOLE_DAY], 'a band is still zoomed');
+			assert.equal(await page.locator(UNZOOM).count(), 0, 'the ⊖ is there with nothing to undo');
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
 	});
 
 	test('ctrl+wheel zooms, shift+wheel pans, and the ⊖ is the way back', async () => {

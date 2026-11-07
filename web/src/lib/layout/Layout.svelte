@@ -694,7 +694,7 @@
 						{...kind.props ? kind.props(settings) : { settings }}
 						epoch={at}
 						{key}
-						onchange={(moved: unknown) => fold && setSession(key, widget.settings, fold(settings, moved))}
+						onchange={(moved: unknown) => fold && setSession(key, widget.settings, fold(settings, moved), kind.passing)}
 					/>
 				{/if}
 			{:else}
