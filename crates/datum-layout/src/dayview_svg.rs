@@ -653,15 +653,22 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 day.day_offset + layout.day_height,
             );
             let fs = (layout.day_height * 0.12).clamp(7.0, 11.0);
-            let (lx, ly) = match layout.orientation {
-                Orientation::Horizontal => (x1 + 2.0, y1 + fs),
-                Orientation::Vertical => (x1 + 2.0, y1 - 2.0),
+            // Before the line in time, on the row the field's dots are drawn
+            // on (vividn, 2026-11-07, da-9sjt5).
+            let (cx, cy) = to_xy(layout, &geom, e.time_pos, day.day_offset + e.cross_pos);
+            let (lx, ly, anchor) = match layout.orientation {
+                Orientation::Horizontal => (cx - 2.0, cy, "end"),
+                Orientation::Vertical => (cx, cy - 2.0, "middle"),
             };
             let _ = write!(
                 &mut out,
-                r#"<g class="integrity-error" data-field="{field}" data-at="{at}"><title>{field}: {what}</title><line class="error-line" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="{ERROR_COLOR}" stroke-width="1.5" stroke-dasharray="3,3" pointer-events="none"/><text class="error-label" x="{lx}" y="{ly}" font-size="{fs}" fill="{ERROR_COLOR}" stroke="{BG_COLOR}" stroke-width="2" paint-order="stroke" pointer-events="none">{field}</text>"#,
+                r#"<g class="integrity-error" data-field="{field}" data-at="{at}"><title>{field}: {what}</title><line class="error-line" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="{ERROR_COLOR}" stroke-width="1.5" stroke-dasharray="3,3" pointer-events="none"/><text class="error-label" x="{lx}" y="{ly}"{dy} text-anchor="{anchor}" font-size="{fs}" fill="{ERROR_COLOR}" stroke="{BG_COLOR}" stroke-width="2" paint-order="stroke" pointer-events="none">{field}</text>"#,
                 at = iso(e.time_ms),
                 what = escape_xml(&e.what),
+                dy = match layout.orientation {
+                    Orientation::Horizontal => r#" dy="0.35em""#,
+                    Orientation::Vertical => "",
+                },
             );
             out.push_str("</g>");
         }
@@ -1975,6 +1982,26 @@ mod tests {
                 (0.0, layout.day_height),
                 "{orientation:?}: the line spans the whole day"
             );
+
+            // Its label stands before the line in time, on the row mood's
+            // dots are drawn on (da-9sjt5): ending at it across a day, and
+            // centered on the row down one.
+            let label = class("error-label");
+            let dot = class("point-fg");
+            let (dx, dy) = (num(dot, "cx"), num(dot, "cy"));
+            let x = num(label, "x");
+            let y = num(label, "y");
+            match orientation {
+                Orientation::Horizontal => {
+                    assert_eq!((x, y), (num(line, "x1") - 2.0, dy));
+                    assert_eq!(label.attribute("text-anchor"), Some("end"));
+                    assert_eq!(label.attribute("dy"), Some("0.35em"));
+                }
+                Orientation::Vertical => {
+                    assert_eq!((x, y), (dx, num(line, "y1") - 2.0));
+                    assert_eq!(label.attribute("text-anchor"), Some("middle"));
+                }
+            }
 
             // The day label's icon is the finding's only one (da-0w8le).
             let icons: Vec<_> = (doc.descendants())

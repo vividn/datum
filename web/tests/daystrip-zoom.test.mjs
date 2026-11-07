@@ -38,12 +38,13 @@ const marks = ({ page }) =>
 	page.locator(TODAY).evaluate((band) => {
 		const box = (selector) => {
 			const r = band.querySelector(selector).getBoundingClientRect();
-			return { mid: r.x + r.width / 2, w: r.width, h: r.height };
+			return { mid: r.x + r.width / 2, w: r.width, h: r.height, end: r.right };
 		};
 		return {
 			dot: box('[data-field="tea"] .point-fg'),
 			glyph: box('[data-field="coffee"] .point-fg'),
 			label: box('.error-label'),
+			line: box('.error-line'),
 			block: box('.block[data-field="work"]')
 		};
 	});
@@ -134,6 +135,13 @@ test('a zoom moves every mark to its time, stretches none, and asks datum for no
 		]) {
 			for (const mark of ['dot', 'glyph', 'label'])
 				sameSize(at[mark], rest[mark], `the ${mark} ${name}`);
+			// The finding's label ends just before its line (da-9sjt5): scaled
+			// back about its right edge, it never runs over or away from it.
+			for (const [it, when] of [[rest, 'at rest'], [at, name]])
+				assert.ok(
+					it.label.end <= it.line.mid + 1 && it.label.end > it.line.mid - 8,
+					`the label ${when} ends at ${it.label.end}, its line at ${it.line.mid}`
+				);
 			// And where its time is: the dot on the strip's 09:00.
 			const nine = await hourAt(app, 9);
 			assert.ok(Math.abs(at.dot.mid - nine) < 0.5, `the dot ${name} is at ${at.dot.mid}, 09:00 at ${nine}`);

@@ -102,6 +102,10 @@ pub struct RenderedError {
     pub field: String,
     pub what: String,
     pub time_pos: f64,
+    /// Where across the band the field's moment dots are drawn, in pixels
+    /// within it; the band's middle for a field this day draws no row of.
+    #[serde(default)]
+    pub cross_pos: f64,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub span: usize,
 }
@@ -1139,11 +1143,15 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         let errors = (day.errors.iter())
             .filter_map(|e| {
                 let (span, within) = span_of(e.time_ms)?;
+                let h = config.day_height;
+                let cross_pos = (day.fields.iter().find(|f| f.field == e.field))
+                    .map_or(h / 2.0, |f| f.y_frac * h + (f.height_frac * h).ceil() / 2.0);
                 Some(RenderedError {
                     time_ms: e.time_ms,
                     field: e.field.clone(),
                     what: e.what.clone(),
                     time_pos: time_to_pos(within, e.time_ms),
+                    cross_pos,
                     span,
                 })
             })
@@ -1790,9 +1798,13 @@ mod tests {
         assert!(marked.has_error && !clean.has_error);
         let extent = layout.time_axis_extent;
         let placed: Vec<_> = (marked.errors.iter())
-            .map(|e| (e.field.as_str(), e.time_pos / extent))
+            .map(|e| (e.field.as_str(), e.time_pos / extent, e.cross_pos))
             .collect();
-        assert_eq!(placed, [("mood", 0.25), ("work", 0.75)]);
+        // Across the band: on the row the field's dots are drawn on, and in
+        // the band's middle for a field with none (da-9sjt5).
+        let dots = marked.fields[0].points[0].cross_pos;
+        assert_eq!(dots, 60.0);
+        assert_eq!(placed, [("mood", 0.25, dots), ("work", 0.75, 50.0)]);
     }
 
     #[test]
