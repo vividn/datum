@@ -50,6 +50,42 @@ const scrollTo = (page, top) =>
 		await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 	}, top);
 
+/**
+ * Record what the page's own scripts do that would move its scroller: a write to its scroll, a `scrollTo` or
+ * `scrollBy` of it, a `scrollIntoView` or a `focus()` without `preventScroll` of something in it. Playwright scrolls
+ * from a world of its own, which none of these see. Returns what was called since, and stops.
+ */
+const watchPageScrolls = async (page) => {
+	await page.evaluate(() => {
+		const scroller = document.querySelector('section.holder.root > .content');
+		const calls = [];
+		const undo = [];
+		const wrap = (proto, name, moves) => {
+			const was = Object.getOwnPropertyDescriptor(proto, name);
+			const key = was.set ? 'set' : 'value';
+			const fn = was[key];
+			Object.defineProperty(proto, name, {
+				...was,
+				[key](...args) {
+					if (moves(this, ...args)) calls.push(`${name} of ${this.outerHTML?.slice(0, 60)}`);
+					return fn.apply(this, args);
+				}
+			});
+			undo.push(() => Object.defineProperty(proto, name, was));
+		};
+		const itself = (el) => el === scroller;
+		const within = (el) => scroller.contains(el);
+		wrap(Element.prototype, 'scrollTop', itself);
+		wrap(Element.prototype, 'scrollTo', itself);
+		wrap(Element.prototype, 'scroll', itself);
+		wrap(Element.prototype, 'scrollBy', itself);
+		wrap(Element.prototype, 'scrollIntoView', within);
+		for (const proto of [HTMLElement.prototype, SVGElement.prototype]) wrap(proto, 'focus', (el, options) => within(el) && !options?.preventScroll);
+		window.__pageScrolls = () => (undo.forEach((u) => u()), calls);
+	});
+	return () => page.evaluate(() => window.__pageScrolls());
+};
+
 const inside = (r, s) => r.top >= s.top - 0.5 && r.bottom <= s.bottom + 0.5 && r.left >= s.left - 0.5 && r.right <= s.right + 0.5;
 
 for (const [screen, device] of [
@@ -88,9 +124,15 @@ for (const [screen, device] of [
 					assert.ok(inside(past.now, past.screen), `${tab}: the nowview is in sight past the intro`);
 					assert.ok(inside(past.game, past.screen), `${tab}: the game is in sight past the intro`);
 					assert.ok(inside(past.collect, past.screen), `${tab}: collect is in sight past the intro`);
+					const scrolls = await watchPageScrolls(page);
 					if (tab === 'change') await startSwitch(page);
 					else await page.getByRole('button', { name: 'Start', exact: true }).click();
 					await settled(page, `[data-pane="${tab}-lesson"]`);
+					// The page moved nothing as the round began, so where the reader left it is where a reader sees it. A
+					// click Playwright retries (a gliding spot over its target, under load) scrolls the target to the
+					// screen's end, center or start first, and the page with it, which a reader's tap does not (da-cnvfw).
+					assert.deepEqual(await scrolls(), [], `${tab}: the page scrolls nothing itself as a round begins`);
+					await scrollTo(page, past.scrollTop);
 					const during = await measure(page, tab);
 					assert.ok(inside(during.now, during.screen), `${tab}: the nowview is in sight while a round runs`);
 					assert.ok(inside(during.game, during.screen), `${tab}: the game is in sight while a round runs`);
