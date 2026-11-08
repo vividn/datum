@@ -52,8 +52,10 @@ const scrollTo = (page, top) =>
 
 /**
  * Record what the page's own scripts do that would move its scroller: a write to its scroll, a `scrollTo` or
- * `scrollBy` of it, a `scrollIntoView` or a `focus()` without `preventScroll` of something in it. Playwright scrolls
- * from a world of its own, which none of these see. Returns what was called since, and stops.
+ * `scrollBy` of it, a `scrollIntoView` or a `focus()` without `preventScroll` of something in it, and a `hashchange`,
+ * which jumps to its target with none of them (da-nj5qa). Playwright scrolls from a world of its own, which none of
+ * these see. Nor do they see the page's CSS scroll-snap, the browser's scroll anchoring or an `autofocus`, which move
+ * the scroller with no call. Returns what was seen since, and stops.
  */
 const watchPageScrolls = async (page) => {
 	await page.evaluate(() => {
@@ -81,6 +83,9 @@ const watchPageScrolls = async (page) => {
 		wrap(Element.prototype, 'scrollBy', itself);
 		wrap(Element.prototype, 'scrollIntoView', within);
 		for (const proto of [HTMLElement.prototype, SVGElement.prototype]) wrap(proto, 'focus', (el, options) => within(el) && !options?.preventScroll);
+		const hash = () => calls.push(`hashchange to ${location.hash}`);
+		window.addEventListener('hashchange', hash);
+		undo.push(() => window.removeEventListener('hashchange', hash));
 		window.__pageScrolls = () => (undo.forEach((u) => u()), calls);
 	});
 	return () => page.evaluate(() => window.__pageScrolls());
