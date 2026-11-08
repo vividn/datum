@@ -131,7 +131,8 @@ describe('a command tap focuses the line without the keyboard', () => {
 			await app.idle();
 			const [moved] = await app.entries(1);
 			assert.equal(moved.hid, entry.hid);
-			assert.notEqual(moved.at, entry.at, 'the entry was not retimed');
+			assert.equal(typeof entry.at.utc, 'string', 'an entry carries its instant as at.utc');
+			assert.equal(Date.parse(entry.at.utc) - Date.parse(moved.at.utc), 5 * 60_000, 'the entry was not retimed five minutes back');
 			assert.equal((await state(page)).text, '', 'the tap put something on the line');
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), [], 'the pills were not spent');
 

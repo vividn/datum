@@ -631,7 +631,8 @@ describe('collect', () => {
 				await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
 				await app.idle();
 				const [coffee] = JSON.parse((await app.run(['tail', 'coffee', '-n', '1', '--json'])).stdout).rows;
-				assert.deepEqual(coffee.at, work.at);
+				assert.equal(typeof work.time, 'string', 'a tail row carries its instant as time');
+				assert.equal(coffee.time, work.time);
 			});
 		});
 
