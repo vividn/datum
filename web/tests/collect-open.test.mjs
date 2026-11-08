@@ -100,6 +100,31 @@ async function listed(page, last) {
 	return (await items(page)).filter((i) => i.role === 'state').map((i) => i.state);
 }
 
+/**
+ * Starts recording every place each element `selector` names is drawn at while
+ * visible, a frame at a time, keyed by its `data-<key>`; the function returned
+ * waits 300 ms more, stops, and gives each key its places.
+ */
+async function placesShown(page, selector, key) {
+	await page.evaluate(([selector, key]) => {
+		const seen = (window.__places = {});
+		const look = () => {
+			for (const el of document.querySelectorAll(selector)) {
+				if (getComputedStyle(el).visibility !== 'visible') continue;
+				const r = el.getBoundingClientRect();
+				(seen[el.dataset[key]] ??= new Set()).add(`${Math.round(r.left)},${Math.round(r.top)}`);
+			}
+			if (!window.__stopPlaces) requestAnimationFrame(look);
+		};
+		window.__stopPlaces = false;
+		requestAnimationFrame(look);
+	}, [selector, key]);
+	return async () => {
+		await page.evaluate(() => new Promise((r) => setTimeout(r, 300)));
+		return page.evaluate(() => ((window.__stopPlaces = true), Object.fromEntries(Object.entries(window.__places).map(([k, v]) => [k, [...v]]))));
+	};
+}
+
 describe('a field opened in collect', () => {
 	before(startApp);
 	after(stopApp);
@@ -204,24 +229,25 @@ describe('a field opened in collect', () => {
 	test('a state shown stands where it stays', async () => {
 		const states = ['a_rather_long_state', 'b', 'another_long_one', 'c', 'd', 'e'];
 		await opening([`setup mood --verb switch --states false,${states.join(',')}`], 'mood', async ({ page }, button) => {
-			await page.evaluate(() => {
-				const seen = (window.__seenStates = {});
-				const look = () => {
-					for (const b of document.querySelectorAll('.collect.open [data-state]')) {
-						if (getComputedStyle(b).visibility !== 'visible') continue;
-						const r = b.getBoundingClientRect();
-						(seen[b.dataset.state] ??= new Set()).add(`${Math.round(r.left)},${Math.round(r.top)}`);
-					}
-					if (!window.__stopStates) requestAnimationFrame(look);
-				};
-				requestAnimationFrame(look);
-			});
+			const seen = await placesShown(page, '.collect.open [data-state]', 'state');
 			await button.click();
 			await page.locator(`${OPEN} [data-state="e"]`).waitFor();
-			await page.evaluate(() => new Promise((r) => setTimeout(r, 300)));
-			const seen = await page.evaluate(() => ((window.__stopStates = true), Object.fromEntries(Object.entries(window.__seenStates).map(([k, v]) => [k, [...v]]))));
-			assert.deepEqual(Object.keys(seen).sort(), [...states].sort(), 'a state was never seen');
-			assert.deepEqual(Object.entries(seen).filter(([, at]) => at.length > 1), [], 'a state shown moved');
+			const at = await seen();
+			assert.deepEqual(Object.keys(at).sort(), [...states].sort(), 'a state was never seen');
+			assert.deepEqual(Object.entries(at).filter(([, places]) => places.length > 1), [], 'a state shown moved');
+		});
+	});
+
+	// On the right the first row is placed by its own width, 0 until it is
+	// measured, so it too is hidden until then (da-tbtt7).
+	test('the first row shown on the right stands where it stays', async () => {
+		await opening(['setup mood --verb switch --states false,good,bad', 'switch mood good -t 13:00'], 'mood', async ({ page }, button) => {
+			await pickOption(page, 'bar', 'side', 'right');
+			const seen = await placesShown(page, '.collect.open .spot.open[data-role="head"]', 'role');
+			await button.click();
+			await page.locator(HEAD).waitFor();
+			const { head } = await seen();
+			assert.equal(head?.length, 1, `the first row shown at ${JSON.stringify(head)}`);
 		});
 	});
 
