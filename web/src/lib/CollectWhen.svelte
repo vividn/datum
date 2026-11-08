@@ -48,6 +48,11 @@
 	import { pills } from './bar.js';
 
 	export const MOMENT_ID = 'moment';
+	/**
+	 * The rows' glide (CollectWidget's `.spot.shelf.glide`), which the section
+	 * opens and closes over: one name, `--glide` in both components' CSS.
+	 */
+	export const GLIDE_MS = 300;
 	export const ALLDAY_ID = 'allday';
 
 	/** `-m`, a moment with no length, on the bar or off it. */
@@ -116,8 +121,6 @@
 	const HALVES_PX = 112;
 	let tall = $state(COLUMN_PX);
 
-	/** The rows' glide (CollectWidget's `.spot.shelf.glide`, 0.3s ease-out), which the section opens and closes over. */
-	const GLIDE_MS = 300;
 	/** Its two lines, one on each edge. */
 	const LINES_PX = 2;
 	/**
@@ -384,6 +387,7 @@
 	style:right={side === 'right' ? `${offset - ON_STRIP_PX}px` : null}
 	style:width="{expanded ? natural + LINES_PX : LINES_PX}px"
 	class:glides={toggled}
+	style:--glide="{GLIDE_MS}ms"
 	data-when
 >
 	{@render clock()}
@@ -456,8 +460,8 @@
 
 	.when.glides {
 		transition:
-			width 0.3s ease-out,
-			border-color 0.3s ease-out;
+			width var(--glide) ease-out,
+			border-color var(--glide) ease-out;
 	}
 
 	/* The open column, at its own width and cut to the section's. */
@@ -552,7 +556,7 @@
 	}
 
 	.glides .clock {
-		transition: top 0.3s ease-out;
+		transition: top var(--glide) ease-out;
 	}
 
 	@media (prefers-reduced-motion: reduce) {

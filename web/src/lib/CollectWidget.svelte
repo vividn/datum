@@ -129,7 +129,7 @@
 	import { flushSync, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
 	import CollectDrawer from './CollectDrawer.svelte';
-	import CollectWhen, { MOMENT_ID, setMoment } from './CollectWhen.svelte';
+	import CollectWhen, { GLIDE_MS, MOMENT_ID, setMoment } from './CollectWhen.svelte';
 	import { CLICK_SLOP } from './inspect.js';
 	import NowStrip from './NowStrip.svelte';
 	import { framed, isoMs, type Mark } from './nowStrip.js';
@@ -304,16 +304,15 @@
 		return () => (held.destroy(), unzoom(), untap(), box.disconnect());
 	});
 
-	/** How long the rows glide to a new zoom (`.spot.shelf.glide`): a tap in it is not a press. */
-	const SETTLE_MS = 300;
 	/**
 	 * No tap while two fingers are down (da-gh1ep, vividn, 2026-11-05: «If two
 	 * fingers are on the collect view or you're in the middle of the zoom
 	 * tapping action should not be registered»): from a second finger landing
-	 * until every finger is up, and `SETTLE_MS` on, no click on the bar is a
-	 * press, wherever it is, and a hold one of the fingers started is called
-	 * off. Registered after `holds`, on the same node, so its cancel comes
-	 * after the hold's own pointerdown has started a timer for the finger.
+	 * until every finger is up, and `GLIDE_MS` on, the rows' glide to the new
+	 * zoom, no click on the bar is a press, wherever it is, and a hold one of
+	 * the fingers started is called off. Registered after `holds`, on the same
+	 * node, so its cancel comes after the hold's own pointerdown has started a
+	 * timer for the finger.
 	 */
 	function untapped(node: HTMLElement) {
 		const down = new Set<number>();
@@ -324,7 +323,7 @@
 			node.dispatchEvent(new PointerEvent('pointercancel'));
 		};
 		const lift = (e: PointerEvent) => {
-			if (down.delete(e.pointerId) && !down.size && pinched) [pinched, calm] = [false, e.timeStamp + SETTLE_MS];
+			if (down.delete(e.pointerId) && !down.size && pinched) [pinched, calm] = [false, e.timeStamp + GLIDE_MS];
 		};
 		const eat = (e: MouseEvent) => {
 			if (pinched || e.timeStamp < calm) (e.preventDefault(), e.stopPropagation());
@@ -1345,6 +1344,7 @@
 							class="spot shelf"
 							class:glide
 							class:pinned
+							style:--glide="{GLIDE_MS}ms"
 							data-role="field"
 							data-row={shelves.rows.get(button.field)}
 							data-section={button.active ? 'active' : 'recent'}
@@ -1803,7 +1803,7 @@
 	}
 
 	.spot.shelf {
-		transition: z-index 0s 0.3s;
+		transition: z-index 0s var(--glide);
 	}
 
 	/* The rows' zoom (da-l1z6h): the button and all in it, so its slot,
@@ -1814,9 +1814,9 @@
 
 	.spot.shelf.glide {
 		transition:
-			left 0.3s ease-out,
-			top 0.3s ease-out,
-			z-index 0s 0.3s;
+			left var(--glide) ease-out,
+			top var(--glide) ease-out,
+			z-index 0s var(--glide);
 	}
 
 	.spot.shelf.pinned {
@@ -1826,8 +1826,8 @@
 
 	.spot.shelf.pinned.glide {
 		transition:
-			left 0.3s ease-out,
-			top 0.3s ease-out,
+			left var(--glide) ease-out,
+			top var(--glide) ease-out,
 			z-index 0s;
 	}
 
