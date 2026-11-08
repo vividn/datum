@@ -60,6 +60,7 @@ mod db_import_regression;
 mod debug_cmd;
 mod definition_entries;
 mod delete_cmd;
+mod docs_links;
 mod dot_glyphs;
 mod dot_icons;
 mod dot_skip_positional;

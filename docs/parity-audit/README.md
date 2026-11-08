@@ -2,8 +2,7 @@
 
 Notes comparing daydumb against the original datum
 (`/home/cans/gt/daydumb/reference/datum-v2`), one file per surface:
-[commands](commands.md), [parsing](parsing.md), [sync](sync.md),
-[views](views.md).
+[commands](commands.md), [parsing](parsing.md), [views](views.md).
 
 Reference images live here too:
 

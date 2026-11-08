@@ -35,7 +35,8 @@ const COHORTS: [&str; 2] = ["workspace", "e2e-full"];
 /// data, which coverage cannot see: a change to a doc runs them (seconds) where
 /// it would run none, so a drift between the docs and the binary is caught on
 /// the PR (da-1nqv4).
-const DOC_READERS: [&str; 3] = [
+const DOC_READERS: [&str; 4] = [
+    "docs_links::every_relative_link_in_the_docs_resolves",
     "readme_anti_drift::readme_autogen_sections_in_sync",
     "readme_anti_drift::every_generated_block_has_markers_in_its_file",
     "readme_snippets::markdown_bash_snippets_run_against_datum_binary",
