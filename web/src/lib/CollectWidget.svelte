@@ -1106,7 +1106,8 @@
 	const holdField = (el: HTMLElement) => {
 		// A state held does the other mode's tap (da-u017i).
 		if (el.dataset.state !== undefined && picking) return choose(picking, el.dataset.state, clicks !== 'one');
-		if (el.dataset.off !== undefined && picking?.shape.kind === 'change') return choose(picking, 'false', clicks !== 'one');
+		// An on/off field's off runs in either mode, so the other mode's tap is its own.
+		if (el.dataset.off !== undefined && picking) return picking.shape.kind === 'change' ? choose(picking, 'false', clicks !== 'one') : off(picking);
 		const button = buttons.find((b) => b.field === el.dataset.field);
 		if (button) hold(button);
 	};
@@ -1274,14 +1275,14 @@
 					{#each laid.keys as key, i (key)}
 						{@const stand = laid.stands[i]}
 						{@const state = listed[i - 1]}
-						<!-- A state is not shown, nor tapped, before it stands where it stays: the first row's place depends on no other's. -->
+						<!-- A state is not shown, nor tapped, before it stands where it stays; the first row's place depends on no other's, only its own width, mirrored on the right. -->
 						<div
 							class="spot open"
 							data-role={i ? 'state' : 'head'}
 							data-row={stand?.row}
 							style:left="{openAt(stand?.x ?? 0, key)}px"
 							style:top="{stand?.top ?? 0}px"
-							style:visibility={i === 0 || laid.ready ? null : 'hidden'}
+							style:visibility={laid.ready || (i === 0 && sizes.has(key)) ? null : 'hidden'}
 							use:sized={key}
 						>
 							{#if i === 0}

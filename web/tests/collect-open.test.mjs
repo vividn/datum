@@ -172,6 +172,23 @@ describe('a field opened in collect', () => {
 		});
 	});
 
+	// A hold does the other mode's tap (da-u017i); an on/off field's off runs in both.
+	test('a hold on an on/off field’s off ends that field', async () => {
+		await opening(['setup work --verb start', 'start work -t 14:00'], 'work', async (app, button) => {
+			const { page } = app;
+			await pickOption(page, 'bar', 'a tap', 'opens and chooses, 2-click');
+			await button.click();
+			await page.locator(`${OPEN} [data-off]`).waitFor();
+			const seen = await app.spyOnRunner();
+			await page.locator(`${OPEN} [data-off]`).click({ button: 'right' });
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'off'));
+			assert.deepEqual((await seen()).find((a) => a[0] === 'off' && !a.includes('--dry-run')), ['off', 'work']);
+			await app.idle();
+			const [row] = JSON.parse((await app.run(['tail', 'work', '-n', '1', '--json'])).stdout).rows;
+			assert.equal(row.state, false);
+		});
+	});
+
 	test('the spec’s states in its order, then every other used, the last used first, none twice', async () => {
 		// `head`, which once shared the first row's key.
 		const lines = ['setup mood --verb switch --states false,good,bad', 'switch mood head -t 08:00', 'switch mood zed -t 09:00', 'switch mood yak -t 10:00', 'switch mood good -t 11:00', 'switch mood ox -t 12:00', 'off mood -t 13:00'];
