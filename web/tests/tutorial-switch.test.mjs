@@ -344,16 +344,19 @@ test('on a 280 px phone every state of room is in reach of a tap', async () => {
 				await app.clock.forward(1000);
 				const before = (await rows(app)).length;
 				await page.locator(`${FIELDS} .fields button[data-field="room"]`).click();
-				const states = await page.locator(`${FIELDS} .ring button[data-state]`).evaluateAll((bs) => bs.map((b) => b.dataset.state));
+				// Its states come with `datum states`' answer (da-r48y9).
+				await page.locator(`${FIELDS} .room button[data-state]`).first().waitFor();
+				const states = await page.locator(`${FIELDS} .room button[data-state]`).evaluateAll((bs) => bs.map((b) => b.dataset.state));
 				assert.deepEqual(states.sort(), ROOMS.map((r) => r.state).sort());
 				// One left of the room is panned in as a learner does, by a finger's drag along the states' row
 				// from the room's middle, once the room is scrolled into sight, then tapped.
-				const button = page.locator(`${FIELDS} .ring button[data-state="${state}"]`);
+				const button = page.locator(`${FIELDS} .room button[data-state="${state}"]`);
 				if (by === 'finger') await page.locator(`${FIELDS} .room`).evaluate((r) => r.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
 				const [room, at] = [await page.locator(`${FIELDS} .room`).boundingBox(), await button.boundingBox()];
 				const dx = room.x - at.x + 8;
 				const mid = { x: room.x + room.width / 2, y: at.y + at.height / 2 };
-				if (by === 'finger' && dx > 0) await finger(page, mid, { x: mid.x + dx, y: mid.y });
+				// A drag shorter than a touch's slop is a tap, and would log the state under it (da-g8oi6): pan 24 px at least.
+				if (by === 'finger' && dx > 0) await finger(page, mid, { x: mid.x + Math.max(dx, 24), y: mid.y });
 				await button.click();
 				await until(() => rows(app).then((r) => r.length), (n) => n === before + 1);
 			}

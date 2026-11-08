@@ -506,6 +506,48 @@ export function atRest(items: Shelved[], o: { height: number; rowH: number; gap:
 	return { stands, rows, outline, section, backing, end };
 }
 
+/** One item of an open field's view (`opened`): its width as drawn, and whether a dotted outline goes round it. */
+export interface Opening {
+	w: number;
+	outlined?: boolean;
+}
+
+/** Where `opened` stands an item: the item's own `x` and `top`, its row, and its outline as an SVG path, if it has one. */
+export interface Opened {
+	x: number;
+	top: number;
+	row: number;
+	outline: string | null;
+}
+
+/**
+ * A field's view in collect's rows (da-r48y9). vividn, 2026-11-07: «same
+ * zoom level … then top to bottom, left to right list the states», and «most
+ * recently used fields are still as far left as they can be, and the same
+ * effect should be present here. just with more y room to layer states in».
+ *
+ * The rows are `atRest`'s, counted and pitched the same from `height`. The
+ * first item takes the first row; each after it the row whose end is furthest
+ * left, the top one of a tie, so they fill column by column and a row fallen
+ * behind takes two narrow ones. An outlined item keeps `gap` clear inside its
+ * outline on each side, as the active section does. `end` is the right edge of
+ * the furthest.
+ */
+export function opened(items: Opening[], o: { height: number; rowH: number; gap: number }): { stands: Opened[]; end: number } {
+	const n = Math.max(1, Math.floor((o.height + o.gap) / (o.rowH + o.gap)));
+	const pitch = o.height / n;
+	const ends: number[] = Array(n).fill(o.gap);
+	const stands = items.map((item, i): Opened => {
+		const row = i === 0 ? 0 : ends.indexOf(Math.min(...ends));
+		const [left, pad] = [ends[row], item.outlined ? o.gap : 0];
+		const top = row * pitch + (pitch - o.rowH) / 2;
+		ends[row] = left + item.w + 2 * pad + o.gap;
+		const outline = item.outlined ? `M${left} ${top - o.gap / 2}H${left + item.w + 2 * pad}V${top + o.rowH + o.gap / 2}H${left}Z` : null;
+		return { x: left + pad, top, row, outline };
+	});
+	return { stands, end: Math.max(...ends) - o.gap };
+}
+
 /**
  * The app's neutral: what a field without a colour is drawn in.
  *
@@ -650,172 +692,4 @@ export function stateLook(button: FieldButton, state: string): Look {
 	if (button.current === state) return lookOf(button, 'state');
 	const color = button.stateColors[state] ?? button.color;
 	return { fill: `color-mix(in srgb, ${color} 25%, transparent)`, line: color, text: 'var(--ink-bright)', label: state };
-}
-
-/** A button's centre, in pixels from the tap, `y` down. */
-export interface Spot {
-	x: number;
-	y: number;
-}
-
-/** Where each button of an open field stands around `end` (`ringOf`). */
-export interface Ring {
-	end: Spot;
-	states: Spot[];
-}
-
-/**
- * A switch field's states around `end`, PLACED BY THE FIELD ALONE
- * (da-vg8vr) — vividn: «break them out of rows entirely … The goal here
- * should be to reduce thumb travel. So packing things efficiently as
- * close as possible», and then «keep the states in a consistent place
- * inside of the fields widget. I still want them to be arranged radially,
- * with end in the center». The rank is the spec's `allowed_states` order,
- * set in the setup widget and never by use, so a state is always the same
- * place, like a pie menu (da-7q3ka).
- *
- * `end` is the centre (da-cwieh); on a field whose spec says it is
- * `never_false` the widget draws a GAP of its width there instead, so
- * every other button stands where it would beside a drawn one. Then each
- * state in rank order takes the free spot NEAREST THE CENTRE: spots every
- * 2px in both directions, no rows, nearest by the distance from the
- * centre to the nearest point of the button, since a long button is
- * tapped anywhere on it; among equals the nearer centre, then the first
- * clockwise from twelve o'clock. A spot is free where the button clears
- * every one already placed by `gap`.
- *
- * Nothing here knows the widget's box: the same field draws the same
- * picture whatever the box. `ringIn` is what answers to the box.
- *
- * `w` is each button's width, `h` a button's height; every spot returned
- * is from the centre.
- */
-export function ringOf(w: { end: number; states: number[] }, h: number, gap: number): Ring {
-	type Placed = Spot & { w: number };
-	const end: Placed = { x: 0, y: 0, w: w.end };
-	const placed = [end];
-	const near = (p: Spot, wide: number) => Math.hypot(Math.max(0, Math.abs(p.x) - wide / 2), Math.max(0, Math.abs(p.y) - h / 2));
-	const turn = (p: Spot) => (Math.atan2(p.x, -p.y) + 2 * Math.PI) % (2 * Math.PI);
-	// The nearest free spot, row by row out from the centre's: along a row
-	// both distances grow with |x|, so a row's best is its free spot nearest
-	// x = 0 on either side, and no row further than the best found holds a
-	// nearer one.
-	const take = (wide: number): Placed => {
-		let best = { x: 0, y: 0, d: Infinity, r: 0, t: 0 };
-		for (let j = 0; Math.max(0, 2 * j - h / 2) <= best.d; j++)
-			for (const y of j === 0 ? [0] : [-2 * j, 2 * j]) {
-				const row = placed
-					.filter((q) => Math.abs(y - q.y) < h + gap)
-					.map((q) => [q.x - (q.w + wide) / 2 - gap, q.x + (q.w + wide) / 2 + gap]);
-				const blocked = (x: number) => row.find(([a, b]) => a < x && x < b);
-				let [right, left] = [0, 0];
-				for (let hit; (hit = blocked(right)); ) right = 2 * Math.ceil(hit[1] / 2);
-				for (let hit; (hit = blocked(left)); ) left = 2 * Math.floor(hit[0] / 2);
-				for (const x of [right, left]) {
-					const p = { x, y, d: near({ x, y }, wide), r: Math.hypot(x, y), t: turn({ x, y }) };
-					if ((p.d - best.d || p.r - best.r || p.t - best.t) < 0) best = p;
-				}
-			}
-		return { x: best.x, y: best.y, w: wide };
-	};
-	const states = w.states.map((wide) => {
-		const p = take(wide);
-		placed.push(p);
-		return { x: p.x, y: p.y };
-	});
-	return { end: { x: 0, y: 0 }, states };
-}
-
-/**
- * The box a field's states stand in, and what its two top corners take of
- * it: `side` from each side and `lid` from the top, a gap past them.
- */
-export interface Room {
-	w: number;
-	h: number;
-	side: number;
-	lid: number;
-}
-
-/**
- * The states in `room`, its center the origin (da-q0lcx) — vividn: «it
- * seems weird that the available space is not being used first before
- * states are drawn off the edge». The field's ring wherever it fits, moved
- * down just clear of the corners if need be, which is what the widget's
- * `rest` does; where it does not, `shelved`; and where that does not fit
- * either, the ring, which pans.
- */
-export function ringIn(w: { end: number; states: number[] }, h: number, gap: number, room: Room): Ring {
-	const ring = ringOf(w, h, gap);
-	const boxes = [{ ...ring.end, w: w.end }, ...ring.states.map((s, i) => ({ ...s, w: w.states[i] }))];
-	const top = (y: number) => (room.h - h) / 2 + y;
-	const down = Math.max(0, ...boxes.filter((b) => Math.abs(b.x) + b.w / 2 > room.w / 2 - room.side).map((b) => room.lid - top(b.y)));
-	const fits = boxes.every((b) => Math.abs(b.x) + b.w / 2 <= room.w / 2 && top(b.y) + down >= 0 && top(b.y) + down + h <= room.h);
-	return fits ? ring : (shelved(w, h, gap, room) ?? ring);
-}
-
-/**
- * The states in the rows `room` holds, for a box too short for the ring:
- * `end` leads the row nearest the middle that lets all of them fit, so it
- * stands off center by half a row or so, and each state in rank order takes
- * the row nearest `end`'s with room for it, between the corners on a row
- * level with them. A row stands centered, its first button in the middle of
- * an odd row and just left of it on an even one, and the rest right, left,
- * right, outward. Null where they do not all fit.
- */
-function shelved(w: { end: number; states: number[] }, h: number, gap: number, room: Room): Ring | null {
-	const n = Math.floor((room.h + gap) / (h + gap));
-	const y = (row: number) => (row - (n - 1) / 2) * (h + gap);
-	const span = (row: number) => room.w - (room.h / 2 + y(row) - h / 2 < room.lid ? 2 * room.side : 0);
-	const rowsFrom = (at: number) => Array.from({ length: n }, (_, row) => row).sort((a, b) => Math.abs(a - at) - Math.abs(b - at) || a - b);
-	const wide = [w.end, ...w.states];
-	for (const home of rowsFrom((n - 1) / 2)) {
-		const rows: number[][] = Array.from({ length: n }, () => []);
-		const taken = (row: number) => rows[row].reduce((sum, i) => sum + wide[i] + gap, 0);
-		rows[home].push(0);
-		const fit = w.states.every((width, i) => {
-			// A pixel's give: the widget measures its corners and buttons in whole ones.
-			const row = rowsFrom(home).find((r) => taken(r) + width + 1 <= span(r));
-			if (row !== undefined) rows[row].push(i + 1);
-			return row !== undefined;
-		});
-		if (!fit) continue;
-		return inRows(rows, wide, gap, y);
-	}
-	return null;
-}
-
-/**
- * Each row stood centered, its first button in the middle of an odd row and
- * just left of it on an even one, and the rest right, left, right, outward.
- */
-function inRows(rows: number[][], wide: number[], gap: number, y: (row: number) => number): Ring {
-	const spots: Spot[] = [];
-	rows.forEach((row, r) => {
-		const line: number[] = [];
-		row.forEach((i, k) => (k % 2 ? line.push(i) : line.unshift(i)));
-		let x = -(row.reduce((sum, i) => sum + wide[i] + gap, 0) - gap) / 2;
-		for (const i of line) {
-			spots[i] = { x: x + wide[i] / 2, y: y(r) };
-			x += wide[i] + gap;
-		}
-	});
-	return { end: spots[0], states: spots.slice(1) };
-}
-
-/**
- * The buttons in the rows a box `tall` holds, however wide that makes them,
- * for a box too short for a ring (da-w6437): the middle row first, each
- * button in rank order to the row least full, so the rows run past the
- * box's sides together and a sideways pan reaches them.
- */
-export function dealt(w: { end: number; states: number[] }, h: number, gap: number, tall: number): Ring {
-	const n = Math.max(1, Math.floor((tall + gap) / (h + gap)));
-	const y = (row: number) => (row - (n - 1) / 2) * (h + gap);
-	const order = Array.from({ length: n }, (_, row) => row).sort((a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2) || a - b);
-	const wide = [w.end, ...w.states];
-	const rows: number[][] = Array.from({ length: n }, () => []);
-	const taken = (row: number) => rows[row].reduce((sum, i) => sum + wide[i] + gap, 0);
-	wide.forEach((_, i) => rows[order.reduce((best, r) => (taken(r) < taken(best) ? r : best))].push(i));
-	return inRows(rows, wide, gap, y);
 }

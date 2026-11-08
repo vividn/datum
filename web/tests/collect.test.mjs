@@ -6,8 +6,9 @@
 // own (collect-rest.test.mjs). Between the now strip and the rows, at rest
 // and beside a field's view, the time and duration section (da-us1n1):
 // `time −1m −5m · dur 1m 5m`, summing into pills, `time` or `dur` opening its
-// options. A tap opens a field: back, its name and chosen state on the first
-// row; a switch field's states, the first of its spec in the middle; its keys
+// options. A tap opens a field in collect's rows: back, its name, its state and
+// off on the first row; a switch field's states down the rows under it
+// (collect-open.test.mjs); its keys
 // and `+ data` in a drawer on the far edge (da-igqs2), closed unless a key is
 // required or it is dragged open. Every pill it makes is on the input bar too.
 
@@ -115,21 +116,15 @@ describe('collect', () => {
 		});
 	});
 
-	test('a switch field tapped: back over its states with the first in the middle, its keys and + data in a closed drawer on the right a drag opens', async () => {
+	test('a switch field tapped: back on the first row over its states, its keys and + data in a closed drawer on the right a drag opens', async () => {
 		await collect(async ({ page }) => {
 			await page.locator(`${VIEW} [data-field="mood"]`).click();
 			await page.locator(`${VIEW} [data-state="good"]`).waitFor();
 			assert.equal(await page.locator(`${VIEW} [data-field]`).count(), 0, 'the fields are still drawn under the view');
 			assert.deepEqual(await page.locator(`${VIEW} [data-state]`).evaluateAll((bs) => bs.map((b) => b.dataset.state)), ['good', 'bad', 'meh']);
-			const room = await center(page, `${VIEW} .room`);
-			const good = await center(page, `${VIEW} [data-state="good"]`);
-			assert.ok(Math.abs(room.x - good.x) <= 2 && Math.abs(room.y - good.y) <= 2, `good at ${JSON.stringify(good)}, the middle at ${JSON.stringify(room)}`);
-
-			const tops = await page.locator(VIEW).evaluate((view) =>
-				Object.fromEntries(['.head', '.room'].map((s) => [s, view.querySelector(s).getBoundingClientRect().top]))
-			);
-			// Back above the states, and no keys of the view's own.
-			assert.ok(tops['.head'] < tops['.room'], JSON.stringify(tops));
+			const [back, good] = await Promise.all([center(page, `${VIEW} [data-back]`), center(page, `${VIEW} [data-state="good"]`)]);
+			// Back before the states, on the first row, and no keys of the view's own.
+			assert.ok(back.y < good.y || back.x < good.x, JSON.stringify({ back, good }));
 			assert.equal(await page.locator(`${VIEW} [data-key]`).count(), 0);
 
 			// mood's keys are optional: the drawer is closed, its handle on the right edge, its keys out of view.
@@ -149,10 +144,7 @@ describe('collect', () => {
 			assert.deepEqual(await barPills(page), ['field:mood'], 'the field is a pill on the bar');
 
 			// mood is in `bad`: its chip says so with the CLI's yellow `!`.
-			assert.deepEqual(
-				await page.locator(`${VIEW} [data-state]`).evaluateAll((bs) => bs.filter((b) => getComputedStyle(b, '::after').content === '"!"').map((b) => b.dataset.state)),
-				['bad']
-			);
+			assert.deepEqual(await page.locator(`${VIEW} [data-state]:has([data-repeat])`).evaluateAll((bs) => bs.map((b) => b.dataset.state)), ['bad']);
 
 			// A key's chip writes `key=` on the line.
 			await page.locator(`${DRAWER} [data-key="why"]`).click();
@@ -533,9 +525,10 @@ describe('collect', () => {
 			await page.locator(`${VIEW} [data-field="coffee"]`).click();
 			await page.locator(`${VIEW} [data-open-field="coffee"]`).waitFor();
 			assert.equal(await page.locator(`${VIEW} [data-state]`).count(), 0);
-			assert.deepEqual(await page.locator(`${VIEW} .top button`).allInnerTexts(), ['back']);
+			// A moment has no off: back alone on the first row.
+			assert.deepEqual(await page.locator(`${VIEW} .spot.open[data-role="head"] button`).allInnerTexts(), ['back']);
 			assert.deepEqual(await page.locator(`${DRAWER} .panel button`).allInnerTexts(), ['+ data']);
-			assert.match(await page.locator(`${VIEW} .head`).innerText(), /back\s*coffee/);
+			assert.match(await page.locator(`${VIEW} .spot.open[data-role="head"]`).innerText(), /back\s*coffee/);
 			// A moment has no length to give: the dur half is off beside it.
 			await openWhen(page);
 			for (const at of ['[data-part="dur"]', '[data-longer="1"]', '[data-longer="5"]']) assert.ok(await page.locator(`${WHEN} ${at}`).isDisabled(), at);

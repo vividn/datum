@@ -131,6 +131,19 @@ export function lengthReadArgv(length: string): string[] {
 	return ['nowview', '--overlay', '--json', '--context', length];
 }
 
+/** A field's states, its spec's in its order then every other it has used, each with when it was last used: a field opened in collect (da-r48y9). */
+export function statesArgv(field: string): string[] {
+	return ['states', field, '--show', 'json'];
+}
+
+/** One row of `statesArgv`'s answer. */
+export interface StateUse {
+	state: unknown;
+	declared: boolean;
+	count: number;
+	last_used: string | null;
+}
+
 /** Entries, `a,b,…`, every column, one document each, as collect's entry cards read them (da-xdz73, da-ug56t). */
 export function entryArgv(hids: string): string[] {
 	return ['get', hids, '--pretty'];
@@ -526,5 +539,6 @@ export interface Reads {
 	layoutHistoryArgv: LayoutVersion[];
 	/** The instant `-t` names, and the length a duration reads as (collect's time section, da-us1n1). */
 	timeReadArgv: { at_ms: number };
+	statesArgv: { field: string; states: StateUse[] };
 	lengthReadArgv: { history_minutes: number };
 }
