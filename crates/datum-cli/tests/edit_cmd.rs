@@ -250,6 +250,43 @@ fn an_edit_changing_the_zone_drops_the_neighbours_marker() {
     assert_eq!(meta(), None);
 }
 
+/// The field `edit` opened, read back from the editor's copy.
+fn opened_field(dir: &Path) -> serde_json::Value {
+    let opened: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("opened.json")).unwrap()).unwrap();
+    opened["field"].clone()
+}
+
+/// da-o995g: a field wins over a hid it only starts, as in `get`, and a
+/// whole hid is still its entry though a field's name starts with it.
+#[test]
+fn a_field_wins_over_a_hid_it_only_starts() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert!(run_bin(tmp.path(), &["occur", "coffee"], "")
+        .status
+        .success());
+    let hid: String = Db::open(tmp.path().join("e.db").to_str().unwrap())
+        .unwrap()
+        .conn()
+        .query_row("SELECT hid FROM entries WHERE field = 'coffee'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let longer = format!("{hid}x");
+    for field in [&hid[..3], &longer] {
+        let out = run_bin(tmp.path(), &["occur", field], "");
+        assert!(out.status.success(), "{out:?}");
+    }
+
+    let out = run_bin(tmp.path(), &["edit", &hid[..3]], "");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(opened_field(tmp.path()), &hid[..3]);
+
+    let out = run_bin(tmp.path(), &["edit", &hid], "");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(opened_field(tmp.path()), "coffee");
+}
+
 #[test]
 fn a_bare_edit_opens_the_last_entry() {
     let tmp = tempfile::tempdir().unwrap();

@@ -142,7 +142,16 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         .id_or_slug
         .as_deref()
         .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
-    let existing = crate::commands::helpers::resolve_prefix_or_tombstone(db, id)?;
+    // da-o995g: a whole hid is its entry; past that a field wins, as in
+    // `get`, over a hid or slug it only starts, and names its newest entry.
+    let newest = match crate::commands::helpers::id_field_named(db, id)? {
+        Some(f) if !db.hid_exists(id)? => db.entries_for_field(&f, Some(1))?.pop(),
+        _ => None,
+    };
+    let existing = match newest {
+        Some(e) => e,
+        None => crate::commands::helpers::resolve_prefix_or_tombstone(db, id)?,
+    };
     if existing.deleted_at.is_some() {
         anyhow::bail!("Cannot edit tombstoned entry {id} — restore it first with `datum undo`");
     }
