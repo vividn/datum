@@ -249,7 +249,7 @@ const exit = (code, why) => { if (why) console.error(why); process.exit(code); }
 const args = process.argv.slice(2);
 if (args[0] === 'api') {
   const at = args.find((a, i) => i > 0 && !a.startsWith('-') && !['-X', '--jq'].includes(args[i - 1]));
-  if (at.endsWith('/git/ref/tags/latest')) exit(0);
+  if (at.includes('/git/ref/tags/')) exit(0);
   if (!state) exit(1, 'HTTP 404');
   if (args.includes('DELETE')) {
     const i = state.assets.findIndex((a) => a.id === Number(at.split('/').pop()));
@@ -318,10 +318,10 @@ function releaseBox() {
 }
 
 // The binaries `sha` built, published to the box's release.
-function publish(box, sha, env = {}) {
+function publish(box, sha, env = {}, tag) {
 	const dist = mkdtempSync(join(box.root, 'dist-'));
 	for (const asset of ASSETS) writeFileSync(join(dist, asset), built(sha, asset));
-	return spawnSync('bash', [publishScript, dist], {
+	return spawnSync('bash', [publishScript, dist, ...(tag ? [tag] : [])], {
 		encoding: 'utf8',
 		env: {
 			PATH: `${box.bin}:${box.signer}:${process.env.PATH}`,
@@ -343,8 +343,8 @@ describe('release/publish.sh moves installs to a build only once it is all up', 
 		assert.equal(run.status, 0, run.stderr);
 		return readFileSync(run.installed, 'utf8');
 	};
-	const published = (box, sha, env) => {
-		const run = publish(box, sha, env);
+	const published = (box, sha, env, tag) => {
+		const run = publish(box, sha, env, tag);
 		assert.equal(run.status, 0, run.stdout + run.stderr);
 		return run;
 	};
@@ -395,6 +395,22 @@ describe('release/publish.sh moves installs to a build only once it is all up', 
 		assert.match(run.stderr, /already exists/);
 		assert.equal(readFileSync(join(box.fake, 'taken'), 'utf8'), '3', 'the upload ran twice more, and stopped');
 		assert.equal(installs(box), built(B));
+	});
+
+	test("a kept release's upload, run again, meets gh's 422 once and goes on, and stops at a second", () => {
+		const box = releaseBox();
+		const tag = 'v3.1.100';
+		published(box, A, {}, tag);
+		assert.equal(existsSync(join(box.release, 'datum-x86_64-linux')), false, 'a kept release, which holds no fixed names');
+		const taken = `datum-aarch64-macos-${A.slice(0, 7)}`;
+		const again = publish(box, A, { FAKE_GH_TAKEN: taken }, tag);
+		assert.equal(again.status, 0, again.stdout + again.stderr);
+		assert.equal(installs(box), built(A));
+
+		const run = publish(box, A, { FAKE_GH_TAKEN: taken, FAKE_GH_TAKEN_TIMES: '3' }, tag);
+		assert.notEqual(run.status, 0);
+		assert.match(run.stderr, /already exists/);
+		assert.equal(readFileSync(join(box.fake, 'taken'), 'utf8'), '3', 'the upload ran twice more, and stopped');
 	});
 
 	test("a 'starter' asset a run leaves blocks no later run", () => {

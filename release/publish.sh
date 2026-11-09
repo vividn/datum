@@ -68,7 +68,10 @@ cp SHA256SUMS.minisig "SHA256SUMS-$build.minisig"
 if [ -n "$tag" ]; then
   kept=(datum-*-"$build" SHA256SUMS "SHA256SUMS-$build.minisig")
   if gh release view "$tag" > /dev/null 2>&1; then
-    gh release upload "$tag" "${kept[@]}" --clobber
+    # Once more on gh's 422 collision, as latest's upload below (da-c1gef).
+    # SHA256SUMS goes up in the same pass as the binaries here, so a second
+    # pass is safe as is (da-juqx4).
+    gh release upload "$tag" "${kept[@]}" --clobber || gh release upload "$tag" "${kept[@]}" --clobber
   else
     gh release create "$tag" "${kept[@]}" --verify-tag --latest=false --title "datum ${tag#v}" \
       --notes "The datum CLI built from ${GITHUB_SHA}, kept at a sync floor. Install: curl -fsSL https://datum.day/install.sh | DATUM_RELEASE_URL=https://github.com/$GH_REPO/releases/download/$tag sh, or datum upgrade --to ${tag#v}"
