@@ -29,8 +29,8 @@ const FIELD = 'setup';
 
 /**
  * The field the widget is on — `''` is a new one — and the kind a new one
- * opens with, or the example it opens filled with (the premade widget's,
- * da-36whg). Every set is a new object, which is what draws the form
+ * opens with, or the example it opens filled with (its catalog's,
+ * da-asgtm). Every set is a new object, which is what draws the form
  * afresh: a new field opened twice is an empty form twice.
  */
 export const editing = writable<{ field: string; verb?: Verb | null; example?: Example }>({ field: '' });

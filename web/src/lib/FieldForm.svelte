@@ -15,8 +15,8 @@
 	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
 	name, start with the shape buttons. I think that ends up being the most
 	important question to answer». Each is named as the tutorial's games
-	name it. The examples are the premade widget's (da-36whg,
-	#lib/layout/PremadeWidget.svelte), by theme: a tap there opens this form
+	name it. The examples are the setup widget's catalog (da-asgtm,
+	#lib/layout/SetupHome.svelte), by theme: its Configure opens this form
 	on its `example`, which fills it — never the database — with a field of
 	that shape, its color, symbol, keys, aliases and states, to be read,
 	changed and saved or not. Neither a shape nor an
@@ -25,8 +25,9 @@
 	jarring».
 
 	The `field:` line is first, over the shapes (da-4ta1k, vividn,
-	2026-11-05). With no field it holds «track something» and nothing else is
-	drawn: a press opens a modal that says what a field is, takes a name,
+	2026-11-05). With no field it holds «manual setup ›» and the `pick` slot,
+	the setup widget's recent fields (da-asgtm), and nothing else of the form
+	is drawn: a press opens a modal that says what a field is, takes a name,
 	pilled in its hash color as it is typed, and lists the fields there are,
 	narrowed by it, to edit one instead. A field entered or chosen is a pill
 	in its color on the line, whose × starts over, beside the widget's
@@ -120,7 +121,7 @@
 		fields = [],
 		/** The spec to edit (`setup F --json`); null declares a new field instead. */
 		spec = null,
-		/** The example a new field's form opens filled with (the premade widget's), or none. */
+		/** The example a new field's form opens filled with (the catalog's Configure), or none. */
 		example = null,
 		/** Whether it differs from what it opened as: what leaving it now would lose. */
 		dirty = $bindable(false),
@@ -133,7 +134,7 @@
 		away = false,
 		/** Whether a save that stayed is being said under Save. */
 		saved = false,
-		/** Beside the field's pill: the widget's own buttons. */
+		/** Beside the field's pill, or «manual setup ›» with none: the widget's own buttons. */
 		pick,
 		/** Hand a save up to run, or null to run nothing and leave. */
 		onclose,
@@ -371,7 +372,7 @@
 	}
 </script>
 
-<div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
+<div class="field-form" class:empty role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
 	<form
 		onsubmit={(e) => {
 			e.preventDefault();
@@ -382,12 +383,13 @@
 		     everything else» (da-uz2td): the shapes, name and tab in front scroll as one, over the tabs and buttons. -->
 		<div class="scroll">
 			<div class="row name-line">
-				<span class="label">field:</span>
 				{#if empty}
 					<button type="button" class="track-something" use:act={'open'} aria-haspopup="dialog" onclick={() => ((typed = ''), (asking = true))}
-						>track something</button
+						>manual setup</button
 					>
+					{@render pick?.()}
 				{:else}
+					<span class="label">field:</span>
 					<span class="pill" style:--c={color || auto} data-field={field}>
 						{#if spec}<h2>{field}</h2>{:else}<span class="named">{field}</span>{/if}
 						<button type="button" class="clear" aria-label="clear {field}" onclick={() => onopen('')}>×</button>
@@ -1154,7 +1156,6 @@
 	}
 
 	.buttons button,
-	.track-something,
 	.status button,
 	.fix,
 	.remove,
@@ -1173,6 +1174,24 @@
 
 	.remove {
 		padding: 0.2rem 0.45rem;
+	}
+
+	/* With no field the form is its one line, over the setup widget's catalog (da-asgtm). */
+	.field-form.empty,
+	.empty .scroll {
+		flex: none;
+		overflow: visible;
+	}
+
+	.track-something {
+		min-block-size: 32px;
+		background: var(--accent);
+		border: 0;
+		border-radius: 4px;
+		padding: 0.2rem 0.8rem;
+		color: var(--page);
+		font: inherit;
+		cursor: pointer;
 	}
 
 	.add {

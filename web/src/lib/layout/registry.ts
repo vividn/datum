@@ -79,7 +79,6 @@ import NowviewWidget from './NowviewWidget.svelte';
 import CliWidget from './CliWidget.svelte';
 import FieldWidget from './FieldWidget.svelte';
 import KitWidget from './KitWidget.svelte';
-import PremadeWidget from './PremadeWidget.svelte';
 import SettingsWidget from './SettingsWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
 import TutorialWidget from './TutorialWidget.svelte';
@@ -920,26 +919,6 @@ A link to another doc opens it here; **← back** returns, and **contents** goes
 		],
 		legible: { width: 200, height: 76 }
 	},
-	// The premade widget (da-36whg): fields ready to set up, by theme, each
-	// opening setup filled in. Legible at its sentence and one row of cards
-	// (about 40px each, estimated) plus padding; the rest scrolls.
-	premade: {
-		meta: meta('premade', 'premade'),
-		component: PremadeWidget,
-		guide: `Fields ready to set up, by theme: body, food & drink, mind, movement, work, home & chores, screens & media, habits, records.
-
-## A tap
-
-Tap one to open setup with that field filled in: its kind, color, symbol, states and data. Nothing is saved until you save it there. A field you have already says **set up**, and a tap opens setup on it. Weight asks first which you weigh in, **lbs** or **kg**.
-
-Under home & chores, **Install the chores kit** adds chores on a schedule; it says what it installs, and **install** installs it.`,
-		tour: [
-			{ at: WHOLE, say: 'Fields ready to set up, by theme.' },
-			{ at: 'button.card', say: 'Tap one to open setup with that field filled in; nothing is saved until you save it there.' },
-			{ at: 'button.install', say: 'Install the chores kit adds chores on a schedule; it says what it installs first.' }
-		],
-		legible: { width: 200, height: 100 }
-	},
 	// «Backups» (da-9ow8m), a place (da-ea5q2): the gear's Backups and the
 	// commands widget's `db backup` / `db restore` open it (`openPlace`). Legible
 	// at its heading over the two file buttons, stacked (88px measured; the
@@ -1014,7 +993,13 @@ Tap a side to keep it for that key, or type a side's letter or what the key shou
 
 ## Choosing a field
 
-With no field, it says **field:** and **track something**. Its sheet asks for a field name: Enter, or ⏎, opens that field, or a new one by that name; under it are the fields there are, narrowed as you type. A chosen field is a pill, whose **×** starts over, and **rename** renames it (asking first to merge it into another of that name).
+With no field, it says **manual setup**, with the three fields you touched last beside it under **recent:**. Its sheet asks for a field name: Enter, or ⏎, opens that field, or a new one by that name; under it are the fields there are, narrowed as you type. A chosen field is a pill, whose **×** starts over, and **rename** renames it (asking first to merge it into another of that name).
+
+## What do you want to track?
+
+Under it, fields ready to set up, by theme. Tap one for its preview: its kind, what it shows, a day of it as the day pictures draw it, and its options (another kind, **lbs** or **kg**, **show label**). **Configure** opens setup with it filled in, nothing saved until you save it there; **Start tracking** sets it up as shown and goes to the collection. A field you have already says so, and **Configure** opens it.
+
+Under home & chores, **Install the chores kit** adds chores on a schedule; it says what it installs, and **install** installs it and opens its chores tab.
 
 Under the name it says whether the field is **NOT SET UP**, **TRACKED** or **IGNORED**, an on/off or change field its current state, and a button: **stop tracking** takes it off the collect widget (\`ignore F\`), and **start tracking** puts it back (\`track F\`), at once.
 
@@ -1037,7 +1022,8 @@ A new field has **start tracking**, which makes it and puts it on the collect wi
 A field already made has **Save** (one \`setup F\`; leaving it saves too), **Revert**, which drops what is not saved, or with nothing to drop steps the field back a version, through its whole history, and **Redo**, forward again.`,
 		tour: [
 			{ at: WHOLE, say: 'A field is one thing you track: mood, coffee, sleep. This is where one is made, or changed.' },
-			{ at: 'button.track-something', say: 'Tap to name a field: a new one, or one you have. Then its kind, its states and data, and Save.' }
+			{ at: 'button.track-something', say: 'Tap to name a field: a new one, or one you have. Then its kind, its states and data, and Save.' },
+			{ at: 'button.row', say: 'Or tap one ready to set up, to see a day of it, then Configure or Start tracking.' }
 		],
 		legible: { width: 240, height: 180 }
 	},

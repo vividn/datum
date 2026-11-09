@@ -233,7 +233,7 @@ export const defaultLayoutFor = (phone: boolean): Layout =>
 // (`nowview`, `tail`, `stats`, …), so
 // `datum.day/nowview` is the nowview alone. A saved layout of the same
 // name shadows a built-in. And the tabs a first visit opens (da-u7vz8,
-// `fresh` in shell.ts): `welcome`, `premade` and `setup`, kinds' own; `collect`; and
+// `fresh` in shell.ts): `welcome` and `setup`, kinds' own; `collect`; and
 // `dayview`, the day strip alone (da-uzi5x). vividn's
 // prebuilt layouts (collect / check / analyze) are his to design: one
 // object each, added to `BUILTIN` below.
@@ -273,7 +273,6 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	help: () => only('help', 'help'),
 	welcome: () => only('welcome', 'welcome'),
 	docs: () => only('docs', 'docs'),
-	premade: () => only('premade', 'premade'),
 	backups: () => only('backups', 'backups'),
 	settings: () => only('settings', 'settings'),
 	conflicts: () => only('conflicts', 'conflicts'),
@@ -307,6 +306,8 @@ export const ALIASES: Record<string, string> = {
 	spec: 'setup',
 	field: 'setup',
 	track: 'setup',
+	// The premade tab was setup's catalog for a while (da-36whg), and is again (da-asgtm).
+	premade: 'setup',
 	// The tutorial's first tab was `introduction` until da-uzyih.4898 (vividn: «make the name of the tab intro»).
 	introduction: 'intro'
 };
@@ -381,9 +382,15 @@ const NEW_DEFAULTS: NewDefault[] = [
 		tabs: ['dayview'],
 		text: 'The dayview tab draws its days smaller, the same size on every screen: about the last two weeks on a phone.'
 	},
+	// Its tab is setup again (da-asgtm), the next: about no tab now, so it joins no offer.
 	{
-		tabs: ['premade'],
+		tabs: [],
 		text: 'A new tab, premade, between welcome and setup: fields ready to set up, by theme. A tap opens setup with one filled in. The examples are no longer in setup.'
+	},
+	// The setup widget changed and its layout did not, so this offers no tab; a premade tab open is setup's (`ALIASES`).
+	{
+		tabs: [],
+		text: 'premade and setup are one tab again: setup lists the fields ready to set up under manual setup, and a click on one shows a day of it, then Configure or Start tracking.'
 	}
 ];
 

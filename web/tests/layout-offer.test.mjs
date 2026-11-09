@@ -58,7 +58,8 @@ const FIRST_VISIT = [
 	['welcome', 'setup', 'collect', 'dayview'],
 	['welcome', 'setup', 'collect', 'dayview'],
 	['welcome', 'setup', 'collect', 'dayview'],
-	['welcome', 'premade', 'setup', 'collect', 'dayview']
+	['welcome', 'premade', 'setup', 'collect', 'dayview'],
+	['welcome', 'setup', 'collect', 'dayview']
 ];
 
 /** A layout of a single stats pane: the reader's own version of `name`. */
@@ -121,14 +122,14 @@ describe('a new default, tab by tab', () => {
 	test('an unchanged tab takes it unasked, a new shipped tab is added at its place, a closed one stays closed, and the order is kept', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await until(() => rootNames(page), (names) => names.join() === 'collect,dayview,welcome,premade');
+			await until(() => rootNames(page), (names) => names.join() === 'collect,dayview,welcome');
 			assert.equal(await offer(page).count(), 0);
 			assert.deepEqual(await titles(page), COLLECT);
 			assert.equal(await seen(page), '1');
 
 			await app.reload();
 			assert.equal(await offer(page).count(), 0);
-			assert.deepEqual(await rootNames(page), ['collect', 'dayview', 'welcome', 'premade']);
+			assert.deepEqual(await rootNames(page), ['collect', 'dayview', 'welcome']);
 		}, here({ news: [{ tabs: ['collect', 'dayview'], text: ON_COLLECT }], tabs: ['collect', 'welcome'], given: ['welcome', 'setup', 'collect'] }));
 	});
 
@@ -149,8 +150,8 @@ describe('a new default, tab by tab', () => {
 			assert.ok(text.includes('collect (mine)'), text);
 			assert.deepEqual(await offer(page).getByRole('button').allInnerTexts(), [UPDATE, KEEP]);
 			await answer(page, UPDATE);
-			// The tabs a device that changed collect had never been given are added too, premade after welcome (da-36whg).
-			await until(() => rootNames(page), (names) => names.join() === 'welcome,premade,collect,dayview');
+			// The tabs a device that changed collect had never been given are added too.
+			await until(() => rootNames(page), (names) => names.join() === 'welcome,collect,dayview');
 			await shows(page, 'collect', COLLECT);
 			assert.ok((await saved(page)).includes('collect (mine)'));
 			await shows(page, 'collect (mine)', ['stats']);

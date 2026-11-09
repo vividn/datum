@@ -56,7 +56,7 @@ export const VERBS: VerbChoice[] = [
  */
 export interface Example {
 	field: string;
-	/** The theme it is listed under in the premade widget (da-36whg). */
+	/** The theme it is listed under in the setup widget's catalog (da-asgtm). */
 	theme: string;
 	kind: Verb;
 	symbol: string;

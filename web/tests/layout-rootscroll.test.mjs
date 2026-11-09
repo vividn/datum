@@ -107,16 +107,16 @@ describe('the root bar scrolls the tab in front into view', () => {
 		}, opened(MANY, 0));
 	});
 
-	// A first visit's five tabs pass a phone's width (da-uzi5x, da-36whg).
+	// A first visit's four tabs pass a phone's width (da-uzi5x, da-asgtm).
 	test('a first visit’s tabs: the one in front is in view as the page opens and at each change', async () => {
-		const FIRST = ['welcome', 'premade', 'setup', 'collect', 'dayview'];
+		const FIRST = ['welcome', 'setup', 'collect', 'dayview'];
 		for (const width of [390, 360])
-			for (const open of [4, 3]) {
+			for (const open of [3, 2]) {
 				await withApp(async (app) => {
 					const { page } = app;
 					const start = await framed(page, open);
-					assert.ok(start.overflows, `the five tabs fit ${width}px: this case needs them not to`);
-					for (const at of [0, 4, 1, 2, 3]) {
+					assert.ok(start.overflows, `the four tabs fit ${width}px: this case needs them not to`);
+					for (const at of [0, 3, 1, 2]) {
 						await page.locator('.root-bar [role="tab"]', { hasText: FIRST[at] }).click();
 						await framed(page, at);
 					}

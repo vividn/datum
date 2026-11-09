@@ -8,9 +8,15 @@
 	intuitive … It should also be clearer what "field" actually is».
 
 	So it is the form (#lib/FieldForm.svelte) for whichever is chosen. With
-	none, its `field:` line and «track something» alone, whose modal says what
-	a field is, takes a new one's name and lists every field there is to edit
-	(da-4ta1k, vividn, 2026-11-05); with one, its pill, whose × starts over.
+	none, «manual setup», whose modal says what a field is, takes a new one's
+	name and lists every field there is to edit (da-4ta1k, vividn,
+	2026-11-05), the three fields touched last beside it, and under them the
+	premade examples (./SetupHome.svelte); with one, its pill, whose × starts
+	over. vividn, 2026-11-09 (da-asgtm): «combine the premade and setup tabs
+	back into one tab, which makes it easy for new people to get going, but
+	also experienced users to add new fields, edit existing fields». The
+	recent fields are the database's (vividn: «just take it from the database
+	for now»): a field's newest entry or spec version, `touchedArgv`.
 	Beside the pill on a field with a spec, «rename» (da-qimwi), vividn: «there should probably be an
 	explicit rename button though»: it asks for the new name, shows `rename
 	OLD NEW --dry-run`'s counts (a refusal asks again, saying why), runs
@@ -58,15 +64,17 @@
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
 	import { fieldPill } from '#lib/bar.ts';
-	import { renameFieldArgv, specHistoryArgv, specShowArgv, revertToVersionArgv, type SpecVersion } from '#lib/calls.ts';
+	import { renameFieldArgv, specHistoryArgv, specShowArgv, revertToVersionArgv, touchedArgv, type SpecVersion } from '#lib/calls.ts';
 	import { stripAnsi } from '#lib/ansi.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
 	import { answerField, away, editing } from '#lib/fieldWidget.ts';
 	import { run } from '#lib/run.ts';
 	import { begin } from '#lib/tour.ts';
-	import type { Save, Spec } from '#lib/track.ts';
+	import type { TailListing } from '#lib/tail.ts';
+	import { VERBS, type Save, type Spec } from '#lib/track.ts';
 	import { fields, press } from './engine.js';
 	import { leavePlace } from './shell.js';
+	import SetupHome from './SetupHome.svelte';
 
 	/** The spec as read: undefined while reading, null for a field without one (made here instead). */
 	let spec: Spec | null | undefined = $state.raw();
@@ -84,6 +92,33 @@
 	let unsay: ReturnType<typeof setTimeout> | undefined;
 
 	const tracked = $derived($fields.filter((f) => !f.ignored));
+	/** With no field: none chosen, the form its one line over the catalog. */
+	const home = $derived(spec !== undefined && readFor.field === '');
+
+	/** The layout's epoch: a tab kept behind the one in front is drawn at it once the page is quiet (da-tajsm). */
+	let { epoch = 0 }: { epoch?: number } = $props();
+
+	/** The fields touched last, newest first, read again at each epoch while there is none chosen; the latest asked is kept. */
+	let touched: string[] = $state([]);
+	let asking = 0;
+	$effect(() => {
+		void epoch;
+		if (!home) return;
+		const at = ++asking;
+		untrack(() => void lastTouched().then((names) => at === asking && (touched = names)));
+	});
+	const recent = $derived(touched.flatMap((name) => $fields.filter((f) => f.field === name)).slice(0, 3));
+
+	/** Each field by its newest entry or spec version, newest first: a spec's row names its field in its slug. */
+	async function lastTouched(): Promise<string[]> {
+		const read = await run(touchedArgv());
+		try {
+			const rows: TailListing['rows'] = read.code === 0 ? JSON.parse(read.stdout).rows : [];
+			return [...new Set(rows.map((r) => (r.field === 'spec' ? r.slug.slice('spec:'.length) : r.field)).reverse())];
+		} catch {
+			return [];
+		}
+	}
 	// Another field: what was said of the last one's save is not said of it.
 	$effect.pre(() => {
 		const asked = $editing;
@@ -250,10 +285,22 @@
 					{#snippet pick()}
 						{#if spec}
 							<button type="button" class="rename" use:act={'open'} aria-haspopup="dialog" onclick={rename}>rename</button>
+						{:else if home && recent.length}
+							<span class="recent" role="group" aria-label="recent">
+								recent:
+								{#each recent as f (f.field)}
+									<button type="button" use:act={'show'} data-recent={f.field} style:--c={f.color} onclick={() => go(f.field)}
+										>{f.glyph ?? VERBS.find((v) => v.what === f.shape.kind)?.glyph} {f.field}</button
+									>
+								{/each}
+							</span>
 						{/if}
 					{/snippet}
 				</FieldForm>
 			{/key}
+			{#if home}
+				<SetupHome />
+			{/if}
 		{/if}
 	</div>
 </Pane>
@@ -264,6 +311,29 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		min-block-size: 100%;
+	}
+
+	.recent {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		color: var(--muted);
+	}
+
+	.recent button {
+		min-block-size: 32px;
+		background: none;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		padding: 0.1rem 0.6rem;
+		color: var(--ink);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.recent button:hover {
+		border-color: var(--c);
 	}
 
 	.rename {

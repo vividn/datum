@@ -175,8 +175,8 @@ const withLessons = ({ names, active }: RootState): RootState => {
 
 /**
  * The root bar a fresh install shows (da-u7vz8), `welcome` in front: what
- * datum is, `premade`, fields ready to set up (da-36whg), the setup widget
- * to choose what to track in, `collect`, the page
+ * datum is, the setup widget to choose what to track in, its examples
+ * under it (da-asgtm), `collect`, the page
  * to log on — which is what a first visit opened alone before, as `mobile`
  * on a phone (da-shzs) and `main` elsewhere — and `dayview`, the day strip
  * alone (da-uzi5x). The tutorial's is its lessons (da-6cvrd).
@@ -184,7 +184,7 @@ const withLessons = ({ names, active }: RootState): RootState => {
 const fresh = (): RootState =>
 	currentDb() === TUTORIAL_DB
 		? { names: lessons(), active: 0 }
-		: { names: ['welcome', 'premade', 'setup', 'collect', 'dayview'], active: 0 };
+		: { names: ['welcome', 'setup', 'collect', 'dayview'], active: 0 };
 
 /**
  * This DEVICE, in the word a layout's `designedFor` uses: decided ONCE, by
@@ -295,7 +295,8 @@ const rootKeys = (o: Pick<Tab, (typeof ROOT_KEYS)[number]>): Partial<Tab> =>
  * `field` setting a saved one carries is read by nobody now, and kept as
  * it is — `RETIRED_SETTINGS` drops a known value, not a key. `repl` is
  * the CLI widget's name before da-mwp4m (vividn, 2026-10-27: «rename the
- * REPL to be CLI»).
+ * REPL to be CLI»). `premade` was the setup widget's catalog on its own
+ * (da-36whg), and is part of it again (da-asgtm).
  *
  * Here rather than in `tree.ts` because this is where layouts are READ:
  * `inline` is the one door every save, draft and built-in comes through,
@@ -304,7 +305,7 @@ const rootKeys = (o: Pick<Tab, (typeof ROOT_KEYS)[number]>): Partial<Tab> =>
  * on every drag of a border instead, and would give the tree's shape
  * module an opinion about kinds, which it has never had.
  */
-const RETIRED_KINDS: Record<string, string> = { spec: 'setup', field: 'setup', repl: 'cli' };
+const RETIRED_KINDS: Record<string, string> = { spec: 'setup', field: 'setup', repl: 'cli', premade: 'setup' };
 
 /**
  * A setting a saved layout may carry that no reader ever chose, dropped so

@@ -34,8 +34,8 @@ async function pick(page, label, name) {
 
 test('a first visit’s third tab reads «collection», holding the layout `collect` and its collect widget', async () => {
 	await withApp(async ({ page }) => {
-		await until(() => rootTabs(page), (t) => t.join() === 'welcome,premade,setup,collection,dayview');
-		assert.deepEqual(await rootIds(page), ['welcome', 'premade', 'setup', 'collect', 'dayview']);
+		await until(() => rootTabs(page), (t) => t.join() === 'welcome,setup,collection,dayview');
+		assert.deepEqual(await rootIds(page), ['welcome', 'setup', 'collect', 'dayview']);
 		assert.ok((await titles(page)).includes('collect'), 'the widget is still titled collect');
 	}, { ...DESKTOP, home: ON_COLLECT, desk: null });
 });

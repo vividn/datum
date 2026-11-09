@@ -35,9 +35,9 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const FIRST = ['welcome', 'premade', 'setup', 'collect', 'dayview'];
+const FIRST = ['welcome', 'setup', 'collect', 'dayview'];
 /** What those tabs read: `collect` is called «collection» (da-jzica). */
-const SHOWN = ['welcome', 'premade', 'setup', 'collection', 'dayview'];
+const SHOWN = ['welcome', 'setup', 'collection', 'dayview'];
 const FRESH_DESKTOP = { ...DESKTOP, home: null, desk: null };
 const FRESH_PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null };
 
@@ -181,29 +181,29 @@ describe('a first visit', () => {
 		}, FRESH_PHONE);
 	});
 
-	test('welcome closes from layout mode: its tab held, Close tab; premade, setup and collect stay, and the + brings it back', async () => {
+	test('welcome closes from layout mode: its tab held, Close tab; setup and collect stay, and the + brings it back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await manageRoot(page, 'Close tab');
-			await until(() => rootNames(page), (names) => names.join() === 'premade,setup,collect,dayview');
-			assert.deepEqual(await front(page), ['premade', 'premade']);
+			await until(() => rootNames(page), (names) => names.join() === 'setup,collect,dayview');
+			assert.deepEqual(await front(page), ['setup', 'setup']);
 
 			await app.reload();
-			assert.deepEqual(await rootNames(page), ['premade', 'setup', 'collect', 'dayview']);
+			assert.deepEqual(await rootNames(page), ['setup', 'collect', 'dayview']);
 
 			// «Open a widget, or a tab you closed: the + beside the tabs.»
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
-			await until(() => rootNames(page), (names) => names.join() === 'premade,setup,collect,dayview,welcome');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,collect,dayview,welcome');
 			assert.ok((await words(page)).includes('Record your life'));
 
 			// And collect, which is no widget kind, comes back from it too.
 			await rootMenuButton(page).waitFor();
-			await page.evaluate(() => window.datum.shell.close(2));
-			await until(() => rootNames(page), (names) => names.join() === 'premade,setup,dayview,welcome');
+			await page.evaluate(() => window.datum.shell.close(1));
+			await until(() => rootNames(page), (names) => names.join() === 'setup,dayview,welcome');
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button.layout', { hasText: exactly('collection') }).click();
-			await until(() => rootNames(page), (names) => names.join() === 'premade,setup,dayview,welcome,collect');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,dayview,welcome,collect');
 			assert.deepEqual(app.errors, []);
 		}, FRESH_DESKTOP);
 	});

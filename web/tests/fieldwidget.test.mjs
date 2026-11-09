@@ -5,12 +5,12 @@
 // editing inside of it more easy and intuitive … It should also be clearer
 // what "field" actually is and means.»
 //
-// So what is held here is what a newcomer meets: the `field:` line and
-// «track something» alone, whose modal says what a field is, takes a name and
-// lists the fields there are (da-4ta1k); a field's pill, whose × starts over;
-// its status line, NOT SET UP, TRACKED or IGNORED; no examples, which are the
-// premade widget's (da-36whg, premade.test.mjs); and a save that leaves a field
-// the bar can log.
+// So what is held here is what a newcomer meets: «manual setup» and the fields
+// touched last, alone of the form, whose modal says what a field is, takes a
+// name and lists the fields there are (da-4ta1k); a field's pill, whose ×
+// starts over; its status line, NOT SET UP, TRACKED or IGNORED; the examples
+// under the form, which premade.test.mjs holds (da-asgtm); and a save that
+// leaves a field the bar can log.
 // The form's own tabs are `track.test.mjs`'s, the place's coming and going
 // `specplace.test.mjs`'s.
 
@@ -52,22 +52,29 @@ const typing = (page) => page.evaluate(() => !!document.activeElement?.matches('
 describe('the field widget', () => {
 	const shared = sharedApp(DESKTOP);
 
-	// vividn, 2026-11-05 (da-4ta1k): «the widget is empty but for its top line, field:, and a track something button».
-	test('with no field: `field:` and «track something» alone; its modal pills the name and narrows the fields there are', async () => {
+	// vividn, 2026-11-05 (da-4ta1k): «the widget is empty but for its top line, field:, and a track something button»;
+	// 2026-11-09 (da-asgtm): «manual setup», the three fields touched last beside it, the examples under it.
+	test('with no field: «manual setup» and the fields touched last alone; its modal pills the name and narrows the fields there are', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			for (const [name, verb] of [['tea', 'occur'], ['team', 'occur'], ['nap', 'start']]) await app.run(['track', name, '--verb', verb]);
+			// A second apart, as the page's clock is held: the fields touched last are by time.
+			for (const [name, verb] of [['tea', 'occur'], ['team', 'occur'], ['nap', 'start']]) {
+				await app.clock.forward(1000);
+				await app.run(['track', name, '--verb', verb]);
+			}
 			await app.redraw();
 			await openField(page);
 			const line = page.locator(`${FIELD_FORM} .name-line`);
 			await line.waitFor();
-			assert.equal((await line.locator('.label').innerText()).trim(), 'field:');
-			// The one button in the form, and none of the rest: no shapes, tabs, status or buttons.
-			assert.deepEqual(await page.locator(`${FIELD_FORM} button`).evaluateAll((all) => all.map((b) => b.className.split(' ')[0])), ['track-something']);
+			assert.equal(await line.locator('.label').count(), 0);
+			// Its buttons, and none of the rest: no shapes, tabs, status or buttons.
+			const buttons = () => page.locator(`${FIELD_FORM} button`).evaluateAll((all) => all.map((b) => b.dataset.recent ?? b.className.split(' ')[0]));
+			await until(buttons, (b) => b.join() === 'track-something,nap,team,tea');
+			assert.equal(await line.locator('button.track-something').innerText(), 'manual setup');
 			for (const gone of ['.verbs', '[role="tab"]', '[data-status]', '.buttons', '.body']) assert.equal(await page.locator(`${FIELD_FORM} ${gone}`).count(), 0, gone);
-			// No examples: they are the premade widget's (da-36whg).
-			for (const gone of ['[data-example]', '[data-examples]', 'button.ex']) assert.equal(await page.locator(`${WIDGET} ${gone}`).count(), 0, gone);
-			assert.equal(await page.locator('dialog.sheet[data-catalog]').count(), 0);
+			// The examples are under the form, not in it.
+			assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0);
+			await page.locator(`${WIDGET} [data-example]`).first().waitFor();
 
 			// The modal says what a field is, has the keys, and lists the fields there are, in their colors and glyphs.
 			await trackSomething(page);

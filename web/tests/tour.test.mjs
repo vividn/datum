@@ -18,7 +18,7 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const ON_SETUP = { names: ['welcome', 'premade', 'setup', 'collect', 'dayview'], active: 2 };
+const ON_SETUP = { names: ['welcome', 'setup', 'collect', 'dayview'], active: 1 };
 const FRESH = { home: ON_SETUP, desk: null, tour: true };
 const PHONE = { ...FRESH, viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
 const DESKTOP = { ...FRESH, viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' };
@@ -90,7 +90,7 @@ describe('the first field\'s tour', () => {
 				assert.equal(await front(page), 'collect', 'Escape did more than end the tour');
 
 				// A second field: saved, and no tour.
-				await page.evaluate(() => window.datum.shell.activate(2));
+				await page.evaluate(() => window.datum.shell.activate(1));
 				await make(page, 'tea', 'occur');
 				await page.locator('[data-widget="setup"] h2', { hasText: 'tea' }).waitFor();
 				await app.idle();

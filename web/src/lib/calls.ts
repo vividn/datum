@@ -98,7 +98,12 @@ export function specShowArgv(field: string): string[] {
 	return ['setup', field, '--json'];
 }
 
-/** premade.toml, compiled into the CLI (da-rky8h): the premade widget's catalog. */
+/** The last rows written, specs included, oldest first: the setup widget's recent fields (da-asgtm). */
+export function touchedArgv(): string[] {
+	return ['tail', '-m', 'modify', '--show-meta', '-n', '40', '--json'];
+}
+
+/** premade.toml, compiled into the CLI (da-rky8h): the setup widget's catalog (da-asgtm). */
 export function premadeArgv(): string[] {
 	return ['setup', '--premade', '--json'];
 }
@@ -518,6 +523,7 @@ export interface Reads {
 	conflictsArgv: Conflicted[];
 	refsArgv: Refs;
 	tailArgv: TailListing;
+	touchedArgv: TailListing;
 	geometryArgv: DayviewJson;
 	/** Each day's data layer, or its digest, by days back. */
 	layersArgv: { pictures?: Record<string, string>; digests?: Record<string, string> };
