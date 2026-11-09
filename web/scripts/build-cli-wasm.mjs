@@ -13,6 +13,12 @@
 // tarballs do not exist (they are x86_64-linux), the failure is "the CLI
 // module does not build here", never "the repo does not build".
 //
+// DATUM_TOOLCHAIN_CACHE names a directory of those tarballs to read before
+// GitHub and keep each download in, each checked against its sha256 on every
+// read (da-waoz2): staging run 11153 went red on eight 504s from GitHub's
+// release CDN, and the forge has no cache service. Unset, nothing changes.
+// toolchain.mjs says how.
+//
 // The artifact is not committed (da-0qa4x): `ensure-wasm.mjs` fetches the
 // one the `wasm` branch holds for this tree's crates, and runs this when
 // there is none. The bytes are reproducible, so either is the same module.
@@ -27,11 +33,11 @@
 //         node scripts/build-cli-wasm.mjs --check   (compiles, writes nothing)
 
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { cargoHome, env, repoRoot } from './reproducible.mjs';
+import { tool as toolIn } from './toolchain.mjs';
 
 const TOOLS = {
 	// clang 18.1.2. 24, not older: 22's wasm32-wasip1 sysroot has no
@@ -62,43 +68,7 @@ const toolchains = resolve(repoRoot, 'target', 'toolchains');
 // cwd it runs in, repoRoot) when set, else <repoRoot>/target.
 const targetDir = resolve(repoRoot, process.env.CARGO_TARGET_DIR || 'target');
 const out = resolve(repoRoot, 'web', 'src', 'lib', 'wasm', 'datum-cli.wasm');
-
-/**
- * `url`'s bytes, asking up to eight times, 10 s more apart each time (4 min 40 s
- * in all): one HTTP 500 from GitHub failed a CI run (da-wh359), and 30 s of 504s
- * another (da-ui0ux). A 4xx is the URL's answer, so it is not asked again, but
- * 408 and 429 say to wait and are.
- */
-async function download(url) {
-	for (let attempt = 1; ; attempt++) {
-		console.log(`fetching ${url}`);
-		try {
-			const res = await fetch(url);
-			if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) throw Object.assign(new Error(`HTTP ${res.status}`), { final: true });
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			return Buffer.from(await res.arrayBuffer());
-		} catch (e) {
-			if (e.final || attempt === 8) throw new Error(`${url}: ${e.message}`);
-			console.log(`${e.message}; again in ${attempt * 10}s`);
-			await new Promise((r) => setTimeout(r, attempt * 10_000));
-		}
-	}
-}
-
-/** The unpacked tool's directory, downloading and verifying it first if needed. */
-async function tool({ url, sha256, dir }) {
-	const home = resolve(toolchains, dir);
-	if (existsSync(home)) return home;
-	mkdirSync(toolchains, { recursive: true });
-	const tarball = resolve(toolchains, url.split('/').pop());
-	if (!existsSync(tarball)) {
-		writeFileSync(tarball, await download(url));
-	}
-	const actual = createHash('sha256').update(readFileSync(tarball)).digest('hex');
-	if (actual !== sha256) throw new Error(`${tarball}: sha256 ${actual}, pinned ${sha256}`);
-	execFileSync('tar', ['-xzf', tarball, '-C', toolchains], { stdio: 'inherit' });
-	return home;
-}
+const tool = (spec) => toolIn(spec, toolchains);
 
 const sdk = await tool(TOOLS.wasiSdk);
 // The library, as a WASI reactor (da-jm4sv): `datum_line` runs one command
