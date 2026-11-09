@@ -23,7 +23,8 @@ import type { FieldSpec } from './types.js';
 export type FieldKind =
 	| { kind: 'moment' }
 	| { kind: 'on/off' }
-	| { kind: 'change'; states: string[] }
+	/** `declared`: the states are its spec's, in its order, and not the ones it was logged with. */
+	| { kind: 'change'; states: string[]; declared?: true }
 	| { kind: 'record' }
 	| { kind: 'allday' };
 
@@ -114,7 +115,7 @@ export function kindFor(spec: FieldSpec | undefined, observed: unknown[] = []): 
 		case 'switch':
 			// A change field with no allowed set is unconstrained, so the states
 			// it has been logged with are the honest menu.
-			return { kind: 'change', states: spec.allowed_states?.length ? spec.allowed_states : strings };
+			return spec.allowed_states?.length ? { kind: 'change', states: spec.allowed_states, declared: true } : { kind: 'change', states: strings };
 		case 'start':
 			return { kind: 'on/off' };
 		case 'add':

@@ -477,9 +477,10 @@ describe('the now strip is the last half second', () => {
 		}, AT_REST);
 	});
 
-	// vividn, 2026-11-05 (da-u7tij): «in the secondary view of the collect widget, still show the now section so you can see the animation right after changing states».
+	// vividn, 2026-11-05 (da-u7tij): «in the secondary view of the collect widget, still show the now section so you can see the animation right after changing states»;
+	// and 2026-11-09 (da-2ylmj), of going back after an entry: «These should feel instantaneous», so the fields' own strip, there at the tap, draws the sweep.
 	for (const side of ['left', 'right'])
-		test(`side: ${side}: a field's view keeps the now strip at the widget's edge beside it, and a state tapped there sweeps in at now's edge while the view is up`, async () => {
+		test(`side: ${side}: a field's view keeps the now strip at the widget's edge beside it, and a state tapped there closes it at once, its sweep coming in at now's edge`, async () => {
 			await withApp(async (app) => {
 				await seeded(app, [...SEED, 'switch mood good']);
 				const { page } = app;
@@ -498,20 +499,18 @@ describe('the now strip is the last half second', () => {
 				assert.ok(clear >= -0.5, `the view overlaps the strip by ${-clear}px`);
 				// Now is the strip's inner edge: its right on the left, its left mirrored.
 				const atNow = (m) => (side === 'left' ? Math.abs(m.right - m.of) : Math.abs(m.left)) <= 0.5;
-				const VIEW_STRIP = `${BAR} > [data-strip] svg.now-strip`;
 				const swept = (want, slack = 3) =>
 					until(
-						async () => (await drawn(page, 'mood', VIEW_STRIP)).filter((m) => m.kind === 'rect' && m.pending),
+						async () => (await drawn(page, 'mood')).filter((m) => m.kind === 'rect' && m.pending),
 						(marks) => marks.some((m) => atNow(m) && Math.abs(m.right - m.left - want) <= slack)
 					);
-				// The files held, the change waits and the view stays: its sweep is drawn on the view's strip at the tap.
+				// The files held, the change waits, and the fields are back at the tap: its sweep is drawn on their strip.
 				await holdFiles(page);
 				await bad.click();
+				await page.locator(`${BAR} .collect.open`).waitFor({ state: 'detached' });
 				await swept(0);
 				await app.clock.forward(250);
-				// Half the picture, which #1863 draws PICTURE_GAP short of the strip's box (da-c93wz).
-				await swept((await page.locator(VIEW_STRIP).boundingBox()).width / 2);
-				assert.equal(await bad.count(), 1, 'the view closed before the change was answered');
+				await swept((await page.locator(`${STRIP} svg.now-strip`).boundingBox()).width / 2);
 				await release(page);
 				await until(async () => (await app.runLine('get mood::state')).stdout.trim(), (s) => s === 'bad');
 			}, AT_REST);

@@ -244,12 +244,25 @@ describe('a switch field’s states in collect, in the rows', () => {
 			const [now, was] = [rows(await open(page, 'mood')), rows(logged)];
 			assert.deepEqual(['d', 'a', 'b', 'c'].map((s) => now[s]), STATES.map((s) => was[s]));
 
-			const offset = () =>
-				page.locator(ROOM).evaluate((room) => {
-					const at = (sel) => room.querySelector(sel).getBoundingClientRect();
-					const [e, d] = [at('[data-state="e"]'), at('[data-state="d"]')];
-					return [Math.round(e.x - d.x), Math.round(e.y - d.y)];
+			// Read once still: every run answered, and two reads a frame apart agreeing. A field opened again draws its kept
+			// listing in its first frame (da-2ylmj), and the room's observer may place the states again after it.
+			const offset = async () => {
+				await app.idle();
+				return page.locator(ROOM).evaluate(async (room) => {
+					const read = () => {
+						const at = (sel) => room.querySelector(sel);
+						const [e, d] = [at('[data-state="e"]'), at('[data-state="d"]')];
+						const [eb, db] = [e.getBoundingClientRect(), d.getBoundingClientRect()];
+						return [e.closest('.spot').dataset.row, Math.round(eb.x - db.x), Math.round(eb.y - db.y)];
+					};
+					for (let was = read(), f = 0; ; f++) {
+						await new Promise((r) => requestAnimationFrame(r));
+						const now = read();
+						if (now.every((v, i) => v === was[i]) || f > 600) return now;
+						was = now;
+					}
 				});
+			};
 			await field.dispatchEvent('click');
 			await page.locator(`${ROOM} [data-state="d"]`).waitFor();
 			await app.submit('setup mood --states false,d,a,b,c,e');
@@ -259,7 +272,9 @@ describe('a switch field’s states in collect, in the rows', () => {
 			await page.locator(VIEW).waitFor({ state: 'detached' });
 			await field.dispatchEvent('click');
 			await page.locator(`${ROOM} [data-state="e"]`).waitFor();
-			assert.deepEqual(live, await offset(), 'the learned state was not placed');
+			// Its row, and the pixels to within one: the view open, e may stand a pixel off a fresh open's (da-9qqtl).
+			const fresh = await offset();
+			assert.ok(live[0] === fresh[0] && Math.abs(live[1] - fresh[1]) <= 1 && Math.abs(live[2] - fresh[2]) <= 1, `the learned state was not placed: ${live} against ${fresh}`);
 		}, options());
 	});
 });

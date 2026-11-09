@@ -11,6 +11,7 @@ import { DAMAGED, damaged } from './damaged.js';
 import { currentDb, DEFAULT_DB } from './database.js';
 import { dbFlag } from './dbFlag.js';
 import { dbOf } from './run.js';
+import { echoedFields } from './echo.js';
 import { moveDays } from './heldDays.js';
 import { moveShell } from './layout/draft.js';
 
@@ -201,7 +202,7 @@ export async function runCli(
 			.then(() => announceMoved(from, to));
 	}
 	if (cli.changed.length) {
-		announceChange(cli.changed, session);
+		announceChange(cli.changed, session, echoedFields(cli.stdout));
 		if (cli.storage === 'opfs') {
 			// Each watcher on its own: the command has already run, and a hook
 			// that throws (the persistence prompt, or any later one) must not

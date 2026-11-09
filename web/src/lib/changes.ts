@@ -41,7 +41,7 @@ let channel: BroadcastChannel | null = null;
 let self_ = '';
 /** This tab's own hearers: of its own writes (`onAnyChange`), and of a
  * sync's (`announceHere`). The channel never delivers to its sender. */
-const own = new Set<(dbs?: string[], session?: boolean) => void>();
+const own = new Set<(dbs?: string[], session?: boolean, fields?: string[]) => void>();
 const here = new Set<(dbs?: string[]) => void>();
 
 function open(): BroadcastChannel | null {
@@ -97,11 +97,12 @@ function catchUp(): void {
  * Say that this tab wrote to `dbs` (by name: `datum`, `_internal`, or
  * whatever `?db=` named), or to all of them when unsaid. `session`: it was
  * a sync session's own run, which this tab's leader started (da-df6cb).
+ * `fields`: those its echo names (da-2ylmj), unsaid where it names none.
  * Safe to call when nobody is listening.
  */
-export function announceChange(dbs?: string[], session = false): void {
-	open()?.postMessage({ from: self_, dbs });
-	for (const hear of own) hear(dbs, session);
+export function announceChange(dbs?: string[], session = false, fields?: string[]): void {
+	open()?.postMessage({ from: self_, dbs, fields });
+	for (const hear of own) hear(dbs, session, fields);
 }
 
 /**
@@ -148,14 +149,15 @@ export function announceHere(dbs: string[]): void {
  * Run `handler` on EVERY write to `db`, this tab's own and every other
  * tab's: what the syncing tab pushes on (da-6kpj5). Not coalesced — the
  * handler owns its own economy. It is told whether the write was a sync
- * session's own (`announceChange`). Returns an unsubscribe.
+ * session's own (`announceChange`), and the fields it wrote where its echo
+ * names them; none said, any may have changed. Returns an unsubscribe.
  */
-export function onAnyChange(handler: (session: boolean) => void, db: string): () => void {
-	const hear = (dbs?: string[], session = false) => {
-		if (!dbs || dbs.includes(db)) handler(session);
+export function onAnyChange(handler: (session: boolean, fields?: string[]) => void, db: string): () => void {
+	const hear = (dbs?: string[], session = false, fields?: string[]) => {
+		if (!dbs || dbs.includes(db)) handler(session, fields);
 	};
 	own.add(hear);
-	const listener = (e: MessageEvent) => hear(e.data?.dbs);
+	const listener = (e: MessageEvent) => hear(e.data?.dbs, false, e.data?.fields);
 	const c = open();
 	c?.addEventListener('message', listener);
 	return () => {
