@@ -2730,7 +2730,7 @@ pub(crate) fn build_time_anchored(
     // A write's year-less date is the nearest one (da-9rda8).
     let ctx = match &own {
         Some((zone, _)) => TimeCtx::at(zone.local_naive(now)),
-        None => TimeCtx::now(),
+        None => TimeCtx::at_instant(now),
     }
     .facing(DefaultDirection::NearestDate);
 
@@ -2750,6 +2750,34 @@ pub(crate) fn build_time_anchored(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// da-5pvv4: the two readings `which_reading` compares are built
+    /// against the line's one `now`, so a midnight passing between them
+    /// names no second day and asks no fall-back question.
+    #[test]
+    fn both_readings_read_one_now_across_midnight() {
+        use datum_parse::time::clock::{install, uninstall, MockClock};
+        let at = "2026-11-07T23:59:59Z".parse().unwrap();
+        let clock = std::sync::Arc::new(MockClock::new(
+            DatumTime::from_utc_and_tz(at, "UTC").unwrap(),
+        ));
+        install(clock.clone());
+        let read = |later| {
+            let time = TimeArgs {
+                date: Some("sunday".into()),
+                timezone: Some("UTC".into()),
+                later,
+                ..TimeArgs::default()
+            };
+            build_time_from_flags(&time, at).unwrap().utc
+        };
+        let first = read(false);
+        clock.advance(chrono::Duration::seconds(2));
+        let second = read(true);
+        uninstall();
+        assert_eq!(first, second);
+        assert_eq!(first.to_rfc3339(), "2026-11-01T00:00:00+00:00");
+    }
 
     #[test]
     fn test_parse_value_token_number() {

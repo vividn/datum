@@ -57,6 +57,18 @@ impl TimeCtx {
         }
     }
 
+    /// [`now`](Self::now) at an instant the caller already read, on the
+    /// clock's wall in its zone: two builds of one line against one `now`
+    /// name one day though midnight passes between them (da-5pvv4).
+    #[cfg(feature = "native")]
+    pub fn at_instant(utc: chrono::DateTime<chrono::Utc>) -> Self {
+        let mut clock = crate::time::clock::now();
+        clock.utc = utc;
+        // The clock's own zone, already a name `Zone::named` reads.
+        let _ = clock.refresh_offset();
+        Self::at(clock.local_time().naive_local())
+    }
+
     /// Anchored on an explicit local wall-clock moment.
     pub fn at(reference: NaiveDateTime) -> Self {
         TimeCtx {
