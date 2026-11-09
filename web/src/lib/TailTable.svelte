@@ -99,7 +99,7 @@
 	import AnsiText from './AnsiText.svelte';
 	import StateCell from './StateCell.svelte';
 	import { fieldPill, select, selected, selectHeld } from './bar.js';
-	import { cursor, timeArg, type Cursor } from './cursor.js';
+	import { cursor, reach, timeArg, type Cursor } from './cursor.js';
 	import { now } from './clock.js';
 	import { HOLD_MS, swallowTail } from './hold.js';
 	import { pressTraveled } from './inspect.js';
@@ -362,12 +362,13 @@
 	/**
 	 * A selection with a length, as the CLI's bounds: dated, so `--since`
 	 * never reads a clock time as a duration ago, and open at the top when
-	 * it ends at now, so what is logged meanwhile is in it.
+	 * it ends at now, so what is logged meanwhile is in it. One `ahead` runs from it.
 	 */
 	function rangeOf(c: Cursor | null): typeof range {
 		if (!c?.span) return null;
 		const dated = (at: Date) => timeArg(at, new Date(0));
-		return { since: dated(new Date(+c.at - c.span * 60_000)), ...(c.rel === 0 ? {} : { until: dated(c.at) }) };
+		const far = +c.at + reach(c);
+		return { since: dated(new Date(Math.min(+c.at, far))), ...(c.rel === 0 && !c.ahead ? {} : { until: dated(new Date(Math.max(+c.at, far))) }) };
 	}
 
 	function narrow(next: string | null, within: typeof range): void {

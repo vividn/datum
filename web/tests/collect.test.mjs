@@ -297,6 +297,47 @@ describe('collect', () => {
 		});
 	});
 
+	// da-vvo03, vividn, 2026-11-09: once `dur=+5` is accepted, «then we can start allowing dragging dur to the right nicely».
+	test('dur dragged right is a length forward from the time, +Nm and dur=+N, stored so; back left through none it ends there again', async () => {
+		await collect(async (app) => {
+			const { page } = app;
+			await tap(page, '[data-earlier="5"]');
+			await saysPill(page, 'time', '−5m');
+			const minutes = async () => Number((await whenPill(page, 'dur').innerText()).match(/^\+?(\d+)m$/)?.[1]);
+
+			const dur = await center(page, `${WHEN} [data-part="dur"]`);
+			await drag(page, dur, { x: dur.x + 40, y: dur.y });
+			await page.waitForFunction((w) => /^\+\d+m$/.test(document.querySelector(`${w} .pill[data-pill="dur"] .said`)?.innerText ?? ''), WHEN);
+			const ahead = await minutes();
+			assert.ok(ahead > 1, `a 40px drag right: ${ahead}`);
+			assert.equal(await page.evaluate(() => window.datum.cursor.of()?.ahead), true);
+			assert.equal(await whenPill(page, 'dur').locator('svg.length-arrow.ahead').count(), 1, 'the arrow points forward');
+			assert.ok((await barPills(page)).includes(`dur:+${ahead}m`), JSON.stringify(await barPills(page)));
+
+			// Back left from the pill, past none: a length ending at the time, as before.
+			const pill = await center(page, `${WHEN} .pill[data-pill="dur"] .said`);
+			await drag(page, pill, { x: pill.x - 80, y: pill.y });
+			await page.waitForFunction((w) => /^\d+m$/.test(document.querySelector(`${w} .pill[data-pill="dur"] .said`)?.innerText ?? ''), WHEN);
+			assert.ok(!(await page.evaluate(() => window.datum.cursor.of()?.ahead)), 'still ahead after crossing none');
+			assert.equal(await whenPill(page, 'dur').locator('svg.length-arrow:not(.ahead)').count(), 1);
+
+			// Right again, and logged: the block runs from 14:55 forward.
+			const back = await center(page, `${WHEN} .pill[data-pill="dur"] .said`);
+			await drag(page, back, { x: back.x + 120, y: back.y });
+			await page.waitForFunction((w) => /^\+\d+m$/.test(document.querySelector(`${w} .pill[data-pill="dur"] .said`)?.innerText ?? ''), WHEN);
+			const n = await minutes();
+			const seen = await app.spyOnRunner();
+			await page.locator(`${VIEW} [data-field="work"]`).click();
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a.includes('work')));
+			const line = (await seen()).find((a) => a.includes('work') && !a.includes('--dry-run'));
+			assert.ok(line.includes(`dur=+${n}m`), JSON.stringify(line));
+			await app.idle();
+			const work = (await app.entries()).filter((e) => e.field === 'work').at(-1);
+			assert.equal(work?.dur, `PT${n}M`, JSON.stringify(work));
+			assert.equal(Date.parse(work.at.utc), todayAt(14, 55 + n), JSON.stringify(work.at));
+		});
+	});
+
 	// «space out the buttons a little more in this time section. right now they overlap some».
 	test('no two of the section\'s buttons meet, their triangles among them, at any height: a column, halves and a row', async () => {
 		await collect(async ({ page }) => {

@@ -34,7 +34,8 @@
 // a duration runs back from the entry's time (da-zwct). `rel: 0` is the
 // length that ends NOW — the nowview's own gesture — and makes the length
 // pill alone, since the entry's time is already now and needs no `-t` at
-// all.
+// all. A length `ahead` runs FORWARD from the selection instead, `+5m`
+// (`dur=+5m`, da-vvo03), collect's dur dragged right.
 //
 // HOW a range spells itself is the view it was MADE in (da-ku7y), and
 // nothing else: the two spellings are the same block to the CLI, and
@@ -68,6 +69,8 @@ export interface Cursor {
 	rel?: number;
 	/** Whole minutes of range ENDING at the selection — the length pill. */
 	span?: number;
+	/** The length runs forward from the selection, `dur=+N` (da-vvo03). */
+	ahead?: boolean;
 	/**
 	 * What made it. The nowview centres its window on a dayview's instant
 	 * alone (da-nwf1h); the day strip is how a range comes to be spelled
@@ -187,7 +190,10 @@ const whole = (n: number | undefined) => (n === undefined ? undefined : Math.max
  * Whether this selection is a range that says its two EDGES — the day
  * strip's spelling (da-ku7y). Anything else says an instant and a length.
  */
-const edged = (c: Cursor): boolean => c.from === 'daystrip' && !!c.span;
+const edged = (c: Cursor): boolean => c.from === 'daystrip' && !!c.span && !c.ahead;
+
+/** Ms from the selection to its range's other edge: back for a length ending there, forward for one `ahead`. */
+export const reach = (c: Cursor): number => (c.ahead ? 1 : -1) * (c.span ?? 0) * MINUTE;
 
 /** Where a range begins: its length before the instant it ends at. */
 const startOf = (c: Cursor): Date => new Date(+c.at - (c.span ?? 0) * MINUTE);
@@ -217,7 +223,7 @@ export function lengthArg(minutes: number): string {
 
 /** What the length pill says: the range's other edge, or the length between them. */
 const spanArg = (c: Cursor, now = new Date()): string =>
-	edged(c) ? `start_time=${timeArg(startOf(c), now)}` : lengthArg(c.span ?? 0);
+	edged(c) ? `start_time=${timeArg(startOf(c), now)}` : `${c.ahead ? '+' : ''}${lengthArg(c.span ?? 0)}`;
 
 /**
  * The pills a selection is: its time, when it has one, and its length,
@@ -249,7 +255,7 @@ function cursorPills(c: Cursor, now: Date): Pill[] {
  * Point the page at a selection, or clear it with `null`.
  *
  * `rel` minutes back from now makes it RELATIVE, `at` makes it absolute,
- * and `span` gives it a length ending there. `rel` is rounded to the
+ * and `span` gives it a length ending there, or starting there with `ahead`. `rel` is rounded to the
  * second, and `at` to the `step` seconds the view that made it says
  * (`tapStep`), a whole minute when it says none; `span` is whole minutes.
  * So nothing downstream has to wonder.
@@ -263,7 +269,7 @@ export function pointAt(sel: (Partial<Cursor> & { at?: Date; step?: number }) | 
 	// A selection AT now with no length is not a selection: now is the
 	// yellow line's, and a white one over it would say the same thing twice.
 	if (rel === 0 && !span) return void cursor.set(null);
-	cursor.set({ at, ...(rel === undefined ? {} : { rel }), ...(span ? { span } : {}), ...(sel.from ? { from: sel.from } : {}) });
+	cursor.set({ at, ...(rel === undefined ? {} : { rel }), ...(span ? { span, ...(sel.ahead ? { ahead: true } : {}) } : {}), ...(sel.from ? { from: sel.from } : {}) });
 }
 
 /**

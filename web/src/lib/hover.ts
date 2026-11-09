@@ -13,7 +13,7 @@
 import { get } from 'svelte/store';
 import { fieldPill, pills, removePill, select, selected, type Pill } from './bar.js';
 import { clockLabel } from './clock.js';
-import { pointAt, pointed, setCursor, type Cursor } from './cursor.js';
+import { pointAt, pointed, reach, setCursor, type Cursor } from './cursor.js';
 import {
 	CLICK_SLOP,
 	hidOf,
@@ -314,8 +314,9 @@ function drawCursor(svg: SVGSVGElement | null, c: Cursor | null | undefined): vo
 	if (along < place.lo - 0.5 || along > place.hi + 0.5) return;
 	if (c.span) {
 		// The range, behind the line that ends it: from `span` minutes
-		// before the selection to the selection, clamped to the day drawn.
-		const from = Math.max(place.lo, Math.min(place.hi, along - c.span * 60_000 * place.perMs));
+		// before the selection to the selection, or after it when it runs
+		// `ahead`, clamped to the day drawn.
+		const from = Math.max(place.lo, Math.min(place.hi, along + reach(c) * place.perMs));
 		const [lo, hi] = [Math.min(from, along), Math.max(from, along)];
 		svg.append(
 			mark('rect', {

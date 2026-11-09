@@ -56,7 +56,7 @@
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import { clearPending, clearTyped, dropHids, pending, pills, prefill, typed } from '#lib/bar.ts';
-	import { DATE_ID, pointed } from '#lib/cursor.ts';
+	import { DATE_ID, pointed, reach } from '#lib/cursor.ts';
 	import { run as read } from '#lib/run.ts';
 	import { minute } from '#lib/clock.ts';
 	import { dateBack, daysBack, layers, standIn, type Layer } from '#lib/dayLayers.ts';
@@ -108,8 +108,8 @@
 
 	/** The selected instant, or null at now: a length ending now selects no time. */
 	const at = $derived($pointed && $pointed.rel !== 0 ? +$pointed.at : null);
-	/** The selected time's length, in ms, which the strip frames with it (da-xqae2). */
-	const span = $derived(at !== null && $pointed?.span ? $pointed.span * 60_000 : 0);
+	/** The selected range's far edge from its time, in ms, which the strip frames with it (da-xqae2): back negative, ahead positive. */
+	const span = $derived(at !== null && $pointed ? reach($pointed) : 0);
 	/** The instant the strip frames at its center: the entries selected, or the selected time and its length. */
 	let framedAt = $state<number | null>(null);
 	/** The day the strip draws: the framed instant's, else today. */

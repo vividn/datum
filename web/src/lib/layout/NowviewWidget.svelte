@@ -179,7 +179,7 @@
 	import { get } from 'svelte/store';
 	import { pills, removePill, selected } from '#lib/bar.ts';
 	import { entrySpanArgv } from '#lib/calls.ts';
-	import { cursor, SPAN_ID, pointAt, pointed, timeArgAt, type Cursor } from '#lib/cursor.ts';
+	import { cursor, SPAN_ID, pointAt, pointed, reach as farFrom, timeArgAt, type Cursor } from '#lib/cursor.ts';
 	import { preview } from '#lib/preview.ts';
 	import { DOUBLE_MS, inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
 	import { markOf, pressSpent } from '#lib/inspect.ts';
@@ -2603,7 +2603,8 @@
 		if (!c) return void queueMicrotask(dismiss);
 		if (press || grip) return;
 		// Only a dayview click centres: any other time, collect's among them, moves the window only to show it (da-nwf1h).
-		aim(+c.at - (c.span ?? 0) * 60_000, +c.at, c.from === 'daystrip' && !c.span);
+		const far = +c.at + farFrom(c);
+		aim(Math.min(+c.at, far), Math.max(+c.at, far), c.from === 'daystrip' && !c.span);
 	}
 
 	/** Follow the entry selected last, from its time and length as datum reads them. */

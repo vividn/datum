@@ -61,7 +61,7 @@
 			onclick={() => dropSection(pill.id, i)}
 			>{#if context}<svg class="glyph funnel" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
 					><path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z" /></svg
-				>{/if}{#if isLength(pill) && !keyed}<LengthArrow />{/if}<span class="label"
+				>{/if}{#if isLength(pill) && !keyed}<LengthArrow ahead={pill.text.startsWith('+')} />{/if}<span class="label"
 				>{keyed ? 'dur=' : ''}{section.text}</span
 			>{#if !section.rest && !context}<span class="x" aria-hidden="true">×</span>{/if}</button
 		>{/each}{#if !context}<button

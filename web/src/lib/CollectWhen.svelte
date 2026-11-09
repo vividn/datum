@@ -38,7 +38,10 @@
 	dur buttons»), and drag sideways with no pill yet too: `time` from now,
 	`dur` from no length («add a little triangle arrow to the time and dur
 	buttons so that you know you can drag them. Allow dragging them left and
-	right, even when there is nothing yet selected»).
+	right, even when there is nothing yet selected»). `dur` dragged left is a
+	length ending at the time, as `dur=5m`, and past none to the right one
+	running forward from it, `+5m`, as `dur=+5m` (da-vvo03, vividn,
+	2026-11-09: «then we can start allowing dragging dur to the right nicely»).
 
 	A line runs on each side of it open, between it and the strip and between
 	it and the rows, and closed one line between the strip and the rows, the
@@ -157,7 +160,8 @@
 		const time = !timePill || !c ? null : c.rel === undefined ? pillSections(c.at).map((s) => s.text).join(' ') : Number.isInteger(c.rel) ? `−${lengthArg(c.rel)}` : timePill.text;
 		return [time, allday ? '-D' : null].filter(Boolean).join(' ') || null;
 	});
-	const durLabel = $derived(moment ? '−m' : span ? lengthArg(span) : null);
+	const ahead = $derived(!!span && !!$cursor?.ahead);
+	const durLabel = $derived(moment ? '−m' : span ? `${ahead ? '+' : ''}${lengthArg(span)}` : null);
 
 	/**
 	 * What made a time once this section has moved it: a range keeps it, its
@@ -165,26 +169,28 @@
 	 * the nowview centres on (da-nwf1h).
 	 */
 	const moved = (c: Cursor) => (c.span ? c.from : undefined);
+	/** A selection's length, which way it runs included. */
+	const lengthOf = (c: Cursor | null) => ({ span: c?.span, ahead: c?.ahead });
 	/** Where a selection is, without its length. */
 	const where = (c: Cursor) => (c.rel !== undefined ? { rel: c.rel, from: moved(c) } : { at: c.at, step: 1, from: moved(c) });
 
 	/** `−1m`, `−5m`: that much earlier, summing. */
 	function earlier(by: number) {
 		const c = get(cursor);
-		if (c && c.rel === undefined) return pointAt({ at: new Date(+c.at - by * MINUTE), step: 1, span: c.span, from: moved(c) });
-		pointAt({ rel: (c?.rel ?? 0) + by, span: c?.span, from: c?.from });
+		if (c && c.rel === undefined) return pointAt({ at: new Date(+c.at - by * MINUTE), step: 1, ...lengthOf(c), from: moved(c) });
+		pointAt({ rel: (c?.rel ?? 0) + by, ...lengthOf(c), from: c?.from });
 	}
 	/** `1m`, `5m`: that much longer, summing, in place of `-m`. */
 	function longer(by: number) {
 		setMoment(false);
 		const c = get(cursor);
-		pointAt({ ...(c ? where(c) : { rel: 0 }), span: (c?.span ?? 0) + by });
+		pointAt({ ...(c ? where(c) : { rel: 0 }), span: (c?.span ?? 0) + by, ahead: c?.ahead });
 	}
 	/** The time's `clear`: the length, if any, ends at now again. */
 	function clearTime() {
 		setAllday(false);
 		const c = get(cursor);
-		pointAt(c?.span ? { rel: 0, span: c.span } : null);
+		pointAt(c?.span ? { rel: 0, ...lengthOf(c) } : null);
 	}
 	/** The length's `clear`. */
 	function clearDur() {
@@ -194,7 +200,7 @@
 	}
 
 	/** Point at `at`, keeping the length. */
-	const pointTo = (at: Date) => pointAt({ at, step: 1, span: get(cursor)?.span });
+	const pointTo = (at: Date) => pointAt({ at, step: 1, ...lengthOf(get(cursor)) });
 	/** The instant pointed at, or now. */
 	const pointedAt = () => get(pointed)?.at ?? new Date();
 
@@ -248,6 +254,7 @@
 		if (badDur) return;
 		setMoment(false);
 		const c = get(cursor);
+		// Typed, a length ends at the time, as an unsigned `dur=` does, whichever way a drag left it.
 		pointAt({ ...(c ? where(c) : { rel: 0 }), span: minutes });
 		typedDur = '';
 	}
@@ -317,9 +324,11 @@
 		jog.moved = true;
 		const by = Math.sign(dx) * Math.round((Math.abs(dx) / JOG_PX) ** 1.4);
 		const c = jog.was;
-		if (jog.kind === 'time') return pointAt({ at: new Date(+c.at + by * MINUTE), span: c.span, from: moved(c) });
+		if (jog.kind === 'time') return pointAt({ at: new Date(+c.at + by * MINUTE), ...lengthOf(c), from: moved(c) });
 		setMoment(false);
-		pointAt({ ...where(c), span: Math.max(1, (c.span ?? 0) - by) });
+		// One axis through none: left a length back from the time, right one forward from it.
+		const axis = (c.ahead ? -1 : 1) * (c.span ?? 0) - by;
+		pointAt({ ...where(c), span: Math.abs(axis), ahead: axis < 0 });
 	}
 	function jogUp() {
 		if (jog?.moved) jogged = performance.now();
@@ -374,7 +383,7 @@
 				aria-expanded={open === kind}
 				onpointerdown={(e) => jogDown(kind, e)}
 				onclick={() => tapped(kind)}
-				>{#if kind === 'dur' && span}<LengthArrow />{/if}{label}{@render drags()}</button
+				>{#if kind === 'dur' && span}<LengthArrow {ahead} />{/if}{label}{@render drags()}</button
 			></span
 		>
 	{/if}

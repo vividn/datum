@@ -554,7 +554,7 @@
 				<span class="spent {pill.kind}" style:--pill={pill.color} style:animation-delay="-{pill.age}ms"
 					use:withGhost
 					>{#if !isLength(pill)}{pill.text}{:else if saysKey([...$pills, ...$spent], $fields)}dur={pill.text}{:else}<LengthArrow
-						/>{pill.text}{/if}</span
+						ahead={pill.text.startsWith('+')} />{pill.text}{/if}</span
 				>
 			{/each}
 		</span>

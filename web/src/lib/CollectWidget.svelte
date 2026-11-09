@@ -246,7 +246,7 @@
 		nowPending = [],
 		/** The selected instant the strip is centered on, still (da-0qdsp); null slides with now. */
 		nowAt = null,
-		/** The selected time's length before `nowAt`, in ms: 0 for none. */
+		/** The selected range's far edge from `nowAt`, in ms: 0 for none, negative for a length ending at it, positive for one ahead. */
 		nowSpan = 0,
 		/** The instant the strip frames, at its center (da-xqae2): for the pane to draw that day's layer. */
 		onframe,
@@ -748,7 +748,7 @@
 						return Number.isFinite(end) ? [[end - isoMs(entry.dur), end]] : [];
 					})
 				: []
-		) ?? (nowAt === null ? null : framed([[nowAt - nowSpan, nowAt]]))
+		) ?? (nowAt === null ? null : framed([nowSpan < 0 ? [nowAt + nowSpan, nowAt] : [nowAt, nowAt + nowSpan]]))
 	);
 	$effect(() => onframe?.(frame?.at ?? null));
 	/** The entry's own clock, `13:23`, at the offset it was logged at. */
