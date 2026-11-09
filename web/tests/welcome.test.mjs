@@ -14,11 +14,8 @@
 // been here keeps the tabs it had. What the WORDS claim about the page is
 // done to the page here, by the controls they name.
 //
-// And it closes by a button of its own (da-zhz0u). vividn, 2026-10-09:
-// «maybe start unlocked. Let's put a button at the bottom of the welcome
-// widget that closes the widget too … I am imagining that the welcome
-// widget will have some scrolling and reading rather than all fitting on
-// one page».
+// Its own «Close welcome» button went (da-6tk9t, vividn, 2026-11-09: «let's
+// remove the "close welcome" button on the welcome tab»): it closes as any tab.
 //
 // And it is short (da-uzyih.19). vividn, 2026-10-22: «trim down the welcome
 // page considerably after the tutorial is in … it should mostly just welcome
@@ -32,7 +29,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, activeTab, addTab, chooser, enterLayoutMode, exactly, leaveLayoutMode, manage, manageRoot, pane, rootMenuButton, titledPane, titles } from './support/layout.mjs';
+import { DESKTOP, chooser, exactly, manage, manageRoot, pane, rootMenuButton, titledPane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -59,9 +56,6 @@ const front = (page) =>
 
 /** The welcome widget's own text. */
 const words = (page) => page.locator('.host.welcome').innerText();
-
-/** The widget's last button (da-zhz0u). */
-const closeWelcome = (page) => page.getByRole('button', { name: 'Close welcome', exact: true });
 
 describe('a first visit', () => {
 	for (const [what, device, collect] of [
@@ -99,7 +93,7 @@ describe('a first visit', () => {
 	// The docs are a button since da-0d8l6, opening the docs place: `docs.test.mjs`.
 	const LINKS = ['https://datum.day/agents.md', 'https://github.com/vividn/datum'];
 
-	test('what it has: the name, local first, the Tutorial button, the docs, the guide for agents and the repo, then «Close welcome»', async () => {
+	test('what it has: the name, local first, the Tutorial button, the docs, the guide for agents and the repo, and no button of its own to close it', async () => {
 		await withApp(async ({ page }) => {
 			const host = page.locator('.host.welcome');
 			assert.equal(await host.getByRole('heading', { level: 1 }).innerText(), 'datum');
@@ -109,8 +103,9 @@ describe('a first visit', () => {
 				all.map((e) => (e.tagName === 'A' ? e.getAttribute('href') : e.textContent.trim()))
 			);
 			assert.deepEqual(controls, ['Tutorial', 'Read the docs', ...LINKS]);
-			// «a button at the bottom of the welcome widget»: the last thing in it.
-			assert.equal((await host.getByRole('button').last().innerText()).trim(), 'Close welcome');
+			// No worded button outside them: no «Close welcome» (da-6tk9t). The frame's own are icons.
+			const worded = (await host.getByRole('button').allInnerTexts()).map((t) => t.trim()).filter(Boolean);
+			assert.deepEqual(worded, ['Tutorial', 'Read the docs']);
 			for (const link of await host.getByRole('link').all()) assert.equal(await link.getAttribute('target'), '_blank');
 		}, FRESH_DESKTOP);
 	});
@@ -155,12 +150,12 @@ describe('a first visit', () => {
 		}, FRESH_PHONE);
 	});
 
-	// «fits a phone screen without scrolling» again (da-uzyih.19), as it was until 2026-10-14: its close button too.
+	// «fits a phone screen without scrolling» again (da-uzyih.19), as it was until 2026-10-14.
 	test('on a phone it fits the screen without scrolling', async () => {
 		await withApp(async ({ page }) => {
 			const box = await page.locator('.host.welcome').evaluate((host) => {
 				let el = host.querySelector('div.welcome');
-				const bottom = Math.max(...[...host.querySelectorAll('div.welcome, button.command')].map((e) => e.getBoundingClientRect().bottom));
+				const bottom = Math.max(...[...host.querySelectorAll('div.welcome')].map((e) => e.getBoundingClientRect().bottom));
 				while (el && getComputedStyle(el).overflowY === 'visible') el = el.parentElement;
 				return { bottom, within: el.getBoundingClientRect().bottom, tall: el.scrollHeight - el.clientHeight, wide: el.scrollWidth - el.clientWidth };
 			});
@@ -184,63 +179,6 @@ describe('a first visit', () => {
 			});
 			assert.equal(border, accent);
 		}, FRESH_PHONE);
-	});
-
-	for (const [what, device] of [
-		['a desktop', FRESH_DESKTOP],
-		['a phone', FRESH_PHONE]
-	])
-		test(`${what}: «Close welcome» closes the tab in one tap, and it stays closed; the + brings it back with its button`, async () => {
-			await withApp(async (app) => {
-				const { page } = app;
-				await closeWelcome(page).click();
-				await until(() => rootNames(page), (names) => names.join() === 'premade,setup,collect,dayview');
-				assert.deepEqual(await front(page), ['premade', 'premade']);
-
-				await app.reload();
-				assert.deepEqual(await rootNames(page), ['premade', 'setup', 'collect', 'dayview']);
-
-				await page.locator('.root-bar button.add').first().click();
-				await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
-				await until(() => rootNames(page), (names) => names.join() === 'premade,setup,collect,dayview,welcome');
-				await closeWelcome(page).waitFor();
-				assert.deepEqual(app.errors, []);
-			}, device);
-		});
-
-	test('the button is the tab\'s own close: there in either mode, and gone on the last tab of the page', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await closeWelcome(page).waitFor();
-			await enterLayoutMode(page);
-			await closeWelcome(page).waitFor();
-			await leaveLayoutMode(page);
-
-			// The root's last tab does not close (tree.ts), so nothing offers to.
-			for (const at of [4, 3, 2, 1]) await page.evaluate((at) => window.datum.shell.close(at), at);
-			await until(() => rootNames(page), (names) => names.join() === 'welcome');
-			assert.equal(await closeWelcome(page).count(), 0);
-			assert.deepEqual(app.errors, []);
-		}, FRESH_DESKTOP);
-	});
-
-	test('in a pane of another page it closes that tab alone, and normal mode takes it away', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await addTab(page, 'tail', 'welcome');
-			await until(() => activeTab(page, 'tail'), (name) => name === 'welcome');
-			await leaveLayoutMode(page);
-			assert.equal(await closeWelcome(page).count(), 0);
-			await enterLayoutMode(page);
-
-			await closeWelcome(page).click();
-			// One tab again, so no strip: the pane is titled by what is left.
-			await until(() => pane(page, 'tail').getAttribute('data-title'), (title) => title === 'tail');
-			assert.equal(await pane(page, 'tail').locator('[role="tab"]').count(), 0);
-			assert.equal(await page.locator('.host.welcome').count(), 0);
-			assert.deepEqual(await rootNames(page), ['main']);
-			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
 	});
 
 	test('welcome closes from layout mode: its tab held, Close tab; premade, setup and collect stay, and the + brings it back', async () => {

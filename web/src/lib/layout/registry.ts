@@ -893,8 +893,7 @@ A command's page leads with what it does; its usage and options are folded under
 
 - **Tutorial** opens the tutorial, in a database of its own: fields, their kinds, the bar and tabs, taught by small games.
 - **Read the docs** opens datum's docs here, in the page.
-- The links point an AI agent at datum.day, and open datum's source.
-- **Close welcome**, where the pane can close, closes it.`,
+- The links point an AI agent at datum.day, and open datum's source.`,
 		tour: [
 			{ at: WHOLE, say: 'What datum is, and where to start.' },
 			{ at: 'button.command', say: 'Tutorial teaches fields, their kinds and the bar by small games, in a database of its own.' },

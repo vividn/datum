@@ -198,14 +198,14 @@
 </script>
 
 <script lang="ts">
-	import { getContext, setContext, tick, untrack, type Snippet } from 'svelte';
+	import { setContext, tick, untrack, type Snippet } from 'svelte';
 	import { on } from 'svelte/events';
 	import { act } from '#lib/act.ts';
 	import { currentDb } from '#lib/database.ts';
 	import { ask } from '#lib/confirm.ts';
 	import { holds } from '#lib/hold.ts';
 	import { syncNow, syncStates } from '#lib/sync.ts';
-	import { derived, writable, type Readable } from 'svelte/store';
+	import { writable } from 'svelte/store';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
 	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding, wrapTabs } from './shell.js';
@@ -238,11 +238,7 @@
 		 * still find a pane's insides.
 		 */
 		kind = undefined,
-		/**
-		 * The one pane of a root tab (da-7nh4l): a layout of one widget is
-		 * drawn in a pane of its own, and the close its widget offers in its
-		 * body (the welcome's) is the root tab's, as when it filled the root.
-		 */
+		/** The one pane of a root tab (da-7nh4l): a layout of one widget is drawn in a pane of its own. */
 		lone = false,
 		/** What the pane holds, handed the tab a swipe is bringing on (`peek`) and the strip's transforms. */
 		children
@@ -302,26 +298,7 @@
 	 */
 	const titleHost = writable<HTMLElement | null>(null);
 	const hosted = writable(false);
-	/**
-	 * The `×`'s act, for a widget that offers it in its own body (the
-	 * welcome widget's «Close welcome», da-zhz0u) — or null wherever the
-	 * `×` is not offered: outside layout mode below the root (a root tab's
-	 * close is a way out of the page, not a change to it), and on the
-	 * root's last tab.
-	 */
-	const close = writable<(() => void) | null>(null);
-	const outer = getContext<{ close: Readable<(() => void) | null> } | undefined>('layout-frame');
-	const lonely = writable(false);
-	$effect.pre(() => {
-		const is = lone;
-		untrack(() => lonely.set(is));
-	});
-	setContext('layout-frame', {
-		alarm,
-		titleHost,
-		hosted,
-		close: outer ? derived([lonely, outer.close, close], ([is, tab, own]) => (is ? tab : own)) : close
-	});
+	setContext('layout-frame', { alarm, titleHost, hosted });
 	let h2: HTMLElement | null = $state(null);
 	$effect.pre(() => {
 		const host = h2;
@@ -329,10 +306,6 @@
 	});
 
 	const active = $derived(pane.tabs[pane.active]);
-	$effect.pre(() => {
-		const act = (locked && !root) || !canClose ? null : () => apply((l) => closeTab(l, pane.id, pane.active));
-		untrack(() => close.set(act));
-	});
 	/**
 	 * Scaffolding, not a thing: a split someone made by splitting. A tab
 	 * carrying a LAYOUT is not one however its content is shaped (da-9puz)

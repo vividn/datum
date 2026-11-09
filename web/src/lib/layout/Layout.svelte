@@ -94,7 +94,7 @@
 		rootId,
 		/** Normal mode: the page is not in layout mode, so nothing here moves the tree. */
 		locked = false,
-		/** The one pane of a root tab: its widget's close is the root tab's (PaneFrame.svelte). */
+		/** The one pane of a root tab (da-7nh4l): a layout of one widget is drawn in a pane of its own (PaneFrame.svelte). */
 		lone = false
 	}: {
 		pane: PaneNode;
