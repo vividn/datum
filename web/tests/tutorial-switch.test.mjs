@@ -14,7 +14,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
-import { cuedRoom, isStatus, startSwitch, switchRoom } from './support/tutorial.mjs';
+import { cuedRoom, isStatus, startSwitch, switchRoom, lessonTab } from './support/tutorial.mjs';
 import { until } from './support/until.mjs';
 import { finger } from './support/press.mjs';
 import { DOORS, ROOMS, WALK_MS, WALLS, dotAt } from '../src/lib/house.ts';
@@ -40,7 +40,7 @@ async function seeded(app) {
 		window.datum.tutorial.house.round.seed = seed;
 		return window.datum.tutorial.house.scene(seed);
 	}, SEED);
-	await page.locator('.root-bar [role="tab"]', { hasText: 'change' }).click();
+	await lessonTab(page, 'change').click();
 	await page.locator(`${PANE} .game[aria-busy="false"]`).waitFor();
 	return walk;
 }

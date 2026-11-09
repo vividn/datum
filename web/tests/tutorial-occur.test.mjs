@@ -13,7 +13,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
-import { isStatus, settled } from './support/tutorial.mjs';
+import { isStatus, settled, lessonTab } from './support/tutorial.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -38,7 +38,7 @@ test('a round of the moment game: each thing appears on the café table and goes
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			const { items, duration, STAND_MS, GOING_MS, kinds } = await page.evaluate(() => {
 				const { cafe } = window.datum.tutorial;
 				cafe.round.seed = 7;
@@ -124,7 +124,7 @@ test("on a phone the moment lesson's collect widget holds the café fields alone
 		async (app) => {
 			const { page } = app;
 			assert.equal((await app.run(['moment', 'other'])).code, 0);
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			for (const field of FIELDS) await page.locator(fieldButton(field)).waitFor({ state: 'attached' });
 			const buttons = await page.locator('[data-pane="moment-fields"] .fields button[data-field]').evaluateAll((bs) => bs.map((b) => b.dataset.field));
 			assert.deepEqual(buttons.sort(), FIELDS);
@@ -143,7 +143,7 @@ test('a mis-tap undone in the bar is gone from the record, and «End now» score
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			const { items } = await page.evaluate(() => {
 				window.datum.tutorial.cafe.round.seed = 7;
 				return window.datum.tutorial.cafe.scene(7);
@@ -200,7 +200,7 @@ test('each thing on the table draws in the nowview as the scene’s emoji', asyn
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			const kinds = await page.evaluate(() => window.datum.tutorial.cafe.KINDS);
 			assert.deepEqual(kinds.map((k) => k.field).sort(), FIELDS, 'the kit’s café fields are the scene’s');
 			const drawn = () => page.locator('[data-pane="moment-now"] text.point-fg').allTextContents();
@@ -240,7 +240,7 @@ test('the plate is centered on the mat, the fork left of it and the knife right;
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			const items = await page.evaluate(() => {
 				const { cafe } = window.datum.tutorial;
 				cafe.round.seed = 7;

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ready, startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
-import { settled, statuses, LESSON_NAMES, tabs, front, press, viaSwitcher } from './support/tutorial.mjs';
+import { settled, statuses, LESSON_NAMES, tabs, front, press, viaSwitcher, lessonTab } from './support/tutorial.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -55,7 +55,7 @@ test('a fresh tutorial’s output section holds one setup block, off the undo st
 			const { page } = app;
 			await press(page, 'Tutorial', 'tutorial');
 			await until(() => history(page), (h) => h.length === 1);
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			const groups = page.locator('.prompt-bar .section.output .group');
 			await groups.first().waitFor();
 			assert.equal(await groups.count(), 1, 'one block');
@@ -134,7 +134,7 @@ test('a game’s start and end each show one line naming its fields, track then 
 		async (app) => {
 			const { page } = app;
 			const { fields } = await page.evaluate(() => window.datum.tutorial.lessons.find((l) => l.name === 'on-off'));
-			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
+			await lessonTab(page, 'on-off').click();
 			const before = (await history(page)).length;
 			await page.getByRole('button', { name: 'Start', exact: true }).click();
 			await settled(page, '[data-pane="on-off-lesson"]');

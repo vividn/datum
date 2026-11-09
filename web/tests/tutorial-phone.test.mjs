@@ -8,7 +8,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { HELD_AT, ready, startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
-import { settled, startSwitch } from './support/tutorial.mjs';
+import { settled, startSwitch, lessonTab } from './support/tutorial.mjs';
 
 before(startApp);
 after(stopApp);
@@ -19,7 +19,7 @@ test('at phone size each lesson’s start button is in sight without scrolling, 
 		async (app) => {
 			const { page } = app;
 			for (const tab of ['moment', 'on-off', 'change']) {
-				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+				await lessonTab(page, tab).click();
 				const name = tab === 'change' ? 'its cue' : 'Start';
 				const button =
 					tab === 'change' ? page.locator('[data-pane="change-lesson"] .game .cue') : page.getByRole('button', { name, exact: true });
@@ -62,7 +62,7 @@ test('on a phone each game draws a picture a finger can read, the control beside
 			const { page } = app;
 			for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['change', 'svg.house']]) {
 				const pane = `[data-pane="${tab}-lesson"]`;
-				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+				await lessonTab(page, tab).click();
 				await page.locator(`${pane} ${picture}`).first().waitFor();
 				const pictures = await Promise.all((await page.locator(`${pane} ${picture}`).all()).map(drawn));
 				const control = page.locator(`${pane} .game ${tab === 'change' ? '.cue' : '.go'}`);
@@ -112,7 +112,7 @@ for (const [screen, options, centered] of [
 				const { page } = app;
 				for (const [tab, picture] of [['moment', 'svg.cafe'], ['on-off', '.thing svg'], ['change', 'svg.house']]) {
 					const pane = `[data-pane="${tab}-lesson"]`;
-					await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+					await lessonTab(page, tab).click();
 					await page.locator(`${pane} ${picture}`).first().waitFor();
 					const stage = await page.locator(`${pane} .stage`).boundingBox();
 					const middle = stage.x + stage.width / 2;
@@ -212,7 +212,7 @@ test('each game reads title and shape, nowview, game, fields widget, discussion,
 			const words = { moment: ['moment', 'entry'], 'on-off': ['on/off', 'state'], change: ['change', 'state'] };
 
 			for (const tab of ['moment', 'change', 'on-off']) {
-				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+				await lessonTab(page, tab).click();
 				await page.locator(`[data-pane="${tab}-lesson"] .game`).waitFor();
 				inOrder(tab, 'before', await parts(tab));
 				assert.deepEqual(await page.locator(`[data-pane="${tab}-about"] p b`).allInnerTexts(), words[tab].slice(0, 1));
@@ -262,7 +262,7 @@ test('on each lesson’s tab no two of its fields’ lanes in the nowview overla
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			await page.locator('[data-pane$="-fields"] .fields button[data-field]').first().waitFor();
 			for (const argv of SEED) assert.equal((await app.run(argv)).code, 0, argv.join(' '));
 			// A quiet run tells no pane: each draws them afresh.
@@ -271,7 +271,7 @@ test('on each lesson’s tab no two of its fields’ lanes in the nowview overla
 			const lessons = await page.evaluate(() => window.datum.tutorial.lessons.filter((l) => l.fields.length));
 			assert.deepEqual([...new Set(SEED.map((argv) => argv[1]))].sort(), lessons.flatMap((l) => l.fields).sort(), 'every lesson field is seeded');
 			for (const { name, fields } of lessons) {
-				const tab = page.locator('.root-bar [role="tab"]', { hasText: name });
+				const tab = lessonTab(page, name);
 				// The open tab's name opens its menu: click only another.
 				if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
 				const now = `[data-pane="${name}-now"]`;

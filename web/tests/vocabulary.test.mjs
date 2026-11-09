@@ -81,7 +81,11 @@ test('a fresh datum.day, its commands and its tutorial say no old word', async (
 			await tabs(page).filter({ hasText: 'welcome' }).click();
 			await Promise.all([page.waitForURL((url) => url.searchParams.get('db') === 'tutorial'), page.getByRole('button', { name: 'Tutorial', exact: true }).click()]);
 			await ready(page);
-			assert.deepEqual(await tabs(page).allInnerTexts(), ['intro', 'moment', 'on-off', 'change', 'input-bar', 'tabs'], 'the lessons, the third named by its kind');
+			assert.deepEqual(
+				await tabs(page).allInnerTexts(),
+				['intro', 'Moments in a Café', 'Turn the TV off', 'Change of scenery', 'input-bar', 'tabs'],
+				'the lessons, each game named by its scene (da-83y6w)'
+			);
 			found.push(...(await everyTab(page)));
 
 			assert.deepEqual(found, []);

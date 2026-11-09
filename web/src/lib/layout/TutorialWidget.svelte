@@ -23,15 +23,17 @@
 	A lesson with no fields is a page of text, with nothing to start over.
 
 	A game's tab is five panes, taller than the screen (da-zb1dr): its
-	title and what its shape of data is (`part: 'about'`), short enough to
-	leave the game and collect in sight («it doesn't need to describe the
-	game like this. Instead it should be about what occur data is»; his
-	whole words are docs/basics.md); the nowview; the game, the game widget
+	title and what its shape of data is (`part: 'about'`), its pane its
+	text's height (da-83y6w), short enough to leave the game and collect in
+	sight («it doesn't need to describe the game like this. Instead it should
+	be about what occur data is»; his
+	whole words are docs/basics.md); the nowview; the game
 	(GameWidget.svelte, da-2chdp), which this kind still draws for a lesson
 	with fields and no part, as a tab saved before that kind did; and the
 	collect widget filtered to its fields (da-2s9im), which this kind still
 	draws for `part: 'fields'`, as a tab saved before did; and under them what
-	just happened, at more length, and the way on (`part: 'discuss'`). The game
+	just happened, at more length, and the way on (`part: 'discuss'`), its
+	text's height too. The game
 	scores what is logged, whatever logged it (`roundOf`).
 -->
 <script lang="ts">
@@ -40,7 +42,7 @@
 	import Pane from '#lib/Pane.svelte';
 	import { VERBS } from '#lib/track.ts';
 	import { lessonNamed } from '#lib/tutorial.ts';
-	import { LESSONS, type Lesson } from './defaults.js';
+	import { LESSONS } from './defaults.js';
 	import { open, resetTutorial } from './shell.js';
 	import GameWidget from './GameWidget.svelte';
 	import CollectPane from './CollectPane.svelte';
@@ -53,10 +55,8 @@
 
 	/** A game's pane: its title and what its shape of data is, or its fields; neither, the game itself. */
 	const part = $derived(lesson.fields.length ? settings.part : undefined);
-	/** A lesson as vividn names it: the word its title leads with («on/off»), or the whole of a title with none. */
-	const label = (l: Lesson): string => l.title.split(':')[0];
-	/** The game's field kind, named as the setup widget names it, by the word its title leads with. */
-	const shape = $derived(VERBS.find((v) => v.what === label(lesson)));
+	/** The game's field kind, named as the setup widget names it. */
+	const shape = $derived(VERBS.find((v) => v.what === lesson.shape));
 
 	let resetting = $state(false);
 	/** Why the last reset failed, said under its button: a refusal before any command runs shows nowhere else (da-uzyih.4913). */
@@ -191,7 +191,7 @@
 		<!-- A game's way on is at the very bottom of its tab, under its discussion (da-zb1dr). -->
 		{#if next && part !== 'fields' && part !== 'about'}
 			<button type="button" class="command next" use:act={'open'} onclick={() => void open(next.name)}
-				>Next: {label(next)}</button
+				>Next: {next.title}</button
 			>
 		{/if}
 		{#if intro}

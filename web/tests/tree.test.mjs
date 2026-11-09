@@ -976,8 +976,20 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 				? [{ ...lesson, part: 'about' }, { kind: 'game', lesson: tree.name }, { kind: 'widgetbar', fields, showIgnored: true }, { ...lesson, part: 'discuss' }]
 				: [lesson];
 			assert.deepEqual(lessonsIn(tree.root), lessons);
-			// A game's tab is taller than the screen (da-zb1dr); a page of text fits one.
-			assert.equal(tree.root.tall > 1, game, `${tree.name}'s tall is ${tree.root.tall}`);
+			// A game's tab is taller than the screen (da-zb1dr), a page of text fits one: a game's play fills the screen,
+			// the intro in it and the discussion under it their text's height (da-83y6w).
+			assert.equal(tree.root.tall, game ? 1 : undefined, `${tree.name}'s tall is ${tree.root.tall}`);
+			if (game) {
+				const [play, discuss] = tree.root.tabs[0].content.children;
+				assert.deepEqual(tree.root.tabs[0].content.ratios, [1, 0]);
+				assert.deepEqual(play.tabs[0].content.children.map((p) => [p.id, p.fit ?? false]), [
+					[`${tree.name}-about`, true],
+					[`${tree.name}-now`, false],
+					[`${tree.name}-lesson`, false],
+					[`${tree.name}-fields`, false]
+				]);
+				assert.deepEqual([discuss.id, discuss.fit], [`${tree.name}-discuss`, true]);
+			}
 		}
 	});
 });

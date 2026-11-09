@@ -1,20 +1,23 @@
 // Each game lesson's tab is taller than the screen and read top to bottom (da-zb1dr, vividn, 2026-11-05: «we keep
 // a small intro text and then the nowview, game … and collect widget …, and then we can have a more in depth
 // discussion below the collect widget of what just happened. … The next button would then be on the very
-// bottom»). The one hard constraint: the game asks for a field and it is tapped in collect, so the game and
-// collect are both in sight while a round runs, once the intro is scrolled past, on an iPhone SE too.
+// bottom»). The game asks for a field and it is tapped in collect, so the game and collect are both in sight while a
+// round runs. The intro and the discussion are their text's height, and the intro, the nowview, the game and
+// collect fill the screen, the shell's and not the window's, the bar's output section open or shut (da-83y6w,
+// vividn, 2026-11-09: «the intro block is much too big … make sure the complete game and collect widget are on
+// screen without having to scroll … the followup text widget can also clamp to its text size»).
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { settled, startSwitch } from './support/tutorial.mjs';
+import { settled, startSwitch, lessonTab, tabLabel } from './support/tutorial.mjs';
 
 before(startApp);
 after(stopApp);
 
 const GAMES = ['moment', 'on-off', 'change'];
-const NEXT = { moment: 'on/off', 'on-off': 'change', change: 'The input bar' };
+const NEXT = { moment: 'on-off', 'on-off': 'change', change: 'The input bar' };
 
 /** The rects that matter, against the page's scroller: the part of the screen the tab is drawn in. */
 const measure = (page, tab) =>
@@ -28,16 +31,24 @@ const measure = (page, tab) =>
 			const body = pane(part).querySelector('.body');
 			return body.scrollHeight - body.clientHeight;
 		};
+		/** How much taller a pane is than its text, the words and the button under them, and a line of it. */
+		const spare = (part) => {
+			const text = pane(part).querySelector('.tutorial');
+			return { by: box(pane(part)).height - box(text).height, line: parseFloat(getComputedStyle(text).lineHeight) };
+		};
 		return {
 			cut: { about: cut('about'), discuss: cut('discuss') },
+			spare: { about: spare('about'), discuss: spare('discuss') },
 			aboutNext: pane('about').querySelectorAll('button.next').length,
 			screen: box(scroller),
+			bar: box(document.querySelector('.prompt-bar')),
 			scrollTop: scroller.scrollTop,
 			scrollable: scroller.scrollHeight - scroller.clientHeight,
 			about: box(pane('about')),
 			now: box(pane('now')),
 			game: box(pane('lesson').querySelector('.game')),
 			collect: box(pane('fields')),
+			fields: [...pane('fields').querySelectorAll('.fields button[data-field]')].map(box),
 			discuss: box(pane('discuss')),
 			next: next && box(next)
 		};
@@ -94,10 +105,10 @@ const watchPageScrolls = async (page) => {
 const inside = (r, s) => r.top >= s.top - 0.5 && r.bottom <= s.bottom + 0.5 && r.left >= s.left - 0.5 && r.right <= s.right + 0.5;
 
 for (const [screen, device] of [
-	['iPhone SE (320×568)', { device: devices['iPhone SE'] }],
-	['390×844 phone', { device: devices['iPhone 12'], viewport: { width: 390, height: 844 } }]
+	['1280×900 desktop', { viewport: { width: 1280, height: 900 } }],
+	['iPhone SE (375×667)', { device: devices['iPhone SE (3rd gen)'] }]
 ]) {
-	test(`on a ${screen} each game's game and collect are in sight together past its intro, and the discussion and Next under them`, async () => {
+	test(`on a ${screen}, output open and shut, each game's intro and discussion are their text's height, and its game and collect in sight at once`, async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -109,56 +120,74 @@ for (const [screen, device] of [
 					while (house.scene(seed)[0].state === 'garden') seed++;
 					house.round.seed = seed;
 				});
-				for (const tab of GAMES) {
-					await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
-					await page.locator(`[data-pane="${tab}-lesson"] .game`).waitFor();
-					await scrollTo(page, 0);
-					await page.locator(`[data-pane="${tab}-fields"] .fields button[data-field]`).first().waitFor();
+				for (const output of ['open', 'shut']) {
+					// Every screen starts with the output section open; PageDown on the box shuts it.
+					if (output === 'shut') await page.locator('.prompt-bar input').press('PageDown');
+					for (const tab of GAMES) {
+						const at = `${tab}, output ${output}`;
+						await lessonTab(page, tab).click();
+						await page.locator(`[data-pane="${tab}-lesson"] .game`).waitFor();
+						await scrollTo(page, 0);
+						await page.locator(`[data-pane="${tab}-fields"] .fields button[data-field]`).first().waitFor();
 
-					const rest = await measure(page, tab);
+						const rest = await measure(page, tab);
+						assert.ok(rest.screen.bottom <= rest.bar.top + 0.5, `${at}: the screen (bottom ${rest.screen.bottom}) ends over the bar (${rest.bar.top})`);
+						assert.ok(rest.scrollable > 0, `${at}: the tab is taller than the screen`);
+						const order = ['about', 'now', 'game', 'collect', 'discuss'];
+						for (const [a, b] of order.slice(1).map((b, i) => [order[i], b]))
+							assert.ok(rest[a].bottom <= rest[b].top + 0.5, `${at}: ${a} (bottom ${rest[a].bottom}) above ${b} (top ${rest[b].top})`);
+						assert.equal(rest.aboutNext, 0, `${at}: no Next in the intro`);
+						assert.deepEqual(rest.cut, { about: 0, discuss: 0 }, `${at}: the intro and the discussion are drawn whole, nothing cut off`);
+						for (const part of ['about', 'discuss']) {
+							const { by, line } = rest.spare[part];
+							assert.ok(by <= line, `${at}: the ${part} pane is ${by}px taller than its text, more than a line (${line}px)`);
+						}
+						// As it opens: the nowview, the game and every one of collect's fields at once, with no scroll.
+						for (const part of ['now', 'game'])
+							assert.ok(inside(rest[part], rest.screen), `${at}: the ${part} is in sight as the tab opens`);
+						const fields = await page.evaluate((t) => window.datum.tutorial.lessons.find((l) => l.name === t).fields.length, tab);
+						assert.equal(rest.fields.length, fields, `${at}: collect draws each of the game's fields`);
+						for (const [i, field] of rest.fields.entries())
+							assert.ok(inside(field, rest.screen), `${at}: collect's field ${i} (bottom ${field.bottom}) is in sight, the screen's bottom ${rest.screen.bottom}`);
 
-					assert.ok(rest.scrollable > 0, `${tab}: the tab is taller than the screen`);
-					const order = ['about', 'now', 'game', 'collect', 'discuss'];
-					for (const [a, b] of order.slice(1).map((b, i) => [order[i], b]))
-						assert.ok(rest[a].bottom <= rest[b].top + 0.5, `${tab}: ${a} (bottom ${rest[a].bottom}) above ${b} (top ${rest[b].top})`);
+						if (output === 'open') {
+							// Past the intro: the game and collect wholly in sight, before and while a round runs.
+							await scrollTo(page, rest.scrollTop + rest.about.bottom - rest.screen.top);
+							const past = await measure(page, tab);
+							// And the nowview over them, what is watched while tapping (vividn, 2026-10-22).
+							assert.ok(inside(past.now, past.screen), `${at}: the nowview is in sight past the intro`);
+							assert.ok(inside(past.game, past.screen), `${at}: the game is in sight past the intro`);
+							assert.ok(inside(past.collect, past.screen), `${at}: collect is in sight past the intro`);
+							const scrolls = await watchPageScrolls(page);
+							if (tab === 'change') await startSwitch(page);
+							else await page.getByRole('button', { name: 'Start', exact: true }).click();
+							await settled(page, `[data-pane="${tab}-lesson"]`);
+							// The page moved nothing as the round began, so where the reader left it is where a reader sees it. A
+							// click Playwright retries (a gliding spot over its target, under load) scrolls the target to the
+							// screen's end, center or start first, and the page with it, which a reader's tap does not (da-cnvfw).
+							assert.deepEqual(await scrolls(), [], `${at}: the page scrolls nothing itself as a round begins`);
+							await scrollTo(page, past.scrollTop);
+							const during = await measure(page, tab);
+							assert.ok(inside(during.now, during.screen), `${at}: the nowview is in sight while a round runs`);
+							assert.ok(inside(during.game, during.screen), `${at}: the game is in sight while a round runs`);
+							assert.ok(inside(during.collect, during.screen), `${at}: collect is in sight while a round runs`);
+							await app.clock.set(app.clock.at() + 1500);
+							const ending = page.getByRole('button', { name: 'End now', exact: true });
+							await page.waitForFunction((pane) => parseFloat(document.querySelector(`${pane} .game .go .spent`)?.style.inlineSize) > 0, `[data-pane="${tab}-lesson"]`);
+							await ending.click();
+							await page.getByRole('button', { name: 'Reset', exact: true }).click();
+							await settled(page, `[data-pane="${tab}-lesson"]`);
+						}
 
-					// Past the intro: the game and collect wholly in sight, before and while a round runs.
-					await scrollTo(page, rest.scrollTop + rest.about.bottom - rest.screen.top);
-					const past = await measure(page, tab);
-					// And the nowview over them, what is watched while tapping (vividn, 2026-10-22).
-					assert.ok(inside(past.now, past.screen), `${tab}: the nowview is in sight past the intro`);
-					assert.ok(inside(past.game, past.screen), `${tab}: the game is in sight past the intro`);
-					assert.ok(inside(past.collect, past.screen), `${tab}: collect is in sight past the intro`);
-					const scrolls = await watchPageScrolls(page);
-					if (tab === 'change') await startSwitch(page);
-					else await page.getByRole('button', { name: 'Start', exact: true }).click();
-					await settled(page, `[data-pane="${tab}-lesson"]`);
-					// The page moved nothing as the round began, so where the reader left it is where a reader sees it. A
-					// click Playwright retries (a gliding spot over its target, under load) scrolls the target to the
-					// screen's end, center or start first, and the page with it, which a reader's tap does not (da-cnvfw).
-					assert.deepEqual(await scrolls(), [], `${tab}: the page scrolls nothing itself as a round begins`);
-					await scrollTo(page, past.scrollTop);
-					const during = await measure(page, tab);
-					assert.ok(inside(during.now, during.screen), `${tab}: the nowview is in sight while a round runs`);
-					assert.ok(inside(during.game, during.screen), `${tab}: the game is in sight while a round runs`);
-					assert.ok(inside(during.collect, during.screen), `${tab}: collect is in sight while a round runs`);
-					await app.clock.set(app.clock.at() + 1500);
-					const ending = page.getByRole('button', { name: 'End now', exact: true });
-					await page.waitForFunction((pane) => parseFloat(document.querySelector(`${pane} .game .go .spent`)?.style.inlineSize) > 0, `[data-pane="${tab}-lesson"]`);
-					await ending.click();
-					await page.getByRole('button', { name: 'Reset', exact: true }).click();
-					await settled(page, `[data-pane="${tab}-lesson"]`);
-
-					// At the very bottom, the discussion, and Next its last thing, in sight.
-					assert.equal(rest.aboutNext, 0, `${tab}: no Next in the intro`);
-					assert.deepEqual(rest.cut, { about: 0, discuss: 0 }, `${tab}: the intro and the discussion are drawn whole, nothing cut off`);
-					await scrollTo(page, past.scrollable);
-					const end = await measure(page, tab);
-					assert.ok(end.next, `${tab}: the discussion ends on Next`);
-					assert.ok(end.next.top >= end.collect.bottom, `${tab}: Next is under collect`);
-					assert.ok(inside(end.next, end.screen), `${tab}: Next is in sight at the bottom`);
-					const button = page.locator(`[data-pane="${tab}-discuss"]`).getByRole('button', { name: `Next: ${NEXT[tab]}`, exact: true });
-					assert.equal(await button.count(), 1, `${tab}: Next names the next lesson`);
+						// At the very bottom, the discussion, and Next its last thing, in sight.
+						await scrollTo(page, rest.scrollable);
+						const end = await measure(page, tab);
+						assert.ok(end.next, `${at}: the discussion ends on Next`);
+						assert.ok(end.next.top >= end.collect.bottom, `${at}: Next is under collect`);
+						assert.ok(inside(end.next, end.screen), `${at}: Next is in sight at the bottom`);
+						const button = page.locator(`[data-pane="${tab}-discuss"]`).getByRole('button', { name: `Next: ${tabLabel(NEXT[tab])}`, exact: true });
+						assert.equal(await button.count(), 1, `${at}: Next names the next lesson`);
+					}
 				}
 				assert.deepEqual(app.errors, []);
 			},

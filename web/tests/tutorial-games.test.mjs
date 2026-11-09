@@ -1,4 +1,4 @@
-// The tutorial's games: Start and Reset, the game widget, and the fields they
+// The tutorial's games: Start and Reset, the game, and the fields they
 // track and ignore.
 // One of 4 files split from tutorial.test.mjs by topic, so each stays well
 // inside test.mjs's 300 s file cap (da-5rpcr); the helpers they share are
@@ -8,7 +8,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
-import { cuedRoom, settled, startSwitch, statuses } from './support/tutorial.mjs';
+import { cuedRoom, settled, startSwitch, statuses, lessonTab } from './support/tutorial.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -41,7 +41,7 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 					assert.equal(await panes.count(), 2, `${tab}: both panes`);
 					for (const name of ['Start over', '↶ Undo', 'Undo']) assert.equal(await panes.getByRole('button', { name, exact: true }).count(), 0, `${tab}, ${when}: no ${name}`);
 				};
-				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+				await lessonTab(page, tab).click();
 				await gone('at rest');
 				if (tab === 'change') await startSwitch(page);
 				else await named('Start').click();
@@ -82,17 +82,17 @@ test('a game over, Start reads «Reset»: the neutral scene again, its fields’
 	);
 });
 
-// da-2chdp, vividn, 2026-11-05: «nowview, game (should be called game widget) and collect widget». A lesson's game
-// is the `game` kind, its pane named «game widget»; a layout saved while the game was the `tutorial` kind's still
-// runs its game.
-test('a lesson’s game is a pane named «game widget» that runs a round; a tab saved with the old tutorial game pane still runs it', async () => {
+// da-2chdp, vividn, 2026-11-05: «nowview, game (should be called game widget) and collect widget», then da-83y6w,
+// 2026-11-09: «"game widget" can just be "game"». A lesson's game is the `game` kind, its pane named «game»; a layout
+// saved while the game was the `tutorial` kind's still runs its game.
+test('a lesson’s game is a pane named «game» that runs a round; a tab saved with the old tutorial game pane still runs it', async () => {
 	await withApp(
 		async (app) => {
 			const { page } = app;
 			const pane = page.locator('[data-pane="moment-lesson"]');
 			/** The moment tab's game pane's kind and title, and a round played in it to its score. */
 			const round = async () => {
-				await page.locator('.root-bar [role="tab"]', { hasText: /^moment$/ }).click();
+				await lessonTab(page, 'moment').click();
 				await pane.locator('.game').waitFor();
 				const kind = await page.locator('.host:has(> [data-pane="moment-lesson"])').getAttribute('data-widget');
 				const title = await pane.getAttribute('data-title');
@@ -107,7 +107,7 @@ test('a lesson’s game is a pane named «game widget» that runs a round; a tab
 				await pane.getByRole('button', { name: 'Start', exact: true }).waitFor();
 				return [kind, title];
 			};
-			assert.deepEqual(await round(), ['game', 'game widget']);
+			assert.deepEqual(await round(), ['game', 'game']);
 
 			// The tab as a layout saved before the game was its own kind: the game pane the `tutorial` kind's.
 			const old = await page.evaluate(() => JSON.parse(JSON.stringify(window.datum.layouts.kitLayout('moment')).replaceAll('"kind":"game"', '"kind":"tutorial"')));
@@ -141,7 +141,7 @@ test('each game’s fields are TRACKED once it begins and IGNORED once it ends, 
 				const pane = `[data-pane="${tab}-lesson"]`;
 				const game = page.locator(`${pane} .game`);
 				const all = (status) => Object.fromEntries(fields.map((f) => [f, status]));
-				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+				await lessonTab(page, tab).click();
 				for (const how of ['time', 'End now']) {
 					if ((await game.getAttribute('data-phase')) === 'done') {
 						await page.getByRole('button', { name: 'Reset', exact: true }).click();
@@ -201,7 +201,7 @@ test('the fields log outside a game too, and no game starts or scores by it', as
 				{ tab: 'on-off', first: async () => ['tv'], then: async () => ['phone'] },
 				{ tab: 'change', first: async () => ['room', await another()], then: async (held) => ['room', await another(held)] }
 			]) {
-				await page.locator('.root-bar [role="tab"]', { hasText: tab }).click();
+				await lessonTab(page, tab).click();
 				const game = page.locator(`[data-pane="${tab}-lesson"] .game`);
 				const result = () => game.locator('.result').innerText();
 				// At their own instants: the clock is held, and two writes at one would collide.

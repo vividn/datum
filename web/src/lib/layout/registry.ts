@@ -60,7 +60,8 @@ import {
 	todayBox
 } from '#lib/panes.ts';
 import { REACH_PX } from '#lib/lanes.ts';
-import { DEBUG_DB, layoutTitle, TUTORIAL_DB } from './defaults.js';
+import { DEBUG_DB, gameTitle, layoutTitle, TUTORIAL_DB } from './defaults.js';
+import { currentDb } from '#lib/database.ts';
 import { DEFAULT_STATS, type StatsRange } from '#lib/stats.ts';
 import { BUCKETS, DEFAULT_CHART, FIELDS_OFFER, RANGES, SHOWS, chartSettings, keysOffer } from '#lib/chart.ts';
 import AliasesWidget from './AliasesWidget.svelte';
@@ -1111,10 +1112,10 @@ The Introduction, then a game for a moment, for on/off, and for a change, then t
 		],
 		legible: ({ part }) => (part === 'fields' ? FIELDS_LEGIBLE : { width: 200, height: 100 })
 	},
-	// A lesson's game (da-2chdp, vividn, 2026-11-05: «game (should be called
-	// game widget)»), in the tutorial's database alone, as its lesson is.
+	// A lesson's game (da-2chdp), in the tutorial's database alone, as its lesson
+	// is; its pane reads «game» (da-83y6w, vividn, 2026-11-09: «"game widget" can just be "game"»).
 	game: {
-		meta: meta('game', 'game widget', { lesson: 'moment' }),
+		meta: meta('game', 'game', { lesson: 'moment' }),
 		component: GameWidget,
 		guide: `A lesson's game, in a box: **Start** begins a round, **End now** ends it early while it runs, filling as its time runs out.
 
@@ -1195,7 +1196,11 @@ export const titleOf = (kind: string, settings: Record<string, unknown> = {}): s
  * failing that what it shows: the widget kind's title, or for a split the
  * names of its panes, `tail | nowview` (`nameOf`, tree.ts, da-6ji5).
  */
-export const labelOf = (tab: Tab): string => nameOf(tab, titleOf, layoutTitle);
+export const labelOf = (tab: Tab): string => nameOf(tab, titleOf, calledHere);
+
+/** What the layout `name` is called in this database: in the tutorial's, a game's tab its title (da-83y6w). */
+export const calledHere = (name: string): string =>
+	(currentDb() === TUTORIAL_DB ? gameTitle(name) : undefined) ?? layoutTitle(name);
 
 /**
  * The settings a fresh widget of `kind` starts with, or undefined when the

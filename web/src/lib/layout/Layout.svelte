@@ -592,6 +592,7 @@
 				     `tall` counts in (TabBody.svelte), so it lands at the height drawn. -->
 				<div
 					class="split {split.direction}"
+					class:tall={pane.id === rootId && tab.tall !== undefined}
 					class:maximized={tab === active && big !== null}
 					onfocusin={tab === active && big !== null ? hold : undefined}
 					bind:this={splitEls[split.id]}
@@ -629,6 +630,7 @@
 						{/if}
 						<div
 							class="cell {named(child)}"
+							class:fit={child.fit}
 							style:--ratio={grow[i]}
 							style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 						>
@@ -755,6 +757,15 @@
 		flex: var(--ratio) 1 0px;
 		min-width: 0;
 		min-height: 0;
+	}
+	/* A pane its content sizes (`Pane.fit`, da-83y6w); in a tall root it is room
+	   on top of the screens, which the others take their ratios of
+	   (`--tall-height`, TabBody.svelte), and the tab grows by it. */
+	.cell.fit {
+		flex: 0 0 auto;
+	}
+	.split.column.tall:has(> .cell.fit) > .cell:not(.fit) {
+		flex: 0 0 calc(var(--ratio) * var(--tall-height, 100%));
 	}
 	.row > .cell {
 		min-width: var(--floor);

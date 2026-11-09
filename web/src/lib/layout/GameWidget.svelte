@@ -1,11 +1,11 @@
 <!--
-	The game widget (da-2chdp, vividn, 2026-11-05: «game (should be called game
-	widget)»): a lesson's game in its box, Start, the round, its score and Reset
-	(GameBox.svelte), taking its pane's height and no more, so it is wholly in
-	sight (da-uzyih.4908): its parts are sized from it (`cqb`). Its title and
-	what its shape of data is, and its fields, are the `tutorial` kind's
-	(TutorialWidget.svelte), which draws this for a lesson with no part, as a
-	tab saved before this kind did.
+	The game (da-2chdp; its pane reads «game», da-83y6w): a lesson's game in
+	its box, Start, the round, its score and Reset (GameBox.svelte), taking
+	its pane's height and no more, so it is wholly in sight (da-uzyih.4908):
+	its parts are sized from it (`cqb`). Its title and what its shape of data
+	is, and its fields, are the `tutorial` kind's (TutorialWidget.svelte),
+	which draws this for a lesson with no part, as a tab saved before this
+	kind did.
 -->
 <script lang="ts">
 	import Pane from '#lib/Pane.svelte';

@@ -58,9 +58,25 @@ export async function statuses(app, fields) {
 // The lessons' layouts, by name, which their tabs say: the change lesson's is `change`, the glossary's word (da-e3rdf).
 export const LESSON_NAMES = ['intro', 'moment', 'on-off', 'change', 'input-bar', 'tabs'];
 
-export const tabs = (page) => page.locator('.root-bar [role="tab"]').allInnerTexts();
+/** What a game's tab says, its title (da-83y6w); another lesson's tab says its layout's name. */
+export const GAME_TITLES = { moment: 'Moments in a Café', 'on-off': 'Turn the TV off', change: 'Change of scenery' };
 
-export const front = (page) => page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText();
+/** The words on a lesson's tab. */
+export const tabLabel = (name) => GAME_TITLES[name] ?? name;
+
+/** The lesson a tab's words name, or the words: the tests speak of a lesson by its layout's name. */
+const lessonOf = (label) => Object.keys(GAME_TITLES).find((name) => GAME_TITLES[name] === label) ?? label;
+
+export const tabs = (page) =>
+	page
+		.locator('.root-bar [role="tab"]')
+		.allInnerTexts()
+		.then((all) => all.map(lessonOf));
+
+export const front = (page) => page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText().then(lessonOf);
+
+/** Lesson `name`'s tab in the root bar, by its words alone (a changed tab's dot after them). */
+export const lessonTab = (page, name) => page.locator('.root-bar [role="tab"]', { hasText: new RegExp(`^${tabLabel(name)}•?$`) });
 
 /** Press `name` and wait for the page it loads, on database `to` (null: datum). */
 export async function press(page, name, to) {

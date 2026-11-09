@@ -122,6 +122,12 @@ export interface Pane {
 	tall?: number;
 	command?: string;
 	output?: 'closed';
+	/**
+	 * Takes its content's height (a row's width), not its ratio of the split: its
+	 * siblings share what is left. In a tall root's column it is room on top of the
+	 * screens, which the siblings take their ratios of (da-83y6w).
+	 */
+	fit?: boolean;
 }
 
 /**

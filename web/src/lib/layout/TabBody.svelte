@@ -127,6 +127,21 @@
 		if (active) frame.hosted.set($hosted);
 	});
 	let body: HTMLElement | undefined = $state();
+	/**
+	 * A tall tab's screen, its scroller's content box, in px: what a fitted root's
+	 * panes take their shares of, their `fit` siblings on top (da-83y6w, Layout.svelte).
+	 */
+	let screen = $state(0);
+	$effect(() => {
+		const scroller = body?.parentElement;
+		if (!active || tall === undefined || !scroller) return;
+		const watch = new ResizeObserver(() => {
+			const pad = getComputedStyle(scroller);
+			screen = scroller.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom);
+		});
+		watch.observe(scroller);
+		return () => watch.disconnect();
+	});
 	// And focus already in it as it goes behind, by a swipe or a script, is let go.
 	$effect(() => {
 		if (!active && kept && body?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
@@ -150,6 +165,7 @@
 	onfocusin={!active && kept ? (e) => refuse(body!, e) : undefined}
 	style:min-width={active && least ? `${least.width}px` : null}
 	style:min-height={active && (least || tall) ? `max(${least?.height ?? 0}px, ${(tall ?? 0) * 100}%)` : null}
+	style:--tall-height={active && tall !== undefined && screen > 0 ? `${tall * screen}px` : null}
 	style:transform={moved}
 	style:margin={(!active && shy > 0) || (beside && moved) ? `${shy}px` : null}
 >{@render children?.()}</div>
@@ -161,6 +177,10 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
+	}
+	/* A tall root column with a `fit` pane is as tall as what is in it (Layout.svelte). */
+	.tab-body:has(> :global(.split.column.tall > .cell.fit)) {
+		flex: none;
 	}
 	.behind {
 		position: absolute;

@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { ready, startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { LESSON_NAMES, tabs, front, press, viaSwitcher } from './support/tutorial.mjs';
+import { LESSON_NAMES, tabs, front, press, viaSwitcher, lessonTab, tabLabel } from './support/tutorial.mjs';
 
 before(startApp);
 after(stopApp);
@@ -36,6 +36,12 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 			assert.equal(await db(page), 'tutorial');
 			assert.notEqual(await hue(page), datumHue, 'the app is recolored');
 			assert.deepEqual(await tabs(page), LESSON_NAMES, 'its lessons, in order');
+			// A game's tab says its title (da-83y6w, vividn, 2026-11-09: «let's title the first tab "Moments in a Café"»,
+			// «let's retitle the other's too: "turn the TV off" "change of scenery"»).
+			assert.deepEqual(
+				await page.locator('.root-bar [role="tab"]').allInnerTexts(),
+				['intro', 'Moments in a Café', 'Turn the TV off', 'Change of scenery', 'input-bar', 'tabs']
+			);
 			const named = await page.locator('section.pane').first().locator('p b').allInnerTexts();
 			assert.ok(named.includes('datum'), `the Introduction names the database to go back to: ${named}`);
 
@@ -70,7 +76,7 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 				[...LESSON_NAMES].sort(),
 				'each tab installed once'
 			);
-			await page.locator('.root-bar [role="tab"]', { hasText: 'moment' }).click();
+			await lessonTab(page, 'moment').click();
 			await app.reload();
 			assert.deepEqual(await tabs(page), LESSON_NAMES, "a reload keeps the tutorial's");
 			assert.equal(await front(page), 'moment');
@@ -100,7 +106,7 @@ test('a tutorial whose tabs are current still gets a kit field it lacks, at the 
 			await tv(false); // as in a tutorial from before the kit had it
 			await app.reload();
 			await tv(true);
-			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
+			await lessonTab(page, 'on-off').click();
 			await page.locator('[data-pane$="-fields"] .fields button[data-field="tv"]').waitFor();
 			assert.deepEqual(app.errors, []);
 		},
@@ -150,10 +156,8 @@ test('the Introduction ends on the next tab, the café, and not on the way back 
 			// Its one way on is the next tab: no way back.
 			await intro.getByRole('button', { name: 'where?', exact: true }).waitFor();
 			assert.equal(await intro.locator('.tutorial').getByRole('button', { name: /back/i }).count(), 0);
-			await intro.getByRole('button', { name: 'Next: moment', exact: true }).click();
-			await page.waitForFunction(
-				() => document.querySelector('.root-bar [role="tab"][aria-selected="true"]')?.textContent.trim() === 'moment'
-			);
+			await intro.getByRole('button', { name: 'Next: Moments in a Café', exact: true }).click();
+			await until(() => front(page), (f) => f === 'moment');
 			await page.locator('[data-pane="moment-lesson"] .game').waitFor();
 			assert.equal(await db(page), 'tutorial', 'the same database, another tab');
 			assert.deepEqual(await tabs(page), LESSON_NAMES);
@@ -163,12 +167,12 @@ test('the Introduction ends on the next tab, the café, and not on the way back 
 });
 
 // da-uzyih.4892, vividn, 2026-10-28: «add advancement buttons at the bottom of every page on the tutorial like there
-// is on the introduction. "Next: on/off"». Each names the next lesson by the word its title leads with.
+// is on the introduction. "Next: on/off"». Each names the next lesson as its tab does (da-83y6w).
 test('every lesson ends on a button to the next, from the Introduction to the last, which has none', async () => {
 	await withApp(
 		async ({ page }) => {
 			await press(page, 'Tutorial', 'tutorial');
-			const labels = ['moment', 'on/off', 'change', 'The input bar', 'Tabs and widgets'];
+			const labels = ['Moments in a Café', 'Turn the TV off', 'Change of scenery', 'The input bar', 'Tabs and widgets'];
 			for (const [i, label] of labels.entries()) {
 				assert.equal(await front(page), LESSON_NAMES[i]);
 				const next = page.getByRole('button', { name: `Next: ${label}`, exact: true });
@@ -183,7 +187,7 @@ test('every lesson ends on a button to the next, from the Introduction to the la
 				await next.click();
 				await page.waitForFunction(
 					(name) => document.querySelector('.root-bar [role="tab"][aria-selected="true"]')?.textContent.trim() === name,
-					LESSON_NAMES[i + 1]
+					tabLabel(LESSON_NAMES[i + 1])
 				);
 			}
 			assert.equal(await front(page), 'tabs');
@@ -222,11 +226,11 @@ test('the Introduction is its three paragraphs and its way on; no tab holds why 
 		async ({ page }) => {
 			await press(page, 'Tutorial', 'tutorial');
 			const intro = page.locator('section.pane').first().locator('.tutorial');
-			await intro.getByRole('button', { name: 'Next: moment', exact: true }).waitFor();
+			await intro.getByRole('button', { name: 'Next: Moments in a Café', exact: true }).waitFor();
 			const parts = await intro.evaluate((root) => [...root.children].map((el) => (el.tagName === 'BUTTON' ? el.textContent.trim() : el.tagName)));
-			assert.deepEqual(parts, ['H1', 'P', 'P', 'P', 'Next: moment', 'Reset the tutorial']);
+			assert.deepEqual(parts, ['H1', 'P', 'P', 'P', 'Next: Moments in a Café', 'Reset the tutorial']);
 			for (const tab of LESSON_NAMES) {
-				await page.locator('.root-bar [role="tab"]', { hasText: new RegExp(`^${tab}$`) }).click();
+				await lessonTab(page, tab).click();
 				await until(() => front(page), (f) => f === tab);
 				await page.locator('.host[data-widget="tutorial"]:visible h1').first().waitFor();
 				const held = await page.locator('.host[data-widget="tutorial"]:visible').evaluateAll((hosts) =>
@@ -277,7 +281,7 @@ test('the two text tabs after the switch lesson: the input bar, then tabs and wi
 				['input-bar', 'The input bar'],
 				['tabs', 'Tabs and widgets']
 			]) {
-				await page.locator('.root-bar [role="tab"]', { hasText: new RegExp(`^${tab}$`) }).click();
+				await lessonTab(page, tab).click();
 				const pane = page.locator('.host[data-widget="tutorial"]:visible');
 				await pane.locator('h1', { hasText: title }).waitFor();
 				assert.ok(await pane.locator('ul li').count(), `${tab} lists what it teaches`);

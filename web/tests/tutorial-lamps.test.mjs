@@ -14,7 +14,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
-import { isStatus, settled } from './support/tutorial.mjs';
+import { isStatus, settled, lessonTab } from './support/tutorial.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -43,7 +43,7 @@ test('at rest the book is closed and the TV and phone off; a round of all three 
 				den.length = round.length;
 				for (const thing of den.things) thing.on = round.on[thing.field];
 			}, ROUND);
-			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
+			await lessonTab(page, 'on-off').click();
 			const buttons = page.locator('[data-pane$="-fields"] .fields button[data-field]');
 			await buttons.nth(2).waitFor();
 			assert.deepEqual(
@@ -116,7 +116,7 @@ test('«End now» shows the accuracy; a game over leaves all three off, and Rese
 			const hids = async () =>
 				(await Promise.all(DEN.map((f) => app.run(['tail', f, '--json', '-n', '50']).then((r) => JSON.parse(r.stdout).rows.map((row) => row.hid))))).flat();
 			const active = () => app.run(['now', '--json']).then((r) => JSON.parse(r.stdout).active.map((a) => a.field).sort());
-			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
+			await lessonTab(page, 'on-off').click();
 			const game = page.locator('[data-pane="on-off-lesson"] .game');
 
 			await page.getByRole('button', { name: 'Start', exact: true }).click();
@@ -159,7 +159,7 @@ test('at a 390 px phone width every field of the game is wholly in view, with no
 	await withApp(
 		async (app) => {
 			const { page } = app;
-			await page.locator('.root-bar [role="tab"]', { hasText: 'on-off' }).click();
+			await lessonTab(page, 'on-off').click();
 			// Attached, not visible: one cut off is the assertion's to say.
 			await page.locator('[data-pane$="-fields"] .fields button[data-field]').nth(2).waitFor({ state: 'attached' });
 			const seen = await page.locator('[data-pane="on-off-fields"] .fields .bar').evaluate((bar) => {
