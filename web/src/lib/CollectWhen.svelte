@@ -12,7 +12,10 @@
 	and `5m` move the very pills the nowview makes and draws, and a × on the
 	bar goes through the cursor's reconciler. Each pill here says its sum
 	(`−6m`, `6m`) and drags sideways to nudge it (da-axrdv), a minute for
-	every few pixels and faster the further it goes; its × clears it.
+	every few pixels and faster the further it goes; `clear` in its options
+	clears it, the pill wearing no × (da-c93wz, vividn, 2026-11-09: «remove
+	the (x) button on the time and dur buttons, it is a bit ugly. Instead,
+	make it easy to clear from within the expanded time and dur menus»).
 
 	The advanced options are what the cursor alone cannot say quickly: a
 	time typed as `-t` reads it (`9:15am`, `yesterday 10am`), resolved by the
@@ -30,11 +33,12 @@
 	2026-11-06: «hide it by default. But a little clock button in the middle
 	between the fields section and the now section, clicking it toggles
 	whether this time panel is open»); whether it is open is the session's,
-	as collect's zoom is. `time` and `dur` wear a pair of triangles, and drag
-	sideways with no pill yet too: `time` from now, `dur` from no length
-	(«add a little triangle arrow to the time and dur buttons so that you
-	know you can drag them. Allow dragging them left and right, even when
-	there is nothing yet selected»).
+	as collect's zoom is. `time` and `dur` wear a triangle outside each side
+	(da-c93wz: «the triangle arrow symbols should appear outside the time and
+	dur buttons»), and drag sideways with no pill yet too: `time` from now,
+	`dur` from no length («add a little triangle arrow to the time and dur
+	buttons so that you know you can drag them. Allow dragging them left and
+	right, even when there is nothing yet selected»).
 
 	A line runs on each side of it open, between it and the strip and between
 	it and the rows, and closed one line between the strip and the rows, the
@@ -176,13 +180,13 @@
 		const c = get(cursor);
 		pointAt({ ...(c ? where(c) : { rel: 0 }), span: (c?.span ?? 0) + by });
 	}
-	/** The time pill's ×: the length, if any, ends at now again. */
+	/** The time's `clear`: the length, if any, ends at now again. */
 	function clearTime() {
 		setAllday(false);
 		const c = get(cursor);
 		pointAt(c?.span ? { rel: 0, span: c.span } : null);
 	}
-	/** The length pill's ×. */
+	/** The length's `clear`. */
 	function clearDur() {
 		setMoment(false);
 		const c = get(cursor);
@@ -337,8 +341,8 @@
 
 <svelte:window onkeydowncapture={onKey} />
 
-<!-- Two triangles, apart: it drags sideways. -->
-{#snippet drags()}<svg class="drags" data-drags viewBox="0 0 14 8" aria-hidden="true" focusable="false"><path d="M0 4 4 0.8v6.4zM14 4 10 0.8v6.4z" /></svg>{/snippet}
+<!-- A triangle outside each side of the button, part of it to a press: it drags sideways. -->
+{#snippet drags()}{#each ['left', 'right'] as at (at)}<svg class="drags {at}" data-drags={at} viewBox="0 0 4 8" aria-hidden="true" focusable="false"><path d={at === 'left' ? 'M0 4 4 0.8v6.4z' : 'M4 4 0 0.8v6.4z'} /></svg>{/each}{/snippet}
 
 {#snippet clock()}
 	<button class="clock" data-when-clock use:act={'show'} aria-expanded={expanded} aria-label={expanded ? 'hide the time and duration' : 'time and duration'} title={expanded ? 'hide the time and duration' : 'time and duration'} onclick={toggleShown}
@@ -371,8 +375,8 @@
 				onpointerdown={(e) => jogDown(kind, e)}
 				onclick={() => tapped(kind)}
 				>{#if kind === 'dur' && span}<LengthArrow />{/if}{label}{@render drags()}</button
-			><button class="clear" {disabled} aria-label="clear {label}" onclick={kind === 'time' ? clearTime : clearDur}>×</button>
-		</span>
+			></span
+		>
 	{/if}
 {/snippet}
 
@@ -416,7 +420,9 @@
 				<form onsubmit={(e) => (e.preventDefault(), void typeTime())}>
 					<label>-t <input data-type-time bind:value={typedTime} aria-invalid={badTime || undefined} oninput={() => (badTime = false)} placeholder="9:15am" {disabled} /></label>
 				</form>
+				<!-- `clear` first in its row, where a phone's edge does not cut it. -->
 				<div class="pair">
+					<button data-clear use:act={'arm'} disabled={disabled || !timeLabel} title="back to now" onclick={() => (clearTime(), (open = null))}>clear</button>
 					<button data-yesterday use:act={'arm'} {disabled} title="a day back, the same clock" onclick={dayBack}>-y</button>
 					<button data-allday use:act={'arm'} class:on={allday} aria-pressed={allday} {disabled} title="the whole day, no clock" onclick={() => setAllday(!allday)}>-D</button>
 				</div>
@@ -426,6 +432,7 @@
 					<label>dur <input data-type-dur bind:value={typedDur} aria-invalid={badDur || undefined} oninput={() => (badDur = false)} placeholder="1h30m" {disabled} /></label>
 				</form>
 				<div class="pair">
+					<button data-clear use:act={'arm'} disabled={disabled || !durLabel} title="no length" onclick={() => (clearDur(), (open = null))}>clear</button>
 					<button data-moment use:act={'arm'} class:on={moment} aria-pressed={moment} {disabled} title="a moment, no length" onclick={toggleMoment}>-m</button>
 				</div>
 			{/if}
@@ -475,11 +482,10 @@
 
 	/*
 	 * Spaced so no two buttons meet (vividn, 11-06: «space out the buttons a
-	 * little more in this time section. right now they overlap some»): a
-	 * pill's × stands 0.7rem above its top right corner and 0.35rem past it,
-	 * so a gap it can reach, above a pill or to its right, is wider than that.
-	 * The halves are as tall (as wide, side by side) as each other, so the
-	 * clock's gap is in the middle.
+	 * little more in this time section. right now they overlap some»), a
+	 * triangle out of each side of `time` and `dur` among them. The halves
+	 * are as tall (as wide, side by side) as each other, so the clock's gap
+	 * is in the middle.
 	 */
 	.column {
 		flex: none;
@@ -489,8 +495,7 @@
 		gap: 0.8rem;
 		width: max-content;
 		height: 100%;
-		/* The × out of a pill's top corner, inside the column. */
-		padding: 0.75rem 0.15rem 0.3rem;
+		padding: 0.3rem 0.15rem;
 		font-size: 0.75rem;
 	}
 
@@ -499,7 +504,7 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: space-evenly;
-		/* A pill's 3.6rem, and its × out of its corner. */
+		/* A pill's 3.6rem, and a triangle out of each side. */
 		width: 4.3rem;
 		gap: 0.4rem;
 	}
@@ -514,11 +519,12 @@
 		grid-template-rows: none;
 		grid-template-columns: 1fr auto 1fr;
 		grid-auto-flow: column;
-		padding: 0.75rem 0.3rem 0.3rem;
+		padding: 0.3rem;
 	}
 
+	/* Room for the first button's outer triangle. */
 	.row .column {
-		padding: 0 0.3rem;
+		padding: 0 0.8rem;
 	}
 
 	.row .half {
@@ -531,8 +537,7 @@
 	 * In the middle of the section, so closed it is ON the strip's edge
 	 * (vividn, 11-06: «put it right on the boundary line between the now
 	 * section and the fields section»), the rows standing clear of its far
-	 * half, and open in the gap between the halves: the column's padding
-	 * puts that gap 0.225rem under the middle.
+	 * half, and open in the gap between the halves.
 	 */
 	.clock {
 		position: absolute;
@@ -551,17 +556,8 @@
 		color: var(--muted);
 	}
 
-	.when:not(.closed, .row) .clock {
-		top: calc(50% + 0.225rem);
-	}
-
-	.glides .clock {
-		transition: top var(--glide) ease-out;
-	}
-
 	@media (prefers-reduced-motion: reduce) {
-		.when.glides,
-		.glides .clock {
+		.when.glides {
 			transition: none;
 		}
 	}
@@ -580,14 +576,24 @@
 		stroke-linecap: round;
 	}
 
-	/* The two triangles: it drags sideways. */
+	/* A triangle out of each side: it drags sideways. */
 	.drags {
-		flex: none;
-		width: 0.85em;
+		position: absolute;
+		top: 50%;
+		translate: 0 -50%;
+		width: 0.3em;
 		height: 0.5em;
-		margin-left: 0.25em;
-		fill: currentColor;
+		fill: var(--muted);
 		opacity: 0.7;
+	}
+
+	/* Out of the button's border: its padding box, which they stand from, is inside it. */
+	.drags.left {
+		right: calc(100% + var(--drag-edge) + 0.2em);
+	}
+
+	.drags.right {
+		left: calc(100% + var(--drag-edge) + 0.2em);
 	}
 
 	.row .pill {
@@ -627,6 +633,8 @@
 	}
 
 	.word {
+		position: relative;
+		--drag-edge: 1px;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -640,14 +648,15 @@
 		box-shadow: 0 0 0 2px var(--ink-bright);
 	}
 
-	/* The sum as a pill, its × in its corner. */
+	/* The sum as a pill, its triangles out of its sides. */
 	.pill {
 		position: relative;
 		display: flex;
-		/* Centered, with its × 0.35rem out of its right corner, inside the half. */
-		max-width: calc(100% - 0.7rem);
+		/* Centered, with a triangle out of each side, inside the half. */
+		max-width: calc(100% - 1rem);
 		box-sizing: border-box;
-		border: 1.5px solid var(--accent);
+		--drag-edge: 1.5px;
+		border: var(--drag-edge) solid var(--accent);
 		border-radius: 0.6rem;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	}
@@ -668,24 +677,8 @@
 		min-width: 0;
 		flex-wrap: wrap;
 		text-align: center;
-		/* Its own padding, and on the right what the × overlaps (24px less its 0.35rem out). */
-		padding-right: calc(24px - 0.1rem);
 		/* Held and dragged sideways. */
 		touch-action: none;
-	}
-
-	.pill .clear {
-		position: absolute;
-		top: -0.7rem;
-		right: -0.35rem;
-		width: 24px;
-		height: 24px;
-		padding: 0;
-		border-radius: 999px;
-		background: var(--ground);
-		border: 1px solid var(--accent);
-		font-size: 0.7rem;
-		line-height: 1;
 	}
 
 	/* The advanced options, out beside the column, over the rows. */
@@ -760,6 +753,12 @@
 	.more .pair button {
 		border-radius: 999px;
 		padding: 0.2rem 0.6rem;
+	}
+
+	/* Off, with nothing to clear or the widget disabled: the page's faintest ink. */
+	.more .pair button:disabled {
+		color: var(--quiet);
+		cursor: default;
 	}
 
 	.more .pair button.on {

@@ -257,12 +257,22 @@ describe('collect', () => {
 		});
 	});
 
+	/** Each triangle of the button `part` names, outside it on its own side (da-c93wz), as [left, right] gaps in px. */
+	const outside = (page, part) =>
+		page.locator(`${WHEN} ${part}`).evaluate((b) => {
+			const box = (b.closest('.pill') ?? b).getBoundingClientRect();
+			const [l, r] = ['left', 'right'].map((at) => b.querySelector(`[data-drags="${at}"]`)?.getBoundingClientRect());
+			return [l ? box.left - l.right : null, r ? r.left - box.right : null];
+		});
+	const isOutside = (gaps, what) => assert.ok(gaps.every((g) => g !== null && g >= 0 && g < 6), `${what}: a triangle is not just outside it: ${JSON.stringify(gaps)}`);
+
 	// «add a little triangle arrow to the time and dur buttons so that you know you
-	// can drag them. Allow dragging them left and right, even when there is nothing yet selected».
-	test('time and dur wear their triangles, and a drag on either with no pill makes one: a time from now, a length', async () => {
+	// can drag them. Allow dragging them left and right, even when there is nothing yet selected»,
+	// and (da-c93wz) «the triangle arrow symbols should appear outside the time and dur buttons».
+	test('time and dur wear a triangle outside each side, and a drag on either with no pill makes one: a time from now, a length', async () => {
 		await collect(async ({ page }) => {
 			await openWhen(page);
-			for (const kind of ['time', 'dur']) assert.equal(await page.locator(`${WHEN} [data-part="${kind}"] [data-drags]`).count(), 1, `${kind} wears no triangles`);
+			for (const kind of ['time', 'dur']) isOutside(await outside(page, `[data-part="${kind}"]`), kind);
 			assert.deepEqual(await barPills(page), []);
 
 			const from = await center(page, `${WHEN} [data-part="time"]`);
@@ -271,7 +281,7 @@ describe('collect', () => {
 			const at = await page.evaluate(() => +window.datum.cursor.at());
 			assert.ok(at < todayAt(15), `the drag left chose ${new Date(at).toISOString()}, not a time before now`);
 			assert.equal(await page.locator(`${WHEN} [data-when-more]`).count(), 0, 'the drag opened the options');
-			assert.equal(await whenPill(page, 'time').locator('[data-drags]').count(), 1, 'the pill wears no triangles');
+			isOutside(await outside(page, '.pill[data-pill="time"] .said'), 'the time pill');
 			// The word the drag began on is gone under it, the pill in its place (canary on #1792): the drag
 			// ended at its lift, so the mouse passing over the pill after, no button down, moves nothing.
 			const pill = await whenPill(page, 'time').boundingBox();
@@ -288,7 +298,7 @@ describe('collect', () => {
 	});
 
 	// «space out the buttons a little more in this time section. right now they overlap some».
-	test('no two of the section\'s buttons meet, their ×s among them, at any height: a column, halves and a row', async () => {
+	test('no two of the section\'s buttons meet, their triangles among them, at any height: a column, halves and a row', async () => {
 		await collect(async ({ page }) => {
 			await tap(page, '[data-earlier="5"]');
 			await tap(page, '[data-longer="5"]');
@@ -302,10 +312,10 @@ describe('collect', () => {
 					for (let a; (a = when.getAnimations({ subtree: true })).length; ) await Promise.allSettled(a.map((x) => x.finished));
 					const column = when.querySelector('.column');
 					// The clock stands over the column's gap, outside it (da-qjq60).
-					const boxes = [...column.querySelectorAll('button'), when.querySelector('[data-when-clock]')].map((b) => {
+					const boxes = [...column.querySelectorAll('button, [data-drags]'), when.querySelector('[data-when-clock]')].map((b) => {
 						const r = b.getBoundingClientRect();
-						// A pill's × stands over its own corner, clear of its text (da-rtsun): one pill is one button here.
-						return { b: b.dataset.part ?? b.getAttribute('aria-label') ?? b.innerText, pill: b.closest('.pill')?.dataset.pill, l: r.left, r: r.right, t: r.top, d: r.bottom };
+						// A pill's triangles stand out of its sides (da-c93wz): one pill is one button here.
+						return { b: b.dataset.part ?? b.dataset.drags ?? b.getAttribute('aria-label') ?? b.innerText, pill: b.closest('.pill')?.dataset.pill, l: r.left, r: r.right, t: r.top, d: r.bottom };
 					});
 					const c = column.getBoundingClientRect();
 					const past = [...column.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.right > c.right - 2.4 + 0.5 || r.left < c.left + 2.4 - 0.5; }).map((e) => `${e.tagName}.${e.className.baseVal ?? e.className}:${Math.round(e.getBoundingClientRect().left - c.left)}-${Math.round(e.getBoundingClientRect().right - c.left)}`);
@@ -313,7 +323,7 @@ describe('collect', () => {
 				}, h);
 				seen.add(m.mode);
 				const say = `${h}px, ${m.mode}: ${JSON.stringify(m.boxes)}`;
-				assert.equal(m.boxes.length, 9, say);
+				assert.equal(m.boxes.length, 11, say);
 				for (const [i, a] of m.boxes.entries())
 					for (const b of m.boxes.slice(i + 1).filter((b) => !a.pill || b.pill !== a.pill)) assert.ok(a.r <= b.l || b.r <= a.l || a.d <= b.t || b.d <= a.t, `${a.b} meets ${b.b} at ${say}`);
 				assert.ok(!m.scrolls, `${h}px, ${m.mode}: the section scrolls, ${m.need}`);
@@ -359,8 +369,8 @@ describe('collect', () => {
 		});
 	});
 
-	// da-rtsun: the 24px × sat over the end of «−6m», reading «−6».
-	test("each pill's × stands clear of its label's text, and is 24px", async () => {
+	// da-c93wz: «remove the (x) button on the time and dur buttons, it is a bit ugly».
+	test('a pill is one button: no × on it, its label whole', async () => {
 		await collect(async ({ page }) => {
 			await tap(page, '[data-earlier="1"]');
 			await tap(page, '[data-earlier="5"]');
@@ -369,16 +379,9 @@ describe('collect', () => {
 			await tap(page, '[data-longer="5"]');
 			await saysPill(page, 'dur', '6m');
 			for (const kind of ['time', 'dur']) {
-				const { text, clear } = await page.locator(`${WHEN} .pill[data-pill="${kind}"]`).evaluate((pill) => {
-					const range = document.createRange();
-					range.selectNodeContents(pill.querySelector('.said'));
-					const box = (r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height });
-					return { text: box(range.getBoundingClientRect()), clear: box(pill.querySelector('.clear').getBoundingClientRect()) };
-				});
-				const meet = text.left < clear.right && clear.left < text.right && text.top < clear.bottom && clear.top < text.bottom;
-				assert.ok(!meet, `${kind}: the × ${JSON.stringify(clear)} is over its text ${JSON.stringify(text)}`);
-				assert.equal(clear.width, 24, `${kind}: the × is ${clear.width}px wide`);
-				assert.equal(clear.height, 24, `${kind}: the × is ${clear.height}px tall`);
+				const pill = page.locator(`${WHEN} .pill[data-pill="${kind}"]`);
+				assert.equal(await pill.locator('button').count(), 1, `${kind}: a second button on the pill`);
+				assert.ok(!(await pill.innerText()).includes('×'), `${kind}: the pill says ×`);
 			}
 		});
 	});
@@ -477,17 +480,25 @@ describe('collect', () => {
 		});
 	});
 
-	test('× clears its own pill and no other', async () => {
+	// da-c93wz: «make it easy to clear from within the expanded time and dur menus».
+	test("clear in a pill's options clears that pill and no other, and closes them; with no pill it is off", async () => {
 		await collect(async ({ page }) => {
+			await tap(page, '[data-part="time"]');
+			assert.ok(await page.locator(`${WHEN} [data-when-more="time"] [data-clear]`).isDisabled(), 'clear is on with nothing to clear');
+			await tap(page, '[data-part="time"]');
 			await tap(page, '[data-earlier="5"]');
 			await tap(page, '[data-longer="5"]');
 			await whenPill(page, 'dur').waitFor();
-			await tap(page, '.pill[data-pill="dur"] .clear');
+
+			await whenPill(page, 'dur').click();
+			await tap(page, '[data-when-more="dur"] [data-clear]');
 			await page.locator(`${WHEN} [data-part="dur"]:not(.said)`).waitFor();
+			assert.equal(await page.locator(`${WHEN} [data-when-more]`).count(), 0, 'the options stayed out');
 			assert.equal(await whenPill(page, 'time').innerText(), '−5m');
 			assert.deepEqual(await barPills(page), ['time:-q']);
 
-			await tap(page, '.pill[data-pill="time"] .clear');
+			await whenPill(page, 'time').click();
+			await tap(page, '[data-when-more="time"] [data-clear]');
 			await page.locator(`${WHEN} [data-part="time"]:not(.said)`).waitFor();
 			assert.deepEqual(await barPills(page), []);
 		});

@@ -345,8 +345,9 @@ describe('the now strip is the last half second', () => {
 			const dot = () => drawn(page, 'coffee').then((marks) => marks.find((m) => m.kind === 'circle'));
 			await until(dot, (d) => d && Math.abs(d.mid - d.of) <= 3);
 			await app.clock.forward(250);
-			await until(dot, (d) => d && Math.abs(d.mid - d.of / 2) <= 3);
-			await app.clock.forward(300);
+			const half = await until(dot, (d) => d && Math.abs(d.mid - d.of / 2) <= 3);
+			// Gone once wholly past the left edge: its center's 250 ms more, and its radius in time.
+			await app.clock.forward(250 + Math.ceil(((half.right - half.left) / 2) * (500 / half.of)) + 20);
 			await until(dot, (d) => d === undefined);
 		}, AT_REST);
 	});

@@ -9,7 +9,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { PHONE, pickOption } from './support/layout.mjs';
+import { DESKTOP, PHONE, pickOption } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -150,6 +150,43 @@ describe('collect: the time section', () => {
 			});
 		});
 	}
+
+	// da-c93wz, vividn, 2026-11-09: «the vertical line where the clock button shows up when the time section is closed.
+	// space it out from the rendered now svg a little more, so that the now section has consistent margins around it».
+	for (const [device, side, options] of [
+		['phone', 'left', {}],
+		['phone', 'right', {}],
+		['desktop', 'left', { device: undefined, ...DESKTOP }]
+	])
+		test(`${device}, side: ${side}: closed, the line stands as far from the strip's picture as the pane's edge does`, async () => {
+			await atRest(
+				side,
+				async ({ page }) => {
+					await still(page);
+					const m = await page.locator(WHEN).evaluate((when, side) => {
+						const flip = (x) => (side === 'right' ? -x : x);
+						const pane = when.closest('section.pane');
+						const p = pane.getBoundingClientRect();
+						const border = parseFloat(getComputedStyle(pane).borderLeftWidth);
+						const svg = pane.querySelector('[data-strip] svg.now-strip');
+						const s = svg.getBoundingClientRect();
+						// The picture's drawn extent across: its marks, cut to the strip's box (overflow hidden).
+						const marks = [...svg.querySelectorAll('g rect, g path')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+						const ink = [Math.max(s.left, Math.min(...marks.map((r) => r.left))), Math.min(s.right, Math.max(...marks.map((r) => r.right)))];
+						const line = when.getBoundingClientRect();
+						const [outer, inner] = side === 'right' ? [p.right - border, line.left] : [p.left + border, line.right - 1];
+						const [far, near] = side === 'right' ? [ink[1], ink[0]] : [ink[0], ink[1]];
+						return { margin: flip(far - outer), gap: flip(inner - near), marks: marks.length };
+					}, side);
+					const at = JSON.stringify(m);
+					assert.ok(m.marks > 0, `nothing drawn on the strip: ${at}`);
+					assert.ok(m.gap >= 6, `the picture runs up to the line: ${at}`);
+					assert.ok(Math.abs(m.gap - m.margin) <= 1.5, `the gap to the line is not the picture's margin from the pane: ${at}`);
+					if (SHOTS) await page.locator(WIDGET).screenshot({ path: `${SHOTS}/margins-${device}-${side}.png` });
+				},
+				options
+			);
+		});
 
 	test('it opens and closes over time: halfway, its width and the rows are between closed and open, each frame no further than the last', async () => {
 		await atRest('left', async ({ page }) => {

@@ -465,6 +465,14 @@
 
 	/** The strip's width at rest: about a fifth of the widget (vividn: «maybe 20%»). */
 	const strip = $derived(Math.round(boxW / 5));
+	/**
+	 * The picture stands this far short of the strip's edge, the line there, as
+	 * far as the widget's body pads it from the pane's other edges (0.6rem,
+	 * CollectPane.svelte), so it has even margins all round (da-c93wz, vividn,
+	 * 2026-11-09: «space it out from the rendered now svg a little more, so
+	 * that the now section has consistent margins around it»).
+	 */
+	const PICTURE_GAP = 10;
 	/** The time and duration section's width past the strip (da-us1n1), its clock's far half while closed (da-s2hht); the rows stand past both. */
 	let whenW = $state(0);
 	const edge = $derived(strip + whenW);
@@ -1157,7 +1165,7 @@
 <!-- The now strip (da-lw7ue), `height` tall: at rest the room's, beside a field's view the widget's (da-u7tij). -->
 {#snippet present(height: number)}
 <div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
-	<NowStrip doc={nowDoc} pending={nowPending} at={frame?.at ?? null} span={frame?.span} width={strip} {height} mirrored={side === 'right'} />
+	<NowStrip doc={nowDoc} pending={nowPending} at={frame?.at ?? null} span={frame?.span} width={strip - PICTURE_GAP} {height} mirrored={side === 'right'} />
 	{#each nowBands as band (band.field)}
 		<button
 			class="now-state"
@@ -1781,6 +1789,11 @@
 	.present.right {
 		border-right: none;
 		border-left: 1px solid var(--rule);
+	}
+
+	/* Mirrored, the picture keeps to the pane's edge, its gap toward the line. */
+	.present.right :global(.now-strip) {
+		left: auto;
 	}
 
 	.dotted {
