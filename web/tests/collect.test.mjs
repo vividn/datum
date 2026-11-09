@@ -674,8 +674,8 @@ describe('collect', () => {
 				await app.redraw();
 				const [work] = JSON.parse((await app.run(['tail', 'work', '-n', '1', '--json'])).stdout).rows;
 				await page.locator(`section[data-title="tail"] tbody tr[data-hid^="${work.hid.slice(0, 5)}"]`).click();
-				await page.locator(`${ENTRY}[data-entry="${work.hid}"]`).waitFor();
-				await page.locator(`${ENTRY} [data-entry-time]`).click();
+				// Its own card: the box takes the new hid at once, and draws mood's card until work's is read (da-uznbv).
+				await page.locator(`${ENTRY} [data-card="${work.hid}"] [data-entry-time]`).click();
 				await page.waitForFunction(() => document.querySelector('.prompt-bar .pill.time')?.innerText.includes('14:20:30'));
 				// Back takes the entry's pill and leaves the time's; a coffee tap logs at once with it.
 				await page.locator(`${ENTRY} [data-back]`).click();
