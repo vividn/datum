@@ -9,8 +9,9 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp } from './support/app.mjs';
-import { DESKTOP, enterLayoutMode, leaveLayoutMode, rootMenuButton, settled, switchItem } from './support/layout.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { DESKTOP, PHONE, enterLayoutMode, leaveLayoutMode, rootMenuButton, settled, swipe, switchItem } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -184,5 +185,90 @@ describe('a layout taller than the screen', () => {
 			const fit = share(await cellsOf(page, 'main'));
 			share(tall).forEach((s, i) => assert.ok(Math.abs(s - fit[i]) < 0.01, `cell ${i}: ${s} vs ${fit[i]}`));
 		});
+	});
+});
+
+// da-o7v14. vividn, 2026-11-09: «when switching tabs onto a tab page that can expand past the bottom, it is
+// momentarily rendered compressed into a single screen height before jumping to expand out … I detected this when
+// swiping between tabs». A root tab behind is a box of one screen (TabBody.svelte); a swipe draws it beside the one
+// in front, and it was drawn there squeezed into that box until it landed.
+describe('a tall layout coming back on', () => {
+	/** This device's open layouts: `main` in front, the built-in `tail` behind it. */
+	const twoLayouts = (context) =>
+		context.addInitScript(
+			(json) => localStorage.setItem('datum.layout.root.v1', json),
+			JSON.stringify({ names: ['main', 'tail'], active: 0 })
+		);
+	const shown = async (page) =>
+		(await page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText()).replace(/\s*•\s*$/, '');
+
+	/** `main`'s split, each frame from now until `stop`: its height, and whether its tab is drawn and where. */
+	const frames = (page) =>
+		page.evaluate(() => {
+			const seen = (window.__tallFrames = []);
+			const each = () => {
+				const split = document.querySelector('[data-split="main"]');
+				const body = split?.closest('.tab-body');
+				if (body)
+					seen.push({
+						height: split.getBoundingClientRect().height,
+						drawn: getComputedStyle(body).clipPath === 'none',
+						front: !body.classList.contains('behind')
+					});
+				if (window.__tallFrames === seen) requestAnimationFrame(each);
+			};
+			requestAnimationFrame(each);
+		});
+	const stop = (page) =>
+		page.evaluate(() => {
+			const seen = window.__tallFrames;
+			window.__tallFrames = null;
+			return seen;
+		});
+
+	test('tapped or swiped back to, every frame it is drawn in has its whole height, and behind it scrolls nothing', async () => {
+		await withApp(
+			async ({ page }) => {
+				await toggleTall(page, true);
+				await page.locator('.border.foot').focus();
+				for (let i = 0; i < 60; i++) await page.keyboard.press('ArrowDown');
+				await settled(page);
+				await leaveLayoutMode(page);
+				const scroller = () => page.evaluate(() => document.querySelector('.root > .content').clientHeight);
+				const whole = (await cellsOf(page, 'main')).reduce((a, c) => a + c.height, 0);
+				assert.ok(whole > 1.5 * (await scroller()), `main is taller than the screen: ${whole}px`);
+				const height = await page.evaluate(() => document.querySelector('[data-split="main"]').getBoundingClientRect().height);
+				const to = async (name, go) => {
+					await go();
+					await until(() => shown(page), (n) => n === name);
+					await settled(page);
+				};
+				const tab = (name) => () => page.locator('.root-bar [role="tab"]', { hasText: name }).click();
+				const strip = await page.locator('.swipe-strip').boundingBox();
+				const y = strip.y + strip.height / 2;
+
+				await to('tail', tab('tail'));
+				assert.equal(await scrolls(page), false, 'main behind made tail scroll');
+				await frames(page);
+				await to('main', tab('main'));
+				const tapped = await stop(page);
+
+				await to('tail', () => swipe(page, 220, y, -150, 0));
+				await frames(page);
+				await to('main', () => swipe(page, 60, y, 150, 0));
+				const swiped = await stop(page);
+
+				for (const [how, seen] of [['tapped', tapped], ['swiped', swiped]]) {
+					assert.ok(seen.some((f) => f.drawn && f.front), `${how}: main never came on`);
+					for (const f of seen.filter((f) => f.drawn))
+						near(f.height, height, `${how}: main drawn ${f.front ? 'in front' : 'beside'}`);
+				}
+				assert.ok(
+					swiped.some((f) => f.drawn && !f.front),
+					'the swipe drew no frame with main beside the tab in front, which is what this is about'
+				);
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
 	});
 });

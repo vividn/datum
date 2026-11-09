@@ -573,18 +573,23 @@
 		{@const content = tab.content}
 		{@const at = pane.id === rootId ? drawnAt(tab, tab === active || tab === pane.tabs[peek], epoch, behind) : epoch}
 		{@const least = pane.id === rootId && isSplit(content) && !soleWidgetOf(tab) ? legible(pane) : undefined}
+		{@const tall = pane.id === rootId ? ((tab === active && $dragged?.tall) || tab.tall) : undefined}
 		<TabBody
 			active={tab === active}
 			beside={tab === pane.tabs[peek]}
 			moved={tab === active ? moves?.front : tab === pane.tabs[peek] ? moves?.beside : undefined}
 			shy={pane.id === rootId ? lands(tab) - lands(active) : 0}
 			{least}
-			tall={pane.id === rootId ? ((tab === active && $dragged?.tall) || tab.tall) : undefined}
+			{tall}
 			kept={pane.id === rootId}
 		>
 			{#if isSplit(content)}
 				{@const split = content}
 				{@const grow = $dragged?.ratios[split.id] ?? split.ratios}
+				<!-- A tall tab behind holds its height on its split (da-o7v14): its
+				     box is one screen, and a swipe drew it squeezed into that until it
+				     landed. 100% is the box's content, the screen the one in front's
+				     `tall` counts in (TabBody.svelte), so it lands at the height drawn. -->
 				<div
 					class="split {split.direction}"
 					class:maximized={tab === active && big !== null}
@@ -593,7 +598,9 @@
 					data-split={split.id}
 					style:--border="{BORDER}px"
 					style:min-width={least && `${least.width}px`}
-					style:min-height={least && `${least.height}px`}
+					style:min-height={tab !== active && tall
+						? `max(${least?.height ?? 0}px, ${tall * 100}%)`
+						: least && `${least.height}px`}
 				>
 					{#each split.children as child, i (child.id)}
 						{#if i > 0}
