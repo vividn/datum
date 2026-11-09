@@ -478,7 +478,11 @@ describe('the output is a strip of commands, the newest at the right', () => {
 		});
 	});
 
-	test('scrolled back, the older commands mount and a new one does not pull the reader forward; back at the end, it does', async () => {
+	// vividn, 2026-11-09: «logging something or doing something that causes a
+	// new CLI entry to be made should scroll the output section over to the far
+	// right (if you've panned back into the past) so that you can see the new
+	// entry come in» (da-4fy4c).
+	test('scrolled back, the older commands mount and the reader stays put; a new command takes the strip to its end, with its slide', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			// More than the strip mounts at the end, which is a row's width
@@ -495,9 +499,22 @@ describe('the output is a strip of commands, the newest at the right', () => {
 				.catch(() => {});
 			assert.ok((await groups()) < lines.length, `all ${lines.length} commands were mounted at the end`);
 
-			// Back to the first command, as a finger or a wheel would scroll: each time the
-			// row nears the oldest mounted, more mount, and the reader stays where they were.
+			// Back to the start of what is mounted, as a finger or a wheel would scroll: more
+			// mount in front of it, and the group the reader was at stays where it was.
 			const roll = page.locator(`${BAR} .roll`);
+			await strip(page); // at rest: the last arrival's slide is a transform
+			const held = await roll.evaluate(async (el) => {
+				const count = () => el.querySelectorAll('.group').length;
+				const was = count();
+				el.scrollTo({ left: 0 });
+				const first = el.querySelector('.group');
+				const left = first.getBoundingClientRect().left;
+				for (let i = 0; i < 120 && count() === was; i += 1) await new Promise((r) => requestAnimationFrame(r));
+				await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+				return { grew: count() - was, moved: first.getBoundingClientRect().left - left };
+			});
+			assert.ok(held.grew > 0, 'scrolling back mounted nothing');
+			assert.ok(Math.abs(held.moved) <= 1, `the reader was moved ${held.moved}px as older commands mounted`);
 			for (let i = 0; i < 10 && (await strip(page)).groups[0].line !== 'occur coffee'; i += 1) {
 				await roll.evaluate((el) => el.scrollTo({ left: 0 }));
 				await page.waitForTimeout(100);
@@ -506,24 +523,21 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			await page.waitForFunction(() => document.querySelector('.prompt-bar .roll').scrollLeft === 0);
 			const back = await strip(page);
 			assert.deepEqual(back.groups.map((g) => g.line), lines);
-			assert.ok(inView(back, back.groups[0]), 'scrolling back did not reach the first command');
+			assert.ok(inView(back, back.groups[0]) && !back.atEnd, 'scrolling back did not reach the first command');
 
+			await watchSlides(page);
 			await app.submit('occur milk');
 			await page.waitForFunction(() => document.querySelector('.prompt-bar .group:last-child .echo').innerText.includes('milk'));
-			const kept = await strip(page);
-			assert.equal(kept.groups[0].line, 'occur coffee', 'the command being read was unmounted');
-			assert.ok(Math.abs(kept.groups[0].left - back.groups[0].left) <= 1, 'the reader was moved');
-			assert.ok(!kept.atEnd, 'the strip jumped to its end');
+			const s = await strip(page);
+			assert.equal(s.groups.at(-1).line, 'occur milk');
+			assert.ok(s.atEnd && inView(s, s.groups.at(-1)), 'scrolled back, the new command is out of view');
+			assert.equal((await page.evaluate(() => window.__slides)).length, 1, 'the arrival did not slide in');
 
-			await roll.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
-			await page.waitForFunction(() => {
-				const el = document.querySelector('.prompt-bar .roll');
-				return el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
-			});
+			// And it is pinned there: the next command lands in view too.
 			await app.submit('occur egg');
 			await page.waitForFunction(() => document.querySelector('.prompt-bar .group:last-child .echo').innerText.includes('egg'));
-			const s = await strip(page);
-			assert.ok(s.atEnd && inView(s, s.groups.at(-1)), 'back at the end, the newest is out of view');
+			const next = await strip(page);
+			assert.ok(next.atEnd && inView(next, next.groups.at(-1)), 'after the jump, the next command is out of view');
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});

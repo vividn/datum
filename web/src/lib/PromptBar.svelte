@@ -229,8 +229,10 @@
 	 * scroll events would read as the reader scrolling away mid-glide — but
 	 * by jumping to the end and playing the jump back as a slide of the
 	 * whole track (FLIP), measured on the group that was newest before.
-	 * Scrolled back, the reader stays where they were, even as the oldest
-	 * group leaves the front of the strip.
+	 * Scrolled back too: a new command takes the row to its end and pins it
+	 * there (vividn, 2026-11-09: «so that you can see the new entry come
+	 * in», da-4fy4c). Only older groups mounting in front keep the reader
+	 * where they were.
 	 */
 	$effect.pre(() => {
 		const list = strip;
@@ -247,10 +249,11 @@
 		untrack(() =>
 			tick().then(() => {
 				if (!anchor.isConnected) return;
-				if (!pinned) {
+				if (!pinned && !arrived) {
 					box.scrollLeft += anchor.getBoundingClientRect().left - before;
 					return fill();
 				}
+				pinned = true;
 				box.scrollLeft = box.scrollWidth;
 				const moved = before - anchor.getBoundingClientRect().left;
 				if (track && arrived && moved > 0 && !matchMedia('(prefers-reduced-motion: reduce)').matches)
