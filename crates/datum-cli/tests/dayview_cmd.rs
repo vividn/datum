@@ -1078,6 +1078,158 @@ fn a_field_with_entries_on_the_day_draws_them_and_no_sample() {
     assert!(!day_svg(&db, &[]).contains("#00aa00"));
 }
 
+/// da-8l6ol: a sample given its `day` draws it, at its times and with its
+/// values, as the same entries logged would be drawn; a span whose `to` is
+/// before its `from` runs past midnight, so the day holds both its ends.
+#[test]
+fn a_samples_given_day_is_drawn_at_its_times_with_its_values() {
+    let at = |d: u32, t: &str| format!("2026-01-{d} {t}");
+    let line = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+    let shapes: [(&str, &str, Vec<Vec<String>>); 4] = [
+        (
+            "pill",
+            r##"{"field":"pill","verb":"occur","allowed_states":null,"state_colors":{},"day":[{"at":"07:12","dose":2},{"at":"19:40"}]}"##,
+            vec![
+                line(&["occur", "pill", "dose=2", "-t", &at(10, "07:12")]),
+                line(&["occur", "pill", "-t", &at(10, "19:40")]),
+            ],
+        ),
+        (
+            "lamp",
+            r#"{"field":"lamp","verb":"start","allowed_states":null,"state_colors":{},"day":[{"from":"12:00","to":"13:15"},{"from":"22:30","to":"06:45"}]}"#,
+            vec![
+                line(&["start", "lamp", "-t", &at(10, "12:00")]),
+                line(&["end", "lamp", "-t", &at(10, "13:15")]),
+                line(&["start", "lamp", "-t", &at(9, "22:30")]),
+                line(&["end", "lamp", "-t", &at(10, "06:45")]),
+                line(&["start", "lamp", "-t", &at(10, "22:30")]),
+                line(&["end", "lamp", "-t", &at(11, "06:45")]),
+            ],
+        ),
+        (
+            "mood",
+            r##"{"field":"mood","verb":"switch","allowed_states":["happy","sad"],"state_colors":{"happy":"#ff0000"},"day":[{"at":"08:00","state":"happy"},{"at":"15:20","state":"sad"}]}"##,
+            vec![
+                line(&["switch", "mood", "happy", "-t", &at(10, "08:00")]),
+                line(&["switch", "mood", "sad", "-t", &at(10, "15:20")]),
+            ],
+        ),
+        (
+            "steps",
+            r#"{"field":"steps","verb":"allday","allowed_states":null,"state_colors":{},"day":8000}"#,
+            vec![line(&["allday", "steps", "8000", "-d", "2026-01-10"])],
+        ),
+    ];
+    for (field, spec, lines) in shapes {
+        let sampled = fresh_db();
+        let svg = day_svg(&sampled, &["--sample", spec]);
+        assert!(
+            sampled.distinct_fields().unwrap().is_empty(),
+            "{field}: an entry written"
+        );
+
+        let logged = fresh_db();
+        run_cli(&["setup", field, "--from-json", spec], &logged).unwrap();
+        for line in &lines {
+            let line: Vec<&str> = line.iter().map(String::as_str).collect();
+            run_cli(&line, &logged).unwrap();
+        }
+        let mut logged = day_svg(&logged, &[]);
+        while let Some(at) = logged.find(r#" data-created=""#) {
+            let end = at + 15 + logged[at + 15..].find('"').unwrap() + 1;
+            logged.replace_range(at..end, "");
+        }
+        assert_eq!(svg, logged, "{field}");
+        if field == "lamp" {
+            // Noon's block, and the night's two ends.
+            assert_eq!(svg.matches("<rect class=\"block").count(), 3, "{svg}");
+        }
+    }
+}
+
+/// da-8l6ol: a given day's values reach the marks, so a value-keyed
+/// `symbol_by` draws each moment's own symbol, which the fixed spots, with
+/// no data, never do.
+#[test]
+fn a_samples_given_day_picks_its_symbol_by_value() {
+    let spec = |day: &str| {
+        format!(
+            r#"{{"field":"mood","verb":"occur","symbol":"😐","symbol_by":{{"key":"level","map":{{"-5":"😭","5":"🤩"}}}}{day}}}"#
+        )
+    };
+    let given = day_svg(
+        &fresh_db(),
+        &[
+            "--sample",
+            &spec(r#","day":[{"at":"09:00","level":5},{"at":"21:00","level":-5}]"#),
+        ],
+    );
+    assert!(given.contains("🤩") && given.contains("😭"), "{given}");
+    assert!(
+        given.find("🤩") < given.find("😭"),
+        "in the day's order: {given}"
+    );
+    let fixed = day_svg(&fresh_db(), &["--sample", &spec("")]);
+    assert!(!fixed.contains("🤩") && !fixed.contains("😭"), "{fixed}");
+    assert!(fixed.contains("😐"), "{fixed}");
+}
+
+/// da-8l6ol: a day that does not fit its field's kind is refused, naming
+/// the shape it takes, as is a day under `--context`, which has no clock.
+#[test]
+fn a_samples_day_must_fit_its_kind() {
+    let db = fresh_db();
+    let dayview = |spec: &str, extra: &[&str]| {
+        let out = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+        let argv = [
+            "dayview",
+            "-o",
+            out.path().to_str().unwrap(),
+            "--sample",
+            spec,
+        ];
+        run_cli(&[&argv[..], extra].concat(), &db)
+            .unwrap_err()
+            .to_string()
+    };
+    for (spec, shape) in [
+        (
+            r#"{"field":"pill","verb":"occur","day":[{"from":"07:00","to":"08:00"}]}"#,
+            "{at, <key>: value}",
+        ),
+        (
+            r#"{"field":"lamp","verb":"start","day":[{"at":"07:00"}]}"#,
+            "{from, to}",
+        ),
+        // A moment and an on/off carry no state, as on a log line.
+        (
+            r#"{"field":"pill","verb":"occur","day":[{"at":"07:00","state":"x"}]}"#,
+            "{at, <key>: value}",
+        ),
+        (
+            r#"{"field":"lamp","verb":"start","day":[{"from":"07:00","state":"x"}]}"#,
+            "{from, to}",
+        ),
+        (
+            r#"{"field":"mood","verb":"switch","day":[{"at":"25:00","state":"x"}]}"#,
+            "{at, state}",
+        ),
+        (
+            r#"{"field":"steps","verb":"allday","day":[{"at":"07:00"}]}"#,
+            "a value",
+        ),
+    ] {
+        let err = dayview(spec, &["--end-date", "2026-01-10"]);
+        assert!(err.contains(shape), "{spec}: {err}");
+    }
+    let err = dayview(
+        r#"{"field":"pill","verb":"occur","day":[{"at":"07:00"}]}"#,
+        &["--context", "none"],
+    );
+    assert!(err.contains("--context"), "{err}");
+    assert!(db.distinct_fields().unwrap().is_empty());
+}
+
 /// da-efxk5: `--digests` gives each named day's picture
 /// as SHA-256 of the SVG its own `--days 1 --end-date` run draws, so a
 /// write into one day changes its digest and no other's.

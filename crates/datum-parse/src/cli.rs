@@ -1893,7 +1893,8 @@ pub struct DayviewArgs {
     /// `--sample <SPEC-JSON>`, unlisted: datum.day's setup form (da-srrqd).
     /// The spec's field is drawn with that spec in place of its stored one,
     /// and on a day with nothing of it to draw, sample entries in its shape
-    /// that no database holds.
+    /// that no database holds: the JSON's `day` where it has one, in
+    /// premade.toml's shapes (da-8l6ol), else at fixed spots in the day.
     pub sample: Option<String>,
     /// `--digests 1,2,5`, unlisted: datum.day's day strip (da-efxk5). With
     /// `--show json`, the SHA-256 of the picture each day that many back

@@ -403,15 +403,24 @@ fn layout_of(
             datum_core::integrity::findings_between(db.conn(), since, until).unwrap_or_default()
         }
     };
-    let sample = match args.sample.as_deref() {
+    let (sample, sample_day) = match args.sample.as_deref() {
         Some(json) => {
-            let field = serde_json::from_str::<serde_json::Value>(json)
+            let mut v = serde_json::from_str::<JsonValue>(json)
                 .ok()
-                .and_then(|v| v["field"].as_str().map(str::to_string))
+                .filter(|v| v["field"].is_string())
                 .context("--sample takes a field's spec as JSON, with its `field`")?;
-            Some(super::spec::spec_from_json(&field, json, db)?)
+            // The example's own day beside the spec, not in it (da-8l6ol).
+            let day = (v.as_object_mut().and_then(|o| o.remove("day")))
+                .filter(|d| !d.is_null())
+                .map(|d| match d {
+                    JsonValue::Array(a) => a,
+                    v => vec![v],
+                });
+            let field = v["field"].as_str().unwrap_or_default().to_string();
+            let spec = super::spec::spec_from_json(&field, &v.to_string(), db)?;
+            (Some(spec), day)
         }
-        None => None,
+        None => (None, None),
     };
     // `dayview a,b`: the fields named, and a sample's, which is asked for too.
     let drawn = |field: &str| {
@@ -423,6 +432,10 @@ fn layout_of(
     let context = args.context.as_deref().map(parse_context).transpose()?;
     let window_ms = context.map(Around::window_ms);
     let windowed = window_ms.is_some();
+    // Its times are a day's clock, and a window has none.
+    if windowed && sample_day.is_some() {
+        anyhow::bail!("a --sample's `day` is drawn on a day, not under --context");
+    }
     // One band, the window before now: a day-window flag would be dropped unsaid.
     if windowed
         && (args.start_date.is_some()
@@ -450,7 +463,7 @@ fn layout_of(
             // In place of the field's own entries, but in a window of its own.
             sample
                 .as_ref()
-                .map(|s| (s, !matches!(context, Some(Around::Window(_))))),
+                .map(|s| (s, None, !matches!(context, Some(Around::Window(_))))),
         )?;
         // A window has no date label to put an ALLDAY band beside.
         fields
@@ -524,7 +537,7 @@ fn layout_of(
             // viewer to cut at its own now as the clock moves (da-0e06p).
             if args.data_layer { day_end_ms } else { now_ms },
             // No `--context` here: a sample only where the field has nothing (da-srrqd).
-            sample.as_ref().map(|s| (s, false)),
+            sample.as_ref().map(|s| (s, sample_day.as_deref(), false)),
         )?;
         fields.retain(|f| drawn(&f.field));
 
@@ -754,8 +767,9 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
 /// `now_ms` the resulting region falls outside the day window and is
 /// dropped by `push_switch_region`.
 ///
-/// `sample` is `--sample`'s spec, and whether it is drawn in place of what
-/// the field has (`--context`, da-jc8ic) or only where it has nothing.
+/// `sample` is `--sample`'s spec, the day it was given (da-8l6ol), and
+/// whether it is drawn in place of what the field has (`--context`,
+/// da-jc8ic) or only where it has nothing.
 /// How far either side of a day [`build_day_fields`] reads its rows.
 const FETCH_BUFFER: Duration = Duration::days(2);
 
@@ -798,9 +812,10 @@ fn build_day_fields(
     day_start_ms: i64,
     day_end_ms: i64,
     now_ms: i64,
-    sample: Option<(&FieldSpec, bool)>,
+    sample: Option<(&FieldSpec, Option<&[JsonValue]>, bool)>,
 ) -> Result<Vec<DayviewFieldInput>> {
-    let (sample, sample_always) = sample.map_or((None, false), |(s, a)| (Some(s), a));
+    let (sample, sample_day, sample_always) =
+        sample.map_or((None, None, false), |(s, d, a)| (Some(s), d, a));
     let day_start_utc = Utc
         .timestamp_millis_opt(day_start_ms)
         .single()
@@ -898,7 +913,10 @@ fn build_day_fields(
         if let Some(s) = sample.filter(|s| {
             s.field == field && (sample_always || blocks.is_empty() && points.is_empty())
         }) {
-            let made = sample_entries(s, day_start_ms, day_end_ms);
+            let made = match sample_day {
+                Some(day) => given_day(s, day, day_start_ms, day_end_ms)?,
+                None => sample_entries(s, day_start_ms, day_end_ms),
+            };
             let rows = FieldStateRows::from_entries(&made);
             let regions = switch_regions(&rows, window, fallback_end_ms);
             (blocks, points) = render_field_visuals(
@@ -999,14 +1017,7 @@ fn sample_entries(spec: &FieldSpec, start_ms: i64, end_ms: i64) -> Vec<Entry> {
     // sample is always inside its day.
     const DOTS: [f64; 8] = [1.5, 4.5, 6.0, 10.5, 14.5, 16.5, 20.5, 22.5];
     const TURNS: [f64; 8] = [1.0, 4.0, 6.5, 11.0, 14.0, 17.5, 20.5, 23.0];
-    let at = |f: f64| DatumTime {
-        utc: Utc
-            .timestamp_millis_opt(start_ms + ((end_ms - start_ms) as f64 * f / 24.0) as i64)
-            .unwrap(),
-        offset_minutes: 0,
-        timezone: None,
-        uncertainty: None,
-    };
+    let at = |f: f64| sample_at(start_ms, end_ms, (f * 60.0) as i64);
     let state = |s: &str| match s {
         "true" => JsonValue::Bool(true),
         "false" => JsonValue::Bool(false),
@@ -1072,6 +1083,130 @@ fn sample_entries(spec: &FieldSpec, start_ms: i64, end_ms: i64) -> Vec<Entry> {
         .enumerate()
         .map(change)
         .collect()
+}
+
+/// The instant `minutes` into a sample's day, as a share of it: on a day of
+/// another length (DST) the same share, so a sample stays inside its day.
+fn sample_at(start_ms: i64, end_ms: i64, minutes: i64) -> DatumTime {
+    DatumTime {
+        utc: (Utc.timestamp_millis_opt(start_ms + (end_ms - start_ms) * minutes / 1440)).unwrap(),
+        offset_minutes: 0,
+        timezone: None,
+        uncertainty: None,
+    }
+}
+
+/// A `--sample`'s own `day` (da-8l6ol), in premade.toml's shapes: a moment's
+/// `{at, <key>: value}`, an on/off's `{from, to}`, a change's `{at, state}`,
+/// an all-day field's value. A time is the day's `HH:MM`; a `to` before its
+/// `from` runs past midnight, so the day holds the night before's end and
+/// this night's start. Every key but those is the entry's data, which a
+/// `symbol_by` reads and a key label prints; a `state` where the shape has
+/// none is refused, as a log line's `state=` is on a moment.
+fn given_day(
+    spec: &FieldSpec,
+    day: &[JsonValue],
+    start_ms: i64,
+    end_ms: i64,
+) -> Result<Vec<Entry>> {
+    let (shape, times): (_, &[&str]) = match spec.verb {
+        Action::Occur => ("{at, <key>: value}", &["at"]),
+        Action::Switch => ("{at, state}", &["at"]),
+        Action::Start => ("{from, to}", &["from", "to"]),
+        Action::AllDay => ("a value", &[]),
+        _ => ("nothing", &[]),
+    };
+    let field = &spec.field;
+    let at = |minutes| Some(sample_at(start_ms, end_ms, minutes));
+    let mut out = Vec::new();
+    for mark in day {
+        let bad = || {
+            anyhow::anyhow!(
+                "--sample's day of a {} field takes {shape}, not {mark}",
+                spec.verb
+            )
+        };
+        let mut keys = match mark {
+            JsonValue::Object(o) => o.clone(),
+            v => serde_json::Map::from_iter([("state".to_string(), v.clone())]),
+        };
+        let mut clock = |key: &str| -> Result<Option<i64>> {
+            let Some(v) = keys.remove(key) else {
+                return Ok(None);
+            };
+            match (times.contains(&key), clock_minutes(&v)) {
+                (true, Some(m)) => Ok(Some(m)),
+                _ => Err(bad()),
+            }
+        };
+        let (at_m, from, to) = (clock("at")?, clock("from")?, clock("to")?);
+        let stated = matches!(spec.verb, Action::Switch | Action::AllDay);
+        if !stated && keys.contains_key("state") {
+            return Err(bad());
+        }
+        let state = keys.remove("state");
+        let data = (!keys.is_empty()).then_some(JsonValue::Object(keys));
+        let switch = |on: bool, data: Option<JsonValue>, m| {
+            Entry::new(field, Verb::Switch, Some(on.into()), data, at(m), None, "")
+        };
+        match (spec.verb, at_m, from) {
+            (Action::Occur, Some(m), _) => out.push(Entry::new(
+                field,
+                Verb::Point,
+                state,
+                data,
+                at(m),
+                Some(Dur::moment()),
+                "",
+            )),
+            (Action::Switch, Some(m), _) => {
+                let state = state.unwrap_or(true.into());
+                out.push(Entry::new(
+                    field,
+                    Verb::Switch,
+                    Some(state),
+                    data,
+                    at(m),
+                    None,
+                    "",
+                ));
+            }
+            (Action::Start, _, Some(from)) => match to {
+                Some(to) if to < from => out.extend([
+                    switch(true, data.clone(), from - 1440),
+                    switch(false, None, to),
+                    switch(true, data, from),
+                    switch(false, None, to + 1440),
+                ]),
+                Some(to) => out.extend([switch(true, data, from), switch(false, None, to)]),
+                None => out.push(switch(true, data, from)),
+            },
+            (Action::AllDay, ..) => {
+                let state = state.unwrap_or(true.into());
+                let mut e = Entry::new(
+                    field,
+                    Verb::Point,
+                    Some(state),
+                    data,
+                    at(0),
+                    Some(Dur::moment()),
+                    "",
+                );
+                e.set_at_uncertainty(Some(datum_parse::entry_id::DATE_ONLY_PRECISION.into()));
+                out.push(e);
+            }
+            _ => return Err(bad()),
+        }
+    }
+    Ok(out)
+}
+
+/// `HH:MM`, from 00:00 to 24:00, as minutes into the day.
+fn clock_minutes(v: &JsonValue) -> Option<i64> {
+    let (h, m) = v.as_str()?.split_once(':')?;
+    let (h, m): (i64, i64) = (h.parse().ok()?, m.parse().ok()?);
+    let minutes = h * 60 + m;
+    ((0..60).contains(&m) && (0..=1440).contains(&minutes)).then_some(minutes)
 }
 
 /// A field's dot size as its spec stores it. A stored spec may not have
