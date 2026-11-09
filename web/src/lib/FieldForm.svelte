@@ -535,7 +535,7 @@
 					<!-- An all-day field's mark is in the day's all-day band, which `dayview --sample` does not draw (da-0cf4z).
 					     Its lane keys are kept, as a record's are: the band draws the mark at the lane's height and size. -->
 					{#if verb && verb !== 'add' && verb !== 'allday'}
-						{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={drafted} {onopen} />{/key}
+						{#key verb}<Placement field={field.trim()} occur={verb === 'occur'} bind:place spec={drafted} keys={keys.map((k) => k.name.trim()).filter(Boolean)} {onopen} />{/key}
 					{/if}
 					{#if verb === 'add'}
 						<!-- vividn: «for card, embed the data widget directly on the basics»; the data tab shows the same rows. -->

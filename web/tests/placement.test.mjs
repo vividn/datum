@@ -54,6 +54,14 @@ describe('the spec it saves', () => {
 		assert.equal('render' in editedSpec(hidden, edit({ y: 0.3, height: 0.2 })), false);
 	});
 
+	test("an occur dot's label keys are placement too: kept when set, dropped when set to nothing (da-ro5xm)", () => {
+		const labelled = { ...base, key_above: 'weight', key_below: 'note' };
+		assert.deepEqual(placeOf(labelled), { y: 0.3, height: 0.2, key_above: 'weight', key_below: 'note' });
+		assert.deepEqual(editedSpec(labelled, edit(placeOf(labelled))), labelled);
+		const back = JSON.parse(JSON.stringify(editedSpec(labelled, edit({ y: 0.3, height: 0.2, key_below: 'note' }))));
+		assert.deepEqual([back.key_above, back.key_below], [undefined, 'note']);
+	});
+
 	test("an occur dot's size is placement too: kept when set, dropped when the tab leaves it at 1", () => {
 		const sized = { ...base, symbol_scale: 2, symbol_aspect: 0.5 };
 		assert.deepEqual(placeOf(sized), { y: 0.3, height: 0.2, symbol_scale: 2, symbol_aspect: 0.5 });
@@ -545,6 +553,33 @@ describe('the Placement tab', () => {
 			await done(page, saved);
 			shown = await spec(app, 'coffee');
 			assert.equal('symbol_scale' in shown || 'symbol_aspect' in shown, false, JSON.stringify(shown));
+		});
+	});
+
+	// da-ro5xm, vividn, 2026-11-09: «you can select up to 2 keys (one for above and one for below) to show».
+	test("a moment's dot takes one of its keys to print above it and one below, chosen among the field's keys", async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'weight', '--verb', 'occur']);
+			await setPlace(app, 'weight', { y: 0.3, height: 0.2, data_keys: ['weight=', 'note='] });
+			let { saved } = await openPlacement(page, 'weight');
+			const pick = (slot) => page.locator(`${MODAL} .placement .dot-labels select[data-slot="${slot}"]`);
+			for (const slot of ['key_above', 'key_below']) {
+				assert.deepEqual(await pick(slot).locator('option').allInnerTexts(), ['nothing', 'weight', 'note'], slot);
+				assert.equal(await pick(slot).inputValue(), '', `${slot}: nothing at first`);
+			}
+			await pick('key_above').selectOption('weight');
+			await pick('key_below').selectOption('note');
+			await done(page, saved);
+			let shown = await spec(app, 'weight');
+			assert.deepEqual([shown.key_above, shown.key_below], ['weight', 'note']);
+
+			({ saved } = await openPlacement(page, 'weight'));
+			assert.equal(await pick('key_above').inputValue(), 'weight', 'read back');
+			await pick('key_above').selectOption('');
+			await done(page, saved);
+			shown = await spec(app, 'weight');
+			assert.deepEqual([shown.key_above, shown.key_below], [undefined, 'note'], 'nothing clears it');
 		});
 	});
 

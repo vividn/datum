@@ -852,6 +852,7 @@ fn push_dot<'a>(
     (cx, cy): (f64, f64),
     outer_r: f64,
 ) {
+    push_labels(sink, p, (cx, cy), outer_r);
     let icon = (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
     // The disc is the mark — the pointer target, the title, the
     // data attributes — but it is never painted: a dot is its
@@ -928,6 +929,27 @@ fn push_dot<'a>(
             g = escape_xml(g),
         ),
     };
+}
+
+/// A dot's labels (da-ro5xm): its `key_above` value just over the mark and
+/// its `key_below` value just under it, centred on it, in its colour, at
+/// twice its radius. They let the pointer through to the dot.
+fn push_labels(sink: &mut String, p: &RenderedPoint, (cx, cy): (f64, f64), r: f64) {
+    let fs = r * 2.0;
+    let gap = r * 0.3;
+    for (text, y, dy, class) in [
+        (&p.label_above, cy - r - gap, "0", "above"),
+        (&p.label_below, cy + r + gap, "0.8em", "below"),
+    ] {
+        if let Some(t) = text {
+            let _ = write!(
+                sink,
+                r#"<text class="point-label {class}" x="{cx}" y="{y}" dy="{dy}" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none">{t}</text>"#,
+                c = p.fg_color,
+                t = escape_xml(t),
+            );
+        }
+    }
 }
 
 /// The `<defs>` id of `field`'s icon: the name with anything an id or a
@@ -1822,6 +1844,8 @@ mod tests {
                         title: None,
                         created_ms: None,
                         glyph: None,
+                        label_above: None,
+                        label_below: None,
                         icon: false,
                         moment: false,
                         allday: false,

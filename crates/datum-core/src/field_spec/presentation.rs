@@ -148,6 +148,15 @@ pub struct PresentationSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol_aspect: Option<f64>,
 
+    /// The data key whose value an occur dot prints just above it, and the
+    /// one it prints just below (da-ro5xm): `weight` shows its `weight`.
+    /// An entry without the key prints nothing there. See
+    /// [`PresentationSpec::labels_for`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_above: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_below: Option<String>,
+
     /// Other fields may be placed relative to this one (da-w5ruf): datum.day's
     /// setup offers only such a field, or one already anchoring another, as
     /// an anchor. The resolver does not read it.
@@ -342,6 +351,28 @@ impl PresentationSpec {
             .filter(|_| self.symbol_override(state, data).is_none())
     }
 
+    /// What an occur dot of an entry holding `data` prints above it and
+    /// below it: the value of [`PresentationSpec::key_above`] and of
+    /// [`PresentationSpec::key_below`], a list's items joined by commas,
+    /// cut with `…` to [`LABEL_MAX`] characters. A key the entry lacks, or
+    /// holding an object, an empty string or nothing, prints nothing.
+    pub fn labels_for(&self, data: Option<&JsonValue>) -> [Option<String>; 2] {
+        [&self.key_above, &self.key_below].map(|key| {
+            let v = data?.get(key.as_deref()?)?;
+            let text = match v {
+                JsonValue::Array(items) => {
+                    let items: Vec<_> = items.iter().filter_map(scalar_key).collect();
+                    Some(items.join(",")).filter(|s| !s.is_empty())
+                }
+                _ => scalar_key(v).filter(|s| !s.is_empty()),
+            }?;
+            Some(match text.chars().count() > LABEL_MAX {
+                true => text.chars().take(LABEL_MAX - 1).chain(['…']).collect(),
+                false => text,
+            })
+        })
+    }
+
     /// The state's symbol, else the `symbol_by` key's mapped value.
     fn symbol_override(
         &self,
@@ -359,6 +390,10 @@ impl PresentationSpec {
         by_state.or_else(by_key)
     }
 }
+
+/// The most characters a dot's label prints, its `…` included
+/// ([`PresentationSpec::labels_for`]).
+pub const LABEL_MAX: usize = 10;
 
 /// A scalar JSON value as the word a symbol map is keyed by — a string as
 /// itself, a number or bool as it prints. Arrays and objects name nothing.
@@ -681,5 +716,56 @@ mod tests {
             merged,
             "the new keys win; a state the new map lacks is the old's"
         );
+    }
+
+    /// da-ro5xm: a dot prints its key above and its key below, nothing for a
+    /// key its entry lacks, and a long value cut to ten characters.
+    #[test]
+    fn a_dot_labels_its_keys_above_and_below() {
+        let pres = PresentationSpec {
+            key_above: Some("weight".into()),
+            key_below: Some("note".into()),
+            ..PresentationSpec::default()
+        };
+        let data = serde_json::json!({"weight": 75.2, "note": "after the long run"});
+        assert_eq!(
+            pres.labels_for(Some(&data)),
+            [Some("75.2".into()), Some("after the…".into())]
+        );
+        assert_eq!("after the…".chars().count(), LABEL_MAX);
+        let short = serde_json::json!({"note": "ok", "weight": {"kg": 75}});
+        assert_eq!(pres.labels_for(Some(&short)), [None, Some("ok".into())]);
+        let list = serde_json::json!({"weight": ["a", 2]});
+        assert_eq!(pres.labels_for(Some(&list))[0].as_deref(), Some("a,2"));
+        let empty = serde_json::json!({"weight": "", "note": []});
+        assert_eq!(
+            pres.labels_for(Some(&empty)),
+            [None, None],
+            "an empty value prints nothing"
+        );
+        assert_eq!(pres.labels_for(None), [None, None]);
+        assert_eq!(
+            PresentationSpec::default().labels_for(Some(&data)),
+            [None, None],
+            "no key named prints nothing"
+        );
+    }
+
+    #[test]
+    fn the_label_keys_round_trip_through_a_stored_spec() {
+        let pres = PresentationSpec {
+            key_above: Some("weight".into()),
+            key_below: Some("note".into()),
+            ..PresentationSpec::default()
+        };
+        let json = serde_json::to_value(&pres).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"key_above": "weight", "key_below": "note"})
+        );
+        let back: PresentationSpec = serde_json::from_value(json).unwrap();
+        assert_eq!(back, pres);
+        let none = serde_json::to_value(PresentationSpec::default()).unwrap();
+        assert!(none.get("key_above").is_none() && none.get("key_below").is_none());
     }
 }

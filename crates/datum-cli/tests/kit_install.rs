@@ -225,6 +225,8 @@ symbol = "●"
 icon = '{ICON}'
 symbol_scale = 2.5
 symbol_aspect = 0.5
+key_above = "level"
+key_below = "why"
 anchorable = true
 tags = ["feel"]
 subfields.why = {{ value_type = "string" }}
@@ -262,6 +264,8 @@ fn a_kit_field_installs_what_spec_set_stores() {
         "icon": ICON,
         "symbol_scale": 2.5,
         "symbol_aspect": 0.5,
+        "key_above": "level",
+        "key_below": "why",
         "anchorable": true,
         "tags": ["feel"],
         "subfields": {
@@ -332,6 +336,8 @@ fn kit_export_round_trips_the_whole_field() {
         "symbol_by",
         "symbol_scale = 2.5",
         "symbol_aspect = 0.5",
+        "key_above = \"level\"",
+        "key_below = \"why\"",
         "anchorable = true",
         "subfields",
         "worn out",

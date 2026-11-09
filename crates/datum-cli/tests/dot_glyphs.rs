@@ -674,3 +674,49 @@ fn the_glyph_flags_are_refused_and_the_keys_read_as_symbol() {
     env.run(&["occur", "coffee"]);
     assert_eq!(env.svg_marks("coffee"), ["☕", "▲"]);
 }
+
+/// da-ro5xm: a moment's dot prints its `key_above` value over it and its
+/// `key_below` value under it, in the dayview and the nowview alike; an
+/// entry without the key prints nothing there, and a long value is cut.
+#[test]
+fn a_dot_prints_its_keys_above_and_below() {
+    let env = Env::new();
+    env.run(&[
+        "occur",
+        "weight",
+        "-t",
+        "-30",
+        "weight=75.2",
+        "note=after the long run",
+    ]);
+    env.run(&["occur", "weight", "-t", "-20", "note=ok"]);
+    env.run(&[
+        "setup",
+        "weight",
+        "--from-json",
+        r#"{"field":"weight","verb":"occur","key_above":"weight","key_below":"note"}"#,
+    ]);
+    let labels = |svg: &str| -> Vec<(String, String)> {
+        svg.split(r#"<text class="point-label "#)
+            .skip(1)
+            .map(|t| {
+                let side = t.split('"').next().unwrap().to_string();
+                let text = t.split('>').nth(1).unwrap().split('<').next().unwrap();
+                (side, text.to_string())
+            })
+            .collect()
+    };
+    let want = |a: &str, b: &str| (a.to_string(), b.to_string());
+    let want = vec![
+        want("above", "75.2"),
+        want("below", "after the…"),
+        want("below", "ok"),
+    ];
+    assert_eq!(labels(&env.run(&["dayview", "-n", "2"])), want);
+    assert_eq!(labels(&env.run(&["nowview", "--context", "1h"])), want);
+    let shown = env.run(&["setup", "weight"]);
+    assert!(
+        shown.contains("key above  weight") && shown.contains("key below  note"),
+        "{shown}"
+    );
+}

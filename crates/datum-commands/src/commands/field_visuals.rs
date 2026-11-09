@@ -287,6 +287,9 @@ pub(crate) fn dot_of(
     let fg = (entry.state.as_ref())
         .and_then(|v| state_value_rgb(v, field, spec))
         .unwrap_or_else(|| field_rgb(field, spec));
+    let [label_above, label_below] = spec.map_or_else(Default::default, |s| {
+        s.presentation.labels_for(entry.data.as_ref())
+    });
     DayviewPoint {
         time_ms: occur_ms,
         fg_color: rgb_to_hex(fg),
@@ -300,6 +303,8 @@ pub(crate) fn dot_of(
                 .icon_for(entry.state.as_ref(), entry.data.as_ref())
                 .is_some()
         }),
+        label_above,
+        label_below,
         moment,
         allday: false,
     }

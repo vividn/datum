@@ -255,6 +255,13 @@ pub struct DayviewPoint {
     /// (da-45wgz). Resolved by the caller, as `glyph` is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
+    /// The text printed just above the dot and just below it (da-ro5xm):
+    /// the values of the spec's `key_above` / `key_below`, resolved and cut
+    /// by the caller, as `glyph` is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_above: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_below: Option<String>,
     /// A moment (`switch run -m`) at an instant the field holds an active
     /// state (da-lqo7x): drawn as a dotted line across its lane, not a dot.
     /// It asks the state around it, not its own (da-xo58u): `run -m` where
@@ -591,6 +598,12 @@ pub struct RenderedPoint {
     /// As [`DayviewPoint::icon`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
+    /// As [`DayviewPoint::label_above`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_above: Option<String>,
+    /// As [`DayviewPoint::label_below`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_below: Option<String>,
     /// As [`DayviewPoint::moment`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub moment: bool,
@@ -1122,6 +1135,8 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     created_ms: p.created_ms,
                     glyph: p.glyph.clone(),
                     icon: p.icon,
+                    label_above: p.label_above.clone(),
+                    label_below: p.label_below.clone(),
                     moment: p.moment,
                     allday: p.allday,
                     span,
@@ -1287,6 +1302,8 @@ mod tests {
                     title: None,
                     created_ms: None,
                     glyph: None,
+                    label_above: None,
+                    label_below: None,
                     icon: false,
                     moment: false,
                     allday: true,
@@ -1551,6 +1568,8 @@ mod tests {
                         title: None,
                         created_ms: None,
                         glyph: None,
+                        label_above: None,
+                        label_below: None,
                         icon: false,
                         moment: false,
                         allday: false,
@@ -1770,6 +1789,8 @@ mod tests {
                 title: None,
                 created_ms: None,
                 glyph: None,
+                label_above: None,
+                label_below: None,
                 icon: false,
                 moment: false,
                 allday: false,
@@ -1977,6 +1998,8 @@ mod tests {
                     title: None,
                     created_ms: None,
                     glyph: None,
+                    label_above: None,
+                    label_below: None,
                     icon: false,
                     moment: false,
                     allday: false,

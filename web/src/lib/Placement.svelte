@@ -68,6 +68,11 @@
 	lets go of a tapped mark's box, whose mark the new picture draws
 	elsewhere.
 
+	An occur field's dot can print one of its keys above it and one below
+	(da-ro5xm), vividn, 2026-11-09: «weight could show the weight key above
+	the weight»: two choices among the form's keys, `key_above` and
+	`key_below`, which every picture draws, the band here included.
+
 	A pinch on the band sizes the field (da-t038c), vividn, 2026-11-05: «two
 	finger zoom on the placement tool should change the size of the
 	dot/bar»: an occur field's dot about its centre, its shape kept, or the
@@ -92,9 +97,11 @@
 		occur = false,
 		/** The spec a save would store, which the band draws: none is drawn for a field with no name yet (da-y72v8). */
 		spec = null,
+		/** The field's keys as the form holds them, which an occur dot may print above and below it (da-ro5xm). */
+		keys = [],
 		/** Go to the field whose setup a link names. */
 		onopen
-	}: { field: string; place: Place; occur?: boolean; spec?: Spec | null; onopen: (field: string) => void } = $props();
+	}: { field: string; place: Place; occur?: boolean; spec?: Spec | null; keys?: string[]; onopen: (field: string) => void } = $props();
 
 	/** The day's height in pixels: tall enough to take a lane's edge with a finger, two thirds of the 160 it was (da-y72v8). */
 	const H = 110;
@@ -631,6 +638,24 @@
 			</button>
 			<span class="dims">{(scale * aspect).toFixed(2)} × {scale.toFixed(2)}</span>
 		</p>
+		<p class="row dot-labels">
+			{#each [['above', 'key_above'], ['below', 'key_below']] as const as [side, slot] (slot)}
+				<label>
+					{side}
+					<select
+						data-slot={slot}
+						value={place[slot] ?? ''}
+						onchange={(e) => (place = { ...place, [slot]: e.currentTarget.value || undefined })}
+					>
+						<option value="">nothing</option>
+						<!-- A key the spec names that the form no longer lists stays offered, so nothing is dropped unseen. -->
+						{#each [...new Set([...keys, ...(place[slot] ? [place[slot]] : [])])] as key (key)}
+							<option value={key}>{key}</option>
+						{/each}
+					</select>
+				</label>
+			{/each}
+		</p>
 	{/if}
 
 	<p class="row readout">
@@ -703,6 +728,10 @@
 
 	.labels {
 		display: grid;
+	}
+
+	.dot-labels {
+		gap: 0.75rem;
 	}
 
 	.labels > span {

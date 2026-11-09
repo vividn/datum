@@ -436,6 +436,9 @@ export interface Place {
 	/** An occur dot's height over its lane's and its width over its height (da-c05v1, da-c1b6m); absent is 1. */
 	symbol_scale?: number;
 	symbol_aspect?: number;
+	/** The data keys an occur dot prints above it and below it (da-ro5xm); absent prints nothing. */
+	key_above?: string;
+	key_below?: string;
 	/** Other fields may be placed relative to this one (da-w5ruf); absent is no. */
 	anchorable?: boolean;
 	/** Whether the pictures draw the field (da-woyqh): false on none, a map by surface; absent is every one. */
@@ -450,6 +453,8 @@ const PLACE_KEYS = [
 	'anchor_size_ratio',
 	'symbol_scale',
 	'symbol_aspect',
+	'key_above',
+	'key_below',
 	'anchorable',
 	'render'
 ] as const;
