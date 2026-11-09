@@ -155,13 +155,7 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
           rustup toolchain install --no-self-update
           rustup component add llvm-tools
-          v=0.9.146
-          if ! cargo nextest --version 2>/dev/null | grep -x "release: $v" >/dev/null; then
-            tmp=$(mktemp -d "$HOME/.cargo/.nextest.XXXXXX")
-            curl -LsSf --retry 3 --retry-all-errors -o "$tmp/nextest.tar.gz" "https://get.nexte.st/$v/linux"
-            tar zxf "$tmp/nextest.tar.gz" -C "$tmp"
-            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rm -r "$tmp"
-          fi
+          scripts/install-nextest.sh
 
       # The cost is the point of reading this log: wall time and max RSS,
       # against ci.yml's nextest steps on the same box.

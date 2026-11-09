@@ -361,26 +361,18 @@ jobs:
           rustc --version && cargo --version
 
       # The prebuilt binary taiki-e/install-action would have fetched, fetched
-      # directly: no action, no compile. Pinned, so a run that finds it already
-      # there downloads nothing; and replaced by RENAME, never untarred over
-      # the binary in place: a job already running the old file keeps its
-      # inode, so none sees `Text file busy` (job 1100). The temp dir is under
-      # ~/.cargo so the `mv` is a rename on one filesystem. The download
-      # retries, into a file since a retry cannot rewind a pipe: a 504 from
-      # get.nexte.st failed a job before any test (run #9851, da-n9d4p).
+      # directly: no action, no compile. Pinned by version and sha256, so a run
+      # that finds it already there downloads nothing, and read from
+      # DATUM_TOOLCHAIN_CACHE before GitHub: a 504 from GitHub failed a job
+      # before any test (run #9851, da-n9d4p; run #11162, da-0515l).
+      # scripts/install-nextest.sh says how; testmap.yml and the integration
+      # job run it too.
       - name: Install cargo-nextest (prebuilt)
         if: env.TRAIN != '1'
         run: |
           set -euo pipefail
-          v=0.9.146
           exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
-          if ! cargo nextest --version 2>/dev/null | grep -x "release: $v" >/dev/null; then
-            tmp=$(mktemp -d "$HOME/.cargo/.nextest.XXXXXX")
-            curl -LsSf --retry 3 --retry-all-errors -o "$tmp/nextest.tar.gz" "https://get.nexte.st/$v/linux"
-            tar zxf "$tmp/nextest.tar.gz" -C "$tmp"
-            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rm -r "$tmp"
-          fi
-          cargo nextest --version
+          scripts/install-nextest.sh
 
       # A PR runs only the Rust tests its change can reach (da-fnt3v): those
       # whose coverage, in the `testmap` branch's map of a staging commit
@@ -813,13 +805,7 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
           rustup toolchain install --no-self-update
           rustup target add wasm32-wasip1
-          v=0.9.146
-          if ! cargo nextest --version 2>/dev/null | grep -x "release: $v" >/dev/null; then
-            tmp=$(mktemp -d "$HOME/.cargo/.nextest.XXXXXX")
-            curl -LsSf --retry 3 --retry-all-errors -o "$tmp/nextest.tar.gz" "https://get.nexte.st/$v/linux"
-            tar zxf "$tmp/nextest.tar.gz" -C "$tmp"
-            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rm -r "$tmp"
-          fi
+          scripts/install-nextest.sh
 
       - name: cargo fmt --all -- --check
         if: env.LISTED == '1'
