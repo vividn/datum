@@ -1,10 +1,11 @@
 // A pinned toolchain tarball, fetched, checked and unpacked: build-cli-wasm.mjs's
-// `tool()`, here so tests/toolchain.test.mjs can drive it.
+// `tool()`, here so tests/toolchain.test.mjs can drive it, and `verified()`, the
+// tarball's checked bytes alone, which tests/support/sync.mjs's relay reads.
 //
 // DATUM_TOOLCHAIN_CACHE, a directory, is a read-through cache of the tarballs
 // (da-waoz2). Staging run 11153 went red when all eight of `download()`'s tries
 // at wasm-bindgen got a 504 from GitHub's release CDN, and the forge has no
-// cache service, so every run fetched all three tools afresh. Set, `tool()`
+// cache service, so every run fetched all three tools afresh. Set, `verified()`
 // reads `<cache>/<the URL's last segment>` (a name carrying the version) before
 // it fetches, and keeps a download there. A cached file is checked against the
 // pinned sha256 like any download and ignored when it differs, which is what
@@ -20,12 +21,13 @@ import { resolve } from 'node:path';
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 /**
- * `url`'s bytes, asking up to eight times, 10 s more apart each time (4 min 40 s
- * in all): one HTTP 500 from GitHub failed a CI run (da-wh359), and 30 s of 504s
- * another (da-ui0ux). A 4xx is the URL's answer, so it is not asked again, but
- * 408 and 429 say to wait and are.
+ * `url`'s bytes, asking up to `tries` times, 10 s more apart each time (eight
+ * by default, 4 min 40 s in all): one HTTP 500 from GitHub failed a CI run
+ * (da-wh359), and 30 s of 504s another (da-ui0ux). A 4xx is the URL's answer,
+ * so it is not asked again, but 408 and 429 say to wait and are. `get` and
+ * `wait` are a test's to replace.
  */
-export async function download(url, get = fetch) {
+export async function download(url, { get = fetch, tries = 8, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
 	for (let attempt = 1; ; attempt++) {
 		console.log(`fetching ${url}`);
 		try {
@@ -34,9 +36,9 @@ export async function download(url, get = fetch) {
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			return Buffer.from(await res.arrayBuffer());
 		} catch (e) {
-			if (e.final || attempt === 8) throw new Error(`${url}: ${e.message}`);
+			if (e.final || attempt === tries) throw new Error(`${url}: ${e.message}`);
 			console.log(`${e.message}; again in ${attempt * 10}s`);
-			await new Promise((r) => setTimeout(r, attempt * 10_000));
+			await wait(attempt * 10_000);
 		}
 	}
 }
@@ -69,24 +71,31 @@ function keep(cache, name, bytes) {
 	}
 }
 
+/**
+ * The tarball `url` names, as `sha256`'s bytes: the cache's copy, or a download
+ * (`download()`'s `options`), which the cache keeps. Throws if they differ.
+ */
+export async function verified({ url, sha256 }, options) {
+	const name = url.split('/').pop();
+	const cache = process.env.DATUM_TOOLCHAIN_CACHE;
+	const hit = cache && cached(cache, name, sha256);
+	if (hit) return hit;
+	const bytes = await download(url, options);
+	const actual = sha(bytes);
+	if (actual !== sha256) throw new Error(`${url}: sha256 ${actual}, pinned ${sha256}`);
+	if (cache) keep(cache, name, bytes);
+	return bytes;
+}
+
 /** The unpacked tool's directory under `toolchains`, downloading and verifying it first if needed. */
-export async function tool({ url, sha256, dir }, toolchains, get = fetch) {
-	const home = resolve(toolchains, dir);
+export async function tool(spec, toolchains, get = fetch) {
+	const home = resolve(toolchains, spec.dir);
 	if (existsSync(home)) return home;
 	mkdirSync(toolchains, { recursive: true });
-	const name = url.split('/').pop();
-	const tarball = resolve(toolchains, name);
-	if (!existsSync(tarball)) {
-		const cache = process.env.DATUM_TOOLCHAIN_CACHE;
-		let bytes = cache && cached(cache, name, sha256);
-		if (!bytes) {
-			bytes = await download(url, get);
-			if (cache && sha(bytes) === sha256) keep(cache, name, bytes);
-		}
-		writeFileSync(tarball, bytes);
-	}
+	const tarball = resolve(toolchains, spec.url.split('/').pop());
+	if (!existsSync(tarball)) writeFileSync(tarball, await verified(spec, { get }));
 	const actual = sha(readFileSync(tarball));
-	if (actual !== sha256) throw new Error(`${tarball}: sha256 ${actual}, pinned ${sha256}`);
+	if (actual !== spec.sha256) throw new Error(`${tarball}: sha256 ${actual}, pinned ${spec.sha256}`);
 	execFileSync('tar', ['-xzf', tarball, '-C', toolchains], { stdio: 'inherit' });
 	return home;
 }

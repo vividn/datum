@@ -41,6 +41,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { preview } from 'vite';
 import { median } from './median.mjs';
+import { verified } from './toolchain.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const repo = join(web, '..');
@@ -75,9 +76,7 @@ async function relayBinary() {
 	const bin = join(home, 'iroh-relay');
 	if (existsSync(bin)) return bin;
 	mkdirSync(home, { recursive: true });
-	const tarball = Buffer.from(await (await fetch(RELAY.url)).arrayBuffer());
-	const actual = createHash('sha256').update(tarball).digest('hex');
-	if (actual !== RELAY.sha256) throw new Error(`${RELAY.url}: sha256 ${actual}, pinned ${RELAY.sha256}`);
+	const tarball = await verified(RELAY);
 	const tmp = mkdtempSync(join(home, '.extract-'));
 	execFileSync('tar', ['-xzf', '-', '-C', tmp], { input: tarball });
 	renameSync(join(tmp, 'iroh-relay'), bin);

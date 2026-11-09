@@ -17,6 +17,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verified } from '../../scripts/toolchain.mjs';
 import { withApp } from './app.mjs';
 import { until } from './until.mjs';
 
@@ -28,34 +29,21 @@ const RELAY = {
 	dir: 'iroh-relay-v1.3.0'
 };
 
-// build-cli-wasm.mjs's `download()`, inlined (da-ccplx): GitHub's release CDN
-// answers 504 on and off for an hour at a time, and one 504 on a single fetch
-// failed the `before()` of every sync file. Eight tries, 10 s more apart each
-// (4 min 40 s in all); a 4xx other than 408 and 429 is final. `get` and `wait`
-// are a test's to replace.
-export async function download(url, { get = fetch, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
-	for (let attempt = 1; ; attempt++) {
-		try {
-			const res = await get(url);
-			if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) throw Object.assign(new Error(`HTTP ${res.status}`), { final: true });
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			return Buffer.from(await res.arrayBuffer());
-		} catch (e) {
-			if (e.final || attempt === 8) throw new Error(`${url}: ${e.message}`);
-			console.log(`${url}: ${e.message}; again in ${attempt * 10}s`);
-			await wait(attempt * 10_000);
-		}
-	}
-}
-
-async function relayBinary() {
-	const home = join(repo, 'target', 'toolchains', RELAY.dir);
+// The tarball comes through toolchain.mjs's `verified()` (da-or6gu), so a
+// DATUM_TOOLCHAIN_CACHE holding it is read and nothing is fetched. A miss is
+// tried five times, 10 s more apart each (100 s of waits), not `download()`'s
+// eight (280 s): it runs in a `before()`, cut at test.mjs's 300 s, and on
+// 2026-11-09 GitHub's release CDN answered 504 on and off from 05:15 UTC to past
+// 07:45, so run 11181's eighth try never came and the hook failed as a timeout
+// rather than naming the URL. `spec`, `toolchains`, `get` and `wait` are a
+// test's to replace.
+const RELAY_TRIES = 5;
+export async function relayBinary({ spec = RELAY, toolchains = join(repo, 'target', 'toolchains'), get, wait } = {}) {
+	const home = join(toolchains, spec.dir);
 	const bin = join(home, 'iroh-relay');
 	if (existsSync(bin)) return bin;
 	mkdirSync(home, { recursive: true });
-	const tarball = await download(RELAY.url);
-	const actual = createHash('sha256').update(tarball).digest('hex');
-	if (actual !== RELAY.sha256) throw new Error(`${RELAY.url}: sha256 ${actual}, pinned ${RELAY.sha256}`);
+	const tarball = await verified(spec, { get, wait, tries: RELAY_TRIES });
 	// Unpacked into a directory of this process's own and renamed into place:
 	// files run side by side, and one spawning `bin` while another was still
 	// writing it failed ETXTBSY (da-7yx6c). A rename is atomic, so `bin`

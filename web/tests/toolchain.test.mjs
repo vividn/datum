@@ -1,5 +1,6 @@
 // build-cli-wasm.mjs's read-through toolchain cache, in node (da-waoz2):
-// `tool()` against a fake fetch, a real tarball and DATUM_TOOLCHAIN_CACHE.
+// `tool()` against a fake fetch, a real tarball and DATUM_TOOLCHAIN_CACHE, and
+// `verified()`, the relay's way in (da-or6gu), held to the same cases.
 
 import test, { after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { tool } from '../scripts/toolchain.mjs';
+import { tool, verified } from '../scripts/toolchain.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'toolchain-'));
 after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -37,68 +38,76 @@ function fake() {
 	return get;
 }
 
-/** `tool(SPEC)` into a fresh toolchains directory: the fetches it made, and that the tool is there. */
-async function run() {
-	const toolchains = mkdtempSync(join(tmp, 'toolchains-'));
-	const get = fake();
-	const home = await tool(SPEC, toolchains, get);
-	assert.equal(readFileSync(join(home, 'bin'), 'utf8'), 'the tool');
-	return get.calls;
-}
+/** Each way in, given a fetch: `tool()`'s unpacked tool, `verified()`'s bytes. */
+const WAYS = {
+	tool: async (get) => {
+		const home = await tool(SPEC, mkdtempSync(join(tmp, 'toolchains-')), get);
+		assert.equal(readFileSync(join(home, 'bin'), 'utf8'), 'the tool');
+	},
+	verified: async (get) => assert.deepEqual(await verified(SPEC, { get }), GOOD)
+};
 
 const dir = () => mkdtempSync(join(tmp, 'cache-'));
 
-test('unset or empty, no cache is read or written', async () => {
-	assert.equal(await run(), 1);
-	// Empty must not read the cwd as the cache: a good tarball there is not taken.
-	const here = dir();
-	writeFileSync(join(here, NAME), GOOD);
-	process.chdir(here);
-	process.env.DATUM_TOOLCHAIN_CACHE = '';
-	assert.equal(await run(), 1);
-	assert.deepEqual(readdirSync(here), [NAME]);
-});
+for (const [way, take] of Object.entries(WAYS)) {
+	/** `way` with a fresh fetch: how many times it was asked. */
+	const run = async () => {
+		const get = fake();
+		await take(get);
+		return get.calls;
+	};
 
-test('a cached tarball with the pinned sha256 is used, and nothing is fetched', async () => {
-	const cache = dir();
-	writeFileSync(join(cache, NAME), GOOD);
-	process.env.DATUM_TOOLCHAIN_CACHE = cache;
-	assert.equal(await run(), 0);
-});
+	test(`${way}: unset or empty, no cache is read or written`, async () => {
+		assert.equal(await run(), 1);
+		// Empty must not read the cwd as the cache: a good tarball there is not taken.
+		const here = dir();
+		writeFileSync(join(here, NAME), GOOD);
+		process.chdir(here);
+		process.env.DATUM_TOOLCHAIN_CACHE = '';
+		assert.equal(await run(), 1);
+		assert.deepEqual(readdirSync(here), [NAME]);
+	});
 
-test('a cached tarball with another sha256 is fetched again, and the good bytes replace it', async () => {
-	const cache = dir();
-	writeFileSync(join(cache, NAME), 'not the tool');
-	process.env.DATUM_TOOLCHAIN_CACHE = cache;
-	assert.equal(await run(), 1);
-	assert.deepEqual(readFileSync(join(cache, NAME)), GOOD);
-	assert.deepEqual(readdirSync(cache), [NAME]);
-});
+	test(`${way}: a cached tarball with the pinned sha256 is used, and nothing is fetched`, async () => {
+		const cache = dir();
+		writeFileSync(join(cache, NAME), GOOD);
+		process.env.DATUM_TOOLCHAIN_CACHE = cache;
+		assert.equal(await run(), 0);
+	});
 
-test('a miss is fetched and kept, and the next build fetches nothing', async () => {
-	const cache = dir();
-	process.env.DATUM_TOOLCHAIN_CACHE = cache;
-	assert.equal(await run(), 1);
-	assert.deepEqual(readdirSync(cache), [NAME]);
-	assert.deepEqual(readFileSync(join(cache, NAME)), GOOD);
-	assert.equal(await run(), 0);
-});
-
-test('a download that fails the check is not kept', async () => {
-	const cache = dir();
-	process.env.DATUM_TOOLCHAIN_CACHE = cache;
-	const get = async () => new Response('not the tool');
-	await assert.rejects(tool(SPEC, mkdtempSync(join(tmp, 'toolchains-')), get), /sha256 .*, pinned/);
-	assert.deepEqual(readdirSync(cache), []);
-});
-
-test('a cache that cannot be written still gives the build its tool', async () => {
-	const file = join(dir(), 'a-file');
-	writeFileSync(file, '');
-	// Missing, and under a file (ENOTDIR, which root cannot write either).
-	for (const cache of [join(tmp, 'missing'), join(file, 'cache')]) {
+	test(`${way}: a cached tarball with another sha256 is fetched again, and the good bytes replace it`, async () => {
+		const cache = dir();
+		writeFileSync(join(cache, NAME), 'not the tool');
 		process.env.DATUM_TOOLCHAIN_CACHE = cache;
 		assert.equal(await run(), 1);
-		assert.equal(existsSync(cache), false);
-	}
-});
+		assert.deepEqual(readFileSync(join(cache, NAME)), GOOD);
+		assert.deepEqual(readdirSync(cache), [NAME]);
+	});
+
+	test(`${way}: a miss is fetched and kept, and the next build fetches nothing`, async () => {
+		const cache = dir();
+		process.env.DATUM_TOOLCHAIN_CACHE = cache;
+		assert.equal(await run(), 1);
+		assert.deepEqual(readdirSync(cache), [NAME]);
+		assert.deepEqual(readFileSync(join(cache, NAME)), GOOD);
+		assert.equal(await run(), 0);
+	});
+
+	test(`${way}: a download that fails the check is not kept`, async () => {
+		const cache = dir();
+		process.env.DATUM_TOOLCHAIN_CACHE = cache;
+		await assert.rejects(take(async () => new Response('not the tool')), /sha256 .*, pinned/);
+		assert.deepEqual(readdirSync(cache), []);
+	});
+
+	test(`${way}: a cache that cannot be written still gives the build its tool`, async () => {
+		const file = join(dir(), 'a-file');
+		writeFileSync(file, '');
+		// Missing, and under a file (ENOTDIR, which root cannot write either).
+		for (const cache of [join(tmp, 'missing'), join(file, 'cache')]) {
+			process.env.DATUM_TOOLCHAIN_CACHE = cache;
+			assert.equal(await run(), 1);
+			assert.equal(existsSync(cache), false);
+		}
+	});
+}
