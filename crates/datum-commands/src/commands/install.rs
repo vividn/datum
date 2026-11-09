@@ -253,11 +253,20 @@ fn replace(check: bool, to: Option<&str>) -> Result<()> {
             println!("{said}");
         }
     }
-    let (url, want) = resolve(to)?;
-    if sha256(&exe)? == want {
+    let (url, want, signed) = resolve(to)?;
+    // A plain upgrade goes only forward: a cache serving an older SHA256SUMS,
+    // or a release URL serving an older signed release, offers a build this
+    // one is newer than, which only `--to` installs (da-izpys).
+    if sha256(&exe)? == want || to.is_none() && !newer(&signed) {
         match to {
             Some(v) => println!("datum is {v} already"),
-            None => println!("datum is up to date"),
+            None if signed == format!("datum {}", said_build()) => {
+                println!("datum is up to date")
+            }
+            None => println!(
+                "datum is up to date: this is datum {}, and the release offers {signed}",
+                said_build()
+            ),
         }
         return Ok(());
     }
@@ -513,7 +522,7 @@ fn within_pin(to: Option<&str>, how: Option<PastPin>) -> Result<ControlFlow<(), 
 /// compatible version this way»): its kept `v<major>.<minor>` once the next
 /// minor has begun, the latest while it is the current one; [`fetch`]
 /// refuses a latest of another minor.
-fn resolve(to: Option<&str>) -> Result<(String, String)> {
+fn resolve(to: Option<&str>) -> Result<(String, String, String)> {
     let kept = release_url(to);
     let found = newest(&kept).or_else(|e| {
         let missing = e
@@ -781,8 +790,18 @@ fn ask(question: &str, label: &str) -> Result<Option<bool>> {
     Ok(Some(is_yes(&answer)))
 }
 
-/// This platform's binary in `release`, and its SHA256SUMS line.
-fn newest(release: &str) -> Result<(String, String)> {
+/// Whether `signed`, a release's version as its signature's trusted comment
+/// says it (`datum <version> (<sha7>)`, release/publish.sh), is newer than
+/// this build. One naming no version, signed before da-izpys, is not.
+fn newer(signed: &str) -> bool {
+    let parts = chain::version_parts;
+    signed.starts_with("datum ") && parts(signed) > parts(&said_build())
+}
+
+/// This platform's binary in `release`, its SHA256SUMS line, and the version
+/// SHA256SUMS's signature names in its trusted comment, which minisign signs
+/// too (da-izpys).
+fn newest(release: &str) -> Result<(String, String, String)> {
     let os = match std::env::consts::OS {
         "linux" | "macos" => std::env::consts::OS,
         _ => "",
@@ -828,8 +847,11 @@ fn newest(release: &str) -> Result<(String, String)> {
     };
     let sig = curl(&format!("{release}/{signature}"), None)
         .with_context(|| format!("SHA256SUMS is not signed: the release has no {signature}"))?;
-    Signature::decode(&String::from_utf8_lossy(&sig))
-        .and_then(|sig| release_key().verify(&sums, &sig, false))
+    let signed = Signature::decode(&String::from_utf8_lossy(&sig))
+        .and_then(|sig| {
+            release_key().verify(&sums, &sig, false)?;
+            Ok(sig.trusted_comment().to_string())
+        })
         .map_err(|e| {
             anyhow!("SHA256SUMS's signature does not verify with the key this datum was built with: {e}")
         })?;
@@ -837,7 +859,7 @@ fn newest(release: &str) -> Result<(String, String)> {
         want.len() == 64 && want.bytes().all(|b| b.is_ascii_hexdigit()),
         "SHA256SUMS's line for {name} holds no sha256: {want}"
     );
-    Ok((format!("{release}/{name}"), want))
+    Ok((format!("{release}/{name}"), want, signed))
 }
 
 /// datum carries no HTTP client: `curl` downloads, to `out` or to memory.
@@ -886,7 +908,7 @@ pub fn findings(syncs: bool) -> Option<Vec<(&'static str, String)>> {
     found.extend(sync_daemon::findings(&record.exe, syncs));
     let wanted = config::load_raw_config_or_default().is_ok_and(|c| c.update_check == Some(true));
     if wanted {
-        match newest(&release_url(None)).and_then(|(_, want)| Ok(sha256(&record.exe)? != want)) {
+        match newest(&release_url(None)).map(|(_, _, signed)| newer(&signed)) {
             Ok(false) => {}
             Ok(true) => found.push((
                 "install_update",

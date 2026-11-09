@@ -54,6 +54,9 @@ downloads the newest release for your machine, checks that
 (`release/minisign.pub`) and the binary against it (a missing or bad
 signature, or a mismatch, changes nothing), puts it in place of the
 running binary in one rename, and restarts the sync daemon if one runs.
+It installs only a version newer than the one running, by the version the
+signature names, so an older release served as the newest (a stale cache)
+leaves it «up to date»; `--to`, below, installs an older one.
 It upgrades only the binary `datum install` set up, or one cargo built
 from a checkout (below).
 

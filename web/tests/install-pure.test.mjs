@@ -300,9 +300,9 @@ const fakeMinisign = `#!${process.execPath}
 const fs = require('fs'), crypto = require('crypto');
 const a = process.argv.slice(2), val = (f) => a[a.indexOf(f) + 1];
 const signed = 'signed ' + crypto.createHash('sha256').update(fs.readFileSync(val('-m'))).digest('hex') + '\\n';
-if (a[0] === '-S') process.exit(void fs.writeFileSync(val('-x'), signed) ?? 0);
+if (a[0] === '-S') process.exit(void fs.writeFileSync(val('-x'), signed + 'trusted comment: ' + val('-t') + '\\n') ?? 0);
 const sig = val('-m') + '.minisig';
-process.exit(fs.existsSync(sig) && fs.readFileSync(sig, 'utf8') === signed ? 0 : 1);
+process.exit(fs.existsSync(sig) && fs.readFileSync(sig, 'utf8').startsWith(signed) ? 0 : 1);
 `;
 
 function releaseBox() {
@@ -357,6 +357,9 @@ describe('release/publish.sh moves installs to a build only once it is all up', 
 		}
 		assert.equal(readFileSync(join(box.release, 'datum-x86_64-linux'), 'utf8'), built(B));
 		assert.match(readFileSync(join(box.release, 'SHA256SUMS'), 'utf8'), /^\S+ {2}datum-x86_64-linux$/m);
+		// Signed with the build's version as its trusted comment, which datum upgrade compares (da-izpys).
+		const signature = readFileSync(join(box.release, `SHA256SUMS-${B.slice(0, 7)}.minisig`), 'utf8');
+		assert.match(signature, new RegExp(`^trusted comment: datum 3\\.0\\.1-beta \\(datum-x86_64-linux ${B.slice(0, 7)}\\)$`, 'm'));
 	});
 
 	test('a run cut short uploading its binaries leaves the previous build installable', () => {

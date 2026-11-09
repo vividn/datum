@@ -1686,6 +1686,12 @@ last (`release/publish.sh`, da-mzhau): install.sh and `datum upgrade` take the
 name from it and check that build's signature, so a run cut short, or a cache
 serving the previous SHA256SUMS, leaves every install on the previous build. The fixed names go up after it, for a datum from
 before build names to upgrade by.
+The signature's trusted comment, which minisign signs too, is the build's
+`datum --version` line, and a plain `datum upgrade`, the daily one and `datum
+check`'s update check take a release only when that version is newer than
+their own, saying «up to date» otherwise: a stale cache, or an older signed
+release served as the latest, downgrades nothing, and `--to` installs an older
+one by name (da-izpys).
 A binary trusts only the key it was built with, so a new key ships in a
 release still signed by the old one: change `release/minisign.pub` (and
 its copies in `web/static/install.sh`, `README.md` and

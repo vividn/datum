@@ -18,6 +18,10 @@ use tempfile::TempDir;
 
 use crate::sync_net::claim_port;
 
+/// A version newer than the test build's, signed for a release of the test
+/// build itself, which an upgrade then installs.
+const NEWER: &str = "datum 9.9.9-beta (abcdef1)";
+
 /// The key the test build trusts, and one it does not.
 pub(crate) const TEST_KEY: [u8; 32] = [7; 32];
 const OTHER_KEY: [u8; 32] = [8; 32];
@@ -29,13 +33,13 @@ pub(crate) fn minisign_key(seed: &[u8; 32]) -> String {
     BASE64.encode(&[b"Ed", &public[..8], &public[..]].concat())
 }
 
-/// `msg` signed by `seed` as `minisign -S` signs: `ED`, Ed25519 over its
-/// BLAKE2b-512, and a global signature over that and the trusted comment.
-fn minisign(seed: &[u8; 32], msg: &[u8]) -> String {
+/// `msg` signed by `seed` as `minisign -S -t <comment>` signs: `ED`, Ed25519
+/// over its BLAKE2b-512, and a global signature over that and the trusted
+/// comment.
+fn minisign(seed: &[u8; 32], msg: &[u8], comment: &str) -> String {
     let key = SigningKey::from_bytes(seed);
     let public = key.verifying_key().to_bytes();
     let sig = key.sign(&Blake2b512::digest(msg)).to_bytes();
-    let comment = "datum test release";
     let global = key
         .sign(&[&sig[..], comment.as_bytes()].concat())
         .to_bytes();
@@ -204,6 +208,12 @@ impl Home {
         sign_release(&self.path(dir), seed);
     }
 
+    /// Signs the release's SHA256SUMS with `seed`'s key, `comment` its
+    /// trusted comment, the version it says it is.
+    fn sign_as(&self, seed: &[u8; 32], comment: &str) {
+        sign_as(&self.path("release"), seed, comment);
+    }
+
     /// The signature an upgrade reads: the build's, `SHA256SUMS-<sha7>.minisig`,
     /// where SHA256SUMS names one, and `SHA256SUMS.minisig` where it does not.
     fn sig(&self) -> PathBuf {
@@ -232,9 +242,28 @@ pub(crate) fn write_release(dir: &std::path::Path, binary: &[u8], sum: Option<&s
     .unwrap();
 }
 
+/// Signs as release/publish.sh does: the trusted comment is what the
+/// release's binary says to `--version` (da-izpys), or `datum 9.9.9` for one
+/// that does not run.
 pub(crate) fn sign_release(dir: &std::path::Path, seed: &[u8; 32]) {
+    let sums = std::fs::read_to_string(dir.join("SHA256SUMS")).unwrap();
+    let binary = dir.join(sums.split_whitespace().last().unwrap());
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let said = Command::new(&binary)
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map_or("datum 9.9.9".into(), |o| {
+            String::from_utf8(o.stdout).unwrap().trim().to_string()
+        });
+    sign_as(dir, seed, &said);
+}
+
+/// Signs the release in `dir` with `comment` as its trusted comment.
+fn sign_as(dir: &std::path::Path, seed: &[u8; 32], comment: &str) {
     let sums = std::fs::read(dir.join("SHA256SUMS")).unwrap();
-    std::fs::write(signature(dir), minisign(seed, &sums)).unwrap();
+    std::fs::write(signature(dir), minisign(seed, &sums, comment)).unwrap();
 }
 
 fn signature(dir: &std::path::Path) -> PathBuf {
@@ -561,7 +590,7 @@ fn a_cargo_install_moves_onto_the_release() {
     };
 
     h.release(&release(b"one"), None);
-    h.sign(&OTHER_KEY);
+    h.sign_as(&OTHER_KEY, NEWER);
     let out = h.run(&["upgrade"]);
     assert!(!out.status.success(), "{out:?}");
     let said = String::from_utf8_lossy(&out.stderr);
@@ -571,7 +600,7 @@ fn a_cargo_install_moves_onto_the_release() {
     );
     unchanged();
 
-    h.sign(&TEST_KEY);
+    h.sign_as(&TEST_KEY, NEWER);
     let out = h.run(&["upgrade", "--check"]);
     assert!(out.status.success(), "{out:?}");
     warned(&out);
@@ -591,6 +620,7 @@ fn a_cargo_install_moves_onto_the_release() {
     assert!(record.contains(&h.exe().display().to_string()), "{record}");
 
     h.release(&release(b"two"), None);
+    h.sign_as(&TEST_KEY, NEWER);
     let out = h.run(&["upgrade"]);
     assert!(out.status.success(), "{out:?}");
     let said = String::from_utf8_lossy(&out.stderr);
@@ -600,6 +630,58 @@ fn a_cargo_install_moves_onto_the_release() {
     );
     assert_eq!(std::fs::read(h.exe()).unwrap(), release(b"two"));
     assert_eq!(h.log().matches(&cargo).count(), 1, "{}", h.log());
+}
+
+/// A plain upgrade goes only forward, by the version the release's signature
+/// names in its trusted comment (da-izpys): an older release offered as the
+/// latest, a stale cache's or an older one served on purpose, is «up to
+/// date» and changes nothing, and so is one whose signature names no
+/// version; `--to` installs the older one. A trusted comment changed after
+/// signing does not verify. A newer one installs, as
+/// `upgrade_refuses_a_mismatch_and_swaps_in_a_good_release` shows.
+#[test]
+fn a_plain_upgrade_installs_only_a_newer_signed_version() {
+    let h = Home::new();
+    h.ok(&["install", "--no-completions"]);
+    let before = std::fs::read(h.exe()).unwrap();
+    let older = b"#!/bin/sh\necho 'datum 0.1.1-beta (abcdef1)'\n";
+    h.release(older, None);
+    for args in [&["upgrade"][..], &["upgrade", "--check"]] {
+        let said = h.ok(args);
+        assert!(said.contains("datum is up to date"), "{args:?}: {said}");
+        assert!(
+            said.contains("the release offers datum 0.1.1-beta (abcdef1)"),
+            "{said}"
+        );
+    }
+    std::fs::create_dir_all(h.path("dconf")).unwrap();
+    std::fs::write(h.path("dconf/datumrc.toml"), "update_check = true\n").unwrap();
+    assert_eq!(h.install_findings(), Some(vec![]), "no newer datum");
+    assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+
+    // Signed before da-izpys: the comment names a commit, no version.
+    h.sign_as(&TEST_KEY, &format!("datum {}", "a".repeat(40)));
+    assert!(h.ok(&["upgrade"]).contains("datum is up to date"));
+    assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+
+    // Its trusted comment rewritten newer, the signature unchanged.
+    h.sign_as(&TEST_KEY, "datum 0.1.1-beta (abcdef1)");
+    let sig = std::fs::read_to_string(h.sig()).unwrap();
+    let forged = sig.replace("datum 0.1.1-beta", "datum 99.0.0-beta");
+    assert_ne!(sig, forged);
+    std::fs::write(h.sig(), forged).unwrap();
+    let said = h.err(&["upgrade"]);
+    assert!(
+        said.contains("does not verify with the key this datum was built with"),
+        "{said}"
+    );
+    assert_eq!(std::fs::read(h.exe()).unwrap(), before);
+
+    h.release_in("v0.1.1", older, None);
+    h.sign_in("v0.1.1", &TEST_KEY);
+    let said = h.ok(&["upgrade", "--to", "0.1.1"]);
+    assert!(said.contains("to datum 0.1.1-beta (abcdef1)"), "{said}");
+    assert_eq!(std::fs::read(h.exe()).unwrap(), older);
 }
 
 /// Once cargo has uninstalled the checkout's datum, the release is the only
@@ -617,6 +699,7 @@ fn a_failed_swap_after_cargo_uninstall_keeps_the_release() {
     .unwrap();
     let release = [&std::fs::read(h.exe()).unwrap()[..], b"one"].concat();
     h.release(&release, None);
+    h.sign_as(&TEST_KEY, NEWER);
     let said = h.err(&["upgrade"]);
     let part = h.path("bin/.datum-upgrade");
     assert!(

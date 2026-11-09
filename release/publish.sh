@@ -54,7 +54,14 @@ trap 'rm -f "$key"' EXIT
 printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
 # The key has no password (`minisign -G -W`); one that has fails here at
 # once, where an open stdin would wait for it.
-minisign -S -s "$key" -m SHA256SUMS -x SHA256SUMS.minisig -t "datum ${GITHUB_SHA}" < /dev/null
+# The trusted comment is the build's version, `datum --version`'s line,
+# `datum <major>.<minor>.<height>-beta (<sha7>)`, which minisign signs too: a
+# plain `datum upgrade` installs only a version newer than its own, so a cache
+# or a release URL serving an older signed release is no downgrade
+# (da-izpys). This runner is x86_64 Linux, and an artifact keeps no mode.
+chmod +x "datum-x86_64-linux-$build"
+said=$("./datum-x86_64-linux-$build" --version)
+minisign -S -s "$key" -m SHA256SUMS -x SHA256SUMS.minisig -t "$said" < /dev/null
 # As datum verifies it, before anything is uploaded: prehashed (-H; datum
 # refuses minisign's legacy form) and by the key it is built with, so a
 # secret that is not that key fails here and publishes nothing that new
