@@ -10,7 +10,8 @@
 
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -111,6 +112,47 @@ describe('install.sh picks the binary for the machine', () => {
 			assert.equal(existsSync(run.installed), false);
 		});
 	}
+});
+
+describe('install.sh tries a download again', () => {
+	// da-dbe3g: GitHub answered 504 for the latest SHA256SUMS on and off for
+	// hours. The release served over HTTP, each file's first request refused
+	// with a 503, and the install gets through on the second.
+	test('a 503 answered once is tried again, for each file', async () => {
+		const box = scratch();
+		const refused = [];
+		const server = createServer((req, res) => {
+			if (!refused.includes(req.url)) {
+				refused.push(req.url);
+				return res.writeHead(503).end();
+			}
+			const file = join(box.release, decodeURIComponent(req.url));
+			if (!existsSync(file)) return res.writeHead(404).end();
+			res.writeHead(200).end(readFileSync(file));
+		});
+		await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+		try {
+			const sh = spawn('sh', [script, '--no-completions'], {
+				env: {
+					PATH: `${box.bin}:${box.signer}:${process.env.PATH}`,
+					HOME: box.home,
+					XDG_CONFIG_HOME: join(box.home, '.config'),
+					DATUM_RELEASE_URL: `http://127.0.0.1:${server.address().port}`,
+					STUB_S: 'Linux',
+					STUB_M: 'x86_64'
+				}
+			});
+			let stderr = '';
+			sh.stderr.on('data', (d) => (stderr += d));
+			const status = await new Promise((resolve) => sh.on('close', resolve));
+			assert.equal(status, 0, stderr);
+			assert.equal(readFileSync(join(box.home, '.local/bin/datum'), 'utf8'), binary('datum-x86_64-linux'));
+			assert.deepEqual(refused, ['/SHA256SUMS', '/SHA256SUMS-0123abc.minisig', '/datum-x86_64-linux-0123abc']);
+		} finally {
+			server.close();
+			rmSync(box.root, { recursive: true, force: true });
+		}
+	});
 });
 
 describe('install.sh refuses a binary SHA256SUMS does not vouch for', () => {

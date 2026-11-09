@@ -45,7 +45,11 @@ asset="datum-$arch-$os"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL -o "$tmp/SHA256SUMS" "$release/SHA256SUMS" || fail "could not download $release/SHA256SUMS"
+# Every download tries again (--retry 5: a timeout, 408, 429 or 5xx, about
+# 31 s in all), as `datum upgrade`'s curl() does: GitHub answered 504 for one
+# asset, the latest SHA256SUMS, on and off for hours on 2026-11-09 (da-dbe3g).
+# A 404 still fails at once.
+curl -fsSL --retry 5 -o "$tmp/SHA256SUMS" "$release/SHA256SUMS" || fail "could not download $release/SHA256SUMS"
 
 # SHA256SUMS names the build's own binary, datum-<arch>-<os>-<sha7>, and is
 # signed by that build's SHA256SUMS-<sha7>.minisig: a release cut short, or a
@@ -62,7 +66,7 @@ sig=SHA256SUMS.minisig
 asset=$name
 
 if command -v minisign > /dev/null; then
-  curl -fsSL -o "$tmp/SHA256SUMS.minisig" "$release/$sig" ||
+  curl -fsSL --retry 5 -o "$tmp/SHA256SUMS.minisig" "$release/$sig" ||
     fail "SHA256SUMS is not signed: could not download $release/$sig; nothing installed"
   minisign -Vq -m "$tmp/SHA256SUMS" -P "$key" ||
     fail "SHA256SUMS's signature does not verify with the release key; nothing installed"
@@ -70,7 +74,7 @@ else
   echo "minisign is not installed, so SHA256SUMS's signature was not checked (by hand: minisign -Vm SHA256SUMS -x $sig -P $key)" >&2
 fi
 
-curl -fsSL -o "$tmp/$asset" "$release/$asset" || fail "could not download $release/$asset"
+curl -fsSL --retry 5 -o "$tmp/$asset" "$release/$asset" || fail "could not download $release/$asset"
 if command -v sha256sum > /dev/null; then
   got=$(sha256sum "$tmp/$asset")
 else

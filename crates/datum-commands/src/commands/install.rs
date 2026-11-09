@@ -841,9 +841,13 @@ fn newest(release: &str) -> Result<(String, String)> {
 }
 
 /// datum carries no HTTP client: `curl` downloads, to `out` or to memory.
+/// Each download tries again (`--retry 5`: a timeout, 408, 429 or 5xx, about
+/// 31 s in all), as install.sh's do: GitHub answered 504 for one asset, the
+/// latest SHA256SUMS, on and off for hours on 2026-11-09 (da-dbe3g). A 404
+/// still fails at once.
 fn curl(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
     let mut cmd = Command::new("curl");
-    cmd.args(["-fsSL", "--max-time", "600"]);
+    cmd.args(["-fsSL", "--retry", "5", "--max-time", "600"]);
     if let Some(out) = out {
         cmd.arg("-o").arg(out);
     }

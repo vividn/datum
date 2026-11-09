@@ -888,3 +888,63 @@ fn a_datum_not_yours_to_replace_is_left_alone() {
         b"#!/bin/sh\necho datum 9.9.9\n"
     );
 }
+
+/// A release download that answers 503 once is tried again (da-dbe3g: GitHub
+/// answered 504 for the latest SHA256SUMS on and off for hours): `release`
+/// served over HTTP, each file's first request refused, and the upgrade
+/// gets through on the second.
+#[test]
+fn upgrade_tries_a_download_again() {
+    use std::io::{Read, Write};
+    let h = Home::new();
+    h.ok(&["install", "--no-completions"]);
+    let stub = b"#!/bin/sh\necho datum 9.9.9\n";
+    h.release(stub, None);
+    let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", server.local_addr().unwrap());
+    let dir = h.path("release");
+    let refused = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let seen = refused.clone();
+    std::thread::spawn(move || {
+        for conn in server.incoming() {
+            let mut conn = conn.unwrap();
+            let mut req = Vec::new();
+            let mut buf = [0; 1024];
+            while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = conn.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                req.extend_from_slice(&buf[..n]);
+            }
+            let req = String::from_utf8_lossy(&req);
+            let path = req.split(' ').nth(1).unwrap_or("/").to_string();
+            let mut seen = seen.lock().unwrap();
+            let (status, body) = if !seen.contains(&path) {
+                seen.push(path);
+                ("503 Service Unavailable", Vec::new())
+            } else {
+                match std::fs::read(dir.join(path.trim_start_matches('/'))) {
+                    Ok(body) => ("200 OK", body),
+                    Err(_) => ("404 Not Found", Vec::new()),
+                }
+            };
+            let head = format!(
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = conn.write_all(head.as_bytes());
+            let _ = conn.write_all(&body);
+        }
+    });
+    let said = h.ok_with(&["upgrade"], &[("DATUM_RELEASE_URL", &url)]);
+    assert!(said.contains("datum 9.9.9"), "{said}");
+    assert_eq!(std::fs::read(h.exe()).unwrap(), stub);
+    // SHA256SUMS, its signature and the binary were each refused once.
+    assert_eq!(
+        refused.lock().unwrap().len(),
+        3,
+        "{:?}",
+        refused.lock().unwrap()
+    );
+}
