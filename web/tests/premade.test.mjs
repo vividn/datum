@@ -9,14 +9,32 @@
 // example under its theme; a tap opens setup with that example's kind and keys
 // filled and writes nothing; one whose field exists says so and opens it; and
 // each example, saved from setup, is a field the bar logs.
+//
+// The examples are premade.toml's, compiled into the CLI (da-rky8h): read here
+// as the page reads them, `setup --premade --json`, through the same wasm.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, exactly } from './support/layout.mjs';
 import { FIELD_FORM, PANEL, declared, fieldNamed, leaveField } from './support/field.mjs';
+import { resolveLibAsSource } from './support/libhook.mjs';
+import { exec } from './support/process.mjs';
 import { until } from './support/until.mjs';
-import { EXAMPLES, THEMES, VERBS, chosen } from '../src/lib/track.ts';
+import { VERBS, chosen } from '../src/lib/track.ts';
+
+resolveLibAsSource();
+const { Sink } = await import('../src/lib/wasiFs.ts');
+/** premade.toml, as `setup --premade --json` prints it from the wasm the page runs. */
+const { themes: THEMES, examples: EXAMPLES } = (() => {
+	const module = new WebAssembly.Module(readFileSync(new URL('../src/lib/wasm/datum-cli.wasm', import.meta.url)));
+	const [stdout, stderr] = [new Sink(), new Sink()];
+	const wasi = new WASI(['datum', 'setup', '--premade', '--json'], ['TZ=UTC'], [new OpenFile(new MemFile([])), stdout, stderr], { debug: false });
+	assert.equal(exec(module, wasi), 0, stderr.text());
+	return JSON.parse(stdout.text());
+})();
 
 before(startApp);
 after(stopApp);
@@ -32,7 +50,11 @@ const keyRows = (page) =>
 	page
 		.locator(`${PANEL} ul.data li.key`)
 		.evaluateAll((all) => all.map((li) => [li.querySelector('.mode').textContent, li.querySelector('input.name').value, li.querySelector('.eq')?.getAttribute('aria-pressed') ?? null]));
-const rowsOf = (keys = []) => keys.map((k) => [k.rest ? `-${k.rest}` : k.in_slug ? '-K' : '-k', k.name, k.rest ? null : String(k.kind !== 'required')]);
+/** The key rows `spec` draws: each key it declares, then the one taking the rest of the line. */
+const rowsOf = (spec) => [
+	...spec.keys.map((k) => [k.in_slug ? '-K' : '-k', k.name, String(k.kind !== 'required')]),
+	...(spec.remainder ? [[spec.string_remainder ? '-SR' : '-R', spec.remainder, null]] : [])
+];
 
 /** Premade's tab, from a first visit's welcome. */
 async function toPremade(page) {
@@ -50,13 +72,15 @@ describe('a first visit', () => {
 			const shown = await page.locator(`${PREMADE} section[data-theme]`).evaluateAll((all) =>
 				all.map((s) => [s.dataset.theme, [...s.querySelectorAll('[data-example]')].map((e) => e.dataset.example)])
 			);
-			assert.deepEqual(shown, THEMES.map(({ theme, examples }) => [theme, examples.map((e) => e.field)]));
+			assert.deepEqual(shown, THEMES.map((theme) => [theme, EXAMPLES.filter((e) => e.theme === theme).map((e) => e.field)]));
 			// Each with its icon in its color, its name and its kind's glyph, and what it shows.
 			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 			const rows = await page.locator(`${PREMADE} [data-example]`).evaluateAll((all) =>
 				all.map((b) => [b.querySelector('.icon').textContent, getComputedStyle(b.querySelector('.icon')).color, b.querySelector('.name').textContent, b.querySelector('.what').textContent])
 			);
-			assert.deepEqual(rows, EXAMPLES.map((e) => [e.glyph, rgb(e.color), `${e.field} ${VERBS.find((v) => v.verb === e.verb).glyph}`, e.shows]));
+			// In the file's order, theme by theme.
+			const listed = THEMES.flatMap((theme) => EXAMPLES.filter((e) => e.theme === theme));
+			assert.deepEqual(rows, listed.map((e) => [e.symbol, rgb(e.color), `${e.field} ${VERBS.find((v) => v.verb === e.kind).glyph}`, e.shows]));
 			// The chores kit is offered beside the chores.
 			assert.equal(await page.locator(`${PREMADE} section[data-theme="home & chores"] button.install`).count(), 1);
 			assert.deepEqual(app.errors, []);
@@ -82,11 +106,11 @@ describe('a first visit', () => {
 		}, { ...PHONE, home: null });
 	});
 
-	test('steps is listed under movement, and a tap opens setup with the all-day kind chosen', async () => {
+	test('steps is listed under body, and a tap opens setup with the all-day kind chosen', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await toPremade(page);
-			assert.equal(await page.locator(`${PREMADE} section[data-theme="movement"] [data-example="steps"]`).count(), 1);
+			assert.equal(await page.locator(`${PREMADE} section[data-theme="body"] [data-example="steps"]`).count(), 1);
 			await card(page, 'steps').click();
 			await until(() => front(page), (name) => name === 'setup');
 			await until(() => fieldNamed(page), (v) => v === 'steps');
@@ -156,6 +180,7 @@ const LOGGED = {
 	headache: ['headache', null],
 	shower: ['shower', null],
 	menstruation: ['menstruation', null],
+	sitting: ['sitting', null],
 	coffee: ['coffee', null],
 	meal: ['snack food=toast', { food: 'toast' }],
 	alcohol: ['alcohol', null],
@@ -198,7 +223,7 @@ const LOGGED = {
 async function openExample(page, example) {
 	if (await page.locator(FIELD_FORM).count()) await leaveField(page);
 	await page.locator('.field-form').waitFor({ state: 'detached' });
-	const saved = page.evaluate((e) => window.datum.field(e.field, e.verb, { example: e }), example);
+	const saved = page.evaluate((e) => window.datum.field(e.field, e.kind, { example: e }), example);
 	saved.catch(() => {});
 	return { saved };
 }
@@ -214,10 +239,11 @@ describe('each example', () => {
 				const { page } = app;
 				const { saved } = await openExample(page, example);
 				await until(() => fieldNamed(page), (v) => v === example.field);
-				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
-				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(example.states ?? {}));
-				if (example.verb !== 'add') await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
-				assert.deepEqual(await keyRows(page), rowsOf(example.keys));
+				const { spec } = example;
+				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.kind);
+				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), spec.allowed_states ?? []);
+				if (example.kind !== 'add') await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
+				assert.deepEqual(await keyRows(page), rowsOf(spec));
 				await app.idle();
 				assert.deepEqual(await app.allEntries(), []);
 
@@ -229,17 +255,14 @@ describe('each example', () => {
 				const echoes = (await app.echoes()).slice(before);
 				assert.equal(echoes.length, 1, `one command, not a stream: ${echoes.join(' | ')}`);
 				assert.equal(declared(echoes[0]).line, `setup ${example.field} --from-json --track`);
+				// What it stores is the example's spec, its place and mood's faces included.
 				const shown = JSON.parse((await app.run(['setup', example.field, '--json'])).stdout);
-				assert.equal(shown.color, example.color);
-				assert.equal(shown.symbol, example.glyph);
-				assert.deepEqual(shown.state_colors, example.states ?? {});
-				assert.equal(shown.state_lookup_field, example.lookup);
-				assert.equal(shown.never_false, example.neverFalse);
-				if (example.aliases)
-					assert.deepEqual(
-						shown.derived_aliases.map((a) => [a.state, a.expands_to]),
-						example.aliases.map((a) => [a.state, a.expands_to])
-					);
+				for (const key of ['color', 'symbol', 'state_colors', 'state_lookup_field', 'never_false', 'symbol_by', 'y', 'height', 'symbol_scale', 'keys'])
+					assert.deepEqual(shown[key], spec[key], key);
+				assert.deepEqual(
+					shown.derived_aliases.map((a) => [a.state, a.expands_to]),
+					spec.derived_aliases.map((a) => [a.state, a.expands_to])
+				);
 				await leaveField(page);
 				await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 

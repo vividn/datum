@@ -122,6 +122,7 @@ mod output_parity;
 mod parity;
 mod parity_repro;
 mod png_output;
+mod premade;
 mod range_shorthand_cmd;
 mod read_only_open;
 mod readme_anti_drift;

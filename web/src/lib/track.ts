@@ -48,164 +48,61 @@ export const VERBS: VerbChoice[] = [
 	{ verb: 'allday', glyph: '▤', what: 'all day', line: 'one value for a whole day' }
 ];
 
-/** A key an example declares: the key row's name, kind, place in the slug, and whether it takes the rest of the line. */
-export type ExampleKey = Pick<KeyRow, 'name' | 'kind' | 'in_slug' | 'rest'>;
-
-/** A field to start from: what an example fills the setup form with, never the database (da-fu29p). */
+/**
+ * A field to start from (da-fu29p): one `[[example]]` of premade.toml, as
+ * `setup --premade --json` prints it (da-rky8h). What it fills the setup
+ * form with is its `spec`, as `setup F --json` prints one; never the
+ * database until it is saved.
+ */
 export interface Example {
 	field: string;
-	verb: Verb;
 	/** The theme it is listed under in the premade widget (da-36whg). */
 	theme: string;
+	kind: Verb;
+	symbol: string;
+	color: string;
 	/** What it shows of datum, under its name. */
 	shows: string;
-	color: string;
-	/** Its icon in the examples, saved as the field's glyph. */
-	glyph: string;
-	/** Each state and its color, in the order they stand. */
-	states?: Record<string, string>;
-	keys?: ExampleKey[];
-	/** Choices that each give the keys in place of `keys`: weight's lbs or kg. */
-	choices?: Record<string, ExampleKey[]>;
-	/** Aliases of its own, which then are the whole list (`no_autoalias`): meal's `snack`. */
-	aliases?: DerivedAlias[];
-	/** A switch whose bare state names an entry of this field (`state_lookup_field`). */
-	lookup?: string;
-	neverFalse?: boolean;
+	/** Its words beside a variant's, where it has one. */
+	label?: string;
+	key_above?: string;
+	key_below?: string;
+	/** Its example day, the file's. */
+	day?: unknown;
+	/** @shallow a spec, whose keys `specShowArgv` reads as `Spec`. */
+	spec: Spec;
+	/** Ways to log it that each give their own keys: weight's lbs or kg. */
+	choices?: Record<string, Choice>;
+	/** Another kind for the same field: menstruation each day. */
+	as?: Variant[];
 }
 
-const dataKey = (name: string, kind: KeyKind = 'optional', in_slug = false): ExampleKey => ({ name, kind, in_slug });
-/** A record's id: required, and in the slug, as `-K id` makes it: `person:vr520`. */
-const id = dataKey('id', 'required', true);
-const moment = (theme: string, field: string, shows: string, color: string, glyph: string, keys?: ExampleKey[]): Example => ({
-	field,
-	verb: 'occur',
-	theme,
-	shows,
-	color,
-	glyph,
-	...(keys && { keys })
-});
-const onOff = (theme: string, field: string, shows: string, color: string, glyph: string, keys?: ExampleKey[]): Example => ({
-	...moment(theme, field, shows, color, glyph, keys),
-	verb: 'start'
-});
-const record = (field: string, shows: string, color: string, glyph: string, keys: string[]): Example => ({
-	field,
-	verb: 'add',
-	theme: 'records',
-	shows,
-	color,
-	glyph,
-	keys: [id, ...keys.map((k) => dataKey(k))]
-});
+/** One of an example's choices: its label key, and the spec it gives. */
+export interface Choice {
+	key_above?: string;
+	/** @shallow as the example's. */
+	spec: Spec;
+}
 
-/**
- * vividn's list, by theme (2026-11-05, da-36whg): «a nice color (potentially
- * symbol), any extra data, states, etc is filled in for you». The themes are
- * interim, his to rename. A spec has no range, so mood's -5 to +5 is its line.
- */
-export const EXAMPLES: Example[] = [
-	onOff('body', 'sleep', 'on at night, off in the morning', '#7b68ee', '🌙'),
-	{
-		...moment('body', 'weight', 'each weighing, in lbs or kg', '#8fbc8f', '⚖'),
-		choices: { lbs: [dataKey('lbs')], kg: [dataKey('kg')] }
-	},
-	moment('body', 'water', 'each glass, and how many ml', '#5ab4e8', '💧', [dataKey('ml')]),
-	moment('body', 'medication', 'what you took, and how much', '#7fb8d4', '💊', [dataKey('name', 'required'), dataKey('dose')]),
-	onOff('body', 'headache', 'on while it lasts, off when it ends', '#d46a6a', '⚡'),
-	onOff('body', 'shower', 'on in, off out', '#5ac8d4', '🚿'),
-	onOff('body', 'menstruation', 'on while it lasts, off when it ends', '#d64545', '🩸'),
-	moment('food & drink', 'coffee', 'each cup', '#c69c6d', '☕'),
-	{
-		...onOff('food & drink', 'meal', 'on as you sit down, off when done; snack, a bite between', '#e0a458', '🍽', [dataKey('food')]),
-		aliases: [
-			{ state: 'meal', expands_to: 'start meal', kind: 'bare_field' },
-			{ state: 'meale', expands_to: 'end meal', kind: 'terminal_end' },
-			{ state: 'snack', expands_to: 'moment meal' }
-		]
-	},
-	moment('food & drink', 'alcohol', 'each drink', '#b5485d', '🍷'),
-	moment('food & drink', 'tobacco', 'each one', '#a0937d', '🚬'),
-	moment('food & drink', 'cannabis', 'each time', '#6b8e23', '🌿'),
-	moment('mind', 'mood', 'a level, -5 to +5', '#e8c547', '🙂', [dataKey('level', 'required')]),
-	moment('mind', 'emotion', 'the words for what you feel', '#d48ad4', '💭', [dataKey('words', 'required'), { ...dataKey('words'), rest: 'R' }]),
-	moment('mind', 'energy', 'a level, 0 to 10', '#f0a830', '🔋', [dataKey('level', 'required')]),
-	onOff('movement', 'run', 'on as you set off, off with how far, in km', '#e8734a', '🏃', [dataKey('distanceKm')]),
-	{
-		...moment('movement', 'workout', 'lift, swim, bike or yoga, until the next', '#4fa3e8', '🏋'),
-		verb: 'switch',
-		states: { lift: '#d4a35a', swim: '#5ab4e8', bike: '#7bd389', yoga: '#c39bd3' }
-	},
-	// vividn, 2026-11-05: «steps should be an ALLDAY kind of data» (da-uykff): `steps 8000`, the day's count as its state.
-	{ ...moment('movement', 'steps', 'the day\'s count: steps 8000', '#f2a65a', '👣'), verb: 'allday' },
-	onOff('work', 'work', 'on when you start, off when you stop', '#d4a35a', '💼'),
-	{ ...moment('work', 'project', 'the project you are on, until the next', '#9b7fd4', '📁'), verb: 'switch' },
-	onOff('work', 'meeting', 'on as it starts, off as it ends', '#d48788', '👥'),
-	{
-		...moment('work', 'activity', 'email, meeting or deepwork, until the next', '#c8c8c8', '🗂'),
-		verb: 'switch',
-		states: { email: '#4f8fe8', meeting: '#d48788', deepwork: '#7bd389' }
-	},
-	{
-		...moment('home & chores', 'room', 'the room you are in, or off', '#cbb994', '🚪'),
-		verb: 'switch',
-		states: { kitchen: '#e0b070', bedroom: '#7b68ee', living: '#9ad48a', bathroom: '#5ac8d4', office: '#7f9cc4' }
-	},
-	{
-		...moment('home & chores', 'environment', 'where you are: home, office, car, train…', '#9acd32', '🌳'),
-		verb: 'switch',
-		// vividn gave outside a light green and airplane an off-white (da-yqx0t).
-		states: {
-			home: '#e0b070',
-			office: '#7f9cc4',
-			inside: '#cbb994',
-			outside: '#9ad48a',
-			car: '#d9825b',
-			bus: '#e2c35a',
-			train: '#5fb3a8',
-			airplane: '#ece8df'
-		},
-		neverFalse: true
-	},
-	moment('home & chores', 'laundry', 'each load', '#8fb8de', '🧺'),
-	moment('home & chores', 'plants', 'each watering', '#6fbf73', '🪴'),
-	moment('home & chores', 'makebed', 'the bed made', '#c8a2c8', '🛏'),
-	moment('home & chores', 'dishes', 'each wash', '#9ec5d6', '🧽'),
-	moment('home & chores', 'trash', 'each time it goes out', '#8a8a8a', '🗑'),
-	moment('home & chores', 'vacuum', 'each time', '#b0a0d0', '🧹'),
-	onOff('screens & media', 'phone', 'on while you are on it', '#8fa3bf', '📱'),
-	onOff('screens & media', 'screentime', 'on while you are on a screen', '#8fa3bf', '📱'),
-	{
-		...moment('screens & media', 'watch', 'what you watch: dune is movie:dune, series:severance a series', '#e57373', '📺'),
-		verb: 'switch',
-		lookup: 'movie'
-	},
-	{
-		...moment('screens & media', 'reading', 'the book you read: dune is book:dune', '#c39bd3', '📖'),
-		verb: 'switch',
-		lookup: 'book'
-	},
-	moment('habits', 'floss', 'each time', '#e0e0e0', '🦷'),
-	moment('habits', 'stretch', 'each time', '#7bd389', '🤸'),
-	moment('habits', 'vitamins', 'each day you take them', '#f4c542', '🍊'),
-	record('person', 'a name, how to reach them, where they work', '#e59866', '👤', ['name', 'lastName', 'address', 'company', 'phone', 'email', 'city']),
-	record('place', 'a record with a name and an address', '#76d7c4', '📍', ['name', 'address']),
-	record('book', 'a title and an author', '#c39bd3', '📚', ['title', 'author']),
-	record('movie', 'a title and a year', '#e57373', '🎬', ['title', 'year']),
-	record('series', 'a title and a season', '#ef9a9a', '🎞', ['title', 'season']),
-	record('word', 'a word, its language, part of speech and meaning', '#80cbc4', '🔤', ['lang', 'pos', 'meaning'])
-];
+/** An example as another kind, with its own words and day. */
+export interface Variant {
+	kind: Verb;
+	label: string;
+	shows: string;
+	day?: unknown;
+	/** @shallow as the example's. */
+	spec: Spec;
+}
 
-/** The examples by theme, in the order the themes first come. */
-export const THEMES: { theme: string; examples: Example[] }[] = [...new Set(EXAMPLES.map((e) => e.theme))].map((theme) => ({
-	theme,
-	examples: EXAMPLES.filter((e) => e.theme === theme)
-}));
+/** premade.toml whole: its themes, in order, and its examples. */
+export interface Premade {
+	themes: string[];
+	examples: Example[];
+}
 
-/** `example` with `choice`'s keys in place of its own: what a tap on one of its choices fills the form with. */
+/** `example` as `choice` gives it: what a tap on one of its choices fills the form with. */
 export const chosen = (example: Example, choice?: string): Example =>
-	choice && example.choices?.[choice] ? { ...example, keys: example.choices[choice] } : example;
+	choice && example.choices?.[choice] ? { ...example, ...example.choices[choice] } : example;
 
 /** The action word `tail` prints for a field declared with `verb`. */
 export const trackLabel = (verb: Verb): string =>
@@ -634,12 +531,14 @@ export const formOf = (spec: Spec): Parameters<typeof editedSpec>[1] => ({
 const blank = (field: string, verb: Verb): Spec => ({ field, verb, color: null, description: null, allowed_states: null, state_colors: {} });
 
 /**
- * A new field's spec as its form holds it, what `declareArgv` declares.
- * The states belong to `switch` alone: a field given one and then changed
- * to another verb would otherwise smuggle it out.
+ * A new field's spec as its form holds it, what `declareArgv` declares:
+ * laid over the example it opened on, if any, so what the form does not
+ * edit (mood's `symbol_by`) is the example's. The states belong to
+ * `switch` alone: a field given one and then changed to another verb
+ * would otherwise smuggle it out.
  */
-export const draftSpec = (field: string, edit: Parameters<typeof editedSpec>[1]): Spec =>
-	editedSpec(blank(field, edit.verb), edit.verb === 'switch' ? edit : { ...edit, states: [] });
+export const draftSpec = (field: string, edit: Parameters<typeof editedSpec>[1], from?: Spec | null): Spec =>
+	editedSpec(from ? { ...from, field } : blank(field, edit.verb), edit.verb === 'switch' ? edit : { ...edit, states: [] });
 
 /**
  * The ONE command that declares a new field, which one Undo takes back
@@ -647,8 +546,8 @@ export const draftSpec = (field: string, edit: Parameters<typeof editedSpec>[1])
  * `--track` or `--ignore`, which write its TRACK or IGNORED row in the same
  * transaction.
  */
-export const declareArgv = (field: string, edit: Parameters<typeof editedSpec>[1], ignore = false): string[] => [
-	...specArgv(draftSpec(field, edit)),
+export const declareArgv = (field: string, edit: Parameters<typeof editedSpec>[1], ignore = false, from?: Spec | null): string[] => [
+	...specArgv(draftSpec(field, edit, from)),
 	ignore ? '--ignore' : '--track'
 ];
 

@@ -10,6 +10,16 @@ pub const SETUP: &str = "setup";
 /// alone its spec, a field with flags a change, and `--delete` the field's
 /// spec document gone.
 pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
+    if tail.contains(&"--premade") {
+        return match tail {
+            ["--premade"] => Ok(SpecCommand::Premade {
+                show: Show::Default,
+            }),
+            _ => Err(ParseError::InvalidArg(format!(
+                "--premade takes nothing else: `{SETUP} --premade`, `--json` for the whole file"
+            ))),
+        };
+    }
     let delete = tail.contains(&"--delete");
     let tail: Vec<&str> = tail.iter().copied().filter(|t| *t != "--delete").collect();
     let (mut out, flagged, named) = parse_spec_set(&tail, false)?;

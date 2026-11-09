@@ -5,8 +5,9 @@
 	be organized by theme rather than data kind», and «examples should be
 	it's completely own layout. So a tab in between welcome and setup».
 
-	Each is `EXAMPLES` (#lib/track.ts): its icon in its color, its name, its
-	kind's glyph and what it shows. A tap opens the setup widget with its
+	Each is an `[[example]]` of premade.toml, compiled into the CLI and read
+	with `setup --premade --json` (da-rky8h): its icon in its color, its
+	name, its kind's glyph and what it shows. A tap opens the setup widget with its
 	form filled (`openField`'s `example`), nothing written until it is saved
 	there; weight's tap is one of its choices, lbs or kg, which name its key.
 	One whose field exists already says «set up», and a tap opens setup on
@@ -19,18 +20,24 @@
 	import { act } from '#lib/act.ts';
 	import { confirm } from '#lib/confirm.ts';
 	import { openField } from '#lib/fieldWidget.ts';
+	import { premadeArgv } from '#lib/calls.ts';
 	import { run } from '#lib/run.ts';
-	import { chosen, THEMES, VERBS, type Example } from '#lib/track.ts';
+	import { chosen, VERBS, type Example, type Premade } from '#lib/track.ts';
 	import { fields, press } from './engine.js';
 
+	let premade = $state<Premade | null>(null);
+	void run(premadeArgv()).then((r) => {
+		if (r.code === 0) premade = JSON.parse(r.stdout);
+	});
+	const themes = $derived((premade?.themes ?? []).map((theme) => ({ theme, examples: premade!.examples.filter((e) => e.theme === theme) })));
 	const taken = $derived(new Set($fields.map((f) => f.field)));
-	const glyphOf = (e: Example) => VERBS.find((v) => v.verb === e.verb)?.glyph;
+	const glyphOf = (e: Example) => VERBS.find((v) => v.verb === e.kind)?.glyph;
 
 	/** Setup on `example`, filled with it (and `choice`'s keys), or on its field where it exists. */
 	function open(example: Example, choice?: string): void {
 		void (taken.has(example.field)
 			? openField(example.field)
-			: openField(example.field, example.verb, { example: chosen(example, choice) }));
+			: openField(example.field, example.kind, { example: chosen(example, choice) }));
 	}
 
 	/** The chores kit, installed once its dry run is seen and agreed to. */
@@ -47,7 +54,7 @@
 <Pane title="premade">
 	<div class="premade">
 		<p class="what">Fields ready to set up. A tap opens setup with one filled in; nothing is saved until you save it there.</p>
-		{#each THEMES as { theme, examples } (theme)}
+		{#each themes as { theme, examples } (theme)}
 			<section data-theme={theme}>
 				<h3>{theme}</h3>
 				<div class="examples">
@@ -56,7 +63,7 @@
 						{@const choices = set ? [] : Object.keys(example.choices ?? {})}
 						<div class="example" data-example={example.field} data-taken={set || undefined}>
 							<button type="button" class="card" use:act={'open'} disabled={choices.length > 0} onclick={() => open(example)}>
-								<span class="icon" style:color={example.color}>{example.glyph}</span>
+								<span class="icon" style:color={example.color}>{example.symbol}</span>
 								<span class="name">{example.field} <span class="kind">{glyphOf(example)}</span></span>
 								<span class="what">{set ? 'set up' : example.shows}</span>
 							</button>

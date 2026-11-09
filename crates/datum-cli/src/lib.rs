@@ -322,6 +322,7 @@ fn writes_nothing(command: &Command) -> bool {
                     Command::Info(_)
                         | Command::Debug(_)
                         | Command::Completions(_)
+                        | Command::Spec(SpecCommand::Premade { .. })
                         | Command::Config(ConfigCommand::Show(_))
                         | Command::Conflicts(ConflictsCommand::List(_))
                         | Command::Meta(MetaCommand::Show { .. })
@@ -900,7 +901,8 @@ fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum config show`, `datum completions`, `datum sync daemon`, `db backup
+    // `datum config show`, `datum completions`, `setup --premade` (the file
+    // compiled in), `datum sync daemon`, `db backup
     // daemon`, `db rename` (which moves the file),
     // `install | uninstall | upgrade` and `alias install | uninstall` run against an in-memory placeholder: they
     // do not read the entry db (the daemon opens each chained db itself, and
@@ -912,6 +914,7 @@ fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
         &cli.command,
         Command::Config(_)
             | Command::Completions(_)
+            | Command::Spec(SpecCommand::Premade { .. })
             | Command::Install(_)
             | Command::Uninstall
             | Command::Upgrade { .. }

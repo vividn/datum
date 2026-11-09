@@ -847,6 +847,8 @@ pub enum SpecCommand {
     Set(Box<SpecSetArgs>),
     /// `datum setup <FIELD> --delete` — delete the spec document.
     Delete { field: String, show: Show },
+    /// `datum setup --premade` — the premade examples; `--json` the whole file.
+    Premade { show: Show },
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

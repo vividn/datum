@@ -48,6 +48,7 @@ pub mod note;
 pub mod now;
 pub mod nowview;
 pub mod occur;
+pub mod premade;
 pub mod question;
 pub(crate) mod reading;
 pub mod rekey;

@@ -1,0 +1,594 @@
+# The premade examples: fields ready to set up, by theme (da-rky8h). datum
+# compiles this file in; `datum setup --premade` lists it and `--json` prints
+# it whole, which is how datum.day reads it. Add an `[[example]]` and it is
+# in the catalog.
+#
+# An example says:
+#   field, theme, kind   its name, its theme (one of `themes`) and its kind:
+#                        occur (a moment), start (on/off), switch (a change),
+#                        add (a record) or allday
+#   symbol, color, shows its icon, its color and what it shows, in a line
+#   keys                 its data keys as `setup -k` declares them: `name`
+#                        required, `name=` optional, `name=x` a default
+#   choices              ways to log it that each give their own `keys`
+#                        (weight's lbs or kg), the first the default
+#   states               a change's states and their colors, in order
+#   never_false, aliases, symbol_by
+#                        as the spec stores them; an alias is
+#                        { name, expands_to, kind }
+#   place                where its lane is, as the spec's presentation reads
+#                        it: `y` the top edge with a `height`, a dot's centre
+#                        without; `symbol_scale` a dot's size
+#   key_above, key_below the data key drawn above and below each dot
+#   day                  its example day, local clocks: a moment's
+#                        `{ at = "HH:MM", <key> = value }`, an on/off's
+#                        `{ from, to }` (`to` before `from` runs past
+#                        midnight), a change's `{ at, state }` (`false` is
+#                        off), an all day's one value
+#   label, [[example.as]]
+#                        another kind for the same field, with its own
+#                        label, shows and day, offered beside the example's
+#                        own label; only where people really split
+# Any other key is the spec's own, given to `setup --from-json` as it is
+# (`id_keys`, `remainder`, `state_lookup_field`).
+#
+# The places are one map, so the fields set up together sit in rows of
+# their own: sleep along the top, food and the body's moments under it, work
+# across the middle, screens and mind below, chores and habits low, where you
+# are along the bottom.
+
+themes = ["body", "food, drink & drugs", "mind", "work", "home & chores", "screens & media", "habits", "records"]
+
+# ── body ──
+
+[[example]]
+field = "sleep"
+theme = "body"
+kind = "start"
+symbol = "🌙"
+color = "#7b68ee"
+shows = "on at night, off in the morning"
+place = { y = 0.02, height = 0.16 }
+day = [{ from = "23:35", to = "07:05" }]
+
+[[example]]
+field = "weight"
+theme = "body"
+kind = "occur"
+symbol = "⚖"
+color = "#8fbc8f"
+shows = "each weighing, in lbs or kg"
+choices = { lbs = { keys = ["lbs="], key_above = "lbs" }, kg = { keys = ["kg="], key_above = "kg" } }
+place = { y = 0.3, symbol_scale = 1.2 }
+day = [{ at = "07:12", kg = 72.4, lbs = 159.6 }]
+
+[[example]]
+field = "headache"
+theme = "body"
+kind = "start"
+symbol = "⚡"
+color = "#d46a6a"
+shows = "on while it lasts, off when it ends"
+place = { y = 0.2, height = 0.06 }
+day = [{ from = "14:20", to = "16:50" }]
+
+[[example]]
+field = "shower"
+theme = "body"
+kind = "start"
+symbol = "🚿"
+color = "#5ac8d4"
+shows = "on in, off out"
+place = { y = 0.2, height = 0.06 }
+day = [{ from = "07:20", to = "07:36" }]
+
+[[example]]
+field = "menstruation"
+theme = "body"
+kind = "start"
+symbol = "🩸"
+color = "#d64545"
+shows = "on while it lasts, off when it ends"
+label = "when it starts and ends"
+place = { y = 0.95, height = 0.04 }
+day = [{ from = "07:30", to = "24:00" }]
+
+[[example.as]]
+kind = "allday"
+label = "each day you have it"
+shows = "one mark for each day you have it"
+day = true
+
+[[example]]
+field = "sitting"
+theme = "body"
+kind = "start"
+symbol = "🪑"
+color = "#b8956a"
+shows = "on when you sit down, off when you get up"
+place = { y = 0.385, height = 0.035 }
+day = [
+  { from = "07:50", to = "08:20" },
+  { from = "08:32", to = "08:54" },
+  { from = "09:05", to = "10:40" },
+  { from = "10:55", to = "12:30" },
+  { from = "13:15", to = "15:00" },
+  { from = "15:20", to = "17:45" },
+  { from = "17:52", to = "18:14" },
+  { from = "19:15", to = "19:55" },
+  { from = "20:30", to = "22:40" },
+]
+
+[[example]]
+field = "run"
+theme = "body"
+kind = "start"
+symbol = "🏃"
+color = "#e8734a"
+shows = "on as you set off, off with how far, in km"
+keys = ["distanceKm="]
+place = { y = 0.2, height = 0.08 }
+day = [{ from = "06:30", to = "07:05" }]
+
+[[example]]
+field = "workout"
+theme = "body"
+kind = "switch"
+symbol = "🏋"
+color = "#4fa3e8"
+shows = "lift, swim, bike or yoga, until the next"
+states = { lift = "#d4a35a", swim = "#5ab4e8", bike = "#7bd389", yoga = "#c39bd3" }
+place = { y = 0.2, height = 0.08 }
+day = [
+  { at = "07:00", state = "yoga" },
+  { at = "07:40", state = false },
+  { at = "18:00", state = "lift" },
+  { at = "19:10", state = false },
+]
+
+# vividn, 2026-11-05: «steps should be an ALLDAY kind of data» (da-uykff).
+[[example]]
+field = "steps"
+theme = "body"
+kind = "allday"
+symbol = "👣"
+color = "#f2a65a"
+shows = "the day's count: steps 8000"
+place = { y = 0.94, height = 0.05 }
+day = 8000
+
+# ── food, drink & drugs ──
+
+[[example]]
+field = "coffee"
+theme = "food, drink & drugs"
+kind = "occur"
+symbol = "☕"
+color = "#c69c6d"
+shows = "each cup"
+place = { y = 0.26 }
+day = [{ at = "07:45" }, { at = "10:30" }, { at = "14:15" }]
+
+[[example]]
+field = "water"
+theme = "food, drink & drugs"
+kind = "occur"
+symbol = "💧"
+color = "#5ab4e8"
+shows = "each glass, and how many ml"
+keys = ["ml="]
+place = { y = 0.36, symbol_scale = 0.8 }
+day = [
+  { at = "07:30", ml = 250 },
+  { at = "10:05", ml = 300 },
+  { at = "12:45", ml = 250 },
+  { at = "15:30", ml = 500 },
+  { at = "18:10", ml = 250 },
+  { at = "20:40", ml = 200 },
+]
+
+[[example]]
+field = "medication"
+theme = "food, drink & drugs"
+kind = "occur"
+symbol = "💊"
+color = "#7fb8d4"
+shows = "what you took, and how much"
+keys = ["name", "dose="]
+key_above = "name"
+key_below = "dose"
+place = { y = 0.3 }
+day = [
+  { at = "08:15", name = "ibuprofen", dose = "400mg" },
+  { at = "16:40", name = "ibuprofen", dose = "400mg" },
+]
+
+[[example]]
+field = "meal"
+theme = "food, drink & drugs"
+kind = "start"
+symbol = "🍽"
+color = "#e0a458"
+shows = "on as you sit down, off when done; snack, a bite between"
+keys = ["food="]
+aliases = [
+  { name = "meal", expands_to = "start meal", kind = "bare_field" },
+  { name = "meale", expands_to = "end meal", kind = "terminal_end" },
+  { name = "snack", expands_to = "moment meal" },
+]
+place = { y = 0.2, height = 0.08 }
+day = [{ from = "12:30", to = "13:05" }, { from = "19:15", to = "19:55" }]
+
+[[example]]
+field = "alcohol"
+theme = "food, drink & drugs"
+kind = "occur"
+symbol = "🍷"
+color = "#b5485d"
+shows = "each drink"
+place = { y = 0.26 }
+day = [{ at = "20:30" }, { at = "21:35" }]
+
+[[example]]
+field = "tobacco"
+theme = "food, drink & drugs"
+kind = "occur"
+symbol = "🚬"
+color = "#a0937d"
+shows = "each one"
+place = { y = 0.26, symbol_scale = 0.8 }
+day = [{ at = "10:15" }, { at = "13:30" }, { at = "18:45" }]
+
+[[example]]
+field = "cannabis"
+theme = "food, drink & drugs"
+kind = "occur"
+symbol = "🌿"
+color = "#6b8e23"
+shows = "each time"
+place = { y = 0.26 }
+day = [{ at = "21:10" }]
+
+# ── mind ──
+
+# A spec has no range, so mood's -5 to +5 is its line; its face follows its level.
+[[example]]
+field = "mood"
+theme = "mind"
+kind = "occur"
+symbol = "🙂"
+color = "#e8c547"
+shows = "a level, -5 to +5"
+keys = ["level"]
+key_above = "level"
+symbol_by = { key = "level", map = { "-5" = "😭", "-4" = "😢", "-3" = "😞", "-2" = "🙁", "-1" = "😕", "0" = "😐", "1" = "🙂", "2" = "😊", "3" = "😄", "4" = "😁", "5" = "🤩" } }
+place = { y = 0.64 }
+day = [
+  { at = "09:00", level = 0 },
+  { at = "13:00", level = -2 },
+  { at = "18:00", level = 3 },
+  { at = "22:00", level = 1 },
+]
+
+[[example]]
+field = "emotion"
+theme = "mind"
+kind = "occur"
+symbol = "💭"
+color = "#d48ad4"
+shows = "the words for what you feel"
+keys = ["words"]
+remainder = "words"
+key_below = "words"
+place = { y = 0.68 }
+day = [{ at = "09:30", words = ["calm"] }, { at = "19:00", words = ["glad"] }]
+
+[[example]]
+field = "energy"
+theme = "mind"
+kind = "occur"
+symbol = "🔋"
+color = "#f0a830"
+shows = "a level, 0 to 10"
+keys = ["level"]
+key_above = "level"
+place = { y = 0.64 }
+day = [{ at = "08:00", level = 7 }, { at = "14:00", level = 4 }, { at = "20:00", level = 5 }]
+
+# ── work ──
+
+[[example]]
+field = "work"
+theme = "work"
+kind = "start"
+symbol = "💼"
+color = "#d4a35a"
+shows = "on when you start, off when you stop"
+place = { y = 0.42, height = 0.12 }
+day = [{ from = "09:00", to = "12:30" }, { from = "13:15", to = "17:45" }]
+
+[[example]]
+field = "project"
+theme = "work"
+kind = "switch"
+symbol = "📁"
+color = "#9b7fd4"
+shows = "the project you are on, until the next"
+place = { y = 0.42, height = 0.12 }
+day = [
+  { at = "09:00", state = "datum" },
+  { at = "12:30", state = false },
+  { at = "13:15", state = "grant" },
+  { at = "17:45", state = false },
+]
+
+[[example]]
+field = "meeting"
+theme = "work"
+kind = "start"
+symbol = "👥"
+color = "#d48788"
+shows = "on as it starts, off as it ends"
+place = { y = 0.45, height = 0.06 }
+day = [{ from = "10:00", to = "10:45" }, { from = "15:00", to = "15:30" }]
+
+[[example]]
+field = "activity"
+theme = "work"
+kind = "switch"
+symbol = "🗂"
+color = "#c8c8c8"
+shows = "email, meeting or deepwork, until the next"
+states = { email = "#4f8fe8", meeting = "#d48788", deepwork = "#7bd389" }
+place = { y = 0.42, height = 0.12 }
+day = [
+  { at = "09:00", state = "email" },
+  { at = "09:40", state = "deepwork" },
+  { at = "12:30", state = false },
+  { at = "13:15", state = "deepwork" },
+  { at = "15:00", state = "meeting" },
+  { at = "15:30", state = "email" },
+  { at = "17:45", state = false },
+]
+
+# ── home & chores ──
+
+[[example]]
+field = "room"
+theme = "home & chores"
+kind = "switch"
+symbol = "🚪"
+color = "#cbb994"
+shows = "the room you are in, or off"
+states = { kitchen = "#e0b070", bedroom = "#7b68ee", living = "#9ad48a", bathroom = "#5ac8d4", office = "#7f9cc4" }
+place = { y = 0.8, height = 0.07 }
+day = [
+  { at = "00:00", state = "bedroom" },
+  { at = "07:00", state = "bathroom" },
+  { at = "07:36", state = "kitchen" },
+  { at = "08:20", state = false },
+  { at = "09:00", state = "office" },
+  { at = "17:45", state = false },
+  { at = "18:30", state = "kitchen" },
+  { at = "19:55", state = "living" },
+  { at = "23:30", state = "bedroom" },
+]
+
+# vividn gave outside a light green and airplane an off-white (da-yqx0t).
+[[example]]
+field = "environment"
+theme = "home & chores"
+kind = "switch"
+symbol = "🌳"
+color = "#9acd32"
+shows = "where you are: home, office, car, train…"
+states = { home = "#e0b070", office = "#7f9cc4", inside = "#cbb994", outside = "#9ad48a", car = "#d9825b", bus = "#e2c35a", train = "#5fb3a8", airplane = "#ece8df" }
+never_false = true
+place = { y = 0.88, height = 0.07 }
+day = [
+  { at = "00:00", state = "home" },
+  { at = "08:30", state = "train" },
+  { at = "08:55", state = "office" },
+  { at = "17:50", state = "train" },
+  { at = "18:15", state = "outside" },
+  { at = "18:30", state = "home" },
+]
+
+[[example]]
+field = "laundry"
+theme = "home & chores"
+kind = "occur"
+symbol = "🧺"
+color = "#8fb8de"
+shows = "each load"
+place = { y = 0.74 }
+day = [{ at = "10:30" }, { at = "19:30" }]
+
+[[example]]
+field = "plants"
+theme = "home & chores"
+kind = "occur"
+symbol = "🪴"
+color = "#6fbf73"
+shows = "each watering"
+place = { y = 0.74 }
+day = [{ at = "08:30" }]
+
+[[example]]
+field = "makebed"
+theme = "home & chores"
+kind = "occur"
+symbol = "🛏"
+color = "#c8a2c8"
+shows = "the bed made"
+place = { y = 0.74 }
+day = [{ at = "07:15" }]
+
+[[example]]
+field = "dishes"
+theme = "home & chores"
+kind = "occur"
+symbol = "🧽"
+color = "#9ec5d6"
+shows = "each wash"
+place = { y = 0.74 }
+day = [{ at = "13:10" }, { at = "20:00" }]
+
+[[example]]
+field = "trash"
+theme = "home & chores"
+kind = "occur"
+symbol = "🗑"
+color = "#8a8a8a"
+shows = "each time it goes out"
+place = { y = 0.74 }
+day = [{ at = "08:25" }]
+
+[[example]]
+field = "vacuum"
+theme = "home & chores"
+kind = "occur"
+symbol = "🧹"
+color = "#b0a0d0"
+shows = "each time"
+place = { y = 0.74 }
+day = [{ at = "11:00" }]
+
+# ── screens & media ──
+
+[[example]]
+field = "phone"
+theme = "screens & media"
+kind = "start"
+symbol = "📱"
+color = "#8fa3bf"
+shows = "on while you are on it"
+place = { y = 0.57, height = 0.05 }
+day = [{ from = "07:05", to = "07:20" }, { from = "12:40", to = "13:00" }, { from = "21:30", to = "22:30" }]
+
+[[example]]
+field = "screentime"
+theme = "screens & media"
+kind = "start"
+symbol = "📱"
+color = "#8fa3bf"
+shows = "on while you are on a screen"
+place = { y = 0.57, height = 0.05 }
+day = [{ from = "09:00", to = "12:30" }, { from = "13:15", to = "17:45" }, { from = "20:30", to = "22:45" }]
+
+[[example]]
+field = "watch"
+theme = "screens & media"
+kind = "switch"
+symbol = "📺"
+color = "#e57373"
+shows = "what you watch: dune is movie:dune, series:severance a series"
+state_lookup_field = "movie"
+place = { y = 0.56, height = 0.07 }
+day = [{ at = "20:30", state = "dune" }, { at = "23:05", state = false }]
+
+[[example]]
+field = "reading"
+theme = "screens & media"
+kind = "switch"
+symbol = "📖"
+color = "#c39bd3"
+shows = "the book you read: dune is book:dune"
+state_lookup_field = "book"
+place = { y = 0.56, height = 0.07 }
+day = [{ at = "22:45", state = "dune" }, { at = "23:25", state = false }]
+
+# ── habits ──
+
+[[example]]
+field = "floss"
+theme = "habits"
+kind = "occur"
+symbol = "🦷"
+color = "#e0e0e0"
+shows = "each time"
+place = { y = 0.7 }
+day = [{ at = "22:50" }]
+
+[[example]]
+field = "stretch"
+theme = "habits"
+kind = "occur"
+symbol = "🤸"
+color = "#7bd389"
+shows = "each time"
+place = { y = 0.7 }
+day = [{ at = "07:00" }, { at = "18:30" }]
+
+[[example]]
+field = "vitamins"
+theme = "habits"
+kind = "occur"
+symbol = "🍊"
+color = "#f4c542"
+shows = "each day you take them"
+place = { y = 0.7 }
+day = [{ at = "08:00" }]
+
+# ── records: untimed, so no place and no day. A record's id is required
+# and in its slug, as `-K id` makes it: person:vr520. ──
+
+[[example]]
+field = "person"
+theme = "records"
+kind = "add"
+symbol = "👤"
+color = "#e59866"
+shows = "a name, how to reach them, where they work"
+id_keys = ["id"]
+keys = ["name=", "lastName=", "address=", "company=", "phone=", "email=", "city="]
+
+[[example]]
+field = "place"
+theme = "records"
+kind = "add"
+symbol = "📍"
+color = "#76d7c4"
+shows = "a record with a name and an address"
+id_keys = ["id"]
+keys = ["name=", "address="]
+
+[[example]]
+field = "book"
+theme = "records"
+kind = "add"
+symbol = "📚"
+color = "#c39bd3"
+shows = "a title and an author"
+id_keys = ["id"]
+keys = ["title=", "author="]
+
+[[example]]
+field = "movie"
+theme = "records"
+kind = "add"
+symbol = "🎬"
+color = "#e57373"
+shows = "a title and a year"
+id_keys = ["id"]
+keys = ["title=", "year="]
+
+[[example]]
+field = "series"
+theme = "records"
+kind = "add"
+symbol = "🎞"
+color = "#ef9a9a"
+shows = "a title and a season"
+id_keys = ["id"]
+keys = ["title=", "season="]
+
+[[example]]
+field = "word"
+theme = "records"
+kind = "add"
+symbol = "🔤"
+color = "#80cbc4"
+shows = "a word, its language, part of speech and meaning"
+id_keys = ["id"]
+keys = ["lang=", "pos=", "meaning="]

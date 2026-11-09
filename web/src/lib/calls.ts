@@ -25,7 +25,7 @@ import { shellSplit } from './shellSplit.js';
 import type { Invite } from './sync.js';
 import type { Admins, ChainList, Grid, PurgePreview, SyncStatus } from './syncView.js';
 import type { TailListing, TailPage } from './tail.js';
-import type { Spec } from './track.js';
+import type { Premade, Spec } from './track.js';
 import type { Refs } from './selection.js';
 
 export { bandArgv, geometryArgv, layersArgv, nowviewSpec } from './panes.js';
@@ -96,6 +96,11 @@ export function showAllArgv(argv: string[]): string[] {
 
 export function specShowArgv(field: string): string[] {
 	return ['setup', field, '--json'];
+}
+
+/** premade.toml, compiled into the CLI (da-rky8h): the premade widget's catalog. */
+export function premadeArgv(): string[] {
+	return ['setup', '--premade', '--json'];
 }
 
 /** The spec entry's history (da-hda4j): every version of it, newest first. */
@@ -518,6 +523,7 @@ export interface Reads {
 	layersArgv: { pictures?: Record<string, string>; digests?: Record<string, string> };
 	showAllArgv: AllFieldsStats | FieldStats;
 	specShowArgv: Spec;
+	premadeArgv: Premade;
 	specHistoryArgv: SpecVersion[];
 	entriesHistoryArgv: EntryVersion[] | { versions: EntryVersion[] }[];
 	syncStatusArgv: SyncStatus;

@@ -542,9 +542,11 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Config(ConfigCommand::Show(a)) => a.show = show,
         // `setup F` draws its block or its JSON; a change or a delete echoes
         // the spec entry (da-ez40f). The listing has one rendering.
-        Command::Spec(SpecCommand::Show { show: s, .. } | SpecCommand::Delete { show: s, .. }) => {
-            *s = show
-        }
+        Command::Spec(
+            SpecCommand::Show { show: s, .. }
+            | SpecCommand::Delete { show: s, .. }
+            | SpecCommand::Premade { show: s },
+        ) => *s = show,
         Command::Spec(SpecCommand::Set(a)) | Command::Track(a) | Command::Ignore(a) => {
             a.show = show
         }

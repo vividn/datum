@@ -47,6 +47,7 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
             }
         },
         SpecCommand::Set(args) => spec_set(*args, db)?,
+        SpecCommand::Premade { show } => super::premade::premade(show)?,
         SpecCommand::List { tag } => {
             if let Some(tag) = tag {
                 let specs = db.list_specs_by_tag(&tag)?;

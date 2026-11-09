@@ -614,6 +614,7 @@ dependencies = [
  "datum-sync",
  "datum-test-util",
  "flate2",
+ "indexmap",
  "libc",
  "minisign-verify",
  "qrcode",

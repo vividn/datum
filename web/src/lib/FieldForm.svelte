@@ -165,6 +165,8 @@
 
 	// The form is drawn from the spec it opened with; a new spec mounts a new form.
 	const opening = untrack(() => spec);
+	/** The spec of the example a new field opened on, which its save is laid over. */
+	const given = untrack(() => (opening ? null : (example?.spec ?? null)));
 	let color = $state(opening?.color ?? '');
 	let description = $state(opening?.description ?? '');
 	let states: StateRow[] = $state(opening ? stateRows(opening) : []);
@@ -209,8 +211,8 @@
 		lookup
 	});
 	/** The spec a save would store, which the placement draws. */
-	const drafted = $derived(spec ? editedSpec(spec, edits) : draftSpec(field.trim(), edits));
-	const save: Save = $derived({ argv: spec ? specArgv(editedSpec(spec, edits)) : declareArgv(field.trim(), edits) });
+	const drafted = $derived(spec ? editedSpec(spec, edits) : draftSpec(field.trim(), edits, given));
+	const save: Save = $derived({ argv: spec ? specArgv(editedSpec(spec, edits)) : declareArgv(field.trim(), edits, false, given) });
 	let opened: string | undefined;
 	$effect.pre(() => {
 		const now = JSON.stringify([field, verb, edits]);
@@ -271,20 +273,20 @@
 		};
 	}
 
-	// A new field opened on an example is that example, every tab of it; nothing is written until it is saved.
-	const given = untrack(() => (opening ? null : example));
+	// A new field opened on an example is that example's spec, every tab of it; nothing is written until it is saved.
 	if (given) {
 		field = given.field;
 		verb = given.verb;
-		color = given.color;
-		symbol = given.glyph;
-		lookup = given.lookup ?? '';
-		neverFalse = !!given.neverFalse;
-		states = Object.entries(given.states ?? {}).map(([name, color]) => ({ name, color, description: '', glyph: '' }));
-		keys = (given.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any' }));
-		if (given.aliases) {
+		color = given.color ?? '';
+		symbol = given.symbol ?? '';
+		lookup = given.state_lookup_field ?? '';
+		neverFalse = !!given.never_false;
+		states = stateRows(given);
+		keys = keyRows(given);
+		place = placeOf(given);
+		if (given.no_autoalias) {
 			autoalias = false;
-			aliases = given.aliases.map((a) => ({ ...a }));
+			aliases = (given.derived_aliases ?? []).map((a) => ({ ...a }));
 		}
 	}
 
@@ -647,7 +649,7 @@
 					class="untracked"
 					use:act={'run'}
 					disabled={!ready}
-					onclick={() => finish({ argv: declareArgv(field.trim(), edits, true) })}>save without tracking</button
+					onclick={() => finish({ argv: declareArgv(field.trim(), edits, true, given) })}>save without tracking</button
 				>
 				<button class="commit" use:act={'run'} type="submit" disabled={!ready}>start tracking</button>
 			{/if}
