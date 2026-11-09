@@ -118,6 +118,7 @@
 		after,
 		clearLine,
 		commandsOpen,
+		fixed,
 		ghost,
 		joinAt,
 		lineOf,
@@ -127,7 +128,8 @@
 		segments,
 		spent,
 		submitLine,
-		text
+		text,
+		unfixed
 	} from '#lib/bar.ts';
 	import { isLength, roleOf, saysKey, valuedFlags } from '#lib/commands.ts';
 	import LengthArrow from '#lib/LengthArrow.svelte';
@@ -402,7 +404,7 @@
 			event.preventDefault();
 			seatId = null;
 			cursor = next;
-			$text = history[cursor];
+			$text = unfixed(history[cursor], $fixed);
 		} else if (event.key === 'ArrowDown') {
 			if (cursor === -1) return;
 			event.preventDefault();
@@ -411,7 +413,7 @@
 				cursor = -1;
 				$text = draft;
 			} else {
-				$text = history[cursor];
+				$text = unfixed(history[cursor], $fixed);
 			}
 		}
 	}
@@ -456,6 +458,11 @@
 			onclick={() => (clears ? clearLine() : commandsOpen.update((open) => !open))}
 			><svg viewBox="0 0 16 16" aria-hidden="true"><g><path d="M4 4 12 12" /><path d="M4 12 12 4" /></g></svg></button
 		>
+	{/if}
+	<!-- The tab's command (da-339ec): first in the line, and no key or ×
+	     takes it — the line runs as `<command> <typed>` (`submitLine`). -->
+	{#if $fixed}
+		<span class="fixed" title="a line typed on this tab runs as {$fixed} <line>">{$fixed}</span>
 	{/if}
 	<!-- After the `❯`, not before it: the `❯` stays where it always stood,
 	     and the ACTION words that start under it (PromptBar.svelte) too. -->
@@ -681,6 +688,19 @@
 	button.prompt.open.clears g,
 	button.prompt.open.clears path {
 		transition-delay: 160ms;
+	}
+
+	/* The tab's command (da-339ec), vividn: «unrounded corners on the left
+	   side and have a colored background». Out of the scrollport, as the
+	   context is. */
+	.fixed {
+		flex: none;
+		padding: 0.1rem 0.5rem;
+		border-radius: 0 0.75rem 0.75rem 0;
+		background: var(--accent);
+		color: var(--ground);
+		font-size: var(--context-font);
+		font-weight: 600;
 	}
 
 	/* Its own size, out of the scrollport: it stays put while the line

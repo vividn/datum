@@ -245,6 +245,12 @@ const only = (name: string, kind: string, settings: Record<string, unknown> = {}
 	root: widgetPane(`${name}-only`, kind, settings)
 });
 
+/** `layout` with its root tab's command (da-339ec), and its output closed when it says so. */
+const commanding = (layout: Layout, command: string, output?: 'closed'): Layout => ({
+	...layout,
+	root: { ...layout.root, command, ...(output ? { output } : {}) }
+});
+
 /** The built-ins by name; `main` is looked up through `builtinLayout`, since it depends on the device. */
 export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	main: (phone) => ({ ...defaultLayoutFor(phone), name: 'main' }),
@@ -263,7 +269,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	chart: () => only('chart', 'chart'),
 	fields: () => only('fields', 'widgetbar'),
 	aliases: () => only('aliases', 'aliases'),
-	sync: () => only('sync', 'sync'),
+	sync: () => commanding(only('sync', 'sync'), 'sync'),
 	help: () => only('help', 'help'),
 	welcome: () => only('welcome', 'welcome'),
 	docs: () => only('docs', 'docs'),
@@ -271,7 +277,9 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	backups: () => only('backups', 'backups'),
 	settings: () => only('settings', 'settings'),
 	conflicts: () => only('conflicts', 'conflicts'),
-	setup: () => only('setup', 'setup'),
+	// A tab's command (da-339ec): typed there, a line runs as `setup <typed>`.
+	// vividn, 2026-11-09: «keep the CLI output closed by default on this tab».
+	setup: () => commanding(only('setup', 'setup'), 'setup', 'closed'),
 	input: () => only('input', 'input')
 };
 

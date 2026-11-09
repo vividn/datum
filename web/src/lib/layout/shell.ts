@@ -90,7 +90,7 @@ import { installTutorialKit, loudly, settingUpQuietly, setUpTutorial } from '#li
 import { dbPurgeArgv } from '#lib/calls.ts';
 import { cliError } from '#lib/run.ts';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
-import { LAYOUT_VERSION, isSplit, isWidget } from './types.js';
+import { LAYOUT_VERSION, ROOT_KEYS, isSplit, isWidget } from './types.js';
 import { apply, layout, loaded, replay } from './current.js';
 import {
 	ALIASES,
@@ -273,6 +273,10 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
 	return copy;
 };
 
+/** The `ROOT_KEYS` a root tab or its layout's root pane sets, and none it leaves unset. */
+const rootKeys = (o: Pick<Tab, (typeof ROOT_KEYS)[number]>): Partial<Tab> =>
+	Object.fromEntries(ROOT_KEYS.filter((key) => o[key] !== undefined).map((key) => [key, o[key]]));
+
 // ---- inline / extract -------------------------------------------------
 
 /**
@@ -404,15 +408,16 @@ export function inline(saved: Layout, taken: Set<NodeId>, lift = false): Tab {
 		mapTabs(saved.root, (tab) => migrated(without(tab, 'locked'))),
 		mint
 	);
-	// The root pane's `tall` is the tab's (da-py6pl).
-	const tall = root.tall === undefined ? {} : { tall: root.tall };
+	// The root pane's `tall` is the tab's (da-py6pl), and so are its `command` and `output` (da-339ec).
+	const own = rootKeys(root);
 	const only = root.tabs.length === 1 ? root.tabs[0] : undefined;
 	if (only && (lift || isSplit(only.content)))
-		return { id: root.id, ...(only.title === undefined ? {} : { title: only.title }), content: only.content, layout: name, ...tall };
+		return { id: root.id, ...(only.title === undefined ? {} : { title: only.title }), content: only.content, layout: name, ...own };
 	const [tab, split] = only ? [`${saved.root.id}-layout`, `${saved.root.id}-split`] : [newId(), newId()];
 	// Drawn now, the pane needs the bar an older save may not carry.
-	const pane = { ...without(root, 'tall'), bar: root.bar ?? BAR };
-	return { id: mint(tab), content: { id: mint(split), direction: 'column', ratios: [1], children: [pane] }, layout: name, ...tall };
+	const { tall: _tall, command: _command, output: _output, ...bare } = root;
+	const pane = { ...bare, bar: root.bar ?? BAR };
+	return { id: mint(tab), content: { id: mint(split), direction: 'column', ratios: [1], children: [pane] }, layout: name, ...own };
 }
 
 /**
@@ -458,7 +463,7 @@ export function extract(tab: Tab): Layout {
 			? bare
 			: { id: bare.id, layout: bare.layout, content: { id: `${bare.id}-stub`, kind: EMPTY_KIND, settings: {} } };
 	});
-	return { version: LAYOUT_VERSION, name, root: tab.tall === undefined ? clean : { ...clean, tall: tab.tall } };
+	return { version: LAYOUT_VERSION, name, root: { ...clean, ...rootKeys(tab) } };
 }
 
 /** The form a save is compared against: what it looks like once inlined and taken back out. */

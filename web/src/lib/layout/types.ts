@@ -93,7 +93,19 @@ export interface Tab {
 	 * so a kit's `[[layout]]` can set it.
 	 */
 	tall?: number;
+	/**
+	 * A root tab's COMMAND (da-339ec): the prompt bar draws it as a pill
+	 * nothing erases, and a line typed there runs as `<command> <typed>` —
+	 * so on the setup tab `coffee` is `setup coffee`. Other commands are run
+	 * from other tabs, for now. Saved on the layout's root pane, as `tall`.
+	 */
+	command?: string;
+	/** A root tab whose output section starts CLOSED (da-339ec), the device's fold kept for the rest. */
+	output?: 'closed';
 }
+
+/** What a root tab keeps on its layout's root pane, and the pane gives back (shell.ts). */
+export const ROOT_KEYS = ['tall', 'command', 'output'] as const;
 
 /**
  * A pane: the holder. Always at least one tab. The bar carries the title
@@ -106,8 +118,10 @@ export interface Pane {
 	/** Index into `tabs`. */
 	active: number;
 	bar: Bar;
-	/** On a saved layout's root pane only: its tab's `tall`. */
+	/** On a saved layout's root pane only: its tab's `tall`, `command` and `output`. */
 	tall?: number;
+	command?: string;
+	output?: 'closed';
 }
 
 /**

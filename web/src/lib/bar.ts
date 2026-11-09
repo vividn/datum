@@ -41,6 +41,7 @@ import { onAnyChange } from './changes.js';
 import { argumentsOf, hidsOf, pendingCommand, pillWord, roleOf, type LogCommand } from './commands.js';
 import { currentDb } from './database.js';
 import { parseEcho } from './echo.js';
+import { layout } from './layout/current.js';
 import { pressWithPills } from './layout/engine.js';
 import { run, type RunResult } from './run.js';
 import { hidPill, pickOf, picked, same, type Refs } from './selection.js';
@@ -627,8 +628,28 @@ function takeKeptLine(): string {
  * the pills from here — which ESM allows because neither module CALLS the
  * other while it is loading.
  */
-export const submitLine = (line: string, inline: Pill[] = []): Promise<RunResult> =>
-	pressWithPills(shellSplit(line), line, inline);
+export const submitLine = (line: string, inline: Pill[] = []): Promise<RunResult> => {
+	const command = get(fixed);
+	const full = command && unfixed(line, command) === line ? `${command} ${line}` : line;
+	return pressWithPills(shellSplit(full), full, inline);
+};
+
+/**
+ * The front root tab's command (da-339ec), or null: drawn as the pill
+ * nothing erases at the start of the line, and put before every line typed
+ * there by `submitLine`. vividn, 2026-11-09: «while on the setup screen,
+ * there should be a special pill that appears, non dismissable at the very
+ * begining of the input "setup"».
+ */
+export const fixed = derived(layout, (l) => l.root.tabs[l.root.active]?.command ?? null);
+
+/**
+ * `line` without a leading `command`, so it is never said twice: a history
+ * line recalled under it, or one that says it already (the sync widget's
+ * `sync status ` prefill), which `submitLine` runs as it is.
+ */
+export const unfixed = (line: string, command: string | null): string =>
+	!command ? line : line === command ? '' : line.startsWith(`${command} `) ? line.slice(command.length + 1) : line;
 
 /**
  * The boxes the command line is drawn in, in the order they mounted: the

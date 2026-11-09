@@ -104,7 +104,7 @@
 	import CommandPane from '#lib/layout/CommandPane.svelte';
 	import { epoch } from '#lib/layout/engine.ts';
 	import { clockSecondsLabel, now } from '#lib/clock.ts';
-	import { closeLog, inLog, lifted, lowering, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
+	import { closeLog, foldedHere, inLog, lifted, lowering, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
 	import { layout } from '#lib/layout/current.ts';
 	import { soleWidgetOf } from '#lib/layout/tree.ts';
 	import { grip } from '#lib/grip.ts';
@@ -140,6 +140,7 @@
 	$effect.pre(() => {
 		const tab = $layout.root.tabs[$layout.root.active];
 		outputless.set(soleWidgetOf(tab)?.widget.kind === 'cli');
+		foldedHere.set(tab?.output === 'closed');
 	});
 
 	/**
