@@ -20,6 +20,7 @@ before(startApp);
 after(stopApp);
 
 const ROOM = 'section.pane[data-title="collect"] .bar .collect .room';
+const STRIP = 'section.pane[data-title="collect"] .bar > [data-strip]';
 const AT = { ...PHONE, home: ON_COLLECT, clock: todayAt(15) };
 const iso = (t) => new Date(t).toISOString();
 
@@ -42,7 +43,7 @@ const sections = (page) =>
 
 /** `field`'s marks on the strip: where each one's middle is, and the strip's width. */
 const marks = (page, field) =>
-	page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => {
+	page.locator(`${STRIP} svg.now-strip`).evaluate((svg, field) => {
 		const box = svg.getBoundingClientRect();
 		return [...svg.querySelectorAll(`[data-mark="${field}"]`)].map((el) => {
 			const r = el.getBoundingClientRect();

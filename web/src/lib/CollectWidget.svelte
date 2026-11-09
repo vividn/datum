@@ -854,8 +854,14 @@
 	let roomEl: HTMLElement | undefined = $state();
 	const overrun = (a: number) => Math.max(0, Math.ceil(a));
 	const lead = $derived(picking ? { x: overrun(side === 'left' ? -shift.x : laid.end + GAP - paneW - shift.x), y: 0 } : { x: 0, y: 0 });
+	/** Where the room was last scrolled to: a write, even of the same place, is a forced style in the flush (da-rh5oa). */
+	let scrolled: { room?: HTMLElement; x: number; y: number } = { x: 0, y: 0 };
 	$effect(() => {
-		if (roomEl) [roomEl.scrollLeft, roomEl.scrollTop] = [lead.x, lead.y];
+		const { x, y } = lead;
+		if (!roomEl) return;
+		// A room just made is at its start.
+		if (scrolled.room !== roomEl) scrolled = { room: roomEl, x: 0, y: 0 };
+		if (x !== scrolled.x || y !== scrolled.y) [roomEl.scrollLeft, roomEl.scrollTop, scrolled.x, scrolled.y] = [x, y, x, y];
 	});
 	/** Off pressed: a change field switched off as a state is, an on/off field ended. */
 	function off(button: FieldButton) {
@@ -1089,6 +1095,16 @@
 		flushSync(() => (pan = kept(shift.x + dx, shift.y + dy)));
 		[room.scrollLeft, room.scrollTop] = [lead.x, lead.y];
 	}
+	/**
+	 * A tapped button lets go of the focus before its tap redraws the view
+	 * (da-rh5oa): removed while focused, as a field opening, back and a state
+	 * all remove theirs, it forces a layout in the middle of the flush. A key's
+	 * click (`detail` 0) keeps it.
+	 */
+	function letGo(e: MouseEvent) {
+		const held = document.activeElement;
+		if (e.detail && held instanceof HTMLElement && (e.currentTarget as Node).contains(held)) held.blur();
+	}
 	function swallow(e: MouseEvent) {
 		if (!dragged) return;
 		dragged = false;
@@ -1162,17 +1178,29 @@
 	{/if}
 {/snippet}
 
-<!-- The now strip (da-lw7ue), `height` tall: at rest the room's, beside a field's view the widget's (da-u7tij). -->
-{#snippet present(height: number)}
-<div class="present" class:right={side === 'right'} style:width="{strip}px" data-strip>
-	<NowStrip doc={nowDoc} pending={nowPending} at={frame?.at ?? null} span={frame?.span} width={strip - PICTURE_GAP} {height} mirrored={side === 'right'} />
+<!-- The now strip (da-lw7ue), the widget's height (da-u7tij): ONE for the fields at rest, a field's view and the
+     entries', so a tap between them does not draw it again (da-rh5oa). At rest a drag on it pans the rows, as the room's. -->
+{#snippet present()}
+{@const pans = !card && !picking}
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="present"
+	class:right={side === 'right'}
+	class:pans
+	style:width="{strip}px"
+	data-strip
+	onpointerdown={pans ? down : undefined}
+	onpointermove={pans ? move : undefined}
+	onclickcapture={pans ? swallow : undefined}
+>
+	<NowStrip doc={nowDoc} pending={nowPending} at={frame?.at ?? null} span={frame?.span} width={strip - PICTURE_GAP} height={boxH} mirrored={side === 'right'} />
 	{#each nowBands as band (band.field)}
 		<button
 			class="now-state"
 			data-now-field={band.field}
 			tabindex="-1"
-			style:top="{band.y * height}px"
-			style:height="{Math.max(3, band.height * height)}px"
+			style:top="{band.y * boxH}px"
+			style:height="{Math.max(3, band.height * boxH)}px"
 			{disabled}
 			title="{band.field}{typeof band.current === 'string' ? ` · ${band.current}` : ''} · tap to select the field"
 			aria-label="select {band.field}"
@@ -1182,7 +1210,7 @@
 </div>
 {/snippet}
 
-<div class="fields" class:picture data-align={picture ? 'picture' : 'rows'} bind:clientWidth={boxW} bind:clientHeight={boxH}>
+<div class="fields" class:picture data-align={picture ? 'picture' : 'rows'} bind:clientWidth={boxW} bind:clientHeight={boxH} onclickcapture={letGo}>
 <ButtonRows
 	items={entries}
 	{arrange}
@@ -1221,9 +1249,9 @@
 		{/if}
 	{/snippet}
 	{#snippet overlay()}
+	{#if card || resting}{@render present()}{/if}
 	{#if card}
 		<!-- The entries selected (da-xdz73), oldest first (da-ug56t), beside the now strip: each its field and time, then its data. -->
-		{@render present(boxH)}
 		<div class="collect open entry" data-entry={hids} style:left={side === 'left' ? `${strip}px` : null} style:right={side === 'right' ? `${strip}px` : null}>
 			<div class="head">
 				<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={unselect}>
@@ -1256,7 +1284,6 @@
 		<!-- The fields' place (da-w6437): at rest the fields in their rows
 		     (da-lw7ue); a field tapped, its name at the top, its states in the
 		     middle, its keys in the drawer, the fields hidden under it. -->
-		{#if here && resting}{@render present(boxH)}{/if}
 		<div class="collect" class:open={!!here} style:left={here && resting && side === 'left' ? `${edge}px` : null} style:right={here && resting && side === 'right' ? `${edge}px` : null}>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
@@ -1340,7 +1367,6 @@
 					<svg class="backing" aria-hidden="true">
 						<path d={frozen ? shelves.backing : `M0 0H${edge}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
 					</svg>
-					{@render present(paneH)}
 					{#if shelves.outline}
 						<svg class="dotted" class:frozen style:transform={frozen ? null : `translateX(${shift.x}px)`} aria-hidden="true">
 							<path d={shelves.outline} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
@@ -1778,6 +1804,11 @@
 		border: none;
 		background: none;
 		cursor: pointer;
+	}
+
+	/* At rest a finger's drag on the strip pans the rows, as on the room. */
+	.present.pans {
+		touch-action: none;
 	}
 
 	/* The mirror (`side`): the strip and the section at the right edge. */

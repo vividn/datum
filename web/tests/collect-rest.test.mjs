@@ -22,6 +22,8 @@ before(startApp);
 after(stopApp);
 
 const ROOM = 'section.pane[data-title="collect"] .bar .collect .room';
+/** The now strip: one for the fields, a field's view and the entries', beside the room and not in it (da-rh5oa). */
+const STRIP = 'section.pane[data-title="collect"] .bar > [data-strip]';
 
 /**
  * What the time and duration section (da-us1n1) takes past the strip, as a
@@ -69,7 +71,7 @@ async function logs(app, line) {
  * one that only touches its edge, as a tap's block does at once, is not.
  * `strip` is the one at rest unless named.
  */
-const drawn = (page, field, strip = `${ROOM} svg.now-strip`) =>
+const drawn = (page, field, strip = `${STRIP} svg.now-strip`) =>
 	page.locator(strip).evaluate((svg, field) => {
 		const box = svg.getBoundingClientRect();
 		return [...svg.querySelectorAll(`[data-mark="${field}"]`)]
@@ -135,7 +137,7 @@ describe('collect at rest', () => {
 			const { page } = app;
 			const spots = await settled(page);
 			assert.equal(await page.locator(`${ROOM} .dotted`).count(), 0, 'an outline with nothing active');
-			assert.equal(await page.locator(`${ROOM} [data-now-field]`).count(), 0);
+			assert.equal(await page.locator(`${STRIP} [data-now-field]`).count(), 0);
 			const rows = rowsOf(spots, 'recent');
 			const keys = Object.keys(rows).map(Number).sort((a, b) => a - b);
 			assert.equal(keys.length, 2, `two rows, by y: ${JSON.stringify(rows)}`);
@@ -159,7 +161,7 @@ describe('collect at rest', () => {
 				assert.ok(s.left > section, `${s.field} stands in the active section`);
 			}
 			await page.locator(`${ROOM} .dotted path`).waitFor();
-			const strip = await page.locator(`${ROOM} [data-now-field]`).evaluateAll((bs) => bs.map((b) => b.dataset.nowField));
+			const strip = await page.locator(`${STRIP} [data-now-field]`).evaluateAll((bs) => bs.map((b) => b.dataset.nowField));
 			assert.deepEqual(strip.sort(), ['mood', 'work']);
 			// Each drawn across the whole strip, in the colour its button is filled with.
 			for (const field of strip) {
@@ -272,7 +274,7 @@ describe('collect at rest', () => {
 			const { page } = app;
 			await pickOption(page, 'bar', 'side', 'right');
 			const room = await page.locator(ROOM).boundingBox();
-			const strip = await page.locator(`${ROOM} [data-now-field="work"]`).boundingBox();
+			const strip = await page.locator(`${STRIP} [data-now-field="work"]`).boundingBox();
 			assert.ok(strip.x >= room.x + room.width * 0.75, `the strip at ${strip.x} of ${room.x}–${room.x + room.width}`);
 			await until(async () => {
 				const spots = await shelf(page);
@@ -290,7 +292,7 @@ describe('collect at rest', () => {
 		await withApp(async (app) => {
 			await seeded(app, [...SEED, 'start work']);
 			const { page } = app;
-			await page.locator(`${ROOM} [data-now-field="work"]`).click();
+			await page.locator(`${STRIP} [data-now-field="work"]`).click();
 			await until(
 				() => page.locator('.prompt-bar .pill').evaluateAll((ps) => ps.map((p) => [[...p.classList].filter((c) => c !== 'pill').join(' '), p.innerText.replace(/[×\s]+$/, '').trim()])),
 				(pills) => pills.length === 1 && pills[0][1] === 'work' && /field/.test(pills[0][0])
@@ -325,7 +327,7 @@ describe('the now strip is the last half second', () => {
 			const { page } = app;
 			await page.locator(`${ROOM} [data-field="work"]`).click();
 			const fill = await colorOf(app, 'work');
-			const of = (await page.locator(`${ROOM} svg.now-strip`).boundingBox()).width;
+			const of = (await page.locator(`${STRIP} svg.now-strip`).boundingBox()).width;
 			// At once: at the right edge, and no wider than the moments since the tap.
 			await sweep(page, 'work', fill, 0);
 			await app.clock.forward(250);
@@ -354,7 +356,7 @@ describe('the now strip is the last half second', () => {
 
 	/** `field`'s dots on the strip, the tap's and the layer's, each with where it stands from the strip's left and how tall it is. */
 	const dotsOf = (page, field) =>
-		page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => {
+		page.locator(`${STRIP} svg.now-strip`).evaluate((svg, field) => {
 			const box = svg.getBoundingClientRect();
 			const at = (el) => {
 				const r = el.getBoundingClientRect();
@@ -413,7 +415,7 @@ describe('the now strip is the last half second', () => {
 				assert.ok(half && Math.abs(half.mid + width / 4) <= 3, `halfway out it stands at ${half?.mid}px, not ${-width / 4}px`);
 				await app.clock.forward(out / 2 + 50);
 				assert.deepEqual((await dotsOf(page, 'huge')).layer, [], 'the dot is still there once wholly past the left edge');
-				assert.equal(await page.locator(`${ROOM} svg.now-strip [data-mark="huge"] :is(circle, text, use, line)`).count(), 0, 'a mark of the dot is left');
+				assert.equal(await page.locator(`${STRIP} svg.now-strip [data-mark="huge"] :is(circle, text, use, line)`).count(), 0, 'a mark of the dot is left');
 			},
 			{ ...AT_REST, holdTimers: true }
 		);
@@ -425,7 +427,7 @@ describe('the now strip is the last half second', () => {
 	const release = (page) => page.evaluate(() => window.release());
 	/** The strip's tap marks and the layer's dots of `field`. */
 	const dots = (page, field) =>
-		page.locator(`${ROOM} svg.now-strip`).evaluate((svg, field) => ({
+		page.locator(`${STRIP} svg.now-strip`).evaluate((svg, field) => ({
 			taps: svg.querySelectorAll(`.pending[data-mark="${field}"]`).length,
 			layer: svg.querySelectorAll(`.strip-point-bg[data-mark="${field}"]`).length
 		}), field);
@@ -451,9 +453,9 @@ describe('the now strip is the last half second', () => {
 		await withApp(async (app) => {
 			await seeded(app, [at('secret', 'start', 0.5, { render: false }), at('cat', 'occur', 0.5, { symbol: '★' }), ...SEED, 'switch mood good,bad', 'start secret']);
 			const { page } = app;
-			await page.locator(`${ROOM} [data-now-field="secret"]`).waitFor({ state: 'attached' });
+			await page.locator(`${STRIP} [data-now-field="secret"]`).waitFor({ state: 'attached' });
 			const strip = () =>
-				page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => ({
+				page.locator(`${STRIP} svg.now-strip`).evaluate((svg) => ({
 					secret: svg.querySelectorAll('[data-mark="secret"]').length,
 					mood: [...svg.querySelectorAll('rect.strip-block[data-mark="mood"]')].map((b) => {
 						const id = /^url\(#(.+)\)$/.exec(b.getAttribute('fill') ?? '')?.[1];
@@ -466,7 +468,7 @@ describe('the now strip is the last half second', () => {
 			await page.locator(`${ROOM} [data-field="cat"]`).click();
 			await until(
 				() =>
-					page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => {
+					page.locator(`${STRIP} svg.now-strip`).evaluate((svg) => {
 						const box = svg.getBoundingClientRect();
 						return [...svg.querySelectorAll('g[data-mark="cat"] text')].map((t) => [t.textContent, Math.abs(t.getBoundingClientRect().left + t.getBoundingClientRect().width / 2 - box.right) <= 3]);
 					}),
@@ -507,7 +509,8 @@ describe('the now strip is the last half second', () => {
 				await bad.click();
 				await swept(0);
 				await app.clock.forward(250);
-				await swept(strip.width / 2);
+				// Half the picture, which #1863 draws PICTURE_GAP short of the strip's box (da-c93wz).
+				await swept((await page.locator(VIEW_STRIP).boundingBox()).width / 2);
 				assert.equal(await bad.count(), 1, 'the view closed before the change was answered');
 				await release(page);
 				await until(async () => (await app.runLine('get mood::state')).stdout.trim(), (s) => s === 'bad');
@@ -533,7 +536,7 @@ describe('the now strip is the last half second', () => {
 			await holdFiles(page);
 			await page.locator(`${ROOM} [data-field="work"]`).click();
 			// An end's sweep is its lane clipped to before the tap (NowStrip.svelte, da-kqloo).
-			const wiped = () => page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => svg.querySelector('g[data-mark="work"] > g[clip-path]') !== null);
+			const wiped = () => page.locator(`${STRIP} svg.now-strip`).evaluate((svg) => svg.querySelector('g[data-mark="work"] > g[clip-path]') !== null);
 			const atTap = await wiped();
 			await release(page);
 			assert.ok(atTap, 'no sweep at the tap');
@@ -557,7 +560,7 @@ describe('the now strip is the last half second', () => {
 			const fill = await colorOf(app, 'over');
 			await until(() => drawn(page, 'over'), (marks) => marks.some((m) => m.fill === fill && m.left <= 0.5 && m.right >= m.of - 0.5));
 			const stacking = () =>
-				page.locator(`${ROOM} svg.now-strip`).evaluate((svg) => {
+				page.locator(`${STRIP} svg.now-strip`).evaluate((svg) => {
 					const tap = svg.querySelector('.pending[data-mark="under"]');
 					const over = [...svg.querySelectorAll('g[data-mark="over"] rect.strip-block')];
 					const [t, o] = [tap?.getBoundingClientRect(), over.map((b) => b.getBoundingClientRect())];
@@ -629,6 +632,31 @@ describe('collect at rest on a phone', () => {
 			await swipe(page, mx, my, 80, 0, 8, 60, 200);
 			const mirrored = await rests(page);
 			assert.ok(Math.abs(mirrored + 80) <= 2, `a slow swipe right of 80px on the mirror panned ${-mirrored}px`);
+		}, AT_REST);
+	});
+
+	// da-rh5oa: a field's view and the way back draw no strip of their own, which on a phone cost a forced layout
+	// in the tap's frame; at rest the strip stands outside the room, and a drag on it still pans the rows.
+	test('one now strip for the fields and a field’s view, and a drag that starts on it pans the rows', async () => {
+		await withApp(async (app) => {
+			await seeded(app, CROWD);
+			const { page } = app;
+			// Wherever it stands, so the test reads the same before the change as after it.
+			const anywhere = 'section.pane[data-title="collect"] [data-strip]';
+			const strip = await page.locator(`${anywhere} svg.now-strip`).elementHandle();
+			await page.locator(`${ROOM} [data-field="mood"]`).first().tap();
+			await page.locator(`${ROOM} [data-role="head"]`).waitFor();
+			assert.ok(await strip.evaluate((s) => s.isConnected), "a field's view drew a strip of its own");
+			await page.locator(`${ROOM} [data-back]`).tap();
+			await page.locator(`${ROOM} [data-role="field"]`).first().waitFor();
+			assert.ok(await strip.evaluate((s) => s.isConnected), 'the way back drew a strip of its own');
+
+			const [room, band] = await Promise.all([page.locator(ROOM).boundingBox(), page.locator(anywhere).boundingBox()]);
+			await swipe(page, room.x + room.width * 0.85, room.y + room.height / 2, -80, 0, 8, 60, 200);
+			const from = await rests(page);
+			await swipe(page, band.x + band.width / 2, band.y + band.height / 2, 40, 0, 8, 60, 200);
+			const back = from - (await rests(page));
+			assert.ok(Math.abs(back - 40) <= 2, `a slow swipe of 40px from the strip panned the rows ${back}px`);
 		}, AT_REST);
 	});
 });

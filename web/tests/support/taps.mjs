@@ -141,7 +141,7 @@ const survey = (page, { within, mark, layer } = {}) =>
 				const [cx, cy] = [box.left + box.width / 2, box.top + box.height / 2];
 				const over = (r) => !!r && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
 				const clipped =
-					!!room && (!over(room.getBoundingClientRect()) || over(room.querySelector('[data-strip]')?.getBoundingClientRect()));
+					!!room && (!over(room.getBoundingClientRect()) || over(room.closest('.bar')?.querySelector(':scope > [data-strip]')?.getBoundingClientRect()));
 				out.push({ key, double, chevron, plus, clipped, away: 'away' in b.dataset, kind: b.dataset.act ?? null });
 			}
 			return out;

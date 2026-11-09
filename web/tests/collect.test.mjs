@@ -93,7 +93,7 @@ describe('collect', () => {
 		await collect(async ({ page }) => {
 			// mood was switched to bad: it is on, the others are not (da-lw7ue).
 			await page.locator(`${VIEW} .spot.shelf[data-section="active"] [data-field="mood"]`).waitFor();
-			await page.locator(`${VIEW} [data-now-field="mood"]`).waitFor();
+			await page.locator(`${WIDGET} [data-now-field="mood"]`).waitFor();
 			const sections = await page.$$eval(`${VIEW} .spot.shelf`, (spots) => spots.map((s) => s.dataset.section));
 			assert.equal(sections.filter((s) => s === 'active').length, 1, JSON.stringify(sections));
 		});
@@ -109,7 +109,7 @@ describe('collect', () => {
 			await app.redraw();
 			await page.locator('section.pane:not([data-title="collect"]) svg [data-field="timezone"]').first().waitFor({ state: 'attached' });
 			await page.locator(`${VIEW} [data-field="mood"]`).waitFor();
-			assert.equal(await page.locator(`${VIEW} [data-field="timezone"], ${VIEW} [data-now-field="timezone"]`).count(), 0);
+			assert.equal(await page.locator(`${VIEW} [data-field="timezone"], ${WIDGET} [data-now-field="timezone"]`).count(), 0);
 			const choices = await choiceLines(page, 'bar', 'fields');
 			assert.ok(choices.some((c) => c.endsWith('coffee')), JSON.stringify(choices));
 			assert.ok(!choices.some((c) => c.endsWith('timezone')), JSON.stringify(choices));

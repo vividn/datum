@@ -95,7 +95,7 @@
 -->
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import Brand from '#lib/Brand.svelte';
 	import CliEntry from '#lib/CliEntry.svelte';
 	import { clearScrollback, cli, stepped, type Command } from '#lib/cliStore.ts';
@@ -297,6 +297,29 @@
 	 */
 	/** No slide for a reader who asked for no motion. */
 	const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+	/**
+	 * The command widget slid up from behind the input, and back. `fly` reads
+	 * the node's computed style as it starts, a forced layout in the flush of
+	 * the tap that moved it (da-rh5oa); this reads nothing.
+	 */
+	const rise = (_: Element) => ({ duration: still() ? 0 : 160, easing: cubicOut, css: (_t: number, u: number) => `transform: translateY(${u * 100}%)` });
+	/**
+	 * Whether the command widget is drawn: `commandsOpen`, after the paint of
+	 * the frame it moved in. A field pill opens it and its last pill closes it
+	 * (da-lnirx), so it would mount and slide in the same frame as the tap
+	 * on a field that draws its view, and its `redo --dry-run` go ahead of
+	 * that view's own commands (da-rh5oa).
+	 */
+	let commandsShown = $state(false);
+	$effect(() => {
+		const open = $commandsOpen;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const frame = requestAnimationFrame(() => (timer = setTimeout(() => (commandsShown = open))));
+		return () => {
+			cancelAnimationFrame(frame);
+			clearTimeout(timer);
+		};
+	});
 
 	function onKey(event: KeyboardEvent): void {
 		// PageUp and PageDown on the box move the bar a state, as a swipe does.
@@ -538,7 +561,7 @@
 		</div>
 	</div>
 
-	{#if $commandsOpen}
+	{#if commandsShown}
 		<!-- Clipped at the input's top, so it slides out from behind it. Its
 		     buttons stand in one row scrolled sideways (da-qzzox), and a swipe
 		     or a wheel on them is theirs: the bar's grip leaves it alone (da-m9zo7). -->
@@ -546,7 +569,7 @@
 			<div
 				id="bar-commands"
 				class="commands"
-				transition:fly={{ y: '100%', opacity: 1, duration: still() ? 0 : 160 }}
+				transition:rise
 			>
 				<CommandPane epoch={$epoch} key="bar:commands" palette />
 			</div>
