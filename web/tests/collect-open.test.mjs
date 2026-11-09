@@ -125,6 +125,33 @@ async function placesShown(page, selector, key) {
 	};
 }
 
+/**
+ * Every run whose command `which` names (`*`, every one) held from now until
+ * the function returned is called, in the order asked; `fail` names those
+ * that then answer exit 1 and run nothing. `window.__held` is what waits.
+ */
+async function hold(page, which, fail = []) {
+	await page.evaluate(
+		([which, fail]) => {
+			window.__held = [];
+			const previous = window.datum.setRunner((argv, ...rest) => {
+				if (which !== '*' && !which.includes(argv[0])) return previous(argv, ...rest);
+				const go = () => (fail.includes(argv[0]) && !argv.includes('--dry-run') ? { argv, code: 1, stdout: '', stderr: 'refused' } : previous(argv, ...rest));
+				return new Promise((done) => window.__held.push({ argv, go: () => done(go()) }));
+			});
+			window.__release = () => {
+				window.datum.setRunner(previous);
+				for (const h of window.__held.splice(0)) h.go();
+			};
+		},
+		[which, fail]
+	);
+	return () => page.evaluate(() => window.__release());
+}
+
+/** The commands held so far, each its words. */
+const held = (page) => page.evaluate(() => window.__held.map((h) => h.argv));
+
 describe('a field opened in collect', () => {
 	before(startApp);
 	after(stopApp);
@@ -281,6 +308,117 @@ describe('a field opened in collect', () => {
 			// The same button height as the fields at rest.
 			const state = await page.locator(`${OPEN} [data-state="s00"]`).boundingBox();
 			assert.ok(Math.abs(state.height - rest.height) < 0.5, `a state ${state.height}px tall, a field ${rest.height}px`);
+		});
+	});
+	// vividn, 2026-11-09: «clicking on a CHANGE data, feels very laggy … Prioritize
+	// drawing the already known states from the spec. But this should probably all
+	// be cached anyway» and «it really needs to be tap tap done» (da-2ylmj).
+	test('a change field draws its spec’s states before `states` answers, the used ones after them, and the spec’s stay put', async () => {
+		await opening(['setup tempo --verb switch --states false,adagio,presto,largo', 'switch tempo zed -t 10:00', 'switch tempo yak -t 11:00'], 'tempo', async (app, button) => {
+			const { page } = app;
+			const release = await hold(page, ['states']);
+			let spec;
+			try {
+				await button.click();
+				await page.locator(`${OPEN} [data-state="largo"]`).waitFor();
+				assert.ok((await held(page)).some((a) => a[0] === 'states'), 'the spec’s states waited for the listing');
+				spec = (await items(page)).filter((i) => i.role === 'state');
+				assert.deepEqual(spec.map((i) => i.state), ['adagio', 'presto', 'largo']);
+			} finally {
+				await release();
+			}
+			await listed(page, 'zed');
+			const all = (await items(page)).filter((i) => i.role === 'state');
+			assert.deepEqual(all.map((i) => i.state), ['adagio', 'presto', 'largo', 'yak', 'zed']);
+			assert.deepEqual(all.slice(0, 3), spec, 'a spec state moved when the used ones came');
+		});
+	});
+
+	test('back, and a state logged, draw the fields with no run between; the write lands after, and one refused opens the field again', async () => {
+		await opening(['setup pace --verb switch --states false,slow,fast'], 'pace', async (app, button) => {
+			const { page } = app;
+			const openPace = async () => {
+				await button.click();
+				await page.locator(`${OPEN} [data-state="fast"]`).waitFor();
+				await app.idle();
+			};
+			await openPace();
+			let release = await hold(page, '*');
+			try {
+				await page.locator(`${OPEN} [data-back]`).click();
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+				await button.waitFor();
+			} finally {
+				await release();
+			}
+			await app.idle();
+			await openPace();
+			release = await hold(page, '*');
+			try {
+				await page.locator(`${OPEN} [data-state="fast"]`).click();
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+				await button.waitFor();
+				assert.ok((await held(page)).some((a) => a[0] === 'change' && a.includes('fast') && !a.includes('--dry-run')), 'the fields waited for the write');
+				// Its pill, still on the bar while the write waits, opens nothing.
+				await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+				assert.equal(await page.locator(OPEN).count(), 0, 'the field opened again before its write ran');
+			} finally {
+				await release();
+			}
+			await app.idle();
+			assert.equal(await page.locator(OPEN).count(), 0, 'the field opened again after its write');
+			const [row] = JSON.parse((await app.run(['tail', 'pace', '-n', '1', '--json'])).stdout).rows;
+			assert.equal(row.state, 'fast');
+			// Refused, its pills stay, and the field is open again for another try.
+			await openPace();
+			release = await hold(page, ['change'], ['change']);
+			try {
+				await page.locator(`${OPEN} [data-state="slow"]`).click();
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+			} finally {
+				await release();
+			}
+			await page.locator(`${OPEN} [data-state="slow"]`).waitFor();
+		});
+	});
+
+	test('a field opened again draws its listing at once and reads nothing, until a write to it, whose states come after the spec’s', async () => {
+		await opening(['setup tone --verb switch --states false,low', 'switch tone mid -t 10:00', 'setup cup --verb occur'], 'tone', async (app, button) => {
+			const { page } = app;
+			const back = async () => {
+				await page.locator(`${OPEN} [data-back]`).click();
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+			};
+			await button.click();
+			await page.locator(`${OPEN} [data-state="mid"]`).waitFor();
+			await app.idle();
+			await back();
+			// Nothing written to it, another field only: drawn from what was kept, and not read again.
+			await app.submit('moment cup -t 12:00');
+			await app.idle();
+			let release = await hold(page, ['states']);
+			try {
+				await button.click();
+				await page.locator(`${OPEN} [data-state="mid"]`).waitFor();
+				await app.idle();
+				assert.deepEqual(await held(page), [], 'read again with nothing written to it');
+				await back();
+			} finally {
+				await release();
+			}
+			// Written to: its spec’s at once, what it has used once read again.
+			await app.submit('switch tone high -t 12:00');
+			await app.idle();
+			release = await hold(page, ['states']);
+			try {
+				await button.click();
+				await page.locator(`${OPEN} [data-state="low"]`).waitFor();
+				await page.waitForFunction(() => window.__held.some((h) => h.argv[0] === 'states'));
+				assert.equal(await page.locator(`${OPEN} [data-state="mid"]`).count(), 0, 'a used state drawn from before the write');
+			} finally {
+				await release();
+			}
+			assert.deepEqual(await listed(page, 'mid'), ['low', 'high', 'mid']);
 		});
 	});
 });
