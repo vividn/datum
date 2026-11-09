@@ -301,6 +301,25 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // and `datum check` reports a `last_state_mismatch` when history
     // disagrees. A duration alongside keeps the verb: that is `-t E <dur>`.
     let has_dur = reserved.dur.is_some() || args.duration.duration.is_some();
+    // da-1ekos: a duration signed `+` runs forward from the entry's time,
+    // the block `start_time=<time> <dur>` places. With `end_time=` the two
+    // ends disagree, and a timeless entry has no time to run from.
+    let forward = reserved.dur_forward
+        || args
+            .duration
+            .duration
+            .as_deref()
+            .is_some_and(|d| d.starts_with('+'));
+    if forward && lifted.end.is_some() {
+        anyhow::bail!(
+            "a +duration runs forward from the entry's time, and end_time= puts that time at the block's end; use start_time= or drop the +"
+        );
+    }
+    if forward && args.time.omit_timestamp {
+        anyhow::bail!(
+            "a +duration runs forward from the entry's time, and -T/--no-timestamp leaves it none"
+        );
+    }
     let action = if lifted.end.is_some()
         && lifted.start.is_none()
         && !has_dur
@@ -556,7 +575,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                 }
                 Some((Some(start), Some(base_time.clone())))
             }
-            (Some(_), None) if has_dur => {
+            // da-1ekos: `dur=+D` is `start_time=<the entry's time> D`.
+            (start, None) if has_dur && (start.is_some() || forward) => {
                 let dur = match reserved.dur.as_ref().map(|d| &d.span) {
                     Some(DurSpan::Of(d)) => *d,
                     // A typed zero reads as a moment (da-xkx16): the block S..S.
@@ -2449,6 +2469,8 @@ pub(crate) struct ReservedColumns {
     pub(crate) field: Option<String>,
     pub(crate) state: Option<JsonValue>,
     pub(crate) dur: Option<datum_core::dur::Dur>,
+    /// `dur=+D`: the duration runs forward from the entry's time (da-1ekos).
+    pub(crate) dur_forward: bool,
     /// `dur_uncertainty=` — how precisely `dur` is known, as an ISO-8601
     /// ± radius. Lands inside `entry.dur` (da-b8rs), so it needs a `dur`
     /// to attach to.
@@ -2523,6 +2545,7 @@ pub(crate) fn extract_reserved_columns(
             out.clears_dur = true;
         } else {
             let s = json_to_dur_string(&v)?;
+            out.dur_forward = s.starts_with('+');
             out.dur = Some(
                 datum_core::dur::Dur::parse_input(&s)
                     .ok_or_else(|| anyhow::anyhow!("invalid dur value: {s:?}"))?,

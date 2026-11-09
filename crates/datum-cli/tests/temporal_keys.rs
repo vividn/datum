@@ -354,3 +354,58 @@ fn other_time_keys_stay_in_data() {
     let wake = datum_parse::time::DatumTime::from_v2_json(wake).expect("an instant");
     assert_eq!(wake.local_time().time().to_string(), "07:00:00");
 }
+
+/// da-1ekos: a `+` duration runs forward from the entry's time, so
+/// `-t -60 dur=+5` is the row `start_time=-60 dur=5` writes, the block
+/// an hour ago to five minutes past it, by the key or the trailing slot, on a start and a moment.
+#[test]
+fn a_plus_duration_is_the_row_start_time_writes() {
+    let _g = freeze_time("2026-09-10T12:00:00Z");
+    for (verb, field) in [("start", "posture"), ("occur", "ev")] {
+        let keyed = fresh_db();
+        run_cli(&[verb, field, "start_time=-60", "dur=5"], &keyed).unwrap();
+        let want = shape(&only(&keyed, field));
+        assert_eq!(want["at"], json!("2026-09-10T11:05:00+00:00"));
+        let mut lines = vec![vec![verb, field, "-t", "-60", "dur=+5"]];
+        if verb == "start" {
+            lines.push(vec![verb, field, "-t", "-60", "+5"]);
+        }
+        for line in lines {
+            let db = fresh_db();
+            run_cli(&line, &db).expect("a +duration");
+            assert_eq!(shape(&only(&db, field)), want, "{line:?}");
+        }
+    }
+}
+
+/// With no `-t` it starts now, and so ends five minutes ahead; a plain
+/// `dur=5` still ends at the entry's time.
+#[test]
+fn a_plus_duration_starts_now_and_a_plain_one_still_ends_there() {
+    let _g = freeze_time("2026-09-10T12:00:00Z");
+    let db = fresh_db();
+    run_cli(&["start", "ahead", "dur=+5"], &db).unwrap();
+    run_cli(&["start", "behind", "-t", "-60", "dur=5"], &db).unwrap();
+    let ahead = only(&db, "ahead");
+    assert_eq!(occur_utc(&ahead), "2026-09-10T12:05:00+00:00");
+    assert_eq!(dur(&ahead).as_deref(), Some("PT5M"));
+    assert_eq!(occur_utc(&only(&db, "behind")), "2026-09-10T11:00:00+00:00");
+}
+
+/// A `+` with `end_time=` puts the entry's time at both ends of the
+/// block, and `-T` leaves it none: each refused naming what it clashes
+/// with, nothing written. With `start_time=` the two agree.
+#[test]
+fn a_plus_duration_refuses_end_time_and_no_timestamp() {
+    let _g = freeze_time("2026-09-10T12:00:00Z");
+    let db = fresh_db();
+    let err = run_cli(&["start", "posture", "end_time=-60", "dur=+5"], &db)
+        .expect_err("end_time= and a +duration");
+    assert!(err.to_string().contains("end_time="), "got: {err}");
+    let err = run_cli(&["occur", "ev", "-T", "dur=+5"], &db).expect_err("-T and a +duration");
+    assert!(err.to_string().contains("-T"), "got: {err}");
+    assert!(rows(&db, "posture").is_empty() && rows(&db, "ev").is_empty());
+
+    run_cli(&["start", "agreed", "start_time=-60", "dur=+5"], &db).unwrap();
+    assert_eq!(occur_utc(&only(&db, "agreed")), "2026-09-10T11:05:00+00:00");
+}

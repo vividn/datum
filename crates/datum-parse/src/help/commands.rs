@@ -1969,6 +1969,10 @@ const TIME_FORMS: &[FormGroup] = &[
                 example: "PT30M",
                 meaning: "ISO 8601",
             },
+            FormSpec {
+                example: "+30",
+                meaning: "30 minutes FORWARD: the period starts at -t, as start_time= does",
+            },
         ],
     },
 ];
@@ -2353,7 +2357,8 @@ pub const COMMANDS: &[CommandSpec] = &[
             "A trailing length (`datum on work 25m`, or `dur=25m`) makes a \
              period: it ENDS at the entry's time — now, or wherever `-t`/`-d` put \
              it — and the span runs BACK from there. `datum on work 25m -t \
-             12:30` is work from 12:05 to 12:30.\n\n\
+             12:30` is work from 12:05 to 12:30, and `+25m` runs forward \
+             from it instead, 12:30 to 12:55.\n\n\
              An array of fields (`datum on a,b`, no spaces) is one on on \
              each: one instant, the same flags and keys, all written or none, \
              and one `undo` takes them all back.",

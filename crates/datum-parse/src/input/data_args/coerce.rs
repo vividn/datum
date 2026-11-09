@@ -243,6 +243,10 @@ pub(super) fn infer_typed_value(
         }
     }
     match coerce_as(ty, value, compat) {
+        // da-1ekos: `dur=+5` keeps its sign, forward from the entry's time.
+        Some(Value::String(d)) if path == "dur" && value.starts_with('+') => {
+            Ok(Some(Value::String(format!("+{d}"))))
+        }
         Some(v) => Ok(Some(v)),
         // The entry's own time and duration keep their own parsers, and
         // their own refusals (`dur=1h±5m` is a duration with uncertainty).

@@ -374,6 +374,9 @@ is reported rather than read again. The owner's reads open as a write does.
   removed because the three spellings disagreed about which side of
   `-t` the block fell on; `crates/datum-cli/tests/dur_flag_removed.rs`
   keeps it gone, and the two survivors now agree with the reference.
+  A `+` runs it forward instead (`-t 10:00 dur=+5` is 10:00–10:05, the
+  row `start_time=10:00 dur=5` writes; with no `-t`, from now), refused
+  beside `end_time=` or `-T` (da-1ekos)
   A full-day time (`-y`, `-d`, `-D`, a `-t` naming a day) takes a duration
   in whole days alone (`outside -D 3d`); `start walk -y 13:00`, `24h` or
   `1d2h` is refused saying so (da-s6ech)
