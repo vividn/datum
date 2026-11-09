@@ -126,7 +126,9 @@
 	the line. A tap here moves the line and not the window: one on now stops
 	where it is for as long as the pill lasts. A handle's stretch scales about
 	an absolute pill's instant, or now, or the window's right edge once now
-	is past it (da-2x9eq); a pinch, about the fingers (da-3zpdx).
+	is past it (da-2x9eq) or the pill stands under the diamond, which a pill
+	never moves (da-5whsm); a pinch, about the fingers (da-3zpdx). A press on
+	the axis just out of a diamond that goes along it is the diamond's.
 	vividn: «any time the view is panned off the default, the "now" label
 	under the now section becomes a filled in yellow button with black now
 	written on it. Clicking that button restores the default.» So off now
@@ -909,6 +911,15 @@
 	/** The pill the press in hand is on, as `onPillDown` hands it to `begin`. */
 	let pillDown: string | undefined;
 	/**
+	 * The handle a press on its axis just out of the diamond may be (da-5whsm,
+	 * vividn: «if you click immediately below it and start dragging left and
+	 * right, you probably want to be grabbing the white diamond and rescaling
+	 * rather than scrubbing the time pill»), and the press.
+	 */
+	let underHandle: { h: Handle; down: PointerEvent } | null = null;
+	/** How far across the axis from a diamond's middle a press is still under it. */
+	const BESIDE_PX = 24;
+	/**
 	 * The time pill a scrub of the OTHER axis gives a LENGTH to: its instant
 	 * in ms, and its `rel` where it is relative. An absolute pill takes one
 	 * from the relative axis (da-f4sto, vividn: «when an absolute time is
@@ -994,6 +1005,14 @@
 			const other = pillDown === SPAN_ID || (on === 'rel' ? !!counted : pill?.rel !== undefined);
 			lengthTo = pill && other && instantAt(press.x, press.y) < +pill.at ? { at: +pill.at, rel: pill.rel } : null;
 			if (pillDown) return void (landedOn = { pill: pillDown });
+			// Just out of its diamond, the press waits: along the axis it is the
+			// handle's drag, and a still lift the time (da-5whsm).
+			const h = handles.find((h) => (h.clock === undefined) === (on === 'rel'));
+			const [hx, hy] = h ? [boxAt.x + h.x, boxAt.y + h.y] : [NaN, NaN];
+			if (h && Math.abs(along(press.x - hx, press.y - hy)) <= HANDLE_PX / 2 && Math.abs(along(press.y - hy, press.x - hx)) <= BESIDE_PX) {
+				underHandle = { h, down: event };
+				return void (landedOn = {});
+			}
 			const label = labelAt(press.x, press.y, on);
 			landedOn = label && {};
 			axisPressed = event.timeStamp;
@@ -1020,6 +1039,7 @@
 		onMark = null;
 		waiting = null;
 		landedOn = null;
+		underHandle = null;
 		lengthTo = null;
 		mode = 'press';
 		long = false;
@@ -1263,6 +1283,14 @@
 		if (!press) return;
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
 		if (landedOn?.pill && still && event.timeStamp - axisPressed > DOUBLE_MS) removePill(landedOn.pill);
+		// Still, a press under a diamond is the time it would have been at once.
+		if (underHandle) {
+			if (still) {
+				axisPressed = event.timeStamp;
+				pointAt(labelAt(press.x, press.y, scrubbing) ?? scrubAt(press.x, press.y));
+			}
+			return drop();
+		}
 		// A flick coasts on, a finger's or a mouse's (da-w57do); one held still first stops where it is let go.
 		if (mode === 'pan') {
 			// Read as the bar's and collect's are, over the time before the LIFT (da-4gwp5):
@@ -1582,6 +1610,18 @@
 		}
 		if (!press) return;
 		last = { x: event.clientX, y: event.clientY };
+		const [dx, dy] = [event.clientX - press.x, event.clientY - press.y];
+		if (underHandle && Math.hypot(dx, dy) > SLOP_PX) {
+			const { h, down } = underHandle;
+			underHandle = null;
+			// Along the axis it is the handle's, pinning the time under the press; across, the scrub.
+			if (Math.abs(along(dx, dy)) >= Math.abs(along(dy, dx))) {
+				const from = along(press.x, press.y);
+				drop();
+				grab(down, h, from);
+				return onGripMove(event);
+			}
+		}
 		// When the finger moved, not when this ran (#lib/nowpoint.ts).
 		long = event.timeStamp - pressedAt >= LONG_MS;
 		step(event.clientX, event.clientY, event.timeStamp);
@@ -1610,7 +1650,7 @@
 	 * same: once it has committed, the move is ours.
 	 */
 	function onTouchMove(event: TouchEvent): void {
-		if (fingers.size >= 2 || mode !== 'press' || waited) event.preventDefault();
+		if (fingers.size >= 2 || mode !== 'press' || waited || grip) event.preventDefault();
 	}
 
 	// ── ctrl+wheel ─────────────────────────────────────────────────────
@@ -1686,7 +1726,8 @@
 	 * window's far end to the anchor, so a drag has room both ways and a
 	 * centered anchor is not under it, or the window's middle where the anchor
 	 * is off the window or next to its far end. With no pill the anchor's place is the window's
-	 * end, where now is on now, so a pan leaves the diamonds put (da-2x9eq). Its words (`-15m`, or a clock's
+	 * end, where now is on now, so a pan leaves the diamonds put (da-2x9eq), and a
+	 * pill keeps them where they stood with none (`bare`, da-5whsm). Its words (`-15m`, or a clock's
 	 * `14:40`, none of which it draws) say the time at the diamond, its
 	 * `minutes` how far that is from the anchor, and `x`, `y` where it stands
 	 * across and down the widget's box. It belongs to the window and not to
@@ -1732,6 +1773,16 @@
 	/** The handles, where the window starts: written only when they moved, being read at every slide. */
 	let handleAt = 0;
 	let handleHalfway = false;
+	/**
+	 * How far along the window the handles stand with no pill, a share of it:
+	 * a pill keeps them there, as now leaving the view does, across a resize
+	 * too, the now strip being a fixed share (da-5whsm, vividn: «the white
+	 * diamonds in the nowview still shift places if you select a time. They
+	 * should stay in the same place»).
+	 */
+	let bare: number | null = null;
+	/** Whether the anchor stands under the handles, which then count and scale from the window's right edge, as panned past now. */
+	let handleNear = false;
 	function readHandles(): void {
 		// Not before the widget is mounted: the flow's effect runs as it is
 		// set up, above where the handles are declared.
@@ -1744,16 +1795,20 @@
 		// the nowsection is visible»); to a pill's instant, with one.
 		const toEnd = !pill && offNow && Number.isFinite(far);
 		const endMs = toEnd ? far + minutes * 60_000 : instantMs();
+		const start = axis?.y ? home.y : home.x;
+		const kept = !!pill && bare !== null;
 		// Read at rest: a pan in hand moves the picture under the handles, and not them.
 		if (svg && !panned) {
 			const end = (axis?.y ? svg.getBoundingClientRect().y : svg.getBoundingClientRect().x) + (toEnd ? xOf(svg, endMs) : anchorX(svg));
 			handleHalfway = end > lo + 2 * HANDLE_PX && end <= hi;
-			handleAt = (handleHalfway ? (lo + end) / 2 : (lo + hi) / 2) - (axis?.y ? home.y : home.x);
+			handleAt = (kept ? lo + bare! * (hi - lo) : handleHalfway ? (lo + end) / 2 : (lo + hi) / 2) - start;
+			if (!pill && hi > lo) bare = (handleAt + start - lo) / (hi - lo);
+			handleNear = kept && Math.abs(end - start - handleAt) < HANDLE_PX;
 		}
 		// The time at the diamond, which the handle's words and numbers name.
-		const here = handleHalfway ? (far + endMs) / 2 : Number.isFinite(was) ? was : axis ? instantAlong((lo + hi) / 2) : NaN;
+		const here = kept ? instantAlong(handleAt + start) : handleHalfway ? (far + endMs) / 2 : Number.isFinite(was) ? was : axis ? instantAlong((lo + hi) / 2) : NaN;
 		// To the second: the flow's now is a few ms off the clock, and 15.0001m has 15m as a step below it.
-		const off = Math.round((instantMs() - here) / 1000) / 60;
+		const off = Math.round(((handleNear ? instantAlong(hi) : instantMs()) - here) / 1000) / 60;
 		const none = !svg || !axis || zoom || !(Math.abs(off) >= 1 / 60);
 		const line = (selector: string) => svg?.querySelector(selector)?.getBoundingClientRect();
 		const [rel, abs] = none ? [] : [line('path.axis'), line('path.clock-axis')];
@@ -1763,7 +1818,7 @@
 			a && b ? a.text === b.text && Math.abs(a.x - b.x) <= 0.25 && Math.abs(a.y - b.y) <= 0.25 : a === b;
 		const nextFar: Handle | null = rel
 			? {
-					text: `${counted ? 't' : ''}${sign < 0 ? '-' : '+'}${sayMinutes(Math.abs(off))}`,
+					text: `${counted && !handleNear ? 't' : ''}${sign < 0 ? '-' : '+'}${sayMinutes(Math.abs(off))}`,
 					minutes: Math.abs(off),
 					sign,
 					...at(axis?.y ? rel.right : rel.top)
@@ -2252,18 +2307,19 @@
 
 	const across = (dx: number, dy: number) => (vertical ? dx : -dy);
 
-	function grab(event: PointerEvent, h: Handle): void {
+	function grab(event: PointerEvent, h: Handle, from?: number): void {
 		const svg = svgEl();
 		if (event.button > 0 || !svg || !axis) return;
 		event.preventDefault();
 		arriving?.();
 		const box = svg.getBoundingClientRect();
-		const at = vertical ? boxAt.y + h.y : boxAt.x + h.x;
+		const at = from ?? (vertical ? boxAt.y + h.y : boxAt.x + h.x);
 		// Panned into the past, a drag scales about the view's right edge, not
 		// about a now far past it (da-2x9eq, vividn: «so that when you are
-		// panned far in the past they still have a nice zoooming effect»).
+		// panned far in the past they still have a nice zoooming effect»);
+		// and so it does about a pill standing under the diamond (da-5whsm).
 		const right = ends()[1];
-		const edge = !counted && (vertical ? box.y : box.x) + anchorX(svg) > right;
+		const edge = handleNear || (!counted && (vertical ? box.y : box.x) + anchorX(svg) > right);
 		const anchor = edge ? right : (vertical ? box.y : box.x) + anchorX(svg);
 		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
 		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, edge, on: h, was: isOpenOn(h), turned: isOpenOn(h) ? (wheel?.pick ?? 0) : 0, mode: 'press', touch: event.pointerType !== 'mouse' };

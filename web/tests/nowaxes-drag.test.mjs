@@ -14,9 +14,11 @@ before(startApp);
 after(stopApp);
 
 bothWays((vertical) => {
-	test('with an absolute pill centered, the handle stands short of it and still scales', async () => {
+	// da-5whsm, vividn: «They should stay in the same place»: no longer halfway to the pill.
+	test('with an absolute pill near the middle, the handle stands where it did and still scales', async () => {
 		await withAxes(vertical, async (app) => {
 			const { page } = app;
+			const before = await page.locator(`${NOWVIEW} .handle[data-axis="rel"]`).boundingBox();
 			const l = await page.locator(`${NOWVIEW} svg.svg .clock-label`, { hasText: /^14:50$|^14:45$/ }).first();
 			const b = await l.boundingBox();
 			const word = await l.textContent();
@@ -29,8 +31,9 @@ bothWays((vertical) => {
 			const g = await read(page);
 			const [start, length] = g.y ? [g.frame.top, g.frame.height] : [g.frame.left, g.frame.width];
 			const [from, across] = g.y ? [at.y + at.height / 2, at.x + at.width / 2] : [at.x + at.width / 2, at.y + at.height / 2];
-			// On now it stands about 0.4 along: halfway to an anchor nearer the far end, here.
-			assert.ok((from - start) / length > 0.1 && (from - start) / length < 0.3, `it stands ${(from - start) / length} along`);
+			// About 0.4 along, as on now with no pill: the pill moves the window's picture, not the handle.
+			assert.ok((from - start) / length > 0.3 && (from - start) / length < 0.55, `it stands ${(from - start) / length} along`);
+			assert.ok(Math.abs(at.x - before.x) <= 0.5 && Math.abs(at.y - before.y) <= 0.5, `it went from ${before.x},${before.y} to ${at.x},${at.y}`);
 			await finger(page, pt(g, from, across), pt(g, from + 30, across));
 			await until(
 				() => page.evaluate(() => window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1)),

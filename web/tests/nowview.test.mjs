@@ -101,9 +101,14 @@ describe('the nowview widget', () => {
 		});
 	});
 
-	test('with the cursor set the far handle counts from it', async () => {
+	// da-5whsm: the diamonds stay where they stand, and one the pill stands
+	// under counts, and scales, from the window's right edge, as panned back.
+	test('with the cursor set the window centres on it, and the diamonds stay, counting from the right edge', async () => {
 		await withApp(
 			async ({ page }) => {
+				const rel = page.locator(`${PANE} .nowview-handles .handle[data-axis="rel"]`);
+				await rel.waitFor();
+				const was = await rel.boundingBox();
 				await page.evaluate((ms) => window.datum.cursor.set(new Date(ms)), todayAt(9, 0));
 				// Centred: the window's −15m to +15m, and its surroundings on to ±45m.
 				await page.waitForFunction(
@@ -111,9 +116,10 @@ describe('the nowview widget', () => {
 					PANE
 				);
 				const where = await beside(page, PANE);
-				assert.equal(where.far, 't-7m30s');
+				assert.match(where.far, /^-\d+m$/);
 				assert.deepEqual(where.wrong, []);
-				assert.deepEqual(await handled(page), ['t-7m30s']);
+				const now = await rel.boundingBox();
+				assert.ok(Math.abs(now.x - was.x) <= 0.5 && Math.abs(now.y - was.y) <= 0.5, `the diamond went from ${was.x} to ${now.x}`);
 			},
 			{ clock: todayAt(12, 0) }
 		);
@@ -390,6 +396,56 @@ describe('the nowview widget', () => {
 				clock: todayAt(12, 0),
 				prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m', at: '11:00' }))
 			}
+		);
+	});
+
+	// da-5whsm, vividn, 2026-11-09: «the white diamonds in the nowview still
+	// shift places if you select a time. They should stay in the same place».
+	// As it was found on datum.day: the collect tab, a tap on the axis 160px
+	// left of them. On the wall clock: held, the page's now is the picture's,
+	// and the pill's anchor, now, never passed the axis it was drawn on.
+	test('on now, a tap on the axis 160px left of the diamonds leaves them where they stood', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const places = () =>
+					page.locator(`${PANE} .nowview-handles .handle`).evaluateAll((hs) =>
+						hs.map((h) => {
+							const r = h.getBoundingClientRect();
+							return [h.dataset.axis, Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)];
+						})
+					);
+				await page.locator(`${PANE} .nowview-handles .handle[data-axis="rel"]`).waitFor();
+				await app.idle();
+				const was = await places();
+				const [, x, y] = was.find(([axis]) => axis === 'rel');
+				await page.mouse.click(x - 160, y);
+				await until(
+					() => page.evaluate(() => window.datum.bar.pills().map((p) => p.kind)),
+					(k) => k.includes('time')
+				);
+				await page.locator(`${PANE} svg.svg .instant-line`).first().waitFor({ state: 'attached' });
+				await app.idle();
+				assert.deepEqual(await places(), was);
+				// And a second on, the picture having flowed with it.
+				await page.waitForTimeout(1000);
+				assert.deepEqual(await places(), was);
+				// And a resize: as far along the window as with no pill.
+				const share = () =>
+					page.locator(PANE).evaluate((p) => {
+						const f = p.querySelector('svg.svg').closest('.picture').getBoundingClientRect();
+						const h = p.querySelector('.nowview-handles .handle[data-axis="rel"]').getBoundingClientRect();
+						return (h.x + h.width / 2 - f.left) / f.width;
+					});
+				const width = () => page.locator(PANE).evaluate((p) => p.querySelector('svg.svg').closest('.picture').getBoundingClientRect().width);
+				const [before, wide] = [await share(), await width()];
+				await page.setViewportSize({ width: 1100, height: 900 });
+				await until(width, (w) => w > 0 && Math.abs(w - wide) > 20);
+				await app.idle();
+				const after = await until(share, (s) => Number.isFinite(s));
+				assert.ok(Math.abs(after - before) < 0.005, `${before} along before the resize, ${after} after`);
+			},
+			{ ...DESKTOP, clock: null, home: ON_COLLECT }
 		);
 	});
 

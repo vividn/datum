@@ -165,4 +165,78 @@ bothWays((vertical) => {
 				assert.deepEqual(await pillsOf(page), [], 'the drag made a pill');
 			});
 		});
+
+	// vividn, 2026-11-09: «the white diamonds in the nowview still shift places
+	// if you select a time. They should stay in the same place» (da-5whsm).
+	for (const kind of ['rel', 'abs'])
+		test(`a time tapped on the ${kind} axis leaves both diamonds where they stood`, async () => {
+			await withAxes(vertical, async (app) => {
+				const { page } = app;
+				const places = () =>
+					page.locator(`${NOWVIEW} .nowview-handles .handle`).evaluateAll((hs) =>
+						hs.map((h) => {
+							const r = h.getBoundingClientRect();
+							return { axis: h.dataset.axis, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+						})
+					);
+				const was = await places();
+				assert.equal(was.length, 2, JSON.stringify(was));
+				const g = await read(page);
+				const h = was.find((p) => p.axis === kind);
+				// On the axis's line, most of the way from the window's far end to the diamond: the old rule put it halfway to there.
+				const [along, across] = vertical ? [h.y, h.x] : [h.x, h.y];
+				const lo = vertical ? g.frame.top : g.frame.left;
+				await finger(page, pt(g, lo + (along - lo) * 0.6, across));
+				await until(() => pillsOf(page), (p) => p.length === 1 && p[0].startsWith('time:'));
+				await page.locator(`${NOWVIEW} svg.svg .instant-line`).first().waitFor({ state: 'attached' });
+				await app.idle();
+				const now = await until(places, (p) => p.length === 2);
+				for (const p of was) {
+					const q = now.find((n) => n.axis === p.axis);
+					assert.ok(Math.abs(q.x - p.x) <= 1 && Math.abs(q.y - p.y) <= 1, `the ${p.axis} diamond went from ${p.x},${p.y} to ${q.x},${q.y}`);
+				}
+			});
+		});
+
+	// vividn, 2026-11-09: «if you click immediately below it and start dragging
+	// left and right, you probably want to be grabbing the white diamond and
+	// rescaling rather than scrubbing the time pill» (da-5whsm).
+	for (const kind of ['rel', 'abs'])
+		test(`a press just out of the ${kind} diamond that drags along the axis scales the window; a tap there is a pill, and a drag from farther scrubs`, async () => {
+			await withAxes(vertical, async (app) => {
+				const { page } = app;
+				const g = await read(page);
+				// Out of the band, 10px past the line on the axis's side, as `a press just out of the diamond puts a time pill`.
+				const out = (kind === 'rel') !== vertical ? 10 : -10;
+				const diamond = async () => {
+					const b = await page.locator(`${NOWVIEW} .handle[data-axis="${kind}"]`).boundingBox();
+					return vertical ? [b.y + b.height / 2, b.x + b.width / 2] : [b.x + b.width / 2, b.y + b.height / 2];
+				};
+				let [along, across] = await diamond();
+				await app.spyOnRunner();
+				// Toward the window's far end: the window grows, and nothing is selected.
+				await finger(page, pt(g, along, across + out), pt(g, along - 30, across + out));
+				await until(
+					() => page.evaluate(() => window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1)),
+					(a) => a && a[a.indexOf('--history') + 1] !== '30m'
+				);
+				assert.deepEqual(await pillsOf(page), [], 'the drag from under the diamond made a pill');
+				await app.idle();
+
+				// A tap there is still a pill, and opens no numbers.
+				[along, across] = await diamond();
+				await finger(page, pt(g, along, across + out));
+				await until(() => pillsOf(page), (p) => p.length === 1 && p[0].startsWith('time:'));
+				assert.equal(await page.locator('.nowview-wheel').count(), 0, 'the tap opened the numbers');
+				await page.locator(`${NOWVIEW} .nowview-now`).click();
+				await until(() => pillsOf(page), (p) => p.length === 0);
+				await app.idle();
+
+				// A drag along the axis that starts well away from the diamond scrubs a pill.
+				const lo = vertical ? g.frame.top : g.frame.left;
+				const far = lo + (along - lo) / 3;
+				await finger(page, pt(g, far, across + out), pt(g, far + 20, across + out));
+				await until(() => pillsOf(page), (p) => p.length === 1 && p[0].startsWith('time:'));
+			});
+		});
 });
