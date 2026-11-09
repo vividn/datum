@@ -28,14 +28,32 @@ const RELAY = {
 	dir: 'iroh-relay-v1.3.0'
 };
 
+// build-cli-wasm.mjs's `download()`, inlined (da-ccplx): GitHub's release CDN
+// answers 504 on and off for an hour at a time, and one 504 on a single fetch
+// failed the `before()` of every sync file. Eight tries, 10 s more apart each
+// (4 min 40 s in all); a 4xx other than 408 and 429 is final. `get` and `wait`
+// are a test's to replace.
+export async function download(url, { get = fetch, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			const res = await get(url);
+			if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) throw Object.assign(new Error(`HTTP ${res.status}`), { final: true });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			return Buffer.from(await res.arrayBuffer());
+		} catch (e) {
+			if (e.final || attempt === 8) throw new Error(`${url}: ${e.message}`);
+			console.log(`${url}: ${e.message}; again in ${attempt * 10}s`);
+			await wait(attempt * 10_000);
+		}
+	}
+}
+
 async function relayBinary() {
 	const home = join(repo, 'target', 'toolchains', RELAY.dir);
 	const bin = join(home, 'iroh-relay');
 	if (existsSync(bin)) return bin;
 	mkdirSync(home, { recursive: true });
-	const res = await fetch(RELAY.url);
-	if (!res.ok) throw new Error(`${RELAY.url}: HTTP ${res.status}`);
-	const tarball = Buffer.from(await res.arrayBuffer());
+	const tarball = await download(RELAY.url);
 	const actual = createHash('sha256').update(tarball).digest('hex');
 	if (actual !== RELAY.sha256) throw new Error(`${RELAY.url}: sha256 ${actual}, pinned ${RELAY.sha256}`);
 	// Unpacked into a directory of this process's own and renamed into place:
