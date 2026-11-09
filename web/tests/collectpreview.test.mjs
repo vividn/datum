@@ -37,6 +37,9 @@ const shared = sharedApp({ clock: todayAt(15) });
 /** `field` opened in collect: a switch by one tap, a block in 2-click mode, since one click logs it (da-gra0z). */
 const opened = (field, fn) =>
 	shared.solo(async (app) => {
+		// The session a test before left forgotten (da-v4b43): `solo` wipes its stored copy and not the page's, so the
+		// time section opened before stood open here, and closed under a press once a write read the wiped copy back.
+		await app.page.evaluate(() => window.datum.layout.forgetSession());
 		if (field !== 'mood') await pickOption(app.page, 'bar', 'a tap', 'opens and chooses, 2-click');
 		for (const line of SEED) {
 			const logged = await app.run(line.split(' '));
