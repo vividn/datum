@@ -28,8 +28,9 @@
 	fields right against its own part of the section (da-il6ni), the most
 	recently used first (`rowsUnder`, the order taken on
 	load and on coming back to the foreground). A drag pans those sideways,
-	gliding on after a swipe; the strip and the active section stay, until
-	the section is wider than half the widget and pans with them. A field
+	gliding on after a swipe, and up and down scrolls the page (da-tsomc);
+	the strip and the active section stay, until the section is wider than
+	half the widget and pans with them. A field
 	that starts glides into the section, and one that ends out of it into the
 	first slot of its row (`bumped`). A PINCH on the rows — two fingers, or
 	ctrl+wheel, a trackpad's — zooms them (da-l1z6h): each field's button,
@@ -154,6 +155,7 @@
 		type Align,
 		type View
 	} from './fields.js';
+	import { on } from 'svelte/events';
 	import { get } from 'svelte/store';
 	import { act } from './act.js';
 	import { holds } from './hold.js';
@@ -299,10 +301,24 @@
 		const held = holds(bar!, { within: 'button[data-field], button[data-state], button[data-off]', run: holdField });
 		const unzoom = zooming(bar!);
 		const untap = untapped(bar!);
+		const unscroll = on(bar!, 'touchmove', noScroll, { passive: false });
 		const box = new ResizeObserver(() => (tall = bar!.clientHeight));
 		box.observe(bar!);
-		return () => (held.destroy(), unzoom(), untap(), box.disconnect());
+		return () => (held.destroy(), unzoom(), untap(), unscroll(), box.disconnect());
 	});
+
+	/**
+	 * The page scrolls under a finger going up or down (`touch-action`), but
+	 * not under two, a pinch, nor once a pan of ours has moved: the browser
+	 * would claim a turn of it and cancel the gesture mid-way (da-tsomc).
+	 * On the bar, which holds the rows' room as well as the picture, so it
+	 * hears both: `drag` is the rows' pan, where they overrun the room
+	 * (`pans`; a drag on rows that fit is the pane's tab swipe, which a
+	 * cancelled move is not), and `live` the zoomed picture's (`zooming`).
+	 */
+	function noScroll(e: TouchEvent) {
+		if (e.touches.length > 1 || (drag?.moving && pans.includes('x')) || live) e.preventDefault();
+	}
 
 	/**
 	 * No tap while two fingers are down (da-gh1ep, vividn, 2026-11-05: «If two
@@ -1051,6 +1067,8 @@
 		drag.xs = tracked(drag.xs, e.clientX, e.timeStamp);
 		drag.ys = tracked(drag.ys, e.clientY, e.timeStamp);
 		if (!drag.moving && Math.hypot(dx, dy) <= CLICK_SLOP) return;
+		// A finger going up or down is the page's scroll (`touch-action`), not a pan: no drag of ours (da-tsomc).
+		if (!drag.moving && e.pointerType === 'touch' && Math.abs(dy) > Math.abs(dx)) return void (drag = null);
 		if (!drag.moving) (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		drag.moving = true;
 		pan = kept(drag.from.x + dx, drag.from.y + dy);
@@ -1210,7 +1228,7 @@
 </div>
 {/snippet}
 
-<div class="fields" class:picture data-align={picture ? 'picture' : 'rows'} bind:clientWidth={boxW} bind:clientHeight={boxH} onclickcapture={letGo}>
+<div class="fields" class:picture class:zoomed={picture && zoomedIn} data-align={picture ? 'picture' : 'rows'} bind:clientWidth={boxW} bind:clientHeight={boxH} onclickcapture={letGo}>
 <ButtonRows
 	items={entries}
 	{arrange}
@@ -1431,8 +1449,13 @@
 	}
 
 	/* A pinch on the bar is the widget's, not the page's; its sideways
-	   scroll is still the browser's. */
+	   scroll is still the browser's, and so is a scroll up or down, the
+	   page's, until a zoom makes that the view's pan (da-tsomc). */
 	.picture :global(.bar) {
+		touch-action: pan-x pan-y;
+	}
+
+	.picture.zoomed :global(.bar) {
 		touch-action: pan-x;
 	}
 
@@ -1760,8 +1783,10 @@
 		flex: 1;
 		min-height: 0;
 		overflow: hidden;
-		/* A finger's drag pans the cluster, never the page. */
-		touch-action: none;
+		/* A finger's sideways drag pans the cluster and two fingers zoom it;
+		   up and down, which the rows never move, the page scrolls (da-tsomc).
+		   `noScroll` keeps the page off a gesture once it is ours. */
+		touch-action: pan-y;
 	}
 
 	.lead {
