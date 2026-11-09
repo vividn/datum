@@ -475,8 +475,12 @@ fn full_day_writes_uncertainty_and_strips_clock() {
 
     let db = fresh_db();
 
-    // -D alone → P1D, today 00:00 local.
+    // -D alone → P1D, today 00:00 local. Today is read on both sides of
+    // the run, which lands on either if local midnight falls between
+    // (da-v8d2y, as `full_day_slugs_on_bare_date` does).
+    let before = Local::now().date_naive();
     run_cli(&["occur", "today_full", "-D"], &db).expect("occur -D");
+    let after = Local::now().date_naive();
     let e = &datum_core::test_util::logged_entries(&db, "today_full")[0];
     let local = e.at.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
@@ -489,10 +493,10 @@ fn full_day_writes_uncertainty_and_strips_clock() {
         NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
         "-D strips clock to 00:00 local",
     );
-    assert_eq!(
+    assert!(
+        [before, after].contains(&local.date_naive()),
+        "-D anchors to today in local time ({} is neither {before} nor {after})",
         local.date_naive(),
-        Local::now().date_naive(),
-        "-D anchors to today in local time",
     );
 
     // -d -1 (no time, no quick) → P1D, yesterday 00:00 local.

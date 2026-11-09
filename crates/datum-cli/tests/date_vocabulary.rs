@@ -23,18 +23,36 @@ fn only_entry_date(db: &Db, field: &str) -> NaiveDate {
         .date_naive()
 }
 
+/// Today read before and after `run`: a run crossing local midnight
+/// resolves its day words on either side, so each entry is checked
+/// against both (da-v8d2y, as `full_day_slugs_on_bare_date` does).
+fn bracketed(run: impl FnOnce()) -> [NaiveDate; 2] {
+    let before = Local::now().date_naive();
+    run();
+    [before, Local::now().date_naive()]
+}
+
+/// The entry for `field` is `offset` days from one side of `days`.
+fn assert_days_from(db: &Db, field: &str, offset: i64, days: [NaiveDate; 2]) {
+    let got = only_entry_date(db, field);
+    assert!(
+        days.iter().any(|t| got == *t + Duration::days(offset)),
+        "{field}: {got} is not {offset} days from {days:?}"
+    );
+}
+
 #[test]
 fn date_flag_accepts_day_words() {
     let db = fresh_db();
-    let today = Local::now().date_naive();
+    let days = bracketed(|| {
+        run_cli(&["occur", "wordtoday", "-d", "today"], &db).expect("-d today");
+        run_cli(&["occur", "wordyest", "-d", "yesterday"], &db).expect("-d yesterday");
+        run_cli(&["occur", "wordtmrw", "-d", "tomorrow"], &db).expect("-d tomorrow");
+    });
 
-    run_cli(&["occur", "wordtoday", "-d", "today"], &db).expect("-d today");
-    run_cli(&["occur", "wordyest", "-d", "yesterday"], &db).expect("-d yesterday");
-    run_cli(&["occur", "wordtmrw", "-d", "tomorrow"], &db).expect("-d tomorrow");
-
-    assert_eq!(only_entry_date(&db, "wordtoday"), today);
-    assert_eq!(only_entry_date(&db, "wordyest"), today - Duration::days(1));
-    assert_eq!(only_entry_date(&db, "wordtmrw"), today + Duration::days(1));
+    assert_days_from(&db, "wordtoday", 0, days);
+    assert_days_from(&db, "wordyest", -1, days);
+    assert_days_from(&db, "wordtmrw", 1, days);
 }
 
 /// A bare weekday looks backward — vividn's decision for da-0gs4, matching
@@ -44,20 +62,26 @@ fn date_flag_accepts_day_words() {
 #[test]
 fn date_flag_accepts_weekday_names() {
     let db = fresh_db();
-    let today = Local::now().date_naive();
-
-    run_cli(&["occur", "wdpast", "-d", "sunday"], &db).expect("-d sunday");
-    run_cli(&["occur", "wdnext", "-d", "sunday+"], &db).expect("-d sunday+");
+    let days = bracketed(|| {
+        run_cli(&["occur", "wdpast", "-d", "sunday"], &db).expect("-d sunday");
+        run_cli(&["occur", "wdnext", "-d", "sunday+"], &db).expect("-d sunday+");
+    });
 
     let past = only_entry_date(&db, "wdpast");
     assert_eq!(past.weekday(), Weekday::Sun);
-    assert!(past <= today, "bare weekday looks back (got {past})");
-    assert!(today - past < Duration::days(7));
+    assert!(
+        days.iter()
+            .any(|&t| past <= t && t - past < Duration::days(7)),
+        "bare weekday looks back from {days:?} (got {past})"
+    );
 
     let next = only_entry_date(&db, "wdnext");
     assert_eq!(next.weekday(), Weekday::Sun);
-    assert!(next > today, "`sunday+` looks forward (got {next})");
-    assert!(next - today <= Duration::days(7));
+    assert!(
+        days.iter()
+            .any(|&t| next > t && next - t <= Duration::days(7)),
+        "`sunday+` looks forward from {days:?} (got {next})"
+    );
 }
 
 /// Half one of da-0gs4: `-t` falls back to date parsing, so a caller with
@@ -65,13 +89,13 @@ fn date_flag_accepts_weekday_names() {
 #[test]
 fn time_flag_falls_back_to_date_parsing() {
     let db = fresh_db();
-    let today = Local::now().date_naive();
+    let days = bracketed(|| {
+        run_cli(&["occur", "tword", "-t", "yesterday"], &db).expect("-t yesterday");
+        run_cli(&["occur", "tweekday", "-t", "sunday"], &db).expect("-t sunday");
+        run_cli(&["occur", "tdate", "-t", "2024-03-16"], &db).expect("-t 2024-03-16");
+    });
 
-    run_cli(&["occur", "tword", "-t", "yesterday"], &db).expect("-t yesterday");
-    run_cli(&["occur", "tweekday", "-t", "sunday"], &db).expect("-t sunday");
-    run_cli(&["occur", "tdate", "-t", "2024-03-16"], &db).expect("-t 2024-03-16");
-
-    assert_eq!(only_entry_date(&db, "tword"), today - Duration::days(1));
+    assert_days_from(&db, "tword", -1, days);
     assert_eq!(only_entry_date(&db, "tweekday").weekday(), Weekday::Sun);
     assert_eq!(
         only_entry_date(&db, "tdate"),
