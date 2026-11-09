@@ -334,6 +334,11 @@ pub(crate) fn extract_with_context_at(
     let action_text = match datum_core::track::track_verb(entry).filter(|_| names_the_row) {
         Some(verb) => Some(paint_track(verb)),
         None => action.map(|a| match a {
+            // An entry after now is FUTURE, in reverse video, whatever its
+            // shape (da-85b0d): a clock typed for last night lands tonight.
+            Outcome::Create if !held() && entry.at.as_ref().is_some_and(|t| t.utc > now.utc) => {
+                paint_future()
+            }
             Outcome::Create if !held() => {
                 paint_word(a, created_word(entry, ctx.is_some_and(|c| c.remark)))
             }
@@ -405,6 +410,14 @@ fn paint_track(verb: datum_core::action::Action) -> String {
         return word.to_string();
     }
     format!("{}{word}{RESET}", Outcome::Create.ansi_color())
+}
+
+/// FUTURE, the word of a new entry after now: bold, in reverse video.
+fn paint_future() -> String {
+    if !color_enabled() {
+        return "FUTURE".to_string();
+    }
+    format!("\x1b[1;7m{}FUTURE{RESET}", Outcome::Create.ansi_color())
 }
 
 fn paint_action(action: Outcome) -> String {

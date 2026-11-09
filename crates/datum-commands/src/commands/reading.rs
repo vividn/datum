@@ -1,34 +1,27 @@
 //! How a typed time is read: the question a fall-back night's repeated hour
-//! asks (da-6i7l1, da-job98), and the note a bare clock far ahead gets
-//! (da-qo5in).
+//! asks (da-6i7l1, da-job98), and the hint an evening logged before noon
+//! gets (da-85b0d).
 
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use datum_core::{entry::Entry, time::DatumTime};
-use datum_parse::input::TimeArgs;
+use datum_core::time::DatumTime;
 use datum_parse::{ParseError, Readings};
 
 use crate::commands::question::Question;
 
-/// A bare clock (`-t 23:50`, [`TimeArgs::bare_clock`]) is today's, as v2's
-/// is, so typed just after midnight for a moment ago it lands almost a day
-/// ahead. Over 12 hours ahead it is said in one line, `option` the way the
-/// line gave the time; the entry stays as typed.
-pub(crate) fn far_ahead(
-    time: &TimeArgs,
-    entry: &Entry,
+/// The hint a time this evening gets when logged before noon (da-85b0d):
+/// most likely last night's, so it says how to move it there. The entry
+/// stays as typed, and its echo says FUTURE.
+pub(crate) fn last_night(
+    at: &DatumTime,
     now: chrono::DateTime<chrono::Utc>,
-    option: &str,
-) -> Option<String> {
-    let ahead = entry.at.as_ref()?.utc - now;
-    let typed = time.time.as_deref()?;
-    (time.bare_clock() && ahead > chrono::TimeDelta::hours(12)).then(|| {
-        format!(
-            "note: {typed} is today, {} h from now; for last night, -y {option}{typed}",
-            ahead.num_hours()
-        )
-    })
+) -> Option<&'static str> {
+    use chrono::Timelike;
+    let at = at.local_time();
+    let now = now.with_timezone(at.offset());
+    (at.date_naive() == now.date_naive() && at.hour() >= 20 && now.hour() < 12)
+        .then_some("note: `retime -y` to move to yesterday")
 }
 
 /// Which of the two instants the flags name the line means, where they name
@@ -94,5 +87,37 @@ pub(crate) fn asking<T>(
             Some(reading) => later.insert(key, reading),
             None => return Ok(None),
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The hint for an entry at `at`, logged at `now`, both in Berlin on
+    /// 2026-11-09 unless `now` names its day.
+    fn hint(at: &str, now: &str) -> bool {
+        let read = |s: &str| {
+            let s = if s.contains('T') {
+                s.to_string()
+            } else {
+                format!("2026-11-09T{s}")
+            };
+            let utc = chrono::DateTime::parse_from_rfc3339(&format!("{s}:00+01:00")).unwrap();
+            DatumTime::from_utc_and_tz(utc.into(), "Europe/Berlin").unwrap()
+        };
+        last_night(&read(at), read(now).utc).is_some()
+    }
+
+    #[test]
+    fn an_evening_logged_before_noon_is_hinted_at_its_edges() {
+        assert!(!hint("19:59", "09:00"));
+        assert!(hint("20:00", "09:00"));
+        assert!(hint("23:59", "09:00"));
+        assert!(hint("23:30", "11:59"));
+        assert!(!hint("23:30", "12:00"));
+        // Last night's own evening, and tomorrow's, are where they belong.
+        assert!(!hint("2026-11-08T23:30", "09:00"));
+        assert!(!hint("2026-11-10T23:30", "09:00"));
     }
 }

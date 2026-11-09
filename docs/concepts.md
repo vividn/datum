@@ -21,7 +21,7 @@ and help that have not moved to a word yet say the old one until they do.
 
 The command you type is the word the echo prints; a period alone has no command of its own.
 A full-day entry (`-D`, a date and no clock) echoes ALLDAY whatever its kind, and a run of whole
-days (`-D 3d`) PERIOD.
+days (`-D 3d`) PERIOD. An entry logged after now echoes FUTURE, whatever its kind (da-85b0d).
 The old words still run, as aliases (`occur`, `start`, `stop`, `end`, `switch`, `add`, `card`, `note`,
 `--verb`), and a spec still stores `occur`, `start`, `switch` or `add`, shown as its kind, until the
 data moves (da-gpz6m).

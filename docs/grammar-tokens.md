@@ -647,12 +647,13 @@ datum moment probe -d sunday+
 ```
 ALLDAY xr027 probe:2026-11-01
 2026-11-01  probe ∅●
-ALLDAY 28quf probe:2026-11-08
+FUTURE 28quf probe:2026-11-08
 2026-11-08  probe  ●
 ```
 
 (Run on Thursday 2026-11-05: the Sunday before, then the Sunday after.)
-`-d` and no clock names the whole day, so each is an ALLDAY entry. Without a
+`-d` and no clock names the whole day, so each is an ALLDAY entry, and the
+one still ahead says FUTURE. Without a
 marker the command's own default direction decides. Fully pinned forms —
 an ISO date, a compact date with a year — ignore it.
 
@@ -666,7 +667,7 @@ datum moment probe -d oct10,2022
 ```
 
 ```
-ALLDAY c6vyo probe:2027-04-29
+FUTURE c6vyo probe:2027-04-29
 2027-04-29  probe ∅●
 ALLDAY qgokn probe:2025-04-29
 2025-04-29  probe ∅●

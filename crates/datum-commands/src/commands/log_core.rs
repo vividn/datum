@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use crate::commands::follow_zone::{
     declared_zone, following, may_name_timezone, neighbours_zone, timezone_line,
 };
-use crate::commands::reading::{asking, far_ahead, which_reading};
+use crate::commands::reading::{asking, last_night, which_reading};
 use crate::{
     args::{LogArgs, LogArgsExt},
     config::client_id,
@@ -715,7 +715,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
     if let (Some(note), false) = (
-        far_ahead(&args.time, &entry, now.utc, &option),
+        entry.at.as_ref().and_then(|at| last_night(at, now.utc)),
         args.output()?.silent(),
     ) {
         eprintln!("{note}");

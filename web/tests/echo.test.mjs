@@ -230,6 +230,20 @@ describe('the echo is painted in datum’s colours', () => {
 // A setup's document is what the terminal prints for it, the field, its kind
 // and its states, and not the spec entry, which is timed at the epoch and
 // holds the spec's raw keys (da-a3u8x).
+describe('an entry after now is FUTURE (da-85b0d)', () => {
+	test('the bar and the CLI label it FUTURE, and one at now its shape', async () => {
+		await shared.solo(async (app) => {
+			const labels = () =>
+				Promise.all(['.prompt-bar', '.cli'].map((root) => app.page.locator(`${root} .doc .action`).last().textContent()));
+			await app.submit('moment coffee -t +5');
+			assert.deepEqual(await labels(), ['FUTURE', 'FUTURE']);
+			await app.submit('moment tea');
+			assert.deepEqual(await labels(), ['MOMENT', 'MOMENT']);
+			assert.deepEqual(app.errors, []);
+		}, CLI_BESIDE);
+	});
+});
+
 describe('a setup echoes its summary', () => {
 	test('the bar and the CLI draw the field and its states, not 1970', async () => {
 		await shared.solo(async (app) => {
