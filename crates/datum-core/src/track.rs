@@ -39,14 +39,14 @@ pub const NOT_A_DECLARATION_SQL: &str =
     "json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL";
 
 /// The six-character action word a TRACK row renders as: `TRACK` plus one
-/// glyph naming the verb — a dot for a moment, a filled block for a span,
-/// the switch hatch, `¢` for the timeless jot and a ruled square for a
-/// whole day. Six characters wide,
+/// glyph naming the kind — a dot for a moment, a bar for on/off, a hatched
+/// square for a change, `¢` for a record and a ruled square for a whole
+/// day. Six characters wide,
 /// like `CREATE`, and each glyph is one display column.
 pub fn track_action_label(verb: Action) -> &'static str {
     match verb {
-        Action::Start | Action::Stop | Action::Block => "TRACK█",
-        Action::Switch => "TRACK▞",
+        Action::Start | Action::Stop | Action::Block => "TRACK▬",
+        Action::Switch => "TRACK▨",
         Action::Add | Action::Note => "TRACK¢",
         Action::Occur => "TRACK●",
         Action::AllDay => "TRACK▤",

@@ -238,7 +238,7 @@ describe('the bar of commands', () => {
 				Object.assign(looks, Object.fromEntries(await read()));
 				await commands(page).locator('button[data-back]').click();
 			}
-			const glyphs = { undo: '↶', moment: '●', on: '█', off: '■', change: '▞', record: '¢', remark: '✎', track: '+' };
+			const glyphs = { undo: '↶', moment: '●', on: '▬', off: '■', change: '▨', record: '¢', remark: '✎', track: '+' };
 			for (const [name, glyph] of Object.entries(glyphs)) assert.ok(looks[name].icon.startsWith(`"${glyph}"`), `${name} draws ${looks[name].icon}`);
 			for (const name of ['delete', 'retime', 'tail', 'stats', 'sync', 'menu write']) assert.match(looks[name].icon, /^M/, `${name} draws ${looks[name].icon}`);
 			const icons = Object.values(looks).map((l) => l.icon);

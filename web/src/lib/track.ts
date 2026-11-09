@@ -8,7 +8,7 @@
 // has a spec, what saving the edited one runs (da-ci85o).
 //
 // The GLYPHS are the CLI's, not the web's: `track_action_label` in
-// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢`/`▤` beside the
+// crates/datum-core/src/track.rs paints `TRACK●`/`▬`/`▨`/`¢`/`▤` beside the
 // declaration on every surface that has an action column, so a pictogram
 // here that drifted from it would teach the wrong shape for the row the
 // press is about to write. `tests/track.test.mjs` runs all five through
@@ -42,8 +42,8 @@ export interface VerbChoice {
  */
 export const VERBS: VerbChoice[] = [
 	{ verb: 'occur', glyph: '●', what: 'moment', line: 'a single point in time (no state)' },
-	{ verb: 'start', glyph: '█', what: 'on/off', line: 'on for a while, then off' },
-	{ verb: 'switch', glyph: '▞', what: 'change', line: 'one state until the next (custom states)' },
+	{ verb: 'start', glyph: '▬', what: 'on/off', line: 'on for a while, then off' },
+	{ verb: 'switch', glyph: '▨', what: 'change', line: 'one state until the next (custom states)' },
 	{ verb: 'add', glyph: '¢', what: 'record', line: 'keys and values, with no time' },
 	{ verb: 'allday', glyph: '▤', what: 'all day', line: 'one value for a whole day' }
 ];

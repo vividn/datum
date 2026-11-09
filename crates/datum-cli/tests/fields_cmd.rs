@@ -301,7 +301,7 @@ fn a_list_echoes_each_field() {
     assert_eq!(heads(&out), [("IGNORE", "work"), ("IGNORE", "declared")]);
     assert_eq!(err, "");
     let out = env.run(&["track", "work,declared"]);
-    assert_eq!(heads(&out), [("TRACK█", "work"), ("TRACK●", "declared")]);
+    assert_eq!(heads(&out), [("TRACK▬", "work"), ("TRACK●", "declared")]);
 }
 
 /// Each echo's action and field, from its header line.

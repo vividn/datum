@@ -319,7 +319,7 @@ pub(crate) fn extract_with_context_at(
 ) -> Extracted {
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     // da-c8mh: a TRACK document says what a field IS, so it names itself
-    // in the action slot — `TRACK●`/`█`/`▞`/`¢`, six columns like
+    // in the action slot — `TRACK●`/`▬`/`▨`/`¢`, six columns like
     // `CREATE` — on the single-document surfaces that have one: the write
     // echo and `get`. Only where the word would otherwise say "a write
     // landed" or "this row is already here" — a DELETE of a TRACK row is

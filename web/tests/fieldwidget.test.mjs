@@ -73,7 +73,7 @@ describe('the field widget', () => {
 			await trackSomething(page);
 			assert.ok((await page.locator(`${PICKER} p.what`).innerText()).trim(), 'it does not say what a field is');
 			assert.equal(await typing(page), true, 'the name box does not have the keys');
-			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '● team', '█ nap'].sort());
+			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '● team', '▬ nap'].sort());
 			const pill = page.locator(`${PICKER} .pill`);
 			const border = () => pill.evaluate((el) => getComputedStyle(el).borderTopColor);
 			// As it is typed, the name is a pill in its own color, and the list narrows to it, whatever the case.
@@ -235,7 +235,7 @@ describe('the field widget', () => {
 			await openField(page, 'coffee');
 			await page.locator(`${FIELD_FORM} h2`).waitFor();
 			await trackSomething(page);
-			assert.deepEqual([...(await chipTexts(page))].sort(), ['¢ person', '█ sleep', '▞ mood', '● coffee', '● run'].sort());
+			assert.deepEqual([...(await chipTexts(page))].sort(), ['¢ person', '▬ sleep', '▨ mood', '● coffee', '● run'].sort());
 			assert.equal(await page.locator(`${PICKER} [data-chip="run"]`).getAttribute('data-ignored'), 'true');
 			assert.equal(
 				await page.locator(`${PICKER} [data-chip="coffee"] span`).evaluate((el) => getComputedStyle(el).color),
@@ -494,7 +494,7 @@ describe('the field widget', () => {
 				await tab(name).click();
 				assert.equal(await page.locator(PANEL).getAttribute('data-panel'), name);
 				assert.equal(await said(name), '');
-				assert.match(await said('basics'), /^█\s*on\/off/);
+				assert.match(await said('basics'), /^▬\s*on\/off/);
 				assert.equal(await summary('basics').locator('.mark').evaluate((m) => getComputedStyle(m).color), rgb('#3366cc'));
 			}
 

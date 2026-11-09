@@ -306,8 +306,8 @@ fn the_first_log_undoes_in_one() {
 fn the_explicit_track_command_still_writes_its_document() {
     for (verb, glyph) in [
         ("occur", "TRACK\u{25cf}"),
-        ("start", "TRACK\u{2588}"),
-        ("switch", "TRACK\u{259e}"),
+        ("start", "TRACK\u{25ac}"),
+        ("switch", "TRACK\u{25a8}"),
         ("add", "TRACK\u{a2}"),
     ] {
         let env = Env::new();

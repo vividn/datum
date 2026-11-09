@@ -62,8 +62,8 @@ fn each_echoes_its_action_and_state_on_an_occur_and_a_stateful_field() {
 
     for (field, track) in [
         ("tea", "TRACK●"),
-        ("mood", "TRACK▞"),
-        ("nap", "TRACK█"),
+        ("mood", "TRACK▨"),
+        ("nap", "TRACK▬"),
         ("jot", "TRACK¢"),
     ] {
         says(
@@ -132,7 +132,7 @@ fn json_carries_action_shape_and_the_state_left() {
 
     let doc: Value = serde_json::from_str(&run(&db, "json", &["track", "mood"])).unwrap();
     let doc = &doc["docs"][0];
-    assert_eq!(doc["action"], "TRACK▞");
+    assert_eq!(doc["action"], "TRACK▨");
     assert_eq!(doc["shape"], "CHANGE");
     assert_eq!(doc["state"], "TRACKED");
 }
@@ -161,7 +161,7 @@ fn a_declaration_echoes_the_spec_then_the_row() {
 
     let out = run(&db, "", &["track", "nap", "--verb", "start"]);
     let last_two = out.lines().rev().take(2).collect::<Vec<_>>();
-    assert!(last_two[1].starts_with("TRACK█ "), "{out}");
+    assert!(last_two[1].starts_with("TRACK▬ "), "{out}");
     assert!(last_two[0].contains("TRACKED"), "{out}");
     assert!(out.starts_with("MOMENT "), "{out}");
 }

@@ -9,7 +9,7 @@
 //
 // The claim that rots if nobody watches it is the first one: the five
 // glyphs are the CLI's, not the web's. `track_action_label` in
-// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢`/`▤` where a
+// crates/datum-core/src/track.rs paints `TRACK●`/`▬`/`▨`/`¢`/`▤` where a
 // SINGLE document names itself — the write echo and `get` — so a pictogram
 // here that drifted from it would teach the wrong shape for the row the
 // press is about to write. The test below declares one field per verb
@@ -204,7 +204,7 @@ describe('the argv it composes', () => {
 		const measured = [...'☔⚡🌙🌈⛅⭐☕🍵🍺🍷🥛🍎🍞🍕🍫🍩🍪🥗'];
 		const grid = GLYPHS.flatMap((g) => g.glyphs);
 		assert.deepEqual(grid.filter(wide), measured);
-		assert.deepEqual([...'日한Ａｱ¢é▞'].filter(wide), [...'日한Ａ']);
+		assert.deepEqual([...'日한Ａｱ¢é▨'].filter(wide), [...'日한Ａ']);
 		assert.equal(wide(''), false);
 	});
 
@@ -382,7 +382,7 @@ describe('in the app', () => {
 		});
 	});
 
-	test('Done declares the field — TRACK▞ in the log, a button in the bar', async () => {
+	test('Done declares the field — TRACK▨ in the log, a button in the bar', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -396,7 +396,7 @@ describe('in the app', () => {
 			assert.equal(spec.verb, 'switch');
 			assert.deepEqual(spec.allowed_states, ['good', 'bad']);
 
-			assert.equal(await actionWord(app, 'mood'), 'TRACK▞');
+			assert.equal(await actionWord(app, 'mood'), 'TRACK▨');
 			// And the widget stays, on the field it made (da-fu29p).
 			assert.equal((await page.locator(`${MODAL} h2`).innerText()).trim(), 'mood');
 		});

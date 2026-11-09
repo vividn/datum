@@ -152,7 +152,7 @@ describe('one document', () => {
 			assert.ok(switched.group.width < switched.section.width / 2, 'a switch took the section: nothing to compare with');
 			for (const [line, action] of [
 				['ignore mood', 'IGNORE'],
-				['track mood', 'TRACK▞'],
+				['track mood', 'TRACK▨'],
 				['ignore tea', 'IGNORE'],
 				['track tea --verb occur', 'TRACK●']
 			]) {

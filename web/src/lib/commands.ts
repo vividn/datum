@@ -140,17 +140,17 @@ export const COMMANDS: CommandButton[] = [
  * name of the command beneath them».
  *
  * One character is a GLYPH, drawn as text: a log command's is the CLI's own, so
- * the button shows the shape the row it writes will show (`TRACK●`/`█`/
- * `▞`/`¢`/`▤` in datum-core's track.rs; `■` is the end of a `█`). No two share
+ * the button shows the shape the row it writes will show (`TRACK●`/`▬`/
+ * `▨`/`¢`/`▤` in datum-core's track.rs; `■` is the end of a `▬`). No two share
  * a mark; a subcommand wears its command's. Anything longer is the path of
  * a 16×16 line DRAWING, for the shapes no font every device carries.
  */
 export const ICONS: Record<string, string> = {
 	undo: '↶',
 	moment: '●',
-	on: '█',
+	on: '▬',
 	off: '■',
-	change: '▞',
+	change: '▨',
 	record: '¢',
 	allday: '▤',
 	remark: '✎',

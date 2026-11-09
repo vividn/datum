@@ -1019,7 +1019,7 @@ Under the name it says whether the field is **NOT SET UP**, **TRACKED** or **IGN
 
 ## Its kind
 
-Four buttons choose what logging the field makes: **●** moment, a single point in time; **█** on/off, on for a while, then off; **▞** change, one state until the next; **¢** record, data with no time.
+Four buttons choose what logging the field makes: **●** moment, a single point in time; **▬** on/off, on for a while, then off; **▨** change, one state until the next; **¢** record, data with no time.
 
 ## basics, data, aliases
 

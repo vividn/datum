@@ -22,8 +22,8 @@ datum.day shows each kind with its name and glyph; the command is what gets type
 | Kind | Command | For | Example |
 |---|---|---|---|
 | ● moment | `moment` | a point in time | `moment coffee` |
-| █ on/off | `on`, `off` | something that lasts a while | `on sleep`, later `off sleep` |
-| ▞ change | `change` | a state that holds until it changes | `change place office` |
+| ▬ on/off | `on`, `off` | something that lasts a while | `on sleep`, later `off sleep` |
+| ▨ change | `change` | a state that holds until it changes | `change place office` |
 | ¢ record | `record` | an entry with no time, found by an id | `record book -K title Dune "Frank Herbert"` |
 
 (The old words still run: `moment` is also `occur`, `on` and `off` are `start` and `stop`, `change` is `switch`,

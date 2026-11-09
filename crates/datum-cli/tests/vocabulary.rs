@@ -310,6 +310,6 @@ fn the_user_docs_say_the_new_words() {
         }
     }
     assert!(said.is_empty(), "{}", said.join("\n"));
-    assert_eq!(kind("- ▞ **switch**: switch data"), Some("**switch**"));
+    assert_eq!(kind("- ▨ **switch**: switch data"), Some("**switch**"));
     assert_eq!(kind("## Field shapes"), Some("shape"));
 }
