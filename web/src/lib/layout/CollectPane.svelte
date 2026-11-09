@@ -199,9 +199,7 @@
 		const at = gestureAt() ?? Date.now();
 		const mark = pendingOf(withPills($grammar, sent, $pills).argv, $fields, at);
 		const settle = mark && tapped(mark);
-		const pressed = pressWithPills(sent);
-		void pressed.then((result) => settle?.(result.code === 0 ? get(written) : null));
-		return pressed;
+		void pressWithPills(sent).then((result) => settle?.(result.code === 0 ? get(written) : null));
 	}
 	const nowPending = $derived(unheld($taps, shown));
 

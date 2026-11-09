@@ -125,19 +125,8 @@
 	teaches the truth because the echoed argv IS the executed argv — there
 	is no second string built for display that could drift from it.
 -->
-<script lang="ts" module>
-	import type { StateUse } from './calls.js';
-	/**
-	 * `datum states <field>` as last read, by database and field (da-2ylmj),
-	 * which a field opened again draws at once, reading nothing. Forgotten
-	 * as a write names the field, and all of them by a write that names none.
-	 */
-	const listings = new Map<string, StateUse[] | null>();
-	const forget = (fields?: string[]) => listings.forEach((_, key) => (!fields || fields.includes(key.split('\0')[1])) && listings.delete(key));
-</script>
-
 <script lang="ts">
-	import { flushSync, onDestroy, onMount, untrack } from 'svelte';
+	import { flushSync, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
 	import CollectDrawer from './CollectDrawer.svelte';
 	import CollectWhen, { GLIDE_MS, MOMENT_ID, setMoment } from './CollectWhen.svelte';
@@ -172,7 +161,7 @@
 	import { onAnyChange } from './changes.js';
 	import { currentDb } from './database.js';
 	import { run } from './run.js';
-	import { entryArgv, statesArgv } from './calls.js';
+	import { entryArgv, statesArgv, type StateUse } from './calls.js';
 	import { cursor, pointAt, pointed, type Cursor } from './cursor.js';
 	import { grammar } from '#lib/layout/engine.ts';
 	import { previewOf } from './preview.js';
@@ -269,7 +258,7 @@
 		timeOpen = false,
 		/** The section's clock tapped: whether it is open now, for the session to keep. */
 		ontime,
-		/** Run a press's line: settled once it has run, where it runs. */
+		/** Run a press's line. */
 		onrun,
 		/** Put a press's line in the command line, unrun, for the rest to be typed. */
 		onfill
@@ -294,7 +283,7 @@
 		onzoom?: (zoom: number) => void;
 		timeOpen?: boolean;
 		ontime?: (open: boolean) => void;
-		onrun: (argv: string[]) => Promise<unknown> | void;
+		onrun: (argv: string[]) => void;
 		onfill: (argv: string[]) => void;
 	} = $props();
 
@@ -360,8 +349,6 @@
 	 * went stale the moment it was picked.
 	 */
 	let picked: string | null = $state(null);
-	/** The field a state tap left, its write still running: its pill on the bar opens it only once that has failed. */
-	let leaving: string | null = $state(null);
 	/**
 	 * What the bar held as the field was tapped: its selection and whether
 	 * it said `-m`. Back puts them back, so a time pill made before the tap
@@ -501,33 +488,19 @@
 	/** Where a field stands across the room at rest, `x` from the strip's edge: mirrored on the right. */
 	const across = (x: number, field: string) => (side === 'right' ? paneW - x - (sizes.get(`f:${field}`)?.w ?? 0) : x);
 
-	/**
-	 * Keep `sizes` to the slot's size as drawn: each item's key, by its node,
-	 * for the one observer that measures them all. One map is written a
-	 * delivery, so fifty buttons drawn at once lay the rows out once, and not
-	 * fifty times, a flush after each observer's callback (da-2ylmj).
-	 */
-	const keyed = new Map<Element, string>();
-	const measure = new ResizeObserver((seen) => {
-		let next: typeof sizes | null = null;
-		for (const { target } of seen) {
-			const key = keyed.get(target);
-			if (key === undefined) continue;
-			const { width: w, height: h } = target.getBoundingClientRect();
-			const was = (next ?? sizes).get(key);
-			if (was?.w !== w || was?.h !== h) (next ??= new Map(sizes)).set(key, { w, h });
-		}
-		if (next) sizes = next;
-	});
-	onDestroy(() => measure.disconnect());
+	/** Keep `sizes` to the slot's size as drawn. */
 	function sized(node: HTMLElement, key: string) {
-		keyed.set(node, key);
-		measure.observe(node);
+		const observer = new ResizeObserver(() => {
+			const { width: w, height: h } = node.getBoundingClientRect();
+			const was = sizes.get(key);
+			if (was?.w !== w || was?.h !== h) sizes = new Map(sizes).set(key, { w, h });
+		});
+		observer.observe(node);
 		// A key let go of takes its size with it, so a stale one is never read.
 		const drop = () => sizes.delete(key) && (sizes = new Map(sizes));
 		return {
-			update: (next: string) => void (next !== key && (drop(), keyed.set(node, (key = next)))),
-			destroy: () => (measure.unobserve(node), keyed.delete(node), drop())
+			update: (next: string) => void (next !== key && (drop(), (key = next))),
+			destroy: () => (observer.disconnect(), drop())
 		};
 	}
 
@@ -812,15 +785,9 @@
 	/** `datum states <field>` for the open change field: which states its spec declares, and when each was last used; null where it gave no listing. */
 	let uses: { field: string; states: StateUse[] | null } | null = $state.raw(null);
 	const asked = $derived(picking?.shape.kind === 'change' ? picking.field : null);
-	// A write made while no collect heard it may have changed any.
-	forget();
-	onMount(() => onAnyChange((_, fields) => forget(fields), currentDb()));
 	$effect(() => {
 		const field = asked;
 		if (field === null) return void (uses = null);
-		const key = `${currentDb()}\0${field}`;
-		const kept = listings.get(key);
-		uses = kept === undefined ? null : { field, states: kept };
 		let [live, n] = [true, 0];
 		const read = async () => {
 			const me = ++n;
@@ -831,11 +798,10 @@
 			} catch {
 				// No listing: the field's own states alone.
 			}
-			if (me === n) listings.set(key, states);
 			if (live && me === n) uses = { field, states };
 		};
-		if (kept === undefined) void read();
-		const unhear = onAnyChange((_, fields) => void ((!fields || fields.includes(field)) && read()), currentDb());
+		void read();
+		const unhear = onAnyChange(() => void read(), currentDb());
 		return () => ((live = false), unhear());
 	});
 	/** Off is no state of the list: it is the first row's. */
@@ -843,11 +809,12 @@
 	/** The open field's states: the spec's in its order, then every other it has used, the last used first, none twice. */
 	const listed = $derived.by((): string[] => {
 		if (picking?.shape.kind !== 'change') return [];
-		const { field, shape } = picking;
-		const rows = uses?.field === field ? uses.states : undefined;
-		// The spec's from the field's own row, drawn before `states` answers, so what it adds comes after them and
-		// nothing drawn moves; a field whose spec lists none has no spec order. With no listing, the field's own.
-		const spec = shape.declared || rows === null ? shape.states.filter((s) => !isOff(s)) : [];
+		// None until it answers, so nothing moves once drawn; with no listing, the field's own.
+		if (uses?.field !== picking.field) return [];
+		const rows = uses.states;
+		// A field whose spec lists none has no spec order: every state is a used one.
+		const declared = new Set(rows?.filter((r) => r.declared).map((r) => said(r.state)));
+		const spec = picking.shape.states.filter((s) => !isOff(s) && (!rows || declared.has(s)));
 		const at = (r: StateUse) => (r.last_used ? Date.parse(r.last_used) : -Infinity);
 		const used = (rows ?? [])
 			.filter((r) => r.count > 0 && ['string', 'number', 'boolean'].includes(typeof r.state) && !isOff(r.state))
@@ -863,9 +830,8 @@
 		const keys = picking ? ['open', ...listed.map((s) => `o:${s}`)] : [];
 		const rowH = Math.max(24, ...keys.map((k) => sizes.get(k)?.h ?? 0));
 		const on = (i: number) => i === 0 || (!!picking?.active && picking.current === listed[i - 1]);
-		// The items measured, from the first: each stands where those before it put it, and one not yet where a width of 0 does, hidden.
-		const unmeasured = keys.findIndex((k) => !sizes.has(k));
-		const ready = unmeasured < 0 ? keys.length : unmeasured;
+		// Every item measured: until then the states stand where a width of 0 puts them, and are hidden.
+		const ready = keys.every((k) => sizes.has(k));
 		return { keys, ready, ...opened(keys.map((k, i) => ({ w: sizes.get(k)?.w ?? 0, outlined: on(i) })), { height: paneH, rowH, gap: GAP }) };
 	});
 	/** Where an open item stands across the room: mirrored on the right. */
@@ -886,7 +852,7 @@
 	/** Off pressed: a change field switched off as a state is, an on/off field ended. */
 	function off(button: FieldButton) {
 		if (button.shape.kind === 'change') choose(button, 'false');
-		else leave(button, ['off']);
+		else onrun(['off']);
 	}
 
 	/**
@@ -910,19 +876,7 @@
 			const at = rest.findIndex((p) => p.kind === 'field') + 1;
 			return [...rest.slice(0, at), pill, ...rest.slice(at)];
 		});
-		if (logs) leave(button, ['change']);
-	}
-
-	/**
-	 * Run `argv` from the open view, which closes at the tap and not once the
-	 * write is in (da-2ylmj): the field's pill, which the write spends, opens
-	 * nothing until it has run, and a failure, keeping the pills, opens the
-	 * field again.
-	 */
-	function leave(button: FieldButton, argv: string[]) {
-		leaving = button.field;
-		void Promise.resolve(onrun(argv)).finally(() => leaving === button.field && (leaving = null));
-		close(true);
+		if (logs) onrun(['change']);
 	}
 
 	/** A key's chip: `key=` on the line, the caret after it. */
@@ -943,13 +897,13 @@
 		picked = button.field;
 	}
 
-	/** Close the field's view: the fields under it are as they were, and the state chosen goes unless a run is `spending` it. */
-	function close(spending = false) {
+	/** Close the field's view: the fields under it are as they were. */
+	function close() {
 		picked = null;
 		pan = restPan;
 		restPan = null;
 		entered = null;
-		if (chosen !== null && !spending) pills.update((all) => all.filter((p) => p.id !== STATE_ID));
+		if (chosen !== null) pills.update((all) => all.filter((p) => p.id !== STATE_ID));
 	}
 
 	/** Back: the field's pill and the ones made since it was tapped go, and a time pill already there stays. */
@@ -1049,7 +1003,7 @@
 	// secondary menu as well»): a hold, the now strip, a reload, a script.
 	// Here, below what `open` reads, as it runs at init (da-1oi8w).
 	$effect.pre(() => {
-		const pilled = picked === $fieldPill || leaving === $fieldPill ? null : fields.find((b) => b.field === $fieldPill);
+		const pilled = picked === $fieldPill ? null : fields.find((b) => b.field === $fieldPill);
 		if (pilled) untrack(() => open(pilled));
 	});
 	function down(e: PointerEvent) {
@@ -1328,7 +1282,7 @@
 							data-row={stand?.row}
 							style:left="{openAt(stand?.x ?? 0, key)}px"
 							style:top="{stand?.top ?? 0}px"
-							style:visibility={i < laid.ready ? null : 'hidden'}
+							style:visibility={laid.ready || (i === 0 && sizes.has(key)) ? null : 'hidden'}
 							use:sized={key}
 						>
 							{#if i === 0}

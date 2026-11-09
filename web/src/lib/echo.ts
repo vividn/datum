@@ -279,27 +279,6 @@ export function parseEcho(stdout: string): EchoDoc[] | null {
 }
 
 /** Every string the renderer places has to be there, and be a string. */
-/**
- * The fields a write's echo names (da-2ylmj): none where a line of it is no
- * line of documents, or a document names no field, so whatever is not said
- * may have changed.
- */
-export function echoedFields(stdout: string): string[] | undefined {
-	const fields: string[] = [];
-	for (const line of stdout.split('\n')) {
-		if (!line.trim()) continue;
-		let docs: unknown;
-		try {
-			docs = JSON.parse(line)?.docs;
-		} catch {
-			return undefined;
-		}
-		if (!Array.isArray(docs) || !docs.every((d) => isDoc(d) && typeof d.field === 'string')) return undefined;
-		fields.push(...docs.map((d: EchoDoc) => d.field!));
-	}
-	return fields.length ? fields : undefined;
-}
-
 function isDoc(value: unknown): boolean {
 	const d = value as EchoDoc;
 	return (
