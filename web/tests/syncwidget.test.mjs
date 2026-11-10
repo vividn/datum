@@ -351,6 +351,77 @@ describe('the sync widget', () => {
 	});
 });
 
+// da-77hqt: a write read every database's sync state at once, the page's own
+// included, past the second a layout behind waits for: so a tap in collect,
+// with the sync tab kept behind it, waited on those reads.
+describe('when the sync widget reads again', () => {
+	/**
+	 * Every `chain list`, `sync status` and `sync grid` from here, by when it
+	 * started and what it ran, and when each `occur` began: `[ms, argv]`.
+	 */
+	const watch = (page) =>
+		page.evaluate(() => {
+			window.__syncRuns = [];
+			const previous = window.datum.setRunner((argv, ...rest) => {
+				const i = argv.indexOf('sync');
+				const read = i >= 0 && (['status', 'grid'].includes(argv[i + 1]) || (argv[i + 1] === 'chain' && argv[i + 2] === 'list'));
+				if (read || argv.includes('occur')) window.__syncRuns.push([performance.now(), argv.join(' ')]);
+				return previous(argv, ...rest);
+			});
+		});
+	const runs = (page) => page.evaluate(() => window.__syncRuns);
+	/** The rounds of reading `db`'s chain: one per `read()`. */
+	const rounds = (seen, db) => seen.filter(([, a]) => a.startsWith(`--db ${db} sync chain list`)).length;
+
+	test('behind collect, a logging write reads no sync state until the page has been quiet a second, then reads once', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await fixture(app);
+			await onHome(app);
+			await app.toCollect();
+			await app.idle();
+			await watch(page);
+			await app.submit('occur coffee');
+			await page.waitForFunction(() => window.__syncRuns.some(([, a]) => a.includes('sync chain list')));
+			await app.idle();
+			await new Promise((resolve) => setTimeout(resolve, 2_500));
+			const seen = await runs(page);
+			const [wrote] = seen.find(([, a]) => a.includes('occur coffee'));
+			const first = Math.min(...seen.filter(([, a]) => !a.includes('occur')).map(([at]) => at));
+			assert.ok(first - wrote >= 1_000, `a sync read began ${Math.round(first - wrote)} ms after the write: ${JSON.stringify(seen)}`);
+			assert.equal(rounds(seen, 'home'), 1, JSON.stringify(seen));
+		}, DESKTOP);
+	});
+
+	test('in front, one write to its database reads once', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await fixture(app);
+			await onHome(app);
+			await app.idle();
+			await watch(page);
+			// As the page runs a command (its tab's `sync` pill would take a typed line).
+			assert.equal((await page.evaluate(() => window.datum.run(['occur', 'coffee']))).code, 0);
+			await app.idle();
+			await new Promise((resolve) => setTimeout(resolve, 2_500));
+			const seen = await runs(page);
+			assert.equal(rounds(seen, 'home'), 1, JSON.stringify(seen));
+		}, DESKTOP);
+	});
+
+	test('a write to another database, which moves no epoch here, still redraws its line', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const ids = await fixture(app);
+			await onHome(app);
+			const work = page.locator(`${WIDGET} .others li[data-db="work"]`);
+			assert.equal(await work.getAttribute('data-mark'), 'pending');
+			await session(app, 'work', ids.workLaptop, '--error', REFUSED);
+			await page.waitForFunction((sel) => document.querySelector(sel)?.dataset.mark === 'error', `${WIDGET} .others li[data-db="work"]`);
+		}, DESKTOP);
+	});
+});
+
 // da-uk23v: a chain restore's wipe reaching the page takes what it held, an
 // entry made offline before the restore with it; it must not be lost.
 describe('a chain restore reaching datum.day', () => {

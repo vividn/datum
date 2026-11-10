@@ -87,7 +87,7 @@
 	} from '#lib/syncView.ts';
 	import { approve, approveRecords, createPasskey } from '#lib/passkey.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
-	import { cliError, type RunResult } from '#lib/run.ts';
+	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
 	import {
 		adminAddArgv,
 		adminListArgv,
@@ -137,6 +137,9 @@
 	let said = $state('');
 	let reading = false;
 	let again = false;
+	/** Writes heard to the databases listed (`later`), and how many of them the latest read began after. */
+	let heard = 0;
+	let begun = 0;
 	let stops: (() => void)[] = [];
 	/** An act under way, and how the last one failed. */
 	let busy = $state(false);
@@ -240,10 +243,11 @@
 		try {
 			do {
 				again = false;
+				begun = heard;
 				const listed = await databases();
 				if (listed.join() !== dbs.map((d) => d.db).join()) {
 					stops.forEach((stop) => stop());
-					stops = listed.map((db) => onAnyChange(() => void read(), db));
+					stops = listed.map((db) => onAnyChange(() => void later(), db));
 				}
 				// Not the JSON asked for (a process killed mid-write): the view stays as it was.
 				dbs = await readSync(listed).catch(() => dbs);
@@ -253,6 +257,24 @@
 		} finally {
 			reading = false;
 		}
+	}
+
+	/**
+	 * Every write to a database listed, read once the page has answered and
+	 * been quiet a beat past a layout behind's second (`lag`, Layout.svelte),
+	 * unless a read began since (da-77hqt). A write the page's epoch carries
+	 * has been read on it by then, in front at once and behind after that
+	 * second; what is left is a write the epoch does not carry: to another
+	 * database, a sync session's own run, a quiet one. So every write is read
+	 * by a read begun after it was heard: the epoch's, its own, or a later
+	 * write's. A read of every database at each write, the moment it landed,
+	 * made a tap in collect wait on them with this layout behind.
+	 */
+	async function later(): Promise<void> {
+		const mine = ++heard;
+		await settled();
+		await new Promise((resolve) => setTimeout(resolve, QUIET_MS + 100));
+		if (mine === heard && begun < mine) void read();
 	}
 
 	onDestroy(() => stops.forEach((stop) => stop()));

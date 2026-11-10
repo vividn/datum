@@ -126,6 +126,9 @@ export function settled(): Promise<void> {
 	return out ? new Promise((resolve) => quiet.push(resolve)) : Promise.resolve();
 }
 
+/** How long a layout kept behind waits once `settled`, with no other command, before it reads (Layout.svelte's `lag`). */
+export const QUIET_MS = 1000;
+
 /** When this tab's latest writes ran, oldest first: a few are enough. */
 let writes: [number, number][] = [];
 

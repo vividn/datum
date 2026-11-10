@@ -85,7 +85,7 @@
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
 	import { keyOf, session, setSession, withSession } from './session.js';
-	import { settled } from '#lib/run.ts';
+	import { QUIET_MS, settled } from '#lib/run.ts';
 
 	let {
 		pane,
@@ -171,7 +171,6 @@
 	 * and the one a swipe is bringing on, are always at the page's: a layout
 	 * brought to the front catches up then.
 	 */
-	const QUIET_MS = 1000;
 	let behind = $state(untrack(() => epoch));
 	let lagging = 0;
 	$effect.pre(() => {
