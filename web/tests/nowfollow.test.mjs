@@ -17,6 +17,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, sharedApp } from './support/app.mjs';
+import { rested } from './support/layout.mjs';
 import { drag } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
@@ -88,11 +89,15 @@ async function dragTime(app, dx) {
 	return Date.parse(c.at);
 }
 
-/** What the window shows once a fly it may have started has landed. */
-async function rested(app) {
-	await app.idle();
-	await app.page.waitForTimeout(400);
-	await app.idle();
+/**
+ * What the window shows once a fly it may have started has landed: a fly
+ * scales the picture each frame for `FLY_MS` (NowviewWidget.svelte) and then
+ * asks datum for the window it landed on, so the picture standing still with
+ * the CLI idle is a fly landed or none started. A follow starts its fly as the
+ * pill is put or taken, so one is in the air by the time this is called.
+ */
+async function landed(app) {
+	await rested(app.page, app.page.locator(`${NOWVIEW} svg.svg:not(.behind svg)`).first(), { app });
 	return shown(app.page);
 }
 
@@ -202,9 +207,7 @@ describe('the nowview follows the bar’s pills', () => {
 			await app.idle();
 
 			await page.evaluate(() => window.datum.bar.removePill('cursor'));
-			await app.idle();
-			await page.waitForTimeout(400);
-			const after = await shown(page);
+			const after = await landed(app);
 			assert.ok(Math.abs(after.from - panned.from) < MINUTE, `the window moved ${(after.from - panned.from) / MINUTE}m when the pill went`);
 		});
 	});
@@ -217,7 +220,7 @@ describe('the nowview follows the bar’s pills', () => {
 			const was = await shown(page);
 			const at = await dragTime(app, -24);
 			assert.ok(at > was.from + MINUTE && at < NOW - MINUTE, `in view: ${new Date(at).toISOString()}`);
-			const after = await rested(app);
+			const after = await landed(app);
 			// The same left edge at the same scale is the same window, on now: a time pill hides the flow `to` is read off, so it is not compared.
 			assert.ok(Math.abs(was.to - NOW) < MINUTE, 'the window was on now');
 			assert.ok(Math.abs(after.from - was.from) < MINUTE, `the window moved ${(after.from - was.from) / MINUTE}m`);
