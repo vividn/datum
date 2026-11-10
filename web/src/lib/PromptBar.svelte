@@ -304,17 +304,6 @@
 	 */
 	const rise = (_: Element) => ({ duration: still() ? 0 : 160, easing: cubicOut, css: (_t: number, u: number) => `transform: translateY(${u * 100}%)` });
 	/**
-	 * A plain mouse's wheel turns the commands' one row sideways, as a
-	 * trackpad's swipe does, so the end of a long list is in reach (da-l4cjg);
-	 * a row that fits is left alone. DayStrip.svelte's pan reads it the same way.
-	 */
-	function sideways(event: WheelEvent): void {
-		const row = (event.currentTarget as HTMLElement).querySelector<HTMLElement>('.bar.commands');
-		if (!row || Math.abs(event.deltaY) <= Math.abs(event.deltaX) || row.scrollWidth <= row.clientWidth) return;
-		event.preventDefault();
-		row.scrollLeft += event.deltaY;
-	}
-	/**
 	 * Whether the command widget is drawn: `commandsOpen`, after the paint of
 	 * the frame it moved in. A field pill opens it and its last pill closes it
 	 * (da-lnirx), so it would mount and slide in the same frame as the tap
@@ -576,7 +565,7 @@
 		<!-- Clipped at the input's top, so it slides out from behind it. Its
 		     buttons stand in one row scrolled sideways (da-qzzox), and a swipe
 		     or a wheel on them is theirs: the bar's grip leaves it alone (da-m9zo7). -->
-		<div class="commands-over" data-own-gestures onwheel={sideways}>
+		<div class="commands-over" data-own-gestures>
 			<div
 				id="bar-commands"
 				class="commands"
