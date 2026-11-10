@@ -20,7 +20,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, pastTheWindow, settled, swipe } from './support/layout.mjs';
+import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, pastTheWindow, rested, settled, swipe } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { PANE, handle, notch, asked, handled, beside, hover, farIs, soloNowview, TOUCH } from './support/nowview.mjs';
 
@@ -431,17 +431,17 @@ describe('the nowview widget', () => {
 				await page.waitForTimeout(1000);
 				assert.deepEqual(await places(), was);
 				// And a resize: as far along the window as with no pill. Read at
-				// rest, two frames on: the widget places its handles in a
-				// ResizeObserver, which a frame delivers after the layout a read
-				// forces, so a read first finds them where they stood in pixels
-				// (da-cot7q, 0.468 for 0.398).
-				const share = () =>
-					page.locator(PANE).evaluate(async (p) => {
-						await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+				// rest: the widget places its handles in a ResizeObserver, which a
+				// frame delivers after the layout a read forces, so a read first
+				// finds them where they stood in pixels (da-cot7q, 0.468 for 0.398).
+				const share = async () => {
+					await rested(page, page.locator(`${PANE} .nowview-handles .handle[data-axis="rel"]`));
+					return page.locator(PANE).evaluate((p) => {
 						const f = p.querySelector('svg.svg').closest('.picture').getBoundingClientRect();
 						const h = p.querySelector('.nowview-handles .handle[data-axis="rel"]').getBoundingClientRect();
 						return (h.x + h.width / 2 - f.left) / f.width;
 					});
+				};
 				const width = () => page.locator(PANE).evaluate((p) => p.querySelector('svg.svg').closest('.picture').getBoundingClientRect().width);
 				const [before, wide] = [await share(), await width()];
 				await page.setViewportSize({ width: 1100, height: 900 });

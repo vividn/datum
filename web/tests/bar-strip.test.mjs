@@ -7,6 +7,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, BAR, OUT, DOC, repl, section, cliDoc } from './support/bar.mjs';
+import { rested } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -777,11 +778,11 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			await app.submit('occur juice');
 			const juice = await hidOf();
 			for (const line of ['occur water', `update ${tea} cups=2`, 'tail']) await app.submit(line);
+			// `tail`'s arrival is still sliding the track (260 ms): scrolled to and
+			// tapped under it, the group moved on before the forced tap landed, onto
+			// a document's state, and once out of view for good (da-f1p0i).
+			await rested(page, page.locator(`${BAR} .roll .track`));
 			await page.locator(`${BAR} .roll`).evaluate(async (roll) => {
-				// `tail`'s arrival is still sliding the track (260 ms): scrolled to and
-				// tapped under it, the group moved on before the forced tap landed, onto
-				// a document's state, and once out of view for good (da-f1p0i).
-				await Promise.all(roll.querySelector('.track').getAnimations().map((a) => a.finished));
 				// The strip mounts its older groups as it is scrolled to them.
 				for (let i = 0; i < 20 && !/occur tea/.test(roll.innerText); i += 1) {
 					roll.scrollLeft = 0;

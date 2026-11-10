@@ -10,7 +10,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, PHONE } from './support/layout.mjs';
+import { DESKTOP, PHONE, rested } from './support/layout.mjs';
 import { unfold } from './support/bar.mjs';
 
 before(startApp);
@@ -128,14 +128,16 @@ test('on a desktop, a vertical wheel over the › list scrolls a long one sidewa
 		const chevron = page.locator(`${BAR} button.prompt`);
 		const list = page.locator(`${BAR} #bar-commands`);
 		// Up and done sliding: a wheel sent while it slides never reaches the page. Read by
-		// where it stands, its clip's top, as the slide's animation may not have begun yet (da-rhk57).
+		// where it stands, its clip's top, as the slide's animation may not have begun yet and a list
+		// still below, its rise not started, is a still box too (da-rhk57).
 		const open = async () => {
 			if (!(await list.count())) await chevron.click();
 			await list.locator('[data-command="undo"]').waitFor();
 			await page.waitForFunction(() => {
 				const el = document.querySelector('.prompt-bar #bar-commands');
-				return el.getAnimations({ subtree: true }).length === 0 && Math.abs(el.getBoundingClientRect().top - el.parentElement.getBoundingClientRect().top) < 0.5;
+				return Math.abs(el.getBoundingClientRect().top - el.parentElement.getBoundingClientRect().top) < 0.5;
 			});
+			await rested(page, list);
 		};
 		const where = () =>
 			list.evaluate((el) => {

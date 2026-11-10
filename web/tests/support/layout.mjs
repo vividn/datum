@@ -409,7 +409,53 @@ export async function swipe(page, x, y, dx, dy, steps = 6, every, hold = 0) {
  * whatever is under the finger, so a test of what a widget does with a drag
  * after a switch waits first. Half as long again.
  */
-export const pastTheWindow = (page) => page.waitForTimeout(1500);
+export const PAST_THE_WINDOW_MS = 1500;
+export const pastTheWindow = (page) => page.waitForTimeout(PAST_THE_WINDOW_MS);
+
+/**
+ * Wait until the page is AT REST (da-otqfq), which is four things:
+ * - nothing is moving, for four frames running: at each, no animation runs
+ *   (in `locator`'s subtree, or the document's) and `locator`'s box is where
+ *   it stood before the first. Its position is read, not only its
+ *   animations, so an element whose intro has not been created yet does not
+ *   pass (#1891, da-rhk57), nor one a frame callback moves. An intro begun
+ *   later than the four frames, from a still box, is not seen;
+ * - so two frames have passed after any two still ones, and a
+ *   ResizeObserver placed what it places;
+ * - with `tapped`, PaneFrame's window after a tab tap has passed, so a drag
+ *   is the widget's and not the frame's swipe (da-72c7z);
+ * - with `app`, the CLI is idle.
+ * A condition that never holds is named in the timeout's message.
+ */
+export async function rested(page, locator, { tapped = false, app, timeout = 30000 } = {}) {
+	const deadline = Date.now() + timeout;
+	if (locator) await locator.waitFor({ state: 'attached', timeout });
+	if (tapped) await pastTheWindow(page);
+	const still = async (el) => {
+		const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+		const box = () => (el ? JSON.stringify(el.getBoundingClientRect()) : '');
+		const was = box();
+		for (let i = 0; i < 4; i++) {
+			await frame();
+			const moving = (el ? el.getAnimations({ subtree: true }) : document.getAnimations()).filter(
+				(a) => a.playState === 'running' || a.pending
+			);
+			if (moving.length) return `animating: ${moving.map((a) => a.animationName ?? a.transitionProperty ?? a.id ?? 'an animation')}`;
+			if (box() !== was) return `moving: ${was} → ${box()}`;
+		}
+		return null;
+	};
+	for (let last = 'never read'; ; ) {
+		if (Date.now() > deadline) throw new Error(`rested: not at rest after ${timeout} ms: ${last}`);
+		if (app)
+			await app.idle().catch((e) => {
+				throw new Error(`rested: the CLI never went idle: ${e.message}`);
+			});
+		last = await (locator ? locator.evaluate(still) : page.evaluate(still, null));
+		if (last === null) return;
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+}
 
 /**
  * Swipe by (dx, dy) from a point in `locator`'s box, given as fractions of
