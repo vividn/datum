@@ -212,9 +212,10 @@
 	let exhausted = $state(false);
 	/** Bumped whenever the screen is replaced, so a page in flight for the old one is dropped. */
 	let generation = 0;
-	let paging = false;
-	/** The generation whose page above a landing is still drawing (`refresh`); no page is asked over it. */
-	let laying = -1;
+	/** A page is in flight or still drawing (`page`); the rows are `aria-busy`. */
+	let paging = $state(false);
+	/** The generation whose page above a landing is still drawing (`refresh`); no page is asked over it, and the rows are `aria-busy`. */
+	let laying = $state(-1);
 	/**
 	 * The reader asked for the past: a page is in flight or landed, and
 	 * the screen is scrolled up until they come back down to the bottom
@@ -637,26 +638,30 @@
 			rows = page.slice(older.length);
 			// From here: a page asked above the screen meanwhile would be these rows, laid twice.
 			if (older.length) laying = of;
-			probed = page.slice(-count);
-			adopt(table.columns, true);
-			await decide();
-			await hold(true);
-			// The screen as drawn can change the room under it; pinned is
-			// pinned under that room, not the one before it.
-			redraw(_epoch, count);
-			await tick();
-			// More rows after now than the listing holds: the rows around now instead.
-			if (nowAt < 0 && visible.length && at(visible[0]) > +$now) {
-				if (!(await around(`@${+$now}`))) return;
-				// Short of the live end, and still the default view.
-				away = false;
+			try {
+				probed = page.slice(-count);
+				adopt(table.columns, true);
+				await decide();
+				await hold(true);
+				// The screen as drawn can change the room under it; pinned is
+				// pinned under that room, not the one before it.
+				redraw(_epoch, count);
 				await tick();
+				// More rows after now than the listing holds: the rows around now instead.
+				if (nowAt < 0 && visible.length && at(visible[0]) > +$now) {
+					if (!(await around(`@${+$now}`))) return;
+					// Short of the live end, and still the default view.
+					away = false;
+					await tick();
+				}
+				if (!home() && scroller) scrollTo(scroller.scrollHeight);
+				if (!older.length) return;
+				await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+				await lay(older, false, () => of === generation && started_at === shown, true);
+			} finally {
+				// Every way out, a throw too: busy rows that never clear would hang a reader.
+				if (laying === of) laying = -1;
 			}
-			if (!home() && scroller) scrollTo(scroller.scrollHeight);
-			if (!older.length) return;
-			await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
-			await lay(older, false, () => of === generation && started_at === shown, true);
-			if (laying === of) laying = -1;
 		} else {
 			// Scrolled up: keep the place. The page is the truth for the
 			// span it covers — a row of ours inside that span but not in
@@ -1103,6 +1108,7 @@
 		</thead>
 		<tbody
 			bind:this={tbody}
+			aria-busy={paging || laying !== -1}
 			class:springs={!dragging}
 			style:transform={stretched ? `translateY(${stretched}px)` : null}
 		>

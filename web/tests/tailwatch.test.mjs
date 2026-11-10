@@ -95,6 +95,9 @@ const geometry = (page) =>
 		};
 	});
 
+/** The tail's rows while a page of them is still being laid. */
+const BUSY = 'section.pane[data-title="tail"] .body:not(.behind .body) tbody[aria-busy="true"]';
+
 const rowCount = (page) => page.evaluate(() => document.querySelectorAll('section.pane[data-title="tail"] tbody tr').length);
 
 /** Wait until the tail's row count `n` satisfies `expr` (a JS expression in `n` and `arg`). */
@@ -108,16 +111,21 @@ const waitRows = (page, expr, arg = 0) =>
 	);
 
 /**
- * Wait until the pane is at rest: nothing in flight behind the seam, at
- * the bottom, and the rows on screen are the count its box holds now.
+ * Wait until the pane is at rest: nothing in flight behind the seam, every
+ * row laid (a page comes in chunks on timers, after the screen: the rows
+ * are `aria-busy` until the last, da-7jh6i), at the bottom, and the rows on
+ * screen are the count its box holds now.
  * Polled, with a deadline: the box can still be settling after the first
  * listing lands (a phone's layout does), and a measurement taken then is
  * of a pane that is about to ask again.
  */
 const atRest = (page, timeout) =>
 	until(
-		async () => ({ inflight: await page.evaluate(() => window.__datumInflight), ...(await geometry(page).catch(() => null)) }),
-		(g) => g.inflight === 0 && g.hids?.length > 0 && g.atBottom && g.holds.includes(g.shown.length),
+		async () => ({
+			...(await page.evaluate((busy) => ({ inflight: window.__datumInflight, busy: !!document.querySelector(busy) }), BUSY)),
+			...(await geometry(page).catch(() => null))
+		}),
+		(g) => g.inflight === 0 && !g.busy && g.hids?.length > 0 && g.atBottom && g.holds.includes(g.shown.length),
 		timeout
 	);
 
@@ -766,7 +774,8 @@ describe('a write', () => {
 	// (da-gtk48), and the reader asks for the next at the top.
 	const TOTAL = 250;
 	const pageKept = async (page, g0, at, label) => {
-		// Both have come back; two frames for them to be drawn.
+		// Both have come back; every row laid, and two frames for them to be drawn.
+		await page.waitForFunction((busy) => !document.querySelector(busy), BUSY);
 		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 		const g = await geometry(page);
 		const held = g0.n + 2 * pageOf(g0.n);
