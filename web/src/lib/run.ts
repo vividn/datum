@@ -129,6 +129,48 @@ export function settled(): Promise<void> {
 /** How long a layout kept behind waits once `settled`, with no other command, before it reads (Layout.svelte's `lag`). */
 export const QUIET_MS = 1000;
 
+/**
+ * What the reads answered before this tab's last write, so an undo of it draws
+ * at once (da-gou47; vividn, 2026-11-10: «for at least 1 undo, the old state of
+ * everything maybe should be cached for a little bit, so that the swap back to
+ * how things were can feel instant»). A read is a pane's refresh or one of
+ * `keepReads`'; each answer is kept by its whole argv, stdin and env, and a
+ * write moves those kept so far to `before`. While `predict` holds, a read
+ * asked again is answered from there: datum's own answer is still on its way,
+ * and once the undo lands (any write ends it) the epoch it bumps reads datum
+ * again, which replaces what was swapped in. Another tab's write or a sync
+ * (`forget`) leaves nothing to swap to.
+ */
+let answers = new Map<string, RunResult>();
+let before: { answers: Map<string, RunResult>; write: RunResult; at: number } | null = null;
+let predicting = false;
+/** How long the state before a write stays to swap back to: past it an undo waits for datum, as any command does. */
+const KEEP_BEFORE_MS = 120_000;
+/** Answers kept of one state: the strip's fortnight and every pane, with room. */
+const KEPT = 256;
+const reads = new Set<string>();
+
+/** These argvs are reads the swap may answer, beside the panes' refreshes: the bar's own. */
+export const keepReads = (...argvs: string[][]): void => argvs.forEach((argv) => reads.add(JSON.stringify(argv)));
+
+/** The write the kept state is from before, while it may still be swapped back to. */
+export const lastWrite = (): RunResult | undefined => (before && Date.now() - before.at < KEEP_BEFORE_MS ? before.write : undefined);
+
+/** Answer the reads from the state before the last write until the next write lands, or `unpredict`. */
+export const predict = (): void => void (predicting = true);
+
+/** Back to datum's answers; whether a prediction was still on, which no write ended. */
+export function unpredict(): boolean {
+	const was = predicting;
+	predicting = false;
+	return was;
+}
+
+/** The database changed under this tab (another tab, a sync): no answer kept is of it now. */
+export function forget(): void {
+	[answers, before, predicting] = [new Map(), null, false];
+}
+
 /** When this tab's latest writes ran, oldest first: a few are enough. */
 let writes: [number, number][] = [];
 
@@ -154,12 +196,27 @@ export async function run(
 	pane?: boolean
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
+	const full = [...dbEnv(argv), ...(env ?? [])];
+	const asked = !stage && (pane || reads.has(JSON.stringify(argv))) ? JSON.stringify([argv, stdin ?? null, full]) : null;
+	// Asked as an undo is drawn, it is the state before (`predict`), and is not kept as the state after.
+	const swapped = predicting;
+	const kept = swapped && asked ? before?.answers.get(asked) : undefined;
+	if (kept) return { ...kept };
 	out++;
 	const began = Date.now();
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		const result = await runner(argv, stdin, onStderr, key, stage, [...dbEnv(argv), ...(env ?? [])], pane);
+		const result = await runner(argv, stdin, onStderr, key, stage, full, pane);
 		if (result.changed?.length) writes = [...writes.slice(-7), [began, Date.now()]];
+		// In answer order, which is the worker's: a read answered before a write read the state before it.
+		if (!pane && result.changed?.includes(currentDb())) {
+			before = argv.includes('sync') ? null : { answers, write: result, at: Date.now() };
+			[answers, predicting] = [new Map(), false];
+		} else if (asked && !swapped && !predicting && result.code === 0 && !result.changed?.length && !result.superseded) {
+			answers.delete(asked);
+			answers.set(asked, result);
+			if (answers.size > KEPT) answers.delete(answers.keys().next().value!);
+		}
 		// `sync new-invite`, a revoke, an admin…: its leader reads the setup again (da-6kpj5).
 		if (argv.includes('sync') && result.changed?.length) {
 			void import('./sync.js').then(({ syncTouched }) => syncTouched(dbOf(argv)));

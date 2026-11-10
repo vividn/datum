@@ -26,7 +26,7 @@ import { asking, fileCommand } from '#lib/dbio.ts';
 import { syncCommand } from '#lib/sync.ts';
 import { parseEcho, runEchoed, type EchoDoc } from '#lib/echo.ts';
 import { cli as history, record, stepped, wroteBy, type Command } from '#lib/cliStore.ts';
-import { run, type RunResult } from '#lib/run.ts';
+import { keepReads, lastWrite, predict, run, unpredict, type RunResult } from '#lib/run.ts';
 import { FROZEN_AT } from '#lib/dbProtocol.ts';
 import { currentDb } from '#lib/database.ts';
 import { conflictsArgv, entriesHistoryArgv, fieldsArgv, grammarArgv, nowArgv, recencyArgv, stepArgv, type Reads } from '#lib/calls.ts';
@@ -195,6 +195,8 @@ export async function boot(): Promise<void> {
 	});
 }
 
+keepReads(fieldsArgv(), nowArgv(), conflictsArgv());
+
 /**
  * The widget's entries are built from `datum fields` — what has been logged
  * and what has been declared — and painted by `datum now`, what is on: so
@@ -302,7 +304,10 @@ function guess(result: RunResult): void {
  * (`gesture`), so what it logs is when they acted.
  */
 export function press(argv: string[], line?: string, stdin?: string, typed = false, echo?: string, env = gesture()): Promise<RunResult> {
+	const undoing = undoes(argv);
+	if (undoing) swap();
 	const result = pressing(argv, line, stdin, typed, echo, env);
+	if (undoing) void result.then(reconcile, reconcile);
 	for (const hear of presses) hear(result);
 	return result;
 }
@@ -469,14 +474,52 @@ export async function followZone(): Promise<void> {
  * Null, running nothing, when an entry's newest change is not this page's.
  */
 export async function step(entry: Command): Promise<RunResult | null> {
-	const hids = wroteBy(entry);
-	if (!(await ours(entry, hids))) return null;
-	const argv = stepArgv(hids);
-	const ranAt = Date.now();
-	const result = await runEchoed(run, argv);
-	record(shellJoin(argv), ranAt, result, entry.ranAt);
-	await ran(result);
-	return result;
+	const undoing = undoes([], entry);
+	if (undoing) swap();
+	try {
+		const hids = wroteBy(entry);
+		if (!(await ours(entry, hids))) return null;
+		const argv = stepArgv(hids);
+		const ranAt = Date.now();
+		const result = await runEchoed(run, argv);
+		record(shellJoin(argv), ranAt, result, entry.ranAt);
+		await ran(result);
+		return result;
+	} finally {
+		if (undoing) reconcile();
+	}
+}
+
+/**
+ * Whether running `argv`, or stepping `entry`, takes back this tab's last
+ * write (da-gou47): `undo` any but an undo, which `redo` takes back, neither
+ * a dry run; a command's ↶ or ↷ the write that was that command or its last step.
+ */
+function undoes(argv: string[], entry?: Command): boolean {
+	const write = lastWrite();
+	if (!write) return false;
+	if (entry) {
+		const last = get(history).scrollback.findLast((c) => c.result === write);
+		return !!last && (last === entry || last.of === entry.ranAt);
+	}
+	const word = (words: string[]) => words.find((w) => !w.startsWith('-'));
+	return !argv.includes('--dry-run') && word(argv) === (word(write.argv) === 'undo' ? 'redo' : 'undo');
+}
+
+/**
+ * Every view as it stood before the write being taken back, at once: the
+ * epoch bumped with their reads answered from what they were (`predict`),
+ * since the undo will make them so. A prediction: the undo's own write ends
+ * it, and the epoch that write bumps reads datum again.
+ */
+function swap(): void {
+	predict();
+	void ran();
+}
+
+/** The undo answered. Where it wrote nothing the prediction is still on, and is wrong: datum is read again. */
+function reconcile(): void {
+	if (unpredict()) void ran();
 }
 
 /**

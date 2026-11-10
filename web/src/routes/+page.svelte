@@ -23,7 +23,7 @@
 	import { epoch, ran } from '#lib/layout/engine.ts';
 	import { onExternalChange } from '#lib/changes.ts';
 	import { currentDb } from '#lib/database.ts';
-	import { settled } from '#lib/run.ts';
+	import { forget, settled } from '#lib/run.ts';
 
 	// Another tab wrote. Same treatment as a local command finishing — bump
 	// the epoch the panes hang off and rebuild the widget bar — so there is
@@ -44,6 +44,8 @@
 	// about. `announceChange` already carries which databases a process
 	// wrote to, measured off their change counters (#lib/cli.ts).
 	onDestroy(onExternalChange(() => ran().then(settled), currentDb()));
+	// At once, not coalesced behind a refresh: an undo pressed meanwhile must not swap to a state from before it (da-gou47).
+	onDestroy(onExternalChange(forget, currentDb()));
 </script>
 
 <!-- Layout mode (da-vvcxc, `mode.ts`) is the one state in which the tree
