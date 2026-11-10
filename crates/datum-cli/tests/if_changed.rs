@@ -83,15 +83,24 @@ fn a_different_state_writes() {
 #[test]
 fn compares_with_the_state_governing_at_t() {
     let env = Env::new();
-    env.ok(&["switch", "mood", "happy", "-t", "900"]);
-    env.ok(&["switch", "mood", "sad", "-t", "1100"]);
+    env.ok(&["switch", "mood", "happy", "-y", "-t", "900"]);
+    env.ok(&["switch", "mood", "sad", "-y", "-t", "1100"]);
     let n = env.count();
-    // At 10:00 the field is happy, whatever the latest entry says.
+    // At 10:00 yesterday (a past instant: one after now echoes FUTURE) the
+    // field is happy, whatever the latest entry says.
     assert!(env
-        .ok(&["switch", "mood", "happy", "--if-changed", "-t", "1000"])
+        .ok(&[
+            "switch",
+            "mood",
+            "happy",
+            "--if-changed",
+            "-y",
+            "-t",
+            "1000"
+        ])
         .starts_with("ISLAST"));
     assert!(env
-        .ok(&["switch", "mood", "sad", "--if-changed", "-t", "1000"])
+        .ok(&["switch", "mood", "sad", "--if-changed", "-y", "-t", "1000"])
         .contains("CHANGE"));
     assert_eq!(env.count(), n + 1);
 }
@@ -99,10 +108,10 @@ fn compares_with_the_state_governing_at_t() {
 #[test]
 fn without_the_flag_a_duplicate_is_written() {
     let env = Env::new();
-    env.ok(&["switch", "mood", "happy", "-t", "900"]);
+    env.ok(&["switch", "mood", "happy", "-y", "-t", "900"]);
     let n = env.count();
     assert!(env
-        .ok(&["switch", "mood", "happy", "-t", "1000"])
+        .ok(&["switch", "mood", "happy", "-y", "-t", "1000"])
         .contains("CHANGE"));
     assert_eq!(env.count(), n + 1);
 }

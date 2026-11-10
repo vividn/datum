@@ -255,9 +255,9 @@ fn a_bare_log_after_a_t_log_is_now() {
 #[test]
 fn a_sync_as_line_binds_no_later_line() {
     let printed = second_line_as_alone(
-        &["occur cake -t 8:00"],
+        &["occur cake -y -t 8:00"],
         "sync --as deadbeef status",
-        "occur tea -t 9:00",
+        "occur tea -y -t 9:00",
     );
     assert!(printed.contains("MOMENT"), "{printed}");
 }

@@ -578,13 +578,13 @@ is no reference.
 ### `±` — uncertainty
 
 ```bash
-datum moment coffee -t '14:00±15m'
+datum moment coffee -y -t '14:00±15m'
 datum get coffee -A
 ```
 
 ```
 MOMENT pbutc coffee:2026-11-05T14:00:00.000Z
-14:00:± +0  coffee ∅●
+-1d 14:00:± +0  coffee ∅●
 ```
 
 A gray `±` takes the seconds' place after the colon, false precision on a
