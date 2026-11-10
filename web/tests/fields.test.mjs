@@ -49,6 +49,9 @@ describe('the logic', () => {
 		assert.deepEqual(kindFor(undefined, [true, false]), { kind: 'on/off' });
 		// ...and named states are a menu.
 		assert.deepEqual(kindFor(undefined, ['b', 'a']), { kind: 'change', states: ['a', 'b'] });
+		// An array logged is a multi-state of the field (da-a2cxa), not a state of its own.
+		assert.deepEqual(kindFor(undefined, ['b', ['a', 'b'], 'a']), { kind: 'change', states: ['a', 'b'], sets: [['a', 'b']] });
+		assert.deepEqual(kindFor(spec('mood', { verb: 'switch', allowed_states: ['a', 'b'] }), [['a', 'b']]), { kind: 'change', states: ['a', 'b'], declared: true, sets: [['a', 'b']] });
 	});
 
 	test('every field, a spec or not; `ignored` is the CLI\'s; `now` says what is on', () => {

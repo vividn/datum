@@ -24,7 +24,7 @@ export type FieldKind =
 	| { kind: 'moment' }
 	| { kind: 'on/off' }
 	/** `declared`: the states are its spec's, in its order, and not the ones it was logged with. */
-	| { kind: 'change'; states: string[]; declared?: true }
+	| { kind: 'change'; states: string[]; declared?: true; sets?: string[][] }
 	| { kind: 'record' }
 	| { kind: 'allday' };
 
@@ -63,6 +63,8 @@ export interface FieldButton {
 	 * #lib/layout/engine.ts).
 	 */
 	current?: true | string;
+	/** The multi-state the field is in now, where `now --json` names an array (da-a2cxa): `current` paints one color, so has none. */
+	set?: string[];
 	/**
 	 * Whether the field is in an ACTIVE state right now — `datum now
 	 * --json` named it, and the rows it names are exactly the truthy ones
@@ -110,12 +112,15 @@ export interface FieldButton {
  */
 export function kindFor(spec: FieldSpec | undefined, observed: unknown[] = []): FieldKind {
 	const strings = [...new Set(observed.filter((v): v is string => typeof v === 'string'))].sort();
+	// The arrays it has been logged with, a multi-state each (da-a2cxa), as `fields --json` lists them.
+	const sets = observed.filter((v): v is string[] => Array.isArray(v) && v.length > 1 && v.every((s) => typeof s === 'string'));
+	const change = (states: string[], declared?: true): FieldKind => ({ kind: 'change', states, ...(declared ? { declared } : {}), ...(sets.length ? { sets } : {}) });
 
 	switch (spec?.verb) {
 		case 'switch':
 			// A change field with no allowed set is unconstrained, so the states
 			// it has been logged with are the honest menu.
-			return spec.allowed_states?.length ? { kind: 'change', states: spec.allowed_states, declared: true } : { kind: 'change', states: strings };
+			return spec.allowed_states?.length ? change(spec.allowed_states, true) : change(strings);
 		case 'start':
 			return { kind: 'on/off' };
 		case 'add':
@@ -126,7 +131,7 @@ export function kindFor(spec: FieldSpec | undefined, observed: unknown[] = []): 
 			return { kind: 'allday' };
 	}
 
-	if (strings.length > 0) return { kind: 'change', states: strings };
+	if (strings.length > 0) return change(strings);
 	if (observed.some((v) => typeof v === 'boolean')) return { kind: 'on/off' };
 	return { kind: 'moment' };
 }
@@ -253,9 +258,10 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 const num = (n: unknown) => (typeof n === 'number' ? n : undefined);
 
 /** Whether `field` is active and in what, by `now --json`'s states. */
-function standing(now: Map<string, unknown>, field: string): Pick<FieldButton, 'active' | 'current'> {
+function standing(now: Map<string, unknown>, field: string): Pick<FieldButton, 'active' | 'current' | 'set'> {
 	const state = now.get(field);
-	return { active: now.has(field), current: state === true || (typeof state === 'string' && state !== '') ? state : undefined };
+	const set = Array.isArray(state) && state.every((s) => typeof s === 'string') ? { set: state } : {};
+	return { active: now.has(field), current: state === true || (typeof state === 'string' && state !== '') ? state : undefined, ...set };
 }
 
 /**
@@ -680,17 +686,18 @@ export function pressArgv(button: FieldButton, state?: string): string[] {
 }
 
 /**
- * How one state reads when a press opens its field (da-7q3ka), in three
- * levels — vividn: «the light tint might work … let's try it»:
- *
- *   the state the field is in NOW — solid, drawn exactly as the field's
- *     own chip draws it (`lookOf`'s switch case), and bold (the widget's);
- *   every other state — a LIGHT TINT, a quarter of its own colour, in its
- *     own outline, under the app's ink;
- *   the back icon, the `+` and `off` — hollow, and not drawn here.
+ * How one state reads when a press opens its field: every state FILLED in
+ * its own color, the CLI's ink over it (vividn, 2026-11-10: «let's fully
+ * color all the state buttons, not just the active one. Which one is active
+ * is now well represented with the exclamation point and surrounding dotted
+ * line»); a multi-state takes its first state's, its outline the field's.
  */
-export function stateLook(button: FieldButton, state: string): Look {
-	if (button.current === state) return lookOf(button, 'state');
-	const color = button.stateColors[state] ?? button.color;
-	return { fill: `color-mix(in srgb, ${color} 25%, transparent)`, line: color, text: 'var(--ink-bright)', label: state };
+export function stateLook(button: FieldButton, state: string, parts?: string[]): Look {
+	const color = button.stateColors[parts?.[0] ?? state] ?? button.color;
+	return { fill: color, line: parts ? button.color : color, text: inkOver(color), label: state };
+}
+
+/** Off in the open view: empty, an outline alone (vividn, 2026-11-10: «the "off" button should not be colored rather empty»). */
+export function offLook(button: FieldButton): Look {
+	return { fill: null, line: button.color, text: 'var(--ink-bright)', label: 'off' };
 }

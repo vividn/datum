@@ -191,6 +191,71 @@ describe('a field opened in collect', () => {
 		});
 	});
 
+	// vividn, 2026-11-10 (da-a2cxa): «let's fully color all the state buttons, not just the active one. Which one is
+	// active is now well represented with the exclamation point and surrounding dotted line», «the "off" button should
+	// not be colored rather empty», and a multi-state colored «just like it is in the tail, so commas … the dividing line
+	// between the colors should be tilted to the right / to match the diagonal lines in a multi state render», fitted to
+	// the text: each state's color behind its own words.
+	for (const screen of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+		test(`every state filled in its color, off empty, a multi-state in commas with a 45° boundary under each (${screen.width}x${screen.height})`, async () => {
+			const lines = ['setup mood --verb switch --states false,good,bad,meh', 'switch mood good,bad -t 10:00', 'switch mood good,bad,meh -t 11:00', 'switch mood bad -t 13:00'];
+			await opening(lines, 'mood', async (app, button) => {
+				const { page } = app;
+				await page.setViewportSize(screen);
+				await button.click();
+				const row = JSON.parse((await app.run(['fields', '--json'])).stdout).find((r) => r.field === 'mood');
+				const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+				assert.deepEqual(await listed(page, 'good,bad,meh'), ['good', 'bad', 'meh', 'good,bad,meh', 'good,bad']);
+				for (const state of ['good', 'bad', 'meh']) {
+					const fill = await page.locator(`${OPEN} [data-state="${state}"]`).evaluate((el) => getComputedStyle(el).backgroundColor);
+					assert.equal(fill, rgb(row.state_colors[state]), `${state} is not filled in its color`);
+				}
+				assert.equal(await page.locator(`${OPEN} [data-off]`).evaluate((el) => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)', 'off is filled');
+				// The active one alone carries the ! and the dotted outline.
+				assert.deepEqual(await page.locator(`${OPEN} [data-state]:has([data-repeat])`).evaluateAll((bs) => bs.map((b) => b.dataset.state)), ['bad']);
+				assert.ok(await outlined(page, `${OPEN} [data-state="bad"]`), 'the state it is in is not outlined');
+				assert.equal(await outlined(page, `${OPEN} [data-state="good"]`), false, 'a state it is not in is outlined');
+				for (const set of [['good', 'bad'], ['good', 'bad', 'meh']]) {
+					const label = set.join(',');
+					const drawn = await page.locator(`${OPEN} [data-state="${label}"]`).evaluate((b) => {
+						const commas = [...b.querySelectorAll('.comma')].map((c) => {
+							const under = getComputedStyle(c, '::before');
+							const r = c.getBoundingClientRect();
+							return { text: c.textContent, half: r.width / 2, left: parseFloat(under.left), top: under.top, bottom: under.bottom, fill: under.backgroundColor, skew: under.transform };
+						});
+						const words = [...b.querySelectorAll('[data-part]')].map((w) => w.textContent);
+						return { text: b.textContent, fill: getComputedStyle(b).backgroundColor, clips: getComputedStyle(b).overflow, commas, words };
+					});
+					assert.equal(drawn.text, label, 'not labelled with commas');
+					assert.deepEqual(drawn.words, set);
+					assert.equal(drawn.fill, rgb(row.state_colors[set[0]]), 'the first state is not behind its words');
+					assert.equal(drawn.clips, 'hidden', 'the colors spill past the button');
+					assert.equal(drawn.commas.length, set.length - 1);
+					drawn.commas.forEach((c, i) => {
+						assert.equal(c.text, ',');
+						assert.equal(c.fill, rgb(row.state_colors[set[i + 1]]), `${set[i + 1]} is not behind its words`);
+						assert.ok(Math.abs(c.left - c.half) < 0.5, `the boundary is not under comma ${i + 1}: ${c.left} vs ${c.half}`);
+						assert.equal(c.top, c.bottom, 'the boundary is not centered on the comma');
+						// skewX(-45deg): leaning right, as dayview's stripes under rotate(45).
+						assert.equal(c.skew, 'matrix(1, 0, -1, 1, 0, 0)');
+					});
+				}
+			});
+		});
+	}
+
+	test('a field in a multi-state marks that button active: the ! and the dotted outline, and no other', async () => {
+		const lines = ['setup mood --verb switch --states false,good,bad', 'switch mood bad -t 10:00', 'switch mood good,bad -t 13:00'];
+		await opening(lines, 'mood', async ({ page }, button) => {
+			await button.click();
+			await page.locator(`${OPEN} [data-state="good,bad"]`).waitFor();
+			assert.deepEqual(await page.locator(`${OPEN} [data-state]:has([data-repeat])`).evaluateAll((bs) => bs.map((b) => b.dataset.state)), ['good,bad']);
+			assert.equal(await page.locator(`${OPEN} [data-state="good,bad"]`).textContent(), '!good,bad');
+			assert.ok(await outlined(page, `${OPEN} [data-state="good,bad"]`), 'the multi-state it is in is not outlined');
+			assert.equal(await outlined(page, `${OPEN} [data-state="bad"]`), false, 'a state it is not in is outlined');
+		});
+	});
+
 	test('off is absent for a field whose spec forbids it, and wears a yellow ! while the field is off', async () => {
 		await opening(['setup posture --verb switch --states sit,stand --never-false', 'setup mood --verb switch --states false,good,bad', 'switch mood good -t 12:00', 'off mood -t 13:00'], 'posture', async ({ page }, button) => {
 			await button.click();

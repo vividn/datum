@@ -162,6 +162,7 @@
 		zoomed,
 		pressArgv,
 		stateLook,
+		offLook,
 		type Look,
 		type SwitchLabel,
 		type FieldButton,
@@ -884,6 +885,10 @@
 	});
 	/** Off is no state of the list: it is the first row's. */
 	const isOff = (s: unknown) => s === false || s === 'false';
+	/** The open field's multi-states, by the label they are tapped as, `good,bad` as the tail shows them (da-a2cxa). */
+	const sets = $derived(new Map(picking?.shape.kind === 'change' ? (picking.shape.sets ?? []).map((p) => [p.join(','), p]) : []));
+	/** Whether the open field is in `state` now, a multi-state by its label. */
+	const isIn = (b: FieldButton, state: string) => b.active && (b.current === state || b.set?.join(',') === state);
 	/** The open field's states: the spec's in its order, then every other it has used, the last used first, none twice. */
 	const listed = $derived.by((): string[] => {
 		if (picking?.shape.kind !== 'change') return [];
@@ -897,7 +902,7 @@
 			.filter((r) => r.count > 0 && ['string', 'number', 'boolean'].includes(typeof r.state) && !isOff(r.state))
 			.sort((a, b) => at(b) - at(a) || 0)
 			.map((r) => said(r.state));
-		return [...new Set([...spec, ...used])];
+		return [...new Set([...spec, ...used, ...sets.keys()])];
 	});
 	/** Whether off is offered: a change field its spec lets be off, or an on/off field. */
 	const offable = $derived(picking?.shape.kind === 'on/off' || (picking?.shape.kind === 'change' && !picking.neverFalse));
@@ -906,7 +911,7 @@
 		// The first row's key is `open`, with no colon, so no state's `o:` key can be it.
 		const keys = picking ? ['open', ...listed.map((s) => `o:${s}`)] : [];
 		const rowH = Math.max(24, ...keys.map((k) => sizes.get(k)?.h ?? 0));
-		const on = (i: number) => i === 0 || (!!picking?.active && picking.current === listed[i - 1]);
+		const on = (i: number) => i === 0 || (!!picking && isIn(picking, listed[i - 1]));
 		// The items measured, from the first: each stands where those before it put it, and one not yet where a width of 0 does, hidden.
 		const unmeasured = keys.findIndex((k) => !sizes.has(k));
 		const ready = unmeasured < 0 ? keys.length : unmeasured;
@@ -1448,7 +1453,7 @@
 										class="widget states"
 										use:act={clicks === 'two' && here.shape.kind === 'change' ? 'arm' : 'run'}
 										class:chosen={chosen === 'false'}
-										style={vars(stateLook(here, 'false'))}
+										style={vars(offLook(here))}
 										{disabled}
 										data-off
 										title={shellJoin(['off', here.field])}
@@ -1457,8 +1462,9 @@
 								{/if}
 								{#if chosen !== null && chosen !== 'false'}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
 							{:else}
-								{@const look = stateLook(here, state)}
-								{@const on = here.active && here.current === state}
+								{@const parts = sets.get(state)}
+								{@const look = stateLook(here, state, parts)}
+								{@const on = isIn(here, state)}
 								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type, or a tap only chooses it (2-click, da-u017i). -->
 								<button
 									class="widget states"
@@ -1470,7 +1476,11 @@
 									data-state={state}
 									title={shellJoin(['change', here.field, state])}
 									onclick={() => (together ? gather(here, state) : choose(here, state))}
-								>{#if on}<span class="repeat" data-repeat>!</span>{/if}{state}</button>
+									class:multi={!!parts}
+								>{#if on}<span class="repeat" data-repeat>!</span>{/if}{#if parts}{#each parts as part, j}{@const color = here.stateColors[part] ?? here.color}{#if j}<span
+												class="comma"
+												style:--next={color}>,</span
+											>{/if}<span data-part={part} style:color={inkOver(color)}>{part}</span>{/each}{:else}{state}{/if}</button>
 							{/if}
 						</div>
 					{/each}
@@ -2068,11 +2078,36 @@
 		white-space: nowrap;
 	}
 
-	/* The state the field is in now: solid, as the field's own chip draws
-	   it (`stateLook`), and bold — the rest are a tint. */
+	/* The state the field is in now: bold. Every state is filled (`stateLook`). */
 	.states.on,
 	.widget.change.on {
 		font-weight: 700;
+	}
+
+	/* A multi-state (da-a2cxa): each state's color behind its own words,
+	   the boundary through the middle of each comma, slanted right at the
+	   45° of the stripes dayview draws a multi-state with. Each comma paints
+	   the next state's color from its middle on, under the words. */
+	.states.multi {
+		position: relative;
+		isolation: isolate;
+		overflow: hidden;
+	}
+
+	.comma {
+		position: relative;
+	}
+
+	.comma::before {
+		content: '';
+		position: absolute;
+		z-index: -1;
+		left: 50%;
+		right: -100vw;
+		top: -2em;
+		bottom: -2em;
+		background: var(--next);
+		transform: skewX(-45deg);
 	}
 
 	.record {

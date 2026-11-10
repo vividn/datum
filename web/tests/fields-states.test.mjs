@@ -142,29 +142,19 @@ describe('a state field fills the widget with its states', () => {
 			await untilFieldStyle(page, 'mood', 'backgroundColor', GREEN);
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="bad"]').waitFor();
-			const ink = (page) =>
-				page.evaluate(() => {
-					const probe = document.body.appendChild(document.createElement('span'));
-					probe.style.color = 'var(--ink-bright)';
-					const color = getComputedStyle(probe).color;
-					probe.remove();
-					return color;
-				});
 			const painted = await page.locator('section.pane[data-title="collect"] .bar').evaluate((el) =>
 				[...el.querySelectorAll('[data-state]')].map((b) => {
 					const cs = getComputedStyle(b);
 					return { state: b.dataset.state, bg: cs.backgroundColor, border: cs.borderTopColor, color: cs.color };
 				})
 			);
-			// `good` is what mood is in now, so it is marked the way the field's
-			// own chip marks it: filled with the state's colour inside the
-			// field's outline. `bad` is a light TINT of its own colour, a quarter
-			// of it, in its own outline and under the app's ink (da-7q3ka: the
-			// hollow back icon, the `+` and `end` stand out against it).
-			// `end` is the commands' now (da-w6437), not a state here.
+			// Every state filled in its own color, in its own outline, under the
+			// CLI's ink over it (vividn, 2026-11-10, da-a2cxa): which one mood is in
+			// is the ! and the dotted outline's to say. `end` is the commands' now
+			// (da-w6437), not a state here.
 			assert.deepEqual(painted, [
-				{ state: 'good', bg: rgb('#008000'), border: rgb('#800080'), color: 'rgb(255, 255, 255)' },
-				{ state: 'bad', bg: 'color(srgb 1 0 0 / 0.25)', border: rgb('#ff0000'), color: await ink(page) }
+				{ state: 'good', bg: rgb('#008000'), border: rgb('#008000'), color: 'rgb(255, 255, 255)' },
+				{ state: 'bad', bg: rgb('#ff0000'), border: rgb('#ff0000'), color: 'rgb(255, 255, 255)' }
 			]);
 		});
 	});
