@@ -102,7 +102,7 @@ fn the_grid_has_a_row_a_device_and_a_column_a_chain() {
         .map(|l| l.split_whitespace().collect())
         .collect();
     let short = |v: &serde_json::Value| v.as_str().unwrap()[..10].to_string();
-    assert_eq!(lines[0], ["notes", "health"], "{text}");
+    assert_eq!(lines[0], ["DEVICE", "KEY", "notes", "health"], "{text}");
     assert_eq!(lines[1], [&notes, &health], "{text}");
     let tail = |n: usize, line: &[&str]| line[line.len() - n..].join(" ");
     assert_eq!(

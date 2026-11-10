@@ -22,6 +22,9 @@ use datum_core::db::Db;
 use serde_json::{json, Value};
 
 use crate::config;
+use crate::render::colors::{BOLD, GREY_FG};
+
+use super::sync::{GREEN, RED, YELLOW};
 
 /// A device's standing in one chain, weakest first: of two endpoints of one
 /// device in a chain (it left and joined again), the stronger is shown.
@@ -182,78 +185,67 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
         !columns.is_empty(),
         "no database of this install is in a sync chain"
     );
-    let label = rows
-        .iter()
-        .map(|r| r.label.chars().count())
-        .max()
-        .unwrap_or(0);
     // A device key and an endpoint are each 32 bytes in hex, 64 ASCII
-    // characters, or the fold takes neither: their head is safe to cut.
-    let names: Vec<String> = rows
-        .iter()
-        .map(|r| match &r.device {
-            Some(d) => format!("{:<label$}  {}", r.label, &d[..10]),
-            None => format!("{:<label$}  endpoint {}", r.label, &r.endpoint[..10]),
-        })
-        .collect();
-    let left = names.iter().map(|n| n.chars().count()).max().unwrap_or(0);
-    // A chain id is a ULID, whose head is only its time: shown whole.
-    let widths: Vec<usize> = heads
-        .iter()
-        .map(|(name, id, _)| name.chars().count().max(id.chars().count()))
-        .collect();
-    let line = |first: &str, cells: Vec<&str>| {
-        let cells: Vec<String> = cells
-            .iter()
-            .zip(&widths)
-            .map(|(c, w)| format!("{c:<w$}"))
-            .collect();
-        format!("{first:<left$}  {}", cells.join("  "))
+    // characters, or the fold takes neither: their head is safe to cut. A
+    // chain id is a ULID, whose head is only its time: shown whole. A table,
+    // as `sync status` draws one (da-hub6q).
+    let head = |first: &str, second: &str, of: fn(&(String, String, bool)) -> &str, code| {
+        [first, second]
+            .into_iter()
+            .chain(heads.iter().map(of))
+            .map(|h| (h.to_string(), code))
+            .collect::<Vec<_>>()
     };
-    println!(
-        "{}",
-        line("", heads.iter().map(|(n, _, _)| n.as_str()).collect()).trim_end()
-    );
-    println!(
-        "{}",
-        line("", heads.iter().map(|(_, id, _)| id.as_str()).collect()).trim_end()
-    );
-    for (r, name) in rows.iter().zip(&names) {
-        let cells: Vec<String> = heads
-            .iter()
-            .enumerate()
-            .map(|(j, (_, id, _))| {
-                let standing = r.cells.get(j).and_then(Option::as_ref).map(|c| c.0.word());
-                let standing = standing.map(|s| match apart_of(r, j) {
-                    Some(a) if a.this_updates => format!("{s} ⚠ update this"),
-                    Some(_) => format!("{s} ⚠ update it"),
-                    None => s.to_string(),
-                });
-                let grant = of(r, id).map(|g| g.word().to_string());
-                match (standing, grant) {
-                    (Some(s), Some(g)) => format!("{s}, {g}"),
-                    (s, g) => s.or(g).unwrap_or_else(|| "—".into()),
-                }
-            })
-            .collect();
-        let mut out = line(name, cells.iter().map(String::as_str).collect())
-            .trim_end()
-            .to_string();
-        if this(r) {
-            out += "  (this device)";
+    let mut table = vec![
+        head("DEVICE", "KEY", |h| h.0.as_str(), BOLD),
+        head("", "", |h| h.1.as_str(), GREY_FG),
+    ];
+    for r in &rows {
+        let key = match &r.device {
+            Some(d) => d[..10].to_string(),
+            None => format!("endpoint {}", &r.endpoint[..10]),
+        };
+        let mut line = vec![(r.label.clone(), ""), (key, GREY_FG)];
+        for (j, (_, id, _)) in heads.iter().enumerate() {
+            let cell = r.cells.get(j).and_then(Option::as_ref).map(|c| c.0);
+            let apart = apart_of(r, j);
+            let standing = cell.map(|c| match apart {
+                Some(a) if a.this_updates => format!("{} ⚠ update this", c.word()),
+                Some(_) => format!("{} ⚠ update it", c.word()),
+                None => c.word().to_string(),
+            });
+            let grant = of(r, id).map(|g| g.word().to_string());
+            let text = match (standing, grant) {
+                (Some(s), Some(g)) => format!("{s}, {g}"),
+                (s, g) => s.or(g).unwrap_or_else(|| "—".into()),
+            };
+            let code = match (cell, apart) {
+                (_, Some(_)) => YELLOW,
+                (Some(Cell::Member | Cell::Reader), _) => GREEN,
+                (Some(Cell::Expelled | Cell::Unjoined), _) => RED,
+                _ => GREY_FG,
+            };
+            line.push((text, code));
         }
-        println!("{out}");
+        line.push((if this(r) { "(this device)" } else { "" }.into(), ""));
+        table.push(line);
     }
-    for g in grants.iter().filter(|g| g.what.is_none()) {
-        println!("{}", g.line());
+    for line in super::sync::table(&table, 2) {
+        println!("{line}");
     }
+    let mut below: Vec<String> = grants
+        .iter()
+        .filter(|g| g.what.is_none())
+        .map(|g| g.line())
+        .collect();
     for r in &rows {
         for (j, (name, _, _)) in columns.iter().enumerate() {
             if let Some(a) = apart_of(r, j) {
-                println!("⚠ {name}: {}", a.words(&r.label));
+                below.push(format!("⚠ {name}: {}", a.words(&r.label)));
             }
         }
     }
+    super::sync::print_below(&below);
     Ok(())
 }
 

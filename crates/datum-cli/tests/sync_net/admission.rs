@@ -140,10 +140,9 @@ fn a_member_with_no_address_is_named_and_an_address_passed_on_is_kept() {
         .lines()
         .find(|l| !l.starts_with('⚠') && l.contains(&c.id()[..10]))
         .unwrap();
-    assert!(
-        line.contains("to send 0") && line.ends_with(&none),
-        "{line}"
-    );
+    // Its TO SEND column, the header's alone (da-hub6q).
+    let cells: Vec<&str> = line.split("  ").filter(|c| !c.is_empty()).collect();
+    assert!(cells[3].trim() == "0" && line.ends_with(&none), "{line}");
     let out = b.fails(&["sync"], "");
     assert!(out.contains(&format!(": {none}\n")), "{out}");
 

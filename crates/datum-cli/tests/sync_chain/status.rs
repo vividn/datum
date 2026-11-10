@@ -52,8 +52,9 @@ fn a_pause_is_named_on_the_readers_clock() {
         said
     };
     let status = at(&["sync", "status"]);
+    // Below the table, with the other warnings (da-hub6q).
     assert!(
-        status.starts_with("⚠ paused since 2020-01-03 01:30: "),
+        status.contains("\n⚠ paused since 2020-01-03 01:30: "),
         "{status}"
     );
     let sync = at(&["sync"]);
@@ -286,4 +287,95 @@ fn status_says_a_chain_is_open() {
         assert!(!copy.ok(&["sync", "status"]).contains(open));
         assert_eq!(json(&copy.ok(&["sync", "status", "--json"]))["open"], false);
     }
+}
+
+/// `sync status` is a table under one header, which says TO SEND so no row
+/// does, and the warnings and the hidden members' line come after it and a
+/// blank line (da-hub6q).
+#[test]
+fn status_is_a_table_with_its_warnings_below_it() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    a.ok(&["sync", "chain", "expel", "c"]);
+    let status = a.ok(&["sync", "status"]);
+    let lines: Vec<&str> = status.lines().collect();
+    let head = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("DEVICE  "))
+        .unwrap_or_else(|| panic!("{status}"));
+    let row = lines[head + 1];
+    assert!(lines[head].contains("TO SEND"), "{status}");
+    assert!(
+        row.contains(&b.id()[..10]) && !row.contains("to send"),
+        "{status}"
+    );
+    // b's row is the table's last: then a blank line, and the rest.
+    assert_eq!(lines[head + 2], "", "{status}");
+    let (above, below) = lines.split_at(head + 2);
+    assert!(above.iter().all(|l| !l.starts_with('⚠')), "{status}");
+    assert!(
+        below.iter().any(|l| l.starts_with("no admin: ")),
+        "{status}"
+    );
+    assert_eq!(
+        below.last().unwrap().trim(),
+        "1 former member hidden — `--show-revoked`",
+        "{status}"
+    );
+}
+
+/// `sync status` and `sync grid` paint only where color is asked for: never
+/// through a pipe, never under `NO_COLOR` even forced (da-hub6q).
+#[test]
+fn status_and_grid_paint_only_where_color_is_asked_for() {
+    let (a, _b) = chained();
+    let tmp = a.tmp.path().display();
+    std::fs::create_dir_all(a.tmp.path().join("config")).unwrap();
+    std::fs::write(
+        a.tmp.path().join("config/dbs.toml"),
+        format!("[db.notes]\npath = \"{tmp}/data.db\"\n"),
+    )
+    .unwrap();
+    let said = |args: &[&str], color: &[(&str, &str)]| {
+        let mut cmd = a.cmd(args);
+        for v in ["NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE"] {
+            cmd.env_remove(v);
+        }
+        let out = cmd.envs(color.iter().copied()).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    for args in [&["sync", "status"][..], &["sync", "grid"]] {
+        let piped = said(args, &[]);
+        assert!(
+            !piped.contains('\x1b') && piped.contains("DEVICE"),
+            "{piped}"
+        );
+        let both = said(args, &[("FORCE_COLOR", "1"), ("NO_COLOR", "1")]);
+        assert_eq!(both, piped);
+        // The control: forced, the header is bold, and only the paint differs.
+        let forced = said(args, &[("FORCE_COLOR", "1")]);
+        assert!(forced.contains("\x1b[1mDEVICE\x1b[0m"), "{forced:?}");
+        assert_eq!(unpainted(&forced), piped);
+    }
+}
+
+/// `s` without its SGR escapes.
+fn unpainted(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\x1b' => {
+                chars.by_ref().find(|c| *c == 'm');
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
 }

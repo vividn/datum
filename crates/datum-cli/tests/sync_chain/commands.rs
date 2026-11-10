@@ -181,7 +181,7 @@ fn pause_stops_the_pipe_and_resume_lets_it_through() {
         named.contains("sync is paused on this copy since "),
         "{named}"
     );
-    assert!(status.starts_with("⚠ paused since "), "{status}");
+    assert!(status.contains("\n⚠ paused since "), "{status}");
     assert_eq!(
         json(&a.ok(&["sync", "status", "--json"]))["paused"],
         at.as_str()

@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
 use crate::commands::check::{Domain, Issue, Severity, Source};
+use crate::render::colors::{paint, BOLD, GREY_FG};
 
 pub(super) const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain join <TICKET>` joins one with a ticket from another";
 
@@ -1775,9 +1776,68 @@ pub(crate) fn depart(db: &Db, chain: &str, again: &str) -> Result<Option<Vec<Str
 /// it can show: a member that left is no copy to stand with, and has no row
 /// there even with `--show-revoked`.
 fn print_hidden(n: usize) {
-    if n > 0 {
-        let s = if n == 1 { "" } else { "s" };
-        println!("  {n} former member{s} hidden — `--show-revoked`");
+    if let Some(line) = hidden_line(n) {
+        println!("  {line}");
+    }
+}
+
+fn hidden_line(n: usize) -> Option<String> {
+    let s = if n == 1 { "" } else { "s" };
+    (n > 0).then(|| format!("{n} former member{s} hidden — `--show-revoked`"))
+}
+
+pub(super) const GREEN: &str = "\x1b[32m";
+pub(super) const YELLOW: &str = "\x1b[33m";
+pub(super) const RED: &str = "\x1b[31m";
+
+/// A table a person reads (da-hub6q): each cell a text and the color it is
+/// painted in, each column as wide as its widest cell, two spaces between,
+/// a column empty under its `heads` header rows left out. Painted after it is measured,
+/// so color moves no column, and plain off a terminal or under `NO_COLOR`.
+pub(super) fn table(rows: &[Vec<(String, &str)>], heads: usize) -> Vec<String> {
+    let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let kept: Vec<usize> = (0..cols)
+        .filter(|&j| {
+            rows.iter()
+                .skip(heads)
+                .any(|r| r.get(j).is_some_and(|c| !c.0.is_empty()))
+        })
+        .collect();
+    let width = |j: usize| {
+        rows.iter()
+            .filter_map(|r| r.get(j))
+            .map(|c| c.0.chars().count())
+            .max()
+            .unwrap_or(0)
+    };
+    let widths: Vec<usize> = kept.iter().map(|&j| width(j)).collect();
+    rows.iter()
+        .map(|r| {
+            let cells: Vec<String> = kept
+                .iter()
+                .zip(&widths)
+                .map(|(&j, w)| {
+                    let (text, code) = r.get(j).map_or(("", ""), |c| (c.0.as_str(), c.1));
+                    let pad = w - text.chars().count();
+                    format!("{}{}", paint(code, text), " ".repeat(pad))
+                })
+                .collect();
+            cells.join("  ").trim_end().to_string()
+        })
+        .collect()
+}
+
+/// What a table leaves for below it (da-hub6q): after a blank line, a ⚠ in
+/// yellow.
+pub(super) fn print_below(lines: &[String]) {
+    if !lines.is_empty() {
+        println!();
+    }
+    for l in lines {
+        match l.starts_with('⚠') {
+            true => println!("{}", paint(YELLOW, l)),
+            false => println!("{l}"),
+        }
     }
 }
 
@@ -1875,16 +1935,21 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
         println!("{out}");
         return Ok(());
     }
-    // Before the chain: the pipe syncs copies in none.
-    for w in clock.iter().map(ToString::to_string).chain(spool) {
-        println!("⚠ {w}");
-    }
+    // Said in a chain or none: the pipe syncs copies in none.
+    let mut below: Vec<String> = clock
+        .iter()
+        .map(ToString::to_string)
+        .chain(spool)
+        .map(|w| format!("⚠ {w}"))
+        .collect();
     if let Err(why) = db.sync_refuse_debug() {
         println!("{why}");
+        print_below(&below);
         return Ok(());
     }
     if let Some(words) = dissolved(&chain) {
         println!("{words}");
+        print_below(&below);
         return Ok(());
     }
     if !chain.exists() {
@@ -1894,13 +1959,14 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
                 .iter()
                 .for_each(|p| println!("{}", joining(&p.label, &p.endpoint))),
         }
+        print_below(&below);
         return Ok(());
     }
     if let Some(at) = &paused {
-        println!(
+        below.push(format!(
             "⚠ paused since {}: this copy neither sends nor receives — `datum sync resume`",
             local(at)
-        );
+        ));
     }
     println!(
         "sync chain {} · this copy {label} ({})",
@@ -1913,48 +1979,38 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
         println!("a reader, {}: {}", f.describe(), fields.join(", "));
     }
     match chain.member(&mine).map(|m| (&m.left, &m.revoked)) {
-        Some((Some(at), _)) => println!(
+        Some((Some(at), _)) => below.push(format!(
             "⚠ this copy signed its departure at {}: `datum sync chain leave` finishes once a \
              member holds it",
             local(chain::hlc_time(at))
-        ),
-        Some((_, Some(at))) => println!(
+        )),
+        Some((_, Some(at))) => below.push(format!(
             "⚠ this copy was expelled at {}: it syncs again once a member's invite admits it, \
              or `datum sync chain leave` keeps every entry and starts afresh",
             local(chain::hlc_time(at))
-        ),
+        )),
         _ => {}
     }
     if chain.is_open() {
-        println!("{OPEN}");
+        below.push(OPEN.into());
     }
     #[cfg(feature = "net")]
     if super::sync_daemon::missing() {
-        println!(
+        below.push(
             "⚠ no sync daemon: this copy syncs only when `datum sync` is run — \
              `datum sync --auto` keeps it syncing in the background"
+                .into(),
         );
     }
     // What `datum check` shows of sync too, from the same source (da-nq07y).
-    for w in upgrade.iter().chain(&unsent) {
-        println!("⚠ {w}");
-    }
-    for line in asked {
-        println!("{line}");
-    }
-    for (n, text) in said(db, notices) {
-        println!("{}", notice_line(&n, &text));
-    }
-    for g in &grants {
-        println!("{}", g.line());
-    }
+    below.extend(upgrade.iter().chain(&unsent).map(|w| format!("⚠ {w}")));
+    below.extend(asked);
+    below.extend(said(db, notices).iter().map(|(n, t)| notice_line(n, t)));
+    below.extend(grants.iter().map(|g| g.line()));
     let (shown, hidden): (Vec<_>, Vec<_>) = peers.iter().partition(|p| show_revoked || !p.revoked);
-    let width = shown
-        .iter()
-        .map(|p| p.label.chars().count())
-        .max()
-        .unwrap_or(0);
-    for p in shown {
+    let head = ["DEVICE", "ID", "STATE", "TO SEND", "LAST", "ROLE", "NOTE"];
+    let mut rows: Vec<Vec<(String, &str)>> = vec![head.map(|h| (h.to_string(), BOLD)).to_vec()];
+    for p in &shown {
         let when = match p.state {
             "error" => p.error_at.clone(),
             "never" => None,
@@ -1966,32 +2022,48 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
                 .map(|(at, _)| at.clone())
                 .or(p.last_seen.clone()),
         };
-        println!(
-            "  {:<width$}  {}  {:<7}  to send {:<5}  {}{}{}{}{}",
-            p.label,
-            &p.endpoint[..10],
-            p.state,
-            p.to_send,
-            when.as_deref().map_or("-".into(), local),
-            match (p.purged, p.revoked) {
-                (true, _) => "  UNJOINED",
-                (_, true) => "  EXPELLED",
-                _ => "",
-            },
-            if p.reader { "  reader" } else { "" },
-            p.filter
-                .as_ref()
-                .map(|f| format!(" ({})", f.describe()))
-                .unwrap_or_default(),
-            p.error
-                .clone()
-                .filter(|_| p.state != "offline")
-                .or_else(|| p.no_address(&peers))
-                .map(|e| format!("  {e}"))
-                .unwrap_or_default(),
-        );
+        let role = match (p.reader, &p.filter) {
+            (true, Some(f)) => format!("reader ({})", f.describe()),
+            (true, None) => "reader".into(),
+            (false, _) => String::new(),
+        };
+        let gone = match (p.purged, p.revoked) {
+            (true, _) => Some("UNJOINED".to_string()),
+            (_, true) => Some("EXPELLED".to_string()),
+            _ => None,
+        };
+        let error = p
+            .error
+            .clone()
+            .filter(|_| p.state != "offline")
+            .or_else(|| p.no_address(&peers));
+        let note: Vec<String> = gone.into_iter().chain(error).collect();
+        let color = match p.state {
+            "synced" => GREEN,
+            "pending" => YELLOW,
+            "error" => RED,
+            _ => GREY_FG,
+        };
+        rows.push(vec![
+            (p.label.clone(), ""),
+            (p.endpoint[..10].to_string(), GREY_FG),
+            (p.state.to_string(), color),
+            (p.to_send.to_string(), ""),
+            (when.as_deref().map_or("-".into(), local), ""),
+            (role, ""),
+            (
+                note.join("  "),
+                if p.purged || p.revoked { RED } else { "" },
+            ),
+        ]);
     }
-    print_hidden(hidden.len());
+    if !shown.is_empty() {
+        for line in table(&rows, 1) {
+            println!("  {line}");
+        }
+    }
+    below.extend(hidden_line(hidden.len()));
+    print_below(&below);
     Ok(())
 }
 
