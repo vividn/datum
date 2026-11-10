@@ -46,6 +46,7 @@ import {
 	leaveLayoutMode,
 	menuLines,
 	pane,
+	rested,
 	rootMenuButton,
 	settled,
 	titles,
@@ -69,6 +70,14 @@ const PAGE = JSON.stringify(along('row', widgetPane('repl', 'cli'), widgetPane('
 // between them. The finger's test alone opens its own: a touch context.
 const shared = sharedApp(DESKTOP);
 const onPage = (fn) => shared.solo(fn, PAGE);
+
+/**
+ * A right click given its chance to open the chooser, before a test says it
+ * did not: `choose` mounts it only once `layoutsFor`'s CLI reads answer
+ * (layout/chooser.ts), so this waits for the CLI to go idle and the page to
+ * stand still, not for a guess at how long the reads take (da-0v8tj).
+ */
+const answered = (app) => rested(app.page, null, { app });
 
 const closeButton = (page, id) => pane(page, id).locator('> .titlebar button.close');
 
@@ -194,7 +203,8 @@ describe('the × on the widget title', () => {
 
 describe('the hold on the widget title', () => {
 	test('a right click opens Change Widget and eats the browser’s own menu', async () => {
-		await onPage(async ({ page }) => {
+		await onPage(async (app) => {
+			const { page } = app;
 			await enterLayoutMode(page);
 			await watchMenus(page);
 
@@ -212,7 +222,7 @@ describe('the hold on the widget title', () => {
 			// And the CONTENT is left alone: that is where a reader selects
 			// and copies what a pane shows.
 			await content(page, 'repl').click({ button: 'right', position: { x: 20, y: 20 } });
-			await page.waitForTimeout(200);
+			await answered(app);
 			assert.equal(await chooser(page).count(), 0, 'a right click in the content opened the chooser');
 			assert.deepEqual(
 				await menusSeen(page),
@@ -257,18 +267,20 @@ describe('the hold on the widget title', () => {
 	});
 
 	test('normal mode closes this door', async () => {
-		await onPage(async ({ page }) => {
+		await onPage(async (app) => {
+			const { page } = app;
 			await watchMenus(page);
 
 			await titleBox(page, 'repl').click({ button: 'right' });
-			await page.waitForTimeout(200);
+			await answered(app);
 			assert.equal(await chooser(page).count(), 0, 'a title in normal mode opened the chooser');
 			assert.deepEqual(await menusSeen(page), [false], 'a title in normal mode still ate the browser’s menu');
 		});
 	});
 
 	test('with a strip, it is the tab IN FRONT that is held, and the `×` closes that tab', async () => {
-		await onPage(async ({ page }) => {
+		await onPage(async (app) => {
+			const { page } = app;
 			await enterLayoutMode(page);
 			await addTab(page, 'repl', 'aliases');
 			await settled(page);
@@ -279,7 +291,7 @@ describe('the hold on the widget title', () => {
 			// A tab BEHIND is a way to switch panes and nothing else: the
 			// browser's own menu is left to it, as it is over the content.
 			await tabs.first().click({ button: 'right' });
-			await page.waitForTimeout(200);
+			await answered(app);
 			assert.equal(await chooser(page).count(), 0, 'a tab behind opened the chooser');
 			assert.deepEqual(await menusSeen(page), [false]);
 
