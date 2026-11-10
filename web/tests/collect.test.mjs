@@ -6,8 +6,8 @@
 // own (collect-rest.test.mjs). Between the now strip and the rows, at rest
 // and beside a field's view, the time and duration section (da-us1n1):
 // `time −1m −5m · dur 1m 5m`, summing into pills, `time` or `dur` opening its
-// options. A tap opens a field in collect's rows: back, its name, its state and
-// off on the first row; a switch field's states down the rows under it
+// options. A tap opens a field in collect's rows: its pill (back, da-dswuc), its
+// state and off on the first row; a switch field's states down the rows under it
 // (collect-open.test.mjs); its keys
 // and `+ data` in a drawer on the far edge (da-igqs2), closed unless a key is
 // required or it is dragged open. Every pill it makes is on the input bar too.
@@ -606,10 +606,10 @@ describe('collect', () => {
 			await page.locator(`${VIEW} [data-field="coffee"]`).click();
 			await page.locator(`${VIEW} [data-open-field="coffee"]`).waitFor();
 			assert.equal(await page.locator(`${VIEW} [data-state]`).count(), 0);
-			// A moment has no off: back alone on the first row.
-			assert.deepEqual(await page.locator(`${VIEW} .spot.open[data-role="head"] button`).allInnerTexts(), ['back']);
+			// A moment has no off: its pill, which is back (da-dswuc), alone on the first row.
+			assert.deepEqual(await page.locator(`${VIEW} .spot.open[data-role="head"] button`).allInnerTexts(), ['coffee\n×']);
+			assert.equal(await page.locator(`${VIEW} .spot.open[data-role="head"] .pill.field button`).count(), 1);
 			assert.deepEqual(await page.locator(`${DRAWER} .panel button`).allInnerTexts(), ['+ data']);
-			assert.match(await page.locator(`${VIEW} .spot.open[data-role="head"]`).innerText(), /back\s*coffee/);
 			// A moment has no length to give: the dur half is off beside it.
 			await openWhen(page);
 			for (const at of ['[data-part="dur"]', '[data-longer="1"]', '[data-longer="5"]']) assert.ok(await page.locator(`${WHEN} ${at}`).isDisabled(), at);
@@ -778,7 +778,7 @@ describe('collect', () => {
 
 		test('its field and time take the keyboard, with a visible ring', async () => {
 			await selected(async ({ page }) => {
-				await page.locator(`${ENTRY} [data-back]`).focus();
+				await page.locator(`${ENTRY} [data-back] button`).focus();
 				for (const link of ['data-entry-field', 'data-entry-time']) {
 					await page.keyboard.press('Tab');
 					const ring = await page.locator(`${ENTRY} [${link}]`).evaluate((el) => el === document.activeElement && el.matches(':focus-visible') && getComputedStyle(el).outlineStyle);

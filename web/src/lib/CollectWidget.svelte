@@ -50,7 +50,7 @@
 	the animation right after changing states»), in the rows the fields stand
 	in at rest and at their zoom (da-r48y9, vividn, 2026-11-07: «looks and
 	behaves much more like the field view»): the first row in a dotted outline,
-	‹ back, the field, the state it is in painted as the CLI paints one, and off
+	the field's pill with its × (back, da-dswuc), the state it is in painted as the CLI paints one, and off
 	where the spec allows it, a yellow `!` before it while the field is off; then
 	a change field's STATES, its spec's in their order and every other it has
 	used, the last used first (`datum states`), each to the row whose end is
@@ -77,7 +77,7 @@
 	will be logged (`happy,sad`), for the bar's run. Whatever puts a field pill
 	on the bar opens that field: a hold, the now strip, a script.
 	A run spends them, the field's with them, and collect is back at rest.
-	Back takes the field's pill and every pill made since the tap, and puts
+	Back, a press on that pill in the view, takes it and every pill made since the tap, and puts
 	back the time and `-m` there were before it; Escape is Back.
 
 	Ignored fields get no button: the setup widget's «track something» lists
@@ -147,6 +147,7 @@
 	import CollectWhen, { GLIDE_MS, MOMENT_ID, setMoment } from './CollectWhen.svelte';
 	import { CLICK_SLOP } from './inspect.js';
 	import NowStrip from './NowStrip.svelte';
+	import PillChip from './Pill.svelte';
 	import { framed, isoMs, type Mark } from './nowStrip.js';
 	import { TAU } from './detent.js';
 	import { speedOver, tracked, type Sample } from './grip.js';
@@ -174,7 +175,7 @@
 	import { get } from 'svelte/store';
 	import { act } from './act.js';
 	import { holds } from './hold.js';
-	import { fieldPill, focusLine, pills, pictured, prefill, refs, selected, setFieldPill, text, type Pill } from './bar.js';
+	import { FIELD_ID, fieldPill, focusLine, pills, pictured, prefill, refs, selected, setFieldPill, text, type Pill } from './bar.js';
 	import { onAnyChange } from './changes.js';
 	import { currentDb } from './database.js';
 	import { run } from './run.js';
@@ -802,6 +803,8 @@
 	});
 	/** Whether the entries' cards are up, in place of the fields. */
 	const card = $derived(cards.length > 0 && !!hids && !$fieldPill);
+	/** The bar's hid pill, drawn over the cards it opened (da-dswuc). */
+	const hidOpener = $derived($pills.find((p) => p.kind === 'hid'));
 	/** What the now strip frames (da-xqae2): the entries the cards show, each `at − dur` to `at`, else the selected time and its length. */
 	const frame = $derived(
 		framed(
@@ -848,7 +851,7 @@
 	// ---- a field OPEN, in collect's rows (da-r48y9) ------------------------
 	//
 	// vividn, 2026-11-07: «so that it looks and behaves much more like the field
-	// view»: its first row in a dotted outline, ‹ back, the field, the state it
+	// view»: its first row in a dotted outline, the field's pill (back), the state it
 	// is in as the CLI paints one, and off where the spec allows it; then the
 	// spec's states in its order, and every other it has used, most recent
 	// first, placed as the fields are (`opened`).
@@ -1372,9 +1375,8 @@
 		<!-- The entries selected (da-xdz73), oldest first (da-ug56t), beside the now strip: each its field and time, then its data. -->
 		<div class="collect open entry" data-entry={hids} style:left={side === 'left' ? `${strip}px` : null} style:right={side === 'right' ? `${strip}px` : null}>
 			<div class="head">
-				<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={unselect}>
-					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg> back
-				</button>
+				<!-- The hid pill that opened the cards, with its ×, in back's place (da-dswuc): a press anywhere on it closes them. -->
+				{#if hidOpener}<span class="opener" data-back data-open-hid={hids}><PillChip pill={hidOpener} closes={unselect} {disabled} /></span>{/if}
 			</div>
 			{#each cards as { hid, entry } (hid)}
 				{@const button = fields.find((b) => b.field === entry.field)}
@@ -1439,11 +1441,9 @@
 							use:sized={key}
 						>
 							{#if i === 0}
-								<!-- The first row (vividn, 2026-11-07): back, the field in its colour, the state it is in drawn as the CLI paints one, and off. -->
-								<button class="nav" use:act={'show'} data-back {disabled} title="back to the fields" aria-label="back" onclick={back}>
-									<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg> back
-								</button>
-								<span class="name" style:color={here.color} data-open-field={here.field}>{here.field}</span>
+								<!-- The first row (vividn, 2026-11-07): the field's pill, which is back and the field at once (da-dswuc, vividn, 2026-11-10: «just the field pill. 2 birds»), the state it is in drawn as the CLI paints one, and off. -->
+								{@const opener = $pills.find((p) => p.kind === 'field' && p.text === here.field) ?? { id: FIELD_ID, kind: 'field', text: here.field, color: here.color }}
+								<span class="opener" data-back data-open-field={here.field}><PillChip pill={opener} closes={back} {disabled} /></span>
 								{#if here.active && here.current !== undefined}
 									{@const color = here.current === true ? here.color : (here.stateColors[here.current] ?? here.color)}
 									<span class="current" data-current style:background={color} style:color={inkOver(color)}>{here.current === true ? 'on' : here.current}</span>
@@ -1736,8 +1736,7 @@
 		cursor: default;
 	}
 
-	/* The back icon and the `+`: the two ends of the states, and neither of
-	   them a state — so they are drawn hollow in the app's own ink rather
+	/* `−A` is no state, so it is drawn hollow in the app's own ink rather
 	   than filled in any field's colour, and cannot be mistaken for
 	   something to log (da-7q3ka). */
 	.nav {
@@ -1767,8 +1766,8 @@
 		visibility: hidden;
 	}
 
-	/* The fields' place (da-w6437): a field's view top to bottom — back and
-	   its name, its states in the room — or at rest the room alone. */
+	/* The fields' place (da-w6437): a field's view top to bottom — its
+	   pill, its states in the room — or at rest the room alone. */
 	.collect {
 		position: absolute;
 		inset: 0;
@@ -1800,7 +1799,6 @@
 		flex-wrap: wrap;
 	}
 
-	.spot.open .name,
 	.card .name {
 		font-weight: 600;
 	}
@@ -2020,17 +2018,10 @@
 		line-height: 1;
 	}
 
-	.nav[data-back] {
-		border-radius: 999px;
-		padding: 0.3rem 0.6rem;
-	}
-
-	.nav svg {
-		width: 1em;
-		height: 1em;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 2;
+	/* The pill that opened a view (da-dswuc), at the size back was. */
+	.opener {
+		display: inline-flex;
+		--input-font: 0.85rem;
 	}
 
 	/* `−A`: round. */

@@ -156,29 +156,31 @@ describe('a field opened in collect', () => {
 	before(startApp);
 	after(stopApp);
 
-	test('its first row in a dotted outline: back, the field in its colour, the state it is in as the CLI paints it, then off', async () => {
+	test("its first row in a dotted outline: the field's pill, which is back (da-dswuc), the state it is in as the CLI paints it, then off", async () => {
 		await opening(['setup mood --verb switch --states false,good,bad,meh', 'switch mood bad -t 13:00'], 'mood', async (app, button) => {
 			const { page } = app;
 			await button.click();
 			await page.locator(HEAD).waitFor();
 			const parts = await page.locator(HEAD).evaluate((head) =>
 				[...head.children].map((el) => ({
-					what: ['back', 'open-field', 'current', 'off'].find((k) => el.hasAttribute(`data-${k}`)),
+					what: ['back', 'current', 'off'].find((k) => el.hasAttribute(`data-${k}`)),
+					field: el.dataset.openField,
 					text: el.textContent.trim(),
 					left: el.getBoundingClientRect().left,
-					color: getComputedStyle(el).color,
-					background: getComputedStyle(el).backgroundColor
+					background: getComputedStyle(el.querySelector('.pill') ?? el).backgroundColor
 				}))
 			);
-			assert.deepEqual(parts.map((p) => p.what), ['back', 'open-field', 'current', 'off']);
+			assert.deepEqual(parts.map((p) => p.what), ['back', 'current', 'off']);
 			assert.ok(parts.every((p, i) => i === 0 || p.left > parts[i - 1].left), 'not left to right');
-			assert.equal(parts[2].text, 'bad');
-			assert.equal(parts[3].text, 'off', 'off says ! while the field is on');
-			// The colours `fields --json` resolves: the field's for its name, the state's behind the state.
+			assert.equal(parts[0].field, 'mood', 'back is not the field');
+			assert.equal(parts[0].text, 'mood×');
+			assert.equal(parts[1].text, 'bad');
+			assert.equal(parts[2].text, 'off', 'off says ! while the field is on');
+			// The colours `fields --json` resolves: the field's behind its pill, the state's behind the state.
 			const row = JSON.parse((await app.run(['fields', '--json'])).stdout).find((r) => r.field === 'mood');
 			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
-			assert.equal(parts[1].color, rgb(row.color));
-			assert.equal(parts[2].background, rgb(row.state_colors.bad));
+			assert.equal(parts[0].background, rgb(row.color));
+			assert.equal(parts[1].background, rgb(row.state_colors.bad));
 			assert.equal(await page.locator(`${HEAD} [data-current]`).evaluate((el) => el.tagName), 'SPAN', 'the state it is in is a button');
 			assert.ok(await outlined(page, HEAD), 'the first row is not in the dotted outline');
 			// Its rows below: the spec's states, the one it is in outlined with a ! in front, the others neither.
@@ -594,7 +596,7 @@ describe('a field opened in collect', () => {
 			});
 		});
 
-		test('‹ back leaves no selection behind, and a plain tap after logs that one state at once', async () => {
+		test('back, its pill, leaves no selection behind, and a plain tap after logs that one state at once', async () => {
 			await opening(MOOD, 'mood', async (app, button) => {
 				const { page } = app;
 				await button.click();

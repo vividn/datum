@@ -39,9 +39,16 @@
 		 * filter mark, and a press on it is the only thing it offers.
 		 */
 		context?: boolean;
+		/**
+		 * The pill as the way out of a view it opened (da-dswuc: collect's
+		 * field and entry views): a press anywhere on it is this, and it has
+		 * no lock, since it stands for the bar's pill and is not another.
+		 */
+		closes?: () => void;
+		disabled?: boolean;
 	}
 
-	let { pill, context = false }: Props = $props();
+	let { pill, context = false, closes, disabled = false }: Props = $props();
 
 	/** A length says `dur=25m` under a field with positional keys, `←25m` otherwise (`saysKey`, da-wdcbo). */
 	const keyed = $derived(isLength(pill) && saysKey($pills, $fields));
@@ -57,14 +64,15 @@
 	>{#each sectionsOf(pill) as section, i}<button
 			type="button"
 			class="remove"
-			aria-label={section.rest ? `drop ${section.text}` : `remove ${pill.text}`}
-			onclick={() => dropSection(pill.id, i)}
+			aria-label={closes ? `close ${pill.text}` : section.rest ? `drop ${section.text}` : `remove ${pill.text}`}
+			{disabled}
+			onclick={() => (closes ? closes() : dropSection(pill.id, i))}
 			>{#if context}<svg class="glyph funnel" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
 					><path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z" /></svg
 				>{/if}{#if isLength(pill) && !keyed}<LengthArrow ahead={pill.text.startsWith('+')} />{/if}<span class="label"
 				>{keyed ? 'dur=' : ''}{section.text}</span
 			>{#if !section.rest && !context}<span class="x" aria-hidden="true">×</span>{/if}</button
-		>{/each}{#if !context}<button
+		>{/each}{#if !context && !closes}<button
 		type="button"
 		class="lock"
 		aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"

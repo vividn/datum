@@ -21,7 +21,7 @@ const outlines = (page, selector = 'section.pane[data-title="collect"] .bar') =>
 		Object.fromEntries(
 			// The fields' and their views', not the time and duration section's (da-us1n1).
 			[...el.querySelectorAll('button:not([data-now-field])')].filter((b) => !b.closest('[data-when]')).map((b) => [
-				b.dataset.field ?? (b.dataset.state ? `=${b.dataset.state}` : b.dataset.back !== undefined ? 'back' : b.textContent.trim()),
+				b.dataset.field ?? (b.dataset.state ? `=${b.dataset.state}` : b.closest('[data-back]') ? 'back' : b.textContent.trim()),
 				getComputedStyle(b).borderTopStyle
 			])
 		)

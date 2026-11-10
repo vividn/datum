@@ -49,7 +49,7 @@ describe('a state field fills the widget with its states', () => {
 			.locator(selector)
 			.evaluate((el) =>
 				[...el.querySelectorAll('button')].map((b) =>
-					b.dataset.back !== undefined ? 'back' : b.dataset.whenClock !== undefined ? 'clock' : b.dataset.nowField ? `now:${b.dataset.nowField}` : b.textContent.trim()
+					b.closest('[data-back]') ? 'back' : b.dataset.whenClock !== undefined ? 'clock' : b.dataset.nowField ? `now:${b.dataset.nowField}` : b.textContent.trim()
 				)
 			);
 	/** Every button collect is showing. */
@@ -170,9 +170,9 @@ describe('a state field fills the widget with its states', () => {
 			const focused = () =>
 				page.evaluate(() => {
 					const at = document.activeElement;
-					return at?.dataset.back !== undefined ? 'back' : at?.dataset.whenClock !== undefined ? 'clock' : at?.textContent.trim();
+					return at?.closest('[data-back]') ? 'back' : at?.dataset.whenClock !== undefined ? 'clock' : at?.textContent.trim();
 				});
-			await page.locator('.bar [data-back]').focus();
+			await page.locator('.bar [data-back] button').focus();
 			const order = [await focused()];
 			for (let i = 0; i < 5; i++) {
 				await page.keyboard.press('Tab');
@@ -219,7 +219,7 @@ describe('a state field fills the widget with its states', () => {
 			assert.ok(at < was, 'the drag did not pan');
 
 			await page.locator('.bar [data-field="mood"]').dispatchEvent('click');
-			await page.locator('.bar [data-back]').dispatchEvent('click');
+			await page.locator('.bar [data-back] button').dispatchEvent('click');
 			await closed(page);
 			assert.equal(await panned(), at);
 		}, { clock: todayAt(15), viewport: { width: 390, height: 640 } });
