@@ -142,15 +142,24 @@
 		return () => undo.reverse().forEach((f) => f());
 	});
 
-	$effect(() => {
-		const edges = [...drawn.edges, ...taps.filter((m) => !m.dot).flatMap((m) => [m.from, m.to])];
-		/** Each dot from its instant to when it is wholly past the left edge: the strip's span and its half length later, in the strip's units. */
+	/**
+	 * Each of the layer's dots from its instant to when it is wholly past the left edge: the strip's span and its half
+	 * length later. Read off the page once a layer, and only for a layer with dots: a tap's marks rerun the slide, and
+	 * a read there lays the page out in the flush of every tap (da-9f6ob).
+	 */
+	const layerDots = $derived.by(() => {
+		if (!drawn.dots.length) return [];
 		// Screen px a unit along time: a nested `<svg>`'s client rect is its content's.
 		const ctm = svg?.getScreenCTM();
 		const px = (ctm && (vertical ? Math.hypot(ctm.c, ctm.d) : Math.hypot(ctm.a, ctm.b))) || 1;
 		const half = (els: Element[]) => Math.max(0, ...els.map((el) => (vertical ? el.getBoundingClientRect().height : el.getBoundingClientRect().width) / 2 / px));
+		return drawn.dots.map((d) => ({ ...d, to: d.at + STRIP_MS + half(d.marks) / k }));
+	});
+
+	$effect(() => {
+		const edges = [...drawn.edges, ...taps.filter((m) => !m.dot).flatMap((m) => [m.from, m.to])];
 		const dots = [
-			...drawn.dots.map((d) => ({ ...d, to: d.at + STRIP_MS + half(d.marks) / k })),
+			...layerDots,
 			...taps.filter((m) => m.dot).map((m) => ({ at: m.from, marks: [], to: m.from + STRIP_MS + ((m.h / 2) * y * (vertical ? 1 : (m.aspect ?? 1))) / k }))
 		];
 		void along;

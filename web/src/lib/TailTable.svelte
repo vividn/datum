@@ -210,6 +210,8 @@
 	/** Bumped whenever the screen is replaced, so a page in flight for the old one is dropped. */
 	let generation = 0;
 	let paging = false;
+	/** The generation whose page above a landing is still drawing (`refresh`); no page is asked over it. */
+	let laying = -1;
 	/**
 	 * The reader asked for the past: a page is in flight or landed, and
 	 * the screen is scrolled up until they come back down to the bottom
@@ -614,11 +616,20 @@
 		const page = toShown(table);
 		if (force || rows.length === 0 || (!paging && !away && atHome())) {
 			// Pinned: the screen is the CLI's newest page and nothing else.
-			generation++;
+			const of = ++generation;
 			away = jumped = false;
 			live = true;
 			extra = 0;
-			rows = page;
+			// The screen first, two rows over it so the oldest is cut at the
+			// header as at rest, and the page above after the paint, as a page
+			// scrolled to is (da-9f6ob): a hundred rows drawn and laid out at
+			// once were most of the flush every write's or pill's listing
+			// landed in. Whole where now's line is above the screen.
+			const cut = page.length - count - 2;
+			const older = cut > 0 && at(page[cut]) <= +$now ? page.slice(0, cut) : [];
+			rows = page.slice(older.length);
+			// From here: a page asked above the screen meanwhile would be these rows, laid twice.
+			if (older.length) laying = of;
 			probed = page.slice(-count);
 			adopt(table.columns, true);
 			await decide();
@@ -635,6 +646,10 @@
 				await tick();
 			}
 			if (!home() && scroller) scrollTo(scroller.scrollHeight);
+			if (!older.length) return;
+			await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+			await lay(older, false, () => of === generation && started_at === shown, true);
+			if (laying === of) laying = -1;
 		} else {
 			// Scrolled up: keep the place. The page is the truth for the
 			// span it covers — a row of ours inside that span but not in
@@ -664,7 +679,7 @@
 	 * does not reach the live end (da-lqz3j).
 	 */
 	async function page(down = false): Promise<void> {
-		if (paging || (down ? live : exhausted) || !n || rows.length === 0) return;
+		if (paging || laying === generation || (down ? live : exhausted) || !n || rows.length === 0) return;
 		paging = true;
 		const of = generation;
 		const size = pageSize(n);
@@ -684,34 +699,47 @@
 			if (fresh.length === 0) return void (down || (exhausted = true));
 			away = true;
 			adopt(table.columns, false);
-			// Drawn `DRAW` rows a task, the nearest first, so no one frame
-			// waits on a whole page (da-j6frl); the place is the one before
-			// the first, so a scroll offset's rounding is not carried on —
-			// unless the body was resized meanwhile, which chose a place of
-			// its own (da-vcdil).
-			let a = anchor(), sized = resizes;
-			for (let done = 0; done < fresh.length; done += DRAW) {
-				if (of !== generation) return;
-				if (sized !== resizes) [a, sized] = [anchor(), resizes];
-				const end = fresh.length - done;
-				rows = down
-					? [...rows, ...fresh.slice(done, done + DRAW)]
-					: [...fresh.slice(Math.max(0, end - DRAW), end), ...rows];
-				if (rows.length > CAP && down) {
-					rows = rows.slice(rows.length - CAP);
-					exhausted = false;
-				} else if (rows.length > CAP) {
-					rows = rows.slice(0, CAP);
-					live = false;
-				}
-				await hold(false);
-				await keep(a);
-				if (done + DRAW < fresh.length) await new Promise((resolve) => setTimeout(resolve));
-			}
+			await lay(fresh, down, () => of === generation);
 		} catch {
 			// A page that failed is a page not shown; the table stands.
 		} finally {
 			paging = false;
+		}
+	}
+
+	/**
+	 * Rows `fresh` drawn above those held, or `down` below them, `DRAW` a
+	 * task, the nearest first, so no one frame waits on a whole page
+	 * (da-j6frl), while `still()` says they are still wanted. The place is
+	 * the one before the first, so a scroll offset's rounding is not
+	 * carried on — unless the body was resized meanwhile, which chose a
+	 * place of its own (da-vcdil). `homing`: a reader at the default view
+	 * is kept there.
+	 */
+	async function lay(fresh: Shown[], down: boolean, still: () => boolean, homing = false): Promise<void> {
+		let a = anchor(), sized = resizes;
+		for (let done = 0; done < fresh.length; done += DRAW) {
+			if (!still()) return;
+			if (sized !== resizes) [a, sized] = [anchor(), resizes];
+			const homed = homing && atHome();
+			const end = fresh.length - done;
+			rows = down
+				? [...rows, ...fresh.slice(done, done + DRAW)]
+				: [...fresh.slice(Math.max(0, end - DRAW), end), ...rows];
+			if (rows.length > CAP && down) {
+				rows = rows.slice(rows.length - CAP);
+				exhausted = false;
+			} else if (rows.length > CAP) {
+				rows = rows.slice(0, CAP);
+				live = false;
+			}
+			await hold(false);
+			if (homed) {
+				await tick();
+				home();
+				a = anchor();
+			} else await keep(a);
+			if (done + DRAW < fresh.length) await new Promise((resolve) => setTimeout(resolve));
 		}
 	}
 

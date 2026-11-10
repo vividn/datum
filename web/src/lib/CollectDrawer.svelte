@@ -35,8 +35,9 @@
 		return () => cancelAnimationFrame(frame);
 	});
 
-	/** The panel's width, and how far of it a drag has it out, 0 closed to 1 open; null while not dragged. */
-	let width = $state(0);
+	/** The panel, whose width a drag reads as it starts: bound, it was read as the drawer mounted, in a tap's flush (da-9f6ob). */
+	let panel: HTMLDivElement | undefined;
+	/** How far of the panel a drag has it out, 0 closed to 1 open; null while not dragged. */
 	let out = $state<number | null>(null);
 	/** A drag's own click is no tap. */
 	let dragged = false;
@@ -47,6 +48,7 @@
 	 * the drawer under the finger, and it rests open past halfway.
 	 */
 	function press(down: PointerEvent) {
+		const width = panel?.clientWidth ?? 0;
 		if (disabled || !width) return;
 		const from = open ? 1 : 0;
 		const toward = edge === 'right' ? -1 : 1;
@@ -95,7 +97,7 @@
 	<button class="handle" data-drawer-handle {disabled} aria-expanded={open} title={open ? 'close the data' : 'the data: its keys'} onclick={() => (open = !open)}>
 		data
 	</button>
-	<div class="panel" bind:clientWidth={width} inert={!open && out === null}>
+	<div class="panel" bind:this={panel} inert={!open && out === null}>
 		{#each keys as key (key.name)}
 			<button class="key" class:required={key.required} data-key={key.name} {disabled} onclick={() => onkey(key.name)}>{key.name}=</button>
 		{/each}

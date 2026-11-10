@@ -227,6 +227,9 @@
 	// here, above everything that reads it.
 	const EDGE_MS = 1000;
 
+	/** What the page draws over the picture that `place` reads nothing of (#lib/hover.ts); the selection it does read, for the pills. */
+	const OVERLAYS = '.preview, .logged, .unsynced';
+
 	// The coast's (da-v8gzq), up here too: how far the picture is drawn is sized by it.
 	/** How fast a coast slows: its speed falls by e in this many ms, as a phone's list does. */
 	const GLIDE_MS = 325;
@@ -2444,7 +2447,13 @@
 	onMount(() => {
 		if (!el) return;
 		measure();
-		const redrawn = new MutationObserver(place);
+		// A redraw, not collect's preview drawn over the picture (OVERLAYS): placing for it laid the whole page out in
+		// the flush of a tap on a field and of the way back (da-9f6ob). The now strip's own marks still place: a dot of
+		// the history waits for the strip's to leave.
+		const ours = (n: Node) => n instanceof Element && n.matches(OVERLAYS);
+		const redrawn = new MutationObserver((seen) => {
+			if (seen.some((m) => ![...m.addedNodes, ...m.removedNodes].every(ours))) place();
+		});
 		redrawn.observe(el, { childList: true, subtree: true });
 		const resized = new ResizeObserver(place);
 		resized.observe(el);

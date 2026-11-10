@@ -983,7 +983,8 @@ describe('a write', () => {
 						[...document.querySelectorAll('section.pane[data-title="tail"] tbody tr')].at(-1)?.textContent.includes('coffee')
 					);
 					await app.idle();
-					const g1 = await geometry(page);
+					// The page above lands after the screen is painted, a task of rows at a time (da-9f6ob).
+					const g1 = await until(() => geometry(page), (g) => g.hids.length >= Math.min(32, g.n + pageOf(g.n)));
 					assert.equal(g1.shown.length, g0.shown.length, 'the count changed with the write');
 					assert.deepEqual(g1.shown.slice(0, -1), g0.shown.slice(1), 'the screen is not the newest page');
 					assertFits(g1, 'after the write', 32);
