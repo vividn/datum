@@ -8,14 +8,15 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp, todayAt } from './support/app.mjs';
-import { PHONE, choose } from './support/layout.mjs';
+import { PHONE, choose, rested } from './support/layout.mjs';
 import { pinch } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
 
-const ROOM = 'section.pane[data-title="collect"] .bar .collect .room';
+const COLLECT = 'section.pane[data-title="collect"] .bar .collect';
+const ROOM = `${COLLECT} .room`;
 /** A tall phone on collect, so its rows are many to begin with. */
 const AT_REST = { ...PHONE, viewport: { width: 390, height: 844 }, home: ON_COLLECT, clock: todayAt(15) };
 
@@ -68,11 +69,15 @@ async function pinchOver(page, [a, b], by, tap = false) {
 	try {
 		await at('touchStart', [spread(0)[0]]);
 		await at('touchStart', spread(0));
+		// The draw's own length, past HOLD_MS (#lib/hold.ts, 450 ms), so a hold
+		// the second finger failed to call off would fire before the lift.
 		for (let i = 1; i <= 7; i++) {
 			await page.waitForTimeout(100);
 			await at('touchMove', spread(i / 7));
 		}
 		await at('touchEnd', [spread(1)[0]]);
+		// The gap between a hand's two lifts: the gesture's shape, not a wait for
+		// the page. `untapped` holds until every finger is up, whatever the gap.
 		await page.waitForTimeout(80);
 		await at('touchEnd', []);
 		if (tap) {
@@ -90,7 +95,11 @@ const middle = async (page, field) => {
 	return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 };
 
-/** A finger's touches through CDP, each `[type, points, ms to wait after]`. */
+/**
+ * A finger's touches through CDP, each `[type, points, ms to wait after]`: the
+ * gesture's own timing (a swipe's speed, a hold's length), never a wait for
+ * the page, which the caller's `rested` is.
+ */
 async function touches(page, steps) {
 	const cdp = await page.context().newCDPSession(page);
 	try {
@@ -126,7 +135,10 @@ async function swipe(page, by) {
 	const [x, y] = [room.x + room.width / 2 - by / 2, room.y + room.height / 2];
 	const at = (k) => [{ id: 9, x: x + k * by, y }];
 	const was = await firstX(page);
-	await touches(page, [['touchStart', at(0), 30], ...[1, 2, 3, 4, 5].map((i) => ['touchMove', at(i / 5), 30]), ['touchEnd', [], 600]]);
+	// 30 ms a step is the swipe's speed, which the rows' momentum is read from (`speedOver`, #lib/grip.ts).
+	await touches(page, [['touchStart', at(0), 30], ...[1, 2, 3, 4, 5].map((i) => ['touchMove', at(i / 5), 30]), ['touchEnd', []]]);
+	// The glide the swipe let go of (`glideOn`, decaying by TAU) has stopped.
+	await rested(page, page.locator(`${ROOM} .spot.shelf`).first());
 	return (await firstX(page)) - was;
 }
 
@@ -174,6 +186,9 @@ describe('collect zoom', () => {
 			const [a, b] = await page.locator(`${ROOM} .spot.shelf button[data-field]`).evaluateAll((all) => all.slice(0, 2).map((el) => el.dataset.field));
 			const start = await rows(page);
 			const opened = async (what) => {
+				// Nothing is to happen, so no rest stands in for this: past HOLD_MS
+				// (#lib/hold.ts, 450 ms) from the last finger down, by when a hold
+				// the gesture failed to call off has opened its field.
 				await page.waitForTimeout(600);
 				await app.idle();
 				assert.deepEqual(await app.entries(), [], `${what} logged nothing`);
@@ -243,11 +258,13 @@ describe('collect zoom', () => {
 
 			const holdOpen = async () => {
 				const at = await middle(page, await page.locator(`${ROOM} .spot.shelf button[data-field]`).first().getAttribute('data-field'));
-				await touches(page, [['touchStart', [{ id: 8, ...at }], 800], ['touchEnd', [], 300]]);
+				// 800 ms down is a hold, past HOLD_MS (#lib/hold.ts, 450 ms).
+				await touches(page, [['touchStart', [{ id: 8, ...at }], 800], ['touchEnd', []]]);
+				// The field's view has glided in, so Escape is Back from it at rest.
+				await rested(page, page.locator(COLLECT));
 				assert.equal(await page.locator('.collect [data-back]').count(), 1, 'the hold opened its field');
 				await page.keyboard.press('Escape');
-				await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
-				await page.waitForTimeout(300);
+				await rested(page, page.locator(`${ROOM} .spot.shelf`).first());
 			};
 			const works = async (when) => {
 				const scale = await scaleOf(page);
@@ -256,10 +273,10 @@ describe('collect zoom', () => {
 				assert.equal(await scaleOf(page), scale, `${when}: a finger's swipes left the zoom alone`);
 				const room = await rowsBox(page);
 				await pinch(page, room, 60, 180);
-				await page.waitForTimeout(300);
+				await rested(page, page.locator(ROOM));
 				assert.ok((await scaleOf(page)) > scale * 1.5, `${when}: a pinch out took the zoom from ${scale} to ${await scaleOf(page)}`);
 				await pinch(page, room, 180, 60);
-				await page.waitForTimeout(300);
+				await rested(page, page.locator(ROOM));
 			};
 
 			await holdOpen();
