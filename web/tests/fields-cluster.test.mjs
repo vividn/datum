@@ -43,6 +43,25 @@ async function placed(page) {
 	return seen(page);
 }
 
+/**
+ * Wait until the output is back after leaving the setup place. The place keeps
+ * the output shut (da-339ec), and the tab it is left for opens it again with a
+ * glide once the slide back has landed. Until then the room the states stand in
+ * shrinks every frame, and a read made then sees that frame's rows (da-jsrh8).
+ */
+const rested = (page) =>
+	page.evaluate(async () => {
+		const shut = () => {
+			const { root } = window.datum.layout.current();
+			return root.tabs[root.active]?.output === 'closed';
+		};
+		// Two frames that start at or past the glide's scheduled end: the first runs its last step, the second sees it drawn.
+		for (let past = 0; past < 2; ) {
+			const t = await new Promise(requestAnimationFrame);
+			past = !shut() && t >= Number(document.querySelector('.shell').dataset.glideEnds) ? past + 1 : 0;
+		}
+	});
+
 /** Open `field` by a press where it is drawn, read the states, close them with Escape. */
 async function open(page, field) {
 	await page.locator(`${BAR} [data-field="${field}"]`).dispatchEvent('click');
@@ -239,6 +258,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 			await leaveField(page);
 			await field.waitFor();
 			await app.idle();
+			await rested(page);
 			// d took the row a had, and so on round: rows, not pixels, as mood
 			// is in d and its outline and `!` widen it.
 			const [now, was] = [rows(await open(page, 'mood')), rows(logged)];
@@ -272,9 +292,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 			await page.locator(VIEW).waitFor({ state: 'detached' });
 			await field.dispatchEvent('click');
 			await page.locator(`${ROOM} [data-state="e"]`).waitFor();
-			// Its row, and the pixels to within one: the view open, e may stand a pixel off a fresh open's (da-9qqtl).
-			const fresh = await offset();
-			assert.ok(live[0] === fresh[0] && Math.abs(live[1] - fresh[1]) <= 1 && Math.abs(live[2] - fresh[2]) <= 1, `the learned state was not placed: ${live} against ${fresh}`);
+			assert.deepEqual(live, await offset(), 'the learned state was not placed');
 		}, options());
 	});
 });
