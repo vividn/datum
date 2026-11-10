@@ -1280,7 +1280,7 @@
 {/snippet}
 
 <!-- The now strip (da-lw7ue), the widget's height (da-u7tij): ONE for the fields at rest, a field's view and the
-     entries', so a tap between them does not draw it again (da-rh5oa). At rest a drag on it pans the rows, as the room's. -->
+     entries', so a tap between them does not draw it again (da-rh5oa). At rest a sideways drag on it pans the rows, as the room's, and a vertical one scrolls the page. -->
 {#snippet present()}
 {@const pans = !card && !picking}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1914,9 +1914,10 @@
 		cursor: pointer;
 	}
 
-	/* At rest a finger's drag on the strip pans the rows, as on the room. */
+	/* At rest a finger's sideways drag on the strip pans the rows, and up and
+	   down the page scrolls, as on the room (da-90nlf). */
 	.present.pans {
-		touch-action: none;
+		touch-action: pan-y;
 	}
 
 	/* The mirror (`side`): the strip and the section at the right edge. */

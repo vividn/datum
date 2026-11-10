@@ -40,11 +40,16 @@ async function onCollect(page) {
 const scrollTop = (page) => page.locator(SCROLLER).evaluate((s) => s.scrollTop);
 
 /** The middle of collect's first field button, once the page's scroll has come to rest (a swipe's fling). */
-async function buttonAt(page) {
+const buttonAt = (page) => middleOf(page, `${FIELDS} .fields button[data-field]`);
+
+/** The middle of the now strip at rest, beside the rows (da-90nlf). */
+const stripAt = (page) => middleOf(page, `${FIELDS} .bar > [data-strip].pans`);
+
+async function middleOf(page, selector) {
 	// The offset read, then read again 150 ms on: still once the two agree.
 	const twice = () => page.locator(SCROLLER).evaluate(async (s) => [s.scrollTop, await new Promise((r) => setTimeout(() => r(s.scrollTop), 150))]);
 	await until(twice, ([was, now]) => was === now);
-	const at = await page.locator(`${FIELDS} .fields button[data-field]`).first().boundingBox();
+	const at = await page.locator(selector).first().boundingBox();
 	return { x: Math.round(at.x + at.width / 2), y: Math.round(at.y + at.height / 2) };
 }
 
@@ -80,31 +85,50 @@ async function zoom(page, by) {
 	await page.waitForTimeout(400);
 }
 
-// Twice: on rows that fit, and on rows that overrun the room, where a sideways drag is collect's pan and so a
-// vertical one must be let go before it becomes one.
-for (const [rows, by, pans] of [
-	['that fit', 200, null],
-	['that overrun the room', -200, 'x']
+// On rows that fit, and on rows that overrun the room, where a sideways drag is collect's pan and so a vertical one
+// must be let go before it becomes one; and from the now strip at rest beside them, where a sideways drag pans the
+// rows too (da-90nlf).
+for (const [where, by, pans, from] of [
+	['collect rows that fit', 200, null, buttonAt],
+	['collect rows that overrun the room', -200, 'x', buttonAt],
+	['the now strip beside rows that overrun the room', -200, 'x', stripAt]
 ])
-	test(`a finger dragged up or down from collect rows ${rows} scrolls the tutorial page, and logs nothing`, async () => {
+	test(`a finger dragged up or down from ${where} scrolls the tutorial page, and logs nothing`, async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await zoom(page, by);
-			const at = await onCollect(page);
-			assert.equal(await page.locator(`${FIELDS} .room`).getAttribute('data-pans'), pans, `the rows ${rows}: the case is not tested`);
+			await onCollect(page);
+			const at = await from(page);
+			assert.equal(await page.locator(`${FIELDS} .room`).getAttribute('data-pans'), pans, `${where}: the case is not tested`);
 			const [top, logged] = [await scrollTop(page), await count(app)];
 			await drag(page, at, { x: 0, y: -120 });
-			const next = await buttonAt(page);
+			const next = await from(page);
 			const up = await scrollTop(page);
 			assert.ok(up - top > 60, `a drag up of 120px over collect scrolled the page ${up - top}px`);
 			await drag(page, next, { x: 0, y: 120 });
-			await buttonAt(page);
+			await from(page);
 			const down = up - (await scrollTop(page));
 			assert.ok(down > 60, `a drag down of 120px over collect scrolled the page back ${down}px`);
 			assert.equal(await count(app), logged, 'neither drag logged anything');
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
+
+test('a sideways finger from the now strip at rest still pans the rows', async () => {
+	await withApp(async (app) => {
+		const { page } = app;
+		await zoom(page, -200);
+		const x = async () => (await page.locator(`${FIELDS} .fields button[data-field]`).first().boundingBox()).x;
+		const was = await x();
+		// The rows panned along on the room, then back from the strip.
+		await drag(page, await onCollect(page), { x: -100, y: 0 });
+		const panned = await x();
+		assert.ok(panned < was - 30, `a drag left on the rows moved them from ${was} to ${panned}`);
+		await drag(page, await stripAt(page), { x: 100, y: 0 });
+		assert.ok((await x()) > panned + 30, `a drag right from the strip moved the rows from ${panned} to ${await x()}`);
+		assert.deepEqual(app.errors, []);
+	}, PHONE);
+});
 
 test('the wheel over collect scrolls the tutorial page', async () => {
 	await withApp(async (app) => {
