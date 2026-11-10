@@ -2,7 +2,7 @@
 //!
 //! Covers:
 //!   * parser: comma-separated `switch field a,b` → JSON array value
-//!   * trailing/leading/empty segments rejected with a helpful error
+//!   * commas read as a data value's are; empty segments rejected
 //!   * single-state switch stays scalar
 //!   * state timeline: an array value is the active state between events
 //!   * same-state-repeat detection: scalar→array, array→scalar, array→array
@@ -45,10 +45,8 @@ fn switch_single_state_stays_scalar() {
     assert_eq!(entries[0].state.as_ref(), Some(&json!("reading")));
 }
 
-/// da-lvvp / da-5z01: edge commas on a switch state-list are tolerated
-/// — old datum aliases produced inputs like `,a,b` and `a,b,`, and the
-/// parser strips the empty edge so the input round-trips during the
-/// transitional period.
+/// A list drops one trailing comma, as a data value's does
+/// (docs/grammar-tokens.md, «`,` inside a value»).
 #[test]
 fn switch_trailing_comma_tolerated() {
     let db = fresh_db();
@@ -96,16 +94,42 @@ fn switch_leading_comma_two_states_da_5z01() {
     );
 }
 
-/// Single-state with edge commas degenerates to scalar — `,reading`
-/// and `reading,` are both equivalent to bare `reading`.
+/// A state reads commas exactly as a data value does (vividn, 2026-11-10,
+/// da-uzljo: «the doc is correct here», docs/grammar-tokens.md «`,` inside
+/// a value»): a comma before a space, or trailing on a value that does not
+/// otherwise split, is text, and a leading one makes a list.
 #[test]
-fn switch_edge_comma_single_state_stays_scalar() {
-    let db = fresh_db();
+fn a_state_reads_commas_as_a_data_value_does() {
+    let cases = [
+        ("a, b", json!("a, b")),
+        ("met Anna, Ben", json!("met Anna, Ben")),
+        ("Anna,", json!("Anna,")),
+        (",a", json!(["a"])),
+        ("a,b", json!(["a", "b"])),
+        ("a,b, c", json!(["a", "b, c"])),
+        ("a,b,", json!(["a", "b"])),
+    ];
+    for (typed, want) in cases {
+        let db = fresh_db();
+        let key = format!("k={typed}");
+        run_cli(&["change", "mood", typed, &key], &db).expect(typed);
+        let entries = datum_core::test_util::logged_entries(&db, "mood");
+        assert_eq!(entries[0].state.as_ref(), Some(&want), "state {typed:?}");
+        let data = entries[0].data.as_ref().and_then(|d| d.get("k"));
+        assert_eq!(data, Some(&want), "data value {typed:?}");
+    }
+}
 
-    run_cli(&["switch", "task", ",reading"], &db).expect("leading-edge single state");
-
-    let entries = datum_core::test_util::logged_entries(&db, "task");
-    assert_eq!(entries[0].state.as_ref(), Some(&json!("reading")));
+/// An empty item anywhere in a state list is refused, at an edge too.
+#[test]
+fn switch_empty_edge_segment_rejected() {
+    for typed in [",,a", "a,,"] {
+        let db = fresh_db();
+        let err = run_cli(&["switch", "task", typed], &db)
+            .expect_err(typed)
+            .to_string();
+        assert!(err.contains("empty segment"), "{typed}: {err}");
+    }
 }
 
 #[test]

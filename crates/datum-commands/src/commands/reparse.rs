@@ -48,9 +48,8 @@ use crate::args::{Command, ReparseArgs};
 use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
     bind_spec_words, build_time_from_flags, change_command, compound_field,
-    datum_value_to_slug_string, expand_array_states, extract_reserved_columns, lift_time_keys,
-    parse_log_args, positional_id, prepare_log_args, take_positional_id,
-    validate_switch_state_token, LiftedTimes,
+    datum_value_to_slug_string, extract_reserved_columns, lift_time_keys, parse_log_args,
+    positional_id, prepare_log_args, take_positional_id, validate_switch_state_token, LiftedTimes,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -302,11 +301,7 @@ fn replay_side(
         action = Action::Stop;
     }
 
-    let value = if matches!(action, Action::Switch) {
-        expand_array_states(parsed.value)?
-    } else {
-        parsed.value
-    };
+    let value = parsed.value;
 
     // State precedence (from log_entry):
     //   1. reserved `state=` wins.

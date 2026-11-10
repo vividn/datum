@@ -684,7 +684,7 @@ pub fn bracket_value(key: &str, value: &str) -> Option<Result<Value>> {
 /// The items of a comma list, or `None` when `value` is not one: split
 /// after a leading comma and at every comma followed by something other
 /// than whitespace, then drop one trailing comma from the last item.
-fn comma_items(value: &str) -> Option<Vec<&str>> {
+pub fn comma_items(value: &str) -> Option<Vec<&str>> {
     // Nothing but commas has nothing to list: `,` and `,,` are text.
     if value.bytes().all(|b| b == b',') {
         return None;

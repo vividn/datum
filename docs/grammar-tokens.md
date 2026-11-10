@@ -303,7 +303,8 @@ MOMENT so79z run:2026-11-05T20:01:08.922Z
 
 A comma *inside* a token never splits sides. A leading comma, or one
 glued to what follows, makes the value an array (da-fwsre); an empty item
-between two glued commas becomes `null`, and a list drops one trailing
+between two glued commas becomes `null` in a data value, and a state refuses
+it (`a,,b`, `,,a`, `a,,`), and a list drops one trailing
 comma (`,work,home,` is `["work","home"]`). A comma followed by a space is
 text, so `met Anna, Ben` stays a sentence, and only the glued comma
 splits: `a,b, c` is `["a","b, c"]`. A trailing comma on a value that does

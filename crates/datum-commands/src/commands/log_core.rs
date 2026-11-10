@@ -404,21 +404,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         );
     }
 
-    // S12 (da-u4k.12): for `switch`, a comma-separated value string is split
-    // into a JSON array of concurrent states (e.g. `switch f a,b` →
-    // `["a","b"]`). Single states stay scalar. Applied post-parse so the
-    // slot/value handling in `parse_log_args` stays verb-agnostic. Under
-    // da-r6ds the state for Switch flows through `reserved.state` (via
-    // the `state=true` slot), so the expansion applies there as well.
-    let value = if matches!(action, Action::Switch) {
-        expand_array_states(value)?
-    } else {
-        value
-    };
-    if matches!(action, Action::Switch) {
-        reserved.state = expand_array_states(reserved.state)?;
-    }
-
     // da-state-back: when the user writes `_` / `__` / `_n` as a switch
     // state, resolve it to a previous DISTINCT state of the field —
     // mirroring the quick-id ordinal pattern (`_` = 1 back, `__` = 2 back).
@@ -1946,46 +1931,27 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
     Ok(())
 }
 
-/// S12: parse a switch value token, splitting on `,` into an array of
-/// concurrent states. A single state (no comma) stays scalar. Edge
-/// commas are stripped (da-lvvp / da-5z01: tolerate `,a,b`, `a,b,`,
-/// `,a,b,`); interior empty segments are still rejected so users
-/// don't silently lose a state they meant to type; `[a,b]` is read as any
-/// value is (`bracket_value`, da-0d7e1).
+/// S12: a state token outside the data parser (`-l`, `tail --state`), its
+/// commas read as a data value's are (`comma_items`, docs/grammar-tokens.md:
+/// `a,b` and `,a` are lists, `a, b` and `Anna,` text; vividn, 2026-11-10,
+/// da-uzljo); `[a,b]` is read as any value is (`bracket_value`, da-0d7e1).
 pub(crate) fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
     if let Some(state) = datum_parse::input::data_args::bracket_value("state", s) {
         return Ok(state?);
     }
-    if !s.contains(',') {
-        return Ok(parse_value_token(s));
-    }
     validate_switch_state_token(s)?;
-    let trimmed = s.trim_matches(',');
-    if trimmed.is_empty() {
-        return Ok(JsonValue::Array(vec![]));
-    }
-    if !trimmed.contains(',') {
-        return Ok(parse_value_token(trimmed));
-    }
-    let parts: Vec<JsonValue> = trimmed.split(',').map(parse_value_token).collect();
-    Ok(JsonValue::Array(parts))
+    Ok(match datum_parse::input::data_args::comma_items(s) {
+        Some(items) => JsonValue::Array(items.into_iter().map(parse_value_token).collect()),
+        None => parse_value_token(s),
+    })
 }
 
-/// Reject interior empty segments (`a,,b`) in a switch state-list token.
-/// Leading/trailing edge commas are tolerated and stripped (da-lvvp /
-/// da-5z01) — unlike `infer_type`, which since da-fwsre drops a trailing
-/// comma only on a value that already splits (`Anna,` is text there).
-/// Surfaced separately from [`parse_switch_state_token`] because
-/// `log_entry` runs the same
-/// validation against raw `args.rest` tokens before [`handle_data_args`]
-/// has a chance to coerce them into arrays via `infer_type`; without
-/// this pre-check, an interior `,,` inside a comma token would
-/// silently become a `null` array element.
+/// Reject an empty item in a state list (`a,,b`, `,,a`, `a,,`), so a state
+/// meant is not silently a `null`. Run against raw `args.rest` tokens too,
+/// before [`handle_data_args`] reads them through `infer_type`.
 pub(crate) fn validate_switch_state_token(s: &str) -> Result<()> {
-    if !s.contains(',') {
-        return Ok(());
-    }
-    if s.trim_matches(',').contains(",,") {
+    let items = datum_parse::input::data_args::comma_items(s).unwrap_or_default();
+    if items.iter().any(|item| item.is_empty()) {
         anyhow::bail!("invalid state list '{s}': empty segment between commas");
     }
     Ok(())
@@ -2345,19 +2311,6 @@ impl KeyEdit {
         }
         Ok(())
     }
-}
-
-/// S12: for `Verb::Switch`, expand a comma-containing string in the
-/// primary value into an array of states. An array is the value parser's
-/// already (a glued-comma list, or the bracket form, whose elements may hold
-/// a comma: `'["a,b","c"]'`, da-yjl9x), so it is kept, one element read as
-/// that state. Every other shape passes through.
-pub(crate) fn expand_array_states(value: Option<JsonValue>) -> Result<Option<JsonValue>> {
-    Ok(match value {
-        Some(JsonValue::String(s)) if s.contains(',') => Some(parse_switch_state_token(&s)?),
-        Some(JsonValue::Array(mut items)) if items.len() == 1 => items.pop(),
-        other => other,
-    })
 }
 
 /// Parse a single value token. Tries number, bool, then falls back to string.
