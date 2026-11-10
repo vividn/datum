@@ -596,6 +596,79 @@ describe('a field opened in collect', () => {
 			});
 		});
 
+		// vividn, 2026-11-10: «If you long press a state, then replace the end button with a button that shows that new
+		// state and the transition arrow between them. Clicking this, then activates enters the data. / if there is an
+		// after state (like when there is a duration), then display the after state with and arrow afterwards» (da-rou2i).
+		const SEEDED = [...MOOD, 'switch mood bad -t 13:00'];
+		const TRANSITION = (page) => page.locator(`${HEAD} [data-transition]`);
+		/** The transition's legs, each its states, `off` for off. */
+		const legs = (page) => TRANSITION(page).locator('[data-leg]').evaluateAll((ls) => ls.map((l) => l.dataset.leg));
+
+		test('a hold on a state shows the state now → it in off’s place, its pill on the bar; a tap on it logs the change', async () => {
+			await opening(SEEDED, 'mood', async (app, button) => {
+				const { page } = app;
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				assert.equal(await TRANSITION(page).count(), 0, 'a transition before any hold');
+				await page.locator(`${HEAD} [data-off]`).waitFor();
+				await STATE(page, 'good').click({ button: 'right' });
+				await TRANSITION(page).waitFor();
+				assert.deepEqual(await legs(page), ['bad', 'good']);
+				assert.equal(await TRANSITION(page).textContent(), 'bad→good');
+				assert.equal(await page.locator(`${HEAD} [data-off]`).count(), 0, 'off beside the transition');
+				assert.equal(await statePill(page), 'good');
+				await TRANSITION(page).click();
+				await until(() => lastState(app), (s) => s === 'good');
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+			});
+		});
+
+		test('gathering a second state still works: the transition takes both, and logs the array', async () => {
+			await opening(SEEDED, 'mood', async (app, button) => {
+				const { page } = app;
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				await STATE(page, 'good').click({ button: 'right' });
+				await STATE(page, 'meh').click();
+				await until(() => statePill(page), (t) => t === 'good,meh');
+				await until(() => legs(page), (l) => JSON.stringify(l) === '["bad","good,meh"]');
+				await TRANSITION(page).click();
+				await until(() => lastState(app), (s) => JSON.stringify(s) === '["good","meh"]');
+			});
+		});
+
+		test('the last state out of the hold brings off back in the transition’s place', async () => {
+			await opening(SEEDED, 'mood', async (app, button) => {
+				const { page } = app;
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				await STATE(page, 'good').click({ button: 'right' });
+				await TRANSITION(page).waitFor();
+				await STATE(page, 'good').click();
+				await until(() => statePill(page), (t) => t === null);
+				await page.locator(`${HEAD} [data-off]`).waitFor();
+				assert.equal(await TRANSITION(page).count(), 0);
+			});
+		});
+
+		test('with a length on the bar, the transition goes on to the state it returns to: now → it → back', async () => {
+			await opening(SEEDED, 'mood', async (app, button) => {
+				const { page } = app;
+				await page.evaluate(() => window.datum.bar.setPills([{ id: 'len', kind: 'dur', text: '30m' }]));
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				await STATE(page, 'good').click({ button: 'right' });
+				await until(() => legs(page), (l) => JSON.stringify(l) === '["bad","good","bad"]');
+				assert.equal(await TRANSITION(page).textContent(), 'bad→good→bad');
+				await TRANSITION(page).click();
+				// What was logged is what the transition drew: the tail's three states of the row.
+				const row = async () => JSON.parse((await app.run(['tail', 'mood', '-n', '1', '--json'])).stdout).rows[0];
+				await until(row, (r) => r.state === 'good');
+				const { previous_state, state, following_state, dur_seconds } = await row();
+				assert.deepEqual([previous_state, state, following_state, dur_seconds], ['bad', 'good', 'bad', 1800]);
+			});
+		});
+
 		test('back, its pill, leaves no selection behind, and a plain tap after logs that one state at once', async () => {
 			await opening(MOOD, 'mood', async (app, button) => {
 				const { page } = app;

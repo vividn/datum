@@ -966,18 +966,36 @@
 		if (logs) leave(button, ['change']);
 	}
 
+	/** `states` as datum reads them: one state, or an array glued with commas (`happy,sad`), or the bracket form where a state holds a comma. */
+	const asOne = (states: string[]) => (states.length === 1 ? states[0] : states.some((s) => s.includes(',')) ? JSON.stringify(states) : states.join(','));
+
 	/** The state pill: `states` as datum reads them, one state or an array, beside the field's pill; none takes it off. */
 	function place(button: FieldButton, states: string[]) {
 		pills.update((all) => {
 			const rest = all.filter((p) => p.id !== STATE_ID);
 			if (!states.length) return rest;
-			// An array is glued commas (`happy,sad`), or the bracket form where a state holds a comma.
-			const text = states.length === 1 ? states[0] : states.some((s) => s.includes(',')) ? JSON.stringify(states) : states.join(',');
-			const pill: Pill = { id: STATE_ID, kind: 'state', text: shellJoin([text]), color: button.stateColors[states[0]] ?? button.color };
+			const pill: Pill = { id: STATE_ID, kind: 'state', text: shellJoin([asOne(states)]), color: button.stateColors[states[0]] ?? button.color };
 			const at = rest.findIndex((p) => p.kind === 'field') + 1;
 			return [...rest.slice(0, at), pill, ...rest.slice(at)];
 		});
 	}
+
+	/**
+	 * THE TRANSITION (da-rou2i, vividn, 2026-11-10: «If you long press a
+	 * state, then replace the end button with a button that shows that new
+	 * state and the transition arrow between them. Clicking this, then
+	 * activates enters the data. / if there is an after state (like when
+	 * there is a duration), then display the after state with and arrow
+	 * afterwards»): while a hold's states are on the bar, off's place holds
+	 * the field's state now → them, and with a length on the bar → the state
+	 * it returns to, which is the one it is in now. Null otherwise.
+	 */
+	const moving = $derived(together && chosen !== null && chosen !== 'false' ? together : null);
+	/** The open field's state now, as the transition draws it: its states, `on`, or null for off; undefined where none is known. */
+	const fromOf = (b: FieldButton): string[] | null | undefined =>
+		!b.active ? null : (b.set ?? (b.current === true ? ['on'] : b.current === undefined ? undefined : [b.current]));
+	/** The transition tapped: the states gathered logged, as a state's tap logs one. */
+	const transit = (button: FieldButton, states: string[]) => (typesKeys('change', button) ? choose(button, asOne(states), true) : leave(button, ['change']));
 
 	function gather(button: FieldButton, state: string) {
 		const was = together ?? [];
@@ -1260,6 +1278,19 @@
 
 <svelte:window onkeydown={onWindowKeyDown} onpointerup={up} onpointercancel={up} />
 
+<!-- One leg of the transition: a state, or several, each in its color as the state buttons are, off empty (null). -->
+{#snippet leg(button: FieldButton, states: string[] | null)}
+	{#if states === null}<span class="leg" data-leg="off">off</span>{:else}{@const color = button.stateColors[states[0]] ?? button.color}<span
+			class="leg"
+			class:multi={states.length > 1}
+			data-leg={states.join(',')}
+			style:background={color}
+			style:color={inkOver(color)}
+			>{#each states as part, j}{@const color = button.stateColors[part] ?? button.color}{#if j}<span class="comma" style:--next={color}>,</span
+				>{/if}<span style:color={inkOver(color)}>{part}</span>{/each}</span
+		>{/if}
+{/snippet}
+
 <!-- One field's button, wherever it stands: in the cluster, or aligned to the picture. -->
 {#snippet fieldButton(button: FieldButton)}
 	{@const look = lookOf(button, switchLabel)}
@@ -1448,7 +1479,22 @@
 									{@const color = here.current === true ? here.color : (here.stateColors[here.current] ?? here.color)}
 									<span class="current" data-current style:background={color} style:color={inkOver(color)}>{here.current === true ? 'on' : here.current}</span>
 								{/if}
-								{#if offable}
+								{#if moving}
+									<!-- The transition, in off's place while a hold's states are on the bar (da-rou2i): now → them (→ back, with a length). -->
+									{@const from = fromOf(here)}
+									<button
+										class="widget states transition"
+										use:act={typesKeys('change', here) ? 'fill' : 'run'}
+										style={vars({ fill: null, line: here.color, text: 'var(--ink-bright)', label: '' })}
+										{disabled}
+										data-transition
+										title={shellJoin(['change', here.field, asOne(moving)])}
+										onclick={() => transit(here, moving)}
+										>{#if from !== undefined}{@render leg(here, from)}<span class="arrow">→</span>{/if}{@render leg(here, moving)}{#if duration && from !== undefined}<span
+												class="arrow">→</span
+											>{@render leg(here, from)}{/if}</button
+									>
+								{:else if offable}
 									<button
 										class="widget states"
 										use:act={clicks === 'two' && here.shape.kind === 'change' ? 'arm' : 'run'}
@@ -1460,7 +1506,7 @@
 										onclick={() => off(here)}
 									>{#if !here.active}<span class="repeat" data-repeat>!</span>{/if}off</button>
 								{/if}
-								{#if chosen !== null && chosen !== 'false'}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
+								{#if !moving && chosen !== null && chosen !== 'false'}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
 							{:else}
 								{@const parts = sets.get(state)}
 								{@const look = stateLook(here, state, parts)}
@@ -2087,6 +2133,24 @@
 
 	.comma {
 		position: relative;
+	}
+
+	/* The transition (da-rou2i): an outline, each leg filled in its state's color, the arrows between them bare. */
+	.transition {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3em;
+	}
+
+	.leg {
+		padding: 0 0.3em;
+		border-radius: 2px;
+	}
+
+	.leg.multi {
+		position: relative;
+		isolation: isolate;
+		overflow: hidden;
 	}
 
 	.comma::before {
