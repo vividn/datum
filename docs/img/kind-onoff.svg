@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="40" viewBox="0 0 480 40" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#808080">
+<!-- The same working day as kind-moment.svg: the screen off for lunch and for the coffee breaks. -->
+<title>screentime, on/off: blocks where the screen is on, gaps where it is off</title>
+<text x="0" y="12">screentime</text>
+<line x1="0" y1="30" x2="480" y2="30" stroke="#808080" stroke-opacity="0.6"/>
+<g fill="#8fa3bf"><rect x="0" y="22" width="56" height="16"/><rect x="72" y="22" width="120" height="16"/><rect x="232" y="22" width="116" height="16"/><rect x="364" y="22" width="116" height="16"/></g>
+</svg>

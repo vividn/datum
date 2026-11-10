@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="40" viewBox="0 0 480 40" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#808080">
+<!-- The same working day as kind-moment.svg: all email and meetings, with a sliver of deep work. -->
+<title>activity, a change: blocks of email, meeting and deepwork, changing color as the state changes</title>
+<text x="0" y="12">activity</text>
+<rect x="80" y="3" width="9" height="9" fill="#4f8fe8"/><text x="93" y="12">email</text>
+<rect x="140" y="3" width="9" height="9" fill="#d48788"/><text x="153" y="12">meeting</text>
+<rect x="214" y="3" width="9" height="9" fill="#7bd389"/><text x="227" y="12">deepwork</text>
+<line x1="0" y1="30" x2="480" y2="30" stroke="#808080" stroke-opacity="0.6"/>
+<rect x="0" y="22" width="72" height="16" fill="#4f8fe8"/><rect x="72" y="22" width="88" height="16" fill="#d48788"/><rect x="160" y="22" width="32" height="16" fill="#4f8fe8"/><rect x="232" y="22" width="96" height="16" fill="#d48788"/><rect x="328" y="22" width="56" height="16" fill="#4f8fe8"/><rect x="384" y="22" width="16" height="16" fill="#7bd389"/><rect x="400" y="22" width="80" height="16" fill="#d48788"/>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="40" viewBox="0 0 480 40" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#808080">
+<!-- One working day, 0 to 120 at 4px a unit, shared by kind-moment, kind-onoff and kind-change so the three line up:
+     the welcome's drawing (#742), its colors chosen by hand. Gray text reads on a light and a dark ground. -->
+<title>coffee, a moment: four dots on one working day</title>
+<text x="0" y="12">coffee</text>
+<line x1="0" y1="30" x2="480" y2="30" stroke="#808080" stroke-opacity="0.6"/>
+<g fill="#c69c6d"><circle cx="12" cy="30" r="5"/><circle cx="64" cy="30" r="5"/><circle cx="240" cy="30" r="5"/><circle cx="356" cy="30" r="5"/></g>
+</svg>

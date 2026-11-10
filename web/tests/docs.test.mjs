@@ -42,6 +42,26 @@ describe('the docs place', () => {
 		});
 	});
 
+	// da-8bgw3: the welcome's working day, a timeline under moment, on/off and change, the build's own copies,
+	// drawn at one width so the three days line up.
+	test("basics.md's kinds of data draw their timelines, one day at one width", async () => {
+		await onWelcome(async ({ page, errors }) => {
+			await readTheDocs(page);
+			await doc(page, 'README.md').locator('a[data-doc="basics.md"]').click();
+			const imgs = doc(page, 'basics.md').locator('li img');
+			await imgs.nth(2).waitFor();
+			const drawn = await imgs.evaluateAll((all) =>
+				Promise.all(all.map((i) => i.decode().then(() => ({ alt: i.alt, src: i.getAttribute('src'), width: i.getBoundingClientRect().width, natural: i.naturalWidth }))))
+			);
+			// Small pictures the build inlines as data: URLs, so each is known by its words.
+			assert.deepEqual(drawn.map((d) => d.alt.split(':')[0]), ['coffee, a moment', 'screentime, on/off', 'activity, a change']);
+			assert.equal(await imgs.evaluateAll((all) => new Set(all.map((i) => i.closest('ul'))).size), 1, 'the kinds stay one list');
+			assert.ok(drawn.every((d) => d.natural > 0 && !d.src.startsWith('https:')), JSON.stringify(drawn));
+			assert.equal(new Set(drawn.map((d) => d.width)).size, 1, JSON.stringify(drawn));
+			assert.deepEqual(errors, []);
+		});
+	});
+
 	test('a link out of the docs opens in a new tab', async () => {
 		await onWelcome(async ({ page }) => {
 			await readTheDocs(page);

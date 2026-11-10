@@ -28,11 +28,17 @@ Data come in a few kinds, by how they relate to time:
 
 - ● **moment**: something that happens or is measured at a single point in time. Represented by dots on a
   timeline. Moments have no state and no duration, but can store extra data. Ex. medication, alarm, weight, coffee
+
+  ![coffee, a moment: four dots on one working day](img/kind-moment.svg)
 - ▬ **on/off**: on/off data have just 2 states, true and false. Represented by blocks of a single color on the
   timeline. For things that happen for a while and then stop happening. Ex. sleep, screentime, work
+
+  ![screentime, on/off: blocks where the screen is on, gaps where it is off](img/kind-onoff.svg)
 - ▨ **change**: change data use custom states to describe things that pass through different phases or modes.
   Represented by blocks that change color on the timeline as they change states. Ex. environment, project, activity,
   stoplight
+
+  ![activity, a change: blocks of email, meeting and deepwork](img/kind-change.svg)
 - ¢ **record**: a collection of keys and values with no relation to time. Used for storing information about the world.
   Ex. people, words, catalogs
 - ▤ **all day**: a value that belongs to a whole day rather than to a moment in it. Every entry is on a date with no
