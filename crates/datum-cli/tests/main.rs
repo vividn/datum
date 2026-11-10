@@ -176,6 +176,7 @@ mod sync_ops;
 mod tail_cmd;
 mod tail_key_lists;
 mod tail_now_line;
+mod tail_state_flag;
 mod template_spec;
 mod temporal_keys;
 mod timeless_id_redesign;

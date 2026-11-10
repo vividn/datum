@@ -245,6 +245,10 @@ pub struct ListParams {
     /// Only the rows listed after a cursor row: `before`'s other side
     /// (da-lqz3j), what a pager moving down toward the live end asks with.
     pub after: Option<(DateTime<Utc>, String)>,
+    /// Only the entries in one of these states, each a state's JSON text as
+    /// it is stored (`"happy"`, `true`); an array state is in each of its
+    /// elements (da-w48r3). Empty = no filter.
+    pub states: Vec<String>,
 }
 
 /// A row of [`super::Db::list_timeline`]: what `stats` reads of an entry.

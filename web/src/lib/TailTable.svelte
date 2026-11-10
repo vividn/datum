@@ -57,7 +57,8 @@
 	A FIELD PILL on the bar narrows the listing to that field (da-8810n,
 	vividn: "tail widget too") — `tail <field>`, its own first positional, and
 	the rows on screen are dropped when it changes, because they are another
-	field's.
+	field's. Its STATE PILL narrows it to the entries in that state, an
+	array to those in any of its states (`--state`, da-w48r3).
 
 	And the columns, when the pane is too narrow for all of them: `hid`
 	goes first, then `_n` (da-kk0d) — the two a row is also reached by
@@ -98,7 +99,7 @@
 	import { ansiSpans, type AnsiSpan } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
 	import StateCell from './StateCell.svelte';
-	import { fieldPill, select, selected, selectHeld } from './bar.js';
+	import { fieldPill, select, selected, selectHeld, statePill } from './bar.js';
 	import { cursor, reach, timeArg, type Cursor } from './cursor.js';
 	import { now } from './clock.js';
 	import { HOLD_MS, swallowTail } from './hold.js';
@@ -194,10 +195,12 @@
 	 * the screen and the pages above it are of the same field.
 	 */
 	let field: string | null = null;
+	/** The bar's state pill (da-w48r3), which narrows the listing to the entries in it. */
+	let inState: string | null = null;
 	/** The range selected (da-lqz3j), which narrows the listing as the field does. */
 	let range: { since: string; until?: string } | null = null;
-	/** Every listing's bounds: the field and the range. */
-	const bounds = () => ({ ...(field ? { field } : {}), ...range });
+	/** Every listing's bounds: the field, its state and the range. */
+	const bounds = () => ({ ...(field ? { field } : {}), ...(inState !== null ? { state: inState } : {}), ...range });
 	/** The newest row held is the listing's newest: false below a jump, until paging down reaches it. */
 	let live = $state(true);
 	/** The selection moved the tail, so clearing it gives the live end back. */
@@ -351,14 +354,14 @@
 	}
 
 	/**
-	 * A new field is a new listing: the rows held are another field's, so
+	 * A new field or state is a new listing: the rows held are another's, so
 	 * they go, and the next `refresh` takes the pinned branch and asks
 	 * afresh. The counts that were settled against the old rows go with
 	 * them — a narrowed listing wraps differently and is measured again.
 	 */
 	$effect.pre(() => {
-		const next = $fieldPill, within = rangeOf($cursor);
-		untrack(() => narrow(next, within));
+		const next = $fieldPill, held = $statePill, within = rangeOf($cursor);
+		untrack(() => narrow(next, held, within));
 	});
 
 	/**
@@ -373,9 +376,10 @@
 		return { since: dated(new Date(Math.min(+c.at, far))), ...(c.rel === 0 && !c.ahead ? {} : { until: dated(new Date(Math.max(+c.at, far))) }) };
 	}
 
-	function narrow(next: string | null, within: typeof range): void {
-		if (next === field && JSON.stringify(within) === JSON.stringify(range)) return;
+	function narrow(next: string | null, held: string | null, within: typeof range): void {
+		if (next === field && held === inState && JSON.stringify(within) === JSON.stringify(range)) return;
 		field = next;
+		inState = held;
 		range = within;
 		live = true;
 		jumped = false;

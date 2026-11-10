@@ -286,6 +286,22 @@ fn list_filter_sql(params: &ListParams) -> (String, Vec<String>) {
         }
         bindings.extend(params.fields.iter().cloned());
     }
+    if !params.states.is_empty() {
+        // The state itself, or an element of an array state, each as its
+        // JSON text: `json_each` gives a scalar as SQL, so it is quoted
+        // back, and true/false come as 1/0 (da-w48r3).
+        let qs = vec!["?"; params.states.len()].join(", ");
+        sql.push_str(&format!(
+            " AND (state IN ({qs}) OR EXISTS (\
+             SELECT 1 FROM json_each(CASE WHEN NOT json_valid(state) THEN '[]' \
+             WHEN json_type(state) = 'array' THEN state ELSE '[]' END) e \
+             WHERE CASE e.type WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' \
+             WHEN 'object' THEN e.value WHEN 'array' THEN e.value \
+             ELSE json_quote(e.value) END IN ({qs})))"
+        ));
+        bindings.extend(params.states.iter().cloned());
+        bindings.extend(params.states.iter().cloned());
+    }
     (sql, bindings)
 }
 

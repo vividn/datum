@@ -273,6 +273,16 @@ export const FIELD_ID = 'field';
 export const fieldPill = derived(pills, (all) => all.find((p) => p.kind === 'field')?.text ?? null);
 
 /**
+ * The state the bar holds beside its field, as datum reads a state (the
+ * pill's own word unquoted: `happy`, `a,b`, the bracket form), or `null`.
+ * The tail lists only the entries in it, an array any of its states (da-w48r3).
+ */
+export const statePill = derived(pills, (all) => {
+	const text = all.find((p) => p.kind === 'state')?.text;
+	return text === undefined ? null : (shellSplit(text)[0] ?? null);
+});
+
+/**
  * Mint the field pill — `null` takes it away. `color` is the field's own
  * resolved colour, which is what the pill is painted in.
  */

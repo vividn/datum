@@ -26,6 +26,7 @@ pub(crate) struct TailExtras {
     above: Option<String>,
     below: Option<String>,
     since: Option<String>,
+    states: Vec<String>,
 }
 
 pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
@@ -94,6 +95,10 @@ pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
         p.extras.since = Some(v.to_string());
         Ok(())
     }));
+    r.push(local_value(None, Some("state"), |p, v| {
+        p.extras.states.push(v.to_string());
+        Ok(())
+    }));
     // `-w/--watch` is special — bare or attached or detached non-flag value.
     // The detached-peek form is handled by the caller after the registry walker.
     r.push(local_optional(Some('w'), Some("watch"), |p, v| {
@@ -153,6 +158,7 @@ pub(crate) fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         above: composed.extras.above,
         below: composed.extras.below,
         since: composed.extras.since,
+        states: composed.extras.states,
         output: composed.output,
     })
 }

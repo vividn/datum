@@ -102,6 +102,8 @@ export interface TailPage {
 	 * every field, which is what `tail` prints on its own.
 	 */
 	field?: string;
+	/** Only the entries in this state, an array any of its states (`--state`, da-w48r3): the bar's state pill. */
+	state?: string;
 }
 
 /**

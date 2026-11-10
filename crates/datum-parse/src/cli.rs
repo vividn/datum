@@ -618,6 +618,10 @@ pub struct TailArgs {
     /// `--since <TIME>`: only the rows at or after it, `count`'s grammar
     /// (da-lqz3j). With `-t`, the rows between the two.
     pub since: Option<String>,
+    /// `--state <STATE>`, repeatable: only the entries in one of these states
+    /// (da-w48r3), each read as a state on the line is, so `a,b` and the
+    /// bracket form are any of their elements; an array state is in each of its own.
+    pub states: Vec<String>,
     /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
     ///
     /// `--show json` (da-c7uw's `--json`) emits one named object per row
@@ -645,6 +649,7 @@ impl Default for TailArgs {
             above: None,
             below: None,
             since: None,
+            states: Vec::new(),
             output: OutputArgs::default(),
         }
     }

@@ -771,6 +771,16 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
+    FlagSpec {
+        short: None,
+        long: "state",
+        takes_value: true,
+        value_hint: Some("STATE"),
+        value_optional: false,
+        summary: "Only entries in this state; `a,b` or repeated is any of them",
+        long_description: None,
+        left_override: None,
+    },
     WIDTH_FLAG,
     ISO_TIMES_FLAG,
 ];

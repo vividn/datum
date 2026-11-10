@@ -148,6 +148,7 @@ OPTIONS:
       --above <ID>      Only the entries listed above this one
       --below <ID>      Only the entries listed below this one
       --since <TIME>    Lower-bound time (as `datum count --since`)
+      --state <STATE>   Only entries in this state; `a,b` or repeated is any of them
       --width <N>       Fit each line to N columns, 0 unlimited (default: the terminal's; piped, unlimited)
       --iso-times       Every time and date in full ISO 8601, with its offset, nothing relative
 

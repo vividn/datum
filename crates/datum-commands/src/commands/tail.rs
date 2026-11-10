@@ -593,7 +593,21 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         // `tail_entries_with_default_count` reads.
         before: None,
         after: None,
+        states: state_texts(&args.states)?,
     })
+}
+
+/// `--state`'s values as the states' stored JSON texts (da-w48r3): each read
+/// as a state on the line is, so `a,b` and `'["a,b","c"]'` give each element.
+fn state_texts(raw: &[String]) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for s in raw {
+        match crate::commands::log_core::parse_switch_state_token(s)? {
+            serde_json::Value::Array(all) => out.extend(all.iter().map(|v| v.to_string())),
+            one => out.push(one.to_string()),
+        }
+    }
+    Ok(out)
 }
 
 struct TailWindow {

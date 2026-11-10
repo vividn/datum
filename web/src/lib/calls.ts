@@ -85,7 +85,8 @@ export function tailArgv(page: TailPage = {}): string[] {
 		...(page.above !== undefined ? ['--above', page.above] : []),
 		...(page.below !== undefined ? ['--below', page.below] : []),
 		...(page.since !== undefined ? ['--since', page.since] : []),
-		...(page.until !== undefined ? ['-t', page.until] : [])
+		...(page.until !== undefined ? ['-t', page.until] : []),
+		...(page.state !== undefined ? ['--state', page.state] : [])
 	];
 }
 

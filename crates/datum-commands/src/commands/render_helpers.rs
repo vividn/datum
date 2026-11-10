@@ -65,6 +65,7 @@ pub(crate) fn live_window_params(fetch_start: DateTime<Utc>, end: DateTime<Utc>)
         include_notes: false,
         before: None,
         after: None,
+        states: Vec::new(),
     }
 }
 
