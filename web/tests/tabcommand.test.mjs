@@ -117,3 +117,62 @@ test('the › list on the setup tab: its own flags and the pages, nothing that w
 		assert.ok(sync.some((c) => c.startsWith('sync ')), `sync's own subcommands are listed: ${sync}`);
 	}, PHONE);
 });
+
+// A plain mouse (da-l4cjg): its wheel turns only vertically, and setup's list
+// runs far past the screen's right edge, its pages last. So a wheel whose
+// turn is down scrolls the one row sideways, as a trackpad's swipe does, and
+// leaves a row that fits alone.
+test('on a desktop, a vertical wheel over the › list scrolls a long one sideways and leaves one that fits', async () => {
+	await withApp(async (app) => {
+		const { page } = app;
+		const chevron = page.locator(`${BAR} button.prompt`);
+		const list = page.locator(`${BAR} #bar-commands`);
+		// Up and done sliding: a wheel sent while it slides never reaches the page.
+		const open = async () => {
+			if (!(await list.count())) await chevron.click();
+			await list.locator('[data-command="undo"]').waitFor();
+			await list.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+		};
+		const where = () =>
+			list.evaluate((el) => {
+				const row = el.querySelector('.bar.commands');
+				return { scrolled: row.scrollLeft, room: row.scrollWidth - row.clientWidth, sync: el.querySelector('[data-command="sync"]')?.getBoundingClientRect().x ?? null };
+			});
+		// Wheels over the list, down unless told, each one heard there before it is read, so a wheel lost on the way is not one that moved nothing.
+		const turn = async (steps, dx = 0, dy = 400) => {
+			await list.evaluate((el) => {
+				window.wheels = 0;
+				el.heard ??= el.addEventListener('wheel', () => (window.wheels += 1)) ?? true;
+			});
+			const box = await list.boundingBox();
+			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+			for (let i = 0; i < steps; i++) await page.mouse.wheel(dx, dy);
+			await page.waitForFunction((n) => window.wheels === n, steps);
+		};
+
+		await app.toCollect();
+		await open();
+		const short = await where();
+		assert.equal(short.room, 0, `collect's list overflows by ${short.room}px: the case that fits is not tested`);
+		await turn(2);
+		assert.deepEqual(await where(), short, 'a wheel moved a list that fits');
+		await chevron.click();
+		await list.waitFor({ state: 'detached' });
+
+		await page.evaluate(() => window.datum.shell.open('setup'));
+		await page.locator(`${BAR} .fixed`).waitFor();
+		await open();
+		const before = await where();
+		const width = page.viewportSize().width;
+		assert.ok(before.sync > width, `sync starts at ${before.sync}px, in sight of a ${width}px screen: the case is not tested`);
+		await turn(5);
+		const after = await where();
+		assert.ok(after.sync <= before.sync - 2000, `five wheels down took sync from ${before.sync}px to ${after.sync}px, the row ${after.scrolled}px of ${before.room}px along`);
+		// A sideways wheel (a trackpad's swipe) is the browser's own scroll still: turning it too would take it and move nothing.
+		await turn(3, 400, 0);
+		await page.waitForFunction((x) => document.querySelector('.prompt-bar #bar-commands [data-command="sync"]').getBoundingClientRect().x <= x - 1000, after.sync).catch(() => {});
+		const across = await where();
+		assert.ok(across.sync <= after.sync - 1000, `three sideways wheels took sync from ${after.sync}px to ${across.sync}px, the row ${across.scrolled}px of ${before.room}px along`);
+		assert.equal(await page.locator(`${BAR} .fixed`).count(), 1, 'the wheel left the setup tab');
+	}, DESKTOP);
+});
