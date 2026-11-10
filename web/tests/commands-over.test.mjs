@@ -15,7 +15,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { dragOn } from './support/bar.mjs';
-import { swipe, withBar } from './support/layout.mjs';
+import { rested, swipe, withBar } from './support/layout.mjs';
 import { reach } from './support/commands.mjs';
 
 before(startApp);
@@ -134,7 +134,8 @@ describe('the ❯ opens the commands over the output', () => {
 			await page.locator(`${OVER} button[data-back]`).waitFor();
 			await page.keyboard.press('Escape');
 			await page.locator(`${OVER} button[data-back]`).waitFor({ state: 'detached' });
-			await page.waitForTimeout(50);
+			// A close the Escape set off would slide them out: wait out whatever moves.
+			await rested(page, page.locator(BAR));
 			assert.equal(await page.locator(OVER).count(), 1, 'one Escape backed out and closed too');
 			await page.keyboard.press('Escape');
 			await page.locator(OVER).waitFor({ state: 'detached' });
@@ -210,7 +211,7 @@ describe('the ❯ opens the commands over the output', () => {
 			await set([TIME, NOTE]);
 			await open();
 			await drop('when');
-			await page.waitForTimeout(50);
+			await rested(page, page.locator(BAR));
 			await open();
 			// The commands follow the pills that are left.
 			await page.locator(`${OVER} button[data-command="moment"]`).waitFor();
@@ -226,7 +227,8 @@ describe('the ❯ opens the commands over the output', () => {
 			await page.keyboard.press('Escape');
 			await page.locator(OVER).waitFor({ state: 'detached' });
 			await set([{ ...TIME, text: '-t 15:00' }]);
-			await page.waitForTimeout(50);
+			// An open it set off would slide them in: wait out whatever moves.
+			await rested(page, page.locator(BAR));
 			assert.equal(await page.locator(OVER).count(), 0, 'a moved pill opened the commands');
 			await set([{ ...TIME, text: '-t 15:00' }, NOTE]);
 			await open();
@@ -417,15 +419,16 @@ describe('a swipe on the commands is theirs', () => {
 			};
 		}, LIST);
 
-	/** Wait for the scroll and the bar to stop moving: three readings alike, so a stalled frame is not a stop. */
+	/**
+	 * Wait for the scroll, the bar and the tab to stop moving: the same
+	 * reading either side of a rest of the page's, since a scroll is no
+	 * animation and moves no box that `rested` reads.
+	 */
 	const still = async (page) => {
-		let last = '';
-		let same = 0;
-		for (;;) {
-			await page.waitForTimeout(120);
+		for (let last = JSON.stringify(await state(page)); ; ) {
+			await rested(page);
 			const now = JSON.stringify(await state(page));
-			same = now === last ? same + 1 : 0;
-			if (same === 2) return JSON.parse(now);
+			if (now === last) return JSON.parse(now);
 			last = now;
 		}
 	};
