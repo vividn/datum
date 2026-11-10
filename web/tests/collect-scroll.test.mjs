@@ -8,7 +8,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
-import { pickOption } from './support/layout.mjs';
+import { pastTheWindow, pickOption } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -78,6 +78,10 @@ async function drag(page, from, by) {
  */
 async function zoom(page, by) {
 	const at = await onCollect(page);
+	// The click on the tab opened the window after a switch (da-d9p5m), in which a sideways drag is the frame's
+	// swipe: it cancelled the rows' pan at its first 10px, 20 of 100 (da-72c7z). Waited out from the switch.
+	await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: TAB }).waitFor();
+	await pastTheWindow(page);
 	await page.mouse.move(at.x, at.y);
 	await page.keyboard.down('Control');
 	for (let i = 0; i < 5; i++) await page.mouse.wheel(0, by);
