@@ -21,7 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp, todayAt } from './support/app.mjs';
-import { PHONE, settled, swipe, titles } from './support/layout.mjs';
+import { PHONE, rested, settled, swipe, titles } from './support/layout.mjs';
 import { drag, finger, lateMove, longPressed, noWait, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 import { listed } from './support/rows.mjs';
@@ -668,15 +668,6 @@ const flick = (page, at, { steps = 8, dy = 12, rest = 0 } = {}) =>
 		{ ...at, steps, dy, rest }
 	);
 
-/** Once the stack's scroll has stood still for 200 ms. */
-async function scrollSettled(page) {
-	let [was, now] = [NaN, await stackTop(page)];
-	while (was !== now) {
-		await page.waitForTimeout(200);
-		[was, now] = [now, await stackTop(page)];
-	}
-}
-
 describe('one gesture, however many fingers (da-wekrr)', () => {
 	test('zoomed in, a flick down goes on by its own momentum after the lift; a finger that rested first stops there (da-v3t0u)', async () => {
 		await withStrip(
@@ -690,7 +681,9 @@ describe('one gesture, however many fingers (da-wekrr)', () => {
 					const a = await midStack(page);
 					const point = await pointUnder(page, a);
 					const lift = await flick(page, a, { rest });
-					await scrollSettled(page);
+					// The fling is DayStrip's `fling`, a frame loop that scrolls the stack, and yesterday's
+					// band moves with it. Not today's: here it is pinned under the stack, and stands still.
+					await rested(page, page.locator(`.stack ${YESTERDAY}`));
 					const seen = await screenOf(page, point);
 					assert.ok(Math.abs(seen.x - lift.x) <= 3, `${what}: the hours moved, ${seen.x} for ${lift.x}`);
 					// A native scroll's momentum: about v·τ, 0.75 px/ms × 325 ms, past the lift.
@@ -931,6 +924,11 @@ describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 // ── vividn's table, on a phone (da-xg1vi) ──────────────────────────────
 
 describe('a finger on the strip, row by row', () => {
+	/**
+	 * Past a double tap's window, `DOUBLE_MS` (300) in #lib/hover.ts: the duration the tests
+	 * below are about, a tap after it being a tap of its own and not a double tap's second.
+	 */
+	const PAST_DOUBLE_MS = 450;
 	/** The strip on a phone, with a block on today to tap. */
 	const onPhone = (fn) =>
 		withStrip(async (app) => {
@@ -970,17 +968,16 @@ describe('a finger on the strip, row by row', () => {
 			const mark = await markAt(page, TODAY);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await saysPills(page, [`hid:${mark.id}`]);
-			// Past a double tap's window (`DOUBLE_MS`, #lib/hover.ts).
-			await page.waitForTimeout(450);
+			await page.waitForTimeout(PAST_DOUBLE_MS);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await saysPills(page, []);
-			await page.waitForTimeout(450);
+			await page.waitForTimeout(PAST_DOUBLE_MS);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await saysPills(page, [`time:-t ${hhmm(instantOf(g, mark.x))}`]);
-			await page.waitForTimeout(450);
+			await page.waitForTimeout(PAST_DOUBLE_MS);
 			await page.touchscreen.tap(mark.x, mark.y);
-			await page.waitForTimeout(450);
+			await page.waitForTimeout(PAST_DOUBLE_MS);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await page.touchscreen.tap(mark.x, mark.y);
 			await saysPills(page, [`hid:${mark.id}`, `time:-t ${hhmm(instantOf(g, mark.x))}`]);
