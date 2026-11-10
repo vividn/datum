@@ -707,8 +707,25 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			assert.equal(await group('get tea').locator('.step').count(), 0, 'a get of a TRACK row has an undo button');
 
 			assert.match(await held(), /TRACKED/);
+			// Once on CI the struck head never came, and nothing said why (da-2cuyi). Each way it
+			// can fail leaves its own trace: the click landing off the button (Playwright checks
+			// the target at mousedown alone), the step refused (`ours` read no history as ours),
+			// or the revert run with no mark (the bar's last command).
+			const clicked = await page.evaluateHandle(() => {
+				const on = [];
+				addEventListener('click', (e) => on.push(e.target.outerHTML.slice(0, 80)), true);
+				return on;
+			});
 			await undo.click();
-			await group('track tea').locator('.head.struck').waitFor();
+			await group('track tea').locator('.head.struck').waitFor().catch(async (e) => {
+				const why = await group('track tea').locator('.step').evaluate((step, clicked) => ({
+					clicked,
+					step: step.textContent,
+					disabled: step.querySelector('button').ariaDisabled,
+					last: window.datum.bar.last().line
+				}), clicked);
+				throw new Error(`undone, the head is not struck: ${JSON.stringify(why)}`, { cause: e });
+			});
 			assert.doesNotMatch(await held(), /TRACKED/, 'undone, the TRACK row is still there');
 			assert.doesNotMatch((await app.run(['setup', 'tea', '--json'])).stdout, /"verb"/, 'undone, the spec is still there');
 			assert.deepEqual(app.errors, []);
