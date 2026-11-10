@@ -10,6 +10,7 @@
 //! between only make it select more.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::ffi::OsStr;
 use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -110,8 +111,10 @@ fn index(prof: &Path, bin_dir: &Path, out: &Path) -> Result<()> {
             let (tx, next, dirs, tools) = (tx.clone(), &next, &dirs, &tools);
             s.spawn(move || loop {
                 let i = next.fetch_add(1, Ordering::Relaxed);
-                let Some((_, dir)) = dirs.get(i) else { break };
-                let _ = tx.send((i, ran(tools, dir)));
+                let Some((test, dir)) = dirs.get(i) else {
+                    break;
+                };
+                let _ = tx.send((i, ran(tools, &test[2], dir)));
             });
         }
         drop(tx);
@@ -133,15 +136,16 @@ fn index(prof: &Path, bin_dir: &Path, out: &Path) -> Result<()> {
             .collect::<String>(),
     )?;
     let all = prof.join(".all.profdata");
-    let status = Command::new(tools.join("llvm-profdata"))
-        .args(["merge", "--sparse", "-f"])
-        .arg(&list)
-        .arg("-o")
-        .arg(&all)
-        .status()?;
-    if !status.success() {
-        bail!("llvm-profdata merge of every test: {status}");
-    }
+    merge(
+        &tools,
+        "of every test",
+        [
+            OsStr::new("-f"),
+            list.as_os_str(),
+            OsStr::new("-o"),
+            all.as_os_str(),
+        ],
+    )?;
     let objects = objects(prof, bin_dir)?;
     let mut cmd = Command::new(tools.join("llvm-cov"));
     cmd.args([
@@ -281,20 +285,43 @@ fn raws(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// The functions one test's processes ran.
-fn ran(tools: &Path, dir: &Path) -> Result<Vec<String>> {
+fn ran(tools: &Path, test: &str, dir: &Path) -> Result<Vec<String>> {
     let raws = raws(dir)?;
     if raws.is_empty() {
         return Ok(Vec::new());
     }
+    let what = format!("of {test} ({})", dir.display());
+    let args = ["--text", "-o", "-"].map(OsStr::new).into_iter();
+    let out = merge(tools, &what, args.chain(raws.iter().map(|r| r.as_os_str())))?;
+    Ok(parse_text_profile(&String::from_utf8_lossy(&out)))
+}
+
+/// `llvm-profdata merge --sparse` of `args`, its stdout. A profile that does
+/// not read is dropped, with llvm's warning naming it, and fails the merge
+/// only when none reads: a process killed as it writes its profile leaves a
+/// truncated one, and one test's partial coverage beats a map that stops
+/// updating (da-uw2dt).
+fn merge<'a>(
+    tools: &Path,
+    what: &str,
+    args: impl IntoIterator<Item = &'a OsStr>,
+) -> Result<Vec<u8>> {
     let out = Command::new(tools.join("llvm-profdata"))
-        .args(["merge", "--sparse", "--text", "-o", "-"])
-        .args(&raws)
-        .stderr(Stdio::null())
+        .args(["merge", "--sparse", "--failure-mode=all"])
+        .args(args)
         .output()?;
+    let err = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
-        bail!("llvm-profdata merge {}: {}", dir.display(), out.status);
+        bail!(
+            "llvm-profdata merge {what}: {}\n{}",
+            out.status,
+            err.trim_end()
+        );
     }
-    Ok(parse_text_profile(&String::from_utf8_lossy(&out.stdout)))
+    for line in err.lines() {
+        eprintln!("llvm-profdata merge {what}: {line}");
+    }
+    Ok(out.stdout)
 }
 
 /// The names in `llvm-profdata merge --text` output with a non-zero counter.
@@ -829,6 +856,29 @@ fn output(cmd: &mut Command) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_profile_that_does_not_read_drops_and_the_rest_merge() {
+        let Ok(tools) = llvm_tools() else {
+            eprintln!("skipped: no llvm-tools");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("testmap-merge-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let good = "_Rran\n# Func Hash:\n1\n# Num Counters:\n1\n# Counter Values:\n3\n\n";
+        fs::write(dir.join("good.profraw"), good).unwrap();
+        // A raw profile's magic and the start of its header, cut off.
+        fs::write(dir.join("cut.profraw"), b"\xfflprofr\x81\x0a\x00").unwrap();
+        assert_eq!(ran(&tools, "t", &dir).unwrap(), ["_Rran"]);
+
+        fs::remove_file(dir.join("good.profraw")).unwrap();
+        let err = format!("{:#}", ran(&tools, "t", &dir).unwrap_err());
+        fs::remove_dir_all(&dir).unwrap();
+        assert!(
+            err.contains("of t (") && err.contains("cut.profraw"),
+            "{err}"
+        );
+    }
 
     #[test]
     fn a_text_profile_names_the_functions_that_ran() {
