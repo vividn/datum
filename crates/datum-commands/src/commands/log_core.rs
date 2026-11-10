@@ -2345,39 +2345,17 @@ impl KeyEdit {
     }
 }
 
-/// S12: for `Verb::Switch`, expand any comma-containing string in the
-/// primary value into an array of states. Handles three inputs:
-///   * scalar string → array if comma-separated, otherwise unchanged
-///   * array (from legacy multi-positional switch) → flatten any
-///     comma-containing string elements into their components
-///   * all other value shapes → passthrough
+/// S12: for `Verb::Switch`, expand a comma-containing string in the
+/// primary value into an array of states. An array is the value parser's
+/// already (a glued-comma list, or the bracket form, whose elements may hold
+/// a comma: `'["a,b","c"]'`, da-yjl9x), so it is kept, one element read as
+/// that state. Every other shape passes through.
 pub(crate) fn expand_array_states(value: Option<JsonValue>) -> Result<Option<JsonValue>> {
-    let Some(v) = value else {
-        return Ok(None);
-    };
-    match v {
-        JsonValue::String(s) if s.contains(',') => Ok(Some(parse_switch_state_token(&s)?)),
-        JsonValue::Array(items) => {
-            let mut out: Vec<JsonValue> = Vec::with_capacity(items.len());
-            for item in items {
-                match item {
-                    JsonValue::String(s) if s.contains(',') => {
-                        match parse_switch_state_token(&s)? {
-                            JsonValue::Array(inner) => out.extend(inner),
-                            other => out.push(other),
-                        }
-                    }
-                    other => out.push(other),
-                }
-            }
-            Ok(Some(match out.len() {
-                0 => JsonValue::Array(out),
-                1 => out.into_iter().next().unwrap(),
-                _ => JsonValue::Array(out),
-            }))
-        }
-        other => Ok(Some(other)),
-    }
+    Ok(match value {
+        Some(JsonValue::String(s)) if s.contains(',') => Some(parse_switch_state_token(&s)?),
+        Some(JsonValue::Array(mut items)) if items.len() == 1 => items.pop(),
+        other => other,
+    })
 }
 
 /// Parse a single value token. Tries number, bool, then falls back to string.

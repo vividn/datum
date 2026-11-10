@@ -447,3 +447,43 @@ fn a_bracketed_state_reads_as_any_value() {
     }
     assert_eq!(datum_core::test_util::logged_entries(&db, "task").len(), 5);
 }
+
+/// da-yjl9x: the bracket form holds a comma inside an element on a state, as
+/// on a data key (docs/grammar-tokens.md, «`,` inside a value»), on every
+/// spelling of a state; a glued-comma list still splits.
+#[test]
+fn a_bracketed_state_keeps_a_comma_inside_an_element() {
+    let db = fresh_db();
+    let ab = json!(["a,b", "c"]);
+    run_cli(&["moment", "cup", r#"k=["a,b","c"]"#], &db).expect("a data key");
+    let cup = datum_core::test_util::logged_entries(&db, "cup");
+    assert_eq!(cup[0].data.as_ref().map(|d| &d["k"]), Some(&ab));
+
+    for (i, argv) in [
+        &["change", "mood", r#"["a,b","c"]"#][..],
+        &["change", "mood", r#"["a,b", "c"]"#],
+        &["change", "mood", r#"state=["a,b","c"]"#],
+        &[
+            "change",
+            "mood",
+            "x",
+            "5m",
+            r#"following_state=["a,b","c"]"#,
+        ],
+        &["change", "mood", "x", "-l", r#"["a,b","c"]"#],
+        &["change", "mood", "a,b,c"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let t = format!("+{}", i + 1);
+        run_cli(&[argv, &["-t", &t]].concat(), &db).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+    }
+    let mut mood = datum_core::test_util::logged_entries(&db, "mood");
+    mood.sort_by_key(|e| e.at.as_ref().map(|t| t.utc));
+    let ab = Some(ab);
+    assert!(mood[..3].iter().all(|e| e.state == ab), "{mood:?}");
+    assert_eq!(mood[3].following_state, ab);
+    assert_eq!(mood[4].user_asserted_last_state, ab);
+    assert_eq!(mood[5].state, Some(json!(["a", "b", "c"])));
+}
