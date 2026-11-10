@@ -7,10 +7,19 @@
 // nothing moves the tree and no `▾` or padlock is drawn; each way in — a
 // right click, Shift+F10, a mouse's long press, a finger's — enters a mode
 // the page shows; a hold that MOVES still reorders; the layout-mode menus
-// hold exactly what vividn listed; Esc Esc discards and Esc Enter accepts;
-// moving to another tab with a change in hand asks; Save writes a layout
-// entry and Accept does not, though Accept survives a reload; and the
-// maximize is the bar's handle.
+// hold exactly what vividn listed; and the maximize is the bar's handle.
+//
+// And MODIFY MODE's ways out (da-00c29), vividn, 2026-11-10: «don't show the
+// [x] buttons on every tab / - instead show a check button on its right and a
+// revert (circle arrow) button on it's left, which applies the changes or
+// resets respectively. No buttons on other tabs, which should be dimmed. / -
+// when in modify mode, disable all normal functionality of widgets», and «yes
+// to esc and enter», «a "modify mode" pill along with (:arrow: revert) and
+// (:check: accept) buttons down in the input bar, which should otherwise be
+// disabled». So: no × on a tab, ↺ and ✓ on the modified one, the others dim
+// and still; ✓ and Enter apply (the dot, no layout entry, a reload keeps it),
+// ↺ and Escape reset; the bar's pill does the same with the rest of the bar
+// inert; and a widget does nothing.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,11 +28,13 @@ import {
 	DESKTOP,
 	PHONE,
 	addButton,
+	applyButton,
 	enterLayoutMode,
 	leaveLayoutMode,
 	menuButton,
 	moveBar,
 	pane,
+	resetButton,
 	rested,
 	rootMenuButton,
 	titles
@@ -48,8 +59,13 @@ const closeMenu = async (page) => {
 	await page.keyboard.press('Escape');
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 };
-/** The layout-mode dialog that asks how to leave. */
+/** A dialog asking anything: modify mode asks nothing on its way out. */
 const asking = (page) => page.locator('dialog.confirm[open]');
+/** What a press on the drawn middle of `locator` lands on, inert or not: a mouse, not an actionable click. */
+const pressMiddle = async (page, locator) => {
+	const box = await locator.boundingBox();
+	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+};
 const TWO = { home: { names: ['main', 'cli'], active: 0 } };
 
 /** A finger's long press through CDP, `move`d by (dx, 0) before the lift when given. */
@@ -106,14 +122,14 @@ describe('normal mode', () => {
 // width, every × is reachable and none stands under the `+`.
 describe('on a phone', () => {
 	for (const width of [390, 360]) {
-		test(`${width} wide: a first visit's four tabs and their × are all reached in the strip in layout mode`, async (t) => {
+		test(`${width} wide: a first visit's four tabs and the modified one's ↺ and ✓ are all reached in the strip in modify mode`, async (t) => {
 			await withApp(async ({ page }) => {
 				const rest = await page.locator('.root-bar .tabs').evaluate((el) => [el.scrollWidth, el.clientWidth]);
 				t.diagnostic(`${width} wide, out of layout mode: the strip is ${rest[0]} of ${rest[1]}px`);
 				await enterLayoutMode(page);
 				const at = await page.locator('.root-bar .tabs').evaluate((el) => {
 					const strip = el.getBoundingClientRect();
-					const out = [...el.querySelectorAll('[role="tab"], .tab-close')]
+					const out = [...el.querySelectorAll('[role="tab"], .way-out')]
 						.filter((b) => {
 							b.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'instant' });
 							const r = b.getBoundingClientRect();
@@ -122,14 +138,16 @@ describe('on a phone', () => {
 						.map((b) => b.getAttribute('aria-label') ?? b.textContent.trim());
 					return {
 						names: [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent.replace('•', '').trim()),
-						closes: el.querySelectorAll('.tab-close').length,
+						ways: [...el.querySelectorAll('.way-out')].map((b) => b.textContent.trim()),
+						order: [...el.children].map((b) => (b.matches('.way-out') ? b.textContent.trim() : b.getAttribute('aria-selected'))),
 						out,
 						scroll: el.scrollWidth,
 						client: el.clientWidth
 					};
 				});
 				assert.deepEqual(at.names, ['welcome', 'setup', 'collection', 'dayview']);
-				assert.equal(at.closes, 4);
+				assert.deepEqual(at.ways, ['↺', '✓'], 'the ways out on the tab');
+				assert.deepEqual(at.order.slice(0, 3), ['↺', 'true', '✓'], 'not ↺ before and ✓ after the open tab');
 				assert.deepEqual(at.out, [], `out of reach of the strip's ${at.client}px`);
 				t.diagnostic(`${width} wide: the strip is ${at.scroll} of ${at.client}px`);
 			}, { ...PHONE, viewport: { width, height: 640 }, home: null });
@@ -138,7 +156,7 @@ describe('on a phone', () => {
 });
 
 describe('the ways in', () => {
-	test('a right click on the open tab enters it, visibly: accent panes, handles in the gaps, a × on every tab; Accept leaves it', async () => {
+	test('a right click on the open tab enters it, visibly: accent panes, handles in the gaps, no × on a tab, ↺ and ✓ on the open one, the others dim; ✓ leaves it', async () => {
 		await withApp(async ({ page, errors }) => {
 			await rootMenuButton(page).click({ button: 'right' });
 			await mode(page).waitFor();
@@ -147,12 +165,26 @@ describe('the ways in', () => {
 			const panes = await page.locator('section.pane').count();
 			assert.equal(await page.locator('section.pane.editing').count(), panes, 'a pane not drawn in the mode');
 			assert.ok((await page.locator('[role="separator"]').count()) > 0, 'no handle between the panes');
-			assert.equal(await page.locator('.root-bar button.tab-close').count(), 2);
+			assert.equal(await page.locator('.root-bar .tabs button').evaluateAll((all) => all.filter((b) => b.textContent.includes('×')).length), 0, 'a tab wears a ×');
+			assert.equal(await page.locator('.root-bar .tabs .way-out').count(), 2);
+			const other = page.locator('.root-bar [role="tab"][aria-selected="false"]');
+			assert.ok(Number(await other.evaluate((el) => getComputedStyle(el).opacity)) < 1, 'the other tab is not dimmed');
+			assert.ok(Number(await rootMenuButton(page).evaluate((el) => getComputedStyle(el).opacity)) === 1, 'the open tab is dimmed');
 			assert.ok(await addButton(page, 'tail').isVisible());
-			await leaveLayoutMode(page, 'Accept');
+			await leaveLayoutMode(page, 'apply');
 			assert.equal(await page.locator('[role="separator"]').count(), 0);
 			assert.deepEqual(errors, []);
 		}, { ...DESKTOP, ...TWO });
+	});
+
+	test('the open tab menu’s Modify enters it, on a phone too', async () => {
+		for (const device of [DESKTOP, PHONE])
+			await withApp(async ({ page }) => {
+				await rootMenuButton(page).click();
+				await page.getByRole('menuitem', { name: 'Modify', exact: true }).click();
+				await mode(page).waitFor();
+				assert.equal(await page.locator('.root-bar .tabs .way-out').count(), 2);
+			}, device);
 	});
 
 	test('Shift+F10 on the focused open tab enters it', async () => {
@@ -258,108 +290,170 @@ describe('the menus in layout mode', () => {
 		}, DESKTOP);
 	});
 
-	test('the open root tab: Change Widget, Split, Taller than the screen, Accept, Save layout, Discard changes, Close tab', async () => {
+	test('the open root tab: Change Widget, Split, Taller than the screen, Close tab: its ways out are its ↺ and ✓', async () => {
 		await withApp(async ({ page }) => {
 			await enterLayoutMode(page);
 			await rootMenuButton(page).click();
-			assert.deepEqual(await menuNames(page), ['Change Widget', 'Split', 'Taller than the screen', 'Accept', 'Save layout', 'Discard changes', 'Close tab']);
+			assert.deepEqual(await menuNames(page), ['Change Widget', 'Split', 'Taller than the screen', 'Close tab']);
 			await closeMenu(page);
 		}, DESKTOP);
 	});
 });
 
 describe('the ways out', () => {
-	test('Esc Esc discards; Esc Enter accepts, writes no layout entry, and a reload keeps it', async () => {
-		await withApp(async (app) => {
-			const { page, errors } = app;
-			const before = await titles(page);
-			await enterLayoutMode(page);
-			await pane(page, 'custom').locator('.titlebar button.close').click();
-			await until(() => titles(page), (t) => !t.includes('custom'));
-			await page.keyboard.press('Escape');
-			await asking(page).waitFor();
-			// Discard changes throws the change away, so it is the dialog's one
-			// red button (da-ad2lt), and Accept and Save layout are the accent.
-			const red = await asking(page).evaluate((d) => {
-				const error = getComputedStyle(document.documentElement).getPropertyValue('--error').trim();
-				const probe = document.createElement('span');
-				probe.style.color = error;
-				document.body.append(probe);
-				const want = getComputedStyle(probe).color;
-				probe.remove();
-				return [...d.querySelectorAll('button')].filter((b) => getComputedStyle(b).color === want).map((b) => b.textContent.trim());
-			});
-			assert.deepEqual(red, ['Discard changes'], 'the red buttons of the leave dialog');
-			await page.keyboard.press('Escape');
-			await mode(page).waitFor({ state: 'detached' });
-			await until(() => titles(page), (t) => JSON.stringify(t) === JSON.stringify(before));
+	/** Into the mode with custom closed. */
+	const closeCustom = async (page) => {
+		await enterLayoutMode(page);
+		await pane(page, 'custom').locator('.titlebar button.close').click();
+		await until(() => titles(page), (t) => !t.includes('custom'));
+	};
+	const dotted = (page) => rootMenuButton(page).locator('.dot').count().then((n) => n > 0);
 
+	for (const [how, out] of [
+		['the tab’s ✓', (page) => applyButton(page).click()],
+		['the bar’s ✓', (page) => page.locator('.prompt-bar .modify button.apply').click()],
+		['Enter', (page) => page.keyboard.press('Enter')]
+	])
+		test(`${how} applies: out of the mode, the tab modified (the dot), no layout entry written, and a reload keeps it`, async () => {
+			await withApp(async (app) => {
+				const { page, errors } = app;
+				await closeCustom(page);
+				await out(page);
+				await mode(page).waitFor({ state: 'detached' });
+				assert.equal(await asking(page).count(), 0, 'leaving asked');
+				assert.ok(!(await titles(page)).includes('custom'));
+				assert.ok(await dotted(page), 'the tab is not marked modified');
+				assert.deepEqual(await userLayouts(page), [], 'applying wrote a layout entry');
+				await app.reload();
+				assert.ok(!(await titles(page)).includes('custom'), 'a reload lost what ✓ kept');
+				assert.equal(await isOn(page), false);
+				assert.deepEqual(errors, []);
+			}, DESKTOP);
+		});
+
+	for (const [how, out] of [
+		['the tab’s ↺', (page) => resetButton(page).click()],
+		['the bar’s ↺', (page) => page.locator('.prompt-bar .modify button:not(.apply)').click()],
+		['Escape', (page) => page.keyboard.press('Escape')]
+	])
+		test(`${how} resets: out of the mode, the layout as it was, and nothing asked`, async () => {
+			await withApp(async ({ page, errors }) => {
+				const before = await titles(page);
+				await closeCustom(page);
+				await out(page);
+				await mode(page).waitFor({ state: 'detached' });
+				assert.equal(await asking(page).count(), 0, 'leaving asked');
+				await until(() => titles(page), (t) => JSON.stringify(t) === JSON.stringify(before));
+				assert.equal(await dotted(page), false, 'the tab is still marked modified');
+				assert.deepEqual(errors, []);
+			}, DESKTOP);
+		});
+
+	test('the ✓ has the focus as the mode is entered, and Enter on a control is that control’s', async () => {
+		await withApp(async ({ page }) => {
 			await enterLayoutMode(page);
-			await pane(page, 'custom').locator('.titlebar button.close').click();
-			await until(() => titles(page), (t) => !t.includes('custom'));
-			await page.keyboard.press('Escape');
-			await asking(page).waitFor();
+			await until(() => applyButton(page).evaluate((b) => b === document.activeElement), Boolean);
+			await rootMenuButton(page).focus();
 			await page.keyboard.press('Enter');
-			await mode(page).waitFor({ state: 'detached' });
-			assert.ok(!(await titles(page)).includes('custom'));
-			assert.deepEqual(await userLayouts(page), [], 'Accept wrote a layout entry');
-			await app.reload();
-			assert.ok(!(await titles(page)).includes('custom'), 'a reload lost what Accept kept');
-			assert.equal(await isOn(page), false);
-			assert.deepEqual(errors, []);
+			await page.locator('[role="menu"]').waitFor();
+			await rested(page);
+			assert.equal(await isOn(page), true, 'Enter on the tab’s name left the mode');
+			await closeMenu(page);
+			await rested(page);
+			assert.equal(await isOn(page), true, 'the menu’s Escape left the mode');
 		}, DESKTOP);
 	});
 
-	test('Escape with nothing changed just leaves', async () => {
+	test('an Escape a dialog takes is the dialog’s: the chooser closes, and the mode stays', async () => {
 		await withApp(async ({ page }) => {
-			await enterLayoutMode(page);
-			await page.keyboard.press('Escape');
-			await mode(page).waitFor({ state: 'detached' });
-			assert.equal(await asking(page).count(), 0);
-		}, DESKTOP);
-	});
-
-	test('an Escape a dialog takes is the dialog’s: the chooser closes, and the mode does not ask', async () => {
-		await withApp(async ({ page }) => {
-			await enterLayoutMode(page);
-			await pane(page, 'custom').locator('.titlebar button.close').click();
+			await closeCustom(page);
 			await addButton(page, 'tail').click();
 			await page.locator('dialog.chooser').waitFor();
 			await page.keyboard.press('Escape');
 			await page.locator('dialog.chooser').waitFor({ state: 'detached' });
-			// The mode asks a task after the key (RootBar's `onEscape`), and the
-			// dialog is drawn a frame after that: wait out whatever it moves.
+			// The mode takes a key a task after it (mode.ts's `onKey`): wait out whatever it moves.
 			await rested(page);
-			assert.equal(await asking(page).count(), 0, 'the chooser’s Escape also asked how to leave');
-			assert.equal(await isOn(page), true);
+			assert.equal(await isOn(page), true, 'the chooser’s Escape also left the mode');
+			assert.ok(!(await titles(page)).includes('custom'), 'the chooser’s Escape also reset');
 		}, DESKTOP);
 	});
 
-	test('Save layout writes the layout entry and leaves', async () => {
+	test('after ✓ the tab menu’s Save writes the layout entry and the dot goes', async () => {
 		await withApp(async ({ page }) => {
-			await enterLayoutMode(page);
-			await pane(page, 'custom').locator('.titlebar button.close').click();
+			await closeCustom(page);
+			await leaveLayoutMode(page, 'apply');
 			await rootMenuButton(page).click();
-			await page.getByRole('menuitem', { name: 'Save layout', exact: true }).click();
-			await mode(page).waitFor({ state: 'detached' });
+			await page.getByRole('menuitem', { name: 'Save', exact: true }).click();
 			await until(() => userLayouts(page), (names) => names.includes('main'));
+			await until(() => dotted(page), (d) => !d);
 		}, DESKTOP);
 	});
 
-	test('moving to another tab with a change in hand asks; Discard changes puts it back and the tab moves', async () => {
+	test('the other tabs are still: a press on one moves nothing, and they bear no button', async () => {
 		await withApp(async ({ page }) => {
-			const before = await titles(page);
-			await enterLayoutMode(page);
-			await pane(page, 'custom').locator('.titlebar button.close').click();
-			await until(() => titles(page), (t) => !t.includes('custom'));
-			await page.locator('.root-bar [role="tab"][aria-selected="false"]').click();
-			await asking(page).waitFor();
-			await asking(page).getByRole('button', { name: 'Discard changes' }).click();
-			await mode(page).waitFor({ state: 'detached' });
-			await until(() => rootMenuButton(page).textContent(), (t) => t.includes('cli'));
-			await page.locator('.root-bar [role="tab"][aria-selected="false"]').click();
-			await until(() => titles(page), (t) => JSON.stringify(t) === JSON.stringify(before));
+			await closeCustom(page);
+			const other = page.locator('.root-bar [role="tab"][aria-selected="false"]');
+			assert.equal(await other.getAttribute('aria-disabled'), 'true');
+			// aria-disabled, which Playwright would wait out: forced, as a finger is not.
+			await other.click({ force: true });
+			await rested(page);
+			assert.equal(await isOn(page), true);
+			assert.equal(await asking(page).count(), 0);
+			assert.ok((await rootMenuButton(page).textContent()).includes('main'), 'the press moved to another tab');
+			assert.equal(await page.locator('.root-bar .tabs .way-out').count(), 2, 'a way out on another tab');
 		}, { ...DESKTOP, ...TWO });
+	});
+});
+
+describe('the bar in modify mode', () => {
+	for (const [name, device] of [
+		['desktop', DESKTOP],
+		['phone', PHONE]
+	])
+		test(`${name}: a «modify mode» pill between ↺ and ✓, and the rest of the bar inert and dimmed`, async () => {
+			await withApp(async ({ page }) => {
+				await enterLayoutMode(page);
+				const pill = page.locator('.prompt-bar .modify');
+				assert.deepEqual(
+					await pill.evaluate((el) => [...el.children].map((c) => c.textContent.trim())),
+					['↺', 'modify mode', '✓']
+				);
+				const input = page.locator('.prompt-bar input');
+				assert.equal(await input.evaluate((el) => el.closest('[inert]') !== null), true, 'the box is not inert');
+				assert.equal(await pill.evaluate((el) => el.closest('[inert]') === null), true, 'the pill is inert');
+				assert.ok(Number(await page.locator('.prompt-bar .section.input').evaluate((el) => getComputedStyle(el).opacity)) < 1, 'the input row is not dimmed');
+				await input.focus();
+				assert.equal(await input.evaluate((el) => el === document.activeElement), false, 'the box took the focus');
+				await leaveLayoutMode(page, 'apply');
+				assert.equal(await pill.count(), 0);
+				assert.equal(await input.evaluate((el) => el.closest('[inert]') === null), true, 'the box is still inert');
+			}, device);
+		});
+});
+
+describe('widgets in modify mode', () => {
+	test('they are inert and dimmed, and a press on collect’s field logs nothing; out of the mode the same press logs', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['setup', 'coffee', '--verb', 'occur'])).code, 0);
+			await app.redraw();
+			const field = page.locator('section.pane[data-title="collect"] .bar [data-field="coffee"]');
+			await field.waitFor();
+			await enterLayoutMode(page);
+			assert.equal(await field.evaluate((el) => el.closest('[inert]') !== null), true, 'collect is not inert');
+			assert.ok(
+				Number(await field.evaluate((el) => getComputedStyle(el.closest('.tab-body')).opacity)) < 1,
+				'collect is not dimmed'
+			);
+			// The pane's own name is no widget's: it stays bright, and opens its menu.
+			assert.equal(await menuButton(page, 'tail').evaluate((el) => el.closest('[inert]')), null);
+			await pressMiddle(page, field);
+			await rested(page);
+			assert.equal((await app.allEntries()).filter((e) => e.field === 'coffee').length, 0, 'a press in modify mode logged');
+			await leaveLayoutMode(page, 'reset');
+			await pressMiddle(page, field);
+			await until(async () => (await app.allEntries()).filter((e) => e.field === 'coffee').length, (n) => n === 1);
+		}, DESKTOP);
 	});
 });
 

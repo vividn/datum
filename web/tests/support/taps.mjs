@@ -564,20 +564,21 @@ async function tapIn(app, path, key, layout) {
  * idle box — more than 300 on CI's lane. What costs is the menus that
  * reshape the layout, since every split, tab or layout they make is a `solo`
  * to put back: the root bar's (`layout`) and a pane's (`pane`) are a share
- * each, walked IN LAYOUT MODE (da-vvcxc), where those menus are — the open
- * root tab's name is the root's, a pane's name and its `+` the pane's. A
+ * each, walked IN MODIFY MODE (da-vvcxc), where those menus are — the open
+ * root tab's name is the root's, a pane's name and its `+` the pane's. The
+ * root's `+` is still there (da-00c29), so its chooser is `rest`'s. A
  * widget's own options menu (`menu`) is a share too, since the rest alone
  * reached the cap on a loaded lane (da-4j2hw), and every other layer is
  * `rest`; both are walked in normal mode.
  */
-const ROOT_LAYOUT = /^page: (open a layout|main)$/;
+const ROOT_LAYOUT = /^page: main$/;
 const PANE_LAYOUT = /: (add a tab to|menu of) the .* pane$/;
 const PANE_MENU = /: menu of the .* pane$/;
 export const SHARES = {
 	layout: { layout: true, test: (key) => ROOT_LAYOUT.test(key) },
 	pane: { layout: true, test: (key) => PANE_LAYOUT.test(key) },
 	menu: { layout: false, test: (key) => PANE_MENU.test(key) },
-	rest: { layout: false, test: (key) => key !== 'page: open a layout' && !PANE_MENU.test(key) }
+	rest: { layout: false, test: (key) => !PANE_MENU.test(key) }
 };
 
 /**

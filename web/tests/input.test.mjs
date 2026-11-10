@@ -16,7 +16,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { choose, chooser, exactly, inRoom, manage, toggleOption } from './support/layout.mjs';
+import { choose, chooser, exactly, inRoom, leaveLayoutMode, manage, toggleOption } from './support/layout.mjs';
 import { drawnLine } from './support/bar.mjs';
 
 before(startApp);
@@ -309,6 +309,8 @@ describe('reversed', () => {
 			await chooser(page).locator('button').filter({ hasText: exactly('input') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
 			await page.locator(WIDGET).waitFor();
+			// Out of modify mode, whose bar and widgets take no line (da-00c29).
+			await leaveLayoutMode(page);
 			// A receipt to measure: with nothing run it is an empty row.
 			await app.submit('occur water');
 			await page.locator('.input-widget .result .doc').first().waitFor();

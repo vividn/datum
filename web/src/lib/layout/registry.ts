@@ -843,7 +843,7 @@ A link adds one device, once, and only until the time it says. For the next devi
 
 ## What syncs
 
-Everything in the database: entries, fields, aliases, and layouts kept with Save layout. A layout you only Accept stays on its device. Each database syncs on its own: Sync shows the one this page is on, and your other databases under it.
+Everything in the database: entries, fields, aliases, and layouts kept with Save. A layout you only apply (✓) stays on its device. Each database syncs on its own: Sync shows the one this page is on, and your other databases under it.
 
 Joining merges: the joining device keeps what it had, and after the first sync both hold everything. Devices sync whenever two of them are online at once; a browser does while datum.day is open in it.
 

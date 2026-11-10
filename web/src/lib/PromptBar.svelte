@@ -105,7 +105,8 @@
 	import { epoch } from '#lib/layout/engine.ts';
 	import { clockSecondsLabel, now } from '#lib/clock.ts';
 	import { closeLog, foldedHere, inLog, lifted, lowering, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
-	import { layout } from '#lib/layout/current.ts';
+	import { editing, layout } from '#lib/layout/current.ts';
+	import { APPLY, RESET, accept, discard } from '#lib/layout/mode.ts';
 	import { soleWidgetOf } from '#lib/layout/tree.ts';
 	import { grip } from '#lib/grip.ts';
 	import { tabWord } from '#lib/tabWord.ts';
@@ -333,6 +334,8 @@
 	});
 
 	function onKey(event: KeyboardEvent): void {
+		// In modify mode the bar is still but for its pill (da-00c29): Escape is the mode's.
+		if ($editing) return;
 		// PageUp and PageDown on the box move the bar a state, as a swipe does.
 		if ((event.key === 'PageUp' || event.key === 'PageDown') && !$outputless && field.contains(event.target as Node)) {
 			event.preventDefault();
@@ -452,12 +455,28 @@
      everything it reaches — the box, the mark, `close history`, PageUp,
      PageDown, Escape — is a control or a key of its own. The same action is on the log
      (#lib/BarLog.svelte): one handle, one gesture, one number. -->
+<!-- In MODIFY MODE (da-00c29) everything here is inert but the «modify mode»
+     pill and its ↺ and ✓, which are the tab's two ways out again. vividn,
+     2026-11-10: «we can put a "modify mode" pill along with (:arrow: revert)
+     and (:check: accept) buttons down in the input bar, which should
+     otherwise be disabled during modify mode». `data-own-gestures` stills
+     the grip: no drag or wheel opens the log meanwhile. -->
 <footer
 	class="prompt-bar"
 	class:alarm={degraded}
+	class:still={!!$editing}
 		title={degraded ? $storageSentence : undefined}
+	data-own-gestures={$editing ? '' : undefined}
 	use:grip
 >
+	{#if $editing}
+		<div class="modify" role="group" aria-label="modify mode">
+			<button type="button" class="control way-out" aria-label="reset the changes" title="reset the changes (Escape)" onclick={discard}>{RESET}</button>
+			<span>modify mode</span>
+			<button type="button" class="control way-out apply" aria-label="apply the changes" title="apply the changes (Enter)" onclick={accept}>{APPLY}</button>
+		</div>
+	{/if}
+	<div class="bar-body" inert={!!$editing}>
 	{#if $shown > 0 || ($lowering && $lifted)}
 		<!-- It OPENS: its height is the first slice of how far the bar is
 		     pulled (#lib/log.ts), so a drag grows it smoothly and the notch
@@ -614,9 +633,62 @@
 			{/key}
 		</button>
 	{/if}
+	</div>
 </footer>
 
 <style>
+	/* The bar's content, in a box of no box of its own, so `inert` reaches all of it at once. */
+	.bar-body {
+		display: contents;
+	}
+
+	.prompt-bar.still .bar-body > :global(*) {
+		opacity: 0.4;
+	}
+
+	/* The pill, over the middle of the input row. */
+	.modify {
+		position: absolute;
+		inset-inline: 0;
+		bottom: 0;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		height: var(--input-height);
+		pointer-events: none;
+	}
+
+	.modify > * {
+		pointer-events: auto;
+	}
+
+	.modify span {
+		padding: 0.15rem 0.7rem;
+		border: 1px solid var(--accent);
+		border-radius: 999px;
+		color: var(--accent);
+		background: var(--ground);
+		font-size: 0.8rem;
+		letter-spacing: 0.06em;
+		white-space: nowrap;
+	}
+
+	.way-out {
+		block-size: 28px;
+		min-inline-size: 28px;
+		color: var(--accent);
+		border-color: var(--accent);
+		background: var(--ground);
+	}
+
+	.way-out.apply {
+		background: var(--accent);
+		color: var(--page);
+		font-weight: 700;
+	}
+
 	.prompt-bar {
 		position: relative;
 		display: flex;

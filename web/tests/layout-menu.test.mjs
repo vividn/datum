@@ -539,7 +539,7 @@ describe("the root bar's menu", () => {
 	/** The root's differences from a pane's, and only these. */
 	const NO_BREAK = 'Break out ← ↓ ↑ →'; // a tab leaves its STRIP, and the root has none (da-a642)
 	const NO_OPTIONS = 'Widget options'; // a widget's are its pane's, and the root holds layouts (da-7nh4l)
-	const ROOT_ONLY = ['Taller than the screen', 'Accept', 'Save layout', 'Discard changes']; // a layout's height (da-py6pl), and the ways out of layout mode (da-vvcxc)
+	const ROOT_ONLY = ['Taller than the screen']; // a layout's height (da-py6pl); the ways out are the tab's ↺ and ✓ (da-00c29)
 	const CLOSE = '× Close tab'; //        last in both (da-ygc9)
 
 	/** Open a menu, read its lines, close it. */

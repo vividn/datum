@@ -93,6 +93,13 @@
 		kept?: boolean;
 		/** A root tab taller than the screen (da-py6pl): this many screens, the page scrolling. */
 		tall?: number;
+		/**
+		 * A widget in modify mode (da-00c29): inert and dimmed. vividn,
+		 * 2026-11-10: «when in modify mode, disable all normal functionality of
+		 * widgets. This mode should be purely about changing layout not
+		 * collecting data».
+		 */
+		still?: boolean;
 		children?: Snippet;
 	}
 
@@ -104,6 +111,7 @@
 		least = undefined,
 		kept = false,
 		tall = undefined,
+		still = false,
 		children
 	}: Props = $props();
 
@@ -159,8 +167,9 @@
 	class:beside
 	class:grown={!active && shy < 0}
 	class:kept
+	class:still
 	bind:this={body}
-	inert={!active && !kept}
+	inert={(!active && !kept) || still}
 	aria-hidden={!active && kept ? 'true' : undefined}
 	onfocusin={!active && kept ? (e) => refuse(body!, e) : undefined}
 	style:min-width={active && least ? `${least.width}px` : null}
@@ -181,6 +190,9 @@
 	/* A tall root column with a `fit` pane is as tall as what is in it (Layout.svelte). */
 	.tab-body:has(> :global(.split.column.tall > .cell.fit)) {
 		flex: none;
+	}
+	.still {
+		opacity: 0.4;
 	}
 	.behind {
 		position: absolute;

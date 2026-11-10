@@ -17,6 +17,7 @@ import { DESKTOP } from './support/layout.mjs';
 // double (da-kk0vr).
 everyLayer('desktop', { ...DESKTOP, desk: null }, 'rest', [
 	'page: main',
+	'page: open a layout',
 	'page: settings › page: Backups',
 	'page: settings › page: Backups › backups: Delete plan'
 ]);

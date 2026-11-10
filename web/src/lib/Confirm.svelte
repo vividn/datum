@@ -7,9 +7,8 @@
 	type. Escape, cancel or a wrong name are all no. A question with more
 	answers than one, a chained purge's leave, rejoin or chain (da-0hay9), puts
 	the rest in `also`, and `onchose` hears which was pressed, or null.
-	`danger` names the button that destroys, drawn in `--error`: the action
-	for a confirm, the cancel for a choice whose way out throws work away
-	(layout mode's Discard changes), or none, and every action is the accent.
+	`danger` says the action destroys, drawn in `--error`, as a confirm's is,
+	or not, and every action is the accent.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -24,7 +23,7 @@
 		name?: string;
 		cancel?: string;
 		kind?: ActKind;
-		danger?: 'action' | 'cancel' | null;
+		danger?: 'action' | null;
 		onclose?: (yes: boolean) => void;
 		onchose?: (pressed: string | null) => void;
 	}
@@ -67,7 +66,7 @@
 			{#each [action, ...also] as a}
 				<button value={a} use:act={kind}>{a}</button>
 			{/each}
-			<button type="button" class:danger={danger === 'cancel'} onclick={() => dialog.close()}>{cancel}</button>
+			<button type="button" onclick={() => dialog.close()}>{cancel}</button>
 		</div>
 	</form>
 </dialog>
@@ -134,12 +133,5 @@
 	button[value] {
 		border-color: var(--act);
 		color: var(--act);
-	}
-
-	button.danger {
-		/* `--error` on `--raised` is under 4.5:1 on a yellow database. */
-		background: var(--ground);
-		border-color: var(--error);
-		color: var(--error);
 	}
 </style>

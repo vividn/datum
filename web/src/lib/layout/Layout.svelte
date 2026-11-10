@@ -581,6 +581,7 @@
 			{least}
 			{tall}
 			kept={pane.id === rootId}
+			still={!locked && !isSplit(content) && content.kind !== EMPTY_KIND}
 		>
 			{#if isSplit(content)}
 				{@const split = content}

@@ -191,14 +191,17 @@ export async function enterLayoutMode(page) {
 	await page.locator('.frame[data-layout-mode]').waitFor();
 }
 
+/** The modified root tab's ways out of modify mode (da-00c29): ↺ on its left, ✓ on its right. */
+export const applyButton = (page) => page.locator('.root-bar .tabs button.apply');
+export const resetButton = (page) => page.locator('.root-bar .tabs button.reset');
+
 /**
- * Out of layout mode by the open tab's menu — `Accept`, `Save layout` or
- * `Discard changes` — and wait for the page to say so.
+ * Out of modify mode by the open tab's ✓ (`apply`) or ↺ (`reset`), and
+ * wait for the page to say so.
  */
-export async function leaveLayoutMode(page, how = 'Accept') {
+export async function leaveLayoutMode(page, how = 'apply') {
 	if (!(await inLayoutMode(page))) return;
-	await rootMenuButton(page).click();
-	await page.getByRole('menuitem', { name: how, exact: true }).click();
+	await (how === 'reset' ? resetButton(page) : applyButton(page)).click();
 	await page.locator('.frame[data-layout-mode]').waitFor({ state: 'detached' });
 }
 
@@ -220,7 +223,7 @@ export const rootMenuButton = (page) => page.locator('.root-bar [role="tab"][ari
  * Open the menu `button` opens and choose `label` from it, in whichever
  * mode the page is (da-vvcxc). In layout mode a pane's normal-mode items
  * are one step in, under `Widget options`; the root tab's are not in its
- * layout-mode menu at all, so the mode is left (Accept) to reach them.
+ * layout-mode menu at all, so the mode is left (✓) to reach them.
  */
 export async function pickFrom(page, button, label) {
 	await button.click();

@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { fill, manage, ONE_PANE } from './support/layout.mjs';
+import { fill, leaveLayoutMode, manage, ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -152,6 +152,8 @@ describe('the aliases widget', () => {
 			// Split is layout mode's (da-vvcxc).
 			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'aliases');
+			// Out of modify mode, whose bar takes no line (da-00c29).
+			await leaveLayoutMode(page);
 			await page.locator('section.pane[data-title="aliases"] li').nth(1).waitFor();
 			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'coffee → occur coffee']);
 

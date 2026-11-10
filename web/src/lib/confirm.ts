@@ -39,17 +39,9 @@ export function confirm(text: string, action: string, name = '', cancel = 'cance
  * for Escape or cancel: a CLI question with more answers than yes, as a
  * chained purge's leave, rejoin or chain (da-0hay9). Each answer opens the next
  * dialog there, so each wears `open`'s chevron; answers that act at once
- * (layout mode's Accept and Save, da-vvcxc) pass `run`. No answer is the
- * danger, so all are the accent, unless `dangerousCancel`: the cancel throws
- * work away and is red (layout mode's Discard changes).
+ * pass `run`. No answer is the danger, so all are the accent.
  */
-export function choose(
-	text: string,
-	actions: string[],
-	cancel = 'cancel',
-	kind: ActKind = 'open',
-	dangerousCancel = false
-): Promise<string | null> {
+export function choose(text: string, actions: string[], cancel = 'cancel', kind: ActKind = 'open'): Promise<string | null> {
 	const [action, ...also] = actions;
 	return new Promise((resolve) => {
 		const dialog = mount(Confirm, {
@@ -60,7 +52,7 @@ export function choose(
 				also,
 				cancel,
 				kind,
-				danger: dangerousCancel ? 'cancel' : null,
+				danger: null,
 				onchose: (pressed) => {
 					unmount(dialog);
 					resolve(pressed);

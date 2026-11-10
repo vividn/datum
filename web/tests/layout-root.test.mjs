@@ -36,6 +36,7 @@ import {
 	swipe,
 	titles,
 	widgetPane,
+	leaveLayoutMode,
 	HELP
 } from './support/layout.mjs';
 
@@ -214,6 +215,8 @@ describe('on a phone', () => {
 			await app.submit(`occur ${'x'.repeat(60)}`);
 			await app.submit('tail');
 			await addTab(page, 'repl', 'aliases');
+			// Out of modify mode, where a widget is inert and scrolls nothing (da-00c29).
+			await leaveLayoutMode(page);
 			await pane(page, 'repl').locator('[role="tab"]', { hasText: 'cli' }).click();
 			await pastTheWindow(page);
 			const body = pane(page, 'repl').locator('.body:not(.behind .body)');

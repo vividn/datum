@@ -55,8 +55,8 @@ const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true,
 /** The root tab's menu, unmodified, as it shipped and with no save behind it (`tabItems`, da-bfqw4). */
 const ACTS = ['Choose another…', 'Modify', 'Save layout as', 'Reorder ← →', '× Close'];
 
-/** The root's layout-mode menu: what is done to the page, and the ways out. */
-const MANAGE = ['Change Widget', 'Split ← ↓ ↑ →', 'Taller than the screen', 'Accept', 'Save layout', 'Discard changes', '× Close tab'];
+/** The root's modify-mode menu: what is done to the page; the ways out are the tab's ↺ and ✓ (da-00c29). */
+const MANAGE = ['Change Widget', 'Split ← ↓ ↑ →', 'Taller than the screen', '× Close tab'];
 
 async function linesFrom(page, button) {
 	await rootSettled(page);

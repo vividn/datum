@@ -481,10 +481,12 @@ describe('the layout engine, by keyboard', () => {
 		return seen;
 	}
 
-	test('a Tab walk reaches every menu button, every border and the nowview steps, in layout mode', async () => {
+	test('a Tab walk reaches every menu button, every border and the open tab’s ↺ and ✓, in modify mode', async () => {
 		await desktop.solo(async ({ page }) => {
-			// Layout mode (da-vvcxc) draws every control there is: the borders,
-			// each pane's `+`, `×` and handle, and each root tab's `×`.
+			// Modify mode (da-vvcxc) draws every control of the layout there is:
+			// the borders, each pane's `+`, `×` and handle, and the open tab's
+			// ↺ and ✓ (da-00c29); a widget's own are inert, as are the bar's
+			// but for its pill, and the gear is still.
 			await enterLayoutMode(page);
 			const reached = await tabWalk(page);
 			// The root bar's `+` and its active tab — which is the page's own
@@ -494,18 +496,18 @@ describe('the layout engine, by keyboard', () => {
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, button.maximize, [role="separator"], .nowview-handles .handle, .root-bar [role="tab"][aria-selected="true"], .root-bar button.tab-close:not(:disabled), .root-bar button.gear, .prompt-bar .brand'
+						'button.title, button.add, button.maximize, [role="separator"], .nowview-handles .handle, .root-bar [role="tab"][aria-selected="true"], .root-bar .way-out, .root-bar button.gear, .prompt-bar .brand, .prompt-bar .modify button'
 					)
 				]
-					.filter((el) => el.getClientRects().length > 0)
+					.filter((el) => el.getClientRects().length > 0 && !el.closest('[inert]') && !el.disabled)
 					.map((el) => ({
 						walk: el.dataset.walk ?? null,
 						what: el.matches('button.title')
 							? `menu of ${el.closest('section')?.dataset.title}`
 							: el.matches('.root-bar button.gear')
 								? 'the gear'
-								: el.matches('.root-bar button.tab-close')
-									? 'the × of a root tab'
+								: el.matches('.way-out')
+									? `the ${el.textContent.trim()} of ${el.closest('.root-bar') ? 'the open tab' : 'the bar'}`
 									: el.matches('.root-bar [role="tab"]')
 										? 'menu of the root bar'
 										: el.matches('button.add')
@@ -519,11 +521,14 @@ describe('the layout engine, by keyboard', () => {
 														: 'border'
 					}))
 			);
-			assert.ok(controls.filter((c) => c.what.startsWith('window handle')).length >= 1, 'no nowview handles');
+			assert.equal(controls.filter((c) => c.what.startsWith('window handle')).length, 0, 'a widget’s own control is live in modify mode');
+			assert.ok((await page.locator('.nowview-handles .handle').count()) >= 1, 'no nowview handles to be inert');
 			assert.equal(controls.filter((c) => c.what === 'menu of the root bar').length, 1, 'the root bar has no menu button');
-			assert.equal(controls.filter((c) => c.what === 'the gear').length, 1, 'the root bar has no gear (da-pp1a)');
-			// The one root tab wears its ×, disabled: the page's last tab does not close.
-			assert.equal(await page.locator('.root-bar button.tab-close:disabled').count(), 1, 'the root tab wears no × in layout mode');
+			assert.equal(await page.locator('.root-bar button.gear:disabled').count(), 1, 'the gear is live in modify mode');
+			assert.deepEqual(
+				controls.filter((c) => c.what.startsWith('the ↺') || c.what.startsWith('the ✓')).map((c) => c.what),
+				['the ↺ of the open tab', 'the ✓ of the open tab', 'the ↺ of the bar', 'the ✓ of the bar']
+			);
 			assert.equal(await page.locator('button.faint').count(), 0, 'the margin handles are back (da-wjob)');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
 			for (const control of controls) {
@@ -537,7 +542,7 @@ describe('the layout engine, by keyboard', () => {
 			// A pane's title, and the root bar's active tab (da-wjob) and gear:
 			// in normal mode what each thing IS, in layout mode what is done
 			// to it (da-vvcxc).
-			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear');
+			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear:not(:disabled)');
 			/** Every label the arrows reached, across all the menus. */
 			const seen = new Set();
 			for (const layoutMode of [false, true]) {
@@ -582,7 +587,7 @@ describe('the layout engine, by keyboard', () => {
 				}
 			}
 			// Layout mode's acts were walked too.
-			for (const act of ['Change Widget', 'Accept', 'Discard changes'])
+			for (const act of ['Change Widget', 'Taller than the screen'])
 				assert.ok(seen.has(act), `${act} was never walked: ${[...seen].join(' | ')}`);
 			// The root tab's own (da-bfqw4), in the menu of `main`, the root
 			// tab this page opens with.
@@ -626,7 +631,7 @@ describe('the layout engine, by keyboard', () => {
 							panes: shown(
 								'section button.title, section button.add, section button.maximize, section button.close'
 							).map(box),
-							root: shown('.root-bar button.add, .root-bar button.tab-close, .root-bar button.gear, .root-bar [role="tab"]').map(box)
+							root: shown('.root-bar button.add, .root-bar .way-out, .root-bar button.gear, .root-bar [role="tab"]').map(box)
 						};
 					});
 					assert.equal(sizes.coarse, name.endsWith('finger'));

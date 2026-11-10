@@ -294,11 +294,12 @@ describe('the shell', () => {
 				(await rootItems(page)).map((i) => i.label),
 				['Choose another…', 'Modify', 'Save layout as', 'Reorder ← →', '× Close']
 			);
-			// Layout mode's: what is DONE to the page and the ways out, Close
-			// last and wearing its × (da-ygc9). The arrows read in vim order.
+			// Modify mode's: what is DONE to the page, Close last and wearing its
+			// × (da-ygc9); the ways out are the tab's ↺ and ✓ (da-00c29). The
+			// arrows read in vim order.
 			assert.deepEqual(
 				(await rootManageItems(page)).map((i) => i.label),
-				['Change Widget', 'Split ← ↓ ↑ →', 'Taller than the screen', 'Accept', 'Save layout', 'Discard changes', '× Close tab']
+				['Change Widget', 'Split ← ↓ ↑ →', 'Taller than the screen', '× Close tab']
 			);
 			assert.deepEqual(errors, []);
 		});

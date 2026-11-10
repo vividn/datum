@@ -182,9 +182,9 @@
 				<ul>
 					<li>Move a tab: drag it. On a phone, hold it first.</li>
 					<li>Open a widget, or a tab you closed: the + beside the tabs.</li>
-					<li>Change a page: hold its tab, or right-click it, for layout mode.</li>
-					<li>In layout mode a pane's name splits, changes or closes it.</li>
-					<li>Leave by the tab's name: Accept, Save layout (every device), or Discard changes.</li>
+					<li>Change a page: hold its tab, or right-click it, for modify mode.</li>
+					<li>In modify mode a pane's name splits, changes or closes it.</li>
+					<li>Leave by the tab's ✓, which applies, or its ↺, which resets; Save in its menu reaches every device.</li>
 				</ul>
 			{/if}
 		{/if}

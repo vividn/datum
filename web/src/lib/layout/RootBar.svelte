@@ -16,19 +16,22 @@
 	a widget opens that kind's built-in one-widget layout. Its first layout
 	is «New layout» (da-1a9fh): named, then opened blank.
 
-	LAYOUT MODE (da-vvcxc, `mode.ts`) is entered HERE: a long press on the
-	open tab let go where it was, or its context menu — a right click, the
-	menu key, Shift+F10. vividn, 2026-10-14: «long pressing (and release
-	without dragging to reorder the tabs) or right clicking on a primary
-	tab name enters unlocked/layout mode». It replaced the padlock that
-	stood by the gear (da-fphjw) and the `▾` beside the `+` (da-bzhq): «no
-	more down arrow button at all or lock button for that matter». In it
-	the bar is hatched in the accent, every tab wears its close on its
-	right, and the open tab's name opens what the `▾` held — `Change
-	Widget`, `Split`, which at the root is `addEdge`, a new pane down one
-	whole side of the layout (da-a642), and `Close tab` — with the three
-	ways out: Accept, Save layout, Discard changes. Escape asks which; so does moving to another
-	tab with a change in hand.
+	MODIFY MODE (da-vvcxc, `mode.ts`) is entered HERE: a long press on the
+	open tab let go where it was, its context menu — a right click, the
+	menu key, Shift+F10 — or its menu's Modify. vividn, 2026-10-14: «long
+	pressing (and release without dragging to reorder the tabs) or right
+	clicking on a primary tab name enters unlocked/layout mode». It replaced
+	the padlock that stood by the gear (da-fphjw) and the `▾` beside the `+`
+	(da-bzhq). In it the bar is hatched in the accent, and the tab being
+	modified wears ↺ on its left and ✓ on its right (da-00c29), vividn,
+	2026-11-10: «don't show the [x] buttons on every tab / - instead show a
+	check button on its right and a revert (circle arrow) button on it's
+	left, which applies the changes or resets respectively. No buttons on
+	other tabs, which should be dimmed.» So the other tabs, the `+` and the
+	gear are dimmed and do nothing but be dragged along the strip, and the
+	open tab's name opens what the `▾` held — `Change Widget`, `Split`,
+	which at the root is `addEdge`, a new pane down one whole side of the
+	layout (da-a642), and `Close tab`.
 
 	In normal mode the name opens the tab's own menu (da-bfqw4, `tabItems`
 	in menu.ts). vividn, 2026-11-10: «Choose another... / Modify (enters
@@ -164,7 +167,7 @@
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
 	import { CHANGE, CLOSE, aimed, helpItems, tabItems, type Item } from './menu.js';
-	import { accept, discard, enter, isAsking, leave, save as saveMode } from './mode.js';
+	import { APPLY, RESET, accept, discard, enter, onKey as onModeKey } from './mode.js';
 	import { offers, widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
@@ -239,7 +242,6 @@
 	 * Nothing is above a root tab, so nothing is refused here.
 	 */
 	async function add(): Promise<void> {
-		await leave();
 		const picked = await choose([], true);
 		if (!picked) return;
 		if ('blank' in picked) return named();
@@ -342,13 +344,12 @@
 	 * as: the layout's acts, and `Keep tab` on a preview — and on a tab that
 	 * is a bare widget, that widget's reset and options first (da-ze1x).
 	 *
-	 * In LAYOUT MODE (da-vvcxc), «all the down arrow actions» (vividn) — what
+	 * In MODIFY MODE (da-vvcxc), «all the down arrow actions» (vividn) — what
 	 * the root `▾` held: `Change Widget`, `Split`, which at the root is a side
 	 * of the whole layout (`addEdge`, da-a642), «Taller than the screen»
 	 * (da-py6pl: the layout may grow past one screen and the page scrolls;
-	 * off fits it back, each pane keeping its share), and `Close tab` — and the
-	 * three ways out of the mode (`mode.ts`): Accept, Save layout where the
-	 * tab holds one, Discard changes. Close last, as ever.
+	 * off fits it back, each pane keeping its share), and `Close tab`, last.
+	 * The ways out are the tab's ↺ and ✓ (da-00c29).
 	 */
 	const arrange = $derived([
 		{ label: CHANGE, act: 'open' as const, run: () => id !== undefined && void fillTab(id) },
@@ -358,9 +359,6 @@
 			toggled: active?.tall !== undefined,
 			run: () => id !== undefined && apply((l) => setTall(l, id, active?.tall === undefined ? 1 : undefined))
 		},
-		{ label: 'Accept', run: accept },
-		...(name === undefined ? [] : [{ label: 'Save layout', act: 'run' as const, run: () => void attempt(saveMode) }]),
-		{ label: 'Discard changes', run: discard },
 		{ label: 'Close tab', glyph: CLOSE, disabled: tabs.length < 2, run: () => close($layout.root.active) }
 	] satisfies Item[]);
 
@@ -391,29 +389,17 @@
 				})
 	);
 
-	/**
-	 * Escape in layout mode asks how to leave it (vividn: «Esc Esc reverts,
-	 * Esc Enter accepts»). Next to last, as PromptBar.svelte orders Escape:
-	 * a key a menu, a dialog, a widget or the log has taken is theirs, so
-	 * this waits for the dispatch to finish, and takes it from the peel.
-	 */
-	function onEscape(event: KeyboardEvent) {
-		// A dialog's Escape is its own cancel, which marks nothing: asked at
-		// the key, since the dialog has closed by the time the dispatch has.
-		if (event.key !== 'Escape' || !$editing || isAsking() || document.querySelector('dialog[open]')) return;
-		setTimeout(() => {
-			if (event.defaultPrevented) return;
-			event.preventDefault();
-			void leave();
-		});
-	}
-
-	/** Another root tab: in layout mode, after asking how to leave it. */
-	async function go(index: number) {
-		if (index === $layout.root.active) return;
-		await leave();
+	/** Another root tab; none in modify mode, whose other tabs are dimmed and still. */
+	function go(index: number) {
+		if (index === $layout.root.active || $editing) return;
 		activate(index);
 	}
+
+	/** The tab's ✓, focused as the mode is entered, so Enter applies and a keyboard is where the way out is. */
+	let applyButton: HTMLButtonElement | null = $state(null);
+	$effect(() => {
+		if ($editing) void tick().then(() => applyButton?.focus({ preventScroll: true }));
+	});
 
 	/**
 	 * «Reset default layouts» (da-jbcv), behind a confirm: it writes, and
@@ -485,9 +471,9 @@
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
 	async function onTabKey(event: KeyboardEvent, index: number) {
 		const next = event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowLeft' ? index - 1 : null;
-		if (next === null || next < 0 || next >= tabs.length) return;
+		if (next === null || next < 0 || next >= tabs.length || $editing) return;
 		event.preventDefault();
-		await go(next);
+		go(next);
 		// After the tick: switching swaps which tab is the menu's button, so
 		// the tab to focus is the one that is there once it has (da-9vtw).
 		await tick();
@@ -528,7 +514,7 @@
 	const TEETH = [0, 45, 90, 135, 180, 225, 270, 315];
 </script>
 
-<svelte:window onkeydown={onEscape} />
+<svelte:window onkeydown={onModeKey} />
 
 <nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts" data-layout-mode={$editing ? '' : undefined}>
 	{#if !$editing && updated.current}
@@ -554,6 +540,7 @@
 		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Settings, where timezone tracking and wrapping tabs on a swipe are set; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
 		class="gear"
 		aria-label="settings"
+		disabled={!!$editing}
 		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">
 			{#each TEETH as angle}<rect x="-1.9" y="-11.4" width="3.8" height="5.6" rx="1" transform="rotate({angle})" />{/each}
 			<circle class="ring" r="6.2" />
@@ -572,7 +559,7 @@
 	>
 	{/if}
 	<!-- A hold on the OPEN tab, let go where it was, or its context menu —
-	     a right click, the menu key, Shift+F10 — enters layout mode
+	     a right click, the menu key, Shift+F10 — enters modify mode
 	     (da-vvcxc); a hold that moves still reorders (`reorder.ts`). -->
 	<div
 		class="tabs"
@@ -586,6 +573,13 @@
 		}}
 	>
 		{#each $loaded ? tabs : [] as tab, i (tab.id)}
+			<!-- The tab being modified wears ↺ on its left and ✓ on its right
+			     (da-00c29); the others none. -->
+			{#if $editing && i === $layout.root.active}
+				<button type="button" class="control way-out reset" aria-label="reset the changes" title="reset the changes (Escape)" onclick={discard}
+					>{RESET}</button
+				>
+			{/if}
 			{#if i === $layout.root.active && items.length > 0}
 				<!-- The tab in front is the menu's button; the others switch. -->
 				<PaneMenu
@@ -609,6 +603,7 @@
 					class="control tab"
 					class:modified={$modified.has(tab.id)}
 					class:preview={tab.layout !== undefined && $previews.has(tab.layout)}
+					aria-disabled={$editing ? 'true' : undefined}
 					aria-selected={i === $layout.root.active}
 					tabindex={i === $layout.root.active ? 0 : -1}
 					onclick={() => go(i)}
@@ -617,21 +612,19 @@
 					{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}
 				</button>
 			{/if}
-			<!-- In layout mode every tab wears its close on its right (vividn:
-			     «the close button should go on the right of each tab»). -->
-			{#if $editing}
+			{#if $editing && i === $layout.root.active}
 				<button
 					type="button"
-					class="control tab-close"
-					aria-label="close the {labelOf(tab)} tab"
-					title="close this tab"
-					disabled={tabs.length < 2}
-					onclick={() => close(i)}>{CLOSE}</button
+					class="control way-out apply"
+					aria-label="apply the changes"
+					title="apply the changes (Enter): kept on this device, Save in the tab's menu writes them"
+					bind:this={applyButton}
+					onclick={accept}>{APPLY}</button
 				>
 			{/if}
 		{/each}
 	</div>
-	<button type="button" class="control badge add" use:act={'open'} aria-label="open a layout" title="open a layout"
+	<button type="button" class="control badge add" use:act={'open'} aria-label="open a layout" title="open a layout" disabled={!!$editing}
 		data-help="A layout is a page of panes, each holding a widget. Opens one as a new tab — a saved layout, a new blank one you name, or a single widget on its own; the tabs switch between them."
 		onclick={add}>+</button
 	>
@@ -776,20 +769,34 @@
 		box-shadow: 0 1px 0 var(--accent);
 	}
 
-	/* Its tabs give the × room (da-yxfem): at 360px wide a first visit's
-	   three tabs and their × were 299px in a 284px strip. */
-	.root-bar[data-layout-mode] .tabs :global(.tab) {
-		padding-inline: 0.4rem;
+	/* What modify mode cannot change is dimmed (da-00c29), vividn: «in
+	   general things should be dimmed except for the things you can change
+	   which can be highlighted»: the other tabs, the `+` and the gear. */
+	.root-bar[data-layout-mode] .tabs :global(.tab[aria-selected='false']),
+	.root-bar[data-layout-mode] .add,
+	.root-bar[data-layout-mode] :global(.gear) {
+		opacity: 0.4;
 	}
 
-	.tab-close {
+	/* The modified tab's ↺ and ✓, tucked against it either side. */
+	.way-out {
 		flex: none;
 		block-size: 24px;
 		min-inline-size: 24px;
-		margin-inline-start: -6px;
 		padding: 0 0.3rem;
 		color: var(--accent);
 		border-color: var(--accent);
+	}
+
+	.way-out.reset {
+		margin-inline-end: -2px;
+	}
+
+	.way-out.apply {
+		margin-inline-start: -2px;
+		background: var(--accent);
+		color: var(--page);
+		font-weight: 700;
 	}
 
 	.dot {

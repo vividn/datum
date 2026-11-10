@@ -1340,13 +1340,14 @@ laid out the same way.
   every gap. There a pane's name opens what is DONE to it — Change Widget,
   Rename, Split, Break out, `Widget options ▸` (the normal-mode list, one
   step in), Close — the `+` and `×` are back, the maximize is the bar's
-  HANDLE (dragged to an edge and a third of it; the arrows move it), each
-  root tab wears a `×`, and the open tab's name opens Change Widget,
-  Split, Close tab and the three ways out: Accept (the draft this device
-  keeps, which a reload keeps too), Save layout (the database, so every
-  synced device), Discard changes. Escape asks which — Esc Esc discards,
-  Esc Enter accepts — and so does moving to another root tab with a
-  change in hand. There is no `▾` and no lock. One builder, `menu.ts`,
+  HANDLE (dragged to an edge and a third of it; the arrows move it), and
+  the open tab's name opens Change Widget, Split, Close tab. Its ways out
+  are the modified tab's ↺ (left) and ✓ (right), and the same two around
+  the input bar's «modify mode» pill (da-00c29): ✓ or Enter applies (the
+  draft this device keeps, a reload too, the tab's dot until its Save),
+  ↺ or Escape resets. Every widget is `inert` and dimmed meanwhile
+  (TabBody's `still`), as are the bar but for its pill and the other
+  tabs, the `+` and the gear, which only drag. There is no `▾` and no lock. One builder, `menu.ts`,
   one order, two ways to draw it — `named` and `arranged`. A HOLD on a
   pane's title in layout mode — the app's one hold, `web/src/lib/hold.ts`
   — is a second door on Change Widget; the `contextmenu` is eaten on the
