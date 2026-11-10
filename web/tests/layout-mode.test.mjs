@@ -24,6 +24,7 @@ import {
 	menuButton,
 	moveBar,
 	pane,
+	rested,
 	rootMenuButton,
 	titles
 } from './support/layout.mjs';
@@ -183,7 +184,9 @@ describe('the ways in', () => {
 				document.addEventListener('contextmenu', (e) => window.__menus.push(e.defaultPrevented));
 			});
 			await page.locator('.root-bar [role="tab"][aria-selected="false"]').click({ button: 'right' });
-			await page.waitForTimeout(200);
+			// The contextmenu is handled as it is dispatched (reorder.ts's `menu`),
+			// so an entry it set off is drawn by the next frame: wait out whatever moves.
+			await rested(page);
 			assert.equal(await isOn(page), false);
 			assert.deepEqual(await page.evaluate(() => window.__menus), [false], 'the browser’s menu was eaten on a tab behind');
 		}, { ...DESKTOP, ...TWO });
@@ -214,7 +217,9 @@ describe('the ways in', () => {
 					page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));
 				const first = await order();
 				await fingerHold(page, rootMenuButton(page), 120, true);
-				await page.waitForTimeout(300);
+				// The lift decides at once (reorder.ts's `up`), so an entry or a
+				// move it set off is drawn by the next frame: wait out whatever moves.
+				await rested(page);
 				assert.equal(await isOn(page), false, 'a hold that wandered and came home entered layout mode');
 				assert.deepEqual(await order(), first, 'the tabs moved');
 				await fingerHold(page, rootMenuButton(page));
@@ -322,7 +327,9 @@ describe('the ways out', () => {
 			await page.locator('dialog.chooser').waitFor();
 			await page.keyboard.press('Escape');
 			await page.locator('dialog.chooser').waitFor({ state: 'detached' });
-			await page.waitForTimeout(200);
+			// The mode asks a task after the key (RootBar's `onEscape`), and the
+			// dialog is drawn a frame after that: wait out whatever it moves.
+			await rested(page);
 			assert.equal(await asking(page).count(), 0, 'the chooser’s Escape also asked how to leave');
 			assert.equal(await isOn(page), true);
 		}, DESKTOP);
