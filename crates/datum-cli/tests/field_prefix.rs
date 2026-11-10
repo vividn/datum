@@ -188,3 +188,32 @@ fn in_an_entrys_place_a_field_wins_over_a_hid() {
         assert!(err.contains("hid"), "{line:?}: {err}");
     }
 }
+
+/// da-zai4h: a write names an entry as `get` does. `retime tea` read the
+/// field `tea`'s one entry and a row whose hid starts `tea` as two matches,
+/// a flake once in 36³ rows.
+#[test]
+fn a_write_takes_the_field_over_a_hid_it_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = seeded(dir.path());
+    let (_, hid, _) = datum(&db, &["get", "coffee::hid"]);
+    let hid = hid.trim();
+    let field = &hid[..3];
+    assert!(datum(&db, &["occur", field, "-y", "-t", "9:00"]).0);
+
+    let (ok, out, err) = datum(&db, &["retime", field, "-y", "-t", "9:30"]);
+    assert!(ok, "{err}");
+    assert!(out.contains(field) && !out.contains("coffee"), "{out}");
+
+    // Two entries of the field: named, and nothing else.
+    assert!(datum(&db, &["occur", field, "-y", "-t", "11:00"]).0);
+    let (ok, _, err) = datum(&db, &["retime", field, "-y", "-t", "9:45"]);
+    assert!(!ok && err.contains("ambiguous"), "{err}");
+    assert_eq!(err.matches(&format!("{field}:")).count(), 2, "{err}");
+    assert!(!err.contains("coffee"), "{err}");
+
+    // A whole hid is its entry.
+    let (ok, out, err) = datum(&db, &["retime", hid, "-y", "-t", "8:00"]);
+    assert!(ok, "{err}");
+    assert!(out.contains("coffee"), "{out}");
+}

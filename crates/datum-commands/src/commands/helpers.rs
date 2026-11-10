@@ -387,9 +387,12 @@ pub(crate) fn resolve_batch(
         std::collections::HashSet::new();
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     for token in id_list(db, input) {
-        // da-tldkb: `get`'s plain name is a field before it is a hid, while
-        // the field has a live entry to show.
-        if expand_ambiguous {
+        // da-tldkb: a plain name is a field before it is a hid or slug it
+        // only starts, while the field has a live entry: `get` shows every
+        // one, a write takes its one or names them (da-zai4h: `retime tea`
+        // read a spec row whose hid starts `tea` as a second match). A
+        // whole hid or slug is its entry.
+        if expand_ambiguous || db.get_entry(token).is_err() {
             let field = match id_field_named(db, token) {
                 Ok(field) => field,
                 Err(e) => {
@@ -398,10 +401,30 @@ pub(crate) fn resolve_batch(
                 }
             };
             if let Some(field) = field {
-                match db.entries_for_field_asc(&field, None) {
+                // A write names as many as `resolve_prefix` does.
+                let limit = (!expand_ambiguous).then_some(16);
+                match db.entries_for_field_asc(&field, limit) {
                     Ok(found) if found.is_empty() => {}
-                    Ok(found) => {
+                    Ok(found) if expand_ambiguous || found.len() == 1 => {
                         entries.extend(found.into_iter().filter(|e| seen.insert(e.slug.clone())));
+                        continue;
+                    }
+                    Ok(found) => {
+                        let candidates = found
+                            .into_iter()
+                            .map(|e| datum_core::error::PrefixCandidate {
+                                slug: e.slug,
+                                hid: e.hid,
+                            })
+                            .collect();
+                        errors.push((
+                            token.to_string(),
+                            datum_core::error::DatumError::AmbiguousPrefix {
+                                prefix: token.to_string(),
+                                candidates,
+                            }
+                            .into(),
+                        ));
                         continue;
                     }
                     Err(e) => {
