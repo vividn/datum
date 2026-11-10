@@ -22,6 +22,11 @@ datum tail activity                       # read it back
 A record like this answers questions an agent cannot answer from memory: how long a task really took, what it
 decided and when, what it was doing when something went wrong. Times come from the record, never from a guess.
 
+Shared with its person, they can watch what it does: `datum --db claude sync chain invite --label claude`, then send
+them the link with `?db=claude` (the database name) added before its `#`:
+`https://datum.day/sync/join?db=claude#<ticket>`. On datum.day it opens as a database of its own beside theirs;
+without `?db=` it joins the record their browser has open.
+
 ## Help your person track
 
 The step-by-step guide for an agent helping its person, from the interview through the setup and sharing a database

@@ -132,6 +132,12 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
   user (a systemd user unit or launchd agent), even on a throwaway db. If one
   slipped in, `datum sync daemon status` shows it and `datum sync daemon uninstall`
   removes it.
+- **Share your own record with your person** so they can watch what you do:
+  `datum --db claude sync chain invite --label claude`, then send them the link it
+  prints with `?db=claude` (the database name) added before its `#`:
+  `https://datum.day/sync/join?db=claude#<ticket>`. On datum.day it opens as a
+  database of its own beside theirs; without `?db=` it joins the record their
+  browser has open.
 
 ## The data model (essentials)
 

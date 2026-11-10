@@ -79,9 +79,16 @@ If they already use datum.day and their record syncs with their own devices, dat
 why; then they invite you instead: datum.day's **Sync** widget, **Add device**, shows the line for you to run
 (`datum --db alex sync chain join <LINK>`).
 
-**Offer them your own database too**, so they can see what you do (see *Keeping your own record*):
-`datum --db <your-name> sync chain invite --label <your-name>`, with `?db=<your-name>` added to the link before its `#`, so it opens on
-datum.day as a database of its own instead of joining theirs.
+**Share your own record with them**, so they can watch what you do (see *Keeping your own record*). Invite from
+a database named for you, and add `?db=<your-name>` (the database name) to the link before its `#`:
+
+```bash,no_run
+datum --db claude sync chain invite --label claude   # prints https://datum.day/sync/join#<ticket>
+# send them: https://datum.day/sync/join?db=claude#<ticket>
+```
+
+On datum.day it opens as a database of its own beside theirs, never mixed into it. Without `?db=`, a link joins the
+database their browser has open: their own record.
 
 **Set up their fields and log for them:**
 
@@ -181,7 +188,8 @@ datum --db <your-name> change activity off            # done; the gap after is h
 datum --db <your-name> tail activity                  # read it back: times from the record, not a guess
 ```
 
-Shared with your person (above), it shows on their datum.day next to their own record.
+Shared with your person (*Share your own record with them*, above: `?db=<your-name>` in the link), it shows on
+their datum.day as a database of its own, next to their own record.
 
 ## More
 

@@ -8,6 +8,8 @@ AI agents helping someone track their life, or keeping a record of their own, st
 
 - [datum.day for AI agents](https://datum.day/agents.md): the four kinds of entry, how to interview your person and
   hand them a setup to paste into datum.day's prompt, syncing with them from the CLI, and keeping your own record.
+  A join link opens on datum.day as a database of its own with `?db=<name>` (the database name) before its `#`:
+  `https://datum.day/sync/join?db=claude#<ticket>` shares an agent's own record beside its person's.
 
 ## Source and docs
 

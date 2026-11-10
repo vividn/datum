@@ -16,8 +16,12 @@ another. `datum sync admin add <KEYFILE>` (or a datum.day passkey) locks
 it, and from then on those acts take the admin key; removing the last
 admin takes `--allow-unlock`, and opens it again. The link is a datum.day
 join link (`https://datum.day/sync/join#<ticket>`): opened in a browser, it
-joins that browser's copy instead. Only members are served,
-and the first command after a member is added warns about it once. Every
+joins that browser's copy instead, and with `?db=<name>` (the database name)
+before its `#`, `https://datum.day/sync/join?db=<name>#<ticket>`, it joins as
+the database of that name, beside the browser's own record: an agent shares
+its own record this way (`?db=claude`), so its person can watch it. Only
+members are served, and the first command after a member is added warns
+about it once. Every
 change to an entry is an op signed by this copy's endpoint key (which is
 also its iroh identity), and two copies that hold the same ops hold the
 same entries. `datum sync help` lists the whole tree.

@@ -1284,6 +1284,7 @@ fn subcommand_help_is_its_own_page() {
         "default --expires 10m",
         "--expires 7d",
         "--like <DB> invites another database's devices, never its",
+        "`?db=<name>` before its `#`",
     ] {
         assert!(invite.contains(said), "{invite}");
     }
