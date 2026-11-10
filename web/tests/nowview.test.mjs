@@ -430,9 +430,14 @@ describe('the nowview widget', () => {
 				// And a second on, the picture having flowed with it.
 				await page.waitForTimeout(1000);
 				assert.deepEqual(await places(), was);
-				// And a resize: as far along the window as with no pill.
+				// And a resize: as far along the window as with no pill. Read at
+				// rest, two frames on: the widget places its handles in a
+				// ResizeObserver, which a frame delivers after the layout a read
+				// forces, so a read first finds them where they stood in pixels
+				// (da-cot7q, 0.468 for 0.398).
 				const share = () =>
-					page.locator(PANE).evaluate((p) => {
+					page.locator(PANE).evaluate(async (p) => {
+						await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
 						const f = p.querySelector('svg.svg').closest('.picture').getBoundingClientRect();
 						const h = p.querySelector('.nowview-handles .handle[data-axis="rel"]').getBoundingClientRect();
 						return (h.x + h.width / 2 - f.left) / f.width;
