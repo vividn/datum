@@ -17,6 +17,7 @@ import {
 	todayAt
 } from './support/app.mjs';
 import { pageWait } from './support/press.mjs';
+import { rested } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { HOLD_MS } from '../src/lib/hold.ts';
 import {
@@ -106,14 +107,16 @@ describe("the day strip's day height and its pin", () => {
 			await heardIs(app, mine);
 
 			// HOLDS: the pane is resized again and the day does not move —
-			// which is the whole of «then it stays». Waited out rather than
-			// waited for: the claim is that nothing happens, so the settle
-			// has to have come and gone before it is worth making.
+			// which is the whole of «then it stays». The claim is that nothing
+			// happens, so what could happen has to have come and gone first:
+			// `boxTo` returns once the strip has HEARD the box (`data-height`
+			// is set by `settle`, layout/resizing.ts), and the day is derived
+			// from it in that same flush; `rested` waits out the rest — the
+			// redraw it asks the CLI for and the frames after it.
 			await boxTo(app, box + 120);
 			const wouldBe = await following(app);
 			assert.notEqual(wouldBe, mine, 'the resize asked for the height already held');
-			await app.page.waitForTimeout(3 * 150);
-			await app.idle();
+			await rested(app.page, app.page.locator('.today-line'), { app });
 			assert.equal(await valueOf(app), mine, 'a resize moved a day height the reader had set');
 			assert.equal(await heard(app), mine);
 
@@ -184,8 +187,7 @@ describe("the day strip's day height and its pin", () => {
 			// And it really is HELD: a resize leaves it where it was, which
 			// is the thing the lost hold would have cost.
 			await boxTo(app, (await boxOf(app)) + 60);
-			await app.page.waitForTimeout(3 * 150);
-			await app.idle();
+			await rested(app.page, app.page.locator('.today-line'), { app });
 			assert.equal(await valueOf(app), derived, 'the box moved a day the reader had set');
 			assert.equal(await heard(app), derived);
 		});
@@ -223,8 +225,7 @@ describe("the day strip's day height and its pin", () => {
 			// Now shrink the box until it derives the floor itself — the
 			// state the finding says cannot be held.
 			await boxTo(app, 68);
-			await app.page.waitForTimeout(3 * 150);
-			await app.idle();
+			await rested(app.page, app.page.locator('.today-line'), { app });
 			assert.equal(await following(app), 40, 'the small box does not derive the floor');
 			assert.equal(await valueOf(app), 40);
 			assert.equal(await heard(app), 40, 'the box deriving the floor un-held it');
@@ -232,8 +233,7 @@ describe("the day strip's day height and its pin", () => {
 			// And it is HELD, not merely equal: the box grows and the day
 			// does not go with it.
 			await boxTo(app, box + 120);
-			await app.page.waitForTimeout(3 * 150);
-			await app.idle();
+			await rested(app.page, app.page.locator('.today-line'), { app });
 			assert.equal(await valueOf(app), 40, 'a taller box moved a floor the reader had set');
 			assert.equal(await heard(app), 40);
 		});
