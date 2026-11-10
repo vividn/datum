@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, exactly } from './support/layout.mjs';
-import { FIELD_FORM, NAMING, PANEL, declared, fieldNamed, leaveField } from './support/field.mjs';
+import { FIELD_FORM, NAMING, PANEL, declared, fieldNamed, leaveField, nameField } from './support/field.mjs';
 import { resolveLibAsSource } from './support/libhook.mjs';
 import { exec } from './support/process.mjs';
 import { until } from './support/until.mjs';
@@ -107,6 +107,36 @@ describe('a first visit', () => {
 				// The button still opens manual setup.
 				await card.locator('button.track-something').click();
 				await page.locator(`${NAMING} input.field`).waitFor();
+				assert.deepEqual(app.errors, []);
+			}, { ...size, home: null, desk: null });
+		});
+
+		// vividn, 2026-11-10 (da-gnba1): «When you're doing manual setup the premade ones don't currently disappear, leaving the entire setup widget cramped up at the top».
+		test(`on a ${device}, a new name typed in manual setup takes the catalog and the recent fields away, and its × brings them back`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await app.run(['moment', 'tea']);
+				await app.redraw();
+				await toSetup(page);
+				const [catalog, recent] = [page.locator(`${SETUP} .home h3.ask`), page.locator(`${SETUP} [data-recent]`)];
+				await recent.first().waitFor();
+				assert.equal(await catalog.innerText(), 'What do you want to track?');
+				await nameField(page, 'hike');
+				assert.equal(await fieldNamed(page), 'hike');
+				assert.equal(await page.locator(`${SETUP} .home`).count(), 0);
+				assert.equal(await recent.count(), 0);
+				// The form has the pane: its foot is the pane's.
+				const [form, pane] = await page
+					.locator(`${SETUP} ${FIELD_FORM}`)
+					.evaluate((el) => [el, el.parentElement].map((e) => Math.round(e.getBoundingClientRect().bottom)));
+				assert.ok(form >= pane - 1, `the form's foot ${form} is above the pane's ${pane}`);
+				await page.locator(`${FIELD_FORM} .name-line .pill button.clear`).click();
+				await catalog.waitFor();
+				await recent.first().waitFor();
+				// A name there is opens that field, as it did.
+				await nameField(page, 'tea');
+				await until(() => page.locator(`${FIELD_FORM} h2`).innerText(), (t) => t.trim() === 'tea');
+				assert.equal(await page.locator(`${SETUP} .home`).count(), 0);
 				assert.deepEqual(app.errors, []);
 			}, { ...size, home: null, desk: null });
 		});

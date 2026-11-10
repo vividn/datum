@@ -127,6 +127,8 @@
 		dirty = $bindable(false),
 		/** A spec's edits as the save leaving it runs (da-hda4j), or null while there are none. */
 		pending = $bindable(null),
+		/** Whether it holds no field yet, neither a spec nor a name: what the widget shows its catalog under (da-gnba1). */
+		empty = $bindable(true),
 		/** Whether Revert, at a save point, has a saved version to step back to, and Redo one to step forward to. */
 		back = false,
 		ahead = false,
@@ -152,6 +154,7 @@
 		example?: Example | null;
 		dirty?: boolean;
 		pending?: Save | null;
+		empty?: boolean;
 		back?: boolean;
 		ahead?: boolean;
 		away?: boolean;
@@ -351,7 +354,8 @@
 	const finish = (next: Save | null) => onclose(next);
 
 	// ---- the field line (da-4ta1k): «track something» with no field, its pill with one ----
-	const empty = $derived(!spec && field.trim() === '');
+	const blank = $derived(!spec && field.trim() === '');
+	$effect.pre(() => void (empty = blank));
 	const here = $derived(fields.find((f) => f.field === field));
 	const off = $derived(!!here?.ignored);
 	/** The modal open, and the name typed in it. */
@@ -372,7 +376,7 @@
 	}
 </script>
 
-<div class="field-form" class:empty role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
+<div class="field-form" class:empty={blank} role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
 	<form
 		onsubmit={(e) => {
 			e.preventDefault();
@@ -382,7 +386,7 @@
 		<!-- vividn, 2026-10-28: «don't freeze the shapes at the top of the setup widget allow them to scroll with
 		     everything else» (da-uz2td): the shapes, name and tab in front scroll as one, over the tabs and buttons. -->
 		<div class="scroll">
-			{#if empty}
+			{#if blank}
 				<!-- vividn, 2026-11-10 (da-thlic): «more like in the design»: a card, its heading, what it is for, the button, the recent fields. -->
 				<div class="manual">
 					<div class="row name-line">
@@ -404,7 +408,7 @@
 					{@render pick?.()}
 				</div>
 			{/if}
-			{#if !empty}
+			{#if !blank}
 			{#if hint}
 				<p class="hint">
 					{hint}{#if fixed}
@@ -606,7 +610,7 @@
 			{/if}
 		</div>
 
-		{#if !empty}
+		{#if !blank}
 		<!-- What each tab holds, over its button while another is open (da-eh4dl). -->
 		<div class="summaries" style:--n={TABS.length}>
 			{#each TABS as name (name)}

@@ -85,6 +85,8 @@
 	/** Whether the form holds edits nobody saved (`dirty`, FieldForm.svelte), and a spec's save of them. */
 	let dirty = $state(false);
 	let pending: Save | null = $state.raw(null);
+	/** Whether the form holds no field yet (`empty`, FieldForm.svelte): a name typed in manual setup is one, read before it is saved. */
+	let empty = $state(true);
 	/** The spec's walk along its history: its entry, the version the walk began at, and the one it is at. */
 	let walk: { hid: string; top: number; at: number } | null = $state.raw(null);
 	/** A save that stayed, said under Save for a moment (da-wz84y). */
@@ -92,8 +94,8 @@
 	let unsay: ReturnType<typeof setTimeout> | undefined;
 
 	const tracked = $derived($fields.filter((f) => !f.ignored));
-	/** With no field: none chosen, the form its one line over the catalog. */
-	const home = $derived(spec !== undefined && readFor.field === '');
+	/** With no field: none chosen and none typed, the form its one line over the catalog (da-gnba1). */
+	const home = $derived(spec !== undefined && readFor.field === '' && empty);
 
 	/** The layout's epoch: a tab kept behind the one in front is drawn at it once the page is quiet (da-tajsm). */
 	let { epoch = 0 }: { epoch?: number } = $props();
@@ -272,6 +274,7 @@
 					example={readFor.example ?? null}
 					bind:dirty
 					bind:pending
+					bind:empty
 					away={$away}
 					{saved}
 					back={!!walk && walk.at > 1}
