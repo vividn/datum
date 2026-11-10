@@ -99,20 +99,29 @@
 
 	const NS = 'http://www.w3.org/2000/svg';
 	const put = <E extends Element>(el: E, attrs: Record<string, string | number | undefined>) => (Object.entries(attrs).forEach(([name, v]) => v !== undefined && el.setAttribute(name, String(v))), el);
-	/** A tap's mark: a dot, or a block. */
+	/**
+	 * A tap's mark: a dot, or a block. A dot of a field with a glyph is drawn as datum draws it (`push_dot`): its disc
+	 * unpainted and the glyph over it, centered, at 1.6 times its radius, so the mark that replaces it looks the same (da-of2g9).
+	 */
 	function tapMark(m: (typeof taps)[number]): SVGElement {
 		const el = document.createElementNS(NS, m.dot ? 'circle' : 'rect');
-		if (m.dot) {
-			const a = m.aspect ?? 1;
-			const [cx, cy] = xy(m.x, (m.y + m.h / 2) * y);
-			put(el, { cx, cy, r: (m.h / 2) * y, transform: a === 1 ? undefined : `matrix(${a} 0 0 1 ${cx * (1 - a)} 0)` });
-		} else {
+		const mark = { class: 'pending', 'data-mark': m.field, fill: m.fill ?? undefined };
+		if (!m.dot) {
 			const [x, ry] = xy(m.x, m.y * y);
 			const [w, h] = xy(m.w, m.h * y);
-			put(el, { x, y: ry, width: w, height: h });
+			return put(el, { x, y: ry, width: w, height: h, ...mark });
 		}
-		put(el, { class: 'pending', 'data-mark': m.field, fill: m.fill ?? undefined });
-		return el;
+		const a = m.aspect ?? 1;
+		const r = (m.h / 2) * y;
+		const [cx, cy] = xy(m.x, (m.y + m.h / 2) * y);
+		const transform = a === 1 ? undefined : `matrix(${a} 0 0 1 ${cx * (1 - a)} 0)`;
+		put(el, { cx, cy, r, transform, ...mark });
+		if (!m.glyph) return el;
+		const glyph = put(document.createElementNS(NS, 'text'), { x: cx, y: cy, dy: '0.35em', 'text-anchor': 'middle', 'font-size': r * 1.6, transform, ...mark });
+		glyph.textContent = m.glyph;
+		const g = document.createElementNS(NS, 'g');
+		g.append(put(el, { 'fill-opacity': 0 }), glyph);
+		return g;
 	}
 
 	// The layer, and each tap's mark at the end of its field's lane in the stretch holding now, the last, a lane of

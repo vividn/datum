@@ -48,11 +48,12 @@ export function framed(spans: [number, number][]): { at: number; span: number } 
 /**
  * A tap's mark on the strip before the layer has it: a block from `from` to
  * `to`, or a dot at `from`, on its band (`y`, `h` in the layer's units,
- * `LAYER_HEIGHT` across; a dot's `h` its height, `aspect` its width over it).
+ * `LAYER_HEIGHT` across; a dot's `h` its height, `aspect` its width over it,
+ * `glyph` the field's symbol, drawn in place of its circle as datum draws it).
  * `fill` null is an end: its field's lane is drawn only before `from`, so
  * what is beneath shows through.
  */
-export type Mark = { field: string; from: number; to: number; y: number; h: number; fill: string | null; dot?: boolean; aspect?: number };
+export type Mark = { field: string; from: number; to: number; y: number; h: number; fill: string | null; dot?: boolean; aspect?: number; glyph?: string };
 
 /** A tap's mark, and once its write landed, the epoch a layer must be asked at to hold it. */
 export type Tap = { mark: Mark; after?: number };
@@ -160,7 +161,7 @@ export function laid(
 
 /**
  * What a press of `argv` at `at` adds to the strip before the database
- * answers: a moment's dot, an `on`'s block in the field's colour, a change's
+ * answers: a moment's dot, its field's glyph where it has one (da-of2g9), an `on`'s block in the field's colour, a change's
  * in its state's, an `off`'s end. An old word for each, `start` and
  * the rest, is read as the CLI reads it (`pendingCommand`). Null for anything else, a time or a length
  * with it included, which the strip's last second would not show where it lands.
@@ -174,7 +175,7 @@ export function pendingOf(argv: string[], fields: FieldButton[], at: number): Ma
 	const bare = state === undefined;
 	// As datum sizes it: the standard dot times the field's scale, on its band's middle.
 	const dot = STANDARD_DOT * LAYER_HEIGHT * (button.dotScale ?? 1);
-	if (command === 'moment' && bare) return { ...band, to: at, y: band.y + (band.h - dot) / 2, h: dot, fill: button.color, dot: true, aspect: button.dotAspect };
+	if (command === 'moment' && bare) return { ...band, to: at, y: band.y + (band.h - dot) / 2, h: dot, fill: button.color, dot: true, aspect: button.dotAspect, glyph: button.glyph };
 	if (command === 'on' && bare) return { ...band, fill: button.color };
 	if (command === 'off' && bare) return { ...band, fill: null };
 	if (command === 'change' && state) return { ...band, fill: button.stateColors[state] ?? button.color };

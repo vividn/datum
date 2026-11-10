@@ -140,6 +140,82 @@ describe('the now section is collect’s now strip', () => {
 			);
 		});
 
+	// vividn, 2026-11-10: «When tapping on croissant for example in the now section, the sweeping data initially looks
+	// like a orange circle before assuming the croissant symbol» (da-of2g9).
+	test("a tap's dot of a field with a glyph is that glyph in both strips at once, as the layer's mark replacing it is", async () => {
+		await withApp(
+			async (app) => {
+				for (const line of [at('croissant', 'occur', 0.4, { symbol: '🥐' }), 'occur croissant']) assert.equal((await app.runLine(line)).code, 0, line);
+				await app.clock.forward(60_000);
+				await seeded(app);
+				const { page } = app;
+				/** Each strip's marks of `field` in view: the glyphs drawn, each `pending` or the layer's, and the circles painted. */
+				const marks = (field) =>
+					page.evaluate(
+						({ strips, field }) =>
+							Object.fromEntries(
+								Object.entries(strips).map(([name, [selector, of]]) => {
+									const svg = document.querySelector(selector);
+									const box = document.querySelector(of).getBoundingClientRect();
+									const inView = (el) => {
+										const r = el.getBoundingClientRect();
+										return r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom;
+									};
+									// The layer's glyph is named by its lane alone, a tap's by itself.
+									const all = [...(svg?.querySelectorAll(`[data-mark="${field}"] :is(circle, text), :is(circle, text)[data-mark="${field}"]`) ?? [])].filter(inView);
+									return [
+										name,
+										{
+											glyphs: all.filter((el) => el.localName === 'text').map((el) => ({ text: el.textContent, size: Number(el.getAttribute('font-size')), pending: el.classList.contains('pending') })),
+											painted: all.filter((el) => el.localName === 'circle' && getComputedStyle(el).fillOpacity !== '0').map((el) => ({ pending: el.classList.contains('pending'), fill: getComputedStyle(el).fill }))
+										}
+									];
+								})
+							),
+						{ strips: STRIPS, field }
+					);
+				const seeds = await page.locator(HISTORY_DOT('croissant')).count();
+				await holdFiles(page);
+				await page.locator(`${COLLECT} [data-field="croissant"]`).first().click();
+				// The write held: what either strip draws is the tap's own mark, and it is the glyph, no disc painted.
+				const first = await until(
+					() => marks('croissant'),
+					(seen) => Object.values(seen).every((m) => m.glyphs.length)
+				);
+				for (const [name, { glyphs, painted }] of Object.entries(first)) {
+					assert.deepEqual(glyphs.map((g) => [g.text, g.pending]), [['🥐', true]], `the ${name} strip's tap draws ${JSON.stringify(glyphs)}`);
+					assert.deepEqual(painted, [], `the ${name} strip paints a disc under the glyph`);
+				}
+				await release(page);
+				await until(() => page.locator(HISTORY_DOT('croissant')).count(), (n) => n === seeds + 1);
+				// The layer holding the write: its mark stands where the tap's stood, the same glyph at the same size.
+				const landed = await until(
+					() => marks('croissant'),
+					(seen) => Object.values(seen).every((m) => m.glyphs.length && m.glyphs.every((g) => !g.pending))
+				);
+				for (const [name, { glyphs, painted }] of Object.entries(landed)) {
+					assert.deepEqual(glyphs.map((g) => g.text), ['🥐'], `the ${name} strip's layer draws ${JSON.stringify(glyphs)}`);
+					const was = first[name].glyphs[0].size;
+					assert.ok(Math.abs(glyphs[0].size - was) <= 0.05 * was, `the ${name} strip's glyph was ${was} px and is ${glyphs[0].size} px`);
+					assert.deepEqual(painted, [], `the ${name} strip's layer paints a disc under the glyph`);
+				}
+
+				// A field with no glyph keeps its dot: a disc in its colour.
+				await app.clock.forward(2000);
+				await holdFiles(page);
+				await page.locator(`${COLLECT} [data-field="coffee"]`).first().click();
+				const dot = await until(
+					() => marks('coffee'),
+					(seen) => Object.values(seen).every((m) => m.painted.some((c) => c.pending))
+				);
+				await release(page);
+				for (const [name, { glyphs }] of Object.entries(dot)) assert.deepEqual(glyphs, [], `the ${name} strip draws a glyph for coffee`);
+				assert.deepEqual(app.errors, []);
+			},
+			{ clock: todayAt(15), desk: desk(), viewport: { width: 1000, height: 800 } }
+		);
+	});
+
 	test('a state started wipes in from now’s edge in both strips over half a second, then is solid', async () => {
 		await withApp(
 			async (app) => {
