@@ -27,6 +27,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, sharedApp, todayAt, withApp } from './support/app.mjs';
 import { pinch } from './support/daystrip.mjs';
+import { rested } from './support/layout.mjs';
 import { longPressed } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
@@ -299,7 +300,10 @@ describe('a tap in the nowview selects the entry behind the mark', () => {
 			await longPressed(page);
 			await page.mouse.move(from.x, from.y + 60, { steps: 6 });
 			await page.mouse.up();
-			await page.waitForTimeout(200);
+			// The lift and what it set off have landed: `finish` answers the
+			// pointerup at once, so a wrong inspect is a pill by the time the
+			// band and the CLI are at rest.
+			await rested(page, page.locator(NOWVIEW), { app });
 			assert.deepEqual(await pillsOf(page), [], 'a held press that wandered off selected something');
 			assert.deepEqual(await litUp(page, NOWVIEW), []);
 		});
@@ -622,8 +626,9 @@ describe('a selection in the nowview: no label, a pixel’s outline at any zoom,
 					() => outlined(page),
 					(o) => o.length > 0 && o.every((l) => l.on)
 				);
-				// The picture's label waits for a finger's lift (#lib/hover.ts): a beat for it.
-				await page.waitForTimeout(150);
+				// A picture landing under a finger is drawn a task after its lift
+				// (`liftHold`, #lib/hover.ts), and its draw is what could put a label up.
+				await rested(page, page.locator(NOWVIEW), { app });
 				assert.equal(await labeled(page), false, 'a tap on the nowview put a label up');
 
 				const band = await page.locator(BAND).boundingBox();
@@ -698,7 +703,8 @@ describe('a tap on either picture: no browser ring, no label, the one outline at
 					(o) => o.length > 0 && o.every((l) => l.on)
 				);
 				assert.deepEqual(await focused(page), { mark: true, ring: 'none' });
-				await page.waitForTimeout(150);
+				// The draw a task after the lift (`liftHold`, #lib/hover.ts) has landed.
+				await rested(page, page.locator(scope), { app });
 				assert.equal(await page.locator('.tip:not([hidden])').count(), 0, 'the tap put a label up');
 				const halo = await page.locator(`${scope} svg.svg [data-selected]`).first().evaluate((m) => getComputedStyle(m).filter);
 				assert.equal(halo, 'none');
@@ -788,7 +794,10 @@ describe('a tap on either picture: no browser ring, no label, the one outline at
 
 // ── tap again, tap twice ───────────────────────────────────────────────
 
-/** Past a double tap's window, `DOUBLE_MS` in #lib/hover.ts: the next tap is a tap of its own. */
+/**
+ * Past a double tap's window, `DOUBLE_MS` (#lib/hover.ts, 300 ms): the next
+ * tap is a tap of its own. A duration the test is about, not a wait for rest.
+ */
 const apart = (page) => page.waitForTimeout(450);
 
 /** A point of `scope`'s picture that is ground: in its svg, on no mark and off the time axis. */
