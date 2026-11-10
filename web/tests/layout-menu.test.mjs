@@ -74,7 +74,7 @@ describe('the menu the title opens', () => {
 	 * modal (da-vhwq): a choice is a submenu of its values, opened from the
 	 * row that names the setting.
 	 */
-	const TAIL_MENU = ['Reset widget', 'type', ...HELP];
+	const TAIL_MENU = ['Modify', 'Reset widget', 'type', ...HELP];
 	const TAIL_MANAGE = ['Change Widget', 'Rename pane', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Widget options', '× Close pane'];
 
 	test('the title is the button: what the pane IS in normal mode, what is done to it in layout mode', async () => {
@@ -613,6 +613,7 @@ describe("the root bar's menu", () => {
 			await leaveLayoutMode(page);
 			const paneLines = await linesOf(page, () => menuButton(page, 'tail').click());
 			assert.deepEqual(paneLines, [
+				'Modify',
 				'Save layout',
 				'Restore layout',
 				// This tab holds `main`, which ships with datum (da-luwe).

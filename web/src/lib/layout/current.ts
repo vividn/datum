@@ -13,7 +13,7 @@
 // differ, so a widget mounts twice only when there is something to change.
 
 import { writable } from 'svelte/store';
-import type { Layout } from './types.js';
+import type { Layout, NodeId } from './types.js';
 import { defaultLayoutFor } from './defaults.js';
 import { pruneSession } from './session.js';
 
@@ -49,7 +49,9 @@ layout.subscribe(pruneSession);
 /**
  * LAYOUT MODE (da-vvcxc): the page as it was when the mode was entered, and
  * the root tab it was entered on — or null, which is normal mode, where
- * nothing the reader does moves the tree. Its acts are `mode.ts`'s; it is
- * here so the renderer and the shell read it without importing them.
+ * nothing the reader does moves the tree. With `pane`, the mode is that one
+ * widget's (da-k5hu5): its pane alone is worked, the rest dimmed and inert.
+ * Its acts are `mode.ts`'s; it is here so the renderer and the shell read it
+ * without importing them.
  */
-export const editing = writable<{ tab: string; before: Layout } | null>(null);
+export const editing = writable<{ tab: string; before: Layout; pane?: NodeId } | null>(null);

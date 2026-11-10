@@ -28,6 +28,7 @@ import {
 	DESKTOP,
 	PHONE,
 	addButton,
+	addTab,
 	applyButton,
 	enterLayoutMode,
 	leaveLayoutMode,
@@ -266,7 +267,9 @@ describe('the menus in layout mode', () => {
 	test('a pane: Change Widget, Rename pane, Split, Break out, Widget options › what normal mode opens, Close pane', async () => {
 		await withApp(async ({ page }) => {
 			await menuButton(page, 'tail').click();
-			const normal = await menuNames(page);
+			// Less its Modify (da-k5hu5): in the mode, that is where the page is.
+			const [modify, ...normal] = await menuNames(page);
+			assert.equal(modify, 'Modify');
 			await closeMenu(page);
 			await enterLayoutMode(page);
 			await menuButton(page, 'tail').click();
@@ -455,6 +458,143 @@ describe('widgets in modify mode', () => {
 			await until(async () => (await app.allEntries()).filter((e) => e.field === 'coffee').length, (n) => n === 1);
 		}, DESKTOP);
 	});
+});
+
+// A WIDGET'S MODIFY MODE (da-k5hu5), vividn, 2026-11-10: «individual widgets
+// should have a modify mode too, which you can access by tapping and holding
+// on the widget title, or an option "Modify" in the widget menu», and «remove
+// the (x) button to remove tabs on multi tab panes, instead we can do that
+// through the widget menu».
+describe('a widget’s modify mode', () => {
+	const scoped = (page) => page.locator('section.pane.editing');
+	const ways = (page, id) => pane(page, id).locator('> .titlebar .way-out');
+	/** A long press on `locator`: a finger's through CDP, or the mouse's. */
+	async function hold(page, locator, finger) {
+		const box = await locator.boundingBox();
+		const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+		if (!finger) {
+			await page.mouse.move(x, y);
+			await page.mouse.down();
+			await page.waitForTimeout(HOLD_MS + 150);
+			await page.mouse.up();
+			return;
+		}
+		const cdp = await page.context().newCDPSession(page);
+		try {
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+			await page.waitForTimeout(HOLD_MS + 150);
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		} finally {
+			await cdp.detach();
+		}
+	}
+	/** What the page shows at the `bar` pane's scope: asserted on every way in. */
+	async function atBar(page, finger = false) {
+		await mode(page).waitFor();
+		assert.deepEqual(await scoped(page).evaluateAll((all) => all.map((p) => p.dataset.pane)), ['bar'], 'not the one pane worked');
+		assert.deepEqual(
+			await pane(page, 'bar').locator('> .titlebar .along').evaluate((el) =>
+				[...el.children].filter((c) => c.matches('.way-out, .titlebox, .tabs')).map((c) => (c.matches('.way-out') ? c.textContent.trim() : 'name'))
+			),
+			['↺', 'name', '✓'],
+			'not ↺ before the name and ✓ after it'
+		);
+		assert.equal(await page.locator('.root-bar .way-out').count(), 0, 'the root tab wears a way out');
+		assert.equal(await page.locator('.root-bar .tabs').evaluate((el) => el.inert && Number(getComputedStyle(el).opacity) < 1), true, 'the root tabs are live');
+		const others = page.locator('section.pane:not(.editing) > .titlebar');
+		assert.ok((await others.count()) > 0);
+		assert.deepEqual(
+			[...new Set(await others.evaluateAll((all) => all.map((t) => t.inert && Number(getComputedStyle(t).opacity) < 1)))],
+			[true],
+			'another pane’s bar is live or bright'
+		);
+		const body = (sel) => page.locator(`${sel} > .content > .tab-body`).first();
+		assert.equal(await body('section.pane.editing').evaluate((el) => el.inert && getComputedStyle(el).opacity === '1'), true, 'its widget is live, or dimmed');
+		assert.equal(await body('section.pane:not(.editing)').evaluate((el) => el.inert && Number(getComputedStyle(el).opacity) < 1), true, 'another widget is live, or bright');
+		assert.equal(await page.locator('[role="separator"]').count(), 0, 'a border outside it is a handle');
+		// The ✓ has the focus, for Enter; a finger's lift gives it to the title it lifted from.
+		if (!finger) await until(() => ways(page, 'bar').last().evaluate((b) => b === document.activeElement), Boolean);
+		assert.equal(await page.locator('.prompt-bar .modify').count(), 1, 'no «modify mode» pill');
+	}
+
+	for (const [name, device, finger] of [
+		['desktop', DESKTOP, false],
+		['phone', PHONE, true]
+	]) {
+		test(`${name}: a long press on a widget’s title enters it at that widget: ↺ and ✓ about its name, the rest dimmed and inert`, async () => {
+			await withApp(async ({ page, errors }) => {
+				await hold(page, menuButton(page, 'bar'), finger);
+				await atBar(page, finger);
+				assert.equal(await page.locator('[role="menu"], dialog.chooser[open]').count(), 0, 'the hold opened something');
+				assert.deepEqual(errors, []);
+			}, device);
+		});
+
+		test(`${name}: Modify, first in a widget’s menu, enters it at that widget`, async () => {
+			await withApp(async ({ page }) => {
+				await menuButton(page, 'bar').click();
+				assert.equal((await menuNames(page))[0], 'Modify');
+				await page.getByRole('menuitem', { name: 'Modify', exact: true }).click();
+				await atBar(page);
+			}, device);
+		});
+	}
+
+	const dotted = (page) => rootMenuButton(page).locator('.dot').count().then((n) => n > 0);
+	const into = async (page) => {
+		await menuButton(page, 'bar').click({ button: 'right' });
+		await mode(page).waitFor();
+		await moveBar(page, 'bar', 'bottom');
+	};
+	for (const [how, out, kept] of [
+		['its ✓', (page) => ways(page, 'bar').last().click(), true],
+		['the bar’s ✓', (page) => page.locator('.prompt-bar .modify button.apply').click(), true],
+		['Enter', (page) => page.keyboard.press('Enter'), true],
+		['its ↺', (page) => ways(page, 'bar').first().click(), false],
+		['the bar’s ↺', (page) => page.locator('.prompt-bar .modify button:not(.apply)').click(), false],
+		['Escape', (page) => page.keyboard.press('Escape'), false]
+	])
+		test(`${how} ${kept ? 'applies' : 'resets'} what was done to it`, async () => {
+			await withApp(async ({ page, errors }) => {
+				await into(page);
+				if (how === 'Enter') await ways(page, 'bar').last().focus();
+				await out(page);
+				await mode(page).waitFor({ state: 'detached' });
+				assert.equal(await page.locator('section.pane.editing').count(), 0);
+				assert.equal(await pane(page, 'bar').evaluate((el) => el.classList.contains('edge-bottom')), kept, 'the bar is not where it should be');
+				assert.equal(await dotted(page), kept, 'the dot says otherwise');
+				assert.deepEqual(errors, []);
+			}, DESKTOP);
+		});
+
+	test('a widget scope whose pane closes widens to the tab’s', async () => {
+		await withApp(async ({ page }) => {
+			await menuButton(page, 'bar').click({ button: 'right' });
+			await mode(page).waitFor();
+			await pane(page, 'bar').locator('> .titlebar button.close').click();
+			await until(() => titles(page), (t) => !t.includes('widgetbar'));
+			assert.equal(await isOn(page), true, 'closing its pane left the mode');
+			assert.equal(await page.locator('.root-bar .tabs .way-out').count(), 2, 'not at the tab’s scope');
+			assert.equal(await scoped(page).count(), await page.locator('section.pane').count());
+		}, DESKTOP);
+	});
+
+	for (const [name, device, id, setup] of [
+		['desktop', DESKTOP, 'tail', (page) => addTab(page, 'tail', 'nowview')],
+		['phone', PHONE, 'side', enterLayoutMode]
+	])
+		test(`${name}: a pane of several tabs has no ×, and its menu’s Close tab closes the one in front`, async () => {
+			await withApp(async ({ page }) => {
+				await setup(page);
+				const tabs = pane(page, id).locator('> .titlebar [role="tab"]');
+				const many = await tabs.count();
+				assert.ok(many > 1);
+				assert.equal(await pane(page, id).locator('> .titlebar button.close').count(), 0, 'a × on a pane of several tabs');
+				await menuButton(page, id).click();
+				await page.getByRole('menuitem', { name: 'Close tab', exact: true }).click();
+				await until(() => tabs.count(), (n) => n === many - 1 || (many === 2 && n === 0));
+			}, device);
+		});
 });
 
 describe('the bar handle', () => {

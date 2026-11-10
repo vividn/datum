@@ -398,7 +398,7 @@
 	/** The tab's ✓, focused as the mode is entered, so Enter applies and a keyboard is where the way out is. */
 	let applyButton: HTMLButtonElement | null = $state(null);
 	$effect(() => {
-		if ($editing) void tick().then(() => applyButton?.focus({ preventScroll: true }));
+		if ($editing && !$editing.pane) void tick().then(() => applyButton?.focus({ preventScroll: true }));
 	});
 
 	/**
@@ -561,8 +561,12 @@
 	<!-- A hold on the OPEN tab, let go where it was, or its context menu —
 	     a right click, the menu key, Shift+F10 — enters modify mode
 	     (da-vvcxc); a hold that moves still reorders (`reorder.ts`). -->
+	<!-- At a widget's scope (da-k5hu5) the widget's pane wears the ↺ and ✓,
+	     and the whole strip is dimmed and still. -->
 	<div
 		class="tabs"
+		class:dim={!!$editing?.pane}
+		inert={!!$editing?.pane}
 		role="tablist"
 		aria-orientation="horizontal"
 		bind:this={strip}
@@ -575,7 +579,7 @@
 		{#each $loaded ? tabs : [] as tab, i (tab.id)}
 			<!-- The tab being modified wears ↺ on its left and ✓ on its right
 			     (da-00c29); the others none. -->
-			{#if $editing && i === $layout.root.active}
+			{#if $editing && !$editing.pane && i === $layout.root.active}
 				<button type="button" class="control way-out reset" aria-label="reset the changes" title="reset the changes (Escape)" onclick={discard}
 					>{RESET}</button
 				>
@@ -612,7 +616,7 @@
 					{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}
 				</button>
 			{/if}
-			{#if $editing && i === $layout.root.active}
+			{#if $editing && !$editing.pane && i === $layout.root.active}
 				<button
 					type="button"
 					class="control way-out apply"
@@ -775,6 +779,10 @@
 	.root-bar[data-layout-mode] .tabs :global(.tab[aria-selected='false']),
 	.root-bar[data-layout-mode] .add,
 	.root-bar[data-layout-mode] :global(.gear) {
+		opacity: 0.4;
+	}
+
+	.tabs.dim {
 		opacity: 0.4;
 	}
 

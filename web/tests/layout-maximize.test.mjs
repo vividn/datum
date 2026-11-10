@@ -362,7 +362,8 @@ describe('the maximize badge', () => {
 			assert.deepEqual(await names('repl'), ['maximize', 'titlebox', 'add', 'close']);
 			// And with a strip in place of the title, the same order.
 			await addTab(page, 'repl', 'aliases');
-			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add', 'close']);
+			// With several tabs, no `×` (da-k5hu5): the menu's Close tab closes one.
+			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add']);
 		});
 	});
 });

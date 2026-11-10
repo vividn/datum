@@ -292,7 +292,7 @@ describe('holders', () => {
 				await menuButton(page, 'tabbed').click();
 				// The NAME's slice: the split it holds is nobody's layout
 				// until Save as layout is asked.
-				assert.deepEqual(await menuLines(page), ['Save as layout']);
+				assert.deepEqual(await menuLines(page), ['Modify', 'Save as layout']);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				// Layout mode's: in a strip, Split splits the tab in front,
@@ -496,7 +496,7 @@ describe('normal mode', () => {
 				// tabbed pane shows `tail`, which declares none.
 				assert.equal(await page.locator('section.root button.title').count(), 1);
 				await pane(page, 'repl').locator('button.title').click();
-				assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first', ...HELP]);
+				assert.deepEqual(await menuLines(page), ['Modify', 'Reset widget', 'newest first', ...HELP]);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				// The gap is still there, as a static border, and dragging across it moves nothing.

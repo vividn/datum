@@ -1347,10 +1347,17 @@ laid out the same way.
   draft this device keeps, a reload too, the tab's dot until its Save),
   ↺ or Escape resets. Every widget is `inert` and dimmed meanwhile
   (TabBody's `still`), as are the bar but for its pill and the other
-  tabs, the `+` and the gear, which only drag. There is no `▾` and no lock. One builder, `menu.ts`,
+  tabs, the `+` and the gear, which only drag. A pane of several tabs has
+  no `×`: its menu's Close tab closes one (da-k5hu5). ONE MODE AT TWO
+  SCOPES (da-k5hu5): a hold on a pane's title in normal mode, or Modify
+  first in its menu, enters the mode at that widget's scope
+  (`editing.pane`): that pane alone is unlocked (`fixed` in Layout.svelte)
+  and wears ↺ and ✓ either side of its name, every other pane's bar and
+  widget, and the root tabs, dimmed and inert; the pill, Escape and Enter
+  as at the tab's. A scope whose pane goes widens to the tab's. There is no `▾` and no lock. One builder, `menu.ts`,
   one order, two ways to draw it — `named` and `arranged`. A HOLD on a
   pane's title in layout mode — the app's one hold, `web/src/lib/hold.ts`
-  — is a second door on Change Widget; the `contextmenu` is eaten on the
+  — is a second door on Change Widget, and in normal mode the door to its widget's scope; the `contextmenu` is eaten on the
   title alone, so a reader still gets the browser's menu over a pane's
   content, where text is selected and copied. The root's `+` is drawn in
   either mode.

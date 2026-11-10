@@ -98,7 +98,7 @@ describe('Reset widget', () => {
 			// is Change Widget (da-z8klv).
 			const lines = await linesOf(page, 'strip');
 			// The freeze wears its icon before its words (da-2hd21).
-			assert.deepEqual(lines, [RESET, '⤓ today frozen at the bottom', 'orientation', ...HELP]);
+			assert.deepEqual(lines, ['Modify', RESET, '⤓ today frozen at the bottom', 'orientation', ...HELP]);
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);
@@ -131,7 +131,7 @@ describe('Reset widget', () => {
 			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats --week');
 
 			const lines = await linesOf(page, 'tail');
-			assert.equal(lines[0], RESET, `the stats menu reads ${lines.join(' | ')}`);
+			assert.equal(lines[1], RESET, `the stats menu reads ${lines.join(' | ')}`);
 
 			await choose(page, 'tail', RESET);
 			// DEFAULT_STATS is this month over every field: `stats --month`,
@@ -145,13 +145,13 @@ describe('Reset widget', () => {
 		await withApp(async ({ page }) => {
 			// The contrast is the whole assertion, so the kind that HAS the
 			// item is read in the same app as the kinds that have not.
-			assert.equal((await linesOf(page, 'strip'))[0], RESET, 'the strip has no Reset widget');
+			assert.equal((await linesOf(page, 'strip'))[1], RESET, 'the strip has no Reset widget');
 
 			// `custom` declares no settings, so there is nothing to put back.
 			// It is the example since da-hkjp gave `tail` a declared `type`,
 			// which puts both items in that kind's NAME menu. Neither item
 			// and no layout leaves its tour and guide alone (da-z8klv, da-7dflk).
-			assert.deepEqual(await linesOf(page, 'custom'), HELP);
+			assert.deepEqual(await linesOf(page, 'custom'), ['Modify', ...HELP]);
 
 			// The root tab holds the `main` layout, so the root menu has none
 			// either — the same rule, not a second one.

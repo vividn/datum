@@ -16,20 +16,35 @@
 // ⚑ The draft is written as the edit is made, as it always was, so a reload
 // in the middle of the mode keeps the edit, as Apply would.
 
+//
+// ONE MODE AT TWO SCOPES (da-k5hu5, vividn, 2026-11-10: «individual widgets
+// should have a modify mode too, which you can access by tapping and holding
+// on the widget title, or an option "Modify" in the widget menu», «2. yes
+// exactly»): the tab's, entered on the root tab, and a widget's, entered on
+// its pane's title, where that pane alone is live and wears ↺ and ✓. A
+// widget scope whose pane goes (Close, Break out) widens to the tab's.
+
 import { get } from 'svelte/store';
 import { editing, layout } from './current.js';
+import { findPane } from './tree.js';
+import type { NodeId } from './types.js';
 
 /** The two ways out, drawn the same on the tab and in the bar. */
 export const APPLY = '✓';
 export const RESET = '↺';
 
-/** Enter modify mode on the root tab in front. */
-export function enter(): void {
+/** Enter modify mode on the root tab in front, or on one widget's pane of it. */
+export function enter(pane?: NodeId): void {
 	if (get(editing)) return;
 	const now = get(layout);
 	const tab = now.root.tabs[now.root.active];
-	if (tab) editing.set({ tab: tab.id, before: now });
+	if (tab) editing.set({ tab: tab.id, before: now, ...(pane && { pane }) });
 }
+
+layout.subscribe((now) => {
+	const e = get(editing);
+	if (e?.pane && !findPane(now, e.pane)) editing.set({ tab: e.tab, before: e.before });
+});
 
 /** ✓: leave the mode, keeping the change on this device. */
 export const accept = (): void => editing.set(null);

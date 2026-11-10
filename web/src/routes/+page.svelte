@@ -49,10 +49,11 @@
 </script>
 
 <!-- Layout mode (da-vvcxc, `mode.ts`) is the one state in which the tree
-     moves; outside it every pane is `locked`. -->
+     moves; outside it every pane is `locked`, and at a widget's scope every
+     pane but that one (da-k5hu5, Layout.svelte). -->
 <div class="frame" data-layout-mode={$editing ? '' : undefined}>
 	{#if $loaded}
-		<Layout pane={$layout.root} epoch={$epoch} rootId={$layout.root.id} locked={!$editing} />
+		<Layout pane={$layout.root} epoch={$epoch} rootId={$layout.root.id} locked={!$editing || !!$editing.pane} />
 	{/if}
 </div>
 

@@ -167,10 +167,8 @@ export const settled = (page) =>
  * What opens a pane's menu (da-9vtw): its title, or — with several tabs —
  * the tab in front. The `…` badge is gone; the `+` beside it adds a tab.
  *
- * ⚠ A pane may have NO such button in normal mode (da-z8klv): the NAME's
- * slice is wholly conditional, so a pane holding a widget whose kind
- * declares neither defaults nor options — `custom`, `aliases`, `notice` —
- * and no layout draws none. In layout mode every pane has one (da-vvcxc).
+ * Every pane with a bar has one, in either mode: normal mode's menu starts
+ * with Modify, the door to that widget's modify mode (da-k5hu5).
  */
 export const menuButton = (page, id) =>
 	pane(page, id).locator('.titlebar button.title, .titlebar [role="tab"][aria-selected="true"]').first();

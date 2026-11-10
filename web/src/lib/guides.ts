@@ -54,16 +54,18 @@ On the right of the top bar, sync says what it is doing: «syncing», «sync pau
 
 ## Widgets and their menus
 
-Each pane shows a widget, named in its title bar. Tap the name for its menu: **Reset widget** puts its options back as it started, then its options, a line each. An option changes what this tab shows on this device, and is kept across a reload; **Save options with layout**, there once you have changed one, writes them into the layout. Then **? help**, the widget's tour: its parts lit one by one, each inviting you to tap, scroll or type there, and how it works with the widgets beside it, ending in **read more**; and **Documentation**, its guide in the docs. In a tour, **skip** goes on without doing what it asks, and **leave** or Escape ends it. The square before the name maximizes the pane to the whole page, and again restores it.
+Each pane shows a widget, named in its title bar. Tap the name for its menu: **Modify** changes this one widget's pane (below), **Reset widget** puts its options back as it started, then its options, a line each. An option changes what this tab shows on this device, and is kept across a reload; **Save options with layout**, there once you have changed one, writes them into the layout. Then **? help**, the widget's tour: its parts lit one by one, each inviting you to tap, scroll or type there, and how it works with the widgets beside it, ending in **read more**; and **Documentation**, its guide in the docs. In a tour, **skip** goes on without doing what it asks, and **leave** or Escape ends it. The square before the name maximizes the pane to the whole page, and again restores it.
 
 ## Modify mode
 
-To change a layout, hold its open tab and let go without moving (or right-click it, press the menu key, or choose **Modify** in its menu). The page turns hatched and the widgets go dim and still: nothing logs or edits while you arrange. Every border is a handle to drag, each pane has **+** and **×** again, and the maximize square becomes a handle to move its bar to another edge. A pane's name now opens **Change Widget**, **Rename pane**, **Split** (an arrow each way), **Break out** (into a pane down a whole side), **Widget options ▸** and **Close pane**; holding a pane's name opens Change Widget too. The open tab's name opens **Change Widget**, **Split**, **Taller than the screen** and **Close tab**.
+To change a layout, hold its open tab and let go without moving (or right-click it, press the menu key, or choose **Modify** in its menu). The page turns hatched and the widgets go dim and still: nothing logs or edits while you arrange. Every border is a handle to drag, each pane has **+** again, and **×** where it has one tab (a pane of several closes the tab in front from its menu), and the maximize square becomes a handle to move its bar to another edge. A pane's name now opens **Change Widget**, **Rename pane**, **Split** (an arrow each way), **Break out** (into a pane down a whole side), **Widget options ▸** and **Close pane**; holding a pane's name opens Change Widget too. The open tab's name opens **Change Widget**, **Split**, **Taller than the screen** and **Close tab**.
 
 The tab you are changing has **↺** on its left and **✓** on its right, and the bar at the foot says **modify mode** between the same two:
 
 - **✓** (or Enter) applies the change on this device, across reloads. The tab wears an orange dot until its menu's **Save** writes it into the database, so every device you sync has it.
 - **↺** (or Escape) resets the page to how it was.
+
+To change one widget's pane alone, hold its name, or choose **Modify** in its menu. That pane wears **↺** and **✓** either side of its name, and everything else goes dim and still until you choose one.
 
 Outside modify mode, the open tab's menu holds **Save**, **Reset** or **Revert** (the versions saved before), **Factory default** for one datum ships, and **Save layout as**.
 

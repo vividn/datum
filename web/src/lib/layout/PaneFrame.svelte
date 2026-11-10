@@ -206,7 +206,8 @@
 	import { holds } from '#lib/hold.ts';
 	import { syncNow, syncStates } from '#lib/sync.ts';
 	import { writable } from 'svelte/store';
-	import { apply, layout } from './current.js';
+	import { apply, editing, layout } from './current.js';
+	import { APPLY, RESET, accept, discard, enter } from './mode.js';
 	import { choose, fillTab, put } from './chooser.js';
 	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding, wrapTabs } from './shell.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
@@ -228,7 +229,8 @@
 		 * no `+` and no `×`, the name opens what the pane IS, and the tab strip
 		 * still switches; in layout mode the name opens what is DONE to the
 		 * pane, the outline is drawn in the accent, and the maximize is the
-		 * bar's handle.
+		 * bar's handle. In a widget's modify mode (da-k5hu5) every pane but
+		 * that widget's is locked, and dimmed and inert besides (`dim`).
 		 */
 		locked = false,
 		/**
@@ -422,7 +424,23 @@
 		acts,
 		saveAs: holder && !root ? saveAsLayout(active.id) : undefined
 	}));
-	const own = $derived(locked ? named(all) : arranged(all));
+	const own = $derived(locked ? ($editing ? named(all) : [{ label: 'Modify', run: () => enter(pane.id) }, ...named(all)]) : arranged(all));
+
+	/**
+	 * A WIDGET'S MODIFY MODE (da-k5hu5). vividn, 2026-11-10: «individual
+	 * widgets should have a modify mode too, which you can access by tapping
+	 * and holding on the widget title, or an option "Modify" in the widget
+	 * menu». `scoped`: it is this pane's, which wears ↺ and ✓ either side of
+	 * its name, the ✓ taking the focus so Enter applies. `dim`: the page is
+	 * in modify mode and this pane is not worked, so its bar is dimmed and
+	 * inert (its widget is TabBody's `still`) and it swipes nowhere.
+	 */
+	const scoped = $derived($editing?.pane === pane.id);
+	const dim = $derived(!!$editing && locked);
+	let applyButton: HTMLButtonElement | null = $state(null);
+	$effect(() => {
+		if (scoped) void tick().then(() => applyButton?.focus({ preventScroll: true }));
+	});
 
 	/**
 	 * THE SECOND DOOR ON `Change Widget` (da-efr4i). vividn, 2026-09-22:
@@ -430,14 +448,15 @@
 	 * widget menu.» A hold on the title with one tab, on the tab in front
 	 * with more.
 	 *
-	 * Layout mode's alone, like the item itself (da-vvcxc): undefined in
-	 * normal mode, which turns the gesture off entirely (#lib/hold.ts). The
+	 * In modify mode, like the item itself (da-vvcxc). In normal mode the
+	 * hold enters this widget's modify mode (da-k5hu5); on a pane another
+	 * widget's modify mode dims it does nothing (#lib/hold.ts). The
 	 * gesture is the app's ONE hold — the same 450ms, the same right click,
 	 * the same menu key — and it is `preventDefault`ed only here: a reader
 	 * right-clicking a pane's CONTENT still gets the browser's own menu,
 	 * which is where text is selected and copied.
 	 */
-	const changeWidget = $derived(locked ? undefined : () => void fillTab(active.id));
+	const changeWidget = $derived(locked ? ($editing ? undefined : () => enter(pane.id)) : () => void fillTab(active.id));
 
 	/**
 	 * `Rename tab` / `Rename pane` (da-6ji5, da-s7sdm): the answer is the
@@ -655,7 +674,7 @@
 	 * layout mode, whose tabs are the layouts and which is left only by
 	 * asking how (`leave`, mode.ts — the root bar's tabs do).
 	 */
-	const swipes = $derived(many && (locked || !root));
+	const swipes = $derived(many && !dim && (locked || !root));
 	const axis = $derived(vertical ? 'y' : 'x');
 	/** The strip at the page's foot: where a finger is, and there are tabs to swipe to. */
 	const stripped = $derived(root && swipes && $badge > ROW);
@@ -990,7 +1009,7 @@
 	style:--badge="{$badge}px"
 >
 	{#if !bare}
-	<div class="titlebar">
+	<div class="titlebar" class:dim inert={dim}>
 		<div class="along align-{pane.bar.align}">
 			<!-- Maximize (da-00am) FIRST, before the tab names (da-bzhq).
 			     vividn, 2026-09-21: «move the maximize button to be before the
@@ -1039,6 +1058,13 @@
 					<path d="M8 1.5v13M1.5 8h13M8 1.5 6 3.5M8 1.5l2 2M8 14.5l-2-2M8 14.5l2-2M1.5 8l2-2M1.5 8l2 2M14.5 8l-2-2M14.5 8l-2 2" />
 				</svg>
 			</button>
+			{/if}
+			<!-- This widget's modify mode (da-k5hu5): ↺ before its name and ✓ after,
+			     as the root tab wears them at the tab's scope. -->
+			{#if scoped}
+				<button type="button" class="control badge way-out reset" aria-label="reset the changes" title="reset the changes (Escape)" onclick={discard}
+					>{RESET}</button
+				>
 			{/if}
 			{#if many}
 				<div
@@ -1109,6 +1135,16 @@
 			     There is no `▾` any more — vividn, 2026-10-14: «no more down
 			     arrow button at all» — what it held is the name's menu in
 			     layout mode. -->
+			{#if scoped}
+				<button
+					type="button"
+					class="control badge way-out apply"
+					aria-label="apply the changes"
+					title="apply the changes (Enter): kept on this device, Save in the tab's menu writes them"
+					bind:this={applyButton}
+					onclick={accept}>{APPLY}</button
+				>
+			{/if}
 			{#if !locked}
 				<button
 					type="button"
@@ -1131,7 +1167,12 @@
 				     more: the DRAFT is what it writes, the save is untouched
 				     and `Restore layout` is the way back, and the last pane
 				     of a layout closes to an EMPTY pane whose one button is
-				     `Change Widget` — never to nothing. -->
+				     `Change Widget` — never to nothing.
+				     Not on a pane of several tabs (da-k5hu5), vividn, 2026-11-10:
+				     «remove the (x) button to remove tabs on multi tab panes,
+				     instead we can do that through the widget menu»: its
+				     menu's `Close tab` closes the tab in front. -->
+				{#if !many}
 				<button
 					type="button"
 					class="control badge close"
@@ -1140,6 +1181,7 @@
 					title="close this {thing}"
 					onclick={() => apply((l) => closeTab(l, pane.id, pane.active))}>{CLOSE}</button
 				>
+				{/if}
 			{/if}
 		</div>
 	</div>
@@ -1460,7 +1502,8 @@
 	   rotated bar too — which is the order the Tab walk reads. */
 	.add,
 	.close,
-	.maximize {
+	.maximize,
+	.way-out {
 		flex: none;
 		pointer-events: auto;
 	}
@@ -1575,9 +1618,25 @@
 	}
 	.maximize.maximize.maximize.maximize,
 	.add.add.add.add,
-	.close.close.close.close {
+	.close.close.close.close,
+	.way-out.way-out.way-out.way-out {
 		background: none;
 		border-color: transparent;
+	}
+	/* A widget's modify mode (da-k5hu5): its ↺ and ✓ in the accent, the ✓
+	   filled, as the root tab's are (RootBar.svelte); a pane it is not on
+	   has its bar dimmed. */
+	.way-out {
+		--edge: var(--accent);
+		color: var(--accent);
+	}
+	.way-out.apply {
+		--ground: var(--accent);
+		color: var(--page);
+		font-weight: 700;
+	}
+	.titlebar.dim {
+		opacity: 0.4;
 	}
 	.maximize::before {
 		content: '';
@@ -1589,12 +1648,14 @@
 		border-radius: 5px;
 	}
 	.add,
-	.close {
+	.close,
+	.way-out {
 		position: relative;
 		isolation: isolate;
 	}
 	.add::before,
-	.close::before {
+	.close::before,
+	.way-out::before {
 		content: '';
 		position: absolute;
 		z-index: -1;

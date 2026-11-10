@@ -178,7 +178,7 @@ describe('a widget\'s tour', () => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.shell.open('aliases'));
 			await nameOf(page, 'aliases').click();
-			assert.deepEqual((await menuLines(page)).slice(0, 2), ['? help', 'Documentation']);
+			assert.deepEqual((await menuLines(page)).slice(0, 3), ['Modify', '? help', 'Documentation']);
 			await page.getByRole('menuitem', { name: 'Documentation', exact: true }).click();
 			await page.locator('article.doc[data-doc="widgets/aliases.md"]').waitFor();
 			// «← back» goes to the contents.
@@ -188,7 +188,7 @@ describe('a widget\'s tour', () => {
 
 			await page.evaluate(() => window.datum.shell.open('tail'));
 			await nameOf(page, 'tail').click();
-			assert.deepEqual((await menuLines(page)).slice(0, 4), ['Reset widget', 'type', '? help', 'Documentation']);
+			assert.deepEqual((await menuLines(page)).slice(0, 5), ['Modify', 'Reset widget', 'type', '? help', 'Documentation']);
 			await page.getByRole('menuitem', { name: '? help', exact: true }).click();
 			await page.locator('.tour .say').waitFor();
 			await page.locator('.tour button.leave').click();

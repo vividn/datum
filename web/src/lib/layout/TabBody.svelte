@@ -100,6 +100,8 @@
 		 * collecting data».
 		 */
 		still?: boolean;
+		/** The widget a widget's modify mode is on (da-k5hu5): still, and not dimmed, the rest being. */
+		lit?: boolean;
 		children?: Snippet;
 	}
 
@@ -112,6 +114,7 @@
 		kept = false,
 		tall = undefined,
 		still = false,
+		lit = false,
 		children
 	}: Props = $props();
 
@@ -167,7 +170,7 @@
 	class:beside
 	class:grown={!active && shy < 0}
 	class:kept
-	class:still
+	class:still={still && !lit}
 	bind:this={body}
 	inert={(!active && !kept) || still}
 	aria-hidden={!active && kept ? 'true' : undefined}

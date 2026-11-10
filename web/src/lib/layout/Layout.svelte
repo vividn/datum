@@ -79,7 +79,7 @@
 	import { CHANGE } from './menu.js';
 	import type { NodeId, Pane as PaneNode, Split, Tab } from './types.js';
 	import { isSplit } from './types.js';
-	import { apply, layout } from './current.js';
+	import { apply, editing, layout } from './current.js';
 	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios, setTall, soleWidgetOf } from './tree.js';
 	import { maximized, maximizedIn } from './maximize.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
@@ -92,7 +92,10 @@
 		epoch = 0,
 		/** The root pane's id: the one pane whose last tab cannot be closed. */
 		rootId,
-		/** Normal mode: the page is not in layout mode, so nothing here moves the tree. */
+		/**
+		 * Normal mode: the page is not in layout mode, so nothing here moves the
+		 * tree — or a widget's modify mode is not this pane's (da-k5hu5).
+		 */
 		locked = false,
 		/** The one pane of a root tab (da-7nh4l): a layout of one widget is drawn in a pane of its own (PaneFrame.svelte). */
 		lone = false
@@ -129,6 +132,11 @@
 	const active = $derived(pane.tabs[pane.active]);
 	const content = $derived(active.content);
 	const canClose = $derived(!(pane.id === rootId && pane.tabs.length === 1));
+	/**
+	 * Whether nothing here moves the tree: `locked`, unless this is the pane a
+	 * widget's modify mode is on (da-k5hu5), which its children inherit.
+	 */
+	const fixed = $derived(locked && $editing?.pane !== pane.id);
 	/**
 	 * The maximized pane (da-00am), resolved HERE and nowhere else: there is
 	 * no `maximized` prop threaded down every level. Null unless this is the
@@ -555,7 +563,7 @@
 	{pane}
 	{canClose}
 	root={pane.id === rootId}
-	locked={locked}
+	locked={fixed}
 	{lone}
 	kind={isSplit(content) ? undefined : content.kind}
 >
@@ -581,7 +589,8 @@
 			{least}
 			{tall}
 			kept={pane.id === rootId}
-			still={!locked && !isSplit(content) && content.kind !== EMPTY_KIND}
+			still={!!$editing && !isSplit(content) && (content.kind !== EMPTY_KIND || fixed)}
+			lit={!fixed && !!$editing?.pane}
 		>
 			{#if isSplit(content)}
 				{@const split = content}
@@ -605,7 +614,7 @@
 				>
 					{#each split.children as child, i (child.id)}
 						{#if i > 0}
-							{#if locked}
+							{#if fixed}
 								<div class="border static" aria-hidden="true"></div>
 							{:else}
 								<!-- A focusable separator is a widget in ARIA (it carries a
@@ -634,11 +643,11 @@
 							style:--ratio={grow[i]}
 							style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 						>
-							<Layout pane={child} epoch={at} {rootId} {locked} lone={pane.id === rootId && split.children.length === 1} />
+							<Layout pane={child} epoch={at} {rootId} locked={fixed} lone={pane.id === rootId && split.children.length === 1} />
 						</div>
 					{/each}
 				</div>
-				{#if pane.id === rootId && tab.tall !== undefined && !locked}
+				{#if pane.id === rootId && tab.tall !== undefined && !fixed}
 					<!-- A tall layout's foot (da-py6pl): dragged down, its last pane grows. -->
 					<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 					<div

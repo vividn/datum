@@ -25,12 +25,15 @@
 //   - a long press by a FINGER does what the right click does, over real
 //     milliseconds — the gesture is a timer (#lib/hold.ts), so a
 //     synthesised pair would be a test of the test.
-//   - a pane whose widget declares no options has only its tour and guide
-//     in its title menu in normal mode (`custom`, `aliases` — da-z8klv,
+//   - a pane whose widget declares no options has only Modify, its tour and
+//     its guide in its title menu in normal mode (`custom`, `aliases` — da-z8klv,
 //     da-7dflk), and the hold works there in layout mode: the gesture is on
 //     the title's box.
 //   - the press the title already had still opens what the pane IS in
 //     normal mode, and `Change Widget` leads it in layout mode.
+//   - since da-k5hu5 the hold in normal mode is the door to that widget's
+//     own modify mode, and a pane of several tabs wears no `×`: its menu's
+//     `Close tab` closes the one in front.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -237,7 +240,7 @@ describe('the hold on the widget title', () => {
 			// The premise: `aliases` declares neither defaults nor options, so
 			// in normal mode its name opens its tour and guide alone (da-z8klv, da-7dflk).
 			await pane(page, 'cmd').locator('> .titlebar button.title').click();
-			assert.deepEqual(await menuLines(page), HELP);
+			assert.deepEqual(await menuLines(page), ['Modify', ...HELP]);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			await enterLayoutMode(page);
@@ -266,19 +269,22 @@ describe('the hold on the widget title', () => {
 		);
 	});
 
-	test('normal mode closes this door', async () => {
+	// In normal mode it is the door to the widget's own modify mode (da-k5hu5).
+	test('in normal mode it enters that widget’s modify mode, and opens no chooser', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await watchMenus(page);
 
 			await titleBox(page, 'repl').click({ button: 'right' });
+			await page.locator('.frame[data-layout-mode]').waitFor();
 			await answered(app);
 			assert.equal(await chooser(page).count(), 0, 'a title in normal mode opened the chooser');
-			assert.deepEqual(await menusSeen(page), [false], 'a title in normal mode still ate the browser’s menu');
+			assert.deepEqual(await menusSeen(page), [true], 'the hold left the browser its menu');
+			assert.deepEqual(await page.locator('section.pane.editing').evaluateAll((all) => all.map((p) => p.dataset.pane)), ['repl']);
 		});
 	});
 
-	test('with a strip, it is the tab IN FRONT that is held, and the `×` closes that tab', async () => {
+	test('with a strip, it is the tab IN FRONT that is held, and the menu’s Close tab closes that tab', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await enterLayoutMode(page);
@@ -303,10 +309,11 @@ describe('the hold on the widget title', () => {
 			await page.keyboard.press('Escape');
 			await chooser(page).waitFor({ state: 'detached' });
 
-			// And the × closes THE TAB, the pane staying: it is the menu's
-			// `Close tab`, which is what the row's last badge always is.
-			assert.match(await closeButton(page, 'repl').getAttribute('aria-label'), /\baliases\b/);
-			await closeButton(page, 'repl').click();
+			// A strip wears no × (da-k5hu5): the menu's `Close tab` closes THE
+			// TAB in front, the pane staying.
+			assert.equal(await closeButton(page, 'repl').count(), 0, 'a strip wears a ×');
+			await tabs.last().click();
+			await page.getByRole('menuitem', { name: 'Close tab', exact: true }).click();
 			await settled(page);
 			assert.deepEqual(await tabs.allInnerTexts(), [], 'the strip outlived its second tab');
 			assert.deepEqual(await titles(page), ['cli', 'aliases'], 'the × closed the pane, not the tab');
@@ -317,7 +324,7 @@ describe('the hold on the widget title', () => {
 		await onPage(async ({ page }) => {
 			// In normal mode a press on the title opens what the pane IS.
 			await titleBox(page, 'repl').click();
-			assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first', ...HELP]);
+			assert.deepEqual(await menuLines(page), ['Modify', 'Reset widget', 'newest first', ...HELP]);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 

@@ -165,7 +165,7 @@ describe('a root tab whose layout is one widget', () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'cli');
-			assert.deepEqual(await paneLines(page, 'cli'), [RESET_WIDGET, NEWEST, ...HELP]);
+			assert.deepEqual(await paneLines(page, 'cli'), ['Modify', RESET_WIDGET, NEWEST, ...HELP]);
 			assert.deepEqual(await rootLines(page), ACTS);
 			await enterLayoutMode(page);
 			assert.deepEqual(await rootLines(page), MANAGE);
@@ -246,7 +246,7 @@ describe('a root tab whose layout is one widget', () => {
 			await chooseRoot(page, 'Save layout as');
 			await rootMenuButton(page).filter({ hasText: 'mine' }).waitFor();
 
-			assert.deepEqual(await paneLines(page, 'cli'), [RESET_WIDGET, NEWEST, ...HELP]);
+			assert.deepEqual(await paneLines(page, 'cli'), ['Modify', RESET_WIDGET, NEWEST, ...HELP]);
 			// Nothing shipped under this name, so there is no shipped tree to
 			// go back to (da-luwe), and it has a save behind it: Revert.
 			assert.deepEqual(await rootLines(page), ['Choose another…', 'Modify', 'Revert', 'Save layout as', 'Reorder ← →', '× Close']);
