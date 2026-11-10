@@ -266,8 +266,10 @@
 		nowSpan = 0,
 		/** The instant the strip frames, at its center (da-xqae2): for the pane to draw that day's layer. */
 		onframe,
-		/** How large the rows at rest are drawn, a button's font and height together (da-l1z6h). */
-		zoom = 1,
+		/** How large the rows at rest are drawn, a button's font and height together (da-l1z6h): unset, `fitted`. */
+		zoom,
+		/** The rows an unset zoom fits the box to (da-je8ju); none, zoom 1. */
+		rows,
 		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep on this device. */
 		onzoom,
 		/** The time and duration section open, or its clock alone (da-iunoo); the session's, as the zoom is. */
@@ -296,6 +298,7 @@
 		nowSpan?: number;
 		onframe?: (at: number | null) => void;
 		zoom?: number;
+		rows?: number;
 		onzoom?: (zoom: number) => void;
 		timeOpen?: boolean;
 		ontime?: (open: boolean) => void;
@@ -466,6 +469,8 @@
 	/** The bar's height, and each placed slot's size as drawn, in px. */
 	let tall = $state(0);
 	let sizes = $state.raw(new Map<string, { w: number; h: number }>());
+	/** A button's height at zoom 1, the hidden probe's, which no zoom reaches: what `rows` fits the box by. */
+	let unit = $state(0);
 	/** The part of the pictures shown; this session's, never the layout's. */
 	let view: View = $state.raw(FULL);
 	/** Where the cluster is drawn from the center: the pan, or none at rest. */
@@ -1091,8 +1096,15 @@
 	/** The rows' zoom from small, legible still, to large (da-l1z6h). */
 	const ZOOM = { min: 0.65, max: 2.5 };
 	const bounded = (z: number) => Math.min(ZOOM.max, Math.max(ZOOM.min, z));
+	/**
+	 * The zoom no pinch has set: 1, or with `rows` the one at which the box fits that many rows at rest, half a row
+	 * spare against `atRest`'s count (da-je8ju, vividn, 2026-11-10: «change the default zoom level of all the
+	 * collect widgets in the tutorial to be 3 rows»). From the probe, not the rows as drawn: a row's height is not
+	 * quite in proportion to its zoom, and read from the rows the fit swung between two hundredths and never rested.
+	 */
+	const fitted = $derived(rows && unit && paneH ? ((paneH + GAP) / (rows + 0.5) - GAP) / unit : 1);
 	/** The rows' zoom as drawn: `zoom`, inside the bounds whatever was stored, or a pinch's while it moves. */
-	let scale = $derived(bounded(zoom));
+	let scale = $derived(bounded(zoom ?? fitted));
 	/**
 	 * The fingers down on the room, and a pinch of two of them at rest: how far apart they began, and the zoom then.
 	 * A finger lifts on the window (da-yn6my): one whose button went from under it,
@@ -1326,7 +1338,7 @@
 	<!-- Given a line colour, or `var(--line)` voids its border and the rows
 	     are counted two pixels short of the buttons they hold. -->
 	{#snippet probe()}
-		<button class="widget" style="--line: transparent" tabindex="-1">probe</button>
+		<button class="widget" style="--line: transparent" tabindex="-1" bind:offsetHeight={unit}>probe</button>
 	{/snippet}
 	{#snippet children({ item })}
 		{#if item.kind === 'hint'}

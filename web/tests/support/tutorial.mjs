@@ -58,8 +58,8 @@ export async function statuses(app, fields) {
 // The lessons' layouts, by name, which their tabs say: the change lesson's is `change`, the glossary's word (da-e3rdf).
 export const LESSON_NAMES = ['intro', 'moment', 'on-off', 'change', 'input-bar', 'tabs'];
 
-/** What a game's tab says, its title (da-83y6w); another lesson's tab says its layout's name. */
-export const GAME_TITLES = { moment: 'Moments in a Café', 'on-off': 'Turn the TV off', change: 'Change of scenery' };
+/** What a game's tab says, its shape (da-je8ju); another lesson's tab says its layout's name. */
+export const GAME_TITLES = { moment: 'moment', 'on-off': 'on/off', change: 'change' };
 
 /** The words on a lesson's tab. */
 export const tabLabel = (name) => GAME_TITLES[name] ?? name;

@@ -452,9 +452,9 @@ export const TUTORIAL_DB = 'tutorial';
 /** One tab of the tutorial: its layout's name, its title, and its fields. */
 export interface Lesson {
 	name: string;
-	/** Its heading, and a game's tab's name (`gameTitle`). */
+	/** Its heading, and its Next button's words. */
 	title: string;
-	/** A game's field kind, as the setup widget names it (`VERBS`' `what`). */
+	/** A game's field kind, as the setup widget names it (`VERBS`' `what`), and its tab's name (`gameTitle`). */
 	shape?: string;
 	/** The fields its game's Reset ends the active states of: the lesson's own, by name (`coffee` …). */
 	fields: string[];
@@ -472,8 +472,8 @@ export interface Lesson {
  */
 export const LESSONS: Lesson[] = [
 	{ name: 'intro', title: 'Introduction', fields: [] },
-	// Each game is titled by its scene (da-83y6w, vividn, 2026-11-09: «let's title the first tab "Moments in a
-	// Café"», «let's retitle the other's too: "turn the TV off" "change of scenery"»).
+	// Each game's heading is its scene (da-83y6w, vividn, 2026-11-09: «let's title the first tab "Moments in a
+	// Café"», «let's retitle the other's too: "turn the TV off" "change of scenery"»), its tab its shape (`gameTitle`).
 	{ name: 'moment', title: 'Moments in a Café', shape: 'moment', fields: ['croissant', 'cake', 'bagel', 'coffee', 'tea'] },
 	{ name: 'on-off', title: 'Turn the TV off', shape: 'on/off', fields: ['tv', 'phone', 'reading'] },
 	{ name: 'change', title: 'Change of scenery', shape: 'change', fields: ['room'] },
@@ -503,14 +503,19 @@ const withNowview = ({ name, fields }: Lesson): Layout => ({
 			split(`${name}-split`, 'column', [1, 0], [
 				holder(
 					`${name}-play`,
-					split(`${name}-play-split`, 'column', [0, 0.3, 0.3, 0.4], [
+					// Collect at two thirds of the 0.4 it had, the rest to the nowview (da-je8ju, vividn, 2026-11-10: «decrease
+					// the height of the collect widget by 2/3», «goes to 2/3 of its current height»; 11-09: «the nowview can be
+					// taller»). The game keeps its 0.3, so its picture and control stand as they did.
+					split(`${name}-play-split`, 'column', [0, 13 / 30, 9 / 30, 8 / 30], [
 						{ ...widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }), fit: true },
 						widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
 						widgetPane(`${name}-lesson`, 'game', { lesson: name }),
 						// The collect widget a person uses, filtered to the game's fields (da-2s9im, vividn, 2026-11-05:
 						// «the widgets in the tutorial should actually use the collect widget … filtered to each game's
-						// set»), its ignored fields shown: a game's fields are IGNORED until it begins.
-						widgetPane(`${name}-fields`, 'widgetbar', { fields, showIgnored: true })
+						// set»), its ignored fields shown: a game's fields are IGNORED until it begins. Its zoom fits three rows
+						// until a pinch moves it (da-je8ju, vividn, 2026-11-10: «change the default zoom level of all the
+						// collect widgets in the tutorial to be 3 rows»).
+						widgetPane(`${name}-fields`, 'widgetbar', { fields, showIgnored: true, rows: 3 })
 					])
 				),
 				{ ...widgetPane(`${name}-discuss`, 'tutorial', { lesson: name, part: 'discuss' }), fit: true }
@@ -520,8 +525,12 @@ const withNowview = ({ name, fields }: Lesson): Layout => ({
 	}
 });
 
-/** What a game's tab is called: its title (da-83y6w); none for another lesson, whose tab is its layout's name. */
-export const gameTitle = (name: string): string | undefined => LESSONS.find((l) => l.name === name && l.fields.length)?.title;
+/**
+ * What a game's tab is called: its shape, the heading keeping its title (da-je8ju, vividn, 2026-11-10: «change the
+ * tab titles in the tutorial (so what appears on the tabs, leave the headings as they are): moment, on/off, change»);
+ * none for another lesson, whose tab is its layout's name.
+ */
+export const gameTitle = (name: string): string | undefined => LESSONS.find((l) => l.name === name && l.fields.length)?.shape;
 
 /** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, five panes, the game the `game` kind's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the change lesson's, da-6xeqy). */
 export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map((lesson) =>

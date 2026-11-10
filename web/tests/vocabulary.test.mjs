@@ -83,8 +83,8 @@ test('a fresh datum.day, its commands and its tutorial say no old word', async (
 			await ready(page);
 			assert.deepEqual(
 				await tabs(page).allInnerTexts(),
-				['intro', 'Moments in a Café', 'Turn the TV off', 'Change of scenery', 'input-bar', 'tabs'],
-				'the lessons, each game named by its scene (da-83y6w)'
+				['intro', 'moment', 'on/off', 'change', 'input-bar', 'tabs'],
+				'the lessons, each game named by its shape (da-je8ju)'
 			);
 			found.push(...(await everyTab(page)));
 

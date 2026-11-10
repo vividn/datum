@@ -70,7 +70,7 @@ export const ROOMS: Room[] = [
 		]
 	},
 	{
-		state: 'living_room',
+		state: 'livingroom',
 		x: 104,
 		y: 4,
 		width: 100,
@@ -149,11 +149,11 @@ export const WALLS = [
 
 /** Each doorway: the two places it joins, and its middle, where a walk through it crosses. */
 export const DOORS: { between: [string, string]; at: [number, number] }[] = [
-	{ between: ['bathroom', 'living_room'], at: [104, 30] },
+	{ between: ['bathroom', 'livingroom'], at: [104, 30] },
 	{ between: ['bedroom', 'kitchen'], at: [104, 82] },
 	{ between: ['bathroom', 'bedroom'], at: [54, 56] },
-	{ between: ['living_room', 'kitchen'], at: [154, 56] },
-	{ between: ['living_room', 'garden'], at: [204, 30] },
+	{ between: ['livingroom', 'kitchen'], at: [154, 56] },
+	{ between: ['livingroom', 'garden'], at: [204, 30] },
 	{ between: ['kitchen', 'garden'], at: [204, 82] }
 ];
 

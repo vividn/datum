@@ -14,7 +14,9 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const PHONE = { device: devices['iPhone SE'], query: '?db=tutorial' };
+// The second SE, 375×667: on the first, 320×568, the tutorial's collect is a third shorter since da-je8ju, two rows at
+// the smallest zoom, and the café's five overrun it however small, so «rows that fit» could not be played there.
+const PHONE = { device: devices['iPhone SE (3rd gen)'], query: '?db=tutorial' };
 const TAB = 'moment';
 const FIELDS = `[data-pane="${TAB}-fields"]`;
 const SCROLLER = 'section.holder.root > .content';

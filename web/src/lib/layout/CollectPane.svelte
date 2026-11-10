@@ -84,8 +84,10 @@
 		clicks = 'one',
 		/** Which edge the strip and the active section stand at (da-lw7ue). */
 		side = 'left',
-		/** How large the rows are drawn, which a pinch moves (da-l1z6h); `onchange` hands it to the session. */
-		zoom = 1,
+		/** How large the rows are drawn, which a pinch moves (da-l1z6h); `onchange` hands it to the session. Unset, 1 or `rows`'. */
+		zoom,
+		/** The rows an unset zoom fits the box to (da-je8ju); none, zoom 1. */
+		rows,
 		/** The time and duration section open, or its clock alone (da-iunoo); `onchange` hands it to the session. */
 		timeOpen = false,
 		/** The fields shown, or every field where empty (da-gfy7w). */
@@ -100,6 +102,7 @@
 		clicks?: 'one' | 'two';
 		side?: 'left' | 'right';
 		zoom?: number;
+		rows?: number;
 		timeOpen?: boolean;
 		epoch?: number;
 		/** What the widget moved itself, for the session to keep: its zoom, its time section open. */
@@ -235,6 +238,7 @@
 		{clicks}
 		{side}
 		{zoom}
+		{rows}
 		onzoom={(zoom) => onchange?.({ zoom })}
 		{timeOpen}
 		ontime={(timeOpen) => onchange?.({ timeOpen })}

@@ -11,13 +11,14 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { settled, startSwitch, lessonTab, tabLabel } from './support/tutorial.mjs';
+import { settled, startSwitch, lessonTab } from './support/tutorial.mjs';
 
 before(startApp);
 after(stopApp);
 
 const GAMES = ['moment', 'on-off', 'change'];
-const NEXT = { moment: 'on-off', 'on-off': 'change', change: 'The input bar' };
+/** The next lesson's heading, which Next names: its title, not its tab's word (da-je8ju). */
+const NEXT = { moment: 'Turn the TV off', 'on-off': 'Change of scenery', change: 'The input bar' };
 
 /** The rects that matter, against the page's scroller: the part of the screen the tab is drawn in. */
 const measure = (page, tab) =>
@@ -46,9 +47,11 @@ const measure = (page, tab) =>
 			scrollable: scroller.scrollHeight - scroller.clientHeight,
 			about: box(pane('about')),
 			now: box(pane('now')),
+			lesson: box(pane('lesson')),
 			game: box(pane('lesson').querySelector('.game')),
 			collect: box(pane('fields')),
 			fields: [...pane('fields').querySelectorAll('.fields button[data-field]')].map(box),
+			rows: [...pane('fields').querySelectorAll('.fields .spot.shelf[data-row]')].map((s) => Number(s.dataset.row)),
 			discuss: box(pane('discuss')),
 			next: next && box(next)
 		};
@@ -149,6 +152,13 @@ for (const [screen, device] of [
 						assert.equal(rest.fields.length, fields, `${at}: collect draws each of the game's fields`);
 						for (const [i, field] of rest.fields.entries())
 							assert.ok(inside(field, rest.screen), `${at}: collect's field ${i} (bottom ${field.bottom}) is in sight, the screen's bottom ${rest.screen.bottom}`);
+						// Collect two thirds of the 0.4 of the nowview, the game and collect it had (da-je8ju, vividn, 2026-11-10:
+						// «goes to 2/3 of its current height»), and its zoom three rows (vividn: «be 3 rows»): a game's fields
+						// span the band, so its rows at three are the top, the middle and the bottom; at two or four they are not.
+						const share = rest.collect.height / (rest.now.height + rest.lesson.height + rest.collect.height);
+						assert.ok(Math.abs(share - (2 / 3) * 0.4) < 0.01, `${at}: collect is ${share} of the nowview, game and collect`);
+						// The change game's one field, room, stands in one row whatever the count, so it cannot show three.
+						if (tab !== 'change') assert.deepEqual([...new Set(rest.rows)].sort(), [0, 1, 2], `${at}: collect's fields stand in three rows`);
 
 						if (output === 'open') {
 							// Past the intro: the game and collect wholly in sight, before and while a round runs.
@@ -185,7 +195,7 @@ for (const [screen, device] of [
 						assert.ok(end.next, `${at}: the discussion ends on Next`);
 						assert.ok(end.next.top >= end.collect.bottom, `${at}: Next is under collect`);
 						assert.ok(inside(end.next, end.screen), `${at}: Next is in sight at the bottom`);
-						const button = page.locator(`[data-pane="${tab}-discuss"]`).getByRole('button', { name: `Next: ${tabLabel(NEXT[tab])}`, exact: true });
+						const button = page.locator(`[data-pane="${tab}-discuss"]`).getByRole('button', { name: `Next: ${NEXT[tab]}`, exact: true });
 						assert.equal(await button.count(), 1, `${at}: Next names the next lesson`);
 					}
 				}
@@ -195,3 +205,44 @@ for (const [screen, device] of [
 		);
 	});
 }
+
+// The three rows are the zoom's default (da-je8ju): a person's own zoom wins, held in the session as any is, and over a
+// reload, where the box is fitted again.
+test('a game’s collect opens at three rows, and a zoom moved by hand stands over a reload', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			const room = '[data-pane="moment-fields"] .fields .room';
+			const shelved = () => page.locator(`${room} .spot.shelf[data-row]`).evaluateAll((ss) => [...new Set(ss.map((s) => Number(s.dataset.row)))].sort());
+			const scale = () => page.locator(room).evaluate((el) => Number(getComputedStyle(el).getPropertyValue('--zoom')));
+			await lessonTab(page, 'moment').click();
+			await page.locator(`${room} .spot.shelf`).first().waitFor();
+			await app.idle();
+			assert.deepEqual(await shelved(), [0, 1, 2], 'three rows as it opens');
+			// With the bar's output shut the screen, and collect with it, is taller: at zoom 1 its box holds four rows
+			// (a second size, where three is the fit's and not the box's), and the fit grows the rows to keep three.
+			const open = await scale();
+			const tall = (await page.locator(room).boundingBox()).height;
+			await page.locator('.prompt-bar input').press('PageDown');
+			await page.waitForFunction(([sel, was]) => document.querySelector(sel).getBoundingClientRect().height > was + 10, [room, tall]);
+			await app.idle();
+			assert.deepEqual(await shelved(), [0, 1, 2], 'three rows with the output shut');
+			const fitted = await scale();
+			assert.ok(fitted > open, `the zoom grew with the box, ${open} to ${fitted}`);
+			const box = await page.locator(room).boundingBox();
+			await page.mouse.move(box.x + box.width * 0.75, box.y + box.height / 2);
+			await page.keyboard.down('Control');
+			await page.mouse.wheel(0, 150);
+			await page.keyboard.up('Control');
+			const held = await scale();
+			assert.ok(held < fitted, `the zoom ${fitted} became ${held}`);
+			assert.ok((await shelved()).length > 3, 'more, smaller rows');
+			await app.reload();
+			await page.locator(`${room} .spot.shelf`).first().waitFor();
+			await app.idle();
+			assert.equal(await scale(), held, 'a reload keeps the zoom moved by hand');
+			assert.deepEqual(app.errors, []);
+		},
+		{ viewport: { width: 1280, height: 900 }, query: '?db=tutorial' }
+	);
+});

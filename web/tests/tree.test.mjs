@@ -958,7 +958,8 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		// lesson's widget once, wherever its split puts it (a nowview beside
 		// it, da-6xeqy), and a game's about over the nowview, its game the game
 		// widget (da-2chdp), and under it the collect widget filtered to its
-		// fields, the ignored shown (da-uzyih.4908, da-2s9im), then its discussion (da-zb1dr), none a built-in's name.
+		// fields, the ignored shown (da-uzyih.4908, da-2s9im), at three rows (da-je8ju), then its discussion (da-zb1dr),
+		// none a built-in's name.
 		const lessonsIn = (node) =>
 			!node || typeof node !== 'object'
 				? []
@@ -973,7 +974,7 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 			const lesson = { kind: 'tutorial', lesson: tree.name };
 			const { fields } = LESSONS.find((l) => l.name === tree.name);
 			const lessons = game
-				? [{ ...lesson, part: 'about' }, { kind: 'game', lesson: tree.name }, { kind: 'widgetbar', fields, showIgnored: true }, { ...lesson, part: 'discuss' }]
+				? [{ ...lesson, part: 'about' }, { kind: 'game', lesson: tree.name }, { kind: 'widgetbar', fields, showIgnored: true, rows: 3 }, { ...lesson, part: 'discuss' }]
 				: [lesson];
 			assert.deepEqual(lessonsIn(tree.root), lessons);
 			// A game's tab is taller than the screen (da-zb1dr), a page of text fits one: a game's play fills the screen,

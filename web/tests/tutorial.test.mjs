@@ -36,12 +36,17 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 			assert.equal(await db(page), 'tutorial');
 			assert.notEqual(await hue(page), datumHue, 'the app is recolored');
 			assert.deepEqual(await tabs(page), LESSON_NAMES, 'its lessons, in order');
-			// A game's tab says its title (da-83y6w, vividn, 2026-11-09: «let's title the first tab "Moments in a Café"»,
-			// «let's retitle the other's too: "turn the TV off" "change of scenery"»).
+			// A game's tab says its shape, its heading its scene (da-je8ju, vividn, 2026-11-10: «change the tab titles in the
+			// tutorial (so what appears on the tabs, leave the headings as they are): moment, on/off, change»).
 			assert.deepEqual(
 				await page.locator('.root-bar [role="tab"]').allInnerTexts(),
-				['intro', 'Moments in a Café', 'Turn the TV off', 'Change of scenery', 'input-bar', 'tabs']
+				['intro', 'moment', 'on/off', 'change', 'input-bar', 'tabs']
 			);
+			for (const [tab, heading] of [['moment', 'Moments in a Café'], ['on-off', 'Turn the TV off'], ['change', 'Change of scenery']]) {
+				await lessonTab(page, tab).click();
+				await page.locator(`[data-pane="${tab}-about"] h1`, { hasText: heading }).waitFor();
+			}
+			await lessonTab(page, 'intro').click();
 			const named = await page.locator('section.pane').first().locator('p b').allInnerTexts();
 			assert.ok(named.includes('datum'), `the Introduction names the database to go back to: ${named}`);
 

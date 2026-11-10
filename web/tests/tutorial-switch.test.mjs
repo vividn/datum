@@ -121,7 +121,7 @@ test('the switch game: started by switching room to where the person is, a move 
 			const lags = [400, 900, 1500];
 			const taps = [];
 			walk.slice(1, 6).forEach((c, i) => i !== 2 && taps.push({ state: c.state, at: c.at + lags[i % 3] }));
-			const wrong = ['kitchen', 'living_room', 'bedroom', 'bathroom', 'garden'].find((s) => s !== walk[2].state && s !== walk[3].state);
+			const wrong = ['kitchen', 'livingroom', 'bedroom', 'bathroom', 'garden'].find((s) => s !== walk[2].state && s !== walk[3].state);
 			taps.push({ state: wrong, at: walk[2].at + 3000 });
 			taps.sort((a, b) => a.at - b.at);
 			for (const tap of taps) {
@@ -260,8 +260,8 @@ test('each room has its furniture; room cannot be ended, and Reset leaves it IGN
 			assert.deepEqual(await things.evaluateAll((gs) => gs.map((g) => `${g.dataset.room}:${g.dataset.thing}`)), [
 				'kitchen:counter',
 				'kitchen:stove',
-				'living_room:sofa',
-				'living_room:table',
+				'livingroom:sofa',
+				'livingroom:table',
 				'bedroom:bed',
 				'bedroom:wardrobe',
 				'bathroom:bath',
@@ -303,6 +303,26 @@ test('each room has its furniture; room cannot be ended, and Reset leaves it IGN
 			assert.ok(!after.some((r) => r.state === false), 'no end written');
 			assert.equal(await page.locator(`${PANE} .game .failed`).count(), 0, 'nothing refused');
 			assert.equal(await page.locator(`${PANE} .game`).getAttribute('data-phase'), 'neutral');
+			assert.deepEqual(app.errors, []);
+		},
+		{ ...PHONE, query: '?db=tutorial' }
+	);
+});
+
+// da-je8ju, vividn, 2026-11-10: «change the state order of room to be bathroom, livingroom (without a _), bedroom,
+// kitchen, garden». Collect lists them so, the spec's order, and each is a place in the house.
+test('room’s states are bathroom, livingroom, bedroom, kitchen, garden, in that order, each a place in the house', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await seeded(app);
+			const order = ['bathroom', 'livingroom', 'bedroom', 'kitchen', 'garden'];
+			await page.locator(`${FIELDS} .fields button[data-field="room"]`).click();
+			const states = page.locator(`${FIELDS} .fields .room button[data-state]`);
+			await states.first().waitFor();
+			assert.deepEqual(await states.evaluateAll((bs) => bs.map((b) => b.dataset.state)), order);
+			const labels = await page.locator(`${PANE} .game .house text[data-room]`).evaluateAll((ts) => ts.map((t) => t.dataset.room));
+			assert.deepEqual([...labels].sort(), [...order].sort());
 			assert.deepEqual(app.errors, []);
 		},
 		{ ...PHONE, query: '?db=tutorial' }

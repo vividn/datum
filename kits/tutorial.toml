@@ -57,17 +57,17 @@ verb = "moment"
 color = "#d6336c"
 glyph = "🍰"
 pos = 0.625
-size = 0.24
-glyph_scale = 3.0
+size = 0.18
+glyph_scale = 2.25
 
 [[field]]
 name = "bagel"
 verb = "moment"
 color = "#d4a373"
 glyph = "🥯"
-pos = 0.88
-size = 0.12
-glyph_scale = 1.5
+pos = 0.82
+size = 0.18
+glyph_scale = 2.25
 
 # On and off (da-uzyih.4866): a book, a TV and a phone, several at once,
 # each in the color the scene draws it in (OnOffLesson.svelte). The TV, the
@@ -107,8 +107,9 @@ never_false = true
 only_listed_states = true
 pos = 0.1
 size = 0.8
-states.kitchen = { color = "#f03e3e" }
-states.living_room = { color = "#a47148" }
-states.bedroom = { color = "#9775fa" }
+# In this order (vividn, 2026-11-10: «bathroom, livingroom (without a _), bedroom, kitchen, garden»).
 states.bathroom = { color = "#cfe6f5" }
+states.livingroom = { color = "#a47148" }
+states.bedroom = { color = "#9775fa" }
+states.kitchen = { color = "#f03e3e" }
 states.garden = { color = "#40c057" }

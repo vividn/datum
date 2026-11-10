@@ -122,7 +122,7 @@
 </div>
 
 <style>
-	/* The cue's column: «living_room» on a line of its own. */
+	/* The cue's column: «livingroom» on a line of its own. */
 	.lesson {
 		--controls: 6.5rem;
 	}

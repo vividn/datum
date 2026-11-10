@@ -756,10 +756,11 @@ An open field shows its name, then its states, its time and length being the sec
 
 With an entry selected in a list (the CLI widget, the tail), it shows that entry instead: its field, state, time and data, **−A** for all of it, and **back**.
 
-Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, timeOpen, fields }) => ({
+Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, rows, timeOpen, fields }) => ({
 			only: Array.isArray(fields) ? fields.filter((f): f is string => typeof f === 'string') : [],
 			align: align === 'picture' ? 'picture' : 'rows',
-			zoom: typeof zoom === 'number' ? zoom : 1,
+			zoom: typeof zoom === 'number' ? zoom : undefined,
+			rows: typeof rows === 'number' ? rows : undefined,
 			timeOpen: timeOpen === true,
 			clicks: clicks === 'two' ? 'two' : 'one',
 			side: side === 'right' ? 'right' : 'left',
@@ -769,7 +770,8 @@ Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		p
 		// A pinch on the rows (da-l1z6h) moves `zoom`, this session's as any
 		// setting a widget moves itself, and so kept on this device across
 		// reloads (da-ray91, da-gh1ep); not among the defaults, as the
-		// strip's day height is not, so `Reset widget` is the way back to 1.
+		// strip's day height is not, so `Reset widget` is the way back to 1,
+		// or to the zoom fitting a layout's `rows` (the tutorial's 3, da-je8ju).
 		// The time section's clock (da-iunoo) moves `timeOpen` the same way.
 		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
 		demos: {
@@ -1186,7 +1188,7 @@ export const titleOf = (kind: string, settings: Record<string, unknown> = {}): s
  */
 export const labelOf = (tab: Tab): string => nameOf(tab, titleOf, calledHere);
 
-/** What the layout `name` is called in this database: in the tutorial's, a game's tab its title (da-83y6w). */
+/** What the layout `name` is called in this database: in the tutorial's, a game's tab its shape (`gameTitle`, da-je8ju). */
 export const calledHere = (name: string): string =>
 	(currentDb() === TUTORIAL_DB ? gameTitle(name) : undefined) ?? layoutTitle(name);
 
