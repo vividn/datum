@@ -34,6 +34,7 @@ import {
 	maximizeButton,
 	pane,
 	pastTheWindow,
+	rested,
 	scrollX,
 	settled,
 	swipe,
@@ -198,7 +199,7 @@ describe('the swipe strip', () => {
 				const [strip, tab] = await Promise.all([box(page, STRIP), handle.boundingBox()]);
 				const y = strip.y + strip.height / 2;
 				await swipe(page, tab.x + tab.width / 2, y, -220, 0);
-				await page.waitForTimeout(400);
+				await rested(page, page.locator('section.root > .content'));
 				assert.equal(await shown(page), 'main', 'a swipe on the tab moved the root tab');
 				await swipe(page, tab.x - 4, y, -220, 0);
 				await until(() => shown(page), (name) => name === 'tail');
@@ -229,11 +230,12 @@ describe('the swipe strip', () => {
 
 	test('a drag on the output tab moves the output, up and down, and never reloads', async () => {
 		await withApp(
-			async ({ page, submit }) => {
+			async (app) => {
+				const { page, submit } = app;
 				await submit('occur coffee');
 				const show = await closeBar(page);
 				const hide = page.getByRole('button', { name: 'hide the output' });
-				await page.evaluate(() => (window.__notReloaded = true));
+				await mark(page);
 				const from = async (tab) => {
 					const b = await tab.boundingBox();
 					return [b.x + b.width / 2, b.y + b.height / 2];
@@ -243,8 +245,7 @@ describe('the swipe strip', () => {
 				await until(() => page.locator('.prompt-bar .section.output').boundingBox(), (b) => b && b.height > 40);
 				await swipe(page, ...(await from(hide)), 0, 70);
 				await show.waitFor();
-				await page.waitForTimeout(400);
-				assert.equal(await page.evaluate(() => window.__notReloaded), true, 'a drag on the tab reloaded');
+				await stillHere(app, 'a drag on the tab reloaded', '.prompt-bar');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);
@@ -298,17 +299,27 @@ describe('the swipe strip', () => {
 	// A pull down the strip syncs at once (da-si4bw); outside a chain it says
 	// it does not, and a lift does nothing. The round itself is sync.test.mjs's.
 	const PULL = '.sync-pull';
-	const mark = (page) => page.evaluate(() => (window.__notReloaded = true));
-	const stillHere = async (page, why) => {
-		await page.waitForTimeout(400);
-		assert.equal(await page.evaluate(() => window.__notReloaded), true, why);
+	// A reload is seen from the moment it is asked for (`beforeunload`), so
+	// what a gesture set off need only have come to rest: the CLI idle, as
+	// the old pull's reload waited on it, and nothing under the finger moving.
+	const mark = (page) =>
+		page.evaluate(() => {
+			window.__notReloaded = true;
+			addEventListener('beforeunload', () => (window.__notReloaded = false));
+		});
+	const stillHere = async (app, why, where = STRIP) => {
+		// A reload leaves the CLI's count behind, and rest is never reached: the reload is the failure.
+		const restless = await rested(app.page, app.page.locator(where), { app }).catch((e) => e);
+		assert.equal(await app.page.evaluate(() => window.__notReloaded), true, why);
+		if (restless) throw restless;
 	};
 	/** Whether the pull's mark is bright, read at each move. */
 	const brightAt = (page, seen) => async () => seen.push(await page.locator(PULL).evaluate((el) => el.classList.contains('bright')));
 
 	test('a long pull down says «not syncing» outside a chain and reloads nothing; a short one, or one gone sideways, leaves no mark', async () => {
 		await withApp(
-			async ({ page }) => {
+			async (app) => {
+				const { page } = app;
 				const input = page.locator('.prompt-bar input');
 				await input.fill('moment half');
 				await closeBar(page);
@@ -325,7 +336,7 @@ describe('the swipe strip', () => {
 				assert.deepEqual(bright, [false, true, false, true]);
 				assert.deepEqual([...new Set(words)], ['not syncing']);
 				assert.equal(await page.locator(PULL).count(), 0, 'the lift left its mark');
-				await stillHere(page, 'a pull reloaded');
+				await stillHere(app, 'a pull reloaded');
 				assert.equal(await input.inputValue(), 'moment half', 'a pull took the line');
 
 				// Begun down, gone sideways: past the line, and no longer a pull.
@@ -337,7 +348,7 @@ describe('the swipe strip', () => {
 				const moved = [];
 				await onStrip(page, [[0, 30], [0, 50]], async () => moved.push(await texture()));
 				assert.deepEqual(moved, [before, before], 'a pull moved the texture');
-				await stillHere(page, 'a pull reloaded');
+				await stillHere(app, 'a pull reloaded');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);
@@ -1096,6 +1107,10 @@ describe('a layout left in the moment after a write', () => {
 				);
 				await until(() => shown(page), (shownName) => shownName === 'tail');
 				await app.idle();
+				// Not a wait for rest: a layout behind takes the page's epoch
+				// once the CLI is settled and QUIET_MS (web/src/lib/run.ts, a
+				// second) has gone by (`lag`, Layout.svelte). Half as long again,
+				// so that refresh has had its chance to run a tail.
 				await page.waitForTimeout(1500);
 				await app.idle();
 				const tails = {};
@@ -1584,7 +1599,7 @@ describe('past the first or last tab', () => {
 			async ({ page }) => {
 				await watch(page.locator(ROOT));
 				await swipe(page, 60, await stripMiddle(page), 220, 0);
-				await page.waitForTimeout(300);
+				await rested(page, page.locator(ROOT));
 				assert.deepEqual(await moved(page), []);
 				assert.equal(await shown(page), 'main');
 			},
@@ -1633,7 +1648,7 @@ describe('past the first or last tab', () => {
 				assert.equal(await wrap(page), true, 'the reload lost it');
 				await swipe(page, 290, await stripMiddle(page), -220, 0);
 				await atRest(page.locator(ROOT));
-				await page.waitForTimeout(300);
+				await rested(page, page.locator(ROOT));
 				assert.equal(await shown(page), 'tail', 'with it off a swipe past the end changed the tab');
 			},
 			{ ...PHONE, prepare: twoLayouts }
