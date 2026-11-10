@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { draft } from './support/layout.mjs';
+import { draft, rested } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -261,6 +261,8 @@ describe('a release is seamless', () => {
 					await page.evaluate(() => (window.__datumSeen = []));
 					await touch(page, steps(10, (t) => [{ id: 1, x: box.x + 20 + t * (box.width - 40), y }]), async () => {
 						await record(page);
+						// Held, not rested: a lift reads its speed over the 80 ms before it
+						// (`WINDOW_MS` in #lib/grip.ts), so one held longer coasts nowhere.
 						await page.waitForTimeout(150);
 					});
 					const { frames, asked } = await untilSettled(page);
@@ -580,7 +582,8 @@ describe('a release is seamless', () => {
 				const slide = () => page.locator(`${BAND} .slide`).evaluate((s) => parseFloat(s.style.translate));
 				const before = await slide();
 				await touch(page, steps(6, (t) => [{ id: 3, x: x + t * 60, y }]), async () => {
-					await page.waitForTimeout(150);
+					// A finger in the wait starts no press and reads no speed (`waitOn`): it only slides the band.
+					await rested(page, page.locator(`${BAND} .slide`));
 					assert.ok(Math.abs((await slide()) - before - 60) < 1, `the band slid ${(await slide()) - before}px under a 60px finger`);
 					await record(page);
 				});
