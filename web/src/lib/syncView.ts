@@ -17,7 +17,9 @@
 // broadcast reachability (#lib/sync.ts `syncStates`) into clients × databases.
 
 import { writable } from 'svelte/store';
-import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, expelArgv, syncStatusArgv } from './calls.js';
+import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, lastEntryArgv, newInviteArgv, qrArgv, expelArgv, syncStatusArgv } from './calls.js';
+import { INTERNAL_DB, isDbName } from './database.js';
+import type { TailListing } from './tail.js';
 import { dateLabel, localTime } from './clock.js';
 import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
@@ -182,25 +184,33 @@ export const approving = heldInTab('datum-sync-approving');
 /** The ticket of the join link datum.day was opened on (`/sync/join#<ticket>`, da-l9kdr), until it is dealt with. */
 export const joining = heldInTab('datum-sync-joining');
 
+/** What joining said, kept across the load that opens the database it joined (da-bedyz). */
+export const joinedInto = heldInTab('datum-sync-joined');
+
 /**
  * What joining with a ticket that says `a` of itself does, in words, for
- * `db`, the page's database, whose chain `d` reads (da-l9kdr) — and, when it
- * cannot, why not: the link expired, or the database is in a chain already
- * (a copy belongs to one) that it cannot leave. One that holds nothing but
- * its own data can (`alone`), and joining replaces its chain (da-h7pnc).
- * One in the link's own chain joins it again: a revoked device rejoins so
- * (da-j8c4l).
+ * `db`, the database chosen, whose chain `d` reads (da-l9kdr), or a new one
+ * (`fresh`, da-bedyz) — and, when it cannot, why not: the link expired, or
+ * the database is in a chain already (a copy belongs to one) that it cannot
+ * leave. One that holds nothing but its own data can (`alone`), and joining
+ * replaces its chain (da-h7pnc). One in the link's own chain joins it
+ * again: a revoked device rejoins so (da-j8c4l).
  */
 export function joinWords(
 	a: TicketAbout,
 	db: string,
 	d: DbSync | undefined,
 	now: number,
-	alone = false
+	alone = false,
+	fresh = false
 ): { words: string[]; refused?: string } {
 	const from = a.from ? `«${a.from}»` : 'another device';
 	const chain = a.chain ? ` (chain ${a.chain.slice(0, 10)})` : '';
-	const words = [`Join the sync chain of ${from}${chain} with this browser’s database «${db}»: what each holds, both will.`];
+	const words = [
+		fresh
+			? `Join the sync chain of ${from}${chain} with a new database «${db}» in this browser: it will hold what the chain holds.`
+			: `Join the sync chain of ${from}${chain} with this browser’s database «${db}»: what each holds, both will.`
+	];
 	const until = a.expires && new Date(a.expires * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 	if (a.expires && a.expires * 1000 <= now) return { words, refused: `This link expired at ${until}: ask ${from} for a new one.` };
 	if (d?.chain && d.chain === a.chain)
@@ -210,13 +220,34 @@ export function joinWords(
 				: `«${db}» is in this chain already: joining again admits it back, as after an expel.`
 		);
 	else if (d?.chain && alone) words.push(`«${db}»’s own sync chain, just this browser, is replaced by this one.`);
-	else if (d?.chain)
-		return {
-			words,
-			refused: `«${db}» is in another sync chain, and a database belongs to one. To join with another database, open the link with ?db=<name> before its # (…/sync/join?db=<name>#…).`
-		};
+	else if (d?.chain) return { words, refused: `«${db}» is in another sync chain, and a database belongs to one: choose another database, or a new one.` };
 	if (until) words.push(`The link works once, until ${until}.`);
 	return { words };
+}
+
+/** Why `name` cannot be a new database's, where `taken` are this browser's: none when it can (da-bedyz). */
+export function newDbRefusal(name: string, taken: string[]): string | undefined {
+	if (!name) return 'Name the new database.';
+	if (name === INTERNAL_DB || !isDbName(name)) return `«${name}» cannot be a database’s name: no «/», no leading «.», no «.db» at its end.`;
+	if (taken.includes(name)) return `A database «${name}» is here already: choose it from the list instead.`;
+}
+
+/** A new database's name from the inviter's label (`from`), as a name none of `taken` has (da-bedyz). */
+export function newDbName(from: string | undefined, taken: string[]): string {
+	const base =
+		(from ?? '')
+			.toLowerCase()
+			.replace(/[^a-z0-9_-]+/g, '-')
+			.replace(/^-+|-+$/g, '') || 'shared';
+	let name = base;
+	for (let n = 2; taken.includes(name) || newDbRefusal(name, taken); n++) name = `${base}-${n}`;
+	return name;
+}
+
+/** Whether `db` holds an entry, meta left out: joining it would mix its own with the chain's (da-bedyz). */
+export async function holdsEntries(db: string): Promise<boolean> {
+	const r = await run(['--db', db, ...lastEntryArgv()]);
+	return r.code === 0 && ((JSON.parse(r.stdout) as Partial<TailListing>).rows?.length ?? 0) > 0;
 }
 
 /** The device that redeemed invite `id` of `d`'s, and when it joined: none while the invite is unused. */

@@ -71,6 +71,11 @@ export function firstEntryArgv(): string[] {
 	return ['head', '-n', '1', '--metric', 'occur', '--json'];
 }
 
+/** The last entry, meta left out: whether a database holds entries (da-bedyz). */
+export function lastEntryArgv(): string[] {
+	return ['tail', '-n', '1', '--json'];
+}
+
 export function aliasesArgv(): string[] {
 	return ['alias', 'list', '--json'];
 }
@@ -520,6 +525,7 @@ export interface Reads {
 	grammarArgv: GrammarEntry[];
 	nowArgv: NowListing;
 	firstEntryArgv: TailListing;
+	lastEntryArgv: TailListing;
 	aliasesArgv: Alias[];
 	conflictsArgv: Conflicted[];
 	refsArgv: Refs;

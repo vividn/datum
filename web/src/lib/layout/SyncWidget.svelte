@@ -50,7 +50,9 @@
 -->
 <script lang="ts">
 	import { browser } from '$app/env';
+	import { resolve as routed } from '$app/paths';
 	import { onDestroy, untrack } from 'svelte';
+	import { get } from 'svelte/store';
 	import Pane from '#lib/Pane.svelte';
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
@@ -62,8 +64,12 @@
 		approveInto,
 		approving,
 		canLeave,
+		holdsEntries,
+		joinedInto,
 		joining,
 		joinWords,
+		newDbName,
+		newDbRefusal,
 		markOwn,
 		newInvite,
 		ownKeys,
@@ -86,6 +92,7 @@
 		type PurgePreview,
 		type Row
 	} from '#lib/syncView.ts';
+	import type { TicketAbout } from '#lib/syncProtocol.ts';
 	import { approve, approveRecords, createPasskey } from '#lib/passkey.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
 	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
@@ -168,11 +175,39 @@
 
 	/**
 	 * The join card (da-l9kdr): the ticket of the link the page was opened
-	 * on, the page's database it joins, and what joining does — or why it
-	 * cannot — in words, before anything is dialed — and the name it joins
-	 * as, the suggestion filled in (da-uyyyg).
+	 * on and what it says of itself, the database it joins — one of this
+	 * browser's (`target`) or a new one named `fresh` (da-bedyz), each with its
+	 * chain and whether it may leave it — and the name it joins as, none
+	 * typed being the suggestion (da-uyyyg). Not a join link: `refused`.
 	 */
-	let join = $state<{ ticket: string; db: string; name: string; user: string; words: string[]; refused?: string; done?: string } | null>(null);
+	let join = $state<{
+		ticket: string;
+		about?: TicketAbout;
+		dbs: { db: string; d: DbSync; alone: boolean }[];
+		target: string | null;
+		fresh: string;
+		named?: string;
+		user: string;
+		refused?: string;
+		done?: string;
+	} | null>(null);
+	/** The database the card joins, as chosen. */
+	const into = $derived(join ? (join.target ?? join.fresh.trim()) : '');
+	/** What joining `into` does, or why it cannot, in words, before anything is dialed. */
+	const joinSaid = $derived.by((): { words: string[]; refused?: string } => {
+		if (!join?.about) return { words: [], refused: join?.refused };
+		if (join.target === null) {
+			const said = joinWords(join.about, into, undefined, Date.now(), false, true);
+			const refused = said.refused ?? newDbRefusal(into, join.dbs.map((c) => c.db));
+			return { ...said, refused };
+		}
+		const c = join.dbs.find((c) => c.db === into);
+		return joinWords(join.about, into, c?.d, Date.now(), c?.alone);
+	});
+	// The page's database is the one a join opens on; what a join into another said is kept across that load,
+	// and shown once: the store is cleared as it is read, so no later mount shows it again.
+	let joinedSaid = $state(browser ? get(joinedInto) : null);
+	if (browser) joinedInto.set(null);
 
 	/**
 	 * A first invite, which starts the chain, asks first what this device is
@@ -306,15 +341,13 @@
 	async function resolveJoin(ticket: string | null): Promise<void> {
 		join = null;
 		if (!ticket) return;
-		const db = currentDb();
-		const said = await ticketAbout(ticket).then(
-			async (about) => {
-				const d = (await readSync([db]))[0];
-				return joinWords(about, db, d, Date.now(), !!d?.chain && (await canLeave(db)));
-			},
-			() => ({ words: [], refused: 'Not a join link: it carries no ticket.' })
-		);
-		if (ticket === $joining) join = { ticket, db, name: suggestedLabel(db), user: username(), ...said };
+		const about = await ticketAbout(ticket).catch(() => undefined);
+		const names = await databases();
+		const dbs = await Promise.all((await readSync(names)).map(async (d) => ({ db: d.db, d, alone: !!d.chain && (await canLeave(d.db)) })));
+		// Joining a database that holds entries mixes them with the chain's: a new one is chosen then (da-bedyz).
+		const target = (await holdsEntries(db)) ? null : db;
+		const refused = about ? undefined : 'Not a join link: it carries no ticket.';
+		if (ticket === $joining) join = { ticket, about, dbs, target, fresh: newDbName(about?.from, names), user: username(), refused };
 	}
 
 	/**
@@ -326,20 +359,23 @@
 			? `Joining: ${a.done.toLocaleString()} of ${a.of.toLocaleString()} ops applied… A command typed meanwhile waits for the step under way.`
 			: 'Joining…';
 
-	const joinHere = (j: NonNullable<typeof join>) =>
+	const joinHere = (j: NonNullable<typeof join>, into: string) =>
 		doing(async () => {
 			// A name typed is kept as typed; the suggestion, untouched, grows a
 			// short id on a collision. Either is refused before the join as
 			// `--label` is.
-			const typed = j.name.trim() && j.name !== suggestedLabel(j.db) ? j.name : undefined;
-			ok(await syncAct(j.db, labelCheckArgv(typed ?? suggestedLabel(j.db))));
+			const typed = j.named?.trim() && j.named !== suggestedLabel(into) ? j.named : undefined;
+			ok(await syncAct(into, labelCheckArgv(typed ?? suggestedLabel(into))));
 			// The username is this browser's, which every chain it enters is told (da-xza37).
 			setUsername(j.user);
-			const r = await syncConnect(j.db, j.ticket, typed);
+			const r = await syncConnect(into, j.ticket, typed);
 			joining.drop();
 			// Across a sync floor it joined, and no entry moved (da-52vdj).
 			const done = r.floor ? `Joined. ${r.floor}` : `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.`;
-			join = { ...j, done };
+			if (into === db) return void (join = { ...j, done });
+			// The page opens on the database joined, so what came in is what is shown (da-bedyz).
+			joinedInto.set(done);
+			location.assign(withDb(routed('/sync/join'), into));
 		});
 
 	async function doing(what: () => Promise<unknown>): Promise<void> {
@@ -592,28 +628,64 @@
 				</div>
 			</section>
 		{/if}
+		{#if joinedSaid && !$joining}
+			<section class="card join" data-db={db}>
+				<p class="head">Joined a sync chain</p>
+				<p class="done">{joinedSaid}</p>
+				<div class="actions">
+					<button type="button" class="command close" use:act={'show'} onclick={() => (joinedSaid = null)}>Dismiss</button>
+				</div>
+			</section>
+		{/if}
 		{#if $joining}
-			<section class="card join" data-db={join?.db}>
+			<section class="card join" data-db={join ? into : undefined}>
 				<p class="head">Join a sync chain?</p>
 				{#if join}
+					{#if join.about && !join.done}
+						<!-- Which database joins: one of this browser's, or a new one (da-bedyz). -->
+						<label class="name into"
+							>Join with
+							<select
+								disabled={busy}
+								value={join.target ?? ''}
+								onchange={(e) => join && (join.target = e.currentTarget.value || null)}
+							>
+								{#each join.dbs as c (c.db)}<option value={c.db}>{c.db === db ? `${c.db} (this page’s)` : c.db}</option>{/each}
+								<option value="">a new database</option>
+							</select></label
+						>
+						{#if join.target === null}
+							<label class="name fresh"
+								>New database’s name <input type="text" bind:value={join.fresh} disabled={busy} spellcheck="false" autocomplete="off" /></label
+							>
+						{/if}
+					{/if}
 					<ul class="what">
-						{#each join.words as line}<li>{line}</li>{/each}
+						{#each joinSaid.words as line}<li>{line}</li>{/each}
 					</ul>
 					{#if join.done}
 						<p class="done">{join.done}</p>
 					{:else if busy}
 						<!-- A first join of years of history takes a while: it says how far it is (da-89ujs). -->
-						<p class="quiet joining" role="status">{joinProgress($syncStates[join.db]?.applying)}</p>
-					{:else if join.refused}
-						<p class="failure">{join.refused}</p>
+						<p class="quiet joining" role="status">{joinProgress($syncStates[into]?.applying)}</p>
+					{:else if joinSaid.refused}
+						<p class="failure">{joinSaid.refused}</p>
 					{:else}
-						<label class="name">This device’s name <input type="text" bind:value={join.name} spellcheck="false" autocomplete="off" /></label>
+						<label class="name"
+							>This device’s name <input
+								type="text"
+								value={join.named ?? suggestedLabel(into)}
+								oninput={(e) => join && (join.named = e.currentTarget.value)}
+								spellcheck="false"
+								autocomplete="off"
+							/></label
+						>
 						<label class="name user">Your username (optional) <input type="text" bind:value={join.user} spellcheck="false" autocomplete="username" /></label>
 					{/if}
 				{/if}
 				<div class="actions">
-					{#if join && !join.done && !join.refused}
-						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => join && joinHere(join)}>Join</button>
+					{#if join && !join.done && !joinSaid.refused}
+						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => join && joinHere(join, into)}>Join</button>
 					{/if}
 					<button type="button" class="command close" use:act={'show'} onclick={() => joining.set(null)}>Dismiss</button>
 				</div>
@@ -1009,7 +1081,12 @@
 	.name.user {
 		margin-top: 0.3rem;
 	}
+	.join .into,
+	.join .fresh {
+		margin-bottom: 0.3rem;
+	}
 	.join input,
+	.join select,
 	.start input {
 		flex: 1 1 14ch;
 		min-width: 0;

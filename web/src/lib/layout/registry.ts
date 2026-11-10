@@ -836,7 +836,7 @@ The gear at the top of the page, then **Sync**; or type \`sync\` in the bar. [Op
 
 1. On the device that has your data, open Sync and press **Turn on sync**. Give this device a name you will recognize, and your username if you like, which every device you sync names you by, then press **Start sync**. Once sync is on, it is **Add device**.
 2. A QR code appears. Scan it with the other device's camera, or press **Copy link** and open the link in the other device's browser.
-3. The other device asks **Join a sync chain?** Give it a name you will recognize, and your username if you like, and press **Join**.
+3. The other device asks **Join a sync chain?** Under **Join with**, choose the database it joins: one of its own, or a new one, which is chosen already where its own holds entries, so the two are not mixed. Give the device a name you will recognize, and your username if you like, and press **Join**.
 4. Each device now lists the other. Press **Done** on the first to put the QR away.
 
 A link adds one device, once, and only until the time it says. For the next device, press Add device again. On a computer with the datum command, open **join from a terminal** under the QR and run what it shows there.

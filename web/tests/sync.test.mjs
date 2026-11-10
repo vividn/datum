@@ -104,6 +104,8 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			const card = b.page.locator('.card.join');
 			const join = card.getByRole('button', { name: 'Join', exact: true });
 			await join.waitFor();
+			// It holds an entry, so a new database is offered: this one is chosen instead (da-bedyz).
+			await card.getByLabel('Join with').selectOption('datum');
 			// What it names: the inviter, its chain, this database, and when the link expires.
 			const words = await card.locator('.what').innerText();
 			for (const fact of ['«datum.day»', chain.slice(0, 10), '«datum»']) assert.ok(words.includes(fact), `${fact}: ${words}`);
@@ -114,6 +116,7 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 
 			// Opened again, the link offers to join again, as a revoked device rejoins (da-j8c4l).
 			await b.goto(link);
+			await card.getByLabel('Join with').selectOption('datum');
 			// It says one thing more, of «datum»: that it is in this chain already.
 			const lines = card.locator('.what li');
 			await until(() => lines.count(), (n) => n === 3);
@@ -133,6 +136,7 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			const card = b.page.locator('.card.join');
 			const join = card.getByRole('button', { name: 'Join', exact: true });
 			await join.waitFor();
+			await card.getByLabel('Join with').selectOption('datum');
 			// It says one thing more, of «datum»: that its own chain is replaced.
 			const lines = card.locator('.what li');
 			assert.equal(await lines.count(), 3);

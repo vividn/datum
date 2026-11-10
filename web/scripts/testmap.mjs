@@ -65,6 +65,7 @@ const SYNC = /^crates\/(datum-sync-wire\/src\/|datum-core\/src\/db\/sync|datum-c
 /** The web test files that start a relay (`startRelay`, tests/support/sync.mjs), so sync through the store. `testmap-pure.test.mjs` holds any test starting one to this list. */
 export const SYNC_TESTS = [
 	'tests/dbrename.test.mjs',
+	'tests/joinchoice.test.mjs',
 	'tests/purgescrollback.test.mjs',
 	'tests/purgewords-cli.test.mjs',
 	'tests/reopen.test.mjs',

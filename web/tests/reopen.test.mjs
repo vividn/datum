@@ -40,6 +40,8 @@ test('a phone joins a chain a desktop made, reloads, and reaches its panes with 
 					);
 					await phone.goto(link);
 					const card = phone.page.locator('.card.join');
+					// It holds an entry of its own, so a new database is offered: this one is chosen (da-bedyz).
+					await card.getByLabel('Join with').selectOption('datum');
 					await card.getByRole('button', { name: 'Join', exact: true }).click();
 					await card.locator('.done').waitFor();
 
