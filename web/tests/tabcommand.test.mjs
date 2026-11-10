@@ -68,13 +68,14 @@ test('the setup tab: `setup` is a pill no key takes, a line runs after it, and i
 
 // The › list there (da-zx826). vividn, 2026-11-09: «show setups own options or
 // other pages you can go to. like db and sync and stuff could still be on there
-// because they switch to their respective tabs». So nothing on it runs as
-// `setup <another command>`; picking a page goes to its tab.
-test('the › list on the setup tab: its own flags and the pages, nothing that would run after the pill', async () => {
+// because they switch to their respective tabs», and 2026-11-10, of setup's
+// flags there: «I don't think it adds a lot to have all the flags listed here,
+// remove them» (da-weass). So nothing on it runs as `setup <another command>`;
+// picking a page goes to its tab.
+test('the › list on the setup tab: undo, Help and the pages, nothing that would run after the pill', async () => {
 	await withApp(async (app) => {
 		const { page } = app;
 		const pill = page.locator(`${BAR} .fixed`);
-		const box = page.locator(`${BAR} input`);
 		const chevron = page.locator(`${BAR} button.prompt`);
 		const list = page.locator(`${BAR} #bar-commands`);
 		const shown = () =>
@@ -94,21 +95,10 @@ test('the › list on the setup tab: its own flags and the pages, nothing that w
 		await page.evaluate(() => window.datum.shell.open('setup'));
 		await pill.waitFor();
 		await open();
-		const here = await shown();
-		const flags = here.filter((c) => c.startsWith('flag setup -'));
-		assert.ok(flags.length > 0, `setup's flags are listed: ${here}`);
-		for (const place of ['sync', 'conflicts', 'db backup', 'db restore']) assert.ok(here.includes(place), `${place} is listed: ${here}`);
-		const after = here.filter((c) => !c.startsWith('flag setup -') && !['undo', 'redo', 'help', 'sync', 'conflicts', 'db backup', 'db restore'].includes(c));
-		assert.deepEqual(after, [], 'nothing listed would run after the pill');
+		assert.deepEqual(await shown(), ['undo', 'redo', 'help', 'sync', 'conflicts', 'db backup', 'db restore'], 'setup lists undo, Help and the pages: no flag');
 		assert.equal(await list.locator('button.lead').count(), 0, 'no lead circle');
 
-		// A flag goes after the pill, not as a second `setup`.
-		await list.locator(`[data-flag="${flags[0].slice('flag '.length)}"]`).click();
-		await page.waitForFunction((flag) => document.querySelector('.prompt-bar input').value === `${flag} `, flags[0].split(' ')[2]);
-
 		// A page goes to its tab, and there the list is that tab's.
-		await box.fill('');
-		await open();
 		await list.locator('[data-command="sync"]').click();
 		await page.waitForFunction(() => document.querySelector('.prompt-bar .fixed')?.textContent.trim() === 'sync');
 		await open();
@@ -118,10 +108,11 @@ test('the › list on the setup tab: its own flags and the pages, nothing that w
 	}, PHONE);
 });
 
-// A plain mouse (da-l4cjg): its wheel turns only vertically, and setup's list
-// runs far past the screen's right edge, its pages last. So a wheel whose
+// A plain mouse (da-l4cjg): its wheel turns only vertically, and a held
+// command's flags run far past the screen's right edge. So a wheel whose
 // turn is down scrolls the one row sideways, as a trackpad's swipe does, and
-// leaves a row that fits alone.
+// leaves a row that fits alone. Setup's list was the long one until its flags
+// left it (da-weass); a held `moment`'s flags are the long list now.
 test('on a desktop, a vertical wheel over the › list scrolls a long one sideways and leaves one that fits', async () => {
 	await withApp(async (app) => {
 		const { page } = app;
@@ -142,7 +133,7 @@ test('on a desktop, a vertical wheel over the › list scrolls a long one sidewa
 		const where = () =>
 			list.evaluate((el) => {
 				const row = el.querySelector('.bar.commands');
-				return { scrolled: row.scrollLeft, room: row.scrollWidth - row.clientWidth, sync: el.querySelector('[data-command="sync"]')?.getBoundingClientRect().x ?? null };
+				return { scrolled: row.scrollLeft, room: row.scrollWidth - row.clientWidth, last: [...row.querySelectorAll('button')].at(-1).getBoundingClientRect().x };
 			});
 		// Wheels over the list, down unless told, each one heard there before it is read, so a wheel lost on the way is not one that moved nothing.
 		const turn = async (steps, dx = 0, dy = 400) => {
@@ -165,20 +156,29 @@ test('on a desktop, a vertical wheel over the › list scrolls a long one sidewa
 		await chevron.click();
 		await list.waitFor({ state: 'detached' });
 
-		await page.evaluate(() => window.datum.shell.open('setup'));
-		await page.locator(`${BAR} .fixed`).waitFor();
+		// Held, `moment` fills the line and its flags take the row (da-st2xl): lifted once they are drawn.
 		await open();
+		await list.locator('[data-menu="write"]').click();
+		const moment = list.locator('[data-command="moment"]');
+		await moment.waitFor();
+		await rested(page, list);
+		const at = await moment.boundingBox();
+		await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+		await page.mouse.down();
+		await list.locator('[data-flag]').first().waitFor();
+		await page.mouse.up();
+		await rested(page, list);
 		const before = await where();
 		const width = page.viewportSize().width;
-		assert.ok(before.sync > width, `sync starts at ${before.sync}px, in sight of a ${width}px screen: the case is not tested`);
-		await turn(5);
+		assert.ok(before.room >= 800, `moment's flags overflow by ${before.room}px of a ${width}px screen: the long case is not tested`);
+		await turn(1);
 		const after = await where();
-		assert.ok(after.sync <= before.sync - 2000, `five wheels down took sync from ${before.sync}px to ${after.sync}px, the row ${after.scrolled}px of ${before.room}px along`);
+		assert.ok(after.last <= before.last - 300, `a wheel down took the last flag from ${before.last}px to ${after.last}px, the row ${after.scrolled}px of ${before.room}px along`);
 		// A sideways wheel (a trackpad's swipe) is the browser's own scroll still: turning it too would take it and move nothing.
-		await turn(3, 400, 0);
-		await page.waitForFunction((x) => document.querySelector('.prompt-bar #bar-commands [data-command="sync"]').getBoundingClientRect().x <= x - 1000, after.sync).catch(() => {});
+		await turn(1, 400, 0);
+		await page.waitForFunction((x) => [...document.querySelectorAll('.prompt-bar #bar-commands .bar.commands button')].at(-1).getBoundingClientRect().x <= x - 300, after.last).catch(() => {});
 		const across = await where();
-		assert.ok(across.sync <= after.sync - 1000, `three sideways wheels took sync from ${after.sync}px to ${across.sync}px, the row ${across.scrolled}px of ${before.room}px along`);
-		assert.equal(await page.locator(`${BAR} .fixed`).count(), 1, 'the wheel left the setup tab');
+		assert.ok(across.last <= after.last - 300, `a sideways wheel took the last flag from ${after.last}px to ${across.last}px, the row ${across.scrolled}px of ${before.room}px along`);
+		assert.ok(await list.locator('[data-flag]').count(), 'the wheel left the flags');
 	}, DESKTOP);
 });
