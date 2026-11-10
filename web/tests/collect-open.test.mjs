@@ -246,15 +246,25 @@ describe('a field opened in collect', () => {
 		});
 	}
 
-	test('a field in a multi-state marks that button active: the ! and the dotted outline, and no other', async () => {
+	test('a field in a multi-state marks that button active: the ! and the dotted outline, and no other, and its head chip says it', async () => {
 		const lines = ['setup mood --verb switch --states false,good,bad', 'switch mood bad -t 10:00', 'switch mood good,bad -t 13:00'];
-		await opening(lines, 'mood', async ({ page }, button) => {
+		await opening(lines, 'mood', async (app, button) => {
+			const { page } = app;
 			await button.click();
 			await page.locator(`${OPEN} [data-state="good,bad"]`).waitFor();
 			assert.deepEqual(await page.locator(`${OPEN} [data-state]:has([data-repeat])`).evaluateAll((bs) => bs.map((b) => b.dataset.state)), ['good,bad']);
 			assert.equal(await page.locator(`${OPEN} [data-state="good,bad"]`).textContent(), '!good,bad');
 			assert.ok(await outlined(page, `${OPEN} [data-state="good,bad"]`), 'the multi-state it is in is not outlined');
 			assert.equal(await outlined(page, `${OPEN} [data-state="bad"]`), false, 'a state it is not in is outlined');
+			// The head row's chip says it too (da-o5jfh), painted as the button: each state's color behind its words, a 45° boundary under the comma.
+			const row = JSON.parse((await app.run(['fields', '--json'])).stdout).find((r) => r.field === 'mood');
+			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+			const chip = await page.locator(`${HEAD} [data-current]`).evaluate((el) => {
+				const comma = el.querySelector('.comma');
+				const under = getComputedStyle(comma, '::before');
+				return { text: el.textContent, fill: getComputedStyle(el).backgroundColor, clips: getComputedStyle(el).overflow, next: under.backgroundColor, skew: under.transform };
+			});
+			assert.deepEqual(chip, { text: 'good,bad', fill: rgb(row.state_colors.good), clips: 'hidden', next: rgb(row.state_colors.bad), skew: 'matrix(1, 0, -1, 1, 0, 0)' });
 		});
 	});
 

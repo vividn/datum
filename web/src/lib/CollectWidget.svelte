@@ -1279,9 +1279,11 @@
 <svelte:window onkeydown={onWindowKeyDown} onpointerup={up} onpointercancel={up} />
 
 <!-- One leg of the transition: a state, or several, each in its color as the state buttons are, off empty (null). -->
-{#snippet leg(button: FieldButton, states: string[] | null)}
+{#snippet leg(button: FieldButton, states: string[] | null, current = false)}
 	{#if states === null}<span class="leg" data-leg="off">off</span>{:else}{@const color = button.stateColors[states[0]] ?? button.color}<span
 			class="leg"
+			class:current
+			data-current={current ? '' : undefined}
 			class:multi={states.length > 1}
 			data-leg={states.join(',')}
 			style:background={color}
@@ -1475,10 +1477,9 @@
 								<!-- The first row (vividn, 2026-11-07): the field's pill, which is back and the field at once (da-dswuc, vividn, 2026-11-10: «just the field pill. 2 birds»), the state it is in drawn as the CLI paints one, and off. -->
 								{@const opener = $pills.find((p) => p.kind === 'field' && p.text === here.field) ?? { id: FIELD_ID, kind: 'field', text: here.field, color: here.color }}
 								<span class="opener" data-back data-open-field={here.field}><PillChip pill={opener} closes={back} {disabled} /></span>
-								{#if here.active && here.current !== undefined}
-									{@const color = here.current === true ? here.color : (here.stateColors[here.current] ?? here.color)}
-									<span class="current" data-current style:background={color} style:color={inkOver(color)}>{here.current === true ? 'on' : here.current}</span>
-								{/if}
+								<!-- One state or several (da-o5jfh), painted as the transition's legs are. -->
+								{@const now = fromOf(here)}
+								{#if now}{@render leg(here, now, true)}{/if}
 								{#if moving}
 									<!-- The transition, in off's place while a hold's states are on the bar (da-rou2i): now → them (→ back, with a length). -->
 									{@const from = fromOf(here)}
