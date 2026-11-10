@@ -24,6 +24,7 @@ import {
 	cycle, declareArgv, editedSpec, GLYPHS, keyRows, modeOf, specArgv, stateRows, trackLabel, VERBS, kindAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
+import { rested } from './support/layout.mjs';
 import {
 	FIELD_FORM as MODAL, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, pickImage, trackSomething
 } from './support/field.mjs';
@@ -921,13 +922,17 @@ describe('in the app', () => {
 	 * Open `field`'s spec, on `tab` if one is named. What saving it ran comes
 	 * back boxed — an async function returning the bare promise would wait
 	 * for the save — beside the echoes before it, counted while the CLI widget is
-	 * drawn: behind the place in front, it is not.
+	 * drawn: behind the place in front, it is not. It comes back at rest: a tab's
+	 * panel unfolds, and the reads a write began land after it, so a click into it
+	 * at once can land its press on one place and its release on another, and
+	 * toggle nothing (da-lngkc).
 	 */
 	async function openFieldTab(app, field, tab) {
 		const before = (await app.echoes()).length;
 		const { saved } = await openField(app.page, field);
 		await app.page.locator(MODAL).waitFor();
 		if (tab) await app.page.locator(`${MODAL} [data-tab="${tab}"]`).click();
+		await rested(app.page, app.page.locator(MODAL), { app });
 		return { saved, before };
 	}
 
