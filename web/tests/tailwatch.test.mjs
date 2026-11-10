@@ -978,6 +978,17 @@ describe('a write', () => {
 						'not the newest rows'
 					);
 
+					// The widget's own scrolls read `now ↓` from where they put the body,
+					// so none is left standing until the scroll event: a capture
+					// listener runs before the pane's own (da-g8g5r).
+					await page.evaluate(() => {
+						window.__markerAtScroll = 0;
+						document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)').addEventListener(
+							'scroll',
+							() => void (window.__markerAtScroll += document.querySelectorAll('section.pane[data-title="tail"] button.home').length),
+							true
+						);
+					});
 					await app.submit('occur coffee');
 					await page.waitForFunction(() =>
 						[...document.querySelectorAll('section.pane[data-title="tail"] tbody tr')].at(-1)?.textContent.includes('coffee')
@@ -989,6 +1000,7 @@ describe('a write', () => {
 					assert.deepEqual(g1.shown.slice(0, -1), g0.shown.slice(1), 'the screen is not the newest page');
 					assertFits(g1, 'after the write', 32);
 					assert.equal(await marker(page).count(), 0, '`now ↓` for a row that is on screen');
+					assert.equal(await page.evaluate(() => window.__markerAtScroll), 0, '`now ↓` stood until a scroll the pane made itself');
 
 					// Asked for what fits the box as it was at the asking — a
 					// phone's box settles after the first listing lands, and the

@@ -509,12 +509,15 @@
 	 * told apart by where it landed. And `last` is there from now, not from
 	 * that event: a reader who scrolls on before the frame is out shares the
 	 * one event with it, and up from where the widget put them is up
-	 * (da-gaiko).
+	 * (da-gaiko). `now ↓` / `now ↑` are read from the new place here, not
+	 * at that event: rows drawn above before it was moved read the old place
+	 * as now's line pushed off the bottom (da-g8g5r).
 	 */
 	function scrollTo(top: number): void {
 		if (!scroller) return;
 		scroller.scrollTop = top;
 		own = last = scroller.scrollTop;
+		see();
 	}
 
 	/** A cell a row has no listing's word for: `keys` is every listing's columns. */
@@ -907,7 +910,6 @@
 			if (y >= last && y <= last + was) share = (y - last) / was;
 		}
 		scrollTo(last + share * (was - height));
-		see();
 	}
 
 	function onScroll(): void {
