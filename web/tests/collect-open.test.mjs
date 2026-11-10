@@ -64,7 +64,6 @@ const shared = sharedApp({ clock: todayAt(15) });
 /** The app seeded with `lines`, the fields drawn, `field` tapped open. */
 const opening = (lines, field, fn) =>
 	shared.solo(async (app) => {
-		await app.page.evaluate(() => window.datum.layout.forgetSession());
 		for (const line of lines) {
 			const logged = await app.run(line.split(' '));
 			assert.equal(logged.code, 0, `${line}: ${logged.stderr}`);

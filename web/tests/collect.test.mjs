@@ -47,8 +47,6 @@ const shared = sharedApp({ clock: todayAt(15) });
  */
 const collect = (fn, { twoClicks = false } = {}) =>
 	shared.solo(async (app) => {
-		// The session a test before left (its time section open, da-iunoo) forgotten, as a fresh device has none.
-		await app.page.evaluate(() => window.datum.layout.forgetSession());
 		if (twoClicks) await pickOption(app.page, 'bar', 'a tap', 'opens and chooses, 2-click');
 		for (const line of SEED) {
 			const logged = await app.run(line.split(' '));

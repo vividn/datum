@@ -24,13 +24,7 @@ const PAGE = JSON.stringify(
 );
 
 const shared = sharedApp(DESKTOP);
-// The session a test before left (collect's time section open, da-iunoo) forgotten: a reload keeps it,
-// and the section opening as the page loads moves the rows under a press measured before it did.
-const onPage = (fn) =>
-	shared.solo(async (app) => {
-		await app.page.evaluate(() => window.datum.layout.forgetSession());
-		await fn(app);
-	}, PAGE);
+const onPage = (fn) => shared.solo(fn, PAGE);
 
 const SEED = [
 	"setup coffee --verb moment --color '#b87333'",

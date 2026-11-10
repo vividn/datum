@@ -26,7 +26,7 @@ const DESKTOP = { viewport: { width: 1280, height: 800 } };
 
 // ONE APP for the tests that stay on `/` (da-6b3dj, sharedApp in
 // support/app.mjs); the one that sets a widget option does it in a room of
-// its own, since `solo` keeps an option this session set. What navigates
+// its own, as it did while `solo` kept the session (da-fxco2). What navigates
 // (`/input`, a saved layout) or opens on a phone keeps an app of its own.
 const shared = sharedApp(DESKTOP);
 

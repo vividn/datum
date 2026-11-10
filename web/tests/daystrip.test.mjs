@@ -101,8 +101,8 @@ after(stopApp);
 // or logs rows is `solo`: the box is set before anything is measured, and
 // `solo` restores `main` and empties the database. A test that moves the
 // strip ITSELF — the handle, the keyboard, the freeze toggle, a zoom — sets
-// a session option on the widget, which `solo` does not put back, so it
-// takes a ROOM, whose strip is a new widget — as does a test that scrolls
+// a session option on the widget, so it takes a ROOM (kept from when `solo`
+// left the session standing, da-fxco2), whose strip is a new widget — as does a test that scrolls
 // a stack the test before it scrolled, since `solo` keeps `main`'s strip and
 // its scroll position. Which is why the helpers (`support/daystrip.mjs`)
 // read and write the strip of the root tab in FRONT. A moved clock is put back by the next

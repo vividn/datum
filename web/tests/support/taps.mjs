@@ -203,8 +203,8 @@ async function reset(app, line, layout = false) {
 		await page.keyboard.press('Escape');
 		await page.locator('.log.full').waitFor({ state: 'detached' });
 	}
-	// A widget option a tap set holds for the session, which `solo` keeps:
-	// forgotten, and the collect widget's own put back below.
+	// A widget option a tap set holds for the session, which a reset that takes
+	// no `solo` keeps: forgotten, and the collect widget's own put back below.
 	const session = () => page.evaluate(() => JSON.stringify(window.datum.layout.session()));
 	if (app.session !== undefined && (await session()) !== app.session)
 		await page.evaluate(() => window.datum.layout.forgetSession());
@@ -250,8 +250,8 @@ async function reset(app, line, layout = false) {
 		await app.keep();
 	}
 	assert.equal(await writes(app), app.seeded, 'the database is back as seeded');
-	// The session's «show ignored fields», which `solo` keeps — unless the
-	// tap before closed or changed the pane it was set on. Read once the
+	// The session's «show ignored fields», which `solo` forgets, as does the
+	// tap before that closed or changed the pane it was set on. Read once the
 	// bar is drawn, or a bar still mounting reads as the option off.
 	await page.locator('.bar [data-field="coffee"]').waitFor();
 	if ((await page.locator('.bar [data-field="run"]').count()) === 0) {

@@ -1245,7 +1245,10 @@ function app(page, errors, query, clean, internal) {
 			// All but which device this is: a boot decides that once (`device`, shell.ts), and
 			// this is no boot. The frames' acts asked it again as they were drawn, and as
 			// `$derived`s they ask only when a menu reads them (da-g9qi2).
+			// The session's options go from the page's copy too (da-fxco2): only its stored one
+			// gone, the last test's options stood here until a write read the wiped copy back.
 			await page.evaluate(() => {
+				window.datum.layout.forgetSession();
 				for (const key of Object.keys(localStorage))
 					if (key.startsWith('datum.layout.') && key !== 'datum.layout.device.v1') localStorage.removeItem(key);
 			});

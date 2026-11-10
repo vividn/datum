@@ -61,8 +61,9 @@ before(startApp);
 after(stopApp);
 
 // ONE APP for most of this file (da-6b3dj, sharedApp in support/app.mjs).
-// An option this session sets on `main`'s own widgets outlives `solo`, so a
-// test that sets one takes a ROOM, whose widgets are new ids (`inRoom`);
+// A test that sets an option on `main`'s own widgets takes a ROOM, whose
+// widgets are new ids (`inRoom`), as it did while `solo` kept the session
+// (da-fxco2);
 // `solo` serves a test that only reads, or whose last act hands the session
 // back (a save, or the pane closed). What still opens an app of its own
 // reloads, seeds the CLI widget's storage before boot, or is a screen no other
