@@ -795,8 +795,28 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			const buried = group('occur tea').getByRole('button', { name: 'undo' });
 			assert.equal(await buried.getAttribute('aria-disabled'), 'true');
 			// Playwright refuses an `aria-disabled` control; the page does not, and says why.
+			// Once on CI the note was never told, and nothing said why (da-jlw07). Each way it can
+			// fail leaves its own trace: the tap landing off the button or making no click (a
+			// forced tap checks no target), a second click telling it away again, the step no
+			// longer refused (it ran, `last`), or the strip moved off the group (`inView`).
+			const pressed = await page.evaluateHandle(() => {
+				const on = [];
+				for (const type of ['touchstart', 'click'])
+					addEventListener(type, (e) => on.push(`${type} ${e.pointerType ?? ''} ${e.target.outerHTML.slice(0, 60)}`), true);
+				return on;
+			});
 			await buried.tap({ force: true });
 			const note = group('occur tea').locator('.buried.told');
+			await note.waitFor().catch(async (e) => {
+				const why = await group('occur tea').locator('.step').evaluate((step, pressed) => ({
+					pressed,
+					step: step.textContent,
+					disabled: step.querySelector('button').ariaDisabled,
+					note: step.querySelector('.buried')?.className ?? null,
+					last: window.datum.bar.last().line
+				}), pressed);
+				throw new Error(`pressed, the buried note is not told: ${JSON.stringify({ ...why, inView: await inView('occur tea') })}`, { cause: e });
+			});
 			assert.match(await note.innerText(), /^cannot undo\. more recent changes$/);
 			assert.ok(await listed(tea), 'a buried undo undid');
 			await note.getByRole('button', { name: 'more recent changes' }).tap();
