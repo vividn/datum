@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, chooser, exactly, manage, manageRoot, pane, rootMenuButton, titledPane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
+import { BAR, unfold } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -84,6 +85,30 @@ describe('a first visit', () => {
 				await until(() => front(page), ([name]) => name === 'collect');
 				await app.idle();
 				assert.deepEqual(await titles(page), collect);
+				assert.deepEqual(app.errors, []);
+			}, device);
+		});
+
+	// vividn, 2026-11-10: «let's not show the output section by default on the welcome tab either (just like the
+	// setup tab)» (da-djys5).
+	for (const [what, device] of [
+		['a desktop', FRESH_DESKTOP],
+		['a phone', FRESH_PHONE]
+	])
+		test(`on ${what}, welcome opens with the output shut, a drag opens it, and collect's stands open`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				const output = page.locator(`${BAR} .section.output`);
+				await page.locator('.host.welcome').waitFor();
+				await output.waitFor({ state: 'detached' });
+				await app.idle();
+				assert.equal(await output.count(), 0, 'welcome opened with its output showing');
+				await unfold(page);
+				assert.equal(await output.count(), 1);
+
+				await page.locator('.root-bar [role="tab"]', { hasText: exactly('collection') }).click();
+				await until(() => front(page), ([name]) => name === 'collect');
+				await output.waitFor();
 				assert.deepEqual(app.errors, []);
 			}, device);
 		});

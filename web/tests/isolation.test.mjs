@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import './support/tmpdir.mjs';
+import { unfold } from './support/bar.mjs';
 
 const build = fileURLToPath(new URL('../build', import.meta.url));
 const TYPES = {
@@ -128,11 +129,12 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 		});
 		try {
 			await page.locator('.prompt-bar input:not([disabled])').waitFor();
+			// A first visit is on welcome, whose output is shut (da-djys5): the visitor opens it.
+			await unfold(page);
 			const input = page.locator('.prompt-bar input');
 			await input.fill('start walk -y 13:00');
 			await input.press('Enter');
-			// A failure is the output's red line: every screen starts with the
-			// output open (da-mwp4m).
+			// A failure is the output's red line.
 			await page.locator('.prompt-bar .section.output .raw.error').waitFor();
 
 			release();
