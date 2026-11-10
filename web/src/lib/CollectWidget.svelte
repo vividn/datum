@@ -71,7 +71,10 @@
 	In 2-click mode (`clicks`, da-u017i) every field opens, and a tap only
 	CHOOSES the state: its pill is placed and its chip ringed, and the command
 	pane's ready «switch → state» logs it. A long press, on a field or a
-	state, does the other mode's tap (da-z45a6). Whatever puts a field pill
+	state, does the other mode's tap (da-z45a6), except that in 1-click mode
+	a held state begins MULTI-SELECT (da-laibn): each tap after it adds a
+	state or takes a chosen one out, the bar's state pill the array as it
+	will be logged (`happy,sad`), for the bar's run. Whatever puts a field pill
 	on the bar opens that field: a hold, the now strip, a script.
 	A run spends them, the field's with them, and collect is back at rest.
 	Back takes the field's pill and every pill made since the tap, and puts
@@ -702,6 +705,16 @@
 	/** The state pill's state, and whether `-m` is on the bar. */
 	const chosen = $derived($pills.find((p) => p.id === STATE_ID)?.text ?? null);
 	const moment = $derived($pills.some((p) => p.id === MOMENT_ID));
+	/**
+	 * MULTI-SELECT (da-laibn, vividn, 2026-11-09: «pressing and holding on a
+	 * state … should also enter into multi select mode, so if you tap on
+	 * another state afterwords it starts forming an array state»): the states
+	 * a hold began, in the order chosen, and null outside it. A tap then adds
+	 * a state or takes a chosen one out, nothing runs, and the bar's run logs
+	 * the array; closing the view or the last one out ends it. Declared
+	 * here, above the effects that may close a view as the widget mounts.
+	 */
+	let together: string[] | null = $state.raw(null);
 
 	// What the open field would log, drawn on the nowview before it is
 	// (da-axrdv): its line as a state's tap or the bar would run it, the
@@ -936,13 +949,28 @@
 			close();
 			return onfill(pressArgv(button, state));
 		}
+		place(button, [state]);
+		if (logs) leave(button, ['change']);
+	}
+
+	/** The state pill: `states` as datum reads them, one state or an array, beside the field's pill; none takes it off. */
+	function place(button: FieldButton, states: string[]) {
 		pills.update((all) => {
 			const rest = all.filter((p) => p.id !== STATE_ID);
-			const pill: Pill = { id: STATE_ID, kind: 'state', text: shellJoin([state]), color: button.stateColors[state] ?? button.color };
+			if (!states.length) return rest;
+			// An array is glued commas (`happy,sad`), or the bracket form where a state holds a comma.
+			const text = states.length === 1 ? states[0] : states.some((s) => s.includes(',')) ? JSON.stringify(states) : states.join(',');
+			const pill: Pill = { id: STATE_ID, kind: 'state', text: shellJoin([text]), color: button.stateColors[states[0]] ?? button.color };
 			const at = rest.findIndex((p) => p.kind === 'field') + 1;
 			return [...rest.slice(0, at), pill, ...rest.slice(at)];
 		});
-		if (logs) leave(button, ['change']);
+	}
+
+	function gather(button: FieldButton, state: string) {
+		const was = together ?? [];
+		const next = was.includes(state) ? was.filter((s) => s !== state) : [...was, state];
+		together = next.length ? next : null;
+		place(button, next);
 	}
 
 	/**
@@ -985,6 +1013,7 @@
 		pan = restPan;
 		restPan = null;
 		entered = null;
+		together = null;
 		if (chosen !== null && !spending) pills.update((all) => all.filter((p) => p.id !== STATE_ID));
 	}
 
@@ -1199,7 +1228,9 @@
 	 */
 	const holdField = (el: HTMLElement) => {
 		// A state held does the other mode's tap (da-u017i).
-		if (el.dataset.state !== undefined && picking) return choose(picking, el.dataset.state, clicks !== 'one');
+		// In 1-click mode, or once gathering, it chooses among several: multi-select (da-laibn).
+		if (el.dataset.state !== undefined && picking)
+			return clicks === 'one' || together ? gather(picking, el.dataset.state) : choose(picking, el.dataset.state, true);
 		// An on/off field's off runs in either mode, so the other mode's tap is its own.
 		if (el.dataset.off !== undefined && picking) return picking.shape.kind === 'change' ? choose(picking, 'false', clicks !== 'one') : off(picking);
 		const button = buttons.find((b) => b.field === el.dataset.field);
@@ -1419,14 +1450,14 @@
 								<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type, or a tap only chooses it (2-click, da-u017i). -->
 								<button
 									class="widget states"
-									use:act={clicks === 'two' ? 'arm' : typesKeys('change', here) ? 'fill' : 'run'}
+									use:act={clicks === 'two' || together ? 'arm' : typesKeys('change', here) ? 'fill' : 'run'}
 									class:on
-									class:chosen={chosen === shellJoin([state])}
+									class:chosen={together ? together.includes(state) : chosen === shellJoin([state])}
 									style={vars(look)}
 									{disabled}
 									data-state={state}
 									title={shellJoin(['change', here.field, state])}
-									onclick={() => choose(here, state)}
+									onclick={() => (together ? gather(here, state) : choose(here, state))}
 								>{#if on}<span class="repeat" data-repeat>!</span>{/if}{state}</button>
 							{/if}
 						</div>

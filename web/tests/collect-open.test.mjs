@@ -467,4 +467,87 @@ describe('a field opened in collect', () => {
 			assert.deepEqual(await listed(page, 'mid'), ['low', 'high', 'mid']);
 		});
 	});
+
+	// vividn, 2026-11-09: «pressing and holding on a state in the state view adds a pill for that state, which is good.
+	// It should also enter into multi select mode, so if you tap on another state afterwords it starts forming an array
+	// state» (da-laibn). A hold is a right click.
+	describe('a state held begins multi-select', () => {
+		const MOOD = ['setup mood --verb switch --states false,good,bad,meh'];
+		const STATE = (page, s) => page.locator(`${OPEN} [data-state="${s}"]`);
+		/** The bar's state pill, as it will be logged, or null. */
+		const statePill = (page) => page.evaluate(() => window.datum.bar.pills().find((p) => p.kind === 'state')?.text ?? null);
+		/** The states drawn ringed as chosen. */
+		const ringed = (page) => page.locator(`${OPEN} [data-state].chosen`).evaluateAll((bs) => bs.map((b) => b.dataset.state));
+		/** The writes run, not their dry runs. */
+		const writes = (seen) => seen().then((all) => all.filter((a) => a[0] === 'change' && !a.includes('--dry-run')));
+		const lastState = async (app) => JSON.parse((await app.run(['tail', 'mood', '-n', '1', '--json'])).stdout).rows[0]?.state;
+
+		test('a hold then two taps logs the three-state array from the bar, and nothing before', async () => {
+			await opening(MOOD, 'mood', async (app, button) => {
+				const { page } = app;
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				await app.idle();
+				const seen = await app.spyOnRunner();
+				await STATE(page, 'good').click({ button: 'right' });
+				await STATE(page, 'bad').click();
+				await STATE(page, 'meh').click();
+				await until(() => statePill(page), (t) => t === 'good,bad,meh');
+				assert.deepEqual(await ringed(page), ['good', 'bad', 'meh']);
+				assert.equal(await STATE(page, 'bad').getAttribute('data-act'), 'arm', 'a tap while gathering still says it runs');
+				await app.idle();
+				assert.deepEqual(await writes(seen), [], 'a tap while gathering logged');
+				const toggle = page.locator('.prompt-bar button.prompt');
+				if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+				const lead = page.locator('.prompt-bar #bar-commands button.lead');
+				await until(() => lead.getAttribute('data-ready'), (r) => r === 'true');
+				await lead.click();
+				await until(() => lastState(app), (s) => JSON.stringify(s) === '["good","bad","meh"]');
+				assert.deepEqual((await writes(seen)).length, 1);
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+			});
+		});
+
+		test('a tap on a chosen state takes it out, and the last one out ends it', async () => {
+			await opening(MOOD, 'mood', async (app, button) => {
+				const { page } = app;
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				const seen = await app.spyOnRunner();
+				await STATE(page, 'good').click({ button: 'right' });
+				await STATE(page, 'bad').click();
+				await until(() => statePill(page), (t) => t === 'good,bad');
+				await STATE(page, 'good').click();
+				await until(() => statePill(page), (t) => t === 'bad');
+				assert.deepEqual(await ringed(page), ['bad']);
+				await STATE(page, 'bad').click();
+				await until(() => statePill(page), (t) => t === null);
+				assert.deepEqual(await ringed(page), []);
+				// Out of multi-select: a tap logs at once.
+				await STATE(page, 'meh').click();
+				await until(() => lastState(app), (s) => s === 'meh');
+				assert.deepEqual((await writes(seen)).map((a) => a.includes('meh')), [true]);
+			});
+		});
+
+		test('‹ back leaves no selection behind, and a plain tap after logs that one state at once', async () => {
+			await opening(MOOD, 'mood', async (app, button) => {
+				const { page } = app;
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				await STATE(page, 'good').click({ button: 'right' });
+				await STATE(page, 'bad').click();
+				await until(() => statePill(page), (t) => t === 'good,bad');
+				await page.locator(`${OPEN} [data-back]`).click();
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+				assert.equal(await statePill(page), null, 'the array stayed on the bar');
+				await button.click();
+				await STATE(page, 'meh').waitFor();
+				assert.deepEqual(await ringed(page), []);
+				assert.equal(await STATE(page, 'meh').getAttribute('data-act'), 'run');
+				await STATE(page, 'meh').click();
+				await until(() => lastState(app), (s) => s === 'meh');
+			});
+		});
+	});
 });
