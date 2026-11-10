@@ -8,7 +8,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { DESKTOP, draft } from './support/layout.mjs';
+import { DESKTOP, draft, rested } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { PANE, handle, notch, asked, handled, beside, hover, farIs, soloNowview, pinch, TOUCH } from './support/nowview.mjs';
 
@@ -149,7 +149,9 @@ describe('the nowview widget zooms', () => {
 					await page.mouse.up();
 					await page.locator('.nowview-wheel .notch.held').waitFor();
 					await page.mouse.wheel(0, -60);
-					await page.waitForTimeout(300);
+					// The turn has landed: `onNumbersWheel` moves the pick as it hears the
+					// wheel, with no timer, so a wrong step is drawn once the numbers are still.
+					await rested(page, page.locator('.nowview-wheel'), { app });
 					assert.equal((await picked()).k, 0, 'two short turns made a step across a close');
 					// A notch a number, up the longer, and the window waits for a click.
 					for (let i = 0; i < 3; i++) await page.mouse.wheel(0, -100);
@@ -157,7 +159,9 @@ describe('the nowview widget zooms', () => {
 					// Past what those turns left short of a step, the other way.
 					await page.mouse.wheel(0, 160);
 					await pickIs(2);
-					await page.waitForTimeout(300);
+					// What a wrong take would have set off has landed: a step is `rescale`,
+					// whose window the CLI is asked for, so it is asked once the CLI is idle.
+					await rested(page, page.locator('.nowview-wheel'), { app });
 					assert.equal(await page.locator(`${PANE} .handle.dragged`).count(), 0);
 					assert.ok(!(await history()) || inMinutes(await history()) === 30, `the wheel took a time: ${await history()}`);
 					// The time taken is the one picked.
@@ -167,7 +171,8 @@ describe('the nowview widget zooms', () => {
 					const longer = await until(history, (m) => m && inMinutes(m) > 30);
 					// The pick stops at the ladder's end.
 					for (let i = 0; i < 30; i++) await page.mouse.wheel(0, -100);
-					await page.waitForTimeout(300);
+					// The thirty turns have landed, and anything they asked of the CLI.
+					await rested(page, page.locator('.nowview-wheel'), { app });
 					const end = await page.locator('.nowview-wheel').evaluate((w) => {
 						const ks = [...w.querySelectorAll('.notch[data-k]')].map((n) => Number(n.dataset.k));
 						return { picked: Number(w.querySelector('.notch.picked').dataset.k), top: Math.max(...ks) };
