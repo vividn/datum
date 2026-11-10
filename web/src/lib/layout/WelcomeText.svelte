@@ -14,7 +14,7 @@
 <script lang="ts">
 	import { act } from '#lib/act.ts';
 	import { openTutorial } from '#lib/tutorial.ts';
-	import { openPlace } from './shell.js';
+	import { open, openPlace } from './shell.js';
 
 	const REPO = 'https://github.com/vividn/datum';
 </script>
@@ -23,11 +23,15 @@
 	<h1 class="name">datum</h1>
 	<p class="motto">Record your life, cultivate awareness, and confront the truth.</p>
 	<p>Track what matters to you. Pay attention, record it here, and see your days as they really were.</p>
-	<p>Local first. You own your data. Seamless sync between your devices. No one else sees or can access your data.</p>
+	<!-- vividn, 2026-11-10: «Above the Tutorial, let's add a filled in button. "track something" that redirects you to
+	     the setup tab.» (da-a6xba) -->
+	<p>
+		<button type="button" class="command track" data-open="setup" use:act={'open'} onclick={() => void open('setup')}>Track something</button>
+	</p>
 	<p>New here? Learn how by playing in the tutorial db</p>
 	<!-- The way into the tutorial (da-6cvrd), a database of its own: practice never lands in yours. -->
 	<p>
-		<button type="button" class="command" use:act={'open'} onclick={openTutorial}>Tutorial</button>
+		<button type="button" class="command" data-open="tutorial" use:act={'open'} onclick={openTutorial}>Tutorial</button>
 	</p>
 	<!-- The docs, read in the page (da-0d8l6): the docs place, on their contents. -->
 	<p>Rather read than practice?</p>
@@ -41,6 +45,8 @@
 		Using an AI agent? Point it at <a href="https://datum.day/agents.md" target="_blank" rel="noopener">datum.day</a>
 		and it can help you set up, analyze your data, or build connectors to other data sources. AI agents love collecting data on themselves too.
 	</p>
+	<!-- Under the AI paragraph, right above open source (vividn, 2026-11-10, da-a6xba). -->
+	<p>Local first. You own your data. Seamless sync between your devices. No one else sees or can access your data.</p>
 	<p>Datum is open source! (AGPL-3.0): <a href={REPO} target="_blank" rel="noopener">github.com/vividn/datum</a></p>
 </div>
 
@@ -62,6 +68,17 @@
 	button.command {
 		border-color: var(--accent);
 		color: var(--ink-bright);
+	}
+
+	/* Filled, where its siblings are outlined: what to do first. */
+	button.track {
+		background: var(--accent);
+		color: var(--page);
+	}
+	button.track:hover:not(:disabled),
+	button.track:focus-visible {
+		background: var(--accent-bright);
+		color: var(--page);
 	}
 
 	.name {

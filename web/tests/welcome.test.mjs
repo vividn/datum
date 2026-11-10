@@ -93,7 +93,7 @@ describe('a first visit', () => {
 	// The docs are a button since da-0d8l6, opening the docs place: `docs.test.mjs`.
 	const LINKS = ['https://datum.day/agents.md', 'https://github.com/vividn/datum'];
 
-	test('what it has: the name, local first, the Tutorial button, the docs, the guide for agents and the repo, and no button of its own to close it', async () => {
+	test('what it has: the name, local first, Track something, the Tutorial button, the docs, the guide for agents and the repo, and no button of its own to close it', async () => {
 		await withApp(async ({ page }) => {
 			const host = page.locator('.host.welcome');
 			assert.equal(await host.getByRole('heading', { level: 1 }).innerText(), 'datum');
@@ -102,10 +102,10 @@ describe('a first visit', () => {
 			const controls = await host.locator('div.welcome').locator('button, a').evaluateAll((all) =>
 				all.map((e) => (e.tagName === 'A' ? e.getAttribute('href') : e.textContent.trim()))
 			);
-			assert.deepEqual(controls, ['Tutorial', 'Read the docs', ...LINKS]);
+			assert.deepEqual(controls, ['Track something', 'Tutorial', 'Read the docs', ...LINKS]);
 			// No worded button outside them: no «Close welcome» (da-6tk9t). The frame's own are icons.
 			const worded = (await host.getByRole('button').allInnerTexts()).map((t) => t.trim()).filter(Boolean);
-			assert.deepEqual(worded, ['Tutorial', 'Read the docs']);
+			assert.deepEqual(worded, ['Track something', 'Tutorial', 'Read the docs']);
 			for (const link of await host.getByRole('link').all()) assert.equal(await link.getAttribute('target'), '_blank');
 		}, FRESH_DESKTOP);
 	});
@@ -118,6 +118,48 @@ describe('a first visit', () => {
 			]);
 		}, FRESH_DESKTOP);
 	});
+
+	// da-a6xba, vividn, 2026-11-10: «Let's move the local first paragraph down beneath the AI paragraph (so right above
+	// the open source section). Above the Tutorial, let's add a filled in button. "track something" that redirects you to
+	// the setup tab.»
+	for (const [what, device] of [
+		['a phone', FRESH_PHONE],
+		['a desktop', FRESH_DESKTOP]
+	])
+		test(`on ${what}, Track something stands filled above Tutorial and opens setup; local first comes after the AI line, before open source`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				const welcome = page.locator('.host.welcome div.welcome');
+				const track = welcome.getByRole('button', { name: 'Track something', exact: true });
+				const tutorial = welcome.getByRole('button', { name: 'Tutorial', exact: true });
+				// Above Tutorial, drawn filled in the accent where Tutorial is the page's ground.
+				assert.ok((await track.boundingBox()).y < (await tutorial.boundingBox()).y, 'Track something is not above Tutorial');
+				const [filled, ground, accent] = await track.evaluate((button) => {
+					const probe = document.createElement('div');
+					probe.style.color = 'var(--accent)';
+					button.parentElement.append(probe);
+					const accent = getComputedStyle(probe).color;
+					probe.remove();
+					const tutorial = [...button.closest('div.welcome').querySelectorAll('button')].find((b) => b.textContent.trim() === 'Tutorial');
+					return [getComputedStyle(button).backgroundColor, getComputedStyle(tutorial).backgroundColor, accent];
+				});
+				assert.equal(filled, accent);
+				assert.notEqual(ground, accent);
+
+				// The paragraphs' order: the AI line, then local first, then open source, last.
+				const order = await welcome.locator('p').evaluateAll((all) =>
+					all.map((p) => p.textContent).flatMap((t) => (/AI agent/.test(t) ? ['ai'] : /local first/i.test(t) ? ['local'] : /open source/i.test(t) ? ['source'] : []))
+				);
+				assert.deepEqual(order, ['ai', 'local', 'source']);
+
+				await track.click();
+				await until(() => front(page), ([name]) => name === 'setup');
+				assert.deepEqual(await front(page), ['setup', 'setup']);
+				await page.locator('.host.setup h3', { hasText: 'What do you want to track?' }).waitFor();
+				assert.deepEqual(await rootNames(page), FIRST);
+				assert.deepEqual(app.errors, []);
+			}, device);
+		});
 
 	// The Help place's front page is the same short welcome, under its own line (da-uzyih.19): no full copy is kept.
 	test('Help\'s front page is the short welcome under its own line', async () => {
@@ -271,7 +313,7 @@ describe('a device that has been here', () => {
 
 // da-rgyq8, vividn: an early user «suggested we call it "setup" widget and I would
 // agree». What the app ships says «Track» nowhere but as the verb of the
-// sentence that says what a field is (WelcomeText.svelte) and of the gear's «Track timezone» (da-yw6o2,
+// sentence that says what a field is (WelcomeText.svelte), of its «Track something» button and of the gear's «Track timezone» (da-yw6o2,
 // vividn's word for it): no title, button, tab or help of the widget. The docs the
 // docs widget bundles (da-0d8l6) are the repo's `docs/` as written, not the app's
 // words, so a chunk that is one (it holds a doc's title line) is not read.
@@ -285,6 +327,6 @@ test('the built app says «Track» only as a verb', () => {
 		.filter((f) => /\.(js|html)$/.test(f))
 		.map((f) => readFileSync(join(build, f), 'utf8'))
 		.filter((text) => !titles.some((title) => text.includes(title)))
-		.flatMap((text) => text.match(/\bTrack\b(?! timezone).{0,20}/g) ?? []);
+		.flatMap((text) => text.match(/\bTrack\b(?! timezone| something).{0,20}/g) ?? []);
 	assert.deepEqual([...new Set(said)], ['Track what matters to you']);
 });

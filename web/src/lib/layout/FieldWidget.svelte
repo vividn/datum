@@ -195,7 +195,7 @@
 
 	/** A field picked, `''` a new one: the spec's edits saved, a new field's once the reader agrees to lose them. */
 	async function go(field: string): Promise<void> {
-		if (dirty && !spec && !(await confirm(`Leave ${$editing.field || 'the new field'} without saving what you changed?`, 'leave'))) return;
+		if (dirty && !spec && !(await confirm(`Leave ${$editing.field || 'the new field'} without saving?`, 'leave'))) return;
 		$away = false;
 		$editing = { field };
 	}
