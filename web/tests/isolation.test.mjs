@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import './support/tmpdir.mjs';
 
 const build = fileURLToPath(new URL('../build', import.meta.url));
 const TYPES = {

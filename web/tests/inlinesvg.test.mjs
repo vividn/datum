@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { chromium } from 'playwright';
+import './support/tmpdir.mjs';
 
 // The module's source, types stripped, in the page: it imports nothing and
 // needs only the page's DOMParser.

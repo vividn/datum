@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { preview } from 'vite';
 import { chromium } from 'playwright';
+import './tmpdir.mjs';
 import { OPFS_DIR } from '../../src/lib/databases.ts';
 import { DESK } from './desk.mjs';
 

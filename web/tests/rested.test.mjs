@@ -6,6 +6,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import './support/tmpdir.mjs';
 import { PAST_THE_WINDOW_MS, rested } from './support/layout.mjs';
 
 let browser;

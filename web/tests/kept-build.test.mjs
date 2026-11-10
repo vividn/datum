@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import './support/tmpdir.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const root = path.join(web, 'build');
