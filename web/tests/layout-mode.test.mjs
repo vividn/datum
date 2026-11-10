@@ -425,11 +425,21 @@ describe('the bar in modify mode', () => {
 				assert.equal(await input.evaluate((el) => el.closest('[inert]') !== null), true, 'the box is not inert');
 				assert.equal(await pill.evaluate((el) => el.closest('[inert]') === null), true, 'the pill is inert');
 				assert.ok(Number(await page.locator('.prompt-bar .section.input').evaluate((el) => getComputedStyle(el).opacity)) < 1, 'the input row is not dimmed');
+				// The `❯` is not left half under the ↺ (da-4ohov): hidden, or clear of it.
+				const chevron = page.locator('.prompt-bar button.prompt');
+				const reset = await pill.locator('button:not(.apply)').boundingBox();
+				const under = await chevron.evaluate((el, r) => {
+					if (getComputedStyle(el).visibility === 'hidden') return false;
+					const c = el.getBoundingClientRect();
+					return c.left < r.x + r.width && r.x < c.right && c.top < r.y + r.height && r.y < c.bottom;
+				}, reset);
+				assert.equal(under, false, 'the ❯ shows under the ↺');
 				await input.focus();
 				assert.equal(await input.evaluate((el) => el === document.activeElement), false, 'the box took the focus');
 				await leaveLayoutMode(page, 'apply');
 				assert.equal(await pill.count(), 0);
 				assert.equal(await input.evaluate((el) => el.closest('[inert]') === null), true, 'the box is still inert');
+				assert.equal(await chevron.evaluate((el) => getComputedStyle(el).visibility), 'visible', 'the ❯ did not come back');
 			}, device);
 		});
 });

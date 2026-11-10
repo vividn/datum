@@ -646,6 +646,12 @@
 		opacity: 0.4;
 	}
 
+	/* The `❯` is under the pill's ↺, so it goes while the pill shows (da-4ohov):
+	   dimmed, half of it peeked out from under the ↺. */
+	.prompt-bar.still :global(button.prompt) {
+		visibility: hidden;
+	}
+
 	/* The pill, over the middle of the input row. */
 	.modify {
 		position: absolute;
