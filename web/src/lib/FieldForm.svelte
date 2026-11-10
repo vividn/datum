@@ -382,21 +382,28 @@
 		<!-- vividn, 2026-10-28: «don't freeze the shapes at the top of the setup widget allow them to scroll with
 		     everything else» (da-uz2td): the shapes, name and tab in front scroll as one, over the tabs and buttons. -->
 		<div class="scroll">
-			<div class="row name-line">
-				{#if empty}
-					<button type="button" class="track-something" use:act={'open'} aria-haspopup="dialog" onclick={() => ((typed = ''), (asking = true))}
-						>manual setup</button
-					>
-					{@render pick?.()}
-				{:else}
+			{#if empty}
+				<!-- vividn, 2026-11-10 (da-thlic): «more like in the design»: a card, its heading, what it is for, the button, the recent fields. -->
+				<div class="manual">
+					<div class="row name-line">
+						<h3>manual setup</h3>
+						<p class="for">Make a field from scratch, or change one you already track.</p>
+						<button type="button" class="track-something" use:act={'open'} aria-haspopup="dialog" onclick={() => ((typed = ''), (asking = true))}
+							>manual setup</button
+						>
+						{@render pick?.()}
+					</div>
+				</div>
+			{:else}
+				<div class="row name-line">
 					<span class="label">field:</span>
 					<span class="pill" style:--c={color || auto} data-field={field}>
 						{#if spec}<h2>{field}</h2>{:else}<span class="named">{field}</span>{/if}
 						<button type="button" class="clear" aria-label="clear {field}" onclick={() => onopen('')}>×</button>
 					</span>
 					{@render pick?.()}
-				{/if}
-			</div>
+				</div>
+			{/if}
 			{#if !empty}
 			{#if hint}
 				<p class="hint">
@@ -1181,6 +1188,47 @@
 	.empty .scroll {
 		flex: none;
 		overflow: visible;
+	}
+
+	/* The design's card (da-thlic): one row that wraps on a desktop, stacked on a phone. */
+	.manual {
+		container-type: inline-size;
+		background: var(--raised);
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+	}
+
+	.manual .name-line {
+		padding: 12px 16px;
+		gap: 0.5rem 1rem;
+	}
+
+	/* The light accent, the design's #adadff. */
+	.manual h3 {
+		margin: 0;
+		color: var(--accent-bright);
+		font-size: 0.75rem;
+		font-weight: normal;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.manual .for {
+		flex: 1 1 12rem;
+		margin: 0;
+		color: var(--muted);
+	}
+
+	@container (inline-size < 30rem) {
+		.manual .name-line {
+			flex-direction: column;
+			align-items: flex-start;
+			padding: 10px 12px;
+		}
+
+		.manual .for {
+			flex: none;
+		}
 	}
 
 	.track-something {

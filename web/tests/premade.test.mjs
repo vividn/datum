@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, exactly } from './support/layout.mjs';
-import { FIELD_FORM, PANEL, declared, fieldNamed, leaveField } from './support/field.mjs';
+import { FIELD_FORM, NAMING, PANEL, declared, fieldNamed, leaveField } from './support/field.mjs';
 import { resolveLibAsSource } from './support/libhook.mjs';
 import { exec } from './support/process.mjs';
 import { until } from './support/until.mjs';
@@ -70,6 +70,48 @@ async function toSetup(page) {
 }
 
 describe('a first visit', () => {
+	// vividn, 2026-11-10 (da-thlic): «can we get that "manual setup" section more like in the design? Right now it is just a lone button».
+	for (const [device, size] of [['desktop', DESKTOP], ['phone', PHONE]]) {
+		test(`on a ${device}, manual setup is a card: its heading, what it is for, the button, and the fields touched last once there are any`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await toSetup(page);
+				const card = page.locator(`${SETUP} ${FIELD_FORM} .manual`);
+				assert.equal(await card.locator('h3').innerText(), 'MANUAL SETUP');
+				assert.equal(await card.locator('p.for').innerText(), 'Make a field from scratch, or change one you already track.');
+				assert.equal(await card.locator('button.track-something').innerText(), 'manual setup');
+				assert.equal(await card.locator('.recent').count(), 0);
+				const ground = await card.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).borderTopWidth]);
+				const raised = await page.evaluate(() => {
+					const probe = document.body.appendChild(Object.assign(document.createElement('i'), { style: 'background: var(--raised)' }));
+					const color = getComputedStyle(probe).backgroundColor;
+					probe.remove();
+					return color;
+				});
+				assert.deepEqual(ground, [raised, '1px']);
+				// One row that wraps on a desktop, stacked on a phone: the button beside the line, or under it.
+				const box = (sel) => card.locator(sel).evaluate((el) => el.getBoundingClientRect().toJSON());
+				const [line, button] = [await box('p.for'), await box('button.track-something')];
+				assert.equal(await card.locator('.name-line').evaluate((el) => getComputedStyle(el).flexDirection), device === 'phone' ? 'column' : 'row');
+				if (device === 'phone') assert.ok(button.top >= line.bottom, `the button is not under the line: ${button.top} < ${line.bottom}`);
+				else assert.ok(button.top < line.bottom, `the button is not beside the line: ${button.top} >= ${line.bottom}`);
+				// Two fields logged, a second apart as the page's clock is held: both are recent, newest first.
+				for (const name of ['tea', 'nap']) {
+					await app.clock.forward(1000);
+					await app.run(['moment', name]);
+				}
+				await app.redraw();
+				const recent = () => card.locator('[data-recent]').evaluateAll((all) => all.map((b) => b.dataset.recent));
+				await until(recent, (r) => r.join() === 'nap,tea');
+				if (device === 'phone') assert.ok((await box('.recent')).top >= (await box('button.track-something')).bottom, 'the recent row is not under the button');
+				// The button still opens manual setup.
+				await card.locator('button.track-something').click();
+				await page.locator(`${NAMING} input.field`).waitFor();
+				assert.deepEqual(app.errors, []);
+			}, { ...size, home: null, desk: null });
+		});
+	}
+
 	test('opens welcome · setup · collection · dayview, and setup lists every example under its theme, icon and name', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

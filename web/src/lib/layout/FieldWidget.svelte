@@ -287,7 +287,7 @@
 							<button type="button" class="rename" use:act={'open'} aria-haspopup="dialog" onclick={rename}>rename</button>
 						{:else if home && recent.length}
 							<span class="recent" role="group" aria-label="recent">
-								recent:
+								<span title="the three fields you touched last: logged, edited or opened">recent:</span>
 								{#each recent as f (f.field)}
 									<button type="button" use:act={'show'} data-recent={f.field} style:--c={f.color} onclick={() => go(f.field)}
 										>{f.glyph ?? VERBS.find((v) => v.what === f.shape.kind)?.glyph} {f.field}</button
