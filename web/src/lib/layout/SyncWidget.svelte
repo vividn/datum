@@ -18,7 +18,8 @@
 	by a load (Brand.svelte says why).
 
 	Under it, the grid (da-n0uj1.7): every device this install's databases
-	know of against every database, each cell its standing there as `sync
+	know of against the page's database, the others behind «other dbs ›»
+	(da-opbpa), each cell its standing there as `sync
 	grid` has it and a dropdown of what may be done to it — a role (an invite,
 	sealed to the device in a chain both share, or a role change), expel,
 	unjoin, wipe, each of the last three confirming in a dialog that says
@@ -113,9 +114,14 @@
 	import { grammar } from './engine.js';
 
 	let {
-		epoch = 0
+		epoch = 0,
+		otherDbs = false,
+		onchange
 	}: {
 		epoch?: number;
+		/** The grid's other databases unfolded, held for the session (da-opbpa). */
+		otherDbs?: boolean;
+		onchange?: (otherDbs: boolean) => void;
 	} = $props();
 
 	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', offline: '○', error: '!', none: '—' };
@@ -215,6 +221,13 @@
 		...(grid?.chains ?? []),
 		...dbs.filter((d) => !d.chain && !grid?.chains.some((c) => c.held && c.db === d.db)).map((d) => ({ chain: null, db: d.db, held: true }))
 	]);
+	/**
+	 * The columns drawn: the page's database first, its chain's or its own,
+	 * then the others as above once «other dbs ›» unfolds them (da-opbpa).
+	 */
+	// `sync grid` names a chain's column after the page's database where it holds it, the others' after theirs.
+	const here = $derived(columns.filter((c) => c.held && c.db === db));
+	const drawn = $derived(otherDbs ? [...here, ...columns.filter((c) => !here.includes(c))] : here);
 	const used = $derived(MARKS.filter((m) => shown.some((c) => c.mark === m)));
 
 	/** How `d` stands as a whole: the worst of its devices, which this copy's cell already is. */
@@ -695,9 +708,9 @@
 						<thead>
 							<tr>
 								<th></th>
-								{#each columns as col (col.chain ?? col.db)}
-									<th data-db={col.db}
-										><span class="name">{col.db}</span>{#if col.held && columns.some((c) => c.chain && c.held && c.db !== col.db)}<button
+								{#each drawn as col (col.chain ?? col.db)}
+									<th data-db={col.db} class:here={here.includes(col)}
+										><span class="name">{col.db}</span>{#if here.includes(col)}<span class="kind">this db</span>{/if}{#if col.held && columns.some((c) => c.chain && c.held && c.db !== col.db)}<button
 												type="button"
 												class="command like"
 												use:act={'open'}
@@ -706,6 +719,13 @@
 											>{/if}</th
 									>
 								{/each}
+								{#if columns.length > here.length}
+									<th
+										><button type="button" class="command fold" use:act={'show'} aria-expanded={otherDbs} onclick={() => onchange?.(!otherDbs)}
+											>{otherDbs ? '‹ fewer' : 'other dbs ›'}</button
+										></th
+									>
+								{/if}
 							</tr>
 						</thead>
 						<tbody>
@@ -715,7 +735,7 @@
 										data-sealed={row.sealed?.length || undefined}
 										title={[row.this ? `${row.label}: this device` : row.label, ...(row.sealed ?? []).map((g) => g.text)].join('\n')}>{row.label}</th
 									>
-									{#each columns as col (col.chain ?? col.db)}
+									{#each drawn as col (col.chain ?? col.db)}
 										{@const cell = col.chain ? row.cells[col.chain] : null}
 										{@const grant = col.chain ? row.grants?.[col.chain] : undefined}
 										{@const acts = row.this || !col.chain || !col.held ? [] : cellActs(cell?.state, !!row.device)}
@@ -1094,7 +1114,11 @@
 		border-radius: 4px;
 		font: inherit;
 	}
-	.grid .like {
+	.grid thead .here .name {
+		font-weight: bold;
+	}
+	.grid .like,
+	.grid .fold {
 		padding: 0.1rem 0.3rem;
 		font-size: 0.85em;
 	}

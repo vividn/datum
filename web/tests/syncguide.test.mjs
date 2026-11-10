@@ -147,6 +147,14 @@ test('every control the guide names is one the widget shows, walked as a person 
 				await widget.locator('.actions[data-db="datum"]').getByRole('button', { name: /^More/ }).click();
 				await widget.locator('.more .device').waitFor();
 				await look(widget);
+				// The grid: datum's column first, a database in no chain folded behind «other dbs ›» (da-opbpa).
+				await app.run(['--db', 'notes', 'occur', 'jot']);
+				await app.goto('/sync');
+				const fold = widget.locator('.grid button.fold');
+				await look(fold);
+				await fold.click();
+				await until(() => fold.innerText(), (t) => t === '‹ fewer');
+				await look(widget.locator('.grid'));
 
 				// The other side: a join link opened in a browser, on a database in no chain.
 				const serving = native.spawn(['sync', 'chain', 'invite']);

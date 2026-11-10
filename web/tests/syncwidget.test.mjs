@@ -24,6 +24,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, withWallClock } from './support/sync.mjs';
 import { OPFS_DIR } from '../src/lib/databases.ts';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -324,6 +325,11 @@ describe('the sync widget', () => {
 			assert.equal(await other.locator('.seen').innerText(), 'same devices');
 			// And home's own list still draws, `work`'s copy one of its devices.
 			assert.deepEqual((await lines(page)).map(([label]) => label), ['datum.day', 'work']);
+			// One chain, one column in the grid: this db's, whichever of the two the page is on (da-opbpa).
+			const head = page.locator(`${WIDGET} .grid thead th.here .name`);
+			assert.equal(await head.innerText(), 'home');
+			await app.goto('/sync?db=work');
+			assert.equal(await head.innerText(), 'work');
 		}, DESKTOP);
 	});
 
@@ -348,6 +354,51 @@ describe('the sync widget', () => {
 		} finally {
 			await lap.close();
 		}
+	});
+
+	test('the grid shows this database’s column first, the others folded behind «other dbs ›», which unfolds them (da-opbpa)', async () => {
+		for (const viewport of [{ width: 390, height: 844 }, DESKTOP.viewport])
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					const heads = () => page.locator(`${WIDGET} .grid thead th[data-db]`).evaluateAll((ths) => ths.map((th) => th.dataset.db));
+					const here = () => page.locator(`${WIDGET} .grid thead th.here`).evaluateAll((ths) => ths.map((th) => th.dataset.db));
+					const fold = page.locator(`${WIDGET} .grid button.fold`);
+					const opened = async (db) => {
+						await app.goto(`/sync?db=${db}`);
+						await page.locator(`${WIDGET} .grid th[data-db="${db}"]`).waitFor();
+					};
+					// One database, in a chain of its own: its column alone, and nothing to unfold.
+					await member(app, 'datum', 'phone');
+					await opened('datum');
+					assert.deepEqual(await heads(), ['datum']);
+					assert.equal(await fold.count(), 0);
+
+					// Two more, one chained: folded, this one's column alone, marked.
+					await member(app, 'home', 'tablet');
+					await cli(app, ['--db', 'notes', 'occur', 'jot']);
+					await opened('home');
+					assert.deepEqual(await heads(), ['home']);
+					assert.deepEqual(await here(), ['home']);
+					assert.equal(await fold.innerText(), 'other dbs ›');
+					await fold.click();
+					await until(heads, (h) => h.length === 3);
+					assert.equal((await heads())[0], 'home');
+					assert.deepEqual((await heads()).toSorted(), ['datum', 'home', 'notes']);
+					assert.equal(await fold.innerText(), '‹ fewer');
+
+					// Another database first, chained or not, whichever is open; the fold folds again.
+					await opened('notes');
+					assert.equal((await heads())[0], 'notes');
+					assert.deepEqual(await here(), ['notes']);
+					// Unfolded still: the session holds it across databases.
+					assert.equal(await fold.getAttribute('aria-expanded'), 'true');
+					await fold.click();
+					await until(heads, (h) => h.length === 1);
+					assert.deepEqual(await heads(), ['notes']);
+				},
+				{ viewport }
+			);
 	});
 });
 

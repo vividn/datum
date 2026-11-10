@@ -823,6 +823,9 @@ It lists them and changes nothing. Type \`alias set <word> "<command>"\` in the 
 	sync: {
 		meta: meta('sync', 'sync'),
 		component: SyncWidget,
+		// «other dbs ›» unfolds the grid's other databases for the session (da-opbpa).
+		props: ({ otherDbs }) => ({ otherDbs: otherDbs === true }),
+		onChange: (settings, otherDbs) => ({ ...settings, otherDbs }),
 		guide: `Sync keeps the same data on each of your devices: a phone, a laptop's browser, a computer with the datum command. Devices talk to each other directly. What they send is encrypted end to end, so a relay that helps them find each other passes on only what it cannot read.
 
 ## Where it is
@@ -855,7 +858,9 @@ Give each device a name you will know it by with **Rename this device**, which a
 
 ## Reading the widget
 
-Every device syncing this database, each CLI install and browser, a line each, this one first, with when it was last seen; then your other databases, a tap each to open it. ✓ synced, ↻ syncing, ◔ pending, ! error (its reason under it), — not syncing. A device not reachable now is drawn gray, as it was when last seen. Its ? opens this guide.`,
+Every device syncing this database, each CLI install and browser, a line each, this one first, with when it was last seen; then your other databases, a tap each to open it. ✓ synced, ↻ syncing, ◔ pending, ! error (its reason under it), — not syncing. A device not reachable now is drawn gray, as it was when last seen. Its ? opens this guide.
+
+Under them, **Devices × databases**: each device's standing in this database, a dropdown of what may be done to it. **other dbs ›** shows your other databases beside this one, and **‹ fewer** folds them again.`,
 		commands: 'sync',
 		tour: [
 			{ at: WHOLE, say: 'Sync keeps the same data on each of your devices, sent from one to another directly, encrypted end to end.' },

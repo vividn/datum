@@ -89,6 +89,9 @@ async function gridWith(app, native, db = 'home') {
 	const device = JSON.parse((await native.run(['sync', 'status', '--json'])).stdout).this.device;
 	const phone = await openChain(app);
 	await app.goto(`/sync?db=${db}`);
+	// Every database's column: the grid opens on `db`'s alone (da-opbpa).
+	const fold = app.page.locator(`${WIDGET} .grid button.fold`);
+	if ((await fold.getAttribute('aria-expanded')) === 'false') await fold.click();
 	await cellOf(app.page, device, 'datum').waitFor();
 	return { device, phone };
 }
