@@ -254,8 +254,9 @@
 		if (badDur) return;
 		setMoment(false);
 		const c = get(cursor);
-		// Typed, a length ends at the time, as an unsigned `dur=` does, whichever way a drag left it.
-		pointAt({ ...(c ? where(c) : { rel: 0 }), span: minutes });
+		// Typed, a length ends at the time, as an unsigned `dur=` does, whichever way a drag left it;
+		// `+5m` runs forward from it, as `dur=+5m` does (da-klpoj). The reader drops the sign, so it is read here.
+		pointAt({ ...(c ? where(c) : { rel: 0 }), span: minutes, ahead: said.startsWith('+') });
 		typedDur = '';
 	}
 	function toggleMoment() {

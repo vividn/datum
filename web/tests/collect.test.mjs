@@ -504,6 +504,37 @@ describe('collect', () => {
 		});
 	});
 
+	// da-klpoj: a typed `+` is the line's `dur=+5m`, a length forward from the time, not dropped.
+	test('a length typed +5m runs forward from the time, +5m and dur=+5m; typed 5m ends at it again', async () => {
+		await collect(async (app) => {
+			const { page } = app;
+			await tap(page, '[data-earlier="5"]');
+			await saysPill(page, 'time', '−5m');
+			await tap(page, '[data-part="dur"]');
+			const typed = page.locator(`${WHEN} [data-when-more="dur"] [data-type-dur]`);
+			await typed.fill('5m');
+			await typed.press('Enter');
+			await saysPill(page, 'dur', '5m');
+			assert.ok(!(await page.evaluate(() => window.datum.cursor.of()?.ahead)), 'typed 5m runs forward');
+			await typed.fill('+5m');
+			await typed.press('Enter');
+			await saysPill(page, 'dur', '+5m');
+			assert.equal(await page.evaluate(() => window.datum.cursor.of()?.ahead), true);
+			assert.equal(await whenPill(page, 'dur').locator('svg.length-arrow.ahead').count(), 1, 'the arrow points forward');
+			await tap(page, '[data-part="dur"]');
+			await page.locator(`${WHEN} [data-when-more]`).waitFor({ state: 'detached' });
+			const seen = await app.spyOnRunner();
+			await page.locator(`${VIEW} [data-field="work"]`).click();
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a.includes('work')));
+			const line = (await seen()).find((a) => a.includes('work') && !a.includes('--dry-run'));
+			assert.ok(line.includes('dur=+5m'), JSON.stringify(line));
+			await app.idle();
+			const work = (await app.entries()).filter((e) => e.field === 'work').at(-1);
+			assert.equal(work?.dur, 'PT5M', JSON.stringify(work));
+			assert.equal(Date.parse(work.at.utc), todayAt(15, 0), JSON.stringify(work.at));
+		});
+	});
+
 	test('a moment tapped with the time pill logs six minutes back', async () => {
 		await collect(async (app) => {
 			const { page } = app;
