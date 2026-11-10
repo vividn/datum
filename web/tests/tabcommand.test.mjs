@@ -10,7 +10,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP } from './support/layout.mjs';
+import { DESKTOP, PHONE } from './support/layout.mjs';
 import { unfold } from './support/bar.mjs';
 
 before(startApp);
@@ -64,4 +64,56 @@ test('the setup tab: `setup` is a pill no key takes, a line runs after it, and i
 		await box.press('Enter');
 		await page.waitForFunction(() => window.datum.bar.last()?.line === 'moment tea');
 	}, DESKTOP);
+});
+
+// The › list there (da-zx826). vividn, 2026-11-09: «show setups own options or
+// other pages you can go to. like db and sync and stuff could still be on there
+// because they switch to their respective tabs». So nothing on it runs as
+// `setup <another command>`; picking a page goes to its tab.
+test('the › list on the setup tab: its own flags and the pages, nothing that would run after the pill', async () => {
+	await withApp(async (app) => {
+		const { page } = app;
+		const pill = page.locator(`${BAR} .fixed`);
+		const box = page.locator(`${BAR} input`);
+		const chevron = page.locator(`${BAR} button.prompt`);
+		const list = page.locator(`${BAR} #bar-commands`);
+		const shown = () =>
+			list.locator('button[data-command], button[data-flag], button[data-menu]').evaluateAll((bs) => bs.map((b) => b.dataset.command ?? (b.dataset.flag && `flag ${b.dataset.flag}`) ?? `menu ${b.dataset.menu}`));
+		const open = async () => {
+			if (!(await list.count())) await chevron.click();
+			await list.locator('[data-command="undo"]').waitFor();
+		};
+
+		await app.toCollect();
+		await open();
+		const base = await shown();
+		assert.ok(base.includes('menu write') && base.includes('db'), `collect's list is the base row: ${base}`);
+		await chevron.click();
+		await list.waitFor({ state: 'detached' });
+
+		await page.evaluate(() => window.datum.shell.open('setup'));
+		await pill.waitFor();
+		await open();
+		const here = await shown();
+		const flags = here.filter((c) => c.startsWith('flag setup -'));
+		assert.ok(flags.length > 0, `setup's flags are listed: ${here}`);
+		for (const place of ['sync', 'conflicts', 'db backup', 'db restore']) assert.ok(here.includes(place), `${place} is listed: ${here}`);
+		const after = here.filter((c) => !c.startsWith('flag setup -') && !['undo', 'redo', 'help', 'sync', 'conflicts', 'db backup', 'db restore'].includes(c));
+		assert.deepEqual(after, [], 'nothing listed would run after the pill');
+		assert.equal(await list.locator('button.lead').count(), 0, 'no lead circle');
+
+		// A flag goes after the pill, not as a second `setup`.
+		await list.locator(`[data-flag="${flags[0].slice('flag '.length)}"]`).click();
+		await page.waitForFunction((flag) => document.querySelector('.prompt-bar input').value === `${flag} `, flags[0].split(' ')[2]);
+
+		// A page goes to its tab, and there the list is that tab's.
+		await box.fill('');
+		await open();
+		await list.locator('[data-command="sync"]').click();
+		await page.waitForFunction(() => document.querySelector('.prompt-bar .fixed')?.textContent.trim() === 'sync');
+		await open();
+		const sync = await shown();
+		assert.ok(!sync.includes('sync'), `the sync tab does not list itself: ${sync}`);
+		assert.ok(sync.some((c) => c.startsWith('sync ')), `sync's own subcommands are listed: ${sync}`);
+	}, PHONE);
 });

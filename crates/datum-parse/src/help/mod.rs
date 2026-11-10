@@ -20,6 +20,7 @@
 pub mod commands;
 mod fit;
 pub mod render;
+mod setup_flags;
 pub mod spec;
 mod upgrade_flags;
 

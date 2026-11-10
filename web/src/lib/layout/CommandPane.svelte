@@ -63,7 +63,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import CommandsWidget from '#lib/CommandsWidget.svelte';
-	import { clearUnlockedPills, commandsOpen, dropHids, pills, prefill, text, type Pill } from '#lib/bar.ts';
+	import { clearUnlockedPills, commandsOpen, dropHids, fixed, pills, prefill, text, unfixed, type Pill } from '#lib/bar.ts';
 	import { openOutput } from '#lib/log.ts';
 	import { argumentsOf, opensField, withFlag, type Suggestion } from '#lib/commands.ts';
 	import { openField } from '#lib/fieldWidget.ts';
@@ -141,7 +141,8 @@
 			void openField(field?.text, null, { brought: !!field });
 		} else {
 			if (spend) clearUnlockedPills(spend);
-			prefill.set({ line, keyboard });
+			// Under the tab's command (da-zx826) the line goes after its pill, so it does not say it again.
+			prefill.set({ line: unfixed(line, $fixed), keyboard });
 		}
 	}
 </script>
@@ -156,10 +157,12 @@
 		{redoable}
 		conflicts={$conflicts.length}
 		{key}
+		fixed={$fixed}
 		onrun={runNow}
 		onsuggest={suggest}
 		online={fill}
-		onflag={(flag) => prefill.set({ line: withFlag($text, flag.command, flag.flag), keyboard: flag.keyboard })}
+		onflag={(flag) =>
+			prefill.set({ line: unfixed(withFlag($fixed ? `${$fixed} ${$text}` : $text, flag.command, flag.flag), $fixed), keyboard: flag.keyboard })}
 	/>
 </div>
 

@@ -720,6 +720,21 @@ export function subcommandsOf(grammar: Grammar | null, name: string): CommandBut
 	];
 }
 
+/**
+ * The bar on a tab with a fixed command (da-zx826, `fixed` in #lib/bar.ts),
+ * where a line runs as `<command> <line>`. vividn, 2026-11-09: «show setups
+ * own options or other pages you can go to. like db and sync and stuff could
+ * still be on there because they switch to their respective tabs». So: undo
+ * and Help, which run nothing after the pill; the command's own subcommands
+ * and flags, which complete the line after it; and the commands that open a
+ * page, sync, conflicts and db's backups, less the tab's own.
+ */
+export function fixedCommands(grammar: Grammar | null, command: string): CommandButton[] {
+	const own = subcommandsOf(grammar, command).filter((b) => b.name.startsWith(`${command} `) && b.press === 'fill');
+	const pages = [SYNC, CONFLICTS, ...BACKUPS.map((name): CommandButton => ({ name, label: name.split(' ')[1], press: 'backups' }))];
+	return [UNDO, HELP, ...own, ...flagsOf(grammar, command).slice(2), ...pages.filter((b) => b.name !== command)];
+}
+
 // ---- a command's flags (da-st2xl) ---------------------------------------
 //
 // vividn, 2026-09-25: «long pressing on a command, like occur should add it

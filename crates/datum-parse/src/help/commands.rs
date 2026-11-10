@@ -50,6 +50,7 @@
 //! command points at it through [`CommandSpec::shared_flags`] while
 //! keeping whatever is particular to it. See `LOG_SHARED_FLAGS` below.
 
+use super::setup_flags::SPEC_FLAGS;
 use super::spec::{
     ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, FormGroup, FormSpec,
     SharedFlags, SubcommandSpec, TopicSpec,
@@ -2899,7 +2900,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: SPEC_USAGE,
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: SPEC_FLAGS,
         shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,

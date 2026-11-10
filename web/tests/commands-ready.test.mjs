@@ -142,7 +142,8 @@ test("another field's pill, or none, takes a state pill left on the bar, and the
  * command pallete comes out from the >, so a separate widget is redundant».
  * The ready command leads the palette as it leads any command pane.
  */
-const TABS = { setup: 1, collect: 2, dayview: 3 };
+// By name: the indices moved once a tab was added before them, and `collect` was setup's.
+const TABS = Object.fromEntries(['setup', 'collect', 'dayview'].map((name) => [name, ON_COLLECT.names.indexOf(name)]));
 const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
 
 for (const [device, options] of [

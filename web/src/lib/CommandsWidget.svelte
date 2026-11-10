@@ -83,6 +83,12 @@
 	scrolled (da-vu7pi): as many rows as fit, up to three, each packed on
 	its own and all of them scrolled along the bar's axis.
 
+	ON A TAB WITH A COMMAND (da-zx826, `fixed` in #lib/bar.ts), where a line
+	runs as `setup <line>`, the bar is `fixedCommands`, whatever pills are
+	loaded or the bar kept: undo, Help, the command's own subcommands and
+	flags, and the commands that open a page. No lead circle, no hold: nothing
+	that would run as `setup <another command>`.
+
 	THE PALETTE, the ❯'s commands over the bottom bar's output (da-qzzox,
 	vividn, 2026-11-04: «increase the size of the buttons in the command
 	pallette. It should be one row, horizontally scrollable»): `palette`
@@ -123,6 +129,7 @@
 		opensField,
 		fieldCommand,
 		fires,
+		fixedCommands,
 		flagsOf,
 		hasFlags,
 		ICONS,
@@ -160,6 +167,8 @@
 		key = '',
 		/** The ❯'s palette: larger circles in one row scrolled sideways (da-qzzox). */
 		palette = false,
+		/** The tab's command (da-zx826), or null: the bar is then `fixedCommands`, whatever is loaded or kept. */
+		fixed = null,
 		/** A press that runs: the argv. */
 		onrun,
 		/** A press that writes the line instead: what to write, and what it spends. */
@@ -177,13 +186,14 @@
 		conflicts?: number;
 		key?: string;
 		palette?: boolean;
+		fixed?: string | null;
 		onrun?: (argv: string[]) => void;
 		online?: (line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }) => void;
 		onflag?: (flag: { command: string; flag: string; keyboard: boolean }) => void;
 		onsuggest?: (suggestion: Suggestion) => void;
 	} = $props();
 
-	const suggested = $derived(suggestionOf(pills, fields));
+	const suggested = $derived(fixed ? null : suggestionOf(pills, fields));
 
 	/** The lead circle's tap: run what is ready, else write it on the line for the rest to be typed. */
 	function lead(s: Suggestion): void {
@@ -215,15 +225,17 @@
 		if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
 	});
 	const shown = $derived(
-		flagged
-			? flagsOf(grammar, flagged)
-			: open
-				? subcommandsOf(grammar, open)
-				: argumentsOf(pills).length
-					? listed
-					: menu
-						? [BACK, ...MENUS[menu]]
-						: BASE
+		fixed
+			? fixedCommands(grammar, fixed)
+			: flagged
+				? flagsOf(grammar, flagged)
+				: open
+					? subcommandsOf(grammar, open)
+					: argumentsOf(pills).length
+						? listed
+						: menu
+							? [BACK, ...MENUS[menu]]
+							: BASE
 	);
 	/**
 	 * The lines the bar is dealt into, at most: the palette is ONE row
@@ -270,7 +282,7 @@
 		if (command.press === 'back') return back();
 		if (command.press === 'menu') return void (menu = command.name as Menu);
 		if (syncMenu(command)) return void (menu = 'sync');
-		if (command.press === 'flag') return onflag?.({ command: flagged!, flag: command.name, keyboard: command.next === 'type' });
+		if (command.press === 'flag') return onflag?.({ command: fixed ?? flagged!, flag: command.name, keyboard: command.next === 'type' });
 		if (kindOf(command) === 'show') return void (open = command.name);
 		// A command chosen from a submenu takes the bar back to the base row, as a menu closes:
 		// kept at once, since the choice can close the widget (the ❯'s commands) before an effect runs.
@@ -401,7 +413,7 @@
 				class="command"
 				use:act={'fill'}
 				{disabled}
-				data-flag={`${flagged} ${command.name}`}
+				data-flag={`${fixed ?? flagged} ${command.name}`}
 				data-help={command.help}
 				title={command.help}
 				onclick={() => press(command)}
@@ -419,7 +431,7 @@
 				{disabled}
 				data-command={command.name}
 				data-glyph={glyph}
-				data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
+				data-holds={!fixed && !open && hasFlags(grammar, command.name) ? '' : undefined}
 				title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : kindOf(command) === 'open' ? `open ${command.label}` : `${command.name} …`}
 				onclick={() => press(command)}
 			>
