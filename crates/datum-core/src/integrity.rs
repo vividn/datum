@@ -1713,7 +1713,7 @@ mod tests {
         use std::sync::Arc;
 
         fn entry_reads_for_batch(size: usize) -> usize {
-            let db = Db::open_in_memory().unwrap();
+            let mut db = Db::open_in_memory().unwrap();
             let base = Utc::now() - Duration::hours(6);
             let batch: Vec<Entry> = (0..size)
                 .map(|i| {
@@ -1729,19 +1729,22 @@ mod tests {
 
             let reads = Arc::new(AtomicUsize::new(0));
             let counter = Arc::clone(&reads);
-            db.conn().authorizer(Some(
-                move |ctx: rusqlite::hooks::AuthContext<'_>| -> rusqlite::hooks::Authorization {
-                    if let rusqlite::hooks::AuthAction::Read { table_name, .. } = ctx.action {
-                        if table_name == "entries" {
-                            counter.fetch_add(1, Ordering::Relaxed);
+            db.conn_mut()
+                .authorizer(Some(
+                    move |ctx: rusqlite::hooks::AuthContext<'_>| -> rusqlite::hooks::Authorization {
+                        if let rusqlite::hooks::AuthAction::Read { table_name, .. } = ctx.action {
+                            if table_name == "entries" {
+                                counter.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
-                    }
-                    rusqlite::hooks::Authorization::Allow
-                },
-            ));
+                        rusqlite::hooks::Authorization::Allow
+                    },
+                ))
+                .unwrap();
             detect_for_entries(db.conn(), &batch, DetectedBy::SyncPull).unwrap();
-            db.conn()
-                .authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> _>);
+            db.conn_mut()
+                .authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> _>)
+                .unwrap();
             reads.load(Ordering::Relaxed)
         }
 

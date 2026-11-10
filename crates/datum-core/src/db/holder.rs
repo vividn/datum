@@ -133,7 +133,7 @@ unsafe extern "C" fn profiled(
 /// Watch `conn`'s holds of the write lock on the file at `db_path`. The
 /// connection must close before the returned `Watch` drops: it holds a
 /// pointer to it.
-pub(crate) fn watch(conn: &Connection, db_path: &Path) -> Option<Arc<Watch>> {
+pub(crate) fn watch(conn: &mut Connection, db_path: &Path) -> Option<Arc<Watch>> {
     if cfg!(target_family = "wasm") {
         return None;
     }
@@ -143,9 +143,9 @@ pub(crate) fn watch(conn: &Connection, db_path: &Path) -> Option<Arc<Watch>> {
         long: Mutex::new(None),
     });
     // SAFETY: SQLite calls `profiled` only from a step on this connection,
-    // and the hooks below each own a clone of the Arc until rusqlite removes
-    // them, at close, before `sqlite3_close`: the pointer is live for every
-    // call, whatever drops first.
+    // and the hooks below each own a clone of the Arc until SQLite frees
+    // them as the connection closes, after its last statement: the pointer
+    // is live for every call, whatever drops first.
     unsafe {
         let ctx = Arc::as_ptr(&watch) as *mut c_void;
         ffi::sqlite3_trace_v2(
@@ -155,15 +155,17 @@ pub(crate) fn watch(conn: &Connection, db_path: &Path) -> Option<Arc<Watch>> {
             ctx,
         );
     }
+    // A hook SQLite could not take (out of memory) leaves only its record
+    // unwritten, and the trace above needs the watch kept all the same.
     let w = watch.clone();
-    conn.update_hook(Some(move |_, _: &str, table: &str, _| w.wrote(table)));
+    let _ = conn.update_hook(Some(move |_, _: &str, table: &str, _| w.wrote(table)));
     let w = watch.clone();
-    conn.commit_hook(Some(move || {
+    let _ = conn.commit_hook(Some(move || {
         w.end();
         false
     }));
     let w = watch.clone();
-    conn.rollback_hook(Some(move || w.end()));
+    let _ = conn.rollback_hook(Some(move || w.end()));
     Some(watch)
 }
 

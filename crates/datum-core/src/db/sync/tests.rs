@@ -444,7 +444,7 @@ fn the_row_hash_probe_sets_every_column_and_key() {
         .collect::<rusqlite::Result<_>>()
         .unwrap();
     let mut probe = db.conn.prepare(ROW_HASH_PROBE).unwrap();
-    let probed: BTreeSet<String> = probe.column_names().into_iter().map(Into::into).collect();
+    let probed: BTreeSet<String> = probe.column_names().map(Into::into).collect();
     let read: BTreeSet<String> = stored
         .into_iter()
         .filter(|c| !UNREAD.contains(&c.as_str()))

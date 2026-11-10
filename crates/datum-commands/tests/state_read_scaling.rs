@@ -198,21 +198,16 @@ fn the_cost_of_a_normal_read_does_not_grow_with_the_history() {
 /// SQLite VM steps, in hundreds, that `argv` costs on `db` — the rows a
 /// command visits, and nothing a loaded runner can move.
 fn vm_steps(db: &Db, argv: &[&str]) -> usize {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
-    let steps = Arc::new(AtomicUsize::new(0));
-    let counter = Arc::clone(&steps);
-    db.conn().progress_handler(
-        100,
-        Some(move || {
-            counter.fetch_add(1, Ordering::Relaxed);
-            false
-        }),
-    );
+    let steps = std::cell::Cell::new(0);
+    let count = || {
+        steps.set(steps.get() + 1);
+        false
+    };
     let argv = std::iter::once("datum").chain(argv.iter().copied());
-    datum_commands::cmd::dispatch_argv(argv.map(String::from).collect(), db).unwrap();
-    db.conn().progress_handler(0, None::<fn() -> bool>);
-    steps.load(Ordering::Relaxed)
+    datum_core::db::with_progress(db.conn(), 100, count, || {
+        datum_commands::cmd::dispatch_argv(argv.map(String::from).collect(), db).unwrap()
+    });
+    steps.get()
 }
 
 /// da-asgt4: on five years of data `tail -n 10` was ×26 slower than on a

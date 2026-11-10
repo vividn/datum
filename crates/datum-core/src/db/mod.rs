@@ -75,6 +75,8 @@ mod list;
 mod lookup;
 mod multi;
 mod now;
+mod progress;
+pub use progress::with_progress;
 mod query;
 mod record;
 mod rename;
@@ -353,7 +355,7 @@ impl Db {
         };
         Self::configure_connection(&mut conn)?;
         let mut db = Db {
-            holds: holder::watch(&conn, std::path::Path::new(path)),
+            holds: holder::watch(&mut conn, std::path::Path::new(path)),
             conn: std::mem::ManuallyDrop::new(conn),
             keep,
             spec_alias_cache: RefCell::new(None),
@@ -381,7 +383,7 @@ impl Db {
         let mut conn = Connection::open(path)?;
         Self::configure_connection(&mut conn)?;
         Ok(Db {
-            holds: holder::watch(&conn, std::path::Path::new(path)),
+            holds: holder::watch(&mut conn, std::path::Path::new(path)),
             conn: std::mem::ManuallyDrop::new(conn),
             keep: false,
             spec_alias_cache: RefCell::new(None),
@@ -537,9 +539,7 @@ impl Db {
 
     /// Does SQLite refuse every write on this handle?
     pub fn read_only(&self) -> bool {
-        self.conn
-            .is_readonly(rusqlite::DatabaseName::Main)
-            .unwrap_or(false)
+        self.conn.is_readonly(rusqlite::MAIN_DB).unwrap_or(false)
     }
 
     /// Can this process write the file at `path` and the directory it is
@@ -736,6 +736,12 @@ impl Db {
     /// and other schema-level tooling.
     pub fn conn(&self) -> &rusqlite::Connection {
         &self.conn
+    }
+
+    /// The connection to hook, which rusqlite takes `&mut` (a test's count).
+    #[cfg(test)]
+    pub(crate) fn conn_mut(&mut self) -> &mut rusqlite::Connection {
+        &mut self.conn
     }
 
     /// The file this handle was opened at; `None` for an in-memory database.

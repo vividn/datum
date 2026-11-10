@@ -15,7 +15,6 @@
 //! See `crate::kit::ViewEntry` for the TOML round-trip shape.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -301,25 +300,20 @@ impl Db {
         self.conn.execute_batch("PRAGMA query_only = 1;")?;
         // Returning true from the progress handler interrupts the query;
         // the flag distinguishes our deadline from a genuine SQL error.
-        let timed_out = Arc::new(AtomicBool::new(false));
-        {
-            let timed_out = Arc::clone(&timed_out);
-            let deadline = Instant::now() + budget;
-            self.conn.progress_handler(
-                PROGRESS_OPS_INTERVAL,
-                Some(move || {
-                    let expired = Instant::now() >= deadline;
-                    if expired {
-                        timed_out.store(true, Ordering::Relaxed);
-                    }
-                    expired
-                }),
-            );
-        }
-        let result = run_view_query(&self.conn, sql, params);
-        // Remove the handler so the shared connection's normal work (the
-        // logging hot path) doesn't keep paying the per-callback cost.
-        self.conn.progress_handler(0, None::<fn() -> bool>);
+        let timed_out = AtomicBool::new(false);
+        let deadline = Instant::now() + budget;
+        // The handler goes as the query ends, so the shared connection's
+        // normal work (the logging hot path) doesn't keep paying for it.
+        let over_budget = || {
+            let expired = Instant::now() >= deadline;
+            if expired {
+                timed_out.store(true, Ordering::Relaxed);
+            }
+            expired
+        };
+        let result = super::with_progress(&self.conn, PROGRESS_OPS_INTERVAL, over_budget, || {
+            run_view_query(&self.conn, sql, params)
+        });
         // `local_day`, `local_today` and `dur_seconds` are the views' alone,
         // never a writer's. A failed removal leaves only a pure read-only
         // function behind.
@@ -507,6 +501,7 @@ fn run_view_query(
     // (`SELECT 1; DELETE …` prepares the SELECT and drops the rest), so
     // go through `Batch`, which exposes sqlite's own tail parsing, and
     // reject chained statements explicitly (da-w3xg).
+    use rusqlite::fallible_iterator::FallibleIterator as _;
     let mut batch = rusqlite::Batch::new(conn, sql);
     let Some(mut stmt) = batch.next().map_err(DatumError::Db)? else {
         return Err(DatumError::Other("view SQL is empty".to_string()));
@@ -523,7 +518,7 @@ fn run_view_query(
             "views must be read-only: this statement would write to the database".to_string(),
         ));
     }
-    let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    let columns: Vec<String> = stmt.column_names().map(|s| s.to_string()).collect();
     let col_count = columns.len();
     let mut out_rows: Vec<Vec<JsonValue>> = Vec::new();
 
@@ -591,6 +586,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::Arc;
 
     fn db() -> Db {
         Db::open_in_memory().unwrap()
