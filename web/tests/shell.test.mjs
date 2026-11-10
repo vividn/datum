@@ -53,6 +53,7 @@ import {
 	openChooser,
 	pickFrom,
 	rootMenuButton,
+	saveOpenTab,
 	settled,
 	titledMenuButton,
 	titledPane,
@@ -167,7 +168,7 @@ async function front(page, label) {
 }
 
 /** The acts, as the root menu names them (da-wjob). */
-const ACT = { save: 'Save layout', restore: 'Restore layout', 'save-as': 'Save layout as' };
+const ACT = { save: 'Save', restore: 'Reset', revert: 'Revert', 'save-as': 'Save layout as' };
 
 /** Run one of the layout's acts from the root menu. */
 const act = (page, name) => chooseRoot(page, ACT[name]);
@@ -175,6 +176,7 @@ const act = (page, name) => chooseRoot(page, ACT[name]);
 /** The root menu's items in normal mode, open: label, whether it is marked, and its colour. */
 async function rootItems(page) {
 	await leaveLayoutMode(page);
+	await page.locator('nav.root-bar[aria-busy="false"]').waitFor();
 	return openItems(page, () => rootMenuButton(page).click());
 }
 
@@ -285,12 +287,12 @@ describe('the shell', () => {
 			assert.match(gear[4].label, /^\d+\.\d+\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
-			// The NAME's slice in normal mode: what the tab shows and what it
-			// is saved as. `main` is a built-in, so `Reset layout` is there
-			// (da-luwe).
+			// The tab's own menu in normal mode (da-bfqw4): unmodified and as it
+			// shipped, so no Save, Reset or Factory default, and no save behind
+			// it, so no Revert.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as']
+				['Choose another…', 'Modify', 'Save layout as', 'Reorder ← →', '× Close']
 			);
 			// Layout mode's: what is DONE to the page and the ways out, Close
 			// last and wearing its × (da-ygc9). The arrows read in vim order.
@@ -531,11 +533,10 @@ describe('the acts', () => {
 		await shared.room('act-split', async (app, room) => {
 			const { page } = app;
 			assert.deepEqual(await dotted(page), []);
-			// `Restore layout` and not `Save layout`, which leads the menu
-			// since da-z8klv: a menu opens on its first item, and once the
-			// keyboard has been used the browser paints that focus, so the
-			// first item's colour is not the same fact read twice.
-			const quiet = (await rootItem(page, 'Restore layout')).color;
+			// `Save layout as` and not the first item: a menu opens on its first
+			// item, and once the keyboard has been used the browser paints that
+			// focus, so the first item's colour is not the same fact read twice.
+			const quiet = (await rootItem(page, 'Save layout as')).color;
 
 			await manage(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'empty', 'custom', 'collect']);
@@ -543,14 +544,14 @@ describe('the acts', () => {
 			// The dot's meaning, in the menu beside it: exactly the two acts
 			// that answer it are marked, and in the dot's own amber.
 			const marked = await rootItems(page);
-			assert.deepEqual(marked.filter((i) => i.marked).map((i) => i.label), ['Save layout', 'Restore layout']);
+			assert.deepEqual(marked.filter((i) => i.marked).map((i) => i.label), ['Save', 'Reset']);
 			for (const i of marked.filter((i) => i.marked)) assert.equal(i.color, PRONOUNCED, `${i.label} is ${i.color}`);
 
 			await act(page, 'restore');
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'nowview', 'tail', 'custom', 'collect']);
 			assert.deepEqual((await rootItems(page)).filter((i) => i.marked), []);
-			assert.equal((await rootItem(page, 'Restore layout')).color, quiet);
+			assert.equal((await rootItem(page, 'Save layout as')).color, quiet);
 
 			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
@@ -618,9 +619,9 @@ describe('the acts', () => {
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(await titles(page), ['dayview', 'cli', 'tail', 'collect']);
 
-			// Nothing to discard, so Restore offers the save's versions under
-			// the bar instead — the one affordance that did NOT move (da-wjob).
-			await act(page, 'restore');
+			// Nothing to discard and saves behind it, so Revert offers the
+			// save's versions under the bar (da-bfqw4).
+			await act(page, 'revert');
 			const items = page.locator('.root-bar .versions button');
 			await items.first().waitFor();
 			assert.deepEqual(
@@ -1170,7 +1171,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			// which is the whole bug in one line: without the outbound drop
 			// the save writes an 85 the baseline will not have, so the dot
 			// never goes out again.
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			const stored = await until(
 				() => layouts(app, 'loadLayout', 'old').then((l) => l.root.tabs[0].content.settings),
 				(s) => s.labelWidth === 59
@@ -1232,8 +1233,9 @@ describe('a layout naming the widget that went and came back', () => {
 			assert.deepEqual(app.errors, []);
 
 			// And `input` is still what a save writes back — nothing rewrites
-			// the id on the way out any more.
-			await act(page, 'save');
+			// the id on the way out any more. Unmodified, so the shell's save:
+			// the menu offers none (da-bfqw4).
+			await saveOpenTab(page);
 			await until(
 				() => layouts(app, 'loadLayout', 'mine'),
 				(saved) => saved.root.tabs[0].content.kind === 'input'

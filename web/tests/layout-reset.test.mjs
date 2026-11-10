@@ -88,9 +88,9 @@ describe('Reset widget', () => {
 			await choose(page, 'strip', SAVE);
 			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 
-			// Saved, so that `Restore layout` has something of its own to put
+			// Saved, so that `Reset` has something of its own to put
 			// back and the dot below is the reset's alone.
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 
 			// First in the NAME's menu, before the widget's own options
@@ -105,7 +105,7 @@ describe('Reset widget', () => {
 			assert.equal(await dotted(page, 'main'), true, 'the reset was not a draft change');
 
 			// A draft change and nothing more: the save still holds the +40.
-			await chooseRoot(page, 'Restore layout');
+			await chooseRoot(page, 'Reset');
 			await dayHeightIs(page, fallback + grow);
 			assert.equal(await dotted(page, 'main'), false, 'a restored layout is still modified');
 		}, DESKTOP);

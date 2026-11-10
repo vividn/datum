@@ -1292,6 +1292,16 @@ export const shippedTree = (name: string): Layout | null =>
 	pick(kitLayout(name), builtinLayout(name, mobile()));
 
 /**
+ * Whether this copy differs from the tree that shipped under its name:
+ * where «Factory default» has something to do (da-bfqw4). False for a name
+ * nothing shipped.
+ */
+export function unlikeShipped(tab: Tab): boolean {
+	const shipped = tab.layout === undefined ? null : shippedTree(tab.layout);
+	return shipped !== null && differs(tab, baselineOf(shipped));
+}
+
+/**
  * Back to the shipped tree: this copy's DRAFT set to what `defaults.ts`
  * holds for its name, and NOTHING written (da-luwe).
  *

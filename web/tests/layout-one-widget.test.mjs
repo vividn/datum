@@ -32,6 +32,7 @@ import {
 	optionChecked,
 	pickOption,
 	rootMenuButton,
+	rootSettled,
 	titledMenuButton,
 	titledPane,
 	toggleOption,
@@ -49,16 +50,16 @@ const HISTORY = 'history';
 const FROZEN = 'today frozen at the bottom';
 const SAVE = 'Save options with layout';
 const RESET_WIDGET = 'Reset widget';
-const RESET_LAYOUT = 'Reset layout';
 const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
 
-/** The layout acts, in the order `layoutActs` builds them for a shipped layout. */
-const ACTS = ['Save layout', 'Restore layout', RESET_LAYOUT, 'Save layout as'];
+/** The root tab's menu, unmodified, as it shipped and with no save behind it (`tabItems`, da-bfqw4). */
+const ACTS = ['Choose another…', 'Modify', 'Save layout as', 'Reorder ← →', '× Close'];
 
 /** The root's layout-mode menu: what is done to the page, and the ways out. */
 const MANAGE = ['Change Widget', 'Split ← ↓ ↑ →', 'Taller than the screen', 'Accept', 'Save layout', 'Discard changes', '× Close tab'];
 
 async function linesFrom(page, button) {
+	await rootSettled(page);
 	await button.click();
 	const lines = await menuLines(page);
 	await page.keyboard.press('Escape');
@@ -208,7 +209,7 @@ describe('a root tab whose layout is one widget', () => {
 			await app.reload();
 			await until(() => loneSettings(page), (s) => s.reversed === true);
 
-			await chooseRoot(page, 'Restore layout');
+			await chooseRoot(page, 'Reset');
 			await until(() => loneSettings(page), (s) => s.reversed !== true);
 			assert.equal(await dotted(page, 'cli'), false);
 			assert.deepEqual(app.errors, []);
@@ -237,7 +238,7 @@ describe('a root tab whose layout is one widget', () => {
 
 	// A layout the reader saved themselves is the same shape and is drawn the
 	// same way — the rule is never the layout's NAME (da-ze1x's trap).
-	test('a one-widget layout a person saved is a pane too, with the items, and its root has no Reset layout', async () => {
+	test('a one-widget layout a person saved is a pane too, with the items, and its root has no Factory default', async () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'cli');
@@ -247,8 +248,8 @@ describe('a root tab whose layout is one widget', () => {
 
 			assert.deepEqual(await paneLines(page, 'cli'), [RESET_WIDGET, NEWEST, ...HELP]);
 			// Nothing shipped under this name, so there is no shipped tree to
-			// go back to (da-luwe).
-			assert.deepEqual(await rootLines(page), ACTS.filter((a) => a !== RESET_LAYOUT));
+			// go back to (da-luwe), and it has a save behind it: Revert.
+			assert.deepEqual(await rootLines(page), ['Choose another…', 'Modify', 'Revert', 'Save layout as', 'Reorder ← →', '× Close']);
 			assert.deepEqual(app.errors, []);
 		});
 	});

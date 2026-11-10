@@ -122,7 +122,7 @@ describe('an edit inside an embedded layout', () => {
 			await manage(page, 'm-a', 'split: a new pane to the right');
 
 			// Save `main` with the edit inside `mine` standing.
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 
 			// What `main` stored is the REFERENCE: a tab naming `mine`, its
@@ -151,7 +151,7 @@ describe('the dot and the acts on a nested layout', () => {
 			const { page } = app;
 			await embed(app);
 			// Embedding changed `main`, not `mine`.
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 			assert.equal(await dotted(copy(page)), false);
 
@@ -210,7 +210,7 @@ describe('two copies of one layout', () => {
 		await withApp(async (app) => { // own app: it reloads
 			const { page } = app;
 			await embedTwice(app);
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 
 			await app.reload();
@@ -314,7 +314,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 
 			// The save is whole: the tab was a copy, and the copy is gone.
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before);
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before, 'saving day wrote over mine');
 			assert.deepEqual(app.errors, []);
@@ -369,7 +369,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			await leaveLayoutMode(page);
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
-			for (const act of ['Save layout', 'Restore layout', 'Save layout as'])
+			for (const act of ['Choose another…', 'Modify', 'Save layout as'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });

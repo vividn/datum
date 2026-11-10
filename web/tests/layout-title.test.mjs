@@ -151,7 +151,7 @@ describe('the × on the widget title', () => {
 
 			// A MIS-TAP IS NOT A LOSS. The × writes the DRAFT and only the
 			// draft, as every other layout act does: whatever this device has
-			// SAVED is byte for byte what it was, so `Restore layout` — which
+			// SAVED is byte for byte what it was, so `Reset` — which
 			// the menu still offers — is the way back, and the database was
 			// never touched at all, a widget being a view of it. (Nor is the
 			// copy of the tree the next load draws first a save, da-bhudz.)
@@ -160,7 +160,7 @@ describe('the × on the widget title', () => {
 			assert.deepEqual(saves(after), saves(before), 'the × wrote something other than the draft');
 			assert.notDeepEqual(after, before, 'the × did not write the draft either');
 			await leaveLayoutMode(page);
-			assert.ok((await rootMenuLines(page)).includes('Restore layout'));
+			assert.ok((await rootMenuLines(page)).includes('Reset'));
 		});
 	});
 

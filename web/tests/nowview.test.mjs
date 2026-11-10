@@ -545,7 +545,7 @@ describe('the nowview widget', () => {
 			await farIs(page, '-60m'); // the draft kept the handed-over window
 
 			// The root bar's save icon, on the `main` tab (da-0a5o).
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await page.waitForFunction(() => !document.querySelector('.root-bar.modified'));
 			const other = await app.newTab();
 			const saved = await other.page.evaluate(() => window.datum.layouts.loadLayout('main'));

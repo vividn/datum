@@ -120,16 +120,15 @@ describe('the menu the title opens', () => {
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 
-			// The root's layout-mode menu ends on Close too; in normal mode the
-			// NAME's menu ends on the layout's acts — `export backup…` was its
-			// last item until it became the gear's «Backups» (da-9ow8m).
+			// The root's layout-mode menu ends on Close too, and so does its
+			// normal-mode one since da-bfqw4 (vividn: «x Close» last).
 			await rootMenuButton(page).click();
 			assert.equal((await menuLines(page)).at(-1), '× Close tab');
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			await leaveLayoutMode(page);
 			await rootMenuButton(page).click();
-			assert.equal((await menuLines(page)).at(-1), 'Save layout as');
+			assert.equal((await menuLines(page)).at(-1), '× Close');
 			await page.keyboard.press('Escape');
 		});
 	});
@@ -552,7 +551,7 @@ describe("the root bar's menu", () => {
 		return lines;
 	}
 
-	test('the active layout name is the button, and Save layout is the first item', async () => {
+	test('the active layout name is the button, and Choose another… is the first item', async () => {
 		await shared.solo(async ({ page }) => {
 			const name = rootMenuButton(page);
 			assert.equal(await name.innerText(), 'main');
@@ -561,9 +560,10 @@ describe("the root bar's menu", () => {
 			assert.equal(await page.locator('.root-bar button.more').count(), 0, 'the … badge is still there');
 			await name.click();
 			assert.match(await page.locator('[role="menu"]').getAttribute('aria-label'), /\bmain\b/);
-			// Change Widget is layout mode's (da-z8klv, da-vvcxc), so in
-			// normal mode the name opens on the acts.
-			assert.equal((await menuLines(page))[0], 'Save layout');
+			// Change Widget is layout mode's (da-z8klv, da-vvcxc); in normal
+			// mode the tab's own menu opens on the chooser that replaces it
+			// (da-bfqw4).
+			assert.equal((await menuLines(page))[0], 'Choose another…');
 			await page.keyboard.press('Escape');
 		});
 	});
@@ -587,7 +587,7 @@ describe("the root bar's menu", () => {
 		});
 	});
 
-	test('the root menus are the pane menus: the same in normal mode, and in layout mode less Break out, with the ways out', async () => {
+	test('in layout mode the root menu is the pane menu less Break out, with the ways out; in normal mode it is the tab’s own', async () => {
 		await withApp(async ({ page }) => {
 			// A pane whose menu has everything a pane menu can have: several
 			// tabs (so it says `Close tab`, as the root's always does) and an
@@ -619,13 +619,13 @@ describe("the root bar's menu", () => {
 				'Reset layout',
 				'Save layout as'
 			]);
-			// The same arithmetic. `Reset layout` is dropped from the
-			// comparison rather than missing from one side: it is a fact about
-			// the LAYOUT — this pane holds the built-in `main`, the root tab
-			// holds the `mine` the reader just saved — and not about which
-			// menu is open, so it is the one item the two may differ on.
+			// The root tab's own menu is no longer the pane's (vividn,
+			// 2026-11-10, da-bfqw4): what a TAB of the top bar does — choose
+			// another in its place, modify, reorder — beside what its layout
+			// is saved as. `mine` has changed since its save, the tab added.
+			await page.locator('nav.root-bar[aria-busy="false"]').waitFor();
 			const rootLines = await linesOf(page, () => rootMenuButton(page).click());
-			assert.deepEqual(rootLines, paneLines.filter((l) => l !== 'Reset layout'));
+			assert.deepEqual(rootLines, ['Choose another…', 'Modify', 'Save', 'Reset', 'Save layout as', 'Reorder ← →', '× Close']);
 		}, DESKTOP);
 	});
 

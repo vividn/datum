@@ -584,10 +584,10 @@ describe('the layout engine, by keyboard', () => {
 			// Layout mode's acts were walked too.
 			for (const act of ['Change Widget', 'Accept', 'Discard changes'])
 				assert.ok(seen.has(act), `${act} was never walked: ${[...seen].join(' | ')}`);
-			// `Reset layout` (da-luwe) is an act like the other four: on the
-			// screen and on the arrows' path, in the menu of `main` — the
-			// built-in root tab this page opens with.
-			assert.ok(seen.has('Reset layout'), `Reset layout was never walked: ${[...seen].join(' | ')}`);
+			// The root tab's own (da-bfqw4), in the menu of `main`, the root
+			// tab this page opens with.
+			for (const act of ['Choose another…', 'Modify'])
+				assert.ok(seen.has(act), `${act} was never walked: ${[...seen].join(' | ')}`);
 		});
 	});
 

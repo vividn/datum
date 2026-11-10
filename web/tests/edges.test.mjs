@@ -134,16 +134,13 @@ describe('extending the dashboard from its edges', () => {
 		});
 	}
 
-	test('in normal mode there is no Split, and the root menu is the acts alone', async () => {
+	test('in normal mode there is no Split, and the root menu is the tab’s own', async () => {
 		await desk.solo(async ({ page }) => {
+			await page.locator('nav.root-bar[aria-busy="false"]').waitFor();
 			await rootMenuButton(page).click();
-			assert.deepEqual(await menuLines(page), [
-				'Save layout',
-				'Restore layout',
-				// `main` ships with datum, so it can be reset (da-luwe).
-				'Reset layout',
-				'Save layout as'
-			]);
+			// Unmodified and as it shipped: no Save, Reset or Factory default
+			// (da-bfqw4).
+			assert.deepEqual(await menuLines(page), ['Choose another…', 'Modify', 'Save layout as', 'Reorder ← →', '× Close']);
 			await page.keyboard.press('Escape');
 		});
 	});

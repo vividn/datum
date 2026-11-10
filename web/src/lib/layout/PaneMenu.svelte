@@ -47,7 +47,10 @@
 	An item with `row` is its label and a few short buttons on one line —
 	the pane's `Split | −` (da-13bc). The buttons are menu items like any
 	other, walked by ArrowUp/ArrowDown in order and by ArrowLeft/ArrowRight
-	along the line, and their `title` is their name.
+	along the line, and their `title` is their name. One that `stays` runs
+	and leaves the menu open where it is (the root tab's Reorder ← →,
+	vividn: «menu should stay open and in the same place so that you can
+	quickly bump over a few»).
 
 	The menu is `position: fixed`, moved out to `document.body` (`portal`)
 	and placed from the button's box when it opens: a pane is a scroll
@@ -389,8 +392,9 @@
 							role="menuitem"
 							aria-label={short.title}
 							title={short.title}
+							disabled={short.disabled}
 							onpointerenter={hover}
-							onclick={() => choose(short)}>{short.text}</button
+							onclick={() => (short.stays ? short.run() : choose(short))}>{short.text}</button
 						>
 					{/each}
 				</div>

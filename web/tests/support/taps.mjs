@@ -495,7 +495,9 @@ const SKIP = {
  */
 const ELSEWHERE = {
 	'page: main › page: Change Widget':
-		"the widget chooser, whose buttons a pane's «add a tab» holds too (act-taps-dialogs-pane); on the root it changes a widget `solo` does not put back"
+		"the widget chooser, whose buttons a pane's «add a tab» holds too (act-taps-dialogs-pane); on the root it changes a widget `solo` does not put back",
+	'page: main › page: Choose another…':
+		"the same chooser, normal mode's door to it on the root tab (da-bfqw4); its pick replaces the tab, which `solo` does not put back"
 };
 
 /** The paths above that only layout mode opens (da-vvcxc): a normal-mode share never meets them. */

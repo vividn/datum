@@ -71,8 +71,12 @@ export type Pick = {
 	toggled?: boolean;
 	run: () => void;
 };
-/** A row's button: `text` is what it shows, `title` its name. */
-export type Short = { text: string; title: string; run: () => void };
+/**
+ * A row's button: `text` is what it shows, `title` its name. One that
+ * `stays` leaves the menu open where it is, for another press: Reorder's
+ * arrows (`tabItems`).
+ */
+export type Short = { text: string; title: string; run: () => void; disabled?: boolean; stays?: true };
 /**
  * One item of a menu. `marked` is the act to notice now — see `layoutActs`;
  * `glyph` is a character drawn before the label, which `Close` wears (da-ygc9).
@@ -182,6 +186,67 @@ export const layoutActs = (a: Acts): Item[] => [
 	{ label: 'Restore layout', marked: a.dirty, run: a.restore },
 	...(a.reset ? [{ label: 'Reset layout', run: a.reset }] : []),
 	{ label: 'Save layout as', act: 'open' as const, run: a.saveAs }
+];
+
+/** What the open root tab's menu can do in normal mode: `tabItems`. */
+export type TabActs = {
+	/** The chooser, whose pick replaces this tab in place. */
+	choose: () => void;
+	/** Into modify mode, as a long press on the tab is. */
+	modify: () => void;
+	/** A tab that is one bare widget: its reset, options and help, the only door to them. */
+	widget?: Item[];
+	/** While modified; `sync` where the database is in a sync chain, which names it «Save & sync». */
+	save?: { run: () => void; sync: boolean };
+	/** While modified: back to the last save. */
+	reset?: () => void;
+	/** Unmodified, with saves behind it: the save's versions. */
+	revert?: () => void;
+	/** A layout that shipped, while it differs from how it shipped. */
+	factory?: () => void;
+	saveAs?: () => void;
+	/** The root's own, before Reorder: `Keep tab`. */
+	extra?: Item[];
+	/** One place left or right; absent at that end. */
+	left?: () => void;
+	right?: () => void;
+	close: { disabled: boolean; run: () => void };
+};
+
+/** What the open root tab's first item is called: the chooser, which replaces the tab in place. */
+export const CHOOSE_ANOTHER = 'Choose another…';
+
+/**
+ * The open root tab's menu in NORMAL MODE (da-bfqw4). vividn, 2026-11-10:
+ * «Choose another... / Modify (enters modification mode, like long
+ * pressing) / Save (appears onl if modified. if db is in a sync chain, then
+ * "Save & sync") / Reset (appears only if modified. Otherwise if there are
+ * previous saved versions, "Revert") / Factory default (only for prebuilt
+ * layouts and only appears if different) / Reorder <- ->, menu should stay
+ * open and in the same place so that you can quickly bump over a few / x
+ * Close». Save and Reset are marked: they are what the orange dot means.
+ *
+ * Beyond his list, kept so that nothing goes: a bare widget's own items
+ * after Modify, `Save layout as` and a preview's `Keep tab` before Reorder.
+ * A pane's menu is still `menuItems`.
+ */
+export const tabItems = (t: TabActs): Item[] => [
+	{ label: CHOOSE_ANOTHER, act: 'open' as const, run: t.choose },
+	{ label: 'Modify', run: t.modify },
+	...(t.widget ?? []),
+	...(t.save ? [{ label: t.save.sync ? 'Save & sync' : 'Save', marked: true, act: 'run' as const, run: t.save.run }] : []),
+	...(t.reset ? [{ label: 'Reset', marked: true, run: t.reset }] : t.revert ? [{ label: 'Revert', run: t.revert }] : []),
+	...(t.factory ? [{ label: 'Factory default', run: t.factory }] : []),
+	...(t.saveAs ? [{ label: 'Save layout as', act: 'open' as const, run: t.saveAs }] : []),
+	...(t.extra ?? []),
+	{
+		label: 'Reorder',
+		row: [
+			{ text: '←', title: 'move this tab left', disabled: !t.left, stays: true as const, run: () => t.left?.() },
+			{ text: '→', title: 'move this tab right', disabled: !t.right, stays: true as const, run: () => t.right?.() }
+		]
+	},
+	{ label: 'Close', glyph: CLOSE, disabled: t.close.disabled, run: t.close.run }
 ];
 
 /** A widget's tour and its guide (da-7dflk): what `? help` and `Documentation` do. */

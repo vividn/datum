@@ -86,7 +86,8 @@ export const SYNC_TESTS = [
 	'tests/syncoffer.test.mjs',
 	'tests/syncpause.test.mjs',
 	'tests/syncreload.test.mjs',
-	'tests/syncunsynced.test.mjs'
+	'tests/syncunsynced.test.mjs',
+	'tests/tabmenu.test.mjs'
 ];
 /** A crate's paths that reach the browser past the map, and the web tests each runs (da-ako1r, da-33tn8). */
 const REACHES = [

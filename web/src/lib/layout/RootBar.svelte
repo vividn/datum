@@ -30,17 +30,24 @@
 	ways out: Accept, Save layout, Discard changes. Escape asks which; so does moving to another
 	tab with a change in hand.
 
-	In normal mode the name opens what the tab is saved as — the layout's
-	acts (a layout of one widget is drawn in a pane of its own, whose menu
-	has that widget's options, da-7nh4l), where the orange dot is (vividn: "Maybe highlight Restore and Save so
+	In normal mode the name opens the tab's own menu (da-bfqw4, `tabItems`
+	in menu.ts). vividn, 2026-11-10: «Choose another... / Modify (enters
+	modification mode, like long pressing) / Save (appears onl if modified.
+	if db is in a sync chain, then "Save & sync") / Reset (appears only if
+	modified. Otherwise if there are previous saved versions, "Revert") /
+	Factory default (only for prebuilt layouts and only appears if
+	different) / Reorder <- ->, menu should stay open and in the same place
+	so that you can quickly bump over a few / x Close», and of Choose
+	another, «replace in place». So Choose another fills THIS tab from the
+	chooser, as Change Widget does in layout mode, where the `+` opens a new
+	one. While the tab is modified Save and Reset are marked, which is what
+	the orange dot points at (vividn: "Maybe highlight Restore and Save so
 	that it is obvious that that is what the orange dot is referring to").
-	While the tab is modified Save and Restore are marked in the menu and
-	the tab keeps its dot, so the dot's meaning is one press from the dot.
-	Restore goes back to the last save; with nothing to discard it opens
-	the save's versions under the bar instead, and `→ forward` undoes the
-	last restore. A tab holding a layout that SHIPPED with datum has
-	another, `Reset layout` (da-luwe), beside Restore: the other way back,
-	to `defaults.ts` rather than to the save.
+	Reset goes back to the last save; Revert opens the save's versions
+	under the bar, and `→ forward` undoes the last restore. Factory default
+	(da-luwe's Reset layout) goes back to `defaults.ts` or the kit's tree
+	instead, writing nothing. Reorder's arrows move the tab and leave the
+	menu open where it was, under the finger.
 
 	A root tab is one COPY of its layout and has no privilege over a copy
 	nested in a pane (da-crp5): the same acts are in that pane's menu
@@ -156,14 +163,14 @@
 	import { updated } from '$app/state';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
-	import { CHANGE, CLOSE, aimed, helpItems, layoutActs, type Item } from './menu.js';
+	import { CHANGE, CLOSE, aimed, helpItems, tabItems, type Item } from './menu.js';
 	import { accept, discard, enter, isAsking, leave, save as saveMode } from './mode.js';
 	import { offers, widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { ALIASES } from './defaults.js';
 	import { labelOf } from './registry.js';
-	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, taken, versions } from './shell.js';
+	import { activate, close, keepTab, modified, open, openBlank, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, taken, unlikeShipped, versions } from './shell.js';
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab, setTall } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
@@ -171,6 +178,10 @@
 	import type { Toward } from './tree.js';
 
 	let busy = $state(false);
+	/** How many saves each layout has behind it, by name, as last read (`countSaves`). */
+	let saves: Record<string, number> = $state({});
+	/** Reads of them under way, which keep the bar `aria-busy`: the menu's Revert waits on them. */
+	let counting = $state(0);
 	let error = $state('');
 	/** The active save's versions, newest first, while the list is open. */
 	let trail: { version: number; modifyTime: string }[] | null = $state(null);
@@ -192,6 +203,8 @@
 	const preview = $derived(name !== undefined && $previews.has(name));
 	/** When this database's sync was paused, while it is (da-wlbyx). */
 	const paused = $derived($syncStates[currentDb()]?.paused);
+	/** In a sync chain, so a save reaches the other devices: «Save & sync» (da-bfqw4). */
+	const chained = $derived($syncStates[currentDb()]?.endpoint !== undefined);
 	/** How far a sync session's apply is, while one runs (da-a7oa4). */
 	const applying = $derived($syncStates[currentDb()]?.applying);
 	/**
@@ -216,7 +229,7 @@
 	const held = $derived($session[sessionOf] ?? {});
 	const options = $derived(widgetOptions(active, held, sessionOf, $offers));
 	/** Loaded, and no act in flight: what a test waits for before pressing. */
-	const ready = $derived($loaded && !busy && active !== undefined);
+	const ready = $derived($loaded && !busy && counting === 0 && active !== undefined);
 
 	/**
 	 * The `+`: the chooser, and what it came back with. A layout opens as a
@@ -259,6 +272,8 @@
 		} finally {
 			busy = false;
 		}
+		// What it did may have added a save, or moved the tab to a name that has some.
+		void countSaves();
 	}
 
 	const doSave = () => attempt(async () => id !== undefined && save(id));
@@ -289,27 +304,32 @@
 		});
 
 	/**
-	 * The acts belong to the layout the active tab HOLDS — and a root
-	 * tab need not hold one: a tab can be a bare widget, which the tree
+	 * How many saves the open layout has behind it: Revert is offered where
+	 * there is one (da-bfqw4). A read is a CLI command, so it is made as the
+	 * menu opens and after this bar's own acts, and never as a tab is
+	 * switched to, which runs nothing (da-tajsm): a layout not read yet
+	 * counts none until its menu opens.
+	 */
+	async function countSaves(): Promise<void> {
+		const of = name;
+		if (of === undefined) return;
+		counting++;
+		try {
+			const trail = preview ? [] : await versions(of).catch(() => []);
+			saves = { ...saves, [of]: trail.length };
+		} finally {
+			counting--;
+		}
+	}
+
+	/**
+	 * The layout's acts belong to the layout the active tab HOLDS — and a
+	 * root tab need not hold one: a tab can be a bare widget, which the tree
 	 * allows and a pane tab given a widget from the chooser becomes
 	 * (da-8o07). At the root that same choice lands the widget's built-in
-	 * layout instead, so it keeps its acts (da-y2f6). The same rule a
-	 * pane's frame reads.
+	 * layout instead, so it keeps its acts (da-y2f6).
 	 */
-	const acts = $derived(
-		name === undefined
-			? undefined
-			: {
-					dirty,
-					save: doSave,
-					restore: doRestore,
-					// Only a layout that HAS a shipped tree can be sent back to
-					// one, so a layout the reader saved themselves has no act
-					// here at all (da-luwe).
-					reset: shippedTree(name) ? doReset : undefined,
-					saveAs: doSaveAs
-				}
-	);
+	const holds = $derived(name !== undefined && id !== undefined);
 
 	/**
 	 * `Keep tab` (da-xamd): only a preview has it, because only a preview is
@@ -347,9 +367,29 @@
 	const reset = $derived(resetWidget(active));
 	/** A bare widget's tour and guide (da-7dflk), after its options, as a pane's menu has them. */
 	const helps = $derived(active && !isSplit(active.content) ? helpItems(helpsOf(active.content.kind)) : []);
-	const items = $derived($editing
-		? arrange
-		: [...(reset ? [{ label: 'Reset widget', run: reset }] : []), ...options, ...helps, ...(acts ? layoutActs(acts) : []), ...keep]);
+	/** Move the open tab one place, the menu staying open on it (da-bfqw4); none at that end. */
+	const bump = (by: number) => {
+		const [from, to] = [$layout.root.active, $layout.root.active + by];
+		return to < 0 || to >= tabs.length ? undefined : () => apply((l) => moveTab(l, l.root.id, from, to));
+	};
+	const items = $derived(
+		$editing
+			? arrange
+			: tabItems({
+					choose: () => id !== undefined && void fillTab(id),
+					modify: enter,
+					widget: [...(reset ? [{ label: 'Reset widget', run: reset }] : []), ...options, ...helps],
+					save: holds && dirty ? { run: doSave, sync: chained } : undefined,
+					reset: holds && dirty ? doRestore : undefined,
+					revert: holds && (saves[name ?? ''] ?? 0) > 0 ? doRestore : undefined,
+					factory: holds && active !== undefined && unlikeShipped(active) ? doReset : undefined,
+					saveAs: holds ? doSaveAs : undefined,
+					extra: keep,
+					left: bump(-1),
+					right: bump(1),
+					close: { disabled: tabs.length < 2, run: () => close($layout.root.active) }
+				})
+	);
 
 	/**
 	 * Escape in layout mode asks how to leave it (vividn: «Esc Esc reverts,
@@ -550,10 +590,11 @@
 				<!-- The tab in front is the menu's button; the others switch. -->
 				<PaneMenu
 					{items}
+					onshow={countSaves}
 					look="tab"
 					label="menu of the {labelOf(tab)} layout"
 					title="layout menu"
-					data-help="The layout in front, and what it is saved as: save it, restore an earlier save, save it under another name, reset it to how it shipped. Long press or right-click it for layout mode, where its panes are split, moved, resized and closed."
+					data-help="The layout in front: choose another in its place, modify it, save it, reset it to its last save or revert to an earlier one, put it back to how it shipped, move it along the tabs, or close it. Long press or right-click it to modify it too, where its panes are split, moved, resized and closed."
 					role="tab"
 					aria-selected="true"
 					tabindex="0"

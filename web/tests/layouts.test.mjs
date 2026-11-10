@@ -24,6 +24,8 @@ import {
 	menuLines,
 	offers,
 	rootMenuButton,
+	leaveLayoutMode,
+	saveOpenTab,
 	titles
 } from './support/layout.mjs';
 
@@ -287,7 +289,7 @@ describe('the draft', () => {
 			await controlsReady(app);
 			assert.equal(await isModified(app), true, 'the draft did not survive a reload');
 
-			await chooseRoot(app.page, 'Save layout');
+			await chooseRoot(app.page, 'Save');
 			await until(() => isModified(app), (m) => m === false);
 			assert.deepEqual(await layouts(app, 'loadLayout', 'main'), edited);
 			assert.equal(await draft(app), null);
@@ -296,7 +298,7 @@ describe('the draft', () => {
 			await app.reload();
 			await controlsReady(app);
 			assert.equal(await isModified(app), true);
-			await chooseRoot(app.page, 'Restore layout');
+			await chooseRoot(app.page, 'Reset');
 			await until(() => isModified(app), (m) => m === false);
 			assert.equal(await draft(app), null);
 
@@ -316,7 +318,8 @@ describe('the draft', () => {
 				// (da-u7vz8): on `welcome`, whose layout saves like any.
 				await controlsReady(app);
 				assert.equal(await isModified(app), false);
-				await chooseRoot(app.page, 'Save layout');
+				// Unmodified, so the menu offers no Save (da-bfqw4): the shell's own.
+				await saveOpenTab(app.page);
 				await controlsReady(app);
 				assert.equal(await layouts(app, 'loadLayout', 'welcome').then((l) => l.name), 'welcome');
 				assert.equal(await app.page.locator('.root-bar .error').count(), 0);
@@ -345,7 +348,7 @@ describe('the controls', () => {
 			await layouts(app, 'saveLayout', first);
 			await layouts(app, 'saveLayout', shellTree('main', 'nowview'));
 
-			await chooseRoot(app.page, 'Restore layout');
+			await chooseRoot(app.page, 'Revert');
 			const items = app.page.locator('.root-bar .versions button');
 			await items.first().waitFor();
 			assert.deepEqual(
@@ -412,7 +415,7 @@ describe('the controls', () => {
 describe('Reset layout', () => {
 	/** This device's tree, as the shell writes it down: save it, then read the save. */
 	async function treeOf(app) {
-		await chooseRoot(app.page, 'Save layout');
+		await saveOpenTab(app.page);
 		return until(() => layouts(app, 'loadLayout', 'main').catch(() => null), (l) => l !== null);
 	}
 
@@ -433,7 +436,7 @@ describe('Reset layout', () => {
 
 	/** Reset the active layout and wait for the shipped tree to land. */
 	async function reset(app, panes) {
-		await chooseRoot(app.page, 'Reset layout');
+		await chooseRoot(app.page, 'Factory default');
 		await until(() => paneCount(app.page), (n) => n === panes);
 	}
 
@@ -468,7 +471,7 @@ describe('Reset layout', () => {
 
 			// Restore, the act above it, puts the save back (vividn, 16:29:
 			// "so that the user can restore to their other layout").
-			await chooseRoot(page, 'Restore layout');
+			await chooseRoot(page, 'Reset');
 			await until(() => paneCount(page), (n) => n === panes + 1);
 			assert.deepEqual((await held(app)).root, edited.root);
 			await until(() => isModified(app), (m) => m === false);
@@ -476,7 +479,7 @@ describe('Reset layout', () => {
 			// And reset then SAVED is how the shipped tree becomes the save —
 			// "upon save it would sync", as any save does.
 			await reset(app, panes);
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await until(
 				() => layouts(app, 'loadLayout', 'main').then((l) => l.root),
 				(root) => isDeepStrictEqual(root, builtin.root)
@@ -507,27 +510,34 @@ describe('Reset layout', () => {
 		});
 	});
 
-	test('a layout the reader saved has no Reset layout — only a built-in does', async () => {
+	test('Factory default is a built-in’s alone, and only once it differs from how it shipped', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await controlsReady(app);
-			// `main`, which ships, has it.
-			await rootMenuButton(page).click();
-			assert.ok((await menuLines(page)).includes('Reset layout'));
-			await page.keyboard.press('Escape');
+			const lines = async () => {
+				await rootMenuButton(page).click();
+				const all = await menuLines(page);
+				await page.keyboard.press('Escape');
+				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+				return all;
+			};
+			// `main`, which ships, as it shipped: nothing to go back to.
+			assert.ok(!(await lines()).includes('Factory default'));
+			await manageRoot(page, 'split: a new pane to the left');
+			await leaveLayoutMode(page);
+			assert.ok((await lines()).includes('Factory default'));
 
 			// `mine`, which the reader just made, has nothing that shipped to
-			// go back to — so it has the other four acts and not this one.
+			// go back to, changed or not.
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await chooseRoot(page, 'Save layout as');
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
-			await rootMenuButton(page).click();
-			const lines = await menuLines(page);
-			assert.ok(!lines.includes('Reset layout'), lines.join(' | '));
-			for (const act of ['Save layout', 'Restore layout', 'Save layout as'])
-				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
-			await page.keyboard.press('Escape');
-			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+			await manageRoot(page, 'split: a new pane to the left');
+			await leaveLayoutMode(page);
+			const mine = await lines();
+			assert.ok(!mine.includes('Factory default'), mine.join(' | '));
+			for (const act of ['Save', 'Reset', 'Save layout as'])
+				assert.ok(mine.includes(act), `${act} is missing: ${mine.join(' | ')}`);
 			assert.deepEqual(app.errors, []);
 		});
 	});

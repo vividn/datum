@@ -1376,7 +1376,7 @@ describe('the day strip zooms onto an hour range', () => {
 				// it: «Save options with layout» is what hands it over, and
 				// `Save layout` then writes it down.
 				await choose(page, 'strip', SAVE_OPTIONS);
-				await chooseRoot(page, 'Save layout');
+				await chooseRoot(page, 'Save');
 				await app.reload();
 				await app.idle();
 

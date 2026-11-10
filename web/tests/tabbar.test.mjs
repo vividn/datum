@@ -10,7 +10,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, chooseRoot, enterLayoutMode, rootMenuButton } from './support/layout.mjs';
+import { DESKTOP, chooseRoot, enterLayoutMode, rootMenuButton, saveOpenTab } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -96,9 +96,11 @@ for (const [name, size] of SIZES) {
 				await onScreen(page, 'dialog.chooser[open]', 'the + chooser');
 				await close(page, 'dialog.chooser');
 
-				await chooseRoot(page, 'Restore layout');
+				// Revert is there once a save is (da-bfqw4).
+				await saveOpenTab(page);
+				await chooseRoot(page, 'Revert');
 				await below(rootMenuButton(page), `${BAR} .versions`, 'the versions');
-				await chooseRoot(page, 'Restore layout');
+				await chooseRoot(page, 'Revert');
 				await page.locator(`${BAR} .versions`).waitFor({ state: 'detached' });
 
 				await enterLayoutMode(page);

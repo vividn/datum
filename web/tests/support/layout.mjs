@@ -238,7 +238,21 @@ export async function pickFrom(page, button, label) {
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** Open the root menu and choose an item by its name — `Save layout`, `split: a new pane to the left`. */
+/** The root bar at rest: loaded, no act in flight, and the open layout's saves read (Revert waits on them). */
+export const rootSettled = (page) => page.locator('nav.root-bar[aria-busy="false"]').waitFor();
+
+/**
+ * Save the open root tab's layout whether or not it is modified: the menu's
+ * Save is there only while it is (da-bfqw4), and a test that captures a
+ * clean tree saves it to read it back.
+ */
+export const saveOpenTab = (page) =>
+	page.evaluate(() => {
+		const { root } = window.datum.layout.current();
+		return window.datum.shell.save(root.tabs[root.active].id);
+	});
+
+/** Open the root menu and choose an item by its name — `Save`, `split: a new pane to the left`. */
 export const chooseRoot = (page, label) => pickFrom(page, rootMenuButton(page), label);
 
 /** Open a pane's NAME menu and choose an item by its name — `Save layout`, `Reset widget`. */

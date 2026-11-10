@@ -151,7 +151,7 @@ async function stage(app) {
 	await dragBy(page, grip, -40);
 	await dayHeightIs(page, grown);
 	await choose(page, 'strip', 'Save options with layout');
-	await chooseRoot(page, 'Save layout');
+	await chooseRoot(page, 'Save');
 	await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 
 	// A SECOND built-in, saved while it is not open: the act is about every

@@ -287,7 +287,7 @@ describe('widget options', () => {
 			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST, ...HELP]);
 			assert.equal(await optionChecked(page, 'repl', NEWEST), true);
 
-			await chooseRoot(page, 'Save layout');
+			await chooseRoot(page, 'Save');
 			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 			await app.reload();
 			assert.deepEqual(await replEchoes(page), [...oldestFirst].reverse(), 'the save lost the option');

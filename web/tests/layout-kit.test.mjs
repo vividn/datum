@@ -147,7 +147,7 @@ describe('a kit ships a layout', () => {
 			assert.equal(await shell(app, 'open', 'focus-day'), true);
 			await app.page.locator('.root-bar [role="tab"]', { hasText: 'focus-day' }).waitFor();
 			await rootMenuButton(app.page).click();
-			await app.page.getByRole('menuitem', { name: 'Reset layout', exact: true }).click();
+			await app.page.getByRole('menuitem', { name: 'Factory default', exact: true }).click();
 			await app.page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			// The layout in front's: `main` stays mounted behind it (da-tajsm).
 			await app.page.locator('section.pane[data-title="nowview"]:not(.tab-body.behind *)').waitFor();
