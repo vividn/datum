@@ -61,8 +61,8 @@ fn absolute_time_keeps_the_relative_offset_either_way_round() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("t.db");
     run(&db, &["alias", "set", "rel", "occur caffeine -t +5"]);
-    run(&db, &["alias", "set", "abs", "occur tea -t 10:00"]);
-    for call in [&["rel", "-t", "10:00"], &["abs", "-t", "+5"]] {
+    run(&db, &["alias", "set", "abs", "occur tea -y -t 10:00"]);
+    for call in [&["rel", "-y", "-t", "10:00"][..], &["abs", "-t", "+5"]] {
         run(&db, call);
         let occur: String = Connection::open(&db)
             .unwrap()

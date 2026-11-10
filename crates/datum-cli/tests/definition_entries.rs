@@ -268,10 +268,10 @@ expression = "field"
     assert_ne!(unique, backup, "the definition carries `unique`");
 
     let here = env.db("here.db");
-    env.run_on(&here, &["occur", "coffee", "-t", "900"], b"");
+    env.run_on(&here, &["occur", "coffee", "-y", "-t", "900"], b"");
     env.run_on(&here, &["db", "restore", "-", "--merge"], unique.as_bytes());
     assert_eq!(kit_indices(&here), ["kit_k__by_field"]);
-    env.run_on(&here, &["occur", "coffee", "-t", "1000"], b"");
+    env.run_on(&here, &["occur", "coffee", "-y", "-t", "1000"], b"");
 
     let shown = env.run_on(&here, &["kit", "show", "k"], b"");
     let lines: Vec<&str> = shown.lines().collect();

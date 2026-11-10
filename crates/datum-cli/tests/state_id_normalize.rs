@@ -53,6 +53,7 @@ fn following_state_takes_the_same_rule_on_update_and_add() {
             "g",
             "--id",
             "two",
+            "-y",
             "-t",
             "10:00",
             "state=m",

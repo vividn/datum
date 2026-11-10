@@ -66,8 +66,9 @@ fn dur_flag_is_rejected_on_every_logging_verb() {
 fn both_surviving_spellings_anchor_the_block_at_minus_t() {
     let db = fresh_db();
 
-    run_cli(&["end", "positional", "12m", "-t", "14:00"], &db).expect("trailing positional dur");
-    run_cli(&["end", "reserved", "dur=12m", "-t", "14:00"], &db).expect("dur= key");
+    run_cli(&["end", "positional", "12m", "-y", "-t", "14:00"], &db)
+        .expect("trailing positional dur");
+    run_cli(&["end", "reserved", "dur=12m", "-y", "-t", "14:00"], &db).expect("dur= key");
 
     let positional = &datum_core::test_util::logged_entries(&db, "positional")[0];
     let reserved = &datum_core::test_util::logged_entries(&db, "reserved")[0];

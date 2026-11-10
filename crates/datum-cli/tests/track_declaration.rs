@@ -360,11 +360,19 @@ fn the_explicit_track_command_still_writes_its_document() {
 #[test]
 fn re_running_the_declaring_log_is_the_benign_no_op() {
     let env = Env::new();
-    env.run(&["occur", "coffee", "-t", "0900", "--show", "none"]);
+    env.run(&["occur", "coffee", "-y", "-t", "0900", "--show", "none"]);
     // A pinned time: a bare log lands on a fresh millisecond and never
     // collides, so only an explicit `-t` can reproduce the shape.
     // Refused: the default, update, has it NODIFF (da-wudrc).
-    let (code, stdout) = env.try_run(&["occur", "coffee", "-t", "0900", "--conflict", "refuse"]);
+    let (code, stdout) = env.try_run(&[
+        "occur",
+        "coffee",
+        "-y",
+        "-t",
+        "0900",
+        "--conflict",
+        "refuse",
+    ]);
     assert_eq!(code, Some(11), "the duplicate exit code: {stdout:?}");
     assert!(
         stdout.contains("EXISTS"),
@@ -389,12 +397,12 @@ fn re_running_the_declaring_log_is_the_benign_no_op() {
 #[test]
 fn a_backfill_in_front_of_the_declaring_log_does_not_unmake_it() {
     let env = Env::new();
-    env.run(&["occur", "foo", "-t", "0900", "--show", "none"]);
+    env.run(&["occur", "foo", "-y", "-t", "0900", "--show", "none"]);
     // Logged second, but it sits EARLIER on the clock than the row that
     // declared the field.
-    env.run(&["occur", "foo", "-t", "0800", "--show", "none"]);
+    env.run(&["occur", "foo", "-y", "-t", "0800", "--show", "none"]);
 
-    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0900", "--conflict", "refuse"]);
+    let (code, stdout) = env.try_run(&["occur", "foo", "-y", "-t", "0900", "--conflict", "refuse"]);
     assert_eq!(code, Some(11), "the duplicate exit code: {stdout:?}");
     assert!(
         stdout.contains("EXISTS"),
@@ -414,7 +422,7 @@ fn a_backfill_in_front_of_the_declaring_log_does_not_unmake_it() {
     // the 0800 row carries no declaration. If the rule ever started
     // recognising non-declaring rows this would still pass, so it is the
     // row count that carries the claim.
-    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0800", "--conflict", "refuse"]);
+    let (code, stdout) = env.try_run(&["occur", "foo", "-y", "-t", "0800", "--conflict", "refuse"]);
     assert_eq!(
         code,
         Some(11),
@@ -441,10 +449,10 @@ fn a_failed_first_log_leaves_no_spec_behind() {
     let env = Env::new();
     // A row at the instant the multi below will share, so the second
     // side collides with it and the atomic insert fails.
-    env.run(&["occur", "bb", "-t", "1100", "--show", "none"]);
+    env.run(&["occur", "bb", "-y", "-t", "1100", "--show", "none"]);
 
     let (code, _) = env.try_run(&[
-        "occur", "brandnew", "-t", "1100", ",", "occur", "bb", "-t", "1100", "cups=2",
+        "occur", "brandnew", "-y", "-t", "1100", ",", "occur", "bb", "-y", "-t", "1100", "cups=2",
     ]);
     assert_ne!(code, Some(0), "the colliding side must fail the window");
 
@@ -478,10 +486,11 @@ fn a_failed_first_log_leaves_no_spec_behind() {
 #[test]
 fn a_different_event_at_the_declaring_rows_instant_still_refuses() {
     let env = Env::new();
-    env.run(&["occur", "coffee", "-t", "0900", "--show", "none"]);
+    env.run(&["occur", "coffee", "-y", "-t", "0900", "--show", "none"]);
     let (code, stdout) = env.try_run(&[
         "occur",
         "coffee",
+        "-y",
         "-t",
         "0900",
         "cups=2",

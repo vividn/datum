@@ -451,11 +451,19 @@ fn retime_echoes_the_header_then_the_moved_line() {
         assert!(out.status.success(), "{args:?}: {out:?}");
         String::from_utf8(out.stdout).unwrap()
     };
-    datum(&["moment", "coffee", "-t", "09:00"]);
-    datum(&["start", "walk", "-t", "10:00", "30m"]);
+    datum(&["moment", "coffee", "-y", "-t", "09:00"]);
+    datum(&["start", "walk", "-y", "-t", "10:00", "30m"]);
     for (field, to, line) in [
-        ("coffee", "09:30", "09:00:00+0 → 09:30:00+0  coffee  ●"),
-        ("walk", "11:00", "10:00:00+0 → 11:00:00+0  walk   on   30m"),
+        (
+            "coffee",
+            "09:30",
+            "-1d 09:00:00+0 → -1d 09:30:00+0  coffee  ●",
+        ),
+        (
+            "walk",
+            "11:00",
+            "-1d 10:00:00+0 → -1d 11:00:00+0  walk   on   30m",
+        ),
     ] {
         let printed = datum(&["retime", field, "-t", to]);
         let lines: Vec<&str> = printed.lines().collect();
@@ -472,7 +480,7 @@ fn retime_echoes_the_header_then_the_moved_line() {
     .unwrap();
     let doc = &doc["docs"][0];
     assert_eq!(doc["action"], "RETIME");
-    assert_eq!(doc["info_time"], "09:30:00+0 → 09:40:00+0");
+    assert_eq!(doc["info_time"], "-1d 09:30:00+0 → -1d 09:40:00+0");
     // da-bjxr6: `-y` keeps the clock, so the new side says it, dated; it
     // was the date alone, a whole day.
     let doc: serde_json::Value =

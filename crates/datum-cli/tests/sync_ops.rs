@@ -273,7 +273,7 @@ fn every_change_is_one_op_with_its_own_line() {
     assert_eq!(first["effect"]["create"]["data"]["cups"], 2);
     // A second entry, so the delete below does not empty the field and take
     // its spec too, in a second op (da-elv6d).
-    a.ok(&["occur", "coffee", "-t", "1000"]);
+    a.ok(&["occur", "coffee", "-y", "-t", "1000"]);
 
     let op = one_op(&a, &["update", &hid, "cups=3"]);
     assert_eq!(op["kind"], "update");
@@ -2355,8 +2355,8 @@ fn check_sync(copy: &Copy, json: bool) -> (bool, String) {
 #[test]
 fn check_names_the_entries_whose_ops_have_no_row() {
     let a = Copy::new();
-    a.ok(&["occur", "tea", "-t", "10:00"]);
-    a.ok(&["occur", "juice", "-t", "12:00"]);
+    a.ok(&["occur", "tea", "-y", "-t", "10:00"]);
+    a.ok(&["occur", "juice", "-y", "-t", "12:00"]);
     // Clean, it says what it read: each entry and the spec its log declared.
     let (ok, clean) = check_sync(&a, false);
     assert!(
@@ -2402,8 +2402,8 @@ fn check_names_the_entries_whose_ops_have_no_row() {
 #[test]
 fn check_fix_deletes_the_entries_whose_ops_have_no_row() {
     let (a, applied) = (Copy::new(), Copy::new());
-    a.ok(&["occur", "tea", "-t", "10:00"]);
-    a.ok(&["occur", "juice", "-t", "12:00"]);
+    a.ok(&["occur", "tea", "-y", "-t", "10:00"]);
+    a.ok(&["occur", "juice", "-y", "-t", "12:00"]);
     converged(&a, &applied);
     let juice = a.hid("juice");
     a.sql("DELETE FROM entries WHERE field = 'juice' OR slug = 'spec:juice'");
@@ -2447,11 +2447,11 @@ fn check_fix_deletes_the_entries_whose_ops_have_no_row() {
 #[test]
 fn check_fix_merges_an_orphan_a_live_entry_shares_an_identity_with() {
     let a = Copy::new();
-    a.ok(&["occur", "coffee", "-t", "10:00", "cups=2"]);
-    a.ok(&["occur", "tea", "-t", "11:00"]);
+    a.ok(&["occur", "coffee", "-y", "-t", "10:00", "cups=2"]);
+    a.ok(&["occur", "tea", "-y", "-t", "11:00"]);
     let old = a.hid("coffee");
     a.sql("DELETE FROM entries");
-    a.ok(&["occur", "coffee", "-t", "10:00", "cups=2", "milk=oat"]);
+    a.ok(&["occur", "coffee", "-y", "-t", "10:00", "cups=2", "milk=oat"]);
     let new = a.hid("coffee");
     let (_, said) = check_sync(&a, false);
     assert!(said.contains("[ERROR] sync_orphan_ops (x4)"), "{said}");

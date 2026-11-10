@@ -30,11 +30,11 @@ fn end_and_stop_are_synonyms() {
     let db_end = fresh_db();
     let db_stop = fresh_db();
 
-    run_cli(&["start", "nap", "-t", "08:00"], &db_end).expect("seed start");
-    run_cli(&["end", "nap", "-t", "09:00"], &db_end).expect("end nap");
+    run_cli(&["start", "nap", "-y", "-t", "08:00"], &db_end).expect("seed start");
+    run_cli(&["end", "nap", "-y", "-t", "09:00"], &db_end).expect("end nap");
 
-    run_cli(&["start", "nap", "-t", "08:00"], &db_stop).expect("seed start");
-    run_cli(&["stop", "nap", "-t", "09:00"], &db_stop).expect("stop nap");
+    run_cli(&["start", "nap", "-y", "-t", "08:00"], &db_stop).expect("seed start");
+    run_cli(&["stop", "nap", "-y", "-t", "09:00"], &db_stop).expect("stop nap");
 
     let end_entries = datum_core::test_util::logged_entries(&db_end, "nap");
     let stop_entries = datum_core::test_util::logged_entries(&db_stop, "nap");
@@ -165,8 +165,8 @@ fn a_trailing_end_after_the_fields_alias_ends_it() {
     sleep.regenerate_derived_aliases();
     db.save_field_spec(&sleep).unwrap();
 
-    run_cli(&["sleep", "-t", "22:00"], &db).expect("start sleep via bare alias");
-    run_cli(&["sleep", "end", "-t", "06:00"], &db).expect("trailing verb");
+    run_cli(&["sleep", "-y", "-t", "22:00"], &db).expect("start sleep via bare alias");
+    run_cli(&["sleep", "end", "-y", "-t", "06:00"], &db).expect("trailing verb");
 
     let entries = datum_core::test_util::logged_entries(&db, "sleep");
     assert_eq!(entries.len(), 2, "start + end produce two rows");
@@ -224,8 +224,11 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
 
     // start_time + end_time → block. da-mjwq: the keys ARE the time — a
     // `-t` alongside is an error, and each value parses as `-t` would.
-    run_cli(&["add", "coffee", "start_time=9:55", "end_time=10:00"], &db)
-        .expect("add with start+end");
+    run_cli(
+        &["add", "coffee", "-y", "start_time=9:55", "end_time=10:00"],
+        &db,
+    )
+    .expect("add with start+end");
 
     let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert_eq!(e.shape(), EntryShape::Block);
@@ -246,14 +249,14 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     // as EntryShape::Point. The observable invariant — start anchored,
     // no end — is what callers actually rely on.
     let db2 = fresh_db();
-    run_cli(&["add", "nap", "start_time=13:55"], &db2).expect("add ongoing");
+    run_cli(&["add", "nap", "-y", "start_time=13:55"], &db2).expect("add ongoing");
     let e2 = &datum_core::test_util::logged_entries(&db2, "nap")[0];
     assert!(e2.at.is_some(), "ongoing add anchors at");
     assert!(e2.dur.is_none(), "ongoing add has no dur");
 
     // no temporal hints → point
     let db3 = fresh_db();
-    run_cli(&["add", "ping", "-t", "10:00"], &db3).expect("add point");
+    run_cli(&["add", "ping", "-y", "-t", "10:00"], &db3).expect("add point");
     let e3 = &datum_core::test_util::logged_entries(&db3, "ping")[0];
     assert_eq!(e3.shape(), EntryShape::Point);
     // Explicit `-t` opts the add back into carrying an at.
@@ -299,7 +302,8 @@ fn bare_note_has_no_at() {
 fn add_with_dur_null_yields_point_shape() {
     let db = fresh_db();
 
-    run_cli(&["add", "note_field", "dur=null", "-t", "10:00"], &db).expect("add with dur=null");
+    run_cli(&["add", "note_field", "dur=null", "-y", "-t", "10:00"], &db)
+        .expect("add with dur=null");
 
     let e = &datum_core::test_util::logged_entries(&db, "note_field")[0];
     assert_eq!(e.shape(), EntryShape::Point);

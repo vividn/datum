@@ -28,6 +28,7 @@ mod alias_show_json;
 mod alias_time_compose;
 mod ambiguous_time;
 mod backup_daemon;
+mod bare_clock_guard;
 mod batch_undo;
 mod batch_update_cmd;
 mod check_examined;

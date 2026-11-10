@@ -163,8 +163,8 @@ fn subprocess_dur_uncertainty_is_printed_with_the_dur() {
 fn subprocess_time_uncertainty_takes_the_seconds_place() {
     let env = Env::new();
     for args in [
-        &["occur", "water", "-t", "1000±5m"][..],
-        &["occur", "tea", "-t", "0915"],
+        &["occur", "water", "-y", "-t", "1000±5m"][..],
+        &["occur", "tea", "-y", "-t", "0915"],
     ] {
         assert_ok(&env.run(args), &args.join(" "));
     }
@@ -205,11 +205,19 @@ fn subprocess_duplicate_relog_exits_11() {
     let env = Env::new();
 
     // Pin the time so both logs produce identical content (same slug + hash).
-    let first = env.run(&["occur", "coffee", "-t", "0900"]);
+    let first = env.run(&["occur", "coffee", "-y", "-t", "0900"]);
     assert_ok(&first, "first occur");
     assert_eq!(env.entry_count(), 1);
 
-    let second = env.run(&["occur", "coffee", "-t", "0900", "--conflict", "refuse"]);
+    let second = env.run(&[
+        "occur",
+        "coffee",
+        "-y",
+        "-t",
+        "0900",
+        "--conflict",
+        "refuse",
+    ]);
     assert_eq!(
         second.status.code(),
         Some(11),
@@ -225,12 +233,12 @@ fn subprocess_duplicate_relog_exits_11() {
     assert_eq!(env.entry_count(), 1, "re-log must not write a new row");
 
     // A subsequent distinct log exits 0 — the flag is per-invocation.
-    let third = env.run(&["occur", "tea", "-t", "0900"]);
+    let third = env.run(&["occur", "tea", "-y", "-t", "0900"]);
     assert_ok(&third, "distinct occur after duplicate");
 
     // da-wudrc: by default a re-log updates, and an identical one is NODIFF,
     // exit 0.
-    let default = env.run(&["occur", "coffee", "-t", "0900"]);
+    let default = env.run(&["occur", "coffee", "-y", "-t", "0900"]);
     assert_ok(&default, "a re-log under update");
     assert!(String::from_utf8_lossy(&default.stdout).contains("NODIFF"));
     assert_eq!(env.entry_count(), 2);
@@ -1018,8 +1026,11 @@ fn subprocess_help_does_not_open_the_db() {
 #[test]
 fn subprocess_tail_json_is_readable_without_counting_columns() {
     let env = Env::new();
-    assert_ok(&env.run(&["start", "activity", "-t", "0900"]), "start");
-    assert_ok(&env.run(&["end", "activity", "-t", "0930"]), "end");
+    assert_ok(
+        &env.run(&["start", "activity", "-y", "-t", "0900"]),
+        "start",
+    );
+    assert_ok(&env.run(&["end", "activity", "-y", "-t", "0930"]), "end");
 
     let out = env.run(&["tail", "activity", "--json"]);
     assert_ok(&out, "tail --json");
@@ -1085,7 +1096,7 @@ fn subprocess_tail_json_carries_the_table_columns() {
 #[test]
 fn subprocess_backup_to_stdout_restores_from_stdin() {
     let from = Env::new();
-    assert_ok(&from.run(&["occur", "coffee", "-t", "0900"]), "occur");
+    assert_ok(&from.run(&["occur", "coffee", "-y", "-t", "0900"]), "occur");
     assert_ok(&from.run(&["switch", "mood", "happy"]), "switch");
     let dump = from.run(&["db", "backup", "-"]);
     assert_ok(&dump, "db backup -");
@@ -1286,10 +1297,13 @@ fn subprocess_hydration_groups_by_the_local_day() {
 fn subprocess_fields_lists_logged_and_declared_fields() {
     let env = Env::new();
     assert_ok(
-        &env.run(&["switch", "mood", "happy", "-t", "0900"]),
+        &env.run(&["switch", "mood", "happy", "-y", "-t", "0900"]),
         "switch",
     );
-    assert_ok(&env.run(&["switch", "mood", "sad", "-t", "0930"]), "switch");
+    assert_ok(
+        &env.run(&["switch", "mood", "sad", "-y", "-t", "0930"]),
+        "switch",
+    );
     assert_ok(&env.run(&["setup", "sleep", "--verb", "start"]), "spec");
 
     let out = env.run(&["fields", "--json"]);

@@ -253,7 +253,7 @@ fn timeless_durations_and_timed_ones() {
         (&["occur", "w", "-T"][..], "w", Some(Dur::moment())),
         (&["switch", "x", "on", "-T"][..], "x", Some(Dur::moment())),
         (
-            &["note", "t", "-t", "10:00", "dur=5m"][..],
+            &["note", "t", "-y", "-t", "10:00", "dur=5m"][..],
             "t",
             Some(Dur::parse("PT5M").unwrap()),
         ),

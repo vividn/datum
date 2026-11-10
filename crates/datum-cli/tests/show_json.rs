@@ -402,6 +402,7 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
     let a = env.docs(&[
         "occur",
         "tea",
+        "-y",
         "-t",
         "9:00",
         "size=large",
@@ -409,7 +410,16 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
         "--show",
         "json",
     ]);
-    let b = env.docs(&["occur", "tea", "-t", "9:30", "size=small", "--show", "json"]);
+    let b = env.docs(&[
+        "occur",
+        "tea",
+        "-y",
+        "-t",
+        "9:30",
+        "size=small",
+        "--show",
+        "json",
+    ]);
     let (a, b) = (a[0]["hid"].as_str().unwrap(), b[0]["hid"].as_str().unwrap());
 
     let docs = env.docs(&[
@@ -457,7 +467,15 @@ fn an_update_of_several_entries_carries_each_ones_before_and_after() {
 #[test]
 fn an_undone_update_is_the_change_taken_back() {
     let env = Env::new();
-    env.run(&["occur", "tea", "-t", "9:00", "size=large", "shop=corner"]);
+    env.run(&[
+        "occur",
+        "tea",
+        "-y",
+        "-t",
+        "9:00",
+        "size=large",
+        "shop=corner",
+    ]);
     let update = env.docs(&["update", "_LAST", "size=small", "--show", "json"]);
     let hid = update[0]["hid"].as_str().unwrap();
 
@@ -493,8 +511,8 @@ fn an_undone_update_is_the_change_taken_back() {
 #[test]
 fn each_undo_says_what_it_changes() {
     let env = Env::new();
-    env.run(&["occur", "tea", "-t", "9:00", "size=large"]);
-    env.run(&["occur", "tea", "-t", "9:30", "size=small", "cups=2"]);
+    env.run(&["occur", "tea", "-y", "-t", "9:00", "size=large"]);
+    env.run(&["occur", "tea", "-y", "-t", "9:30", "size=small", "cups=2"]);
 
     let undo = |env: &Env| {
         let printed = env.run(&["undo"]);
@@ -530,7 +548,7 @@ fn each_undo_says_what_it_changes() {
     );
     assert_eq!(
         body(&printed),
-        ["− TIME  tea  ●", "  − cups: 2", "  − size: \"small\""]
+        ["− -1d TIME  tea  ●", "  − cups: 2", "  − size: \"small\""]
     );
     assert!(printed.contains("\x1b[2;9m"), "struck: {printed:?}");
     assert_eq!(docs[0]["undid"]["action"], "CREATE");
@@ -563,7 +581,7 @@ fn each_undo_says_what_it_changes() {
     );
     assert_eq!(
         body(&printed),
-        ["+ TIME  tea  ●", "  + cups: 2", "  + size: \"small\""]
+        ["+ -1d TIME  tea  ●", "  + cups: 2", "  + size: \"small\""]
     );
     assert!(
         !printed.contains("\x1b[2;9m"),
@@ -591,7 +609,7 @@ fn each_undo_says_what_it_changes() {
     assert_eq!(
         body(&printed),
         [
-            "TIME  tea  ●",
+            "-1d TIME  tea  ●",
             "  size: \"small\" ← \"large\"",
             "  − milk: \"oat\"",
             "  cups: 2",
@@ -616,8 +634,8 @@ fn each_undo_says_what_it_changes() {
 #[test]
 fn a_bare_undo_of_a_list_echoes_each_entry_and_redo_the_update() {
     let env = Env::new();
-    let a = env.docs(&["occur", "tea", "-t", "9:00", "n=1", "--show", "json"]);
-    let b = env.docs(&["occur", "tea", "-t", "9:30", "n=2", "--show", "json"]);
+    let a = env.docs(&["occur", "tea", "-y", "-t", "9:00", "n=1", "--show", "json"]);
+    let b = env.docs(&["occur", "tea", "-y", "-t", "9:30", "n=2", "--show", "json"]);
     let (a, b) = (a[0]["hid"].as_str().unwrap(), b[0]["hid"].as_str().unwrap());
     env.run(&["update", &format!("{a},{b}"), "n=5"]);
 

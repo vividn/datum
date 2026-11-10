@@ -402,7 +402,7 @@ fn binary_alias_sides_merge_as_typed() {
     for args in [
         &["rans", "10"][..],
         &["rr", "10"],
-        &["rans", "10", "-t", "10:40"],
+        &["rans", "10", "-y", "-t", "10:40"],
     ] {
         let (ok, _, stderr) = run(&db, args);
         assert!(ok, "{args:?}: {stderr}");
@@ -449,10 +449,10 @@ fn minute(db: &PathBuf, field: &str) -> i64 {
 fn binary_each_side_keeps_its_own_time() {
     for args in [
         &[
-            "occur", "tea", "-t", "9:00", ",", "switch", "mood", "calm", "-t", "9:10",
+            "occur", "tea", "-y", "-t", "9:00", ",", "switch", "mood", "calm", "-y", "-t", "9:10",
         ][..],
         &[
-            "switch", "mood", "calm", "-t", "9:10", ",", "occur", "tea", "-t", "9:00",
+            "switch", "mood", "calm", "-y", "-t", "9:10", ",", "occur", "tea", "-y", "-t", "9:00",
         ],
     ] {
         let db = tmp_db();
@@ -467,7 +467,7 @@ fn binary_each_side_keeps_its_own_time() {
 fn binary_a_block_side_keeps_its_own_time() {
     let db = tmp_db();
     let args = [
-        "start", "walk", "-t", "10:00", "30m", ",", "occur", "cake", "-t", "10:05",
+        "start", "walk", "-y", "-t", "10:00", "30m", ",", "occur", "cake", "-y", "-t", "10:05",
     ];
     let (ok, _, stderr) = run(&db, &args);
     assert!(ok, "{stderr}");
@@ -479,7 +479,8 @@ fn binary_a_block_side_keeps_its_own_time() {
 fn binary_a_side_with_no_time_takes_the_first_sides() {
     let db = tmp_db();
     let args = [
-        "occur", "tea", "-t", "9:00", ",", "occur", "cake", ",", "occur", "pie", "-t", "9:30",
+        "occur", "tea", "-y", "-t", "9:00", ",", "occur", "cake", ",", "occur", "pie", "-y", "-t",
+        "9:30",
     ];
     let (ok, _, stderr) = run(&db, &args);
     assert!(ok, "{stderr}");

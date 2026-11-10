@@ -112,7 +112,7 @@ fn dash_k_affects_data_not_slug() {
 fn retime_overwrites_uncertainty_from_new_input() {
     let db = fresh_db();
     // Seed an entry with a well-known uncertainty (exact — column NULL).
-    run_cli(&["occur", "coffee", "-t", "12:00"], &db).expect("seed entry");
+    run_cli(&["occur", "coffee", "-y", "-t", "12:00"], &db).expect("seed entry");
     let seeded = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     // v3 (da-5ns): the uncertainty is a single ISO-8601 duration string
     // (NULL == not stated), replacing the v=19 (seconds, unit) pair. Since
@@ -151,7 +151,7 @@ fn a_fractional_uncertainty_is_stored_whole() {
         ("c", "10:00±2h", "PT2H"),
         ("d", "10:00±0.5d", "PT12H"),
     ] {
-        run_cli(&["occur", field, "-t", t], &db).expect(t);
+        run_cli(&["occur", field, "-y", "-t", t], &db).expect(t);
         let e = &datum_core::test_util::logged_entries(&db, field)[0];
         assert_eq!(e.at_uncertainty(), Some(iso), "-t {t}");
     }

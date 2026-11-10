@@ -99,8 +99,8 @@ fn a_new_command_after_an_undo_drops_the_redo_tail() {
 #[test]
 fn a_command_over_two_entries_undoes_as_one() {
     let db = fresh_db();
-    run_cli(&["occur", "alpha", "-t", "10:00"], &db).unwrap();
-    run_cli(&["occur", "beta", "-t", "11:00"], &db).unwrap();
+    run_cli(&["occur", "alpha", "-y", "-t", "10:00"], &db).unwrap();
+    run_cli(&["occur", "beta", "-y", "-t", "11:00"], &db).unwrap();
     let (a, b) = (hid_of(&db, "alpha"), hid_of(&db, "beta"));
     let time = |hid: &str| db.get_entry(hid).unwrap().at.unwrap().utc;
     let before = (time(&a), time(&b));
@@ -160,8 +160,8 @@ fn undo_last_after_a_get_reverts_what_it_showed() {
 #[test]
 fn a_step_that_fails_part_way_moves_nothing() {
     let db = fresh_db();
-    run_cli(&["occur", "alpha", "-t", "10:00"], &db).unwrap();
-    run_cli(&["occur", "beta", "-t", "11:00"], &db).unwrap();
+    run_cli(&["occur", "alpha", "-y", "-t", "10:00"], &db).unwrap();
+    run_cli(&["occur", "beta", "-y", "-t", "11:00"], &db).unwrap();
     let (a, b) = (hid_of(&db, "alpha"), hid_of(&db, "beta"));
     let time = |hid: &str| db.get_entry(hid).unwrap().at.unwrap().utc;
     let before = (time(&a), time(&b));

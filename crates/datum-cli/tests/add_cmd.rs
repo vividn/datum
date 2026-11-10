@@ -303,7 +303,7 @@ fn identical_content_triggers_exists_outcome() {
     let db = fresh_db();
     // Use the strategy API directly to observe the outcome — the CLI path
     // already produces the same InsertOutcome variants.
-    run_cli(&["add", "bob", "foo=bar", "-t", "09:00"], &db).expect("first note");
+    run_cli(&["add", "bob", "foo=bar", "-y", "-t", "09:00"], &db).expect("first note");
     assert_count!(db, "bob", 1);
     let first = datum_core::test_util::logged_entries(&db, "bob")[0].clone();
 
@@ -391,7 +391,16 @@ fn keyed_record_relogs_in_place_under_update() {
     // A template carrying the time (here by its camelCase alias) is not a
     // key: its collision is two events at one instant, as before.
     run_cli(
-        &["occur", "tx", "-t", "09:00", "--id", "%occurTime%", "a=1"],
+        &[
+            "occur",
+            "tx",
+            "-y",
+            "-t",
+            "09:00",
+            "--id",
+            "%occurTime%",
+            "a=1",
+        ],
         &db,
     )
     .expect("tx");
@@ -399,6 +408,7 @@ fn keyed_record_relogs_in_place_under_update() {
         &[
             "occur",
             "tx",
+            "-y",
             "-t",
             "09:00",
             "--id",
@@ -418,7 +428,7 @@ fn keyed_record_relogs_in_place_under_update() {
 #[test]
 fn optional_time_placeholder_is_not_a_key() {
     let db = fresh_db();
-    let argv = |a: &'static str| ["occur", "tx", "-t", "09:00", "--id", "%?at%", a];
+    let argv = |a: &'static str| ["occur", "tx", "-y", "-t", "09:00", "--id", "%?at%", a];
     run_cli(&argv("a=1"), &db).expect("tx");
     let mut refused = argv("a=2").to_vec();
     refused.extend(["--conflict", "refuse"]);
@@ -528,7 +538,7 @@ fn id_structure_always_set_when_id_given() {
     );
 
     // A timed default add (explicit -t) takes the `%at%` branch.
-    run_cli(&["add", "timed", "-t", "10:00"], &db).expect("note timed");
+    run_cli(&["add", "timed", "-y", "-t", "10:00"], &db).expect("note timed");
     let timed = &datum_core::test_util::logged_entries(&db, "timed")[0];
     assert_eq!(
         timed.id_structure.as_deref(),

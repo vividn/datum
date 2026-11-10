@@ -1524,6 +1524,11 @@ cargo test -p datum-cli
 
 Add tests for new behavior.
 
+A test logs at a day other than today: `cargo test` refuses `-t 10:00`, `-d today -t 10` and
+`start_time=9am` (`DATUM_TEST_REFUSE_BARE_CLOCK` in `.cargo/config.toml`, da-5kpsw), since today's clock
+lies ahead of now or behind it by the hour CI runs at, and an entry ahead echoes FUTURE. Write `-y -t
+10:00`; a test whose clock is the point sets the variable to `0` and holds the hour itself (`future_echo.rs`).
+
 ## Integration branches
 
 Work too big for one PR, many beads under one epic that should land on staging together, is built on a branch of

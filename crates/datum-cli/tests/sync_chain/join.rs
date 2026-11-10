@@ -12,7 +12,7 @@ use super::*;
 fn a_join_cut_short_names_the_copy_it_joins_through_and_resumes_with_it() {
     let (a, b) = (Copy::new(), Copy::new());
     for t in ["0800", "0900", "1000"] {
-        a.ok(&["occur", "tea", "-t", t]);
+        a.ok(&["occur", "tea", "-y", "-t", t]);
     }
     let out = redeem(&a, &b, "b", None, &["--chain", ""]);
     assert!(
@@ -90,7 +90,7 @@ fn a_join_cut_short_names_the_copy_it_joins_through_and_resumes_with_it() {
 #[test]
 fn a_join_cut_short_before_any_op_resumes_where_its_invite_was_redeemed() {
     let (a, b) = (Copy::new(), Copy::new());
-    a.ok(&["occur", "tea", "-t", "0800"]);
+    a.ok(&["occur", "tea", "-y", "-t", "0800"]);
     let out = redeem(&a, &b, "b", None, &["--chain", ""]);
     assert!(
         out.status.success(),

@@ -119,16 +119,16 @@ fn without_the_flag_a_duplicate_is_written() {
 #[test]
 fn start_while_open_and_end_while_closed_are_islast() {
     let env = Env::new();
-    env.ok(&["start", "work", "-t", "900"]);
+    env.ok(&["start", "work", "-y", "-t", "900"]);
     let n = env.count();
     assert!(env
-        .ok(&["start", "work", "--if-changed", "-t", "910"])
+        .ok(&["start", "work", "--if-changed", "-y", "-t", "910"])
         .starts_with("ISLAST"));
     assert_eq!(env.count(), n);
-    env.ok(&["end", "work", "-t", "920"]);
+    env.ok(&["end", "work", "-y", "-t", "920"]);
     let n = env.count();
     assert!(env
-        .ok(&["end", "work", "--if-changed", "-t", "930"])
+        .ok(&["end", "work", "--if-changed", "-y", "-t", "930"])
         .starts_with("ISLAST"));
     assert_eq!(env.count(), n);
 }
@@ -144,8 +144,8 @@ fn other_verbs_refuse_the_flag() {
 #[test]
 fn a_dry_run_previews_islast_and_leaves_the_cursor() {
     let env = Env::new();
-    env.ok(&["switch", "mood", "happy", "-t", "900"]);
-    let before = env.ok(&["occur", "coffee", "-t", "910"]);
+    env.ok(&["switch", "mood", "happy", "-y", "-t", "900"]);
+    let before = env.ok(&["occur", "coffee", "-y", "-t", "910"]);
     // An explicit -t, like the entries above: at now, before 09:00, the
     // happy entry would still be in the future and nothing would govern.
     let out = env.ok(&[
@@ -154,6 +154,7 @@ fn a_dry_run_previews_islast_and_leaves_the_cursor() {
         "happy",
         "--if-changed",
         "--dry-run",
+        "-y",
         "-t",
         "920",
     ]);

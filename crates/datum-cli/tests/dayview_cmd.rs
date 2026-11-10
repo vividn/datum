@@ -1796,7 +1796,8 @@ fn dayview_json(db: &datum_core::db::Db, extra: &[&str]) -> serde_json::Value {
 #[test]
 fn allday_entries_are_their_fields_symbols_in_a_band_before_the_time_axis() {
     let db = fresh_db();
-    run_cli(&["moment", "tea", "-t", "10:00"], &db).unwrap();
+    // Now, so it is today's whatever the hour.
+    run_cli(&["moment", "tea"], &db).unwrap();
     let plain = dayview_json(&db, &[]);
     assert!(
         plain.get("allday_width").is_none(),

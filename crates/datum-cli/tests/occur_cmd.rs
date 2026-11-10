@@ -307,8 +307,8 @@ fn a_zone_typed_in_any_case_is_stored_canonically() {
     ] {
         let db = fresh_db();
         for argv in [
-            vec!["occur", "event", "-t", "1200", "-z", typed],
-            vec!["start", "event", "-t", "1300", "-z", typed],
+            vec!["occur", "event", "-y", "-t", "1200", "-z", typed],
+            vec!["start", "event", "-y", "-t", "1300", "-z", typed],
         ] {
             run_cli(&argv, &db).unwrap_or_else(|e| panic!("{argv:?}: {e:#}"));
         }
@@ -591,7 +591,7 @@ fn full_day_slugs_on_bare_date() {
     );
 
     // A timed entry on the same day keeps the full stamp.
-    run_cli(&["occur", "timed_slug", "-t", "14:00"], &db).expect("occur -t 14:00");
+    run_cli(&["occur", "timed_slug", "-y", "-t", "14:00"], &db).expect("occur -y -t 14:00");
     let e = &datum_core::test_util::logged_entries(&db, "timed_slug")[0];
     assert_eq!(
         e.slug.as_str(),
@@ -857,7 +857,7 @@ fn relative_time_beside_a_named_day_needs_a_clock() {
 
     for flags in [
         &["-d", "2026-10-05", "-t", "1830", "-t", "-6"][..],
-        &["-t", "1830", "-t", "-6"],
+        &["-y", "-t", "1830", "-t", "-6"],
         &["-q"],
         &["-t", "-6"],
     ] {
@@ -1278,7 +1278,7 @@ fn occur_routes_dur_uncertainty_reserved_key_to_column() {
 fn dur_takes_plus_minus_wherever_time_does() {
     for t in ["10:00±5m", "10:00+-5m"] {
         let db = fresh_db();
-        run_cli(&["occur", "run", "-t", t], &db).unwrap_or_else(|e| panic!("-t {t}: {e}"));
+        run_cli(&["occur", "run", "-y", "-t", t], &db).unwrap_or_else(|e| panic!("-t {t}: {e}"));
         let entry = &datum_core::test_util::logged_entries(&db, "run")[0];
         let at = entry.at.as_ref().expect("-t places the entry");
         assert_eq!(at.uncertainty.as_deref(), Some("PT5M"), "-t {t}");

@@ -30,6 +30,8 @@ fn datum(db: &Path, tz: &str, args: &[&str]) -> Output {
         .env("HOME", db.parent().unwrap())
         .env("DATUM_SYNC_NO_DAEMON", "1")
         .env("TZ", tz)
+        // Today's clock is the point here, and `TZ` sets the hour it reads.
+        .env("DATUM_TEST_REFUSE_BARE_CLOCK", "0")
         .output()
         .unwrap();
     assert!(

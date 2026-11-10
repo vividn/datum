@@ -177,8 +177,8 @@ fn a_purged_device_that_rejoins_brings_all_its_ops_back() {
 #[test]
 fn a_purge_frees_the_rows_merged_into_the_purged_devices_row() {
     let (a, b) = chained();
-    b.ok(&["occur", "coffee", "-t", "1200", "cups=2"]);
-    a.ok(&["occur", "coffee", "-t", "1200", "cups=2"]);
+    b.ok(&["occur", "coffee", "-y", "-t", "1200", "cups=2"]);
+    a.ok(&["occur", "coffee", "-y", "-t", "1200", "cups=2"]);
     assert!(b.send(&a).0);
     let shown = "SELECT COUNT(*) FROM entries WHERE field = 'coffee' AND superseded_by IS NULL";
     assert_eq!(a.query(shown), "1");
@@ -203,9 +203,9 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
     let (a, b) = chained();
     let c = Copy::new();
     admit(&a, &c, "c", None);
-    b.ok(&["occur", "coffee", "-t", "1200", "cups=2"]);
-    a.ok(&["occur", "coffee", "-t", "1200", "cups=2"]);
-    c.ok(&["occur", "coffee", "-t", "1200", "cups=2"]);
+    b.ok(&["occur", "coffee", "-y", "-t", "1200", "cups=2"]);
+    a.ok(&["occur", "coffee", "-y", "-t", "1200", "cups=2"]);
+    c.ok(&["occur", "coffee", "-y", "-t", "1200", "cups=2"]);
     assert!(b.send(&a).0);
     assert!(c.send(&a).0);
     // c holds all three too: the purge reaches it by sync, below.

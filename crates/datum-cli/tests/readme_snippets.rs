@@ -372,8 +372,15 @@ impl TestEnv {
     }
 }
 
-fn run_command(args: &[String], env: &TestEnv) -> std::process::Output {
+/// A block with no transcript prints nothing anyone reads, so it may log at
+/// a clock today (`stop sleep -t 07:10`, the README's): only what is printed
+/// differs by the hour it runs at (da-5kpsw).
+fn run_command(args: &[String], env: &TestEnv, transcribed: bool) -> std::process::Output {
     env.apply(&mut Command::new(env!("CARGO_BIN_EXE_datum")))
+        .env(
+            "DATUM_TEST_REFUSE_BARE_CLOCK",
+            if transcribed { "1" } else { "0" },
+        )
         .args(args)
         .output()
         .expect("spawn datum")
@@ -438,6 +445,7 @@ fn run_snippets_in(rel: &str) {
             continue;
         }
         let env = TestEnv::new();
+        let transcribed = TRANSCRIPT_DOCS.contains(&rel) && !block.transcripts.is_empty();
         ran_blocks += 1;
         let mut printed = String::new();
         for cmd in split_commands(&block.body) {
@@ -456,7 +464,7 @@ fn run_snippets_in(rel: &str) {
                 argv[0], block.line_no,
             );
             let cli_args = &argv[1..];
-            let out = run_command(cli_args, &env);
+            let out = run_command(cli_args, &env, transcribed);
             let actual = out.status.code().unwrap_or(-1);
             let expected = match mode {
                 Mode::RunOk => 0,

@@ -142,7 +142,7 @@ fn explicit_c_is_redundant_not_an_error() {
 fn a_leading_dash_is_still_a_flag() {
     let env = Env::new();
     // `-t` places the entry; only `late` is comment text.
-    env.ok(&["note", "coffee", "-t", "9:00", "late"]);
+    env.ok(&["note", "coffee", "-y", "-t", "9:00", "late"]);
 
     assert_eq!(
         data_of(&env, "coffee"),

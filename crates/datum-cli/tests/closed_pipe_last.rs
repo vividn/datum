@@ -49,7 +49,7 @@ impl Env {
 
     /// Log `field` at `time` and return its hid.
     fn occur(&self, field: &str, time: &str) -> String {
-        let out = self.ok(&["occur", field, "-t", time, "--show", "json"]);
+        let out = self.ok(&["occur", field, "-y", "-t", time, "--show", "json"]);
         let docs: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         docs["docs"][0]["hid"].as_str().unwrap().to_string()
     }
@@ -84,7 +84,7 @@ fn stderr(o: &Output) -> String {
 fn a_cut_off_log_is_what_a_bare_undo_reverts() {
     let env = Env::new();
     env.occur("tea", "0900");
-    env.cut_off(&["occur", "coffee", "-t", "0910"]);
+    env.cut_off(&["occur", "coffee", "-y", "-t", "0910"]);
     assert_eq!(env.live(), ["tea=null", "coffee=null"]);
     env.ok(&["undo"]);
     assert_eq!(env.live(), ["tea=null"]);

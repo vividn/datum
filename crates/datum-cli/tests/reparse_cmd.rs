@@ -667,14 +667,16 @@ fn reparse_replays_the_first_row_of_a_line_of_several_sides() {
         ),
         (
             &[
-                "switch", "f", "x", "-t", "10:00", ",", "switch", "f", "y", "-t", "10:00",
+                "switch", "f", "x", "-y", "-t", "10:00", ",", "switch", "f", "y", "-y", "-t",
+                "10:00",
             ],
             "f",
         ),
         // A side that states another time is a row of its own.
         (
             &[
-                "switch", "f", "x", "-t", "10:00", ",", "switch", "f", "y", "-t", "11:00",
+                "switch", "f", "x", "-y", "-t", "10:00", ",", "switch", "f", "y", "-y", "-t",
+                "11:00",
             ],
             "f",
         ),

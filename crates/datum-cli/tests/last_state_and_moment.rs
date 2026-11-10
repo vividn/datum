@@ -283,17 +283,17 @@ fn switch_moment_records_point_in_time() {
 #[test]
 fn a_zero_duration_is_stored_as_a_moment() {
     let lines: [&[&str]; 7] = [
-        &["on", "nap", "-t", "21:30", "0"],
-        &["occur", "tea", "-t", "21:40", "dur=0"],
-        &["occur", "tea", "-t", "21:41", "dur=PT0S"],
-        &["start", "nap", "-t", "21:42", "0m"],
-        &["stop", "nap", "-t", "21:43", "0m±1m"],
-        &["occur", "tea", "start_time=21:44", "end_time=21:44"],
-        &["occur", "tea", "start_time=21:45", "dur=0"],
+        &["on", "nap", "-y", "-t", "21:30", "0"],
+        &["occur", "tea", "-y", "-t", "21:40", "dur=0"],
+        &["occur", "tea", "-y", "-t", "21:41", "dur=PT0S"],
+        &["start", "nap", "-y", "-t", "21:42", "0m"],
+        &["stop", "nap", "-y", "-t", "21:43", "0m±1m"],
+        &["occur", "tea", "-y", "start_time=21:44", "end_time=21:44"],
+        &["occur", "tea", "-y", "start_time=21:45", "dur=0"],
     ];
     for line in lines {
         let db = fresh_db();
-        run_cli(&[line[0], line[1], "-t", "20:00"], &db).expect("first entry");
+        run_cli(&[line[0], line[1], "-y", "-t", "20:00"], &db).expect("first entry");
         run_cli(line, &db).expect("zero duration");
         let entries = datum_core::test_util::logged_entries(&db, line[1]);
         let e = entries
@@ -312,8 +312,8 @@ fn a_zero_duration_is_stored_as_a_moment() {
     }
     // An update to a zero duration is one too.
     let db = fresh_db();
-    run_cli(&["occur", "tea", "-t", "20:00"], &db).expect("first entry");
-    run_cli(&["start", "tea", "-t", "21:00", "10m"], &db).expect("block");
+    run_cli(&["occur", "tea", "-y", "-t", "20:00"], &db).expect("first entry");
+    run_cli(&["start", "tea", "-y", "-t", "21:00", "10m"], &db).expect("block");
     let last = |db: &Db| {
         datum_core::test_util::logged_entries(db, "tea")
             .into_iter()

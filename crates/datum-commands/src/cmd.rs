@@ -2180,6 +2180,7 @@ mod tests {
     fn make_timed_add_args(field: &str, rest: Vec<&str>) -> LogArgs {
         let mut a = make_add_args(field, rest);
         a.time.time = Some("10:00".into());
+        a.time.yesterday = 1;
         a
     }
 

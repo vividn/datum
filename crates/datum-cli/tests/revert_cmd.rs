@@ -218,9 +218,9 @@ fn a_hid_steps_to_its_previous_state_and_a_second_revert_puts_it_back() {
 #[test]
 fn a_field_with_several_entries_walks_back_one_command_at_a_time() {
     let env = Env::new();
-    env.ok("moment a -t 9:00");
-    env.ok("moment a -t 9:10");
-    env.ok("moment a -t 9:20");
+    env.ok("moment a -y -t 9:00");
+    env.ok("moment a -y -t 9:10");
+    env.ok("moment a -y -t 9:20");
     env.ok("moment other");
 
     env.ok("revert a");

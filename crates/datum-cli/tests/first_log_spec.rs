@@ -72,8 +72,8 @@ fn deleting_the_only_entry_by_underscore_takes_the_spec() {
 #[test]
 fn the_last_live_entry_takes_the_spec_and_undo_returns_both() {
     let db = fresh_db();
-    run_cli(&["occur", "x", "-t", "1000"], &db).unwrap();
-    run_cli(&["occur", "x", "-t", "1100"], &db).unwrap();
+    run_cli(&["occur", "x", "-y", "-t", "1000"], &db).unwrap();
+    run_cli(&["occur", "x", "-y", "-t", "1100"], &db).unwrap();
     let hids: Vec<String> = logged_entries(&db, "x")
         .into_iter()
         .map(|e| e.hid.0)

@@ -1,6 +1,7 @@
 //! How a typed time is read: the question a fall-back night's repeated hour
 //! asks (da-6i7l1, da-job98), and the hint an evening logged before noon
-//! gets (da-85b0d).
+//! gets (da-85b0d), and a test build's refusal of a clock today
+//! (da-5kpsw).
 
 use std::collections::BTreeMap;
 
@@ -9,6 +10,42 @@ use datum_core::time::DatumTime;
 use datum_parse::{ParseError, Readings};
 
 use crate::commands::question::Question;
+
+/// A test build refuses a log at a clock today (`-t 10:00`, `-d today -t 10`,
+/// `start_time=9am`) under `DATUM_TEST_REFUSE_BARE_CLOCK=1`, which
+/// `.cargo/config.toml` sets for every `cargo test` (da-5kpsw). Such a time is
+/// today's, so it lies ahead of now or behind it by the hour the test runs
+/// at, and echoes FUTURE only before it: a test that passes by day goes red
+/// after midnight. A test whose clock is held by a `MockClock` is not asked,
+/// nor a `-T` line, which places nothing and keeps its own error.
+#[cfg(feature = "test-util")]
+pub(crate) fn refuse_bare_clock(time: &datum_parse::input::TimeArgs) -> Result<()> {
+    if std::env::var("DATUM_TEST_REFUSE_BARE_CLOCK").as_deref() != Ok("1")
+        || datum_parse::time::clock::current().is_some()
+        || time.omit_timestamp
+    {
+        return Ok(());
+    }
+    let ctx = datum_core::time::TimeCtx::now();
+    let Ok(b) = time.builder(ctx) else {
+        return Ok(());
+    };
+    let today = ctx.reference.map(|now| now.date());
+    let day = match (b.iso_naive_override, b.time_override) {
+        (Some(naive), _) => Some(naive.date()),
+        (None, Some(_)) => b.date_override.or(today.filter(|_| b.days_back == 0)),
+        (None, None) => None,
+    };
+    if !b.full_day && day.is_some() && day == today {
+        let typed = time.time.as_deref().unwrap_or_default();
+        anyhow::bail!(
+            "a test logs at `{typed}`, a clock today, so it passes or fails by the hour it \
+             runs at: give it another day (-y, -d), or set DATUM_TEST_REFUSE_BARE_CLOCK=0 \
+             where today's clock is the point (da-5kpsw)"
+        );
+    }
+    Ok(())
+}
 
 /// The hint a time this evening gets when logged before noon (da-85b0d):
 /// most likely last night's, so it says how to move it there. The entry

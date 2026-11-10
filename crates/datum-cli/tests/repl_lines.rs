@@ -144,7 +144,8 @@ fn second_line_as_alone(seed: &[&str], first: &str, second: &str) -> String {
 
 #[test]
 fn a_lines_color_is_that_lines() {
-    let printed = second_line_as_alone(&["occur coffee -t 10:00"], "--color always tail", "tail");
+    let printed =
+        second_line_as_alone(&["occur coffee -y -t 10:00"], "--color always tail", "tail");
     assert!(
         printed.contains('\x1b'),
         "the first line was not painted: {printed}"
@@ -154,9 +155,9 @@ fn a_lines_color_is_that_lines() {
 #[test]
 fn a_json_echo_is_that_lines() {
     let printed = second_line_as_alone(
-        &["occur tea -t 9:00"],
-        "occur cake -t 9:30 --show json",
-        "occur coffee -t 10:00",
+        &["occur tea -y -t 9:00"],
+        "occur cake -y -t 9:30 --show json",
+        "occur coffee -y -t 10:00",
     );
     assert!(printed.contains(r#"{"docs":"#), "no echo: {printed}");
 }
@@ -166,13 +167,13 @@ fn a_json_echo_is_that_lines() {
 #[test]
 fn a_dry_run_is_that_lines() {
     let printed = second_line_as_alone(
-        &["occur tea -t 9:00"],
+        &["occur tea -y -t 9:00"],
         "retime tea -t 9:30 --dry-run",
         "retime tea -t 10:00",
     );
     assert!(printed.contains("DRYRUN"), "no dry run: {printed}");
     let env = Env::new();
-    env.repl(&["occur tea -t 9:00", "retime tea -t 9:30 --dry-run"]);
+    env.repl(&["occur tea -y -t 9:00", "retime tea -t 9:30 --dry-run"]);
     assert_eq!(
         env.query("SELECT strftime('%H:%M', at, 'localtime') FROM entries WHERE field = 'tea'"),
         "09:00"
@@ -184,9 +185,9 @@ fn a_dry_run_is_that_lines() {
 #[test]
 fn a_failed_window_leaves_nothing_for_the_next_line() {
     let printed = second_line_as_alone(
-        &["occur bb -t 11:00"],
-        "occur newfield -t 11:00 , occur bb -t 11:00 cups=2",
-        "occur newfield -t 15:00",
+        &["occur bb -y -t 11:00"],
+        "occur newfield -y -t 11:00 , occur bb -y -t 11:00 cups=2",
+        "occur newfield -y -t 15:00",
     );
     assert!(
         printed.contains("error:"),
@@ -198,9 +199,9 @@ fn a_failed_window_leaves_nothing_for_the_next_line() {
 #[test]
 fn a_dedup_is_that_lines_and_the_repl_exits_0() {
     let printed = second_line_as_alone(
-        &["occur coffee -t 10:00"],
-        "occur coffee -t 10:00 --conflict refuse",
-        "occur tea -t 9:00",
+        &["occur coffee -y -t 10:00"],
+        "occur coffee -y -t 10:00 --conflict refuse",
+        "occur tea -y -t 9:00",
     );
     assert!(
         printed.contains("EXISTS"),
@@ -210,7 +211,7 @@ fn a_dedup_is_that_lines_and_the_repl_exits_0() {
 
 #[test]
 fn undo_after_a_failed_write_takes_back_the_write_before_it() {
-    let printed = second_line_as_alone(&["occur tea -t 9:00"], "delete nosuchhid", "undo");
+    let printed = second_line_as_alone(&["occur tea -y -t 9:00"], "delete nosuchhid", "undo");
     assert!(
         printed.contains("error:"),
         "the delete did not fail: {printed}"
@@ -222,24 +223,24 @@ fn undo_after_a_failed_write_takes_back_the_write_before_it() {
 #[test]
 fn a_write_carries_its_own_line() {
     let env = Env::new();
-    env.repl(&["occur tea -t 9:00", "tail", "occur coffee -t 10:00"]);
+    env.repl(&["occur tea -y -t 9:00", "tail", "occur coffee -y -t 10:00"]);
     let raw = |what: &str| {
         env.query(&format!(
             "SELECT {what} FROM entries e JOIN ops o USING (hid)
              WHERE e.field = 'coffee' AND o.kind = 'create'"
         ))
     };
-    assert_eq!(raw("e.raw_input"), "occur coffee -t 10:00");
+    assert_eq!(raw("e.raw_input"), "occur coffee -y -t 10:00");
     assert_eq!(
         raw("json_extract(o.body, '$.raw')"),
-        "occur coffee -t 10:00"
+        "occur coffee -y -t 10:00"
     );
 }
 
 #[test]
 fn a_bare_log_after_a_t_log_is_now() {
     let env = Env::new();
-    env.repl(&["occur tea -t 9:00", "occur coffee"]);
+    env.repl(&["occur tea -y -t 9:00", "occur coffee"]);
     let off = env.query(
         "SELECT CAST(ABS(unixepoch('now') - unixepoch(at)) AS TEXT)
          FROM entries WHERE field = 'coffee'",
@@ -266,9 +267,9 @@ fn a_sync_as_line_binds_no_later_line() {
 fn a_rekey_signs_the_next_line_with_the_new_key() {
     let env = Env::new();
     env.repl(&[
-        "occur cake -t 8:00",
+        "occur cake -y -t 8:00",
         "sync chain rekey",
-        "occur pie -t 8:00",
+        "occur pie -y -t 8:00",
     ]);
     let signer = |field: &str| {
         env.query(&format!(

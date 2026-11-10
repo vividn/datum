@@ -113,6 +113,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
         args.time.time = Some(raw.to_string());
     }
+    #[cfg(feature = "test-util")]
+    super::reading::refuse_bare_clock(&args.time)?;
     // -T/--no-timestamp: time-specifying flags are rejected so silent discard
     // can't mask a user misconception. Before the line's zone is worked out
     // below, which an `at=` key beside `-T` takes as a `-z` (da-htxn7).

@@ -310,7 +310,7 @@ fn a_failed_window_does_not_suppress_a_later_single_log() {
     let db = fresh_db();
     // A row the second side of the window below will collide with.
     dispatch_argv(
-        ["datum", "occur", "bb", "-t", "1100"]
+        ["datum", "occur", "bb", "-y", "-t", "1100"]
             .into_iter()
             .map(String::from)
             .collect(),
@@ -320,7 +320,8 @@ fn a_failed_window_does_not_suppress_a_later_single_log() {
 
     // The window fails: side 1 declares `newfield`, side 2 collides.
     let failed: Vec<String> = [
-        "datum", "occur", "newfield", "-t", "1100", ",", "occur", "bb", "-t", "1100", "cups=2",
+        "datum", "occur", "newfield", "-y", "-t", "1100", ",", "occur", "bb", "-y", "-t", "1100",
+        "cups=2",
     ]
     .into_iter()
     .map(String::from)
@@ -330,7 +331,7 @@ fn a_failed_window_does_not_suppress_a_later_single_log() {
     // Now a first log of that same field, on the single path, in the
     // SAME process. It is still the field's first log and must declare.
     dispatch_argv(
-        ["datum", "occur", "newfield", "-t", "1500"]
+        ["datum", "occur", "newfield", "-y", "-t", "1500"]
             .into_iter()
             .map(String::from)
             .collect(),

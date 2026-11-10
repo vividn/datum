@@ -60,13 +60,13 @@ fn spelled(lines: &[&[&str]], cli: bool) -> Vec<Vec<String>> {
 #[test]
 fn on_off_and_card_write_what_start_stop_and_add_do() {
     let cases: &[(&str, &[&[&str]])] = &[
-        ("work", &[&["on", "work", "-t", "9:00"]]),
-        ("run", &[&["on", "run", "25m", "-t", "12:30"]]),
+        ("work", &[&["on", "work", "-y", "-t", "9:00"]]),
+        ("run", &[&["on", "run", "25m", "-y", "-t", "12:30"]]),
         (
             "work",
             &[
-                &["on", "work", "-t", "9:00"],
-                &["off", "work", "-t", "17:00"],
+                &["on", "work", "-y", "-t", "9:00"],
+                &["off", "work", "-y", "-t", "17:00"],
             ],
         ),
         ("book", &[&["card", "book", "-K", "title", "Dune"]]),
@@ -76,7 +76,7 @@ fn on_off_and_card_write_what_start_stop_and_add_do() {
             "sleep",
             &[
                 &["alias", "set", "bed", "on sleep"],
-                &["bed", "-t", "22:00"],
+                &["bed", "-y", "-t", "22:00"],
                 &["bed", "tail"],
             ],
         ),
@@ -86,15 +86,15 @@ fn on_off_and_card_write_what_start_stop_and_add_do() {
             &[
                 &["setup", "run", "--verb", "start", "-k", "pace"],
                 &["alias", "set", "r", "on run"],
-                &["r", "5", "20m", "-t", "8:00"],
+                &["r", "5", "20m", "-y", "-t", "8:00"],
             ],
         ),
         (
             "b",
             &[
-                &["on", "b", "-t", "8:00"],
+                &["on", "b", "-y", "-t", "8:00"],
                 &["alias", "set", "m", "on a , off b"],
-                &["m", "-t", "9:00"],
+                &["m", "-y", "-t", "9:00"],
             ],
         ),
     ];

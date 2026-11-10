@@ -73,14 +73,17 @@ const OLD: &[&[(&str, &str)]] = &[
 #[test]
 fn each_command_and_its_aliases_log_the_same_entry() {
     let cases: &[(&str, &[&[&str]])] = &[
-        ("mood", &[&["change", "mood", "happy", "-t", "9:00"]]),
-        ("mood", &[&["change", "mood", "sad", "20m", "-t", "9:00"]]),
+        ("mood", &[&["change", "mood", "happy", "-y", "-t", "9:00"]]),
+        (
+            "mood",
+            &[&["change", "mood", "sad", "20m", "-y", "-t", "9:00"]],
+        ),
         // `change light off` turns it off, as `off light` does.
         (
             "light",
             &[
-                &["on", "light", "-t", "8:00"],
-                &["change", "light", "off", "-t", "9:00"],
+                &["on", "light", "-y", "-t", "8:00"],
+                &["change", "light", "off", "-y", "-t", "9:00"],
             ],
         ),
         ("book", &[&["record", "book", "dune", "title=x"]]),
@@ -89,25 +92,27 @@ fn each_command_and_its_aliases_log_the_same_entry() {
         (
             "work",
             &[
-                &["on", "work", "-t", "9:00"],
-                &["off", "work", "-t", "17:00"],
+                &["on", "work", "-y", "-t", "9:00"],
+                &["off", "work", "-y", "-t", "17:00"],
             ],
         ),
-        ("tea", &[&["moment", "tea", "-t", "9:00"]]),
+        ("tea", &[&["moment", "tea", "-y", "-t", "9:00"]]),
         // A trailing command word changes the line, as v2's did.
-        ("tea", &[&["moment", "tea", "change", "-t", "9:00"]]),
+        ("tea", &[&["moment", "tea", "change", "-y", "-t", "9:00"]]),
         // Sides, arrays and an alias's body.
         (
             "mood",
-            &[&["moment", "tea", "-t", "9:00", ",", "change", "mood", "calm"]],
+            &[&[
+                "moment", "tea", "-y", "-t", "9:00", ",", "change", "mood", "calm",
+            ]],
         ),
-        ("a", &[&["change", "a,b", "x", "-t", "9:00"]]),
+        ("a", &[&["change", "a,b", "x", "-y", "-t", "9:00"]]),
         (
             "environment",
             &[
                 &["alias", "set", "envi", "change environment"],
-                &["envi", "home", "-t", "9:00"],
-                &["envi", "x", "change", "out", "-t", "10:00"],
+                &["envi", "home", "-y", "-t", "9:00"],
+                &["envi", "x", "change", "out", "-y", "-t", "10:00"],
             ],
         ),
     ];

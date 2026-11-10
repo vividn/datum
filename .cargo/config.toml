@@ -21,3 +21,8 @@ jobs = 3
 
 [env]
 RUST_TEST_THREADS = "3"
+# A test build refuses a log at a clock today (`-t 10:00`), which is
+# ahead of now or behind it by the hour the test runs at (da-5kpsw,
+# `refuse_bare_clock` in datum-commands' `reading.rs`). A test whose
+# clock is the point sets it to 0.
+DATUM_TEST_REFUSE_BARE_CLOCK = "1"

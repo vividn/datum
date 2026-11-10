@@ -116,7 +116,7 @@ fn each_command_takes_an_array_at_one_instant_and_one_undo_takes_it_back() {
 #[test]
 fn the_rest_of_the_line_is_each_names() {
     let env = Env::new();
-    env.ok(&["moment", "a,b", "-t", "9", "x=1"]);
+    env.ok(&["moment", "a,b", "-y", "-t", "9", "x=1"]);
     let rows = env.rows();
     assert_eq!(rows[0][1], rows[1][1]);
     assert_eq!(rows[0][3], rows[1][3]);
@@ -335,7 +335,7 @@ fn another_array_on_the_line_asks_its_own_hour() {
         .command()
         .env("TZ", "Europe/Berlin")
         .env("DATUM_NO_DEFAULT_ANSWER", "1")
-        .args(["moment", "a,b", "-t", "9", ",", "moment", "c,d"])
+        .args(["moment", "a,b", "-y", "-t", "9", ",", "moment", "c,d"])
         .args(["-d", "2026-10-25", "-t", "02:30"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
