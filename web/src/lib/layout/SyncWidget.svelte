@@ -14,17 +14,27 @@
 	this install's databases know of against the page's database, the others
 	behind «other dbs ›» (da-opbpa). A database in no chain is drawn too, with
 	this device's row: there is no «Turn on sync», its chain starts as it is
-	first shared. A cell is the device's standing there as `sync grid` has it,
-	the state of its last sync before it, and a dropdown of what may be done
-	to it — a role (an invite, sealed to the device in a chain both share, or a
-	role change), expel, unjoin, wipe, each of the last three confirming in a
-	dialog that says what happens to whose data. An expelled or unjoined
-	device is not drawn at all: «completely expelled/removed devices should not
-	appear in the sync grid at all». Only the CLI's commands: the invite's
-	ticket is the sync worker's, as [Add device]'s is.
+	first shared. A cell is symbolic (da-dxng1): its last sync's mark, 🔒 for a
+	reader, ✉ for an invite waiting, and the time since that device last synced
+	that database. vividn, 2026-11-10: «I'd keep the grid more symbolic + time
+	since last sync. clicking on it shows more information, plus option to
+	change membership, etc for just that device x db combo.» Tapped, it opens
+	under the grid what is known of the pair and its acts — a role (an invite,
+	sealed to the device in a chain both share, or a role change), remove
+	(expel), unjoin, wipe, each of the last three confirming in a dialog that
+	says what happens to whose data — grayed with the reason where this device
+	may not: a reader, or a chain locked by admins nothing here can sign as.
+	An expelled or unjoined device is not drawn at all: «completely
+	expelled/removed devices should not appear in the sync grid at all». Only
+	the CLI's commands: the invite's ticket is the sync worker's, as [Add
+	device]'s is. A database's name, tapped, opens its menu: pause or resume,
+	and stop syncing, which leaves its chain once a dialog has said what
+	happens to whose data («tapping on the database name should give a menu
+	where you can pause, stop syncing (leave -- with explanation modal for
+	confirmation)»).
 
 	Bottom, every act together: [Add device], and for a database in a chain
-	pause, leave and the admins (da-bjxts). Under them, in every state, the
+	the admins (da-bjxts). Under them, in every state, the
 	passkey account (da-nf1p4): [Sign in with a passkey] and [New passkey], or
 	«Signed in» and [Sign out]. The header's `?` opens the guide to all of it
 	(da-oyvsz).
@@ -72,6 +82,8 @@
 		newInvite,
 		ownKeys,
 		unjoinWords,
+		ago,
+		barred,
 		cellActs,
 		wipeWords,
 		qr,
@@ -84,7 +96,6 @@
 		type DbSync,
 		type Grid,
 		type GridCell,
-		cellWords,
 		type Cell,
 		type Mark,
 		type Notice,
@@ -266,6 +277,53 @@
 		const me = grid.devices.find((r) => r.this) ?? { device: grid.device, endpoint: null, label: named, this: true, cells: {} };
 		const live = grid.devices.filter((r) => !r.this && (Object.values(r.cells).some((c) => c && LIVE.includes(c.state)) || Object.keys(r.grants ?? {}).length || r.sealed?.length));
 		return [me, ...live];
+	});
+
+	type Col = (typeof columns)[number];
+	const colKey = (c: Col): string => c.chain ?? c.db;
+	const rowKey = (r: GridRow): string => (r.this ? 'this' : (r.device ?? r.endpoint ?? ''));
+	/** Under the grid, a cell's details (`row`) or a database's menu, by column; tapped again, closed. */
+	let open = $state<{ col: string; row?: string } | null>(null);
+	const toggle = (o: { col: string; row?: string }) => (open = open?.col === o.col && open.row === o.row ? null : o);
+
+	/** What a cell draws (da-dxng1): a symbol for the device's standing in the column's database, and the time since it last synced it. */
+	function glance(row: GridRow, col: Col, at: number) {
+		const standing = col.chain ? row.cells[col.chain] : null;
+		// A device expelled or unjoined there is not in it: its row stays only for a chain it is still in.
+		const cell = standing && LIVE.includes(standing.state) ? standing : null;
+		const grant = col.chain ? row.grants?.[col.chain] : undefined;
+		const last = lastSync(row, col, cell);
+		const symbol = last ? SYMBOL[last.mark] : grant ? '✉' : '—';
+		const tone = last ? (last.stale ? 'stale' : last.mark) : grant?.state === 'waiting' ? 'pending' : 'none';
+		const when = last?.synced ? ago(last.synced, at) : '';
+		// What the symbols say, in words, for a screen reader: the button's name is the only text it reads.
+		const state = last?.title ?? grant?.text ?? (row.this && !col.chain && col.held ? 'only on this device' : 'not in it');
+		const said = `${state}${when ? `, last synced ${when === 'now' ? 'just now' : `${when} ago`}` : ''}`;
+		return { cell, grant, last, symbol, tone, reader: cell?.state === 'reader', when, said };
+	}
+
+	/** An act's words in a cell's details: a role is an invite to a device not in it, or a change of a member's. */
+	const ACT: Record<string, [string, string]> = {
+		member: ['Share, read and write', 'Let it write'],
+		reader: ['Share, read only', 'Make read-only'],
+		expel: ['Remove', 'Remove'],
+		unjoin: ['Unjoin', 'Unjoin'],
+		wipe: ['Wipe its copy', 'Wipe its copy']
+	};
+
+	/** The cell open, with the acts for that device × database alone and why they are grayed. */
+	const pair = $derived.by(() => {
+		const row = open?.row && devices.find((r) => rowKey(r) === open?.row);
+		const col = row && drawn.find((c) => colKey(c) === open?.col);
+		if (!row || !col) return null;
+		const g = glance(row, col, +$now);
+		const acts = row.this || !col.chain || !col.held ? [] : cellActs(g.cell?.state, !!row.device);
+		return { row, col, g, acts, why: acts.length ? barred(dbs.find((d) => d.db === col.db), $account?.key) : '' };
+	});
+	/** The database menu open: its column and its sync. */
+	const menu = $derived.by(() => {
+		const col = open && !open.row && drawn.find((c) => colKey(c) === open?.col);
+		return col ? { col, d: dbs.find((d) => d.db === col.db && d.chain) } : null;
 	});
 
 	/** A device's last sync in a column's database, as its row in `table` has it: none where it is not in it. */
@@ -535,11 +593,11 @@
 
 	const ack = (db: string, n: Notice) => doing(async () => ok(await ackNotice(db, n)));
 
-	/** Leave the chain from any chain, for a fresh start (da-j8c4l). */
+	/** Stop syncing: leave the chain from any chain, for a fresh start (da-j8c4l). */
 	const leave = (d: DbSync) =>
 		doing(async () => {
-			const words = `Leave this sync chain with ${d.db}? Every entry is kept, this device’s own and those it received. It stops syncing with the chain’s other devices; adding a device after starts a new chain.`;
-			if (!(await confirm(words, 'leave'))) return;
+			const words = `Stop syncing ${d.db} on this device? It leaves ${d.db}’s sync chain and sends and receives nothing more. This device keeps every entry, its own and those it received. The chain’s other devices keep their copies, with what this device wrote until now: nothing is deleted anywhere. Sharing ${d.db} again starts a new chain.`;
+			if (!(await confirm(words, 'stop syncing'))) return;
 			const refused = (r: RunResult) => r.code !== 0 && r.stderr.includes('no member holds');
 			// A departure leaves only once a member holds it (da-dsob1), which this page's sync
 			// delivers: each session it ends well is a reason to try again (da-2o19r).
@@ -555,8 +613,8 @@
 			} finally {
 				waiting = '';
 			}
-			const unheard = `No device of the chain could be reached to receive this device’s departure. ${d.db} stays in the chain, writing nothing, until a sync delivers it; press Leave again then. Leave now, telling no one?`;
-			if (!(await confirm(unheard, 'leave anyway'))) return;
+			const unheard = `No device of the chain could be reached to receive this device’s departure. ${d.db} stays in the chain, writing nothing, until a sync delivers it; press Stop syncing again then. Stop now, telling no one?`;
+			if (!(await confirm(unheard, 'stop anyway'))) return;
 			// A member may have come up while the question was open (da-48g3o): one sync, and the leave again, which forces only if still unheard.
 			await syncNow(d.db);
 			const again = await syncAct(d.db, leaveArgv());
@@ -741,7 +799,15 @@
 								<th></th>
 								{#each drawn as col (col.chain ?? col.db)}
 									<th data-db={col.db} class:here={here.includes(col)}
-										><span class="name">{col.db}</span>{#if here.includes(col)}<span class="kind">this db</span>{/if}</th
+										><button
+											type="button"
+											class="name"
+											use:act={'show'}
+											aria-haspopup="true"
+											aria-expanded={!!menu && menu.col === col}
+											title="pause, resume or stop syncing {col.db}"
+											onclick={() => toggle({ col: colKey(col) })}>{col.db}</button
+										>{#if here.includes(col)}<span class="kind">this db</span>{/if}</th
 									>
 								{/each}
 								{#if columns.length > here.length}
@@ -761,40 +827,25 @@
 										title={[row.this ? `${row.label}: this device` : row.label, ...(row.sealed ?? []).map((g) => g.text)].join('\n')}>{row.label}</th
 									>
 									{#each drawn as col (col.chain ?? col.db)}
-										{@const standing = col.chain ? row.cells[col.chain] : null}
-										<!-- A device expelled or unjoined there is not in it: its row stays only for a chain it is still in. -->
-										{@const cell = standing && LIVE.includes(standing.state) ? standing : null}
-										{@const grant = col.chain ? row.grants?.[col.chain] : undefined}
-										{@const last = lastSync(row, col, cell)}
-										{@const acts = row.this || !col.chain || !col.held ? [] : cellActs(cell?.state, !!row.device)}
-										{@const words = row.this && !col.chain && col.held ? 'only here' : cellWords(cell?.state, grant)}
+										{@const g = glance(row, col, +$now)}
 										<td
 											data-db={col.db}
-											data-state={cell?.state ?? 'none'}
-											data-mark={last?.mark}
-											data-grant={grant?.state}
-											data-apart={cell?.apart?.updates}
-											title={[last?.title, grant?.text, cell?.apart?.words].filter(Boolean).join('\n') || undefined}
+											data-state={g.cell?.state ?? 'none'}
+											data-mark={g.last?.mark}
+											data-grant={g.grant?.state}
+											data-apart={g.cell?.apart?.updates}
+											title={[g.last?.title, g.grant?.text, g.cell?.apart?.words].filter(Boolean).join('\n') || undefined}
 										>
-											{#if last}<span class="mark {last.stale ? 'stale' : last.mark}">{SYMBOL[last.mark]}</span>{/if}
-											{#if acts.length}
-												<select
-													aria-label="{row.label} in {col.db}"
-													disabled={busy}
-													onchange={(e) => {
-														const what = e.currentTarget.value;
-														e.currentTarget.value = '';
-														cellAct(row, col, what);
-													}}
-												>
-													<option value="" selected>{words}</option>
-													{#each acts as a (a)}<option value={a}>{a}</option>{/each}
-												</select>
-											{:else}
-												<span class="standing">{words}</span>
-											{/if}
-											<!-- One of the two must update before entries sync (da-52vdj); the words are its title. -->
-											{#if cell?.apart}<span class="apart">⚠ {cell.apart.updates === 'this' ? 'update this' : 'update it'}</span>{/if}
+											<button
+												type="button"
+												class="cell"
+												aria-label="{row.label} in {col.db}: {g.said}"
+												aria-expanded={pair?.row === row && pair.col === col}
+												onclick={() => toggle({ col: colKey(col), row: rowKey(row) })}
+												><span class="{g.last ? 'mark' : 'glyph'} {g.tone}">{g.symbol}</span>{#if g.reader}<span class="ro" title="read-only">🔒&#xFE0E;</span>{/if}{#if g.when}<span
+														class="ago">{g.when}</span
+													>{/if}{#if g.cell?.apart}<span class="apart">⚠</span>{/if}</button
+											>
 										</td>
 									{/each}
 								</tr>
@@ -802,6 +853,59 @@
 						</tbody>
 					</table>
 				</div>
+				{#if pair}
+					{@const { row, col, g } = pair}
+					<!-- What is known of that device × database, and the acts for that pair alone (da-dxng1). -->
+					<div class="card pair" data-device={rowKey(row)} data-db={col.db}>
+						<p class="head">{row.this ? `${row.label} (this device)` : row.label} × {col.db}</p>
+						<ul class="what">
+							<li class="standing">
+								{#if !col.held}not on this device
+								{:else if row.this && !col.chain}only on this device: no other device has it yet
+								{:else if g.cell}{g.cell.state === 'reader' ? 'reads it, writing nothing' : 'reads and writes it'}{#if g.last}: {g.last.title}{/if}
+								{:else}not in it{/if}
+							</li>
+							{#if g.cell}<li class="last">{g.last?.synced ? `last synced ${when(g.last.synced)}, ${g.when === 'now' ? 'just now' : `${g.when} ago`}` : 'never synced'}</li>{/if}
+							{#if g.last?.error}<li class="failure-text">{g.last.error}</li>{/if}
+							{#if g.grant}<li>{g.grant.text}</li>{/if}
+							{#if g.cell?.apart}<li>⚠ {g.cell.apart.words}</li>{/if}
+						</ul>
+						{#if pair.acts.length}
+							<div class="actions">
+								{#each pair.acts as a (a)}
+									<button
+										type="button"
+										class="command"
+										data-do={a}
+										use:act={['member', 'reader'].includes(a) ? 'run' : 'open'}
+										disabled={busy || !!pair.why}
+										title={pair.why || undefined}
+										onclick={() => cellAct(row, col, a)}>{ACT[a][g.cell ? 1 : 0]}</button
+									>
+								{/each}
+							</div>
+							{#if pair.why}<p class="quiet why">{pair.why}</p>{/if}
+						{/if}
+					</div>
+				{/if}
+				{#if menu}
+					{@const { col, d } = menu}
+					<!-- A database's menu (da-dxng1): pause or resume, and stop syncing, which asks first. -->
+					<div class="card dbmenu" data-db={col.db}>
+						<p class="head">{col.db}</p>
+						{#if !col.held}
+							<p class="quiet">Not on this device: it was shared with it, and arrives as it next syncs.</p>
+						{:else if !d}
+							<p class="quiet">Only on this device: sharing it with a device starts its sync.</p>
+						{:else}
+							<p class="quiet">{d.paused ? 'Paused: this device sends and receives nothing for it until resumed.' : 'Syncing with its chain’s other devices.'}</p>
+							<div class="actions">
+								<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => pause(d)}>{d.paused ? 'Resume sync' : 'Pause sync'}</button>
+								<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => leave(d)}>Stop syncing</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
 				{#if said}<p class="quiet said" role="status">{said}</p>{/if}
 			</section>
 		{/if}
@@ -845,10 +949,6 @@
 					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db, cur.chain ? undefined : startName(db))}
 						>Add device</button
 					>
-				{/if}
-				{#if cur.chain}
-					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
-					<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => leave(cur)}>Leave chain</button>
 				{/if}
 			</div>
 			{#if cur.chain}
@@ -1069,18 +1169,50 @@
 	.grid .here th {
 		color: var(--ink-bright);
 	}
-	.grid select {
-		background: var(--page);
-		color: var(--ink);
-		border: 1px solid var(--rule);
-		border-radius: 4px;
+	/* A cell and a database's name are buttons drawn as the text they are. */
+	.grid .cell,
+	.grid thead .name {
+		padding: 0;
 		font: inherit;
+		color: inherit;
+		background: none;
+		border: 0;
+		cursor: pointer;
+	}
+	.grid .cell {
+		min-width: 2.5rem;
+		text-align: left;
+	}
+	.grid thead .name {
+		text-decoration: underline dotted;
+	}
+	.grid .cell:focus-visible,
+	.grid thead .name:focus-visible {
+		outline: 1px solid var(--accent);
+	}
+	.grid [aria-expanded='true'] {
+		outline: 1px solid var(--accent);
 	}
 	.grid thead .here .name {
 		font-weight: bold;
 	}
-	.grid .mark {
-		margin-right: 0.3rem;
+	.grid .ago {
+		margin-left: 0.3rem;
+		color: var(--muted);
+	}
+	.grid .ro,
+	.grid .apart {
+		margin-left: 0.2rem;
+	}
+	.grid .apart {
+		color: var(--warn);
+	}
+	.pair,
+	.dbmenu {
+		margin-top: 0.5rem;
+	}
+	.failure-text {
+		color: var(--error);
 	}
 	.grid .fold {
 		padding: 0.1rem 0.3rem;

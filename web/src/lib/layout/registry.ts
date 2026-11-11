@@ -872,15 +872,15 @@ Joining merges: the joining device keeps what it had, and after the first sync b
 Every other device shows a ⚠ in the tab bar: tap it, and it says «Another device joined», names it and when, and offers to expel it should it not be yours. Sync lists it too, with **OK**. The device that joined is told the chain's members once, plainly.
 
 - One you added: press OK.
-- One you don't know: in Sync choose **expel** in its cell, so it can no longer sync. **unjoin** also takes back everything it changed. Either takes it off the grid.
+- One you don't know: in Sync tap its cell and choose **Remove**, so it can no longer sync. **Unjoin** also takes back everything it changed. Either takes it off the grid.
 
-Give this device a name you will know it by with its **✎**, which takes your username too. Under the grid are **Pause sync**, and **Leave chain**, which stops this device syncing and keeps its data.
+Give this device a name you will know it by with its **✎**, which takes your username too. Tap a database's name, at the head of its column, for **Pause sync** and **Stop syncing**, which stops this device syncing it and keeps its data.
 
 ## Reading the widget
 
 At the top, this device's name and your @username, and how this database stands: **only on this device** while no other device has it, **✓ synced**, or how many devices it has not reached yet. Its ? opens this guide.
 
-Under them, **Devices × databases**: every device syncing this database, each CLI install and browser, a row each, this one first. A cell says how its last sync went, ✓ synced, ↻ syncing, ◔ pending, ○ offline, ! error (hover it for why), gray where the device is not reachable now; its standing, a member or a reader; and a dropdown of what may be done to it. **other dbs ›** shows your other databases beside this one, and **‹ fewer** folds them again.`,
+Under them, **Devices × databases**: every device syncing this database, each CLI install and browser, a row each, this one first. A cell says how its last sync went, ✓ synced, ↻ syncing, ◔ pending, ○ offline, ! error, gray where the device is not reachable now, — where it is not in that database, 🔒 for a device that only reads, ✉ for an invite waiting; and how long ago it last synced, 2m, 3h, 4d. Tap it for its details and what may be done to that device in that database: share it, change whether it writes, or remove it. **other dbs ›** shows your other databases beside this one, and **‹ fewer** folds them again.`,
 		commands: 'sync',
 		tour: [
 			{ at: WHOLE, say: 'Sync keeps the same data on each of your devices, sent from one to another directly, encrypted end to end.' },

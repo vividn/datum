@@ -159,6 +159,11 @@ test('every control the guide names is one the widget shows, walked as a person 
 				await fold.click();
 				await until(() => fold.innerText(), (t) => t === '‹ fewer');
 				await look(widget.locator('.grid'));
+				// The other device's cell opens its acts, and the database's name its menu (da-dxng1).
+				await widget.locator('.grid tbody tr:not(.here) td[data-db="datum"] button.cell').click();
+				await look(widget.locator('.grid .pair'));
+				await widget.locator('.grid thead th[data-db="datum"] button.name').click();
+				await look(widget.locator('.grid .dbmenu'));
 
 				// The other side: a join link opened in a browser, on a database in no chain.
 				const serving = native.spawn(['sync', 'chain', 'invite']);

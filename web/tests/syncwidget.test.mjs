@@ -168,7 +168,7 @@ describe('the sync widget', () => {
 					await app.goto('/sync');
 					await rowsDrawn(page, 1);
 					assert.deepEqual(await lines(page, 'datum'), [['datum.day (datum)', undefined]]);
-					assert.equal(await page.locator(`${ROWS}.here td[data-db="datum"]`).innerText(), 'only here');
+					assert.equal(await page.locator(`${ROWS}.here td[data-db="datum"]`).innerText(), '—');
 					assert.equal(await page.locator(`${WIDGET} .grid thead th.here .name`).innerText(), 'datum');
 					// Never «synced» with no one to sync with.
 					assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), 'only on this device');
@@ -282,6 +282,74 @@ describe('the sync widget', () => {
 			assert.equal(await page.locator(`${WIDGET} .grid button.fold`).innerText(), 'other dbs ›');
 			await noneOfTheOld(page);
 		}, DESKTOP);
+	});
+
+	test('a cell is a symbol and the time since that device last synced; tapped, the pair’s details and acts, grayed where a key file locks the chain; a database’s name pauses, resumes, and asks before it stops syncing (da-dxng1)', async () => {
+		for (const viewport of [{ width: 390, height: 844 }, DESKTOP.viewport])
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					const ids = await fixture(app);
+					await onHome(app);
+					const status = async () => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'status', '--json']));
+					// The time is the CLI's last good sync: the laptop's verified a moment ago, the tablet's never.
+					const lap = (await status()).members.find((m) => m.endpoint === ids.laptop);
+					assert.ok(Date.now() - Date.parse(lap.last_synced) < 60_000, lap.last_synced);
+					assert.equal(await line(page, 'laptop').locator('.ago').innerText(), 'now');
+					// A screen reader hears what the symbols say: the button's name carries the state and the time.
+					assert.match(await line(page, 'laptop').locator('button.cell').getAttribute('aria-label'), /^laptop in home: synced\b.*, last synced just now$/);
+					assert.match(await line(page, 'tablet').locator('button.cell').getAttribute('aria-label'), new RegExp(`^tablet in home: error: ${REFUSED}`));
+					assert.equal(await line(page, 'tablet').locator('.mark').innerText(), '!');
+					assert.equal(await line(page, 'tablet').locator('.ago').count(), 0);
+					// Symbols, never words.
+					for (const label of ['laptop', 'phone', 'tablet', 'watch'])
+						assert.doesNotMatch(await line(page, label).innerText(), /member|reader|synced|pending|error|offline|never/, label);
+
+					const pair = page.locator(`${WIDGET} .grid .pair[data-db="home"]`);
+					const acts = pair.locator('button[data-do]');
+					await line(page, 'laptop').locator('button.cell').click();
+					assert.equal(await pair.locator('.head').innerText(), 'laptop × home');
+					assert.match(await pair.locator('.standing').innerText(), /^reads and writes it/);
+					assert.match(await pair.locator('.last').innerText(), /^last synced .+, just now$/);
+					assert.deepEqual(await acts.allInnerTexts(), ['Make read-only', 'Remove', 'Unjoin', 'Wipe its copy']);
+					for (const b of await acts.all()) assert.equal(await b.isDisabled(), false);
+					assert.equal(await pair.locator('.why').count(), 0);
+					// Another cell takes its place, its error verbatim; tapped again, it closes.
+					await line(page, 'tablet').locator('button.cell').click();
+					assert.equal(await pair.locator('.failure-text').innerText(), REFUSED);
+					await line(page, 'tablet').locator('button.cell').click();
+					assert.equal(await pair.count(), 0);
+
+					// A key file locks the chain: nothing here can sign as it, so every act is grayed and says why.
+					await cli(app, ['--db', 'home', 'sync', 'admin', 'add', '/data/home-admin.key', '--label', 'laptop key']);
+					await onHome(app);
+					await line(page, 'laptop').locator('button.cell').click();
+					assert.match(await pair.locator('.why').innerText(), /locked: only its admin \(laptop key\)/);
+					for (const b of await acts.all()) assert.equal(await b.isDisabled(), true);
+
+					// The database's name opens its menu in the cell's place: pause, resume, stop syncing.
+					await page.locator(`${WIDGET} .grid thead th[data-db="home"] button.name`).click();
+					assert.equal(await pair.count(), 0);
+					const menu = page.locator(`${WIDGET} .grid .dbmenu[data-db="home"]`);
+					assert.deepEqual(await menu.locator('button').allInnerTexts(), ['Pause sync', 'Stop syncing']);
+					await menu.getByRole('button', { name: 'Pause sync' }).click();
+					await menu.getByRole('button', { name: 'Resume sync' }).waitFor();
+					assert.ok((await status()).paused);
+					assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), 'paused');
+					await menu.getByRole('button', { name: 'Resume sync' }).click();
+					await menu.getByRole('button', { name: 'Pause sync' }).waitFor();
+					assert.ok(!(await status()).paused);
+					await menu.getByRole('button', { name: 'Stop syncing' }).click();
+					const dialog = page.locator('dialog.confirm');
+					const said = await dialog.innerText();
+					for (const fact of ['Stop syncing home on this device?', 'keeps every entry', 'other devices keep their copies', 'nothing is deleted'])
+						assert.ok(said.includes(fact), fact);
+					await dialog.getByRole('button', { name: 'cancel' }).click();
+					await dialog.waitFor({ state: 'detached' });
+					assert.ok((await status()).chain, 'still in its chain');
+				},
+				{ viewport }
+			);
 	});
 
 	test('a device its last session never reached is offline: its reason a hover away, and not an error', async () => {

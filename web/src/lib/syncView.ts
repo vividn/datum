@@ -302,6 +302,8 @@ export interface Cell {
 	stale: boolean;
 	/** When the state was last true, ms since the epoch. */
 	at?: number;
+	/** When a session with it last ended well (`last_synced`); this copy's, the latest of its members'. */
+	synced?: number;
 	/** What the tooltip says: the state in words, `to_send`, the error verbatim. */
 	title: string;
 	error?: string;
@@ -377,6 +379,7 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 				mark,
 				stale: false,
 				at: mark === 'error' ? ms(m.error_at) : ms(m.last_seen),
+				synced: ms(m.last_synced),
 				title: `${title}${m.reader ? ', read-only' : ''}${m.filter ? `, ${filtered(m.filter)}` : ''}`,
 				error,
 				reader: m.reader,
@@ -392,7 +395,8 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 			const mark = WORST.find((w) => marks.includes(w)) ?? 'synced';
 			const f = d.this.filter ?? undefined;
 			const title = `this copy: ${WORDS[mark]}${d.this.reader ? ', read-only' : ''}${f ? `, ${filtered(f)}` : ''}`;
-			here.cells[d.db] = { mark, stale: false, title, reader: d.this.reader, filter: f };
+			const synced = d.members.filter((m) => !m.revoked).reduce<number | undefined>((t, m) => later(t, ms(m.last_synced)), undefined);
+			here.cells[d.db] = { mark, stale: false, title, synced, reader: d.this.reader, filter: f };
 		}
 	}
 	const all = [here, ...rows.values()];
@@ -406,6 +410,14 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 			}
 		}
 	return all;
+}
+
+/** How long before `now` `at` was, in its largest whole unit: «now», «2m», «3h», «4d» (da-dxng1). */
+export function ago(at: number, now: number): string {
+	const s = Math.max(0, now - at) / 1000;
+	if (s < 60) return 'now';
+	const [n, unit] = s < 3600 ? [s / 60, 'm'] : s < 86400 ? [s / 3600, 'h'] : [s / 86400, 'd'];
+	return `${Math.floor(n)}${unit}`;
 }
 
 /** A device's standing in one chain, as `sync grid --json` has it (da-n0uj1.3). */
@@ -455,11 +467,22 @@ export interface Grid {
 	}[];
 }
 
-/** A grid cell's words, the CLI's: the standing, then any grant. */
-export const cellWords = (state: Standing | undefined, grant: GridGrant | undefined): string =>
-	[state, grant?.word].filter(Boolean).join(', ') || '—';
+/**
+ * Why this device may not change who syncs `d` (da-dxng1), empty where it may:
+ * a reader writes nothing, and a chain locked by admins is changed only by
+ * one — a passkey (`es256:`, `eddsa:`), which the act asks for, or `account`,
+ * the key this tab is signed in to. A key file (`ed25519:`) signs at a terminal.
+ */
+export function barred(d: Pick<DbSync, 'db' | 'this' | 'admins'> | undefined, account?: string): string {
+	if (!d) return '';
+	if (d.this?.reader) return `This device only reads ${d.db}: a device that writes it can change who syncs it.`;
+	const admins = d.admins ?? [];
+	if (admins.length && !admins.some((a) => !a.key.startsWith('ed25519:') || a.key === account))
+		return `${d.db}’s chain is locked: only its admin (${admins.map((a) => a.label).join(', ')}) can change who syncs it, at a terminal.`;
+	return '';
+}
 
-/** What a cell's dropdown offers a device standing so: a role (an invite, or a role change), or a destructive act. */
+/** What a cell offers a device standing so: a role (an invite, or a role change), or a destructive act. */
 export function cellActs(s: Standing | undefined, bound: boolean): string[] {
 	const live = s === 'member' || s === 'reader';
 	const roles = live || bound ? (['member', 'reader'] as const).filter((r) => r !== s) : [];

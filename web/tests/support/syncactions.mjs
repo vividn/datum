@@ -57,7 +57,18 @@ export async function addAdmin(page) {
 }
 
 /** `act` chosen in the dropdown of `label`'s grid cell in `db` (da-5wlnr: the grid is the one list of devices). */
-export const cellAct = (page, label, db, act) => page.locator(`${WIDGET} .grid select[aria-label="${label} in ${db}"]`).selectOption(act);
+export async function cellAct(page, label, db, act) {
+	const cell = page.locator(`${WIDGET} .grid button.cell[aria-label^="${label} in ${db}: "]`);
+	if ((await cell.getAttribute('aria-expanded')) !== 'true') await cell.click();
+	await page.locator(`${WIDGET} .grid .pair[data-db="${db}"] button[data-do="${act}"]`).click();
+}
+
+/** `db`'s menu, opened by its name at the head of its column (da-dxng1). */
+export async function dbMenu(page, db) {
+	const name = page.locator(`${WIDGET} .grid thead th[data-db="${db}"] button.name`);
+	if ((await name.getAttribute('aria-expanded')) !== 'true') await name.click();
+	return page.locator(`${WIDGET} .grid .dbmenu[data-db="${db}"]`);
+}
 
 /** The grid's device rows' labels. */
 export const gridLabels = (page) => page.locator(`${WIDGET} .grid tbody th`).allInnerTexts();

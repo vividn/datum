@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
-import { AT_DATUM_DAY, DESKTOP, WIDGET, addAdmin, authenticator, cli, endpointId, cellAct, gridLabels, members, openChain, runIn } from './support/syncactions.mjs';
+import { AT_DATUM_DAY, DESKTOP, WIDGET, addAdmin, authenticator, cli, endpointId, cellAct, dbMenu, gridLabels, members, openChain, runIn } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -75,7 +75,9 @@ describe('the sync widget’s actions', () => {
 					assert.equal(joined.code, 0, joined.stderr);
 					await until(async () => (await page.locator(`${WIDGET} .grid tbody tr`).count()) === 2, Boolean);
 					await offer.getByRole('button', { name: 'Done' }).click();
-					assert.deepEqual(await actions.first().locator('button').allInnerTexts(), ['Add device', 'Pause sync', 'Leave chain']);
+					// Pause and stop syncing are the database's, in the menu its name opens (da-dxng1).
+					assert.deepEqual(await actions.first().locator('button').allInnerTexts(), ['Add device']);
+					assert.deepEqual(await (await dbMenu(page, 'datum')).locator('button').allInnerTexts(), ['Pause sync', 'Stop syncing']);
 					// Open: no admin to remove, and one to add.
 					const row = page.locator(`${WIDGET} .chain[data-db="datum"]`);
 					assert.equal(await row.locator('button.admin').count(), 0);

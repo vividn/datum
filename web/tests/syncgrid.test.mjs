@@ -1,5 +1,5 @@
 // The Sync widget's grid (da-n0uj1.7): every device against every database,
-// a dropdown per cell, each act a CLI command — `sync chain invite` with the
+// a cell tapped opening that pair's details and acts (da-dxng1), each act a CLI command — `sync chain invite` with the
 // sync worker's ticket, `sync chain expel [--unjoin] [--wipe] | role` — and
 // every expel, unjoin and wipe confirmed in a dialog saying what happens to
 // whose data. A device expelled, unjoined or wiped is drawn no more (da-5wlnr).
@@ -14,7 +14,7 @@ import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
 import { countOf, nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
-import { DESKTOP, WIDGET, cli, members, openChain } from './support/syncactions.mjs';
+import { DESKTOP, WIDGET, cellAct, cli, members, openChain } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -80,10 +80,13 @@ describe('the sync widget’s grid', () => {
 					const { device } = await gridWith(app, native, 'work');
 					assert.equal(await stateOf(page, device, 'datum'), 'member');
 					assert.equal(await stateOf(page, device, 'work'), 'none');
-					// This device's cells offer nothing: it leaves under the grid.
-					assert.equal(await page.locator(`${WIDGET} .grid tr.here select`).count(), 0);
+					// This device's cells offer no act: it stops syncing from a database's menu.
+					await page.locator(`${WIDGET} .grid tr.here td[data-db="work"] button.cell`).click();
+					await page.locator(`${WIDGET} .grid .pair[data-device="this"][data-db="work"]`).waitFor();
+					assert.equal(await page.locator(`${WIDGET} .grid .pair button`).count(), 0);
 
-					await cellOf(page, device, 'work').locator('select').selectOption('member');
+					const label = await page.locator(`${WIDGET} .grid tr[data-device="${device}"] th`).innerText();
+					await cellAct(page, label, 'work', 'member');
 					const asked = page.locator('dialog.ask');
 					assert.ok((await asked.innerText()).includes('work'));
 					assert.equal(await asked.locator('input').inputValue(), 'work');
@@ -117,12 +120,11 @@ describe('the sync widget’s grid', () => {
 				async (app) => {
 					const { page } = app;
 					const { phone } = await gridWith(app, native);
-					const select = cellOf(page, phone, 'home').locator('select');
 					const dialog = page.locator('dialog.confirm');
 					// Each asks its own act, of phone's data in home.
 					const words = { expel: /^Expel\b/, unjoin: /^Unjoin\b/, wipe: /^Wipe\b/ };
 					for (const [act, said] of Object.entries(words)) {
-						await select.selectOption(act);
+						await cellAct(page, 'phone', 'home', act);
 						await dialog.waitFor();
 						const text = await dialog.innerText();
 						assert.match(text, said, act);
@@ -134,7 +136,7 @@ describe('the sync widget’s grid', () => {
 					const it = (await members(app)).members.find((m) => m.endpoint === phone);
 					assert.ok(!it.revoked, 'nothing was written');
 
-					await select.selectOption('wipe');
+					await cellAct(page, 'phone', 'home', 'wipe');
 					await dialog.locator('input').fill('phone');
 					await dialog.getByRole('button', { name: 'wipe' }).click();
 					// Asked of the device, which is expelled: drawn no more (da-5wlnr).

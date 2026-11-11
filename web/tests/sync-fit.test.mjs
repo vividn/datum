@@ -104,10 +104,11 @@ describe('the sync widget fits its screen, legibly', () => {
 				await widget.locator('.grid button.fold').waitFor();
 				const off = await fits(page, 'off', screen.name);
 				// The one act, and the account's sign-in under it (da-nf1p4): signed in first, the chain it starts is the account's.
+				// The database's name opens its menu, and this device's cell its details (da-dxng1).
 				assert.deepEqual(
 					off.buttons.map((b) => b.label),
-					['✎', '?', 'other dbs ›', 'Add device', 'Sign in with a passkey', 'New passkey'],
-					'off: the name’s ✎ (da-5wlnr), the guide (da-oyvsz), the grid’s fold, the one act, and the sign-in'
+					['✎', '?', 'datum', 'other dbs ›', '—', 'Add device', 'Sign in with a passkey', 'New passkey'],
+					'off: the name’s ✎ (da-5wlnr), the guide (da-oyvsz), the database’s name, the grid’s fold, this device’s cell, the one act, and the sign-in'
 				);
 
 				await widget.locator('header button.rename').click();
