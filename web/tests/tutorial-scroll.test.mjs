@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { settled, startSwitch, lessonTab } from './support/tutorial.mjs';
+import { leaveWidget, modifyWidget } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -206,7 +207,7 @@ for (const [screen, device] of [
 	});
 }
 
-// The three rows are the zoom's default (da-je8ju): a person's own zoom wins, held in the session as any is, and over a
+// The three rows are the zoom's default (da-je8ju): a person's own zoom, set in modify mode (da-xi4up), wins, and over a
 // reload, where the box is fitted again.
 test('a game’s collect opens at three rows, and a zoom moved by hand stands over a reload', async () => {
 	await withApp(
@@ -229,11 +230,14 @@ test('a game’s collect opens at three rows, and a zoom moved by hand stands ov
 			assert.deepEqual(await shelved(), [0, 1, 2], 'three rows with the output shut');
 			const fitted = await scale();
 			assert.ok(fitted > open, `the zoom grew with the box, ${open} to ${fitted}`);
+			// In the widget's modify mode, where alone the rows zoom (da-xi4up), kept by its ✓.
+			await modifyWidget(page, 'moment-fields');
 			const box = await page.locator(room).boundingBox();
 			await page.mouse.move(box.x + box.width * 0.75, box.y + box.height / 2);
 			await page.keyboard.down('Control');
 			await page.mouse.wheel(0, 150);
 			await page.keyboard.up('Control');
+			await leaveWidget(page, 'moment-fields', 'apply');
 			const held = await scale();
 			assert.ok(held < fitted, `the zoom ${fitted} became ${held}`);
 			assert.ok((await shelved()).length > 3, 'more, smaller rows');

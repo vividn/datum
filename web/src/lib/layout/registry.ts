@@ -121,6 +121,13 @@ export interface WidgetKind {
 	/** The settings a reload forgets: held for the visit alone (`passing`, session.ts, da-8gf5i). */
 	passing?: readonly string[];
 	/**
+	 * The kind draws controls of its own in modify mode (da-xi4up): it is
+	 * handed `modifying` and is neither inert nor dimmed by its tab, keeping
+	 * the rest of itself still, and what its `onchange` moves meanwhile is
+	 * written into the layout (`modifyWidget`, mode.ts).
+	 */
+	modifies?: true;
+	/**
 	 * How to use it (da-oefd0), in Markdown, the person's words and not the
 	 * CLI's: what it is for, then each of its features — what you tap, hold,
 	 * drag or pinch and what happens, the lines of its menu, every one of
@@ -719,7 +726,17 @@ It reads each field's entries with \`tail F --json\`.`,
 
 ## At rest
 
-The fields stand in rows. At the left edge is the last half second of today, a now strip, where what you tap is seen sweeping in at now; tap a field's band there to open that field. Then the fields that are on, inside a dotted line, then the rest, the last used first. Drag the rows sideways to see more. Pinch them, or ctrl and the wheel, to zoom: smaller fits more rows, larger fewer.
+The fields stand in rows. At the left edge is the last half second of today, a now strip, where what you tap is seen sweeping in at now; tap a field's band there to open that field. Then the fields that are on, inside a dotted line, then the rest, the last used first. Drag the rows sideways to see more.
+
+## In modify mode
+
+Hold the widget's title, or choose **Modify** in its menu, and collect shows its own controls, the fields still:
+
+- Drag the **handle** on the line between the now section and the fields to make the now section wider or narrower.
+- **⇄** puts the now section on the other side.
+- **+**, at the top of that line, adds a row of fields, and **−**, at its foot, takes one away. A pinch, or ctrl and the wheel, zooms the rows too: smaller fits more rows, larger fewer.
+
+**✓** keeps them with the layout, **↺** puts them back.
 
 With a time chosen in another widget, the buttons show how each field stood then, and a moment logged at that instant is tinted: a tap on it deletes it.
 
@@ -756,7 +773,8 @@ An open field shows its name, then its states, its time and length being the sec
 
 With an entry selected in a list (the CLI widget, the tail), it shows that entry instead: its field, state, time and data, **−A** for all of it, and **back**.
 
-Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, rows, timeOpen, fields }) => ({
+Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		props: ({ align, switchLabel, showIgnored, clicks, side, zoom, rows, nowWidth, timeOpen, fields }) => ({
+			nowWidth: typeof nowWidth === 'number' ? nowWidth : undefined,
 			only: Array.isArray(fields) ? fields.filter((f): f is string => typeof f === 'string') : [],
 			align: align === 'picture' ? 'picture' : 'rows',
 			zoom: typeof zoom === 'number' ? zoom : undefined,
@@ -767,12 +785,14 @@ Each tap runs a command: \`moment F\`, \`on F\`, \`off F\`, \`change F S\`.`,		p
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
 			showIgnored: showIgnored === true
 		}),
-		// A pinch on the rows (da-l1z6h) moves `zoom`, this session's as any
-		// setting a widget moves itself, and so kept on this device across
-		// reloads (da-ray91, da-gh1ep); not among the defaults, as the
-		// strip's day height is not, so `Reset widget` is the way back to 1,
-		// or to the zoom fitting a layout's `rows` (the tutorial's 3, da-je8ju).
-		// The time section's clock (da-iunoo) moves `timeOpen` the same way.
+		// In modify mode alone (da-xi4up, vividn, 2026-11-10: «let's move just
+		// into modify mode»), the now width's handle moves `nowWidth`, flip
+		// `side`, + and − `rows` (the zoom unset, so the rows fit, da-je8ju), and
+		// a pinch `zoom` (da-l1z6h): written into the layout (`modifies`), so ✓
+		// keeps them and ↺ takes them back. None is among the defaults, as the
+		// strip's day height is not, so `Reset widget` is the way back. The time
+		// section's clock (da-iunoo) moves `timeOpen`, this session's.
+		modifies: true,
 		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
 		demos: {
 			tap: {

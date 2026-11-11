@@ -454,8 +454,15 @@ describe('widgets in modify mode', () => {
 			await field.waitFor();
 			await enterLayoutMode(page);
 			assert.equal(await field.evaluate((el) => el.closest('[inert]') !== null), true, 'collect is not inert');
+			// Dimmed by its tab, or by itself under its own controls (da-xi4up): the opacity drawn, every box up to the tab's.
 			assert.ok(
-				Number(await field.evaluate((el) => getComputedStyle(el.closest('.tab-body')).opacity)) < 1,
+				Number(
+					await field.evaluate((el) => {
+						let seen = 1;
+						for (let at = el; at && !at.matches('.tab-body'); at = at.parentElement) seen *= Number(getComputedStyle(at).opacity);
+						return seen * Number(getComputedStyle(el.closest('.tab-body')).opacity);
+					})
+				) < 1,
 				'collect is not dimmed'
 			);
 			// The pane's own name is no widget's: it stays bright, and opens its menu.
@@ -519,9 +526,10 @@ describe('a widget’s modify mode', () => {
 			'another pane’s bar is live or bright'
 		);
 		const body = (sel) => page.locator(`${sel} > .content > .tab-body`).first();
-		assert.equal(await body('section.pane.editing').evaluate((el) => el.inert && getComputedStyle(el).opacity === '1'), true, 'its widget is live, or dimmed');
+		// Its rows still, and its own controls over them (collect's, da-xi4up).
+		assert.equal(await body('section.pane.editing').evaluate((el) => !!el.querySelector('.bar')?.closest('[inert]') && getComputedStyle(el).opacity === '1'), true, 'its widget is live, or dimmed');
 		assert.equal(await body('section.pane:not(.editing)').evaluate((el) => el.inert && Number(getComputedStyle(el).opacity) < 1), true, 'another widget is live, or bright');
-		assert.equal(await page.locator('[role="separator"]').count(), 0, 'a border outside it is a handle');
+		assert.equal(await page.locator('[role="separator"]:not([data-modify] *)').count(), 0, 'a border outside it is a handle');
 		// The ✓ has the focus, for Enter; a finger's lift gives it to the title it lifted from.
 		if (!finger) await until(() => ways(page, 'bar').last().evaluate((b) => b === document.activeElement), Boolean);
 		assert.equal(await page.locator('.prompt-bar .modify').count(), 1, 'no «modify mode» pill');
