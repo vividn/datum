@@ -1427,9 +1427,10 @@ impl SyncRole {
         }
     }
 
-    /// Whether its entry ops are allowed: a member's and a writer's.
+    /// Whether its entry ops are allowed: a member's and a writer's, so a
+    /// role added later writes only once it says so.
     pub fn writes(self) -> bool {
-        self != SyncRole::Reader
+        matches!(self, SyncRole::Member | SyncRole::Writer)
     }
 
     /// Whether it serves what other copies wrote: a member alone. A copy

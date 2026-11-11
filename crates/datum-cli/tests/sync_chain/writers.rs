@@ -153,3 +153,41 @@ fn a_writer_with_an_empty_filter_holds_only_the_chain_and_its_own_entries() {
     assert_eq!(w.query(&theirs), "0");
     assert_eq!(verify_with(&a, &w), verify_with(&w, &a));
 }
+
+/// A writer that signs a chain record itself, an invite, a revoke or a role
+/// of its own, and pipes it into a member: refused on that member's fold,
+/// open chain or locked, and the chain is as it was (da-2j7yr).
+#[test]
+fn a_writers_forged_acts_are_refused_by_a_member_open_chain_or_locked() {
+    for lock in [false, true] {
+        let (a, b) = chained();
+        let admin = a.key("admin.key");
+        if lock {
+            a.ok(&["sync", "admin", "add", &admin]);
+        }
+        let key: &[&str] = if lock { &["--admin-key", &admin] } else { &[] };
+        let w = Copy::new();
+        admit_writer(&a, &w, key);
+        let chain = || a.ok(&["sync", "chain", "list", "--json"]);
+        let before = chain();
+        for record in [
+            serde_json::json!({"type": "invite", "invite_id": "x", "secret_hash": "h",
+                "expires": "2099-01-01T00:00:00Z", "caps": {}}),
+            serde_json::json!({"type": "revoke", "endpoint": b.id()}),
+            serde_json::json!({"type": "role", "endpoint": w.id(), "role": "member"}),
+        ] {
+            let mut record = record;
+            record["chain"] = chain_of(&a).into();
+            record["created"] = "2026-09-29T00:00:00Z".into();
+            let out = a.run(&["sync", "pipe", "apply"], &forged(&w, &a, record));
+            let text = String::from_utf8_lossy(&out.stderr);
+            assert!(!out.status.success(), "{text}");
+            assert!(
+                text.contains("its writer is a writer in the sync chain"),
+                "{text}"
+            );
+        }
+        assert_eq!(chain(), before);
+        assert_eq!(member_of(&a, &w.id())["role"], "writer");
+    }
+}
