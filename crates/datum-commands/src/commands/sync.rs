@@ -1149,12 +1149,19 @@ pub(super) fn invite(
             chain.id
         );
     }
+    // Whom it admits, for the ticket datum.day makes of it (da-wm9wb).
+    let mut said = json!({"role": caps["role"].as_str().unwrap_or("member")});
+    if let Some(fields) = caps.get("fields") {
+        said["fields"] = fields.clone();
+    }
     let (secret, expires_at, id, record) = invite_record(&chain.id, expires, caps);
     if print {
-        println!(
-            "{}",
-            json!({"secret": secret, "expires": expires_at, "id": id})
+        (said["secret"], said["expires"], said["id"]) = (
+            secret.clone().into(),
+            expires_at.clone().into(),
+            id.clone().into(),
         );
+        println!("{said}");
     }
     sign(db, record, &chain, admin_key)?;
     // In a chain it was in, only once the invite is signed: a refused

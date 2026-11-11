@@ -454,12 +454,14 @@
 		const names = await databases();
 		const dbs = await Promise.all((await readSync(names)).map(async (d) => ({ db: d.db, d, alone: !!d.chain && (await canLeave(d.db)) })));
 		// Joining a database that holds entries mixes them with the chain's: a new one is chosen then (da-bedyz),
-		// as it is for one in another chain, which a database cannot leave for this one (da-48kc3).
+		// as it is for one in another chain, which a database cannot leave for this one (da-48kc3), and for a
+		// reader's invite: its copy is theirs to watch, not to mix into your own (da-wm9wb).
 		const page = dbs.find((c) => c.db === db);
 		const elsewhere = !!page?.d.chain && page.d.chain !== about?.chain && !page.alone;
-		const target = elsewhere || (await holdsEntries(db)) ? null : db;
+		const target = about?.role === 'reader' || elsewhere || (await holdsEntries(db)) ? null : db;
 		const refused = about ? undefined : 'Not a join link: it carries no ticket.';
-		if (ticket === $joining) join = { ticket, about, dbs, target, fresh: newDbName(about?.from, names), user: username(), refused };
+		const fresh = newDbName(about?.db ?? about?.from, names);
+		if (ticket === $joining) join = { ticket, about, dbs, target, fresh, user: username(), refused };
 	}
 
 	/**

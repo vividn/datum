@@ -267,9 +267,16 @@ export function joinWords(
 	else if (d?.chain && alone) words.push(`«${db}»’s own sync chain, just this browser, is replaced by this one.`);
 	// Merging two chains is to come (vividn, 2026-11-10): meanwhile the card offers a new database.
 	else if (d?.chain) return { words: [...words, `«${db}» is in another sync chain, and a database belongs to one: join with a new database instead.`], other: true };
+	if (a.role === 'reader') words.push(readOnly(a.fields));
 	if (until) words.push(`The link works once, until ${until}.`);
 	return { words };
 }
+
+/** What a reader's invite admits, in the person's words (da-wm9wb): `fields`, a filtered one's. */
+const readOnly = (fields?: string[]): string =>
+	fields?.length
+		? `Read only, of ${fields.map((f) => `«${f}»`).join(', ')}: you’ll receive what they log of those; nothing you log in it goes to them.`
+		: 'Read only: you’ll receive what they log here; nothing you log in it goes to them.';
 
 /**
  * The ticket in what Enter code was given: a bare code, a join link, or the
@@ -289,7 +296,7 @@ export function newDbRefusal(name: string, taken: string[]): string | undefined 
 	if (taken.includes(name)) return `A database «${name}» is here already: choose it from the list instead.`;
 }
 
-/** A new database's name from the inviter's label (`from`), as a name none of `taken` has (da-bedyz). */
+/** A new database's name from the inviter's database's name or label (`from`), as a name none of `taken` has (da-bedyz, da-wm9wb). */
 export function newDbName(from: string | undefined, taken: string[]): string {
 	const base =
 		(from ?? '')

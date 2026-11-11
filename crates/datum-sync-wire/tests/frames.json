@@ -80,8 +80,13 @@
       }
     ],
     "chain": "chain",
+    "db": "home",
     "expires": 1700000000,
+    "fields": [
+      "coffee"
+    ],
     "from": "laptop",
+    "role": "reader",
     "secret": "secret"
   },
   "vector": {

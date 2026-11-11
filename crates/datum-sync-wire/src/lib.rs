@@ -449,7 +449,9 @@ pub struct Ticket {
 
 /// What a ticket says of itself, for a redeemer to ask before it joins
 /// (da-l9kdr): the inviting copy, its chain, and when the invite expires
-/// (unix seconds). A ticket made before these were carried has none.
+/// (unix seconds); its database's name, and whom the invite admits, `member`
+/// or `reader`, with a filtered reader's fields (da-wm9wb). A ticket made
+/// before any of these were carried has none.
 #[derive(Serialize, Deserialize, Default)]
 pub struct About {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -458,6 +460,12 @@ pub struct About {
     pub chain: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub db: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<String>>,
 }
 
 /// Seconds since the epoch, in a browser too.
@@ -2782,6 +2790,9 @@ mod tests {
                         from: Some("laptop".into()),
                         chain: Some("chain".into()),
                         expires: Some(1_700_000_000),
+                        db: Some("home".into()),
+                        role: Some("reader".into()),
+                        fields: Some(vec!["coffee".into()]),
                     },
                 },
             ),
@@ -2883,6 +2894,47 @@ mod tests {
             assert_eq!(lacks(&again[name], was, "", true), None, "{name}");
         }
         drift(&again, &now).unwrap();
+    }
+
+    /// A ticket says its database and whom it admits, and a ticket made
+    /// before it said them decodes with neither (da-wm9wb).
+    #[test]
+    fn a_ticket_says_its_database_and_role_and_an_old_one_neither() {
+        let old = BASE32_NOPAD
+            .encode(br#"{"addrs":[],"secret":"s","from":"laptop","chain":"c","expires":1}"#);
+        let t = Ticket::decode(&format!("{JOIN}{old}")).unwrap();
+        assert_eq!(t.about.from.as_deref(), Some("laptop"));
+        assert_eq!(
+            (t.about.db, t.about.role, t.about.fields),
+            (None, None, None)
+        );
+        let about = About {
+            db: Some("home".into()),
+            role: Some("reader".into()),
+            fields: Some(vec!["coffee".into(), "tea".into()]),
+            ..Default::default()
+        };
+        let link = Ticket {
+            addrs: vec![],
+            secret: "s".into(),
+            about,
+        }
+        .link()
+        .unwrap();
+        let t = Ticket::decode(&link).unwrap();
+        assert_eq!(t.about.db.as_deref(), Some("home"));
+        assert_eq!(t.about.role.as_deref(), Some("reader"));
+        assert_eq!(t.about.fields, Some(vec!["coffee".into(), "tea".into()]));
+        // Absent, none is written: a member's ticket of before reads the same.
+        let bare = Ticket {
+            addrs: vec![],
+            secret: "s".into(),
+            about: About::default(),
+        };
+        assert_eq!(
+            serde_json::to_string(&bare).unwrap(),
+            r#"{"addrs":[],"secret":"s"}"#
+        );
     }
 
     /// Two copies that speak different ALPNs are told so in a sentence, on

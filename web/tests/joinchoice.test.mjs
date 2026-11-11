@@ -25,16 +25,16 @@ after(async () => {
 	await stopApp();
 });
 
-/** `native`'s join link, served until redeemed. */
-async function linkOf(native) {
-	const serving = native.spawn(['sync', 'chain', 'invite']);
+/** `native`'s join link, served until redeemed: `args` after `invite`, `env` its own. */
+async function linkOf(native, args = [], env = {}) {
+	const serving = native.spawn(['sync', 'chain', 'invite', ...args], env);
 	const [, link] = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 	return link;
 }
 
 /** Open `native`'s join link in `app`: the card, its choice, and its Join. */
-async function opened(app, native) {
-	const link = await linkOf(native);
+async function opened(app, native, args, env) {
+	const link = await linkOf(native, args, env);
 	await app.goto(`/sync/join#${link.split('#').pop()}`);
 	const card = app.page.locator('.card.join');
 	const into = card.getByLabel('Join with');
@@ -71,6 +71,28 @@ for (const [shape, opts] of Object.entries(SHAPES)) {
 						// The page's own database keeps its own, and nothing of the chain's.
 						assert.equal(await countIn(app, 'datum', 'mine'), 1);
 						assert.equal(await countIn(app, 'datum', 'theirs'), 0);
+					},
+					{ prepare: relayed(relay), ...opts }
+				);
+			} finally {
+				await native.close();
+			}
+		});
+
+		test('a reader’s link on an empty page names a new database after the inviter’s, says read only, and has it chosen (da-wm9wb)', async () => {
+			const native = await nativeCopy(relay);
+			try {
+				await withWallClock(
+					async (app) => {
+						// The page's own database is empty: a member's link would join it as it is.
+						const { card, into, fresh, join } = await opened(app, native, ['--reader'], { DATUM_DB: `${native.home}/friends.db` });
+						// The card read once its Join is drawn: on a phone it can follow the words by a render.
+						await join.waitFor();
+						assert.equal(await into.inputValue(), '', 'a new database is the one chosen');
+						assert.equal(await fresh.inputValue(), 'friends');
+						const what = await card.locator('.what').innerText();
+						assert.match(what, /a new database «friends»/);
+						assert.match(what, /Read only: you’ll receive what they log here; nothing you log in it goes to them\./);
 					},
 					{ prepare: relayed(relay), ...opts }
 				);

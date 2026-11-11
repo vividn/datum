@@ -44,6 +44,15 @@ test('the words follow the database chosen: a new one, one of this browser’s, 
 	assert.doesNotMatch(taken.words.join(' '), /\?db=/);
 });
 
+test('a reader’s invite says read only, a filtered one which fields; a member’s says neither (da-wm9wb)', () => {
+	const said = (more) => joinWords({ ...about, ...more }, 'home', undefined, NOW, false, true).words.join(' ');
+	assert.match(said({ role: 'reader' }), /Read only: you’ll receive what they log here; nothing you log in it goes to them\./);
+	assert.match(said({ role: 'reader', fields: ['coffee', 'tea'] }), /Read only, of «coffee», «tea»: you’ll receive what they log of those/);
+	for (const more of [{ role: 'member' }, {}]) assert.doesNotMatch(said(more), /Read only/);
+	// A new database is named after the inviter's database, where the ticket names it.
+	assert.equal(newDbName('home', ['datum']), 'home');
+});
+
 test('Enter code takes a bare code, a join link, or the CLI command carrying one (da-48kc3)', () => {
 	const code = 'endpointabc234xyz';
 	for (const typed of [code, `  ${code}\n`, `https://datum.day/sync/join#${code}`, `datum sync chain join 'https://datum.day/sync/join#${code}'`, `"${code}"`])

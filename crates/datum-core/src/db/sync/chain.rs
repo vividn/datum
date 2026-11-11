@@ -1036,6 +1036,14 @@ impl Chain {
         ))
     }
 
+    /// The role of the invite whose secret is `secret`, and a filtered
+    /// reader's fields: what its ticket says it admits (da-wm9wb).
+    pub fn invite_of(&self, secret: &str) -> Option<(Role, Option<&Filter>)> {
+        let hash = secret_hash(secret);
+        let i = self.invites.values().find(|i| i.secret_hash == hash)?;
+        Some((i.role, i.filter.as_ref()))
+    }
+
     pub fn exists(&self) -> bool {
         !self.id.is_empty()
     }

@@ -782,10 +782,19 @@ fn link(db: &Db, me: EndpointAddr, secret: &str, expires: Duration) -> Result<St
     let from = chain
         .member(&db.sync_endpoint_id()?)
         .map(|m| m.label.clone());
+    // Whom it admits, and this database's name (da-wm9wb), so a redeemer's
+    // join card can say «read only» and name a new database after this one.
+    let invite = chain.invite_of(secret);
+    let role = invite.map(|(r, _)| r.as_str().to_string());
+    let fields = invite.and_then(|(_, f)| f.map(|f| f.fields.iter().cloned().collect()));
+    let name = db.path().and_then(|p| p.file_stem());
     let about = About {
         from,
         chain: Some(chain.id),
         expires: Some(unix_now() + expires.as_secs()),
+        db: name.map(|s| s.to_string_lossy().into_owned()),
+        role,
+        fields,
     };
     let secret = secret.into();
     Ticket {
@@ -866,6 +875,7 @@ pub fn account_ticket(members: &[String], secret: &str, chain: &str) -> Result<S
             from: Some("your account".into()),
             chain: Some(chain.into()),
             expires: Some(unix_now() + 7 * 24 * 3600),
+            ..Default::default()
         },
     }
     .link()
@@ -891,6 +901,18 @@ const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 fn who_admits(t: &Ticket) -> String {
     let from = t.about.from.as_deref().unwrap_or("the inviting device");
     format!("{from} or another device in the chain")
+}
+
+/// What else a ticket says it joins (da-wm9wb): the inviting database, and
+/// as what, a member, a reader, or a reader of some fields. None for a
+/// ticket made before it said either.
+fn joins_as(t: &Ticket) -> String {
+    let db = t.about.db.as_ref().map(|d| format!(", database {d}"));
+    let role = t.about.role.as_ref().map(|r| match &t.about.fields {
+        Some(f) => format!(", as a {r} of {}", f.join(", ")),
+        None => format!(", as a {r}"),
+    });
+    db.unwrap_or_default() + &role.unwrap_or_default()
 }
 
 /// Until when a ticket's invite holds, on the reader's clock.
@@ -944,7 +966,10 @@ pub fn connect(
             ..Default::default()
         })?;
         held();
-        eprintln!("joining {from}'s sync chain: trying {who} now");
+        eprintln!(
+            "joining {from}'s sync chain{}: trying {who} now",
+            joins_as(&t)
+        );
         let ep = datum_sync_wire::bind_now(db.sync_endpoint_secret()?, &net()?).await?;
         let ep = bound(db, ep);
         let rep = telling(&told, redeem(&store, &ep, &t, true)).await;

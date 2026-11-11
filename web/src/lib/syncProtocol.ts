@@ -41,6 +41,12 @@ export interface TicketAbout {
 	chain?: string;
 	/** When the invite expires, unix seconds. */
 	expires?: number;
+	/** The inviting database's name (da-wm9wb). */
+	db?: string;
+	/** Whom the invite admits. */
+	role?: 'member' | 'reader';
+	/** A filtered reader's fields. */
+	fields?: string[];
 	/** Read, never written: whether the inviter's address names its relay, without which no other device reaches it. */
 	relay?: boolean;
 }

@@ -160,3 +160,44 @@ fn a_filtered_reader_over_the_link_gets_its_fields_and_verifies() {
     assert!(now.contains("verify ok"), "{now}");
     assert!(r.has("tea"));
 }
+
+/// A ticket says the inviting database's name and whom it admits, a filtered
+/// reader's fields too, and `join` says them as it joins (da-wm9wb): what a
+/// join card names a new database after, and how it says «read only».
+#[test]
+fn an_invites_ticket_names_its_database_and_whom_it_admits() {
+    let a = Copy::of("ann", "home.db");
+    a.ok(&["occur", "coffee"]);
+    let about = |link: &str| -> serde_json::Value {
+        let code = link.rsplit('#').next().unwrap().as_bytes();
+        serde_json::from_slice(&data_encoding::BASE32_NOPAD.decode(code).unwrap()).unwrap()
+    };
+    for (caps, role, fields, said) in [
+        (&[][..], "member", None, ", database home, as a member:"),
+        (
+            &["--reader"][..],
+            "reader",
+            None,
+            ", database home, as a reader:",
+        ),
+        (
+            &["--fields", "coffee"][..],
+            "reader",
+            Some(serde_json::json!(["coffee"])),
+            ", database home, as a reader of coffee:",
+        ),
+    ] {
+        let (mut inviting, link) = a.invite(caps);
+        let t = about(&link);
+        assert_eq!(t["db"], "home", "{t}");
+        assert_eq!(t["role"], role, "{t}");
+        assert_eq!(t.get("fields").cloned(), fields, "{t}");
+        let out = Copy::new().run(&["sync", "chain", "join", &link]);
+        let told = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success() && told.contains(said),
+            "{said} in {told}"
+        );
+        assert!(inviting.finish().0);
+    }
+}
