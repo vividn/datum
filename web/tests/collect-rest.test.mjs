@@ -501,16 +501,28 @@ describe('the now strip is the last half second', () => {
 				const atNow = (m) => (side === 'left' ? Math.abs(m.right - m.of) : Math.abs(m.left)) <= 0.5;
 				const swept = (want, slack = 3) =>
 					until(
-						async () => (await drawn(page, 'mood')).filter((m) => m.kind === 'rect' && m.pending),
-						(marks) => marks.some((m) => atNow(m) && Math.abs(m.right - m.left - want) <= slack)
+						async () => (await drawn(page, 'mood')).filter((m) => m.kind === 'rect' && m.pending && atNow(m)),
+						(marks) => marks.some((m) => want === undefined || Math.abs(m.right - m.left - want) <= slack)
 					);
 				// The files held, the change waits, and the fields are back at the tap: its sweep is drawn on their strip.
 				await holdFiles(page);
+				// The tap's sweep is as wide as the click's real age when the app read it (`gestureAt`): the page's Date
+				// is held and the age is not, 28 ms of it on a loaded runner (da-svjz3). Read on `window` before the
+				// app's handler and after it, those ages bound the sweep at the tap, and a tap stamped early fails them.
+				await page.evaluate(() => {
+					const age = (e) => performance.now() - e.timeStamp;
+					addEventListener('click', (e) => (window.__tapAge = [age(e)]), { capture: true, once: true });
+					addEventListener('click', (e) => window.__tapAge.push(age(e)), { once: true });
+				});
 				await bad.click();
 				await page.locator(`${BAR} .collect.open`).waitFor({ state: 'detached' });
-				await swept(0);
+				const [tap] = await swept();
+				const [early, late] = await page.evaluate(() => window.__tapAge);
+				const of = (await page.locator(`${STRIP} svg.now-strip`).boundingBox()).width;
+				const width = tap.right - tap.left;
+				assert.ok(late !== undefined && width >= (early * of) / 500 - 3 && width <= (late * of) / 500 + 3, `the sweep at the tap is ${width}px, for a click ${early}–${late} ms old`);
 				await app.clock.forward(250);
-				await swept((await page.locator(`${STRIP} svg.now-strip`).boundingBox()).width / 2);
+				await swept(width + of / 2);
 				await release(page);
 				await until(async () => (await app.runLine('get mood::state')).stdout.trim(), (s) => s === 'bad');
 			}, AT_REST);
