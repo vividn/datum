@@ -41,7 +41,7 @@
 	import { act } from '#lib/act.ts';
 	import { CHANGE } from './menu.js';
 	import { currentDb } from '#lib/database.ts';
-	import { calledHere, pickableIn, titleOf } from './registry.js';
+	import { blurbOf, calledHere, pickableIn, titleOf } from './registry.js';
 	import type { Choice, Offer } from './chooser.js';
 	import type { KitWidget } from './store.js';
 
@@ -105,7 +105,7 @@
 	<h3>Widgets</h3>
 	<div class="group" role="group" aria-label="Widgets">
 		{#each pickableIn(currentDb()) as kind (kind)}
-			<button type="button" class="widget" onclick={() => pick({ kind })}>{titleOf(kind)}</button>
+			<button type="button" class="widget" title={blurbOf(kind)} onclick={() => pick({ kind })}>{titleOf(kind)}</button>
 		{/each}
 		{#each widgets as { kit, name, title } (`${kit}/${name}`)}
 			<button

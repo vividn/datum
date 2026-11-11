@@ -199,7 +199,8 @@ describe('the menu the title opens', () => {
 				'settings',
 				'conflicts',
 				'setup',
-				'input'
+				'input',
+				'text'
 			]);
 			await chooser(page).locator('button', { hasText: 'nowview' }).click();
 			// The new pane is titled by its kind and draws: a second nowview

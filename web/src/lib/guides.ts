@@ -13,7 +13,7 @@ import { writable } from 'svelte/store';
 import { builtinLayout } from './layout/defaults.js';
 import { KINDS, titleOf } from './layout/registry.js';
 import { demoSrc } from './demo.js';
-import { markdown } from './markdown.js';
+import { markdown, OUTWARD } from './markdown.js';
 
 /**
  * The doc a docs widget is asked to show (da-7dflk): a widget's guide, from its
@@ -92,7 +92,6 @@ export const guideOf = (name: string): Guide | undefined =>
  */
 export const guided = (): string[] => Object.keys(KINDS).filter((kind) => !KINDS[kind].db && (!KINDS[kind].hidden || kind === 'kit'));
 
-const OUT = { link: (href: string) => `href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener"`, image: (src: string) => src };
 const PLACE = /\[([^\]]+)\]\(place:([\w-]+)\)/g;
 /** A line of a guide that is one of its kind's demos (da-2fxiz): `[what it shows](demo:<name>)`. */
 export const DEMO = /^\[([^\]]+)\]\(demo:([\w-]+)\)$/gm;
@@ -129,5 +128,5 @@ export const withDemos = (text: string, kind: string, page: string, draw: (text:
 export function guideHtml(text: string, kind = '', page = ''): string {
 	const button = (label: string, place: string) =>
 		builtinLayout(place, false) ? `<button type="button" class="command" data-place="${place}">${escape(label)}</button>` : escape(label);
-	return withDemos(text, kind, page, (text) => holding(text, [[PLACE, (_, label, place) => button(label, place)]], (text) => markdown(text, OUT)));
+	return withDemos(text, kind, page, (text) => holding(text, [[PLACE, (_, label, place) => button(label, place)]], (text) => markdown(text, OUTWARD)));
 }

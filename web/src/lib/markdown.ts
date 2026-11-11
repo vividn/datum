@@ -34,6 +34,12 @@ export const anchor = (heading: string): string =>
 		.trim()
 		.replace(/\s/g, '-');
 
+/** Targets that lead out of the page: a link opens in a new tab, an image is drawn from where it says. */
+export const OUTWARD: Targets = {
+	link: (href) => `href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener"`,
+	image: (src) => src
+};
+
 const LINKS = ['http:', 'https:', 'mailto:'];
 const IMAGES = ['http:', 'https:'];
 

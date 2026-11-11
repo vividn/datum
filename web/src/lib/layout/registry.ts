@@ -81,6 +81,7 @@ import FieldWidget from './FieldWidget.svelte';
 import KitWidget from './KitWidget.svelte';
 import SettingsWidget from './SettingsWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
+import TextWidget from './TextWidget.svelte';
 import TutorialWidget from './TutorialWidget.svelte';
 import GameWidget from './GameWidget.svelte';
 import WelcomeWidget from './WelcomeWidget.svelte';
@@ -1099,6 +1100,23 @@ Type a command and press Enter, or **➤**; ↑ and ↓ walk back through what y
 		],
 		legible: { width: 200, height: 58 }
 	},
+	// The text widget (da-12308): its `text`, markdown, drawn; written in
+	// modify mode alone, into the layout (`modifies`), so it saves, resets and
+	// syncs with it. Legible at two lines of text plus padding.
+	text: {
+		meta: meta('text', 'text', { text: '' }),
+		component: TextWidget,
+		guide: `Text of your own, written in markdown and shown formatted: headings, **bold**, *italics*, lists, links, tables and code.
+
+## Writing it
+
+Choose **Modify** in its menu: the text becomes its markdown, to edit. ✓ keeps what you wrote, ↺ takes it back, and the layout's **Save** saves it with the layout, on every device it syncs to.`,
+		props: ({ text }) => ({ text: typeof text === 'string' ? text : '' }),
+		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
+		modifies: true,
+		tour: [{ at: WHOLE, say: 'Text of your own, in markdown: Modify, in its menu, to write it.' }],
+		legible: { width: 120, height: 56 }
+	},
 	// The debug widget (da-o2wm8), offered in the DEBUG database alone: the
 	// bottom bar's TAU and DETENT as live knobs, so that the one person who
 	// can judge how the bar FEELS can move them on his own phone. Legible
@@ -1214,6 +1232,12 @@ export const pickableIn = (db: string): string[] =>
  * (shell.ts) accepts a kit layout's name there as it accepts a built-in's.
  */
 export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden && !KINDS[kind].db);
+
+/** What a kind is, in a line: its guide's first sentence, as plain text, which the chooser shows beside its name (da-12308). */
+export const blurbOf = (kind: string): string => {
+	const first = KINDS[kind]?.guide.split('\n')[0] ?? '';
+	return (first.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? first).replace(/\*\*|\*|`/g, '');
+};
 
 export const titleOf = (kind: string, settings: Record<string, unknown> = {}): string =>
 	KINDS[kind]?.title?.(settings) ?? KINDS[kind]?.meta.title ?? kind;

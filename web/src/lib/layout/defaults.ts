@@ -275,7 +275,8 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	conflicts: () => only('conflicts', 'conflicts'),
 	// A tab's command (da-339ec): typed there, a line runs as `setup <typed>`.
 	setup: () => commanding(only('setup', 'setup'), 'setup'),
-	input: () => only('input', 'input')
+	input: () => only('input', 'input'),
+	text: () => only('text', 'text')
 };
 
 /**
