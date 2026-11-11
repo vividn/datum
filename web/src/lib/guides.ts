@@ -14,6 +14,7 @@ import { builtinLayout } from './layout/defaults.js';
 import { KINDS, titleOf } from './layout/registry.js';
 import { demoSrc } from './demo.js';
 import { markdown, OUTWARD } from './markdown.js';
+import type { Action } from './actions.js';
 
 /**
  * The doc a docs widget is asked to show (da-7dflk): a widget's guide, from its
@@ -92,7 +93,6 @@ export const guideOf = (name: string): Guide | undefined =>
  */
 export const guided = (): string[] => Object.keys(KINDS).filter((kind) => !KINDS[kind].db && (!KINDS[kind].hidden || kind === 'kit'));
 
-const PLACE = /\[([^\]]+)\]\(place:([\w-]+)\)/g;
 /** A line of a guide that is one of its kind's demos (da-2fxiz): `[what it shows](demo:<name>)`. */
 export const DEMO = /^\[([^\]]+)\]\(demo:([\w-]+)\)$/gm;
 const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -121,12 +121,12 @@ export const withDemos = (text: string, kind: string, page: string, draw: (text:
 
 /**
  * A guide's Markdown as the Help place draws it (#lib/markdown.ts), the guide of `kind`.
- * A link to a place, `[Open Sync](place:sync)`, is a `button.command[data-place]`, which
- * Guide.svelte makes open it (da-7s7xc); one to a name no place has is its text. A demo
- * line is a frame playing it, from the `/demo` page at `page` (`withDemos`).
+ * A link to one of datum's actions is a button (#lib/actions.ts, da-uzl16), which
+ * Guide.svelte wires: `[Open Sync](act:place/sync)` opens it (da-7s7xc), and one to a
+ * name no place has is its text. A demo line is a frame playing it, from the `/demo`
+ * page at `page` (`withDemos`).
  */
 export function guideHtml(text: string, kind = '', page = ''): string {
-	const button = (label: string, place: string) =>
-		builtinLayout(place, false) ? `<button type="button" class="command" data-place="${place}">${escape(label)}</button>` : escape(label);
-	return withDemos(text, kind, page, (text) => holding(text, [[PLACE, (_, label, place) => button(label, place)]], (text) => markdown(text, OUTWARD)));
+	const act = (action: Action) => action.kind !== 'place' || builtinLayout(action.name, false) !== null;
+	return withDemos(text, kind, page, (text) => markdown(text, { ...OUTWARD, act }));
 }

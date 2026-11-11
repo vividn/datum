@@ -5,7 +5,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { anchor, markdown } from '../src/lib/markdown.ts';
+import { resolveLibAsSource } from './support/libhook.mjs';
+
+resolveLibAsSource();
+const { anchor, markdown } = await import('../src/lib/markdown.ts');
 
 const to = { link: (href) => `href="${href}"`, image: (src) => `/img/${src}` };
 const md = (text) => markdown(text, to);

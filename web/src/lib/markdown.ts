@@ -13,12 +13,22 @@
 // other is drawn as its text, so no doc carries a `javascript:` URL into the
 // page however it is written (da-hse1u). A heading gets GitHub's anchor, so
 // `#a-heading` lands on it.
+//
+// Where the caller's `act` says, a link to one of datum's actions
+// (#lib/actions.ts, da-uzl16) is a button, which the caller wires, and an
+// embed one of `EMBEDS` is a placeholder it mounts the component into; a run
+// the vocabulary refuses is its text and why. Without `act`, none of them is
+// a link at all, as any scheme not kept.
+
+import { actionOf, refusal, said, type Action } from './actions.js';
 
 export interface Targets {
 	/** The attributes of a link to `href`, as written in the doc: `href="…"` and whatever else. */
 	link: (href: string) => string;
 	/** The URL an image at `src` is drawn from, or null to draw a link to it, «image: example.com/…», fetching nothing. */
 	image: (src: string) => string | null;
+	/** Whether an action is drawn as one (a button, or an embed's placeholder); absent, no action is. */
+	act?: (action: Action) => boolean;
 }
 
 const escape = (text: string): string =>
@@ -42,6 +52,8 @@ export const OUTWARD: Targets = {
 
 const LINKS = ['http:', 'https:', 'mailto:'];
 const IMAGES = ['http:', 'https:'];
+/** The components a link may embed, drawn where it stands (`act:field/coffee`, da-uzl16); any other kind is an action, or no link. */
+export const EMBEDS = ['field'];
 
 /** Whether `target`, read as the browser reads it, has one of `schemes`. */
 function keeps(target: string, schemes: string[]): boolean {
@@ -63,17 +75,28 @@ function picture(alt: string, src: string, to: Targets): string {
 function inline(text: string, to: Targets): string {
 	const held: string[] = [];
 	const hold = (html: string) => `\u0000${held.push(html) - 1}\u0000`;
+	const restore = (html: string) => html.replace(/\u0000(\d+)\u0000/g, (_, i: string) => held[Number(i)]);
 	let out = escape(text).replace(/(`+)(.+?)\1/g, (_, __, code: string) => hold(`<code>${code.trim() || code}</code>`));
 	out = out
 		.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt: string, src: string) =>
 			hold(keeps(unescaped(src), IMAGES) ? picture(alt, unescaped(src), to) : alt)
 		)
-		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) =>
-			keeps(unescaped(href), LINKS) ? `<a ${to.link(unescaped(href))}>${label}</a>` : label
-		)
+		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) => {
+			const action = to.act ? actionOf(unescaped(href)) : null;
+			if (action && to.act?.(action)) return hold(acting(restore(label), action));
+			return keeps(unescaped(href), LINKS) && !action ? `<a ${to.link(unescaped(href))}>${label}</a>` : label;
+		})
 		.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 		.replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, '$1<em>$2</em>');
-	return out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => held[Number(i)]);
+	return restore(out);
+}
+
+/** An action's button, an embed's placeholder, or a refused run's text and why. */
+function acting(label: string, action: Action): string {
+	if (action.kind !== 'run' && EMBEDS.includes(action.kind)) return `<span data-embed="${action.kind}" data-name="${escape(action.name)}"></span>`;
+	const refused = refusal(action);
+	if (refused) return `<span class="refused">${label} (refused: ${escape(refused)})</span>`;
+	return `<button type="button" class="command" data-action="${escape(JSON.stringify(action))}" title="${escape(said(action))}">${label}</button>`;
 }
 
 /** A target as the doc wrote it, back from its escaped form. */

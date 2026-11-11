@@ -84,21 +84,36 @@ describe('the guides', () => {
 	});
 });
 
-// A guide links to a place by the page's own scheme (da-7s7xc): the sync
-// guide's «Open Sync». syncguide.test.mjs presses it.
+// A guide links to a place by datum's action links (da-7s7xc, da-uzl16): the
+// sync guide's «Open Sync», `act:place/sync`. syncguide.test.mjs presses it.
 describe('a place link', () => {
 	test('is a button for a place, and its text for a name no place has', () => {
-		const html = guideHtml('[Open Sync](place:sync) or [Nowhere <b>](place:nowhere)');
-		assert.match(html, /<button type="button" class="command" data-place="sync">Open Sync<\/button>/);
+		const html = guideHtml('[Open Sync](act:place/sync) or [Nowhere <b>](act:place/nowhere)');
+		assert.match(html, /<button type="button" class="command" data-action="\{&quot;kind&quot;:&quot;place&quot;,&quot;name&quot;:&quot;sync&quot;\}" title="[^"]*">Open Sync<\/button>/);
 		assert.match(html, /or Nowhere &lt;b&gt;<\/p>$/);
 		assert.equal((html.match(/<button/g) ?? []).length, 1, html);
 	});
 
 	test('in every guide names a place', () => {
-		const links = [PAGE, ...Object.keys(KINDS)].flatMap((name) => [...guideOf(name).text.matchAll(/\]\(place:([^)]*)\)/g)].map((m) => ({ name, place: m[1] })));
+		const links = [PAGE, ...Object.keys(KINDS)].flatMap((name) => [...guideOf(name).text.matchAll(/\]\(act:place\/([^)]*)\)/g)].map((m) => ({ name, place: m[1] })));
 		assert.ok(links.some((l) => l.name === 'sync' && l.place === 'sync'), 'the sync guide links to no place');
-		for (const { name, place } of links) assert.match(guideHtml(`[x](place:${place})`), /data-place=/, `${name}'s guide links to ${place}, no place`);
+		for (const { name, place } of links) assert.match(guideHtml(`[x](act:place/${place})`), /data-action=/, `${name}'s guide links to ${place}, no place`);
 	});
+});
+
+// The vocabulary is said whole (da-uzl16): the text widget's guide and the docs
+// name every action and embed with its example.
+test('the text widget guide and docs/actions.md list every action and embed', async () => {
+	const { KINDS_OF_ACTION } = await import('../src/lib/actions.ts');
+	const { EMBEDS } = await import('../src/lib/markdown.ts');
+	const kinds = Object.keys(KINDS_OF_ACTION);
+	assert.deepEqual(kinds, ['tab', 'place', 'run', 'field']);
+	for (const embed of EMBEDS) assert.ok(kinds.includes(embed), `the embed ${embed} is not in the vocabulary`);
+	const docs = read('docs/actions.md');
+	for (const { example } of Object.values(KINDS_OF_ACTION)) {
+		assert.ok(guideOf('text').text.includes(example), `the guide lacks ${example}`);
+		assert.ok(docs.includes(example), `docs/actions.md lacks ${example}`);
+	}
 });
 
 describe('the user docs', () => {

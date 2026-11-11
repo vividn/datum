@@ -9,19 +9,20 @@
 	down, for the commands. A kind naming `commands` folds that CLI page at the
 	end, closed, for a terminal (the sync guide's, da-oyvsz).
 
-	A link to a place is a button (`guideHtml`), which a press opens
-	(`openPlace`, da-7s7xc), and a demo line a frame playing it (da-2fxiz).
+	A link to an action is a button (`guideHtml`), which a press does
+	(#lib/wireActions.ts: a place opens, da-7s7xc), and a demo line a frame
+	playing it (da-2fxiz).
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { act } from '#lib/act.ts';
-	import { openPlace } from './shell.js';
 	import { ansiSpans } from '#lib/ansi.ts';
 	import AnsiText from '#lib/AnsiText.svelte';
 	import { helpArgv } from '#lib/calls.ts';
 	import { PAGE, guideHtml, guideOf } from '#lib/guides.ts';
 	import { explainCommand } from '#lib/help.ts';
 	import { run } from '#lib/run.ts';
+	import { wireActions } from '#lib/wireActions.ts';
 
 	let { name }: { name: string } = $props();
 
@@ -29,15 +30,6 @@
 	const blocks = $derived((guide?.text ?? '').split(/\n\s*\n/));
 	const lead = $derived(guideHtml(blocks[0] ?? '', name, resolve('/demo')));
 	const rest = $derived(guideHtml(blocks.slice(1).join('\n\n'), name, resolve('/demo')));
-
-	let body: HTMLElement;
-	$effect(() => {
-		void [lead, rest];
-		for (const button of body.querySelectorAll<HTMLButtonElement>('button[data-place]')) {
-			act(button, 'open');
-			button.onclick = () => void openPlace(button.dataset.place!);
-		}
-	});
 
 	let reference = $state('');
 	$effect(() => {
@@ -47,7 +39,7 @@
 	});
 </script>
 
-<div class="guide" data-guide={name} bind:this={body}>
+<div class="guide" data-guide={name} use:wireActions={lead + rest}>
 	{@html lead}
 	{#if name === PAGE}
 		<p class="commands">

@@ -27,6 +27,10 @@ export const LOG_COMMANDS: LogCommand[] = ['moment', 'on', 'off', 'change', 'rec
 /** Each one's old words, which the CLI still runs as aliases: typed, they pend the same command. */
 const ALIASES: Record<string, LogCommand> = { occur: 'moment', start: 'on', end: 'off', stop: 'off', switch: 'change', add: 'record', card: 'record' };
 
+/** Whether `word` is a command that only logs: the six, `remark` (once `note`), or an old word of one (da-uzl16). */
+export const logs = (word: string): boolean =>
+	(LOG_COMMANDS as string[]).includes(word) || Object.hasOwn(ALIASES, word) || word === 'remark' || word === 'note';
+
 /** What a press on a command button does. */
 export type Press =
 	/** Run it, now, with no argument: `undo` (and its redo icon). */

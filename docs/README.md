@@ -8,6 +8,7 @@ For using datum:
 - [grammar-tokens.md](grammar-tokens.md): the grammar's punctuation, every example a real run.
 - [aliases.md](aliases.md): aliases, from a shortcut to several entries at once.
 - [sync.md](sync.md): syncing copies of a database, peer to peer.
+- [actions.md](actions.md): datum.day's action links: a button that goes to a tab, opens a place or logs a line, and a field's button in a text widget.
 - [configuration.md](configuration.md): flags, environment variables and `datumrc.toml`.
 - [install.md](install.md): installing and upgrading the CLI.
 - [agents.md](agents.md): datum for AI agents, their own record and their person's.

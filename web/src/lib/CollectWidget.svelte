@@ -143,6 +143,7 @@
 <script lang="ts">
 	import { flushSync, onDestroy, onMount, untrack } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
+	import FieldChip from './FieldChip.svelte';
 	import CollectDrawer from './CollectDrawer.svelte';
 	import CollectWhen, { GLIDE_MS, MOMENT_ID, setMoment } from './CollectWhen.svelte';
 	import { CLICK_SLOP } from './inspect.js';
@@ -1346,41 +1347,16 @@
 
 <!-- One field's button, wherever it stands: in the cluster, or aligned to the picture. -->
 {#snippet fieldButton(button: FieldButton)}
-	{@const look = lookOf(button, switchLabel)}
-	{#if button.shape.kind === 'record'}
-		<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
-		     HOLD is every field's (da-8810n) — a record is a field like
-		     any other, and only what a press MEANS is its own. -->
-		<button
-			class="record"
-			use:act={pressKind(button, pending, oneTap)}
-			class:ignored={button.ignored}
-			class:pilled={$fieldPill === button.field}
-			role="link"
-			data-field={button.field}
-			data-ignored={button.ignored ? '' : undefined}
-			data-pilled={$fieldPill === button.field ? '' : undefined}
-			style={vars(look) + tallOf(button)}
-			{disabled}
-			title={titleOf(button)}
-			onclick={() => press(button)}>{button.field}</button
-		>
-	{:else}
-		<button
-			class="widget {button.shape.kind.replace('/', '')}"
-			use:act={pressKind(button, pending, oneTap)}
-			class:on={look.fill !== null}
-			class:ignored={button.ignored}
-			class:pilled={$fieldPill === button.field}
-			style={vars(look) + tallOf(button)}
-			{disabled}
-			data-field={button.field}
-			data-ignored={button.ignored ? '' : undefined}
-			data-pilled={$fieldPill === button.field ? '' : undefined}
-			title={titleOf(button)}
-			onclick={() => press(button)}
-		>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'change' ? ':' : ''}</button>
-	{/if}
+	<FieldChip
+		{button}
+		look={lookOf(button, switchLabel)}
+		kind={pressKind(button, pending, oneTap)}
+		pilled={$fieldPill === button.field}
+		{disabled}
+		title={titleOf(button)}
+		style={tallOf(button)}
+		onclick={() => press(button)}
+	/>
 {/snippet}
 
 <!-- The now strip (da-lw7ue), the widget's height (da-u7tij): ONE for the fields at rest, a field's view and the
@@ -1828,8 +1804,7 @@
 	/* Never wider than the pane (da-hygvc): a longer name is cut, and the
 	   rest of it is not left under the pane beside, which a tap there
 	   reaches instead. */
-	.widget,
-	.record {
+	.widget {
 		max-width: 100cqw;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -1837,7 +1812,6 @@
 	}
 
 	.widget,
-	.record,
 	.nav {
 		/* A held press must not also select the label or raise the platform's
 		   text callout, on touch least of all. */
@@ -1861,50 +1835,8 @@
 		font-size: 0.85rem;
 	}
 
-	.widget.moment {
-		border-radius: 999px;
-	}
-
-	/* A point's mark (da-h2io6): what an occur of it draws, in its colour. */
-	.glyph {
-		margin-right: 0.35em;
-		color: var(--line);
-	}
-
 	.widget:hover:not(:disabled) {
 		filter: brightness(1.2);
-	}
-
-	/* The field whose PILL is on the bar (da-8810n): a ring in the app's
-	   ink, so a reader can see where the pill came from. In the ink rather
-	   than in the field's colour, because the button is already drawn in
-	   that and a ring of it would read as part of the shape. */
-	.widget.pilled,
-	.record.pilled {
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink-bright) 55%, transparent);
-	}
-
-	/* A record has no box of its own, so its ring needs one to sit on. */
-	.record.pilled {
-		border-radius: 3px;
-	}
-
-	/* An IGNORED field, drawn because `showIgnored` asked for it (da-xhio).
-	   It keeps its colour and its shape — it is still that field — and is
-	   faded and dashed, which is how the widget already says «not kept»
-	   (`.track-this`). A tracked field is never either, so the two cannot
-	   be read for one another. */
-	.widget.ignored,
-	.record.ignored {
-		opacity: 0.45;
-	}
-
-	.widget.ignored {
-		border-style: dashed;
-	}
-
-	.record.ignored {
-		text-decoration-style: dashed;
 	}
 
 	/* A button a tap RUNS (`pressKind`, da-z8z40) is drawn in a DOUBLE
@@ -1915,37 +1847,13 @@
 	   button FILLED in its own line's colour would paint the two lines and
 	   the gap as one edge. Clipped, the gap shows the bar behind it, as it
 	   does on a button that is not filled. */
-	.widget:global([data-act='run']):not(.ignored) {
+	.widget:global([data-act='run']) {
 		border: 3px double var(--line);
 		background-clip: padding-box;
 		padding: calc(0.35rem - 1.5px) calc(0.85rem - 1.5px);
 	}
 
-	.record:global([data-act='run']):not(.ignored) {
-		border: 3px double var(--line);
-		border-radius: 3px;
-		padding: calc(0.35rem - 3px) calc(0.3rem - 3px);
-	}
-
-	/* An IGNORED field that runs keeps its dashes, which are what tell it
-	   from a tracked one (da-xhio), and draws them DOUBLE (da-nmna0): CSS
-	   has no double-dashed border, so the second line is a dashed outline
-	   a border's gap inside the dashed border, following its radius. It
-	   gives way to the focus ring, which is an outline too. */
-	.widget.ignored:global([data-act='run']):not(:focus-visible),
-	.record.ignored:global([data-act='run']):not(:focus-visible) {
-		outline: 1.5px dashed var(--line);
-		outline-offset: -4.5px;
-	}
-
-	.record.ignored:global([data-act='run']) {
-		border: 1.5px dashed var(--line);
-		border-radius: 3px;
-		padding: calc(0.35rem - 1.5px) calc(0.3rem - 1.5px);
-	}
-
 	.widget:disabled,
-	.record:disabled,
 	.nav:disabled {
 		opacity: 0.4;
 		cursor: default;
@@ -2196,8 +2104,9 @@
 	}
 
 	/* The rows' zoom (da-l1z6h): the button and all in it, so its slot,
-	   which `atRest` counts the rows from, is measured at the zoom. */
-	.spot.shelf > button {
+	   which `atRest` counts the rows from, is measured at the zoom. The
+	   button is FieldChip.svelte's, so the rule reaches it as :global. */
+	.spot.shelf > :global(button) {
 		zoom: var(--zoom);
 	}
 
@@ -2285,8 +2194,7 @@
 	}
 
 	/* The state the field is in now: bold. Every state is filled (`stateLook`). */
-	.states.on,
-	.widget.change.on {
+	.states.on {
 		font-weight: 700;
 	}
 
@@ -2332,16 +2240,6 @@
 		bottom: -2em;
 		background: var(--next);
 		transform: skewX(-45deg);
-	}
-
-	.record {
-		background: none;
-		border: none;
-		padding: 0.35rem 0.3rem;
-		color: var(--ink);
-		font-size: 0.85rem;
-		text-decoration: underline 2px var(--line);
-		text-underline-offset: 0.3em;
 	}
 
 	.untracked {

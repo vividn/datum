@@ -12,10 +12,15 @@
 	its pictures are published in (deploy.yml); any other is a link to it, so a
 	layout synced to someone else carries no image from a host that learns of
 	each view (da-ipk3v).
+
+	A link to one of datum's actions (#lib/actions.ts, da-uzl16) is a button
+	that does it, the reader's tap its yes, and `act:field/<name>` that
+	field's collect button itself (#lib/wireActions.ts).
 -->
 <script lang="ts">
 	import Pane from '#lib/Pane.svelte';
 	import { markdown, OUTWARD, type Targets } from '#lib/markdown.ts';
+	import { wireActions } from '#lib/wireActions.ts';
 
 	interface Props {
 		text?: string;
@@ -25,7 +30,7 @@
 
 	let { text = '', modifying = false, onchange }: Props = $props();
 
-	const TARGETS: Targets = { ...OUTWARD, image: (src) => (new URL(src, location.href).origin === location.origin ? src : null) };
+	const TARGETS: Targets = { ...OUTWARD, image: (src) => (new URL(src, location.href).origin === location.origin ? src : null), act: () => true };
 
 	const html = $derived(markdown(text, TARGETS));
 </script>
@@ -39,7 +44,7 @@
 			oninput={(e) => onchange?.({ text: e.currentTarget.value })}
 		></textarea>
 	{:else if text.trim()}
-		<div class="text">{@html html}</div>
+		<div class="text" use:wireActions={html}>{@html html}</div>
 	{:else}
 		<p class="quiet">A text widget: Modify, in its menu, to write its markdown.</p>
 	{/if}
@@ -84,6 +89,10 @@
 	.text :global(code) {
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.9em;
+	}
+	.text :global(.refused) {
+		color: var(--quiet);
+		font-style: italic;
 	}
 	.text :global(img) {
 		max-inline-size: 100%;

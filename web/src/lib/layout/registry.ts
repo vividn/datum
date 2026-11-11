@@ -72,6 +72,7 @@ import DayviewWidget from './DayviewWidget.svelte';
 import CollectPane from './CollectPane.svelte';
 import DocsWidget from './DocsWidget.svelte';
 import { COLLECT_FIELDS_OFFER } from '#lib/fields.ts';
+import { KINDS_OF_ACTION } from '#lib/actions.ts';
 import HelpWidget from './HelpWidget.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
@@ -868,7 +869,7 @@ It lists them and changes nothing. Type \`alias set <word> "<command>"\` in the 
 
 ## Where it is
 
-The gear at the top of the page, then **Sync**; or type \`sync\` in the bar. [Open Sync](place:sync)
+The gear at the top of the page, then **Sync**; or type \`sync\` in the bar. [Open Sync](act:place/sync)
 
 ## Connect a second device
 
@@ -1112,7 +1113,17 @@ Type a command and press Enter, or **➤**; ↑ and ↓ walk back through what y
 
 ## Writing it
 
-Choose **Modify** in its menu: the text becomes its markdown, to edit. ✓ keeps what you wrote, ↺ takes it back, and the layout's **Save** saves it with the layout, on every device it syncs to.`,
+Choose **Modify** in its menu: the text becomes its markdown, to edit. ✓ keeps what you wrote, ↺ takes it back, and the layout's **Save** saves it with the layout, on every device it syncs to.
+
+## Buttons and fields
+
+A link to one of datum's actions is a button that does it when you tap it, labelled with the link's words; its title says what it does. These are all of them, a space in a line written \`+\`:
+
+${Object.entries(KINDS_OF_ACTION)
+	.map(([kind, { does, example }]) => `- **${kind}** ${does}: \`${example}\``)
+	.join('\n')}
+
+A run takes the logging commands alone; any other line, \`delete\` or \`db\` among them, is drawn as its words and why it is refused. Each is a link of datum.day too, \`https://datum.day/act/run?line=moment+coffee\`: opened from anywhere else, it says what it would do, and does it only once you tap.`,
 		props: ({ text }) => ({ text: typeof text === 'string' ? text : '' }),
 		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
 		modifies: true,
