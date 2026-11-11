@@ -74,6 +74,8 @@ async function act(page, how, { x, y }) {
 		return page.keyboard.type('tail');
 	}
 	await page.mouse.down();
+	// The hold itself, not a wait for the page: past HOLD_MS (#lib/hold.ts, 450 ms),
+	// the press a hold stop's timer (#lib/tour.ts) must outlast before the lift clears it.
 	if (how === 'hold') await page.waitForTimeout(600);
 	else await page.mouse.move(x + 60, y, { steps: 6 });
 	await page.mouse.up();
