@@ -11,6 +11,12 @@
 import type { FieldSpec } from './types.js';
 import type { StateUse } from './calls.js';
 
+/** The statuses that hide a field, datum-core's `is_hidden_state`: IGNORED, and FINISHED, which no `track` reopens (da-5n7zh). */
+export const isHiddenState = (state: unknown): boolean => state === 'IGNORED' || state === 'FINISHED';
+
+/** The three statuses, datum-core's `is_status_state`: a field's standing, never a state it is switched to. */
+export const isStatusState = (state: unknown): boolean => state === 'TRACKED' || isHiddenState(state);
+
 /**
  * What a press on a button means: the field's KIND (the glossary's word,
  * AGENTS.md), derived from its spec.
@@ -36,8 +42,11 @@ export interface FieldButton {
 	 * `datum fields --json`'s `ignored` — the field's latest track/ignore
 	 * status, defined once in datum-core (da-d08c). The bar draws a button
 	 * for every field that is not; the setup widget offers the ignored ones back.
+	 * A FINISHED field is ignored too, and `finished`.
 	 */
 	ignored: boolean;
+	/** `datum fields --json`'s `finished`: its status is FINISHED, which `track` does not undo, so nothing offers it back (da-5n7zh). */
+	finished: boolean;
 	/**
 	 * The field's RESOLVED colour (`#rrggbb`) — `datum fields --json`'s
 	 * `color`, computed the same way the CLI paints it: a spec override, else
@@ -195,8 +204,10 @@ export interface FieldListing {
 	color: string;
 	/** Every listed state's resolved colour (`#rrggbb`), keyed by state name. */
 	state_colors: Record<string, string>;
-	/** The latest track/ignore status is IGNORED (da-d08c). */
+	/** The latest status hides the field: IGNORED or FINISHED (da-d08c). */
 	ignored: boolean;
+	/** The latest status is FINISHED (da-5n7zh). */
+	finished: boolean;
 	/** Where the field's band sits in the dayview and nowview, 0 at the top (da-vu7pi). */
 	y: number;
 	/** How tall the band is, as a share of the pictures' data area. */
@@ -234,11 +245,12 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 	const now = new Map(active.map((a) => [a.field, a.state]));
 	return [...listing]
 		.sort((a, b) => a.y - b.y)
-		.map(({ field, spec, states, color, state_colors, ignored, y, height, never_false, own }) => {
+		.map(({ field, spec, states, color, state_colors, ignored, finished, y, height, never_false, own }) => {
 			return {
 				field,
 				shape: kindFor(spec ?? undefined, states),
 				ignored,
+				finished: !!finished,
 				color,
 				stateColors: state_colors,
 				glyph: spec?.symbol ?? undefined,

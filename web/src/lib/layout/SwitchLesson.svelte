@@ -25,7 +25,8 @@
 <script lang="ts">
 	import { tailArgv } from '#lib/calls.ts';
 	import { run } from '#lib/run.ts';
-	import { isStatus, percent, type Outcome } from '#lib/tutorial.ts';
+	import { isStatusState } from '#lib/fields.ts';
+	import { percent, type Outcome } from '#lib/tutorial.ts';
 	import { FIELD, PLAN, ROOMS, ROUND_MS, WALLS, accuracy, dotAt, round, scene, stateAt, type Change, type Tap } from '#lib/house.ts';
 	import GameBox from './GameBox.svelte';
 	import { get } from 'svelte/store';
@@ -72,7 +73,7 @@
 		await shared.settled();
 		next = fresh();
 		const listed = await run(tailArgv({ field: FIELD, count: 200 }));
-		const rows: { time: string | null; state: unknown }[] = listed.code === 0 ? JSON.parse(listed.stdout).rows.filter((row: { state: unknown }) => !isStatus(row.state)) : [];
+		const rows: { time: string | null; state: unknown }[] = listed.code === 0 ? JSON.parse(listed.stdout).rows.filter((row: { state: unknown }) => !isStatusState(row.state)) : [];
 		const taps: Tap[] = rows
 			.map(({ time, state }) => ({ state: String(state), at: time ? Date.parse(time) - start : NaN }))
 			.filter((tap) => tap.at <= elapsed)

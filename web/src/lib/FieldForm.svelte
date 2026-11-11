@@ -34,7 +34,9 @@
 	«rename» on a spec (`pick` slot). Under it the status line: NOT SET UP
 	until a new field is saved, TRACKED with its current state where it has
 	one and «stop tracking» (`ignore F`, at once), IGNORED with «start
-	tracking» (`track F`), each handed up as `run` and leaving the form open.
+	tracking» (`track F`), each handed up as `run` and leaving the form open,
+	and FINISHED with neither: a finish ends the field for good, and reopening
+	it is updating its FINISH entry, a deliberate act (da-5n7zh).
 
 	Every field, a new one too, has the three tabs — basics · data · aliases —
 	none of them required (da-i9upr), but a record's data is on basics, so it
@@ -378,6 +380,7 @@
 	$effect.pre(() => void (empty = blank));
 	const here = $derived(fields.find((f) => f.field === field));
 	const off = $derived(!!here?.ignored);
+	const finished = $derived(!!here?.finished);
 	/** The modal open, and the name typed in it. */
 	let asking = $state(false);
 	let typed = $state('');
@@ -503,12 +506,12 @@
 						>{/if}
 				</p>
 			{/if}
-			<p class="row status" data-status={!spec ? 'new' : off ? 'ignored' : 'tracked'}>
-				<span class="word">{!spec ? 'NOT SET UP' : off ? 'IGNORED' : 'TRACKED'}</span>
+			<p class="row status" data-status={!spec ? 'new' : finished ? 'finished' : off ? 'ignored' : 'tracked'}>
+				<span class="word">{!spec ? 'NOT SET UP' : finished ? 'FINISHED' : off ? 'IGNORED' : 'TRACKED'}</span>
 				{#if spec && !off && (verb === 'switch' || verb === 'start')}
 					<span class="now">current state: <b>{here?.current === true ? 'on' : (here?.current ?? 'off')}</b></span>
 				{/if}
-				{#if spec}
+				{#if spec && !finished}
 					<button
 						type="button"
 						use:act={'run'}

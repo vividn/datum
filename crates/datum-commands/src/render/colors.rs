@@ -11,14 +11,12 @@
 //!   `38;2;R;G;B` for fg).
 
 use datum_core::field_spec::FieldSpec;
-use datum_core::shape::is_off_state;
+use datum_core::shape::{is_hidden_state, is_off_state};
 use serde_json::Value as JsonValue;
 use std::cell::Cell;
 use std::io::IsTerminal;
 use std::marker::PhantomData;
 use unicode_width::UnicodeWidthChar;
-
-use super::characters::IGNORED_STATE;
 
 // ─── ANSI primitives ─────────────────────────────────────────────────────────
 
@@ -217,7 +215,7 @@ pub(crate) fn state_value_rgb(
         JsonValue::Null => Some(Rgb::GREY),
         JsonValue::Bool(true) => Some(field_rgb(field, spec)),
         v if is_off_state(v) => None,
-        JsonValue::String(s) if s == IGNORED_STATE => Some(Rgb::GREY),
+        v if is_hidden_state(v) => Some(Rgb::GREY),
         JsonValue::String(s) => Some(state_rgb(s, spec)),
         JsonValue::Array(items) => {
             // Array → first element recursive; §5.

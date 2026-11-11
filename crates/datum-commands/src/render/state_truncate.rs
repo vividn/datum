@@ -15,7 +15,7 @@
 use datum_core::{
     entry::Entry,
     field_spec::FieldSpec,
-    shape::{has_state_badge, TRACKED_STATE_VALUE},
+    shape::{has_state_badge, is_hidden_state, TRACKED_STATE_VALUE},
 };
 use serde_json::Value as JsonValue;
 
@@ -23,7 +23,7 @@ use super::action::{
     format_lead_cell, render_lead_slot, render_occur_dot, render_slot, RenderContext,
     StateTransition,
 };
-use super::characters::{IGNORED_STATE, NON_OCCUR, NULL_STATE, SLOT};
+use super::characters::{NON_OCCUR, NULL_STATE, SLOT};
 use super::colors::{
     field_rgb, paint, paint_bg, paint_bg_fg, state_rgb, state_value_rgb, structured_state_rgb,
     visible_width, Rgb, GREY_FG,
@@ -124,7 +124,7 @@ fn truncate_state_body(
             Rgb::DARK_GREY,
             &right_truncate(NULL_STATE, budget),
         ),
-        Some(JsonValue::String(s)) if s == IGNORED_STATE => {
+        Some(v @ JsonValue::String(s)) if is_hidden_state(v) => {
             paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, &right_truncate(s, budget))
         }
         Some(JsonValue::String(s)) if s == TRACKED_STATE_VALUE => {
@@ -280,7 +280,7 @@ fn paint_chip(item: &JsonValue, body: &str, field: &str, spec: Option<&FieldSpec
         JsonValue::Bool(true) => paint_bg(field_rgb(field, spec), body),
         JsonValue::Bool(false) => body.to_string(),
         JsonValue::Null => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, body),
-        JsonValue::String(s) if s == IGNORED_STATE => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, body),
+        v if is_hidden_state(v) => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, body),
         JsonValue::String(_) => paint_bg(
             state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY),
             body,

@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use anyhow::Result;
 use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::Db;
-use datum_core::shape::{is_hidden_state, is_status_state};
+use datum_core::shape::{is_finished_state, is_hidden_state, is_status_state};
 use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
 use serde_json::{json, Value as JsonValue};
 
@@ -125,16 +125,18 @@ pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
     format_grid(&headers, &give[..headers.len()], &rows)
 }
 
-/// `[{"field", "spec", "states", "color", "state_colors", "ignored", "y",
-/// "height"}]`, alphabetical by
+/// `[{"field", "spec", "states", "color", "state_colors", "ignored",
+/// "finished", "y", "height"}]`, alphabetical by
 /// field. `color` and `state_colors` are the RESOLVED colours (spec override
 /// → md5 fallback, ANSI-256 legacy numbers included) that
 /// `crates/datum-commands/src/render/colors.rs` paints the CLI with — so a
 /// caller like the web widget bar never has to re-derive them (da-yiyj).
 /// `state_colors` covers every state the field has been logged with plus
 /// every `allowed_states` entry, since a not-yet-logged allowed state still
-/// gets a button. `ignored` is the field's latest track/ignore status
-/// ([`is_ignored_state`], da-d08c) — whether a spec exists has no say in it.
+/// gets a button. `ignored` is the field's latest status hiding it
+/// ([`is_hidden_state`]: IGNORED or FINISHED, da-d08c) — whether a spec
+/// exists has no say in it — and `finished` whether that status is FINISHED
+/// ([`is_finished_state`], da-5n7zh), which no `track` reopens.
 /// `y` and `height` are where the field's band sits across the dayview and
 /// nowview, 0 at the top and `y` its top edge — resolved as they resolve it
 /// (the anchor's place scaled by the ratios for a `relative_to` field,
@@ -208,6 +210,7 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
             .iter()
             .map(|(field, states)| {
                 let ignored = latest.get(field).is_some_and(is_hidden_state);
+                let finished = latest.get(field).is_some_and(is_finished_state);
                 let spec = specs.get(field);
                 let color = field_hex(field, spec);
                 let mut state_names = BTreeSet::new();
@@ -235,6 +238,7 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
                     "color": color,
                     "state_colors": state_colors,
                     "ignored": ignored,
+                    "finished": finished,
                     "y": positions[field].y,
                     "height": positions[field].height,
                 });

@@ -132,9 +132,6 @@ export async function keep(fields: string[], tracked: boolean, at: number): Prom
 	await must(tracked ? trackArgv(fields) : ignoreArgv(fields), undefined, [`${FROZEN_AT}${at}`], loudly);
 }
 
-/** A row's state that is its field's TRACKED or IGNORED, which `keep` writes: no reading, so no game scores it. */
-export const isStatus = (state: unknown): boolean => state === 'TRACKED' || state === 'IGNORED';
-
 /**
  * Into the tutorial: a load, as the database switcher's is (Brand.svelte),
  * on the page's root.

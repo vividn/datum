@@ -22,6 +22,17 @@ fn finish_hid(db: &Db, field: &str) -> String {
     row.hid.to_string()
 }
 
+/// `fields --json`'s row for `field`.
+fn listing_of(db: &Db, field: &str) -> serde_json::Value {
+    let listing = compute_fields(db).unwrap();
+    let row = listing
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["field"] == field);
+    row.expect("a row").clone()
+}
+
 fn finished_db() -> Db {
     let db = fresh_db();
     run_cli(&["moment", "exp", "-yy", "-t", "10:00"], &db).unwrap();
@@ -72,14 +83,21 @@ fn the_finish_edited_to_off_takes_entries_again() {
 fn a_finished_field_is_hidden_as_an_ignored_one() {
     let db = finished_db();
     run_cli(&["moment", "kept", "-y", "-t", "10:00"], &db).unwrap();
-    let listing = compute_fields(&db).unwrap();
-    let ignored = |f: &str| {
-        let row = listing.as_array().unwrap().iter().find(|r| r["field"] == f);
-        row.unwrap()["ignored"].clone()
+    run_cli(&["ignore", "kept"], &db).unwrap();
+    run_cli(&["moment", "on", "-y", "-t", "10:00"], &db).unwrap();
+    // Hidden, both, and only the finished one finished (da-5n7zh), so
+    // datum.day can tell it from an ignored one that `track` reopens.
+    let flags = |f: &str| {
+        let row = listing_of(&db, f);
+        (row["ignored"].clone(), row["finished"].clone())
     };
     assert_eq!(
-        (ignored("exp"), ignored("kept")),
-        (json!(true), json!(false))
+        (flags("exp"), flags("kept"), flags("on")),
+        (
+            (json!(true), json!(true)),
+            (json!(true), json!(false)),
+            (json!(false), json!(false))
+        )
     );
     // `now` drops it and `now -A` lists it, by the same flag.
     let tracked = db.get_tracked_fields(Utc::now()).unwrap();

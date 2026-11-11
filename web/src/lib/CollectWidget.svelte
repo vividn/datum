@@ -407,7 +407,8 @@
 	const buttons = $derived(
 		fieldsUnder(
 			fieldsWithDuration(
-				fields.filter((w) => showIgnored || !w.ignored),
+				// A FINISHED field is left out even then: no entry after its finish is taken (da-5n7zh).
+				fields.filter((w) => (showIgnored ? !w.finished : !w.ignored)),
 				duration
 			),
 			pending

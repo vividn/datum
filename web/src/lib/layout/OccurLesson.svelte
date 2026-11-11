@@ -29,7 +29,8 @@
 	import { onMount } from 'svelte';
 	import { tailArgv } from '#lib/calls.ts';
 	import { run } from '#lib/run.ts';
-	import { isStatus, percent, type Outcome } from '#lib/tutorial.ts';
+	import { isStatusState } from '#lib/fields.ts';
+	import { percent, type Outcome } from '#lib/tutorial.ts';
 	import { GOING_MS, KINDS, MATCH_MS, STAND_MS, round, scene, score, type Item, type Tap } from '#lib/cafe.ts';
 	import GameBox from './GameBox.svelte';
 	import { roundOf } from './round.js';
@@ -117,7 +118,7 @@
 			const listed = await run(tailArgv({ field, count: 200 }));
 			if (listed.code !== 0) continue;
 			for (const { time, state } of JSON.parse(listed.stdout).rows as { time: string | null; state: unknown }[])
-				if (time && !isStatus(state) && Date.parse(time) >= start && Date.parse(time) - start <= elapsed) taps.push({ field, at: Date.parse(time) - start });
+				if (time && !isStatusState(state) && Date.parse(time) >= start && Date.parse(time) - start <= elapsed) taps.push({ field, at: Date.parse(time) - start });
 		}
 		// What appeared before it ended: a thing still in its time to be tapped counts if caught, and is no miss if not.
 		const { items: appeared, extra } = score(

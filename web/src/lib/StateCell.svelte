@@ -46,13 +46,12 @@
 	/** The `∅` the CLI paints where a state is not tracked. */
 	const NULL_SET = '∅';
 
-	/** The sentinel for "the field was not tracked here" — the CLI's own. */
-	const ignored = (state: unknown) => state === 'IGNORED';
 </script>
 
 <script lang="ts">
 	import { ansiSpans } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
+	import { isHiddenState } from './fields.js';
 	import type { TailRow } from './tail.js';
 
 	interface Props {
@@ -77,7 +76,8 @@
 	 */
 	function hover(state: unknown, text: string | null | undefined): string | undefined {
 		if (state === null || state === undefined) return undefined;
-		return ignored(state) ? NULL_SET : (text ?? NULL_SET);
+		// A hidden status (IGNORED, FINISHED) is "not tracked here", the CLI's grey slot.
+		return isHiddenState(state) ? NULL_SET : (text ?? NULL_SET);
 	}
 
 	const lead = $derived(typeof row.previous_state_cell === 'string' ? row.previous_state_cell : '');

@@ -786,7 +786,7 @@ An open field shows its name, then its states, its time and length being the sec
 
 - **the buttons stand**: **in rows**, or **aligned to the picture**, each at the height the day pictures draw its field. Aligned, a pinch zooms the heights and a drag up or down pans; the slim mark at the right zooms back out.
 - **a change field is labelled with its**: **field**, or the **state** it is in.
-- **show ignored fields**: the fields you stopped tracking, faint and dashed.
+- **show ignored fields**: the fields you stopped tracking, faint and dashed; a finished field stays hidden.
 - **side**: the now strip at the **left** or the **right**.
 - **fields**: only the fields chosen; none chosen, every field.
 
@@ -1051,7 +1051,7 @@ Under it, fields ready to set up, by theme. Tap one for its preview: its kind, w
 
 Under home & chores, **Install the chores kit** adds chores on a schedule; it says what it installs, and **install** installs it and opens its chores tab.
 
-Under the name it says whether the field is **NOT SET UP**, **TRACKED** or **IGNORED**, an on/off or change field its current state, and a button: **stop tracking** takes it off the collect widget (\`ignore F\`), and **start tracking** puts it back (\`track F\`), at once.
+Under the name it says whether the field is **NOT SET UP**, **TRACKED**, **IGNORED** or **FINISHED**, an on/off or change field its current state, and a button: **stop tracking** takes it off the collect widget (\`ignore F\`), and **start tracking** puts it back (\`track F\`), at once. A finished field (\`datum finish F\`) has neither: it is done for good.
 
 ## Its kind
 

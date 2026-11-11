@@ -24,7 +24,7 @@ use datum_core::state::FieldStateRows;
 use datum_core::{
     entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
-    shape::{hands_field_back, has_state_badge, TRACKED_STATE_VALUE},
+    shape::{hands_field_back, has_state_badge, is_hidden_state, TRACKED_STATE_VALUE},
     time::{DatumTime, Zone},
 };
 use datum_parse::time::{format_human_duration, DurationPrecision};
@@ -581,7 +581,7 @@ fn render_point_state_label(state: &JsonValue, field: &str, spec: Option<&FieldS
         JsonValue::Bool(true) => paint(&field_rgb(field, spec).fg(), "on"),
         JsonValue::Bool(false) => paint(&field_rgb(field, spec).fg(), "off"),
         JsonValue::Null => paint(&Rgb::GREY.fg(), NULL_STATE),
-        JsonValue::String(s) if s == IGNORED_STATE => paint(&Rgb::GREY.fg(), s),
+        JsonValue::String(s) if is_hidden_state(state) => paint(&Rgb::GREY.fg(), s),
         JsonValue::String(s) => paint(&state_rgb(s, spec).fg(), s),
         JsonValue::Object(obj) => {
             let body = match obj.get("id").and_then(JsonValue::as_str) {
@@ -642,7 +642,7 @@ pub(crate) fn compute_occur_dot_colors(
         None | Some(JsonValue::Bool(false)) => None,
         // IGNORED tracking state → grey bg (sentinel string or null).
         Some(JsonValue::Null) => Some(Rgb::GREY),
-        Some(JsonValue::String(s)) if s == IGNORED_STATE => Some(Rgb::GREY),
+        Some(v) if is_hidden_state(v) => Some(Rgb::GREY),
         // Any other ongoing-state value → that state's color.
         Some(v) => state_value_rgb(v, &row.field, spec),
     };
@@ -782,7 +782,7 @@ fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>
         None => SlotKind::Ignored,
         Some(JsonValue::Null) => SlotKind::Ignored,
         Some(JsonValue::Bool(false)) => SlotKind::FieldEnded,
-        Some(JsonValue::String(s)) if s == IGNORED_STATE => SlotKind::Ignored,
+        Some(v) if is_hidden_state(v) => SlotKind::Ignored,
         Some(JsonValue::Array(items)) if items.len() >= 2 => {
             let colors: Vec<Rgb> = items
                 .iter()
@@ -842,7 +842,7 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
         }
         Some(JsonValue::Bool(false)) => "off".to_string(),
         Some(JsonValue::Null) => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, NULL_STATE),
-        Some(JsonValue::String(s)) if s == IGNORED_STATE => {
+        Some(v @ JsonValue::String(s)) if is_hidden_state(v) => {
             paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, s)
         }
         // da-6fvys: «tracking began» is a marker, not a state anyone
@@ -1532,6 +1532,15 @@ mod tests {
         let ignored_sentinel = JsonValue::String(IGNORED_STATE.to_string());
         let (_, bg_str) = compute_occur_dot_colors(&row, None, Some(&ignored_sentinel));
         assert_eq!(bg_str, Some(Rgb::GREY), "IGNORED sentinel → grey bg");
+        // FINISHED hides a field as IGNORED does, and is painted as it is (da-5n7zh).
+        let finished = JsonValue::from("FINISHED");
+        let (_, bg) = compute_occur_dot_colors(&row, None, Some(&finished));
+        assert_eq!(bg, Some(Rgb::GREY), "FINISHED → grey bg");
+        assert_eq!(state_value_rgb(&finished, "blocked", None), Some(Rgb::GREY));
+        assert!(matches!(
+            resolve_slot(Some(&finished), "blocked", None),
+            SlotKind::Ignored
+        ));
 
         let null = JsonValue::Null;
         let (_, bg_null) = compute_occur_dot_colors(&row, None, Some(&null));

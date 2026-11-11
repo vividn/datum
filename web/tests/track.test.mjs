@@ -504,6 +504,24 @@ describe('in the app', () => {
 		});
 	});
 
+	// da-5n7zh: a finish is for good, so nothing here offers to undo it: `track` would be refused or write nothing.
+	test('a finished field says FINISHED, with no start or stop tracking', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.submit('track done --verb occur');
+			await page.locator('.bar button[data-field="done"]').waitFor();
+			await app.clock.forward(1000);
+			await app.submit('finish done');
+			await page.waitForFunction(() => !document.querySelector('.bar [data-field="done"]'));
+			await app.clock.forward(1000);
+			await openField(page, 'done');
+			const status = page.locator(`${MODAL} [data-status="finished"]`);
+			assert.equal((await status.locator('.word').innerText()).trim(), 'FINISHED');
+			assert.equal(await status.locator('button').count(), 0, 'a button offered on a finished field');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	// da-oxaij: the button's title names a command that works when typed.
 	test('an ignored spaced field’s title quotes it', async () => {
 		await shared.solo(async (app) => {

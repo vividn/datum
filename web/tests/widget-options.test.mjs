@@ -613,8 +613,11 @@ describe('widget options', () => {
 			await app.submit('track walk --verb occur');
 			await app.submit('track run --verb occur');
 			await app.submit('switch mood good');
+			// And a finished one, which the option leaves out (da-5n7zh): no tap on it is taken.
+			await app.submit('track done --verb occur');
 			// Drawn before it is taken away, as track.test.mjs is careful to do.
 			await button.waitFor();
+			await page.locator('.bar button[data-field="done"]').waitFor();
 			// A second on between writes to one field: the clock is held, and
 			// each needs an instant of its own beside the one before it.
 			await app.clock.forward(1000);
@@ -622,13 +625,15 @@ describe('widget options', () => {
 			await app.submit('ignore run');
 			await app.clock.forward(1000);
 			await app.submit('ignore mood');
-			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"], .bar [data-field="mood"]'));
+			await app.submit('finish done');
+			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"], .bar [data-field="mood"], .bar [data-field="done"]'));
 
 			await toggleOption(page, 'bar', 'show ignored fields');
 
 			// Back in the bar, and saying what it is: the word in the title, the
 			// dashes and the fade in the drawing.
 			await button.waitFor();
+			assert.equal(await page.locator('.bar button[data-field="done"]').count(), 0, 'a finished field shown with the ignored');
 			const title = await button.getAttribute('title');
 			for (const fact of [/\brun\b/, /\bignored\b/]) assert.match(title, fact);
 			assert.equal(await button.getAttribute('data-ignored'), '');

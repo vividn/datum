@@ -22,6 +22,7 @@
 <script lang="ts">
 	import { run } from './run.js';
 	import { tailArgv } from './calls.js';
+	import { isStatusState } from './fields.js';
 	import type { Label } from './track.js';
 	import type { TailListing } from './tail.js';
 
@@ -100,8 +101,8 @@
 		if (!name) return;
 		void run(tailArgv({ field: name, count: 20 })).then((r) => {
 			if (r.code !== 0 || name !== field) return;
-			// A TRACK or IGNORED row draws no mark, so it gives no sample.
-			const marked = (row: TailListing['rows'][number]) => row.field === name && !['TRACKED', 'IGNORED'].includes(row.state_label ?? '');
+			// A status row (TRACKED, IGNORED, FINISHED) draws no mark, so it gives no sample.
+			const marked = (row: TailListing['rows'][number]) => row.field === name && !isStatusState(row.state_label);
 			rows = (JSON.parse(r.stdout) as TailListing).rows.filter(marked).reverse();
 		});
 	});
