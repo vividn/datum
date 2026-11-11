@@ -93,11 +93,29 @@ jobs:
 
       # ring and rusqlite's bundled SQLite compile C, which a musl target
       # needs a musl C compiler for. Each Linux build runs on its own arch.
+      # apt tries each fetch 5 more times, and on x86_64 an install that still
+      # fails goes once more to mirrors.edge.kernel.org, the same archive under
+      # another host and DNS name: two releases failed resolving
+      # security.ubuntu.com (da-6o3dy). kernel.org mirrors no ubuntu-ports, so
+      # the aarch64 row has the retries alone.
       - name: Install musl-gcc
         if: ${{ endsWith(matrix.target, '-musl') }}
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q musl-tools
+          musl() {
+            sudo apt-get -o Acquire::Retries=5 update -q
+            sudo apt-get -o Acquire::Retries=5 install -y -q musl-tools
+          }
+          if musl; then
+            echo "musl-tools from the runner's Ubuntu mirrors"
+          elif [ "${{ matrix.target }}" = x86_64-unknown-linux-musl ]; then
+            echo "::warning::apt failed on the runner's Ubuntu mirrors; trying mirrors.edge.kernel.org"
+            sudo sed -i -E 's#https?://([a-z0-9-]+\.)*ubuntu\.com/ubuntu/?([[:space:]]|$)#https://mirrors.edge.kernel.org/ubuntu/\2#' \
+              $(ls /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2> /dev/null)
+            musl
+            echo "musl-tools from mirrors.edge.kernel.org"
+          else
+            exit 1
+          fi
           target=${{ matrix.target }}
           echo "CC_${target//-/_}=musl-gcc" >> "$GITHUB_ENV"
 
