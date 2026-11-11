@@ -42,6 +42,18 @@ and redeems it itself, and a member that lacks the invite writes it as the
 admin's before it admits the device. Like any join, it waits until a member is
 online. Without PRF, invites are the way in.
 
+Which chains to join, a device signed in learns from the account's record:
+a small record published under the account key to n0's pkarr relay, which
+anyone can fetch and only the account's devices can read, since it is
+encrypted with a second key derived from the passkey's secret. It lists each
+chain the account is an admin of, the database it is in and a member or a few
+to reach it through. Signing in reads it and joins each chain this device is
+not in, into a database of the same name (or `<name>-2` where that one holds
+data of its own); each signed-in device publishes it again with its own chains
+when it starts one and every half hour. It holds about ten chains. The relay
+keeps it as a cache: until it is also published to the mainline DHT, a record
+the relay dropped is back once a signed-in device of the account runs again.
+
 Per key the op with the later hybrid logical clock wins. Concurrent edits
 of one key, or a delete against a concurrent edit, leave the entry's
 `conflicts` naming each side — the same on every copy that holds both — which

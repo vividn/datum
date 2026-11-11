@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, IsTerminal, Read};
 
 use anyhow::{bail, ensure, Context, Result};
+use datum_core::db::account;
 use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
 use datum_core::error::DatumError;
@@ -738,9 +739,49 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 None => println!("approved: {what}"),
             }
         }
-        SyncCommand::Account { invite } => {
+        SyncCommand::Account {
+            invite,
+            record,
+            relay,
+            with,
+            read,
+        } => {
             let account = account()?.context("not signed in: DATUM_ACCOUNT holds no PRF output")?;
-            let mut out = json!({"key": chain::ed25519_admin_key(&account.sign)});
+            let key = chain::ed25519_admin_key(&account.sign);
+            let mut out = json!({"key": key, "name": account::name(&account.sign)});
+            let opened =
+                |body: &str| account::open(body, &account::public(&account.sign), &account.seal);
+            if record {
+                let mut mine = account::Record {
+                    relay,
+                    chains: Vec::new(),
+                };
+                for (name, path, _) in super::sync_grid::chains(db)? {
+                    let listed = match db
+                        .path()
+                        .is_some_and(|p| p.canonicalize().ok() == Some(path.clone()))
+                    {
+                        true => db.sync_account_listed(&key, &name)?,
+                        false => Db::open_read_only(&path.to_string_lossy())?
+                            .sync_account_listed(&key, &name)?,
+                    };
+                    mine.chains.extend(listed);
+                }
+                let held = with.as_deref().filter(|w| opened(w).is_some());
+                let mine = account::union(mine, held.and_then(opened));
+                let now = chrono::Utc::now().timestamp_micros() as u64;
+                let micros = account::stamp(now, held);
+                out["body"] = match mine.chains.is_empty() {
+                    true => Value::Null,
+                    false => account::publish(&mine, &account.sign, &account.seal, micros)
+                        .map_err(anyhow::Error::msg)?
+                        .into(),
+                };
+            }
+            if let Some(hex) = read {
+                let r = opened(&hex).context("not this account's record")?;
+                out["joins"] = account_joins(db, r)?.into();
+            }
             if let Some(id) = invite {
                 let caps = json!({});
                 let (secret, expires, id, mut record) =
@@ -1104,6 +1145,35 @@ pub(super) fn invite(
 
 /// An account admin's label (da-nf1p4).
 const ACCOUNT: &str = "account";
+
+/// The chains record `r` lists that this install holds no copy of and is
+/// joining none of (da-rnxp4): each with the database to join it into, as a
+/// grant's (`free_name`), and its members' addresses, by the record's relay.
+fn account_joins(db: &Db, r: account::Record) -> Result<Vec<Value>> {
+    let mut held: Vec<String> = super::sync_grid::chains(db)?
+        .into_iter()
+        .map(|(_, _, c)| c.id)
+        .collect();
+    for path in crate::config::known_dbs().values().filter(|p| p.exists()) {
+        let join = Db::open_read_only(&path.to_string_lossy()).and_then(|d| d.sync_join_pending());
+        held.extend(join.ok().flatten().and_then(|j| j.chain));
+    }
+    held.extend(db.sync_join_pending()?.and_then(|j| j.chain));
+    let addrs: Vec<Value> = r.relay.iter().map(|url| json!({"Relay": url})).collect();
+    r.chains
+        .into_iter()
+        .filter(|c| !held.contains(&c.chain))
+        .map(|c| {
+            let members: Vec<String> = c
+                .members
+                .iter()
+                .map(|id| json!({"id": id, "addrs": addrs}).to_string())
+                .collect();
+            let db = super::sync_grant::free_name(&c.db, &c.chain)?;
+            Ok(json!({"chain": c.chain, "db": db, "members": members}))
+        })
+        .collect()
+}
 
 /// The account this process is signed in to: `DATUM_ACCOUNT`, a passkey's
 /// PRF output as hex (`chain::ACCOUNT_PRF_SALT`), which datum.day hands each

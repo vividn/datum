@@ -52,7 +52,7 @@
 // are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`).
 
 import { writable, type Readable } from 'svelte/store';
-import { accountArgv, chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
+import { accountArgv, accountReadArgv, accountRecordArgv, chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, run, type RunResult } from './run.js';
@@ -60,6 +60,7 @@ import type { ChainList, Member, Notice, PendingJoin, SyncStatus } from './syncV
 import { shellSplit } from './shellSplit.js';
 import { accountEnv, setAccount } from './account.js';
 import { signIn } from './passkey.js';
+import { listDatabases } from './databases.js';
 
 const PULL_MS = 30_000;
 /** How soon a leader that could not read its setup first reads it again,
@@ -777,7 +778,10 @@ export async function syncOffer(db: string, invite?: Invite): Promise<string> {
 	// Signed in, this tab writes it, as the account (da-nf1p4): the leader may be another tab's.
 	const env = accountEnv();
 	invite ??= env.length ? (JSON.parse(await ran(['--db', db, ...newInviteArgv()], env)) as Invite) : undefined;
-	return call(db, { op: 'offer', invite });
+	const ticket = await call<string>(db, { op: 'offer', invite });
+	// A chain the account made, or one more member coming: the record says so (da-rnxp4).
+	if (env.length) void syncAccountRecord().catch(() => {});
+	return ticket;
 }
 
 /** `argv` through the seam, with this tab's account; its stdout, or its failure thrown. */
@@ -812,6 +816,70 @@ export async function accountJoin(db: string, chain: string, members: string[]):
 	const ticket = await call<string>(db, { op: 'offer', invite, chain, also: `[${members.join(',')}]` });
 	return syncConnect(db, ticket);
 }
+
+/** n0's pkarr relay (iroh's `N0_DNS_PKARR_RELAY_PROD`); a test names its own as `datum.pkarrRelay`. */
+const PKARR = 'https://dns.iroh.link/pkarr';
+/** How often a signed-in tab publishes the record again: the relay's copy is a cache, not a store. */
+const REPUBLISH_MS = 30 * 60_000;
+let recording: Promise<void> = Promise.resolve();
+let republishing = false;
+
+function pkarr(): string {
+	try {
+		return localStorage.getItem('datum.pkarrRelay') ?? PKARR;
+	} catch {
+		return PKARR;
+	}
+}
+
+/**
+ * The account record (da-rnxp4): read from the pkarr relay, each chain it
+ * lists that this install holds no copy of joined as `accountJoin` does,
+ * and published again with every chain of the account's on this device
+ * (the CLI seals and signs it with the account's keys), so a device newly
+ * signed in finds them. A device with none of its own publishes nothing,
+ * so a new one never empties the record. Then again every `REPUBLISH_MS`
+ * while signed in; one at a time.
+ */
+export function syncAccountRecord(): Promise<void> {
+	const next = recording.then(accountRecord);
+	recording = next.catch(() => {});
+	if (!republishing) {
+		republishing = true;
+		setInterval(() => accountEnv().length && void syncAccountRecord().catch(() => {}), REPUBLISH_MS);
+	}
+	return next;
+}
+
+async function accountRecord(): Promise<void> {
+	if (!accountEnv().length) return;
+	const { name } = JSON.parse(await ran(accountArgv())) as { name: string };
+	const url = `${pkarr()}/${name}`;
+	const got = await fetch(url);
+	if (!got.ok && got.status !== 404) throw new Error(`the account record could not be read (${got.status})`);
+	const held = got.ok ? hexOf(await got.arrayBuffer()) : undefined;
+	// The CLI lists every database it can see, and a database is seen once a
+	// command names it: so each is named once, and the last run (and `--read`)
+	// holds them all. Each run's record is the next one's `--with`.
+	const dbs = (await listDatabases()).filter((d) => d !== '_internal');
+	let body = held;
+	let refused: unknown;
+	for (const db of dbs.length ? dbs.map((d) => ['--db', d]) : [[]]) {
+		const made = await ran([...db, ...accountRecordArgv(relay(), body)]).catch((e) => void (refused = e));
+		body = made ? ((JSON.parse(made) as { body: string | null }).body ?? body) : body;
+	}
+	if (held) {
+		const { joins } = JSON.parse(await ran(accountReadArgv(held))) as { joins: { chain: string; db: string; members: string[] }[] };
+		for (const j of joins) await accountJoin(j.db, j.chain, j.members);
+	}
+	// Past what one packet holds, the joins still happen; the record stays as it was.
+	if (refused) throw refused;
+	if (!body || body === held) return;
+	const put = await fetch(url, { method: 'PUT', body: Uint8Array.from(body.match(/../g) ?? [], (h) => parseInt(h, 16)) });
+	if (!put.ok) throw new Error(`the account record could not be published (${put.status})`);
+}
+
+const hexOf = (b: ArrayBuffer): string => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
 
 /** The link a browser opens to redeem `ticket` (da-l9kdr): the ticket in the fragment, which no server sees. */
 export function joinLink(ticket: string): string {

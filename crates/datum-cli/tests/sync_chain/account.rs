@@ -85,3 +85,59 @@ fn a_chain_made_signed_in_is_the_accounts_and_its_devices_admit_themselves() {
     assert!(!broken.status.success());
     assert!(String::from_utf8_lossy(&broken.stderr).contains("DATUM_ACCOUNT is not a PRF output"));
 }
+
+/// The account record (da-rnxp4): a device signed in publishes the
+/// account's chains it is in, sealed under the account's key; another of
+/// the account's devices reads which to join, into what database, through
+/// which member; a third device publishing keeps what the record held; and
+/// another account reads nothing of it.
+#[test]
+fn the_account_record_says_which_chains_a_new_device_joins_and_through_whom() {
+    let (a, b) = (Copy::new(), Copy::new());
+    // Signed in, with no chain of the account's: nothing to publish.
+    assert!(json(&signed_in(&a, &["sync", "account", "--record"]))["body"].is_null());
+    signed_in(&a, &["sync", "new-invite"]);
+    let chain = json(&a.ok(&["sync", "chain", "list", "--json"]))["chain"].clone();
+    let relay = "http://127.0.0.1:3340/";
+    let record = ["sync", "account", "--record", "--relay", relay];
+    let made = json(&signed_in(&a, &record));
+    let name = made["name"].as_str().unwrap();
+    assert_eq!(name.len(), 52, "pkarr's z-base-32 of the key");
+    let body = made["body"].as_str().unwrap();
+
+    // b reads it: the chain, the database a names it by, and a, by the relay.
+    let read = json(&signed_in(&b, &["sync", "account", "--read", body]));
+    let joins = read["joins"].as_array().unwrap();
+    assert_eq!(joins.len(), 1, "{read}");
+    assert_eq!(joins[0]["chain"], chain);
+    assert_eq!(joins[0]["db"], "data");
+    let member = json(joins[0]["members"][0].as_str().unwrap());
+    assert_eq!(
+        member,
+        serde_json::json!({"id": a.id(), "addrs": [{"Relay": relay}]})
+    );
+    // a holds it: nothing to join.
+    let held = json(&signed_in(&a, &["sync", "account", "--read", body]));
+    assert_eq!(held["joins"], serde_json::json!([]));
+
+    // b, in no chain yet, publishes what the record held.
+    let kept = json(&signed_in(
+        &b,
+        &["sync", "account", "--record", "--with", body],
+    ));
+    let again = json(&signed_in(
+        &b,
+        &["sync", "account", "--read", kept["body"].as_str().unwrap()],
+    ));
+    assert_eq!(again["joins"][0]["chain"], chain);
+
+    // Another account's devices read nothing of it.
+    let why = b.fails(&["sync", "account", "--read", body], "");
+    assert!(why.contains("not signed in"), "{why}");
+    let other = b
+        .cmd(&["sync", "account", "--read", body])
+        .env("DATUM_ACCOUNT", "08".repeat(32))
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&other.stderr).contains("not this account's record"));
+}

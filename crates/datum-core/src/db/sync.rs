@@ -87,6 +87,7 @@ use super::row_mapper::row_to_entry;
 use super::spec::{SPEC_FIELD, SPEC_KIT_KEY};
 use super::{Db, WriteBatch};
 
+pub mod account;
 pub mod chain;
 mod debug;
 mod diagnose;

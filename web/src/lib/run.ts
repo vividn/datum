@@ -197,7 +197,9 @@ export async function run(
 	pane?: boolean
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
-	const full = [...dbEnv(argv), ...accountEnv(), ...(env ?? [])];
+	// A caller naming its own account (a sign-in) is that account: the CLI reads the first it is given (da-rnxp4).
+	const own = env?.some((v) => v.startsWith('DATUM_ACCOUNT='));
+	const full = [...dbEnv(argv), ...(own ? [] : accountEnv()), ...(env ?? [])];
 	const asked = !stage && (pane || reads.has(JSON.stringify(argv))) ? JSON.stringify([argv, stdin ?? null, full]) : null;
 	// Asked as an undo is drawn, it is the state before (`predict`), and is not kept as the state after.
 	const swapped = predicting;

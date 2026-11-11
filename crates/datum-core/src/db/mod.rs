@@ -135,9 +135,9 @@ pub use spool::{busy, Drained, Spool};
 pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub(crate) use sync::derive_all_conflicts;
 pub use sync::{
-    canonical_json, chain, device_id, forget_invocation, peers, row_diff, set_client_source,
-    set_device_source, set_invocation, Apart, ApplySummary, DebugConflicts, FoldCheck, Named,
-    Orphan, PendingJoin, Reentry, Stale, Version,
+    account, canonical_json, chain, device_id, forget_invocation, peers, row_diff,
+    set_client_source, set_device_source, set_invocation, Apart, ApplySummary, DebugConflicts,
+    FoldCheck, Named, Orphan, PendingJoin, Reentry, Stale, Version,
 };
 pub use tombstone::{revert_in_tx, soft_delete_in_tx, take_back_in_tx};
 pub use types::{

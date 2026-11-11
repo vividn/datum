@@ -808,7 +808,22 @@ redeems, `<secret>.<base64url record>` (`chain::carry_invite`), and a member's
 `sync_admit` writes the carried invite as its own op when it lacks it (the chain takes it
 only as an admin's) and then admits: no fold rule changes. The page builds the ticket
 with the members' addresses (`accountJoin` in `#lib/sync.ts`) and joins as any pending
-join does (da-4qpwf). Which chains and members: part 2's account record (da-rnxp4).
+join does (da-4qpwf). Which chains and members: the account record.
+
+The account record (da-rnxp4, `db/sync/account.rs`) is a pkarr packet under the
+account key, published to n0's pkarr relay (`https://dns.iroh.link/pkarr`; a test's is
+`datum.pkarrRelay`): one TXT record `_datum`, AES-256-GCM under `seal`, listing each of
+the account's chains, its database's name, up to three members' endpoint ids (this copy
+first, then the most recently seen) and the relay when not n0's. The CLI builds, signs
+and opens it (hidden `sync account --record [--relay] [--with <HEX>]` and `--read
+<HEX>`), so the account's secret never leaves it; the page only GETs and PUTs the bytes
+(`syncAccountRecord` in `#lib/sync.ts`), at sign-in, after a signed-in offer and every
+30 minutes while signed in. A publish is what this install holds united with what the
+record held, so a device with none of its own publishes nothing. A packet's DNS part is
+1000 bytes: over it each chain keeps fewer members, down to one, and past one each
+(about ten chains) `--record` is refused, naming the most. `--read` lists the chains no
+database here holds or is joining, each into a grant's `free_name`. Not yet: the
+mainline DHT (a new dependency, da-le3ee), and a record past the limit (da-c7cpm).
 
 ### Expel, unjoin and purge
 

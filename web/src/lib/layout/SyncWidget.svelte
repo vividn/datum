@@ -65,7 +65,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncSignIn, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, syncSignIn, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -581,6 +581,8 @@
 			const label = make ? await ask('Name the passkey', 'make', 'datum') : undefined;
 			if (make && !label) return;
 			await syncSignIn(label ?? undefined);
+			// The account's chains this device is not in yet, joined (da-rnxp4).
+			await syncAccountRecord();
 		});
 
 	const removeAdmin = (d: DbSync, a: Admin) =>

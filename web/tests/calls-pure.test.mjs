@@ -251,6 +251,8 @@ const SAMPLES = {
 	expelArgv: [[MEMBER]],
 	newInviteArgv: [[], [true]],
 	accountArgv: [[], ['c1']],
+	accountRecordArgv: [[], ['http://127.0.0.1:1/', 'ab']],
+	accountReadArgv: [['ab']],
 	grantArgv: [[MEMBER, 'member', 'ticket', 'invite'], [MEMBER, 'reader', 'ticket', 'invite', 'work']],
 	roleArgv: [[MEMBER, 'reader']],
 	wipeArgv: [[MEMBER]],

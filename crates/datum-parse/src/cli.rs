@@ -1365,8 +1365,18 @@ pub enum SyncCommand {
     /// `--invite` an invite to `CHAIN` that key signed, for this copy to
     /// redeem itself: its secret carries the record, so a member that lacks
     /// it writes it before it admits.
+    ///
+    /// `--record` (da-rnxp4) prints the account record to publish: the
+    /// account's chains this install is in, and those `--with` (the record
+    /// a relay held, hex) lists besides, reached by `--relay` when not n0's.
+    /// `--read <HEX>` prints the chains a record lists that this install
+    /// holds no copy of, each with the database to join it into.
     Account {
         invite: Option<String>,
+        record: bool,
+        relay: Option<String>,
+        with: Option<String>,
+        read: Option<String>,
     },
     /// Hidden: `datum sync qr <TEXT>` — `TEXT` as a QR code, SVG: the
     /// ticket datum.day shows to add a device (da-bjxts).

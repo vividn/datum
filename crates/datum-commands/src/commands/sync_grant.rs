@@ -618,12 +618,11 @@ fn pending(db: &Db, say_expired: bool) -> Result<Vec<Granted>> {
     Ok(out)
 }
 
-#[cfg(feature = "net")]
 /// The name a grant of `chain` joins under here: `want`, or `want-2`, `-3`…
 /// where a database of that name holds data or another chain (it is never
 /// touched), or another join. A database already in `chain` is its own: a
 /// join there cut short.
-fn free_name(want: &str, chain: &str) -> Result<String> {
+pub(super) fn free_name(want: &str, chain: &str) -> Result<String> {
     ensure!(
         !want.is_empty() && !config::looks_like_path(want),
         "an invite names no database: {want:?}"

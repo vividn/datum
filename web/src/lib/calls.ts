@@ -242,6 +242,19 @@ export function accountArgv(chain?: string): string[] {
 	return ['sync', 'account', ...(chain ? ['--invite', chain] : [])];
 }
 
+/**
+ * The account record to publish (da-rnxp4), hex: the account's chains here and those `held` (the relay's) lists,
+ * reached by `relay` when not n0's.
+ */
+export function accountRecordArgv(relay?: string, held?: string): string[] {
+	return ['sync', 'account', '--record', ...(relay ? ['--relay', relay] : []), ...(held ? ['--with', held] : [])];
+}
+
+/** The chains record `body` lists that this install holds no copy of, each with the database to join it into. */
+export function accountReadArgv(body: string): string[] {
+	return ['sync', 'account', '--read', body];
+}
+
 export function endpointKeyArgv(): string[] {
 	return ['sync', 'endpoint-key'];
 }
