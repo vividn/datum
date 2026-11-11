@@ -126,7 +126,7 @@ describe('the pills ride with the text', () => {
 			await withCoffee(app);
 			await setPill(page, { text: '-t 14:30', locked: true });
 			await page.locator(`${BAR} .pill`).waitFor();
-			const waiting = (await pillAt(page)).pill;
+			const { pill: waiting, caret } = await pillAt(page);
 			// The box's width, which the pills follow (da-0eqgg): the ghost watch records it too.
 			const placed = await page.evaluate(() => parseFloat(document.querySelector('.prompt-bar input').style.width));
 
@@ -146,10 +146,30 @@ describe('the pills ride with the text', () => {
 			// The ghost goes; the locked pill stays and returns leftward, to
 			// where it waited.
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
-			await page.waitForFunction(
-				(was) => Math.abs(document.querySelector('.prompt-bar .pill').getBoundingClientRect().left - was) < 1,
-				waiting
-			);
+			await page
+				.waitForFunction(
+					(was) => Math.abs(document.querySelector('.prompt-bar .pill').getBoundingClientRect().left - was) < 1,
+					waiting
+				)
+				.catch(async (e) => {
+					// Seen once on staging (da-snyyw) and never again in about a
+					// hundred runs, under 2 to 50x CPU throttle and on 2 cores, so
+					// a miss says what the bar held: a pill's left is the `❯`'s
+					// right plus the box's width (3px empty), so text in the box,
+					// the box seated after a pill, a pill before it or a moved `❯`.
+					const bar = await page.evaluate(() => {
+						const input = document.querySelector('.prompt-bar input');
+						return {
+							box: input.value,
+							width: input.style.width,
+							mirror: document.querySelector('.prompt-bar .mirror')?.textContent,
+							drawn: [...document.querySelectorAll('.prompt-bar .pill')].map((p) => [p.textContent, Math.round(p.getBoundingClientRect().left)]),
+							pills: window.datum.bar.pills().map((p) => [p.id, p.kind, p.text]),
+							caret: document.querySelector('.prompt-bar .line > .prompt').getBoundingClientRect().right
+						};
+					});
+					throw new Error(`the locked pill never came back to ${waiting} (❯ at ${caret}): ${JSON.stringify(bar)}`, { cause: e });
+				});
 			assert.equal(await page.locator(`${BAR} .pill`).count(), 1, 'a locked pill was spent');
 			assert.deepEqual(app.errors, []);
 			// The day page: `withCoffee` presses the COLLECT widget, which is a
