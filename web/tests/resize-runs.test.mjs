@@ -24,7 +24,10 @@ async function runsOf(app, act) {
 	await act();
 	await settled(app.page);
 	await app.idle();
-	// A run that lands can resize what is under it, and that asks again.
+	// Not a wait for rest: a new size reaches a drawn pane SETTLE_MS (150 ms,
+	// #lib/layout/resizing.ts, CliPane's and DayStrip's) after its last box, so
+	// its runs begin after the CLI went idle above, and a run that lands can
+	// resize what is under it, which asks again a SETTLE_MS later.
 	await app.page.waitForTimeout(500);
 	await app.idle();
 	return (await seen()).map((argv) => argv.join(' '));
