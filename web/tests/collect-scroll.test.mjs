@@ -1,14 +1,14 @@
 // Collect moves nothing up and down at rest, so a vertical scroll over it is the page's (da-tsomc, vividn,
 // 2026-11-09: «if you scroll up and down on the collect widget you should still be able to scroll around in the
 // page, since collect doesn't have any up and down type movement»): a finger's drag and the wheel. What it does
-// move stays its own: a sideways drag pans the rows, a pinch zooms them (collect-zoom.test.mjs), and the picture
+// move stays its own: a sideways drag pans the rows, a pinch in modify mode zooms them (collect-zoom.test.mjs), and the picture
 // layout zoomed in pans up and down under a finger.
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
-import { pickOption, rested } from './support/layout.mjs';
+import { leaveWidget, modifyWidget, pickOption, rested } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -90,10 +90,13 @@ async function zoom(page, by) {
 	// The click on the tab opened the window after a switch (da-d9p5m), in which a sideways drag is the frame's
 	// swipe: it cancelled the rows' pan at its first 10px, 20 of 100 (da-72c7z). Waited out from the switch.
 	await rested(page, page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: TAB }), { tapped: true });
+	// In the widget's modify mode, where alone the rows zoom (da-xi4up).
+	await modifyWidget(page, `${TAB}-fields`);
 	await page.mouse.move(at.x, at.y);
 	await page.keyboard.down('Control');
 	for (let i = 0; i < 5; i++) await page.mouse.wheel(0, by);
 	await page.keyboard.up('Control');
+	await leaveWidget(page, `${TAB}-fields`, 'apply');
 	// The rows have glided to the new zoom (`.spot.shelf.glide`'s transitions) and been measured again.
 	await rested(page, page.locator(`${FIELDS} .room`));
 }

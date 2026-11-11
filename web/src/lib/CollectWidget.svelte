@@ -32,15 +32,19 @@
 	the strip and the active section stay, until the section is wider than
 	half the widget and pans with them. A field
 	that starts glides into the section, and one that ends out of it into the
-	first slot of its row (`bumped`). A PINCH on the rows — two fingers, or
-	ctrl+wheel, a trackpad's — zooms them (da-l1z6h): each field's button,
-	its font and its height together, so smaller fits more rows into the
-	widget and larger fewer, the rows still locked to the pictures' height.
-	The zoom is a setting the widget moves itself (`onzoom`), between
-	`ZOOM`'s bounds, and kept on this device across reloads, by the layout,
-	tab and widget, as every option a widget moves is (da-ray91, da-gh1ep).
-	While two fingers are down, and until the rows have settled after the
-	last is up, no tap logs or opens anything (`untapped`).
+	first slot of its row (`bumped`). While two fingers are down, and until
+	the rows have settled after the last is up, no tap logs or opens anything
+	(`untapped`).
+
+	IN MODIFY MODE (`modifying`, da-xi4up) the rows are still under a cover
+	that holds the widget's own controls, each written into the layout
+	(`onmodify`): a handle on the strip's line sets the now section's share
+	of the width (`nowWidth`), ⇄ the `side`, + at the line's top and − at its
+	foot a row more or fewer (`rows`, the zoom left to fit them), and a PINCH
+	— two fingers, or ctrl+wheel, a trackpad's — zooms the rows (da-l1z6h):
+	each field's button, its font and its height together, so smaller fits
+	more rows into the widget and larger fewer, between `ZOOM`'s bounds.
+	Out of the mode a pinch zooms nothing.
 
 	A TAP OPENS a field (vividn's frames, 2026-11-03), a switch alone in
 	1-click mode and every field in 2-click (below): its pill goes on the
@@ -272,8 +276,12 @@
 		zoom,
 		/** The rows an unset zoom fits the box to (da-je8ju); none, zoom 1. */
 		rows,
-		/** A pinch let go of, or a ctrl+wheel: the zoom it left, for the session to keep on this device. */
-		onzoom,
+		/** The now section's share of the widget's width (da-xi4up); unset, a fifth. */
+		nowWidth,
+		/** Modify mode is on this widget (da-xi4up): its controls drawn over it, the rest still. */
+		modifying = false,
+		/** A control of modify mode moved: the settings it left, for the layout. */
+		onmodify,
 		/** The time and duration section open, or its clock alone (da-iunoo); the session's, as the zoom is. */
 		timeOpen = false,
 		/** The section's clock tapped: whether it is open now, for the session to keep. */
@@ -301,7 +309,9 @@
 		onframe?: (at: number | null) => void;
 		zoom?: number;
 		rows?: number;
-		onzoom?: (zoom: number) => void;
+		nowWidth?: number;
+		modifying?: boolean;
+		onmodify?: (moved: { zoom?: number; rows?: number; side?: 'left' | 'right'; nowWidth?: number }) => void;
 		timeOpen?: boolean;
 		ontime?: (open: boolean) => void;
 		onrun: (argv: string[]) => Promise<unknown> | void;
@@ -503,8 +513,12 @@
 		else glide = false;
 	});
 
-	/** The strip's width at rest: about a fifth of the widget (vividn: «maybe 20%»). */
-	const strip = $derived(Math.round(boxW / 5));
+	/** The now section's share of the widget, inside bounds whatever was stored; its handle's while it is dragged. */
+	const NOW_WIDTH = { min: 0.1, max: 0.5 };
+	const shareOf = (w: number) => Math.min(NOW_WIDTH.max, Math.max(NOW_WIDTH.min, w));
+	let share = $derived(shareOf(nowWidth ?? 0.2));
+	/** The strip's width at rest: about a fifth of the widget (vividn: «maybe 20%»), or what modify mode's handle made it. */
+	const strip = $derived(Math.round(boxW * share));
 	/**
 	 * The picture stands this far short of the strip's edge, the line there, as
 	 * far as the widget's body pads it from the pane's other edges (0.6rem,
@@ -517,13 +531,19 @@
 	let whenW = $state(0);
 	const edge = $derived(strip + whenW);
 	/** Where each field stands at rest, and the active section's outline. */
-	const shelves = $derived.by(() => {
+	/** A row's height at rest: its tallest button's. */
+	const rowH = $derived.by(() => {
 		const hs = [...sizes].filter(([key]) => key.startsWith('f:')).map(([, s]) => s.h);
-		return atRest(
-			clustered.map((b) => ({ ...b, w: sizes.get(`f:${b.field}`)?.w ?? 0 })),
-			{ height: paneH, rowH: hs.length ? Math.max(...hs) : 30, gap: GAP, strip: edge }
-		);
+		return hs.length ? Math.max(...hs) : 30;
 	});
+	/** The rows the room holds at rest, as `atRest` counts them: what modify mode's + and − step from. */
+	const rowCount = $derived(Math.max(1, Math.floor((paneH + GAP) / (rowH + GAP))));
+	const shelves = $derived(
+		atRest(
+			clustered.map((b) => ({ ...b, w: sizes.get(`f:${b.field}`)?.w ?? 0 })),
+			{ height: paneH, rowH, gap: GAP, strip: edge }
+		)
+	);
 	/** The strip and the active section stay while the section is under half the widget, the time section beside the strip not counted; past it the section pans too. */
 	const frozen = $derived(shelves.section - whenW <= paneW / 2);
 	/** Each active field's band on the strip, a tap's target over its picture. */
@@ -622,11 +642,7 @@
 			live = false;
 		};
 		const wheel = (e: WheelEvent) => {
-			if (!picture) {
-				if (!e.ctrlKey || !resting || picked !== null) return;
-				e.preventDefault();
-				return onzoom?.((scale = bounded(scale * Math.exp(-e.deltaY / 200))));
-			}
+			if (!picture) return;
 			const box = node.getBoundingClientRect();
 			if (e.ctrlKey) view = zoomed(view, (e.clientY - box.top) / box.height, Math.exp(-e.deltaY / 200));
 			else if (zoomedIn && Math.abs(e.deltaY) > Math.abs(e.deltaX)) view = panned(view, e.deltaY / tall);
@@ -1132,10 +1148,9 @@
 	/** The rows' zoom as drawn: `zoom`, inside the bounds whatever was stored, or a pinch's while it moves. */
 	let scale = $derived(bounded(zoom ?? fitted));
 	/**
-	 * The fingers down on the room, and a pinch of two of them at rest: how far apart they began, and the zoom then.
-	 * A finger lifts on the window (da-yn6my): one whose button went from under it,
-	 * a hold opening its field, lifts outside the room, and kept here it made every
-	 * later touch a pinch against it, so a drag zoomed and a pinch did nothing.
+	 * The fingers down on modify mode's cover, and a pinch of two of them: how far apart they began, and the
+	 * zoom then (da-l1z6h). Only there (da-xi4up, vividn, 2026-11-10: «We can allow pinch zooming when in
+	 * modify mode though in addition to the +/-»): out of the mode a pinch zooms nothing.
 	 */
 	const fingers = new Map<number, { x: number; y: number }>();
 	let pinch: { d: number; from: number } | null = null;
@@ -1163,11 +1178,7 @@
 		// A finger put down stops a glide where it is.
 		cancelAnimationFrame(coast);
 		coast = 0;
-		// Touch alone: a mouse zooms by ctrl+wheel.
-		if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-		// A second finger at rest is a pinch: the pan stops. `untapped` calls off a hold and every tap.
-		if (fingers.size === 2 && resting && picked === null) [pinch, drag] = [{ d: apart(), from: scale }, null];
-		if (e.button === 0 && !pinch)
+		if (e.button === 0)
 			drag = {
 				id: e.pointerId,
 				x: e.clientX,
@@ -1179,8 +1190,6 @@
 			};
 	}
 	function move(e: PointerEvent) {
-		if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-		if (pinch && fingers.size === 2 && pinch.d > 0) scale = bounded((pinch.from * apart()) / pinch.d);
 		if (drag?.id !== e.pointerId) return;
 		const [dx, dy] = [e.clientX - drag.x, e.clientY - drag.y];
 		drag.xs = tracked(drag.xs, e.clientX, e.timeStamp);
@@ -1193,11 +1202,6 @@
 		pan = kept(drag.from.x + dx, drag.from.y + dy);
 	}
 	function up(e: PointerEvent) {
-		fingers.delete(e.pointerId);
-		if (pinch && fingers.size < 2) {
-			pinch = null;
-			onzoom?.(scale);
-		}
 		if (drag?.id !== e.pointerId) return;
 		dragged = drag.moving;
 		// A swipe carries on (vividn, 2026-11-04: «scrolling should have some
@@ -1220,6 +1224,73 @@
 		coast = requestAnimationFrame(step);
 	}
 	$effect(() => () => cancelAnimationFrame(coast));
+
+	// ---- MODIFY MODE (da-xi4up) ---------------------------------------------
+	// vividn, 2026-11-10: «in the collect widget for example some things that
+	// you could change in the modify mode would be the now section width, have
+	// a button to flip left and right, but a + button at the top of the line
+	// separating the fields section from the time/now section and a - button
+	// on the bottom which changes the number of rows in the widget». A cover
+	// over the widget, the rows under it still (`inert`), holds them: a handle
+	// on the strip's line, + and − at its ends, ⇄, and the pinch.
+	$effect(() => {
+		if (bar) bar.inert = modifying;
+	});
+	/** The zoom at which the room fits `n` rows, as `fitted` reads `rows`. */
+	const fitsFor = (n: number) => (unit && paneH ? ((paneH + GAP) / (n + 0.5) - GAP) / unit : 1);
+	const moreRows = $derived(fitsFor(rowCount + 1) >= ZOOM.min);
+	const fewerRows = $derived(rowCount > 1 && fitsFor(rowCount - 1) <= ZOOM.max);
+	/** + and −: a row more or fewer, the zoom left to fit them. */
+	const stepRows = (by: 1 | -1) => onmodify?.({ rows: rowCount + by, zoom: undefined });
+	/** The handle in hand: the pointer, and the cover it is read against, its box read at each move. */
+	let sizing: { id: number; cover: HTMLElement } | null = null;
+	function grab(e: PointerEvent) {
+		if (e.button !== 0) return;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		sizing = { id: e.pointerId, cover: (e.currentTarget as HTMLElement).parentElement!.parentElement! };
+	}
+	function slide(e: PointerEvent) {
+		const box = sizing?.id === e.pointerId ? sizing.cover.getBoundingClientRect() : null;
+		if (!box?.width) return;
+		const x = (e.clientX - box.left) / box.width;
+		share = shareOf(side === 'right' ? 1 - x : x);
+	}
+	function drop(e: PointerEvent) {
+		if (sizing?.id !== e.pointerId) return;
+		sizing = null;
+		onmodify?.({ nowWidth: Math.round(share * 100) / 100 });
+	}
+	function nudgeWidth(e: KeyboardEvent) {
+		const by = { ArrowLeft: -0.02, ArrowRight: 0.02 }[e.key];
+		if (by === undefined) return;
+		e.preventDefault();
+		share = shareOf(share + (side === 'right' ? -by : by));
+		onmodify?.({ nowWidth: Math.round(share * 100) / 100 });
+	}
+	/** A pinch on the cover (da-l1z6h): two fingers, their spread the zoom; let go, the layout's. */
+	function pinchDown(e: PointerEvent) {
+		// A control's own press stays its own: captured here, its click would land on the cover.
+		if (e.pointerType !== 'touch' || (e.target as Element).closest('button, .grip')) return;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (fingers.size === 2) pinch = { d: apart(), from: scale };
+	}
+	function pinchMove(e: PointerEvent) {
+		if (!fingers.has(e.pointerId)) return;
+		fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pinch && fingers.size === 2 && pinch.d > 0) scale = bounded((pinch.from * apart()) / pinch.d);
+	}
+	function pinchUp(e: PointerEvent) {
+		if (!fingers.delete(e.pointerId) || !pinch || fingers.size >= 2) return;
+		pinch = null;
+		onmodify?.({ zoom: scale });
+	}
+	/** Ctrl and the wheel, which is what a trackpad's pinch arrives as. */
+	function pinchWheel(e: WheelEvent) {
+		if (!e.ctrlKey) return;
+		e.preventDefault();
+		onmodify?.({ zoom: (scale = bounded(scale * Math.exp(-e.deltaY / 200))) });
+	}
 	/**
 	 * A reveal — a focus, a scroll into view — scrolls the room itself (da-71p3u):
 	 * taken as the pan that shows the same, so the room stays scrolled by its
@@ -1364,7 +1435,7 @@
 </div>
 {/snippet}
 
-<div class="fields" class:picture class:zoomed={picture && zoomedIn} data-align={picture ? 'picture' : 'rows'} bind:clientWidth={boxW} bind:clientHeight={boxH} onclickcapture={letGo}>
+<div class="fields" class:modifying class:picture class:zoomed={picture && zoomedIn} data-align={picture ? 'picture' : 'rows'} bind:clientWidth={boxW} bind:clientHeight={boxH} onclickcapture={letGo}>
 <ButtonRows
 	items={entries}
 	{arrange}
@@ -1574,6 +1645,44 @@
 	{/if}
 	{/snippet}
 </ButtonRows>
+{#if modifying}
+	<!-- Modify mode's cover (da-xi4up): the rows under it still, the pinch its own. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="modify"
+		class:right={side === 'right'}
+		data-modify
+		data-rows={rowCount}
+		data-now-width={share}
+		onpointerdown={pinchDown}
+		onpointermove={pinchMove}
+		onpointerup={pinchUp}
+		onpointercancel={pinchUp}
+		onwheel={pinchWheel}
+	>
+		<button type="button" class="flip" style:width="{strip}px" title="put the now section on the {side === 'left' ? 'right' : 'left'}" aria-label="flip" onclick={() => onmodify?.({ side: side === 'left' ? 'right' : 'left' })}>⇄</button>
+		<div class="seam" style:left={side === 'left' ? `${strip}px` : null} style:right={side === 'right' ? `${strip}px` : null}>
+			<button type="button" class="step" title="a row more" aria-label="more rows" disabled={!moreRows} onclick={() => stepRows(1)}>+</button>
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+			<div
+				class="grip"
+				role="separator"
+				tabindex="0"
+				aria-orientation="vertical"
+				aria-label="now section width"
+				aria-valuenow={Math.round(share * 100)}
+				aria-valuemin={NOW_WIDTH.min * 100}
+				aria-valuemax={NOW_WIDTH.max * 100}
+				onpointerdown={grab}
+				onpointermove={slide}
+				onpointerup={drop}
+				onpointercancel={drop}
+				onkeydown={nudgeWidth}
+			></div>
+			<button type="button" class="step" title="a row fewer" aria-label="fewer rows" disabled={!fewerRows} onclick={() => stepRows(-1)}>−</button>
+		</div>
+	</div>
+{/if}
 {#if picture && zoomedIn}
 	<!-- Which part of the pictures' height is in view; a tap shows it all again. -->
 	<button
@@ -1590,6 +1699,81 @@
 </div>
 
 <style>
+	/* Modify mode (da-xi4up): the rows dimmed and still under the cover, which a pinch is the widget's on. */
+	.modifying > :global(.bar) {
+		opacity: 0.45;
+	}
+	.modify {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		touch-action: none;
+	}
+	.modify .flip {
+		position: absolute;
+		top: 50%;
+		left: 0;
+		transform: translateY(-50%);
+		min-height: 2rem;
+		border: 1px solid var(--accent);
+		border-radius: 3px;
+		background: var(--ground);
+		color: var(--accent);
+		font: inherit;
+		cursor: pointer;
+	}
+	.modify.right .flip {
+		left: auto;
+		right: 0;
+	}
+	/* The handle is the whole line, however short the widget; + and − lie over its ends. */
+	.seam {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 24px;
+		transform: translateX(-50%);
+	}
+	.modify.right .seam {
+		transform: translateX(50%);
+	}
+	.seam .step {
+		position: absolute;
+		left: 0;
+		z-index: 1;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		border: 1px solid var(--accent);
+		border-radius: 50%;
+		background: var(--ground);
+		color: var(--accent);
+		font: inherit;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.seam .step:first-child {
+		top: 0;
+	}
+	.seam .step:last-child {
+		bottom: 0;
+	}
+	.seam .step:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+	.grip {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 7px;
+		width: 10px;
+		border-radius: 5px;
+		background: var(--accent);
+		cursor: ew-resize;
+		touch-action: none;
+	}
+
 	.fields {
 		position: relative;
 		flex: 1;

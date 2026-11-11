@@ -192,6 +192,26 @@ export function clearSession(key: string): void {
 	change(({ [key]: _dropped, ...rest }) => rest);
 }
 
+/**
+ * Take `names` out of what this session holds against `key`, and hand back
+ * what they held (da-xi4up): a setting modify mode writes into the layout,
+ * which an overlay would otherwise go on masking. `restoreSession` puts it back.
+ */
+export function dropSession(key: string, names: string[]): Settings {
+	const held = joined()[key] ?? {};
+	const took = Object.fromEntries(names.filter((name) => name in held).map((name) => [name, held[name]]));
+	if (Object.keys(took).length === 0) return took;
+	const without = (s: Settings | undefined) => Object.fromEntries(Object.entries(s ?? {}).filter(([name]) => !names.includes(name)));
+	passing = put(passing, key, without(passing[key]));
+	change((all) => put(all, key, without(all[key])));
+	return took;
+}
+
+/** What `dropSession` took, held again: modify mode's ↺. */
+export function restoreSession(key: string, settings: Settings): void {
+	change((all) => put(all, key, { ...all[key], ...settings }));
+}
+
 /** Forget everything this session set, here and on this device: a test's way back to the layout (da-juku7). */
 export function forgetSession(): void {
 	inProgress.clear();
