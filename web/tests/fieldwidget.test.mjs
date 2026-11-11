@@ -42,6 +42,24 @@ const status = async (page) => {
 };
 /** `#rrggbb` as the browser computes it. */
 const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+/** WCAG's contrast ratio of two computed `rgb(…)` colours. */
+const contrast = (a, b) => {
+	const lum = (c) =>
+		c
+			.match(/[\d.]+/g)
+			.slice(0, 3)
+			.map((v) => v / 255)
+			.map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+			.reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+	const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+	return (hi + 0.05) / (lo + 0.05);
+};
+/** A pill's fill, and the ink of its name, × and box (da-ksx39): the bar's pill's rule, the field's colour solid. */
+const pillLook = (pill) =>
+	pill.evaluate((el) => ({
+		fill: getComputedStyle(el).backgroundColor,
+		inks: [...el.querySelectorAll('h2, .named, input, button')].map((c) => getComputedStyle(c).color)
+	}));
 /** The field the form is on: its name line's h2. */
 const heading = async (page) => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim();
 
@@ -87,6 +105,9 @@ describe('the field widget', () => {
 			const box = page.locator(`${PICKER} input.field`);
 			await box.fill('TE');
 			assert.equal(await border(), rgb(defaultColor('TE')));
+			const typed = await pillLook(pill);
+			assert.equal(typed.fill, rgb(defaultColor('TE')), 'the pill is not filled solid');
+			for (const ink of typed.inks) assert.ok(contrast(ink, typed.fill) >= 3, `${ink} on ${typed.fill}`);
 			assert.deepEqual([...(await chipTexts(page))].sort(), ['● tea', '● team'].sort());
 			await box.fill('walk');
 			assert.equal(await border(), rgb(defaultColor('walk')));
@@ -107,6 +128,11 @@ describe('the field widget', () => {
 			assert.equal(await fieldNamed(page), 'tea');
 			const pill = page.locator(`${FIELD_FORM} .name-line .pill`);
 			assert.equal(await pill.evaluate((el) => getComputedStyle(el).borderTopColor), rgb(defaultColor('tea')));
+			// vividn, 2026-11-11: «the field pill … should be compeletely filled in rather than the semi transparent fill».
+			const look = await pillLook(pill);
+			assert.equal(look.fill, rgb(defaultColor('tea')), 'the pill is not filled solid');
+			assert.equal(look.inks.length, 2, 'its name and ×');
+			for (const ink of look.inks) assert.ok(contrast(ink, look.fill) >= 3, `${ink} on ${look.fill}`);
 			assert.deepEqual(await status(page), ['NOT SET UP', null]);
 			// The line goes above the shapes.
 			const top = async (sel) => (await page.locator(`${FIELD_FORM} ${sel}`).first().boundingBox()).y;
@@ -383,8 +409,8 @@ describe('the field widget', () => {
 					if (Date.now() > end) assert.fail(`never drawn: ${what}, but ${JSON.stringify(seen)}`);
 				}
 			};
-			const off = at('.states li.off button.off-state');
-			const struck = async () => [await off.getAttribute('aria-pressed'), await off.isDisabled()];
+			const off = at('.states li.off input.offer');
+			const struck = async () => [await off.isChecked(), await off.isDisabled()];
 			await nameField(page, 'thing');
 			// No shape yet, nothing to draw.
 			assert.equal(await at('.placement').count(), 0);
@@ -399,7 +425,7 @@ describe('the field widget', () => {
 
 			// A switch starts with off alone, which cannot go until there is another state.
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
-			assert.deepEqual(await struck(), ['false', true]);
+			assert.deepEqual(await struck(), [true, true]);
 			await at('.states + button.add').click();
 			await at('.state input.name').fill('calm');
 			await drawn('calm with off between', ({ blocks }) => blocks.length === 4 && blocks.every((s) => s === 'calm'));
@@ -537,7 +563,7 @@ describe('the field widget', () => {
 	// sufficient. also, just put a ... button to the left of x button … remove the up and down arrows, and put reorg handles
 	// like there are on the data tab … have the "off" state at the top look the same as the rest of the states».
 	for (const [name, size] of [['a desktop', DESKTOP], ['a phone', PHONE]])
-		test(`on ${name}, a switch's states are handle · color · name · … · ✕, off's ✕ strikes it, and a save keeps all of it`, async () => {
+		test(`on ${name}, a switch's states are handle · color · name · … · ✕, off and on are a checkbox · color · name, and a save keeps all of it`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await app.run(['track', 'mood', '--verb', 'switch', '--states', 'a,b,c', '--state-description', 'a=first']);
@@ -545,7 +571,11 @@ describe('the field widget', () => {
 				const rows = page.locator(`${FIELD_FORM} .states li.state`);
 				const names = () => rows.locator('input.name').evaluateAll((all) => all.map((i) => i.value));
 				const off = page.locator(`${FIELD_FORM} .states li.off`);
-				const strike = off.locator('button.off-state');
+				const strike = off.locator('input.offer');
+				// da-ksx39, vividn, 2026-11-11: «remove the "x" button on off, and instead have it be a checkbox to the left /
+				// add a second row, also with checkbox for "on", color should be the field's».
+				const onRow = page.locator(`${FIELD_FORM} .states li.on`);
+				const onBox = onRow.locator('input.offer');
 				/** The parts of a row, left to right, each its class and the middle of its box. */
 				const parts = (row) =>
 					row.evaluate((li) =>
@@ -561,12 +591,23 @@ describe('the field widget', () => {
 				assert.ok(row.every((p) => p.x >= row[0].x && Math.abs(p.y - row[0].y) <= 2), JSON.stringify(row));
 				assert.deepEqual(await rows.first().locator(':scope > button:not(.handle)').evaluateAll((all) => all.map((b) => b.textContent.trim())), ['', '…', '✕']);
 				for (const gone of ['.tile', 'input.meaning']) assert.equal(await rows.locator(gone).count(), 0, gone);
-				// Off: the same columns, its swatch and ✕ under theirs, «off» not to be edited, no handle and no ….
-				const offRow = await parts(off);
-				assert.deepEqual(offRow.map((p) => p.part), ['swatch', 'name', 'remove']);
-				assert.deepEqual([offRow[0].x, offRow[2].x], [row[1].x, row[4].x]);
-				assert.deepEqual([await off.locator('input.name').inputValue(), await off.locator('input.name').isDisabled()], ['off', true]);
+				// Off, then on: a checkbox where the handle stands, the swatch under the states', and the word, which is
+				// text and no box to type in («so that they don't look like editable text fields»); no … and no ✕.
+				for (const [li, word] of [[off, 'off'], [onRow, 'on']]) {
+					const line = await parts(li);
+					assert.deepEqual(line.map((p) => p.part), ['offer', 'swatch', 'name'], word);
+					const handle = await rows.first().locator('.handle').boundingBox();
+					assert.ok(line[0].x >= handle.x && line[0].x < handle.x + handle.width, `${word}'s checkbox is not in the handle's column`);
+					assert.equal(line[1].x, row[1].x, `${word}'s swatch`);
+					assert.ok(line.every((p) => Math.abs(p.y - line[0].y) <= 2), `${word} is not one line: ${JSON.stringify(line)}`);
+					assert.equal((await li.locator('.name').innerText()).trim(), word);
+					assert.equal(await li.locator('input:not([type="checkbox"]), [contenteditable]').count(), 0, `${word} can be typed in`);
+					assert.equal(await li.locator('button').count(), 0, `${word} has a button`);
+				}
 				assert.equal(await off.locator('.swatch').evaluate((s) => getComputedStyle(s).backgroundColor), 'rgba(0, 0, 0, 0)');
+				assert.equal(await onRow.locator('.swatch').evaluate((s) => getComputedStyle(s).backgroundColor), rgb(defaultColor('mood')), 'on is not in the field\'s color');
+				// Off offered, on not, as the spec says.
+				assert.deepEqual([await strike.isChecked(), await onBox.isChecked()], [true, false]);
 
 				// … opens the description and, under «advanced», the symbol; pressed again, it shuts.
 				const more = page.locator(`${FIELD_FORM} [aria-label="the options of a"]`);
@@ -598,33 +639,52 @@ describe('the field widget', () => {
 				assert.deepEqual(await names(), ['a', 'c', 'b']);
 				assert.equal(await handle('c').evaluate((el) => el === document.activeElement), true, 'the moved handle lost the focus');
 
-				// Off's ✕ strikes the whole line, and again brings it back.
+				// Off's checkbox unchecked strikes the whole line, and checked again brings it back.
 				const across = () => off.evaluate((li) => getComputedStyle(li, '::after').borderTopStyle);
-				assert.deepEqual([await strike.getAttribute('aria-pressed'), await across()], ['false', 'none']);
+				assert.deepEqual([await strike.isChecked(), await across()], [true, 'none']);
 				await strike.click();
-				assert.deepEqual([await strike.getAttribute('aria-pressed'), await across()], ['true', 'solid']);
+				assert.deepEqual([await strike.isChecked(), await across()], [false, 'solid']);
 				await strike.click();
-				assert.equal(await strike.getAttribute('aria-pressed'), 'false');
+				assert.equal(await strike.isChecked(), true);
 				await strike.click();
+				// On checked lists `true`, first.
+				await onBox.click();
+				assert.equal(await onBox.isChecked(), true);
 
 				await page.locator(`${FIELD_FORM} button.commit`).click();
 				assert.equal((await saved).code, 0);
 				const shown = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
-				assert.deepEqual(shown.allowed_states, ['a', 'c', 'b']);
+				assert.deepEqual(shown.allowed_states, ['true', 'a', 'c', 'b']);
 				assert.deepEqual(shown.state_colors, { b: color });
 				assert.deepEqual(shown.state_descriptions, { a: 'the first' });
 				assert.equal(shown.never_false, true);
+				// `true` is the CLI's on: logged, it stores `true` and reads «on».
+				await app.run(['change', 'mood', 'true', '-y', '-t', '10:00']);
+				const [entry] = JSON.parse((await app.run(['tail', 'mood', '--json'])).stdout).rows;
+				assert.deepEqual([entry.state, entry.state_label], [true, 'on']);
 
-				// It cannot strike off while `false` is a state, nor while there is no other.
+				// Opened again, on is checked and in no state row; unchecked, the save lists no `true`.
+				const { saved: again } = await openField(page, 'mood');
+				assert.deepEqual([await strike.isChecked(), await onBox.isChecked()], [false, true]);
+				assert.deepEqual(await names(), ['a', 'c', 'b']);
+				await onBox.click();
+				await page.locator(`${FIELD_FORM} button.commit`).click();
+				assert.equal((await again).code, 0);
+				assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['a', 'c', 'b']);
+
+				// It cannot take off away while `false` is a state, nor while there is no other; on is another.
 				const { saved: left } = await openField(page, 'mood');
 				await strike.click();
 				await page.locator(`${FIELD_FORM} .states + button.add`).click();
 				await rows.last().locator('input.name').fill('false');
-				assert.equal(await strike.isDisabled(), true);
+				assert.deepEqual([await strike.isChecked(), await strike.isDisabled()], [true, true]);
 				assert.match(await strike.getAttribute('title'), /\bfalse\b/, 'the title names the state in the way');
+				await onBox.click();
 				for (const s of ['false', 'a', 'c', 'b']) await page.locator(`${FIELD_FORM} [aria-label="remove ${s}"]`).click();
+				assert.equal(await strike.isDisabled(), false, 'on is another state');
+				await onBox.click();
 				assert.equal(await strike.isDisabled(), true);
-				assert.ok(await strike.getAttribute('title'), 'a disabled ✕ says why');
+				assert.match(await strike.getAttribute('title'), /another state/, 'a disabled checkbox says why');
 				await leaveField(page);
 				assert.equal(await left, null);
 				assert.deepEqual(app.errors, []);

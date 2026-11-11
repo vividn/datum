@@ -44,7 +44,8 @@
 	back on the setup widget, but no swipe action between them»; a swipe
 	across the form is the pane's (PaneFrame.svelte), so the super tabs
 	swipe as they did with no tabs (da-4t0yn). Basics shows a switch's states,
-	off first and disabled (`never_false`) only once there is another, and
+	off first and disabled (`never_false`) only once there is another, on
+	under it (`true` listed), and
 	where its lane sits in the day (`Placement.svelte`), its entries drawn
 	there as the form holds them (da-srrqd), and on a record the data rows
 	themselves. Over each tab's button but the open one's is what it holds
@@ -173,7 +174,11 @@
 	const given = untrack(() => (opening ? null : (example?.spec ?? null)));
 	let color = $state(opening?.color ?? '');
 	let description = $state(opening?.description ?? '');
-	let states: StateRow[] = $state(opening ? stateRows(opening) : []);
+	/** On is `true` listed among the states (da-ksx39), as a field listing `false` keeps off: its own row under off, saved first. */
+	const isOn = (s: StateRow) => s.name.trim() === 'true';
+	const rowsOf = (s: Spec | null) => (s ? stateRows(s) : []);
+	let states: StateRow[] = $state(rowsOf(opening).filter((r) => !isOn(r)));
+	let on: StateRow | null = $state(rowsOf(opening).find(isOn) ?? null);
 	let symbol = $state(opening?.symbol ?? '');
 	let keys: KeyRow[] = $state(opening ? keyRows(opening) : []);
 	let autoalias = $state(!opening?.no_autoalias);
@@ -204,7 +209,7 @@
 		verb: verb ?? spec?.verb ?? 'occur',
 		color,
 		description,
-		states,
+		states: on ? [on, ...states] : states,
 		keys,
 		autoalias,
 		aliases,
@@ -227,7 +232,7 @@
 	});
 	// What `auto` paints: the name's colour, and none while there is no name.
 	const auto = $derived(field.trim() ? defaultColor(field.trim()) : 'transparent');
-	const named = $derived(states.filter((s) => s.name.trim()));
+	const named = $derived([...(on ? [on] : []), ...states].filter((s) => s.name.trim()));
 	const keyed = $derived(keys.map((k) => k.name.trim()).filter(Boolean));
 
 	// ---- what each tab holds, over its button while another is open (da-eh4dl) ----
@@ -285,7 +290,8 @@
 		symbol = given.symbol ?? '';
 		lookup = given.state_lookup_field ?? '';
 		neverFalse = !!given.never_false;
-		states = stateRows(given);
+		states = rowsOf(given).filter((r) => !isOn(r));
+		on = rowsOf(given).find(isOn) ?? null;
 		keys = keyRows(given);
 		place = placeOf(given);
 		if (given.no_autoalias) {
@@ -470,25 +476,39 @@
 						<!-- A switch starts with one state, off (da-i9upr): vividn, «that can be disabled as soon as you have
 						     more states». Off disabled is `never_false` (da-cwieh); a field that lists `false` keeps its `end`.
 						     Each row is handle · color · name · … · ✕ (da-puzij); a state is told apart by its color, and
-						     what it means and its symbol are under its …. Off is a row like the others, whose ✕ strikes it. -->
+						     what it means and its symbol are under its …. Off and on are rows of their own, a checkbox where a
+						     handle stands offering each (da-ksx39): on is `true` listed among the states, as `false` keeps off. -->
 						{@const listsFalse = states.some((s) => s.name.trim() === 'false')}
 						<ul class="states" bind:this={stateList}>
 							<li class="off" class:disabled={neverFalse}>
-								<span class="swatch" aria-hidden="true"></span>
-								<input class="name" value="off" disabled aria-label="off" />
-								<button
-									type="button"
-									class="remove off-state"
-									aria-label="disable off"
-									aria-pressed={neverFalse}
+								<input
+									type="checkbox"
+									class="offer"
+									aria-label="off"
+									checked={!neverFalse}
 									title={listsFalse
 										? 'false is one of its states, so the ring keeps off'
 										: !neverFalse && named.length === 0
 											? 'a change field needs another state before off can go'
 											: 'off disabled, the collect widget leaves a gap where off would stand'}
 									disabled={listsFalse || (!neverFalse && named.length === 0)}
-									onclick={() => (neverFalse = !neverFalse)}>✕</button
-								>
+									onchange={() => (neverFalse = !neverFalse)}
+								/>
+								<span class="swatch" aria-hidden="true"></span>
+								<span class="name">off</span>
+							</li>
+							<!-- vividn, 2026-11-11: «add a second row, also with checkbox for "on", color should be the field's». -->
+							<li class="on" class:disabled={!on} style:--c={color || auto}>
+								<input
+									type="checkbox"
+									class="offer"
+									aria-label="on"
+									checked={!!on}
+									title="on, the field's own color: change {field} true"
+									onchange={() => (on = on ? null : { name: 'true', color: '', description: '', glyph: '' })}
+								/>
+								<span class="swatch" aria-hidden="true"></span>
+								<span class="name">on</span>
 							</li>
 							{#each states as state, i (state)}
 								{@const which = state.name || 'this state'}
@@ -931,7 +951,9 @@
 		min-block-size: 28px;
 		border: 1px solid var(--c);
 		border-radius: 999px;
-		background: color-mix(in srgb, var(--c) 30%, var(--raised));
+		/* Solid, its ink the page's, as the bar's pill (Pill.svelte): vividn, 2026-11-11, «completely filled in». */
+		background: var(--c);
+		color: var(--page);
 		padding-inline: 0.6rem 0.15rem;
 	}
 
@@ -941,7 +963,6 @@
 		overflow-wrap: anywhere;
 		font-size: 0.9rem;
 		letter-spacing: 0.06em;
-		color: var(--ink-bright);
 	}
 
 	.pill input {
@@ -950,6 +971,8 @@
 		border: 0;
 		background: none;
 		padding-inline: 0;
+		color: inherit;
+		caret-color: currentColor;
 	}
 
 	.naming .pill {
@@ -963,7 +986,7 @@
 		border: 0;
 		border-radius: 999px;
 		background: none;
-		color: var(--ink-bright);
+		color: inherit;
 		font: inherit;
 		cursor: pointer;
 	}
@@ -1044,7 +1067,8 @@
 	}
 
 	.state,
-	.off {
+	.off,
+	.on {
 		position: relative;
 		display: grid;
 		grid-template-columns: 1.4rem 28px minmax(0, 1fr) auto auto;
@@ -1056,8 +1080,15 @@
 		outline: 1px dashed var(--accent);
 	}
 
-	/* Off has no handle and no …: its swatch, name and ✕ stay in their columns. */
-	.off .swatch {
+	/* Off and on have a checkbox where a handle stands, and no … or ✕: their swatch and name stay in their columns. */
+	.offer {
+		justify-self: center;
+		margin: 0;
+		accent-color: var(--c, var(--accent));
+	}
+
+	.off .swatch,
+	.on .swatch {
 		grid-column: 2;
 		box-sizing: border-box;
 		block-size: 28px;
@@ -1065,12 +1096,14 @@
 		border-radius: 4px;
 	}
 
-	.off .remove {
-		grid-column: 5;
+	.on .swatch {
+		border-color: var(--c);
+		background: var(--c);
 	}
 
-	/* Disabled, the whole line struck through. */
-	.off.disabled {
+	/* Not offered, its swatch and name dimmed; off's line struck through too. */
+	.disabled .swatch,
+	.disabled > .name {
 		opacity: 0.5;
 	}
 
@@ -1083,9 +1116,14 @@
 		pointer-events: none;
 	}
 
-	.state .name,
-	.off .name {
+	.state .name {
 		min-inline-size: 0;
+	}
+
+	/* Off and on are words, not boxes to type in (vividn, 2026-11-11). */
+	.off .name,
+	.on .name {
+		color: var(--ink);
 	}
 
 	/* The handle takes the touch: the body would scroll under it. */
