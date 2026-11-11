@@ -241,11 +241,21 @@ describe('collect out of modify mode', () => {
 			await seeded(app, WIDE);
 			assert.equal(await page.locator(ROOM).getAttribute('data-pans'), 'x', 'the rows run past the room, so a finger pans them');
 			const holdOpen = async () => {
-				const at = await middle(page, await page.locator(`${ROOM} .spot.shelf button[data-field]`).first().getAttribute('data-field'));
+				// The field nearest the rows' middle, which a swipe before it cannot
+				// have panned out of view as it may the first (da-ywxa0).
+				const box = await rowsBox(page);
+				const [field, at] = await page.locator(`${ROOM} .spot.shelf button[data-field]`).evaluateAll((all, c) => {
+					const mid = (el) => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
+					const near = all.reduce((a, b) => (Math.hypot(mid(a).x - c.x, mid(a).y - c.y) <= Math.hypot(mid(b).x - c.x, mid(b).y - c.y) ? a : b));
+					return [near.dataset.field, mid(near)];
+				}, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+				// So a hold that fails says which it was: a finger off the field, or a hold on it that opened nothing.
+				const under = await page.evaluate(({ x, y }) => { const el = document.elementFromPoint(x, y); return el?.closest('[data-field]')?.dataset.field ?? el?.outerHTML.slice(0, 80) ?? null; }, at);
+				assert.equal(under, field, `the finger at (${Math.round(at.x)},${Math.round(at.y)}) lands on ${field}`);
 				// 800 ms down is a hold, past HOLD_MS (#lib/hold.ts, 450 ms).
 				await touches(page, [['touchStart', [{ id: 8, ...at }], 800], ['touchEnd', []]]);
 				await rested(page, page.locator(COLLECT));
-				assert.equal(await page.locator('.collect [data-back]').count(), 1, 'the hold opened its field');
+				assert.equal(await page.locator('.collect [data-back]').count(), 1, `the hold on ${field} at (${Math.round(at.x)},${Math.round(at.y)}), the finger on it, opened its field`);
 				await page.keyboard.press('Escape');
 				await rested(page, page.locator(`${ROOM} .spot.shelf`).first());
 			};
