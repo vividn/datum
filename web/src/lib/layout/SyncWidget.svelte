@@ -31,7 +31,13 @@
 	and stop syncing, which leaves its chain once a dialog has said what
 	happens to whose data («tapping on the database name should give a menu
 	where you can pause, stop syncing (leave -- with explanation modal for
-	confirmation)»).
+	confirmation)»). Another device's name, tapped, opens its menu (da-jlyyr):
+	Rename and Remove, in each database it is in, and Sync all, an invite
+	sealed to it for each database here it is not in, a database in no chain
+	starting one; each the chain's own record, so it syncs, and grayed with
+	the reason where this device may not: a reader, or a chain its admins
+	lock. vividn, 2026-11-10: «Clicking on a device should let you rename,
+	remove, and sync all (which then adds all the databases for syncing).»
 
 	Above the grid, three ways in (da-48kc3): [Share write access], [Share
 	read access] (a reader's invite) and [Enter code], and the same three
@@ -96,6 +102,8 @@
 		ago,
 		barred,
 		cellActs,
+		deviceActs,
+		expelWords,
 		wipeWords,
 		qr,
 		readSync,
@@ -314,9 +322,9 @@
 	type Col = (typeof columns)[number];
 	const colKey = (c: Col): string => c.chain ?? c.db;
 	const rowKey = (r: GridRow): string => (r.this ? 'this' : (r.device ?? r.endpoint ?? ''));
-	/** Under the grid, a cell's details (`row`) or a database's menu, by column; tapped again, closed. */
-	let open = $state<{ col: string; row?: string } | null>(null);
-	const toggle = (o: { col: string; row?: string }) => (open = open?.col === o.col && open.row === o.row ? null : o);
+	/** Under the grid, a cell's details (both), a database's menu (`col`) or a device's (`row`); tapped again, closed. */
+	let open = $state<{ col?: string; row?: string } | null>(null);
+	const toggle = (o: { col?: string; row?: string }) => (open = open?.col === o.col && open?.row === o.row ? null : o);
 
 	/** What a cell draws (da-dxng1): a symbol for the device's standing in the column's database, and the time since it last synced it. */
 	function glance(row: GridRow, col: Col, at: number) {
@@ -345,7 +353,7 @@
 
 	/** The cell open, with the acts for that device × database alone and why they are grayed. */
 	const pair = $derived.by(() => {
-		const row = open?.row && devices.find((r) => rowKey(r) === open?.row);
+		const row = open?.row && open.col && devices.find((r) => rowKey(r) === open?.row);
 		const col = row && drawn.find((c) => colKey(c) === open?.col);
 		if (!row || !col) return null;
 		const g = glance(row, col, +$now);
@@ -354,8 +362,18 @@
 	});
 	/** The database menu open: its column and its sync. */
 	const menu = $derived.by(() => {
-		const col = open && !open.row && drawn.find((c) => colKey(c) === open?.col);
+		const col = open?.col && !open.row && drawn.find((c) => colKey(c) === open?.col);
 		return col ? { col, d: dbs.find((d) => d.db === col.db && d.chain) } : null;
+	});
+	/**
+	 * Another device's menu, its name tapped (da-jlyyr): rename, remove and sync all, each in the databases this
+	 * device may change, grayed with the reason where it may change none. vividn, 2026-11-10: «Clicking on a device
+	 * should let you rename, remove, and sync all (which then adds all the databases for syncing).» This device's
+	 * name is the ✎'s, and its leaving each database's menu's.
+	 */
+	const device = $derived.by(() => {
+		const row = open?.row && !open.col && devices.find((r) => !r.this && rowKey(r) === open?.row);
+		return row && grid ? { row, ...deviceActs(row, grid.chains, dbs, $account?.key) } : null;
 	});
 
 	/** A device's last sync in a column's database, as its row in `table` has it: none where it is not in it. */
@@ -565,9 +583,38 @@
 
 	const expel = (label: string, endpoint: string, d = db) =>
 		doing(async () => {
-			const words = `Expel ${label} from ${d}? It can no longer sync ${d} until a new invite admits it again. It keeps its own copy, and what it wrote stays on every device. If it is lost or someone else may hold it, Unjoin it instead, which sets aside everything it wrote: a device not yet told of the removal still takes its writes dated before it.`;
-			if (!(await confirm(words, 'expel'))) return;
+			if (!(await confirm(expelWords(label, [d]), 'expel'))) return;
 			ok(await syncAct(d, expelArgv(endpoint)));
+		});
+
+	/** The device menu's acts (da-jlyyr): each the chain's own record, so it syncs as any membership change. */
+	const renameDevice = (label: string, ins: { db: string; endpoint: string }[]) =>
+		doing(async () => {
+			const name = (await ask(`Rename ${label}. The name every device of ${ins.map((x) => x.db).join(', ')} shows for it:`, 'rename', label))?.trim();
+			if (!name || name === label) return;
+			ok(await syncAct(ins[0].db, labelCheckArgv(name)));
+			for (const x of ins) ok(await syncAct(x.db, renameArgv(name, x.endpoint)));
+		});
+
+	const removeDevice = (label: string, ins: { db: string; endpoint: string }[]) =>
+		doing(async () => {
+			if (!(await confirm(expelWords(label, ins.map((x) => x.db)), 'remove'))) return;
+			for (const x of ins) ok(await syncAct(x.db, expelArgv(x.endpoint)));
+			open = null;
+		});
+
+	/** Sync all: an invite sealed to the device for each database here it is not in, a database in none starting its chain. */
+	const syncAll = (device: string, to: { db: string; chain: string | null }[]) =>
+		doing(async () => {
+			const lines: string[] = [];
+			for (const t of to) {
+				const named = t.chain ? undefined : startName(t.db);
+				if (named) ok(await syncAct(t.db, labelCheckArgv(named)));
+				const invite = await newInvite(t.db);
+				if (named) ok(await syncAct(t.db, renameArgv(named)));
+				lines.push(await granting(t.db, device, 'member', undefined, invite));
+			}
+			said = lines.join('\n');
 		});
 
 	/** An unjoin previews first (da-ry11c): the confirm names the device and what goes. */
@@ -1004,7 +1051,15 @@
 								<tr data-device={row.device ?? row.endpoint} class:here={row.this}>
 									<th
 										data-sealed={row.sealed?.length || undefined}
-										title={[row.this ? `${row.label}: this device` : row.label, ...(row.sealed ?? []).map((g) => g.text)].join('\n')}>{row.label}</th
+										title={[row.this ? `${row.label}: this device` : row.label, ...(row.sealed ?? []).map((g) => g.text)].join('\n')}
+										>{#if row.this}{row.label}{:else}<button
+												type="button"
+												class="name"
+												use:act={'show'}
+												aria-haspopup="true"
+												aria-expanded={device?.row === row}
+												onclick={() => toggle({ row: rowKey(row) })}>{row.label}</button
+											>{/if}</th
 									>
 									{#each drawn as col (col.chain ?? col.db)}
 										{@const g = glance(row, col, +$now)}
@@ -1094,6 +1149,32 @@
 								<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => leave(d)}>Stop syncing</button>
 							</div>
 						{/if}
+					</div>
+				{/if}
+				{#if device}
+					{@const { row, change, changeWhy, add, addWhy } = device}
+					<!-- A device's menu (da-jlyyr): what it does reaches the databases named, and a grayed act says why. -->
+					<div class="card devmenu" data-device={rowKey(row)}>
+						<p class="head">{row.label}</p>
+						<div class="actions">
+							<button type="button" class="command" data-do="rename" use:act={'open'} disabled={busy || !change.length} title={changeWhy || undefined} onclick={() => renameDevice(row.label, change)}
+								>Rename</button
+							>
+							<button type="button" class="command" data-do="remove" use:act={'open'} disabled={busy || !change.length} title={changeWhy || undefined} onclick={() => removeDevice(row.label, change)}
+								>Remove</button
+							>
+							<button
+								type="button"
+								class="command"
+								data-do="all"
+								use:act={'run'}
+								disabled={busy || !add.length || !row.device}
+								title={addWhy || undefined}
+								onclick={() => row.device && syncAll(row.device, add)}>Sync all</button
+							>
+						</div>
+						{#if changeWhy}<p class="quiet why" data-for="change">{change.length ? `Rename and Remove reach ${change.map((x) => x.db).join(', ')} alone. ` : 'Rename and Remove: '}{changeWhy}</p>{/if}
+						{#if addWhy}<p class="quiet why" data-for="all">{add.length ? `Sync all adds ${add.map((x) => x.db).join(', ')} alone. ` : 'Sync all: '}{addWhy}</p>{/if}
 					</div>
 				{/if}
 				{#if said}<p class="quiet said" role="status">{said}</p>{/if}
@@ -1319,12 +1400,18 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	.grid tbody .name {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		vertical-align: bottom;
+	}
 	.grid .here th {
 		color: var(--ink-bright);
 	}
 	/* A cell and a database's name are buttons drawn as the text they are. */
 	.grid .cell,
-	.grid thead .name {
+	.grid .name {
 		padding: 0;
 		font: inherit;
 		color: inherit;
@@ -1336,11 +1423,11 @@
 		min-width: 2.5rem;
 		text-align: left;
 	}
-	.grid thead .name {
+	.grid .name {
 		text-decoration: underline dotted;
 	}
 	.grid .cell:focus-visible,
-	.grid thead .name:focus-visible {
+	.grid .name:focus-visible {
 		outline: 1px solid var(--accent);
 	}
 	.grid [aria-expanded='true'] {
@@ -1361,7 +1448,8 @@
 		color: var(--warn);
 	}
 	.pair,
-	.dbmenu {
+	.dbmenu,
+	.devmenu {
 		margin-top: 0.5rem;
 	}
 	.failure-text {

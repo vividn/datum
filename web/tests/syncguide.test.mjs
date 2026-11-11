@@ -164,6 +164,9 @@ test('every control the guide names is one the widget shows, walked as a person 
 				await look(widget.locator('.grid .pair'));
 				await widget.locator('.grid thead th[data-db="datum"] button.name').click();
 				await look(widget.locator('.grid .dbmenu'));
+				// And the other device's name its menu: Rename, Remove, Sync all (da-jlyyr).
+				await widget.locator('.grid tbody tr:not(.here) th button.name').click();
+				await look(widget.locator('.grid .devmenu'));
 
 				// The other side: a join link opened in a browser, on a database in no chain.
 				const serving = native.spawn(['sync', 'chain', 'invite']);

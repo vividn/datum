@@ -72,3 +72,10 @@ export async function dbMenu(page, db) {
 
 /** The grid's device rows' labels. */
 export const gridLabels = (page) => page.locator(`${WIDGET} .grid tbody th`).allInnerTexts();
+
+/** Another device's menu, opened by its name at the head of its grid row (da-jlyyr). */
+export async function deviceMenu(page, label) {
+	const name = page.locator(`${WIDGET} .grid tbody th`).getByRole('button', { name: label, exact: true });
+	if ((await name.getAttribute('aria-expanded')) !== 'true') await name.click();
+	return page.locator(`${WIDGET} .grid .devmenu`);
+}

@@ -876,7 +876,7 @@ Every other device shows a ⚠ in the tab bar: tap it, and it says «Another dev
 - One you added: press OK.
 - One you don't know: in Sync tap its cell and choose **Remove**, so it can no longer sync. **Unjoin** also takes back everything it changed. Either takes it off the grid.
 
-Give this device a name you will know it by with its **✎**, which takes your username too. Tap a database's name, at the head of its column, for **Pause sync** and **Stop syncing**, which stops this device syncing it and keeps its data.
+Give this device a name you will know it by with its **✎**, which takes your username too. Tap a database's name, at the head of its column, for **Pause sync** and **Stop syncing**, which stops this device syncing it and keeps its data. Tap another device's name, at the head of its row, to **Rename** it, **Remove** it from every database it syncs here, or **Sync all**, which invites it to every database here it is not in yet; a device that only reads, or a database whose admin locks it, cannot, and the menu says why.
 
 ## Reading the widget
 

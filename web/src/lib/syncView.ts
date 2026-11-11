@@ -528,6 +528,51 @@ export function cellActs(s: Standing | undefined, bound: boolean): string[] {
 	return [...roles, ...acts];
 }
 
+/** A device's acts from its menu (da-jlyyr): the databases each reaches, and why it reaches none or not all. */
+export interface DeviceActs {
+	/** Rename and remove: each database here it is in, by its endpoint there, that this device may change. */
+	change: { db: string; endpoint: string }[];
+	changeWhy: string;
+	/** Sync all: each database here it is not in, nor invited to, that this device may invite it to. */
+	add: { db: string; chain: string | null }[];
+	addWhy: string;
+}
+
+/**
+ * What a device's menu offers (da-jlyyr). vividn, 2026-11-10: «you shouldn't be able to for example rename if you
+ * only have read access--some of these obviously require admin access». A database barred (`barred`) is left out
+ * and its reason said; an invite is sealed to the device's key and carried by a chain it shares with this device,
+ * which a reader writes nothing in.
+ */
+export function deviceActs(row: Grid['devices'][number], chains: Grid['chains'], dbs: DbSync[], account?: string): DeviceActs {
+	const why = (ds: (DbSync | undefined)[]) => [...new Set(ds.map((d) => barred(d, account)).filter(Boolean))].join(' ');
+	const ins = chains.flatMap((c) => {
+		const cell = row.cells[c.chain];
+		return c.held && cell && (cell.state === 'member' || cell.state === 'reader') ? [{ db: c.db, endpoint: cell.endpoint, d: dbs.find((d) => d.db === c.db) }] : [];
+	});
+	const change = ins.filter((x) => !barred(x.d, account)).map(({ db, endpoint }) => ({ db, endpoint }));
+	const changeWhy = ins.length ? why(ins.filter((x) => barred(x.d, account)).map((x) => x.d)) : `${row.label} is in no database here yet.`;
+	const left = dbs.filter((d) => !ins.some((x) => x.db === d.db) && !(d.chain && row.grants?.[d.chain]?.state === 'waiting'));
+	const carried = !!row.device && ins.some((x) => x.d && !x.d.this?.reader);
+	const add = carried ? left.filter((d) => !barred(d, account)).map(({ db, chain }) => ({ db, chain })) : [];
+	const addWhy = !row.device
+		? `${row.label} has no device key here, which an invite is sealed to.`
+		: !ins.length
+			? `${row.label} is in no database here yet, so nothing carries an invite to it.`
+			: !carried
+			? `This device only reads what it shares with ${row.label}: an invite reaches it through a database this device writes.`
+			: !left.length
+				? `${row.label} already syncs every database here.`
+				: why(left.filter((d) => barred(d, account)));
+	return { change, changeWhy, add, addWhy };
+}
+
+/** The confirm of removing `label` from `dbs`: what happens to whose data (da-fstz5: a lost device is unjoined). */
+export const expelWords = (label: string, dbs: string[]): string => {
+	const list = dbs.length > 1 ? `${dbs.slice(0, -1).join(', ')} and ${dbs.at(-1)}` : dbs[0];
+	return `Expel ${label} from ${list}? It can no longer sync ${dbs.length > 1 ? 'them' : list} until a new invite admits it again. It keeps its own copy, and what it wrote stays on every device. If it is lost or someone else may hold it, Unjoin it instead, which sets aside everything it wrote: a device not yet told of the removal still takes its writes dated before it.`;
+};
+
 /** The wipe's confirm: what happens to whose data, and its limit said plainly (vividn: «a popup dialog should explain what this means»). */
 export const wipeWords = (label: string, db: string): string =>
 	`Wipe ${label}’s copy of ${db}? It is expelled now, and asked to delete its own copy of ${db} when it next reaches a device of this chain. A device that never comes back online cannot be made to delete anything: until it obeys, this is only an expel, and it keeps what it holds. What it synced stays on every other device; what it wrote since it last synced goes with its copy.`;

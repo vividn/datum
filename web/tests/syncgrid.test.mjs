@@ -3,6 +3,8 @@
 // sync worker's ticket, `sync chain expel [--unjoin] [--wipe] | role` — and
 // every expel, unjoin and wipe confirmed in a dialog saying what happens to
 // whose data. A device expelled, unjoined or wiped is drawn no more (da-5wlnr).
+// A device's menu's Sync all is an invite to it for every database here it is
+// not in (da-jlyyr); its Rename and Remove are syncdevice's.
 //
 // A device in the grid is a native copy paired with the page's `datum` (so
 // bound to its device key, which a grant is sealed to); `home` is a chain of
@@ -14,7 +16,7 @@ import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
 import { countOf, nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
-import { DESKTOP, WIDGET, cellAct, cli, members, openChain } from './support/syncactions.mjs';
+import { DESKTOP, WIDGET, cellAct, cli, deviceMenu, members, openChain } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -147,6 +149,59 @@ describe('the sync widget’s grid', () => {
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
+	test('Sync all invites the device to every database here it is not in, one in no chain starting its chain: it joins each, and a read-only copy may not (da-jlyyr)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					assert.equal((await pairWith(app, native)).verified, true);
+					const device = JSON.parse((await native.run(['sync', 'status', '--json'])).stdout).this.device;
+					// `work` in a chain with this copy alone, `notes` in none.
+					await cli(app, ['--db', 'work', 'sync', 'new-invite']);
+					await cli(app, ['--db', 'notes', 'occur', 'tea']);
+					await app.goto('/sync');
+					await page.locator(`${WIDGET} .grid button.fold`).click();
+					await cellOf(page, device, 'notes').waitFor();
+					const label = await page.locator(`${WIDGET} .grid tr[data-device="${device}"] th`).innerText();
+
+					const menu = await deviceMenu(page, label);
+					const all = menu.locator('[data-do="all"]');
+					assert.equal(await all.isDisabled(), false);
+					assert.equal(await menu.locator('.why').count(), 0);
+					await all.click();
+					const said = page.locator(`${WIDGET} .grid .said`);
+					await said.waitFor();
+					assert.equal((await said.innerText()).split('\n').length, 2, await said.innerText());
+					// Waiting in each column it was not in; `notes` has a chain now.
+					for (const db of ['work', 'notes']) await until(() => cellOf(page, device, db).getAttribute('data-grant'), (s) => s === 'waiting');
+					assert.ok(JSON.parse(await cli(app, ['--db', 'notes', 'sync', 'status', '--json'])).chain);
+
+					for (const db of ['work', 'notes']) {
+						await joins(native, db);
+						await syncs(native, db);
+					}
+					for (const db of ['datum', 'work', 'notes']) await until(() => stateOf(page, device, db), (s) => s === 'member');
+					assert.match(await (await deviceMenu(page, label)).locator('.why[data-for="all"]').innerText(), /already syncs every database here/);
+
+					// This copy made a reader of each: it renames, removes and invites no one, and says why.
+					for (const db of ['datum', 'work', 'notes']) {
+						const me = JSON.parse(await cli(app, ['--db', db, 'sync', 'status', '--json'])).this.endpoint;
+						await cli(app, ['--db', db, 'sync', 'chain', 'role', me, 'reader']);
+					}
+					await app.goto('/sync');
+					const ro = await deviceMenu(page, label);
+					for (const a of ['rename', 'remove', 'all']) assert.equal(await ro.locator(`[data-do="${a}"]`).isDisabled(), true, a);
+					assert.match(await ro.locator('.why[data-for="change"]').innerText(), /only reads datum/);
+					assert.match(await ro.locator('.why[data-for="all"]').innerText(), /only reads what it shares/);
+				},
+				{ prepare: relayed(relay), viewport: { width: 390, height: 844 } }
 			);
 		} finally {
 			await native.close();
