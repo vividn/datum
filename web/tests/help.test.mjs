@@ -8,7 +8,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
-import { DESKTOP, PHONE, along, atRest, widgetPane } from './support/layout.mjs';
+import { DESKTOP, PHONE, along, atRest, rested, widgetPane } from './support/layout.mjs';
 import { reach } from './support/commands.mjs';
 import { until } from './support/until.mjs';
 
@@ -256,7 +256,8 @@ describe('the Help button', () => {
 		const withPane = JSON.stringify(
 			along('column', widgetPane('cmd', 'command'), widgetPane('help', 'help'), widgetPane('bar', 'widgetbar'))
 		);
-		await onPage(async ({ page }) => {
+		await onPage(async (app) => {
+			const { page } = app;
 			await page.locator('section.pane[data-title="help"]').waitFor();
 			const tabs = await rootTabs(page);
 			await armHelp(page);
@@ -264,10 +265,12 @@ describe('the Help button', () => {
 			const lines = await read(page, 'datum help moment');
 			assert.equal(lines[0], (await cliHelp(page, 'moment')).title);
 			// The pane shows it at once; a tab `openPlace` opened would land a
-			// layout load later, so the tabs are watched for a while.
-			for (let i = 0; i < 10; i++, await page.waitForTimeout(100)) {
-				assert.deepEqual(await rootTabs(page), tabs, 'a tab opened beside the pane');
-			}
+			// layout load later, so the CLI is waited idle and the page still
+			// first. `show()` (#lib/help.ts) calls `openPlace` as it sets the
+			// answer, so by now its load is queued: with it called whatever the
+			// pane, the tab stands by the time the answer reads (da-y5jmw).
+			await rested(page, null, { app });
+			assert.deepEqual(await rootTabs(page), tabs, 'a tab opened beside the pane');
 		}, withPane);
 	});
 	// canary-kimi-k3 on #355: a pane's tabs behind the front one stay mounted
