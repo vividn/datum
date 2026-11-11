@@ -427,8 +427,14 @@ describe('the nowview widget', () => {
 				await page.locator(`${PANE} svg.svg .instant-line`).first().waitFor({ state: 'attached' });
 				await app.idle();
 				assert.deepEqual(await places(), was);
-				// And a second on, the picture having flowed with it.
-				await page.waitForTimeout(1000);
+				// And a tick of the page's clock on: `now` in #lib/clock.ts, once a
+				// second, which rewrites the picture's `.now-clock`. It is all that
+				// moves here, as a pill's picture is drawn at its instant with no
+				// `.flow` to slide. Read at rest once it has (da-xpdyi).
+				const clock = () => page.locator(`${PANE} .now-clock`).first().textContent();
+				const ticked = await clock();
+				await until(clock, (t) => t !== ticked);
+				await rested(page, page.locator(`${PANE} .nowview-handles .handle[data-axis="rel"]`));
 				assert.deepEqual(await places(), was);
 				// And a resize: as far along the window as with no pill. Read at
 				// rest: the widget places its handles in a ResizeObserver, which a
