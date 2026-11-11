@@ -19,6 +19,7 @@
 // it and hold the glyphs to the CLI's render.
 
 import { derived, get, writable } from 'svelte/store';
+import { fieldPill, setFieldPill } from './bar.js';
 import { layout } from './layout/current.js';
 import { isPreview, modalPlace, openPlace } from './layout/shell.js';
 import type { RunResult } from './run.js';
@@ -82,6 +83,8 @@ export async function openField(
 ): Promise<RunResult | null> {
 	answerField(null);
 	away.set(false);
+	// The bar's field pill is the widget's field (da-upig4): one naming another goes, and the widget mints its own once read.
+	if (get(fieldPill) !== (field || null)) setFieldPill(null);
 	editing.set({ field, verb, ...(example && { example }) });
 	// A pane's tabs behind the front one stay mounted, hidden (TabBody.svelte): not in view.
 	const hosts = [...document.querySelectorAll(`.host[data-widget="${FIELD}"]`)];

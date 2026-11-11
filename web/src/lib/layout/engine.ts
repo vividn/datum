@@ -581,7 +581,9 @@ export const pressWithPills = async (argv: string[], line?: string, inline: Pill
 	if (result.code === 0) {
 		// A press nobody typed ghosted when it was pressed, and its pills
 		// fade on that ghost's clock; a typed line has no ghost to keep time.
-		clearUnlockedPills([...inline, ...used], line === undefined ? pressed : Date.now());
+		// `setup F` keeps the field pill it took: it is the field the widget opened on (da-upig4).
+		const kept = specOpens(full) === null ? used : used.filter((p) => p.kind !== 'field');
+		clearUnlockedPills([...inline, ...kept], line === undefined ? pressed : Date.now());
 	}
 	// Whatever the exit: a run that wrote and then failed still echoes its
 	// writes (da-0uvyr), and `del <good>,<bad>` has deleted the good one.

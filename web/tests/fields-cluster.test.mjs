@@ -251,6 +251,8 @@ describe('a switch field’s states in collect, in the rows', () => {
 			await saved;
 			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['false', 'd', 'a', 'b', 'c']);
 			await leaveField(page);
+			// Opened in setup, mood is the bar's pill (da-upig4), and collect on its view: the pill's × closes it.
+			await page.locator('.prompt-bar .pill.field button[aria-label="remove mood"]').click();
 			await field.waitFor();
 			await app.idle();
 			await rested(page);

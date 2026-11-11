@@ -135,7 +135,7 @@
 		if (!held) commandsOpen.set(false);
 		const field = argumentsOf($pills).find((p) => p.kind === 'field');
 		if (!held && opensField(name)) {
-			if (field) clearUnlockedPills([field]);
+			// The pill stays: it is the field the widget opens on (da-upig4).
 			// The widget runs its own save; what it answers is the console's.
 			// A field held, then the setup command: brought, so Save goes back (da-wz84y).
 			void openField(field?.text, null, { brought: !!field });

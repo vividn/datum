@@ -24,8 +24,9 @@
 
 	Which field is `editing` (#lib/fieldWidget.ts), one store for every copy
 	of the widget, so anything that opens it on a field has one place to
-	say so. A field pill minted while this is on the page says so too: a
-	hold on a field in the collect widget brings that field here. A new field
+	say so. The bar's field pill is that field while this is on the page
+	(da-upig4): a hold on a field in the collect widget brings that field
+	here, either × clears both, and a field opened here is the bar's pill. A new field
 	picked away from asks first where the form has edits nobody saved.
 
 	Save on a new field runs its one command (da-2pbvd) and STAYS, on the
@@ -63,7 +64,7 @@
 	import FieldForm from '#lib/FieldForm.svelte';
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
-	import { fieldPill } from '#lib/bar.ts';
+	import { commandsOpen, fieldPill, setFieldPill } from '#lib/bar.ts';
 	import { renameFieldArgv, specHistoryArgv, specShowArgv, revertToVersionArgv, touchedArgv, type SpecVersion } from '#lib/calls.ts';
 	import { stripAnsi } from '#lib/ansi.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
@@ -131,13 +132,33 @@
 			});
 	});
 
-	// Only a pill minted while this is here: one that was there already is not an ask.
-	let pilled = $fieldPill;
-	$effect.pre(() => {
-		if ($fieldPill !== pilled) {
-			pilled = $fieldPill;
-			if (pilled !== null) $editing = { field: pilled };
-		}
+	// The bar's field pill is this widget's field (da-upig4), vividn, 2026-11-11: «if you dismiss the field
+	// pill in the input bar, it should also be dismissed in the setup widget and vice versa». One there as it
+	// opens is its field, and one minted or taken away while it is here moves it. Synchronous, so a door
+	// (`openField`) clearing a pill that disagrees with it is heard before it sets its own field.
+	let opening = true;
+	onDestroy(
+		fieldPill.subscribe((pill) => {
+			if ((pill !== null || !opening) && pill !== ($editing.field || null)) $editing = { field: pill ?? '' };
+			opening = false;
+		})
+	);
+	// And back: the field read is the bar's pill, in its colour — none on a new one. Only once the read is
+	// of the field asked for, so a pill that moved the field is not taken back by the read before. Not a
+	// field this widget just made (`fresh`): its pill would open collect's view on it, over the chip the
+	// tour points at. And it leaves the command widget as it was, which a pill added opens (da-lnirx):
+	// on a phone that covers the form's own buttons.
+	let fresh: typeof $editing | null = null;
+	$effect(() => {
+		const [field, color] = [readFor.field, $fields.find((f) => f.field === readFor.field)?.color];
+		untrack(() => {
+			if (readFor !== $editing || readFor === fresh || $fieldPill === (field || null)) return;
+			if (!field) return setFieldPill(null);
+			if (color === undefined) return;
+			const open = $commandsOpen;
+			setFieldPill(field, color);
+			$commandsOpen = open;
+		});
 	});
 
 	/** Read `asked`'s spec afresh, the edits left behind saved first; `at` keeps a walk going, else it begins at the newest version. */
@@ -245,7 +266,7 @@
 		// went to another field while the save ran stays where they went.
 		if ((result && result.code !== 0) || asked !== $editing) return;
 		if (made) {
-			$editing = { field: made };
+			$editing = fresh = { field: made };
 			if (first) void begin(made);
 			return;
 		}

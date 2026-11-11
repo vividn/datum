@@ -25,6 +25,7 @@ import {
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 import { rested } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 import {
 	FIELD_FORM as MODAL, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, pickImage, trackSomething
 } from './support/field.mjs';
@@ -496,8 +497,9 @@ describe('in the app', () => {
 			const status = page.locator(`${MODAL} [data-status="ignored"]`);
 			assert.equal((await status.locator('.word').innerText()).trim(), 'IGNORED');
 			await status.locator('button', { hasText: 'start tracking' }).click();
-			await page.locator('.bar button[data-field="run"]').waitFor();
-			assert.equal((await app.echoes()).at(-1), 'track run');
+			// Opened in setup, run is the bar's pill (da-upig4), so collect draws it as its open view.
+			await page.locator('[data-open-field="run"]').waitFor();
+			await until(async () => (await app.echoes()).at(-1), (e) => e === 'track run');
 		});
 	});
 

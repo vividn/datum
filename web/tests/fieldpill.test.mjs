@@ -803,7 +803,8 @@ describe('`setup` under the pill', () => {
 	const specButton = (page) => pane(page, 'cmd').locator('[data-command="setup"]');
 	const line = (page) => page.locator('.prompt-bar input').first();
 
-	test('long press, tap `setup`: the modal is open on that field, and the pill is spent', async () => {
+	// da-upig4, vividn, 2026-11-11: «when you have a field pill selected and go to setup, and the field pill is active (which it should remain)».
+	test('long press, tap `setup`: the modal is open on that field, and the pill stays', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			await longPress(page, 'mood');
@@ -815,7 +816,7 @@ describe('`setup` under the pill', () => {
 			await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
 			assert.equal(await page.locator(`${MODAL} h2`).innerText(), 'mood');
 			assert.equal(await page.locator(`${MODAL} [data-verb="switch"]`).getAttribute('aria-checked'), 'true');
-			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
+			assert.equal(await fieldPill(page).count(), 1, 'the tap spent the pill');
 			assert.equal(await line(page).inputValue(), '', 'the tap wrote a line as well');
 
 			// And what it saves is the one `setup F`, with no pill after it.
@@ -837,8 +838,9 @@ describe('`setup` under the pill', () => {
 			const dialog = page.locator('dialog.sheet[data-place="setup"]');
 			const button = (name) => page.locator(`${MODAL} .buttons button.${name}`);
 			const description = page.locator(`${MODAL} input.description`);
+			// The pill stays through the tap and the leaving (da-upig4), so one hold serves both.
+			await longPress(page, 'mood');
 			for (const leave of ['cancel', 'commit']) {
-				await longPress(page, 'mood');
 				await fieldPill(page).waitFor();
 				await specButton(page).click();
 				await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
@@ -875,14 +877,13 @@ describe('`setup` under the pill', () => {
 			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
 			assert.equal(await fieldNamed(page), 'tea');
 			assert.equal(await page.locator(`${MODAL} [data-verb][aria-checked="true"]`).count(), 0);
-			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
+			assert.equal(await fieldPill(page).count(), 1, 'the tap spent the pill');
 
-			// Dismissed, it runs nothing, and the pill stays spent: it was spent
-			// at the tap, which is the choice (review 3754).
+			// Dismissed, it runs nothing, and the pill stays: the tap kept it (da-upig4).
 			await page.locator(`${MODAL} button.cancel`).click();
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
-			assert.equal(await fieldPill(page).count(), 0, 'a dismiss put the pill back');
+			assert.equal(await fieldPill(page).count(), 1, 'a dismiss took the pill');
 			assert.match((await app.run(['setup', 'tea', '--json'])).stdout, /No spec defined/, 'a dismiss declared tea');
 			assert.deepEqual(app.errors, []);
 		});

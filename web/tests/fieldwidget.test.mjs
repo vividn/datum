@@ -771,6 +771,37 @@ describe('the field widget', () => {
 		});
 	});
 
+	// da-upig4, vividn, 2026-11-11: «if you dismiss the field pill in the input bar, it should also be dismissed in
+	// the setup widget and vice versa»: the widget's field is the bar's field pill while it is on the page.
+	test('in a pane, its field is the bar\'s field pill: either × clears both, and a field opened in it is pilled', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.submit('track tea --verb occur');
+			await app.submit('track nap --verb start');
+			const pane = await put(page, 'setup');
+			const pill = page.locator('.prompt-bar .pill.field');
+			const heading = pane.locator(`${FIELD_FORM} h2`);
+			const home = pane.locator(`${FIELD_FORM} button.track-something`);
+
+			// A field opened in it is the bar's pill.
+			await openField(page, 'tea');
+			await until(() => pill.locator('.label').allInnerTexts(), (t) => t.join().trim() === 'tea');
+			// The bar's × clears the widget's field.
+			await pill.locator('button[aria-label="remove tea"]').click();
+			await home.waitFor();
+			assert.equal(await heading.count(), 0, 'the widget kept tea');
+
+			// The widget's × takes the bar's pill away.
+			await page.locator('.bar button[data-field="nap"]').click({ modifiers: ['Shift'] });
+			await until(async () => (await heading.allInnerTexts()).join().trim(), (t) => t === 'nap');
+			assert.equal(await pill.count(), 1);
+			await pane.locator(`${FIELD_FORM} .name-line .pill button.clear`).click();
+			await home.waitFor();
+			await until(() => pill.count(), (n) => n === 0);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	// vividn, 2026-10-31: «on the web, it should fail once warning that the other field name already exists and then give you the option to merge the other name into it» (da-icna7).
 	test('«rename» onto a name that exists warns, offers the merge with its numbers, and only a yes merges', async () => {
 		await shared.solo(async (app) => {
@@ -856,8 +887,9 @@ describe('the field widget', () => {
 			await until(() => heading(page), (t) => t === 'feeling');
 			assert.deepEqual((await app.entries()).map((e) => e.field).sort(), ['feeling', 'feeling']);
 			await until(() => tail.innerText(), (t) => t.includes('feeling') && !t.includes('mood'));
-			await page.locator('.bar button[data-field="feeling"]').waitFor();
-			assert.equal(await page.locator('.bar button[data-field="mood"]').count(), 0);
+			// The bar's pill follows the rename (da-upig4), so collect is on the field's own view.
+			await page.locator('[data-open-field="feeling"]').waitFor();
+			assert.equal(await page.locator('.bar button[data-field="mood"], [data-open-field="mood"]').count(), 0);
 			// One undo takes it all back.
 			assert.equal((await app.run(['undo'])).code, 0);
 			assert.deepEqual((await app.entries()).map((e) => e.field), ['mood', 'mood']);

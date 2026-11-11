@@ -33,7 +33,8 @@ import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, kindFor, button
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
-import { FIELD_FORM, NAMING, openField, trackSomething } from './support/field.mjs';
+import { FIELD_FORM, NAMING, leaveField, openField, trackSomething } from './support/field.mjs';
+import { until } from './support/until.mjs';
 
 const spec = (field, rest = {}) => ({ field, ...rest });
 
@@ -456,8 +457,11 @@ describe('in the app', () => {
 			await trackSomething(page);
 			await page.locator(`${NAMING} [data-chip="run"][data-ignored]`).click();
 			await page.locator(`${FIELD_FORM} [data-status="ignored"] button`).click();
+			// Opened in setup, run is the bar's pill (da-upig4), and collect on its view: the pill's × closes it.
+			await until(async () => (await app.echoes()).at(-1), (e) => e === 'track run');
+			await leaveField(page);
+			await page.locator('.prompt-bar .pill.field button[aria-label="remove run"]').click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
-			assert.equal((await app.echoes()).at(-1), 'track run');
 			assert.deepEqual(await drawn(), ['BUTTON:run', 'BUTTON:tea', 'BUTTON:walk']);
 		});
 	});
