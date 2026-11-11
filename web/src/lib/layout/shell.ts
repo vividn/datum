@@ -1057,7 +1057,7 @@ export const wrapTabs = writable(loadWrap());
 wrapTabs.subscribe(saveWrap);
 
 /** Whether the root tab in front is an open place. */
-const inPlace = (): boolean => {
+export const inPlace = (): boolean => {
 	const l = get(layout);
 	const name = l.root.tabs[l.root.active]?.layout;
 	return name !== undefined && places.has(name);

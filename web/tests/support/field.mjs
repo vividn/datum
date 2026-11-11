@@ -22,14 +22,13 @@ export function declared(text) {
 	return { line: argv.join(' '), spec: JSON.parse(json) };
 }
 
-/** Any copy of the form, the sliding one too: what must be gone before another opens. */
-const ANY = '.field-form';
-
 /**
  * Open the field widget on `field` as the console does — none is a new
  * field, `verb` its kind — once any place before it has gone: a form still
- * open in one, as Save leaves it (da-hda4j), is left first, and a place
- * left slides back before its tab closes. `saved` is `datum.field`'s answer, what the
+ * open in one, as Save leaves it (da-hda4j), is left first, and the place,
+ * the modal or the place tab, waited out: not its form, which a save may
+ * remount while the tab slides back before it closes. A pane's form stays,
+ * and is never waited for (da-35ns4). `saved` is `datum.field`'s answer, what the
  * place's next save ran or null when left, BOXED: awaiting this must not
  * await the save. Nor may a test that never awaits it be failed by it: a
  * page closed under a test that threw rejects it with «Target page closed»,
@@ -37,8 +36,14 @@ const ANY = '.field-form';
  * `brought` opens it as the hold → setup path does (da-29s6c): Save goes back.
  */
 export async function openField(page, field, verb, brought = false) {
-	if (await page.locator(FIELD_FORM).count()) await page.evaluate(() => window.datum.shell.leavePlace());
-	await page.locator(ANY).waitFor({ state: 'detached' });
+	const left = await page.evaluateHandle((form) => {
+		const { shell } = window.datum;
+		const place = document.querySelector('dialog.sheet[data-place]') ?? (shell.inPlace() ? document.querySelector('.tab-body.kept:not(.behind)') : null);
+		if (!place?.querySelector(form)) return null;
+		shell.leavePlace();
+		return place;
+	}, FIELD_FORM);
+	await page.waitForFunction((place) => !place?.isConnected, left);
 	const saved = page.evaluate(([f, v, b]) => window.datum.field(f, v, { brought: b }), [field, verb ?? null, brought]);
 	saved.catch(() => {});
 	return { saved };
