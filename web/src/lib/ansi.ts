@@ -157,7 +157,8 @@ export function splitFill(text: string, bg?: string | null, fg?: string | null):
  *
  * So a run with a colour and no ground of its own, holding a letter or a
  * digit, is lifted toward white (toward black on a light ground) until it
- * reads at WCAG's 4.5:1 on the pane's `--ground`. Mixing with white keeps
+ * reads at WCAG's 4.5:1 on every ground it may stand on: a pane's `--ground`
+ * and the bar's lighter `--output-ground` (da-3m19p). Mixing with white keeps
  * its hue. A run with no letter or digit is a mark (a moment's dot, a
  * field's symbol, `∅`) and keeps the field's own colour, as does a colour
  * that already reads. The terminal is left as it is: its ground is unknown.
@@ -166,14 +167,15 @@ export function textColor(text: string, fg?: string | null, bg?: string | null):
 	if (!fg || bg || typeof document === 'undefined' || !/[\p{L}\p{N}]/u.test(text)) return fg ?? undefined;
 	const ground = groundNow();
 	let lifted = ground.lifted.get(fg);
-	if (!lifted) ground.lifted.set(fg, (lifted = legible(channels(fg), ground.luminance) ?? fg));
+	if (!lifted) ground.lifted.set(fg, (lifted = legible(channels(fg), ground.luminances) ?? fg));
 	return lifted;
 }
 
-/** `#rrggbb` or `rgb(r g b)` / `rgb(r, g, b)` as its three channels. */
+/** `#rrggbb`, `rgb(r g b)` / `rgb(r, g, b)`, or `color(srgb r g b)` (a computed `color-mix`) as its three channels. */
 function channels(color: string): number[] {
 	if (color.startsWith('#')) return [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
-	return (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+	const scale = color.startsWith('color(') ? 255 : 1;
+	return (color.match(/[\d.]+/g) ?? []).slice(0, 3).map((v) => Number(v) * scale);
 }
 
 /** WCAG's relative luminance. */
@@ -184,31 +186,35 @@ function luminance(color: number[]): number {
 
 const ratio = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 
-/** `color` mixed toward white or black just far enough to read on `ground`; undefined where it reads already. */
-function legible(color: number[], ground: number): string | undefined {
-	if (ratio(luminance(color), ground) >= 4.5) return undefined;
-	const light = ground < 0.18;
+/** `color` mixed toward white or black just far enough to read on every one of `grounds`; undefined where it reads already. */
+function legible(color: number[], grounds: number[]): string | undefined {
+	const reads = (c: number[]) => grounds.every((g) => ratio(luminance(c), g) >= 4.5);
+	if (reads(color)) return undefined;
+	const light = grounds[0] < 0.18;
 	const at = (t: number) => color.map((v) => (light ? Math.ceil(v + (255 - v) * t) : Math.floor(v * (1 - t))));
 	let [lo, hi] = [0, 1];
 	for (let i = 0; i < 16; i++) {
 		const mid = (lo + hi) / 2;
-		if (ratio(luminance(at(mid)), ground) >= 4.5) hi = mid;
+		if (reads(at(mid))) hi = mid;
 		else lo = mid;
 	}
 	const [r, g, b] = at(hi);
 	return rgb(r, g, b);
 }
 
-let held: { key: string; luminance: number; lifted: Map<string, string> } | undefined;
+let held: { key: string; luminances: number[]; lifted: Map<string, string> } | undefined;
 
-/** The pane's ground, read once per database colour (`--hue`, `--sat`, `--shift`, routes/+layout.svelte). */
+/** The grounds a run stands on, read once per database colour (`--hue`, `--sat`, `--shift`, routes/+layout.svelte). */
 function groundNow(): NonNullable<typeof held> {
 	const root = document.documentElement.style;
 	const key = ['--hue', '--sat', '--shift'].map((t) => root.getPropertyValue(t)).join();
 	if (held?.key !== key) {
 		const probe = document.body.appendChild(document.createElement('i'));
-		probe.style.background = 'var(--ground)';
-		held = { key, luminance: luminance(channels(getComputedStyle(probe).backgroundColor)), lifted: new Map() };
+		const luminances = ['--ground', '--output-ground'].map((token) => {
+			probe.style.background = `var(${token})`;
+			return luminance(channels(getComputedStyle(probe).backgroundColor));
+		});
+		held = { key, luminances, lifted: new Map() };
 		probe.remove();
 	}
 	return held;

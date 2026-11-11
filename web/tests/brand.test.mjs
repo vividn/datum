@@ -84,11 +84,12 @@ const paintOf = (page, token) =>
 
 const accentOf = (page) => paintOf(page, '--accent');
 
-/** WCAG contrast between two `rgb(...)` strings. */
+/** WCAG contrast between two `rgb(...)` strings, or a `color-mix`'s computed `color(srgb r g b)`, its channels 0 to 1. */
 function contrast(a, b) {
 	const channel = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 	const luminance = (color) => {
-		const [r, g, b] = color.match(/\d+(\.\d+)?/g).map((n) => channel(Number(n) / 255));
+		const scale = color.startsWith('color(') ? 1 : 255;
+		const [r, g, b] = color.match(/\d+(\.\d+)?/g).slice(0, 3).map((n) => channel(Number(n) / scale));
 		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 	};
 	const [x, y] = [luminance(a), luminance(b)];
@@ -523,7 +524,8 @@ describe('the base colour follows the database', () => {
 		// stop being one, so this holds the page at every color a name can pick
 		// rather than the few a handful of names hash to (da-kni8r, da-wikou).
 		// A literal is a text color no token names.
-		const grounds = ['--page', '--ground', '--tint', '--raised'];
+		// `--output-ground` is the bar's output strip (da-qu9j8, da-3m19p).
+		const grounds = ['--page', '--ground', '--tint', '--raised', '--output-ground'];
 		const LEGIBLE = [
 			...['--ink', '--ink-bright', '--accent', '--accent-bright', '--warn'].flatMap((ink) => grounds.map((g) => [ink, g])),
 			...['--error', '--track'].flatMap((ink) => [[ink, '--page'], [ink, '--ground']]),

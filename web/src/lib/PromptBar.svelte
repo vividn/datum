@@ -796,8 +796,8 @@
 		/* SET APART FROM THE INPUT ROW (da-qu9j8): a ground a step towards
 		   `--tint`, between two grounds every ink is held legible on
 		   (brand.test.mjs). vividn, 2026-11-11: «a background texture/slightly
-		   different color to differentiate it more from the input bar». */
-		--output-ground: color-mix(in srgb, var(--ground), var(--tint) 45%);
+		   different color to differentiate it more from the input bar». The
+		   token is app.css's, so ansi.ts lifts a field's text to read on it. */
 		background: var(--output-ground);
 	}
 

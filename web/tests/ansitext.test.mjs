@@ -284,26 +284,28 @@ describe('the spans one component paints', () => {
 	});
 });
 
-/** The echo of `switch ink <state>` in the bar and the CLI widget: its dot the field's colour, its state lifted. */
+/**
+ * The echo of `switch ink <state>` in the bar and the CLI widget: its dot the field's colour, its state lifted
+ * to read on the ground under its own frame, which in the bar's output strip is lighter than a pane's (da-3m19p).
+ */
 async function echoLifts(app, state) {
-	const ground = await app.page.evaluate(() => {
-		const probe = document.body.appendChild(document.createElement('i'));
-		probe.style.background = 'var(--ground)';
-		const color = getComputedStyle(probe).backgroundColor;
-		probe.remove();
-		return color;
-	});
 	const frames = await app.page.evaluate(() => {
-		const spans = (doc) =>
-			[...(doc?.querySelectorAll('.info span') ?? [])]
+		const read = (doc) => {
+			const probe = doc?.appendChild(document.createElement('i'));
+			if (probe) probe.style.background = 'var(--ground)';
+			const ground = probe && getComputedStyle(probe).backgroundColor;
+			probe?.remove();
+			const spans = [...(doc?.querySelectorAll('.info span') ?? [])]
 				.filter((s) => !s.querySelector('span'))
 				.map((s) => ({ text: s.textContent, color: getComputedStyle(s).color }));
+			return { ground, spans };
+		};
 		return {
-			bar: spans(document.querySelector('.prompt-bar .group:last-child .doc')),
-			'CLI widget': spans([...document.querySelectorAll('.cli .doc')].at(-1))
+			bar: read(document.querySelector('.prompt-bar .group:last-child .doc')),
+			'CLI widget': read([...document.querySelectorAll('.cli .doc')].at(-1))
 		};
 	});
-	for (const [surface, spans] of Object.entries(frames)) {
+	for (const [surface, { ground, spans }] of Object.entries(frames)) {
 		const at = spans.findIndex((s) => s.text === '●');
 		assert.ok(at >= 0, `the ${surface}'s frame paints no dot of its own: ${JSON.stringify(spans)}`);
 		const [dot, name] = spans.slice(at, at + 2);
@@ -316,10 +318,11 @@ async function echoLifts(app, state) {
 	}
 }
 
-/** WCAG's contrast ratio of two computed `rgb(r, g, b)` colours. */
+/** WCAG's contrast ratio of two computed colours, `rgb(r, g, b)` or a `color-mix`'s `color(srgb r g b)`. */
 function contrast(a, b) {
 	const luminance = (color) => {
-		const [r, g, b] = color.match(/\d+/g).slice(0, 3).map((v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+		const scale = color.startsWith('color(') ? 1 : 255;
+		const [r, g, b] = color.match(/[\d.]+/g).slice(0, 3).map((v) => ((v /= scale) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
 		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 	};
 	const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);

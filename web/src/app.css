@@ -78,6 +78,9 @@
 	--ground: hsl(var(--hue) calc(33.3% * var(--sat)) calc(7.6% + var(--shift)));
 	/* A hovered row's ground, and a rule quiet enough to sit inside a pane. */
 	--tint: hsl(var(--hue) calc(30.2% * var(--sat)) calc(16.9% + var(--shift)));
+	/* The bar's output strip (da-qu9j8): a step from `--ground` towards `--tint`,
+	   set as `--ground` there. A field's text lifts to read on it too (ansi.ts). */
+	--output-ground: color-mix(in srgb, var(--ground), var(--tint) 45%);
 	/* Every outline, border and separator. */
 	--rule: hsl(var(--hue) calc(27.6% * var(--sat)) calc(22.7% + var(--shift)));
 	/* The app's one colour: a pane's title, a link, the thing that is chosen. */
