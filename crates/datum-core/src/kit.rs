@@ -24,7 +24,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{DatumError, Result};
 use crate::field_spec::{
-    Alias, FieldSpec, Render, SubfieldSpec, SymbolBy, DEFAULT_FIELD_HEIGHT, GLYPH_KEYS,
+    Alias, FieldSpec, PresentationSpec, Render, SubfieldSpec, SymbolBy, DEFAULT_FIELD_HEIGHT,
+    GLYPH_KEYS,
 };
 
 /// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
@@ -964,18 +965,85 @@ impl FieldEntry {
     /// that were never set on install survive as `None` so the round-trip
     /// is clean.
     pub fn from_spec(spec: &FieldSpec) -> Self {
-        let states: IndexMap<String, StateSpec> = if let Some(allowed) = &spec.allowed_states {
+        // Every field of the spec and its presentation, with no `..`: a field
+        // added to either fails to compile here until the kit carries it, or
+        // says beside its `_` why it does not (da-r6ksc).
+        let FieldSpec {
+            field,
+            verb,
+            subfields,
+            description,
+            id_template,
+            color,
+            allowed_states,
+            state_colors,
+            state_descriptions,
+            state_keys,
+            state_assign,
+            // Not a kit key yet: an export drops them (da-wlme2).
+            archived: _,
+            conflict: _,
+            key_conflict: _,
+            // Rebuilt from the spec on install (`regenerate_derived_aliases`).
+            derived_aliases: _,
+            state_lookup_field,
+            id_keys,
+            data_keys,
+            assign,
+            id_assign,
+            no_autoalias,
+            never_false,
+            auto_setup,
+            only_listed_keys,
+            only_listed_states,
+            remainder,
+            string_remainder,
+            comment_remainder,
+            tags,
+            presentation,
+            // Keys no datum names: nothing for a kit to say.
+            extra: _,
+            // Never stored: filled as a spec is loaded.
+            template: _,
+        } = spec;
+        let PresentationSpec {
+            y,
+            height,
+            z_index,
+            relative_to,
+            anchor_pos_ratio,
+            anchor_size_ratio,
+            render,
+            symbol,
+            state_symbols,
+            symbol_by,
+            icon,
+            symbol_scale,
+            symbol_aspect,
+            labels,
+            anchorable,
+            // Old names, folded into the new ones by `PresentationSpec::read`.
+            glyph: _,
+            state_glyphs: _,
+            glyph_by: _,
+            glyph_scale: _,
+            glyph_aspect: _,
+            key_above: _,
+            key_below: _,
+        } = presentation;
+
+        let states: IndexMap<String, StateSpec> = if let Some(allowed) = allowed_states {
             allowed
                 .iter()
                 .map(|name| {
                     (
                         name.clone(),
                         StateSpec {
-                            color: spec.state_colors.get(name).cloned(),
-                            symbol: spec.presentation.state_symbols.get(name).cloned(),
-                            description: spec.state_descriptions.get(name).cloned(),
-                            keys: spec.state_keys.get(name).cloned().unwrap_or_default(),
-                            assign: spec.state_assign.get(name).cloned().unwrap_or_default(),
+                            color: state_colors.get(name).cloned(),
+                            symbol: state_symbols.get(name).cloned(),
+                            description: state_descriptions.get(name).cloned(),
+                            keys: state_keys.get(name).cloned().unwrap_or_default(),
+                            assign: state_assign.get(name).cloned().unwrap_or_default(),
                         },
                     )
                 })
@@ -988,53 +1056,48 @@ impl FieldEntry {
         // back into TOML's `relative_to`/`pos`/`size` shape. Absolute specs
         // emit y/height as `pos`/`size`. An anchored spec never carries a
         // standalone y/height, so the projection is unambiguous.
-        let (pos, size, relative_to) = if let Some(anchor) = &spec.presentation.relative_to {
-            (
-                spec.presentation.anchor_pos_ratio,
-                spec.presentation.anchor_size_ratio,
-                Some(anchor.clone()),
-            )
-        } else {
-            (spec.presentation.y, spec.presentation.height, None)
+        let (pos, size) = match relative_to {
+            Some(_) => (*anchor_pos_ratio, *anchor_size_ratio),
+            None => (*y, *height),
         };
 
         Self {
-            name: spec.field.clone(),
-            verb: spec.verb.to_string(),
-            description: spec.description.clone(),
-            subfields: spec.subfields.clone().into_iter().collect(),
-            id_template: spec.id_template.clone(),
-            state_lookup_field: spec.state_lookup_field.clone(),
-            only_listed_keys: spec.only_listed_keys,
-            only_listed_states: spec.only_listed_states,
-            remainder: spec.remainder.clone(),
-            string_remainder: spec.string_remainder,
-            comment_remainder: spec.comment_remainder,
-            no_autoalias: spec.no_autoalias,
-            never_false: spec.never_false,
-            auto_setup: spec.auto_setup,
+            name: field.clone(),
+            verb: verb.to_string(),
+            description: description.clone(),
+            subfields: subfields.clone().into_iter().collect(),
+            id_template: id_template.clone(),
+            state_lookup_field: state_lookup_field.clone(),
+            only_listed_keys: *only_listed_keys,
+            only_listed_states: *only_listed_states,
+            remainder: remainder.clone(),
+            string_remainder: *string_remainder,
+            comment_remainder: *comment_remainder,
+            no_autoalias: *no_autoalias,
+            never_false: *never_false,
+            auto_setup: *auto_setup,
             pos,
             size,
-            color: spec.color.clone(),
-            symbol: spec.presentation.symbol.clone(),
-            symbol_by: spec.presentation.symbol_by.clone(),
-            icon: spec.presentation.icon.clone(),
-            symbol_scale: spec.presentation.symbol_scale,
-            symbol_aspect: spec.presentation.symbol_aspect,
-            labels: spec.presentation.labels.clone(),
+            color: color.clone(),
+            symbol: symbol.clone(),
+            symbol_by: symbol_by.clone(),
+            icon: icon.clone(),
+            symbol_scale: *symbol_scale,
+            symbol_aspect: *symbol_aspect,
+            labels: labels.clone(),
             key_above: None,
             key_below: None,
-            anchorable: spec.presentation.anchorable,
+            anchorable: *anchorable,
             hidden: false,
-            z_index: spec.presentation.z_index,
-            relative_to,
-            id_keys: spec.id_keys.clone(),
-            data_keys: spec.data_keys.clone(),
-            assign: spec.assign.clone(),
-            id_assign: spec.id_assign.clone(),
+            z_index: *z_index,
+            relative_to: relative_to.clone(),
+            id_keys: id_keys.clone(),
+            data_keys: data_keys.clone(),
+            assign: assign.clone(),
+            id_assign: id_assign.clone(),
             states,
-            tags: spec.tags.clone(),
-            render: spec.presentation.render.clone(),
+            tags: tags.clone(),
+            render: render.clone(),
         }
     }
 }

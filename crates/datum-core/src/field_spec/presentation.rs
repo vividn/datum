@@ -117,17 +117,19 @@ pub struct PresentationSpec {
 
     /// The symbol keys under their old names ([`GLYPH_KEYS`]), read and
     /// never written: [`PresentationSpec::read`] folds them into the new
-    /// ones, so nothing else reads them.
+    /// ones, so nothing else reads them. `pub(crate)` only so `FieldEntry::from_spec`
+    /// can name them in a pattern with no `..` (da-r6ksc); so are `key_above` and
+    /// `key_below`.
     #[serde(default, rename = "glyph", skip_serializing)]
-    glyph: Option<String>,
+    pub(crate) glyph: Option<String>,
     #[serde(default, rename = "state_glyphs", skip_serializing)]
-    state_glyphs: Option<BTreeMap<String, String>>,
+    pub(crate) state_glyphs: Option<BTreeMap<String, String>>,
     #[serde(default, rename = "glyph_by", skip_serializing)]
-    glyph_by: Option<SymbolBy>,
+    pub(crate) glyph_by: Option<SymbolBy>,
     #[serde(default, rename = "glyph_scale", skip_serializing)]
-    glyph_scale: Option<f64>,
+    pub(crate) glyph_scale: Option<f64>,
     #[serde(default, rename = "glyph_aspect", skip_serializing)]
-    glyph_aspect: Option<f64>,
+    pub(crate) glyph_aspect: Option<f64>,
 
     /// A custom SVG icon (da-45wgz): the whole `<svg>` element, vetted and
     /// size-capped by `setup`. The dayview draws it where the field's
@@ -157,9 +159,9 @@ pub struct PresentationSpec {
     /// printed over each dot and one under it. Read and never written:
     /// [`PresentationSpec::read`] folds them into `labels`.
     #[serde(default, skip_serializing)]
-    key_above: Option<String>,
+    pub(crate) key_above: Option<String>,
     #[serde(default, skip_serializing)]
-    key_below: Option<String>,
+    pub(crate) key_below: Option<String>,
 
     /// Other fields may be placed relative to this one (da-w5ruf): datum.day's
     /// setup offers only such a field, or one already anchoring another, as
