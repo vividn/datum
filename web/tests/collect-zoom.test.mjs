@@ -405,8 +405,15 @@ describe('collect in modify mode', () => {
 				const share = (await inTree(page, id)).nowWidth;
 				assert.ok(share > 0.2, `the layout holds a share of ${share}`);
 				const flip = cover(page).getByRole('button', { name: 'flip' });
+				const grip = () => cover(page).locator('.grip').boundingBox();
+				// ⇄ stops short of the handle, so a tap at its edge is ⇄'s.
+				const [onLeft, gripLeft] = [await flip.boundingBox(), await grip()];
+				assert.ok(onLeft.x + onLeft.width < gripLeft.x, `⇄ runs to ${onLeft.x + onLeft.width}px, the handle starts at ${gripLeft.x}px`);
 				await (finger ? flip.tap() : flip.click());
 				await until(async () => (await stripBox(page)).x, (x) => x > pane.x + pane.width / 2);
+				await rested(page, page.locator(`${COLLECT_PANE} [data-strip]`));
+				const [onRight, gripRight] = [await flip.boundingBox(), await grip()];
+				assert.ok(onRight.x > gripRight.x + gripRight.width, `⇄ starts at ${onRight.x}px, the handle ends at ${gripRight.x + gripRight.width}px`);
 				const right = await stripBox(page);
 				assert.ok(right.x + right.width > pane.x + pane.width - 30, 'the now section is not at the right edge');
 				assert.ok(Math.abs(right.width - wide.width) < 2, `the width ${wide.width}px became ${right.width}px on the right`);
@@ -441,6 +448,29 @@ describe('collect in modify mode', () => {
 			// Forced: an unforced `tap()` waits out the flip's widening first, past the fling.
 			await cover(page).getByRole('button', { name: 'flip' }).tap({ force: true });
 			await until(async () => (await stripBox(page)).x, (x) => x > pane.x + pane.width / 2);
+		}, AT_REST);
+	});
+
+	test('phone: a second finger landing on the handle while one drags it does not take it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seeded(app);
+			const id = await idOf(page);
+			await modifyWidget(page, id);
+			const was = await stripBox(page);
+			const box = await cover(page).locator('.grip').boundingBox();
+			const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+			// The first finger on the handle goes 20px in; the second lands beside it and goes 80px out.
+			const both = (i) => [{ id: 4, x: x - 4 * i, y }, { id: 5, x: x + 2 + 16 * i, y: y + 30 }];
+			await touches(page, [
+				['touchStart', [{ id: 4, x, y }], 30],
+				['touchStart', both(0), 30],
+				...[1, 2, 3, 4, 5].map((i) => ['touchMove', both(i), 30]),
+				['touchEnd', []]
+			]);
+			await rested(page, page.locator(`${COLLECT_PANE} [data-strip]`));
+			const now = await stripBox(page);
+			assert.ok(now.width < was.width, `the now section went from ${was.width}px to ${now.width}px: the second finger took the handle`);
 		}, AT_REST);
 	});
 

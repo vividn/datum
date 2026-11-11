@@ -1203,7 +1203,8 @@
 	/** The handle in hand: the pointer, and the cover it is read against, its box read at each move. */
 	let sizing: { id: number; cover: HTMLElement } | null = null;
 	function grab(e: PointerEvent) {
-		if (e.button !== 0) return;
+		// A second finger on it while one drags is not the hand moving it.
+		if (e.button !== 0 || sizing) return;
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		sizing = { id: e.pointerId, cover: (e.currentTarget as HTMLElement).parentElement!.parentElement! };
 	}
@@ -1640,7 +1641,8 @@
 		onwheel={pinchWheel}
 		onpointerleave={wheelDone}
 	>
-		<button type="button" class="flip" style:width="{strip}px" title="put the now section on the {side === 'left' ? 'right' : 'left'}" aria-label="flip" onclick={() => onmodify?.({ side: side === 'left' ? 'right' : 'left' })}>⇄</button>
+		<!-- Clear of the grip, whose 10px are centered on the strip's edge. -->
+		<button type="button" class="flip" style:width="{strip - 6}px" title="put the now section on the {side === 'left' ? 'right' : 'left'}" aria-label="flip" onclick={() => onmodify?.({ side: side === 'left' ? 'right' : 'left' })}>⇄</button>
 		<div class="seam" style:left={side === 'left' ? `${strip}px` : null} style:right={side === 'right' ? `${strip}px` : null}>
 			<button type="button" class="step" title="a row more" aria-label="more rows" disabled={!moreRows} onclick={() => stepRows(1)}>+</button>
 			<!-- Its touch moves consumed: unconsumed, Chrome flings a drag let go at speed, `touch-action: none` or not, and a tap within ~150 ms only cancels the fling, with no click (da-rw31h). -->

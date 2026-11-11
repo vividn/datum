@@ -37,7 +37,6 @@ export const RESET = '↺';
 /** Enter modify mode on the root tab in front, or on one widget's pane of it. */
 export function enter(pane?: NodeId): void {
 	if (get(editing)) return;
-	held.clear();
 	const now = get(layout);
 	const tab = now.root.tabs[now.root.active];
 	if (tab) editing.set({ tab: tab.id, before: now, ...(pane && { pane }) });
@@ -50,7 +49,6 @@ layout.subscribe((now) => {
 
 /** ✓: leave the mode, keeping the change on this device. */
 export function accept(): void {
-	held.clear();
 	editing.set(null);
 }
 
@@ -60,7 +58,6 @@ export function discard(): void {
 	if (!e) return;
 	layout.set(e.before);
 	for (const [key, settings] of held) restoreSession(key, settings);
-	held.clear();
 	editing.set(null);
 }
 
@@ -74,6 +71,8 @@ export function discard(): void {
  * masking it (vremya, 2026-11-10), and ↺ holds it again.
  */
 const held = new Map<string, Taken>();
+/** Forgotten as the mode ends, whatever ends it. */
+editing.subscribe((e) => e || held.clear());
 export function modifyWidget(
 	tabId: NodeId,
 	key: string,
