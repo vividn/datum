@@ -1161,7 +1161,9 @@ describe('the three states and the full screen', () => {
 			assert.ok((await where(page)).scroll < open.scroll, 'the wheel did not scroll the history');
 
 			// At the top, a wheel up of its own collapses it — after the last
-			// wheel's gesture is over (`SAME_MS`, BarLog.svelte).
+			// wheel's gesture is over: sent past `SAME_MS` (150, BarLog.svelte)
+			// after it, or the log takes it for that wheel's own. A gap between
+			// the events' timestamps, stamped as they are sent, so Node's clock.
 			await page.evaluate(() => (document.querySelector('.log .body').scrollTop = 0));
 			await page.waitForTimeout(200);
 			await wheelOver(page, '.log', -120);
