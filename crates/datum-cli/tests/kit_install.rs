@@ -231,8 +231,12 @@ tags = ["feel"]
 subfields.why = {{ value_type = "string" }}
 subfields.level = {{ value_type = "number", required = true }}
 glyph_by = {{ key = "why", map = {{ work = "w" }} }}
+conflict = "merge"
+key_conflict.why = "replace"
 states.tired = {{ color = "#868e96", symbol = "z", description = "worn out" }}
 states.calm = {{}}
+states.sleepy = {{ color = "#000000", archived = true }}
+states.gone = {{ archived = true }}
 "##
     )
 }
@@ -274,7 +278,10 @@ fn a_kit_field_installs_what_spec_set_stores() {
         },
         "symbol_by": {"key": "why", "map": {"work": "w"}},
         "allowed_states": ["tired", "calm"],
-        "state_colors": {"tired": "#868e96"},
+        "archived": ["sleepy", "gone"],
+        "conflict": "merge",
+        "key_conflict": {"why": "replace"},
+        "state_colors": {"tired": "#868e96", "sleepy": "#000000"},
         "state_symbols": {"tired": "z"},
         "state_descriptions": {"tired": "worn out"},
     });
@@ -354,15 +361,34 @@ fn kit_export_round_trips_the_whole_field() {
         "anchorable = true",
         "subfields",
         "worn out",
+        "conflict = \"merge\"",
+        "why = \"replace\"",
+        "archived = true",
     ] {
         assert!(first.contains(key), "{key} missing from:\n{first}");
     }
     assert!(first.find("tired") < first.find("calm"), "{first}");
+    assert!(first.find("calm") < first.find("sleepy"), "{first}");
+    assert!(first.find("sleepy") < first.find("gone"), "{first}");
 
     let again = fresh_db();
     install(&again, &first, &[]).unwrap();
     assert_eq!(spec_json(&again, "mood"), spec_json(&db, "mood"));
     assert_eq!(export(&again), first);
+}
+
+/// da-wlme2: a kit's `conflict` takes the words `setup --conflict` does:
+/// `rekey` is a line's alone, refused for the field and for one key.
+#[test]
+fn a_kit_refuses_rekey_as_a_fields_conflict() {
+    for line in ["conflict = \"rekey\"", "key_conflict.why = \"rekey\""] {
+        let kit =
+            format!("[kit]\nname = \"k\"\n\n[[field]]\nname = \"tea\"\nverb = \"occur\"\n{line}\n");
+        let db = fresh_db();
+        let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
+        assert!(err.contains("rekey is a line's alone"), "{err}");
+        assert!(db.load_spec("tea").unwrap().is_none(), "nothing installed");
+    }
 }
 
 /// da-d608p: a kit's `string_remainder` and `comment_remainder` log as

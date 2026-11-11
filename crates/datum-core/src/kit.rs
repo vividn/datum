@@ -150,6 +150,14 @@ pub struct FieldEntry {
     /// field it covers only with `--setup`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_setup: Option<bool>,
+    /// How a log colliding with one of the field's entries resolves — the
+    /// spec's `conflict`, `setup --conflict` (da-wudrc, da-wlme2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conflict: Option<datum_parse::cli::ConflictStrategyArg>,
+    /// A data key's own strategy over `conflict` — `setup --key-conflict`
+    /// (da-c2nwv, da-wlme2).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub key_conflict: BTreeMap<String, datum_parse::cli::ConflictStrategyArg>,
     /// Position perpendicular to the time axis, fraction `[0.0, 1.0]`.
     /// Maps to [`PresentationSpec::y`](crate::field_spec::PresentationSpec::y) for the current axis-orientation.
     #[serde(default)]
@@ -621,6 +629,10 @@ pub struct StateSpec {
     /// (da-ulc0v).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub assign: BTreeMap<String, String>,
+    /// Off the list, kept for its past rows — `setup --archive-state`
+    /// (da-z6g2s, da-wlme2): its word is refused as archived.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub archived: bool,
 }
 
 impl KitToml {
@@ -875,6 +887,15 @@ impl FieldEntry {
             )));
         }
 
+        for c in self.conflict.iter().chain(self.key_conflict.values()) {
+            if *c == datum_parse::cli::ConflictStrategyArg::Rekey {
+                return Err(DatumError::Other(format!(
+                    "kit field '{}': conflict is replace, update, merge or refuse: rekey is a line's alone",
+                    self.name
+                )));
+            }
+        }
+
         let mut spec = FieldSpec::new(&self.name, action);
         spec.description = self.description;
         spec.subfields = self.subfields.into_iter().collect();
@@ -891,6 +912,8 @@ impl FieldEntry {
         spec.no_autoalias = self.no_autoalias;
         spec.never_false = self.never_false;
         spec.auto_setup = self.auto_setup;
+        spec.conflict = self.conflict;
+        spec.key_conflict = self.key_conflict;
         spec.color = color_resolved;
         spec.presentation.symbol = self.symbol;
         spec.presentation.symbol_by = self.symbol_by;
@@ -928,8 +951,16 @@ impl FieldEntry {
         }
 
         if !self.states.is_empty() {
-            let allowed: Vec<String> = self.states.keys().cloned().collect();
+            let allowed: Vec<String> = self
+                .states
+                .iter()
+                .filter(|(_, s)| !s.archived)
+                .map(|(name, _)| name.clone())
+                .collect();
             for (name, s) in &self.states {
+                if s.archived {
+                    spec.archived.push(name.clone());
+                }
                 if let Some(c) = &s.color {
                     spec.state_colors.insert(name.clone(), c.clone());
                 }
@@ -948,7 +979,7 @@ impl FieldEntry {
                     spec.state_assign.insert(name.clone(), s.assign.clone());
                 }
             }
-            spec.allowed_states = Some(allowed);
+            spec.allowed_states = Some(allowed).filter(|a| !a.is_empty());
         }
 
         spec.tags = self.tags;
@@ -980,10 +1011,9 @@ impl FieldEntry {
             state_descriptions,
             state_keys,
             state_assign,
-            // Not a kit key yet: an export drops them (da-wlme2).
-            archived: _,
-            conflict: _,
-            key_conflict: _,
+            archived,
+            conflict,
+            key_conflict,
             // Rebuilt from the spec on install (`regenerate_derived_aliases`).
             derived_aliases: _,
             state_lookup_field,
@@ -1032,25 +1062,29 @@ impl FieldEntry {
             key_below: _,
         } = presentation;
 
-        let states: IndexMap<String, StateSpec> = if let Some(allowed) = allowed_states {
-            allowed
-                .iter()
-                .map(|name| {
-                    (
-                        name.clone(),
-                        StateSpec {
-                            color: state_colors.get(name).cloned(),
-                            symbol: state_symbols.get(name).cloned(),
-                            description: state_descriptions.get(name).cloned(),
-                            keys: state_keys.get(name).cloned().unwrap_or_default(),
-                            assign: state_assign.get(name).cloned().unwrap_or_default(),
-                        },
-                    )
-                })
-                .collect()
-        } else {
-            IndexMap::new()
-        };
+        // The listed states, then the archived ones in the order archived,
+        // each `archived = true` with what it carries (da-wlme2).
+        let listed = allowed_states.as_deref().unwrap_or_default();
+        let mut names: Vec<&String> = listed.iter().chain(archived).collect();
+        for s in spec.archived_states() {
+            if !names.contains(&s) {
+                names.push(s);
+            }
+        }
+        let states: IndexMap<String, StateSpec> = names
+            .into_iter()
+            .map(|name| {
+                let s = StateSpec {
+                    color: state_colors.get(name).cloned(),
+                    symbol: state_symbols.get(name).cloned(),
+                    description: state_descriptions.get(name).cloned(),
+                    keys: state_keys.get(name).cloned().unwrap_or_default(),
+                    assign: state_assign.get(name).cloned().unwrap_or_default(),
+                    archived: !listed.contains(name),
+                };
+                (name.clone(), s)
+            })
+            .collect();
 
         // Anchored specs project `relative_to`/anchor_pos_ratio/anchor_size_ratio
         // back into TOML's `relative_to`/`pos`/`size` shape. Absolute specs
@@ -1076,6 +1110,8 @@ impl FieldEntry {
             no_autoalias: *no_autoalias,
             never_false: *never_false,
             auto_setup: *auto_setup,
+            conflict: *conflict,
+            key_conflict: key_conflict.clone(),
             pos,
             size,
             color: color.clone(),
