@@ -5,7 +5,8 @@
 // round runs. The intro and the discussion are their text's height, and the intro, the nowview, the game and
 // collect fill the screen, the shell's and not the window's, the bar's output section open or shut (da-83y6w,
 // vividn, 2026-11-09: «the intro block is much too big … make sure the complete game and collect widget are on
-// screen without having to scroll … the followup text widget can also clamp to its text size»).
+// screen without having to scroll … the followup text widget can also clamp to its text size»), but for the 13/90 at
+// its foot where the discussion's top shows (da-44yfo).
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -54,6 +55,8 @@ const measure = (page, tab) =>
 			fields: [...pane('fields').querySelectorAll('.fields button[data-field]')].map(box),
 			rows: [...pane('fields').querySelectorAll('.fields .spot.shelf[data-row]')].map((s) => Number(s.dataset.row)),
 			discuss: box(pane('discuss')),
+			heading: box(pane('discuss').querySelector('div.tutorial > h2')),
+			headingText: pane('discuss').querySelector('div.tutorial > h2').textContent,
 			next: next && box(next)
 		};
 	}, tab);
@@ -153,11 +156,18 @@ for (const [screen, device] of [
 						assert.equal(rest.fields.length, fields, `${at}: collect draws each of the game's fields`);
 						for (const [i, field] of rest.fields.entries())
 							assert.ok(inside(field, rest.screen), `${at}: collect's field ${i} (bottom ${field.bottom}) is in sight, the screen's bottom ${rest.screen.bottom}`);
-						// Collect two thirds of the 0.4 of the nowview, the game and collect it had (da-je8ju, vividn, 2026-11-10:
-						// «goes to 2/3 of its current height»), and its zoom three rows (vividn: «be 3 rows»): a game's fields
-						// span the band, so its rows at three are the top, the middle and the bottom; at two or four they are not.
-						const share = rest.collect.height / (rest.now.height + rest.lesson.height + rest.collect.height);
-						assert.ok(Math.abs(share - (2 / 3) * 0.4) < 0.01, `${at}: collect is ${share} of the nowview, game and collect`);
+						// Of the screen, the nowview 26/90, two thirds of its 13/30 (da-44yfo, vividn, 2026-11-11: «maybe 2/3 of
+						// it's current size»), the game 9/30 and collect 8/30 as they were (da-je8ju: collect «goes to 2/3 of its
+						// current height»), and collect's zoom three rows (vividn: «be 3 rows»): a game's fields span the band, so
+						// its rows at three are the top, the middle and the bottom; at two or four they are not.
+						const play = rest.now.height + rest.lesson.height + rest.collect.height;
+						const shares = ['now', 'lesson', 'collect'].map((part) => rest[part].height / play);
+						for (const [i, want] of [26 / 77, 27 / 77, 24 / 77].entries())
+							assert.ok(Math.abs(shares[i] - want) < 0.01, `${at}: the nowview, game and collect share the play ${shares}`);
+						// What the nowview gave up, 13/90 of the screen, is where the discussion begins: its heading, «Read more»,
+						// in sight as the tab opens, a sign there is more below (da-44yfo, vividn: «so you know there is more text»).
+						assert.equal(rest.headingText, 'Read more');
+						assert.ok(inside(rest.heading, rest.screen), `${at}: «Read more» (bottom ${rest.heading.bottom}) is in sight as the tab opens, the screen's bottom ${rest.screen.bottom}`);
 						// The change game's one field, room, stands in one row whatever the count, so it cannot show three.
 						if (tab !== 'change') assert.deepEqual([...new Set(rest.rows)].sort(), [0, 1, 2], `${at}: collect's fields stand in three rows`);
 

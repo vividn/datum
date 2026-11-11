@@ -129,7 +129,7 @@
 			<CollectPane only={lesson.fields} showIgnored />
 		{:else if part === 'discuss'}
 			<!-- Under the game and collect, scrolled to once a round is played: what it logged, and why. -->
-			<h2>What just happened</h2>
+			<h2>Read more</h2>
 			{#if lesson.name === 'moment'}
 				<p>
 					Each tap logged an <b>entry</b> of its field at that instant, a dot on the timeline. A moment has no state and no

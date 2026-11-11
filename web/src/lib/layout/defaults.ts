@@ -496,13 +496,16 @@ const withNowview = ({ name, fields }: Lesson): Layout => ({
 	root: {
 		...holder(
 			name,
-			split(`${name}-split`, 'column', [1, 0], [
+			// The play takes the screen but the 13/90 the nowview gave up, where the discussion's top shows, as a sign there
+			// is more below (da-44yfo, vividn, 2026-11-11: «see at least a bit of the "What just happened" text widget at the
+			// bottom of each tutorial tab so you know there is more text»).
+			split(`${name}-split`, 'column', [77 / 90, 13 / 90], [
 				holder(
 					`${name}-play`,
-					// Collect at two thirds of the 0.4 it had, the rest to the nowview (da-je8ju, vividn, 2026-11-10: «decrease
-					// the height of the collect widget by 2/3», «goes to 2/3 of its current height»; 11-09: «the nowview can be
-					// taller»). The game keeps its 0.3, so its picture and control stand as they did.
-					split(`${name}-play-split`, 'column', [0, 13 / 30, 9 / 30, 8 / 30], [
+					// Of the screen, the nowview 26/90, two thirds of the 13/30 it had (da-44yfo, vividn, 2026-11-11: «the
+					// nowview is much too tall, it should be maybe 2/3 of it's current size»), the game 9/30 and collect 8/30
+					// as they were (da-je8ju, vividn, 2026-11-10: collect «goes to 2/3 of its current height»).
+					split(`${name}-play-split`, 'column', [0, 26 / 77, 27 / 77, 24 / 77], [
 						{ ...widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }), fit: true },
 						widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
 						widgetPane(`${name}-lesson`, 'game', { lesson: name }),
