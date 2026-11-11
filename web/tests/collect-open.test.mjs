@@ -268,6 +268,25 @@ describe('a field opened in collect', () => {
 		});
 	});
 
+	// vividn, 2026-11-11 (da-n2oa7): «it happens for states that have only ever appeared in a multistate before»: a
+	// state no spec declares and never logged alone still takes its own color, not the field's.
+	test('a state seen only inside a multi-state is painted in its own color, not the field\'s', async () => {
+		await opening(['switch mood good,bad -t 10:00', 'switch mood calm -t 13:00'], 'mood', async (app, button) => {
+			const { page } = app;
+			await button.click();
+			await page.locator(`${OPEN} [data-state="good,bad"]`).waitFor();
+			const row = JSON.parse((await app.run(['fields', '--json'])).stdout).find((r) => r.field === 'mood');
+			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+			const drawn = await page.locator(`${OPEN} [data-state="good,bad"]`).evaluate((b) => ({
+				fill: getComputedStyle(b).backgroundColor,
+				next: getComputedStyle(b.querySelector('.comma'), '::before').backgroundColor
+			}));
+			assert.deepEqual(drawn, { fill: rgb(row.state_colors.good), next: rgb(row.state_colors.bad) });
+			assert.notEqual(drawn.fill, rgb(row.color), 'good takes the field\'s color');
+			assert.notEqual(drawn.next, rgb(row.color), 'bad takes the field\'s color');
+		});
+	});
+
 	test('off is absent for a field whose spec forbids it, and wears a yellow ! while the field is off', async () => {
 		await opening(['setup posture --verb switch --states sit,stand --never-false', 'setup mood --verb switch --states false,good,bad', 'switch mood good -t 12:00', 'off mood -t 13:00'], 'posture', async ({ page }, button) => {
 			await button.click();

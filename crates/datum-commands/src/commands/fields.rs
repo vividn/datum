@@ -183,6 +183,18 @@ fn is_a_state(state: &JsonValue) -> bool {
     *state != TRACKED_STATE_VALUE && !is_ignored_state(state)
 }
 
+/// The names a state is painted by, as the page looks them up (a string as
+/// itself, a number as its JSON): a multi-state's members each, as the CLI
+/// paints each its own (da-n2oa7). A boolean or an object names none.
+fn paint_names(state: &JsonValue, into: &mut BTreeSet<String>) {
+    match state {
+        JsonValue::String(s) => _ = into.insert(s.clone()),
+        JsonValue::Number(n) => _ = into.insert(n.to_string()),
+        JsonValue::Array(items) => items.iter().for_each(|v| paint_names(v, into)),
+        _ => {}
+    }
+}
+
 /// One row a field, in `by_field`'s order: each spec read as dayview reads
 /// it, a template's applied to the fields it covers (da-yorr2), and each
 /// lane with its anchors honoured (da-btyvj).
@@ -198,14 +210,17 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
                 let ignored = latest.get(field).is_some_and(is_ignored_state);
                 let spec = specs.get(field);
                 let color = field_hex(field, spec);
-                let mut state_names: BTreeSet<&str> =
-                    states.iter().filter_map(JsonValue::as_str).collect();
+                let mut state_names = BTreeSet::new();
+                states.iter().for_each(|s| paint_names(s, &mut state_names));
                 if let Some(allowed) = spec.and_then(|s| s.allowed_states.as_deref()) {
-                    state_names.extend(allowed.iter().map(String::as_str));
+                    state_names.extend(allowed.iter().cloned());
                 }
                 let state_colors: JsonValue = state_names
                     .into_iter()
-                    .map(|s| (s.to_string(), json!(state_rgb(s, spec).hex())))
+                    .map(|s| {
+                        let hex = state_rgb(&s, spec).hex();
+                        (s, json!(hex))
+                    })
                     .collect::<serde_json::Map<_, _>>()
                     .into();
                 let mut row = json!({
@@ -586,5 +601,51 @@ mod tests {
             listing[0]["state_colors"]["sad"],
             state_rgb("sad", None).hex()
         );
+    }
+
+    /// da-n2oa7: a state seen only inside a multi-state, and a number state,
+    /// each get the colour the CLI paints them, keyed as the page reads them.
+    #[test]
+    fn multi_state_members_and_numbers_get_their_own_colours() {
+        let db = fresh_db();
+        let mut spec = FieldSpec::new("mood", Action::Switch);
+        spec.state_colors
+            .insert("bad".to_string(), "#123456".to_string());
+        db.save_field_spec(&spec).unwrap();
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .state(json!(["good", "bad"]))
+            .insert(&db);
+        entry_builder("level")
+            .verb(Verb::Switch)
+            .state(json!(3))
+            .insert(&db);
+
+        let listing = compute_fields(&db).unwrap();
+        let row = |f: &str| {
+            listing
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["field"] == f)
+                .unwrap()
+                .clone()
+        };
+        let (level, mood) = (row("level"), row("mood"));
+        assert_eq!(
+            level["state_colors"]["3"],
+            state_rgb("3", None).hex(),
+            "{level}"
+        );
+        assert_eq!(
+            mood["state_colors"]["good"],
+            state_rgb("good", Some(&spec)).hex(),
+            "{mood}"
+        );
+        assert_eq!(
+            mood["state_colors"]["bad"], "#123456",
+            "the spec's override wins"
+        );
+        assert_eq!(mood["state_colors"].as_object().unwrap().len(), 2, "{mood}");
     }
 }
