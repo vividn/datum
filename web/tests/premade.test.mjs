@@ -398,6 +398,67 @@ async function openExample(page, example) {
 	return { saved };
 }
 
+// vividn, 2026-11-11 (da-ebz6k): «hitting "start tracking" on a premade thing ends up switching to collection
+// which is good, but it leaves the modal open, which it should close». On a phone the preview's sheet, on a
+// desktop the setup modal: whatever is open goes as collect comes to the front, with the new field's button on it.
+describe('start tracking lands on collect with nothing open over it', () => {
+	/** The dialogs open, but the tour's sentence: a sheet, the setup modal, the form's naming modal. */
+	const open = (page) => page.locator('dialog[open], [role="dialog"]:not(.tour *)').count();
+	/** Whether `field`'s button is drawn on the collect widget in front. */
+	const button = (page, field) =>
+		page.locator(`[data-widget="widgetbar"] button[data-field="${field}"]`).evaluateAll((all) => all.some((b) => b.getBoundingClientRect().width > 0));
+	async function landed(page, field, at = 'collect') {
+		await until(() => front(page), (name) => name === at);
+		await until(() => open(page), (n) => n === 0);
+		await until(() => button(page, field), (drawn) => drawn);
+	}
+	const ON_SETUP = { names: ['welcome', 'setup', 'collect', 'dayview'], active: 1 };
+	/** The setup place, which on a desktop with no setup tab is a modal over the page. */
+	const toModal = (page) => void page.evaluate(() => window.datum.field()).catch(() => {});
+
+	for (const [device, size] of [['desktop', DESKTOP], ['phone', PHONE]])
+		test(`on a ${device}, a premade's Start tracking from the setup tab`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await toSetup(page);
+				await row(page, 'weight').click();
+				if (device === 'phone') await page.locator('dialog[open] [data-preview="weight"]').waitFor();
+				await page.locator(`${PREVIEW} button.start`).click();
+				await landed(page, 'weight');
+				assert.deepEqual(app.errors, []);
+			}, { ...size, home: null, desk: null });
+		});
+
+	test("on a desktop, a premade's Start tracking from the setup modal", async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			toModal(page);
+			await page.locator('dialog.sheet[open][data-place="setup"] button.row[data-example="weight"]').click();
+			await page.locator(`${PREVIEW} button.start`).click();
+			await landed(page, 'weight');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	// Over a page with a collect widget on it already, the tour stays there (tour.test.mjs).
+	for (const [where, options, at] of [
+		["a phone's setup tab", { ...PHONE, home: ON_SETUP, desk: null, tour: true }, 'collect'],
+		["a desktop's setup modal", { ...DESKTOP, tour: true }, 'main']
+	])
+		test(`a first field typed by hand, from ${where}`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				if (where.includes('modal')) toModal(page);
+				await page.locator(FIELD_FORM).waitFor();
+				await nameField(page, 'tea');
+				await page.locator(`${FIELD_FORM} .verb[data-verb="occur"]`).click();
+				await setupCommand(page);
+				await landed(page, 'tea', at);
+				assert.deepEqual(app.errors, []);
+			}, options);
+		});
+});
+
 describe('each example', () => {
 	const shared = sharedApp(DESKTOP);
 

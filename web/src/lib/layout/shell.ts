@@ -930,8 +930,10 @@ async function followSaves(): Promise<void> {
 export async function open(name: string): Promise<boolean> {
 	await boot();
 	// Leaving the layout, whether to a tab that is already open or to a new
-	// one: a maximize is not sticky (da-00am).
+	// one: a maximize is not sticky (da-00am), and a modal place does not
+	// stay over the tab it opens (da-ebz6k).
 	unmaximize();
+	closeModalPlace();
 	const n = canonicalName(name);
 	const at = rootTabs(get(layout)).findIndex((t) => t.layout === n);
 	if (at >= 0) {

@@ -124,6 +124,8 @@
 		const first = $fields.every((f) => f.ignored);
 		const result = await press([...specArgv(shaped(e).spec), '--track']);
 		if (result.code !== 0) return;
+		// The sheet goes with it: setup stays mounted behind collect (da-ebz6k).
+		if (!wide) picked = kept = null;
 		await open('collect');
 		if (first) void begin(e.field);
 	}
