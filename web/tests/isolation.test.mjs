@@ -137,13 +137,19 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 			// A failure is the output's red line.
 			await page.locator('.prompt-bar .section.output .raw.error').waitFor();
 
+			// The reload is decided in the layout's `controllerchange` listener,
+			// which ran before this one, added after the mount: once this one has
+			// run, the page has decided. A reload sets its flag in sessionStorage
+			// first, which outlives the reload, so either answer is read at once.
+			await page.evaluate(() =>
+				navigator.serviceWorker.addEventListener('controllerchange', () => (window.__changed = true), { once: true })
+			);
 			release();
 			held = null;
-			await page.waitForFunction(() => !!navigator.serviceWorker.controller);
-			// A reload asked for in `controllerchange` would be on its way by
-			// now; give it the time a navigation takes to land.
-			await page.waitForTimeout(1500);
-			await page.waitForLoadState('load');
+			const decided = await (
+				await page.waitForFunction(() => sessionStorage.getItem('datum-reloaded-for-isolation') ?? window.__changed)
+			).jsonValue();
+			assert.equal(decided, true, 'the page reloaded under the command');
 			assert.equal(loads(), 1, 'the page reloaded under the command');
 			assert.equal(await page.locator('.prompt-bar .section.output .raw.error').count(), 1, 'the reload took the error away');
 		} finally {
@@ -180,7 +186,13 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 				await page.locator(`${card} button.close`).click();
 				await page.reload({ waitUntil: 'load' });
 				await mounted(page);
-				await page.waitForTimeout(1000);
+				// The card comes back only from the link the tab holds (syncView's
+				// heldInTab), read as the page loads: a tab holding none has none to show.
+				assert.deepEqual(
+					await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith('datum-sync-'))),
+					[],
+					'the dismissed link is still held in the tab'
+				);
 				assert.equal(await page.locator(card).count(), 0, 'a dismissed card came back on a reload');
 
 				// Warm: an isolated page opening the link shows the card, as ever.
