@@ -329,6 +329,9 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 				await page.evaluate(noWait);
 				await page.mouse.down();
 				await page.mouse.move(box.x + box.width - 160, y, { steps: 8 });
+				// Not a wait for rest: the drag held still past WINDOW_MS (80 ms,
+				// #lib/grip.ts), the time before a lift its speed is read over, so the
+				// lift lets go at none and the band springs back rather than coasting.
 				await page.waitForTimeout(100);
 				await page.mouse.up();
 				const frames = await settle(page);
