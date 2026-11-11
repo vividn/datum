@@ -237,11 +237,6 @@ export function wipeArgv(endpoint: string): string[] {
 	return ['sync', 'chain', 'expel', endpoint, '--wipe', '--yes'];
 }
 
-/** This chain takes `like`'s devices: it starts one with `like`'s admins if in none, and leaves each grant to the page (da-n0uj1.7, da-pvax0). */
-export function grantLikeArgv(like: string): string[] {
-	return ['sync', 'chain', 'invite', '--like', like, '--defer'];
-}
-
 export function endpointKeyArgv(): string[] {
 	return ['sync', 'endpoint-key'];
 }

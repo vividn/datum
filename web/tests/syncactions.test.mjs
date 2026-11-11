@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
-import { AT_DATUM_DAY, DESKTOP, WIDGET, addAdmin, authenticator, cli, endpointId, members, more, openChain, runIn } from './support/syncactions.mjs';
+import { AT_DATUM_DAY, DESKTOP, WIDGET, addAdmin, authenticator, cli, endpointId, cellAct, gridLabels, members, openChain, runIn } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -45,7 +45,7 @@ const foreignPasskey = (label) =>
 	});
 
 describe('the sync widget’s actions', () => {
-	test('turn on sync, then add a device: the ticket as a QR and a command, which a native copy redeems', async () => {
+	test('name this device and its person under ✎, then add a device: the ticket as a QR and a command, which a native copy redeems', async () => {
 		const native = await nativeCopy(relay);
 		try {
 			await withWallClock(
@@ -53,12 +53,14 @@ describe('the sync widget’s actions', () => {
 					const { page } = app;
 					await app.goto('/sync');
 					const actions = page.locator(`${WIDGET} .actions[data-db="datum"]`);
-					await actions.getByRole('button', { name: 'Turn on sync' }).click();
-					// A first invite asks this device's name and its person's username first (da-xza37).
-					const start = page.locator(`${WIDGET} .start[data-db="datum"]`);
-					assert.equal(await start.getByLabel('This device’s name').inputValue(), 'datum.day (datum)');
-					await start.getByLabel('Your username (optional)').fill('bea');
-					await start.getByRole('button', { name: 'Start sync' }).click();
+					// No chain yet, and no «Turn on sync»: the name and the username are edited in place (da-5wlnr, da-xza37).
+					await page.locator(`${WIDGET} header button.rename`).click();
+					const edit = page.locator(`${WIDGET} header .edit`);
+					assert.equal(await edit.getByLabel('This device’s name').inputValue(), 'datum.day (datum)');
+					await edit.getByLabel('Your username (optional)').fill('bea');
+					await edit.getByRole('button', { name: 'Save' }).click();
+					await page.locator(`${WIDGET} header .user`).filter({ hasText: /^@bea$/ }).waitFor();
+					await actions.getByRole('button', { name: 'Add device' }).click();
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
 					await offer.locator('summary', { hasText: 'join from a terminal' }).click();
@@ -71,10 +73,9 @@ describe('the sync widget’s actions', () => {
 
 					const joined = await native.run(['sync', 'chain', 'join', ticket]);
 					assert.equal(joined.code, 0, joined.stderr);
-					await until(async () => (await page.locator(`${WIDGET} .devices li`).count()) === 2, Boolean);
+					await until(async () => (await page.locator(`${WIDGET} .grid tbody tr`).count()) === 2, Boolean);
 					await offer.getByRole('button', { name: 'Done' }).click();
-					assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Add device', 'Rename this device', 'More ▸']);
-					await more(page);
+					assert.deepEqual(await actions.first().locator('button').allInnerTexts(), ['Add device', 'Pause sync', 'Leave chain']);
 					// Open: no admin to remove, and one to add.
 					const row = page.locator(`${WIDGET} .chain[data-db="datum"]`);
 					assert.equal(await row.locator('button.admin').count(), 0);
@@ -102,14 +103,13 @@ describe('the sync widget’s actions', () => {
 					assert.equal(await page.locator(WIDGET).count(), 0);
 
 					await app.submit('sync chain invite');
-					await page.locator(`${WIDGET} .start[data-db="datum"]`).getByRole('button', { name: 'Start sync' }).click();
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
 					await offer.locator('summary', { hasText: 'join from a terminal' }).click();
 					const ticket = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
 					const joined = await native.run(['sync', 'chain', 'join', ticket]);
 					assert.equal(joined.code, 0, joined.stderr);
-					await until(async () => (await page.locator(`${WIDGET} .devices li`).count()) === 2, Boolean);
+					await until(async () => (await page.locator(`${WIDGET} .grid tbody tr`).count()) === 2, Boolean);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);
@@ -118,7 +118,7 @@ describe('the sync widget’s actions', () => {
 		}
 	});
 
-	test('a passkey locks the chain; an expel is approved with it and the device moves to More as expelled', async () => {
+	test('a passkey locks the chain; an expel is approved with it and the device is drawn no more', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
@@ -131,13 +131,12 @@ describe('the sync widget’s actions', () => {
 			assert.equal(chain.admins[0].label, 'my phone');
 
 			// Locked: the expel stops at an approve link, which the passkey signs.
-			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Expel' }).click();
+			await cellAct(page, 'phone', 'home', 'expel');
 			const asked = page.locator('dialog.confirm');
 			for (const fact of ['phone', 'home']) assert.ok((await asked.innerText()).includes(fact), fact);
 			await asked.getByRole('button', { name: 'expel' }).click();
-			await page.locator(`${WIDGET} p.revoked`).waitFor();
-			assert.equal(await page.locator(`${WIDGET} .devices li[data-client="${phone}"]`).count(), 0);
-			assert.equal(await page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"] .name`).innerText(), 'phone · expelled');
+			await until(() => gridLabels(page), (labels) => labels.length === 1);
+			assert.equal((await gridLabels(page)).includes('phone'), false);
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 			assert.ok(await revokedOf(app, phone));
 		}, AT_DATUM_DAY);
@@ -146,12 +145,12 @@ describe('the sync widget’s actions', () => {
 	test('a refused action reads the CLI’s reason, without its «Error: » (da-s6o5z)', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
-			const phone = await openChain(app);
+			await openChain(app);
 			await app.goto('/sync?db=home');
-			await more(page);
-			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Rename' }).click();
-			await page.locator('dialog.ask input').fill('x'.repeat(65));
-			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
+			await page.locator(`${WIDGET} header button.rename`).click();
+			const edit = page.locator(`${WIDGET} header .edit`);
+			await edit.getByLabel('This device’s name').fill('x'.repeat(65));
+			await edit.getByRole('button', { name: 'Save' }).click();
 			const failure = page.locator(`${WIDGET} .failure`);
 			await failure.waitFor();
 			// The limit and the length, and no «Error: ».
@@ -168,8 +167,7 @@ describe('the sync widget’s actions', () => {
 				const phone = await openChain(app);
 				const of = async () => (await members(app)).members.find((m) => m.endpoint === phone);
 				await app.goto('/sync?db=home');
-				await more(page);
-				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Unjoin', exact: true }).click();
+				await cellAct(page, 'phone', 'home', 'unjoin');
 				const dialog = page.locator('dialog.confirm');
 				// It names the device and the database, and counts no entry: it changed none.
 				const said = await dialog.innerText();
@@ -180,14 +178,12 @@ describe('the sync widget’s actions', () => {
 				await dialog.getByRole('button', { name: 'unjoin', exact: true }).click();
 				assert.equal((await of()).purged, null);
 
-				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Unjoin', exact: true }).click();
+				await cellAct(page, 'phone', 'home', 'unjoin');
 				await dialog.locator('input').fill('phone');
 				await dialog.getByRole('button', { name: 'unjoin', exact: true }).click();
-				const gone = page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"]`);
-				await gone.filter({ hasText: 'phone · unjoined' }).waitFor();
-				assert.equal(await gone.getByRole('button').count(), 0);
-				// Listed once: its device line, with Rename and Expel, is gone.
-				assert.equal(await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).count(), 0);
+				// Unjoined, it is drawn nowhere, and nothing says one is hidden (da-5wlnr).
+				await until(() => gridLabels(page), (labels) => !labels.includes('phone'));
+				assert.equal(await page.locator(`${WIDGET} .revoked`).count(), 0);
 				assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 				assert.ok((await of()).purged);
 			},

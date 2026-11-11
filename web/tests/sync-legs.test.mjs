@@ -52,7 +52,7 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 				await until(async () => [await native.verify(), await verifyOf(app)], ([a, b]) => a === b);
 
 				await app.goto('/sync');
-				const line = app.page.locator(`${WIDGET} .devices li:not(.here)`);
+				const line = app.page.locator(`${WIDGET} .grid tbody tr:not(.here) td[data-db="datum"]`);
 				const reason = { innerText: () => line.getAttribute('title').then((t) => t ?? '') };
 
 				// The terminal stops: the page's next push reaches the relay, and nobody there.

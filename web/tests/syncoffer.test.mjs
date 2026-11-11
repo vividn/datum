@@ -20,11 +20,10 @@ after(async () => {
 	await stopApp();
 });
 
-/** Turn on sync in `app`'s widget: its invite panel, and the join link it offers. */
+/** Add device in `app`'s widget, its database in no chain yet (da-5wlnr): its invite panel, and the join link it offers. */
 async function invite(app) {
 	await app.goto('/sync');
-	await app.page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).click();
-	await app.page.locator(`${WIDGET} .start[data-db="datum"]`).getByRole('button', { name: 'Start sync' }).click();
+	await app.page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Add device' }).click();
 	const offer = app.page.locator(`${WIDGET} .offer[data-db="datum"]`);
 	await offer.locator('.qr svg').waitFor();
 	const [, link] = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').textContent());
@@ -102,9 +101,7 @@ describe('the invite panel (da-2bvxq)', () => {
 			async (app) => {
 				await app.goto('/sync');
 				const widget = app.page.locator(WIDGET);
-				const turnOn = widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Turn on sync' });
-				await turnOn.click();
-				const start = widget.locator('.start[data-db="datum"]').getByRole('button', { name: 'Start sync' });
+				const start = widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Add device' });
 				await start.click();
 				assert.notEqual(await widget.locator('.waiting').innerText(), '');
 				assert.equal(await start.isDisabled(), true);

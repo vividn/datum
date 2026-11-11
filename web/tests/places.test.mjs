@@ -251,21 +251,6 @@ describe('a place on a phone', () => {
 			assert.deepEqual(errors, []);
 		});
 	});
-	test('the raw subcommands are under More, and fill the line', async () => {
-		await phone.solo(async ({ page }) => {
-			// More is a chained database's: with sync off, turning it on is the one act.
-			assert.equal((await page.evaluate(() => window.datum.runQuiet(['sync', 'new-invite']))).code, 0);
-			await openPlace(page, 'sync');
-			const widget = page.locator('.host[data-widget="sync"]');
-			await widget.getByRole('button', { name: /^More/ }).click();
-			const advanced = widget.locator('.more .advanced');
-			const subs = await advanced.locator('button').evaluateAll((all) => all.map((b) => b.textContent.trim()));
-			assert.ok(subs.includes('sync status') && subs.includes('sync chain'), subs.join(' '));
-			await advanced.locator('button', { hasText: /^sync status$/ }).click();
-			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'sync status ');
-		});
-	});
-
 	test('opens right of whichever tab you are on; a tap back slides back and closes it', async () => {
 		await withApp(
 			async ({ page, errors }) => {

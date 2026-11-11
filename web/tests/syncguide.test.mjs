@@ -69,12 +69,12 @@ describe('the sync guide opens from', () => {
 	test('the Help button, then the Sync widget: its tour, and nothing in the widget runs', async () => {
 		await shared.solo(async ({ page }) => {
 			await page.locator('.root-bar button.help[data-command="help"]').click();
-			await page.locator(`${WIDGET} .actions`).getByRole('button', { name: 'Turn on sync' }).click();
+			await page.locator(`${WIDGET} .actions`).getByRole('button', { name: 'Add device' }).click();
 			await page.locator('.tour .say').waitFor();
 			assert.equal(await page.locator('.tour').getAttribute('data-do'), null, 'it opened on a step that invites');
 			await page.keyboard.press('Escape');
 			await page.locator('.tour').waitFor({ state: 'detached' });
-			assert.equal(await page.locator(`${WIDGET} .offer, ${WIDGET} .start`).count(), 0, 'Turn on sync ran');
+			assert.equal(await page.locator(`${WIDGET} .offer`).count(), 0, 'Add device ran');
 		}, PAGE);
 	});
 
@@ -126,11 +126,14 @@ test('every control the guide names is one the widget shows, walked as a person 
 				await page.locator('.root-bar button.gear').click();
 				await sync.click();
 
-				// Connect a second device: the QR, and the other device redeeming it.
-				await widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Turn on sync' }).click();
-				const start = widget.locator('.start[data-db="datum"]');
-				await look(start);
-				await start.getByRole('button', { name: 'Start sync' }).click();
+				// Connect a second device: this one named under its ✎ (da-5wlnr), the QR, and the other device redeeming it.
+				await widget.locator('header button.rename').click();
+				const edit = widget.locator('header .edit');
+				await edit.getByLabel('This device’s name').fill('desk');
+				await look(edit);
+				await edit.getByRole('button', { name: 'Save' }).click();
+				await until(() => widget.locator('header .device').innerText(), (t) => t === 'desk');
+				await widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Add device' }).click();
 				const offer = widget.locator('.offer[data-db="datum"]');
 				await offer.locator('.qr svg').waitFor();
 				await offer.locator('summary', { hasText: 'join from a terminal' }).click();
@@ -138,14 +141,15 @@ test('every control the guide names is one the widget shows, walked as a person 
 				const ticket = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
 				const joined = await native.run(['sync', 'chain', 'join', ticket]);
 				assert.equal(joined.code, 0, joined.stderr);
-				await until(() => widget.locator('.devices li').count(), (n) => n === 2);
+				await until(() => widget.locator('.grid tbody tr').count(), (n) => n === 2);
+				// The chain it started names this device as kept under its ✎.
+				assert.equal(JSON.parse((await app.run(['sync', 'status', '--json'])).stdout).this.label, 'desk');
 				// It joined: the ⚠, and Sync's line with OK.
 				await widget.locator('.notice').getByRole('button', { name: 'OK' }).waitFor();
 				await page.locator('.root-bar').getByRole('button', { name: 'sync notices' }).waitFor();
 				await look(widget);
 				await offer.getByRole('button', { name: 'Done' }).click();
-				await widget.locator('.actions[data-db="datum"]').getByRole('button', { name: /^More/ }).click();
-				await widget.locator('.more .device').waitFor();
+				await widget.locator('.actions.chain').waitFor();
 				await look(widget);
 				// The grid: datum's column first, a database in no chain folded behind «other dbs ›» (da-opbpa).
 				await app.run(['--db', 'notes', 'occur', 'jot']);
@@ -166,7 +170,7 @@ test('every control the guide names is one the widget shows, walked as a person 
 				await card.getByRole('button', { name: 'Join', exact: true }).click();
 				await card.locator('.done').waitFor({ timeout: 60_000 });
 				// Each device now lists the other.
-				await until(() => page.locator(`${WIDGET} .devices li`).count(), (n) => n >= 2);
+				await until(() => page.locator(`${WIDGET} .grid tbody tr`).count(), (n) => n >= 2);
 			},
 			{ prepare: relayed(relay), viewport: DESKTOP.viewport }
 		);

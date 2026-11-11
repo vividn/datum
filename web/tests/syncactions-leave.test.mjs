@@ -16,7 +16,7 @@ import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { SYNC_TIMEOUT_S, startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
-import { AT_DATUM_DAY, DESKTOP, WIDGET, cli, members, more, openChain } from './support/syncactions.mjs';
+import { AT_DATUM_DAY, DESKTOP, WIDGET, cli, members, openChain } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -30,15 +30,14 @@ after(async () => {
 });
 
 describe('the sync widget’s Leave chain', () => {
-	test('leaving the chain asks first, then keeps every entry under a new key, and sync can be turned on afresh (da-j8c4l)', async () => {
+	test('leaving the chain asks first, then keeps every entry under a new key, and the database is on this device only again (da-j8c4l)', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			await openChain(app);
 			await cli(app, ['--db', 'home', 'occur', 'tea']);
 			const key = await cli(app, ['--db', 'home', 'sync', 'endpoint-key']);
 			await app.goto('/sync?db=home');
-			await more(page);
-			const leave = page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' });
+			const leave = page.locator(`${WIDGET} .actions[data-db="home"]`).getByRole('button', { name: 'Leave chain' });
 
 			await leave.click();
 			const dialog = page.locator('dialog.confirm');
@@ -55,7 +54,9 @@ describe('the sync widget’s Leave chain', () => {
 			assert.ok(Date.now() - pressed >= SYNC_TIMEOUT_S * 1000 - 1000, `asked again after ${Date.now() - pressed} ms`);
 			assert.match(JSON.stringify(await members(app)), /"left":"/);
 			await dialog.getByRole('button', { name: 'leave anyway' }).click();
-			await page.locator(`${WIDGET} .actions[data-db="home"]`).getByRole('button', { name: 'Turn on sync' }).waitFor();
+			// In no chain: only on this device, with nothing to leave (da-5wlnr).
+			await leave.waitFor({ state: 'detached' });
+			assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), 'only on this device');
 			assert.equal(JSON.parse(await cli(app, ['--db', 'home', 'sync', 'status', '--json'])).chain, null);
 			assert.match(await cli(app, ['--db', 'home', 'tail']), /tea/);
 			assert.notEqual(await cli(app, ['--db', 'home', 'sync', 'endpoint-key']), key);
@@ -84,10 +85,9 @@ describe('the sync widget’s Leave chain', () => {
 					pairing.child.kill();
 					await until(() => pairing.child.exitCode !== null || pairing.child.signalCode !== null, Boolean);
 					await app.goto('/sync');
-					await more(page);
 
 					// The only other member is down: no one holds the departure.
-					await page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' }).click();
+					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Leave chain' }).click();
 					const dialog = page.locator('dialog.confirm');
 					await dialog.getByRole('button', { name: 'leave', exact: true }).click();
 					await dialog.getByRole('button', { name: 'leave anyway' }).waitFor({ timeout: 30_000 });
@@ -97,7 +97,7 @@ describe('the sync widget’s Leave chain', () => {
 					assert.equal(await left(), false);
 					await dialog.getByRole('button', { name: 'leave anyway' }).click();
 					// First the dial begun while it was down, which a dead peer holds for the wire's idle timeout.
-					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 90_000 });
+					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Leave chain' }).waitFor({ state: 'detached', timeout: 90_000 });
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 					assert.equal(await left(), true);
 				},
@@ -118,11 +118,10 @@ describe('the sync widget’s Leave chain', () => {
 					native.spawn(['sync', 'run']);
 					const me = JSON.parse(await cli(app, ['sync', 'status', '--json'])).this.endpoint;
 					await app.goto('/sync');
-					await more(page);
-					await page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' }).click();
+					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Leave chain' }).click();
 					const dialog = page.locator('dialog.confirm');
 					await dialog.getByRole('button', { name: 'leave' }).click();
-					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 90_000 });
+					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Leave chain' }).waitFor({ state: 'detached', timeout: 90_000 });
 					assert.equal(await dialog.count(), 0);
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 					// The native member holds the departure: it lists this copy as left.

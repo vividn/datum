@@ -1,5 +1,6 @@
-// The Sync widget (da-x4t0a, redone as a list in da-yoef7): the page's
-// database's devices, a line each, then the other databases a line each.
+// The Sync widget (da-x4t0a, da-yoef7, da-5wlnr): this device's name, its
+// person's @username and how the page's database stands at the top, then the
+// grid, a row per device, each cell its last sync as a mark and its standing.
 //
 // The fixture is two chained databases beside the default `datum`, which
 // is in no chain; the tests open the page on `home`. Their states are set
@@ -118,29 +119,139 @@ async function fixture(app) {
 const broadcast = (app, db, peers) =>
 	app.page.evaluate(([db, peers]) => new BroadcastChannel('datum-sync').postMessage({ state: { db, peers } }), [db, peers]);
 
-/** Each device's line as `[label, mark]`, top to bottom. */
-const lines = (page) =>
-	page.locator(`${WIDGET} .devices li`).evaluateAll((lis) => lis.map((li) => [li.querySelector('.name').textContent, li.dataset.mark]));
+const ROWS = `${WIDGET} .grid tbody tr`;
 
-const line = (page, client) => page.locator(`${WIDGET} .devices li[data-client="${client}"]`);
+/** Each device's row in `db`'s column as `[label, mark]`, top to bottom. */
+const lines = (page, db = 'home') =>
+	page.locator(ROWS).evaluateAll((trs, db) => trs.map((tr) => [tr.querySelector('th').textContent, tr.querySelector(`td[data-db="${db}"]`)?.dataset.mark]), db);
+
+/**
+ * `label`'s cell in `db`'s column, of the device by that name that is in `db`: the laptop is two native copies, so
+ * two devices, one in each database. This device's is `.here`'s.
+ */
+const line = (page, label, db = 'home') =>
+	label === 'this'
+		? page.locator(`${ROWS}.here td[data-db="${db}"]`)
+		: page
+				.locator(ROWS)
+				.filter({ has: page.locator('th', { hasText: new RegExp(`^${label}$`) }) })
+				.locator(`td[data-db="${db}"]:not([data-state="none"])`);
+
+/** Wait for `n` device rows, or `n` of them in `db`: those with a mark there. */
+async function rowsDrawn(page, n, db) {
+	const sel = db ? `${ROWS} td[data-db="${db}"][data-mark]` : ROWS;
+	const h = await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length === n, [sel, n]);
+	await h.dispose();
+}
 
 /** The page on `home`, its five devices drawn. */
 async function onHome(app) {
 	await app.goto('/sync?db=home');
-	const h = await app.page.waitForFunction((sel) => document.querySelectorAll(sel).length === 5, `${WIDGET} .devices li`);
-	await h.dispose();
+	await rowsDrawn(app.page, 5, 'home');
+}
+
+/** What the widget no longer draws (da-5wlnr): the device list, the other databases, the legend, More, Rename this device, «invite like…». */
+async function noneOfTheOld(page) {
+	for (const gone of ['.devices', '.others', '.legend', '.key', '.more', '.start', 'p.revoked', '.grid button.like'])
+		assert.equal(await page.locator(`${WIDGET} ${gone}`).count(), 0, gone);
+	for (const name of ['Turn on sync', 'Rename this device', /^More/]) assert.equal(await page.locator(WIDGET).getByRole('button', { name }).count(), 0, String(name));
 }
 
 const DESKTOP = { viewport: { width: 1280, height: 800 } };
 
 describe('the sync widget', () => {
-	test('a line per device, this one first, with its state as a shape and a word, and the other databases a line each', async () => {
+	test('a database in no chain: this device’s row in the grid, «only on this device», and no «Turn on sync» (da-5wlnr)', async () => {
+		for (const viewport of [{ width: 390, height: 844 }, DESKTOP.viewport])
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					await app.goto('/sync');
+					await rowsDrawn(page, 1);
+					assert.deepEqual(await lines(page, 'datum'), [['datum.day (datum)', undefined]]);
+					assert.equal(await page.locator(`${ROWS}.here td[data-db="datum"]`).innerText(), 'only here');
+					assert.equal(await page.locator(`${WIDGET} .grid thead th.here .name`).innerText(), 'datum');
+					// Never «synced» with no one to sync with.
+					assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), 'only on this device');
+					assert.deepEqual(await page.locator(`${WIDGET} .actions[data-db="datum"] button`).allInnerTexts(), ['Add device']);
+					await noneOfTheOld(page);
+				},
+				{ viewport }
+			);
+	});
+
+	test('✎ edits this device’s name and the username in place: @username under the name, kept across a reload, and told to every chain (da-5wlnr)', async () => {
+		for (const viewport of [{ width: 390, height: 844 }, DESKTOP.viewport])
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					await member(app, 'home', 'phone');
+					const top = page.locator(`${WIDGET} header`);
+					const edit = top.locator('.edit');
+					const rename = async (name, user) => {
+						await top.locator('button.rename').click();
+						await edit.getByLabel('This device’s name').fill(name);
+						await edit.getByLabel('Your username (optional)').fill(user);
+						await edit.getByRole('button', { name: 'Save' }).click();
+						await edit.waitFor({ state: 'detached' });
+					};
+
+					// In no chain: kept on this device, for the chain its first share starts.
+					await app.goto('/sync');
+					assert.equal(await top.locator('.user').count(), 0);
+					await rename('desk', 'bea');
+					assert.equal(await top.locator('.device').innerText(), 'desk');
+					assert.equal(await top.locator('.user').innerText(), '@bea');
+					await app.reload();
+					await until(() => top.locator('.device').innerText(), (t) => t === 'desk');
+					assert.equal(await top.locator('.user').innerText(), '@bea');
+					// Escape puts it back, unsaved.
+					await top.locator('button.rename').click();
+					await edit.getByLabel('This device’s name').fill('nope');
+					await edit.getByLabel('This device’s name').press('Escape');
+					assert.equal(await top.locator('.device').innerText(), 'desk');
+
+					// In a chain: its label there, and the username beside it.
+					await app.goto('/sync?db=home');
+					await rename('laptop browser', 'bo');
+					const me = async () => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'chain', 'list', '--json'])).members.find((m) => m.label === 'laptop browser');
+					await until(me, Boolean);
+					assert.equal((await me()).user, 'bo');
+					await until(() => top.locator('.device').innerText(), (t) => t === 'laptop browser');
+					assert.equal(await top.locator('.user').innerText(), '@bo');
+					// The grid is read after the chain, so its row follows a beat later.
+					await until(() => page.locator(`${ROWS}.here th`).innerText(), (t) => t === 'laptop browser');
+				},
+				{ viewport }
+			);
+	});
+
+	test('✎ saved after a rename lands meanwhile keeps that rename: only what the edit changed is written', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
-			const ids = await fixture(app);
+			await member(app, 'home', 'phone');
+			await app.goto('/sync?db=home');
+			const top = page.locator(`${WIDGET} header`);
+			const edit = top.locator('.edit');
+			await top.locator('button.rename').click();
+			// Another rename lands while the edit is open, as another device's would: the grid reads it.
+			await cli(app, ['--db', 'home', 'sync', 'chain', 'rename', 'elsewhere']);
+			await until(() => page.locator(`${ROWS}.here th`).innerText(), (t) => t === 'elsewhere');
+			await edit.getByLabel('Your username (optional)').fill('cy');
+			await edit.getByRole('button', { name: 'Save' }).click();
+			await edit.waitFor({ state: 'detached' });
+			const me = async () => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'status', '--json'])).this;
+			await until(async () => (await cli(app, ['--db', 'home', 'sync', 'chain', 'list', '--json'])).includes('"user":"cy"'), Boolean);
+			assert.equal((await me()).label, 'elsewhere');
+		}, DESKTOP);
+	});
+
+	test('a row per device, this one first, each cell its last sync as a mark; the top names this device and how the database stands', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await fixture(app);
 			await onHome(app);
 
-			const [first, ...rest] = await lines(page);
+			const [first, ...rest] = (await lines(page)).filter(([, mark]) => mark);
 			assert.deepEqual(first, ['datum.day', 'error']);
 			assert.deepEqual(rest.sort(([a], [b]) => a.localeCompare(b)), [
 				['laptop', 'synced'],
@@ -148,51 +259,32 @@ describe('the sync widget', () => {
 				['tablet', 'error'],
 				['watch', 'pending']
 			]);
-			assert.equal(await line(page, 'this').locator('.kind').innerText(), 'this device');
-			assert.equal(await line(page, LAPTOP).locator('.state').innerText(), '✓ synced');
-			assert.match(await line(page, LAPTOP).locator('.kind').innerText(), /CLI/);
-			assert.match(await line(page, LAPTOP).locator('.seen').innerText(), /^(now|\d+ min ago|\d+ h ago)$/);
-			assert.match(await line(page, ids.phone).getAttribute('title'), /\bpending\b.*\b\d+\b/);
-			assert.match(await line(page, ids.watch).getAttribute('title'), /never synced/);
-			assert.equal(await line(page, ids.watch).locator('.seen').innerText(), 'never');
-			// An error's reason, verbatim, under its line: no tap needed.
-			assert.equal(await line(page, ids.tablet).locator('.reason').innerText(), REFUSED);
-			// The database as a whole is its worst device.
-			assert.equal(await page.locator(`${WIDGET} header .title`).innerText(), 'Sync · home');
-			assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), '! error');
+			assert.equal(await line(page, 'laptop').locator('.mark').innerText(), '✓');
+			assert.equal(await line(page, 'laptop').getAttribute('data-state'), 'member');
+			assert.match(await line(page, 'phone').getAttribute('title'), /\bpending\b.*\b\d+\b/);
+			assert.match(await line(page, 'watch').getAttribute('title'), /never synced/);
+			// An error's reason, verbatim, a hover away.
+			assert.ok((await line(page, 'tablet').getAttribute('title')).includes(REFUSED));
+			// The top: this device, and the database as a whole, its worst device and how many it has not reached.
+			assert.equal(await page.locator(`${WIDGET} header .device`).innerText(), 'datum.day');
+			const state = page.locator(`${WIDGET} header .state`);
+			assert.equal(await state.getAttribute('data-mark'), 'error');
+			assert.equal(await state.innerText(), '! 3 devices not reached');
 
 			// Nobody leads `home`: every other device is offline, its state
 			// last known, grey — never a green ✓.
-			assert.equal(await line(page, LAPTOP).getAttribute('data-reach'), 'offline');
-			assert.match(await line(page, LAPTOP).getAttribute('class'), /\bstale\b/);
+			const mark = line(page, 'laptop').locator('.mark');
+			assert.match(await mark.getAttribute('class'), /\bstale\b/);
 			const color = (l) => l.evaluate((e) => getComputedStyle(e).color);
-			assert.notEqual(await color(line(page, LAPTOP).locator('.state')), await color(page.locator(`${WIDGET} .legend .synced`)));
+			assert.notEqual(await color(mark), await color(page.locator(`${WIDGET} .grid tr.here .mark`)));
 
-			// The others, one line each: work in a chain of its own, datum in none.
-			const others = await page.locator(`${WIDGET} .others li`).evaluateAll((lis) =>
-				lis.map((li) => [li.dataset.db, li.dataset.mark, li.querySelector('.seen').textContent])
-			);
-			assert.deepEqual(others.sort(), [
-				['datum', 'none', 'not syncing'],
-				['work', 'pending', '2 devices']
-			]);
-			// The legend says only what is in use, and the whole of it is a tap away.
-			assert.deepEqual(await page.locator(`${WIDGET} .legend > span`).allInnerTexts(), [
-				'✓ synced',
-				'◔ pending',
-				'! error',
-				'— not syncing'
-			]);
-			await page.locator(`${WIDGET} .legend .info`).click();
-			assert.match(await page.locator(`${WIDGET} .key`).innerText(), /↻ syncing/);
-
-			// A tap on another database switches to it, as the logo does.
-			await page.locator(`${WIDGET} .others li[data-db="work"] a`).click();
-			await page.waitForURL(/[?&]db=work\b/);
+			// The other databases are the grid's, folded behind «other dbs ›»; and the old lists are gone.
+			assert.equal(await page.locator(`${WIDGET} .grid button.fold`).innerText(), 'other dbs ›');
+			await noneOfTheOld(page);
 		}, DESKTOP);
 	});
 
-	test('a device its last session never reached is offline: grey, when last seen, no reason, and not an error', async () => {
+	test('a device its last session never reached is offline: its reason a hover away, and not an error', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			await fixture(app);
@@ -200,55 +292,42 @@ describe('the sync widget', () => {
 			await session(app, 'work', kiosk, '--vector', '{}');
 			await session(app, 'work', kiosk, '--error', UNREACHED, '--offline');
 			await app.goto('/sync?db=work');
-			const h = await page.waitForFunction((sel) => document.querySelectorAll(sel).length === 3, `${WIDGET} .devices li`);
-			await h.dispose();
-			const row = line(page, kiosk);
+			await rowsDrawn(page, 3, 'work');
+			const row = line(page, 'kiosk', 'work');
 			assert.equal(await row.getAttribute('data-mark'), 'offline');
-			assert.equal(await row.locator('.state').innerText(), '○ offline');
-			assert.match(await row.locator('.seen').innerText(), /^(now|\d+ min ago|\d+ h ago)$/);
-			assert.equal(await row.locator('.reason').count(), 0);
+			assert.equal(await row.locator('.mark').innerText(), '○');
 			// Why is a hover away, in the tooltip, verbatim.
 			assert.ok((await row.getAttribute('title')).startsWith(`offline: ${UNREACHED}`));
-			// Not up is no fault: the database as a whole is pending, never red.
-			assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), '◔ pending');
-			assert.ok((await page.locator(`${WIDGET} .legend > span`).allInnerTexts()).includes('○ offline'));
+			// Not up is no fault: the database as a whole is pending, never red, and neither device is reached.
+			const state = page.locator(`${WIDGET} header .state`);
+			assert.equal(await state.getAttribute('data-mark'), 'pending');
+			assert.equal(await state.innerText(), '◔ 2 devices not reached');
 		}, DESKTOP);
 	});
 
-	test('the reachability dot and the syncing mark follow the worker’s broadcast', async () => {
+	test('the syncing mark follows the worker’s broadcast, and a device not reachable is grey', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const ids = await fixture(app);
 			await onHome(app);
-			const row = line(page, LAPTOP);
-			const reach = async (want) => {
-				const h = await page.waitForFunction(
-					([sel, want]) => document.querySelector(sel)?.dataset.reach === want,
-					[`${WIDGET} .devices li[data-client="${LAPTOP}"]`, want]
-				);
-				await h.dispose();
-			};
+			const cell = line(page, 'laptop');
+			const marked = async (want) => until(() => cell.locator('.mark').getAttribute('class'), (c) => c?.split(' ').includes(want));
 
 			await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'reachable', lastSeen: Date.now() } });
-			await reach('reachable');
-			assert.equal(await row.locator('.dot').innerText(), '◐');
-			assert.doesNotMatch(await row.getAttribute('class'), /\bstale\b/);
-			assert.equal(await row.getAttribute('data-mark'), 'synced');
+			await marked('synced');
+			assert.equal(await cell.getAttribute('data-mark'), 'synced');
 
 			await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'online' } });
-			await reach('online');
-			assert.equal(await row.locator('.dot').innerText(), '●');
-			assert.equal(await row.getAttribute('data-mark'), 'syncing');
-			assert.equal(await row.locator('.symbol').innerText(), '↻');
+			await marked('syncing');
+			assert.equal(await cell.getAttribute('data-mark'), 'syncing');
+			assert.equal(await cell.locator('.mark').innerText(), '↻');
 
 			await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'offline' } });
-			await reach('offline');
-			assert.equal(await row.locator('.dot').innerText(), '○');
-			assert.match(await row.getAttribute('class'), /\bstale\b/);
+			await marked('stale');
 		}, DESKTOP);
 	});
 
-	test('a reader carries the lock beside its state, and the legend names it', async () => {
+	test('a reader’s cell says reader, and read-only in its title', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const run = inPage(app, 'home');
@@ -256,17 +335,16 @@ describe('the sync widget', () => {
 			const { secret } = JSON.parse(await run(['sync', 'new-invite', '--reader', '--expires', '1d']));
 			await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
 			await app.goto('/sync?db=home');
-			const reader = line(page, id);
+			const reader = line(page, 'kindle');
 			await reader.waitFor();
-			assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
+			assert.equal(await reader.getAttribute('data-state'), 'reader');
 			assert.match(await reader.getAttribute('title'), /, read-only\b/);
-			// This copy is a member: no lock.
-			assert.equal(await line(page, 'this').locator('.reader').count(), 0);
-			assert.match(await page.locator(`${WIDGET} .legend .reader`).innerText(), /^🔒︎\s*read-only$/);
+			// This copy is a member.
+			assert.equal(await line(page, 'this').getAttribute('data-state'), 'member');
 		}, DESKTOP);
 	});
 
-	test('a filtered reader carries the filter too, its title says how many fields, and the legend names it', async () => {
+	test('a filtered reader’s title says how many fields it is sent', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const run = inPage(app, 'home');
@@ -276,37 +354,35 @@ describe('the sync widget', () => {
 			const { secret } = JSON.parse(await run(invite));
 			await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
 			await app.goto('/sync?db=home');
-			const reader = line(page, id);
+			const reader = line(page, 'kindle');
 			await reader.waitFor();
-			assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
-			assert.equal(await reader.locator('.filter').innerText(), '⛛');
+			assert.equal(await reader.getAttribute('data-state'), 'reader');
 			// Read-only, and which part it is sent: 1 field of 2.
 			const title = await reader.getAttribute('title');
 			assert.match(title, /\bread-only\b/);
 			assert.match(title, /\b1 of 2\b/);
-			assert.equal(await line(page, 'this').locator('.filter').count(), 0);
-			assert.match(await page.locator(`${WIDGET} .legend .filter`).innerText(), /^⛛\s*partial$/);
+			assert.doesNotMatch((await line(page, 'this').getAttribute('title')) ?? '', /\bof\b/);
 		}, DESKTOP);
 	});
 
-	test('an expelled device has no line, the list says one is hidden, and the legend has no «not syncing» (da-73gyz)', async () => {
+	test('an expelled or unjoined device is not drawn at all, and nothing says one is hidden (da-5wlnr)', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const phone = await member(app, 'home', 'phone');
+			const tablet = await member(app, 'home', 'tablet');
+			await member(app, 'home', 'watch');
 			await cli(app, ['--db', 'home', 'sync', 'chain', 'expel', phone]);
-			// Every other database chained too, so no «not syncing» comes from them.
-			await cli(app, ['sync', 'new-invite']);
+			await cli(app, ['--db', 'home', 'sync', 'chain', 'expel', tablet, '--unjoin', '--yes']);
 			await app.goto('/sync?db=home');
-			const hidden = page.locator(`${WIDGET} p.revoked`);
-			await hidden.waitFor();
-			// How many, and where they are listed.
-			assert.match(await hidden.innerText(), /^1\b.*\bMore\b/);
-			assert.equal(await page.locator(`${WIDGET} .devices li[data-client="${phone}"]`).count(), 0);
-			assert.deepEqual(await page.locator(`${WIDGET} .legend > span`).allInnerTexts(), ['✓ synced']);
+			await line(page, 'watch').waitFor();
+			assert.deepEqual((await lines(page)).map(([label]) => label), ['datum.day', 'watch']);
+			assert.equal(await page.locator(`${WIDGET} .revoked`).count(), 0);
+			// Only watch is reached or not: the expelled two are no device of this database.
+			assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), '◔ 1 device not reached');
 		}, DESKTOP);
 	});
 
-	test('two databases in one chain: the other is one line, «same devices»', async () => {
+	test('two databases in one chain: one column, the page’s', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const [home, work] = [inPage(app, 'home'), inPage(app, 'work')];
@@ -320,10 +396,8 @@ describe('the sync widget', () => {
 			assert.equal(JSON.parse(await work(['sync', 'status', '--json'])).chain, JSON.parse(await home(['sync', 'status', '--json'])).chain);
 
 			await app.goto('/sync?db=home');
-			const other = page.locator(`${WIDGET} .others li[data-db="work"]`);
-			await other.waitFor();
-			assert.equal(await other.locator('.seen').innerText(), 'same devices');
-			// And home's own list still draws, `work`'s copy one of its devices.
+			await rowsDrawn(page, 2);
+			// `work`'s copy is one of home's devices.
 			assert.deepEqual((await lines(page)).map(([label]) => label), ['datum.day', 'work']);
 			// One chain, one column in the grid: this db's, whichever of the two the page is on (da-opbpa).
 			const head = page.locator(`${WIDGET} .grid thead th.here .name`);
@@ -460,15 +534,16 @@ describe('when the sync widget reads again', () => {
 		}, DESKTOP);
 	});
 
-	test('a write to another database, which moves no epoch here, still redraws its line', async () => {
+	test('a write to another database, which moves no epoch here, still redraws its column', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const ids = await fixture(app);
 			await onHome(app);
-			const work = page.locator(`${WIDGET} .others li[data-db="work"]`);
-			assert.equal(await work.getAttribute('data-mark'), 'pending');
+			await page.locator(`${WIDGET} .grid button.fold`).click();
+			const work = line(page, 'laptop', 'work');
+			await until(() => work.getAttribute('data-mark'), (m) => m === 'pending');
 			await session(app, 'work', ids.workLaptop, '--error', REFUSED);
-			await page.waitForFunction((sel) => document.querySelector(sel)?.dataset.mark === 'error', `${WIDGET} .others li[data-db="work"]`);
+			await until(() => work.getAttribute('data-mark'), (m) => m === 'error');
 		}, DESKTOP);
 	});
 });

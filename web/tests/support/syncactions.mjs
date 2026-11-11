@@ -28,9 +28,6 @@ export async function openChain(app, label = 'phone') {
 	return phone;
 }
 
-/** Open the widget's More. */
-export const more = (page) => page.locator(`${WIDGET} .actions`).getByRole('button', { name: /^More/ }).click();
-
 export const members = async (app) => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'chain', 'list', '--json']));
 
 /** A passkey the page can make and use, with the user verified. */
@@ -49,11 +46,16 @@ export async function authenticator(page) {
 	});
 }
 
-/** Lock `home`'s chain with a new passkey, through the widget's More. */
+/** Lock `home`'s chain with a new passkey, under the widget's grid. */
 export async function addAdmin(page) {
-	await more(page);
 	await page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'add admin' }).click();
 	await page.locator('dialog.ask input').fill('my phone');
 	await page.locator('dialog.ask').getByRole('button', { name: 'add' }).click();
 	await page.locator(`${WIDGET} .chain[data-db="home"] .admin`).waitFor();
 }
+
+/** `act` chosen in the dropdown of `label`'s grid cell in `db` (da-5wlnr: the grid is the one list of devices). */
+export const cellAct = (page, label, db, act) => page.locator(`${WIDGET} .grid select[aria-label="${label} in ${db}"]`).selectOption(act);
+
+/** The grid's device rows' labels. */
+export const gridLabels = (page) => page.locator(`${WIDGET} .grid tbody th`).allInnerTexts();

@@ -92,21 +92,29 @@ async function fits(page, state, screen) {
 
 describe('the sync widget fits its screen, legibly', () => {
 	for (const screen of SCREENS)
-		test(`${screen.name}: off, adding a device, and on`, async () => {
+		test(`${screen.name}: on this device only, naming it, adding a device, and on`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await cli(app, ['--db', 'work', 'occur', 'tea']);
 				await app.goto('/sync');
 				const widget = page.locator(WIDGET);
-				const turnOn = widget.getByRole('button', { name: 'Turn on sync' });
-				await turnOn.waitFor();
-				// Drawn before the databases are read: measure what it settles to.
-				await widget.locator('.others li[data-db="work"]').waitFor();
+				const add = widget.getByRole('button', { name: 'Add device' });
+				await add.waitFor();
+				// Drawn before the databases are read: measure what it settles to, the grid's fold for `work`.
+				await widget.locator('.grid button.fold').waitFor();
 				const off = await fits(page, 'off', screen.name);
-				assert.deepEqual(off.buttons.map((b) => b.label), ['?', 'ⓘ', 'Turn on sync'], 'off: the guide (da-oyvsz), the legend, and the one act');
+				assert.deepEqual(
+					off.buttons.map((b) => b.label),
+					['✎', '?', 'other dbs ›', 'Add device'],
+					'off: the name’s ✎ (da-5wlnr), the guide (da-oyvsz), the grid’s fold, and the one act'
+				);
 
-				await turnOn.click();
-				await widget.locator('.start').getByRole('button', { name: 'Start sync' }).click();
+				await widget.locator('header button.rename').click();
+				await widget.locator('header .edit input').first().waitFor();
+				await fits(page, 'naming', screen.name);
+				await widget.locator('header .edit').getByRole('button', { name: 'Cancel' }).click();
+
+				await add.click();
 				const offer = widget.locator('.offer');
 				await offer.locator('.qr svg').waitFor();
 				// The ticket is behind its disclosure; the panel's acts are at its bottom.
@@ -121,9 +129,8 @@ describe('the sync widget fits its screen, legibly', () => {
 
 				await admit(app, 'laptop', '--vector', '{}');
 				await admit(app, 'tablet', '--error', 'connection refused by the relay');
-				await widget.locator('.devices li').nth(2).waitFor();
-				await widget.getByRole('button', { name: /^More/ }).click();
-				await widget.locator('.more .chain').waitFor();
+				await widget.locator('.grid tbody tr').nth(2).waitFor();
+				await widget.locator('.actions.chain').waitFor();
 				await fits(page, 'on', screen.name);
 			}, screen.options);
 		});
@@ -170,10 +177,10 @@ describe('the sync widget fits its screen, legibly', () => {
 				});
 				const focused = (l, prop) =>
 					l.evaluate((e, prop) => (e.focus(), e.matches(':focus-visible') && getComputedStyle(e)[prop]), prop);
-				const rename = widget.getByRole('button', { name: 'Rename this device' });
-				await rename.waitFor();
-				assert.equal(await focused(rename, 'borderTopColor'), accent);
-				assert.equal(await focused(widget.locator('.legend .info'), 'outlineColor'), accent);
+				const add = widget.getByRole('button', { name: 'Add device' });
+				await add.waitFor();
+				assert.equal(await focused(add, 'borderTopColor'), accent);
+				assert.equal(await focused(widget.locator('header button.rename'), 'outlineColor'), accent);
 			},
 			{ viewport: { width: 390, height: 844 } }
 		);

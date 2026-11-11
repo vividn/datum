@@ -834,7 +834,7 @@ The gear at the top of the page, then **Sync**; or type \`sync\` in the bar. [Op
 
 ## Connect a second device
 
-1. On the device that has your data, open Sync and press **Turn on sync**. Give this device a name you will recognize, and your username if you like, which every device you sync names you by, then press **Start sync**. Once sync is on, it is **Add device**.
+1. On the device that has your data, open Sync. At the top is this device's name: press **✎** beside it to give it one you will recognize, and your username if you like, which every device you sync names you by, then **Save**. Press **Add device**.
 2. A QR code appears. Scan it with the other device's camera, or press **Copy link** and open the link in the other device's browser.
 3. The other device asks **Join a sync chain?** Under **Join with**, choose the database it joins: one of its own, or a new one, which is chosen already where its own holds entries, so the two are not mixed. Give the device a name you will recognize, and your username if you like, and press **Join**.
 4. Each device now lists the other. Press **Done** on the first to put the QR away.
@@ -843,7 +843,7 @@ A link adds one device, once, and only until the time it says. For the next devi
 
 ## What syncs
 
-Everything in the database: entries, fields, aliases, and layouts kept with Save. A layout you only apply (✓) stays on its device. Each database syncs on its own: Sync shows the one this page is on, and your other databases under it.
+Everything in the database: entries, fields, aliases, and layouts kept with Save. A layout you only apply (✓) stays on its device. Each database syncs on its own: Sync shows the one this page is on, and **other dbs ›** your others beside it.
 
 Joining merges: the joining device keeps what it had, and after the first sync both hold everything. Devices sync whenever two of them are online at once; a browser does while datum.day is open in it.
 
@@ -852,19 +852,19 @@ Joining merges: the joining device keeps what it had, and after the first sync b
 Every other device shows a ⚠ in the tab bar: tap it, and it says «Another device joined», names it and when, and offers to expel it should it not be yours. Sync lists it too, with **OK**. The device that joined is told the chain's members once, plainly.
 
 - One you added: press OK.
-- One you don't know: in Sync press **More**, then **Expel** beside it, so it can no longer sync. **Unjoin** also takes back everything it changed.
+- One you don't know: in Sync choose **expel** in its cell, so it can no longer sync. **unjoin** also takes back everything it changed. Either takes it off the grid.
 
-Give each device a name you will know it by with **Rename this device**, which asks for your username too. More also holds **Pause sync**, and **Leave chain**, which stops this device syncing and keeps its data.
+Give this device a name you will know it by with its **✎**, which takes your username too. Under the grid are **Pause sync**, and **Leave chain**, which stops this device syncing and keeps its data.
 
 ## Reading the widget
 
-Every device syncing this database, each CLI install and browser, a line each, this one first, with when it was last seen; then your other databases, a tap each to open it. ✓ synced, ↻ syncing, ◔ pending, ! error (its reason under it), — not syncing. A device not reachable now is drawn gray, as it was when last seen. Its ? opens this guide.
+At the top, this device's name and your @username, and how this database stands: **only on this device** while no other device has it, **✓ synced**, or how many devices it has not reached yet. Its ? opens this guide.
 
-Under them, **Devices × databases**: each device's standing in this database, a dropdown of what may be done to it. **other dbs ›** shows your other databases beside this one, and **‹ fewer** folds them again.`,
+Under them, **Devices × databases**: every device syncing this database, each CLI install and browser, a row each, this one first. A cell says how its last sync went, ✓ synced, ↻ syncing, ◔ pending, ○ offline, ! error (hover it for why), gray where the device is not reachable now; its standing, a member or a reader; and a dropdown of what may be done to it. **other dbs ›** shows your other databases beside this one, and **‹ fewer** folds them again.`,
 		commands: 'sync',
 		tour: [
 			{ at: WHOLE, say: 'Sync keeps the same data on each of your devices, sent from one to another directly, encrypted end to end.' },
-			{ at: '.actions button.command', say: 'Turn on sync, here, to connect a second device: it shows a QR code for the other to scan.' },
+			{ at: '.actions button.command', say: 'Add device, here, to connect a second device: it shows a QR code for the other to scan.' },
 			{ at: 'button.guide', say: 'Its ? opens the guide to syncing, step by step.' }
 		],
 		legible: { width: 140, height: 100 }

@@ -1,8 +1,8 @@
 // The Sync widget's grid (da-n0uj1.7): every device against every database,
-// a dropdown per cell and «invite like…» per column, each act a CLI command —
-// `sync chain invite` with the sync worker's ticket, `sync chain expel [--unjoin] [--wipe] |
-// role`, `sync chain invite --like --defer` — and every expel, unjoin and wipe
-// confirmed in a dialog saying what happens to whose data.
+// a dropdown per cell, each act a CLI command — `sync chain invite` with the
+// sync worker's ticket, `sync chain expel [--unjoin] [--wipe] | role` — and
+// every expel, unjoin and wipe confirmed in a dialog saying what happens to
+// whose data. A device expelled, unjoined or wiped is drawn no more (da-5wlnr).
 //
 // A device in the grid is a native copy paired with the page's `datum` (so
 // bound to its device key, which a grant is sealed to); `home` is a chain of
@@ -11,7 +11,6 @@
 // `work`, a chain with this copy alone.
 
 import test, { after, before, describe } from 'node:test';
-import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
 import { countOf, nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
@@ -57,32 +56,6 @@ const syncs = async (native, db) => {
 	assert.equal(code, 0, stderr);
 };
 
-/**
- * A software passkey answering the page's `navigator.credentials.get` as one at datum.day would (P-256,
- * user present and verified), so a native copy reached through the local relay can share the test: a
- * virtual authenticator needs the page at https://datum.day, which reaches no local relay. Its admin
- * key's JSON, as `sync admin add` takes it; `window.passkeyAsks` counts its approvals.
- */
-async function softPasskey(page) {
-	const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-	const sha = (b) => createHash('sha256').update(b).digest();
-	await page.exposeFunction('softAssert', (challenge) => {
-		const auth = Buffer.concat([sha('datum.day'), Buffer.from([0x05, 0, 0, 0, 0])]);
-		const client = Buffer.from(JSON.stringify({ type: 'webauthn.get', origin: 'https://datum.day', challenge: Buffer.from(challenge).toString('base64url') }));
-		const signature = sign('sha256', Buffer.concat([auth, sha(client)]), { key: privateKey, dsaEncoding: 'der' });
-		return [auth, client, signature].map((b) => [...b]);
-	});
-	await page.evaluate(() => {
-		window.passkeyAsks = 0;
-		navigator.credentials.get = async (o) => {
-			window.passkeyAsks++;
-			const [a, c, s] = (await window.softAssert([...new Uint8Array(o.publicKey.challenge)])).map((b) => new Uint8Array(b).buffer);
-			return { response: { authenticatorData: a, clientDataJSON: c, signature: s } };
-		};
-	});
-	return JSON.stringify({ alg: -7, publicKey: publicKey.export({ format: 'der', type: 'spki' }).toString('base64url'), label: 'soft' });
-}
-
 /** The native copy paired with the page's `datum`, `home` in a chain of its own with `phone`; the page on `db`'s sync widget. */
 async function gridWith(app, native, db = 'home') {
 	assert.equal((await pairWith(app, native)).verified, true);
@@ -107,7 +80,7 @@ describe('the sync widget’s grid', () => {
 					const { device } = await gridWith(app, native, 'work');
 					assert.equal(await stateOf(page, device, 'datum'), 'member');
 					assert.equal(await stateOf(page, device, 'work'), 'none');
-					// This device's cells offer nothing: it leaves from More.
+					// This device's cells offer nothing: it leaves under the grid.
 					assert.equal(await page.locator(`${WIDGET} .grid tr.here select`).count(), 0);
 
 					await cellOf(page, device, 'work').locator('select').selectOption('member');
@@ -164,70 +137,12 @@ describe('the sync widget’s grid', () => {
 					await select.selectOption('wipe');
 					await dialog.locator('input').fill('phone');
 					await dialog.getByRole('button', { name: 'wipe' }).click();
-					await until(() => stateOf(page, phone, 'home'), (s) => s === 'wiping');
+					// Asked of the device, which is expelled: drawn no more (da-5wlnr).
+					await cellOf(page, phone, 'home').waitFor({ state: 'detached' });
+					const { devices, chains } = JSON.parse(await cli(app, ['--db', 'home', 'sync', 'grid', '--json']));
+					const home = chains.find((c) => c.db === 'home').chain;
+					assert.equal(devices.find((d) => d.endpoint === phone || d.cells[home]?.endpoint === phone).cells[home].state, 'wiping');
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
-				},
-				{ prepare: relayed(relay), viewport: DESKTOP }
-			);
-		} finally {
-			await native.close();
-		}
-	});
-
-	test('«invite like…» starts a database in no chain with another’s admins, and invites each of that one’s devices', async () => {
-		const native = await nativeCopy(relay);
-		try {
-			await withWallClock(
-				async (app) => {
-					const { page } = app;
-					await cli(app, ['--db', 'notes', 'occur', 'jot']);
-					const { device } = await gridWith(app, native);
-					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'invite like…' }).click();
-					const dialog = page.locator('dialog.confirm');
-					assert.ok((await dialog.innerText()).includes('notes'));
-					await dialog.getByRole('button', { name: 'datum' }).click();
-					const said = page.locator(`${WIDGET} .grid .said`);
-					await said.waitFor();
-					// The chain it started, then the grant, as a member.
-					const { chain } = JSON.parse(await cli(app, ['--db', 'notes', 'sync', 'status', '--json']));
-					assert.ok(chain);
-					const lines = (await said.innerText()).split('\n');
-					assert.ok(lines[0].includes(chain), lines[0]);
-					assert.match(lines[1], /^invited\b.*\bmember\b/);
-
-					assert.match((await joins(native, 'notes')).stdout, /joined «notes»/);
-					await syncs(native, 'notes');
-					await until(() => stateOf(page, device, 'notes'), (s) => s === 'member');
-				},
-				{ prepare: relayed(relay), viewport: DESKTOP }
-			);
-		} finally {
-			await native.close();
-		}
-	});
-
-	test('«invite like…» a passkey-locked chain asks the passkey once for the new chain and every invite (da-7bjai)', async () => {
-		const native = await nativeCopy(relay);
-		try {
-			await withWallClock(
-				async (app) => {
-					const { page } = app;
-					await cli(app, ['--db', 'notes', 'occur', 'jot']);
-					const { device } = await gridWith(app, native, 'datum');
-					await cli(app, ['--db', 'datum', 'sync', 'admin', 'add', await softPasskey(page)]);
-					await page.locator(`${WIDGET} .grid th[data-db="notes"]`).getByRole('button', { name: 'invite like…' }).click();
-					await page.locator('dialog.confirm').getByRole('button', { name: 'datum' }).click();
-					const said = page.locator(`${WIDGET} .grid .said`);
-					await said.waitFor();
-					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0, await page.locator(WIDGET).innerText());
-					assert.match(await said.innerText(), /\binvited\b.*\bmember\b/);
-					assert.equal(await page.evaluate(() => window.passkeyAsks), 1);
-					const admins = JSON.parse(await cli(app, ['--db', 'notes', 'sync', 'admin', 'list', '--json'])).admins;
-					assert.equal(admins.length, 1);
-
-					assert.match((await joins(native, 'notes')).stdout, /joined «notes»/);
-					await syncs(native, 'notes');
-					await until(() => stateOf(page, device, 'notes'), (s) => s === 'member');
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);

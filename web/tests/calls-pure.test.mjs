@@ -253,7 +253,6 @@ const SAMPLES = {
 	grantArgv: [[MEMBER, 'member', 'ticket', 'invite'], [MEMBER, 'reader', 'ticket', 'invite', 'work']],
 	roleArgv: [[MEMBER, 'reader']],
 	wipeArgv: [[MEMBER]],
-	grantLikeArgv: [['_internal']],
 	unjoinArgv: [[MEMBER], [MEMBER, true]],
 	ackArgv: [['unlock'], [MEMBER]],
 	adminAddArgv: [['not-a-key']],

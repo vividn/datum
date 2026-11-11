@@ -459,11 +459,6 @@ export interface Grid {
 export const cellWords = (state: Standing | undefined, grant: GridGrant | undefined): string =>
 	[state, grant?.word].filter(Boolean).join(', ') || '—';
 
-/** What `sync chain invite --like --defer` leaves the page to seal (da-n0uj1.7), each with the invite it wrote, approved with the rest at once (da-7bjai). */
-export interface Deferred {
-	grants: { device: string; label: string; role: 'member' | 'reader'; invite: Invite }[];
-}
-
 /** What a cell's dropdown offers a device standing so: a role (an invite, or a role change), or a destructive act. */
 export function cellActs(s: Standing | undefined, bound: boolean): string[] {
 	const live = s === 'member' || s === 'reader';

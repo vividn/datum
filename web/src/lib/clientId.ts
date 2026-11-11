@@ -53,26 +53,42 @@ export function deviceKey(): string {
 }
 
 const USERNAME_KEY = 'datum-username';
+const DEVICE_NAME_KEY = 'datum-device-name';
 
-/**
- * The username this browser's person gave (da-xza37), offered in every sync
- * chain a database here enters and described as its `user`: the CLI reads it
- * as `DATUM_USERNAME`. Empty is none, as is a store the browser blocks.
- */
-export function username(): string {
+/** What this browser keeps under `key`; empty is none, as is a store the browser blocks. */
+function kept(key: string): string {
 	try {
-		return localStorage.getItem(USERNAME_KEY) ?? '';
+		return localStorage.getItem(key) ?? '';
 	} catch {
 		return '';
 	}
 }
 
-/** Keep `name` as this browser's username; empty forgets it. */
-export function setUsername(name: string): void {
+/** Keep `value` under `key`; empty forgets it. Blocked, it is kept for nothing later, as for none. */
+function keep(key: string, value: string): void {
 	try {
-		if (name.trim()) localStorage.setItem(USERNAME_KEY, name.trim());
-		else localStorage.removeItem(USERNAME_KEY);
+		if (value.trim()) localStorage.setItem(key, value.trim());
+		else localStorage.removeItem(key);
 	} catch {
-		// Blocked: a username for no later chain, as for none.
+		// Blocked.
 	}
 }
+
+/**
+ * The username this browser's person gave (da-xza37), offered in every sync
+ * chain a database here enters and described as its `user`: the CLI reads it
+ * as `DATUM_USERNAME`.
+ */
+export const username = (): string => kept(USERNAME_KEY);
+
+/** Keep `name` as this browser's username; empty forgets it. */
+export const setUsername = (name: string): void => keep(USERNAME_KEY, name);
+
+/**
+ * The name this browser's person gave this device in Sync (da-5wlnr), kept
+ * for a database in no chain yet: its chain starts with it when the
+ * database is first shared. Empty is none: the chain assembles one.
+ */
+export const deviceName = (): string => kept(DEVICE_NAME_KEY);
+
+export const setDeviceName = (name: string): void => keep(DEVICE_NAME_KEY, name);

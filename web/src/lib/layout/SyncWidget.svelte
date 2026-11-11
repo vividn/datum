@@ -3,36 +3,29 @@
 	(da-yoef7). vividn: «you have a nice view, and then actions for changing
 	sync setup and stuff are on the lower side of the widget together.»
 
-	Top, the page's database: its name and how it stands overall, then ONE
-	LINE PER DEVICE in its chain, this one first — the reachability dot
-	from the sync worker's broadcast (`syncStates`), the state as a shape
-	AND a word, and when it was last seen. A device not reachable now shows
-	its last-known state grey: never a green ✓ for it. One in error says
-	why under its line; one offline, its last session never reaching it, is
-	grey with when it was last seen, and no why (da-ueb4p). A reader (da-9yvb6) carries the lock beside its
-	state, a filtered one (da-u81u1) the filter too. A list, not a table: a
-	table of clients × databases was 459px on a 390px phone.
+	Top, this device (da-5wlnr): its name, and under it, smaller, its
+	person's @username, both edited in place under its ✎; beside them one
+	line that is true of the page's database: «only on this device» while no
+	other device has it, «✓ synced», or how many devices it has not reached.
+	vividn, 2026-11-10: «at the top, let's put device name, and then a
+	pencil icon next to it, which let's you edit it».
 
-	Middle, every other database on one line: its state, and «same devices»
-	when it is in this one's chain. A tap switches to it as the logo does,
-	by a load (Brand.svelte says why).
+	Under it, the grid (da-n0uj1.7), the only list of devices: every device
+	this install's databases know of against the page's database, the others
+	behind «other dbs ›» (da-opbpa). A database in no chain is drawn too, with
+	this device's row: there is no «Turn on sync», its chain starts as it is
+	first shared. A cell is the device's standing there as `sync grid` has it,
+	the state of its last sync before it, and a dropdown of what may be done
+	to it — a role (an invite, sealed to the device in a chain both share, or a
+	role change), expel, unjoin, wipe, each of the last three confirming in a
+	dialog that says what happens to whose data. An expelled or unjoined
+	device is not drawn at all: «completely expelled/removed devices should not
+	appear in the sync grid at all». Only the CLI's commands: the invite's
+	ticket is the sync worker's, as [Add device]'s is.
 
-	Under it, the grid (da-n0uj1.7): every device this install's databases
-	know of against the page's database, the others behind «other dbs ›»
-	(da-opbpa), each cell its standing there as `sync
-	grid` has it and a dropdown of what may be done to it — a role (an invite,
-	sealed to the device in a chain both share, or a role change), expel,
-	unjoin, wipe, each of the last three confirming in a dialog that says
-	what happens to whose data. A column's «invite like…» gives its database
-	another's devices (`sync chain invite --like`), starting its chain with that one's
-	admins when it is in none. Only the CLI's commands: the invite's ticket is
-	the sync worker's, as [Add device]'s is.
-
-	Bottom, every act together: [Turn on sync] alone for a database in no
-	chain; else [Add device], [Rename this device] and [More], which holds
-	pause, the other devices' rename, expel and unjoin, the admins (da-bjxts) and
-	the raw `sync` subcommands, each filling `sync <sub> ` on the line
-	(da-6du3o). The header's `?` opens the guide to all of it (da-oyvsz).
+	Bottom, every act together: [Add device], and for a database in a chain
+	pause, leave and the admins (da-bjxts). The header's `?` opens the guide
+	to all of it (da-oyvsz).
 	[Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
 	and its own buttons at its bottom — with the ticket under a closed
 	«join from a terminal». Once the invite is used, or expired, the QR and
@@ -43,8 +36,8 @@
 	the inviting device, its chain and the page's database before it joins
 	or says why it cannot — are the same shape, on top. A join kept until a
 	member admits this device (da-4qpwf) says under the header that it waits
-	for its first sync, or why a member refused it, in place of [Turn on
-	sync]; a link works for days, so its panel says until which day. Notices of new
+	for its first sync, or why a member refused it, in place of [Add device];
+	a link works for days, so its panel says until which day. Notices of new
 	members and unlocks stand with the acts until acknowledged.
 
 	Every CLI read and act is #lib/syncView.ts's. Every button is the
@@ -87,17 +80,17 @@
 		type Admin,
 		type Admins,
 		type DbSync,
-		type Deferred,
 		type Grid,
+		type GridCell,
 		cellWords,
+		type Cell,
 		type Mark,
 		type Notice,
-		type PurgePreview,
-		type Row
+		type PurgePreview
 	} from '#lib/syncView.ts';
 	import type { TicketAbout } from '#lib/syncProtocol.ts';
 	import { approve, approveRecords, createPasskey } from '#lib/passkey.ts';
-	import { ask, choose, confirm } from '#lib/confirm.ts';
+	import { ask, confirm } from '#lib/confirm.ts';
 	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
 	import {
 		adminAddArgv,
@@ -108,20 +101,18 @@
 		pausedArgv,
 		unjoinArgv,
 		renameArgv,
+		unsetRenameArgv,
 		expelArgv,
-		grantLikeArgv,
 		grantArgv,
 		gridArgv,
 		roleArgv,
 		userArgv,
 		wipeArgv
 	} from '#lib/calls.ts';
-	import { setUsername, username } from '#lib/clientId.ts';
+	import { deviceName, setDeviceName, setUsername, username } from '#lib/clientId.ts';
 	import { act } from '#lib/act.ts';
 	import { now } from '#lib/clock.ts';
-	import { prefill } from '#lib/bar.ts';
 	import { explainGuide } from '#lib/help.ts';
-	import { grammar } from './engine.js';
 
 	let {
 		epoch = 0,
@@ -135,14 +126,8 @@
 	} = $props();
 
 	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', offline: '○', error: '!', none: '—' };
-	const WORD: Record<Mark, string> = { synced: 'synced', syncing: 'syncing', pending: 'pending', offline: 'offline', error: 'error', none: 'not syncing' };
-	const DOT = { online: '●', reachable: '◐', offline: '○' };
-	/** Beside the state of a copy that is a reader in its chain (da-9yvb6). */
-	const READER = '🔒︎';
-	/** Beside it too when the reader is sent only some fields (da-u81u1). */
-	const FILTER = '⛛';
-	/** The order a legend and a database's overall state are read in. */
-	const MARKS: Mark[] = ['synced', 'syncing', 'pending', 'offline', 'error', 'none'];
+	/** A standing still in its chain: an expelled, unjoined or wiped device is drawn nowhere (da-5wlnr). */
+	const LIVE = ['member', 'reader'];
 	const canShare = browser && typeof navigator.share === 'function';
 
 	/** The page's database: the one this widget is about. */
@@ -162,9 +147,10 @@
 	let failure = $state('');
 	/** What an act under way waits on, in words. */
 	let waiting = $state('');
-	/** More's acts shown, and the whole legend. */
-	let more = $state(false);
-	let key = $state(false);
+	/** This device's name and username as kept, and as edited in place under ✎ (da-5wlnr). */
+	let kept = $state(browser ? { name: deviceName(), user: username() } : { name: '', user: '' });
+	/** `was`: the name the edit began from, so a rename that lands meanwhile is not read as this one. */
+	let edit = $state<{ name: string; user: string; was: string } | null>(null);
 	/** The join link of the last device invited, its QR, until when it works, its invite's id, and whether it names this device's relay. */
 	let offer = $state<{ db: string; link: string; svg: string; until: string; expires: number; id: string; relay: boolean } | null>(null);
 	/** The approval card's outcome: written here, or the code to paste. */
@@ -212,14 +198,6 @@
 	let joinedSaid = $state(browser ? get(joinedInto) : null);
 	if (browser) joinedInto.set(null);
 
-	/**
-	 * A first invite, which starts the chain, asks first what this device is
-	 * named and its person's username (da-xza37), as a join does: the
-	 * suggestion and the username kept filled in.
-	 */
-	let start = $state<{ db: string; name: string; user: string } | null>(null);
-	const turnOn = (db: string): void => void (start = { db, name: suggestedLabel(db), user: username() });
-
 	$effect.pre(() => {
 		const asked = $approving;
 		if (browser) untrack(() => void resolve(asked));
@@ -233,7 +211,7 @@
 		const asked = $inviting;
 		if (browser && asked)
 			untrack(() => {
-				void readSync([asked]).then(([d]) => (d?.chain ? addDevice(asked) : turnOn(asked)));
+				void readSync([asked]).then(([d]) => addDevice(asked, d?.chain ? undefined : startName(asked)));
 				inviting.set(null);
 			});
 	});
@@ -247,13 +225,21 @@
 		if (browser) untrack(() => void read(at));
 	});
 	const cur = $derived(dbs.find((d) => d.db === db) ?? { db, chain: null, members: [] });
-	const others = $derived(dbs.filter((d) => d.db !== db));
-	const rows = $derived(cur.chain ? table([cur], $syncStates) : []);
+	/** Each device's last sync in each database it is in: a grid cell's state beside its standing. */
+	const rows = $derived(table(dbs, $syncStates));
 	const overall = $derived(standing(cur, $syncStates));
-	// An expelled device has no line, only a count of them: «More» lists them (da-73gyz).
-	const live = $derived(rows.filter((r) => !r.revoked));
-	const hidden = $derived(rows.filter((r) => r.revoked).length);
-	const shown = $derived([...live.map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))]);
+	/** This device as named in the page's database's chain, else as kept here, else as its chain would assemble it. */
+	const named = $derived(cur.this?.label ?? (kept.name || suggestedLabel(db)));
+	/** The other devices holding the page's database, and those of them its last changes have not reached. */
+	const peers = $derived(rows.filter((r) => !r.here && r.endpoints[db]));
+	const unreached = $derived(peers.filter((r) => !['synced', 'syncing'].includes(r.cells[db].mark)).length);
+	/** The one line beside the name: never «synced» with no one to sync with. */
+	const status = $derived.by((): { mark: Mark; words: string } => {
+		if (cur.chain && cur.paused) return { mark: 'none', words: 'paused' };
+		if (!peers.length) return { mark: 'none', words: 'only on this device' };
+		if (unreached) return { mark: overall.mark, words: `${SYMBOL[overall.mark]} ${unreached} device${unreached === 1 ? '' : 's'} not reached` };
+		return { mark: overall.mark, words: `${SYMBOL[overall.mark]} ${overall.mark === 'syncing' ? 'syncing' : 'synced'}` };
+	});
 	/** The grid's columns: every chain, then each database in none, which only a copy fills. */
 	const columns = $derived([
 		...(grid?.chains ?? []),
@@ -266,21 +252,30 @@
 	// `sync grid` names a chain's column after the page's database where it holds it, the others' after theirs.
 	const here = $derived(columns.filter((c) => c.held && c.db === db));
 	const drawn = $derived(otherDbs ? [...here, ...columns.filter((c) => !here.includes(c))] : here);
-	const used = $derived(MARKS.filter((m) => shown.some((c) => c.mark === m)));
+	type GridRow = Grid['devices'][number];
+	/**
+	 * The grid's rows: this device first, drawn where no chain names it yet,
+	 * then every other still in a chain or offered one; an expelled or
+	 * unjoined device is drawn nowhere.
+	 */
+	const devices = $derived.by((): GridRow[] => {
+		if (!grid) return [];
+		const me = grid.devices.find((r) => r.this) ?? { device: grid.device, endpoint: null, label: named, this: true, cells: {} };
+		const live = grid.devices.filter((r) => !r.this && (Object.values(r.cells).some((c) => c && LIVE.includes(c.state)) || Object.keys(r.grants ?? {}).length || r.sealed?.length));
+		return [me, ...live];
+	});
+
+	/** A device's last sync in a column's database, as its row in `table` has it: none where it is not in it. */
+	function lastSync(row: GridRow, col: { db: string }, cell: GridCell | null): Cell | undefined {
+		const r = row.this ? rows.find((r) => r.here) : cell ? rows.find((r) => r.endpoints[col.db] === cell.endpoint) : undefined;
+		const c = r?.cells[col.db];
+		return c && c.mark !== 'none' ? c : undefined;
+	}
 
 	/** How `d` stands as a whole: the worst of its devices, which this copy's cell already is. */
 	function standing(d: DbSync, states: Record<string, SyncState>): { mark: Mark; reader?: boolean; filter?: unknown } {
 		if (!d.chain) return { mark: 'none' };
 		return table([d], states)[0].cells[d.db];
-	}
-
-	/** What another database's line says beside its state. */
-	function devices(d: DbSync): string {
-		if (!d.chain) return WORD.none;
-		const live = d.members.filter((m) => !m.revoked);
-		const failed = live.filter((m) => m.state === 'error').map((m) => `${m.label}: error`);
-		const who = d.chain === cur.chain ? 'same devices' : `${live.length + (d.this ? 1 : 0)} devices`;
-		return [who, ...failed].join(' · ');
 	}
 
 	async function databases(): Promise<string[]> {
@@ -420,42 +415,35 @@
 				const link = joinLink(ticket);
 				const expires = Date.parse(invite.expires);
 				offer = { db, link, svg: await qr(link), until: when(expires), expires, id: invite.id, relay };
-				start = null;
 			} finally {
 				waiting = '';
 			}
 		});
 	}
 
-	/** A first invite, as `start` names this device and its person. */
-	function startHere(s: NonNullable<typeof start>): Promise<void> {
-		setUsername(s.user);
-		const typed = s.name.trim() && s.name !== suggestedLabel(s.db) ? s.name.trim() : undefined;
-		return addDevice(s.db, typed);
-	}
+	const unedit = (e: KeyboardEvent): void => void (e.key === 'Escape' && (edit = null));
+
+	/** The name a first invite starts `db`'s chain with: the one kept here, unless it is the suggestion. */
+	const startName = (db: string): string | undefined => (kept.name && kept.name !== suggestedLabel(db) ? kept.name : undefined);
 
 	const share = (link: string) => navigator.share({ title: 'Join a datum sync chain', url: link }).catch(() => {});
 
-	/** This device, in every database it syncs: a client is one name. */
-	const renameHere = () =>
+	/**
+	 * ✎'s edit kept: this device renamed in every database it syncs, a client
+	 * being one name, and kept here for each chain it starts; the username
+	 * beside it this browser's in every chain (da-xza37). An empty name is
+	 * none: the chain assembles one (da-xijlw).
+	 */
+	const saveName = (e: { name: string; user: string; was: string }) =>
 		doing(async () => {
-			const was = cur.this?.label ?? '';
-			const label = await ask('Rename this device to', 'rename', was);
-			if (!label) return;
-			// The username beside it, this browser's in every chain (da-xza37).
-			const user = await ask('Your username (optional)', 'save', username(), true);
-			if (user === null) return;
-			const [named, told] = [label !== was, user !== username()];
-			if (!named && !told) return;
+			const [name, user] = [e.name.trim(), e.user.trim()];
+			const [renamed, told] = [name !== e.was.trim(), user !== kept.user];
+			if (renamed && name) ok(await syncAct(db, labelCheckArgv(name)));
 			setUsername(user);
-			for (const d of dbs) if (d.this) ok(await syncAct(d.db, named ? renameArgv(label) : userArgv(user)));
-		});
-
-	const rename = (row: Row) =>
-		doing(async () => {
-			const label = await ask(`Rename ${row.label} to`, 'rename', row.label);
-			if (!label || label === row.label) return;
-			ok(await syncAct(db, renameArgv(label, row.endpoints[db])));
+			if (renamed) setDeviceName(name);
+			kept = { name: deviceName(), user: username() };
+			if (renamed || told) for (const d of dbs) if (d.this) ok(await syncAct(d.db, !renamed ? userArgv(user) : name ? renameArgv(name) : unsetRenameArgv()));
+			edit = null;
 		});
 
 	const expel = (label: string, endpoint: string, d = db) =>
@@ -499,8 +487,6 @@
 		}
 	}
 
-	type GridRow = Grid['devices'][number];
-
 	/** A cell's dropdown chose `what`: a role is an invite, or a role change for a live member; the rest confirm first. */
 	function cellAct(row: GridRow, col: { chain: string | null; db: string }, what: string): void {
 		const cell = col.chain ? row.cells[col.chain] : null;
@@ -515,21 +501,6 @@
 			if (name) said = await granting(col.db, row.device, role, name === col.db ? undefined : name);
 		});
 	}
-
-	/** «invite like…»: `col` takes another database's devices, each with its role there, the invites left to this page: one approval for all their invites (da-7bjai). */
-	const grantLike = (col: { chain: string | null; db: string }) =>
-		doing(async () => {
-			const sources = columns.filter((c) => c.chain && c.held && c.db !== col.db).map((c) => c.db);
-			const which = col.chain ? `Each of its devices ${col.db} lacks` : `${col.db} starts a sync chain with the same admins, and each of its devices`;
-			const from = await choose(`Invite to ${col.db} the devices of which database? ${which} is invited with the role it has there, and joins ${col.db} when it next syncs.`, sources);
-			if (!from) return;
-			const r = ok(await syncAct(col.db, grantLikeArgv(from)));
-			// `chain invite --like --defer` prints the invites left as its one stdout line, saying all else on stderr.
-			const { grants } = JSON.parse(r.stdout.split('\n').find((l) => l.startsWith('{"grants"')) ?? '') as Deferred;
-			const lines = [r.stderr.trim()];
-			for (const g of grants) lines.push(await granting(col.db, g.device, g.role, undefined, g.invite));
-			said = lines.filter(Boolean).join('\n') || `${from} has no device ${col.db} lacks`;
-		});
 
 	const addAdmin = (d: DbSync) =>
 		doing(async () => {
@@ -602,16 +573,6 @@
 	/** `at` as a link's «until»: the time today, the date and time on another day — an invite lasts days (da-4qpwf). */
 	const when = (at: number) =>
 		new Date(at).toDateString() === new Date().toDateString() ? hm(at) : `${new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' })} ${hm(at)}`;
-
-	/** When a device was last seen, relative: «now», «2 min ago», «3 h ago», a date. */
-	function ago(at?: number): string {
-		if (at === undefined || Number.isNaN(at)) return 'never';
-		const s = Math.max(0, (Date.now() - at) / 1000);
-		if (s < 60) return 'now';
-		if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-		if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-		return new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' });
-	}
 </script>
 
 <Pane title="sync">
@@ -705,76 +666,46 @@
 		{/if}
 
 		<header data-db={db}>
-			<span class="title">Sync · {db}</span>
-			<span class="state {overall.mark}" data-mark={overall.mark}
-				>{SYMBOL[overall.mark]} {cur.chain && cur.paused ? 'paused' : overall.mark === 'synced' ? 'all synced' : WORD[overall.mark]}</span
-			>
+			{#if edit}
+				<!-- ✎ edits both in place (da-5wlnr): Enter keeps them, Escape puts them back. -->
+				<form
+					class="me edit"
+					onsubmit={(e) => {
+						e.preventDefault();
+						if (edit) void saveName(edit);
+					}}
+				>
+					<label class="name"
+						>This device’s name <input type="text" bind:value={edit.name} disabled={busy} onkeydown={unedit} spellcheck="false" autocomplete="off" /></label
+					>
+					<label class="name user"
+						>Your username (optional) <input type="text" bind:value={edit.user} disabled={busy} onkeydown={unedit} spellcheck="false" autocomplete="username" /></label
+					>
+					<div class="actions">
+						<button type="submit" class="command" use:act={'run'} disabled={busy}>Save</button>
+						<button type="button" class="command close" use:act={'show'} onclick={() => (edit = null)}>Cancel</button>
+					</div>
+				</form>
+			{:else}
+				<span class="me"
+					><span class="device">{named}</span><button
+						type="button"
+						class="info rename"
+						use:act={'show'}
+						disabled={busy}
+						aria-label="edit this device’s name and your username"
+						title="edit this device’s name and your username"
+						onclick={() => (edit = { name: named, user: kept.user, was: named })}>✎</button
+					>{#if kept.user}<span class="user">@{kept.user}</span>{/if}</span
+				>
+				<span class="state {status.mark}" data-mark={status.mark}>{status.words}</span>
+			{/if}
 			<!-- The guide to all of this, in plain words (da-oyvsz): the Help place opens it. -->
 			<button type="button" class="info guide" use:act={'show'} aria-label="how to sync" title="how to sync" onclick={() => explainGuide('sync')}>?</button>
 		</header>
 		{#if !cur.chain && cur.pending}
 			<!-- A join kept until a member admits this device: waiting, never an error (da-4qpwf). -->
 			<p class="quiet pending" class:failure={!!cur.pending.refused} data-pending={cur.pending.refused ? 'refused' : 'waiting'}>{pendingWords(cur.pending)}</p>
-		{/if}
-		{#if cur.chain}
-			<ul class="devices">
-				{#each live as row (row.key)}
-					{@const cell = row.cells[db]}
-					<li
-						data-client={row.key}
-						data-reach={row.reach}
-						data-mark={cell.mark}
-						class:here={row.here}
-						class:stale={cell.stale}
-						title={cell.title}
-					>
-						<span class="dot {row.reach}" aria-label={row.reach}>{DOT[row.reach]}</span>
-						<span class="who"
-							><span class="name">{row.label}</span
-							>{#if row.here}<span class="kind">this device</span>{:else if row.kind && row.kind !== row.label}<span class="kind">{row.kind}</span>{/if}</span
-						>
-						<span class="state {cell.stale ? 'stale' : cell.mark}"
-							><span class="symbol">{SYMBOL[cell.mark]}</span> {WORD[cell.mark]}{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}{#if cell.filter}<span class="filter" aria-hidden="true">{FILTER}</span>{/if}</span
-						>
-						<span class="seen">{row.here ? 'now' : ago(row.lastSeen)}</span>
-						{#if cell.error}<p class="reason">{cell.error}</p>{/if}
-					</li>
-				{/each}
-			</ul>
-			{#if hidden}<p class="quiet revoked">{hidden} former member{hidden === 1 ? '' : 's'} hidden — More lists {hidden === 1 ? 'it' : 'them'}</p>{/if}
-		{:else}
-			<p class="quiet">On this device only: no other device has a copy.</p>
-		{/if}
-
-		{#if others.length}
-			<p class="label">Other databases</p>
-			<ul class="others">
-				{#each others as d (d.db)}
-					{@const s = standing(d, $syncStates)}
-					<li data-db={d.db} data-mark={s.mark}>
-						<a href={withDb(location.pathname, d.db)} data-sveltekit-reload
-							><span class="name">{d.db}</span><span class="state {s.mark}">{SYMBOL[s.mark]}</span><span class="seen">{devices(d)}</span></a
-						>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-
-		{#if used.length}
-			<p class="legend">
-				{#each used as mark (mark)}<span class={mark}>{SYMBOL[mark]} {WORD[mark]}</span>{/each}
-				{#if shown.some((c) => c.filter)}<span class="filter" title="a reader sent only some fields">{FILTER} partial</span>{/if}
-				{#if shown.some((c) => c.reader)}<span class="reader">{READER} read-only</span>{/if}
-				<button type="button" class="info" use:act={'show'} aria-label="what the marks mean" aria-expanded={key} onclick={() => (key = !key)}>ⓘ</button>
-			</p>
-		{/if}
-		{#if key}
-			<p class="key">
-				{#each MARKS as mark (mark)}<span class={mark}>{SYMBOL[mark]} {mark === 'none' ? 'not in a chain' : WORD[mark]}</span>{/each}
-				<span>{FILTER} partial: a reader sent only some fields</span>
-				<span>{READER} read-only</span>
-				<span>● online ◐ reachable ○ offline, its state as last seen</span>
-			</p>
 		{/if}
 
 		{#each dbs as d (d.db)}
@@ -788,7 +719,7 @@
 				<p class="notice clock" data-db={d.db}>⚠ {d.db}: {c.text}</p>
 			{/each}
 		{/each}
-		{#if columns.length && grid?.chains.length}
+		{#if grid && drawn.length}
 			<section class="grid">
 				<p class="label">Devices × databases</p>
 				<div class="scroll">
@@ -798,13 +729,7 @@
 								<th></th>
 								{#each drawn as col (col.chain ?? col.db)}
 									<th data-db={col.db} class:here={here.includes(col)}
-										><span class="name">{col.db}</span>{#if here.includes(col)}<span class="kind">this db</span>{/if}{#if col.held && columns.some((c) => c.chain && c.held && c.db !== col.db)}<button
-												type="button"
-												class="command like"
-												use:act={'open'}
-												disabled={busy}
-												onclick={() => grantLike(col)}>invite like…</button
-											>{/if}</th
+										><span class="name">{col.db}</span>{#if here.includes(col)}<span class="kind">this db</span>{/if}</th
 									>
 								{/each}
 								{#if columns.length > here.length}
@@ -817,23 +742,29 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each grid.devices as row (row.device ?? row.endpoint)}
+							{#each devices as row (row.device ?? row.endpoint)}
 								<tr data-device={row.device ?? row.endpoint} class:here={row.this}>
 									<th
 										data-sealed={row.sealed?.length || undefined}
 										title={[row.this ? `${row.label}: this device` : row.label, ...(row.sealed ?? []).map((g) => g.text)].join('\n')}>{row.label}</th
 									>
 									{#each drawn as col (col.chain ?? col.db)}
-										{@const cell = col.chain ? row.cells[col.chain] : null}
+										{@const standing = col.chain ? row.cells[col.chain] : null}
+										<!-- A device expelled or unjoined there is not in it: its row stays only for a chain it is still in. -->
+										{@const cell = standing && LIVE.includes(standing.state) ? standing : null}
 										{@const grant = col.chain ? row.grants?.[col.chain] : undefined}
+										{@const last = lastSync(row, col, cell)}
 										{@const acts = row.this || !col.chain || !col.held ? [] : cellActs(cell?.state, !!row.device)}
+										{@const words = row.this && !col.chain && col.held ? 'only here' : cellWords(cell?.state, grant)}
 										<td
 											data-db={col.db}
 											data-state={cell?.state ?? 'none'}
+											data-mark={last?.mark}
 											data-grant={grant?.state}
 											data-apart={cell?.apart?.updates}
-											title={[grant?.text, cell?.apart?.words].filter(Boolean).join('\n') || undefined}
+											title={[last?.title, grant?.text, cell?.apart?.words].filter(Boolean).join('\n') || undefined}
 										>
+											{#if last}<span class="mark {last.stale ? 'stale' : last.mark}">{SYMBOL[last.mark]}</span>{/if}
 											{#if acts.length}
 												<select
 													aria-label="{row.label} in {col.db}"
@@ -844,11 +775,11 @@
 														cellAct(row, col, what);
 													}}
 												>
-													<option value="" selected>{cellWords(cell?.state, grant)}</option>
+													<option value="" selected>{words}</option>
 													{#each acts as a (a)}<option value={a}>{a}</option>{/each}
 												</select>
 											{:else}
-												<span class="standing">{cellWords(cell?.state, grant)}</span>
+												<span class="standing">{words}</span>
 											{/if}
 											<!-- One of the two must update before entries sync (da-52vdj); the words are its title. -->
 											{#if cell?.apart}<span class="apart">⚠ {cell.apart.updates === 'this' ? 'update this' : 'update it'}</span>{/if}
@@ -893,76 +824,36 @@
 					<button type="button" class="command" use:act={'show'} onclick={() => (offer = null)}>Done</button>
 				</div>
 			</section>
-		{:else if start}
-			<section class="card start" data-db={start.db}>
-				<p class="head">Turn on sync for {start.db}: what is this device called, and who uses it?</p>
-				<label class="name">This device’s name <input type="text" bind:value={start.name} spellcheck="false" autocomplete="off" /></label>
-				<label class="name user">Your username (optional) <input type="text" bind:value={start.user} spellcheck="false" autocomplete="username" /></label>
-				<div class="actions">
-					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => start && startHere(start)}>Start sync</button>
-					<button type="button" class="command close" use:act={'show'} onclick={() => (start = null)}>Cancel</button>
-				</div>
-			</section>
 		{:else}
 			<div class="actions" data-db={db}>
 				{#if !cur.chain && cur.pending && !cur.pending.refused}
-					<!-- Waiting for its first sync: nothing to turn on (da-4qpwf). -->
-				{:else if !cur.chain}
-					<button type="button" class="command" use:act={'show'} disabled={busy} onclick={() => turnOn(db)}>Turn on sync</button>
+					<!-- Waiting for its first sync: nothing to share yet (da-4qpwf). -->
 				{:else}
-					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db)}>Add device</button>
-					<button type="button" class="command" use:act={'open'} disabled={busy} onclick={renameHere}>Rename this device</button>
-					<button type="button" class="command" use:act={'show'} aria-expanded={more} onclick={() => (more = !more)}>More <span aria-hidden="true">{more ? '▾' : '▸'}</span></button>
+					<!-- A database in no chain starts one as it is first shared, with the name kept under ✎ (da-5wlnr). -->
+					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db, cur.chain ? undefined : startName(db))}
+						>Add device</button
+					>
+				{/if}
+				{#if cur.chain}
+					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
+					<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => leave(cur)}>Leave chain</button>
 				{/if}
 			</div>
-			{#if more && cur.chain}
-				<section class="more">
-					<div class="actions">
-						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
-						<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => leave(cur)}>Leave chain</button>
-					</div>
-					{#each live.filter((r) => !r.here) as row (row.key)}
-						<div class="actions device" data-client={row.key}>
-							<span class="name">{row.label}</span>
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => rename(row)}>Rename</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => expel(row.label, row.endpoints[db])}>Expel</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => unjoin(row.label, row.endpoints[db])}>Unjoin</button>
-						</div>
-					{/each}
-					{#each cur.members.filter((m) => m.revoked) as m (m.endpoint)}
-						<div class="actions device" data-endpoint={m.endpoint}>
-							<span class="name">{m.label} · {m.purged ? 'unjoined' : 'expelled'}</span>
-							{#if !m.purged}
-								<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => unjoin(m.label, m.endpoint)}>Unjoin</button>
-							{/if}
-						</div>
-					{/each}
-					<div class="actions chain" data-db={db}>
-						{#if cur.admins?.length}
-							<span>locked by</span>
-							{#each cur.admins as a (a.key)}
-								<button type="button" class="command admin" use:act={cur.admins.length === 1 ? 'open' : 'run'} disabled={busy} aria-label="remove {a.label}" onclick={() => removeAdmin(cur, a)}
-									>{a.label} ×</button
-								>
-							{/each}
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add passkey</button>
-						{:else}
-							<span>no admin: any device can add devices</span>
-							<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add admin</button>
-						{/if}
-					</div>
-					<div class="actions advanced">
-						{#each $grammar?.get('sync')?.subcommands ?? [] as sub (sub)}
-							<button
-								type="button"
-								class="command"
-								use:act={'fill'}
-								data-command="sync {sub}"
-								onclick={() => prefill.set({ line: `sync ${sub} `, keyboard: true })}>sync {sub}</button
+			{#if cur.chain}
+				<div class="actions chain" data-db={db}>
+					{#if cur.admins?.length}
+						<span>locked by</span>
+						{#each cur.admins as a (a.key)}
+							<button type="button" class="command admin" use:act={cur.admins.length === 1 ? 'open' : 'run'} disabled={busy} aria-label="remove {a.label}" onclick={() => removeAdmin(cur, a)}
+								>{a.label} ×</button
 							>
 						{/each}
-					</div>
-				</section>
+						<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add passkey</button>
+					{:else}
+						<span>no admin: any device can add devices</span>
+						<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add admin</button>
+					{/if}
+				</div>
 			{/if}
 		{/if}
 	</div>
@@ -974,9 +865,7 @@
 		font-family: monospace;
 		overflow-wrap: anywhere;
 	}
-	header,
-	.devices li,
-	.others a {
+	header {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
@@ -984,28 +873,32 @@
 		padding: 0.3rem 0;
 		border-bottom: 1px solid var(--rule);
 	}
-	header .title {
+	header .me {
 		flex: 1;
+		min-width: 0;
 		color: var(--ink-bright);
+	}
+	/* The username under the name, smaller (vividn: «a smaller @username under the device name»). */
+	.me .user {
+		display: block;
+		font-size: 0.8em;
+		color: var(--muted);
+	}
+	.me.edit .name {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.2rem 0.6rem;
 	}
 	ul {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
-	.who {
-		flex: 1 1 8ch;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.state,
-	.seen {
+	.state {
 		white-space: nowrap;
 	}
 	.kind,
-	.seen,
 	.label {
 		margin-left: 0.4rem;
 		font-size: 0.8em;
@@ -1013,23 +906,6 @@
 	}
 	.label {
 		margin: 0.6rem 0 0;
-	}
-	.others a {
-		color: inherit;
-		text-decoration: none;
-	}
-	.others .name {
-		flex: 1 1 8ch;
-		min-width: 0;
-	}
-	.dot.online {
-		color: var(--synced);
-	}
-	.dot.reachable {
-		color: var(--accent);
-	}
-	.dot.offline {
-		color: var(--quiet);
 	}
 	.synced {
 		color: var(--synced);
@@ -1048,11 +924,6 @@
 	.stale {
 		color: var(--muted);
 	}
-	.reason {
-		flex-basis: 100%;
-		margin: 0.2rem 0 0 1.4rem;
-		color: var(--error);
-	}
 	.quiet {
 		color: var(--muted);
 	}
@@ -1067,18 +938,6 @@
 		flex: 1 1 100%;
 		color: var(--muted);
 	}
-	.device .name {
-		flex: 0 0 10ch;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		color: var(--muted);
-	}
-	.more {
-		margin-top: 0.4rem;
-		padding-top: 0.2rem;
-		border-top: 1px solid var(--rule);
-	}
 	.card,
 	.notice,
 	.failure {
@@ -1089,8 +948,7 @@
 	.card .actions {
 		margin-top: 0.5rem;
 	}
-	.join .name,
-	.start .name {
+	.join .name {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
@@ -1105,7 +963,7 @@
 	}
 	.join input,
 	.join select,
-	.start input {
+	.edit input {
 		flex: 1 1 14ch;
 		min-width: 0;
 		background: var(--page);
@@ -1147,19 +1005,6 @@
 		padding-left: 1.2rem;
 		list-style: disc;
 		color: var(--ink-bright);
-	}
-	.legend,
-	.key {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.2rem 0.8rem;
-		margin: 0.5rem 0 0;
-		font-size: 0.85em;
-	}
-	.legend span,
-	.key span {
-		white-space: nowrap;
 	}
 	.info {
 		padding: 0 0.2rem;
@@ -1212,7 +1057,9 @@
 	.grid thead .here .name {
 		font-weight: bold;
 	}
-	.grid .like,
+	.grid .mark {
+		margin-right: 0.3rem;
+	}
 	.grid .fold {
 		padding: 0.1rem 0.3rem;
 		font-size: 0.85em;
