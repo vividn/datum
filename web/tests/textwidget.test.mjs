@@ -64,6 +64,27 @@ describe('the text widget', () => {
 		}, DESKTOP);
 	});
 
+	test("an image from datum.day's own origin is drawn; any other is a link to it, and nothing asks its host (da-ipk3v)", async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const asked = [];
+			page.on('request', (r) => {
+				if (new URL(r.url()).hostname === 'example.com') asked.push(r.url());
+			});
+			const { pane, id } = await opened(app);
+			await modifyWidget(page, id);
+			await pane.locator('textarea').fill('![ours](/favicon.png)\n\n![theirs](https://example.com/watching.png)');
+			await leaveWidget(page, id);
+			const ours = pane.locator('.text img[alt="ours"]');
+			await until(() => ours.evaluate((el) => el.complete && el.naturalWidth), (w) => w > 0);
+			assert.deepEqual(await pane.locator('.text img').evaluateAll((els) => els.map((el) => el.getAttribute('src'))), ['/favicon.png'], 'the outside image was drawn as an image');
+			const link = pane.locator('.text a');
+			assert.deepEqual([await link.textContent(), await link.getAttribute('href')], ['image: example.com/watching.png', 'https://example.com/watching.png']);
+			assert.deepEqual(asked, [], 'the page asked the outside host');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
 	test('↺ takes back what modify mode wrote', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

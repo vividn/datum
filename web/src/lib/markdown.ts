@@ -17,8 +17,8 @@
 export interface Targets {
 	/** The attributes of a link to `href`, as written in the doc: `href="…"` and whatever else. */
 	link: (href: string) => string;
-	/** The URL an image at `src` is drawn from. */
-	image: (src: string) => string;
+	/** The URL an image at `src` is drawn from, or null to draw a link to it, «image: example.com/…», fetching nothing. */
+	image: (src: string) => string | null;
 }
 
 const escape = (text: string): string =>
@@ -52,6 +52,13 @@ function keeps(target: string, schemes: string[]): boolean {
 	}
 }
 
+/** An image, or where its target refuses it a link to it, which loads nothing until followed. */
+function picture(alt: string, src: string, to: Targets): string {
+	const url = to.image(src);
+	if (url !== null) return `<img alt="${alt}" src="${escape(url)}">`;
+	return `<a ${to.link(src)}${alt ? ` title="${alt}"` : ''}>image: ${escape(src.replace(/^https?:\/\//i, ''))}</a>`;
+}
+
 /** One line's inline markup. */
 function inline(text: string, to: Targets): string {
 	const held: string[] = [];
@@ -59,7 +66,7 @@ function inline(text: string, to: Targets): string {
 	let out = escape(text).replace(/(`+)(.+?)\1/g, (_, __, code: string) => hold(`<code>${code.trim() || code}</code>`));
 	out = out
 		.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt: string, src: string) =>
-			hold(keeps(unescaped(src), IMAGES) ? `<img alt="${alt}" src="${escape(to.image(unescaped(src)))}">` : alt)
+			hold(keeps(unescaped(src), IMAGES) ? picture(alt, unescaped(src), to) : alt)
 		)
 		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) =>
 			keeps(unescaped(href), LINKS) ? `<a ${to.link(unescaped(href))}>${label}</a>` : label

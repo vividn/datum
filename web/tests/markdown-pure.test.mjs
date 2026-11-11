@@ -32,6 +32,14 @@ test('a link keeps http, https or mailto, an image http or https; any other is i
 	assert.equal(md('![x](data:image/png;base64,AA) ![](mailto:a@b.c)'), '<p>x </p>');
 });
 
+test('an image its target refuses is a link to it, which loads nothing (da-ipk3v)', () => {
+	const refusing = { ...to, image: () => null };
+	assert.equal(
+		markdown('![a "pic"](https://example.com/p.png?a=1&b=2) ![](http://x/q.png)', refusing),
+		'<p><a href="https://example.com/p.png?a=1&b=2" title="a &quot;pic&quot;">image: example.com/p.png?a=1&amp;b=2</a> <a href="http://x/q.png">image: x/q.png</a></p>'
+	);
+});
+
 test('a paragraph joins its lines; a code block keeps them, escaped', () => {
 	assert.equal(md('one\ntwo\n\n```bash\na < b\n  c\n```'), '<p>one two</p>\n<pre><code>a &lt; b\n  c</code></pre>');
 });

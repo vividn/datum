@@ -7,10 +7,15 @@
 	read-only; in it a textarea of the source, each keystroke an `onchange`
 	that `modifyWidget` (mode.ts) writes into the layout, so ✓ keeps it, ↺
 	takes it back and the tab's Save saves and syncs it.
+
+	Its images load from datum.day's own origin alone, the bucket the site and
+	its pictures are published in (deploy.yml); any other is a link to it, so a
+	layout synced to someone else carries no image from a host that learns of
+	each view (da-ipk3v).
 -->
 <script lang="ts">
 	import Pane from '#lib/Pane.svelte';
-	import { markdown, OUTWARD } from '#lib/markdown.ts';
+	import { markdown, OUTWARD, type Targets } from '#lib/markdown.ts';
 
 	interface Props {
 		text?: string;
@@ -20,7 +25,9 @@
 
 	let { text = '', modifying = false, onchange }: Props = $props();
 
-	const html = $derived(markdown(text, OUTWARD));
+	const TARGETS: Targets = { ...OUTWARD, image: (src) => (new URL(src, location.href).origin === location.origin ? src : null) };
+
+	const html = $derived(markdown(text, TARGETS));
 </script>
 
 <Pane title="text">
