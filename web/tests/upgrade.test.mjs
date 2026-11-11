@@ -153,8 +153,10 @@ test('«↑ new» shows for a newer build, and reloads onto the deployed page pa
 		await page.locator('.prompt-bar input').fill(unsent);
 		const asked = pages;
 		await upgrade.click();
-		// Long enough for an unguarded press to have unregistered and asked the
-		// origin for the page, which it holds for `slow`.
+		// A window for what must NOT happen, not a wait for rest: long enough for an
+		// unguarded press to have unregistered and asked the origin for the page,
+		// which it holds for `slow`. That path (#lib/upgrade.ts, idle() to
+		// location.reload()) takes about 120 ms at most, six runs at once (da-slfj7).
 		await page.waitForTimeout(1500);
 		assert.equal(pages, asked, 'the page reloaded under an unanswered write');
 		assert.ok(await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())), 'the worker went before the write answered');
