@@ -207,7 +207,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "account" => {
             let o = opts(
                 &mut rest,
-                &["invite", "relay", "with", "read"],
+                &["invite", "relay", "with", "read", "seal"],
                 &["record"],
                 0..=0,
             )?;
@@ -217,18 +217,19 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 relay: o.get("relay"),
                 with: o.get("with"),
                 read: o.get("read"),
+                seal: o.get("seal"),
             }
         }
+        "login" => SyncCommand::Login,
+        "logout" => SyncCommand::Logout,
         "qr" => SyncCommand::Qr {
             text: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
         },
-        other => {
-            return Err(unknown(
-                "sync",
-                other,
-                "status|grid|diff|refold|chain|admin|daemon|pause|resume|pin|unpin|help",
-            ))
-        }
+        other => return Err(unknown(
+            "sync",
+            other,
+            "status|grid|diff|refold|chain|admin|daemon|pause|resume|pin|unpin|login|logout|help",
+        )),
     };
     match rest.next() {
         Some(t) => Err(unknown_flag(split_flag(t))),
@@ -681,6 +682,8 @@ mod tests {
             }
         );
         assert_eq!(p(&["pause"]), SyncCommand::Pause);
+        assert_eq!(p(&["login"]), SyncCommand::Login);
+        assert_eq!(p(&["logout"]), SyncCommand::Logout);
         assert_eq!(p(&["resume"]), SyncCommand::Resume);
         assert!(matches!(
             parse_sync_cmd(&["help"]),

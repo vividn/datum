@@ -431,6 +431,36 @@ pub fn about(ticket: String) -> Result<String, JsError> {
     serde_json::to_string(&about).map_err(js)
 }
 
+/// Sign a waiting `datum sync login` in (da-mzqs4): send `message`, the
+/// account sealed to its device key, to the CLI `link` names, from an
+/// endpoint of its own under `key` (hex, fresh), on n0's relays or `relay`.
+/// Its refusal is the error.
+#[wasm_bindgen]
+pub async fn login(
+    link: String,
+    key: String,
+    relay: Option<String>,
+    message: String,
+) -> Result<(), JsError> {
+    let to = Login::decode(&link).map_err(js)?;
+    let ep = bind_dialer(secret_of(&key)?, &relay.map_or(Net::N0, Net::Relay))
+        .await
+        .map_err(js)?;
+    let sent = login_send(&ep, &to, message.as_bytes()).await;
+    ep.close().await;
+    sent.map_err(|e| js(format!("{e:#}")))
+}
+
+/// 32 bytes of hex: a key.
+fn secret_of(key: &str) -> Result<[u8; 32], JsError> {
+    let bytes: Vec<u8> = (0..key.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(key.get(i..i + 2).unwrap_or("zz"), 16))
+        .collect::<Result<_, _>>()
+        .map_err(js)?;
+    bytes.try_into().map_err(|_| js("not an endpoint key"))
+}
+
 #[wasm_bindgen]
 impl Node {
     /// Bind the endpoint whose key is `key` (hex, `datum sync
@@ -451,12 +481,7 @@ impl Node {
         progress: Function,
         serving: Function,
     ) -> Result<Node, JsError> {
-        let bytes: Vec<u8> = (0..key.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(key.get(i..i + 2).unwrap_or("zz"), 16))
-            .collect::<Result<_, _>>()
-            .map_err(js)?;
-        let secret: [u8; 32] = bytes.try_into().map_err(|_| js("not an endpoint key"))?;
+        let secret = secret_of(&key)?;
         IDLE_S.store(idle.unwrap_or(0).into(), Relaxed);
         let net = relay.map_or(Net::N0, Net::Relay);
         let ep = bind(secret, &net).await.map_err(js)?;

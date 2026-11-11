@@ -54,6 +54,17 @@ when it starts one and every half hour. It holds about ten chains. The relay
 keeps it as a cache: until it is also published to the mainline DHT, a record
 the relay dropped is back once a signed-in device of the account runs again.
 
+A terminal signs in by `datum sync login`: it prints a datum.day link, and
+opens it where it can. Open it on this computer or on a phone, sign in with
+the passkey there, and the page sends the account to the waiting CLI over
+the sync relays, sealed to this install's device key, so a CLI on a server
+signs in from a phone's browser. The CLI keeps the account in `account` in
+its data directory, readable by its user alone, joins the account's chains
+as a browser does, and signs as the account from then on. `datum sync
+status` says which account it is signed in to, and `datum sync logout`
+forgets it. Only open a login link from a `datum sync login` you ran
+yourself: whoever printed it gets the account.
+
 Per key the op with the later hybrid logical clock wins. Concurrent edits
 of one key, or a delete against a concurrent edit, leave the entry's
 `conflicts` naming each side — the same on every copy that holds both — which

@@ -402,6 +402,59 @@ pub fn open_grant(g: &Grant) -> Option<Value> {
     serde_json::from_slice(&opened).ok()
 }
 
+/// What datum.day sends a waiting `datum sync login` (da-mzqs4): the PRF
+/// output `prf` and the login's `nonce`, sealed to the CLI's device key `to`
+/// as a grant is, as JSON.
+pub fn seal_login(to: &str, nonce: &str, prf: &[u8; 32]) -> std::result::Result<String, String> {
+    let (eph, sealed) = seal_grant(
+        to,
+        &serde_json::json!({"login": nonce, "account": hex(prf)}),
+    )?;
+    Ok(serde_json::json!({"eph": eph, "sealed": sealed}).to_string())
+}
+
+/// The device key and nonce a `datum sync login` link names: its fragment
+/// is base32 of the wire crate's `Login`, `{"addr": {"id": …}, "nonce": …}`.
+pub fn login_of(link: &str) -> Option<(String, String)> {
+    let code = link
+        .rsplit('#')
+        .next()
+        .unwrap_or(link)
+        .trim()
+        .to_uppercase();
+    let bytes = data_encoding::BASE32_NOPAD.decode(code.as_bytes()).ok()?;
+    let l: Value = serde_json::from_slice(&bytes).ok()?;
+    Some((
+        l["addr"]["id"].as_str()?.into(),
+        l["nonce"].as_str()?.into(),
+    ))
+}
+
+/// The PRF output a login's `message` carries, when this install's device
+/// key opens it and it names `nonce`: else why it is refused.
+pub fn open_login(message: &[u8], nonce: &str) -> std::result::Result<[u8; 32], String> {
+    let m: Value = serde_json::from_slice(message).map_err(|_| "not a sign-in")?;
+    let to = SigningKey::from_bytes(&device_secret().ok_or("this install has no device key")?);
+    let field = |k: &str| m[k].as_str().unwrap_or_default().to_string();
+    let p = open_grant(&Grant {
+        to: hex(to.verifying_key().as_bytes()),
+        eph: field("eph"),
+        sealed: field("sealed"),
+        hlc: String::new(),
+        by: String::new(),
+        expires: None,
+        own: None,
+    })
+    .ok_or("sealed to another device's key")?;
+    if p["login"] != nonce {
+        return Err("for another login: run `datum sync login` again and open its link".into());
+    }
+    p["account"]
+        .as_str()
+        .and_then(unhex::<32>)
+        .ok_or_else(|| "no account in it".into())
+}
+
 /// What a grant this install's device wrote says of itself, by its `own`
 /// seal: none for another's, or a record from before it (da-pofki).
 pub fn open_own_grant(g: &Grant) -> Option<Value> {
@@ -2429,6 +2482,32 @@ mod tests {
             ..g
         };
         assert_eq!(open_where(&torn, "c2"), None);
+    }
+
+    /// A login (da-mzqs4) opens for the device it is sealed to and the nonce
+    /// it names alone: another device's key, or another login's, is refused.
+    #[test]
+    fn a_login_opens_for_its_device_and_nonce_alone() {
+        fn seven() -> Option<String> {
+            Some("07".repeat(32))
+        }
+        fn eight() -> Option<String> {
+            Some("08".repeat(32))
+        }
+        let to = hex(SigningKey::from_bytes(&[7u8; 32])
+            .verifying_key()
+            .as_bytes());
+        let m = seal_login(&to, "n1", &[9u8; 32]).unwrap();
+        super::super::set_device_source(seven);
+        assert_eq!(open_login(m.as_bytes(), "n1"), Ok([9u8; 32]));
+        let other = open_login(m.as_bytes(), "n2").unwrap_err();
+        assert!(other.starts_with("for another login"), "{other}");
+        super::super::set_device_source(eight);
+        assert_eq!(
+            open_login(m.as_bytes(), "n1"),
+            Err("sealed to another device's key".into())
+        );
+        assert_eq!(open_login(b"junk", "n1"), Err("not a sign-in".into()));
     }
 
     /// A grant (da-n0uj1.4) is a member's message to a device, sealed to its

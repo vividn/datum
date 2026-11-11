@@ -556,10 +556,10 @@ pub(super) fn seen(columns: &[(String, PathBuf, Chain)]) -> Vec<Seen> {
 #[cfg(feature = "net")]
 /// A grant to this device, opened: the name it joins under, its join link
 /// and who granted it.
-struct Granted {
-    name: String,
-    ticket: String,
-    from: String,
+pub(super) struct Granted {
+    pub(super) name: String,
+    pub(super) ticket: String,
+    pub(super) from: String,
 }
 
 #[cfg(feature = "net")]
@@ -651,7 +651,7 @@ pub(super) fn free_name(want: &str, chain: &str) -> Result<String> {
 /// one's environment, so its data directory and registry: the ticket on its
 /// stdin, which no other user reads. A bound address (the tests') gets a
 /// port of its own: the carrier's run may hold this one.
-fn join(g: &Granted, quiet: bool) -> Result<String> {
+pub(super) fn join(g: &Granted, quiet: bool) -> Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
     let mut c = Command::new(std::env::current_exe()?);

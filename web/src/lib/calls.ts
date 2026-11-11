@@ -255,6 +255,11 @@ export function accountReadArgv(body: string): string[] {
 	return ['sync', 'account', '--read', body];
 }
 
+/** What a waiting `datum sync login` takes (da-mzqs4): the account sealed to the device key `link` names, with its nonce. */
+export function accountSealArgv(link: string): string[] {
+	return ['sync', 'account', '--seal', link];
+}
+
 export function endpointKeyArgv(): string[] {
 	return ['sync', 'endpoint-key'];
 }

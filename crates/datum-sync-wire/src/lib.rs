@@ -2460,6 +2460,105 @@ pub async fn redeem(
     }
 }
 
+// ─── Login (da-mzqs4) ───────────────────────────────────────────────────────
+
+/// `datum sync login`: one message, from datum.day to the waiting CLI, and
+/// one reply. The CLI listens with its device key, to which the page seals
+/// the account it signed in to; the bytes are opaque here.
+pub const LOGIN: &[u8] = b"datum/login/1";
+/// Where datum.day signs a CLI in: the [`Login`] rides in the fragment.
+pub const LOGIN_LINK: &str = "https://datum.day/sync/login#";
+
+/// What a login link carries: where the CLI waits, and its one-time nonce.
+#[derive(Serialize, Deserialize)]
+pub struct Login {
+    pub addr: EndpointAddr,
+    pub nonce: String,
+}
+
+impl Login {
+    pub fn link(&self) -> Result<String> {
+        Ok(format!(
+            "{LOGIN_LINK}{}",
+            BASE32_NOPAD.encode(&serde_json::to_vec(self)?)
+        ))
+    }
+
+    /// A login, or a link holding one.
+    pub fn decode(s: &str) -> Result<Self> {
+        let s = s.rsplit('#').next().unwrap_or(s);
+        let bytes = BASE32_NOPAD
+            .decode(s.trim().to_uppercase().as_bytes())
+            .context("not a datum login link")?;
+        serde_json::from_slice(&bytes).context("not a datum login link")
+    }
+}
+
+/// How long a connection to a login has to send its message.
+const LOGIN_READ: Duration = Duration::from_secs(10);
+
+/// The endpoint a login waits on, under the device key `secret`: [`LOGIN`]
+/// alone, so it never serves a sync; once it names its relay.
+pub async fn bind_login(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
+    let ep = bind_for(secret, net, vec![LOGIN.to_vec()]).await?;
+    if relayed(net) {
+        let _ = timeout(Duration::from_secs(10), ep.online()).await;
+    }
+    Ok(ep)
+}
+
+/// Wait on `ep` until a message `opens` takes: each is answered with what
+/// `opens` said of it, so a page sealing to another key or with another
+/// nonce is told, and this goes on waiting.
+pub async fn login_wait<T>(ep: &Endpoint, opens: impl Fn(&[u8]) -> Result<T>) -> Result<T> {
+    loop {
+        let incoming = ep.accept().await.context("the endpoint closed")?;
+        // One at a time, each given a few seconds to say its message: a
+        // connection that says nothing does not hold up the next.
+        let read = async {
+            let conn = accepted(incoming).await?;
+            let (s, mut r) = conn.accept_bi().await?;
+            let message = get(&mut r, MAX_HELLO).await?;
+            anyhow::Ok((conn, s, message))
+        };
+        let Ok(Ok((conn, mut s, message))) = timeout(LOGIN_READ, read).await else {
+            continue;
+        };
+        let opened = opens(&message);
+        let reply = match &opened {
+            Ok(_) => serde_json::json!({"ok": true}),
+            Err(e) => serde_json::json!({"error": format!("{e:#}")}),
+        };
+        // The account is taken whether or not the reply reaches the page.
+        if put_json(&mut s, &reply).await.is_ok() && s.finish().is_ok() {
+            // The sender closes once it has read the reply.
+            let _ = timeout(Duration::from_secs(5), conn.closed()).await;
+        }
+        if let Ok(t) = opened {
+            return Ok(t);
+        }
+    }
+}
+
+/// Send `message` to the login `to` waits on, from `ep`: what it answered,
+/// its refusal as the error.
+pub async fn login_send(ep: &Endpoint, to: &Login, message: &[u8]) -> Result<()> {
+    let conn = connect(ep, to.addr.clone(), LOGIN, dial_limit()).await?;
+    let (mut s, mut r) = conn.open_bi().await?;
+    put(&mut s, message).await?;
+    let reply: serde_json::Value = get_json(&mut r, MAX_HELLO).await?;
+    conn.close(0u32.into(), b"done");
+    match reply["error"].as_str() {
+        Some(e) => bail!("the CLI refused the sign-in: {e}"),
+        None => Ok(()),
+    }
+}
+
+/// An endpoint that only dials, under `secret`: a page's, sending a login.
+pub async fn bind_dialer(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
+    bind_for(secret, net, Vec::new()).await
+}
+
 // ─── The endpoint ───────────────────────────────────────────────────────────
 
 /// How the endpoint reaches its peers.
@@ -2494,6 +2593,11 @@ pub async fn bind(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
 
 /// [`bind`] with no wait for the relay: a person is waiting ([`Asked`]).
 pub async fn bind_now(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
+    bind_for(secret, net, vec![ALPN.to_vec(), DIFF.to_vec()]).await
+}
+
+/// The endpoint whose key is `secret`, serving `alpns`.
+async fn bind_for(secret: [u8; 32], net: &Net, alpns: Vec<Vec<u8>>) -> Result<Endpoint> {
     let builder = match net {
         Net::N0 => Endpoint::builder(presets::N0),
         Net::Relay(url) => Endpoint::builder(presets::Minimal).relay_mode(RelayMode::custom([url
@@ -2507,7 +2611,7 @@ pub async fn bind_now(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
     };
     let ep = builder
         .secret_key(SecretKey::from_bytes(&secret))
-        .alpns(vec![ALPN.to_vec(), DIFF.to_vec()])
+        .alpns(alpns)
         .bind()
         .await?;
     keeper(&ep.id().to_string(), |k| {
@@ -2810,6 +2914,37 @@ mod tests {
             format!("{e:#}"),
             format!("a copy dialed this one, and {OTHER}")
         );
+    }
+
+    /// A login answers every message, refusing what its check refuses, and
+    /// waits on until one is taken (da-mzqs4); its link reads back.
+    #[cfg(not(target_family = "wasm"))]
+    #[tokio::test]
+    async fn a_login_refuses_until_one_message_is_taken() {
+        let net = Net::Local("127.0.0.1:0".parse().unwrap());
+        let cli = bind_login([3; 32], &net).await.unwrap();
+        let page = bind_dialer([4; 32], &net).await.unwrap();
+        let to = Login {
+            addr: cli.addr(),
+            nonce: "n1".into(),
+        };
+        let to = Login::decode(&to.link().unwrap()).unwrap();
+        assert_eq!(to.nonce, "n1");
+        let waiting = login_wait(&cli, |m| match m {
+            b"right" => Ok(m.to_vec()),
+            _ => bail!("not for this login"),
+        });
+        let sending = async {
+            let e = login_send(&page, &to, b"wrong").await.unwrap_err();
+            assert_eq!(
+                format!("{e:#}"),
+                "the CLI refused the sign-in: not for this login"
+            );
+            login_send(&page, &to, b"right").await
+        };
+        let (taken, sent) = tokio::join!(waiting, sending);
+        sent.unwrap();
+        assert_eq!(taken.unwrap(), b"right");
     }
 
     /// A copy one version apart keeps reading a refusal (da-b6xh6): the

@@ -52,7 +52,7 @@
 // are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`).
 
 import { writable, type Readable } from 'svelte/store';
-import { accountArgv, accountReadArgv, accountRecordArgv, chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
+import { accountArgv, accountReadArgv, accountRecordArgv, accountSealArgv, chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, run, type RunResult } from './run.js';
@@ -815,6 +815,19 @@ export async function accountJoin(db: string, chain: string, members: string[]):
 	const invite = JSON.parse(await ran(['--db', db, ...accountArgv(chain)])) as Invite;
 	const ticket = await call<string>(db, { op: 'offer', invite, chain, also: `[${members.join(',')}]` });
 	return syncConnect(db, ticket);
+}
+
+/**
+ * Sign in the `datum sync login` that `link` names (da-mzqs4) to this tab's
+ * account: the CLI here seals the PRF output to the device key the link
+ * names, with its nonce, and the sync worker sends it over the relay from an
+ * endpoint of the moment. The CLI's refusal is thrown.
+ */
+export async function syncLogin(link: string): Promise<void> {
+	if (!accountEnv().length) throw new Error('not signed in');
+	const { message } = JSON.parse(await ran(accountSealArgv(link))) as { message: string };
+	const key = hexOf(crypto.getRandomValues(new Uint8Array(32)).buffer);
+	await ask('', { op: 'login', link, key, relay: relay(), message });
 }
 
 /** n0's pkarr relay (iroh's `N0_DNS_PKARR_RELAY_PROD`); a test names its own as `datum.pkarrRelay`. */

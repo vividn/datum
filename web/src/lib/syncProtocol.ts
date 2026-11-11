@@ -55,6 +55,8 @@ export type SyncRequest =
 			| { op: 'ticket'; secret: string; also?: string; about?: string }
 			/** What a ticket or join link says of itself (`TicketAbout`); needs no endpoint. */
 			| { op: 'about'; ticket: string }
+			/** Send `message` to the `datum sync login` `link` names, from an endpoint under `key` (da-mzqs4); needs no database's. */
+			| { op: 'login'; link: string; key: string; relay?: string; message: string }
 	  ))
 	/** A CLI process the worker asked for (`run`), and how it went. */
 	| { ran: number; result: { code: number; stdout: string; stderr: string } };

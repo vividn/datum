@@ -804,6 +804,68 @@ pub fn grant_link(db: &Db, secret: &str, expires: Duration) -> Result<String> {
     link(db, me, secret, expires)
 }
 
+/// `datum sync login` (da-mzqs4): wait under this install's device key
+/// `secret` for datum.day to send the account it signed in to, `shown` the
+/// link to open first; each message to `opens`, whose refusal the page is
+/// told, until one is taken or `limit` passes. Then the account record, by
+/// the account's public key `record_of` gives, from the pkarr relay
+/// (`DATUM_SYNC_PKARR`, else n0's): the relay's body, or why none was read.
+pub fn login<T>(
+    secret: [u8; 32],
+    nonce: &str,
+    limit: Duration,
+    shown: impl FnOnce(&str) -> Result<()>,
+    opens: impl Fn(&[u8]) -> Result<T>,
+    record_of: impl FnOnce(&T) -> [u8; 32],
+) -> Result<(T, Result<Vec<u8>>)> {
+    runtime()?.block_on(async {
+        let ep = datum_sync_wire::bind_login(secret, &net()?).await?;
+        let to = datum_sync_wire::Login {
+            addr: ep.addr(),
+            nonce: nonce.into(),
+        };
+        shown(&to.link()?)?;
+        let taken = tokio::time::timeout(limit, datum_sync_wire::login_wait(&ep, opens))
+            .await
+            .map_err(|_| anyhow!("no sign-in came within {} minutes", limit.as_secs() / 60))??;
+        let record = async {
+            use iroh::address_lookup::{PkarrRelayClient, N0_DNS_PKARR_RELAY_PROD};
+            let url = std::env::var("DATUM_SYNC_PKARR")
+                .unwrap_or_else(|_| N0_DNS_PKARR_RELAY_PROD.into());
+            let client = PkarrRelayClient::new(
+                url.parse().context("DATUM_SYNC_PKARR")?,
+                ep.tls_config().clone(),
+                ep.dns_resolver()?.clone(),
+            );
+            let key = iroh::PublicKey::from_bytes(&record_of(&taken))?;
+            Ok(client.resolve(key).await?.to_relay_payload())
+        }
+        .await;
+        ep.close().await;
+        Ok((taken, record))
+    })
+}
+
+/// The join link a device signed in to an account redeems to join `chain`
+/// through `members` (addresses as JSON) with the invite `secret` carries
+/// (da-mzqs4), as datum.day's `accountJoin` builds one; from the account.
+pub fn account_ticket(members: &[String], secret: &str, chain: &str) -> Result<String> {
+    let addrs = members
+        .iter()
+        .map(|m| serde_json::from_str(m).context("not a member's address"))
+        .collect::<Result<_>>()?;
+    Ticket {
+        addrs,
+        secret: secret.into(),
+        about: About {
+            from: Some("your account".into()),
+            chain: Some(chain.into()),
+            expires: Some(unix_now() + 7 * 24 * 3600),
+        },
+    }
+    .link()
+}
+
 /// `ticket` with `more` addresses after its own: what a grant's fellow
 /// grantees said where they serve (da-kvp9q). One that does not read is left.
 pub fn ticket_also(ticket: &str, more: &[serde_json::Value]) -> Result<String> {

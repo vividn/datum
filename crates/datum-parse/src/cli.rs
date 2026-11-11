@@ -1371,13 +1371,25 @@ pub enum SyncCommand {
     /// a relay held, hex) lists besides, reached by `--relay` when not n0's.
     /// `--read <HEX>` prints the chains a record lists that this install
     /// holds no copy of, each with the database to join it into.
+    ///
+    /// `--seal <LINK>` (da-mzqs4) prints the `message` a waiting `datum
+    /// sync login` takes: the account sealed to the device key its link
+    /// names, with its nonce.
     Account {
         invite: Option<String>,
         record: bool,
         relay: Option<String>,
         with: Option<String>,
         read: Option<String>,
+        seal: Option<String>,
     },
+    /// `datum sync login` (da-mzqs4): print, and open where it can, a
+    /// datum.day link where a passkey signs in, and wait for the account it
+    /// sends sealed to this install's device key; keep it, and join the
+    /// account's chains.
+    Login,
+    /// `datum sync logout`: forget the account `login` kept.
+    Logout,
     /// Hidden: `datum sync qr <TEXT>` — `TEXT` as a QR code, SVG: the
     /// ticket datum.day shows to add a device (da-bjxts).
     Qr {

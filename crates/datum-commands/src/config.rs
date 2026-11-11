@@ -373,6 +373,52 @@ pub fn device_key() -> Result<String> {
     Ok(key.into())
 }
 
+/// Where `datum sync login` keeps the account this install is signed in to
+/// (da-mzqs4): `account` in the data directory, beside `device_key`, the
+/// passkey's PRF output as hex, readable by its user alone (0600).
+pub fn account_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("account"))
+}
+
+/// The PRF output `datum sync login` kept, if any; read making nothing.
+pub fn kept_account() -> Result<Option<String>> {
+    let Some(path) = data_dir_path().map(|d| d.join("account")) else {
+        return Ok(None);
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(Some(text.trim().into())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("Reading the account from {path:?}")),
+    }
+}
+
+/// Keep `prf` as this install's account, written aside (0600) and moved in.
+pub fn keep_account(prf: &str) -> Result<PathBuf> {
+    let path = account_path()?;
+    // Its own per process, so two logins at once never write one aside.
+    let aside = path.with_extension(format!("new-{}", std::process::id()));
+    // Made afresh, so its mode is this one whatever a crash left there.
+    let _ = std::fs::remove_file(&aside);
+    let mut f = std::fs::OpenOptions::new();
+    f.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut f, 0o600);
+    std::io::Write::write_all(&mut f.open(&aside)?, prf.as_bytes())
+        .with_context(|| format!("Writing the account to {aside:?}"))?;
+    std::fs::rename(&aside, &path).with_context(|| format!("Writing the account to {path:?}"))?;
+    Ok(path)
+}
+
+/// Forget the account `datum sync login` kept: whether there was one.
+pub fn forget_account() -> Result<bool> {
+    let path = account_path()?;
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e).with_context(|| format!("Removing {path:?}")),
+    }
+}
+
 /// The username this install's person gave (da-xza37), which every chain it
 /// enters describes it by: `DATUM_USERNAME` (a browser's, kept in its own
 /// storage), else `username` in the data directory. Empty is none.

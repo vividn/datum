@@ -201,6 +201,25 @@ export const approving = heldInTab('datum-sync-approving');
 /** The ticket of the join link datum.day was opened on (`/sync/join#<ticket>`, da-l9kdr), until it is dealt with. */
 export const joining = heldInTab('datum-sync-joining');
 
+/** The `datum sync login` link datum.day was opened on (`/sync/login#<login>`, da-mzqs4), until it is dealt with. */
+export const loggingIn = heldInTab('datum-sync-login');
+
+/**
+ * The code a `datum sync login` link shows (da-mzqs4), which the CLI prints
+ * beside it: the first six characters of the device key it names, read from
+ * the link's base32 JSON. Empty for a link that does not read.
+ */
+export function loginCode(link: string): string {
+	const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+	const bits = [...(link.split('#').pop() ?? '').toUpperCase()].map((c) => A.indexOf(c).toString(2).padStart(5, '0')).join('');
+	try {
+		const bytes = Uint8Array.from(bits.match(/.{8}/g) ?? [], (b) => parseInt(b, 2));
+		return String(JSON.parse(new TextDecoder().decode(bytes)).addr.id).slice(0, 6);
+	} catch {
+		return '';
+	}
+}
+
 /** What joining said, kept across the load that opens the database it joined (da-bedyz). */
 export const joinedInto = heldInTab('datum-sync-joined');
 

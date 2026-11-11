@@ -10,7 +10,7 @@
 // The page decides when to dial; this file serves whatever comes in, and
 // says so.
 
-import init, { Node, about, type Pending } from './wasm/datum-sync.js';
+import init, { Node, about, login, type Pending } from './wasm/datum-sync.js';
 import syncWasm from './wasm/datum-sync_bg.wasm?url';
 import type { SyncEvent, SyncRequest } from './syncProtocol.js';
 
@@ -52,6 +52,7 @@ async function serve(db: string, node: Node): Promise<void> {
 async function answer(request: Exclude<SyncRequest, { ran: number }>): Promise<unknown> {
 	await ready;
 	if (request.op === 'about') return JSON.parse(about(request.ticket));
+	if (request.op === 'login') return login(request.link, request.key, request.relay, request.message);
 	if (request.op === 'start' && keys.get(request.db) !== request.key) {
 		void nodes.get(request.db)?.then((old) => old.close(), () => {});
 		const db = request.db;

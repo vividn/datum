@@ -177,3 +177,60 @@ fn the_account_signs_the_restore_and_the_purge_of_its_chain() {
     signed_in(&a, &["db", "purge", "--chain", "--yes"]);
     assert_eq!(count("tea"), "0");
 }
+
+/// What `datum sync login` keeps (da-mzqs4), `account` in the data
+/// directory, signs the install in with no `DATUM_ACCOUNT`: `sync status`
+/// names the account, and the page's `--seal` of a login link is to the
+/// device key and nonce the link names. `sync logout` forgets it.
+#[test]
+fn a_kept_account_signs_in_until_logout_forgets_it() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["moment", "tea"]);
+    b.ok(&["moment", "tea"]);
+    let status = |c: &Copy| json(&c.ok(&["sync", "status", "--json"]))["this"].clone();
+    assert_eq!(status(&a)["account"], serde_json::Value::Null);
+    let home = a.tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    // One that does not read is no account, and `status` says why.
+    std::fs::write(home.join("account"), "0707").unwrap();
+    assert_eq!(status(&a)["account"], serde_json::Value::Null);
+    assert!(a
+        .ok(&["sync", "status"])
+        .contains("⚠ signed in to no account:"));
+    std::fs::write(home.join("account"), PRF).unwrap();
+    assert_eq!(status(&a)["account"], KEY);
+    assert!(a
+        .ok(&["sync", "status"])
+        .contains(&format!("signed in to account {KEY}")));
+    assert_eq!(json(&a.ok(&["sync", "account"]))["key"], KEY);
+
+    let device = status(&b)["device"].as_str().unwrap().to_string();
+    let login = serde_json::json!({"addr": {"id": device, "addrs": []}, "nonce": "n1"});
+    let link = format!(
+        "https://datum.day/sync/login#{}",
+        data_encoding::BASE32_NOPAD.encode(login.to_string().as_bytes())
+    );
+    let sealed = json(&a.ok(&["sync", "account", "--seal", &link]));
+    assert_eq!(sealed["to"], device.as_str());
+    let message = json(sealed["message"].as_str().unwrap());
+    assert!(
+        message["eph"].is_string() && message["sealed"].is_string(),
+        "{message}"
+    );
+    let why = a.fails(
+        &[
+            "sync",
+            "account",
+            "--seal",
+            "https://datum.day/sync/login#nope",
+        ],
+        "",
+    );
+    assert!(why.contains("not a datum login link"), "{why}");
+
+    assert!(a.ok(&["sync", "logout"]).contains("signed out"));
+    assert!(!home.join("account").exists());
+    assert_eq!(status(&a)["account"], serde_json::Value::Null);
+    assert!(a.fails(&["sync", "account"], "").contains("not signed in"));
+    assert!(a.ok(&["sync", "logout"]).contains("not signed in"));
+}

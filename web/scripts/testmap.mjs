@@ -85,6 +85,7 @@ export const SYNC_TESTS = [
 	'tests/syncgrid.test.mjs',
 	'tests/syncguide.test.mjs',
 	'tests/syncjoin.test.mjs',
+	'tests/synclogin.test.mjs',
 	'tests/syncoffer.test.mjs',
 	'tests/syncpause.test.mjs',
 	'tests/syncreload.test.mjs',

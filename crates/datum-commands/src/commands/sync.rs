@@ -745,8 +745,9 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             relay,
             with,
             read,
+            seal,
         } => {
-            let account = account()?.context("not signed in: DATUM_ACCOUNT holds no PRF output")?;
+            let (prf, account) = account()?.context(NOT_SIGNED_IN)?;
             let key = chain::ed25519_admin_key(&account.sign);
             let mut out = json!({"key": key, "name": account::name(&account.sign)});
             let opened =
@@ -782,6 +783,13 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 let r = opened(&hex).context("not this account's record")?;
                 out["joins"] = account_joins(db, r)?.into();
             }
+            if let Some(link) = seal {
+                let (to, nonce) = login_of(&link)?;
+                out["message"] = chain::seal_login(&to, &nonce, &prf)
+                    .map_err(anyhow::Error::msg)?
+                    .into();
+                out["to"] = to.into();
+            }
             if let Some(id) = invite {
                 let caps = json!({});
                 let (secret, expires, id, mut record) =
@@ -792,6 +800,20 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 out["id"] = id.into();
             }
             println!("{out}");
+        }
+        #[cfg(feature = "net")]
+        SyncCommand::Login => login(db)?,
+        #[cfg(not(feature = "net"))]
+        SyncCommand::Login => bail!(NO_NET),
+        SyncCommand::Logout => {
+            let path = crate::config::account_path()?;
+            match crate::config::forget_account()? {
+                true => println!("signed out: {} is gone", path.display()),
+                false => println!("not signed in: `datum sync login` signs in"),
+            }
+            if std::env::var_os("DATUM_ACCOUNT").is_some() {
+                println!("DATUM_ACCOUNT still signs this process in");
+            }
         }
         SyncCommand::Qr { text } => {
             let code = qrcode::QrCode::new(text.as_bytes())?;
@@ -1114,7 +1136,7 @@ pub(super) fn invite(
             "admins": [], "label": name, "created": chrono::Utc::now().to_rfc3339(),
         });
         // Signed in, the chain is the account's: its key an admin (da-nf1p4).
-        if let Some(account) = account()? {
+        if let Some((_, account)) = account()? {
             let key = chain::ed25519_admin_key(&account.sign);
             genesis["admins"] = json!([{"key": key, "label": ACCOUNT}]);
             genesis["sig"] = chain::sign_ed25519(&genesis, &account.sign).into();
@@ -1175,17 +1197,133 @@ fn account_joins(db: &Db, r: account::Record) -> Result<Vec<Value>> {
         .collect()
 }
 
-/// The account this process is signed in to: `DATUM_ACCOUNT`, a passkey's
-/// PRF output as hex (`chain::ACCOUNT_PRF_SALT`), which datum.day hands each
-/// command while a tab is signed in and never stores (da-nf1p4). Set but
-/// not 64 hex digits, it is refused: a broken one is no signing out.
-fn account() -> Result<Option<chain::AccountKeys>> {
-    let Ok(hex) = std::env::var("DATUM_ACCOUNT") else {
-        return Ok(None);
+const NOT_SIGNED_IN: &str = "not signed in: `datum sync login` signs in with a passkey";
+
+/// The account this process is signed in to, its PRF output and keys:
+/// `DATUM_ACCOUNT`, a passkey's PRF output as hex (`chain::ACCOUNT_PRF_SALT`),
+/// which datum.day hands each command while a tab is signed in and never
+/// stores (da-nf1p4); else the one `datum sync login` kept (da-mzqs4). Set
+/// but not 64 hex digits, it is refused: a broken one is no signing out.
+fn account() -> Result<Option<([u8; 32], chain::AccountKeys)>> {
+    let (hex, from) = match std::env::var("DATUM_ACCOUNT") {
+        Ok(hex) => (hex, "DATUM_ACCOUNT".to_string()),
+        Err(_) => match crate::config::kept_account()? {
+            Some(hex) => (hex, crate::config::account_path()?.display().to_string()),
+            None => return Ok(None),
+        },
     };
     let prf = chain::read_admin_secret(&hex)
-        .context("DATUM_ACCOUNT is not a PRF output: 64 hex digits")?;
-    Ok(Some(chain::account_keys(&prf)))
+        .with_context(|| format!("{from} is not a PRF output: 64 hex digits"))?;
+    Ok(Some((prf, chain::account_keys(&prf))))
+}
+
+/// The device key and nonce a `datum sync login` link names.
+fn login_of(link: &str) -> Result<(String, String)> {
+    chain::login_of(link).context("not a datum login link")
+}
+
+/// `bytes` as hex.
+fn hexed(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(feature = "net")]
+/// `datum sync login` (da-mzqs4): a datum.day link, printed and opened where
+/// it can, where a passkey signs in and the page sends the account sealed to
+/// this install's device key, with the link's nonce; kept as `account` in the
+/// data directory, and then each chain the account's record lists that this
+/// install holds no copy of joined, as datum.day's sign-in does.
+fn login(db: &Db) -> Result<()> {
+    let device =
+        chain::read_admin_secret(&crate::config::device_key()?).context("no device key")?;
+    // 16 random bytes as hex: a fresh secret's first half.
+    let nonce = chain::new_admin_secret()[..32].to_string();
+    let shown = |link: &str| {
+        println!("Sign in with your passkey: open this link, on this device or another\n");
+        println!("  {link}\n");
+        // What the page shows too (`loginCode` in datum.day's syncView.ts).
+        if let Some((to, _)) = chain::login_of(link) {
+            println!(
+                "The page shows the code {}: sign in only where it does.",
+                &to[..6]
+            );
+        }
+        println!("Waiting for the sign-in…");
+        if std::io::stdout().is_terminal() {
+            open_browser(link);
+        }
+        Ok(())
+    };
+    let opens = |m: &[u8]| {
+        let prf = chain::open_login(m, &nonce).map_err(anyhow::Error::msg);
+        if let Err(e) = &prf {
+            eprintln!("⚠ a sign-in was refused: {e}");
+        }
+        prf
+    };
+    let limit = std::time::Duration::from_secs(15 * 60);
+    let public = |prf: &[u8; 32]| account::public(&chain::account_keys(prf).sign);
+    let (prf, record) = datum_sync::login(device, &nonce, limit, shown, opens, public)?;
+    let keys = chain::account_keys(&prf);
+    let path = crate::config::keep_account(&hexed(&prf))?;
+    println!(
+        "signed in to account {}, kept in {} (readable by this user alone)",
+        chain::ed25519_admin_key(&keys.sign),
+        path.display()
+    );
+    let body = match record {
+        Ok(body) => body,
+        Err(e) => {
+            println!("no chain of the account's to join: its record was not read ({e:#})");
+            return Ok(());
+        }
+    };
+    let r = account::open(&hexed(&body), &public(&prf), &keys.seal)
+        .context("the account's record does not open with its key")?;
+    let joins = account_joins(db, r)?;
+    if joins.is_empty() {
+        println!("every chain of the account's is on this device already");
+    }
+    for j in joins {
+        let (name, id) = (
+            j["db"].as_str().unwrap_or_default(),
+            j["chain"].as_str().unwrap_or_default(),
+        );
+        let members: Vec<String> = serde_json::from_value(j["members"].clone())?;
+        let (secret, _, _, mut invite) =
+            invite_record(id, std::time::Duration::from_secs(7 * 24 * 3600), json!({}));
+        invite["sig"] = chain::sign_ed25519(&invite, &keys.sign).into();
+        let secret = chain::carry_invite(&secret, &invite);
+        let g = super::sync_grant::Granted {
+            name: name.into(),
+            ticket: datum_sync::account_ticket(&members, &secret, id)?,
+            from: "your account".into(),
+        };
+        println!("joining «{name}», a chain of the account's");
+        match super::sync_grant::join(&g, false) {
+            Ok(said) => println!("{said}"),
+            Err(e) => eprintln!(
+                "⚠ {e:#}; signed in all the same: `datum sync login` again joins what is left"
+            ),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "net")]
+/// Open `link` in the browser, where this system has a way to: unheard if not.
+fn open_browser(link: &str) {
+    let opener = match std::env::consts::OS {
+        "macos" => "open",
+        "windows" => "explorer",
+        _ => "xdg-open",
+    };
+    let _ = std::process::Command::new(opener)
+        .arg(link)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 /// A new invite of chain `chain`, unsigned: its secret, when it expires, its
@@ -1648,7 +1786,7 @@ pub(super) fn account_admin(chain: &Chain) -> Result<Option<[u8; 32]>> {
             .iter()
             .any(|a| a.key == chain::ed25519_admin_key(s))
     };
-    Ok(account()?.map(|a| a.sign).filter(admin))
+    Ok(account()?.map(|(_, a)| a.sign).filter(admin))
 }
 
 /// [`sign`] for records written together, in order: a key file signs each,
@@ -2081,6 +2219,12 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
         .into_iter()
         .map(|i| i.message)
         .collect();
+    // The account this copy is signed in to (da-mzqs4): one unreadable is no account.
+    // One that does not read is no account, and said below.
+    let (signed, unread) = match account() {
+        Ok(a) => (a.map(|(_, k)| chain::ed25519_admin_key(&k.sign)), None),
+        Err(e) => (None, Some(format!("{e:#}"))),
+    };
     if json {
         let path = db.conn().path().unwrap_or_default();
         let name = std::path::Path::new(path)
@@ -2117,7 +2261,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
             "open": live && chain.is_open(), "unlocked": unlocked,
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
-                "device": datum_core::db::device_id(),
+                "device": datum_core::db::device_id(), "account": signed,
                 "datum": datum_core::build(), "schema": runs.0, "floor": runs.1,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
                 "revoked": chain.member(&mine).and_then(|m| m.revoked.as_deref()).map(chain::hlc_time),
@@ -2148,6 +2292,14 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
         .chain(spool)
         .map(|w| format!("⚠ {w}"))
         .collect();
+    if let Some(key) = &signed {
+        below.push(format!(
+            "signed in to account {key} — `datum sync logout` signs out"
+        ));
+    }
+    if let Some(why) = &unread {
+        below.push(format!("⚠ signed in to no account: {why}"));
+    }
     if let Err(why) = db.sync_refuse_debug() {
         println!("{why}");
         print_below(&below);

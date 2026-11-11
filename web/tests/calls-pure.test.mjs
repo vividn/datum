@@ -253,6 +253,7 @@ const SAMPLES = {
 	accountArgv: [[], ['c1']],
 	accountRecordArgv: [[], ['http://127.0.0.1:1/', 'ab']],
 	accountReadArgv: [['ab']],
+	accountSealArgv: [['https://datum.day/sync/login#nothing']],
 	grantArgv: [[MEMBER, 'member', 'ticket', 'invite'], [MEMBER, 'reader', 'ticket', 'invite', 'work']],
 	roleArgv: [[MEMBER, 'reader']],
 	wipeArgv: [[MEMBER]],

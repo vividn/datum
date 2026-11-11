@@ -65,7 +65,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, syncSignIn, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, syncLogin, syncSignIn, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -75,6 +75,8 @@
 		holdsEntries,
 		joinedInto,
 		joining,
+		loggingIn,
+		loginCode,
 		joinWords,
 		newDbName,
 		newDbRefusal,
@@ -585,6 +587,21 @@
 			await syncAccountRecord();
 		});
 
+	/** What signing a CLI in said (da-mzqs4), once it is signed in. */
+	let loginSaid = $state<string | null>(null);
+
+	/** Sign in the `datum sync login` this page was opened for, the tab signed in first if it is not. */
+	const loginHere = (link: string) =>
+		doing(async () => {
+			if (!$account) {
+				if (!(await prfOffered())) throw new Error(NO_PRF);
+				await syncSignIn();
+			}
+			await syncLogin(link);
+			loggingIn.set(null);
+			loginSaid = 'The CLI is signed in to your account, and joins its chains.';
+		});
+
 	const removeAdmin = (d: DbSync, a: Admin) =>
 		doing(async () => {
 			const last = d.admins?.length === 1;
@@ -670,6 +687,31 @@
 						<button type="button" class="command" use:act={'run'} disabled={busy || !card} onclick={() => card && approveHere(card)}>Approve with passkey</button>
 					{/if}
 					<button type="button" class="command close" use:act={'show'} onclick={dismiss}>Dismiss</button>
+				</div>
+			</section>
+		{/if}
+		{#if $loggingIn}
+			<!-- `datum sync login`'s link (da-mzqs4): the account goes to whoever made it, so it asks first. -->
+			<section class="card login">
+				<p class="head">Sign in a datum CLI?</p>
+				<p>The CLI that printed this link gets your account: it joins your account’s chains and can add or expel their devices.</p>
+				<p class="only">
+					Only if you ran <code>datum sync login</code> yourself, just now, and it shows the code <code class="code">{loginCode($loggingIn)}</code>.
+					If someone sent you this link, close it.
+				</p>
+				<div class="actions">
+					<button type="button" class="command" use:act={$account ? 'run' : 'open'} disabled={busy} onclick={() => $loggingIn && loginHere($loggingIn)}
+						>{$account ? 'Sign in the CLI' : 'Sign in with a passkey'}</button
+					>
+					<button type="button" class="command close" use:act={'show'} onclick={() => loggingIn.set(null)}>Dismiss</button>
+				</div>
+			</section>
+		{/if}
+		{#if loginSaid}
+			<section class="card login">
+				<p class="done">{loginSaid}</p>
+				<div class="actions">
+					<button type="button" class="command close" use:act={'show'} onclick={() => (loginSaid = null)}>Dismiss</button>
 				</div>
 			</section>
 		{/if}

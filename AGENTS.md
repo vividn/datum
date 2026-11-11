@@ -828,6 +828,21 @@ record held, so a device with none of its own publishes nothing. A packet's DNS 
 database here holds or is joining, each into a grant's `free_name`. Not yet: the
 mainline DHT (a new dependency, da-le3ee), and a record past the limit (da-c7cpm).
 
+`datum sync login` (da-mzqs4) signs a CLI in with no browser of its own: it binds an
+endpoint under the install's device key on ALPN `datum/login/1` (`bind_login` in the wire
+crate), prints and opens where it can a link, `https://datum.day/sync/login#<Login>` (its
+address and a one-time nonce, base32 JSON), and waits up to 15 minutes. On any device the
+page asks first (the Sync widget's «Sign in a datum CLI?»), signs in, has its CLI seal the
+PRF output and the nonce to the device key the link names (hidden `sync account --seal
+<LINK>`, `chain::seal_login`, a grant's seal), and sends it over the relay from an endpoint
+of the moment (`login` in the wire crate's `web`). The CLI answers every message: one
+sealed to another key or naming another nonce is refused, and the page told, and it waits
+on. Taken, it keeps the PRF output in `account` in the data directory, beside
+`device_key`, mode 0600, which `account()` reads when `DATUM_ACCOUNT` is unset; reads the
+account record from the pkarr relay over the same endpoint (`DATUM_SYNC_PKARR`, else n0's)
+and joins each chain it lists as a grant is joined, with an invite the account signs.
+`datum sync logout` removes the file; `sync status` names the account (`this.account`).
+
 ### Expel, unjoin and purge
 
 The command is `expel`, and its flags say how far it goes (da-zfss8, which cut

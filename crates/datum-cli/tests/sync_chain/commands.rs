@@ -93,8 +93,8 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         top,
         [
-            "status", "grid", "pause", "resume", "pin", "unpin", "diff", "refold", "chain",
-            "admin", "daemon"
+            "status", "grid", "pause", "resume", "login", "logout", "pin", "unpin", "diff",
+            "refold", "chain", "admin", "daemon"
         ]
     );
     assert_eq!(

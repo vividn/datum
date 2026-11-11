@@ -157,6 +157,8 @@ export async function nativeCopy(relay) {
 	};
 	const running = new Set();
 	const self = {
+		/** Its data directory, `DATUM_HOME`. */
+		home,
 		run: (argv, stdin, more = {}) =>
 			new Promise((resolve) => {
 				// `maxBuffer`: execFile's 1 MiB cut a `tail --json` of thousands of rows short.

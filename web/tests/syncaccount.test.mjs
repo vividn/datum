@@ -9,10 +9,10 @@
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPublicKey, verify } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
 import { countOf, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
 import { AT_DATUM_DAY, WIDGET, authenticator } from './support/syncactions.mjs';
+import { pkarrRelay } from './support/pkarr.mjs';
 import { until } from './support/until.mjs';
 
 /** The PRF output whose account key `chain.rs`'s derivation test names: the web's is the same CLI's. */
@@ -28,40 +28,6 @@ after(async () => {
 	await relay?.stop();
 	await stopApp();
 });
-
-/**
- * A pkarr relay (da-rnxp4), routed in the browser: a PUT is kept only if
- * it is what n0's relay would take (BEP44: signed by the key the path
- * names over `3:seqi<t>e1:v<n>:<packet>`, a packet of 1000 bytes at most),
- * and a GET answers it or 404. One for every context it prepares.
- */
-const PKARR = 'https://pkarr.test/pkarr';
-function pkarrRelay() {
-	const held = new Map();
-	const z32 = (s) => {
-		let bits = '';
-		for (const c of s) bits += 'ybndrfg8ejkmcpqxot1uwisza345h769'.indexOf(c).toString(2).padStart(5, '0');
-		return Buffer.from(bits.slice(0, 256).match(/.{8}/g).map((b) => parseInt(b, 2)));
-	};
-	const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, PUT', 'access-control-allow-headers': '*' };
-	const prepare = async (context) => {
-		await context.addInitScript((url) => localStorage.setItem('datum.pkarrRelay', url), PKARR);
-		await context.route(`${PKARR}/*`, async (route) => {
-			const req = route.request();
-			const name = new URL(req.url()).pathname.split('/').pop();
-			if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-			if (req.method() === 'GET') return held.has(name) ? route.fulfill({ status: 200, headers: cors, body: held.get(name) }) : route.fulfill({ status: 404, headers: cors });
-			const body = req.postDataBuffer();
-			const key = createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: z32(name).toString('base64url') }, format: 'jwk' });
-			const packet = body.subarray(72);
-			const signed = Buffer.concat([Buffer.from(`3:seqi${body.readBigUInt64BE(64)}e1:v${packet.length}:`), packet]);
-			const ok = packet.length <= 1000 && verify(null, signed, key, body.subarray(0, 64));
-			if (ok) held.set(name, body);
-			return route.fulfill({ status: ok ? 200 : 400, headers: cors });
-		});
-	};
-	return { held, prepare };
-}
 
 const signIn = (app, secret) => app.page.evaluate((s) => window.datum.sync.signIn(undefined, s), secret);
 const account = (page) => page.locator(`${WIDGET} .account`);
