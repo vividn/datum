@@ -88,7 +88,6 @@
 	"tests/commands-pure.test.mjs": 0,
 	"tests/selection-pure.test.mjs": 0,
 	"tests/wait-caps.test.mjs": 0,
-	"tests/lanes-pure.test.mjs": 0,
 	"tests/detent.test.mjs": 0,
 	"tests/sink.test.mjs": 0,
 	"tests/scrollback-pure.test.mjs": 0,

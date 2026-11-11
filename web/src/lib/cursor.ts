@@ -49,9 +49,8 @@
 
 import { browser } from '$app/env';
 import { derived, get, writable } from 'svelte/store';
-import { pills, selected, type Pill, type PillSection } from './bar.js';
+import { pills, type Pill, type PillSection } from './bar.js';
 import { minute, now as clockNow } from './clock.js';
-import { lanes } from './lanes.js';
 import { relArg } from './nowpoint.js';
 
 /**
@@ -317,13 +316,6 @@ export const pointed = derived([cursor, minute], ([c]) =>
 );
 
 cursor.subscribe((c) => {
-	// The lanes a press published are the selection's other half, and a
-	// selection CLEARED clears them (da-qu16, #lib/lanes.ts): the pill's
-	// ×, `now →` and the reconciler below are every door out of one, and
-	// all three pass through here. A press that lands at now clears the
-	// selection and still re-orders — which is why the pictures publish
-	// their lanes AFTER they point.
-	if (!c && !get(selected).length) lanes.set(null);
 	spelled = new Date();
 	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== SPAN_ID), ...(c ? cursorPills(c, spelled) : [])]);
 });
@@ -341,13 +333,6 @@ if (browser)
 		const c = get(cursor);
 		if (c && c.rel === undefined && t.toDateString() !== spelled.toDateString()) cursor.set(c);
 	});
-
-// And an ENTRY selected by a tap publishes them too (da-xg1vi: a tap on a
-// mark is its entry, and its height still orders the fields), so the last
-// of the two selections to go clears them.
-selected.subscribe((hids) => {
-	if (!hids.length && !get(cursor)) lanes.set(null);
-});
 
 // The pills are the selection's other face, and a press on one of them
 // changes the selection: the length pill's × takes the range's length away

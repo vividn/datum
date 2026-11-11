@@ -24,7 +24,6 @@ import {
 	pressTraveled,
 	spendPress
 } from './inspect.js';
-import { readLanes } from './lanes.js';
 import { preview, type Preview } from './preview.js';
 import { inlineSvg } from './svgSafe.js';
 import { isSelected } from './selection.js';
@@ -509,8 +508,7 @@ export function tipText(mark: Element, clientX?: number): string {
  *
  * `data-pilled` on the CLI's own `.field[data-field]` groups, and the halo
  * is CSS (`CliOutput.svelte`). No geometry is invented and no field name is
- * guessed: the group already says which field it is, exactly as
- * #lib/lanes.ts reads it.
+ * guessed: the group already says which field it is.
  */
 function highlight(svg: SVGSVGElement | null, field: string | null): void {
 	svg?.querySelectorAll('.field[data-pilled]').forEach((g) => g.removeAttribute('data-pilled'));
@@ -649,7 +647,7 @@ export function inspectMark(
 	else {
 		const order = root ? marksIn(root).map(hidOf).filter((h): h is string => !!h) : [hid];
 		pointAt(null);
-		select(hid, inspectMods(e), order, true);
+		select(hid, inspectMods(e), order);
 	}
 	spendPress();
 	return true;
@@ -836,22 +834,11 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	/** The instant under a pointer event, on the day it landed in. */
 	const timeOf = (e: MouseEvent) => (e.target instanceof Element ? timeAt(e.target, e.clientX, e.clientY) : null);
 
-	/**
-	 * The fields drawn at the height of `e` come first in the collect widget
-	 * (da-qu16) — published after the selection, which is what clears them
-	 * again.
-	 */
-	function lanesAt(e: MouseEvent, at: Date | null): void {
-		const svg = node.querySelector<SVGSVGElement>('svg');
-		if (svg) readLanes(svg, { x: e.clientX, y: e.clientY, t: at && +at });
-	}
-
 	/** Point the page at the time under `e`. */
 	function pointTime(e: MouseEvent): boolean {
 		const at = timeOf(e);
 		if (!at) return false;
 		setCursor(at);
-		lanesAt(e, at);
 		return true;
 	}
 
@@ -875,7 +862,7 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	// answered, and not one that traveled: that was a pan or a scroll.
 	const click = (e: MouseEvent) => {
 		if (pressSpent() || own() || pressTraveled()) return;
-		if (inspectMark(markOf(e.target), e, node)) return lanesAt(e, timeOf(e));
+		if (inspectMark(markOf(e.target), e, node)) return;
 		pointTime(e);
 	};
 	// Enter on a focused mark selects the mark's own time — and it does so

@@ -1,32 +1,20 @@
 // The collect widget answers the selection (da-qu16).
 //
 // vividn, 2026-09-17 16:44: «if a duration is selected, filter down to
-// start/switch based fields … I want to have a smart filter of fields
-// depending on the y position of your click. So fields that have a span
-// over that y position and occur dots that are close to that position
-// should be prioritized in the fields menu.» And at 17:01: «clicking in
-// the now region should also reorder fields based on y position.»
+// start/switch based fields». So a length pill FILTERS: it leaves the fields
+// a length can be spent on, and composes with a pending command.
 //
-// Two rules of different kinds, and this file keeps them apart: the
-// length pill FILTERS, the click's height ORDERS. Nothing the height does
-// may remove a field, so every case here reads the WHOLE list back.
+// The same ask ordered the fields by the height of a press on a picture;
+// that went with the collect widget's redesign (da-g5y5o, vividn,
+// 2026-11-11: «fields always appear in their given row anyway, so this
+// filtering basically does nothing anymore»).
 //
-// Delta-blind: every row is pressed where the CLI drew its own mark
-// (`.field[data-field]` and the blocks, dots and chips inside it), every
-// pill is read off the bar's store, and the bar is asserted as an ordered
-// list of names — never as "something moved".
-//
-// The ranking itself is `lanes-pure.test.mjs`, in node — which is where
-// the ORDER within a rank lives too (da-q5jq: «The fields with the closest
-// y should appear first in the fields list», and a block outranking a dot
-// only while its field is on). No press on this seed's picture can put a
-// dot nearer the finger than a row it also reached — the lanes are 6px
-// tall and 19px apart — so those cases are made of boxes, not of clicks.
+// Delta-blind: every pill is read off the bar's store, and the bar is
+// asserted as an ordered list of names — never as "something moved".
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
-import { PHONE } from './support/layout.mjs';
+import { startApp, stopApp, sharedApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import { rowsOf } from './support/rows.mjs';
 
@@ -49,24 +37,16 @@ const SEED = [
 	['occur', 'coffee', '-t', '14:50']
 ];
 
-/**
- * The usual order, and what collect returns to (da-xtkcp, da-lw7ue): last
- * used first, as the CLI sorts it. Read off
- * the page when a test starts, as `usual`.
- */
-const ALL = ['coffee', 'mood', 'run', 'sleep'];
-
 const BAR = 'section.pane[data-title="collect"] .bar';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 
 // ONE app for the tests on the default screen (sharedApp in support/app.mjs),
 // each in a room of its own so no test meets the widgets the last one moved.
-// A test that says how its app is to be opened opens its own.
 const shared = sharedApp({ clock: NOW });
 
 /** The app with that seed, its clock pinned on the page and in the worker. */
-async function withFields(fn, options) {
-	const body = async (app) => {
+const withFields = (fn) =>
+	shared.fresh(async (app) => {
 		for (const argv of SEED) {
 			const logged = await app.run(argv);
 			assert.equal(logged.code, 0, logged.stderr);
@@ -74,16 +54,9 @@ async function withFields(fn, options) {
 		await app.redraw();
 		await app.page.locator(`${BAR} [data-field="sleep"]`).waitFor();
 		await fn(app);
-	};
-	if (!options) return shared.fresh(body);
-	await withApp(body, { ...options, clock: NOW });
-}
+	});
 
-/**
- * Every field button the bar draws, row by row. A press's fields head the
- * rows and every other keeps its own (`rowsUnder`), so one promoted field
- * reads as that field, then the usual order without it.
- */
+/** Every field button the bar draws, row by row. */
 const shownFields = async (page) => (await rowsOf(page.locator(BAR), '[data-field]')).flat();
 
 /** Wait until the bar reads exactly `want`, and say what it read if it never does. */
@@ -93,20 +66,12 @@ const saysFields = (page, want) =>
 		(seen) => seen.join() === want.join()
 	);
 
-/** The fields the cluster MARKED as promoted. */
-const marked = (page) =>
-	page.$$eval(`${BAR} .room .spot`, (spots) => ({
-		promoted: spots.filter((s) => s.hasAttribute('data-promoted')).map((s) => s.querySelector('[data-field]')?.dataset.field)
-	}));
-
 /** The centre of a mark the picture drew for `field`, on screen. */
 async function markOf(page, field, kind = '[data-from]') {
 	const box = await page.locator(`${NOWVIEW} svg.svg .field[data-field="${field}"] ${kind}`).first().boundingBox();
 	assert.ok(box, `nothing drawn for ${field} in the nowview`);
 	return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
-
-const clickAt = (page, { x, y }) => page.mouse.click(x, y);
 
 /** The pills as `kind:text` — what each PUTS on the command line, which is what it means. */
 const pillsOf = (page) =>
@@ -132,91 +97,6 @@ async function dragARange(page) {
 		(seen) => seen.some((p) => p.startsWith('dur:'))
 	);
 }
-
-// ── the click's height: it ORDERS ──────────────────────────────────────
-
-describe('a click on the picture puts the fields drawn there first', () => {
-	test('the row clicked leads a two-row bar, nothing is hidden, and the ✕ gives the order back', async () => {
-		await withFields(
-			async ({ page }) => {
-				const usual = await shownFields(page);
-				assert.deepEqual([...usual].sort(), ALL, 'every field');
-				assert.notEqual(usual[0], 'run', 'run already stands first: the case is not tested');
-
-				// `run`'s own block, as the CLI drew it: its row and its time.
-				await clickAt(page, await markOf(page, 'run'));
-				await saysFields(page, ['run', ...usual.filter((f) => f !== 'run')]);
-				assert.deepEqual((await marked(page)).promoted, ['run'], 'the promoted field says so');
-
-				// The fields a press reached come first, so `run` takes the first
-				// slot of its row as DRAWN (da-lw7ue).
-				const ahead = await page.$$eval(`${BAR} .room .spot.shelf[data-section="recent"]`, (spots) => {
-					const run = spots.find((s) => s.querySelector('[data-field="run"]'));
-					const left = (s) => s.getBoundingClientRect().left;
-					return spots.filter((s) => s.dataset.row === run.dataset.row && left(s) < left(run)).map((s) => s.textContent.trim());
-				});
-				assert.deepEqual(ahead, [], 'run is not first in its row');
-
-				// The ✕ on the selection's pill — the entry's, since a tap on a
-				// mark selects it (da-xg1vi). Clearing the selection clears
-				// the lanes it published, and the bar is as it was.
-				await page.locator('.prompt-bar .pill.hid button.remove').last().click();
-				await until(
-					() => pillsOf(page),
-					(seen) => seen.length === 0
-				);
-				await saysFields(page, usual);
-				assert.deepEqual((await marked(page)).promoted, [], 'and the mark goes with it');
-			},
-			{ viewport: { width: 1280, height: 1100 } }
-		);
-	});
-
-	test('a dot is reached by its HEIGHT, wherever along the row the press fell', async () => {
-		await withFields(async (app) => {
-			const { page } = app;
-			const usual = await shownFields(page);
-			const dot = await markOf(page, 'coffee', '[data-at]');
-			await clickAt(page, dot);
-			await until(
-				() => marked(page),
-				(seen) => seen.promoted.join() === 'coffee'
-			);
-			assert.deepEqual(await shownFields(page), ['coffee', ...usual.filter((f) => f !== 'coffee')], 'a dot hides nothing');
-
-			// The SAME row, at another mark's x entirely — minutes away in
-			// TIME. vividn, 2026-09-21, on his phone: «it seems occur dots
-			// aren't well filtered when clicking at a certain y in the now
-			// view. Let's filter.» A block spans every x and so is reached by
-			// height alone; a dot was reached by a RADIUS round its centre,
-			// so this press — the dot's exact height, and `run`'s block's
-			// x — found nothing at all. It is the dot's HEIGHT that decides.
-			const run = await markOf(page, 'run');
-			assert.ok(Math.abs(run.x - dot.x) > 24, `the two marks are ${Math.abs(run.x - dot.x)}px apart in time`);
-			await clickAt(page, { x: run.x, y: dot.y });
-			await until(
-				() => marked(page),
-				(seen) => seen.promoted.join() === 'coffee'
-			);
-			assert.deepEqual(await shownFields(page), ['coffee', ...usual.filter((f) => f !== 'coffee')]);
-
-			// Height still gates it, so the dot is not dragged into every
-			// press: `mood`'s own block is a lane and a half below it, and
-			// the press that lands squarely there does not reach it — at
-			// the coffee's time, inside the window: the last press's time
-			// pill cut `mood`'s block at its section (da-zccjs), and the
-			// first half's middle is before the window.
-			await app.idle();
-			const lane = await markOf(page, 'mood');
-			await clickAt(page, { x: (await markOf(page, 'coffee', '[data-at]')).x, y: lane.y });
-			await until(
-				() => marked(page),
-				(seen) => seen.promoted.length > 0 && !seen.promoted.includes('coffee')
-			);
-			assert.ok((await shownFields(page)).includes('coffee'), 'and it is still there to press');
-		});
-	});
-});
 
 // ── a duration on the bar: it FILTERS ──────────────────────────────────
 
@@ -247,68 +127,5 @@ describe('a duration on the bar leaves the fields it can be spent on', () => {
 			await page.locator('.prompt-bar .pill.dur button.remove').last().click();
 			await saysFields(page, ['coffee']);
 		});
-	});
-});
-
-// ── the now region: a height and no time at all ────────────────────────
-
-describe('the now region re-orders by height alone, on a phone', () => {
-	test('a press on a chip in the snapshot selects its entry, no time, and puts that field at the top', async () => {
-		await withFields(
-			async ({ page }) => {
-				// `mobile` draws the snapshot (`history: '0'`) beside the tail
-				// and the fields bar under them both: chips, and no time axis
-				// for a press to select an instant on (vividn, 17:01).
-				const usual = await shownFields(page);
-				await page.locator(`${NOWVIEW} svg.svg .now-chunk`).first().waitFor();
-				await clickAt(page, await markOf(page, 'mood', '.now-chunk'));
-
-				await saysFields(page, ['mood', ...usual.filter((f) => f !== 'mood')]);
-				assert.deepEqual((await marked(page)).promoted, ['mood']);
-				const pills = await pillsOf(page);
-				assert.equal(pills.length, 1, `the press made ${JSON.stringify(pills)}`);
-				assert.match(pills[0], /^hid:/, 'a tap on a chip is its entry (da-xg1vi), and the snapshot has no time');
-			},
-			{ ...PHONE, home: 'mobile' }
-		);
-	});
-
-	test('a finger on the bar holds the order until it leaves', async () => {
-		await withFields(
-			async ({ page }) => {
-				const usual = await shownFields(page);
-				await page.locator(`${NOWVIEW} svg.svg .now-chunk`).first().waitFor();
-				const mood = await markOf(page, 'mood', '.now-chunk');
-				const sleep = await markOf(page, 'sleep', '.now-chunk');
-
-				await page.touchscreen.tap(mood.x, mood.y);
-				await saysFields(page, ['mood', ...usual.filter((f) => f !== 'mood')]);
-
-				// A pointer comes to rest ON the bar, and a second press
-				// elsewhere would re-order it. No button moves out from under
-				// it: the bar keeps the order it is being read in.
-				// `hover` scrolls it in first: its centre can lie past the
-				// bar's edge, off the bar (da-vteda's wider `Track +`).
-				await page.locator(`${BAR} [data-field="mood"]`).hover();
-				const box = await page.locator(`${BAR} [data-field="mood"]`).boundingBox();
-				await page.touchscreen.tap(sleep.x, sleep.y);
-				await until(
-					() => marked(page),
-					(seen) => seen.promoted.join() === 'sleep',
-					// The press DID land: the lanes it published are what the
-					// bar is holding back from drawing.
-					1000
-				).then(
-					() => assert.fail('the bar re-ordered under the pointer'),
-					() => {}
-				);
-				assert.deepEqual(await shownFields(page), ['mood', ...usual.filter((f) => f !== 'mood')]);
-
-				// And it catches up the moment the pointer leaves.
-				await page.mouse.move(box.x + box.width / 2, box.y - 200);
-				await saysFields(page, ['sleep', ...usual.filter((f) => f !== 'sleep')]);
-			},
-			{ ...PHONE, home: 'mobile' }
-		);
 	});
 });

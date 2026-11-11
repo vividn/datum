@@ -19,10 +19,9 @@
 	the box empties, and the list is whole again.
 
 	The SELECTION is the other thing the widget answers (da-qu16): a length
-	pill among the bar's pills leaves the fields a length can be spent on,
-	and the lanes a press on a picture landed in bring those fields to the
-	front. Both arrive here as stores and go in as plain props, so the
-	widget itself asks nothing of the page.
+	pill among the bar's pills leaves the fields a length can be spent on.
+	It arrives here as a store and goes in as a plain prop, so the widget
+	itself asks nothing of the page.
 
 	The NOW STRIP (da-uuzu6) is today's data layer, the one the nowview and
 	the day strip hold (#lib/dayLayers.ts), asked again at each write's epoch.
@@ -70,7 +69,6 @@
 	import { advance } from '#lib/keyframes.ts';
 	import { offers } from './options.js';
 	import { COLLECT_FIELDS_OFFER, standingAt, type Align, type NowActive, type NowListing, type SwitchLabel } from '#lib/fields.ts';
-	import { lanes } from '#lib/lanes.ts';
 	import { shellJoin, shellSplit } from '#lib/shellSplit.ts';
 	import { epoch as written, fields, gestureAt, grammar, here, press, pressWithPills, standings } from './engine.js';
 
@@ -174,9 +172,8 @@
 	const tappable = $derived($fields.filter((f) => !f.own));
 	/**
 	 * A day's pill on the bar (`pointDay`, da-x3l9n) leaves the fields a whole
-	 * day is logged on, the all-day ones first, as a press's lanes stand
-	 * theirs (vividn, 2026-11-05: «show moment data there as well, but show
-	 * the ALLDAY data first»).
+	 * day is logged on, the all-day ones first (vividn, 2026-11-05: «show
+	 * moment data there as well, but show the ALLDAY data first»).
 	 */
 	const onDay = $derived($pills.some((p) => p.id === DATE_ID));
 	/** The buttons at the selected time by the last `now -t` answered, kept while a moving instant rests, else as they stand now. */
@@ -185,9 +182,7 @@
 		const some = only.length ? all.filter((f) => only.includes(f.field)) : all;
 		return onDay ? some.filter((f) => f.shape.kind === 'allday' || f.shape.kind === 'moment') : some;
 	});
-	const rank = $derived(
-		onDay ? new Map(standing.filter((f) => f.shape.kind === 'allday').map((f) => [f.field, { rank: 0, dy: 0, dx: 0 }])) : $lanes
-	);
+	const first = $derived(onDay ? standing.filter((f) => f.shape.kind === 'allday').map((f) => f.field) : []);
 	$effect.pre(() => {
 		const offered = { [COLLECT_FIELDS_OFFER]: tappable.map(({ field }) => ({ value: field, label: field })) };
 		untrack(() => offers.update((o) => ({ ...o, ...offered })));
@@ -240,7 +235,7 @@
 		fields={standing}
 		pending={$pending}
 		duration={hasDuration($pills)}
-		{rank}
+		{first}
 		standings={$standings}
 		{align}
 		{switchLabel}

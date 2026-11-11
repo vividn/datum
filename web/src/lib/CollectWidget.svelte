@@ -26,7 +26,7 @@
 	tap on an active field's band puts that field's pill on the bar; then the ACTIVE SECTION, every field in an active state
 	inside a dotted outline that steps with each row; then each row's other
 	fields right against its own part of the section (da-il6ni), the most
-	recently used first (`rowsUnder`, the order taken on
+	recently used first (`fieldRows`, the order taken on
 	load and on coming back to the foreground). A drag pans those sideways,
 	gliding on after a swipe, and up and down scrolls the page (da-tsomc);
 	the strip and the active section stay, until the section is wider than
@@ -112,12 +112,8 @@
 
 	A SELECTION talks to it too (da-qu16). A length pill (`25m`) on the bar leaves
 	the fields a length can be spent on — on/off and change — and composes with a
-	pending command, both filters applying. And a press on a PICTURE gives
-	the fields drawn near that height the middle of the cluster, ahead of
-	the rest (`rowsUnder`, #lib/lanes.ts): that one only ORDERS, so
-	everything is still there. Nothing moves under a finger: while a
-	pointer is over the bar the order is held until it leaves. A field open
-	stays open whatever filters the bar: the length made in its view would.
+	pending command, both filters applying. A field open stays open whatever
+	filters the bar: the length made in its view would.
 
 	The widget shows the fields and nothing else: a new field is made in
 	the setup widget or at the prompt (`setup <field> …`), never here — its
@@ -159,12 +155,12 @@
 		FULL,
 		aligned,
 		atRest,
+		fieldRows,
 		panned,
 		opened,
 		listedStates,
 		inkOver,
 		lookOf,
-		yIn,
 		zoomed,
 		pressArgv,
 		stateLook,
@@ -180,7 +176,7 @@
 	import { get } from 'svelte/store';
 	import { act } from './act.js';
 	import { holds } from './hold.js';
-	import { FIELD_ID, fieldPill, focusLine, pills, pictured, prefill, refs, selected, setFieldPill, text, type Pill } from './bar.js';
+	import { FIELD_ID, fieldPill, focusLine, pills, prefill, refs, selected, setFieldPill, text, type Pill } from './bar.js';
 	import { onAnyChange } from './changes.js';
 	import { currentDb } from './database.js';
 	import { run } from './run.js';
@@ -189,7 +185,6 @@
 	import { grammar } from '#lib/layout/engine.ts';
 	import { previewOf } from './preview.js';
 	import { labelOf, withPills } from './selection.js';
-	import { closer, rowsUnder, type Near } from './lanes.js';
 	import { shellJoin } from './shellSplit.js';
 	import {
 		fieldsUnder,
@@ -229,14 +224,8 @@
 		 * It COMPOSES with `pending` — both filters apply.
 		 */
 		duration = false,
-		/**
-		 * What a press on a picture landed on or near, field by rank
-		 * (`nearest` in #lib/lanes.ts), or null.
-		 *
-		 * Those fields come FIRST. Nothing is hidden by it: a person who
-		 * clicked empty space still finds every field, in its usual order.
-		 */
-		rank = null,
+		/** The fields that stand ahead of the rest, marked so: a day pill's all-day ones (da-x3l9n). */
+		first = [],
 		/**
 		 * Whether the IGNORED fields get a button too (da-xhio).
 		 *
@@ -298,7 +287,7 @@
 		switchLabel?: SwitchLabel;
 		pending?: LogCommand | null;
 		duration?: boolean;
-		rank?: Map<string, Near> | null;
+		first?: string[];
 		showIgnored?: boolean;
 		standings?: Standings;
 		clicks?: 'one' | 'two';
@@ -414,21 +403,6 @@
 	/** The widget's own size, which the strip is measured by: the room narrows beside it while a field is open. */
 	let boxW = $state(0);
 	let boxH = $state(0);
-	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
-	let over = $state(false);
-	/**
-	 * The ranking the bar is DRAWN under.
-	 *
-	 * It follows `rank`, except while a pointer is over the bar: no button
-	 * is moved out from under a finger (vividn asked for calm). It catches
-	 * up the moment the pointer leaves, which is what this statement
-	 * re-running on `over` is for.
-	 */
-	let shown: Map<string, Near> | null = $state.raw(null);
-	$effect.pre(() => {
-		if (!over) shown = rank;
-	});
-
 	const buttons = $derived(
 		fieldsUnder(
 			fieldsWithDuration(
@@ -448,7 +422,7 @@
 	 * stand in the cluster (`clustered`), and a picked field's view floats
 	 * over the bar.
 	 */
-	type Entry = { kind: 'hint' } | { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
+	type Entry = { kind: 'hint' } | { kind: 'field'; button: FieldButton; edge: boolean };
 	const entries = $derived.by((): Entry[] => {
 		if (buttons.length > 0) return [];
 		return [{ kind: 'hint' }];
@@ -463,21 +437,21 @@
 	/** Whether the buttons stand where their fields are drawn: the option, on a bar of fields. */
 	const picture = $derived(align === 'picture' && buttons.length > 0);
 	/**
-	 * The fields at rest, last used first, a press's fields ahead of them
-	 * (`rowsUnder`): the order they take their slots in collect's rows
-	 * (`atRest`, da-lw7ue).
+	 * The fields at rest, last used first, `first` ahead of them: the order
+	 * they take their slots in collect's rows (`atRest`, da-lw7ue).
 	 */
-	const under = $derived(buttons.length === 0 || picture ? [] : rowsUnder(buttons, 1, standings, shown));
-	const clustered = $derived(under.flatMap(({ lead, rest }) => [...lead, ...rest]));
+	const clustered = $derived.by(() => {
+		if (buttons.length === 0 || picture) return [];
+		const [row] = fieldRows(buttons, 1, standings);
+		return [...row.filter((b) => first.includes(b.field)), ...row.filter((b) => !first.includes(b.field))];
+	});
 	/** Whether the fields stand in collect's rows at rest (`atRest`). */
 	const resting = $derived(clustered.length > 0);
-	/** The fields a press on a picture put first, marked so (da-qu16). */
-	const promoted = $derived(new Set(under.flatMap(({ lead }) => lead.map((b) => b.field))));
 	/** The fields in the order they claim their places: most recently used at the last sort first. */
 	const placing = $derived(
 		[...buttons]
 			.sort((a, b) => (standings.get(b.field)?.last ?? -1) - (standings.get(a.field)?.last ?? -1))
-			.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
+			.map((button): Entry => ({ kind: 'field', button, edge: false }))
 	);
 	/** The bar's height, and each placed slot's size as drawn, in px. */
 	let tall = $state(0);
@@ -664,22 +638,6 @@
 		};
 	}
 
-	/**
-	 * A press on a picture, while zoomed: the view pans to the height of the
-	 * field it landed nearest (`closer` in #lib/lanes.ts).
-	 */
-	$effect.pre(() => {
-		const near = rank;
-		untrack(() => towards(near));
-	});
-	function towards(near: Map<string, Near> | null) {
-		if (!near || !picture || !zoomedIn) return;
-		const first = [...near].sort(([, a], [, b]) => closer(a, b))[0];
-		if (!first) return;
-		const button = buttons.find((b) => b.field === first[0]);
-		if (button) view = panned(view, yIn(view, button.y) - 0.5);
-	}
-
 	/** A look as the custom properties every button below is painted from. */
 	function vars(look: Look) {
 		return `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}`;
@@ -768,8 +726,7 @@
 	// information about this individual datum … no need to show by metadata
 	// here, just the data / put a -A button which toggles showing all the
 	// data». The bar's `hid` pill, each of its entries, while no field is open
-	// and it was not selected on a picture, whose press ranks the fields
-	// instead (da-qu16) until vividn rules between the two. A field pill on
+	// whatever surface it was tapped on (da-g5y5o). A field pill on
 	// the bar keeps the fields too, its hold being theirs (da-05oit):
 	// its field and time, then its data; `−A` adds every other column, as
 	// `get -A` prints them. Its actions are the command pane's (da-fg4w4).
@@ -779,7 +736,7 @@
 	 * (da-ug56t), read again on every write. vividn, 2026-11-07: «if there
 	 * are multiple entries selected show all of them (in chronological order)».
 	 */
-	const hids = $derived($pictured ? '' : $selected.join(','));
+	const hids = $derived($selected.join(','));
 	let cards: { hid: string; entry: Record<string, unknown> }[] = $state.raw([]);
 	/** `−A`, each entry's own: every column, metadata included. */
 	let everything: string[] = $state([]);
@@ -1466,8 +1423,6 @@
 	key={keyOf}
 	class={picking || card ? 'picking' : clustered.length ? 'clustered' : ''}
 	bind:bar
-	onpointerenter={() => (over = true)}
-	onpointerleave={() => (over = false)}
 >
 	<!-- Given a line colour, or `var(--line)` voids its border and the rows
 	     are counted two pixels short of the buttons they hold. -->
@@ -1648,7 +1603,7 @@
 							data-role="field"
 							data-row={shelves.rows.get(button.field)}
 							data-section={button.active ? 'active' : 'recent'}
-							data-promoted={promoted.has(button.field) ? '' : undefined}
+							data-promoted={first.includes(button.field) ? '' : undefined}
 							style:left="{across(stand?.x ?? 0, button.field)}px"
 							style:top="{stand?.top ?? 0}px"
 							style:transform={pinned ? null : `translateX(${shift.x}px)`}

@@ -7,7 +7,7 @@
 // `context.parentURL` decides. A package's own relative imports are really
 // `.js` — `svelte/store` reaches `./internal/index.js` that way — and
 // rewriting those resolves a file that does not exist. The pure tests
-// (`lanes-pure`, `nowpoint-pure`, `selection-pure`) always had that guard;
+// (`nowpoint-pure`, `selection-pure`) always had that guard;
 // the two registry importers did not, and it went unnoticed until registry
 // first reached a module that imports `svelte/store` (da-7q8r). `src/lib/vendor/`
 // is a package's too.

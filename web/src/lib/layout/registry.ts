@@ -59,7 +59,6 @@ import {
 	TAIL,
 	todayBox
 } from '#lib/panes.ts';
-import { REACH_PX } from '#lib/lanes.ts';
 import { DEBUG_DB, gameTitle, layoutTitle, TUTORIAL_DB } from './defaults.js';
 import { currentDb } from '#lib/database.ts';
 import { DEFAULT_STATS, type StatsRange } from '#lib/stats.ts';
@@ -192,6 +191,9 @@ const SVG_MARGIN_PX = 2;
 /** The collect widget's floor, and a tutorial game's fields part's, which draws it. */
 const FIELDS_LEGIBLE: Floor = { width: 160, height: 49 };
 
+/** A fingertip's half-width, in px: what a press is aimed with. */
+export const FINGERTIP_PX = 24;
+
 /**
  * How narrow nowview's snapshot (`showHistory: false`) stays usable.
  *
@@ -204,9 +206,8 @@ const FIELDS_LEGIBLE: Floor = { width: 160, height: 49 };
  * means. The floor is therefore what a labelless block needs to be SEEN
  * and AIMED AT, not read.
  *
- * Aiming is the larger of the two, and `#lib/lanes.ts` already has its
- * number: `REACH_PX` is «a fingertip's half-width», and `NOW_PX` in
- * #lib/nowpoint.ts is the same 24 for the same reason. A block one whole
+ * Aiming is the larger of the two: `FINGERTIP_PX` is a fingertip's
+ * half-width, as `NOW_PX` in NowviewWidget is. A block one whole
  * fingertip across is a target a finger can land on; narrower and the
  * press is aimed at something smaller than the thing pressing it. The
  * pane hands its content box to the CLI as `--width` (`wantsBox`,
@@ -219,7 +220,7 @@ const FIELDS_LEGIBLE: Floor = { width: 160, height: 49 };
  * floor it declared. A number that shipped is not thereby a number that
  * worked.
  */
-const SNAPSHOT_WIDTH = 2 * REACH_PX + 2 * SVG_MARGIN_PX;
+const SNAPSHOT_WIDTH = 2 * FINGERTIP_PX + 2 * SVG_MARGIN_PX;
 
 /**
  * The pivot (da-a6guc, da-78evn): time down the page, as a calendar draws

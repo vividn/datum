@@ -789,5 +789,70 @@ describe('collect', () => {
 				}
 			});
 		});
+
+		// da-g5y5o: a mark tapped on a picture selects its entry as a tail row
+		// does, and collect shows its card the same way (vividn, 2026-11-11).
+		describe('tapped on a picture', () => {
+			const PICTURES = { nowview: 'section.pane[data-title="nowview"] svg.svg', dayview: '.band[data-days-ago="0"] svg.svg' };
+			/** mood's entry, `why=tired`, logged where the nowview's half hour draws it. */
+			const logged = async (app) => {
+				const done = await app.run(['switch', 'mood', 'good', 'why=tired', '-t', '14:35']);
+				assert.equal(done.code, 0, done.stderr);
+				await app.redraw();
+				return JSON.parse((await app.run(['tail', 'mood', '-n', '1', '--json'])).stdout).rows[0].hid;
+			};
+			/** The middle of the widest mark `picture` draws for `hid`, checked to be on it. */
+			const markOf = (page, picture, hid) =>
+				until(
+					() =>
+						page.locator(picture).first().evaluate((svg, hid) => {
+							const marks = [...svg.querySelectorAll(`[data-id="${hid}"]`)].map((m) => m.getBoundingClientRect()).filter((r) => r.width > 0);
+							const r = marks.sort((a, b) => b.width - a.width)[0];
+							if (!r) return null;
+							const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
+							return document.elementFromPoint(x, y)?.closest('[data-id]')?.getAttribute('data-id') === hid ? { x, y } : null;
+						}, hid),
+					(at) => at !== null
+				);
+
+			for (const [name, picture] of Object.entries(PICTURES))
+				test(`a mark tapped in the ${name} shows its entry: field and time, then its data`, async () => {
+					await collect(async (app) => {
+						const { page } = app;
+						const hid = await logged(app);
+						const { x, y } = await markOf(page, picture, hid);
+						await page.mouse.click(x, y);
+						await page.locator(`${ENTRY} [data-card="${hid}"] [data-row="why"]`).waitFor();
+						assert.match(await page.locator(`${ENTRY} .title`).innerText(), /mood\s*good\s*14:35/);
+						assert.equal(await page.locator(`${ENTRY} [data-row="why"]`).innerText(), 'why\ntired');
+						assert.equal(await page.locator(`${BAR_PILLS}.hid`).count(), 1);
+					});
+				});
+
+			test('a tap on the dayview’s ground selects a time and no entry, and collect stays on its rows', async () => {
+				await collect(async (app) => {
+					const { page } = app;
+					await logged(app);
+					const ground = await page.locator(PICTURES.dayview).first().evaluate((svg) => {
+						const r = svg.getBoundingClientRect();
+						for (let f = 0.02; f < 0.3; f += 0.01) {
+							const [x, y] = [r.left + f * r.width, r.top + r.height / 2];
+							const at = document.elementFromPoint(x, y);
+							if (at && svg.contains(at) && !at.closest('[data-id]')) return { x, y };
+						}
+						return null;
+					});
+					assert.ok(ground, 'no bare ground in the first hours of the day');
+					await page.mouse.click(ground.x, ground.y);
+					const pills = await until(
+						() => barPills(page),
+						(p) => p.length > 0
+					);
+					assert.ok(pills.every((p) => !p.startsWith('hid:')), `the ground selected an entry: ${pills}`);
+					assert.equal(await page.locator(ENTRY).count(), 0);
+					await page.locator(`${VIEW} [data-field="coffee"]`).waitFor();
+				});
+			});
+		});
 	});
 });

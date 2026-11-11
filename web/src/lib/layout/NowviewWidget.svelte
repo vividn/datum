@@ -183,7 +183,6 @@
 	import { preview } from '#lib/preview.ts';
 	import { DOUBLE_MS, inspectMark, instantOn, msPerPx, outlineSelected, timeAxis } from '#lib/hover.ts';
 	import { markOf, pressSpent } from '#lib/inspect.ts';
-	import { readLanes } from '#lib/lanes.ts';
 	import { MAX_SPEED, speedOver, tracked, type Sample } from '#lib/grip.ts';
 	import { advance, LONG_MS, SLOP_PX, SNAP_PX, snapTo, tapStep, undecided, type Mode, type Press } from '#lib/nowpoint.ts';
 	import { clockSecondsLabel, minute, now as clockNow } from '#lib/clock.ts';
@@ -1111,7 +1110,7 @@
 	 * absolute for a clock time, relative for a relative one (da-b9glf).
 	 */
 	function tap(x: number, y: number): void {
-		if (!axis) return lanesAt(x, y, null);
+		if (!axis) return;
 		const pos = along(x, y);
 		// The window's own kind first, which a mark of the other standing on it does not displace.
 		const [rel, abs] = [gridlines(), gridlines('.clock-mark')];
@@ -1119,7 +1118,6 @@
 		const at = instantAlong(p);
 		const kind = p === pos ? undefined : (offNow ? abs.includes(p) : !rel.includes(p)) ? 'abs' : 'rel';
 		pointAt(kind === 'abs' ? exact(at) : selection(at, undefined, kind));
-		lanesAt(x, y, at);
 	}
 
 	/** A long press let go where it was, or a right click: on a dot or a state change within reach, its instant; else a tap's (da-b9glf). */
@@ -1127,22 +1125,6 @@
 		const at = axis ? dataNear(along(x, y), SNAP_PX) : null;
 		if (at === null) return tap(x, y);
 		pointAt(exact(at));
-		lanesAt(x, y, at);
-	}
-
-	/** The fields drawn at this height, for the collect widget to put first. */
-	function lanesAt(x: number, y: number, at: number | null): void {
-		// The lanes the press crossed, for the collect widget to answer
-		// (da-qu16, #lib/lanes.ts): the band takes the pointer itself, so
-		// nothing else on the page would hear the press.
-		//
-		// AFTER the selection, and not before it: a selection cleared
-		// clears the lanes, and a tap at now IS a cleared selection
-		// (#lib/cursor.ts) — yet it still re-orders the fields by its
-		// height. The snapshot has no axis and so selects no time at all;
-		// there the height is the whole of what a press says (vividn, 17:01).
-		const svg = svgEl();
-		if (svg) readLanes(svg, { x, y, t: at });
 	}
 
 	/**
@@ -1310,9 +1292,7 @@
 			picking = true;
 			const entry = mode === 'press' && inspectMark(markOf(event.target) ?? onMark, event, svgEl());
 			picking = false;
-			if (entry) lanesAt(press.x, press.y, axis ? instantAt(press.x, press.y) : null);
-			else if (mode === 'hold') holdAt(press.x, press.y);
-			else tap(press.x, press.y);
+			if (!entry) (mode === 'hold' ? holdAt : tap)(press.x, press.y);
 		}
 		drop();
 	}

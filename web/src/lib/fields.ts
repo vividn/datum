@@ -76,7 +76,7 @@ export interface FieldButton {
 	 *
 	 * Not the same question as `current`, which is the field's state as a
 	 * COLOUR and so is absent for a field whose active state paints
-	 * nothing. A press ranks by this one (`promoted` in #lib/lanes.ts).
+	 * nothing.
 	 */
 	active: boolean;
 	/**

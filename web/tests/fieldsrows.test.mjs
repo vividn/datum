@@ -11,8 +11,8 @@
 // refresh: none moves a button. da-8i1kn saw that go wrong once: a press on
 // `coffee` set off a refresh that put another field under the next tap.
 //
-// The arrangement itself is pure (`atRest` in fields.test.mjs, `rowsUnder`
-// in lanes-pure.test.mjs); this is the built app on a seeded database, read
+// The arrangement itself is pure (`atRest` in fields.test.mjs, `fieldRows`
+// in fields.ts); this is the built app on a seeded database, read
 // as each row's order.
 
 import test, { before, after } from 'node:test';
