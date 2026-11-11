@@ -43,7 +43,10 @@ fn a_chainless_copy_lists_its_chain_and_admins_as_json() {
     let a = Copy::new();
     a.ok(&["occur", "tea"]);
     let local = a.query("SELECT * FROM sync_local");
-    let list = json(&a.ok(&["sync", "chain", "list", "--json"]));
+    let mut list = json(&a.ok(&["sync", "chain", "list", "--json"]));
+    // What its chain will name it (da-l341o), read minting nothing.
+    let label = list.as_object_mut().unwrap().remove("label").unwrap();
+    assert!(label.is_string(), "{label}");
     assert_eq!(
         list,
         serde_json::json!({"chain": null, "admins": [], "members": []})

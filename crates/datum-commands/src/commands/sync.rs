@@ -1366,6 +1366,17 @@ fn describe_as(db: &Db, label: Option<&str>, kind: &str, user: Option<&str>) -> 
     Ok(db.sync_describe_self(label, kind, user.as_deref(), "datum.day")?)
 }
 
+/// What this copy's chain will name it, read in no chain (da-l341o): the
+/// label a first share's `describe` is assembled to, as `describe_self`
+/// writes it.
+fn label_alone(db: &Db) -> String {
+    let user = crate::config::username();
+    #[cfg(feature = "net")]
+    return datum_sync::label_alone(db, user.as_deref());
+    #[cfg(not(feature = "net"))]
+    db.sync_label_alone(user.as_deref(), "datum.day")
+}
+
 /// How this copy names itself in the chain.
 pub(super) fn copy_label() -> String {
     #[cfg(feature = "net")]
@@ -1936,9 +1947,11 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     if !chain.exists() {
         // In no chain `--json` still answers, as `sync status --json` does
         // (da-y6oh6); `joining` is there only while a join is under way,
-        // `pending_join` while one waits for a member (da-4qpwf).
+        // `pending_join` while one waits for a member (da-4qpwf), and
+        // `label` is what its chain will name it (da-l341o).
         if json {
-            let mut out = json!({"chain": null, "admins": [], "members": []});
+            let label = label_alone(db);
+            let mut out = json!({"chain": null, "admins": [], "members": [], "label": label});
             if !through.is_empty() {
                 out["joining"] = through
                     .iter()

@@ -167,7 +167,9 @@ describe('the sync widget', () => {
 					const { page } = app;
 					await app.goto('/sync');
 					await rowsDrawn(page, 1);
-					assert.deepEqual(await lines(page, 'datum'), [['datum.day (datum)', undefined]]);
+					// The name its chain will assemble, as the CLI says it in no chain (da-l341o).
+					assert.deepEqual(await lines(page, 'datum'), [['datum.day', undefined]]);
+					assert.equal(await page.locator(`${WIDGET} header .device`).innerText(), 'datum.day');
 					assert.equal(await page.locator(`${ROWS}.here td[data-db="datum"]`).innerText(), '—');
 					assert.equal(await page.locator(`${WIDGET} .grid thead th.here .name`).innerText(), 'datum');
 					// Never «synced» with no one to sync with.

@@ -220,6 +220,14 @@
 	} | null>(null);
 	/** The database the card joins, as chosen. */
 	const into = $derived(join ? (join.target ?? join.fresh.trim()) : '');
+	/**
+	 * The name the card offers (da-l341o): the one `into` names this device by, what the CLI says its chain will
+	 * assemble or its chain's, else the page's database's. Untouched, the chain it joins assembles one.
+	 */
+	const offered = (j: NonNullable<typeof join>, into: string): string => {
+		const by = (d?: DbSync) => d?.label ?? d?.this?.label;
+		return by(j.dbs.find((c) => c.db === into)?.d) ?? by(cur) ?? '';
+	};
 	/** What joining `into` does, or why it cannot, in words, before anything is dialed. */
 	const joinSaid = $derived.by((): { words: string[]; refused?: string; other?: boolean } => {
 		if (!join?.about) return { words: [], refused: join?.refused };
@@ -266,8 +274,8 @@
 	/** Each device's last sync in each database it is in: a grid cell's state beside its standing. */
 	const rows = $derived(table(dbs, $syncStates));
 	const overall = $derived(standing(cur, $syncStates));
-	/** This device as named in the page's database's chain, else as kept here, else as its chain would assemble it. */
-	const named = $derived(cur.this?.label ?? (kept.name || suggestedLabel(db)));
+	/** This device as named in the page's database's chain, else as kept here, else as the CLI says its chain will assemble it (da-l341o). */
+	const named = $derived(cur.this?.label ?? (kept.name || cur.label || ''));
 	/** The other devices holding the page's database, and those of them its last changes have not reached. */
 	const peers = $derived(rows.filter((r) => !r.here && r.endpoints[db]));
 	const unreached = $derived(peers.filter((r) => !['synced', 'syncing'].includes(r.cells[db].mark)).length);
@@ -450,7 +458,7 @@
 			// A name typed is kept as typed; the suggestion, untouched, grows a
 			// short id on a collision. Either is refused before the join as
 			// `--label` is.
-			const typed = j.named?.trim() && j.named !== suggestedLabel(into) ? j.named : undefined;
+			const typed = j.named?.trim() && j.named !== offered(j, into) ? j.named : undefined;
 			ok(await syncAct(into, labelCheckArgv(typed ?? suggestedLabel(into))));
 			// The username is this browser's, which every chain it enters is told (da-xza37).
 			setUsername(j.user);
@@ -807,7 +815,7 @@
 						<label class="name"
 							>This device’s name <input
 								type="text"
-								value={join.named ?? suggestedLabel(into)}
+								value={join.named ?? offered(join, into)}
 								oninput={(e) => join && (join.named = e.currentTarget.value)}
 								spellcheck="false"
 								autocomplete="off"

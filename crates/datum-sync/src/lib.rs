@@ -74,6 +74,11 @@ pub fn label(username: Option<&str>) -> String {
     chain::assembled(named_user(username).as_deref(), &host(), None)
 }
 
+/// What a chain of this copy alone names it, in no chain yet (da-l341o).
+pub fn label_alone(db: &Db, username: Option<&str>) -> String {
+    db.sync_label_alone(named_user(username).as_deref(), &host())
+}
+
 /// Write this copy's `describe` (da-xijlw): `label`, or with none one
 /// assembled from its user (`username`, else the one it runs as), host and
 /// database's name.

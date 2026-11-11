@@ -333,3 +333,15 @@ fn history_names_each_versions_device_by_its_label_on_every_member() {
     let line = format!("create    {genesis}  'occur tea cups=1'\n");
     assert!(shown.contains(&line), "{shown}");
 }
+
+/// A copy in no chain says what its chain will name it (da-l341o): the
+/// label its first invite's describe is assembled to, read before there
+/// is a chain, so datum.day shows a device by one name either side of it.
+#[test]
+fn a_copy_in_no_chain_says_the_label_its_first_invite_assembles() {
+    let a = Copy::new();
+    let before = json(&a.ok(&["sync", "chain", "list", "--json"]))["label"].clone();
+    assert!(before.is_string(), "{before}");
+    a.ok(&["sync", "new-invite"]);
+    assert_eq!(member_of(&a, &a.id())["label"], before);
+}

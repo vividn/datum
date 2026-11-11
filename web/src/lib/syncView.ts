@@ -83,6 +83,8 @@ export interface ChainList extends Admins {
 	dissolved?: string;
 	/** A join kept until a member admits it (da-4qpwf), or refused for good: never its ticket. */
 	pending_join?: PendingJoin;
+	/** In no chain: what the chain its first share starts will name this device (da-l341o). */
+	label?: string;
 }
 
 /** A join this copy waits on a member to admit (`pending_join`, da-4qpwf). */
@@ -159,6 +161,8 @@ export interface DbSync {
 	clock?: { endpoint: string; text: string }[];
 	/** A join this copy waits on, in no chain yet (da-4qpwf). */
 	pending?: PendingJoin;
+	/** In no chain: what its chain will name this device, `ChainList`'s `label`. */
+	label?: string;
 }
 
 /**
@@ -166,7 +170,7 @@ export interface DbSync {
  * pending join, which it names `pending_join` (da-4qpwf).
  * `this` is always there: only a `DbSync` made for a database in no chain lacks it.
  */
-export type SyncStatus = Omit<DbSync, 'db' | 'admins' | 'listed' | 'pending'> & Required<Pick<DbSync, 'this'>> & { pending_join?: PendingJoin | null };
+export type SyncStatus = Omit<DbSync, 'db' | 'admins' | 'listed' | 'pending' | 'label'> & Required<Pick<DbSync, 'this'>> & { pending_join?: PendingJoin | null };
 
 /**
  * A link's `#` held in this tab's `sessionStorage` as well as in memory
@@ -316,8 +320,9 @@ export function readSync(dbs: string[]): Promise<DbSync[]> {
 	return Promise.all(
 		dbs.map(async (db): Promise<DbSync> => {
 			const members = await run(['--db', db, ...chainListArgv()]);
-			const pending = members.code === 0 ? ((JSON.parse(members.stdout) as ChainList).pending_join ?? undefined) : undefined;
-			if (!syncs(members)) return { db, chain: null, members: [], pending };
+			const list = members.code === 0 ? (JSON.parse(members.stdout) as ChainList) : undefined;
+			const pending = list?.pending_join ?? undefined;
+			if (!syncs(members)) return { db, chain: null, members: [], pending, label: list?.label };
 			const status = await run(['--db', db, ...syncStatusArgv()]);
 			if (status.code !== 0) return { db, chain: null, members: [] };
 			const s = JSON.parse(status.stdout) as SyncStatus;

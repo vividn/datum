@@ -558,8 +558,11 @@ export interface Reads {
 	specHistoryArgv: SpecVersion[];
 	entriesHistoryArgv: EntryVersion[] | { versions: EntryVersion[] }[];
 	syncStatusArgv: SyncStatus;
-	/** `joining` takes a join cut short, `dissolved` a chain-wide purge: no seeded database holds either. */
-	chainListArgv: Omit<ChainList, 'joining' | 'dissolved'>;
+	/**
+	 * `joining` takes a join cut short, `dissolved` a chain-wide purge, and `label` (da-l341o) a copy in no chain:
+	 * no seeded database holds any of them. `sync_chain::labels` holds `label` natively.
+	 */
+	chainListArgv: Omit<ChainList, 'joining' | 'dissolved' | 'label'>;
 	adminListArgv: Admins;
 	newInviteArgv: Invite;
 	gridArgv: Grid;

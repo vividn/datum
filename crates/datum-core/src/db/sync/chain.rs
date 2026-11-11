@@ -1922,6 +1922,38 @@ impl Db {
     /// its database's name; with no `label`, its label is assembled from
     /// those (da-xijlw), and the record's `label` is all of them, for a copy
     /// before that to show.
+    /// A `describe`'s user, host and database name: each is printed on
+    /// every member, so each within a label's rules.
+    fn describe_pieces(
+        &self,
+        user: Option<&str>,
+        host: &str,
+    ) -> (Option<String>, String, Option<String>) {
+        let db = self.path().and_then(|p| p.file_stem());
+        let db = db.map(|s| fit(&s.to_string_lossy(), MAX_LABEL));
+        (user.map(|u| fit(u, MAX_LABEL)), fit(host, MAX_LABEL), db)
+    }
+
+    /// The label a copy in no chain is given by the chain its first share
+    /// starts, read without making it (da-l341o): its `describe` with no
+    /// label, assembled as a chain of one member folds it.
+    pub fn sync_label_alone(&self, user: Option<&str>, host: &str) -> String {
+        let (user, host, db) = self.describe_pieces(user, host);
+        let me = Member {
+            auto: true,
+            user,
+            host: Some(host),
+            db,
+            ..Default::default()
+        };
+        let mut chain = Chain {
+            members: vec![me],
+            ..Default::default()
+        };
+        chain.assemble();
+        chain.members.remove(0).label
+    }
+
     pub fn sync_describe_self(
         &self,
         label: Option<&str>,
@@ -1929,10 +1961,7 @@ impl Db {
         user: Option<&str>,
         host: &str,
     ) -> Result<()> {
-        // Each is printed on every member, so each within a label's rules.
-        let db = self.path().and_then(|p| p.file_stem());
-        let db = db.map(|s| fit(&s.to_string_lossy(), MAX_LABEL));
-        let (user, host) = (user.map(|u| fit(u, MAX_LABEL)), fit(host, MAX_LABEL));
+        let (user, host, db) = self.describe_pieces(user, host);
         let (user, host) = (user.as_deref(), host.as_str());
         let (chain, me) = (self.sync_chain()?.id, self.sync_endpoint_id()?);
         let mut record = json!({

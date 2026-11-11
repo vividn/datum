@@ -178,15 +178,18 @@ describe('the name a browser joins as (da-uyyyg)', () => {
 	/** `app`'s own label and endpoint, as its `sync status` has them. */
 	const self = async (app) => JSON.parse((await app.run(['sync', 'status', '--json'])).stdout).this;
 
-	/** Open a join link to `native`'s chain in `app`, the card's name field filled in as it comes. */
-	async function card(app, native) {
+	/**
+	 * Open a join link to `native`'s chain in `app`, the card's name field filled in as it comes:
+	 * `offered`, the name the chain its database is in names it by, or will (da-l341o).
+	 */
+	async function card(app, native, offered = 'datum.day') {
 		const serving = native.spawn(['sync', 'chain', 'invite']);
 		const [, link] = await until(() => /datum sync chain join '([^']+)'/.exec(serving.stdout), Boolean);
 		await app.goto(`/sync/join#${link.split('#').pop()}`);
 		const card = app.page.locator('.card.join');
 		const name = card.getByLabel('This device’s name');
 		await name.waitFor();
-		assert.equal(await name.inputValue(), 'datum.day (datum)');
+		assert.equal(await name.inputValue(), offered);
 		return { card, name, join: card.getByRole('button', { name: 'Join', exact: true }) };
 	}
 
@@ -203,7 +206,8 @@ describe('the name a browser joins as (da-uyyyg)', () => {
 					await first.card.locator('.done').waitFor();
 					const list = JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
 					assert.equal(list.members.find((m) => m.this).user, 'bea');
-					const again = await card(app, native);
+					// In a chain now, the card offers the name that chain gives it, whatever the host's users make it.
+					const again = await card(app, native, (await self(app)).label);
 					assert.equal(await again.card.getByLabel('Your username (optional)').inputValue(), 'bea');
 				},
 				{ prepare: relayed(relay) }

@@ -56,7 +56,8 @@ describe('the sync widget’s actions', () => {
 					// No chain yet, and no «Turn on sync»: the name and the username are edited in place (da-5wlnr, da-xza37).
 					await page.locator(`${WIDGET} header button.rename`).click();
 					const edit = page.locator(`${WIDGET} header .edit`);
-					assert.equal(await edit.getByLabel('This device’s name').inputValue(), 'datum.day (datum)');
+					// The name its chain will assemble, which the CLI says before there is one (da-l341o).
+					assert.equal(await edit.getByLabel('This device’s name').inputValue(), 'datum.day');
 					await edit.getByLabel('Your username (optional)').fill('bea');
 					await edit.getByRole('button', { name: 'Save' }).click();
 					await page.locator(`${WIDGET} header .user`).filter({ hasText: /^@bea$/ }).waitFor();
@@ -69,6 +70,9 @@ describe('the sync widget’s actions', () => {
 					const chain = JSON.parse(await cli(app, ['sync', 'chain', 'list', '--json']));
 					assert.equal(chain.members.length, 1);
 					assert.equal(chain.members[0].user, 'bea');
+					// The chain it started names it as the widget did before it (da-l341o).
+					assert.equal(chain.members[0].label, 'datum.day');
+					assert.equal(await page.locator(`${WIDGET} header .device`).innerText(), 'datum.day');
 					assert.deepEqual(chain.admins, []);
 
 					const joined = await native.run(['sync', 'chain', 'join', ticket]);
