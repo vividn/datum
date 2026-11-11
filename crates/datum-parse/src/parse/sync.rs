@@ -190,12 +190,12 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             let o = opts(
                 &mut rest,
                 &["expires", "admin-key", "fields", "kit"],
-                &["reader"],
+                &["reader", "writer"],
                 0..=0,
             )?;
-            let filter = o.filter()?;
+            let (role, filter) = o.role()?;
             SyncCommand::NewInvite {
-                reader: o.on("reader") || filter.is_some(),
+                role,
                 filter,
                 expires_secs: o.expires()?,
                 admin_key: o.get("admin-key"),
@@ -259,7 +259,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 "ticket",
                 "invite",
             ];
-            let mut o = opts(rest, &values, &["qr", "reader", "defer"], 0..=1)?;
+            let mut o = opts(rest, &values, &["qr", "reader", "writer", "defer"], 0..=1)?;
             let (device, like) = (o.positional.pop(), o.get("like"));
             if device.is_some() && like.is_some() {
                 return Err(ParseError::InvalidArg(
@@ -279,7 +279,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             // The role and the expiry: a device may be off for days.
             if let Some(like) = like {
                 let why = "does not go with --like <DB>: each device takes the role it has there";
-                refuse(&o, &["reader"], why)?;
+                refuse(&o, &["reader", "writer"], why)?;
                 let devices = o.get("devices").map(|d| {
                     let d = d.split(',').map(str::trim).filter(|d| !d.is_empty());
                     d.map(Into::into).collect::<Vec<String>>()
@@ -296,9 +296,11 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 });
             }
             if let Some(device) = device {
+                // No filter to drop: `--fields` and `--kit` are refused
+                // beside a device above.
                 return Ok(SyncCommand::Grant {
                     device,
-                    reader: o.on("reader"),
+                    role: o.role()?.0,
                     expires_secs: o.expires_or(WEEK)?,
                     name: o.get("as"),
                     admin_key: o.get("admin-key"),
@@ -313,9 +315,9 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                     },
                 });
             }
-            let filter = o.filter()?;
+            let (role, filter) = o.role()?;
             SyncCommand::Invite {
-                reader: o.on("reader") || filter.is_some(),
+                role,
                 filter,
                 qr: o.on("qr"),
                 expires_secs: o.expires()?,
@@ -410,24 +412,20 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
         }
         Some("role") => {
             let mut o = opts(rest, &["admin-key", "fields", "kit"], &[], 2..=2)?;
-            let filter = o.filter()?;
-            let reader = match o.positional.pop().as_deref() {
-                Some("reader") => true,
-                Some("member") => false,
-                r => {
-                    return Err(ParseError::InvalidArg(format!(
-                        "a role is member or reader, not {}",
-                        r.unwrap_or_default()
-                    )))
-                }
+            let word = o.positional.pop().unwrap_or_default();
+            let Some(role) = SyncRole::parse(&word) else {
+                return Err(ParseError::InvalidArg(format!(
+                    "a role is member, reader or writer, not {word}"
+                )));
             };
-            if filter.is_some() && !reader {
+            let filter = o.filter(role)?;
+            if filter.is_some() && role.relays() {
                 return Err(ParseError::InvalidArg(
-                    "only a reader is filtered: `role <WHO> reader --fields …`".into(),
+                    "only a reader or a writer is filtered: `role <WHO> reader --fields …`".into(),
                 ));
             }
             SyncCommand::Admin {
-                act: SyncAdminAct::Role { reader, filter },
+                act: SyncAdminAct::Role { role, filter },
                 who: o.positional.remove(0),
                 label: None,
                 admin_key: o.get("admin-key"),
@@ -564,8 +562,9 @@ impl Opts {
         self.switches.iter().any(|s| s == name)
     }
 
-    /// A reader's filter (da-u81u1): `--fields a,b` or `--kit <KIT>`.
-    fn filter(&self) -> Result<Option<SyncFilter>> {
+    /// A reader's or writer's filter (da-u81u1): `--fields a,b` or `--kit
+    /// <KIT>`; a writer's may name none, `--fields ''` (da-o5o6m).
+    fn filter(&self, role: SyncRole) -> Result<Option<SyncFilter>> {
         match (self.get("fields"), self.get("kit")) {
             (Some(_), Some(_)) => Err(ParseError::InvalidArg("--fields or --kit, not both".into())),
             (Some(f), None) => {
@@ -575,14 +574,34 @@ impl Opts {
                     .filter(|f| !f.is_empty())
                     .map(Into::into)
                     .collect();
-                match fields.is_empty() {
-                    true => Err(ParseError::InvalidArg("--fields names no field".into())),
+                match fields.is_empty() && role != SyncRole::Writer {
+                    true => Err(ParseError::InvalidArg(
+                        "--fields names no field: only a writer's may (`--writer --fields ''`)"
+                            .into(),
+                    )),
                     false => Ok(Some(SyncFilter::Fields(fields))),
                 }
             }
             (None, Some(k)) => Ok(Some(SyncFilter::Kit(k))),
             (None, None) => Ok(None),
         }
+    }
+
+    /// The role `--reader` or `--writer` asks for, and the filter beside it:
+    /// a filter alone is a reader's.
+    fn role(&self) -> Result<(SyncRole, Option<SyncFilter>)> {
+        let role = match (self.on("reader"), self.on("writer")) {
+            (true, true) => {
+                return Err(ParseError::InvalidArg(
+                    "--reader or --writer, not both".into(),
+                ))
+            }
+            (_, true) => SyncRole::Writer,
+            (true, _) => SyncRole::Reader,
+            _ if self.get("fields").is_some() || self.get("kit").is_some() => SyncRole::Reader,
+            _ => SyncRole::Member,
+        };
+        Ok((role, self.filter(role)?))
     }
 
     /// `--expires`, 7 days by default: a link is sent, and its redeemer
@@ -807,7 +826,7 @@ mod tests {
         assert_eq!(
             p(&["new-invite", "--expires", "1m"]),
             SyncCommand::NewInvite {
-                reader: false,
+                role: SyncRole::Member,
                 filter: None,
                 expires_secs: 60,
                 admin_key: None
@@ -834,7 +853,7 @@ mod tests {
                 "laptop"
             ]),
             SyncCommand::Invite {
-                reader: true,
+                role: SyncRole::Reader,
                 filter: None,
                 qr: true,
                 expires_secs: WEEK,
@@ -1000,7 +1019,7 @@ mod tests {
             p(&["chain", "role", "b", "reader", "--admin-key", "k"]),
             SyncCommand::Admin {
                 act: SyncAdminAct::Role {
-                    reader: true,
+                    role: SyncRole::Reader,
                     filter: None
                 },
                 who: "b".into(),
@@ -1016,7 +1035,7 @@ mod tests {
             p(&["chain", "role", "b", "reader", "--fields", "coffee, tea"]),
             SyncCommand::Admin {
                 act: SyncAdminAct::Role {
-                    reader: true,
+                    role: SyncRole::Reader,
                     filter: Some(SyncFilter::Fields(vec!["coffee".into(), "tea".into()]))
                 },
                 who: "b".into(),
@@ -1031,7 +1050,7 @@ mod tests {
         assert_eq!(
             p(&["chain", "invite", "--kit", "health"]),
             SyncCommand::Invite {
-                reader: true,
+                role: SyncRole::Reader,
                 filter: Some(SyncFilter::Kit("health".into())),
                 qr: false,
                 expires_secs: WEEK,
@@ -1041,6 +1060,55 @@ mod tests {
             }
         );
         assert!(parse_sync_cmd(&["chain", "role", "b"]).is_err());
+        // A writer (da-o5o6m): filtered or not, and alone its filter may
+        // name no field.
+        assert_eq!(
+            p(&["chain", "invite", "--writer", "--fields", ""]),
+            SyncCommand::Invite {
+                role: SyncRole::Writer,
+                filter: Some(SyncFilter::Fields(vec![])),
+                qr: false,
+                expires_secs: WEEK,
+                label: None,
+                user: None,
+                admin_key: None
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "invite", "--reader", "--writer"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "invite", "--reader", "--fields", ""]).is_err());
+        assert_eq!(
+            p(&["chain", "role", "b", "writer"]),
+            SyncCommand::Admin {
+                act: SyncAdminAct::Role {
+                    role: SyncRole::Writer,
+                    filter: None
+                },
+                who: "b".into(),
+                label: None,
+                admin_key: None,
+                allow_unlock: false
+            }
+        );
+        assert_eq!(
+            p(&["new-invite", "--writer"]),
+            SyncCommand::NewInvite {
+                role: SyncRole::Writer,
+                filter: None,
+                expires_secs: WEEK,
+                admin_key: None
+            }
+        );
+        assert_eq!(
+            p(&["chain", "invite", "9ae6", "--writer"]),
+            SyncCommand::Grant {
+                device: "9ae6".into(),
+                role: SyncRole::Writer,
+                name: None,
+                expires_secs: WEEK,
+                admin_key: None,
+                ticket: None
+            }
+        );
         assert_eq!(
             p(&["chain", "ack", "abc"]),
             SyncCommand::Ack {
@@ -1155,7 +1223,7 @@ mod tests {
             p(&invite(&["9ae6", "--reader", "--as", "work"])),
             SyncCommand::Grant {
                 device: "9ae6".into(),
-                reader: true,
+                role: SyncRole::Reader,
                 name: Some("work".into()),
                 expires_secs: WEEK,
                 admin_key: None,
@@ -1166,7 +1234,7 @@ mod tests {
             p(&invite(&["9ae6", "--expires", "1h"])),
             SyncCommand::Grant {
                 device: "9ae6".into(),
-                reader: false,
+                role: SyncRole::Member,
                 name: None,
                 expires_secs: 3600,
                 admin_key: None,
@@ -1177,7 +1245,7 @@ mod tests {
             p(&invite(&["9ae6", "--ticket", "T", "--invite", "01j"])),
             SyncCommand::Grant {
                 device: "9ae6".into(),
-                reader: false,
+                role: SyncRole::Member,
                 name: None,
                 expires_secs: WEEK,
                 admin_key: None,
@@ -1231,7 +1299,7 @@ mod tests {
         assert_eq!(
             p(&["chain", "invite", "--qr", "--label", "x", "--user", "ann"]),
             SyncCommand::Invite {
-                reader: false,
+                role: SyncRole::Member,
                 filter: None,
                 qr: true,
                 expires_secs: WEEK,

@@ -24,9 +24,10 @@ pub struct PeerStatus {
     pub revoked: bool,
     /// Every op of its set aside (da-ry11c).
     pub purged: bool,
-    /// A reader (da-9yvb6): it receives, and writes nothing.
-    pub reader: bool,
-    /// A filtered reader's filter (da-u81u1).
+    /// A reader (da-9yvb6) receives and writes nothing; a writer
+    /// (da-o5o6m) writes entries and serves its own ops alone.
+    pub role: Role,
+    /// A filtered reader's or writer's filter (da-u81u1).
     pub filter: Option<Filter>,
     /// `synced`, `pending`, `offline`, `error` or `never`: `offline` when
     /// the last session failed before it reached the member (da-ueb4p).
@@ -49,15 +50,15 @@ impl PeerStatus {
     /// What `sync` and `sync status` say of a member this copy cannot dial:
     /// it has never met it, and no member has passed its address on yet
     /// (da-fly3f). Its ops arrive meanwhile through the members of `all`,
-    /// the status it is one row of, that this copy does dial: a reader is
-    /// none of them, it relays nothing.
+    /// the status it is one row of, that this copy does dial: a reader or a
+    /// writer is none of them, it relays nothing.
     pub fn no_address(&self, all: &[PeerStatus]) -> Option<String> {
         if self.state != "never" || self.addr.is_some() || self.revoked {
             return None;
         }
         let via: Vec<&str> = all
             .iter()
-            .filter(|p| p.addr.is_some() && !p.revoked && !p.reader)
+            .filter(|p| p.addr.is_some() && !p.revoked && p.role.relays())
             .map(|p| p.label.as_str())
             .collect();
         Some(match via.is_empty() {
@@ -236,17 +237,19 @@ impl Db {
     pub fn sync_status(&self) -> Result<Vec<PeerStatus>> {
         let chain = Chain::served(&self.conn)?;
         let mine = self.sync_endpoint_id()?;
-        // A reader never relays and signs no baselines (`sync_ops_since`):
-        // what it has to send is its own ops alone (da-b2krf).
-        let reader = chain.member(&mine).map(Member::role) == Some(Role::Reader);
+        // A reader or a writer never relays (`sync_ops_since`): what it has
+        // to send is its own ops alone (da-b2krf), and a reader signs no
+        // baselines.
+        let role = chain.member(&mine).map_or(Role::Member, Member::role);
+        let own_only = !role.relays();
         let mut held = self.sync_vector()?;
-        held.retain(|e, _| !reader || *e == mine);
+        held.retain(|e, _| !own_only || *e == mine);
         // Entries no op covers yet go as baselines on the next session: to a
         // filtered reader, those of its fields alone. By the field each
         // belongs to.
-        let uncovered: Vec<Option<String>> = match reader {
-            true => Vec::new(),
-            false => self
+        let uncovered: Vec<Option<String>> = match role.writes() {
+            false => Vec::new(),
+            true => self
                 .conn
                 .prepare(super::UNCOVERED_SQL)?
                 .query_map([], row_to_entry)?
@@ -316,7 +319,7 @@ impl Db {
             let filter = chain.filter(&m.endpoint);
             let to_send = match filter {
                 Some(f) => {
-                    let only = reader.then_some(mine.as_str());
+                    let only = own_only.then_some(mine.as_str());
                     let baselines = uncovered.iter().filter(|b| f.admits(b.as_deref())).count();
                     (baselines + filtered_lines(&self.conn, &theirs, f, &chain, only)?.1) as i64
                 }
@@ -360,7 +363,7 @@ impl Db {
                 kind: m.kind.clone(),
                 revoked: m.revoked.is_some(),
                 purged: m.purged.is_some(),
-                reader: m.role() == Role::Reader,
+                role: m.role(),
                 filter: filter.cloned(),
                 state,
                 to_send,
@@ -525,7 +528,7 @@ fn upgrade(label: &str, datum: &str, schema: u32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::PeerStatus;
+    use super::{PeerStatus, Role};
 
     fn peer(label: &str, addr: bool) -> PeerStatus {
         PeerStatus {
@@ -535,7 +538,7 @@ mod tests {
             kind: None,
             revoked: false,
             purged: false,
-            reader: false,
+            role: Role::Member,
             filter: None,
             state: if addr { "synced" } else { "never" },
             to_send: 0,
@@ -555,7 +558,7 @@ mod tests {
     fn no_address_names_only_the_members_that_relay() {
         let c = peer("c", false);
         let reader = PeerStatus {
-            reader: true,
+            role: Role::Reader,
             ..peer("r", true)
         };
         let revoked = PeerStatus {

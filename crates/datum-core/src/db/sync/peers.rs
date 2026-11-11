@@ -647,7 +647,12 @@ mod tests {
             let listed = |of: &Db| {
                 let all = of.sync_status().unwrap();
                 let r = all.into_iter().find(|p| p.endpoint == id(&r));
-                r.map(|p| (p.reader, p.filter.map(|f| f.describe())))
+                r.map(|p| {
+                    (
+                        p.role == chain::Role::Reader,
+                        p.filter.map(|f| f.describe()),
+                    )
+                })
             };
             let filter = (!plain).then(|| "filtered: 1 of 3 fields".to_string());
             assert_eq!(listed(&b), Some((true, filter.clone())));

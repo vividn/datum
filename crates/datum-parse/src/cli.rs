@@ -1081,15 +1081,16 @@ pub enum SyncCommand {
     /// `datum sync pause | resume` (da-wlbyx): this copy's, never synced.
     Pause,
     Resume,
-    /// `datum sync chain invite [--reader] [--fields <F,…> | --kit <KIT>]
+    /// `datum sync chain invite [--reader | --writer] [--fields <F,…> | --kit <KIT>]
     /// [--qr] [--expires <DUR>] [--label <L>] [--admin-key <FILE>]` — an
     /// invite any member can admit, served until redeemed; on a copy in no
     /// chain, it starts an open one (da-6177s). `--reader` admits a reader
-    /// (da-9yvb6), and a filter a reader sent only those fields (da-u81u1).
+    /// (da-9yvb6), `--writer` a writer (da-o5o6m), and a filter either sent
+    /// only those fields (da-u81u1).
     /// `--label` names this copy (da-ey3hz), `--user` the person using it
     /// (da-xza37); a first invite on a terminal asks for either not given.
     Invite {
-        reader: bool,
+        role: SyncRole,
         filter: Option<SyncFilter>,
         qr: bool,
         expires_secs: u64,
@@ -1165,7 +1166,7 @@ pub enum SyncCommand {
     /// database opens, as it will not.
     Reenter,
     /// `datum sync chain expel <WHO> [--unjoin] [--wipe] [--yes]`,
-    /// `datum sync chain role <WHO> member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
+    /// `datum sync chain role <WHO> member|reader|writer [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
     /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,
     /// each `[--admin-key <FILE>]` — a signed act on the chain.
     Admin {
@@ -1252,13 +1253,13 @@ pub enum SyncCommand {
     Grid {
         show: Show,
     },
-    /// `datum sync chain invite <DEVICE> [--reader] [--as <NAME>] [--expires
+    /// `datum sync chain invite <DEVICE> [--reader | --writer] [--as <NAME>] [--expires
     /// <DUR>] [--admin-key <FILE>]` (da-n0uj1.4, da-p76eu): an invite to this chain,
     /// its ticket sealed to the device in a chain the two share already.
     /// `--as` is the database's name on that device, if not this one's.
     Grant {
         device: String,
-        reader: bool,
+        role: SyncRole,
         name: Option<String>,
         expires_secs: u64,
         admin_key: Option<String>,
@@ -1344,12 +1345,12 @@ pub enum SyncCommand {
         records: bool,
         dialed: bool,
     },
-    /// Hidden: `datum sync new-invite [--reader] [--expires <DUR>]
+    /// Hidden: `datum sync new-invite [--reader | --writer] [--expires <DUR>]
     /// [--admin-key <FILE>]` — write `invite`'s record and print its
     /// secret, expiry and id (its redeemer's `via`), for datum.day's
     /// transport to serve.
     NewInvite {
-        reader: bool,
+        role: SyncRole,
         filter: Option<SyncFilter>,
         expires_secs: u64,
         admin_key: Option<String>,
@@ -1405,8 +1406,47 @@ pub enum SyncDaemonAct {
     Run,
 }
 
-/// A filtered reader's fields (da-u81u1): named, or a kit's, resolved
-/// against the database when the record is written.
+/// What a copy is in its sync chain: a member writes and relays, a reader
+/// writes nothing, and a writer (da-o5o6m) writes entries as a member does
+/// and serves as a reader does, only its own ops. Only a full member relays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncRole {
+    Member,
+    Reader,
+    Writer,
+}
+
+impl SyncRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SyncRole::Member => "member",
+            SyncRole::Reader => "reader",
+            SyncRole::Writer => "writer",
+        }
+    }
+
+    /// Whether its entry ops are allowed: a member's and a writer's.
+    pub fn writes(self) -> bool {
+        self != SyncRole::Reader
+    }
+
+    /// Whether it serves what other copies wrote: a member alone. A copy
+    /// that does not is the one a filter may be on.
+    pub fn relays(self) -> bool {
+        self == SyncRole::Member
+    }
+
+    /// `member`, `reader` or `writer`.
+    pub fn parse(s: &str) -> Option<SyncRole> {
+        [SyncRole::Member, SyncRole::Reader, SyncRole::Writer]
+            .into_iter()
+            .find(|r| r.as_str() == s)
+    }
+}
+
+/// A filtered reader's or writer's fields (da-u81u1): named, or a kit's, resolved
+/// against the database when the record is written. A writer's may name
+/// none (`--fields ''`): it is sent only the chain's records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncFilter {
     Fields(Vec<String>),
@@ -1426,7 +1466,7 @@ pub enum SyncAdminAct {
         show: Show,
     },
     Role {
-        reader: bool,
+        role: SyncRole,
         filter: Option<SyncFilter>,
     },
     AddAdmin,

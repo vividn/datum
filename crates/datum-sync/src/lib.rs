@@ -904,11 +904,12 @@ fn who_admits(t: &Ticket) -> String {
 }
 
 /// What else a ticket says it joins (da-wm9wb): the inviting database, and
-/// as what, a member, a reader, or a reader of some fields. None for a
+/// as what, a member, a reader or writer (da-o5o6m), or one of some fields. None for a
 /// ticket made before it said either.
 fn joins_as(t: &Ticket) -> String {
     let db = t.about.db.as_ref().map(|d| format!(", database {d}"));
     let role = t.about.role.as_ref().map(|r| match &t.about.fields {
+        Some(f) if f.is_empty() => format!(", as a {r} of no field"),
         Some(f) => format!(", as a {r} of {}", f.join(", ")),
         None => format!(", as a {r}"),
     });

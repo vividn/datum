@@ -129,7 +129,7 @@ export interface Invite {
 	/** Its id, which its redeemer is admitted `via` (da-2bvxq). */
 	id: string;
 	/** Whom it admits (da-wm9wb): the page makes no filtered reader's invite. */
-	role?: 'member' | 'reader';
+	role?: 'member' | 'reader' | 'writer';
 }
 
 /** An offer of `chain`, the account's, through `also`: a ticket this copy redeems itself (da-nf1p4). */

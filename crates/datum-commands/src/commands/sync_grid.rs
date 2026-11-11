@@ -35,6 +35,7 @@ enum Cell {
     Wiping,
     Expelled,
     Reader,
+    Writer,
     Member,
 }
 
@@ -49,6 +50,7 @@ impl Cell {
             _ if m.left.is_some() => None,
             _ if m.revoked.is_some() => Some(Cell::Expelled),
             _ if m.role() == Role::Reader => Some(Cell::Reader),
+            _ if m.role() == Role::Writer => Some(Cell::Writer),
             _ => Some(Cell::Member),
         }
     }
@@ -60,6 +62,7 @@ impl Cell {
             Cell::Wiping => "wiping",
             Cell::Expelled => "expelled",
             Cell::Reader => "reader",
+            Cell::Writer => "writer",
             Cell::Member => "member",
         }
     }
@@ -221,7 +224,7 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
             };
             let code = match (cell, apart) {
                 (_, Some(_)) => YELLOW,
-                (Some(Cell::Member | Cell::Reader), _) => GREEN,
+                (Some(Cell::Member | Cell::Reader | Cell::Writer), _) => GREEN,
                 (Some(Cell::Expelled | Cell::Unjoined), _) => RED,
                 _ => GREY_FG,
             };

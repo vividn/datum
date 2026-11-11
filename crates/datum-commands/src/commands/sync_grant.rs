@@ -69,12 +69,12 @@ fn device(columns: &[(String, PathBuf, Chain)], who: &str) -> Result<(String, St
     }
 }
 
-/// `datum --db X sync chain invite <DEVICE> [--reader] [--as NAME]`. `given`:
+/// `datum --db X sync chain invite <DEVICE> [--reader | --writer] [--as NAME]`. `given`:
 /// the ticket made elsewhere for an invite already here, and that invite.
 pub fn grant(
     db: &Db,
     who: &str,
-    reader: bool,
+    role: Role,
     name: Option<&str>,
     expires: Duration,
     admin_key: Option<&str>,
@@ -125,7 +125,6 @@ pub fn grant(
              invite): a bare `datum sync chain invite` makes a link to carry to it instead"
         );
     };
-    let role = if reader { "reader" } else { "member" };
     let (ticket, expires_at, invite) = match given {
         Some((ticket, id)) => {
             let secret = chain::ticket_secret(ticket)
@@ -134,19 +133,21 @@ pub fn grant(
                 bail!("--ticket is no ticket of invite {id}, an unused invite of this sync chain");
             };
             ensure!(
-                (r == Role::Reader) == reader,
-                "invite {id} is a {}'s, not a {role}'s",
-                r.as_str()
+                r == role,
+                "invite {id} is a {}'s, not a {}'s",
+                r.as_str(),
+                role.as_str()
             );
             ensure!(
                 !filtered,
-                "invite {id} is a filtered reader's: a device's is of all of this database"
+                "invite {id} is a filtered {}'s: a device's is of all of this database",
+                r.as_str()
             );
             (ticket.to_string(), until.to_string(), id.to_string())
         }
         #[cfg(feature = "net")]
         None => {
-            let caps = super::sync::caps(db, reader, None)?;
+            let caps = super::sync::caps(db, role, None)?;
             let (secret, until, id) =
                 super::sync::invite(db, expires, admin_key, caps, None, false)?;
             (datum_sync::grant_link(db, &secret, expires)?, until, id)
@@ -157,6 +158,7 @@ pub fn grant(
             bail!("this build makes no ticket: datum.day's sync widget invites a device")
         }
     };
+    let role = role.as_str();
     let as_name = name.unwrap_or(db_name);
     let payload = json!({
         "ticket": ticket,
@@ -230,8 +232,8 @@ pub fn grant_like(
     ensure!(
         src.member(&src_me)
             .is_some_and(|m| live(m) && m.role() == Role::Member),
-        "this install's {like} writes nothing to its sync chain (a reader, or expelled): \
-         it carries no invite to {like}'s devices"
+        "this install's {like} writes no record to its sync chain (a reader or a writer, or \
+         expelled): it carries no invite to {like}'s devices"
     );
     let here = db.sync_chain()?;
     let starts = !here.exists() || here.dissolved().is_some();
@@ -243,7 +245,8 @@ pub fn grant_like(
         let me = here.member(&db.sync_endpoint_id()?);
         ensure!(
             me.is_some_and(|m| live(m) && m.role() == Role::Member),
-            "this copy writes nothing to its sync chain (a reader, or expelled): it invites no devices"
+            "this copy writes no record to its sync chain (a reader or a writer, or expelled): it \
+             invites no devices"
         );
     }
     // Whose admin signs: this chain's, or the one a new chain takes its admins from.
@@ -324,17 +327,18 @@ pub fn grant_like(
         if let Some(had) = had {
             notes.push(format!("{label} is a {} here already", had.role().as_str()));
         } else if m.filter.is_some() {
+            let role = m.role().as_str();
             notes.push(format!(
-                "{label} is a reader of some of {like}'s fields, which are not this database's: \
-                 `datum sync chain invite {} --reader` makes it a reader of all of it",
+                "{label} is a {role} of some of {like}'s fields, which are not this database's: \
+                 `datum sync chain invite {} --{role}` makes it a {role} of all of it",
                 &d[..12.min(d.len())]
             ));
         } else {
-            let reader = m.role() == Role::Reader;
-            let caps = super::sync::caps(db, reader, None)?;
+            let role = m.role();
+            let caps = super::sync::caps(db, role, None)?;
             let (secret, until, id, record) = super::sync::invite_record(&chain, expires, caps);
             records.push(record);
-            invited.push((d.to_string(), label, reader, secret, until, id));
+            invited.push((d.to_string(), label, role, secret, until, id));
         }
     }
     // Before the approval, so a run that stops at its link (datum.day's,
@@ -342,10 +346,10 @@ pub fn grant_like(
     if defer {
         let grants: Vec<Value> = invited
             .iter()
-            .map(|(device, label, reader, secret, expires, id)| {
+            .map(|(device, label, role, secret, expires, id)| {
                 json!({
                     "device": device, "label": label,
-                    "role": if *reader { "reader" } else { "member" },
+                    "role": role.as_str(),
                     "invite": {"secret": secret, "expires": expires, "id": id},
                 })
             })
@@ -371,10 +375,10 @@ pub fn grant_like(
     notes.into_iter().for_each(say);
     #[cfg(feature = "net")]
     if !defer {
-        for (device, _, reader, secret, _, id) in &invited {
+        for (device, _, role, secret, _, id) in &invited {
             let ticket = datum_sync::grant_link(db, secret, expires)?;
             let given = Some((ticket.as_str(), id.as_str()));
-            grant(db, device, *reader, None, expires, admin_key, given)?;
+            grant(db, device, *role, None, expires, admin_key, given)?;
         }
     }
     if unbound > 0 {

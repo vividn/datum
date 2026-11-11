@@ -27,6 +27,8 @@ test('a cell’s acts are grayed for a reader, and in a chain locked by key file
 	const d = (more) => ({ db: 'home', this: { reader: false }, admins: [], ...more });
 	assert.equal(barred(d()), '', 'an open chain: any writer may');
 	assert.match(barred(d({ this: { reader: true } })), /only reads home/);
+	// A writer writes no chain record (da-o5o6m): who syncs is a member's to change.
+	assert.match(barred(d({ this: { reader: false, role: 'writer' } })), /only logs to home/);
 	const file = { key: `ed25519:${'ab'.repeat(32)}`, label: 'laptop key' };
 	assert.match(barred(d({ admins: [file] })), /locked: only its admin \(laptop key\)/);
 	// A passkey is asked for as the act runs, and an account signed in here signs itself.
@@ -40,6 +42,8 @@ test('a cell offers a device a role and, while it is in, its removal', () => {
 	assert.deepEqual(cellActs(undefined, false), []);
 	assert.deepEqual(cellActs('member', true), ['reader', 'expel', 'unjoin', 'wipe']);
 	assert.deepEqual(cellActs('reader', false), ['member', 'expel', 'unjoin', 'wipe']);
+	// A writer (da-o5o6m) is in it: made a member or a reader, or removed.
+	assert.deepEqual(cellActs('writer', false), ['member', 'reader', 'expel', 'unjoin', 'wipe']);
 });
 
 test('a device’s menu renames and removes it where it is in, adds it where it is not, and says why it leaves any out (da-jlyyr)', () => {

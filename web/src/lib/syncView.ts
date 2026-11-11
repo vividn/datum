@@ -143,6 +143,8 @@ export interface DbSync {
 		schema: number;
 		floor: number;
 		reader?: boolean;
+		/** `member`, `reader` or `writer` (da-o5o6m), in a chain. */
+		role?: 'member' | 'reader' | 'writer' | null;
 		/** @shallow as a member's. */
 		filter?: Filter | null;
 		revoked?: string | null;
@@ -268,6 +270,7 @@ export function joinWords(
 	// Merging two chains is to come (vividn, 2026-11-10): meanwhile the card offers a new database.
 	else if (d?.chain) return { words: [...words, `«${db}» is in another sync chain, and a database belongs to one: join with a new database instead.`], other: true };
 	if (a.role === 'reader') words.push(readOnly(a.fields));
+	if (a.role === 'writer') words.push(writeOnly(a.fields));
 	if (until) words.push(`The link works once, until ${until}.`);
 	return { words };
 }
@@ -277,6 +280,14 @@ const readOnly = (fields?: string[]): string =>
 	fields?.length
 		? `Read only, of ${fields.map((f) => `«${f}»`).join(', ')}: you’ll receive what they log of those; nothing you log in it goes to them.`
 		: 'Read only: you’ll receive what they log here; nothing you log in it goes to them.';
+
+/** What a writer's invite admits (da-o5o6m): it writes as a member does, and passes on nothing of anyone else's. */
+const writeOnly = (fields?: string[]): string =>
+	!fields
+		? 'As a writer: what you log goes to them, and you’ll receive what they log, passing none of it on.'
+		: fields.length
+			? `As a writer, of ${fields.map((f) => `«${f}»`).join(', ')}: what you log goes to them, and you’ll receive what they log of those.`
+			: 'As a writer: what you log goes to them, and you’ll receive nothing of theirs.';
 
 /**
  * The ticket in what Enter code was given: a bare code, a join link, or the
@@ -469,7 +480,7 @@ export function ago(at: number, now: number): string {
 }
 
 /** A device's standing in one chain, as `sync grid --json` has it (da-n0uj1.3). */
-export type Standing = 'member' | 'reader' | 'expelled' | 'unjoined' | 'wiping' | 'wiped';
+export type Standing = 'member' | 'reader' | 'writer' | 'expelled' | 'unjoined' | 'wiping' | 'wiped';
 
 /** A grant not yet taken, as this install can read it (da-pofki): `word` its cell's, `text` the CLI's sentence. */
 export interface GridGrant {
@@ -517,13 +528,14 @@ export interface Grid {
 
 /**
  * Why this device may not change who syncs `d` (da-dxng1), empty where it may:
- * a reader writes nothing, and a chain locked by admins is changed only by
+ * a reader writes nothing, a writer no chain record (da-o5o6m), and a chain locked by admins is changed only by
  * one — a passkey (`es256:`, `eddsa:`), which the act asks for, or `account`,
  * the key this tab is signed in to. A key file (`ed25519:`) signs at a terminal.
  */
 export function barred(d: Pick<DbSync, 'db' | 'this' | 'admins'> | undefined, account?: string): string {
 	if (!d) return '';
 	if (d.this?.reader) return `This device only reads ${d.db}: a device that writes it can change who syncs it.`;
+	if (d.this?.role === 'writer') return `This device only logs to ${d.db}: a member can change who syncs it.`;
 	const admins = d.admins ?? [];
 	if (admins.length && !admins.some((a) => !a.key.startsWith('ed25519:') || a.key === account))
 		return `${d.db}’s chain is locked: only its admin (${admins.map((a) => a.label).join(', ')}) can change who syncs it, at a terminal.`;
@@ -532,7 +544,7 @@ export function barred(d: Pick<DbSync, 'db' | 'this' | 'admins'> | undefined, ac
 
 /** What a cell offers a device standing so: a role (an invite, or a role change), or a destructive act. */
 export function cellActs(s: Standing | undefined, bound: boolean): string[] {
-	const live = s === 'member' || s === 'reader';
+	const live = s === 'member' || s === 'reader' || s === 'writer';
 	const roles = live || bound ? (['member', 'reader'] as const).filter((r) => r !== s) : [];
 	const acts = live ? ['expel', 'unjoin', 'wipe'] : s === 'expelled' ? ['unjoin', 'wipe'] : s === 'unjoined' ? ['wipe'] : [];
 	return [...roles, ...acts];
@@ -558,12 +570,12 @@ export function deviceActs(row: Grid['devices'][number], chains: Grid['chains'],
 	const why = (ds: (DbSync | undefined)[]) => [...new Set(ds.map((d) => barred(d, account)).filter(Boolean))].join(' ');
 	const ins = chains.flatMap((c) => {
 		const cell = row.cells[c.chain];
-		return c.held && cell && (cell.state === 'member' || cell.state === 'reader') ? [{ db: c.db, endpoint: cell.endpoint, d: dbs.find((d) => d.db === c.db) }] : [];
+		return c.held && cell && ['member', 'reader', 'writer'].includes(cell.state) ? [{ db: c.db, endpoint: cell.endpoint, d: dbs.find((d) => d.db === c.db) }] : [];
 	});
 	const change = ins.filter((x) => !barred(x.d, account)).map(({ db, endpoint }) => ({ db, endpoint }));
 	const changeWhy = ins.length ? why(ins.filter((x) => barred(x.d, account)).map((x) => x.d)) : `${row.label} is in no database here yet.`;
 	const left = dbs.filter((d) => !ins.some((x) => x.db === d.db) && !(d.chain && row.grants?.[d.chain]?.state === 'waiting'));
-	const carried = !!row.device && ins.some((x) => x.d && !x.d.this?.reader);
+	const carried = !!row.device && ins.some((x) => x.d && !x.d.this?.reader && x.d.this?.role !== 'writer');
 	const add = carried ? left.filter((d) => !barred(d, account)).map(({ db, chain }) => ({ db, chain })) : [];
 	const addWhy = !row.device
 		? `${row.label} has no device key here, which an invite is sealed to.`

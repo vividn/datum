@@ -1275,7 +1275,11 @@ fn subcommand_help_is_its_own_page() {
     let invite = parse("sync chain invite --like home --help");
     assert_eq!(invite, parse("help sync chain invite"));
     assert_eq!(invite, parse("sync chain invite 9ae6 --help"));
-    for usage in ["invite [--reader]", "invite <DEVICE>", "invite --like <DB>"] {
+    for usage in [
+        "invite [--reader | --writer]",
+        "invite <DEVICE>",
+        "invite --like <DB>",
+    ] {
         assert!(invite.contains(usage), "{invite}");
     }
     for said in [

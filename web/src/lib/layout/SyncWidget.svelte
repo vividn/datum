@@ -161,7 +161,7 @@
 
 	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', offline: '○', error: '!', none: '—' };
 	/** A standing still in its chain: an expelled, unjoined or wiped device is drawn nowhere (da-5wlnr). */
-	const LIVE = ['member', 'reader'];
+	const LIVE = ['member', 'reader', 'writer'];
 	const canShare = browser && typeof navigator.share === 'function';
 
 	/** The page's database: the one this widget is about. */
@@ -646,7 +646,7 @@
 			const invite = made ?? (await newInvite(d, role === 'reader'));
 			const said = ok(await syncAct(d, grantArgv(device, role, await syncOffer(d, invite), invite.id, name))).stdout.trim();
 			const row = grid?.devices.find((r) => r.device === device);
-			for (const c of grid?.chains ?? []) if (c.db !== d && ['member', 'reader'].includes(row?.cells[c.chain]?.state ?? '')) void syncNow(c.db).catch(() => {});
+			for (const c of grid?.chains ?? []) if (c.db !== d && LIVE.includes(row?.cells[c.chain]?.state ?? '')) void syncNow(c.db).catch(() => {});
 			return said;
 		} finally {
 			waiting = '';
@@ -661,7 +661,7 @@
 		if (what === 'wipe' && cell) return void wipe(row.label, cell.endpoint, col.db);
 		const role = what as 'member' | 'reader';
 		void doing(async () => {
-			if (cell && (cell.state === 'member' || cell.state === 'reader')) return void (said = ok(await syncAct(col.db, roleArgv(cell.endpoint, role))).stdout.trim());
+			if (cell && LIVE.includes(cell.state)) return void (said = ok(await syncAct(col.db, roleArgv(cell.endpoint, role))).stdout.trim());
 			if (!row.device) return;
 			const name = await ask(`Invite ${row.label} to ${col.db} as a ${role === 'reader' ? 'reader' : 'member'}. The name it takes on that device:`, 'invite', col.db);
 			if (name) said = await granting(col.db, row.device, role, name === col.db ? undefined : name);
@@ -1109,7 +1109,7 @@
 							<li class="standing">
 								{#if !col.held}not on this device
 								{:else if row.this && !col.chain}only on this device: no other device has it yet
-								{:else if g.cell}{g.cell.state === 'reader' ? 'reads it, writing nothing' : 'reads and writes it'}{#if g.last}: {g.last.title}{/if}
+								{:else if g.cell}{g.cell.state === 'reader' ? 'reads it, writing nothing' : g.cell.state === 'writer' ? 'writes it, passing on nothing of others’' : 'reads and writes it'}{#if g.last}: {g.last.title}{/if}
 								{:else}not in it{/if}
 							</li>
 							{#if g.cell}<li class="last">{g.last?.synced ? `last synced ${when(g.last.synced)}, ${g.when === 'now' ? 'just now' : `${g.when} ago`}` : 'never synced'}</li>{/if}

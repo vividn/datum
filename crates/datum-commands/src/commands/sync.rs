@@ -431,9 +431,9 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     };
                     (json!({"type": record, "endpoint": m}), done)
                 }
-                SyncAdminAct::Role { reader, filter } => {
+                SyncAdminAct::Role { role, filter } => {
                     let m = member(&chain, &who)?;
-                    let role = if reader { "reader" } else { "member" };
+                    let role = role.as_str();
                     let filter = resolve(db, filter)?;
                     // Nothing to sign: in a locked chain, a passkey tap for nothing.
                     let now = chain
@@ -456,7 +456,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                         Some(f) => {
                             r["fields"] = json!(f.fields);
                             r["of"] = f.of.into();
-                            format!("{who} is a reader, {}", f.describe())
+                            format!("{who} is a {role}, {}", f.describe())
                         }
                         None => format!("{who} is a {role}"),
                     };
@@ -679,13 +679,13 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             println!("{}", if added { "added" } else { "known" });
         }
         SyncCommand::NewInvite {
-            reader,
+            role,
             filter,
             expires_secs,
             admin_key,
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
-            let caps = caps(db, reader, filter)?;
+            let caps = caps(db, role, filter)?;
             invite(db, expires, admin_key.as_deref(), caps, None, true)?;
         }
         SyncCommand::Approve { link } => {
@@ -857,7 +857,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         },
         #[cfg(feature = "net")]
         SyncCommand::Invite {
-            reader,
+            role,
             filter,
             qr,
             expires_secs,
@@ -881,9 +881,16 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             // The daemon leaves the copy to the invite: a joiner it admitted
             // would never be seen here, which waits out the expiry (da-apd52).
             let _held = super::sync_daemon::first_sync(db)?;
-            let caps = caps(db, reader, filter)?;
-            if let Some(f) = caps.get("fields") {
-                eprintln!("the redeemer is a reader sent only {f}, each with its spec");
+            let caps = caps(db, role, filter)?;
+            match caps.get("fields") {
+                Some(f) if f.as_array().is_some_and(Vec::is_empty) => {
+                    eprintln!("the redeemer is a writer sent only the chain's records")
+                }
+                Some(f) => {
+                    let role = role.as_str();
+                    eprintln!("the redeemer is a {role} sent only {f}, each with its spec")
+                }
+                None => {}
             }
             let (secret, expires_at, _) = invite(
                 db,
@@ -945,7 +952,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         }
         SyncCommand::Grant {
             device,
-            reader,
+            role,
             name,
             expires_secs,
             admin_key,
@@ -953,7 +960,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         } => super::sync_grant::grant(
             db,
             &device,
-            reader,
+            role,
             name.as_deref(),
             std::time::Duration::from_secs(expires_secs),
             admin_key.as_deref(),
@@ -1065,7 +1072,7 @@ fn summary(db: &Db) -> Result<Option<String>> {
         .then(|| format!("{} · `datum sync status` for more", states.join(" · "))))
 }
 
-/// A reader's filter as the chain records it (da-u81u1): its fields — a
+/// A reader's or writer's filter as the chain records it (da-u81u1): its fields — a
 /// kit's, those it holds specs for here — and how many fields the database
 /// has, those named included.
 fn resolve(db: &Db, filter: Option<SyncFilter>) -> Result<Option<chain::Filter>> {
@@ -1086,12 +1093,12 @@ fn resolve(db: &Db, filter: Option<SyncFilter>) -> Result<Option<chain::Filter>>
     }))
 }
 
-/// An invite's `caps`: a member's `{}`, a reader's role, and its filter.
-pub(super) fn caps(db: &Db, reader: bool, filter: Option<SyncFilter>) -> Result<Value> {
-    let mut caps = if reader {
-        json!({"role": "reader"})
-    } else {
-        json!({})
+/// An invite's `caps`: a member's `{}`, a reader's or writer's role, and
+/// its filter.
+pub(super) fn caps(db: &Db, role: chain::Role, filter: Option<SyncFilter>) -> Result<Value> {
+    let mut caps = match role {
+        chain::Role::Member => json!({}),
+        r => json!({"role": r.as_str()}),
     };
     if let Some(f) = resolve(db, filter)? {
         caps["fields"] = json!(f.fields);
@@ -1877,6 +1884,7 @@ fn approving(r: &Value) -> String {
     let kind = r["type"].as_str().unwrap_or("record");
     match kind {
         "invite" if r["caps"]["role"] == "reader" => "an invite as a reader".into(),
+        "invite" if r["caps"]["role"] == "writer" => "an invite as a writer".into(),
         "invite" => "an invite as a member".into(),
         "genesis" => format!(
             "a new sync chain {}",
@@ -2260,7 +2268,8 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
                 .map(|p| {
                     json!({
                         "endpoint": p.endpoint, "client": p.client, "label": p.label,
-                        "kind": p.kind, "revoked": p.revoked, "purged": p.purged, "reader": p.reader,
+                        "kind": p.kind, "revoked": p.revoked, "purged": p.purged,
+                        "reader": p.role == chain::Role::Reader, "role": p.role.as_str(),
                         "filter": filter_json(p.filter.as_ref()), "state": p.state,
                         "to_send": p.to_send, "last_seen": p.last_seen, "last_synced": p.last_synced,
                         "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
@@ -2284,6 +2293,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
                 "device": datum_core::db::device_id(), "account": signed,
                 "datum": datum_core::build(), "schema": runs.0, "floor": runs.1,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
+                "role": chain.member(&mine).map(|m| m.role().as_str()),
                 "revoked": chain.member(&mine).and_then(|m| m.revoked.as_deref()).map(chain::hlc_time),
                 "filter": filter_json(chain.filter(&mine)),
             },
@@ -2404,10 +2414,10 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
                 .map(|(at, _)| at.clone())
                 .or(p.last_seen.clone()),
         };
-        let role = match (p.reader, &p.filter) {
-            (true, Some(f)) => format!("reader ({})", f.describe()),
-            (true, None) => "reader".into(),
-            (false, _) => String::new(),
+        let role = match (p.role, &p.filter) {
+            (chain::Role::Member, _) => String::new(),
+            (r, Some(f)) => format!("{} ({})", r.as_str(), f.describe()),
+            (r, None) => r.as_str().into(),
         };
         let gone = match (p.purged, p.revoked) {
             (true, _) => Some("UNJOINED".to_string()),

@@ -792,6 +792,15 @@ entry that moved in whole, `{"remove": hid}` for one that moved out, and a
 no gap wait, drops what falls outside, and its vector is its marks
 (`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
 
+A WRITER (da-o5o6m, `--writer`, `role <WHO> writer`; vividn, 2026-11-11: «yes to
+writer role, this will also be importnat later for building integrations with
+sensors and other streams of data») writes entries as a member does
+(`Chain::allows`) and no chain record but its own describe and departure
+(`Chain::acts`), and serves as a reader does, its own ops alone (`own_alone`):
+only a full member relays. It may be filtered as a reader is, and only its
+filter may name no field (`--fields ''`): it is sent the chain's records alone,
+and keeps what it writes.
+
 ### Signing in with a passkey
 
 datum.day signs a tab in to sync with a passkey's WebAuthn PRF output (da-nf1p4,

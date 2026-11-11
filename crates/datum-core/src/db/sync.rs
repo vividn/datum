@@ -98,7 +98,7 @@ mod rejoin;
 pub mod status;
 mod summed;
 mod versions;
-use chain::{Chain, Filter, Role, CHAIN_HID};
+use chain::{Chain, Filter, CHAIN_HID};
 pub use debug::DebugConflicts;
 pub use diagnose::{row_diff, FoldCheck, Named, Orphan, Stale};
 pub use join::PendingJoin;
@@ -373,7 +373,8 @@ thread_local! {
     /// asks, and a batch signs thousands of ops: the fold is dearer than
     /// the look. Kept across a REPL's lines: one changing the key or the
     /// chain's records misses it (da-3f9nl).
-    static READER: RefCell<Option<(ReaderKey, Option<&'static str>)>> = const { RefCell::new(None) };
+    /// And whether it relays (da-o5o6m).
+    static READER: RefCell<Option<(ReaderKey, Standing)>> = const { RefCell::new(None) };
 }
 
 /// Said when a reader's copy is asked to write (da-9yvb6).
@@ -384,10 +385,24 @@ const READ_ONLY: &str = "this copy is a reader in its sync chain: it receives, a
 const LEAVING: &str = "this copy signed its departure from its sync chain and writes nothing \
      more: `datum sync chain leave` finishes once a member holds it, or `--force` leaves now";
 
+/// Why this copy writes nothing now, if it does not, and whether it relays.
+type Standing = (Option<&'static str>, bool);
+
 /// Why this copy writes nothing now, if it does not: a reader in its
 /// chain, or a member that signed its departure. Either serves its own ops
 /// alone, and signs no baseline.
 fn read_only(conn: &Connection, ep: &Endpoint) -> Result<Option<&'static str>> {
+    Ok(standing(conn, ep)?.0)
+}
+
+/// Whether this copy serves its own ops alone: it writes nothing now, or
+/// it is a writer (da-o5o6m). Only a member relays.
+fn own_alone(conn: &Connection, ep: &Endpoint) -> Result<bool> {
+    let (why, relays) = standing(conn, ep)?;
+    Ok(why.is_some() || !relays)
+}
+
+fn standing(conn: &Connection, ep: &Endpoint) -> Result<Standing> {
     let key: ReaderKey = conn
         .prepare_cached("SELECT ?1, COUNT(*), MAX(hlc) FROM ops WHERE hid = ?2 AND applied = 1")?
         .query_row(params![ep.id, CHAIN_HID], |r| {
@@ -398,13 +413,15 @@ fn read_only(conn: &Connection, ep: &Endpoint) -> Result<Option<&'static str>> {
         return Ok(why);
     }
     let chain = Chain::load(conn)?;
-    let why = chain.member(&ep.id).and_then(|m| match () {
+    let me = chain.member(&ep.id);
+    let why = me.and_then(|m| match () {
         _ if m.left.is_some() => Some(LEAVING),
-        _ if m.role() == Role::Reader => Some(READ_ONLY),
+        _ if !m.role().writes() => Some(READ_ONLY),
         _ => None,
     });
-    READER.with(|c| *c.borrow_mut() = Some((key, why)));
-    Ok(why)
+    let standing = (why, me.is_none_or(|m| m.role().relays()));
+    READER.with(|c| *c.borrow_mut() = Some((key, standing)));
+    Ok(standing)
 }
 
 /// Said wherever two copies are found signing with one key (da-p79vq).
@@ -3013,8 +3030,8 @@ impl Db {
     ) -> Result<Vec<String>> {
         self.sync_sign_baselines(since, None)?;
         let mine = endpoint(&self.conn)?;
-        // A reader never relays: it serves its own ops alone.
-        let reader = read_only(&self.conn, &mine)?.is_some();
+        // A reader or a writer never relays: it serves its own ops alone.
+        let own_only = own_alone(&self.conn, &mine)?;
         let mine = mine.id;
         self.read(|view| {
             let tx = view.conn();
@@ -3026,14 +3043,14 @@ impl Db {
             let served = Chain::served(tx)?;
             if let Some(filter) = peer.and_then(|p| served.filter(p)).filter(|_| !dissolved) {
                 let (lines, _) =
-                    filtered_lines(tx, since, filter, &chain, reader.then_some(&mine))?;
+                    filtered_lines(tx, since, filter, &chain, own_only.then_some(&mine))?;
                 return Ok(lines);
             }
             // A member's refused op goes too, for every copy to refuse
             // itself: the ops after it are counted past it. A non-member's
             // stays here.
             let serves = |e: &str, applied: i64| {
-                !(reader && e != mine || applied == 2 && chain.member(e).is_none())
+                !(own_only && e != mine || applied == 2 && chain.member(e).is_none())
             };
             let lacks = |e: &str, seq: i64| seq > since.get(e).copied().unwrap_or(0);
             // The round's last HLC, read without the bodies: the value of the

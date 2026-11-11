@@ -29,7 +29,7 @@
 //!     One per chain.
 //!   - `invite {invite_id, secret_hash, expires, caps}`: pre-authorised, so
 //!     any member admits its redeemer; one-time, until `expires`. `caps`
-//!     holds the role it grants: `{"role": "reader"}`, or `{}` for a member.
+//!     holds the role it grants: `{"role": "reader"}` or `"writer"`, or `{}` for a member.
 //!   - `admit {endpoint, label, via, secret}`: unsigned, written by the
 //!     member that redeemed invite `via`, valid while the invite is unused
 //!     and unexpired and `secret` hashes to it. The secret is carried so
@@ -57,11 +57,15 @@
 //!     An admin act, as a revoke is. `all` DISSOLVES the chain too: the fold
 //!     takes no record after it, and a copy holding it is in no chain to its
 //!     user, while it keeps its key and the records, to pass the order on.
-//!   - `role {endpoint, role}` (da-9yvb6): `member` or `reader` from its
-//!     HLC on, an admin act like a revoke. A reader's `role` or invite
-//!     `caps` may carry a filter (da-u81u1): `fields`, the fields it is
-//!     sent, and `of`, how many the database had when it was written. The
-//!     latest record's filter stands; one without `fields` clears it.
+//!   - `role {endpoint, role}` (da-9yvb6): `member`, `reader` or `writer`
+//!     from its HLC on, an admin act like a revoke. A writer (da-o5o6m)
+//!     writes entries as a member does and no chain record but its own
+//!     describe and departure, and serves as a reader does: its own ops
+//!     alone, so only a member relays. A reader's or writer's `role` or
+//!     invite `caps` may carry a filter (da-u81u1): `fields`, the fields it
+//!     is sent (a writer's may be none), and `of`, how many the database
+//!     had when it was written. The latest record's filter stands; one
+//!     without `fields` clears it.
 //!   - `describe {endpoint, client, label, kind, user, host, db, auto}`
 //!     (da-rcb5m): what a member is — the client it runs in (one per CLI
 //!     data directory or browser profile, shared by every db there, so one
@@ -210,6 +214,9 @@ fn is_client_id(s: &str) -> bool {
 
 /// Why a reader's op is refused.
 const READER: &str = "a reader in the sync chain: it receives, and can't write";
+
+/// Why a writer's chain record is refused.
+const WRITER: &str = "a writer in the sync chain: it writes entries, and no chain records";
 
 /// The hid every chain op is filed under.
 pub const CHAIN_HID: &str = "~chain";
@@ -793,13 +800,15 @@ pub struct Filter {
 
 impl Filter {
     /// A record's filter — `fields` and `of` beside a `role` — or why it
-    /// has none it may carry: only a reader is filtered.
+    /// has none it may carry: only a copy that relays nothing is filtered,
+    /// and only a writer's may name no field (da-o5o6m): it is sent the
+    /// chain's records alone.
     fn parse(r: &Value, role: Role) -> std::result::Result<Option<Filter>, String> {
         let Some(fields) = r.get("fields").filter(|f| !f.is_null()) else {
             return Ok(None);
         };
-        if role != Role::Reader {
-            return Err("only a reader is filtered".into());
+        if role.relays() {
+            return Err("only a reader or a writer is filtered".into());
         }
         let fields: BTreeSet<String> = fields
             .as_array()
@@ -807,7 +816,8 @@ impl Filter {
             .flatten()
             .filter_map(|f| f.as_str().filter(|f| !f.is_empty()).map(Into::into))
             .collect();
-        if fields.is_empty() || fields.len() != r["fields"].as_array().map_or(0, Vec::len) {
+        let none = fields.is_empty() && role != Role::Writer;
+        if none || fields.len() != r["fields"].as_array().map_or(0, Vec::len) {
             return Err("a filter's fields are a list of field names".into());
         }
         match r["of"].as_i64() {
@@ -827,30 +837,19 @@ impl Filter {
     }
 }
 
-/// What a member may write: a reader writes nothing but its own describe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    Member,
-    Reader,
-}
+/// What a member may write: a reader nothing but its own describe and
+/// departure, a writer (da-o5o6m) entries too, and a member chain records
+/// as well.
+pub use datum_parse::cli::SyncRole as Role;
 
-impl Role {
-    /// A record's role: none is a member.
-    fn parse(v: &Value) -> std::result::Result<Role, String> {
-        match v.as_str() {
-            None if v.is_null() => Ok(Role::Member),
-            Some("member") => Ok(Role::Member),
-            Some("reader") => Ok(Role::Reader),
-            _ => Err(format!("a role is member or reader, not {v}")),
-        }
+/// A record's role: none is a member.
+fn role_of(v: &Value) -> std::result::Result<Role, String> {
+    match v.as_str() {
+        None if v.is_null() => Some(Role::Member),
+        Some(r) => Role::parse(r),
+        None => None,
     }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Role::Member => "member",
-            Role::Reader => "reader",
-        }
-    }
+    .ok_or_else(|| format!("a role is member, reader or writer, not {v}"))
 }
 
 impl Member {
@@ -882,10 +881,10 @@ impl Member {
     /// revoke, or when it first was a reader (all of them, admitted as one);
     /// a purge refuses all of them, whenever made, so it is `""`, not its HLC.
     pub(super) fn refused_from(&self) -> Option<&str> {
-        let reader = self.roles.iter().position(|r| r.1 == Role::Reader);
-        let reader = reader.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
+        let unwriting = self.roles.iter().position(|r| !r.1.writes());
+        let unwriting = unwriting.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
         let purged = self.purged.as_ref().map(|_| "");
-        reader
+        unwriting
             .into_iter()
             .chain(self.revoked.as_deref())
             .chain(purged)
@@ -1076,7 +1075,17 @@ impl Chain {
     pub fn allows(&self, endpoint: &str, hlc: &str) -> std::result::Result<(), String> {
         self.live(endpoint, hlc)?;
         match self.member(endpoint) {
-            Some(m) if m.role_at(hlc) == Role::Reader => Err(READER.into()),
+            Some(m) if !m.role_at(hlc).writes() => Err(READER.into()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Why a chain record of `endpoint` at `hlc` is refused, if it is: as
+    /// [`Chain::allows`], and a writer writes entries alone (da-o5o6m).
+    fn acts(&self, endpoint: &str, hlc: &str) -> std::result::Result<(), String> {
+        self.allows(endpoint, hlc)?;
+        match self.member(endpoint) {
+            Some(m) if m.role_at(hlc) == Role::Writer => Err(WRITER.into()),
             _ => Ok(()),
         }
     }
@@ -1109,10 +1118,10 @@ impl Chain {
         }
     }
 
-    /// A reader's filter, if `endpoint` is a filtered reader now.
+    /// A reader's or writer's filter, if `endpoint` is filtered now.
     pub fn filter(&self, endpoint: &str) -> Option<&Filter> {
         let m = self.member(endpoint)?;
-        m.filter.as_ref().filter(|_| m.role() == Role::Reader)
+        m.filter.as_ref().filter(|_| !m.role().relays())
     }
 
     /// The chain the ops held make.
@@ -1315,14 +1324,15 @@ impl Chain {
                 hlc_time(&w.hlc)
             ));
         }
-        // A reader describes itself and leaves, and writes nothing else.
+        // A reader or a writer describes itself and leaves, and writes no
+        // other record.
         let own = matches!(kind.as_str(), "describe" | "leave") && op.endpoint == s("endpoint");
         if kind == "leave" && !own {
             return Err("a copy leaves the chain only itself".into());
         }
         match own {
             true => self.live(&op.endpoint, &op.hlc),
-            false => self.allows(&op.endpoint, &op.hlc),
+            false => self.acts(&op.endpoint, &op.hlc),
         }
         .map_err(|why| format!("its writer is {why}"))?;
         if kind == "admit" {
@@ -1400,7 +1410,7 @@ impl Chain {
                 Ok(())
             }
             "invite" => {
-                let role = Role::parse(&r["caps"]["role"])?;
+                let role = role_of(&r["caps"]["role"])?;
                 let filter = Filter::parse(&r["caps"], role)?;
                 self.invites.insert(
                     s("invite_id"),
@@ -1455,7 +1465,7 @@ impl Chain {
                 Ok(())
             }
             "role" => {
-                let role = Role::parse(&r["role"])?;
+                let role = role_of(&r["role"])?;
                 let filter = Filter::parse(r, role)?;
                 let m = self
                     .members
@@ -2064,8 +2074,8 @@ impl Db {
     /// unless it has, and say which members hold it — each whose last
     /// session ended holding every op this copy signed, the departure its
     /// last, as a copy that signed it writes nothing more. Only a member
-    /// that is no reader counts while there is one, since a reader relays
-    /// nothing. None: there is no one to tell — no other live member, or
+    /// that relays counts while there is one, since a reader or a writer
+    /// relays nothing. None: there is no one to tell — no other live member, or
     /// this copy is revoked, and no member would take its record.
     pub fn sync_depart(&self) -> Result<Option<Vec<String>>> {
         let chain = self.sync_chain()?;
@@ -2078,10 +2088,8 @@ impl Db {
             .iter()
             .filter(|m| m.endpoint != me && m.revoked.is_none())
             .collect();
-        let relays = others.iter().any(|m| m.role() == Role::Member);
-        let tell = others
-            .iter()
-            .filter(|m| !relays || m.role() == Role::Member);
+        let relays = others.iter().any(|m| m.role().relays());
+        let tell = others.iter().filter(|m| !relays || m.role().relays());
         if others.is_empty() || mine.left.is_none() && mine.revoked.is_some() {
             return Ok(None);
         }
@@ -3092,7 +3100,7 @@ mod tests {
             );
             assert_eq!(
                 step(&mut chain, 15, &r, role(&r, "admin")).0.unwrap_err(),
-                "a role is member or reader, not \"admin\""
+                "a role is member, reader or writer, not \"admin\""
             );
         }
     }

@@ -44,8 +44,8 @@ export interface TicketAbout {
 	/** The inviting database's name (da-wm9wb). */
 	db?: string;
 	/** Whom the invite admits. */
-	role?: 'member' | 'reader';
-	/** A filtered reader's fields. */
+	role?: 'member' | 'reader' | 'writer';
+	/** A filtered reader's or writer's fields: a writer's may be none. */
 	fields?: string[];
 	/** Read, never written: whether the inviter's address names its relay, without which no other device reaches it. */
 	relay?: boolean;

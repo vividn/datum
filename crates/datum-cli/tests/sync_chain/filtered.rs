@@ -318,7 +318,10 @@ fn a_kit_names_its_fields_and_only_a_reader_is_filtered() {
         &["sync", "chain", "role", "b", "member", "--fields", "coffee"],
         "",
     );
-    assert!(out.contains("only a reader is filtered"), "{out}");
+    assert!(
+        out.contains("only a reader or a writer is filtered"),
+        "{out}"
+    );
 }
 
 /// A filtered reader made a member holds its gaps until they are sent: it
