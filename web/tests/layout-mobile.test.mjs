@@ -22,7 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { fold as foldBar } from './support/bar.mjs';
-import { DESKTOP, pane, pickOption, titles, toggleOption } from './support/layout.mjs';
+import { DESKTOP, enterLayoutMode, leaveLayoutMode, pane, pickOption, titles, toggleOption } from './support/layout.mjs';
 import { FREEZE } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
@@ -274,6 +274,8 @@ describe('a fresh phone', () => {
 				assert.equal(b.today.of, TAB_DAY, `today: ${JSON.stringify(b)}`);
 				assert.equal(b.yesterday.of, TAB_DAY, `yesterday: ${JSON.stringify(b)}`);
 
+				// In modify mode, where the line is a handle (da-1tmd1).
+				await enterLayoutMode(page);
 				const line = strip.locator('.today-line');
 				const box = await line.boundingBox();
 				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
@@ -282,6 +284,7 @@ describe('a fresh phone', () => {
 				await page.mouse.move(x, y - 40, { steps: 8 });
 				await page.mouse.up();
 				await until(() => bands(page), (now) => now.today.of === TAB_DAY + 40);
+				await leaveLayoutMode(page);
 				assert.equal(Number(await line.getAttribute('aria-valuenow')), TAB_DAY + 40);
 			}, options);
 		});

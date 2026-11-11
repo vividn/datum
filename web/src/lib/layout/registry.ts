@@ -290,7 +290,8 @@ export const KINDS: Record<string, WidgetKind> = {
 	// The strip fills its box and shows as much of the past as fits above
 	// today (da-zb0d). Its settings are what the reader has moved on it:
 	// the day height (the day line) and the date column (the spine), each
-	// dragged or moved as the keyboard's slider, whether today is frozen
+	// dragged or moved as the keyboard's slider in modify mode alone
+	// (`modifies`, da-1tmd1), so written into the layout, whether today is frozen
 	// at the bottom, and the hour range it is zoomed onto — for the visit
 	// alone (da-8gf5i), though a layout saved while zoomed keeps it, and
 	// `Reset widget` is the way back to the whole day (da-ukcf).
@@ -323,14 +324,23 @@ Nothing here logs anything: what you tap becomes a pill on the bar, for the next
 
 ## Moving around
 
-Drag up and down, or the wheel, to scroll back through the days. Pinch sideways, or ctrl and the wheel, to zoom onto hours; drag sideways, or shift and the wheel, to pan them. The magnifier with a 0 in it, while zoomed, brings back the whole day. Pinch up and down to make each day taller or shorter, or drag a day's line where it crosses the dates; drag the line beside the dates to widen them (or the arrow keys on either). Scrolled up, the jagged line under the days brings back today.
+Drag up and down, or the wheel, to scroll back through the days. Pinch sideways, or ctrl and the wheel, to zoom onto hours; drag sideways, or shift and the wheel, to pan them. Pinch up and down to make each day taller or shorter for a while. The magnifier with a 0 in it, while zoomed, brings back the whole day at its height. Scrolled up, the jagged line under the days brings back today.
+
+## In modify mode
+
+Hold the widget's title, or choose **Modify** in its menu, and the days are still, their lines handles:
+
+- Drag a day's **line** where it crosses the dates to make every day taller or shorter.
+- Drag the **line beside the dates** to widen them.
+
+The arrow keys move either once it is focused. **✓** keeps them with the layout, **↺** puts them back.
 
 ## Its options
 
 - **today frozen at the bottom**: today stays at the foot while the days above it scroll.
 - **orientation**: **horizontal**, or **vertical**, a week of columns, time down the page.
 
-The strip keeps the sizes you move it to, until **Reset widget**, and the hours you zoom onto until you reload.`,
+The strip keeps the hours you zoom onto until you reload, and **Reset widget** brings back its sizes.`,
 		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
 			orientation: orientation === 'vertical' ? 'vertical' : 'horizontal',
 			// Undefined on purpose: the strip derives its day from its own
@@ -349,6 +359,11 @@ The strip keeps the sizes you move it to, until **Reset widget**, and the hours 
 		// A pinch's hours are the visit's: a reload opens on the whole day
 		// (da-8gf5i), as its day height already does (da-r7h0m).
 		passing: ['hourFrom', 'hourTo'],
+		// The day height and the label width, in modify mode alone (da-1tmd1,
+		// vividn, 2026-11-10: «change the day height and the day label width,
+		// then we disable this functinality when not in modify mode»); the
+		// strip keeps the rest of itself still there, so no hour is written.
+		modifies: true,
 		// A notch, not a wall: shorter, the strip clips today's band from
 		// the top and keeps its axis. Only while the reader HOLDS a day
 		// height — following its box (da-r0ydu) every height is one whole

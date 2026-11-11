@@ -192,24 +192,28 @@ export function clearSession(key: string): void {
 	change(({ [key]: _dropped, ...rest }) => rest);
 }
 
+/** What `dropSession` took, by the half it was held in: written down, or the visit's. */
+export type Taken = { kept: Settings; passing: Settings };
+
 /**
  * Take `names` out of what this session holds against `key`, and hand back
  * what they held (da-xi4up): a setting modify mode writes into the layout,
  * which an overlay would otherwise go on masking. `restoreSession` puts it back.
  */
-export function dropSession(key: string, names: string[]): Settings {
-	const held = joined()[key] ?? {};
-	const took = Object.fromEntries(names.filter((name) => name in held).map((name) => [name, held[name]]));
-	if (Object.keys(took).length === 0) return took;
-	const without = (s: Settings | undefined) => Object.fromEntries(Object.entries(s ?? {}).filter(([name]) => !names.includes(name)));
-	passing = put(passing, key, without(passing[key]));
-	change((all) => put(all, key, without(all[key])));
+export function dropSession(key: string, names: string[]): Taken {
+	const pick = (s: Settings | undefined, keep: boolean) =>
+		Object.fromEntries(Object.entries(s ?? {}).filter(([name]) => names.includes(name) === keep));
+	const took = { kept: pick(kept[key], true), passing: pick(passing[key], true) };
+	if (Object.keys({ ...took.kept, ...took.passing }).length === 0) return took;
+	passing = put(passing, key, pick(passing[key], false));
+	change((all) => put(all, key, pick(all[key], false)));
 	return took;
 }
 
-/** What `dropSession` took, held again: modify mode's ↺. */
-export function restoreSession(key: string, settings: Settings): void {
-	change((all) => put(all, key, { ...all[key], ...settings }));
+/** What `dropSession` took, held again, each in the half it came from: modify mode's ↺. */
+export function restoreSession(key: string, took: Taken): void {
+	passing = put(passing, key, { ...passing[key], ...took.passing });
+	change((all) => put(all, key, { ...all[key], ...took.kept }));
 }
 
 /** Forget everything this session set, here and on this device: a test's way back to the layout (da-juku7). */

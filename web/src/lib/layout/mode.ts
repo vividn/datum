@@ -28,7 +28,7 @@ import { get } from 'svelte/store';
 import { apply, editing, layout } from './current.js';
 import { findPane, findTab, setWidget } from './tree.js';
 import { isWidget, type NodeId } from './types.js';
-import { dropSession, overlay, restoreSession } from './session.js';
+import { dropSession, overlay, restoreSession, type Taken } from './session.js';
 
 /** The two ways out, drawn the same on the tab and in the bar. */
 export const APPLY = '✓';
@@ -73,7 +73,7 @@ export function discard(): void {
  * changes is dropped from the session too, or the overlay would go on
  * masking it (vremya, 2026-11-10), and ↺ holds it again.
  */
-const held = new Map<string, Record<string, unknown>>();
+const held = new Map<string, Taken>();
 export function modifyWidget(
 	tabId: NodeId,
 	key: string,
@@ -84,12 +84,17 @@ export function modifyWidget(
 	apply((l) => {
 		const now = findTab(l, tabId);
 		if (!now || !isWidget(now.content)) return l;
-		const settings = fold(now.content.settings, moved);
-		changed = Object.keys(overlay(now.content.settings, settings));
+		// A setting moved to nothing is no key (da-1tmd1): the strip's day
+		// height dragged back onto its box's follows the box again.
+		const settings = Object.fromEntries(Object.entries(fold(now.content.settings, moved)).filter(([, v]) => v !== undefined));
+		// What it moved, a setting unset among it, as well as what differs.
+		changed = [...new Set([...Object.keys(overlay(now.content.settings, settings)), ...Object.keys(moved ?? {})])];
 		return setWidget(l, tabId, { ...now.content, settings });
 	});
 	const took = dropSession(key, changed);
-	if (Object.keys(took).length) held.set(key, { ...took, ...held.get(key) });
+	const was = held.get(key);
+	if (Object.keys({ ...took.kept, ...took.passing }).length)
+		held.set(key, { kept: { ...took.kept, ...was?.kept }, passing: { ...took.passing, ...was?.passing } });
 }
 
 /**

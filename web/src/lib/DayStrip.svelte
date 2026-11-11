@@ -193,6 +193,15 @@
 	keeps them in the widget's settings, and the strip itself writes
 	nothing down.
 
+	IN MODIFY MODE ALONE (`modifying`, da-1tmd1, vividn, 2026-11-10: «change
+	the day height and the day label width, then we disable this
+	functinality when not in modify mode»): the lines below are handles
+	there, drawn in the accent, and what they move goes into the layout
+	(`modifies`, layout/registry.ts), so ✓ keeps it and ↺ takes it back.
+	The rest of the strip is dimmed and still there — no pan, zoom, tap or
+	`⊖` — so no hour is written into the layout. Out of the mode a line is
+	only a line, and the sliders say their value, disabled.
+
 	THE TWO SIZES ARE MOVED BY THE LINES (da-ray91). Every line between two
 	days, the divider included, is a ns-resize handle a few pixels either
 	side of it that moves the day height — but only where it crosses the
@@ -368,6 +377,8 @@
 		hourTo?: number;
 		/** What the reader moved, for the owner to fold into the widget's settings (`Setting`). */
 		onchange?: (moved: Setting) => void;
+		/** Modify mode is on this widget (da-1tmd1): the lines are handles, and the rest of the strip is still. */
+		modifying?: boolean;
 	}
 
 	let {
@@ -378,7 +389,8 @@
 		freezeToday = false,
 		hourFrom = HOUR_FROM,
 		hourTo = HOUR_TO,
-		onchange
+		onchange,
+		modifying = false
 	}: Props = $props();
 
 	/** What this strip drew before it was last unmounted, if anything (`held`). */
@@ -1427,13 +1439,16 @@
 	 */
 	function setSizes(px: number, wide: number): void {
 		const next = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
+		const wider = clamp(Math.round(wide), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH);
+		const moved: Setting = {};
 		// A line moved from the moment's height, and the height it leaves is the set one.
 		if (next !== day) {
-			dayHeight = next === boxDay ? undefined : next;
+			moved.dayHeight = dayHeight = next === boxDay ? undefined : next;
 			zoomDay = null;
 		}
-		labelWidth = clamp(Math.round(wide), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH);
-		onchange?.({ dayHeight, labelWidth });
+		if (wider !== labelWidth) moved.labelWidth = labelWidth = wider;
+		// Only what moved: in modify mode it is written into the layout (da-1tmd1).
+		if (Object.keys(moved).length) onchange?.(moved);
 	}
 
 	/**
@@ -1553,6 +1568,7 @@
 
 	/** A focused line's arrows, its own axis alone: up/down the day height, left/right the label width. */
 	function onHandleKey(event: KeyboardEvent, axes: Axes): void {
+		if (!modifying) return;
 		const key = (more: string, less: string) => (event.key === more ? 1 : event.key === less ? -1 : 0);
 		const up = axes === 'y' ? key('ArrowUp', 'ArrowDown') : 0;
 		const right = axes === 'x' ? key('ArrowRight', 'ArrowLeft') : 0;
@@ -1673,6 +1689,7 @@
 	 * the date column was the pane's alone and a tap there did nothing.
 	 */
 	function onDayClick(event: MouseEvent): void {
+		if (modifying) return;
 		const el = event.target as HTMLElement;
 		if (el.closest('button') || !el.closest('.stamp, div.allday')) return;
 		const back = Number(el.closest('.row')?.querySelector<HTMLElement>(':scope > .band')?.dataset.daysAgo);
@@ -1682,7 +1699,7 @@
 	function onPointerDown(event: PointerEvent): void {
 		// The strip's own controls are not the picture: the lines, the `⊖` and the jagged line have the pointer when it is on
 		// them, and a press on one is not the start of a gesture.
-		if ((event.target as HTMLElement).closest('button, .sizer')) return;
+		if (modifying || (event.target as HTMLElement).closest('button, .sizer')) return;
 		if (event.pointerType === 'mouse') {
 			// The mouse has no finger to register, but its drag still needs
 			// the window's listeners: it may leave the strip mid-gesture.
@@ -1775,7 +1792,9 @@
 	function onTouchMove(event: TouchEvent): void {
 		// Also what tells the pane the move is taken (`defaultPrevented`,
 		// PaneFrame.svelte): a range on a band at both ends is no tab swipe.
-		if (fingers.size >= 2 || !undecided(mode)) event.preventDefault();
+		// A line's moves too: unconsumed, Chrome flings a drag let go at speed, `touch-action: none` or not,
+		// and a tap within ~150 ms after, the ✓ in modify mode, only cancels the fling (da-rw31h).
+		if (fingers.size >= 2 || !undecided(mode) || (event.target as Element).closest('.sizer')) event.preventDefault();
 	}
 
 	// ── pointing into a band: a range, or a pan (da-ku7y) ──────────────
@@ -2157,7 +2176,7 @@
 	let settling: ReturnType<typeof setTimeout> | undefined;
 
 	function onWheel(event: WheelEvent): void {
-		if (pinching || (!event.ctrlKey && !event.shiftKey)) return;
+		if (modifying || pinching || (!event.ctrlKey && !event.shiftKey)) return;
 		const box = bandBoxNow();
 		if (!box) return;
 		event.preventDefault();
@@ -2223,6 +2242,7 @@
 	<div
 		class="strip"
 		class:zoomed
+		class:modifying
 		data-labels="entry"
 		bind:this={stripEl}
 		data-mode={mode}
@@ -2250,14 +2270,15 @@
 				{#each rows as end, i (end)}
 					<div class="row" class:now={end === 0}>
 						{#if i > 0}<div class="sizer day-line" data-pans="xy" use:resizes={'y'}></div>{/if}
-						<div class="stamp" style:font-size="{stampFont}px">
+						<div class="stamp" inert={modifying} style:font-size="{stampFont}px">
 							{#if flagged[end]?.length}<IntegrityMark fields={flagged[end]} />{/if}
 							{#each stamp(geometry?.today ?? null, end, stampLines) as line}<span>{line}</span
 								>{/each}
 						</div>
-						{#if allday > 0}<div class="allday" {@attach alldayMarks(shown[end], allday, day)}></div>{/if}
+						{#if allday > 0}<div class="allday" inert={modifying} {@attach alldayMarks(shown[end], allday, day)}></div>{/if}
 						<div
 							class="band"
+							inert={modifying}
 							class:past={end > 0}
 							data-days-ago={end}
 							data-days="1"
@@ -2289,7 +2310,8 @@
 				class="sizer day-line today-line"
 				data-pans="xy"
 				role="slider"
-				tabindex="0"
+				tabindex={modifying ? 0 : undefined}
+				aria-disabled={!modifying}
 				aria-label="day height"
 				aria-orientation="vertical"
 				aria-valuemin={MIN_DAY_HEIGHT}
@@ -2303,7 +2325,8 @@
 			class="sizer spine"
 			data-pans="xy"
 			role="slider"
-			tabindex="0"
+			tabindex={modifying ? 0 : undefined}
+			aria-disabled={!modifying}
 			aria-label="date-label width"
 			aria-orientation="horizontal"
 			aria-valuemin={MIN_LABEL_WIDTH}
@@ -2313,7 +2336,7 @@
 			use:resizes={'x'}
 		></div>
 
-		{#if zoomed || zoomDay != null}
+		{#if (zoomed || zoomDay != null) && !modifying}
 			<!--
 				The way back from a window, now that the double tap is the
 				inspect's alone (da-8rqb9): a magnifier with a zero in it, at
@@ -2369,13 +2392,14 @@
 
 		{#if freezeToday}
 			<div class="row now pinned">
-				<div class="stamp" style:font-size="{stampFont}px">
+				<div class="stamp" inert={modifying} style:font-size="{stampFont}px">
 					{#if flagged[0]?.length}<IntegrityMark fields={flagged[0]} />{/if}
 					{#each stamp(geometry?.today ?? null, 0, stampLines) as line}<span>{line}</span>{/each}
 				</div>
-				{#if allday > 0}<div class="allday" {@attach alldayMarks(shown[0], allday, day)}></div>{/if}
+				{#if allday > 0}<div class="allday" inert={modifying} {@attach alldayMarks(shown[0], allday, day)}></div>{/if}
 				<div
 					class="band"
+					inert={modifying}
 					data-days-ago="0"
 					data-days="1"
 					data-pans="x"
@@ -2394,7 +2418,7 @@
 		{/if}
 
 		<!-- The ruler, drawn once, under whichever band is at the bottom. -->
-		<div class="axis" data-pans="xy">
+		<div class="axis" data-pans="xy" inert={modifying}>
 			{#if geometry && bandWidth > 0}
 				<div class="ruler-track">
 					<svg class="ruler" width={bandWidth} height={AXIS_HEIGHT} aria-hidden="true">
@@ -2761,6 +2785,30 @@
 	   is drawn: the line already is. */
 	.sizer {
 		touch-action: none;
+	}
+	/* Handles in modify mode alone (da-1tmd1, vividn, 2026-11-10: «we disable
+	   this functinality when not in modify mode»): out of it a line is only a
+	   line, and a press on it is the date's or the scroll's. In it the rest
+	   of the strip is dimmed and still, and each handle is drawn. */
+	.strip:not(.modifying) .sizer,
+	.strip:not(.modifying) .spine::before {
+		pointer-events: none;
+	}
+	.modifying :is(.band, .stamp, .allday, .axis) {
+		opacity: 0.45;
+	}
+	.modifying .spine {
+		width: 4px;
+		translate: -1.5px 0;
+		border-radius: 2px;
+		background: var(--accent);
+	}
+	.modifying .day-line::after {
+		content: '';
+		position: absolute;
+		inset: calc(50% - 2px) 6px;
+		border-radius: 2px;
+		background: var(--accent);
 	}
 	/* Focused, the ring is round the hit area: the spine's own 1px is no
 	   ring a reader sees. */

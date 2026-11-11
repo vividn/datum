@@ -1281,12 +1281,33 @@
 		pinch = null;
 		onmodify?.({ zoom: scale });
 	}
-	/** Ctrl and the wheel, which is what a trackpad's pinch arrives as. */
+	/**
+	 * Ctrl and the wheel, which is what a trackpad's pinch arrives as: a
+	 * stream, written once it goes quiet, or as the pointer leaves the cover
+	 * for ✓. A write still waiting when the mode ends is dropped, the zoom
+	 * drawn back to the layout's: late, it would land in the session, under ↺.
+	 */
+	let wheeling: ReturnType<typeof setTimeout> | undefined;
 	function pinchWheel(e: WheelEvent) {
 		if (!e.ctrlKey) return;
 		e.preventDefault();
-		onmodify?.({ zoom: (scale = bounded(scale * Math.exp(-e.deltaY / 200))) });
+		scale = bounded(scale * Math.exp(-e.deltaY / 200));
+		clearTimeout(wheeling);
+		wheeling = setTimeout(wheelDone, 150);
 	}
+	function wheelDone() {
+		if (wheeling === undefined) return;
+		clearTimeout(wheeling);
+		wheeling = undefined;
+		onmodify?.({ zoom: scale });
+	}
+	$effect(() => {
+		if (modifying || wheeling === undefined) return;
+		clearTimeout(wheeling);
+		wheeling = undefined;
+		scale = bounded(untrack(() => zoom ?? fitted));
+	});
+	$effect(() => () => clearTimeout(wheeling));
 	/**
 	 * A reveal — a focus, a scroll into view — scrolls the room itself (da-71p3u):
 	 * taken as the pan that shows the same, so the room stays scrolled by its
@@ -1655,6 +1676,7 @@
 		onpointerup={pinchUp}
 		onpointercancel={pinchUp}
 		onwheel={pinchWheel}
+		onpointerleave={wheelDone}
 	>
 		<button type="button" class="flip" style:width="{strip}px" title="put the now section on the {side === 'left' ? 'right' : 'left'}" aria-label="flip" onclick={() => onmodify?.({ side: side === 'left' ? 'right' : 'left' })}>⇄</button>
 		<div class="seam" style:left={side === 'left' ? `${strip}px` : null} style:right={side === 'right' ? `${strip}px` : null}>

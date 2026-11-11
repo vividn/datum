@@ -89,7 +89,8 @@ import {
 	stackScroll,
 	jagged,
 	pinch,
-	dragBy,
+	resize,
+	modifyingStrip,
 	PHONE
 } from './support/daystrip.mjs';
 
@@ -996,7 +997,7 @@ describe('the day strip zooms onto an hour range', () => {
 			// A line moves from the height drawn, and what it leaves is kept:
 			// the divider's, which is on screen at any height.
 			await app.idle();
-			await dragBy(app, '.today-line', 0, -20);
+			await resize(app, '.today-line', 0, -20);
 			await until(() => valueOf(app), (v) => v === 140);
 			assert.equal(await heard(app), 140, 'a line did not store the day height');
 
@@ -1242,13 +1243,17 @@ describe('the day strip zooms onto an hour range', () => {
 			assert.ok(seen.inside, 'the ⊖ hangs off the strip');
 			assert.ok(seen.clearOfThePictures, 'the ⊖ is over a picture');
 
-			// And the day line the keyboard has (da-5wa91) is still pressed
-			// beside it: the ⊖ covers the column's right end of it at most.
-			const hit = await page.locator('.strip .today-line').evaluate((el) => {
-				const r = el.getBoundingClientRect();
-				return document.elementFromPoint(r.left + 4, (r.top + r.bottom) / 2) === el;
-			});
-			assert.ok(hit, 'the ⊖ covers the whole day line');
+			// And the day line (da-5wa91) is a handle in modify mode alone
+			// (da-1tmd1), where the ⊖, which would write the hours into the
+			// layout, is not drawn: there nothing covers the line.
+			const hit = await modifyingStrip(app, async () => {
+				assert.equal(await page.locator(UNZOOM).count(), 0, 'the ⊖ is drawn in modify mode');
+				return page.locator('.strip .today-line').evaluate((el) => {
+					const r = el.getBoundingClientRect();
+					return document.elementFromPoint(r.left + 4, (r.top + r.bottom) / 2) === el;
+				});
+			}, 'reset');
+			assert.ok(hit, 'the day line is not pressed in modify mode');
 
 			// Plainly visible (da-8gf5i, vividn: «right now it is almost
 			// invisible»): its glyph at 3:1 or more on its ground, under

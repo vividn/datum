@@ -21,7 +21,8 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp, todayAt } from './support/app.mjs';
-import { PHONE, rested, settled, swipe, titles } from './support/layout.mjs';
+import { PHONE, leaveWidget, modifyWidget, rested, rootMenuButton, settled, swipe, titles } from './support/layout.mjs';
+import { stripPane } from './support/daystrip.mjs';
 import { drag, finger, lateMove, longPressed, noWait, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 import { listed } from './support/rows.mjs';
@@ -84,11 +85,12 @@ const desktop = sharedApp({ clock: NOW, ...DESKTOP });
  * of the tests below are about what a swipe does to the layout.
  */
 const stackOfDays = async (page) => {
-	// DRAGGED, not written into the tree. A setting the reader moves lands
-	// in THIS SESSION (da-vhwq) and the layout never hears of it; writing
-	// the tree instead lights the layout's modified dot, and two of the
-	// tests below read the root tab's name. Down is shorter (da-hsba), and
-	// 300px of it clamps at `MIN_DAY_HEIGHT`.
+	// DRAGGED, as a reader does: in modify mode (da-1tmd1), ✓, and the tab's
+	// Save, so the layout's modified dot is not lit — two of the tests below
+	// read the root tab's name. Down is shorter (da-hsba), and 300px of it
+	// clamps at `MIN_DAY_HEIGHT`.
+	const id = await stripPane({ page });
+	await modifyWidget(page, id);
 	const box = await page.locator('.today-line').boundingBox();
 	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
 	await page.mouse.move(x, y);
@@ -98,6 +100,9 @@ const stackOfDays = async (page) => {
 	await page.waitForFunction(
 		() => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === 40
 	);
+	await leaveWidget(page, id);
+	await rootMenuButton(page).click();
+	await page.getByRole('menuitem', { name: 'Save', exact: true }).click();
 	await page.locator('.band[data-days-ago="1"] svg.svg').waitFor();
 };
 
@@ -1139,11 +1144,15 @@ describe('what the bands take, and what they leave', () => {
 					return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 				};
 
-				// Across the dates, the line is the handle: up is taller.
+				// Across the dates, the line is the handle, in modify mode
+				// (da-1tmd1): up is taller.
 				const was = await height();
+				const id = await stripPane(app);
+				await modifyWidget(page, id);
 				const dates = await middle();
 				await swipe(page, dates.x, dates.y, 0, -20, 6);
 				await until(height, (now) => now === was + 20);
+				await leaveWidget(page, id);
 
 				// Over the bands it is no handle: three pixels above it, where the
 				// handle reached across the whole width until da-xg1vi, is the
@@ -1340,6 +1349,9 @@ describe('what the bands take, and what they leave', () => {
 			// — the slate is wiped first.)
 			await page.evaluate(() => window.datum.cursor.set(null));
 			await saysPills(page, []);
+			// In modify mode, where the line is a handle (da-1tmd1).
+			const id = await stripPane(app);
+			await modifyWidget(page, id);
 			const grip = await page.locator('.today-line').boundingBox();
 			const was = Number(await page.locator('.today-line').getAttribute('aria-valuenow'));
 			await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
@@ -1350,6 +1362,7 @@ describe('what the bands take, and what they leave', () => {
 				() => page.locator('.today-line').getAttribute('aria-valuenow'),
 				(now) => Number(now) > was
 			);
+			await leaveWidget(page, id);
 			assert.deepEqual(await pillsOf(page), [], 'the handle made a selection');
 			assert.deepEqual(app.errors, []);
 		});

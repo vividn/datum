@@ -46,7 +46,8 @@ import {
 	say,
 	waitForHeights,
 	inView,
-	dragBy,
+	resize,
+	modifyingStrip,
 	todayBand,
 	stackScroll,
 	jagged,
@@ -102,7 +103,7 @@ describe("the day strip's day height and its pin", () => {
 			// hears it — up is taller (da-hsba).
 			const grow = 30;
 			const mine = (await valueOf(app)) + grow;
-			await dragBy(app, '.today-line', 0, -grow);
+			await resize(app, '.today-line', 0, -grow);
 			assert.equal(await valueOf(app), mine);
 			await heardIs(app, mine);
 
@@ -122,7 +123,7 @@ describe("the day strip's day height and its pin", () => {
 
 			// RE-ARMS: dragged onto the height the box would have chosen,
 			// nothing is held — the same absence a fresh strip has.
-			await dragBy(app, '.today-line', 0, -(wouldBe - mine));
+			await resize(app, '.today-line', 0, -(wouldBe - mine));
 			assert.equal(await valueOf(app), wouldBe);
 			await heardIs(app, undefined);
 
@@ -177,7 +178,7 @@ describe("the day strip's day height and its pin", () => {
 
 			// SIDEWAYS ONLY: the label column widens, the height is not touched.
 			const wide = await widthOf(app);
-			await dragBy(app, '.strip .spine', 40, 0);
+			await resize(app, '.strip .spine', 40, 0);
 			assert.ok((await widthOf(app)) > wide, 'the sideways drag moved nothing');
 
 			// The height is still the reader's, and the box still says so.
@@ -218,7 +219,7 @@ describe("the day strip's day height and its pin", () => {
 			await settledAt(app, tall);
 
 			// Dragged to the floor: down is shorter, and far enough to clamp.
-			await dragBy(app, '.today-line', 0, 400);
+			await resize(app, '.today-line', 0, 400);
 			assert.equal(await valueOf(app), 40, 'the drag did not reach the floor');
 			await heardIs(app, 40);
 
@@ -327,7 +328,7 @@ describe("the day strip's day height and its pin", () => {
 			// The handle moves it — up is taller (da-hsba) — and the owner
 			// hears the new value: the strip does not keep it to itself.
 			const grow = 30;
-			await dragBy(app, '.today-line', 0, -grow);
+			await resize(app, '.today-line', 0, -grow);
 			assert.equal(await valueOf(app), 120 + grow);
 			await heardIs(app, 120 + grow);
 			// And the bands are re-drawn, not stretched: the picture datum
@@ -354,7 +355,7 @@ describe("the day strip's day height and its pin", () => {
 
 			// UP is taller (da-hsba): the pointer moves 40px up, and every
 			// day is drawn 40px taller — today's, and each of the past's.
-			await dragBy(app, '.today-line', 0, -grow);
+			await resize(app, '.today-line', 0, -grow);
 			assert.equal(await valueOf(app), was + grow);
 			const up = grown(m, grow);
 			assert.equal(owedAt(up), 2, 'the taller days do not leave two in the box');
@@ -382,10 +383,10 @@ describe("the day strip's day height and its pin", () => {
 
 			// And DOWN is shorter, by the same 40, from the same start —
 			// and more days fit.
-			await dragBy(app, '.today-line', 0, grow);
+			await resize(app, '.today-line', 0, grow);
 			assert.equal(await valueOf(app), was);
 			await waitForHeights(app, m.band);
-			await dragBy(app, '.today-line', 0, grow);
+			await resize(app, '.today-line', 0, grow);
 			assert.equal(await valueOf(app), was - grow);
 			const down = grown(m, -grow);
 			await waitForHeights(app, down.band);
@@ -406,7 +407,7 @@ describe("the day strip's day height and its pin", () => {
 				.evaluate((el) => el.getBoundingClientRect().width);
 
 			const wider = 30;
-			await dragBy(app, '.strip .spine', wider, 0);
+			await resize(app, '.strip .spine', wider, 0);
 			assert.equal(await widthOf(app), was + wider);
 			await heardIs(app, was + wider, 'labelWidth');
 
@@ -457,7 +458,7 @@ describe("the day strip's day height and its pin", () => {
 			const lowest = '.stack .row > .day-line >> nth=-1';
 			const lines = await app.page.locator('.stack .row > .day-line').count();
 			assert.ok(lines >= 2, `only ${lines} day lines`);
-			await dragBy(app, lowest, 30, -20);
+			await resize(app, lowest, 30, -20);
 			assert.equal(await valueOf(app), tall + 20, 'the day line did not move the day height');
 			await heardIs(app, tall + 20);
 			assert.equal(await widthOf(app), wide, 'the day line moved the label width');
@@ -466,85 +467,84 @@ describe("the day strip's day height and its pin", () => {
 			await waitForHeights(app, tall + 20);
 
 			// One higher in the stack, and the divider.
-			await dragBy(app, '.stack .row > .day-line >> nth=-2', 0, -10);
+			await resize(app, '.stack .row > .day-line >> nth=-2', 0, -10);
 			assert.equal(await valueOf(app), tall + 30, 'a line higher in the stack is no handle');
 			await waitForHeights(app, tall + 30);
-			await dragBy(app, '.divider > .day-line', 0, 10);
+			await resize(app, '.divider > .day-line', 0, 10);
 			assert.equal(await valueOf(app), tall + 20, 'the divider is no handle');
 			await waitForHeights(app, tall + 20);
 
-			// The spine, low down and pushed up and right: wider, the day
-			// height untouched.
-			const spine = await app.page.locator('.spine').boundingBox();
-			const x = spine.x + spine.width / 2;
-			const y = spine.y + spine.height - 30;
-			await app.page.mouse.move(x, y);
-			await app.page.mouse.down();
-			await app.page.mouse.move(x + 25, y - 40, { steps: 8 });
-			await app.page.mouse.up();
-			assert.equal(await widthOf(app), wide + 25, 'the spine did not move the label width');
-			await heardIs(app, wide + 25, 'labelWidth');
-			assert.equal(await valueOf(app), tall + 20, 'the spine moved the day height');
-			await waitForHeights(app, tall + 20);
+			// In modify mode, where the lines are handles (da-1tmd1).
+			await modifyingStrip(app, async () => {
+				// The spine, low down and pushed up and right: wider, the day
+				// height untouched.
+				const spine = await app.page.locator('.spine').boundingBox();
+				const x = spine.x + spine.width / 2;
+				const y = spine.y + spine.height - 30;
+				await app.page.mouse.move(x, y);
+				await app.page.mouse.down();
+				await app.page.mouse.move(x + 25, y - 40, { steps: 8 });
+				await app.page.mouse.up();
+				assert.equal(await widthOf(app), wide + 25, 'the spine did not move the label width');
+				await heardIs(app, wide + 25, 'labelWidth');
+				assert.equal(await valueOf(app), tall + 20, 'the spine moved the day height');
+				await waitForHeights(app, tall + 20);
 
-			// Three pixels off a line still hit it: a few px either side.
-			const line = await app.page.locator(lowest).boundingBox();
-			const cy = line.y + line.height / 2 + 3;
-			await app.page.mouse.move(line.x + line.width / 2, cy);
-			await app.page.mouse.down();
-			await app.page.mouse.move(line.x + line.width / 2, cy - 5, { steps: 4 });
-			await app.page.mouse.up();
-			assert.equal(await valueOf(app), tall + 25, 'a press beside the line missed it');
-			// Measured once the line is where the new height draws it: a box
-			// read sooner is its old place, 5px off a hit area of 4 (da-ruodd).
-			await waitForHeights(app, tall + 25);
+				// Three pixels off a line still hit it: a few px either side.
+				const line = await app.page.locator(lowest).boundingBox();
+				const cy = line.y + line.height / 2 + 3;
+				await app.page.mouse.move(line.x + line.width / 2, cy);
+				await app.page.mouse.down();
+				await app.page.mouse.move(line.x + line.width / 2, cy - 5, { steps: 4 });
+				await app.page.mouse.up();
+				assert.equal(await valueOf(app), tall + 25, 'a press beside the line missed it');
+				// Measured once the line is where the new height draws it: a box
+				// read sooner is its old place, 5px off a hit area of 4 (da-ruodd).
+				await waitForHeights(app, tall + 25);
 
-			// Held past the long press and then moved, which on the picture
-			// is a range (da-pzzoz): on a line it is still only the height.
-			const held = await app.page.locator(lowest).boundingBox();
-			const hx = held.x + held.width / 2;
-			const hy = held.y + held.height / 2;
-			await app.page.mouse.move(hx, hy);
-			await app.page.mouse.down();
-			// A line arms no long press, so nothing shows the hold: held on
-			// the page's clock, which a band's `LONG_MS` (`HOLD_MS`) would fire ahead of.
-			await pageWait(app.page, HOLD_MS);
-			await app.page.mouse.move(hx + 120, hy + 5, { steps: 8 });
-			await app.page.mouse.up();
-			assert.equal(await valueOf(app), tall + 20, 'a held drag on a line missed it');
+				// Held past the long press and then moved, which on the picture
+				// is a range (da-pzzoz): on a line it is still only the height.
+				const held = await app.page.locator(lowest).boundingBox();
+				const hx = held.x + held.width / 2;
+				const hy = held.y + held.height / 2;
+				await app.page.mouse.move(hx, hy);
+				await app.page.mouse.down();
+				// A line arms no long press, so nothing shows the hold: held on
+				// the page's clock, which a band's `LONG_MS` (`HOLD_MS`) would fire ahead of.
+				await pageWait(app.page, HOLD_MS);
+				await app.page.mouse.move(hx + 120, hy + 5, { steps: 8 });
+				await app.page.mouse.up();
+				assert.equal(await valueOf(app), tall + 20, 'a held drag on a line missed it');
 
-			// None of it was a press on the picture.
-			assert.equal(await pills(), marks, 'a drag on a line made a selection');
-			assert.deepEqual(await hours(), window0, 'a drag on a line panned the hours');
-			assert.equal(await app.page.evaluate(() => String(getSelection())), '', 'a drag on a line selected text');
+				// None of it was a press on the picture.
+				assert.equal(await pills(), marks, 'a drag on a line made a selection');
+				assert.deepEqual(await hours(), window0, 'a drag on a line panned the hours');
+				assert.equal(await app.page.evaluate(() => String(getSelection())), '', 'a drag on a line selected text');
+			});
 		});
 	});
 
-	// Both survive a reload, on this device and not in the layout: vividn,
-	// 2026-10-20 (da-ray91): «these settings should persist between
-	// refreshes too somehow … but not synced between devices, like saved
-	// layouts». They are the session's (layout/session.ts), which this
-	// device keeps in `localStorage`; the tree, which a save would sync,
-	// never hears of them.
-	test('the day height and the label width a line set survive a reload, and stay out of the layout', async () => {
+	// Both survive a reload: set in modify mode (da-1tmd1), they are the
+	// LAYOUT's, which ✓ keeps as this device's draft until the tab's Save.
+	test('the day height and the label width a line set survive a reload, in the layout', async () => {
 		await withApp(async (app) => { // own app: it reloads
 			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 			await sizeFor(app, 6);
 			const [tall, wide] = [await valueOf(app), await widthOf(app)];
-			await dragBy(app, '.stack .row > .day-line >> nth=-1', 0, -20);
+			await resize(app, '.stack .row > .day-line >> nth=-1', 0, -20);
 			await heardIs(app, tall + 20);
-			await dragBy(app, '.spine', 25, 0);
+			await resize(app, '.spine', 25, 0);
 			await heardIs(app, wide + 25, 'labelWidth');
 
 			const tree = () => app.page.evaluate(() => JSON.stringify(window.datum.layout.current()));
 			const inTree = (t) => [`"dayHeight":${tall + 20}`, `"labelWidth":${wide + 25}`].filter((k) => t.includes(k));
-			assert.deepEqual(inTree(await tree()), [], 'a line wrote its size into the layout');
+			assert.equal(inTree(await tree()).length, 2, 'a line did not write its size into the layout');
 
 			await app.reload();
 			await waitForHeights(app, tall + 20);
 			assert.equal(await valueOf(app), tall + 20, 'a reload lost the day height');
 			assert.equal(await widthOf(app), wide + 25, 'a reload lost the label width');
-			assert.deepEqual(inTree(await tree()), [], 'the kept sizes reached the layout');
+			assert.equal(inTree(await tree()).length, 2, 'a reload lost the sizes from the layout');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -576,8 +576,8 @@ describe("the day strip's day height and its pin", () => {
 
 	// A layout that HOLDS a day height (the dayview tab's 47, da-cp8pv): the
 	// line dragged onto the box's own height follows the box, and a reload
-	// keeps it following. The session holds that as a key set to nothing,
-	// which JSON dropped, so the reload drew the layout's height (da-t0d4y).
+	// keeps it following (da-t0d4y). In modify mode the line writes the
+	// layout, which then holds no day height at all (da-1tmd1).
 	test("a line let go over a layout's day height still follows after a reload", async () => {
 		await withApp(async (app) => { // own app: it reloads
 			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
@@ -587,16 +587,16 @@ describe("the day strip's day height and its pin", () => {
 			await say(app, { dayHeight: laid });
 			await settledAt(app, laid);
 
-			await dragBy(app, '.today-line', 0, -30);
+			await resize(app, '.today-line', 0, -30);
 			assert.equal(await valueOf(app), free);
 			await heardIs(app, undefined);
 
 			await app.reload();
 			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
-			assert.match(
+			assert.doesNotMatch(
 				await app.page.evaluate(() => JSON.stringify(window.datum.layout.current())),
-				new RegExp(`"dayHeight":${laid}\\b`),
-				'the layout no longer holds the day height, so the reload asks nothing'
+				/"dayHeight"/,
+				'the layout still holds a day height'
 			);
 			await settledAt(app, free);
 			assert.equal(await heard(app), undefined, 'a reload holds a day height again');
@@ -616,37 +616,39 @@ describe("the day strip's day height and its pin", () => {
 				.evaluate((el) => el.getBoundingClientRect().height);
 			const seen = await app.spyOnRunner();
 
-			const box = await app.page.locator('.today-line').boundingBox();
-			const x = box.x + box.width / 2;
-			const y = box.y + box.height / 2;
-			await app.page.mouse.move(x, y);
-			await app.page.mouse.down();
-			await app.page.mouse.move(x, y - 40, { steps: 8 });
+			await modifyingStrip(app, async () => {
+				const box = await app.page.locator('.today-line').boundingBox();
+				const x = box.x + box.width / 2;
+				const y = box.y + box.height / 2;
+				await app.page.mouse.move(x, y);
+				await app.page.mouse.down();
+				await app.page.mouse.move(x, y - 40, { steps: 8 });
 
-			// Mid-drag: the band on the screen is 40px taller although datum
-			// has not been asked for anything.
-			const during = await app.page
-				.locator('.band[data-days-ago="0"] svg.svg')
-				.evaluate((el) => el.getBoundingClientRect().height);
-			assert.ok(
-				Math.abs(during - (before + 40)) <= 1,
-				`the preview shows ${during}px where ${before + 40} was asked for`
-			);
-			assert.equal(
-				(await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer')).length,
-				0,
-				'the strip re-drew during the drag'
-			);
+				// Mid-drag: the band on the screen is 40px taller although datum
+				// has not been asked for anything.
+				const during = await app.page
+					.locator('.band[data-days-ago="0"] svg.svg')
+					.evaluate((el) => el.getBoundingClientRect().height);
+				assert.ok(
+					Math.abs(during - (before + 40)) <= 1,
+					`the preview shows ${during}px where ${before + 40} was asked for`
+				);
+				assert.equal(
+					(await seen()).filter((argv) => argv[0] === 'dayview' && !argv.includes('--data-layer')).length,
+					0,
+					'the strip re-drew during the drag'
+				);
 
-			await app.page.mouse.up();
-			assert.equal(await valueOf(app), was + 40);
-			await waitForHeights(app, was + 40);
-			// And once it lands the picture is its own size again: nothing
-			// on the screen is a stretched band.
-			const after = await app.page
-				.locator('.band[data-days-ago="0"] svg.svg')
-				.evaluate((el) => el.getBoundingClientRect().height);
-			assert.ok(Math.abs(after - (was + 40)) <= 1, `the drawn band is ${after}px, not ${was + 40}`);
+				await app.page.mouse.up();
+				assert.equal(await valueOf(app), was + 40);
+				await waitForHeights(app, was + 40);
+				// And once it lands the picture is its own size again: nothing
+				// on the screen is a stretched band.
+				const after = await app.page
+					.locator('.band[data-days-ago="0"] svg.svg')
+					.evaluate((el) => el.getBoundingClientRect().height);
+				assert.ok(Math.abs(after - (was + 40)) <= 1, `the drawn band is ${after}px, not ${was + 40}`);
+			});
 		});
 	});
 
@@ -657,47 +659,49 @@ describe("the day strip's day height and its pin", () => {
 			const tall = await valueOf(app);
 			const wide = await widthOf(app);
 
-			await app.page.locator('.today-line').focus();
-			assert.ok(
-				await app.page.evaluate(() => document.activeElement.classList.contains('today-line')),
-				'the day line does not take focus'
-			);
-			// Up is taller, as it is for the pointer — the two paths are one
-			// convention.
-			await app.page.keyboard.press('ArrowUp');
-			const taller = await valueOf(app);
-			assert.ok(taller > tall, `up did not make the day taller: ${taller}`);
-			// Down from above the start, not below it: the strip may open at
-			// its floor (a 720px screen does, under the bar's open output,
-			// da-mwp4m), where a second Down has nowhere to go.
-			await app.page.keyboard.press('ArrowUp');
-			await app.page.keyboard.press('ArrowDown');
-			assert.equal(await valueOf(app), taller);
-			assert.equal(await heard(app), taller);
+			await modifyingStrip(app, async () => {
+				await app.page.locator('.today-line').focus();
+				assert.ok(
+					await app.page.evaluate(() => document.activeElement.classList.contains('today-line')),
+					'the day line does not take focus'
+				);
+				// Up is taller, as it is for the pointer — the two paths are one
+				// convention.
+				await app.page.keyboard.press('ArrowUp');
+				const taller = await valueOf(app);
+				assert.ok(taller > tall, `up did not make the day taller: ${taller}`);
+				// Down from above the start, not below it: the strip may open at
+				// its floor (a 720px screen does, under the bar's open output,
+				// da-mwp4m), where a second Down has nowhere to go.
+				await app.page.keyboard.press('ArrowUp');
+				await app.page.keyboard.press('ArrowDown');
+				assert.equal(await valueOf(app), taller);
+				assert.equal(await heard(app), taller);
 
-			// Sideways on the day line is nothing: the width is the spine's.
-			await app.page.keyboard.press('ArrowRight');
-			assert.equal(await widthOf(app), wide, 'the day line moved the date column');
+				// Sideways on the day line is nothing: the width is the spine's.
+				await app.page.keyboard.press('ArrowRight');
+				assert.equal(await widthOf(app), wide, 'the day line moved the date column');
 
-			// And on the spine right is a wider column, left a narrower one,
-			// and up and down are nothing.
-			await app.page.locator('.strip .spine').focus();
-			// Its own 1px is no focus ring: the ring is round the hit area.
-			assert.equal(
-				await app.page
-					.locator('.strip .spine')
-					.evaluate((el) => (el.matches(':focus-visible') ? getComputedStyle(el, '::before').outlineStyle : 'unfocused')),
-				'solid',
-				'the focused spine draws no ring a reader sees'
-			);
-			await app.page.keyboard.press('ArrowUp');
-			assert.equal(await valueOf(app), taller, 'the spine moved the day height');
-			await app.page.keyboard.press('ArrowRight');
-			const wider = await widthOf(app);
-			assert.ok(wider > wide, `right did not widen the date column: ${wider}`);
-			await app.page.keyboard.press('ArrowLeft');
-			assert.equal(await widthOf(app), wide);
-			assert.equal(await heard(app, 'labelWidth'), wide);
+				// And on the spine right is a wider column, left a narrower one,
+				// and up and down are nothing.
+				await app.page.locator('.strip .spine').focus();
+				// Its own 1px is no focus ring: the ring is round the hit area.
+				assert.equal(
+					await app.page
+						.locator('.strip .spine')
+						.evaluate((el) => (el.matches(':focus-visible') ? getComputedStyle(el, '::before').outlineStyle : 'unfocused')),
+					'solid',
+					'the focused spine draws no ring a reader sees'
+				);
+				await app.page.keyboard.press('ArrowUp');
+				assert.equal(await valueOf(app), taller, 'the spine moved the day height');
+				await app.page.keyboard.press('ArrowRight');
+				const wider = await widthOf(app);
+				assert.ok(wider > wide, `right did not widen the date column: ${wider}`);
+				await app.page.keyboard.press('ArrowLeft');
+				assert.equal(await widthOf(app), wide);
+				assert.equal(await heard(app, 'labelWidth'), wide);
+			});
 		});
 	});
 
@@ -814,9 +818,11 @@ describe("the day strip's day height and its pin", () => {
 			await sizeFor(app, 2);
 			const before = await storeKeys(app);
 
-			await dragBy(app, '.today-line', 0, -20);
-			await app.page.locator('.today-line').focus();
-			await app.page.keyboard.press('ArrowUp');
+			await resize(app, '.today-line', 0, -20);
+			await modifyingStrip(app, async () => {
+					await app.page.locator('.today-line').focus();
+					await app.page.keyboard.press('ArrowUp');
+			});
 			await toggleFreeze(app);
 			await heardIs(app, false, 'freezeToday');
 			// Heard, and drawn: the strip has done what it does with it.
@@ -837,8 +843,10 @@ describe("the day strip's day height and its pin", () => {
 				await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 				await until(() => valueOf(app), (v) => v === fallback);
 				await sizeFor(app, 1);
-				await app.page.locator('.today-line').focus();
-				await app.page.keyboard.press('ArrowUp');
+				await modifyingStrip(app, async () => {
+					await app.page.locator('.today-line').focus();
+					await app.page.keyboard.press('ArrowUp');
+				});
 				assert.ok((await valueOf(app)) > fallback);
 				assert.deepEqual(app.errors, [], 'the page threw with storage blocked');
 			},

@@ -23,8 +23,10 @@ import {
 	frozen,
 	toggleFreeze,
 	pinch,
+	stripPane,
 	PHONE
 } from './support/daystrip.mjs';
+import { leaveWidget, modifyWidget } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -35,8 +37,17 @@ const phone = sharedApp(PHONE);
 const band = (back) => `.band[data-days-ago="${back}"]`;
 const lineOver = (back) => `.stack .row:has(> ${band(back)}) > .day-line`;
 
-/** Every band's top and bottom, and the day height, each frame `act` takes and until its pictures land. */
-async function framesOf(app, height, act) {
+/**
+ * Every band's top and bottom, and the day height, each frame `act` takes and
+ * until its pictures land: in modify mode, where a line is a handle
+ * (da-1tmd1), unless `modify` is false (a pinch, which is the moment's).
+ */
+async function framesOf(app, height, act, modify = true) {
+	const id = modify && (await stripPane(app));
+	if (id) {
+		await modifyWidget(app.page, id);
+		await app.idle();
+	}
 	await app.page.evaluate(() => {
 		const frames = (window.__frames = []);
 		const read = () => {
@@ -54,6 +65,7 @@ async function framesOf(app, height, act) {
 	await waitForHeights(app, height);
 	await app.idle();
 	const frames = await app.page.evaluate(() => (cancelAnimationFrame(window.__reading), window.__frames));
+	if (id) await leaveWidget(app.page, id);
 	assert.ok(new Set(frames.map((f) => f.height)).size >= 4, `the height took ${frames.length} frames and hardly moved`);
 	assert.equal(frames.at(-1).height, height);
 	return frames;
@@ -200,7 +212,7 @@ test('a pinch on a frozen today holds it, the past pushed up from its top', asyn
 	await settledRoom(phone, 'pinch', async (app) => {
 		await strip(app, 60, true);
 		const box = await app.page.locator(band(0)).boundingBox();
-		const frames = await framesOf(app, 120, () => pinch(app.page, box, 25, 50, null, 'y'));
+		const frames = await framesOf(app, 120, () => pinch(app.page, box, 25, 50, null, 'y'), false);
 		still(frames, (f) => f.days[0].bottom, "the frozen today's bottom");
 		still(frames, (f) => f.days[0].top - f.days[1].bottom, 'the seam under yesterday');
 	});
@@ -209,8 +221,8 @@ test('a pinch on a frozen today holds it, the past pushed up from its top', asyn
 test('the keyboard holds what the divider does', async () => {
 	await settledRoom(shared, 'keys', async (app) => {
 		await strip(app, 60, false);
-		await app.page.locator('.today-line').focus();
 		const frames = await framesOf(app, 80, async () => {
+			await app.page.locator('.today-line').focus();
 			for (let i = 0; i < 4; i++) {
 				await app.page.keyboard.press('ArrowUp');
 				await app.page.evaluate(() => new Promise(requestAnimationFrame));

@@ -12,19 +12,14 @@
 // its dot and `Save layout` is what writes it — and a tab with no widget
 // of its own (it holds a layout, or a split) has no such act at all.
 //
-// Since da-vhwq the widget's own `change` does NOT take that path: the
-// strip's handle is this session's until «Save options with layout» is
-// asked for. So the reset is one of the two acts that still write a widget
-// into the tree, and it drops what the session holds as well — «defaults»
-// means the widget as it STARTS.
+// Since da-1tmd1 the strip's handle moves its day height in modify mode
+// alone, where it writes the layout and ✓ lights the dot. The reset drops
+// what the session holds as well — «defaults» means the widget as it STARTS.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, HELP, addTab, chooseRoot, chooser, choose, exactly, leaveLayoutMode, manage, menuButton, menuLines, pane } from './support/layout.mjs';
-
-/** «Save options with layout» (da-vhwq): what makes a widget's own move the layout's. */
-const SAVE = 'Save options with layout';
+import { DESKTOP, HELP, addTab, chooseRoot, chooser, choose, exactly, leaveLayoutMode, leaveWidget, manage, menuButton, menuLines, modifyWidget, pane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -80,12 +75,11 @@ describe('Reset widget', () => {
 			const fallback = await dayHeight(page);
 			const grow = 40;
 
+			// In modify mode (da-1tmd1), whose ✓ is what lights the dot.
+			await modifyWidget(page, 'strip');
 			await dragBy(page, grip, -grow);
 			await dayHeightIs(page, fallback + grow);
-			// da-vhwq: the drag is what THIS TAB shows, and nothing more —
-			// until it is asked for, which is what lights the dot.
-			assert.equal(await dotted(page, 'main'), false, 'a session setting dirtied the layout');
-			await choose(page, 'strip', SAVE);
+			await leaveWidget(page, 'strip');
 			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 
 			// Saved, so that `Reset` has something of its own to put

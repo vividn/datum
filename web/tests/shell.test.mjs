@@ -1076,6 +1076,13 @@ describe('a layout saved with the day height the defaults used to write', () => 
 	/** What the strip's handle says — the height actually drawn. */
 	const drawn = (page) =>
 		page.locator('.dayview .today-line').getAttribute('aria-valuenow').then(Number);
+	/** `act` in the strip's modify mode (da-1tmd1), where its lines are handles, then ✓. */
+	async function modifying(page, act) {
+		await pickFrom(page, titledMenuButton(page, 'dayview'), 'Modify');
+		await act();
+		await titledPane(page, 'dayview').locator('> .titlebar .way-out').last().click();
+		await page.locator('.frame[data-layout-mode]').waitFor({ state: 'detached' });
+	}
 
 	test('the OLD DEFAULT is dropped, so the day follows the widget again', async () => {
 		await shared.solo(async (app) => {
@@ -1104,8 +1111,7 @@ describe('a layout saved with the day height the defaults used to write', () => 
 	// ⛔ AND THE DROP RUNS BOTH WAYS (da-r0ydu, canary qwen-3-8-2-4t on PR
 	// #73, round 6). The handle steps by 5 and both clamps are multiples of
 	// 5, so a reader whose box derives something else CAN land the day on
-	// the retired literal and press «Save options with layout», which is
-	// the one writer to the tree. If only `inline` dropped it, the two
+	// the retired literal in modify mode, which writes the tree (da-1tmd1). If only `inline` dropped it, the two
 	// sides of `modified` would disagree from that instant — the tab's own
 	// `extract` keeping the key, the baseline made by `baselineOf` dropping
 	// it — and the dot would stay lit THROUGH a save, offering «Restore
@@ -1118,10 +1124,8 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			// A layout that says NOTHING about the height, so the day follows
 			// and the baseline has no key for the comparison to hold onto.
 			// It DOES say the label width the widget defaults to (54,
-			// `DEFAULT_LABEL_WIDTH`): the handle carries both sizes on every
-			// press and the session keeps whatever DIFFERS from the layout,
-			// so without this the save would also be writing a label width
-			// and the dot below would be reporting that instead.
+			// `DEFAULT_LABEL_WIDTH`), so the spine's move below is a change
+			// from something the layout holds.
 			await layouts(app, 'saveLayout', stripLayout({ freezeToday: true, labelWidth: 54 }));
 			await pick(page, 'old');
 			await until(() => rootTabs(page), (t) => t.includes('old'));
@@ -1138,17 +1142,15 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			// gets there. One drop is one re-render of the stack; the
 			// keyboard's 5px step took thirty-one of them and was a quarter
 			// of this file's time (da-31464).
-			const at = await grip.boundingBox();
-			const [x, y] = [at.x + at.width / 2, at.y + at.height / 2];
-			await page.mouse.move(x, y);
-			await page.mouse.down();
-			await page.mouse.move(x, y + follows - 85, { steps: 4 });
-			await page.mouse.up();
-			await until(() => drawn(page), (n) => n === 85);
-			assert.deepEqual(await dotted(page), [], 'the session alone dirtied the layout');
-
-			// «Save options with layout» is the one writer to the tree.
-			await choose(page, 'dayview', 'Save options with layout');
+			await modifying(page, async () => {
+				const at = await grip.boundingBox();
+				const [x, y] = [at.x + at.width / 2, at.y + at.height / 2];
+				await page.mouse.move(x, y);
+				await page.mouse.down();
+				await page.mouse.move(x, y + follows - 85, { steps: 4 });
+				await page.mouse.up();
+				await until(() => drawn(page), (n) => n === 85);
+			});
 			await until(() => drawn(page), (n) => n === 85);
 
 			// The key is sitting in the tree — and the tree still reads as
@@ -1163,9 +1165,10 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			// dot that genuinely lit — so the two assertions below are a
 			// save landing and a dot CLEARING, not a pair that would read
 			// the same if nothing had happened at all.
-			await page.locator('.dayview .spine').focus();
-			await page.keyboard.press('ArrowRight');
-			await choose(page, 'dayview', 'Save options with layout');
+			await modifying(page, async () => {
+				await page.locator('.dayview .spine').focus();
+				await page.keyboard.press('ArrowRight');
+			});
 			await until(() => dotted(page), (d) => d.length === 1);
 
 			// And the save carries the label width and no day height —

@@ -5,7 +5,7 @@
 	"most calendars are already vertically oriented", and it may read better
 	on a phone than the strip does. The strip's own gestures (zoom, the `+`
 	handle, the frozen today) are the horizontal strip's; the pivot is the
-	CLI's picture as it draws it.
+	CLI's picture as it draws it, and still in modify mode (da-1tmd1).
 -->
 <script lang="ts">
 	import type { ComponentProps } from 'svelte';
@@ -19,7 +19,16 @@
 </script>
 
 {#if orientation === 'vertical'}
-	<CliPane spec={DAYVIEW_VERTICAL} {epoch} />
+	<div class="pivot" class:still={rest.modifying} inert={rest.modifying}><CliPane spec={DAYVIEW_VERTICAL} {epoch} /></div>
 {:else}
 	<DayStrip {...rest} {epoch} />
 {/if}
+
+<style>
+	.pivot {
+		display: contents;
+	}
+	.still > :global(*) {
+		opacity: 0.45;
+	}
+</style>

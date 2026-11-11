@@ -323,6 +323,30 @@ describe('collect in modify mode', () => {
 		}, AT_REST);
 	});
 
+	// canary-deepseek-v4-pro on #1938: the wheel's write waits for it to go
+	// quiet, so a ↺ inside that wait left it to land after the mode, in the session.
+	test('ctrl+wheel and ↺ at once: the zoom is neither in the layout nor in the session', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seeded(app);
+			const start = await rows(page);
+			const id = await idOf(page);
+			const before = (await inTree(page, id)).zoom;
+			await modifyWidget(page, id);
+			const room = await page.locator(ROOM).boundingBox();
+			await page.mouse.move(room.x + room.width * 0.75, room.y + room.height / 2);
+			await page.keyboard.down('Control');
+			await page.mouse.wheel(0, -100);
+			await page.keyboard.up('Control');
+			await page.keyboard.press('Escape');
+			await page.locator('.frame[data-layout-mode]').waitFor({ state: 'detached' });
+			await page.evaluate(() => new Promise((done) => setTimeout(done, 400)));
+			assert.deepEqual(await heldOver(page), [], 'the zoom landed in the session after ↺');
+			assert.equal((await inTree(page, id)).zoom, before, 'the zoom landed in the layout after ↺');
+			assert.deepEqual(await rows(page), start, 'the rows are not back as they were');
+		}, AT_REST);
+	});
+
 	for (const [name, device, finger] of [
 		['desktop', { ...DESKTOP, home: ON_COLLECT, clock: todayAt(15) }, false],
 		['phone', AT_REST, true]

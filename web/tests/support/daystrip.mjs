@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
 import { swipeNoWait } from './press.mjs';
-import { optionChecked, toggleOption } from './layout.mjs';
+import { leaveWidget, modifyWidget, optionChecked, toggleOption } from './layout.mjs';
 import { until } from './until.mjs';
 
 /** «Save options with layout» (da-vhwq): what hands a widget's own move to the layout. */
@@ -220,7 +220,22 @@ export const following = async (app) => {
 export const FREEZE = 'today frozen at the bottom';
 
 /** The dayview pane's id, in `main` or in a room. */
-const stripPane = ({ page }) => page.locator('section.pane[data-title="dayview"]').first().getAttribute('data-pane');
+export const stripPane = ({ page }) => page.locator('section.pane[data-title="dayview"]').first().getAttribute('data-pane');
+
+/**
+ * `fn` in the strip's modify mode (da-1tmd1), the one place its lines are
+ * handles: entered by Modify in its menu, left by ✓ (`apply`) or ↺ (`reset`).
+ */
+export async function modifyingStrip(app, fn, how = 'apply') {
+	const id = await stripPane(app);
+	await modifyWidget(app.page, id);
+	const got = await fn();
+	await leaveWidget(app.page, id, how);
+	return got;
+}
+
+/** A line dragged by (dx, dy) as a person sets a size: in modify mode, kept by ✓ (`how`) or taken back by ↺. */
+export const resize = (app, selector, dx, dy, how) => modifyingStrip(app, () => dragBy(app, selector, dx, dy), how);
 
 /** Whether today is frozen, read off the option's switch. */
 export const frozen = async (app) => optionChecked(app.page, await stripPane(app), FREEZE);
