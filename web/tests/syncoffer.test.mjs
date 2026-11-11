@@ -20,10 +20,10 @@ after(async () => {
 	await stopApp();
 });
 
-/** Add device in `app`'s widget, its database in no chain yet (da-5wlnr): its invite panel, and the join link it offers. */
+/** Share write access in `app`'s widget, its database in no chain yet (da-5wlnr): its invite panel, and the join link it offers. */
 async function invite(app) {
 	await app.goto('/sync');
-	await app.page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Add device' }).click();
+	await app.page.locator(`${WIDGET} .ways[data-db="datum"]`).getByRole('button', { name: 'Share write access' }).click();
 	const offer = app.page.locator(`${WIDGET} .offer[data-db="datum"]`);
 	await offer.locator('.qr svg').waitFor();
 	const [, link] = /datum sync chain join '([^']+)'/.exec(await offer.locator('.ticket').textContent());
@@ -101,7 +101,7 @@ describe('the invite panel (da-2bvxq)', () => {
 			async (app) => {
 				await app.goto('/sync');
 				const widget = app.page.locator(WIDGET);
-				const start = widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Add device' });
+				const start = widget.locator('.ways[data-db="datum"]').getByRole('button', { name: 'Share write access' });
 				await start.click();
 				assert.notEqual(await widget.locator('.waiting').innerText(), '');
 				assert.equal(await start.isDisabled(), true);

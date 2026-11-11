@@ -230,7 +230,9 @@ export const joinedInto = heldInTab('datum-sync-joined');
  * the database is in a chain already (a copy belongs to one) that it cannot
  * leave. One that holds nothing but its own data can (`alone`), and joining
  * replaces its chain (da-h7pnc). One in the link's own chain joins it
- * again: a revoked device rejoins so (da-j8c4l).
+ * again: a revoked device rejoins so (da-j8c4l). One in another chain it
+ * cannot leave is `other`: no refusal, the card offering a new database to
+ * join with instead (da-48kc3).
  */
 export function joinWords(
 	a: TicketAbout,
@@ -239,7 +241,7 @@ export function joinWords(
 	now: number,
 	alone = false,
 	fresh = false
-): { words: string[]; refused?: string } {
+): { words: string[]; refused?: string; other?: boolean } {
 	const from = a.from ? `«${a.from}»` : 'another device';
 	const chain = a.chain ? ` (chain ${a.chain.slice(0, 10)})` : '';
 	const words = [
@@ -256,9 +258,21 @@ export function joinWords(
 				: `«${db}» is in this chain already: joining again admits it back, as after an expel.`
 		);
 	else if (d?.chain && alone) words.push(`«${db}»’s own sync chain, just this browser, is replaced by this one.`);
-	else if (d?.chain) return { words, refused: `«${db}» is in another sync chain, and a database belongs to one: choose another database, or a new one.` };
+	// Merging two chains is to come (vividn, 2026-11-10): meanwhile the card offers a new database.
+	else if (d?.chain) return { words: [...words, `«${db}» is in another sync chain, and a database belongs to one: join with a new database instead.`], other: true };
 	if (until) words.push(`The link works once, until ${until}.`);
 	return { words };
+}
+
+/**
+ * The ticket in what Enter code was given: a bare code, a join link, or the
+ * CLI command that carries one. None for a link with no ticket in its
+ * fragment: a ticket holds no «/».
+ */
+export function ticketOf(typed: string): string {
+	const word = (typed.trim().split(/\s+/).pop() ?? '').replace(/^['"]|['"]$/g, '');
+	const at = word.indexOf('#');
+	return at >= 0 ? word.slice(at + 1) : word.includes('/') ? '' : word;
 }
 
 /** Why `name` cannot be a new database's, where `taken` are this browser's: none when it can (da-bedyz). */

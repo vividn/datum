@@ -172,7 +172,7 @@ describe('the sync widget', () => {
 					assert.equal(await page.locator(`${WIDGET} .grid thead th.here .name`).innerText(), 'datum');
 					// Never «synced» with no one to sync with.
 					assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), 'only on this device');
-					assert.deepEqual(await page.locator(`${WIDGET} .actions[data-db="datum"] button`).allInnerTexts(), ['Add device']);
+					assert.deepEqual(await page.locator(`${WIDGET} .actions[data-db="datum"] button`).allInnerTexts(), ['Share write access', 'Share read access', 'Enter code']);
 					await noneOfTheOld(page);
 				},
 				{ viewport }

@@ -98,18 +98,26 @@ describe('the sync widget fits its screen, legibly', () => {
 				await cli(app, ['--db', 'work', 'occur', 'tea']);
 				await app.goto('/sync');
 				const widget = page.locator(WIDGET);
-				const add = widget.getByRole('button', { name: 'Add device' });
+				const add = widget.locator('.ways').getByRole('button', { name: 'Share write access' });
 				await add.waitFor();
 				// Drawn before the databases are read: measure what it settles to, the grid's fold for `work`.
 				await widget.locator('.grid button.fold').waitFor();
 				const off = await fits(page, 'off', screen.name);
-				// The one act, and the account's sign-in under it (da-nf1p4): signed in first, the chain it starts is the account's.
-				// The database's name opens its menu, and this device's cell its details (da-dxng1).
+				// The three ways in above the grid and at its foot (da-48kc3), and the account's sign-in under it (da-nf1p4):
+				// signed in first, the chain it starts is the account's. The database's name opens its menu, and this device's
+				// cell its details (da-dxng1).
 				assert.deepEqual(
 					off.buttons.map((b) => b.label),
-					['✎', '?', 'datum', 'other dbs ›', '—', 'Add device', 'Sign in with a passkey', 'New passkey'],
-					'off: the name’s ✎ (da-5wlnr), the guide (da-oyvsz), the database’s name, the grid’s fold, this device’s cell, the one act, and the sign-in'
+					['✎', '?', 'Share write access', 'Share read access', 'Enter code', 'datum', 'other dbs ›', '—', '+ add device ▾', 'Sign in with a passkey', 'New passkey'],
+					'off: the name’s ✎ (da-5wlnr), the guide (da-oyvsz), the three ways in, the database’s name, the grid’s fold, this device’s cell, its foot, and the sign-in'
 				);
+				await widget.locator('.grid tfoot button.add').click();
+				await widget.locator('.grid tfoot .actions button').first().waitFor();
+				await fits(page, 'foot', screen.name);
+				await widget.locator('.ways').getByRole('button', { name: 'Enter code' }).click();
+				await widget.locator('form.enter input').waitFor();
+				await fits(page, 'entering', screen.name);
+				await widget.locator('form.enter').getByRole('button', { name: 'Cancel' }).click();
 
 				await widget.locator('header button.rename').click();
 				await widget.locator('header .edit input').first().waitFor();
@@ -123,7 +131,7 @@ describe('the sync widget fits its screen, legibly', () => {
 				assert.equal(await offer.locator('.ticket').isVisible(), false);
 				await fits(page, 'adding', screen.name);
 				const own = await offer.locator('.actions button').allInnerTexts();
-				assert.deepEqual(own.filter((l) => l !== 'Share'), ['Copy link', 'Done']);
+				assert.deepEqual(own.filter((l) => l !== 'Share'), ['Copy code', 'Copy URL', 'Copy CLI command', 'Done']);
 				await offer.locator('summary').click();
 				assert.match(await offer.locator('.ticket').innerText(), /^datum sync chain join 'https?:\/\/[^\s']+\/sync\/join#[^\s']+'$/);
 				await fits(page, 'terminal', screen.name);
@@ -137,7 +145,7 @@ describe('the sync widget fits its screen, legibly', () => {
 			}, screen.options);
 		});
 
-	test('Add device opens the panel with Copy link, Share where the browser shares, and Done', async () => {
+	test('a share opens the panel with its copies, Share where the browser shares, and Done', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -147,16 +155,16 @@ describe('the sync widget fits its screen, legibly', () => {
 				await cli(app, ['sync', 'new-invite']);
 				await app.goto('/sync');
 				const widget = page.locator(WIDGET);
-				await widget.getByRole('button', { name: 'Add device' }).click();
+				await widget.locator('.ways').getByRole('button', { name: 'Share write access' }).click();
 				const offer = widget.locator('.offer');
 				await offer.locator('.qr svg').waitFor();
-				assert.deepEqual(await offer.locator('.actions button').allInnerTexts(), ['Copy link', 'Share', 'Done']);
+				assert.deepEqual(await offer.locator('.actions button').allInnerTexts(), ['Copy code', 'Copy URL', 'Copy CLI command', 'Share', 'Done']);
 				assert.match(await offer.locator('.head').innerText(), /\b\d\d:\d\d\b/, 'the expiry time');
 				await offer.getByRole('button', { name: 'Share' }).click();
 				const shared = await page.waitForFunction(() => window.__shared);
 				assert.match((await shared.jsonValue()).url, /\/sync\/join#\S+$/);
 				await offer.getByRole('button', { name: 'Done' }).click();
-				await widget.getByRole('button', { name: 'Add device' }).waitFor();
+				await offer.waitFor({ state: 'detached' });
 			},
 			{ viewport: { width: 390, height: 844 } }
 		);
@@ -179,7 +187,7 @@ describe('the sync widget fits its screen, legibly', () => {
 				});
 				const focused = (l, prop) =>
 					l.evaluate((e, prop) => (e.focus(), e.matches(':focus-visible') && getComputedStyle(e)[prop]), prop);
-				const add = widget.getByRole('button', { name: 'Add device' });
+				const add = widget.locator('.ways').getByRole('button', { name: 'Share write access' });
 				await add.waitFor();
 				assert.equal(await focused(add, 'borderTopColor'), accent);
 				assert.equal(await focused(widget.locator('header button.rename'), 'outlineColor'), accent);

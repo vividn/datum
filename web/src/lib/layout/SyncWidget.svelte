@@ -33,22 +33,31 @@
 	where you can pause, stop syncing (leave -- with explanation modal for
 	confirmation)»).
 
-	Bottom, every act together: [Add device], and for a database in a chain
-	the admins (da-bjxts). Under them, in every state, the
+	Above the grid, three ways in (da-48kc3): [Share write access], [Share
+	read access] (a reader's invite) and [Enter code], and the same three
+	under «+ add device ▾» at the grid's foot. vividn, 2026-11-10: «above the
+	grid, maybe we have three buttons "Share write access" "Share read
+	access" "enter code"». A share opens its panel under them: the QR, Copy
+	code (the ticket), Copy URL (the join link), Copy CLI command, and until
+	when it works. Enter code takes a code, a link or that command and opens
+	the join card; a database in another chain is offered a new database to
+	join with, merging two chains being to come.
+
+	Bottom, for a database in a chain, the admins (da-bjxts). Under them, in every state, the
 	passkey account (da-nf1p4): [Sign in with a passkey] and [New passkey], or
 	«Signed in» and [Sign out]. The header's `?` opens the guide to all of it
 	(da-oyvsz).
-	[Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
-	and its own buttons at its bottom — with the ticket under a closed
+	A share, or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
+	and its own buttons at its bottom — with the command under a closed
 	«join from a terminal». Once the invite is used, or expired, the QR and
 	link go: the panel names the device that joined, or says it expired, and
-	offers [Add another device] (da-2bvxq). The cards a link opens — `/sync/approve#…`,
+	offers [Add another device], with the same access (da-2bvxq). The cards a link opens — `/sync/approve#…`,
 	which names what the passkey signs before it offers the passkey, since
 	a link is anyone's to send, and `/sync/join#…` (da-l9kdr), which names
 	the inviting device, its chain and the page's database before it joins
 	or says why it cannot — are the same shape, on top. A join kept until a
 	member admits this device (da-4qpwf) says under the header that it waits
-	for its first sync, or why a member refused it, in place of [Add device];
+	for its first sync, or why a member refused it, in place of the shares;
 	a link works for days, so its panel says until which day. Notices of new
 	members and unlocks stand with the acts until acknowledged.
 
@@ -93,6 +102,7 @@
 		redeemer,
 		syncAct,
 		table,
+		ticketOf,
 		type Admin,
 		type Admins,
 		type DbSync,
@@ -167,8 +177,20 @@
 	let kept = $state(browser ? { name: deviceName(), user: username() } : { name: '', user: '' });
 	/** `was`: the name the edit began from, so a rename that lands meanwhile is not read as this one. */
 	let edit = $state<{ name: string; user: string; was: string } | null>(null);
-	/** The join link of the last device invited, its QR, until when it works, its invite's id, and whether it names this device's relay. */
-	let offer = $state<{ db: string; link: string; svg: string; until: string; expires: number; id: string; relay: boolean } | null>(null);
+	/**
+	 * The last share (da-48kc3): its ticket (the code), join link, QR, until
+	 * when it works, its invite's id, whether it names this device's relay,
+	 * and whether it shares read access alone.
+	 */
+	let offer = $state<{ db: string; ticket: string; link: string; svg: string; until: string; expires: number; id: string; relay: boolean; reader: boolean } | null>(
+		null
+	);
+	/** What the share panel copied last, in words; and Enter code's field, open where its button was pressed, as typed. */
+	let copied = $state('');
+	let entering = $state<{ at: Where; typed: string } | null>(null);
+	type Where = 'top' | 'foot';
+	/** «+ add device ▾» unfolded, at the grid's foot. */
+	let adding = $state(false);
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = $state({});
 	/**
@@ -199,7 +221,7 @@
 	/** The database the card joins, as chosen. */
 	const into = $derived(join ? (join.target ?? join.fresh.trim()) : '');
 	/** What joining `into` does, or why it cannot, in words, before anything is dialed. */
-	const joinSaid = $derived.by((): { words: string[]; refused?: string } => {
+	const joinSaid = $derived.by((): { words: string[]; refused?: string; other?: boolean } => {
 		if (!join?.about) return { words: [], refused: join?.refused };
 		if (join.target === null) {
 			const said = joinWords(join.about, into, undefined, Date.now(), false, true);
@@ -222,7 +244,7 @@
 		const asked = $joining;
 		if (browser) untrack(() => void resolveJoin(asked));
 	});
-	// `sync chain invite` typed on the page (da-5g0nk): the offer [Add device] makes.
+	// `sync chain invite` typed on the page (da-5g0nk): the offer [Share write access] makes.
 	$effect.pre(() => {
 		const asked = $inviting;
 		if (browser && asked)
@@ -405,8 +427,11 @@
 		const about = await ticketAbout(ticket).catch(() => undefined);
 		const names = await databases();
 		const dbs = await Promise.all((await readSync(names)).map(async (d) => ({ db: d.db, d, alone: !!d.chain && (await canLeave(d.db)) })));
-		// Joining a database that holds entries mixes them with the chain's: a new one is chosen then (da-bedyz).
-		const target = (await holdsEntries(db)) ? null : db;
+		// Joining a database that holds entries mixes them with the chain's: a new one is chosen then (da-bedyz),
+		// as it is for one in another chain, which a database cannot leave for this one (da-48kc3).
+		const page = dbs.find((c) => c.db === db);
+		const elsewhere = !!page?.d.chain && page.d.chain !== about?.chain && !page.alone;
+		const target = elsewhere || (await holdsEntries(db)) ? null : db;
 		const refused = about ? undefined : 'Not a join link: it carries no ticket.';
 		if (ticket === $joining) join = { ticket, about, dbs, target, fresh: newDbName(about?.from, names), user: username(), refused };
 	}
@@ -464,20 +489,22 @@
 	}
 
 	// A declaration, hoisted: the effect above runs as it is created, before this line.
-	function addDevice(db: string, named?: string): Promise<void> {
+	function addDevice(db: string, named?: string, reader = false): Promise<void> {
 		return doing(async () => {
+			adding = false;
+			copied = '';
 			if (named) ok(await syncAct(db, labelCheckArgv(named)));
 			// The ticket waits for this device to reach its relay, up to 30 s (da-kfhty).
 			waiting = 'Making the invite…';
 			try {
-				const invite = await newInvite(db);
+				const invite = await newInvite(db, reader);
 				// The chain it started describes this device: a name typed is its label.
 				if (named) ok(await syncAct(db, renameArgv(named)));
 				const ticket = await syncOffer(db, invite);
 				const { relay = false } = await ticketAbout(ticket);
 				const link = joinLink(ticket);
 				const expires = Date.parse(invite.expires);
-				offer = { db, link, svg: await qr(link), until: when(expires), expires, id: invite.id, relay };
+				offer = { db, ticket, link, svg: await qr(link), until: when(expires), expires, id: invite.id, relay, reader };
 			} finally {
 				waiting = '';
 			}
@@ -490,6 +517,25 @@
 	const startName = (db: string): string | undefined => (kept.name && kept.name !== suggestedLabel(db) ? kept.name : undefined);
 
 	const share = (link: string) => navigator.share({ title: 'Join a datum sync chain', url: link }).catch(() => {});
+
+	/** A share of the page's database: a database in no chain starts one as it is first shared, with the name kept under ✎ (da-5wlnr). */
+	const shareDb = (reader: boolean) => addDevice(db, cur.chain ? undefined : startName(db), reader);
+
+	/** The share panel's copy of `what`, said once it is on the clipboard. */
+	const copy = (what: string, text: string) =>
+		(navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
+			() => (copied = `Copied the ${what}.`),
+			() => (copied = `This browser did not let the page copy the ${what}.`)
+		);
+
+	/** Enter code given: the join card for its ticket, with its database choice (da-bedyz). */
+	function enter(typed: string): void {
+		const ticket = ticketOf(typed);
+		if (!ticket) return;
+		entering = null;
+		adding = false;
+		joining.set(ticket);
+	}
 
 	/**
 	 * ✎'s edit kept: this device renamed in every database it syncs, a client
@@ -532,7 +578,7 @@
 		});
 
 	/**
-	 * `device` invited to `d` as `role`, the invite's ticket made here as [Add device]'s is: what the CLI says of it.
+	 * `device` invited to `d` as `role`, the invite's ticket made here as a share's is: what the CLI says of it.
 	 * Each chain the device is live in here is synced, so the invite reaches it now if it is online: the
 	 * CLI picks one of them as the carrier (one this copy writes to) and does not say which, so all are
 	 * pushed, and one that fails is a device away, which the invite waits for in the chain.
@@ -757,7 +803,7 @@
 						<p class="quiet joining" role="status">{joinProgress($syncStates[into]?.applying)}</p>
 					{:else if joinSaid.refused}
 						<p class="failure">{joinSaid.refused}</p>
-					{:else}
+					{:else if !joinSaid.other}
 						<label class="name"
 							>This device’s name <input
 								type="text"
@@ -771,7 +817,9 @@
 					{/if}
 				{/if}
 				<div class="actions">
-					{#if join && !join.done && !joinSaid.refused}
+					{#if join && !join.done && !joinSaid.refused && joinSaid.other}
+						<button type="button" class="command" use:act={'show'} disabled={busy} onclick={() => join && (join.target = null)}>Join as a new database</button>
+					{:else if join && !join.done && !joinSaid.refused}
 						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => join && joinHere(join, into)}>Join</button>
 					{/if}
 					<button type="button" class="command close" use:act={'show'} onclick={() => joining.set(null)}>Dismiss</button>
@@ -833,6 +881,86 @@
 				<p class="notice clock" data-db={d.db}>⚠ {d.db}: {c.text}</p>
 			{/each}
 		{/each}
+		<!-- The three ways in, above the grid and at its foot (da-48kc3). vividn, 2026-11-10: «above the grid, maybe we have three buttons "Share write access" "Share read access" "enter code"». -->
+		{#snippet ways(at: Where)}
+			{#if !(!cur.chain && cur.pending && !cur.pending.refused)}
+				<!-- Waiting for its first sync: nothing to share yet (da-4qpwf). -->
+				<button type="button" class="command" data-share="write" use:act={'run'} disabled={busy} onclick={() => shareDb(false)}>Share write access</button>
+				<button type="button" class="command" data-share="read" use:act={'run'} disabled={busy} onclick={() => shareDb(true)}>Share read access</button>
+			{/if}
+			<button
+				type="button"
+				class="command"
+				data-share="enter"
+				use:act={'show'}
+				disabled={busy}
+				aria-expanded={entering?.at === at}
+				onclick={() => (entering = entering?.at === at ? null : { at, typed: '' })}>Enter code</button
+			>
+		{/snippet}
+		<!-- A code or a link, or the CLI command carrying one, opens the join card (da-48kc3); its field opens under the button pressed. -->
+		{#snippet enterField(field: { typed: string })}
+			<form
+				class="card enter"
+				onsubmit={(e) => {
+					e.preventDefault();
+					enter(field.typed);
+				}}
+			>
+				<label class="name"
+					>Code or link <input
+						type="text"
+						bind:value={field.typed}
+						onkeydown={(e) => e.key === 'Escape' && (entering = null)}
+						spellcheck="false"
+						autocomplete="off"
+						placeholder="paste what the other device shares"
+					/></label
+				>
+				<div class="actions">
+					<button type="submit" class="command" use:act={'show'} disabled={!ticketOf(field.typed)}>Open</button>
+					<button type="button" class="command close" use:act={'show'} onclick={() => (entering = null)}>Cancel</button>
+				</div>
+			</form>
+		{/snippet}
+		<div class="actions ways" data-db={db}>{@render ways('top')}</div>
+		{#if entering?.at === 'top'}{@render enterField(entering)}{/if}
+		{#if offer}
+			<section class="card offer" data-db={offer.db} data-role={offer.reader ? 'reader' : 'member'}>
+				{#if joined}
+					<p class="head joined">{joined.label} joined at {hm(Date.parse(joined.at))}.</p>
+				{:else if expired}
+					<p class="head expired">This invite expired at {offer.until}, unused.</p>
+				{:else if !offer.relay}
+					<p class="head unreachable">This device has not reached its relay yet, so no other device can reach this invite. Check the connection and try again.</p>
+				{:else}
+					<p class="head">
+						{offer.reader ? `Share read access to ${offer.db}: the other device reads it, writing nothing.` : `Share write access to ${offer.db}: the other device reads and writes it.`}
+						Scan this with it, or give it the code or the URL. It works once, until {offer.until}.
+					</p>
+					<div class="qr">{@html offer.svg}</div>
+					<details class="terminal">
+						<summary>join from a terminal</summary>
+						<code class="code ticket">datum sync chain join '{offer.link}'</code>
+					</details>
+				{/if}
+				<div class="actions">
+					{#if joined || expired}
+						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => offer && addDevice(offer.db, undefined, offer.reader)}>Add another device</button>
+					{:else if !offer.relay}
+						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => offer && addDevice(offer.db, undefined, offer.reader)}>Try again</button>
+					{:else}
+						<!-- vividn: «the share links should let you copy code, copy url, copy cli command, and show qr code». -->
+						<button type="button" class="command" use:act={'run'} onclick={() => offer && copy('code', offer.ticket)}>Copy code</button>
+						<button type="button" class="command" use:act={'run'} onclick={() => offer && copy('URL', offer.link)}>Copy URL</button>
+						<button type="button" class="command" use:act={'run'} onclick={() => offer && copy('CLI command', `datum sync chain join '${offer.link}'`)}>Copy CLI command</button>
+						{#if canShare}<button type="button" class="command" use:act={'open'} onclick={() => offer && share(offer.link)}>Share</button>{/if}
+					{/if}
+					<button type="button" class="command" use:act={'show'} onclick={() => (offer = null)}>Done</button>
+				</div>
+				{#if copied}<p class="quiet copied" role="status">{copied}</p>{/if}
+			</section>
+		{/if}
 		{#if grid && drawn.length}
 			<section class="grid">
 				<p class="label">Devices × databases</p>
@@ -895,6 +1023,16 @@
 								</tr>
 							{/each}
 						</tbody>
+						<tfoot>
+							<!-- vividn: «on the device side of the grid, it should be easy to just +add device at the bottom, which has a drop down with basically the same three options». -->
+							<tr class="add">
+								<td colspan={drawn.length + (columns.length > here.length ? 2 : 1)}
+									><button type="button" class="cell add" use:act={'show'} aria-expanded={adding} onclick={() => (adding = !adding)}>+ add device ▾</button>
+									{#if adding}<div class="actions">{@render ways('foot')}</div>
+										{#if entering?.at === 'foot'}{@render enterField(entering)}{/if}{/if}</td
+								>
+							</tr>
+						</tfoot>
 					</table>
 				</div>
 				{#if pair}
@@ -956,61 +1094,21 @@
 		{#if failure}<p class="failure" role="alert">{failure}</p>{/if}
 		{#if waiting}<p class="quiet waiting" role="status">{waiting}</p>{/if}
 
-		{#if offer}
-			<section class="card offer" data-db={offer.db}>
-				{#if joined}
-					<p class="head joined">{joined.label} joined at {hm(Date.parse(joined.at))}.</p>
-				{:else if expired}
-					<p class="head expired">This invite expired at {offer.until}, unused.</p>
-				{:else if !offer.relay}
-					<p class="head unreachable">This device has not reached its relay yet, so no other device can reach this invite. Check the connection and try again.</p>
+		{#if cur.chain}
+			<div class="actions chain" data-db={db}>
+				{#if cur.admins?.length}
+					<span>locked by</span>
+					{#each cur.admins as a (a.key)}
+						<button type="button" class="command admin" use:act={cur.admins.length === 1 ? 'open' : 'run'} disabled={busy} aria-label="remove {a.label}" onclick={() => removeAdmin(cur, a)}
+							>{a.label} ×</button
+						>
+					{/each}
+					<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add passkey</button>
 				{:else}
-					<p class="head">Add a device to {offer.db}: scan this with it, or open the link in its browser. It works once, until {offer.until}.</p>
-					<div class="qr">{@html offer.svg}</div>
-					<details class="terminal">
-						<summary>join from a terminal</summary>
-						<code class="code ticket">datum sync chain join '{offer.link}'</code>
-					</details>
-				{/if}
-				<div class="actions">
-					{#if joined || expired}
-						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => offer && addDevice(offer.db)}>Add another device</button>
-					{:else if !offer.relay}
-						<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => offer && addDevice(offer.db)}>Try again</button>
-					{:else}
-						<button type="button" class="command" use:act={'run'} onclick={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>
-						{#if canShare}<button type="button" class="command" use:act={'open'} onclick={() => offer && share(offer.link)}>Share</button>{/if}
-					{/if}
-					<button type="button" class="command" use:act={'show'} onclick={() => (offer = null)}>Done</button>
-				</div>
-			</section>
-		{:else}
-			<div class="actions" data-db={db}>
-				{#if !cur.chain && cur.pending && !cur.pending.refused}
-					<!-- Waiting for its first sync: nothing to share yet (da-4qpwf). -->
-				{:else}
-					<!-- A database in no chain starts one as it is first shared, with the name kept under ✎ (da-5wlnr). -->
-					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db, cur.chain ? undefined : startName(db))}
-						>Add device</button
-					>
+					<span>no admin: any device can add devices</span>
+					<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add admin</button>
 				{/if}
 			</div>
-			{#if cur.chain}
-				<div class="actions chain" data-db={db}>
-					{#if cur.admins?.length}
-						<span>locked by</span>
-						{#each cur.admins as a (a.key)}
-							<button type="button" class="command admin" use:act={cur.admins.length === 1 ? 'open' : 'run'} disabled={busy} aria-label="remove {a.label}" onclick={() => removeAdmin(cur, a)}
-								>{a.label} ×</button
-							>
-						{/each}
-						<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add passkey</button>
-					{:else}
-						<span>no admin: any device can add devices</span>
-						<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => addAdmin(cur)}>Add admin</button>
-					{/if}
-				</div>
-			{/if}
 		{/if}
 		<!-- The account a passkey signs in to (da-nf1p4): this tab's alone, gone at a reload. -->
 		<div class="actions account" data-signed={$account ? 'in' : 'out'}>
@@ -1114,7 +1212,8 @@
 	.card .actions {
 		margin-top: 0.5rem;
 	}
-	.join .name {
+	.join .name,
+	.enter .name {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
@@ -1129,7 +1228,8 @@
 	}
 	.join input,
 	.join select,
-	.edit input {
+	.edit input,
+	.enter input {
 		flex: 1 1 14ch;
 		min-width: 0;
 		background: var(--page);
@@ -1205,8 +1305,9 @@
 	.grid thead .name {
 		display: block;
 	}
+	/* Room for a browser's own name, «datum.day (datum)», on a phone (vremya, 2026-11-11). */
 	.grid tbody th {
-		max-width: 14ch;
+		max-width: 24ch;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
@@ -1257,6 +1358,13 @@
 	}
 	.failure-text {
 		color: var(--error);
+	}
+	.grid tfoot td {
+		border-bottom: 0;
+		white-space: normal;
+	}
+	.grid tfoot .actions {
+		margin-top: 0.3rem;
 	}
 	.grid .fold {
 		padding: 0.1rem 0.3rem;

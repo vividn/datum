@@ -89,6 +89,7 @@ export const SYNC_TESTS = [
 	'tests/syncoffer.test.mjs',
 	'tests/syncpause.test.mjs',
 	'tests/syncreload.test.mjs',
+	'tests/syncshare.test.mjs',
 	'tests/syncunsynced.test.mjs',
 	'tests/tabmenu.test.mjs'
 ];

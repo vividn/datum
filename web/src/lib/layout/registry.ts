@@ -854,12 +854,14 @@ The gear at the top of the page, then **Sync**; or type \`sync\` in the bar. [Op
 
 ## Connect a second device
 
-1. On the device that has your data, open Sync. At the top is this device's name: press **✎** beside it to give it one you will recognize, and your username if you like, which every device you sync names you by, then **Save**. Press **Add device**.
-2. A QR code appears. Scan it with the other device's camera, or press **Copy link** and open the link in the other device's browser.
+1. On the device that has your data, open Sync. At the top is this device's name: press **✎** beside it to give it one you will recognize, and your username if you like, which every device you sync names you by, then **Save**. Press **Share write access**.
+2. A QR code appears. Scan it with the other device's camera, or press **Copy URL** and open the link in the other device's browser, or press **Copy code** and paste it into the other device's **Enter code**.
 3. The other device asks **Join a sync chain?** Under **Join with**, choose the database it joins: one of its own, or a new one, which is chosen already where its own holds entries, so the two are not mixed. Give the device a name you will recognize, and your username if you like, and press **Join**.
 4. Each device now lists the other. Press **Done** on the first to put the QR away.
 
-A link adds one device, once, and only until the time it says. For the next device, press Add device again. On a computer with the datum command, open **join from a terminal** under the QR and run what it shows there.
+A link adds one device, once, and only until the time it says. For the next device, share again: above the grid, or under **+ add device** at its foot. **Share read access** shares the database with a device that reads it and writes nothing. On a computer with the datum command, press **Copy CLI command** and run it there, or open **join from a terminal** under the QR.
+
+A database already syncing with other devices cannot join a second group of them: the other device's question offers to join with a new database instead.
 
 ## What syncs
 
@@ -884,7 +886,7 @@ Under them, **Devices × databases**: every device syncing this database, each C
 		commands: 'sync',
 		tour: [
 			{ at: WHOLE, say: 'Sync keeps the same data on each of your devices, sent from one to another directly, encrypted end to end.' },
-			{ at: '.actions button.command', say: 'Add device, here, to connect a second device: it shows a QR code for the other to scan.' },
+			{ at: '.ways button.command', say: 'Share write access, here, to connect a second device: it shows a QR code for the other to scan, and a code and a link to copy.' },
 			{ at: 'button.guide', say: 'Its ? opens the guide to syncing, step by step.' }
 		],
 		legible: { width: 140, height: 100 }

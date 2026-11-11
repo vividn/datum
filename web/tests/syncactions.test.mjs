@@ -60,7 +60,7 @@ describe('the sync widget’s actions', () => {
 					await edit.getByLabel('Your username (optional)').fill('bea');
 					await edit.getByRole('button', { name: 'Save' }).click();
 					await page.locator(`${WIDGET} header .user`).filter({ hasText: /^@bea$/ }).waitFor();
-					await actions.getByRole('button', { name: 'Add device' }).click();
+					await actions.getByRole('button', { name: 'Share write access' }).click();
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
 					await offer.locator('summary', { hasText: 'join from a terminal' }).click();
@@ -76,7 +76,7 @@ describe('the sync widget’s actions', () => {
 					await until(async () => (await page.locator(`${WIDGET} .grid tbody tr`).count()) === 2, Boolean);
 					await offer.getByRole('button', { name: 'Done' }).click();
 					// Pause and stop syncing are the database's, in the menu its name opens (da-dxng1).
-					assert.deepEqual(await actions.first().locator('button').allInnerTexts(), ['Add device']);
+					assert.deepEqual(await actions.first().locator('button').allInnerTexts(), ['Share write access', 'Share read access', 'Enter code']);
 					assert.deepEqual(await (await dbMenu(page, 'datum')).locator('button').allInnerTexts(), ['Pause sync', 'Stop syncing']);
 					// Open: no admin to remove, and one to add.
 					const row = page.locator(`${WIDGET} .chain[data-db="datum"]`);

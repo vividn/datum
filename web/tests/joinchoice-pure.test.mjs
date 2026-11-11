@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource();
-const { joinWords, newDbName, newDbRefusal } = await import('../src/lib/syncView.ts');
+const { joinWords, newDbName, newDbRefusal, ticketOf } = await import('../src/lib/syncView.ts');
 
 const about = { from: 'Laptop (Home)', chain: 'c0ffee12345678', expires: 0 };
 const NOW = Date.UTC(2026, 10, 10);
@@ -36,8 +36,18 @@ test('the words follow the database chosen: a new one, one of this browser’s, 
 	assert.match(mine.words[0], /with this browser’s database «datum»: what each holds, both will/);
 	assert.equal(mine.refused, undefined);
 
+	// A database in another chain is no refusal (da-48kc3): the card offers a new database instead.
 	const taken = joinWords(about, 'work', { db: 'work', chain: 'beef', members: [] }, NOW, false);
-	assert.match(taken.refused, /«work» is in another sync chain/);
-	// The card offers the choice, so the refusal no longer sends anyone to edit the link.
-	assert.doesNotMatch(taken.refused, /\?db=/);
+	assert.equal(taken.refused, undefined);
+	assert.equal(taken.other, true);
+	assert.match(taken.words.at(-1), /«work» is in another sync chain.*join with a new database instead/);
+	assert.doesNotMatch(taken.words.join(' '), /\?db=/);
+});
+
+test('Enter code takes a bare code, a join link, or the CLI command carrying one (da-48kc3)', () => {
+	const code = 'endpointabc234xyz';
+	for (const typed of [code, `  ${code}\n`, `https://datum.day/sync/join#${code}`, `datum sync chain join 'https://datum.day/sync/join#${code}'`, `"${code}"`])
+		assert.equal(ticketOf(typed), code, typed);
+	// A link with no ticket in it is none: Open stays off.
+	for (const typed of ['', '   ', 'https://datum.day/sync/join', "datum sync chain join 'https://datum.day/sync/join'"]) assert.equal(ticketOf(typed), '', typed);
 });

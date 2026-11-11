@@ -69,12 +69,12 @@ describe('the sync guide opens from', () => {
 	test('the Help button, then the Sync widget: its tour, and nothing in the widget runs', async () => {
 		await shared.solo(async ({ page }) => {
 			await page.locator('.root-bar button.help[data-command="help"]').click();
-			await page.locator(`${WIDGET} .actions`).getByRole('button', { name: 'Add device' }).click();
+			await page.locator(`${WIDGET} .ways`).getByRole('button', { name: 'Share write access' }).click();
 			await page.locator('.tour .say').waitFor();
 			assert.equal(await page.locator('.tour').getAttribute('data-do'), null, 'it opened on a step that invites');
 			await page.keyboard.press('Escape');
 			await page.locator('.tour').waitFor({ state: 'detached' });
-			assert.equal(await page.locator(`${WIDGET} .offer`).count(), 0, 'Add device ran');
+			assert.equal(await page.locator(`${WIDGET} .offer`).count(), 0, 'the share ran');
 		}, PAGE);
 	});
 
@@ -133,7 +133,7 @@ test('every control the guide names is one the widget shows, walked as a person 
 				await look(edit);
 				await edit.getByRole('button', { name: 'Save' }).click();
 				await until(() => widget.locator('header .device').innerText(), (t) => t === 'desk');
-				await widget.locator('.actions[data-db="datum"]').getByRole('button', { name: 'Add device' }).click();
+				await widget.locator('.ways[data-db="datum"]').getByRole('button', { name: 'Share write access' }).click();
 				const offer = widget.locator('.offer[data-db="datum"]');
 				await offer.locator('.qr svg').waitFor();
 				await offer.locator('summary', { hasText: 'join from a terminal' }).click();

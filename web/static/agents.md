@@ -75,9 +75,9 @@ machine's name:
 datum --db alex sync chain invite --label "Alex's agent"   # prints https://datum.day/sync/join#…: send it to them
 ```
 
-If they already use datum.day and their record syncs with their own devices, datum.day refuses your link and says
-why; then they invite you instead: datum.day's **Sync** widget, **Add device**, shows the line for you to run
-(`datum --db alex sync chain join <LINK>`).
+If they already use datum.day and their record syncs with their own devices, datum.day offers to join your link as a
+new database beside theirs. Or they invite you instead: datum.day's **Sync** widget, **Share write access**, then
+**Copy CLI command**, gives the line for you to run (`datum --db alex sync chain join <LINK>`).
 
 **Share your own record with them**, so they can watch what you do (see *Keeping your own record*). Invite from
 a database named for you, and add `?db=<your-name>` (the database name) to the link before its `#`:

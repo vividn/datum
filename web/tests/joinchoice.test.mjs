@@ -79,7 +79,7 @@ for (const [shape, opts] of Object.entries(SHAPES)) {
 			}
 		});
 
-		test('an empty database chosen is joined; a taken name typed as new, and a database in another chain, are refused', async () => {
+		test('an empty database chosen is joined; a taken name typed as new is refused, and a database in another chain offered a new one', async () => {
 			const [native, other] = [await nativeCopy(relay), await nativeCopy(relay)];
 			try {
 				await native.run(['occur', 'theirs', '-y', '-t', '08:00']);
@@ -96,10 +96,14 @@ for (const [shape, opts] of Object.entries(SHAPES)) {
 						assert.match(await card.locator('.failure').innerText(), /«datum» is here already/);
 						assert.equal(await join.count(), 0);
 
+						// A database in another chain is no refusal: the card offers a new database instead (da-48kc3).
 						await into.selectOption('work');
-						assert.match(await card.locator('.failure').innerText(), /«work» is in another sync chain/);
-						assert.match(await card.locator('.what').innerText(), /«work»/);
+						assert.equal(await card.locator('.failure').count(), 0);
+						assert.match(await card.locator('.what').innerText(), /«work» is in another sync chain.*join with a new database instead/);
 						assert.equal(await join.count(), 0);
+						await card.getByRole('button', { name: 'Join as a new database' }).click();
+						assert.equal(await into.inputValue(), '');
+						await fresh.waitFor();
 
 						await into.selectOption('spare');
 						assert.match(await card.locator('.what').innerText(), /this browser’s database «spare»/);
