@@ -437,8 +437,13 @@ describe('the keyboard can still select in the band', () => {
 			// block's own 14:00 rather than the window's 14:30.
 			await saysPills(page, ['time:-t 14:00']);
 			// And the window is the band's own: a selection made in here never
-			// moves it, by the keyboard as by a finger. The pill's line is
-			// drawn (da-dv45l), and the button on now's «now» says «reset».
+			// moves it, by the keyboard as by a finger — though 14:00 is off
+			// the window, where the pills' follow (da-2v3mr) would fly to it.
+			// A fly is in the air from the flush that drew the pill, so one
+			// landed first is read as it lands, not raced (da-i7vts). The
+			// pill's line is drawn (da-dv45l), and the button on now's «now»
+			// says «reset».
+			await page.locator(`${BAND}[data-flying]`).waitFor({ state: 'detached' });
 			await instantDrawn(page, Date.parse('2026-09-10T14:00:00Z'));
 			assert.equal(await asked(page), null, 'Enter in the band moved the window');
 			assert.equal(await page.locator(`${NOWVIEW} .nowview-now`).innerText(), 'reset');

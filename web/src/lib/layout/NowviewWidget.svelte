@@ -2610,7 +2610,8 @@
 	function follow(c: Cursor | null): void {
 		// A tap on a mark clears the time on its way to the entry: asked once both have settled.
 		if (!c) return void queueMicrotask(dismiss);
-		if (press || grip) return;
+		// Made in this window, it moves nothing: Enter on a mark there is the mark's drawn start, which may be off the window (da-i7vts).
+		if (press || grip || c.from === 'nowview') return;
 		// Only a dayview click centres: any other time, collect's among them, moves the window only to show it (da-nwf1h).
 		const far = +c.at + farFrom(c);
 		aim(Math.min(+c.at, far), Math.max(+c.at, far), c.from === 'daystrip' && !c.span);
