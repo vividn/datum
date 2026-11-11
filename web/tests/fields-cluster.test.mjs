@@ -15,9 +15,10 @@ const BAR = 'section[data-pane="bar"] .bar';
 const VIEW = `${BAR} .collect.open`;
 const ROOM = `${VIEW} .room`;
 const STATES = ['a', 'b', 'c', 'd'];
-/** Every field a switch of the same states, so each opens the same picture: one to tap wherever a field is drawn. */
+/** Every field a switch of the same states, so each opens the same picture: one to tap wherever a field is drawn. Never off, so off,
+ * the first state where offered (da-qryu8, `collect-open.test.mjs`), takes no row of the column. */
 const FIELDS = 'alfa bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra mood'.split(' ');
-const SEED = FIELDS.map((f) => `setup ${f} --verb switch --states false,${STATES.join(',')}`);
+const SEED = FIELDS.map((f) => `setup ${f} --verb switch --states ${STATES.join(',')} --never-false`);
 
 /** What the open view draws: the room, the box round all it holds, and each state's box, by name. */
 const seen = (page) =>
@@ -102,7 +103,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 				const fields = await page.locator(BAR).evaluate((bar) => [...bar.querySelectorAll('[data-field]')].map((b) => b.dataset.field));
 				const picked = [fields[0], fields[Math.floor(fields.length / 2)], fields.at(-1)];
 				const first = await open(page, picked[0]);
-				assert.deepEqual(first.buttons.map((b) => b.name), STATES, 'off is the first row’s, not a state');
+				assert.deepEqual(first.buttons.map((b) => b.name), STATES, 'the spec’s states, in its order');
 				// The rows hold them all in one column, a row each under the first row, at the room's left.
 				assert.deepEqual(first.buttons.map((b) => b.row), [1, 2, 3, 4]);
 				const a = first.find('a');
@@ -249,7 +250,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 			for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowUp');
 			await page.locator(`${FIELD_FORM} .commit`).click();
 			await saved;
-			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['false', 'd', 'a', 'b', 'c']);
+			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['d', 'a', 'b', 'c']);
 			await leaveField(page);
 			// Opened in setup, mood is the bar's pill (da-upig4), and collect on its view: the pill's × closes it.
 			await page.locator('.prompt-bar .pill.field button[aria-label="remove mood"]').click();
@@ -282,7 +283,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 			};
 			await field.dispatchEvent('click');
 			await page.locator(`${ROOM} [data-state="d"]`).waitFor();
-			await app.submit('setup mood --states false,d,a,b,c,e');
+			await app.submit('setup mood --states d,a,b,c,e');
 			await page.locator(`${ROOM} [data-state="e"]`).waitFor();
 			const live = await offset();
 			await page.keyboard.press('Escape');

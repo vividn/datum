@@ -94,7 +94,8 @@ const items = (page) =>
 		[...view.querySelectorAll('.spot.open')].map((spot) => {
 			const r = spot.getBoundingClientRect();
 			const b = spot.querySelector('[data-state]');
-			return { role: spot.dataset.role, row: Number(spot.dataset.row), state: b?.dataset.state, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+			const state = b?.dataset.state ?? (spot.querySelector('[data-off]') ? 'off' : undefined);
+			return { role: spot.dataset.role, row: Number(spot.dataset.row), state, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
 		})
 	);
 
@@ -107,7 +108,7 @@ const outlined = (page, selector) =>
 		return path.isPointInFill(at);
 	});
 
-/** The states listed, once the read of `datum states` has put `last` among them. */
+/** The states listed, off as `off`, once the read of `datum states` has put `last` among them. */
 async function listed(page, last) {
 	await page.locator(`${OPEN} [data-state="${last}"]`).waitFor();
 	return (await items(page)).filter((i) => i.role === 'state').map((i) => i.state);
@@ -169,7 +170,7 @@ describe('a field opened in collect', () => {
 	before(startApp);
 	after(stopApp);
 
-	test("its first row in a dotted outline: the field's pill, which is back (da-dswuc), the state it is in as the CLI paints it, then off", async () => {
+	test("its first row in a dotted outline: the field's pill, which is back (da-dswuc), and the state it is in as the CLI paints it; off is the first state (da-qryu8)", async () => {
 		await opening(['setup mood --verb switch --states false,good,bad,meh', 'switch mood bad -t 13:00'], 'mood', async (app, button) => {
 			const { page } = app;
 			await button.click();
@@ -183,12 +184,11 @@ describe('a field opened in collect', () => {
 					background: getComputedStyle(el.querySelector('.pill') ?? el).backgroundColor
 				}))
 			);
-			assert.deepEqual(parts.map((p) => p.what), ['back', 'current', 'off']);
+			assert.deepEqual(parts.map((p) => p.what), ['back', 'current']);
 			assert.ok(parts.every((p, i) => i === 0 || p.left > parts[i - 1].left), 'not left to right');
 			assert.equal(parts[0].field, 'mood', 'back is not the field');
 			assert.equal(parts[0].text, 'mood×');
 			assert.equal(parts[1].text, 'bad');
-			assert.equal(parts[2].text, 'off', 'off says ! while the field is on');
 			// The colours `fields --json` resolves: the field's behind its pill, the state's behind the state.
 			const row = JSON.parse((await app.run(['fields', '--json'])).stdout).find((r) => r.field === 'mood');
 			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
@@ -197,7 +197,8 @@ describe('a field opened in collect', () => {
 			assert.equal(await page.locator(`${HEAD} [data-current]`).evaluate((el) => el.tagName), 'SPAN', 'the state it is in is a button');
 			assert.ok(await outlined(page, HEAD), 'the first row is not in the dotted outline');
 			// Its rows below: the spec's states, the one it is in outlined with a ! in front, the others neither.
-			assert.deepEqual(await listed(page, 'meh'), ['good', 'bad', 'meh']);
+			assert.deepEqual(await listed(page, 'meh'), ['off', 'good', 'bad', 'meh']);
+			assert.equal(await page.locator(`${OPEN} [data-off]`).textContent(), 'off', 'off says ! while the field is on');
 			assert.deepEqual(await page.locator(`${OPEN} [data-state]:has([data-repeat])`).evaluateAll((bs) => bs.map((b) => b.dataset.state)), ['bad']);
 			assert.equal(await page.locator(`${OPEN} [data-state="bad"]`).textContent(), '!bad', 'the ! is not in front');
 			assert.equal(await page.locator(`${OPEN} [data-state="bad"] [data-repeat]`).evaluate((el) => getComputedStyle(el).color), 'rgb(255, 209, 102)', 'the ! is not the warning yellow');
@@ -220,7 +221,7 @@ describe('a field opened in collect', () => {
 				await button.click();
 				const row = JSON.parse((await app.run(['fields', '--json'])).stdout).find((r) => r.field === 'mood');
 				const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
-				assert.deepEqual(await listed(page, 'good,bad,meh'), ['good', 'bad', 'meh', 'good,bad,meh', 'good,bad']);
+				assert.deepEqual(await listed(page, 'good,bad,meh'), ['off', 'good', 'bad', 'meh', 'good,bad,meh', 'good,bad']);
 				for (const state of ['good', 'bad', 'meh']) {
 					const fill = await page.locator(`${OPEN} [data-state="${state}"]`).evaluate((el) => getComputedStyle(el).backgroundColor);
 					assert.equal(fill, rgb(row.state_colors[state]), `${state} is not filled in its color`);
@@ -305,9 +306,14 @@ describe('a field opened in collect', () => {
 			await button.click();
 			await page.locator(`${OPEN} [data-state="stand"]`).waitFor();
 			assert.equal(await page.locator(`${OPEN} [data-off]`).count(), 0, 'a never-off field has off');
+			assert.deepEqual(await listed(page, 'stand'), ['sit', 'stand']);
 			await page.keyboard.press('Escape');
 			await page.locator(`${VIEW} [data-field="mood"]`).click();
 			await page.locator(`${OPEN} [data-off]`).waitFor();
+			// Off is the first state, not in the first row (da-qryu8).
+			assert.deepEqual(await listed(page, 'bad'), ['off', 'good', 'bad']);
+			assert.equal(await page.locator(`${HEAD} [data-off]`).count(), 0, 'off in the first row');
+			assert.ok(await outlined(page, `${OPEN} [data-off]`), 'off, the state it is in, is not outlined');
 			assert.equal(await page.locator(`${OPEN} [data-off] [data-repeat]`).textContent(), '!');
 			assert.equal(await page.locator(`${HEAD} [data-current]`).count(), 0, 'an off field shows a state it is in');
 			assert.equal(await page.locator(`${OPEN} [data-state] [data-repeat]`).count(), 0, 'a state is marked as the one it is in');
@@ -322,6 +328,7 @@ describe('a field opened in collect', () => {
 			await pickOption(page, 'bar', 'a tap', 'opens and chooses, 2-click');
 			await button.click();
 			await page.locator(`${OPEN} [data-off]`).waitFor();
+			assert.deepEqual((await items(page)).map((i) => [i.role, i.state]), [['head', undefined], ['state', 'off']], 'an on/off field’s one state is not off');
 			assert.equal(await page.locator(`${OPEN} [data-off] [data-repeat]`).count(), 0, 'work is on: off says !');
 			const seen = await app.spyOnRunner();
 			await page.locator(`${OPEN} [data-off]`).click();
@@ -350,12 +357,33 @@ describe('a field opened in collect', () => {
 		});
 	});
 
+	// vividn, 2026-11-11: «when on is then enabled, it appears of course then as the second state in the collect widgets
+	// state view» (da-qryu8): setup's on lists `true`, drawn «on» in the field's color, after off.
+	test('a field that takes true lists on second, after off, in the field’s color, and logs it', async () => {
+		await opening(['setup lamp --verb switch --states false,dim,true', 'switch lamp dim -t 12:00'], 'lamp', async (app, button) => {
+			const { page } = app;
+			await button.click();
+			assert.deepEqual(await listed(page, 'true'), ['off', 'true', 'dim']);
+			assert.equal(await page.locator(`${OPEN} [data-state="true"]`).textContent(), 'on');
+			const row = JSON.parse((await app.run(['fields', '--json'])).stdout).find((r) => r.field === 'lamp');
+			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+			assert.equal(await page.locator(`${OPEN} [data-state="true"]`).evaluate((el) => getComputedStyle(el).backgroundColor), rgb(row.color), 'on is not the field’s color');
+			await page.locator(`${OPEN} [data-state="true"]`).click();
+			await page.locator(OPEN).waitFor({ state: 'detached' });
+			await app.idle();
+			assert.equal(JSON.parse((await app.run(['tail', 'lamp', '-n', '1', '--json'])).stdout).rows[0].state, true);
+			await button.click();
+			await page.locator(`${OPEN} [data-state="true"] [data-repeat]`).waitFor();
+			assert.equal(await page.locator(`${HEAD} [data-current]`).textContent(), 'on');
+		});
+	});
+
 	test('the spec’s states in its order, then every other used, the last used first, none twice', async () => {
 		// `head`, which once shared the first row's key.
 		const lines = ['setup mood --verb switch --states false,good,bad', 'switch mood head -t 08:00', 'switch mood zed -t 09:00', 'switch mood yak -t 10:00', 'switch mood good -t 11:00', 'switch mood ox -t 12:00', 'off mood -t 13:00'];
 		await opening(lines, 'mood', async ({ page }, button) => {
 			await button.click();
-			assert.deepEqual(await listed(page, 'head'), ['good', 'bad', 'ox', 'yak', 'zed', 'head']);
+			assert.deepEqual(await listed(page, 'head'), ['off', 'good', 'bad', 'ox', 'yak', 'zed', 'head']);
 		});
 	});
 
@@ -364,7 +392,7 @@ describe('a field opened in collect', () => {
 		await opening(lines, 'mood', async ({ page }, button) => {
 			await button.click();
 			// `zed` shows once `states` answers: the multi-states are known before it.
-			assert.deepEqual(await listed(page, 'zed'), ['good', 'bad', 'meh', 'good,bad', 'ox', 'bad,meh', 'zed']);
+			assert.deepEqual(await listed(page, 'zed'), ['off', 'good', 'bad', 'meh', 'good,bad', 'ox', 'bad,meh', 'zed']);
 		});
 	});
 
@@ -399,7 +427,8 @@ describe('a field opened in collect', () => {
 	test('the states fill the rows column by column, a row fallen behind taking two before the long one its second, at the fields’ own height', async () => {
 		const short = Array.from({ length: 30 }, (_, i) => `s${String(i).padStart(2, '0')}`);
 		const states = ['a_state_with_a_rather_long_name', ...short];
-		await opening([`setup mood --verb switch --states false,${states.join(',')}`, 'setup coffee --verb occur'], 'mood', async ({ page }, button) => {
+		// Never off: off, the state a field never logged is in, is outlined, and stands in from its column.
+		await opening([`setup mood --verb switch --states ${states.join(',')} --never-false`, 'setup coffee --verb occur'], 'mood', async ({ page }, button) => {
 			const rest = await page.locator(`${VIEW} .spot.shelf [data-field="coffee"]`).boundingBox();
 			await button.click();
 			const all = await listed(page, short.at(-1));
@@ -441,14 +470,14 @@ describe('a field opened in collect', () => {
 				await page.locator(`${OPEN} [data-state="largo"]`).waitFor();
 				assert.ok((await held(page)).some((a) => a[0] === 'states'), 'the spec’s states waited for the listing');
 				spec = (await items(page)).filter((i) => i.role === 'state');
-				assert.deepEqual(spec.map((i) => i.state), ['adagio', 'presto', 'largo']);
+				assert.deepEqual(spec.map((i) => i.state), ['off', 'adagio', 'presto', 'largo']);
 			} finally {
 				await release();
 			}
 			await listed(page, 'zed');
 			const all = (await items(page)).filter((i) => i.role === 'state');
-			assert.deepEqual(all.map((i) => i.state), ['adagio', 'presto', 'largo', 'yak', 'zed']);
-			assert.deepEqual(all.slice(0, 3), spec, 'a spec state moved when the used ones came');
+			assert.deepEqual(all.map((i) => i.state), ['off', 'adagio', 'presto', 'largo', 'yak', 'zed']);
+			assert.deepEqual(all.slice(0, 4), spec, 'a spec state moved when the used ones came');
 		});
 	});
 
@@ -581,7 +610,7 @@ describe('a field opened in collect', () => {
 			} finally {
 				await release();
 			}
-			assert.deepEqual(await listed(page, 'mid'), ['low', 'high', 'mid']);
+			assert.deepEqual(await listed(page, 'mid'), ['off', 'low', 'high', 'mid']);
 		});
 	});
 
@@ -655,18 +684,20 @@ describe('a field opened in collect', () => {
 		/** The transition's legs, each its states, `off` for off. */
 		const legs = (page) => TRANSITION(page).locator('[data-leg]').evaluateAll((ls) => ls.map((l) => l.dataset.leg));
 
-		test('a hold on a state shows the state now → it in off’s place, its pill on the bar; a tap on it logs the change', async () => {
+		test('a hold on a state shows the state now → it in the state now’s place, which is drawn once (da-qryu8), its pill on the bar; a tap on it logs the change', async () => {
 			await opening(SEEDED, 'mood', async (app, button) => {
 				const { page } = app;
 				await button.click();
 				await STATE(page, 'meh').waitFor();
 				assert.equal(await TRANSITION(page).count(), 0, 'a transition before any hold');
-				await page.locator(`${HEAD} [data-off]`).waitFor();
+				assert.equal(await page.locator(`${HEAD} [data-current]`).textContent(), 'bad');
 				await STATE(page, 'good').click({ button: 'right' });
 				await TRANSITION(page).waitFor();
 				assert.deepEqual(await legs(page), ['bad', 'good']);
 				assert.equal(await TRANSITION(page).textContent(), 'bad→good');
-				assert.equal(await page.locator(`${HEAD} [data-off]`).count(), 0, 'off beside the transition');
+				assert.equal(await page.locator(`${HEAD} [data-current]`).count(), 0, 'the state now beside the transition, which starts with it');
+				assert.equal(await page.locator(HEAD).innerText().then((t) => t.split('bad').length - 1), 1, 'the state now drawn twice');
+				assert.equal(await page.locator(`${HEAD} [data-off]`).count(), 0, 'off in the first row');
 				assert.equal(await statePill(page), 'good');
 				await TRANSITION(page).click();
 				await until(() => lastState(app), (s) => s === 'good');
@@ -688,7 +719,7 @@ describe('a field opened in collect', () => {
 			});
 		});
 
-		test('the last state out of the hold brings off back in the transition’s place', async () => {
+		test('the last state out of the hold brings the state now back in the transition’s place', async () => {
 			await opening(SEEDED, 'mood', async (app, button) => {
 				const { page } = app;
 				await button.click();
@@ -697,7 +728,7 @@ describe('a field opened in collect', () => {
 				await TRANSITION(page).waitFor();
 				await STATE(page, 'good').click();
 				await until(() => statePill(page), (t) => t === null);
-				await page.locator(`${HEAD} [data-off]`).waitFor();
+				await page.locator(`${HEAD} [data-current]`).waitFor();
 				assert.equal(await TRANSITION(page).count(), 0);
 			});
 		});

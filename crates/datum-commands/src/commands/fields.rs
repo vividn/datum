@@ -218,7 +218,12 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
                 let state_colors: JsonValue = state_names
                     .into_iter()
                     .map(|s| {
-                        let hex = state_rgb(&s, spec).hex();
+                        // `true` names on, which is painted in the field's color (da-qryu8).
+                        let hex = if s == "true" {
+                            color.clone()
+                        } else {
+                            state_rgb(&s, spec).hex()
+                        };
                         (s, json!(hex))
                     })
                     .collect::<serde_json::Map<_, _>>()
@@ -600,6 +605,23 @@ mod tests {
         assert_eq!(
             listing[0]["state_colors"]["sad"],
             state_rgb("sad", None).hex()
+        );
+    }
+
+    /// da-qryu8: a spec listing `true` (setup's on) gets the field's colour
+    /// for it, as the CLI paints on, not the hash of the word.
+    #[test]
+    fn listed_true_is_painted_in_the_field_colour() {
+        let db = fresh_db();
+        let mut spec = FieldSpec::new("mood", Action::Switch);
+        spec.allowed_states = Some(vec!["true".to_string(), "sad".to_string()]);
+        db.save_field_spec(&spec).unwrap();
+
+        let listing = compute_fields(&db).unwrap();
+        assert_eq!(listing[0]["state_colors"]["true"], listing[0]["color"]);
+        assert_ne!(
+            listing[0]["state_colors"]["true"],
+            state_rgb("true", None).hex()
         );
     }
 

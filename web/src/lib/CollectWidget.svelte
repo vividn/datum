@@ -903,12 +903,15 @@
 		const unhear = onAnyChange((_, fields) => void ((!fields || fields.includes(field)) && read()), currentDb());
 		return () => ((live = false), unhear());
 	});
-	/** Off is no state of the list: it is the first row's. */
+	/** Off is no state of `listed`: it heads `stated`, as setup lists it. */
 	const isOff = (s: unknown) => s === false || s === 'false';
 	/** The open field's multi-states, by the label they are tapped as, `good,bad` as the tail shows them (da-a2cxa). */
 	const sets = $derived(new Map(picking?.shape.kind === 'change' ? (picking.shape.sets ?? []).map((p) => [p.join(','), p]) : []));
-	/** Whether the open field is in `state` now, a multi-state by its label. */
-	const isIn = (b: FieldButton, state: string) => b.active && (b.current === state || b.set?.join(',') === state);
+	/** Whether the open field is in `state` now, a multi-state by its label, `false` off and `true` on. */
+	const isIn = (b: FieldButton, state: string) =>
+		state === 'false' ? !b.active : b.active && (b.current === state || (state === 'true' && b.current === true) || b.set?.join(',') === state);
+	/** A state's word: `true` is on, as the CLI says it. */
+	const named = (state: string) => (state === 'true' ? 'on' : state);
 	/** The open field's states: the spec's in its order, then every other it has used, a multi-state among them, the last used first, none twice. */
 	const listed = $derived.by((): string[] => {
 		if (picking?.shape.kind !== 'change') return [];
@@ -921,12 +924,14 @@
 	});
 	/** Whether off is offered: a change field its spec lets be off, or an on/off field. */
 	const offable = $derived(picking?.shape.kind === 'on/off' || (picking?.shape.kind === 'change' && !picking.neverFalse));
+	/** The open view's states (da-qryu8, vividn, 2026-11-11): off first where offered, then on where the field takes `true`, then `listed`. */
+	const stated = $derived([...(offable ? ['false'] : []), ...(listed.includes('true') ? ['true'] : []), ...listed.filter((s) => s !== 'true')]);
 	/** Where the open view stands: its first row, then each state, by `sized`'s keys. */
 	const laid = $derived.by(() => {
 		// The first row's key is `open`, with no colon, so no state's `o:` key can be it.
-		const keys = picking ? ['open', ...listed.map((s) => `o:${s}`)] : [];
+		const keys = picking ? ['open', ...stated.map((s) => `o:${s}`)] : [];
 		const rowH = Math.max(24, ...keys.map((k) => sizes.get(k)?.h ?? 0));
-		const on = (i: number) => i === 0 || (!!picking && isIn(picking, listed[i - 1]));
+		const on = (i: number) => i === 0 || (!!picking && isIn(picking, stated[i - 1]));
 		// The items measured, from the first: each stands where those before it put it, and one not yet where a width of 0 does, hidden.
 		const unmeasured = keys.findIndex((k) => !sizes.has(k));
 		const ready = unmeasured < 0 ? keys.length : unmeasured;
@@ -998,8 +1003,8 @@
 	 * state and the transition arrow between them. Clicking this, then
 	 * activates enters the data. / if there is an after state (like when
 	 * there is a duration), then display the after state with and arrow
-	 * afterwards»): while a hold's states are on the bar, off's place holds
-	 * the field's state now → them, and with a length on the bar → the state
+	 * afterwards»): while a hold's states are on the bar, the first row holds
+	 * the field's state now → them, in place of the state now (da-qryu8), and with a length on the bar → the state
 	 * it returns to, which is the one it is in now. Null otherwise.
 	 */
 	const moving = $derived(together && chosen !== null && chosen !== 'false' ? together : null);
@@ -1377,7 +1382,7 @@
 			style:background={color}
 			style:color={inkOver(color)}
 			>{#each states as part, j}{@const color = button.stateColors[part] ?? button.color}{#if j}<span class="comma" style:--next={color}>,</span
-				>{/if}<span style:color={inkOver(color)}>{part}</span>{/each}</span
+				>{/if}<span style:color={inkOver(color)}>{named(part)}</span>{/each}</span
 		>{/if}
 {/snippet}
 
@@ -1550,7 +1555,7 @@
 					</svg>
 					{#each laid.keys as key, i (key)}
 						{@const stand = laid.stands[i]}
-						{@const state = listed[i - 1]}
+						{@const state = stated[i - 1]}
 						<!-- A state is not shown, nor tapped, before it stands where it stays; the first row's place depends on no other's, only its own width, mirrored on the right. -->
 						<div
 							class="spot open"
@@ -1562,14 +1567,14 @@
 							use:sized={key}
 						>
 							{#if i === 0}
-								<!-- The first row (vividn, 2026-11-07): the field's pill, which is back and the field at once (da-dswuc, vividn, 2026-11-10: «just the field pill. 2 birds»), the state it is in drawn as the CLI paints one, and off. -->
+								<!-- The first row (vividn, 2026-11-07): the field's pill, which is back and the field at once (da-dswuc, vividn, 2026-11-10: «just the field pill. 2 birds»), and the state it is in drawn as the CLI paints one, or the transition, which starts with it (da-qryu8). -->
 								{@const opener = $pills.find((p) => p.kind === 'field' && p.text === here.field) ?? { id: FIELD_ID, kind: 'field', text: here.field, color: here.color }}
 								<span class="opener" data-back data-open-field={here.field}><PillChip pill={opener} closes={back} {disabled} /></span>
 								<!-- One state or several (da-o5jfh), painted as the transition's legs are. -->
 								{@const now = fromOf(here)}
-								{#if now}{@render leg(here, now, true)}{/if}
+								{#if now && !moving}{@render leg(here, now, true)}{/if}
 								{#if moving}
-									<!-- The transition, in off's place while a hold's states are on the bar (da-rou2i): now → them (→ back, with a length). -->
+									<!-- The transition, while a hold's states are on the bar (da-rou2i): now → them (→ back, with a length). -->
 									{@const from = fromOf(here)}
 									<button
 										class="widget states transition"
@@ -1583,19 +1588,21 @@
 												class="arrow">→</span
 											>{@render leg(here, from)}{/if}</button
 									>
-								{:else if offable}
-									<button
-										class="widget states"
-										use:act={clicks === 'two' && here.shape.kind === 'change' ? 'arm' : 'run'}
-										class:chosen={chosen === 'false'}
-										style={vars(offLook(here))}
-										{disabled}
-										data-off
-										title={shellJoin(['off', here.field])}
-										onclick={() => off(here)}
-									>{#if !here.active}<span class="repeat" data-repeat>!</span>{/if}off</button>
 								{/if}
-								{#if !moving && chosen !== null && chosen !== 'false'}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{chosen}</span></span>{/if}
+								{#if !moving && chosen !== null && chosen !== 'false'}<span class="to">→ <span style:color={here.stateColors[chosen] ?? here.color}>{named(chosen)}</span></span>{/if}
+							{:else if state === 'false'}
+								<!-- Off, the first state where it is offered (da-qryu8): empty, an outline alone. -->
+								<button
+									class="widget states"
+									use:act={clicks === 'two' && here.shape.kind === 'change' ? 'arm' : 'run'}
+									class:on={!here.active}
+									class:chosen={chosen === 'false'}
+									style={vars(offLook(here))}
+									{disabled}
+									data-off
+									title={shellJoin(['off', here.field])}
+									onclick={() => ((together = null), off(here))}
+								>{#if !here.active}<span class="repeat" data-repeat>!</span>{/if}off</button>
 							{:else}
 								{@const parts = sets.get(state)}
 								{@const look = stateLook(here, state, parts)}
@@ -1615,7 +1622,7 @@
 								>{#if on}<span class="repeat" data-repeat>!</span>{/if}{#if parts}{#each parts as part, j}{@const color = here.stateColors[part] ?? here.color}{#if j}<span
 												class="comma"
 												style:--next={color}>,</span
-											>{/if}<span data-part={part} style:color={inkOver(color)}>{part}</span>{/each}{:else}{state}{/if}</button>
+											>{/if}<span data-part={part} style:color={inkOver(color)}>{part}</span>{/each}{:else}{named(state)}{/if}</button>
 							{/if}
 						</div>
 					{/each}

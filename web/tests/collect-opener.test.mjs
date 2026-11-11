@@ -54,9 +54,9 @@ for (const [screen, options] of Object.entries(SCREENS)) {
 					const [here, bar] = await Promise.all([look(page, pill), look(page, '.prompt-bar .pill.field')]);
 					assert.deepEqual({ ...here, fill: undefined }, { kind: 'field', words: 'mood', x: true, lock: false, fill: undefined });
 					assert.equal(here.fill, bar.fill, "drawn in the bar's field pill's color");
-					// Back and the field's name are the pill now: the head's other buttons are off alone.
-					const others = await page.locator(HEAD).evaluate((h) => [...h.querySelectorAll('button')].filter((b) => !b.closest('.pill') && !b.hasAttribute('data-off')).length);
-					assert.equal(others, 0, 'a button beside the pill and off');
+					// Back and the field's name are the pill now, and off is a state (da-qryu8): the head holds no other button.
+					const others = await page.locator(HEAD).evaluate((h) => [...h.querySelectorAll('button')].filter((b) => !b.closest('.pill')).length);
+					assert.equal(others, 0, 'a button beside the pill');
 					assert.equal(await page.locator(`${HEAD} .name`).count(), 0, "the field's name is still drawn beside its pill");
 					assert.ok(!(await page.locator(HEAD).innerText()).includes('back'), 'back is still drawn');
 
