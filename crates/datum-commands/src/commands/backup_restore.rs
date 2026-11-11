@@ -587,7 +587,9 @@ fn restore_chain(
         }
         None => None,
     };
-    let approve = (args.dry_run && !held.is_open() && args.admin_key.is_none())
+    // The account signed in, an admin here, signs it itself (da-t1492).
+    let signer = args.admin_key.is_some() || super::sync::account_admin(&held)?.is_some();
+    let approve = (args.dry_run && !held.is_open() && !signer)
         .then(|| chain::approve_link(&super::sync::wipe_record(&held, "data", true)));
     // A live set changed since `--if-unchanged` counted it stops here too.
     let preview = run(Mode {

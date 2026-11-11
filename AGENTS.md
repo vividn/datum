@@ -801,7 +801,10 @@ tab's memory alone (`#lib/account.ts`) and goes to every command `run` sends as
 `DATUM_ACCOUNT`; the CLI derives the account's keys from it (`chain::account_keys`,
 HKDF-SHA256 with fixed info strings): `sign`, the Ed25519 account key, and `seal`, for
 part 2's account record. Signed in, a genesis lists the account key as its admin and is
-signed by it, and `sign_all` signs a locked chain's acts with it where it is an admin.
+signed by it, and `sign_all` signs a locked chain's acts with it where it is an admin
+(`account_admin`), so a `db restore --hard --chain --dry-run` names no order to approve,
+and datum.day's purge and restore dialogs offer that chain's order as one the run signs
+(`pageSigns` in `#lib/dbio.ts`, da-t1492).
 A device of the account joins with no invite from anyone: `sync account --invite
 <CHAIN>` (hidden) signs an `invite` with the account key and carries it in the secret it
 redeems, `<secret>.<base64url record>` (`chain::carry_invite`), and a member's

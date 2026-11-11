@@ -19,6 +19,14 @@ import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './supp
 import { AT_DATUM_DAY, DESKTOP, addAdmin, authenticator, cli, openChain, runIn } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
+/** A PRF output, as `syncaccount.test.mjs` signs in with: its account key admins a chain made signed in. */
+const PRF = '07'.repeat(32);
+/** This tab signed in to that account (da-nf1p4) and `home` in a chain it locks: a reload signs it out. */
+async function accountChain(app) {
+	await app.page.evaluate((s) => window.datum.sync.signIn(undefined, s), PRF);
+	await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']);
+}
+
 let relay;
 before(async () => {
 	await startApp();
@@ -127,10 +135,11 @@ describe('`db purge --leave` in the bar', () => {
 // asks a passkey for and a key file can give only the CLI. The dialog says
 // so before the name, which was otherwise typed for a refusal.
 describe('the purge dialog in a locked chain', () => {
-	const ask = async (app) => {
+	const ask = async (app, then = async () => {}) => {
 		const dialog = app.page.locator('dialog.confirm');
 		await cli(app, ['--db', 'home', 'occur', 'tea']);
 		await app.goto('/repl?db=home');
+		await then();
 		const said = app.submit('db purge');
 		// Handled, so a failed assertion is the failure reported, not its closing the page under this.
 		said.catch(() => {});
@@ -177,18 +186,44 @@ describe('the purge dialog in a locked chain', () => {
 	});
 });
 
+// da-t1492: a chain started signed in to a passkey's account is locked by the
+// account key, an `ed25519:` key as a key file's is, which the CLI signs with
+// itself while the tab is signed in: so the page offers its purge.
+describe('the purge dialog in a chain the account locks', () => {
+	test('signed in, the whole chain is offered, and the account signs its purge with no passkey asked', async () => {
+		await withWallClock(async (app) => {
+			const dialog = app.page.locator('dialog.confirm');
+			await cli(app, ['--db', 'home', 'occur', 'tea']);
+			await app.goto('/repl?db=home');
+			await accountChain(app);
+			const said = app.submit('db purge');
+			said.catch(() => {});
+			await dialog.waitFor();
+			const text = await dialog.locator('p').innerText();
+			assert.doesNotMatch(text, /--admin-key/);
+			assert.match(text, /signed in/);
+			await dialog.getByRole('button', { name: 'chain', exact: true }).click();
+			await dialog.locator('input').fill('home');
+			await dialog.locator('input').press('Enter');
+			await said;
+			assert.equal((await runIn(app, ['--db', 'home', 'count', 'tea'])).stdout.trim(), '0');
+		}, AT_DATUM_DAY);
+	});
+});
+
 // da-art6t: a hard restore of every copy in a locked chain takes an admin's
 // signature, which the CLI would read on stdin, and here stdin is the backup.
 // A key file's only the CLI reads, so the page says it cannot before the
 // name; a passkey's the page asks for once the name is typed, and hands the
 // run the order it signed (da-sd7xt).
 describe('the hard restore dialog in a locked chain', () => {
-	const restore = async (app) => {
+	const restore = async (app, then = async () => {}) => {
 		const { page } = app;
 		await cli(app, ['--db', 'home', 'occur', 'tea']);
 		const backup = await cli(app, ['--db', 'home', 'db', 'backup', '-']);
 		await cli(app, ['--db', 'home', 'occur', 'poison']);
 		await app.goto('/repl?db=home');
+		await then();
 		const chooser = page.waitForEvent('filechooser');
 		// Its echo lands once the file is chosen: handled, so a failed assertion is the failure reported.
 		const ran = app.submit('db restore --hard --chain');
@@ -224,6 +259,21 @@ describe('the hard restore dialog in a locked chain', () => {
 			const dialog = app.page.locator('dialog.confirm[open]');
 			await dialog.waitFor();
 			assert.match(await dialog.locator('p').innerText(), /passkey/);
+			await dialog.locator('input').fill('home');
+			await dialog.locator('input').press('Enter');
+			await ran;
+			assert.match((await app.stdouts()).at(-1), /\b2 written\b/);
+			assert.deepEqual([await count(app, 'tea'), await count(app, 'poison')], ['1', '0']);
+		}, AT_DATUM_DAY);
+	});
+
+	test('locked by the account this tab is signed in to: asked by name alone, and the account signs the restore of every copy (da-t1492)', async () => {
+		await withWallClock(async (app) => {
+			// No authenticator: a passkey asked for would fail the run.
+			const ran = restore(app, () => accountChain(app));
+			const dialog = app.page.locator('dialog.confirm[open]');
+			await dialog.waitFor();
+			assert.doesNotMatch(await dialog.locator('p').innerText(), /passkey/);
 			await dialog.locator('input').fill('home');
 			await dialog.locator('input').press('Enter');
 			await ran;

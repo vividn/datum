@@ -141,3 +141,39 @@ fn the_account_record_says_which_chains_a_new_device_joins_and_through_whom() {
         .unwrap();
     assert!(String::from_utf8_lossy(&other.stderr).contains("not this account's record"));
 }
+
+/// `args` signed in, `stdin` on its stdin: datum.day hands a backup so.
+fn signed_in_with(c: &Copy, args: &[&str], stdin: &str) -> String {
+    let mut child = c.cmd(args).env("DATUM_ACCOUNT", PRF).spawn().unwrap();
+    let mut pipe = child.stdin.take().unwrap();
+    pipe.write_all(stdin.as_bytes()).unwrap();
+    drop(pipe);
+    let out = child.wait_with_output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "`datum {}`: {err}", args.join(" "));
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// The account's chain is the account's to restore and purge (da-t1492):
+/// signed in, a hard restore of every copy names no order for a passkey to
+/// approve and runs with the backup on stdin, as datum.day hands it, and a
+/// purge of every copy runs with no approval code. Signed out, the dry run
+/// names the order an admin must approve.
+#[test]
+fn the_account_signs_the_restore_and_the_purge_of_its_chain() {
+    let a = Copy::new();
+    signed_in(&a, &["sync", "new-invite"]);
+    a.ok(&["occur", "tea"]);
+    let bytes = a.ok(&["db", "backup", "-"]);
+    a.ok(&["occur", "poison"]);
+    let piped = ["db", "restore", "-", "--hard", "--chain"];
+    let dry = [&piped[..], &["--dry-run", "--json"]].concat();
+    assert!(json(&a.ok_in(&dry, &bytes))["approve"].is_string());
+    assert!(json(&signed_in_with(&a, &dry, &bytes))["approve"].is_null());
+    signed_in_with(&a, &[&piped[..], &["--yes"]].concat(), &bytes);
+    let count = |f: &str| a.ok(&["count", f]).trim().to_string();
+    assert_eq!([count("tea"), count("poison")], ["1", "0"]);
+
+    signed_in(&a, &["db", "purge", "--chain", "--yes"]);
+    assert_eq!(count("tea"), "0");
+}

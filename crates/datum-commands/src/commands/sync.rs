@@ -1638,6 +1638,19 @@ pub(super) fn sign(db: &Db, record: Value, chain: &Chain, admin_key: Option<&str
     sign_all(db, vec![record], chain, admin_key)
 }
 
+/// The signed-in account's signing key, where it is an admin of `chain`:
+/// then it signs the chain's acts (da-nf1p4), and no passkey is asked for
+/// (da-t1492).
+pub(super) fn account_admin(chain: &Chain) -> Result<Option<[u8; 32]>> {
+    let admin = |s: &[u8; 32]| {
+        chain
+            .admins
+            .iter()
+            .any(|a| a.key == chain::ed25519_admin_key(s))
+    };
+    Ok(account()?.map(|a| a.sign).filter(admin))
+}
+
 /// [`sign`] for records written together, in order: a key file signs each,
 /// and a passkey approves them all at once (da-7bjai), each record carrying
 /// the `batch` its one approval names.
@@ -1648,14 +1661,7 @@ pub(super) fn sign_all(
     admin_key: Option<&str>,
 ) -> Result<()> {
     let unsigned = !chain.is_open() && records.iter().any(|r| r.get("sig").is_none());
-    // Signed in to an account that is an admin here, it signs (da-nf1p4).
-    let admin = |s: &[u8; 32]| {
-        chain
-            .admins
-            .iter()
-            .any(|a| a.key == chain::ed25519_admin_key(s))
-    };
-    let account = account()?.map(|a| a.sign).filter(admin);
+    let account = account_admin(chain)?;
     if unsigned {
         match admin_key
             .map(|path| key_file(path, false))
