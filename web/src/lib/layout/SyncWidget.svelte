@@ -511,7 +511,7 @@
 
 	const expel = (label: string, endpoint: string, d = db) =>
 		doing(async () => {
-			const words = `Expel ${label} from ${d}? It can no longer sync ${d} until a new invite admits it again. It keeps its own copy, and what it wrote stays on every device.`;
+			const words = `Expel ${label} from ${d}? It can no longer sync ${d} until a new invite admits it again. It keeps its own copy, and what it wrote stays on every device. If it is lost or someone else may hold it, Unjoin it instead, which sets aside everything it wrote: a device not yet told of the removal still takes its writes dated before it.`;
 			if (!(await confirm(words, 'expel'))) return;
 			ok(await syncAct(d, expelArgv(endpoint)));
 		});

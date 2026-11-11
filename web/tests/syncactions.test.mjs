@@ -135,7 +135,8 @@ describe('the sync widget’s actions', () => {
 			// Locked: the expel stops at an approve link, which the passkey signs.
 			await cellAct(page, 'phone', 'home', 'expel');
 			const asked = page.locator('dialog.confirm');
-			for (const fact of ['phone', 'home']) assert.ok((await asked.innerText()).includes(fact), fact);
+			// The device, the database, and the act a lost or stolen device takes instead (da-fstz5).
+			for (const fact of ['phone', 'home', 'Unjoin']) assert.ok((await asked.innerText()).includes(fact), fact);
 			await asked.getByRole('button', { name: 'expel' }).click();
 			await until(() => gridLabels(page), (labels) => labels.length === 1);
 			assert.equal((await gridLabels(page)).includes('phone'), false);

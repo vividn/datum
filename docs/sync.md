@@ -26,6 +26,13 @@ change to an entry is an op signed by this copy's endpoint key (which is
 also its iroh identity), and two copies that hold the same ops hold the
 same entries. `datum sync help` lists the whole tree.
 
+A device you have lost, or that someone else may hold, should be unjoined
+(`datum sync chain expel <WHO> --unjoin`, the Sync widget's «Unjoin»), which
+sets aside everything it wrote, not only removed. Removing it trusts the
+device's own clock for what it wrote before the removal, so until every member
+has heard of the removal, it could still send writes dated earlier through
+one that has not, and they would stand.
+
 On datum.day a person can sign in to sync with a passkey (the Sync widget's
 «Sign in with a passkey»), where the browser and passkey give WebAuthn's PRF:
 passkeys in iCloud Keychain (iOS and iPadOS 18.4, macOS 15.4 and later) and
