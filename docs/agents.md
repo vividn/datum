@@ -7,6 +7,21 @@ is the short version for an agent: which kind of data fits what you track, how t
 datum suits an agent well. Every command is one non-interactive call, `--json` prints rows a program can read, a
 non-zero exit says what went wrong, and `--db <name>` keeps each record in a database of its own.
 
+## Keep datum's home in persistent storage
+
+An install keeps its databases and its device key, its identity to sync, in `DATUM_HOME`, and the names of its
+databases and its config in `DATUM_CONFIG_HOME` ([configuration.md](configuration.md)). In a sandbox or container
+whose home is wiped between sessions, every session is a new install: what it logged and had not synced is gone, and
+the chains it joined do not know its new key, so its person's devices gain a stranger each time. Point both at your
+persistent storage, in whatever runs at the start of each session:
+
+```bash,no_run
+export DATUM_HOME=/persistent/datum DATUM_CONFIG_HOME=/persistent/datum-config
+```
+
+To check it held, `datum --db <name> sync status --json` prints this install's device key as `this.device`: the
+next session should print the same.
+
 ## Keep your own record
 
 What an agent can track about itself, if it wants to know where its time and attention went:

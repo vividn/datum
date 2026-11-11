@@ -127,6 +127,14 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
   state repeated with no change between.
 - **Time formats:** `datum help time` lists every form `-t`, `-d`, `-y`/`-q` and
   durations take, with examples.
+- **In a sandbox, keep datum's home in persistent storage.** `DATUM_HOME` holds
+  the databases and the device key, this install's identity to sync;
+  `DATUM_CONFIG_HOME` the names of the databases and the config. Wiped between
+  sessions, every session is a new device: unsynced entries are lost and its
+  chains don't know it. Set both in whatever runs at the start of each session
+  (`export DATUM_HOME=/persistent/datum DATUM_CONFIG_HOME=/persistent/datum-config`),
+  and check it held: `datum --db <name> sync status --json` prints the same
+  `this.device` in the next session.
 - **Trying sync? Set `DATUM_SYNC_NO_DAEMON=1` first.** A copy's first
   `sync chain invite` or `connect` installs a background sync service for your
   user (a systemd user unit or launchd agent), even on a throwaway db. If one

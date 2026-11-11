@@ -66,6 +66,18 @@ curl -fsSL https://datum.day/install.sh | sh
 Elsewhere, build it from a checkout with Rust's `cargo`: `git clone https://github.com/vividn/datum && cd datum &&
 scripts/install.sh`.
 
+**In a sandbox, keep datum's home in persistent storage.** `DATUM_HOME` holds the databases and the device key, your
+install's identity to sync; `DATUM_CONFIG_HOME` the names of the databases and the config. If your home is wiped
+between sessions, every session is a new device: what you logged and had not synced is gone, and your person's chain
+does not know you, so they must invite you again. Set both in whatever runs at the start of each session:
+
+```bash,no_run
+export DATUM_HOME=/persistent/datum DATUM_CONFIG_HOME=/persistent/datum-config
+```
+
+To check it held, `datum --db alex sync status --json` prints your device key as `this.device`: the next session
+should print the same.
+
 **Share a database with your person.** Keep their record in a database named for them, and send them the link
 `sync chain invite` prints; they open it on datum.day and agree, and from then on what either side writes, both hold.
 `--label` names your copy in what they see («Join the sync chain of «Alex's agent»»); without it they see your
