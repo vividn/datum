@@ -88,7 +88,7 @@
 	import { run } from './run.js';
 	import { STANDARD_DOT } from './panes.js';
 	import type { FieldListing } from './fields.js';
-	import { specArgv, type Place, type Spec } from './track.js';
+	import type { Place, Spec } from './track.js';
 
 	let {
 		field,
@@ -167,17 +167,6 @@
 	/** The `render` an open eye writes for a field: none, but for a template's, whose own would show through. */
 	const opened = (name: string) => (lanes[name]?.spec?.template ? true : undefined);
 	const hidden = $derived(hides(place.render));
-	/** The other fields hidden, the way back to each. */
-	const hiddenFields = $derived(Object.keys(lanes).filter((n) => n !== field && hides(lanes[n].spec?.render)).sort());
-
-	/** Draw a hidden field again: its spec saved now, the one the form holds not being its. */
-	async function reveal(name: string) {
-		const r = await run(specArgv({ ...lanes[name].spec, render: opened(name) } as unknown as Spec));
-		if (r.code !== 0) return;
-		await list();
-		asked = '';
-		draw();
-	}
 
 	/** What the band is to draw, and what it was last asked to. */
 	let want = '';
@@ -671,19 +660,6 @@
 		</span>
 	</p>
 
-	{#if hiddenFields.length}
-		<p class="row hidden-fields">
-			hidden: {#each hiddenFields as name (name)}
-				<span class="hidden-field" data-field={name}>
-					<button type="button" class="icon" aria-label="draw {name} on the pictures" title="draw {name} on the pictures" onclick={() => reveal(name)}>
-						{@render eye(false)}
-					</button>
-					<button type="button" class="link" onclick={() => onopen(name)}>{name}</button>
-				</span>
-			{/each}
-		</p>
-	{/if}
-
 	{#if anchored.length}
 		<p class="anchorees">
 			⚓ anchors: {#each anchored as name, i (name)}{#if i},{' '}{/if}<button type="button" class="link" onclick={() => onopen(name)}>{name}</button>{/each}
@@ -834,16 +810,6 @@
 		margin: 0;
 		font-size: 0.75rem;
 		color: var(--ink);
-	}
-
-	.hidden-fields {
-		flex-wrap: wrap;
-	}
-
-	.hidden-field {
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
 	}
 
 	.icon {

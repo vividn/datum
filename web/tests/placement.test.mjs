@@ -838,7 +838,6 @@ describe('the Placement tab', () => {
 	// da-woyqh, vividn, 2026-10-30: «the placement widget should allow completely hiding».
 	describe('the eye', () => {
 		const EYE = `${MODAL} .placement button.eye`;
-		const hiddenRow = (field) => `${MODAL} .placement .hidden-field[data-field="${field}"]`;
 		/** The fields each picture draws, as the CLI says. */
 		const pictures = async (app) => {
 			const day = JSON.parse((await app.run(['dayview', '--show', 'json'])).stdout);
@@ -923,33 +922,22 @@ describe('the Placement tab', () => {
 			});
 		});
 
-		test('the tool lists the fields hidden, each with its eye closed: a click draws it, its name opens its setup', async () => {
+		// da-g1nae, vividn, 2026-11-11: «also remove the "hidden: <hidden fields>" that appears below every placement tool, this is not the place to show this».
+		test('the tool names no other field hidden: a hidden field is shown again from its own setup', async () => {
 			await onSeam(async (app) => {
 				const { page } = app;
 				for (const f of ['walk', 'read', 'cook']) await app.run(['start', f, '-t', '-30']);
 				await setPlace(app, 'walk', { render: false });
-				await setPlace(app, 'cook', { render: false, y: 0.7, height: 0.1 });
+				await setPlace(app, 'cook', { render: false });
 
 				await openPlacement(page, 'read');
 				await turn(page, 'current');
-				assert.deepEqual(await page.locator(`${MODAL} .placement .hidden-field`).evaluateAll((els) => els.map((e) => e.dataset.field)), ['cook', 'walk']);
-				assert.equal(await page.locator(`${hiddenRow('walk')} circle`).count(), 0, 'its eye is closed');
-				assert.equal(await onBand(page, 'cook').count(), 0);
-
-				await page.locator(`${hiddenRow('cook')} button.icon`).click();
-				await page.locator(hiddenRow('cook')).waitFor({ state: 'detached' });
-				await onBand(page, 'cook').waitFor();
-				const back = await spec(app, 'cook');
-				assert.equal('render' in back, false, 'saved at once');
-				assert.deepEqual([back.y, back.height], [0.7, 0.1], 'and nothing else of it changed');
-
-				await page.locator(`${hiddenRow('walk')} button.link`).click();
-				await page.locator(FORM_OF('walk')).waitFor();
-				await page.locator(`${EYE}[aria-pressed="true"]`).waitFor();
-				assert.equal(await page.locator(`${MODAL} .placement .hidden-field`).count(), 0, 'a field does not list itself');
+				await page.locator(`${MODAL} .placement .band[data-drawn]`).waitFor();
+				const words = await page.locator(`${MODAL} .placement`).innerText();
+				assert.doesNotMatch(words, /hidden/i, words);
+				assert.equal(await page.locator(`${MODAL} .placement button.eye`).count(), 1, 'one eye, the field\'s own');
+				assert.equal(await page.locator(`${MODAL} .placement`).getByRole('button', { name: /walk|cook/ }).count(), 0, 'nothing names a hidden field');
 				await leaveField(page);
-				// The form it went to keeps what it said, hidden.
-				assert.equal((await spec(app, 'walk')).render, false);
 			});
 		});
 
