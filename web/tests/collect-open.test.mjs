@@ -13,7 +13,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { opened } from '../src/lib/fields.ts';
+import { opened, listedStates } from '../src/lib/fields.ts';
 import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
 import { along, pickOption, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
@@ -50,6 +50,19 @@ describe('opened', () => {
 
 	test('a room shorter than two rows is one row', () => {
 		assert.deepEqual(opened([{ w: 10 }, { w: 10 }, { w: 10 }], { ...O, height: 40 }).stands.map((s) => s.row), [0, 0, 0]);
+	});
+});
+
+// vividn, 2026-11-11: «in the state view, sort more recently occuring multi states before the less recently
+// occuring single states. right now all the multi states happen at the end» (da-dz32d).
+describe('listedStates', () => {
+	const use = (state, last_used, count = 1) => ({ state, declared: false, count, last_used });
+	test('the spec’s first, then singles and multi-states together, the last used first, then multi-states never used', () => {
+		const rows = [use('good', '2026-11-10T09:00:00Z', 2), use('ox', '2026-11-10T10:00:00Z'), use(['good', 'bad'], '2026-11-10T11:00:00Z'), use(['bad', 'meh'], '2026-11-10T08:00:00Z'), use(false, '2026-11-10T12:00:00Z')];
+		assert.deepEqual(listedStates(['good', 'bad'], rows, ['good,bad', 'bad,meh', 'good,meh']), ['good', 'bad', 'good,bad', 'ox', 'bad,meh', 'good,meh']);
+	});
+	test('an array no multi-state of the field is left out, as a state it cannot tap', () => {
+		assert.deepEqual(listedStates([], [use(['solo'], '2026-11-10T11:00:00Z'), use('ox', '2026-11-10T10:00:00Z')], []), ['ox']);
 	});
 });
 
@@ -343,6 +356,15 @@ describe('a field opened in collect', () => {
 		await opening(lines, 'mood', async ({ page }, button) => {
 			await button.click();
 			assert.deepEqual(await listed(page, 'head'), ['good', 'bad', 'ox', 'yak', 'zed', 'head']);
+		});
+	});
+
+	test('a multi-state among the used singles by its last use, not after them (da-dz32d)', async () => {
+		const lines = ['setup mood --verb switch --states false,good,bad,meh', 'switch mood zed -t 09:00', 'switch mood bad,meh -t 10:00', 'switch mood ox -t 11:00', 'switch mood good,bad -t 12:00', 'off mood -t 13:00'];
+		await opening(lines, 'mood', async ({ page }, button) => {
+			await button.click();
+			// `zed` shows once `states` answers: the multi-states are known before it.
+			assert.deepEqual(await listed(page, 'zed'), ['good', 'bad', 'meh', 'good,bad', 'ox', 'bad,meh', 'zed']);
 		});
 	});
 

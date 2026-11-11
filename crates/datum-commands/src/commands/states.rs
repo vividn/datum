@@ -65,7 +65,8 @@ pub fn compute_states(db: &Db, field: &str) -> Result<JsonValue> {
             "declared": declared,
             "count": count,
             "last_used": last.map(|t: chrono::DateTime<chrono::Utc>| t.to_rfc3339()),
-            "color": state_rgb(&text, spec.as_ref()).hex(),
+            // A multi-state's color is each of its states', none of its own (da-dz32d).
+            "color": (!state.is_array()).then(|| state_rgb(&text, spec.as_ref()).hex()),
             "description": spec.as_ref().and_then(|s| s.state_descriptions.get(&text)),
         })
     };
@@ -112,8 +113,15 @@ pub fn format_states(listing: &JsonValue, start: bool) -> String {
                 (_, JsonValue::Bool(false)) => "the field switched off".to_string(),
                 _ => "undeclared".to_string(),
             };
+            // A multi-state reads `good,bad`, as in `tail`.
+            let label = match state {
+                JsonValue::Array(states) => {
+                    states.iter().map(state_label).collect::<Vec<_>>().join(",")
+                }
+                state => state_label(state),
+            };
             vec![
-                state_label(state),
+                label,
                 r["count"].to_string(),
                 last,
                 r["color"].as_str().unwrap_or("").to_string(),
@@ -266,6 +274,41 @@ mod tests {
         let end = table.lines().find(|l| l.starts_with("off ")).unwrap();
         assert!(end.ends_with("the field switched off"), "{table}");
         assert!(!table.contains("start/stop"), "{table}");
+    }
+
+    /// A multi-state is a row of its own beside its states', with its own
+    /// last use, which collect's view sorts it by (da-dz32d).
+    #[test]
+    fn a_multi_state_is_a_row_of_its_own() {
+        let db = fresh_db();
+        let t = |h| chrono::DateTime::parse_from_rfc3339(h).unwrap().to_utc();
+        for (state, at) in [
+            (json!("good"), "2026-10-01T09:00:00Z"),
+            (json!(["good", "bad"]), "2026-10-02T09:00:00Z"),
+        ] {
+            entry_builder("mood")
+                .verb(Verb::Switch)
+                .state(state)
+                .time_start_utc(t(at))
+                .insert(&db);
+        }
+        let listing = compute_states(&db, "mood").unwrap();
+        let row = |state: JsonValue| {
+            let rows = listing["states"].as_array().unwrap();
+            let r = rows.iter().find(|r| r["state"] == state).unwrap();
+            (r["count"].as_u64().unwrap(), r["last_used"].clone())
+        };
+        let at = json!("2026-10-02T09:00:00+00:00");
+        assert_eq!(row(json!("good")), (2, at.clone()));
+        assert_eq!(row(json!("bad")), (1, at.clone()));
+        assert_eq!(row(json!(["good", "bad"])), (1, at));
+        assert_eq!(listing["states"].as_array().unwrap().len(), 3);
+        let table = format_states(&listing, false);
+        let multi = table
+            .lines()
+            .find(|l| l.starts_with("good,bad "))
+            .expect(&table);
+        assert!(!multi.contains('#') && !table.contains('['), "{table}");
     }
 
     #[test]

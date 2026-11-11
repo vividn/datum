@@ -228,8 +228,9 @@ impl Db {
     /// its trailing `following_state` — with how many live entries carry it
     /// and the latest `at` among them, None when every one is
     /// timeless (da-7905t). Most used first, then by name. A concurrent
-    /// array counts once for each of its states. A declaration, a flag or a
-    /// meta note is no use of a state.
+    /// array counts once for each of its states, and once as itself, a
+    /// multi-state, so its last use is known (da-dz32d). A declaration, a
+    /// flag or a meta note is no use of a state.
     pub fn field_state_uses(&self, field: &str) -> Result<Vec<StateUse>> {
         let rows = format!(
             "FROM entries WHERE field = ?1 AND {LIVE_SQL} AND {NOT_FLAG_OR_META_SQL} AND {}",
@@ -250,7 +251,12 @@ impl Db {
             ))
         })? {
             let (state, n, last) = row.map_err(DatumError::Db)?;
+            // A multi-state is a use of each of its states, and of itself (da-dz32d).
             let states = match serde_json::from_str(&state)? {
+                serde_json::Value::Array(states) if states.len() > 1 => {
+                    let whole = serde_json::Value::Array(states.clone());
+                    states.into_iter().chain([whole]).collect()
+                }
                 serde_json::Value::Array(states) => states,
                 state => vec![state],
             };

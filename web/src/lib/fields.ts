@@ -9,6 +9,7 @@
 // point of the echo is that it teaches the truth.
 
 import type { FieldSpec } from './types.js';
+import type { StateUse } from './calls.js';
 
 /**
  * What a press on a button means: the field's KIND (the glossary's word,
@@ -700,4 +701,21 @@ export function stateLook(button: FieldButton, state: string, parts?: string[]):
 /** Off in the open view: empty, an outline alone (vividn, 2026-11-10: «the "off" button should not be colored rather empty»). */
 export function offLook(button: FieldButton): Look {
 	return { fill: null, line: button.color, text: 'var(--ink-bright)', label: 'off' };
+}
+
+/**
+ * A change field's view, its states in order (da-dz32d): `spec`'s in its
+ * order, then every other used, a multi-state of `sets` by its label
+ * (`good,bad`) among the single ones, the last used first, then `sets` never
+ * used; none twice. Off is no state of the list.
+ */
+export function listedStates(spec: string[], rows: StateUse[], sets: string[]): string[] {
+	const label = (s: unknown) => (Array.isArray(s) ? s.join(',') : typeof s === 'string' ? s : JSON.stringify(s));
+	const shown = (s: unknown) => (Array.isArray(s) ? sets.includes(label(s)) : ['string', 'number', 'boolean'].includes(typeof s) && s !== false && s !== 'false');
+	const at = (r: StateUse) => (r.last_used ? Date.parse(r.last_used) : -Infinity);
+	const used = rows
+		.filter((r) => r.count > 0 && shown(r.state))
+		.sort((a, b) => at(b) - at(a) || 0)
+		.map((r) => label(r.state));
+	return [...new Set([...spec, ...used, ...sets])];
 }

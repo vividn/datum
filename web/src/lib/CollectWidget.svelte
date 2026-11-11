@@ -161,6 +161,7 @@
 		atRest,
 		panned,
 		opened,
+		listedStates,
 		inkOver,
 		lookOf,
 		yIn,
@@ -908,7 +909,7 @@
 	const sets = $derived(new Map(picking?.shape.kind === 'change' ? (picking.shape.sets ?? []).map((p) => [p.join(','), p]) : []));
 	/** Whether the open field is in `state` now, a multi-state by its label. */
 	const isIn = (b: FieldButton, state: string) => b.active && (b.current === state || b.set?.join(',') === state);
-	/** The open field's states: the spec's in its order, then every other it has used, the last used first, none twice. */
+	/** The open field's states: the spec's in its order, then every other it has used, a multi-state among them, the last used first, none twice. */
 	const listed = $derived.by((): string[] => {
 		if (picking?.shape.kind !== 'change') return [];
 		const { field, shape } = picking;
@@ -916,12 +917,7 @@
 		// The spec's from the field's own row, drawn before `states` answers, so what it adds comes after them and
 		// nothing drawn moves; a field whose spec lists none has no spec order. With no listing, the field's own.
 		const spec = shape.declared || rows === null ? shape.states.filter((s) => !isOff(s)) : [];
-		const at = (r: StateUse) => (r.last_used ? Date.parse(r.last_used) : -Infinity);
-		const used = (rows ?? [])
-			.filter((r) => r.count > 0 && ['string', 'number', 'boolean'].includes(typeof r.state) && !isOff(r.state))
-			.sort((a, b) => at(b) - at(a) || 0)
-			.map((r) => said(r.state));
-		return [...new Set([...spec, ...used, ...sets.keys()])];
+		return listedStates(spec, rows ?? [], [...sets.keys()]);
 	});
 	/** Whether off is offered: a change field its spec lets be off, or an on/off field. */
 	const offable = $derived(picking?.shape.kind === 'on/off' || (picking?.shape.kind === 'change' && !picking.neverFalse));
