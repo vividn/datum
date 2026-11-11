@@ -406,6 +406,7 @@ fn verify_with(copy: &Copy, peer: &Copy) -> String {
         .to_string()
 }
 
+mod account;
 mod admins;
 mod commands;
 mod db_purge;

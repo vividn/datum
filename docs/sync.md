@@ -26,6 +26,22 @@ change to an entry is an op signed by this copy's endpoint key (which is
 also its iroh identity), and two copies that hold the same ops hold the
 same entries. `datum sync help` lists the whole tree.
 
+On datum.day a person can sign in to sync with a passkey (the Sync widget's
+«Sign in with a passkey»), where the browser and passkey give WebAuthn's PRF:
+passkeys in iCloud Keychain (iOS and iPadOS 18.4, macOS 15.4 and later) and
+Google Password Manager do, and Windows Hello's stay on the one device. The
+passkey's PRF secret, asked with the fixed salt `datum.day account v1`, is the
+same on every device the passkey is on, and an account key is derived from it
+(HKDF-SHA256, info `datum account key v1`), held in the tab until it signs out
+or reloads, never stored. A chain started while signed in has that key as its
+admin, so it is locked and the account's: while signed in, the account signs
+its invites, expels and renames, and signed out they take an admin key as any
+locked chain's do. A device signed in to the same account joins that chain
+with no invite from another device: it signs an invite with the account key
+and redeems it itself, and a member that lacks the invite writes it as the
+admin's before it admits the device. Like any join, it waits until a member is
+online. Without PRF, invites are the way in.
+
 Per key the op with the later hybrid logical clock wins. Concurrent edits
 of one key, or a delete against a concurrent edit, leave the entry's
 `conflicts` naming each side — the same on every copy that holds both — which

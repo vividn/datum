@@ -24,8 +24,10 @@
 	ticket is the sync worker's, as [Add device]'s is.
 
 	Bottom, every act together: [Add device], and for a database in a chain
-	pause, leave and the admins (da-bjxts). The header's `?` opens the guide
-	to all of it (da-oyvsz).
+	pause, leave and the admins (da-bjxts). Under them, in every state, the
+	passkey account (da-nf1p4): [Sign in with a passkey] and [New passkey], or
+	«Signed in» and [Sign out]. The header's `?` opens the guide to all of it
+	(da-oyvsz).
 	[Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
 	and its own buttons at its bottom — with the ticket under a closed
 	«join from a terminal». Once the invite is used, or expired, the QR and
@@ -53,7 +55,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncSignIn, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -89,7 +91,8 @@
 		type PurgePreview
 	} from '#lib/syncView.ts';
 	import type { TicketAbout } from '#lib/syncProtocol.ts';
-	import { approve, approveRecords, createPasskey } from '#lib/passkey.ts';
+	import { approve, approveRecords, createPasskey, NO_PRF, prfOffered } from '#lib/passkey.ts';
+	import { account, setAccount } from '#lib/account.ts';
 	import { ask, confirm } from '#lib/confirm.ts';
 	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
 	import {
@@ -513,6 +516,15 @@
 			markOwn(admins.map((a) => a.key).filter((k) => !before.has(k)));
 		});
 
+	/** Sign this tab in to sync with a passkey, a new one when `make` (da-nf1p4). */
+	const signInHere = (make: boolean) =>
+		doing(async () => {
+			if (!(await prfOffered())) throw new Error(NO_PRF);
+			const label = make ? await ask('Name the passkey', 'make', 'datum') : undefined;
+			if (make && !label) return;
+			await syncSignIn(label ?? undefined);
+		});
+
 	const removeAdmin = (d: DbSync, a: Admin) =>
 		doing(async () => {
 			const last = d.admins?.length === 1;
@@ -856,6 +868,16 @@
 				</div>
 			{/if}
 		{/if}
+		<!-- The account a passkey signs in to (da-nf1p4): this tab's alone, gone at a reload. -->
+		<div class="actions account" data-signed={$account ? 'in' : 'out'}>
+			{#if $account}
+				<span class="signed-in" title={$account.key}>Signed in: chains started here are your account’s, and its devices join them</span>
+				<button type="button" class="command" use:act={'show'} disabled={busy} onclick={() => setAccount(null)}>Sign out</button>
+			{:else}
+				<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => signInHere(false)}>Sign in with a passkey</button>
+				<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => signInHere(true)}>New passkey</button>
+			{/if}
+		</div>
 	</div>
 </Pane>
 

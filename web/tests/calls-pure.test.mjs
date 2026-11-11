@@ -250,6 +250,7 @@ const SAMPLES = {
 	userArgv: [['bea'], ['']],
 	expelArgv: [[MEMBER]],
 	newInviteArgv: [[], [true]],
+	accountArgv: [[], ['c1']],
 	grantArgv: [[MEMBER, 'member', 'ticket', 'invite'], [MEMBER, 'reader', 'ticket', 'invite', 'work']],
 	roleArgv: [[MEMBER, 'reader']],
 	wipeArgv: [[MEMBER]],

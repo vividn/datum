@@ -105,3 +105,65 @@ export async function approve(link: string): Promise<string> {
 	out.push(...new Uint8Array(r.signature));
 	return b64url(new Uint8Array(out));
 }
+
+/**
+ * What a passkey's WebAuthn PRF is asked of to sign in (da-nf1p4), as
+ * `chain::ACCOUNT_PRF_SALT`: the same 32 bytes come back on every device the
+ * passkey is synced to, and the CLI derives the account's keys from them.
+ */
+const PRF_SALT = new TextEncoder().encode('datum.day account v1');
+
+/** Said when this browser or passkey gives no PRF: invites stay the way in. */
+export const NO_PRF =
+	'This browser or passkey can’t sign in to sync (it gives no WebAuthn PRF). Passkeys in iCloud Keychain (iOS 18.4, macOS 15.4 and later) and Google Password Manager can; Windows Hello’s stay on one device. Add a device with an invite instead.';
+
+/** False when the browser says it has no PRF; true when it says it has, or does not say. */
+export async function prfOffered(): Promise<boolean> {
+	const caps = await (
+		PublicKeyCredential as unknown as { getClientCapabilities?: () => Promise<Record<string, boolean>> }
+	)
+		.getClientCapabilities?.()
+		.catch(() => undefined);
+	return caps?.['extension:prf'] !== false;
+}
+
+/**
+ * Sign in with a passkey: the PRF output of an assertion, hex, which only the
+ * page holds, for the session. `make` names a new passkey made first; even
+ * then the secret comes from an assertion, since an authenticator need not
+ * answer PRF as it makes one. Throws `NO_PRF` where the passkey gives none.
+ */
+export async function signIn(make?: string): Promise<string> {
+	let allow: PublicKeyCredentialDescriptor[] | undefined;
+	if (make) {
+		const cred = (await navigator.credentials.create({
+			publicKey: {
+				rp: { id: RP_ID, name: 'datum' },
+				user: { id: crypto.getRandomValues(new Uint8Array(16)), name: make, displayName: make },
+				challenge: crypto.getRandomValues(new Uint8Array(32)),
+				pubKeyCredParams: [
+					{ type: 'public-key', alg: -8 },
+					{ type: 'public-key', alg: -7 }
+				],
+				authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+				extensions: { prf: {} }
+			}
+		})) as PublicKeyCredential | null;
+		if (!cred) throw new Error('no passkey was made');
+		if (cred.getClientExtensionResults().prf?.enabled === false) throw new Error(NO_PRF);
+		allow = [{ type: 'public-key', id: cred.rawId }];
+	}
+	const cred = (await navigator.credentials.get({
+		publicKey: {
+			rpId: RP_ID,
+			challenge: crypto.getRandomValues(new Uint8Array(32)),
+			userVerification: 'required',
+			allowCredentials: allow,
+			extensions: { prf: { eval: { first: PRF_SALT } } }
+		}
+	})) as PublicKeyCredential | null;
+	const first = cred?.getClientExtensionResults().prf?.results?.first;
+	if (!first) throw new Error(NO_PRF);
+	const bytes = ArrayBuffer.isView(first) ? new Uint8Array(first.buffer, first.byteOffset, first.byteLength) : new Uint8Array(first);
+	return hex(bytes.slice().buffer);
+}

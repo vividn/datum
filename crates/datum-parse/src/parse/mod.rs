@@ -1704,6 +1704,7 @@ mod tests {
             ("sync new-invite", ""),
             ("sync approve", "link"),
             ("sync qr", "text"),
+            ("sync account", ""),
         ];
         for (name, args) in dropped {
             let plain = debug(parse_argv(&words(name, args)));

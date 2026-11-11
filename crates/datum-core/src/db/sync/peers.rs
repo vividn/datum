@@ -357,6 +357,48 @@ mod tests {
         send(member, copy);
     }
 
+    /// A device signed in to the chain's account admits itself (da-nf1p4):
+    /// the invite its account key signed rides in its secret, and a member
+    /// lacking it writes it, then admits, once. One a key no admin holds
+    /// signed admits no one.
+    #[test]
+    fn an_invite_its_account_signed_admits_the_device_that_brings_it() {
+        let [a, b, c] = [(); 3].map(|()| Db::open_in_memory().unwrap());
+        let account = chain::account_keys(&[7; 32]);
+        let key = chain::ed25519_admin_key(&account.sign);
+        let mut g = json!({"type": "genesis", "chain": "c1", "label": "a",
+                           "admins": [{"key": key, "label": "account"}]});
+        g["sig"] = chain::sign_ed25519(&g, &account.sign).into();
+        a.sync_chain_write(g, true).unwrap();
+        let carried = |secret: &str, by: &[u8; 32]| {
+            let mut r = json!({
+                "type": "invite", "chain": "c1", "invite_id": secret, "caps": {},
+                "secret_hash": chain::secret_hash(secret), "expires": "2099-01-01T00:00:00Z",
+            });
+            r["sig"] = chain::sign_ed25519(&r, by).into();
+            chain::carry_invite(secret, &r)
+        };
+        let hello = |db: &Db, label: &str, secret: &str| {
+            a.sync_handshake(&id(db), label, "{}", Some(secret), Some(""), 0, None, false)
+        };
+        let ops = || a.sync_chain_records().unwrap().len();
+        let held = ops();
+        let why = hello(&c, "c", &carried("s2", &[9; 32]))
+            .unwrap_err()
+            .to_string();
+        assert!(why.contains("the invite c brought"), "{why}");
+        // Refused, the record it wrote is rolled back: nothing to sync.
+        assert_eq!(ops(), held);
+        assert!(a.sync_chain().unwrap().member(&id(&c)).is_none());
+        let own = carried("s1", &account.sign);
+        assert!(hello(&b, "b", &own).unwrap());
+        assert!(a.sync_chain().unwrap().member(&id(&b)).is_some());
+        let again = hello(&b, "b", &own).unwrap_err().to_string();
+        assert!(again.contains("invite already used"), "{again}");
+        send(&a, &b);
+        assert!(b.sync_chain().unwrap().member(&id(&b)).is_some());
+    }
+
     /// A session's file purged under it takes no peer row (da-otz0d): each of
     /// the three that write one asks who the copy is, and no key is minted.
     #[test]

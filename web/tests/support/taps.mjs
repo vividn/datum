@@ -484,6 +484,8 @@ const SKIP = {
 	'page: settings › page: Backups › backups: Back up now': "writes the plan's destination, the tab's memory bucket, which no counter reads",
 	'page: settings › page: Backups › backups: Test connection': "needs the network, an S3 endpoint (s3.test.mjs stubs it)",
 	'page: settings › page: Backups › backups: Add plan': 'acts on a filled form only, which backups.test.mjs fills',
+	'page: settings › page: Sync › sync: Sign in with a passkey':
+		"opens the browser's passkey sheet, no modal of the page's, and needs an authenticator (syncaccount.test.mjs adds one)",
 	'page: settings › page: Reset default layouts › page: reset':
 		'writes over a saved layout of a name datum ships, and the seeded page has saved none'
 };

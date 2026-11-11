@@ -237,6 +237,11 @@ export function wipeArgv(endpoint: string): string[] {
 	return ['sync', 'chain', 'expel', endpoint, '--wipe', '--yes'];
 }
 
+/** The signed-in account's key, and with `chain` an invite to it the account signs (da-nf1p4). */
+export function accountArgv(chain?: string): string[] {
+	return ['sync', 'account', ...(chain ? ['--invite', chain] : [])];
+}
+
 export function endpointKeyArgv(): string[] {
 	return ['sync', 'endpoint-key'];
 }

@@ -204,6 +204,9 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "approve" => SyncCommand::Approve {
             link: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
         },
+        "account" => SyncCommand::Account {
+            invite: opts(&mut rest, &["invite"], &[], 0..=0)?.get("invite"),
+        },
         "qr" => SyncCommand::Qr {
             text: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
         },

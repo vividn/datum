@@ -262,6 +262,75 @@ pub fn read_admin_secret(text: &str) -> Option<[u8; 32]> {
     unhex::<32>(text.trim())
 }
 
+// ─── The account a passkey signs in to (da-nf1p4) ───────────────────────────
+
+/// What datum.day asks a passkey's WebAuthn PRF of, as `prf.eval.first`: the
+/// same 32 bytes come back on every device the passkey is synced to, and
+/// nothing else produces them. The two keys below are derived from them.
+pub const ACCOUNT_PRF_SALT: &str = "datum.day account v1";
+
+/// An account's two keys, by HKDF-SHA256 (RFC 5869, no salt) of the PRF
+/// output with a fixed `info` each: `sign`, the Ed25519 secret of the
+/// account key, an admin of every chain made signed in; `seal`, the key for
+/// what only the account's own devices read.
+pub struct AccountKeys {
+    pub sign: [u8; 32],
+    pub seal: [u8; 32],
+}
+
+fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
+    let mut k = [0u8; 64];
+    match key.len() > 64 {
+        true => k[..32].copy_from_slice(&Sha256::digest(key)),
+        false => k[..key.len()].copy_from_slice(key),
+    }
+    let pad = |b: u8| k.map(|x| x ^ b);
+    let inner = Sha256::new()
+        .chain_update(pad(0x36))
+        .chain_update(msg)
+        .finalize();
+    Sha256::new()
+        .chain_update(pad(0x5c))
+        .chain_update(inner)
+        .finalize()
+        .into()
+}
+
+/// HKDF-SHA256's first 32 bytes of output.
+fn hkdf32(salt: &[u8], ikm: &[u8], info: &[u8]) -> [u8; 32] {
+    let prk = hmac_sha256(salt, ikm);
+    hmac_sha256(&prk, &[info, &[1]].concat())
+}
+
+pub fn account_keys(prf: &[u8; 32]) -> AccountKeys {
+    AccountKeys {
+        sign: hkdf32(&[], prf, b"datum account key v1"),
+        seal: hkdf32(&[], prf, b"datum account encryption key v1"),
+    }
+}
+
+/// The separator of an invite carried in its own secret, which is hex.
+const CARRIED: char = '.';
+
+/// The secret a device signed in redeems an invite of its own with
+/// (da-nf1p4): `secret`, then the `invite` record the account key signed. A
+/// member not holding that invite writes it as its own, the account key
+/// being an admin, and then admits; so a device joins the account's chain
+/// with no other device's invite, and the chain's rules are unchanged.
+pub fn carry_invite(secret: &str, invite: &Value) -> String {
+    let record = BASE64URL_NOPAD.encode(invite.to_string().as_bytes());
+    format!("{secret}{CARRIED}{record}")
+}
+
+/// A redeemer's secret, and the invite it carries, if it carries one.
+pub fn carried_invite(secret: &str) -> (&str, Option<Value>) {
+    let Some((plain, record)) = secret.split_once(CARRIED) else {
+        return (secret, None);
+    };
+    let record = BASE64URL_NOPAD.decode(record.as_bytes()).ok();
+    (plain, record.and_then(|r| serde_json::from_slice(&r).ok()))
+}
+
 /// What a device key signs to say an endpoint is one of its install's.
 fn binding(chain: &str, endpoint: &str) -> Vec<u8> {
     format!("datum device binding\nchain {chain}\nendpoint {endpoint}").into_bytes()
@@ -1832,8 +1901,18 @@ impl Db {
     /// with entries of its own, which as a reader it could never send and
     /// its fold would hide (da-tti3w).
     pub fn sync_admit(&self, endpoint: &str, label: &str, secret: &str, holds: u64) -> Result<()> {
-        let chain = self.sync_chain()?;
+        let (secret, carried) = carried_invite(secret);
+        let mut chain = self.sync_chain()?;
         let hash = sha256_hex(secret);
+        // An invite the redeemer's account signed (da-nf1p4), new here: this
+        // member writes it, which the chain takes only as an admin's.
+        let lacks = !chain.invites.values().any(|i| i.secret_hash == hash);
+        let invites = |r: &Value| r["type"] == "invite" && r["secret_hash"] == hash.as_str();
+        if let Some(r) = carried.filter(|r| lacks && invites(r)) {
+            self.sync_chain_write(r, true)
+                .map_err(|e| DatumError::Other(format!("the invite {label} brought: {e}")))?;
+            chain = self.sync_chain()?;
+        }
         let (id, invite) = chain
             .invites
             .iter()
@@ -2160,6 +2239,30 @@ mod tests {
     /// `user@` on every one, until it is out; two still alike take short
     /// ids; and a label given always wins. Read from the records alone, so
     /// any copy holding them shows the same.
+    /// HKDF as RFC 5869 says (its cases 1 and 3, the first 32 bytes), and
+    /// the account a known PRF output signs in to: the key datum.day shows
+    /// for it too (`web/tests/account.test.mjs`), da-nf1p4.
+    #[test]
+    fn an_account_is_derived_from_its_prf_output_alone() {
+        let ikm = [0x0b; 22];
+        let salt: Vec<u8> = (0..=0x0c).collect();
+        let info: Vec<u8> = (0xf0..=0xf9).collect();
+        let rfc1 = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf";
+        let rfc3 = "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d";
+        assert_eq!(hex(&hkdf32(&salt, &ikm, &info)), rfc1);
+        assert_eq!(hex(&hkdf32(&[], &ikm, &[])), rfc3);
+        let account = account_keys(&[7; 32]);
+        assert_eq!(
+            ed25519_admin_key(&account.sign),
+            "ed25519:f71518e0672bdcd79e5cb2e5a1143eaaa5699998a08f28b2fa10716998e761ef"
+        );
+        assert_eq!(
+            hex(&account.seal),
+            "5b712a5a6862933fbe6a684d54349dd26b9871bebe9d10000e3060235bb8fb81"
+        );
+        assert_ne!(account.sign, account_keys(&[8; 32]).sign);
+    }
+
     #[test]
     fn a_label_is_the_least_that_tells_the_chains_members_apart() {
         fn add(ops: &mut Vec<Op>, by: &str, mut rec: Value) -> Vec<String> {

@@ -52,12 +52,14 @@
 // are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`).
 
 import { writable, type Readable } from 'svelte/store';
-import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
+import { accountArgv, chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, run, type RunResult } from './run.js';
 import type { ChainList, Member, Notice, PendingJoin, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
+import { accountEnv, setAccount } from './account.js';
+import { signIn } from './passkey.js';
 
 const PULL_MS = 30_000;
 /** How soon a leader that could not read its setup first reads it again,
@@ -127,7 +129,8 @@ export interface Invite {
 	id: string;
 }
 
-type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string; label?: string } | { op: 'sync' } | { op: 'said' };
+/** An offer of `chain`, the account's, through `also`: a ticket this copy redeems itself (da-nf1p4). */
+type Call = { op: 'offer'; invite?: Invite; chain?: string; also?: string } | { op: 'connect'; ticket: string; label?: string } | { op: 'sync' } | { op: 'said' };
 
 /** What a bare `sync` on the page says (da-5lpeg): one line a member, and whether it did its job. */
 interface Said {
@@ -637,13 +640,15 @@ export class Leader {
 		// An invite the page wrote already (the Sync widget, approved with a
 		// passkey in the tab tapped — da-bjxts), or a new one.
 		const invite: Invite = c.invite ?? JSON.parse(await must(['--db', this.db, ...newInviteArgv()]));
-		// The first invite starts the chain, and with it the endpoint.
-		await this.refresh();
+		// The first invite starts the chain, and with it the endpoint; an
+		// account's own, of a chain this copy is not in yet, needs the endpoint.
+		await (c.chain ? this.start() : this.refresh());
 		// Any member can admit the redeemer.
-		const also = JSON.stringify(this.peers.map((p) => JSON.parse(p.addr)));
+		const also = c.also ?? JSON.stringify(this.peers.map((p) => JSON.parse(p.addr)));
 		// What the redeemer is asked before it joins (da-l9kdr).
 		const expires = Math.floor(Date.parse(invite.expires) / 1000);
-		const about = JSON.stringify({ from: this.label, chain: this.chainId, expires } satisfies TicketAbout);
+		const from = c.chain ? 'a device of your account' : this.label;
+		const about = JSON.stringify({ from, chain: c.chain ?? this.chainId, expires } satisfies TicketAbout);
 		return ask<string>(this.db, { op: 'ticket', secret: invite.secret, also, about });
 	}
 
@@ -768,8 +773,44 @@ async function call<T>(db: string, c: Call): Promise<T> {
  * invite whose `secret` is given, or a new one, starting an open chain when
  * the database is in none.
  */
-export function syncOffer(db: string, invite?: Invite): Promise<string> {
+export async function syncOffer(db: string, invite?: Invite): Promise<string> {
+	// Signed in, this tab writes it, as the account (da-nf1p4): the leader may be another tab's.
+	const env = accountEnv();
+	invite ??= env.length ? (JSON.parse(await ran(['--db', db, ...newInviteArgv()], env)) as Invite) : undefined;
 	return call(db, { op: 'offer', invite });
+}
+
+/** `argv` through the seam, with this tab's account; its stdout, or its failure thrown. */
+async function ran(argv: string[], env?: string[]): Promise<string> {
+	const r = await run(argv, undefined, undefined, undefined, undefined, env);
+	if (r.code !== 0) throw cliError(r.stderr);
+	return r.stdout;
+}
+
+/**
+ * Sign this tab in to sync with a passkey's PRF output (da-nf1p4): the
+ * passkey's (`signIn`, `make` naming a new one), or `secret` when given (a
+ * test's). The account key, as the CLI derives it, comes back.
+ */
+export async function syncSignIn(make?: string, secret?: string): Promise<string> {
+	secret ??= await signIn(make);
+	const { key } = JSON.parse(await ran(accountArgv(), [`DATUM_ACCOUNT=${secret}`])) as { key: string };
+	setAccount(secret, key);
+	return key;
+}
+
+/**
+ * Join `chain`, the signed-in account's, into `db` with no other device's
+ * invite (da-nf1p4): an invite the account key signs, redeemed through
+ * `members` (each an address as JSON), which write it as an admin's and
+ * admit this copy. No member online, the join is kept and redeemed once one
+ * is (da-4qpwf).
+ */
+export async function accountJoin(db: string, chain: string, members: string[]): Promise<SyncReport> {
+	if (!accountEnv().length) throw new Error('not signed in');
+	const invite = JSON.parse(await ran(['--db', db, ...accountArgv(chain)])) as Invite;
+	const ticket = await call<string>(db, { op: 'offer', invite, chain, also: `[${members.join(',')}]` });
+	return syncConnect(db, ticket);
 }
 
 /** The link a browser opens to redeem `ticket` (da-l9kdr): the ticket in the fragment, which no server sees. */

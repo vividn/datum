@@ -738,6 +738,20 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 None => println!("approved: {what}"),
             }
         }
+        SyncCommand::Account { invite } => {
+            let account = account()?.context("not signed in: DATUM_ACCOUNT holds no PRF output")?;
+            let mut out = json!({"key": chain::ed25519_admin_key(&account.sign)});
+            if let Some(id) = invite {
+                let caps = json!({});
+                let (secret, expires, id, mut record) =
+                    invite_record(&id, std::time::Duration::from_secs(7 * 24 * 3600), caps);
+                record["sig"] = chain::sign_ed25519(&record, &account.sign).into();
+                out["secret"] = chain::carry_invite(&secret, &record).into();
+                out["expires"] = expires.into();
+                out["id"] = id.into();
+            }
+            println!("{out}");
+        }
         SyncCommand::Qr { text } => {
             let code = qrcode::QrCode::new(text.as_bytes())?;
             println!("{}", code.render::<qrcode::render::svg::Color>().build());
@@ -1054,10 +1068,16 @@ pub(super) fn invite(
         }
     };
     if starts {
-        let genesis = json!({
+        let mut genesis = json!({
             "type": "genesis", "chain": datum_core::ids::new_ulid().to_lowercase(),
             "admins": [], "label": name, "created": chrono::Utc::now().to_rfc3339(),
         });
+        // Signed in, the chain is the account's: its key an admin (da-nf1p4).
+        if let Some(account) = account()? {
+            let key = chain::ed25519_admin_key(&account.sign);
+            genesis["admins"] = json!([{"key": key, "label": ACCOUNT}]);
+            genesis["sig"] = chain::sign_ed25519(&genesis, &account.sign).into();
+        }
         db.sync_chain_write(genesis, true)?;
         describe();
         chain = db.sync_chain()?;
@@ -1080,6 +1100,22 @@ pub(super) fn invite(
         describe();
     }
     Ok((secret, expires_at, id))
+}
+
+/// An account admin's label (da-nf1p4).
+const ACCOUNT: &str = "account";
+
+/// The account this process is signed in to: `DATUM_ACCOUNT`, a passkey's
+/// PRF output as hex (`chain::ACCOUNT_PRF_SALT`), which datum.day hands each
+/// command while a tab is signed in and never stores (da-nf1p4). Set but
+/// not 64 hex digits, it is refused: a broken one is no signing out.
+fn account() -> Result<Option<chain::AccountKeys>> {
+    let Ok(hex) = std::env::var("DATUM_ACCOUNT") else {
+        return Ok(None);
+    };
+    let prf = chain::read_admin_secret(&hex)
+        .context("DATUM_ACCOUNT is not a PRF output: 64 hex digits")?;
+    Ok(Some(chain::account_keys(&prf)))
 }
 
 /// A new invite of chain `chain`, unsigned: its secret, when it expires, its
@@ -1542,10 +1578,21 @@ pub(super) fn sign_all(
     admin_key: Option<&str>,
 ) -> Result<()> {
     let unsigned = !chain.is_open() && records.iter().any(|r| r.get("sig").is_none());
+    // Signed in to an account that is an admin here, it signs (da-nf1p4).
+    let admin = |s: &[u8; 32]| {
+        chain
+            .admins
+            .iter()
+            .any(|a| a.key == chain::ed25519_admin_key(s))
+    };
+    let account = account()?.map(|a| a.sign).filter(admin);
     if unsigned {
-        match admin_key {
-            Some(path) => {
-                let secret = key_file(path, false)?;
+        match admin_key
+            .map(|path| key_file(path, false))
+            .transpose()?
+            .or(account)
+        {
+            Some(secret) => {
                 for r in &mut records {
                     r["sig"] = chain::sign_ed25519(r, &secret).into();
                 }

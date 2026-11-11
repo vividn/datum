@@ -78,6 +78,7 @@ export const SYNC_TESTS = [
 	'tests/sync.test.mjs',
 	'tests/syncactions-leave.test.mjs',
 	'tests/syncactions-purge.test.mjs',
+	'tests/syncaccount.test.mjs',
 	'tests/syncactions.test.mjs',
 	'tests/syncapplying.test.mjs',
 	'tests/syncgate.test.mjs',

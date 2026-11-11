@@ -1360,6 +1360,14 @@ pub enum SyncCommand {
     Approve {
         link: String,
     },
+    /// Hidden: `datum sync account [--invite <CHAIN>]` (da-nf1p4) — the
+    /// account key datum.day is signed in to (`DATUM_ACCOUNT`), and with
+    /// `--invite` an invite to `CHAIN` that key signed, for this copy to
+    /// redeem itself: its secret carries the record, so a member that lacks
+    /// it writes it before it admits.
+    Account {
+        invite: Option<String>,
+    },
     /// Hidden: `datum sync qr <TEXT>` — `TEXT` as a QR code, SVG: the
     /// ticket datum.day shows to add a device (da-bjxts).
     Qr {

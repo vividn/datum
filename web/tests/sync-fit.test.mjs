@@ -103,10 +103,11 @@ describe('the sync widget fits its screen, legibly', () => {
 				// Drawn before the databases are read: measure what it settles to, the grid's fold for `work`.
 				await widget.locator('.grid button.fold').waitFor();
 				const off = await fits(page, 'off', screen.name);
+				// The one act, and the account's sign-in under it (da-nf1p4): signed in first, the chain it starts is the account's.
 				assert.deepEqual(
 					off.buttons.map((b) => b.label),
-					['✎', '?', 'other dbs ›', 'Add device'],
-					'off: the name’s ✎ (da-5wlnr), the guide (da-oyvsz), the grid’s fold, and the one act'
+					['✎', '?', 'other dbs ›', 'Add device', 'Sign in with a passkey', 'New passkey'],
+					'off: the name’s ✎ (da-5wlnr), the guide (da-oyvsz), the grid’s fold, the one act, and the sign-in'
 				);
 
 				await widget.locator('header button.rename').click();

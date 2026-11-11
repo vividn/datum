@@ -792,6 +792,24 @@ entry that moved in whole, `{"remove": hid}` for one that moved out, and a
 no gap wait, drops what falls outside, and its vector is its marks
 (`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
 
+### Signing in with a passkey
+
+datum.day signs a tab in to sync with a passkey's WebAuthn PRF output (da-nf1p4,
+`signIn` in `web/src/lib/passkey.ts`, salt `chain::ACCOUNT_PRF_SALT`), read from an
+assertion, never the create, which an authenticator need not answer. It lives in the
+tab's memory alone (`#lib/account.ts`) and goes to every command `run` sends as
+`DATUM_ACCOUNT`; the CLI derives the account's keys from it (`chain::account_keys`,
+HKDF-SHA256 with fixed info strings): `sign`, the Ed25519 account key, and `seal`, for
+part 2's account record. Signed in, a genesis lists the account key as its admin and is
+signed by it, and `sign_all` signs a locked chain's acts with it where it is an admin.
+A device of the account joins with no invite from anyone: `sync account --invite
+<CHAIN>` (hidden) signs an `invite` with the account key and carries it in the secret it
+redeems, `<secret>.<base64url record>` (`chain::carry_invite`), and a member's
+`sync_admit` writes the carried invite as its own op when it lacks it (the chain takes it
+only as an admin's) and then admits: no fold rule changes. The page builds the ticket
+with the members' addresses (`accountJoin` in `#lib/sync.ts`) and joins as any pending
+join does (da-4qpwf). Which chains and members: part 2's account record (da-rnxp4).
+
 ### Expel, unjoin and purge
 
 The command is `expel`, and its flags say how far it goes (da-zfss8, which cut

@@ -10,6 +10,7 @@
 // the native REPL hands the parser (`crates/datum-cli/src/repl.rs` prepends
 // "datum" itself before dispatching a line).
 
+import { accountEnv } from './account.js';
 import { currentDb, DEFAULT_DB } from './database.js';
 import { dbFlag } from './dbFlag.js';
 import type { Stage } from './dbProtocol.js';
@@ -196,7 +197,7 @@ export async function run(
 	pane?: boolean
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
-	const full = [...dbEnv(argv), ...(env ?? [])];
+	const full = [...dbEnv(argv), ...accountEnv(), ...(env ?? [])];
 	const asked = !stage && (pane || reads.has(JSON.stringify(argv))) ? JSON.stringify([argv, stdin ?? null, full]) : null;
 	// Asked as an undo is drawn, it is the state before (`predict`), and is not kept as the state after.
 	const swapped = predicting;

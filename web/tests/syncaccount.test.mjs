@@ -1,0 +1,133 @@
+// Signing in to sync with a passkey (da-nf1p4): its WebAuthn PRF output, held
+// in the tab, from which the CLI derives the account key — an admin of every
+// chain made signed in, and what signs the invite a device of the account
+// redeems to join one with no other device's invite.
+//
+// A passkey is Chromium's virtual authenticator (CDP `WebAuthn`), with PRF
+// (`hasPrf`) or without; the page is served as https://datum.day, the passkey's
+// relying party. The two devices are two browser contexts on a local relay.
+
+import test, { after, before, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { startApp, stopApp } from './support/app.mjs';
+import { countOf, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
+import { AT_DATUM_DAY, WIDGET, authenticator } from './support/syncactions.mjs';
+import { until } from './support/until.mjs';
+
+/** The PRF output whose account key `chain.rs`'s derivation test names: the web's is the same CLI's. */
+const PRF = '07'.repeat(32);
+const KEY = 'ed25519:f71518e0672bdcd79e5cb2e5a1143eaaa5699998a08f28b2fa10716998e761ef';
+
+let relay;
+before(async () => {
+	await startApp();
+	relay = await startRelay();
+});
+after(async () => {
+	await relay?.stop();
+	await stopApp();
+});
+
+const signIn = (app, secret) => app.page.evaluate((s) => window.datum.sync.signIn(undefined, s), secret);
+const account = (page) => page.locator(`${WIDGET} .account`);
+const chainOf = async (app) => JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
+
+/** Make a passkey from the widget, which signs the tab in. */
+async function newPasskey(page) {
+	await account(page).getByRole('button', { name: 'New passkey' }).click();
+	await page.locator('dialog.ask input').fill('my phone');
+	await page.locator('dialog.ask').getByRole('button', { name: 'make' }).click();
+}
+
+describe('signing in to sync with a passkey', () => {
+	for (const [width, viewport] of [
+		['desktop', AT_DATUM_DAY.viewport],
+		['phone', { width: 390, height: 844 }]
+	]) {
+		test(`a known PRF output signs in to the key the CLI derives for it; signed out, the widget offers the passkey again (${width})`, async () => {
+			await withWallClock(async (app) => {
+				const { page } = app;
+				await app.goto('/sync');
+				assert.equal(await signIn(app, PRF), KEY);
+				await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+				assert.equal(await page.locator(`${WIDGET} .signed-in`).getAttribute('title'), KEY);
+				await account(page).getByRole('button', { name: 'Sign out' }).click();
+				await account(page).getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
+				// Signed out, nothing is signed in for the CLI either.
+				assert.notEqual((await app.run(['sync', 'account'])).code, 0);
+			}, { ...AT_DATUM_DAY, viewport });
+		});
+	}
+
+	test('a new passkey with PRF signs in, and a chain made then is the account’s: its key the admin, which signs the next invite', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await authenticator(page, { hasPrf: true });
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			const key = await page.locator(`${WIDGET} .signed-in`).getAttribute('title');
+			assert.match(key, /^ed25519:[0-9a-f]{64}$/);
+			assert.equal((await app.run(['sync', 'new-invite'])).code, 0);
+			const chain = await chainOf(app);
+			assert.deepEqual(
+				chain.admins.map((a) => a.key),
+				[key]
+			);
+			// Locked by the account, a second invite needs no passkey prompt: the account signs it.
+			const again = await app.run(['sync', 'new-invite']);
+			assert.equal(again.code, 0, again.stderr);
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+		}, AT_DATUM_DAY);
+	});
+
+	test('a passkey that gives no PRF is said plainly, and the tab stays signed out', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await authenticator(page);
+			await app.goto('/sync');
+			await newPasskey(page);
+			const failure = page.locator(`${WIDGET} .failure`);
+			await failure.waitFor();
+			assert.match(await failure.innerText(), /PRF/);
+			assert.match(await failure.innerText(), /invite/);
+			assert.equal(await page.locator(`${WIDGET} .account[data-signed="out"]`).count(), 1);
+		}, AT_DATUM_DAY);
+	});
+
+	test('a second device signed in to the same account joins its chain with no invite, and syncs once the first is online', async () => {
+		// Served as itself: a page at https://datum.day reaches no plain-http relay.
+		const opts = { prepare: relayed(relay) };
+		await withWallClock(
+			(a) =>
+				withWallClock(async (b) => {
+					assert.equal(await signIn(a, PRF), KEY);
+					assert.equal((await a.run(['occur', 'tea'])).code, 0);
+					// The first invite starts the chain; b never sees it.
+					assert.equal((await a.run(['sync', 'new-invite'])).code, 0);
+					const { chain } = await chainOf(a);
+					const endpoint = await until(() => a.page.evaluate(() => window.datum.sync.states().datum?.endpoint), Boolean);
+					// Part 2's account record says where its members are; here, the test does.
+					const member = JSON.stringify({ id: endpoint, addrs: [{ Relay: relay.url }] });
+
+					// The first device paused: it is reached and refuses, and the join is kept.
+					assert.equal((await a.run(['sync', 'pause'])).code, 0);
+					assert.equal(await signIn(b, PRF), KEY);
+					const kept = await b.page.evaluate(([c, m]) => window.datum.sync.accountJoin('datum', c, [m]), [chain, member]);
+					assert.equal(kept.pending, true, JSON.stringify(kept));
+					assert.match(kept.said ?? '', /paused/, JSON.stringify(kept));
+					assert.equal((await chainOf(b)).chain, null);
+
+					// Online again, b's leader redeems it at its next pull: admitted, synced.
+					assert.equal((await a.run(['sync', 'resume'])).code, 0);
+					await until(() => countOf(b, 'tea'), (n) => n === 1, 75000);
+					const joined = await chainOf(b);
+					assert.equal(joined.chain, chain);
+					assert.ok(!joined.pending_join, JSON.stringify(joined));
+					assert.equal((await chainOf(a)).members.length, 2);
+					await until(async () => (await verifyOf(a)) === (await verifyOf(b)), Boolean, 30000);
+				}, opts),
+			opts
+		);
+	});
+});

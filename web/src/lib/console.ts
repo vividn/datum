@@ -44,7 +44,7 @@ import * as house from './house.js';
 import * as cafe from './cafe.js';
 import { DEN, type Round } from './den.js';
 import { KINDS as BACKUP_KINDS, type DestinationKind } from './backups.js';
-import { syncConnect, syncLeads, syncOffer, syncStates, type Invite, type SyncState } from './sync.js';
+import { accountJoin, syncConnect, syncLeads, syncOffer, syncSignIn, syncStates, type Invite, type SyncState } from './sync.js';
 import type { SyncReport } from './syncProtocol.js';
 
 export interface DatumConsole {
@@ -75,6 +75,10 @@ export interface DatumConsole {
 		leads(): string[];
 		offer(db: string, invite?: Invite): Promise<string>;
 		connect(db: string, ticket: string): Promise<SyncReport>;
+		/** Sign in to sync (da-nf1p4): with a passkey, or a PRF output already had. */
+		signIn(make?: string, secret?: string): Promise<string>;
+		/** Join the account's `chain` through `members` (addresses as JSON), with no invite. */
+		accountJoin(db: string, chain: string, members: string[]): Promise<SyncReport>;
 	};
 	/**
 	 * The live tree (da-jdop): what is on screen, and the one way to change
@@ -159,7 +163,7 @@ export function installConsole(target: Record<string, unknown>): void {
 		},
 		shell,
 		mode: { on: () => get(editing) !== null, enter: mode.enter, accept: mode.accept, discard: mode.discard },
-		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect },
+		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect, signIn: syncSignIn, accountJoin },
 		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		field: openField,

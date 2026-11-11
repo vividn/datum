@@ -30,20 +30,22 @@ export async function openChain(app, label = 'phone') {
 
 export const members = async (app) => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'chain', 'list', '--json']));
 
-/** A passkey the page can make and use, with the user verified. */
-export async function authenticator(page) {
+/** A passkey the page can make and use, with the user verified; `more`, its other options (`hasPrf`). The CDP session comes back. */
+export async function authenticator(page, more = {}) {
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
+	const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
 		options: {
 			protocol: 'ctap2',
 			transport: 'internal',
 			hasResidentKey: true,
 			hasUserVerification: true,
 			isUserVerified: true,
-			automaticPresenceSimulation: true
+			automaticPresenceSimulation: true,
+			...more
 		}
 	});
+	return { cdp, authenticatorId };
 }
 
 /** Lock `home`'s chain with a new passkey, under the widget's grid. */
