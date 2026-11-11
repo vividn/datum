@@ -429,23 +429,24 @@ const countOpens = `
  * every open counted belongs to an acquisition counted.
  */
 async function counts(page) {
-	for (;;) {
-		const { opens, acquired, pending } = await page.evaluate(
-			() =>
-				new Promise((resolve) => {
-					const channel = new BroadcastChannel('datum-test-opens');
-					channel.onmessage = (e) => {
-						if (typeof e.data?.opens === 'number') {
-							channel.close();
-							resolve(e.data);
-						}
-					};
-					channel.postMessage('how many?');
-				})
-		);
-		if (pending === 0) return { opens, acquired };
-		await page.waitForTimeout(10);
-	}
+	const { opens, acquired } = await until(
+		() =>
+			page.evaluate(
+				() =>
+					new Promise((resolve) => {
+						const channel = new BroadcastChannel('datum-test-opens');
+						channel.onmessage = (e) => {
+							if (typeof e.data?.opens === 'number') {
+								channel.close();
+								resolve(e.data);
+							}
+						};
+						channel.postMessage('how many?');
+					})
+			),
+		(c) => c.pending === 0
+	);
+	return { opens, acquired };
 }
 
 /** What passed between two `counts`. */
