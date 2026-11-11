@@ -67,25 +67,6 @@ const strip = () => widgetPane('strip', 'daystrip', { ...STRIP });
  */
 export const DAYVIEW_TAB_DAY_HEIGHT = 47;
 
-/**
- * Collect's nowview pane (da-jtqtg): the nowview in front, as it was, and a
- * dayview tab beside it fitting three days to the pane, phone or desktop,
- * resized or not. vividn, 2026-11-11: «on the default collection layout, add
- * a dayview tab on the nowview pane. let's have the default day height be
- * such that you can see three days on this dayview by default», fitted. A day
- * height the reader sets wins over the fit, as any held one does. The ids are
- * the one-tab pane's, so what a session held on its nowview it still holds.
- */
-const nowAndDays = (): Pane => ({
-	id: 'nowview',
-	tabs: [
-		{ id: 'nowview-tab', content: { id: 'nowview-widget', kind: 'nowview', settings: {} } },
-		{ id: 'nowview-dayview-tab', content: { id: 'nowview-dayview', kind: 'daystrip', settings: { ...STRIP, fitDays: 3 } } }
-	],
-	active: 0,
-	bar
-});
-
 const holder = (id: string, split: Split): Pane => ({
 	id,
 	tabs: [{ id: `${id}-tab`, content: split }],
@@ -146,7 +127,7 @@ export const DEFAULT_LAYOUT: Layout = {
 					widgetPane('bar', 'widgetbar'),
 					holder(
 						'now',
-						split('now-stats', 'column', [1 / 2, 1 / 2], [nowAndDays(), widgetPane('stats', 'stats')])
+						split('now-stats', 'column', [1 / 2, 1 / 2], [widgetPane('nowview', 'nowview'), widgetPane('stats', 'stats')])
 					)
 				])
 			)
@@ -218,7 +199,7 @@ export const MOBILE_LAYOUT: Layout = {
 		'root',
 		split('main', 'column', [1 / 3, 1 / 4, 5 / 12], [
 			widgetPane('tail', 'tail', { type: 'small' }),
-			nowAndDays(),
+			widgetPane('nowview', 'nowview'),
 			widgetPane('bar', 'widgetbar')
 		])
 	)
@@ -407,10 +388,6 @@ const NEW_DEFAULTS: NewDefault[] = [
 	{
 		tabs: [],
 		text: 'premade and setup are one tab again: setup lists the fields ready to set up under manual setup, and a click on one shows a day of it, then Configure or Start tracking.'
-	},
-	{
-		tabs: ['collect'],
-		text: "collect's nowview has a dayview tab beside it, showing the last three days in the pane's height."
 	}
 ];
 

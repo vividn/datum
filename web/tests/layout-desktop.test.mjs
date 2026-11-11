@@ -84,9 +84,8 @@ describe('a fresh desktop', () => {
 		assert.deepEqual(await titles(page), ['dayview', 'tail', 'collect', 'nowview', 'stats']);
 		// No `input`: the bottom bar is the command line, and one is enough.
 		assert.equal(await page.locator('main section.pane[data-title="input"]').count(), 0);
-		// Splits, not tabs: every pane is on the screen at once, the nowview's
-		// dayview (da-jtqtg) the one tab beside another.
-		assert.deepEqual(await page.locator('main [role="tab"]').allInnerTexts(), ['nowview', 'dayview']);
+		// Splits, not tabs: every pane is on the screen at once.
+		assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `main` is tabbed');
 
 		const { panes: p } = await screen(page);
 		const near = (a, b, by = 2) => Math.abs(a - b) <= by;

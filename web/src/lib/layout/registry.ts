@@ -344,14 +344,12 @@ The arrow keys move either once it is focused. **✓** keeps them with the layou
 - **orientation**: **horizontal**, or **vertical**, a week of columns, time down the page.
 
 The strip keeps the hours you zoom onto until you reload, and **Reset widget** brings back its sizes.`,
-		props: ({ dayHeight, fitDays, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
+		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
 			orientation: orientation === 'vertical' ? 'vertical' : 'horizontal',
 			// Undefined on purpose: the strip derives its day from its own
 			// box while nothing is set (da-r0ydu), and a default here would
 			// be a number nobody chose standing in the way of that.
 			dayHeight: typeof dayHeight === 'number' ? dayHeight : undefined,
-			// The days the box fits while it follows (da-jtqtg), a whole number from 1.
-			fitDays: typeof fitDays === 'number' && fitDays >= 1 ? Math.round(fitDays) : undefined,
 			labelWidth: typeof labelWidth === 'number' ? labelWidth : DEFAULT_LABEL_WIDTH,
 			freezeToday: typeof freezeToday === 'boolean' ? freezeToday : false,
 			hourFrom: typeof hourFrom === 'number' ? hourFrom : HOUR_FROM,

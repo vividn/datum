@@ -162,9 +162,8 @@ describe('a fresh phone', () => {
 			assert.deepEqual(await titles(page), MOBILE_TREE);
 			// No command pane: the bar's output stands where it was, open.
 			assert.equal(await page.locator('.prompt-bar .section.output').count(), 1, 'the output is not open');
-			// The root bar's own tab is not the dashboard's: the nowview pane's
-			// dayview (da-jtqtg) is the one tab beside another.
-			assert.deepEqual(await page.locator('main [role="tab"]').allInnerTexts(), ['nowview', 'dayview']);
+			// The root bar's own tab is not the dashboard's.
+			assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `mobile` is still tabbed');
 			// Unmodified as it opens: its extract is its baseline, and nothing
 			// was written for it.
 			assert.equal(await page.locator('.root-bar').evaluate((el) => el.classList.contains('modified')), false);
