@@ -45,6 +45,29 @@ fn joining(label: &str, endpoint: &str) -> String {
     )
 }
 
+/// What a pending join says of itself (da-4qpwf): never an error, unless a
+/// member refused it for good, and then what to do. Never its ticket.
+fn pending_words(j: &datum_core::db::PendingJoin) -> String {
+    let from = j.from.as_deref().unwrap_or("the inviting device");
+    if let Some(why) = &j.refused {
+        return format!("could not join {from}'s sync chain: {why}. Ask {from} for a new link");
+    }
+    let until = j
+        .expires
+        .and_then(|at| chrono::DateTime::from_timestamp(at as i64, 0))
+        .map(|at| format!(" (the invite holds until {})", local(&at.to_rfc3339())))
+        .unwrap_or_default();
+    format!(
+        "waiting for its first sync: joined {from}'s sync chain from its link; syncing starts \
+         when {from} or another device in the chain is online{until}"
+    )
+}
+
+/// A pending join in `--json`: what it says of itself, never its ticket.
+fn pending_json(j: &datum_core::db::PendingJoin) -> Value {
+    json!({"from": j.from, "chain": j.chain, "expires": j.expires, "since": j.since, "refused": j.refused})
+}
+
 /// What an open chain says beside its members.
 const OPEN: &str =
     "no admin: any device can add devices — `datum sync admin add` to protect the chain";
@@ -119,7 +142,8 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         }
         SyncCommand::Now { verbose } => {
             db.sync_refuse_debug()?;
-            if !db.sync_chain()?.exists() && db.sync_joining()?.is_empty() {
+            let pending = db.sync_join_pending()?.is_some();
+            if !pending && !db.sync_chain()?.exists() && db.sync_joining()?.is_empty() {
                 println!("{NO_CHAIN}");
                 return Ok(());
             }
@@ -558,6 +582,38 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             );
         }
         SyncCommand::Holds => println!("{}", db.sync_holds()?),
+        SyncCommand::PendingJoin {
+            hold,
+            about,
+            label,
+            username,
+            refused,
+            clear,
+        } => {
+            if let Some(ticket) = hold {
+                let about: Value = about
+                    .map(|a| serde_json::from_str(&a))
+                    .transpose()
+                    .context("--about is not JSON")?
+                    .unwrap_or_default();
+                db.sync_join_hold(&datum_core::db::PendingJoin {
+                    ticket,
+                    label,
+                    username,
+                    from: about["from"].as_str().map(Into::into),
+                    chain: about["chain"].as_str().map(Into::into),
+                    expires: about["expires"].as_u64(),
+                    ..Default::default()
+                })?;
+            }
+            if let Some(why) = refused {
+                db.sync_join_refused(&why)?;
+            }
+            if clear {
+                db.sync_join_clear()?;
+            }
+            println!("{}", json!(db.sync_join_pending()?));
+        }
         SyncCommand::RecordSession {
             endpoint,
             vector,
@@ -782,11 +838,20 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             let _first = super::sync_daemon::first_sync(db)?;
             // Admitted, it is a member whether or not its first sync ends:
             // unserved, every other copy times out on it (da-shfv4, da-qr7gz).
-            datum_sync::connect(db, &ticket, label.as_deref(), username.as_deref(), &|| {
+            // Stored, the join is the daemon's to finish (da-4qpwf).
+            let install = || {
                 if joins {
                     super::sync_daemon::auto_install(db);
                 }
-            })?;
+            };
+            datum_sync::connect(
+                db,
+                &ticket,
+                label.as_deref(),
+                username.as_deref(),
+                &install,
+                &install,
+            )?;
         }
         #[cfg(feature = "net")]
         SyncCommand::Diff { who, show } => {
@@ -1602,9 +1667,11 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     // A copy joining a chain is in none yet, and says through which copies
     // (da-idw54): datum.day reads this to resume the join.
     let through = db.sync_joining()?;
+    let pending = db.sync_join_pending()?;
     if !chain.exists() {
         // In no chain `--json` still answers, as `sync status --json` does
-        // (da-y6oh6); `joining` is there only while a join is under way.
+        // (da-y6oh6); `joining` is there only while a join is under way,
+        // `pending_join` while one waits for a member (da-4qpwf).
         if json {
             let mut out = json!({"chain": null, "admins": [], "members": []});
             if !through.is_empty() {
@@ -1613,10 +1680,16 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                     .map(|p| json!({"endpoint": p.id, "label": p.label}))
                     .collect();
             }
+            if let Some(j) = &pending {
+                out["pending_join"] = pending_json(j);
+            }
             println!("{out}");
             return Ok(());
         }
-        ensure!(!through.is_empty(), NO_CHAIN);
+        if let Some(j) = &pending {
+            println!("{}", pending_words(j));
+        }
+        ensure!(!through.is_empty() || pending.is_some(), NO_CHAIN);
         through
             .iter()
             .for_each(|p| println!("{}", joining(&p.label, &p.id)));
@@ -1662,7 +1735,11 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 })
             })
             .collect();
-        let out = json!({"chain": chain.id, "admins": admins, "members": members});
+        let mut out = json!({"chain": chain.id, "admins": admins, "members": members});
+        // A chain of one may be joining another (da-4qpwf).
+        if let Some(j) = &pending {
+            out["pending_join"] = pending_json(j);
+        }
         println!("{out}");
         return Ok(());
     }
@@ -1860,6 +1937,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
     let upgrade = db.sync_upgrade_warnings()?;
     let (asked, asked_json) = super::sync_upgrade::shown(db, &chain)?;
     let unsent = db.sync_unsent()?;
+    let pending = db.sync_join_pending()?;
     // A grant this database carries or grants (da-pofki): only with one
     // possible are the install's other databases opened to read them.
     let grants = match no_grants || (chain.grants.is_empty() && !chain.has_unused_invite()) {
@@ -1931,6 +2009,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
             "upgrade": upgrade, "unsent": unsent, "spool": spool,
             "pin": asked_json["pin"], "asked": asked_json["asked"],
             "grants": grants.iter().map(|g| g.json()).collect::<Vec<_>>(),
+            "pending_join": pending.as_ref().map(pending_json),
         });
         println!("{out}");
         return Ok(());
@@ -1952,8 +2031,12 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
         print_below(&below);
         return Ok(());
     }
+    if let Some(j) = &pending {
+        println!("{}", pending_words(j));
+    }
     if !chain.exists() {
         match peers.is_empty() {
+            true if pending.is_some() => {}
             true => println!("{NO_CHAIN}"),
             false => peers
                 .iter()

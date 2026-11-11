@@ -102,6 +102,44 @@ describe('datum.day and a native copy', () => {
 		}
 	});
 
+	// vividn, 2026-11-10: «It should just add the keys and be done. And then
+	// start syncing once both devices are online» (da-4qpwf). The inviter's
+	// invite ends before the page joins, so only its `sync run`, started
+	// after, can admit the page: at the leader's pull, with nothing more asked.
+	test('a join with the inviter offline returns at once, waits, and syncs once the inviter is up (da-4qpwf)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			assert.equal((await native.run(['occur', 'tea', '-t', '0800'])).code, 0);
+			const inviting = native.spawn(['sync', 'chain', 'invite']);
+			const [, ticket] = await until(() => /datum sync chain join '([^']+)'/.exec(inviting.stdout), Boolean);
+			const gone = new Promise((r) => inviting.child.on('exit', r));
+			inviting.child.kill();
+			await gone;
+			await withWallClock(
+				async (app) => {
+					const began = Date.now();
+					const report = await app.page.evaluate((t) => window.datum.sync.connect('datum', t), ticket);
+					assert.equal(report.pending, true, JSON.stringify(report));
+					// The inviter as its link names it, which the join's words say.
+					assert.ok(report.label, JSON.stringify(report));
+					// One try, a few seconds at the ticket's one address: no wait on a member.
+					assert.ok(Date.now() - began < 20000, `${Date.now() - began} ms`);
+					const listed = JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
+					assert.ok(listed.pending_join && !listed.pending_join.refused, JSON.stringify(listed));
+					assert.equal(listed.chain, null);
+					assert.equal(await countOf(app, 'tea'), 0);
+					native.spawn(['sync', 'run']);
+					await until(() => countOf(app, 'tea'), (n) => n === 1, 75000);
+					const joined = JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
+					assert.ok(joined.chain && !joined.pending_join, JSON.stringify(joined));
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	// vividn, 2026-11-05: «type sync right now in the web opens the sync pane.
 	// It should instead do `sync run`» (da-5lpeg). The native copy serves an
 	// invite, which dials nobody, so what it wrote reaches the page only by

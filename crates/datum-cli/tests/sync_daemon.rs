@@ -246,8 +246,8 @@ fn a_join_whose_first_sync_fails_still_installs_it() {
     assert!(b.service().exists());
 }
 
-/// `join` installs the daemon once it is admitted, not after its first
-/// sync (da-qr7gz): killed while that sync runs it has left the daemon, which
+/// `join` installs the daemon as it keeps the join (da-4qpwf), not after
+/// its first sync (da-qr7gz): killed while that sync runs it has left the daemon, which
 /// kept off the database for as long as the `join` lived, and finishes
 /// the join. The joiner applies 300 ops at 20 ms each: six seconds to be
 /// killed in.
@@ -267,10 +267,19 @@ fn a_join_killed_at_its_first_sync_left_the_daemon_which_finishes_it() {
         .map_while(Result::ok)
         .any(|l| l.contains("sync now runs in the background"));
     assert!(said, "the join ended without installing the daemon");
-    // Said with the first sync still to finish, and the daemon leaves the
-    // database to the `join` meanwhile.
-    let status = b.ok(&["sync", "status"]);
-    assert!(status.contains("joining a sync chain through"), "{status}");
+    // Installed as the join is kept (da-4qpwf); once admitted, with the
+    // first sync still to finish, the daemon leaves the database to the
+    // `join` meanwhile.
+    let start = std::time::Instant::now();
+    let status = loop {
+        let status = b.ok(&["sync", "status"]);
+        if status.contains("joining a sync chain through") {
+            break status;
+        }
+        assert!(start.elapsed().as_secs() < 10, "{status}");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+    assert!(!status.contains("waiting for its first sync"), "{status}");
     let daemon = b.ok(&["sync", "daemon", "status"]);
     assert!(daemon.contains("0 chained database(s)"), "{daemon}");
 

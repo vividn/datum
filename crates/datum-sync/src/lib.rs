@@ -23,16 +23,15 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
-use datum_core::db::{chain, Db};
+use datum_core::db::{chain, Db, PendingJoin};
 use datum_core::error::{DatumError, Refusal as CoreRefusal};
-use datum_parse::time::Zone;
 use datum_sync_wire::{
-    accept, dial, failure, gave_way, redeem, refused_applying, serve, unix_now, About, Applied,
-    Asked, Diffed, Digest, Endpoint, EndpointAddr, Failure, Lost, Net, Refusal, Report, Store,
-    Ticket, Vector, Version, Why,
+    accept, answered, dial, failure, gave_way, join_kept, may_redeem, redeem, refused_applying,
+    retries, serve, unix_now, About, Applied, Asked, Diffed, Digest, Endpoint, EndpointAddr,
+    Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use iroh::{SecretKey, Watcher};
@@ -813,46 +812,43 @@ pub fn ticket_also(ticket: &str, more: &[serde_json::Value]) -> Result<String> {
 
 const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 
-/// `datum sync chain join <ticket>`: redeem an invite and sync, with the
-/// first of the ticket's addresses that admits it. It says at once whom it
-/// waits for and until when, then every [`WAITING`] that it still is, and
-/// once it is answered how far the sync is; a join that fails ends saying why
-/// and what to do next (da-0tawk). `admitted` runs once it is welcomed, a
-/// member from then on, before its first sync (da-qr7gz). `name`: the label
-/// it joins as (`--label`), else [`named`]; `username`: the person's, else
-/// the user it runs as (da-xza37).
+/// Who may admit a ticket's redeemer, in words: its maker, and any member.
+fn who_admits(t: &Ticket) -> String {
+    let from = t.about.from.as_deref().unwrap_or("the inviting device");
+    format!("{from} or another device in the chain")
+}
+
+/// Until when a ticket's invite holds, on the reader's clock.
+fn until(expires: Option<u64>) -> Option<String> {
+    let at = DateTime::from_timestamp(expires? as i64, 0)?.to_rfc3339();
+    Some(datum_core::time::on_readers_clock(&at, "%H:%M"))
+}
+
+/// `datum sync chain join <ticket>`: store the ticket as this copy's pending
+/// join and return (da-4qpwf, vividn: «It should just add the keys and be
+/// done»), after one try at the ticket's addresses that waits [`Asked`]'s
+/// few seconds to reach one. A member reached admits it and syncs as before,
+/// saying how far; none reached, it says it joined and when syncing starts,
+/// and `sync run`, the daemon and a bare `sync` redeem it once one answers
+/// ([`redeem_pending`]). A copy that may not join (in another chain, with
+/// data of its own) is refused before anything is stored, and a refusal no
+/// retry changes (a used or expired invite) ends the join saying what to do
+/// next (da-0tawk). `held` runs once the join is stored, `admitted` once it
+/// is welcomed (da-qr7gz). `name`: the label it joins as (`--label`), else
+/// [`named`]; `username`: the person's, else the user it runs as (da-xza37).
 pub fn connect(
     db: &Db,
     ticket: &str,
     name: Option<&str>,
     username: Option<&str>,
+    held: &dyn Fn(),
     admitted: &dyn Fn(),
 ) -> Result<()> {
+    let ticket = ticket.trim();
     let t = Ticket::decode(ticket)?;
     let from = t.about.from.as_deref().unwrap_or("the inviting device");
-    let until = t
-        .about
-        .expires
-        .and_then(|at| DateTime::from_timestamp(at as i64, 0))
-        .map(|at| {
-            format!(
-                " (the invite holds until {})",
-                Zone::host().local_naive(at).format("%H:%M")
-            )
-        });
-    // Any address the ticket lists may admit it, so a wait is on them all.
-    let (who, it) = match t.addrs.len() {
-        1 => (from.to_string(), "it"),
-        _ => (format!("{from} or another member"), "either"),
-    };
-    eprintln!(
-        "joining {from}'s sync chain: waiting for {it} to answer{}\n\
-         {it} answers while it is online: datum.day open on that database, its \
-         sync daemon, or `datum sync chain invite` still running there",
-        until.as_deref().unwrap_or_default()
-    );
+    let who = who_admits(&t);
     runtime()?.block_on(async {
-        let ep = bind(db).await?;
         let told = Told::new(format!("still waiting for {who}"));
         let store = DbStore(
             db,
@@ -861,27 +857,92 @@ pub fn connect(
             (name, username),
             Default::default(),
         );
-        let rep = telling(&told, redeem(&store, &ep, &t)).await;
-        ep.close().await;
-        // Admitted, it says what it is; its peers hear on the next sync. A
-        // copy refused (one already in a chain) writes nothing.
+        may_redeem(&store, &t).await?;
+        ensure!(!t.addrs.is_empty(), "the ticket names no address");
+        db.sync_join_hold(&PendingJoin {
+            ticket: ticket.into(),
+            label: name.map(Into::into),
+            username: username.map(Into::into),
+            from: t.about.from.clone(),
+            chain: t.about.chain.clone(),
+            expires: t.about.expires,
+            ..Default::default()
+        })?;
+        held();
+        eprintln!("joining {from}'s sync chain: trying {who} now");
+        let ep = datum_sync_wire::bind_now(db.sync_endpoint_secret()?, &net()?).await?;
+        let ep = bound(db, ep);
+        let rep = telling(&told, redeem(&store, &ep, &t, true)).await;
+        let _ = tokio::time::timeout(Duration::from_secs(1), ep.close()).await;
+        // Admitted, it says what it is; its peers hear on the next sync.
         let joined =
             "this copy was admitted to its sync chain, but the first sync did not finish: \
                       `datum sync` finishes it";
-        let admitted = rep
+        let welcomed = rep
             .as_ref()
             .map_or_else(|e| paired_unfinished(e, joined), |_| true);
         let me = db.sync_endpoint_id()?;
-        if admitted && db.sync_chain()?.member(&me).is_some() {
+        if welcomed && db.sync_chain()?.member(&me).is_some() {
             describe_self(db, name, "cli", username)?;
         }
-        let rep = match rep {
-            Err(e) if !admitted => return Err(next_step(e, from, &who)),
-            rep => rep?,
-        };
-        print_added(&rep);
+        // Kept while a retry may change it, saying what a member answered;
+        // a refusal no retry changes, or this copy's own (paused), says why.
+        match rep {
+            // A plain dial's handshake carries no invite, which ends it (da-4qpwf).
+            Ok(rep) => {
+                db.sync_join_clear()?;
+                print_added(&rep)
+            }
+            Err(e) if welcomed => return Err(e),
+            Err(e) if join_kept(&t, &e) => {
+                if let Some(said) = answered(&e) {
+                    println!("{said}");
+                }
+                let holds = until(t.about.expires)
+                    .map(|at| format!("; the invite holds until {at}"))
+                    .unwrap_or_default();
+                println!(
+                    "Joined: syncing starts when {who} is online{holds}. \
+                     The sync daemon keeps trying, and `datum sync` tries now"
+                );
+            }
+            Err(e) => {
+                db.sync_join_clear()?;
+                return Err(next_step(e, from, &who));
+            }
+        }
         Ok(())
     })
+}
+
+/// Redeem the pending join `j` (da-4qpwf), joining as it was asked to:
+/// `sync run`'s and a bare `sync`'s. Admitted, the copy says what it is,
+/// and the handshake ended the pending join; refused for good, the join
+/// records why and is tried no more.
+async fn redeem_pending(db: &Db, ep: &Endpoint, j: &PendingJoin, asked: bool) -> Result<Report> {
+    let t = Ticket::decode(&j.ticket)?;
+    let (name, username) = (j.label.as_deref(), j.username.as_deref());
+    let store = DbStore(
+        db,
+        None,
+        Cell::new(None),
+        (name, username),
+        Default::default(),
+    );
+    let rep = redeem(&store, ep, &t, asked).await;
+    let admitted = match &rep {
+        Ok(_) => true,
+        Err(e) => matches!(e.downcast_ref::<Lost>(), Some(Lost(r, _)) if r.redeemed),
+    };
+    if admitted && db.sync_chain()?.member(&db.sync_endpoint_id()?).is_some() {
+        describe_self(db, name, "cli", username)?;
+    }
+    match &rep {
+        Ok(_) => db.sync_join_clear()?,
+        Err(e) if !admitted && !retries(&t, e) => db.sync_join_refused(&format!("{e:#}"))?,
+        _ => {}
+    }
+    rep
 }
 
 /// A join that failed, as one line: why, and what to do next — by the
@@ -1023,6 +1084,9 @@ fn print_no_address(db: &Db) -> Result<()> {
 /// to, and prints what its sessions did: a second set of sessions would
 /// double the traffic, and bind the endpoint key twice (da-tltjj).
 pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
+    if let Some(j) = db.sync_join_pending()? {
+        return join_now(db, &j);
+    }
     let peers = synced_peers(db)?;
     if peers.is_empty() {
         println!("no sync peers: `datum sync chain invite` makes an invite");
@@ -1090,6 +1154,40 @@ pub fn now_all(db: &Db, verbose: bool) -> Result<()> {
     })
 }
 
+/// `datum sync` on a copy with a pending join (da-4qpwf): try it now, unless
+/// this copy's `sync run` serves it, which keeps trying. No member answering
+/// is no failure: the copy waits for its first sync.
+fn join_now(db: &Db, j: &PendingJoin) -> Result<()> {
+    let from = j.from.as_deref().unwrap_or("the inviting device");
+    let who = format!("{from} or another device in the chain");
+    if let Some(why) = &j.refused {
+        bail!("could not join {from}'s sync chain: {why}. Next: ask {from} for a new link");
+    }
+    if asks(db).is_some_and(|p| std::os::unix::net::UnixStream::connect(p).is_ok()) {
+        println!(
+            "waiting for the first sync: this copy's sync daemon tries {who} until one answers"
+        );
+        return Ok(());
+    }
+    println!("joining {from}'s sync chain: trying {who} now");
+    let rep = runtime()?.block_on(async {
+        let ep = datum_sync_wire::bind_now(db.sync_endpoint_secret()?, &net()?).await?;
+        let ep = bound(db, ep);
+        let rep = redeem_pending(db, &ep, j, true).await;
+        let _ = tokio::time::timeout(Duration::from_secs(1), ep.close()).await;
+        Ok::<_, anyhow::Error>(rep)
+    })?;
+    match rep {
+        Ok(rep) => print_added(&rep),
+        Err(e) if paired_unfinished(&e, UNFINISHED) => {}
+        Err(e) if retries(&Ticket::decode(&j.ticket)?, &e) => {
+            println!("waiting for the first sync: it starts when {who} is online")
+        }
+        Err(e) => return Err(next_step(e, from, &who)),
+    }
+    Ok(())
+}
+
 /// `datum sync diff <WHO>`: what this copy and the member `id` hold
 /// differently (da-n0ruf). It asks the member, which must be up.
 pub fn diff(db: &Db, id: &str) -> Result<Diffed> {
@@ -1114,6 +1212,9 @@ fn backoff(last: Option<Duration>) -> Duration {
     let first = env("DATUM_SYNC_TEST_RETRY_MS").map_or(RETRY, Duration::from_millis);
     last.map_or(first, |prev| (prev * 2).min(first * RETRY_CAP))
 }
+
+/// `sync run`'s key for a pending join's session, among its peers' ids.
+const PENDING_JOIN: &str = "join";
 
 const RETRY: Duration = Duration::from_secs(60);
 const RETRY_CAP: u32 = 30;
@@ -1438,11 +1539,30 @@ pub fn run(db: &Db, up: impl Fn(String), stop: impl Fn() -> Result<()>) -> Resul
                     // Paused (da-wlbyx), it idles: an incoming session's
                     // handshake refuses, and nothing is pushed. Applying, it
                     // waits: each push would bring the same ops (da-h31wt).
-                    let peers = match db.sync_paused()? {
+                    let paused = db.sync_paused()?;
+                    let peers = match paused {
                         Some(_) => Vec::new(),
                         None if store.applying() => Vec::new(),
                         None => synced_peers(db)?,
                     };
+                    // A pending join, until a member admits it (da-4qpwf).
+                    let join = match paused {
+                        Some(_) => None,
+                        None => db.sync_join_pending()?.filter(|j| j.refused.is_none()),
+                    };
+                    let due = |id: &str| {
+                        retry.get(id).is_some_and(|r| r.0 > Instant::now())
+                            || busy.get(id).is_some_and(|at| *at > Instant::now())
+                    };
+                    if let Some(j) = join.filter(|_| !due(PENDING_JOIN) && !open.has(PENDING_JOIN)) {
+                        open.open(PENDING_JOIN);
+                        let ep = &ep;
+                        sessions.push(Box::pin(async move {
+                            let from = j.from.as_deref().unwrap_or("the inviting device");
+                            let label = format!("joining {from}'s sync chain");
+                            (Some((PENDING_JOIN.into(), label)), redeem_pending(db, ep, &j, false).await)
+                        }));
+                    }
                     let vector = db.sync_vector()?;
                     for p in peers {
                         let waiting = retry.get(&p.id).is_some_and(|r| r.0 > Instant::now())

@@ -20,4 +20,16 @@ test('only a copy in a chain, joining one or passing on a dissolved one syncs', 
 	assert.equal(syncs(answer({ ...none, chain: 'c0ffee' })), true, 'a member');
 	assert.equal(syncs(answer({ ...none, joining: [{ endpoint: 'e', label: 'a' }] })), true, 'joining');
 	assert.equal(syncs(answer({ ...none, dissolved: 'c0ffee' })), true, 'dissolved');
+	// A join kept until a member admits it syncs; one a member refused for good has nothing to try (da-4qpwf).
+	const pending = { from: 'laptop', chain: 'c0ffee', expires: 1, since: '2026-11-10T20:00:00Z' };
+	assert.equal(syncs(answer({ ...none, pending_join: pending })), true, 'a pending join');
+	assert.equal(syncs(answer({ ...none, pending_join: { ...pending, refused: 'invite used' } })), false, 'a refused one');
+});
+
+test('a pending join says it waits for its first sync, or why it was refused and what to do (da-4qpwf)', async () => {
+	const { pendingWords } = await import('../src/lib/sync.ts');
+	const p = { from: 'laptop', since: '2026-11-10T20:00:00Z' };
+	assert.match(pendingWords(p), /waiting for its first sync: it starts when laptop or another device in the chain is online/);
+	const refused = pendingWords({ ...p, refused: 'invite expired' });
+	assert.match(refused, /^Could not join laptop’s sync chain: invite expired\. Ask laptop for a new link\.$/);
 });

@@ -186,6 +186,9 @@ seed(['newchore', 'vacuum', '7']);
 seed(['vacuum']);
 seed(['newchore', 'dishes', '7']);
 seed(['occur', 'dishes', '-T', 'next_date=2000-01-01']);
+// A join it was handed and a member refused (da-4qpwf): `chain list` and `status` say it.
+seed(['sync', 'pending-join', '--hold', 'ticket', '--about', JSON.stringify({ from: 'laptop', chain: 'c0ffee', expires: 1 })]);
+seed(['sync', 'pending-join', '--refused', 'invite already used']);
 const MEMBER = JSON.parse(seed(calls.syncStatusArgv()).stdout).members[0].endpoint;
 const HID = JSON.parse(seed(calls.layoutsArgv()).stdout).rows.find((r) => r.data?.name).hid;
 

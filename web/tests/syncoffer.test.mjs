@@ -80,9 +80,12 @@ describe('the invite panel (da-2bvxq)', () => {
 		await withApp(
 			async (app) => {
 				const { offer } = await invite(app);
-				const until_ = /\b(\d\d:\d\d)\b/.exec(await offer.locator('.head').innerText())[1];
+				const head = await offer.locator('.head').innerText();
+				const until_ = /\b(\d\d:\d\d)\b/.exec(head)[1];
+				// A link lasts a week (da-4qpwf), so its «until» names the day as well as the time.
+				assert.match(head, /until [A-Z][a-z]+ \d+ \d\d:\d\d/, head);
 				assert.equal(await offer.locator('.expired').count(), 0);
-				await app.clock.forward(11 * 60_000);
+				await app.clock.forward(7 * 24 * 3600_000 + 60_000);
 				await offer.locator('.expired').waitFor();
 				assert.ok((await offer.locator('.expired').innerText()).includes(until_), 'when it expired');
 				assert.deepEqual(await offered(offer), SPENT);

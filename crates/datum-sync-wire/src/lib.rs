@@ -2294,14 +2294,11 @@ impl<S: Store> Drop for Served<'_, S> {
     }
 }
 
-/// Redeem `ticket`'s invite and sync, with the first of its addresses that
-/// admits it. A copy invited back into its own chain — a revoked device —
-/// rejoins it, as a new device joins (da-j8c4l). A copy in another chain is
-/// refused before anything is sent: its ops would flow one way into the
-/// other chain (da-mepav) — unless they are its own alone, when it leaves
-/// its chain once admitted (da-h7pnc).
-pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Result<Report> {
-    let (chain, leaves) = match store.chain().await? {
+/// Whether this copy may redeem `ticket`, and how (`redeem`'s chain and
+/// whether it leaves its own), checked before a join is stored, so one that
+/// may not is refused before anything is (da-4qpwf).
+pub async fn may_redeem(store: &impl Store, ticket: &Ticket) -> Result<(String, Option<String>)> {
+    Ok(match store.chain().await? {
         None => (String::new(), None),
         Some((id, _)) if ticket.about.chain.as_ref() == Some(&id) => (id, None),
         Some((id, n)) if store.leave(true).await.is_err() => bail!(
@@ -2310,22 +2307,125 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
              a copy that isn't in one"
         ),
         Some((id, _)) => (String::new(), Some(id)),
-    };
+    })
+}
+
+/// The invites, by secret, a redeem of this process gave way on once it had
+/// reached a member ([`redeem`]).
+static GAVE_WAY: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Mark `secret` given way on (`mark`), or say whether it was.
+fn gave_way_on(secret: &str, mark: bool) -> bool {
+    let mut set = GAVE_WAY.lock().unwrap_or_else(|e| e.into_inner());
+    match mark {
+        true => !set.insert(secret.into()),
+        false => set.contains(secret),
+    }
+}
+
+fn gave_way_off(secret: &str) {
+    GAVE_WAY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(secret);
+}
+
+/// The inviting device itself answered that it does not hold the invite (a
+/// ticket it never made, or one a restore took back): no member will, so a
+/// pending join ends (da-4qpwf). The refusal's kind stays under it.
+#[derive(Debug)]
+pub struct Disowned;
+
+impl std::fmt::Display for Disowned {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("the inviting device does not hold this invite")
+    }
+}
+
+impl std::error::Error for Disowned {}
+
+/// Whether a person's join that failed so is kept as the pending join
+/// (da-4qpwf): whenever a retry may change it, a member's refusal of the
+/// moment among them (one not holding the invite yet, paused), and never
+/// for this copy's own failure, which has no kind (its own pause).
+pub fn join_kept(ticket: &Ticket, e: &anyhow::Error) -> bool {
+    failure(e).is_some() && retries(ticket, e)
+}
+
+/// What a member said of a join it did not admit and that is kept
+/// ([`join_kept`]), in words; none where no member answered.
+pub fn answered(e: &anyhow::Error) -> Option<String> {
+    match failure(e)? {
+        Failure::Refused(Why::UnknownInvite) => {
+            Some("a device in the chain does not hold this invite yet".into())
+        }
+        Failure::Refused(Why::Paused) => Some("sync is paused on a device in the chain".into()),
+        Failure::Refused(Why::Upgrade) => Some(e.to_string()),
+        _ => None,
+    }
+}
+
+/// Whether a redeem of `ticket` that failed so may be tried again later
+/// (da-4qpwf): no member reached, or one that does not hold the invite yet,
+/// is busy, paused or across a sync floor — until the invite expires. A used
+/// or expired invite, a refusal of this copy, is no retry's to change: the
+/// pending join says so and stops.
+pub fn retries(ticket: &Ticket, e: &anyhow::Error) -> bool {
+    if ticket.about.expires.is_some_and(|at| at <= unix_now()) || e.is::<Disowned>() {
+        return false;
+    }
+    match failure(e) {
+        None | Some(Failure::Unreachable | Failure::TimedOut) => true,
+        Some(Failure::Refused(why)) => {
+            matches!(
+                why,
+                Why::UnknownInvite | Why::Busy | Why::Paused | Why::Upgrade
+            )
+        }
+        Some(_) => false,
+    }
+}
+
+/// Redeem `ticket`'s invite and sync, with the first of its addresses that
+/// admits it. A copy invited back into its own chain — a revoked device —
+/// rejoins it, as a new device joins (da-j8c4l). A copy in another chain is
+/// refused before anything is sent: its ops would flow one way into the
+/// other chain (da-mepav) — unless they are its own alone, when it leaves
+/// its chain once admitted (da-h7pnc).
+pub async fn redeem(
+    store: &impl Store,
+    ep: &Endpoint,
+    ticket: &Ticket,
+    asked: bool,
+) -> Result<Report> {
+    let (chain, leaves) = may_redeem(store, ticket).await?;
     let invite = Redeem {
         secret: &ticket.secret,
         chain,
         leaves,
     };
     let mut rep = Err(anyhow!("the ticket names no address"));
+    // The ticket's maker comes first (`link`).
+    let maker = ticket.addrs.first().map(|a| a.id);
     // A member rejoining is named among its chain's members (da-j8c4l).
     for addr in ticket.addrs.iter().filter(|a| a.id != ep.id()) {
-        rep = dial(store, ep, addr.clone(), Some(&invite), None).await;
+        // A person waiting gives each address [`Asked`]'s few seconds: the
+        // inviter offline must leave a member the time to answer.
+        let reach = asked.then(Asked::now);
+        rep = dial(store, ep, addr.clone(), Some(&invite), reach.as_ref()).await;
         // Unreachable, or a member not yet holding the invite: the next
         // address may admit. Any other refusal stops here, a paused inviter
         // too, and so does another protocol: going on would report whatever
         // the last address said, often «could not reach», in place of the
         // words that say what to do.
         let next = rep.as_ref().err().and_then(failure);
+        if next == Some(Failure::Refused(Why::Busy)) {
+            gave_way_on(&ticket.secret, true);
+        }
+        // The maker not holding it, no member will: final (da-4qpwf).
+        if Some(addr.id) == maker && next == Some(Failure::Refused(Why::UnknownInvite)) {
+            return rep.map_err(|e| e.context(Disowned));
+        }
         if !matches!(
             next,
             Some(Failure::Unreachable | Failure::Refused(Why::UnknownInvite | Why::Busy))
@@ -2337,6 +2437,23 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
     // ticket reaches no one; this clock says why. Only then: a clock that
     // is wrong must not refuse an invite still served (da-l9kdr).
     let late = ticket.about.expires.is_some_and(|at| at <= unix_now());
+    // Used, after an attempt of this process gave way to a session served
+    // once it had reached a member (da-gvia0, da-vj3ly): that member may
+    // have admitted it before the dial closed, so it is a member now. A
+    // plain dial says which; refused, the invite's words stand (da-4qpwf).
+    let used = rep.as_ref().err().and_then(failure) == Some(Failure::Refused(Why::InviteUsed));
+    if used && gave_way_on(&ticket.secret, false) {
+        for addr in ticket.addrs.iter().filter(|a| a.id != ep.id()) {
+            let reach = asked.then(Asked::now);
+            if let Ok(plain) = dial(store, ep, addr.clone(), None, reach.as_ref()).await {
+                gave_way_off(&ticket.secret);
+                return Ok(plain);
+            }
+        }
+    }
+    if rep.is_ok() {
+        gave_way_off(&ticket.secret);
+    }
     match rep {
         Err(e) if late && failure(&e) == Some(Failure::Unreachable) => {
             let why = "invite expired: ask the inviting device for a new one";

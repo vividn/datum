@@ -346,7 +346,10 @@ fn a_grant_joins_through_another_grantee_while_the_granter_is_off() {
     let synced = o.ok("home", &["sync"]);
     assert!(synced.contains("joined «work»"), "{synced}");
     assert!(o.has("work", "coffee"));
-    assert!(synced.contains("waiting for either to answer"), "{synced}");
+    assert!(
+        synced.contains("or another device in the chain"),
+        "{synced}"
+    );
 
     // What says where is no record a device outside `work` reads: it names
     // neither the chain nor the address in the clear.

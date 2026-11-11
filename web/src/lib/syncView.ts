@@ -81,6 +81,20 @@ export interface ChainList extends Admins {
 	members: Listed[];
 	joining?: { endpoint: string; label: string }[];
 	dissolved?: string;
+	/** A join kept until a member admits it (da-4qpwf), or refused for good: never its ticket. */
+	pending_join?: PendingJoin;
+}
+
+/** A join this copy waits on a member to admit (`pending_join`, da-4qpwf). */
+export interface PendingJoin {
+	/** The inviting device's label, as its link names it. */
+	from?: string | null;
+	chain?: string | null;
+	/** When its invite expires, unix seconds. */
+	expires?: number | null;
+	since: string;
+	/** A member's refusal no retry changes: the words, and then the join waits no more. */
+	refused?: string | null;
 }
 
 /** A member as `sync chain list` has it: what admitted it, and when (da-2bvxq). */
@@ -143,13 +157,16 @@ export interface DbSync {
 	 * @shallow it takes a second device, ahead of this one.
 	 */
 	clock?: { endpoint: string; text: string }[];
+	/** A join this copy waits on, in no chain yet (da-4qpwf). */
+	pending?: PendingJoin;
 }
 
 /**
- * `sync status --json`: a `DbSync` but for the database's name and the admins, which `sync chain list` has.
+ * `sync status --json`: a `DbSync` but for the database's name and the admins, which `sync chain list` has, and its
+ * pending join, which it names `pending_join` (da-4qpwf).
  * `this` is always there: only a `DbSync` made for a database in no chain lacks it.
  */
-export type SyncStatus = Omit<DbSync, 'db' | 'admins' | 'listed'> & Required<Pick<DbSync, 'this'>>;
+export type SyncStatus = Omit<DbSync, 'db' | 'admins' | 'listed' | 'pending'> & Required<Pick<DbSync, 'this'>> & { pending_join?: PendingJoin | null };
 
 /**
  * A link's `#` held in this tab's `sessionStorage` as well as in memory
@@ -266,12 +283,13 @@ export function readSync(dbs: string[]): Promise<DbSync[]> {
 	return Promise.all(
 		dbs.map(async (db): Promise<DbSync> => {
 			const members = await run(['--db', db, ...chainListArgv()]);
-			if (!syncs(members)) return { db, chain: null, members: [] };
+			const pending = members.code === 0 ? ((JSON.parse(members.stdout) as ChainList).pending_join ?? undefined) : undefined;
+			if (!syncs(members)) return { db, chain: null, members: [], pending };
 			const status = await run(['--db', db, ...syncStatusArgv()]);
 			if (status.code !== 0) return { db, chain: null, members: [] };
 			const s = JSON.parse(status.stdout) as SyncStatus;
 			const { admins, members: listed } = JSON.parse(members.stdout) as ChainList;
-			return { db, chain: s.chain, this: s.this, members: s.members, admins, listed, paused: s.paused, notices: s.notices, clock: s.clock };
+			return { db, chain: s.chain, this: s.this, members: s.members, admins, listed, paused: s.paused, notices: s.notices, clock: s.clock, pending };
 		})
 	);
 }

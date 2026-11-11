@@ -293,31 +293,89 @@ fn an_invite_is_one_time_and_expires() {
     assert!(!a.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
 }
 
-/// `join` says at once whom it waits for and until when, says every few
-/// seconds that it still is, and a join nobody answers ends saying why and
-/// what to do next (da-0tawk): vividn's terminal sat silent for a minute.
+/// A join with every member offline returns at once, kept as this copy's
+/// pending join, which `status` and `chain list` show as waiting, never as an
+/// error (da-4qpwf; vividn: «It should just add the keys and be done»). Once
+/// the inviter is up, this copy's `sync run`, the daemon's, admits and syncs
+/// it with nothing more from the person, and joins as it was told.
 #[test]
-fn join_says_what_it_waits_for_and_why_it_ended_unanswered() {
-    let (a, mut b) = (Copy::new(), Copy::new());
+fn a_join_with_the_inviter_offline_returns_at_once_and_syncs_once_it_is_up() {
+    let (a, mut c) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "from-a"]);
     let (inviting, ticket) = a.invite(&[]);
     // Nobody serves the invite now.
     drop(inviting);
-    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "6")];
-    let out = b.fails(&["sync", "chain", "join", &ticket], "");
-    let lines: Vec<&str> = out.lines().collect();
-    let waiting = lines.iter().position(|l| {
-        l.contains("'s sync chain: waiting for it to answer (the invite holds until ")
-    });
-    let still = lines
-        .iter()
-        .position(|l| l.starts_with("still waiting for "));
-    let ended = lines.iter().position(|l| l.contains("did not answer"));
+    c.env = vec![
+        ("DATUM_SYNC_DIAL_TIMEOUT_S", "2"),
+        ("DATUM_SYNC_TEST_RETRY_MS", "300"),
+    ];
+    c.ok(&["occur", "from-c"]);
+    let began = Instant::now();
+    let joined = c.ok(&["sync", "chain", "join", &ticket, "--label", "phone"]);
     assert!(
-        matches!((waiting, still, ended), (Some(w), Some(s), Some(e)) if w < s && s < e),
-        "{out}"
+        began.elapsed() < Duration::from_secs(15),
+        "{:?}",
+        began.elapsed()
     );
-    assert!(out.contains("datum.day open on that database"), "{out}");
-    assert!(out.contains("or ask it for a fresh invite"), "{out}");
+    assert!(
+        joined.contains("Joined: syncing starts when ") && joined.contains(" is online"),
+        "{joined}"
+    );
+    let status = c.ok(&["sync", "status"]);
+    assert!(status.contains("waiting for its first sync"), "{status}");
+    let listed: serde_json::Value =
+        serde_json::from_str(&c.ok(&["sync", "chain", "list", "--json"])).unwrap();
+    let pending = &listed["pending_join"];
+    assert!(
+        pending["expires"].is_u64() && pending["refused"].is_null(),
+        "{listed}"
+    );
+    // The secret stays in the ticket, which no listing prints.
+    assert!(
+        !listed.to_string().contains(&ticket[ticket.len() - 20..]),
+        "{listed}"
+    );
+    // A bare `sync` with no member up is no failure: it says it waits.
+    let synced = c.ok(&["sync"]);
+    assert!(synced.contains("waiting for the first sync"), "{synced}");
+
+    // Trying already, it is admitted once the inviter is up.
+    let _c_runs = c.serve(&["sync", "run"]);
+    std::thread::sleep(Duration::from_millis(500));
+    let _a_runs = a.serve(&["sync", "run"]);
+    until("c admitted and synced", Duration::from_secs(60), || {
+        c.has("from-a") && a.has("from-c")
+    });
+    let members = a.ok(&["sync", "chain", "list"]);
+    assert!(members.contains("phone"), "{members}");
+    eventually("the pending join gone", || {
+        !c.ok(&["sync", "status"])
+            .contains("waiting for its first sync")
+    });
+}
+
+/// An invite that expires before any member is reached refuses the join
+/// kept for it, in words, and the retries end: `status` says to ask for a
+/// new link (da-4qpwf).
+#[test]
+fn a_pending_join_whose_invite_expires_unreached_is_refused_with_words() {
+    let (a, mut c) = (Copy::new(), Copy::new());
+    let (inviting, ticket) = a.invite(&["--expires", "4s"]);
+    drop(inviting);
+    c.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "1")];
+    let joined = c.ok(&["sync", "chain", "join", &ticket]);
+    assert!(joined.contains("Joined: "), "{joined}");
+    std::thread::sleep(Duration::from_secs(5));
+    let late = c.fails(&["sync"], "");
+    assert!(late.contains("invite expired"), "{late}");
+    let status = c.ok(&["sync", "status"]);
+    assert!(
+        status.contains("could not join ") && status.contains("for a new link"),
+        "{status}"
+    );
+    // Refused for good: a bare `sync` says so again, dialing no one.
+    let again = c.fails(&["sync"], "");
+    assert!(again.contains("for a new link"), "{again}");
 }
 
 /// A ticket past its time that nobody answers says the invite expired, in
@@ -340,9 +398,8 @@ fn a_late_ticket_nobody_answers_says_it_expired() {
 }
 
 /// A refusal reaches the redeemer as a kind beside its words, and the next
-/// step follows the kind (da-b6xh6): an invite the inviter does not hold asks
-/// for a fresh one, and an inviter whose sync is paused is named as the copy
-/// to resume, its words («paused on this copy») being the inviter's.
+/// step follows the kind (da-b6xh6): an invite the inviter itself does not
+/// hold asks for a fresh one, and ends the join (da-4qpwf).
 #[test]
 fn a_refusal_names_its_next_step_by_its_kind() {
     let (a, c) = (Copy::new(), Copy::new());
@@ -358,17 +415,47 @@ fn a_refusal_names_its_next_step_by_its_kind() {
     assert!(unknown.contains("Next: ask "), "{unknown}");
     assert!(unknown.contains(" for a fresh invite"), "{unknown}");
 
+    // A paused inviter is a refusal of the moment: the join is kept, saying
+    // what it answered (da-4qpwf).
     a.ok(&["sync", "pause"]);
-    let paused = c.fails(&["sync", "chain", "join", &ticket], "");
+    let paused = c.ok(&["sync", "chain", "join", &ticket]);
     assert!(
-        paused.contains("refused: sync is paused on this copy"),
+        paused.contains("sync is paused on a device in the chain"),
         "{paused}"
     );
-    assert!(paused.contains("Next: sync is paused on "), "{paused}");
+    assert!(paused.contains("Joined: syncing starts when "), "{paused}");
+}
+
+/// A member that has not seen the invite yet answering while the inviter
+/// sleeps keeps the join, whatever the order of the ticket's addresses: the
+/// invite is fine (vremya, on #1934). Once the inviter is up, it admits it.
+#[test]
+fn a_join_a_member_does_not_hold_yet_is_kept_while_the_inviter_sleeps() {
+    let (a, b) = paired();
+    a.ok(&["occur", "from-a"]);
+    // b is off as a makes the invite, so only a holds it; the ticket names b too.
+    let (inviting, ticket) = a.invite(&[]);
+    drop(inviting);
+    let _b_runs = b.serve(&["sync", "run"]);
+    let mut c = Copy::new();
+    c.env = vec![
+        ("DATUM_SYNC_DIAL_TIMEOUT_S", "2"),
+        ("DATUM_SYNC_TEST_RETRY_MS", "300"),
+    ];
+    let joined = c.ok(&["sync", "chain", "join", &ticket]);
     assert!(
-        paused.contains(", not on this copy: resume it there"),
-        "{paused}"
+        joined.contains("a device in the chain does not hold this invite yet"),
+        "{joined}"
     );
+    assert!(joined.contains("Joined: syncing starts when "), "{joined}");
+    let listed: serde_json::Value =
+        serde_json::from_str(&c.ok(&["sync", "chain", "list", "--json"])).unwrap();
+    assert!(listed["pending_join"]["refused"].is_null(), "{listed}");
+    let _c_runs = c.serve(&["sync", "run"]);
+    let _a_runs = a.serve(&["sync", "run"]);
+    until("c admitted and synced", Duration::from_secs(60), || {
+        c.has("from-a")
+    });
 }
 
 /// A stranger that dials without an invite is refused by the store's

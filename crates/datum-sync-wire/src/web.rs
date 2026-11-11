@@ -520,27 +520,122 @@ impl Node {
         report(rep)
     }
 
-    /// `datum sync chain join [--label]`: redeem `ticket` as `label`,
-    /// which the admit records, and sync.
+    /// `datum sync chain join [--label]`: keep `ticket` as this database's
+    /// pending join, as `label`, which the admit records, and try it once
+    /// for a few seconds an address (da-4qpwf). Admitted, it syncs and its
+    /// report says so; kept ([`join_kept`]), the report is `{"pending": true,
+    /// "label": <the inviter's>, "said": <what a member answered>}`
+    /// and the leader redeems it later ([`Node::redeem_pending`]). A copy
+    /// that may not join is refused before anything is kept, and a member's
+    /// refusal ends the join with its words.
     pub async fn connect(&self, ticket: String, label: Option<String>) -> Result<String, JsError> {
-        let ticket = Ticket::decode(&ticket).map_err(js)?;
-        if let Some(label) = label {
-            self.cli.label.replace(label);
+        let t = Ticket::decode(&ticket).map_err(js)?;
+        let about = serde_json::to_string(&t.about).map_err(js)?;
+        let mut hold = vec!["sync", "pending-join", "--hold", &ticket, "--about", &about];
+        if let Some(label) = &label {
+            hold.extend(["--label", label]);
+            self.cli.label.replace(label.clone());
         }
-        // A join refused as busy gives up its turn and tries again, for
-        // [`JOIN_WAITS`] (da-tqg19): two pages each holding a turn refuse
-        // each other's session, and a member's sync met in passing is no
-        // reason a join fails. The wait is jittered, so two pages that met
-        // do not meet again in step.
+        let held = Cell::new(false);
+        let rep = self.redeeming(&t, true, Some((&hold, &held))).await;
+        match rep {
+            // Kept while a retry may change it, with what a member answered.
+            Err(e) if join_kept(&t, &e) => Ok(serde_json::json!({
+                "pending": true, "label": t.about.from, "said": answered(&e),
+            })
+            .to_string()),
+            Err(e) => {
+                // A join refused before it was kept leaves an older one alone.
+                let lost = matches!(e.downcast_ref::<Lost>(), Some(Lost(r, _)) if r.redeemed);
+                if held.get() && !lost {
+                    let _ = self
+                        .cli
+                        .run(&["sync", "pending-join", "--clear"], None)
+                        .await;
+                }
+                report(Err(e))
+            }
+            rep => {
+                // A plain dial's handshake carries no invite, which ends it.
+                let _ = self
+                    .cli
+                    .run(&["sync", "pending-join", "--clear"], None)
+                    .await;
+                report(rep)
+            }
+        }
+    }
+
+    /// Redeem this database's pending join, if it holds one a member has not
+    /// refused for good, as it was asked to join (da-4qpwf): `null` with none.
+    /// A refusal no retry changes is kept on the join, and ends its retries.
+    #[wasm_bindgen(js_name = redeemPending)]
+    pub async fn redeem_pending(&self) -> Result<String, JsError> {
+        let held = self
+            .cli
+            .run(&["sync", "pending-join"], None)
+            .await
+            .map_err(js)?;
+        let j: serde_json::Value = serde_json::from_str(held.trim()).map_err(js)?;
+        let Some(ticket) = j["ticket"].as_str().filter(|_| j["refused"].is_null()) else {
+            return Ok("null".into());
+        };
+        let t = Ticket::decode(ticket).map_err(js)?;
+        if let Some(label) = j["label"].as_str() {
+            self.cli.label.replace(label.into());
+        }
+        let rep = self.redeeming(&t, false, None).await;
+        if rep.is_ok() {
+            let _ = self
+                .cli
+                .run(&["sync", "pending-join", "--clear"], None)
+                .await;
+        }
+        if let Err(e) = &rep {
+            let lost = matches!(e.downcast_ref::<Lost>(), Some(Lost(r, _)) if r.redeemed);
+            if !lost && !retries(&t, e) {
+                let why = format!("{e:#}");
+                let _ = self
+                    .cli
+                    .run(&["sync", "pending-join", "--refused", &why], None)
+                    .await;
+            }
+        }
+        report(rep)
+    }
+
+    /// Redeem `t`, `asked` with a person waiting. One refused as busy gives
+    /// up its turn and tries again, for [`JOIN_WAITS`] (da-tqg19): two pages
+    /// each holding a turn refuse each other's session, and a member's sync
+    /// met in passing is no reason a join fails. The wait is jittered, so two
+    /// pages that met do not meet again in step. A background redeem
+    /// (`!asked`) gives up at the first: the next pull tries again.
+    ///
+    /// `keep`, a person's join: in its first turn, before it dials, whether
+    /// this copy may join, and then the CLI line keeping it, `true` once
+    /// kept. The join holds its turn from its first process, as it did
+    /// before it was kept (da-tqg19): a session served meanwhile is the one
+    /// refused, never the join.
+    async fn redeeming(
+        &self,
+        t: &Ticket,
+        asked: bool,
+        mut keep: Option<(&[&str], &Cell<bool>)>,
+    ) -> Result<Report> {
         let began = n0_future::time::Instant::now();
         loop {
             let rep = {
                 let _turn = self.turn().await;
-                redeem(&self.cli, &self.ep, &ticket).await
+                if let Some((hold, held)) = keep.take() {
+                    may_redeem(&self.cli, t).await?;
+                    self.cli.run(hold, None).await?;
+                    held.set(true);
+                }
+                redeem(&self.cli, &self.ep, t, asked).await
             };
             let busy = rep.as_ref().err().and_then(failure) == Some(Failure::Refused(Why::Busy));
-            if !busy || began.elapsed() > JOIN_WAITS {
-                return report(rep);
+            if !busy || !asked || began.elapsed() > JOIN_WAITS {
+                return rep;
             }
             let ms = 250.0 + 750.0 * js_sys::Math::random();
             n0_future::time::sleep(Duration::from_millis(ms as u64)).await;

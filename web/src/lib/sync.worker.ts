@@ -75,6 +75,8 @@ async function answer(request: Exclude<SyncRequest, { ran: number }>): Promise<u
 			return JSON.parse(await node.dial(request.addr));
 		case 'connect':
 			return JSON.parse(await node.connect(request.ticket, request.label));
+		case 'redeem':
+			return JSON.parse(await node.redeemPending());
 		case 'ticket':
 			return node.ticket(request.secret, request.also, request.about);
 	}

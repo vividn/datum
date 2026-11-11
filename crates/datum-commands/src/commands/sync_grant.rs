@@ -680,6 +680,15 @@ fn join(g: &Granted, quiet: bool) -> Result<String> {
     let out = child.wait_with_output()?;
     let said = String::from_utf8_lossy(&out.stderr).trim().to_string();
     ensure!(out.status.success(), "joining «{}» failed: {said}", g.name);
+    // No member answered: the join is kept, and no grant is taken until a
+    // member admits it (da-4qpwf). A join of the next sync is tried again.
+    let path = config::locate_db(Some(&g.name)).context("Cannot determine data directory")?;
+    let there = Db::open_read_only(&path.to_string_lossy())?;
+    ensure!(
+        there.sync_join_pending()?.is_none(),
+        "«{}» waits for its first sync: no device of its chain answered yet",
+        g.name
+    );
     Ok(format!("joined «{}», invited by {}", g.name, g.from))
 }
 

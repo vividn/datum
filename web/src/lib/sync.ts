@@ -56,7 +56,7 @@ import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusAr
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, run, type RunResult } from './run.js';
-import type { ChainList, Member, Notice, SyncStatus } from './syncView.js';
+import type { ChainList, Member, Notice, PendingJoin, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
 
 const PULL_MS = 30_000;
@@ -169,7 +169,14 @@ async function cli(argv: string[], stdin?: string, session?: boolean): Promise<R
 export function syncs(r: RunResult): boolean {
 	if (r.code !== 0) return false;
 	const l = JSON.parse(r.stdout) as ChainList;
-	return Boolean(l.chain || l.joining?.length || l.dissolved);
+	return Boolean(l.chain || l.joining?.length || l.dissolved || (l.pending_join && !l.pending_join.refused));
+}
+
+/** What a pending join says, in words: waiting for its first sync, or why it was refused and what to do. */
+export function pendingWords(p: PendingJoin): string {
+	const from = p.from ?? 'the inviting device';
+	if (p.refused) return `Could not join ${from}’s sync chain: ${p.refused}. Ask ${from} for a new link.`;
+	return `This device is waiting for its first sync: it starts when ${from} or another device in the chain is online.`;
 }
 
 async function must(argv: string[], stdin?: string): Promise<string> {
@@ -305,8 +312,13 @@ export class Leader {
 	chain = false;
 	/** The chain's id, while there is one. */
 	chainId?: string;
-	/** In no chain yet, joining one through `peers`: a join cut short (da-idw54). */
+	/** In no chain yet, joining one through `peers`: a join cut short (da-idw54), or one kept until a member answers (da-4qpwf). */
 	joining = false;
+	/** A join kept until a member admits it, which `redeem` tries (da-4qpwf). */
+	pendingJoin?: PendingJoin;
+	redeeming = false;
+	/** A person's join under way, which a background redeem leaves alone. */
+	connecting = false;
 	paused?: string;
 	notices: Notice[] = [];
 	/** When a session with a member last ended well, as the CLI recorded it. */
@@ -362,7 +374,9 @@ export class Leader {
 	 */
 	async refresh(): Promise<void> {
 		failInjected();
-		const listed = syncs(await cli(['--db', this.db, ...chainListArgv()]));
+		const list = await cli(['--db', this.db, ...chainListArgv()]);
+		const listed = syncs(list);
+		this.pendingJoin = list.code === 0 ? ((JSON.parse(list.stdout) as ChainList).pending_join ?? undefined) : undefined;
 		const status = listed ? (JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) as SyncStatus) : undefined;
 		const chain = Boolean(status?.chain);
 		const joined = this.joining && chain;
@@ -485,6 +499,11 @@ export class Leader {
 	async said(): Promise<Said | null> {
 		if (!this.read) await this.reading;
 		if (!this.endpoint || this.paused) return null;
+		// A join kept: tried now, and said as it stands (da-4qpwf).
+		if (this.pendingJoin) {
+			await this.redeem();
+			if (this.pendingJoin) return { lines: [pendingWords(this.pendingJoin)], ok: !this.pendingJoin.refused };
+		}
 		if (!this.peers.length) return { lines: ['no sync peers: `sync chain invite` makes an invite'], ok: true };
 		const since = Date.now();
 		await this.syncNow();
@@ -498,6 +517,24 @@ export class Leader {
 			lines: [`syncing with ${this.peers.map((p) => p.label).join(', ')}`, ...each.map((e) => e.line)],
 			ok: each.some((e) => e.ok)
 		};
+	}
+
+	/**
+	 * Redeem the pending join, if a member answers (da-4qpwf): the leader's
+	 * as it starts and at every pull, until a member admits this copy, or
+	 * refuses it for good, which the CLI keeps on the join and says.
+	 */
+	async redeem(): Promise<void> {
+		if (!this.endpoint || !this.pendingJoin || this.pendingJoin.refused || this.paused || this.redeeming || this.connecting) return;
+		this.redeeming = true;
+		try {
+			const report = await ask<SyncReport | null>(this.db, { op: 'redeem' }).catch(() => null);
+			if (report) return this.done(report.id, report);
+			await this.refresh();
+		} finally {
+			this.redeeming = false;
+			this.progress();
+		}
 	}
 
 	/** A session's apply moved on; undefined once it is over. */
@@ -559,19 +596,31 @@ export class Leader {
 		if (c.op === 'said') return this.said();
 		if (c.op === 'connect') {
 			await this.start();
-			// The admit records the name it joins as, so the inviter holds it at once.
-			const label = c.label ?? suggestedLabel(this.db);
-			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket, label }).finally(() => this.progress());
-			this.done(report.id, report);
-			// Admitted to a chain, it says what it is (`datum sync chain join`):
-			// a name it was told as told, else none: the chain assembles one (da-xijlw).
-			// Its peers hear on the next sync, as natively: pushed on, it dialed
-			// the inviter, whose invite has ended, and held the page's one
-			// session until the dial timed out (da-qlffb).
-			await this.refresh();
-			const named = c.label ? renameArgv(c.label) : unsetRenameArgv();
-			if (this.chain) await cli(['--db', this.db, ...named], undefined, true);
-			return report;
+			// The join is kept before it dials: no background redeem of it meanwhile, which
+			// would take the invite from under the person's own (da-4qpwf).
+			this.connecting = true;
+			try {
+				// The admit records the name it joins as, so the inviter holds it at once.
+				const label = c.label ?? suggestedLabel(this.db);
+				const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket, label }).finally(() => this.progress());
+				// No member answered: the join is kept, and redeemed once one does (da-4qpwf).
+				if (report.pending) {
+					await this.refresh();
+					return report;
+				}
+				this.done(report.id, report);
+				// Admitted to a chain, it says what it is (`datum sync chain join`):
+				// a name it was told as told, else none: the chain assembles one (da-xijlw).
+				// Its peers hear on the next sync, as natively: pushed on, it dialed
+				// the inviter, whose invite has ended, and held the page's one
+				// session until the dial timed out (da-qlffb).
+				await this.refresh();
+				const named = c.label ? renameArgv(c.label) : unsetRenameArgv();
+				if (this.chain) await cli(['--db', this.db, ...named], undefined, true);
+				return report;
+			} finally {
+				this.connecting = false;
+			}
 		}
 		// An invite the page wrote already (the Sync widget, approved with a
 		// passkey in the tab tapped — da-bjxts), or a new one.
@@ -630,8 +679,10 @@ async function lead(db: string): Promise<void> {
 	}
 	onAnyChange((session) => session || void leader.push().catch(() => {}), db);
 	// A database that does not sync has nothing to pull, nor any reach to age.
+	void leader.redeem();
 	setInterval(() => {
 		if (leader.endpoint) void leader.push(true).catch(() => {});
+		void leader.redeem();
 	}, PULL_MS);
 	setInterval(() => leader.endpoint && leader.post(), REACHABLE_MS / 4);
 	if (leader.peers.length && !leader.paused && leader.lastSynced && Date.now() - leader.lastSynced > UNSYNCED_MS) {
@@ -741,14 +792,17 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
 		(r) => ({
 			argv: shown,
 			code: 0,
-			stdout: [
-				r.left ? `this copy's own sync chain ${r.left[0]} (just itself) is replaced by sync chain ${r.left[1]}` : '',
-				r.added ? `added sync peer ${r.label} (${r.id.slice(0, 10)})` : '',
-				// Across a sync floor its words name the other copy (da-52vdj).
-				reportLine(r)
-			]
-				.filter(Boolean)
-				.join('\n'),
+			// No member answered: the join is kept, and redeemed once one does (da-4qpwf).
+			stdout: r.pending
+				? [r.said, `Joined: syncing starts when ${r.label ?? 'the inviting device'} or another device in the chain is online`].filter(Boolean).join('\n')
+				: [
+						r.left ? `this copy's own sync chain ${r.left[0]} (just itself) is replaced by sync chain ${r.left[1]}` : '',
+						r.added ? `added sync peer ${r.label} (${r.id.slice(0, 10)})` : '',
+						// Across a sync floor its words name the other copy (da-52vdj).
+						reportLine(r)
+					]
+						.filter(Boolean)
+						.join('\n'),
 			stderr: ''
 		}),
 		(e) => ({ argv: shown, code: 1, stdout: '', stderr: `error: ${(e as Error).message}` })

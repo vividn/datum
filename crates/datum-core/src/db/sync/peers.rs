@@ -311,6 +311,8 @@ impl Db {
                     "UPDATE sync_peers SET redeemed_at = ?2 WHERE endpoint_id = ?1",
                     params![id, now()],
                 )?;
+                // Admitted: its pending join is over (da-4qpwf).
+                tx.execute("DELETE FROM _meta WHERE key = 'sync_join'", [])?;
             }
             Ok::<_, DatumError>(())
         })?;

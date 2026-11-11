@@ -41,7 +41,10 @@
 	which names what the passkey signs before it offers the passkey, since
 	a link is anyone's to send, and `/sync/join#…` (da-l9kdr), which names
 	the inviting device, its chain and the page's database before it joins
-	or says why it cannot — are the same shape, on top. Notices of new
+	or says why it cannot — are the same shape, on top. A join kept until a
+	member admits this device (da-4qpwf) says under the header that it waits
+	for its first sync, or why a member refused it, in place of [Turn on
+	sync]; a link works for days, so its panel says until which day. Notices of new
 	members and unlocks stand with the acts until acknowledged.
 
 	Every CLI read and act is #lib/syncView.ts's. Every button is the
@@ -57,7 +60,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -370,8 +373,14 @@
 			setUsername(j.user);
 			const r = await syncConnect(into, j.ticket, typed);
 			joining.drop();
+			// No member answered: the join is kept, and the first sync starts once one is online (da-4qpwf).
 			// Across a sync floor it joined, and no entry moved (da-52vdj).
-			const done = r.floor ? `Joined. ${r.floor}` : `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.`;
+			const from = j.about?.from ?? 'the inviting device';
+			const done = r.pending
+				? `${r.said ? `${r.said.charAt(0).toUpperCase()}${r.said.slice(1)}. ` : ''}Joined: syncing starts when ${from} or another device in the chain is online.`
+				: r.floor
+					? `Joined. ${r.floor}`
+					: `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.`;
 			if (into === db) return void (join = { ...j, done });
 			// The page opens on the database joined, so what came in is what is shown (da-bedyz).
 			joinedInto.set(done);
@@ -410,7 +419,7 @@
 				const { relay = false } = await ticketAbout(ticket);
 				const link = joinLink(ticket);
 				const expires = Date.parse(invite.expires);
-				offer = { db, link, svg: await qr(link), until: hm(expires), expires, id: invite.id, relay };
+				offer = { db, link, svg: await qr(link), until: when(expires), expires, id: invite.id, relay };
 				start = null;
 			} finally {
 				waiting = '';
@@ -590,6 +599,9 @@
 	}
 
 	const hm = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+	/** `at` as a link's «until»: the time today, the date and time on another day — an invite lasts days (da-4qpwf). */
+	const when = (at: number) =>
+		new Date(at).toDateString() === new Date().toDateString() ? hm(at) : `${new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' })} ${hm(at)}`;
 
 	/** When a device was last seen, relative: «now», «2 min ago», «3 h ago», a date. */
 	function ago(at?: number): string {
@@ -700,6 +712,10 @@
 			<!-- The guide to all of this, in plain words (da-oyvsz): the Help place opens it. -->
 			<button type="button" class="info guide" use:act={'show'} aria-label="how to sync" title="how to sync" onclick={() => explainGuide('sync')}>?</button>
 		</header>
+		{#if !cur.chain && cur.pending}
+			<!-- A join kept until a member admits this device: waiting, never an error (da-4qpwf). -->
+			<p class="quiet pending" class:failure={!!cur.pending.refused} data-pending={cur.pending.refused ? 'refused' : 'waiting'}>{pendingWords(cur.pending)}</p>
+		{/if}
 		{#if cur.chain}
 			<ul class="devices">
 				{#each live as row (row.key)}
@@ -889,7 +905,9 @@
 			</section>
 		{:else}
 			<div class="actions" data-db={db}>
-				{#if !cur.chain}
+				{#if !cur.chain && cur.pending && !cur.pending.refused}
+					<!-- Waiting for its first sync: nothing to turn on (da-4qpwf). -->
+				{:else if !cur.chain}
 					<button type="button" class="command" use:act={'show'} disabled={busy} onclick={() => turnOn(db)}>Turn on sync</button>
 				{:else}
 					<button type="button" class="command" use:act={'run'} disabled={busy} onclick={() => addDevice(db)}>Add device</button>

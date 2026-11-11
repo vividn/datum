@@ -1281,7 +1281,7 @@ fn subcommand_help_is_its_own_page() {
     for said in [
         "Serves until redeemed",
         "It returns at once",
-        "default --expires 10m",
+        "default --expires 7d",
         "--expires 7d",
         "--like <DB> invites another database's devices, never its",
         "`?db=<name>` before its `#`",

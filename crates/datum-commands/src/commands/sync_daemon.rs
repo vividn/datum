@@ -490,6 +490,9 @@ fn looked() -> (Vec<(String, PathBuf)>, bool) {
                 Ok(db) => {
                     db.sync_chain().is_ok_and(|c| c.exists())
                         || db.sync_joining().is_ok_and(|j| !j.is_empty())
+                        || db
+                            .sync_join_pending()
+                            .is_ok_and(|j| j.is_some_and(|j| j.refused.is_none()))
                 }
                 Err(_) => {
                     refused |= path.exists();

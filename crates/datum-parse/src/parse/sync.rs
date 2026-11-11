@@ -11,6 +11,9 @@ use crate::cli::*;
 use crate::error::{ParseError, Result};
 use crate::input::Show;
 
+/// How long an invite holds unless `--expires` says (da-4qpwf).
+const WEEK: u64 = 7 * 24 * 3600;
+
 pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     let Some((sub, rest)) = tail.split_first() else {
         return Ok(SyncCommand::Now { verbose: false });
@@ -95,6 +98,22 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         // Hidden (da-rcb5m): datum.day's network worker, not a person.
         "endpoint-key" => SyncCommand::EndpointKey,
         "holds" => SyncCommand::Holds,
+        "pending-join" => {
+            let o = opts(
+                &mut rest,
+                &["hold", "about", "label", "user", "refused"],
+                &["clear"],
+                0..=0,
+            )?;
+            SyncCommand::PendingJoin {
+                hold: o.get("hold"),
+                about: o.get("about"),
+                label: o.get("label"),
+                username: o.get("user"),
+                refused: o.get("refused"),
+                clear: o.on("clear"),
+            }
+        }
         "record-session" => {
             let mut o = opts(
                 &mut rest,
@@ -241,7 +260,6 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 refuse(&o, &["qr", "label", "user", "fields", "kit"], why)?;
             }
             // The role and the expiry: a device may be off for days.
-            let week = 7 * 24 * 3600;
             if let Some(like) = like {
                 let why = "does not go with --like <DB>: each device takes the role it has there";
                 refuse(&o, &["reader"], why)?;
@@ -255,7 +273,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 return Ok(SyncCommand::GrantLike {
                     like,
                     devices,
-                    expires_secs: o.expires_or(week)?,
+                    expires_secs: o.expires_or(WEEK)?,
                     admin_key: o.get("admin-key"),
                     defer: o.on("defer"),
                 });
@@ -264,7 +282,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 return Ok(SyncCommand::Grant {
                     device,
                     reader: o.on("reader"),
-                    expires_secs: o.expires_or(week)?,
+                    expires_secs: o.expires_or(WEEK)?,
                     name: o.get("as"),
                     admin_key: o.get("admin-key"),
                     ticket: match (o.get("ticket"), o.get("invite")) {
@@ -550,9 +568,10 @@ impl Opts {
         }
     }
 
-    /// `--expires`, 10 minutes by default.
+    /// `--expires`, 7 days by default: a link is sent, and its redeemer
+    /// joins whenever it opens it (da-4qpwf).
     fn expires(&self) -> Result<u64> {
-        self.expires_or(600)
+        self.expires_or(WEEK)
     }
 
     fn expires_or(&self, default: u64) -> Result<u64> {
@@ -799,7 +818,7 @@ mod tests {
                 reader: true,
                 filter: None,
                 qr: true,
-                expires_secs: 600,
+                expires_secs: WEEK,
                 label: Some("laptop".into()),
                 user: None,
                 admin_key: Some("k".into())
@@ -996,7 +1015,7 @@ mod tests {
                 reader: true,
                 filter: Some(SyncFilter::Kit("health".into())),
                 qr: false,
-                expires_secs: 600,
+                expires_secs: WEEK,
                 label: None,
                 user: None,
                 admin_key: None
@@ -1119,7 +1138,7 @@ mod tests {
                 device: "9ae6".into(),
                 reader: true,
                 name: Some("work".into()),
-                expires_secs: 7 * 24 * 3600,
+                expires_secs: WEEK,
                 admin_key: None,
                 ticket: None,
             }
@@ -1141,7 +1160,7 @@ mod tests {
                 device: "9ae6".into(),
                 reader: false,
                 name: None,
-                expires_secs: 7 * 24 * 3600,
+                expires_secs: WEEK,
                 admin_key: None,
                 ticket: Some(("T".into(), "01j".into())),
             }
@@ -1159,7 +1178,7 @@ mod tests {
             SyncCommand::GrantLike {
                 like: "home".into(),
                 devices: None,
-                expires_secs: 7 * 24 * 3600,
+                expires_secs: WEEK,
                 admin_key: None,
                 defer: false,
             }
@@ -1187,16 +1206,16 @@ mod tests {
         assert!(parse_sync_cmd(&["chain", "invite", "--like", "home", "--devices", ","]).is_err());
     }
 
-    /// A bare invite stays as it was, and takes none of the other forms' flags.
+    /// A bare invite holds a week, as a link sent does (da-4qpwf), and takes none of the other forms' flags.
     #[test]
-    fn a_bare_invite_keeps_ten_minutes_and_its_own_flags() {
+    fn a_bare_invite_keeps_a_week_and_its_own_flags() {
         assert_eq!(
             p(&["chain", "invite", "--qr", "--label", "x", "--user", "ann"]),
             SyncCommand::Invite {
                 reader: false,
                 filter: None,
                 qr: true,
-                expires_secs: 600,
+                expires_secs: WEEK,
                 label: Some("x".into()),
                 user: Some("ann".into()),
                 admin_key: None,

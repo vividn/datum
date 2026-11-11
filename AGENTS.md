@@ -924,6 +924,25 @@ op covers yet. That file is never pruned, and a purge removes it as it does
 the snapshots. It runs only when asked; the newer-schema refusal of a chained
 file names it.
 
+A join is kept, not waited on (da-4qpwf, vividn, 2026-11-10: «It should just add the keys
+and be done»): `chain join` checks the copy may join, stores the ticket as the database's
+pending join (`_meta` `sync_join`, one per database, the newer replacing the older,
+`Db::sync_join_hold`), and tries it once, five seconds an address. A member reached admits
+and syncs as before; otherwise, wherever a retry may change it (`join_kept`: none reached,
+or a member not holding the invite yet, paused, busy, whatever the order of the ticket's
+addresses), it says what a member answered and «Joined: syncing starts when <inviter> or
+another device in the chain is online», exits 0, and `sync run`, the daemon (which counts such a
+database as chained), a bare `sync` and datum.day's leader (`redeemPending`, at its pull)
+redeem it once one answers. The handshake recording the member that admitted it ends it.
+A member's refusal no retry changes (used, expired, an invite past its time, the inviter
+itself not holding it, `Disowned`; `retries` in the wire crate) is kept on the join and ends its retries, except that «invite already used» after an
+attempt of the same process gave way once it reached a member (da-gvia0, da-vj3ly), which may
+have been admitted before it closed, dials the ticket's addresses plainly first (`GAVE_WAY` in
+`redeem`): `sync status` says «could not
+join …: ask <inviter> for a new link». `sync status` and `chain list --json` show it as
+`pending_join`, never its ticket; the hidden `sync pending-join` is the page's store for it.
+A bare `chain invite` and datum.day's links last 7 days by default.
+
 Redeeming another chain's invite leaves on its own only a copy holding nothing
 but its own data (no other live member, no other endpoint's op), keeping its
 key.
@@ -1046,7 +1065,7 @@ run` for every chained db `known_dbs` lists; a copy's first `chain invite` /
 `join` keeps a db opened by path in the registry under its absolute path, so
 the daemon finds it too (da-zrl7n), and installs it unless
 `DATUM_SYNC_NO_DAEMON=1`, and `datum install` and `datum upgrade` restart it onto a new binary; a `join`
-installs it once admitted and holds `<db>.joining` locked for its life, so the
+installs it as it keeps the join and holds `<db>.joining` locked for its life, so the
 daemon leaves that database alone until the `join` ends or is killed, and
 then finishes a first sync cut short; an `invite` holds the same lock, so a
 joiner is served by the `invite` that shows it and not by the daemon — whose

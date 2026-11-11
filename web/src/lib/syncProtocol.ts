@@ -23,6 +23,14 @@ export interface SyncReport {
 	 * records moved, and this says which must update (da-52vdj).
 	 */
 	floor?: string | null;
+	/**
+	 * A join no member answered yet: kept as the database's pending join, which
+	 * the leader redeems once one is online (da-4qpwf). Then `label` is the
+	 * inviter's, as its link names it, and the rest is absent.
+	 */
+	pending?: true;
+	/** What a member answered of a join it kept and did not admit (not holding the invite yet, paused), if one did. */
+	said?: string | null;
 }
 
 /** What a ticket says of itself (the wire crate's `About`, da-l9kdr): never its secret. */
@@ -42,6 +50,8 @@ export type SyncRequest =
 			| { op: 'start'; key: string; relay?: string; idle?: number; label: string; datum: string; schema: number; floor: number }
 			| { op: 'dial'; addr: string }
 			| { op: 'connect'; ticket: string; label?: string }
+			/** Redeem the database's pending join, if a member answers: its report, or null with none (da-4qpwf). */
+			| { op: 'redeem' }
 			| { op: 'ticket'; secret: string; also?: string; about?: string }
 			/** What a ticket or join link says of itself (`TicketAbout`); needs no endpoint. */
 			| { op: 'about'; ticket: string }
