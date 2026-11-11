@@ -46,10 +46,6 @@
 	no field has is not drawn, and is offered beside the fields there are so
 	the menu can take it off again.
 
-	In MODIFY MODE (`modifying`, da-xi4up) its now width, side, rows and zoom
-	are the widget's own controls, and what they move goes to `onchange`,
-	which the renderer writes into the layout then (`modifyWidget`, mode.ts).
-
 	`showIgnored` (da-xhio) arrives as a prop too, though its value is the
 	SESSION's rather than the layout's: the renderer merges the two before
 	it draws (Layout.svelte, #lib/layout/session.ts), so neither this pane
@@ -92,10 +88,6 @@
 		zoom,
 		/** The rows an unset zoom fits the box to (da-je8ju); none, zoom 1. */
 		rows,
-		/** The now section's share of the widget's width (da-xi4up); unset, a fifth. */
-		nowWidth,
-		/** Modify mode is on this widget (da-xi4up): its own controls are drawn, and it is otherwise still. */
-		modifying = false,
 		/** The time and duration section open, or its clock alone (da-iunoo); `onchange` hands it to the session. */
 		timeOpen = false,
 		/** The fields shown, or every field where empty (da-gfy7w). */
@@ -111,12 +103,10 @@
 		side?: 'left' | 'right';
 		zoom?: number;
 		rows?: number;
-		nowWidth?: number;
-		modifying?: boolean;
 		timeOpen?: boolean;
 		epoch?: number;
-		/** What the widget moved itself: its time section open, for the session; in modify mode its zoom, rows, side and now width, for the layout. */
-		onchange?: (moved: { zoom?: number; rows?: number; side?: 'left' | 'right'; nowWidth?: number; timeOpen?: boolean }) => void;
+		/** What the widget moved itself, for the session to keep: its zoom, its time section open. */
+		onchange?: (moved: { zoom?: number; timeOpen?: boolean }) => void;
 	} = $props();
 
 	/** The selected instant, or null at now: a length ending now selects no time. */
@@ -249,9 +239,7 @@
 		{side}
 		{zoom}
 		{rows}
-		{nowWidth}
-		{modifying}
-		onmodify={(moved) => onchange?.(moved)}
+		onzoom={(zoom) => onchange?.({ zoom })}
 		{timeOpen}
 		ontime={(timeOpen) => onchange?.({ timeOpen })}
 		nowDoc={doc}
