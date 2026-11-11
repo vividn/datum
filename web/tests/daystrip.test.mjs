@@ -1126,7 +1126,11 @@ describe('the day strip zooms onto an hour range', () => {
 			await page.waitForFunction(
 				`window.datum.bar.pills().some((p) => p.text === ${JSON.stringify(mark)})`
 			);
-			// Past a double tap's window (`DOUBLE_MS`, #lib/hover.ts).
+			// Not a wait for rest: the next tap held past DOUBLE_MS (300 ms,
+			// #lib/hover.ts), so it starts a double tap of its own rather than
+			// finishing one with the tap above. The window is read off each
+			// event's `timeStamp`, which this app's held `Date` does not hold,
+			// so the wall clock's 450 ms is the one it counts.
 			await page.waitForTimeout(450);
 			await page.touchscreen.tap(middle.x, middle.y);
 			await page.touchscreen.tap(middle.x, middle.y);
