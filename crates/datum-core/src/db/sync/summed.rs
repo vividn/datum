@@ -222,6 +222,14 @@ pub(super) fn add(sum: &mut [u8; 32], part: &[u8; 32], sign: i16) {
     }
 }
 
+/// The summed state hash of `rows`, each hashed as a kept part is.
+pub(super) fn of_rows(rows: Vec<Map<String, Value>>) -> [u8; 32] {
+    rows.into_iter().fold([0; 32], |mut sum, r| {
+        add(&mut sum, &row_part(r).0, 1);
+        sum
+    })
+}
+
 /// The sum of `parts`, as [`add`] adds them.
 fn total<'a>(parts: impl Iterator<Item = &'a ([u8; 32], Option<String>)>) -> [u8; 32] {
     parts.fold([0; 32], |mut sum, (h, _)| {

@@ -1447,12 +1447,23 @@ impl SyncRole {
     }
 }
 
-/// A filtered reader's or writer's fields (da-u81u1): named, or a kit's, resolved
-/// against the database when the record is written. A writer's may name
-/// none (`--fields ''`): it is sent only the chain's records.
+/// A filtered reader's or writer's filter: its fields (da-u81u1), every one
+/// where none are named; a `window`, in seconds, of the entries sent and the
+/// one that set each field's state at its start; and with `specs` every
+/// field's spec and every alias whatever else (da-nflkk).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SyncFilter {
+    pub fields: Option<SyncFields>,
+    pub window_secs: Option<u64>,
+    pub specs: bool,
+}
+
+/// A filter's fields: named, or a kit's, resolved against the database when
+/// the record is written. A writer's may name none (`--fields ''`): it is
+/// sent only the chain's records.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SyncFilter {
-    Fields(Vec<String>),
+pub enum SyncFields {
+    Named(Vec<String>),
     Kit(String),
 }
 

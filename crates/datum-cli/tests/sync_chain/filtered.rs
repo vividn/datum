@@ -103,7 +103,10 @@ fn a_filtered_reader_gets_its_fields_and_their_specs_and_nothing_else() {
         .ok(&["sync", "chain", "list"])
         .contains("reader (filtered: 1 of 2 fields)"));
     let filter = &member_of(&a, &r.id())["filter"];
-    assert_eq!(filter, &serde_json::json!({"fields": ["coffee"], "of": 2}));
+    assert_eq!(
+        filter,
+        &serde_json::json!({"fields": ["coffee"], "of": 2, "said": "filtered: 1 of 2 fields"})
+    );
     let this = &json(&r.ok(&["sync", "status", "--json"]))["this"];
     assert_eq!(this["filter"]["fields"], serde_json::json!(["coffee"]));
 }

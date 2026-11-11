@@ -132,7 +132,7 @@ fn a_writer_with_an_empty_filter_holds_only_the_chain_and_its_own_entries() {
     assert_eq!(member_of(&w, &b.id())["role"], "member");
     assert_eq!(
         member_of(&a, &w.id())["filter"],
-        serde_json::json!({"fields": [], "of": 1})
+        serde_json::json!({"fields": [], "of": 1, "said": "filtered: 0 of 1 fields"})
     );
 
     w.ok(&["occur", "coffee", "-t", "-2"]);

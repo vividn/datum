@@ -790,51 +790,172 @@ pub struct Member {
     pub filter: Option<Filter>,
 }
 
-/// The fields a filtered reader is sent (da-u81u1), each with its spec, and
-/// how many fields the database had when the filter was written.
+/// What a filtered reader or writer is sent (da-u81u1): its fields'
+/// entries, each with its spec — every field's where it names none — of
+/// which, with a `window` (da-nflkk), those whose time is in the window and
+/// the entry that set each field's state at its start; and with `specs`,
+/// every field's spec and every alias, whatever its fields and window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Filter {
-    pub fields: BTreeSet<String>,
+    /// None: every field.
+    pub fields: Option<BTreeSet<String>>,
+    /// How many fields the database had when `fields` was written.
     pub of: i64,
+    /// How far back it reaches, in seconds.
+    pub window: Option<i64>,
+    pub specs: bool,
 }
 
 impl Filter {
-    /// A record's filter — `fields` and `of` beside a `role` — or why it
-    /// has none it may carry: only a copy that relays nothing is filtered,
-    /// and only a writer's may name no field (da-o5o6m): it is sent the
-    /// chain's records alone.
+    /// A record's filter — `fields` and `of`, `window`, `specs` beside a
+    /// `role` — or why it has none it may carry: only a copy that relays
+    /// nothing is filtered, and only a writer's, or one sent every spec,
+    /// may name no field (da-o5o6m): it is sent the chain's records alone.
     fn parse(r: &Value, role: Role) -> std::result::Result<Option<Filter>, String> {
-        let Some(fields) = r.get("fields").filter(|f| !f.is_null()) else {
-            return Ok(None);
+        let given = |k: &str| r.get(k).filter(|v| !v.is_null());
+        let specs = match given("specs") {
+            None => false,
+            Some(Value::Bool(b)) => *b,
+            Some(_) => return Err("a filter's `specs` is true or false".into()),
         };
+        let window = match given("window") {
+            None => None,
+            Some(w) => match w.as_i64() {
+                Some(w) if w > 0 => Some(w),
+                _ => return Err("a filter's window is a number of seconds".into()),
+            },
+        };
+        if given("fields").is_none() && window.is_none() && !specs {
+            return Ok(None);
+        }
         if role.relays() {
             return Err("only a reader or a writer is filtered".into());
         }
-        let fields: BTreeSet<String> = fields
+        let Some(list) = given("fields") else {
+            return Ok(Some(Filter {
+                fields: None,
+                of: 0,
+                window,
+                specs,
+            }));
+        };
+        let fields: BTreeSet<String> = list
             .as_array()
             .into_iter()
             .flatten()
             .filter_map(|f| f.as_str().filter(|f| !f.is_empty()).map(Into::into))
             .collect();
-        let none = fields.is_empty() && role != Role::Writer;
-        if none || fields.len() != r["fields"].as_array().map_or(0, Vec::len) {
+        let none = fields.is_empty() && role != Role::Writer && !specs;
+        if none || fields.len() != list.as_array().map_or(0, Vec::len) {
             return Err("a filter's fields are a list of field names".into());
         }
         match r["of"].as_i64() {
-            Some(of) if of >= fields.len() as i64 => Ok(Some(Filter { fields, of })),
+            Some(of) if of >= fields.len() as i64 => Ok(Some(Filter {
+                fields: Some(fields),
+                of,
+                window,
+                specs,
+            })),
             _ => Err("a filter's `of` counts the database's fields, its own among them".into()),
         }
     }
 
-    /// Whether an entry that belongs to `field` passes it.
+    /// Whether its fields take `field`'s entries.
     pub fn admits(&self, field: Option<&str>) -> bool {
-        field.is_some_and(|f| self.fields.contains(f))
+        field.is_some_and(|f| self.fields.as_ref().is_none_or(|s| s.contains(f)))
     }
 
-    /// «filtered: 5 of 23 fields»
-    pub fn describe(&self) -> String {
-        format!("filtered: {} of {} fields", self.fields.len(), self.of)
+    /// Whether it is judged by an entry's field alone, as before windows.
+    pub fn by_field(&self) -> bool {
+        self.fields.is_some() && self.window.is_none() && !self.specs
     }
+
+    /// Whether everything it passes, `other` passes too: what a reader's
+    /// marks made under `other` still answer for it.
+    pub fn within(&self, other: &Filter) -> bool {
+        let fields = match (&self.fields, &other.fields) {
+            (_, None) => true,
+            (Some(mine), Some(theirs)) => mine.is_subset(theirs),
+            (None, Some(_)) => false,
+        };
+        let window = match (self.window, other.window) {
+            (_, None) => true,
+            (Some(mine), Some(theirs)) => mine <= theirs,
+            (None, Some(_)) => false,
+        };
+        fields && window && (!self.specs || other.specs || other.fields.is_none())
+    }
+
+    /// The keys a record carries it by, which a mark repeats.
+    pub fn to_json(&self) -> Value {
+        let mut v = json!({});
+        if let Some(f) = &self.fields {
+            v["fields"] = json!(f);
+            v["of"] = self.of.into();
+        }
+        if let Some(w) = self.window {
+            v["window"] = w.into();
+        }
+        if self.specs {
+            v["specs"] = true.into();
+        }
+        v
+    }
+
+    /// A filter from what [`Filter::to_json`] wrote, or a mark's bare
+    /// list of fields (da-u81u1); none from anything else.
+    pub fn from_json(v: &Value) -> Option<Filter> {
+        let names = |l: &Value| -> Option<BTreeSet<String>> {
+            l.as_array()?
+                .iter()
+                .map(|f| f.as_str().map(Into::into))
+                .collect()
+        };
+        if v.is_array() {
+            let fields = names(v)?;
+            let of = fields.len() as i64;
+            return Some(Filter {
+                fields: Some(fields),
+                of,
+                window: None,
+                specs: false,
+            });
+        }
+        let fields = match v.get("fields").filter(|f| !f.is_null()) {
+            Some(l) => Some(names(l)?),
+            None => None,
+        };
+        Some(Filter {
+            of: v["of"].as_i64().unwrap_or(0),
+            fields,
+            window: v["window"].as_i64(),
+            specs: v["specs"].as_bool().unwrap_or(false),
+        })
+    }
+
+    /// «filtered: 5 of 23 fields», «filtered: every field, the last 1d,
+    /// every spec and alias»
+    pub fn describe(&self) -> String {
+        let mut said = match &self.fields {
+            Some(f) => format!("filtered: {} of {} fields", f.len(), self.of),
+            None => "filtered: every field".into(),
+        };
+        if let Some(w) = self.window {
+            said.push_str(&format!(", the last {}", span(w)));
+        }
+        if self.specs {
+            said.push_str(", every spec and alias");
+        }
+        said
+    }
+}
+
+/// A window's length as it was likely typed: `1d`, `36h`, `90m`, `45s`.
+fn span(secs: i64) -> String {
+    [(86_400, "d"), (3_600, "h"), (60, "m")]
+        .into_iter()
+        .find(|(n, _)| secs % n == 0)
+        .map_or(format!("{secs}s"), |(n, u)| format!("{}{u}", secs / n))
 }
 
 /// What a member may write: a reader nothing but its own describe and

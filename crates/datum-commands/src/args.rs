@@ -38,8 +38,8 @@ pub use pcli::{
     IdsArgs, InfoArgs, KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs,
     MigrateCommand, NowArgs, NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs,
     RevertArgs, RotationAction, SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, SyncAdminAct,
-    SyncCommand, SyncDaemonAct, SyncFilter, TailArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat,
-    WhyArgs,
+    SyncCommand, SyncDaemonAct, SyncFields, SyncFilter, TailArgs, UndoArgs, UpdateArgs, ViewArgs,
+    ViewFormat, WhyArgs,
 };
 // Apart from the list above, which every added name reflows.
 pub use pcli::RenameArgs;

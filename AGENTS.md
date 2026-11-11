@@ -792,6 +792,19 @@ entry that moved in whole, `{"remove": hid}` for one that moved out, and a
 no gap wait, drops what falls outside, and its vector is its marks
 (`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
 
+A filter may carry a WINDOW and SPECS too (da-nflkk, `--window 1d`, `--specs`;
+vividn, 2026-11-11: «set per code, and include the states at the window start as
+well»): with no `fields` it is every field's. A window passes an entry whose
+time (`at`, else its create time) is at or after its start, back to the hour
+(`window_from` in `db/sync/window.rs`, so two copies judging a moment apart agree,
+`DATUM_SYNC_TEST_NOW` the tests' clock), and per field the entry that set its
+state then (`governing_at`, the oracle `now` reads). It is judged again at each
+sync: the reader drops what aged out at every apply, never an entry holding an op
+of its own, and a member sends a field's governing entry whole whenever an entry
+of that field changed, since a delete can make an older one govern. `--specs`
+passes every spec and alias whatever else, and neither is windowed. A windowed
+or specs filter's verify sums its rows afresh, reading from the window's start.
+
 A WRITER (da-o5o6m, `--writer`, `role <WHO> writer`; vividn, 2026-11-11: «yes to
 writer role, this will also be importnat later for building integrations with
 sensors and other streams of data») writes entries as a member does

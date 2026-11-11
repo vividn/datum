@@ -86,143 +86,7 @@ impl Db {
         fields: &[&str],
         t: DateTime<Utc>,
     ) -> Result<std::collections::HashMap<String, (JsonValue, Option<String>)>> {
-        // One row per field answers the common case — and is the whole
-        // of the pre-da-phoe cost. A field whose newest row is a block
-        // that has already handed the field back needs the row behind
-        // it, so those fields (only) are re-read to depth.
-        let mut rows = self.state_rows_at(fields, t, false)?;
-        let deep: Vec<&str> = fields
-            .iter()
-            .copied()
-            .filter(|f| {
-                rows.get(*f)
-                    .and_then(|r| r.first())
-                    .is_some_and(|row| row.hands_field_back(t))
-            })
-            .collect();
-        if !deep.is_empty() {
-            rows.extend(self.state_rows_at(&deep, t, true)?);
-        }
-        // The reads leave occur dots out; a field an occur moves (IGNORED,
-        // or no state at all — a field of nothing but dots included) needs
-        // the first one after that took effect, which turns it TRACKED.
-        let mut out = std::collections::HashMap::with_capacity(rows.len());
-        for field in dedup_fields(fields) {
-            let mut rows = rows.remove(field).unwrap_or_default();
-            let mut eff = crate::state::resolve_effective(&rows, t);
-            if eff.an_occur_tracks() {
-                if let Some(dot) = self.first_dot_row_after(field, eff.since, t)? {
-                    rows.push(dot);
-                    eff = crate::state::resolve_effective(&rows, t);
-                }
-            }
-            if rows.is_empty() {
-                continue;
-            }
-            let id = eff.governing.map(|i| rows[i].id.clone());
-            out.insert(field.to_string(), (eff.state, id));
-        }
-        Ok(out)
-    }
-
-    /// [`Db::first_dot_after`] in the state columns alone, as the other
-    /// state reads select them.
-    fn first_dot_row_after(
-        &self,
-        field: &str,
-        after: Option<DateTime<Utc>>,
-        at: DateTime<Utc>,
-    ) -> Result<Option<crate::state::StateRow>> {
-        use rusqlite::OptionalExtension;
-        let after = after.map(|t| t.to_rfc3339()).unwrap_or_default();
-        let columns = self
-            .conn
-            .query_row(
-                &super::lookup::first_dot_sql("field, state, verb, at, dur, following_state, hid"),
-                rusqlite::params![field, after, at.to_rfc3339()],
-                read_state_columns,
-            )
-            .optional()?;
-        Ok(match columns {
-            Some(cols) => Some(decode_state_row(cols)?.1),
-            None => None,
-        })
-    }
-
-    /// For every field in `fields`, evaluated at `t`, newest first, the
-    /// column-level input [`crate::state::resolve_effective`] reads: its
-    /// newest row, or `deep`, its [`crate::state::RESUME_LOOKBACK`] newest
-    /// that can decide a state ([`state_rows_sql`]). Fields with no
-    /// qualifying entry are absent from the map.
-    ///
-    /// da-vmjh: one index-bounded `ORDER BY … LIMIT depth` PER FIELD,
-    /// looped over a single prepared statement. The predecessor asked
-    /// for all fields at once and ranked them with `ROW_NUMBER() OVER
-    /// (PARTITION BY field …)`, filtering `rn <= depth` OUTSIDE the
-    /// window — so SQLite numbered every row of every field back to the
-    /// beginning of history just to keep one per field, and the cost of
-    /// reading "what is the state right now" grew with the length of the
-    /// record (77 ms at 22k rows, 0.9 ms this way). Per field the
-    /// planner walks `entries_live_field_at` — the partial
-    /// `(field, at) WHERE deleted_at IS NULL` index, whose
-    /// predicate [`STATE_PARTICIPATION_SQL`] implies — backwards from
-    /// the cutoff and stops after `depth` rows.
-    fn state_rows_at(
-        &self,
-        fields: &[&str],
-        t: DateTime<Utc>,
-        deep: bool,
-    ) -> Result<std::collections::HashMap<String, Vec<crate::state::StateRow>>> {
-        let mut out: std::collections::HashMap<String, Vec<crate::state::StateRow>> =
-            std::collections::HashMap::with_capacity(fields.len());
-        if fields.is_empty() {
-            return Ok(out);
-        }
-        let cutoff = t.to_rfc3339();
-        let mut stmt = self.conn.prepare(&state_rows_sql(deep))?;
-        for field in dedup_fields(fields) {
-            let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
-            for r in rows {
-                let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
-                out.entry(field).or_default().push(row);
-            }
-        }
-        self.append_spanning_blocks(fields, t, &mut out)?;
-        Ok(out)
-    }
-
-    /// Append, per field, the dur-bearing rows stored AFTER `t` whose
-    /// span still covers it. da-zwct: a block's `at` is its END,
-    /// so the row holding a field at `t` can sit in `t`'s future and the
-    /// `at <= t` window above would never see it. Mirrors
-    /// [`Db::blocks_spanning`] for the column-level reader; the leading
-    /// edge is re-derived in Rust because `dur` is an ISO-8601 string
-    /// SQL cannot subtract from a time. [`crate::state::resolve_effective`]
-    /// re-orders the merged rows on that edge.
-    ///
-    /// da-vmjh: same per-field `ORDER BY … LIMIT` shape as
-    /// [`Db::state_rows_at`], and for the same reason — this one walked
-    /// forward from `t` over every future row of every field.
-    fn append_spanning_blocks(
-        &self,
-        fields: &[&str],
-        t: DateTime<Utc>,
-        out: &mut std::collections::HashMap<String, Vec<crate::state::StateRow>>,
-    ) -> Result<()> {
-        let cutoff = t.to_rfc3339();
-        let mut stmt = self
-            .conn
-            .prepare(&spanning_blocks_sql(crate::state::SPAN_LOOKAHEAD))?;
-        for field in dedup_fields(fields) {
-            let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
-            for r in rows {
-                let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
-                if row.leading_edge().is_some_and(|edge| edge <= t) {
-                    out.entry(field).or_default().push(row);
-                }
-            }
-        }
-        Ok(())
+        governing_at(&self.conn, fields, t)
     }
 
     /// Resolve the `n`th most-recent DISTINCT previous state of `field`,
@@ -414,6 +278,149 @@ impl Db {
         }
         Ok(map)
     }
+}
+
+/// [`Db::batch_governing_at`] on a connection: what a sync filter's window
+/// reads at its start (da-nflkk).
+pub(crate) fn governing_at(
+    conn: &rusqlite::Connection,
+    fields: &[&str],
+    t: DateTime<Utc>,
+) -> Result<std::collections::HashMap<String, (JsonValue, Option<String>)>> {
+    // One row per field answers the common case — and is the whole
+    // of the pre-da-phoe cost. A field whose newest row is a block
+    // that has already handed the field back needs the row behind
+    // it, so those fields (only) are re-read to depth.
+    let mut rows = state_rows_at(conn, fields, t, false)?;
+    let deep: Vec<&str> = fields
+        .iter()
+        .copied()
+        .filter(|f| {
+            rows.get(*f)
+                .and_then(|r| r.first())
+                .is_some_and(|row| row.hands_field_back(t))
+        })
+        .collect();
+    if !deep.is_empty() {
+        rows.extend(state_rows_at(conn, &deep, t, true)?);
+    }
+    // The reads leave occur dots out; a field an occur moves (IGNORED,
+    // or no state at all — a field of nothing but dots included) needs
+    // the first one after that took effect, which turns it TRACKED.
+    let mut out = std::collections::HashMap::with_capacity(rows.len());
+    for field in dedup_fields(fields) {
+        let mut rows = rows.remove(field).unwrap_or_default();
+        let mut eff = crate::state::resolve_effective(&rows, t);
+        if eff.an_occur_tracks() {
+            if let Some(dot) = first_dot_row_after(conn, field, eff.since, t)? {
+                rows.push(dot);
+                eff = crate::state::resolve_effective(&rows, t);
+            }
+        }
+        if rows.is_empty() {
+            continue;
+        }
+        let id = eff.governing.map(|i| rows[i].id.clone());
+        out.insert(field.to_string(), (eff.state, id));
+    }
+    Ok(out)
+}
+
+/// [`Db::first_dot_after`] in the state columns alone, as the other
+/// state reads select them.
+fn first_dot_row_after(
+    conn: &rusqlite::Connection,
+    field: &str,
+    after: Option<DateTime<Utc>>,
+    at: DateTime<Utc>,
+) -> Result<Option<crate::state::StateRow>> {
+    use rusqlite::OptionalExtension;
+    let after = after.map(|t| t.to_rfc3339()).unwrap_or_default();
+    let columns = conn
+        .query_row(
+            &super::lookup::first_dot_sql("field, state, verb, at, dur, following_state, hid"),
+            rusqlite::params![field, after, at.to_rfc3339()],
+            read_state_columns,
+        )
+        .optional()?;
+    Ok(match columns {
+        Some(cols) => Some(decode_state_row(cols)?.1),
+        None => None,
+    })
+}
+
+/// For every field in `fields`, evaluated at `t`, newest first, the
+/// column-level input [`crate::state::resolve_effective`] reads: its
+/// newest row, or `deep`, its [`crate::state::RESUME_LOOKBACK`] newest
+/// that can decide a state ([`state_rows_sql`]). Fields with no
+/// qualifying entry are absent from the map.
+///
+/// da-vmjh: one index-bounded `ORDER BY … LIMIT depth` PER FIELD,
+/// looped over a single prepared statement. The predecessor asked
+/// for all fields at once and ranked them with `ROW_NUMBER() OVER
+/// (PARTITION BY field …)`, filtering `rn <= depth` OUTSIDE the
+/// window — so SQLite numbered every row of every field back to the
+/// beginning of history just to keep one per field, and the cost of
+/// reading "what is the state right now" grew with the length of the
+/// record (77 ms at 22k rows, 0.9 ms this way). Per field the
+/// planner walks `entries_live_field_at` — the partial
+/// `(field, at) WHERE deleted_at IS NULL` index, whose
+/// predicate [`STATE_PARTICIPATION_SQL`] implies — backwards from
+/// the cutoff and stops after `depth` rows.
+fn state_rows_at(
+    conn: &rusqlite::Connection,
+    fields: &[&str],
+    t: DateTime<Utc>,
+    deep: bool,
+) -> Result<std::collections::HashMap<String, Vec<crate::state::StateRow>>> {
+    let mut out: std::collections::HashMap<String, Vec<crate::state::StateRow>> =
+        std::collections::HashMap::with_capacity(fields.len());
+    if fields.is_empty() {
+        return Ok(out);
+    }
+    let cutoff = t.to_rfc3339();
+    let mut stmt = conn.prepare(&state_rows_sql(deep))?;
+    for field in dedup_fields(fields) {
+        let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
+        for r in rows {
+            let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
+            out.entry(field).or_default().push(row);
+        }
+    }
+    append_spanning_blocks(conn, fields, t, &mut out)?;
+    Ok(out)
+}
+
+/// Append, per field, the dur-bearing rows stored AFTER `t` whose
+/// span still covers it. da-zwct: a block's `at` is its END,
+/// so the row holding a field at `t` can sit in `t`'s future and the
+/// `at <= t` window above would never see it. Mirrors
+/// [`Db::blocks_spanning`] for the column-level reader; the leading
+/// edge is re-derived in Rust because `dur` is an ISO-8601 string
+/// SQL cannot subtract from a time. [`crate::state::resolve_effective`]
+/// re-orders the merged rows on that edge.
+///
+/// da-vmjh: same per-field `ORDER BY … LIMIT` shape as
+/// [`state_rows_at`], and for the same reason — this one walked
+/// forward from `t` over every future row of every field.
+fn append_spanning_blocks(
+    conn: &rusqlite::Connection,
+    fields: &[&str],
+    t: DateTime<Utc>,
+    out: &mut std::collections::HashMap<String, Vec<crate::state::StateRow>>,
+) -> Result<()> {
+    let cutoff = t.to_rfc3339();
+    let mut stmt = conn.prepare(&spanning_blocks_sql(crate::state::SPAN_LOOKAHEAD))?;
+    for field in dedup_fields(fields) {
+        let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
+        for r in rows {
+            let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
+            if row.leading_edge().is_some_and(|edge| edge <= t) {
+                out.entry(field).or_default().push(row);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The `fields` list with repeats removed, order preserved. The
@@ -736,7 +743,7 @@ mod tests {
     fn repeated_field_reads_once() {
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "mood", json!("happy"), 100);
-        let rows = db.state_rows_at(&["mood", "mood"], probe(), true).unwrap();
+        let rows = state_rows_at(db.conn(), &["mood", "mood"], probe(), true).unwrap();
         assert_eq!(rows["mood"].len(), 1);
     }
 

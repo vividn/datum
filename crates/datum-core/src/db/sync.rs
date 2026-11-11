@@ -98,6 +98,8 @@ mod rejoin;
 pub mod status;
 mod summed;
 mod versions;
+mod window;
+use super::alias::ALIAS_FIELD;
 use chain::{Chain, Filter, CHAIN_HID};
 pub use debug::DebugConflicts;
 pub use diagnose::{row_diff, FoldCheck, Named, Orphan, Stale};
@@ -108,6 +110,7 @@ use summed::{add, summed};
 #[cfg(test)]
 use summed::{row_hash_rule, ROW_HASH_PROBE};
 pub use versions::Version;
+use window::{window_from, Judge};
 
 // ─── The invocation ─────────────────────────────────────────────────────────
 
@@ -2475,6 +2478,7 @@ fn filtered_lines(
     chain: &Chain,
     only: Option<&str>,
 ) -> Result<(Vec<String>, usize)> {
+    let judge = Judge::new(conn, filter)?;
     let after = |e: &str| since.get(e).copied().unwrap_or(0);
     // As `sync_ops_since` serves: a non-member's refused op stays here.
     let served = |e: &str, refused: bool| {
@@ -2511,7 +2515,25 @@ fn filtered_lines(
     }
     drop(stmt);
     let mut n = lines.len();
-    for hid in touched {
+    // Within a window the reader may lack an entry's earlier ops, and a
+    // change may make an older entry the one that sets its field's state at
+    // the window's start, which is sent whole too (da-nflkk).
+    let windowed = filter.window.is_some();
+    let mut fields = BTreeSet::new();
+    let mut hids: Vec<String> = touched.iter().cloned().collect();
+    let mut i = 0;
+    loop {
+        if windowed && i == touched.len() {
+            let more = judge
+                .governing
+                .iter()
+                .filter(|(f, h)| fields.contains(*f) && !touched.contains(*h));
+            hids.extend(more.map(|(_, h)| h.clone()).collect::<Vec<_>>());
+        }
+        let Some(hid) = hids.get(i).cloned() else {
+            break;
+        };
+        i += 1;
         let ops: Vec<Op> = held_ops(conn, &hid)?
             .into_iter()
             .filter(|(o, refused)| served(&o.endpoint, *refused))
@@ -2522,15 +2544,21 @@ fn filtered_lines(
             .filter(|o| o.seq <= after(&o.endpoint))
             .cloned()
             .collect();
-        let now_in = filter.admits(belongs_after(&ops).as_deref());
-        let then_in = !then.is_empty() && filter.admits(belongs_after(&then).as_deref());
+        if windowed {
+            fields.extend(belongs_after(&ops));
+        }
+        let now_in = judge.ops(&ops);
+        // Within a window the sender cannot tell what the reader kept, so an
+        // entry it was sent before is told its fate: all its ops, or a
+        // removal, a no-op on a copy that never held it.
+        let then_in = !then.is_empty() && (windowed || judge.ops(&then));
         let send: Vec<&str> = match (now_in, then_in) {
-            (true, true) => ops
+            (true, true) if !windowed => ops
                 .iter()
                 .filter(|o| o.seq > after(&o.endpoint))
                 .map(|o| o.body.as_str())
                 .collect(),
-            (true, false) => ops.iter().map(|o| o.body.as_str()).collect(),
+            (true, _) => ops.iter().map(|o| o.body.as_str()).collect(),
             (false, true) => {
                 lines.push(json!({ "remove": hid }).to_string());
                 continue;
@@ -2544,13 +2572,16 @@ fn filtered_lines(
         Some(_) => BTreeMap::from([own_head(conn)?]),
         None => held_vector(conn)?,
     };
-    let mark = json!({ "caught_up": caught_up, "fields": filter.fields, "since": since });
+    let mut mark = json!({ "caught_up": caught_up, "fields": filter.fields, "since": since });
+    if !filter.by_field() {
+        mark["filter"] = filter.to_json();
+    }
     lines.push(mark.to_string());
     Ok((lines, n))
 }
 
-/// A filtered reader's vector: per endpoint, the highest mark made under
-/// fields covering `filter`, and its own head.
+/// A filtered reader's vector: per endpoint, the highest mark made under a
+/// filter passing all `filter` does, and its own head.
 fn caught_up(
     conn: &Connection,
     filter: &Filter,
@@ -2562,9 +2593,13 @@ fn caught_up(
         Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get(2)?))
     })?;
     for mark in marks {
-        let (e, fields, seq): (String, String, i64) = mark?;
-        let fields: BTreeSet<String> = serde_json::from_str(&fields).unwrap_or_default();
-        if fields.is_superset(&filter.fields) {
+        let (e, under, seq): (String, String, i64) = mark?;
+        let under = serde_json::from_str(&under).ok();
+        if under
+            .as_ref()
+            .and_then(Filter::from_json)
+            .is_some_and(|u| filter.within(&u))
+        {
             let head = v.entry(e).or_insert(seq);
             *head = seq.max(*head);
         }
@@ -2663,7 +2698,9 @@ fn settle_filter(
         }
         return Ok(());
     };
-    let hids: BTreeSet<String> = match before == Some(filter) {
+    // Within a window an entry leaves as it ages, with nothing sent: every
+    // entry is judged again at each apply (da-nflkk).
+    let hids: BTreeSet<String> = match before == Some(filter) && filter.window.is_none() {
         true => got.iter().map(|g| g.2.clone()).collect(),
         false => conn
             .prepare("SELECT DISTINCT hid FROM ops WHERE endpoint != ?1 AND hid != ?2")?
@@ -2672,9 +2709,20 @@ fn settle_filter(
     };
     // A purge's stubs are no entry, and dropping them would open the gaps
     // they fill (da-qzrj9).
+    // The sender's removals first: an entry it took out may be what set a
+    // field's state at a window's start (da-nflkk).
+    let mut own = conn.prepare_cached("SELECT 1 FROM ops WHERE hid = ?1 AND endpoint = ?2")?;
+    for hid in words.iter().filter_map(|w| w["remove"].as_str()) {
+        if !own.exists(params![hid, mine])? {
+            drop_entry(conn, hid)?;
+        }
+    }
+    drop(own);
+    let judge = Judge::new(conn, filter)?;
     for hid in hids.iter().filter(|h| *h != CHAIN_HID && *h != PURGED) {
         let ops: Vec<Op> = held_ops(conn, hid)?.into_iter().map(|o| o.0).collect();
-        if filter.admits(belongs_after(&ops).as_deref()) {
+        // Its own ops stay whatever the filter: they number its seqs.
+        if judge.ops(&ops) || ops.iter().any(|o| o.endpoint == mine) {
             continue;
         }
         for (e, seq, _) in got.iter().filter(|g| g.2 == *hid) {
@@ -2690,9 +2738,6 @@ fn settle_filter(
     let signed = own_head(conn)?.1;
     let now = caught_up(conn, filter, (mine, signed))?;
     for w in words {
-        if let Some(hid) = w["remove"].as_str() {
-            drop_entry(conn, hid)?;
-        }
         let answered = w["since"]
             .as_object()
             .into_iter()
@@ -2701,7 +2746,7 @@ fn settle_filter(
         if !answered {
             continue;
         }
-        let fields = w["fields"].to_string();
+        let fields = w.get("filter").unwrap_or(&w["fields"]).to_string();
         for (e, seq) in w["caught_up"].as_object().into_iter().flatten() {
             conn.execute(
                 "INSERT INTO sync_caught_up (endpoint, fields, seq) VALUES (?1, ?2, ?3)
@@ -2775,17 +2820,33 @@ fn state_row(r: &rusqlite::Row) -> rusqlite::Result<Map<String, Value>> {
     Ok(r)
 }
 
-/// Every entry row that passes each of `filters`, as [`shared_rows`].
+/// Every entry row that passes each of `filters`, as [`shared_rows`]. A
+/// window's start bounds what is read (da-nflkk).
 fn rows_passing(conn: &Connection, filters: &[Filter]) -> Result<Vec<Map<String, Value>>> {
+    let judges = filters
+        .iter()
+        .map(|f| Judge::new(conn, f))
+        .collect::<Result<Vec<_>>>()?;
+    // Any one judge's bound holds every row that passes it, so every row
+    // that passes them all: the first window's will do.
+    let windowed = judges.iter().find(|j| j.from.is_some());
+    let (bound, args): (&str, Vec<String>) = match windowed.and_then(|j| Some((j, j.from?))) {
+        Some((j, from)) => (
+            "WHERE field IN (?1, ?2) OR COALESCE(at, create_time) >= ?3
+                OR hid IN (SELECT value FROM json_each(?4))",
+            vec![
+                SPEC_FIELD.into(),
+                ALIAS_FIELD.into(),
+                from.to_rfc3339(),
+                json!(j.governing.values().collect::<Vec<_>>()).to_string(),
+            ],
+        ),
+        None => ("", Vec::new()),
+    };
     let rows = conn
-        .prepare("SELECT * FROM entries ORDER BY slug, hid")?
-        .query_map([], state_row)?
-        .filter(|r| {
-            r.as_ref().map_or(true, |r| {
-                let belongs = belongs_to(r);
-                filters.iter().all(|f| f.admits(belongs.as_deref()))
-            })
-        })
+        .prepare(&format!("SELECT * FROM entries {bound} ORDER BY slug, hid"))?
+        .query_map(rusqlite::params_from_iter(args), state_row)?
+        .filter(|r| r.as_ref().map_or(true, |r| judges.iter().all(|j| j.row(r))))
         .collect::<rusqlite::Result<_>>()?;
     Ok(rows)
 }
@@ -3261,6 +3322,12 @@ impl Db {
         let Some(filters) = shared_filters(&self.conn, me, peer)? else {
             return Ok(hex(&[0; 32]));
         };
+        // A window's or every spec's rows are judged by more than the field
+        // a kept part names: summed afresh (da-nflkk).
+        if !filters.iter().all(Filter::by_field) {
+            let rows = self.read(|view| rows_passing(view.conn(), &filters))?;
+            return Ok(hex(&summed::of_rows(rows)));
+        }
         let key = json!(filters.iter().map(|f| &f.fields).collect::<Vec<_>>()).to_string();
         let (sum, keep) = self.read(|view| summed(view.conn(), view.seen(), &key, &filters))?;
         let _ = self.write(&keep);
@@ -3290,10 +3357,15 @@ impl Db {
         let Some(filters) = shared_filters(&self.conn, me, peer)? else {
             return Ok(state_hash(Vec::new()));
         };
-        // A build may serialize a row differently: it reads its own.
+        // A build may serialize a row differently: it reads its own. A
+        // window's rows are those from its start (da-nflkk).
         let key = json!([
             crate::build(),
-            filters.iter().map(|f| &f.fields).collect::<Vec<_>>()
+            filters.iter().map(|f| &f.fields).collect::<Vec<_>>(),
+            filters
+                .iter()
+                .map(|f| (f.to_json(), f.window.map(window_from)))
+                .collect::<Vec<_>>(),
         ])
         .to_string();
         let (hashed, keep) = self.read(|view| {

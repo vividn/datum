@@ -55,12 +55,19 @@ export interface Member {
 }
 
 export interface Filter {
-	fields: string[];
-	of: number;
+	/** None: every field. */
+	fields?: string[];
+	of?: number;
+	/** How far back it reaches, in seconds (da-nflkk). */
+	window?: number;
+	/** Sent every spec and alias too. */
+	specs?: boolean;
+	/** «filtered: 5 of 23 fields», in the CLI's words. */
+	said?: string;
 }
 
 /** «filtered: 5 of 23 fields», as the CLI says it. */
-export const filtered = (f: Filter): string => `filtered: ${f.fields.length} of ${f.of} fields`;
+export const filtered = (f: Filter): string => f.said ?? `filtered: ${f.fields?.length} of ${f.of} fields`;
 
 export interface Admin {
 	key: string;

@@ -786,7 +786,8 @@ fn link(db: &Db, me: EndpointAddr, secret: &str, expires: Duration) -> Result<St
     // join card can say «read only» and name a new database after this one.
     let invite = chain.invite_of(secret);
     let role = invite.map(|(r, _)| r.as_str().to_string());
-    let fields = invite.and_then(|(_, f)| f.map(|f| f.fields.iter().cloned().collect()));
+    let fields = invite
+        .and_then(|(_, f)| f.and_then(|f| Some(f.fields.as_ref()?.iter().cloned().collect())));
     let name = db.path().and_then(|p| p.file_stem());
     let about = About {
         from,

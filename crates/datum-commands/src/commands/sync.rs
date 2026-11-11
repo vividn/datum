@@ -18,7 +18,7 @@ use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use datum_core::time::on_readers_clock;
 use serde_json::{json, Value};
 
-use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
+use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFields, SyncFilter};
 use crate::commands::check::{Domain, Issue, Severity, Source};
 use crate::render::colors::{paint, BOLD, GREY_FG};
 
@@ -439,8 +439,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     let now = chain
                         .member(&m)
                         .map(|m| (m.role().as_str(), m.filter.clone()));
-                    let was =
-                        |f: &chain::Filter| filter.as_ref().is_some_and(|g| g.fields == f.fields);
+                    let was = |f: &chain::Filter| {
+                        filter.as_ref().is_some_and(|g| {
+                            (&g.fields, g.window, g.specs) == (&f.fields, f.window, f.specs)
+                        })
+                    };
                     ensure!(
                         !now.as_ref().is_some_and(
                             |(r, f)| *r == role && f.as_ref().map_or(filter.is_none(), was)
@@ -454,8 +457,9 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     let mut r = json!({"type": "role", "endpoint": m, "role": role});
                     let said = match &filter {
                         Some(f) => {
-                            r["fields"] = json!(f.fields);
-                            r["of"] = f.of.into();
+                            for (k, v) in f.to_json().as_object().into_iter().flatten() {
+                                r[k] = v.clone();
+                            }
                             format!("{who} is a {role}, {}", f.describe())
                         }
                         None => format!("{who} is a {role}"),
@@ -882,15 +886,18 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             // would never be seen here, which waits out the expiry (da-apd52).
             let _held = super::sync_daemon::first_sync(db)?;
             let caps = caps(db, role, filter)?;
-            match caps.get("fields") {
-                Some(f) if f.as_array().is_some_and(Vec::is_empty) => {
+            match (caps.get("fields"), chain::Filter::from_json(&caps)) {
+                (Some(f), Some(c)) if f.as_array().is_some_and(Vec::is_empty) && !c.specs => {
                     eprintln!("the redeemer is a writer sent only the chain's records")
                 }
-                Some(f) => {
+                (_, Some(c)) if !c.by_field() => {
+                    eprintln!("the redeemer is a {}, {}", role.as_str(), c.describe())
+                }
+                (Some(f), _) => {
                     let role = role.as_str();
                     eprintln!("the redeemer is a {role} sent only {f}, each with its spec")
                 }
-                None => {}
+                _ => {}
             }
             let (secret, expires_at, _) = invite(
                 db,
@@ -1074,22 +1081,28 @@ fn summary(db: &Db) -> Result<Option<String>> {
 
 /// A reader's or writer's filter as the chain records it (da-u81u1): its fields — a
 /// kit's, those it holds specs for here — and how many fields the database
-/// has, those named included.
+/// has, those named included; its window and whether it is sent every spec
+/// (da-nflkk).
 fn resolve(db: &Db, filter: Option<SyncFilter>) -> Result<Option<chain::Filter>> {
-    let fields: std::collections::BTreeSet<String> = match filter {
-        None => return Ok(None),
-        Some(SyncFilter::Fields(f)) => f.into_iter().collect(),
-        Some(SyncFilter::Kit(k)) => {
+    let Some(filter) = filter else {
+        return Ok(None);
+    };
+    let fields: Option<std::collections::BTreeSet<String>> = match filter.fields {
+        None => None,
+        Some(SyncFields::Named(f)) => Some(f.into_iter().collect()),
+        Some(SyncFields::Kit(k)) => {
             let specs = db.load_specs_by_kit(&k)?;
             ensure!(!specs.is_empty(), "kit {k} has no fields in this database");
-            specs.into_iter().map(|s| s.field).collect()
+            Some(specs.into_iter().map(|s| s.field).collect())
         }
     };
     let mut all: std::collections::BTreeSet<String> = db.distinct_fields()?.into_iter().collect();
-    all.extend(fields.iter().cloned());
+    all.extend(fields.iter().flatten().cloned());
     Ok(Some(chain::Filter {
+        of: fields.as_ref().map_or(0, |_| all.len() as i64),
         fields,
-        of: all.len() as i64,
+        window: filter.window_secs.map(|w| w as i64),
+        specs: filter.specs,
     }))
 }
 
@@ -1101,8 +1114,9 @@ pub(super) fn caps(db: &Db, role: chain::Role, filter: Option<SyncFilter>) -> Re
         r => json!({"role": r.as_str()}),
     };
     if let Some(f) = resolve(db, filter)? {
-        caps["fields"] = json!(f.fields);
-        caps["of"] = f.of.into();
+        for (k, v) in f.to_json().as_object().into_iter().flatten() {
+            caps[k] = v.clone();
+        }
     }
     Ok(caps)
 }
@@ -1947,9 +1961,14 @@ fn admins(db: &Db, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// A filter as `--json` has it: `{fields, of}`, or null.
+/// A filter as `--json` has it: `{fields, of}`, `window` (seconds) and
+/// `specs` where it has them, and `said`, its words; or null.
 fn filter_json(f: Option<&chain::Filter>) -> Value {
-    f.map_or(Value::Null, |f| json!({"fields": f.fields, "of": f.of}))
+    f.map_or(Value::Null, |f| {
+        let mut v = f.to_json();
+        v["said"] = f.describe().into();
+        v
+    })
 }
 
 /// `datum sync chain list`.
@@ -2367,8 +2386,11 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
     );
     // An empty field here reads as «not shared», not «nothing logged».
     if let Some(f) = chain.filter(&mine) {
-        let fields: Vec<&str> = f.fields.iter().map(String::as_str).collect();
-        println!("a reader, {}: {}", f.describe(), fields.join(", "));
+        let fields: Vec<&str> = f.fields.iter().flatten().map(String::as_str).collect();
+        match fields.is_empty() {
+            true => println!("a reader, {}", f.describe()),
+            false => println!("a reader, {}: {}", f.describe(), fields.join(", ")),
+        }
     }
     match chain.member(&mine).map(|m| (&m.left, &m.revoked)) {
         Some((Some(at), _)) => below.push(format!(
