@@ -23,8 +23,12 @@ async function runsAfter(app, line) {
 	const seen = await app.spyOnRunner();
 	await app.submit(line);
 	await app.idle();
-	// A second round starts after the first settles, if one comes — an echo
-	// of the write, or a pane hearing its own data — so wait, then settle again.
+	// A window for a second round that must NOT come, not a wait for rest: one
+	// would start after the first settles — an echo of the write, or a pane
+	// hearing its own data and asking again a SETTLE_MS (150 ms,
+	// #lib/layout/resizing.ts) later. None comes now: nothing runs in the 2.5 s
+	// after idle(). rested() returns in about 60 ms, and a round that comes
+	// later lands in the next line's count, or in no count at all (da-i3vgf).
 	await app.page.waitForTimeout(500);
 	await app.idle();
 	const [typed, ...refresh] = (await seen()).map((argv) => argv.join(' '));
