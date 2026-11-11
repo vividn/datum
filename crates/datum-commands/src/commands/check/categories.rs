@@ -41,6 +41,7 @@ pub const CATEGORIES: &[(&str, &[&str])] = &[
             "integrity_last_state_mismatch",
             "repeated_state",
             "sync_conflict",
+            "integrity_after_finished",
         ],
     ),
     ("keys", &["key_drift"]),

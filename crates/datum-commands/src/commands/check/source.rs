@@ -14,6 +14,8 @@ pub enum Source<'a> {
     Notice(&'a str),
     /// An entry's `conflicts`.
     Conflicts,
+    /// An entry dated after its field's FINISHED (da-udkd3).
+    AfterFinished,
 }
 
 macro_rules! integrity {
@@ -44,6 +46,7 @@ impl Source<'_> {
             Source::Notice("wipe") => sync!("wiped"),
             Source::Notice(_) => sync!("new_member"),
             Source::Conflicts => sync!("conflict"),
+            Source::AfterFinished => integrity!("after_finished"),
         }
     }
 }

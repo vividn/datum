@@ -20,7 +20,6 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use datum_core::db::IGNORED_STATE_VALUE;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape, RenderShape};
@@ -72,7 +71,7 @@ pub fn block_fill_for_value(
 }
 
 pub(crate) fn is_ignored_or_false(v: &JsonValue) -> bool {
-    is_off_state(v) || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
+    is_off_state(v) || datum_core::shape::is_hidden_state(v)
 }
 
 /// A span of one state as the timelines draw it, named by the row that

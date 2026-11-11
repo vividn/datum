@@ -310,6 +310,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
 
         "track" => Command::Track(parse_status(rest, true)?),
         "ignore" => Command::Ignore(parse_status(rest, false)?),
+        "finish" => Command::Finish(track_ignore::parse_finish(rest)?),
 
         "meta" => Command::Meta(parse_meta_cmd(rest)?),
 
@@ -547,9 +548,10 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
             | SpecCommand::Delete { show: s, .. }
             | SpecCommand::Premade { show: s },
         ) => *s = show,
-        Command::Spec(SpecCommand::Set(a)) | Command::Track(a) | Command::Ignore(a) => {
-            a.show = show
-        }
+        Command::Spec(SpecCommand::Set(a))
+        | Command::Track(a)
+        | Command::Ignore(a)
+        | Command::Finish(a) => a.show = show,
         Command::Alias(AliasCommand::List {
             show: s,
             names: false,

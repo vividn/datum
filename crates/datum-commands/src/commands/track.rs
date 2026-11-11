@@ -8,7 +8,7 @@ use datum_core::{
     db::{Db, IGNORED_STATE_VALUE},
     entry::{Entry, Verb},
     field_spec::{verb_choice, VERB_CHOICES_TEXT, VERB_NAMES_TEXT},
-    shape::is_ignored_state,
+    shape::{is_finished_state, is_ignored_state, FINISHED_STATE_VALUE},
     time::{DatumTime, DefaultDirection, TimeCtx},
     timezone_field::TIMEZONE_FIELD,
     track::track_entry,
@@ -174,6 +174,39 @@ fn status_one(args: SpecSetArgs, db: &Db) -> Result<()> {
     echo_status(db, &entry, args.show)
 }
 
+/// `finish F` (da-udkd3): the FINISHED row, at now or where the time flags
+/// place it. A field already finished there gets none, «no change»; a name
+/// no entry or spec holds is refused, as is `timezone`. A list writes each,
+/// every name checked first.
+pub fn finish(args: SpecSetArgs, db: &Db) -> Result<()> {
+    let now = status_time(&args.time)?;
+    let fields: Vec<&str> = args.field.split(',').collect();
+    for field in &fields {
+        anyhow::ensure!(
+            *field != TIMEZONE_FIELD,
+            "'{field}' is reserved and never finished"
+        );
+        anyhow::ensure!(
+            db.load_spec(field)?.is_some() || !db.entries_for_field(field, Some(1))?.is_empty(),
+            "no field '{field}' to finish"
+        );
+    }
+    for field in fields {
+        if db
+            .state_at(field, now.utc)?
+            .is_some_and(|s| is_finished_state(&s))
+        {
+            println!("no change");
+            continue;
+        }
+        let row = status_entry(field, FINISHED_STATE_VALUE, now.clone(), client_id()?);
+        db.insert_entry(&row)?;
+        let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&row.hid));
+        echo(db, &row, Outcome::Finish, args.show)?;
+    }
+    Ok(())
+}
+
 /// A status row's echo, as any log's (da-te4id): `TRACK` and the verb's glyph,
 /// or `IGNORE`, over the state change into TRACKED or IGNORED.
 pub(crate) fn echo_status(db: &Db, row: &Entry, show: Show) -> Result<()> {
@@ -216,10 +249,15 @@ pub(crate) fn status_time(time: &TimeArgs) -> Result<DatumTime> {
 
 /// The row that ignores `field` from `at` on.
 pub(crate) fn ignored_entry(field: &str, at: DatumTime, client: String) -> Entry {
+    status_entry(field, IGNORED_STATE_VALUE, at, client)
+}
+
+/// The change of `field` into the status `state` at `at`.
+fn status_entry(field: &str, state: &str, at: DatumTime, client: String) -> Entry {
     Entry::new_legacy(
         field,
         Verb::Switch,
-        Some(serde_json::Value::String(IGNORED_STATE_VALUE.to_string())),
+        Some(serde_json::Value::String(state.to_string())),
         None,
         Some(at),
         None,

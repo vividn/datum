@@ -79,6 +79,7 @@ mod field_name_commas;
 mod field_name_controls;
 mod field_prefix;
 mod fields_cmd;
+mod finish_cmd;
 mod first_log_spec;
 mod flag_cluster_value;
 mod float_roundtrip;

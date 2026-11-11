@@ -60,6 +60,11 @@ pub const IGNORED_STATE_VALUE: &str = "IGNORED";
 /// text it reads as `false` — see [`is_off_state`].
 pub const TRACKED_STATE_VALUE: &str = "TRACKED";
 
+/// The sentinel state `datum finish` writes (da-udkd3): the field is
+/// conclusively done. Terminal: no new entry is dated after it, and it is
+/// hidden as IGNORED is.
+pub const FINISHED_STATE_VALUE: &str = "FINISHED";
+
 /// A stored string beginning `ref://` IS a reference to the slug after it
 /// (da-s5k2s) — the prefix is reserved, as `:` is in a state.
 pub const REF_MARK: &str = "ref://";
@@ -83,8 +88,24 @@ pub fn is_off_state(v: &JsonValue) -> bool {
 pub fn is_inactive_state(v: Option<&JsonValue>) -> bool {
     match v {
         None | Some(JsonValue::Null) => true,
-        Some(v) => is_ignored_state(v) || is_off_state(v),
+        Some(v) => is_hidden_state(v) || is_off_state(v),
     }
+}
+
+/// True for the FINISHED sentinel (da-udkd3).
+pub fn is_finished_state(v: &JsonValue) -> bool {
+    matches!(v, JsonValue::String(s) if s == FINISHED_STATE_VALUE)
+}
+
+/// True for the statuses that hide a field: IGNORED and FINISHED.
+pub fn is_hidden_state(v: &JsonValue) -> bool {
+    is_ignored_state(v) || is_finished_state(v)
+}
+
+/// True for the three statuses, TRACKED, IGNORED and FINISHED: each the
+/// whole field's standing, never a state it is switched to.
+pub fn is_status_state(v: &JsonValue) -> bool {
+    is_hidden_state(v) || matches!(v, JsonValue::String(s) if s == TRACKED_STATE_VALUE)
 }
 
 /// True for the IGNORED sentinel: a field whose latest track/ignore status
@@ -113,7 +134,7 @@ pub fn parallel_sentinel_error(state: &JsonValue) -> Option<String> {
         return None;
     }
     let sentinel = states.iter().find_map(|v| match v {
-        JsonValue::String(s) if is_ignored_state(v) || s == TRACKED_STATE_VALUE => Some(s),
+        JsonValue::String(s) if is_status_state(v) => Some(s),
         _ => None,
     })?;
     let typed = states
@@ -122,10 +143,11 @@ pub fn parallel_sentinel_error(state: &JsonValue) -> Option<String> {
         .collect::<Vec<_>>()
         .join(",");
     Some(format!(
-        "{sentinel} cannot be one of several states (`{typed}`): {IGNORED_STATE_VALUE} and \
-         {TRACKED_STATE_VALUE} describe the whole field at that instant — not tracked at all, \
-         or tracked with nothing logged yet — so each is a field's only state. Log it on its \
-         own, or leave it out; `null` may stand beside other states."
+        "{sentinel} cannot be one of several states (`{typed}`): {IGNORED_STATE_VALUE}, \
+         {TRACKED_STATE_VALUE} and {FINISHED_STATE_VALUE} describe the whole field at that \
+         instant — not tracked at all, tracked with nothing logged yet, or done for good — so \
+         each is a field's only state. Log it on its own, or leave it out; `null` may stand \
+         beside other states."
     ))
 }
 

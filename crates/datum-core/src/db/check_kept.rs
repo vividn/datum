@@ -8,7 +8,9 @@ use rusqlite::{params, OptionalExtension};
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 
+use super::insert::FINISHES_SQL;
 use super::row_mapper::row_to_entry;
+use super::types::LIVE_SQL;
 use super::{Db, WriteBatch};
 
 /// The tables and triggers (`check_kept.sql`).
@@ -125,6 +127,50 @@ impl Db {
             .query_map(params![field], |r| r.get(0))?
             .map(|r| r.map_err(DatumError::Db))
             .collect()
+    }
+
+    /// The fields finished (da-udkd3), of `fields` or of all, and each live
+    /// entry dated after its field's first FINISHED, `(hid, the FINISH's
+    /// hid)` in time order: what `datum check integrity` names.
+    #[allow(clippy::type_complexity)]
+    pub fn after_finished(
+        &self,
+        fields: Option<&std::collections::BTreeSet<String>>,
+    ) -> Result<(Vec<String>, Vec<(String, String)>)> {
+        let finished = serde_json::Value::from(crate::shape::FINISHED_STATE_VALUE).to_string();
+        let first =
+            format!("SELECT field, MIN(at), hid FROM entries WHERE state = ?1 AND {FINISHES_SQL}");
+        let finishes: Vec<(String, String, String)> = match fields {
+            None => self
+                .conn
+                .prepare(&format!("{first} GROUP BY field"))?
+                .query_map([&finished], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<_>>()?,
+            Some(fields) => {
+                let mut stmt = self.conn.prepare(&format!("{first} AND field = ?2"))?;
+                let mut out = Vec::new();
+                for field in fields {
+                    let row: (Option<String>, Option<String>, Option<String>) = stmt
+                        .query_row(params![finished, field], |r| {
+                            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                        })?;
+                    if let (Some(f), Some(at), Some(hid)) = row {
+                        out.push((f, at, hid));
+                    }
+                }
+                out
+            }
+        };
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT hid FROM entries WHERE field = ?1 AND at > ?2 AND {LIVE_SQL} ORDER BY at"
+        ))?;
+        let mut after = Vec::new();
+        for (field, at, finish) in &finishes {
+            for hid in stmt.query_map(params![field, at], |r| r.get::<_, String>(0))? {
+                after.push((hid?, finish.clone()));
+            }
+        }
+        Ok((finishes.into_iter().map(|(f, ..)| f).collect(), after))
     }
 
     /// The rows of `hids`, tombstones among them, in slug order as

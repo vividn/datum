@@ -124,6 +124,8 @@ pub enum Outcome {
     /// The row `datum ignore` wrote (da-te4id). `track`'s is a `Create`, which
     /// [`datum_core::track::track_action_label`] names.
     Ignore,
+    /// The row `datum finish` wrote (da-udkd3).
+    Finish,
     /// What a `--dry-run` would write, written nowhere (da-axrdv).
     DryRun,
 }
@@ -191,6 +193,7 @@ impl Outcome {
             Outcome::Undone => "UNDONE",
             Outcome::Revert => "REVERT",
             Outcome::Ignore => "IGNORE",
+            Outcome::Finish => "FINISH",
             Outcome::DryRun => "DRYRUN",
         }
     }
@@ -215,15 +218,15 @@ impl Outcome {
             return "#c061cb"; // magenta
         }
         match self.shown() {
-            Outcome::Create | Outcome::Ignore => "#26a269", // green
-            Outcome::Delete | Outcome::Failed => "#e01b24", // red
-            Outcome::Exists => "#e5a50a",                   // yellow
+            Outcome::Create | Outcome::Ignore | Outcome::Finish => "#26a269", // green
+            Outcome::Delete | Outcome::Failed => "#e01b24",                   // red
+            Outcome::Exists => "#e5a50a",                                     // yellow
             Outcome::Update | Outcome::Rename | Outcome::Retime => "#2aa1b3", // cyan
-            Outcome::OWrite => "#3584e4",                   // blue
-            Outcome::NoDiff => "#ffa500",                   // orange, as emitted
-            Outcome::IsLast => "#b8860b",                   // dark amber, as emitted
+            Outcome::OWrite => "#3584e4",                                     // blue
+            Outcome::NoDiff => "#ffa500",                                     // orange, as emitted
+            Outcome::IsLast => "#b8860b", // dark amber, as emitted
             Outcome::Undone | Outcome::Revert => "#9a8cff", // lavender, as emitted
-            Outcome::DryRun => "#888888",                   // grey
+            Outcome::DryRun => "#888888", // grey
         }
     }
 
@@ -234,14 +237,14 @@ impl Outcome {
             return "\x1b[35m"; // magenta
         }
         match self.shown() {
-            Outcome::Create | Outcome::Ignore => "\x1b[32m", // green
-            Outcome::Delete | Outcome::Failed => "\x1b[31m", // red
-            Outcome::Exists => "\x1b[33m",                   // yellow
+            Outcome::Create | Outcome::Ignore | Outcome::Finish => "\x1b[32m", // green
+            Outcome::Delete | Outcome::Failed => "\x1b[31m",                   // red
+            Outcome::Exists => "\x1b[33m",                                     // yellow
             Outcome::Update | Outcome::Rename | Outcome::Retime => "\x1b[36m", // cyan
-            Outcome::OWrite => "\x1b[34m",                   // blue
-            Outcome::NoDiff => "\x1b[38;2;255;165;0m",       // orange
-            Outcome::IsLast => "\x1b[38;2;184;134;11m",      // dark amber
-            Outcome::Undone | Outcome::Revert => "\x1b[38;2;154;140;255m", // lavender
+            Outcome::OWrite => "\x1b[34m",                                     // blue
+            Outcome::NoDiff => "\x1b[38;2;255;165;0m",                         // orange
+            Outcome::IsLast => "\x1b[38;2;184;134;11m",                        // dark amber
+            Outcome::Undone | Outcome::Revert => "\x1b[38;2;154;140;255m",     // lavender
             Outcome::DryRun => GREY_FG,
         }
     }

@@ -21,7 +21,7 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::{contains_template, verb_from_log, Covered, FieldSpec, SpecRegistry};
 use crate::history::ChangeKind;
 use crate::ids::Slug;
-use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
+use crate::shape::is_status_state;
 use crate::time::DatumTime;
 use crate::timezone_field::TIMEZONE_FIELD;
 use crate::verb::Verb;
@@ -447,7 +447,7 @@ impl Db {
         let states: Vec<serde_json::Value> = self
             .distinct_field_states()?
             .into_iter()
-            .filter(|(f, s)| f == field && *s != TRACKED_STATE_VALUE && !is_ignored_state(s))
+            .filter(|(f, s)| f == field && !is_status_state(s))
             .map(|(_, s)| s)
             .collect();
         if states.is_empty() && !self.field_has_entries(field)? {

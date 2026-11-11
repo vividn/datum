@@ -557,6 +557,7 @@ fn changes_entries(command: &Command) -> bool {
             | Command::Conflicts(_)
             | Command::Track(_)
             | Command::Ignore(_)
+            | Command::Finish(_)
             | Command::Flag(_)
     )
 }

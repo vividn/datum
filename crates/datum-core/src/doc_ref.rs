@@ -26,7 +26,7 @@ use std::borrow::Cow;
 use serde_json::Value as JsonValue;
 
 use crate::field_spec::{FieldSpec, SubfieldType};
-use crate::shape::{IGNORED_STATE_VALUE, REF_MARK, STR_MARK, TRACKED_STATE_VALUE};
+use crate::shape::{is_status_state, REF_MARK, STR_MARK};
 
 /// Split `s` on the first `:` and return `(field, id)` when both sides are
 /// non-empty and the field portion is a plausible identifier.
@@ -86,9 +86,8 @@ pub fn state_refs(spec: Option<&FieldSpec>, state: &JsonValue) -> Vec<String> {
     match state {
         JsonValue::Array(items) => items.iter().flat_map(|s| state_refs(spec, s)).collect(),
         JsonValue::String(s) if slug_shaped(s) => vec![s.clone()],
-        JsonValue::String(s)
-            if s.is_empty() || s == TRACKED_STATE_VALUE || s == IGNORED_STATE_VALUE =>
-        {
+        JsonValue::String(_) if is_status_state(state) => vec![],
+        JsonValue::String(s) if s.is_empty() => {
             vec![]
         }
         JsonValue::String(s) => spec

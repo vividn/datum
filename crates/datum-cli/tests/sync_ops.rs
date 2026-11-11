@@ -199,6 +199,27 @@ fn two_copies_converge_over_a_pipe() {
     );
 }
 
+/// da-udkd3: a sync refuses nothing after a FINISHED. One copy finishes a
+/// field while the other logs to it later; both hold every entry, and
+/// `datum check` names the later one on both.
+#[test]
+fn an_entry_after_a_finish_syncs_and_check_names_it_on_both_copies() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "exp", "-y"]);
+    converged(&a, &b);
+    a.ok(&["finish", "exp", "-t", "-10"]);
+    b.ok(&["occur", "exp", "-t", "-5"]);
+    let later = b.hid("exp");
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        let said = copy.ok(&["check", "integrity"]);
+        assert!(
+            said.contains("integrity_after_finished") && said.contains(&later[..5]),
+            "{said}"
+        );
+    }
+}
+
 /// da-w6pp2: the database's `auto_setup` is an entry, so a copy synced from
 /// a strict one is strict too (vividn, 2026-10-26: «yes it should sync»).
 #[test]

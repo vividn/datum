@@ -33,7 +33,7 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
                 if show == Show::Json {
                     println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?)
                 } else {
-                    print!("{}", Block::of(&spec, ignored(db, &field)?).render(None))
+                    print!("{}", Block::of(&spec, status_now(db, &field)?).render(None))
                 }
             }
             None => {
@@ -95,11 +95,14 @@ fn listed(field: &str) -> String {
     }
 }
 
-/// Is `field` ignored now? What a spec's block says beside it.
-fn ignored(db: &Db, field: &str) -> Result<bool> {
-    Ok(db
-        .state_at(field, DatumTime::now().utc)?
-        .is_some_and(|s| is_ignored_state(&s)))
+/// `field`'s status now, what a spec's block says beside it: ignored,
+/// finished (da-udkd3) or tracked.
+fn status_now(db: &Db, field: &str) -> Result<&'static str> {
+    Ok(match db.state_at(field, DatumTime::now().utc)? {
+        Some(s) if is_ignored_state(&s) => "ignored",
+        Some(s) if datum_core::shape::is_finished_state(&s) => "finished",
+        _ => "tracked",
+    })
 }
 
 /// The spec entry's action: the one-line summary over its block, or under
@@ -475,14 +478,14 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         match (&before, &old, args.show) {
             (Some(row), Some(old), Show::Json) => {
                 echo(db, row, Outcome::NoDiff, Show::Json)?;
-                in_place_of_entry(&Block::of(old, ignored(db, &old.field)?).render(None));
+                in_place_of_entry(&Block::of(old, status_now(db, &old.field)?).render(None));
             }
             _ => println!("no change"),
         }
         return Ok(());
     }
-    let was_ignored = ignored(db, &spec.field)?;
-    let was = old.as_ref().map(|old| Block::of(old, was_ignored));
+    let was_status = status_now(db, &spec.field)?;
+    let was = old.as_ref().map(|old| Block::of(old, was_status));
     let report = db.save_field_spec_with(&spec, status.as_ref())?;
     remember(db, report.hid.clone());
     let row = db
@@ -495,7 +498,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     echo(db, &row, action, args.show)?;
     // Read back: a covered field's own keys are what was stored.
     let saved = db.load_spec(&spec.field)?.unwrap_or(spec);
-    let block = Block::of(&saved, ignored(db, &saved.field)?).render(was.as_ref());
+    let block = Block::of(&saved, status_now(db, &saved.field)?).render(was.as_ref());
     match args.show {
         Show::Json => in_place_of_entry(&block),
         _ => print!("{block}"),
@@ -596,7 +599,7 @@ pub(crate) fn add_slots(spec: &mut FieldSpec, keys: &[String], id: bool) {
     }
 }
 
-/// IGNORED and TRACKED are statuses, not states a spec can list (da-h1l5o):
+/// IGNORED, TRACKED and FINISHED are statuses, not states a spec can list (da-h1l5o):
 /// completion offers a listed state to switch to, and picking one of them
 /// ignores the field or declares it. `false` stays listable: it is how a
 /// never-false field keeps its `end` (da-eqb30).
@@ -604,6 +607,7 @@ pub(crate) fn check_state_name(field: &str, name: &str) -> Result<()> {
     let does = match name {
         IGNORED_STATE_VALUE => "ignore",
         TRACKED_STATE_VALUE => "track",
+        datum_core::shape::FINISHED_STATE_VALUE => "finish",
         _ => return Ok(()),
     };
     anyhow::bail!("'{name}' is a status, not a state; `datum {does} {field}` does that")
@@ -936,12 +940,11 @@ struct Block {
 }
 
 impl Block {
-    fn of(spec: &FieldSpec, ignored: bool) -> Self {
+    fn of(spec: &FieldSpec, status: &str) -> Self {
         let mut head = vec![("kind".to_string(), spec.verb.kind())];
         if let Some(c) = &spec.color {
             head.push(("color".into(), c.clone()));
         }
-        let status = if ignored { "ignored" } else { "tracked" };
         head.push(("status".into(), status.into()));
         let mut lines: Vec<(String, String)> = Vec::new();
         let mut line = |label: &str, value: String| lines.push((label.to_string(), value));

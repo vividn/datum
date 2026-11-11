@@ -124,7 +124,7 @@ export function clearScrollback(): void {
  * A TRACK row names itself in that word (`TRACK●`), a `track`'s and a `get`'s
  * of one alike; only `action_color`, EXISTS's yellow on a `get`, parts them.
  */
-const WRITES = new Set(['UPDATE', 'DELETE', 'OWRITE', 'RENAME', 'RETIME', 'UNDONE', 'REVERT', 'IGNORE']);
+const WRITES = new Set(['UPDATE', 'DELETE', 'OWRITE', 'RENAME', 'RETIME', 'UNDONE', 'REVERT', 'IGNORE', 'FINISH']);
 const EXISTS_COLOR = '#e5a50a';
 const wroteDoc = (d: EchoDoc): boolean =>
 	d.created || WRITES.has(d.action) || (d.action.startsWith('TRACK') && d.action_color !== EXISTS_COLOR);

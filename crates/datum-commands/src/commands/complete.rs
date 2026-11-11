@@ -27,7 +27,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use datum_core::db::{is_meta_field, Db, NOT_FLAG_OR_META_SQL};
-use datum_core::shape::is_ignored_state;
+use datum_core::shape::is_status_state;
 use datum_core::track::NOT_A_DECLARATION_SQL;
 use datum_parse::alias::{self as palias, expand_argv};
 use datum_parse::help::{find_command, FlagSpec, COMMANDS, GLOBAL_FLAGS};
@@ -582,7 +582,7 @@ fn states(db: &Db, field: &str) -> Candidates {
         .and_then(|mut stmt| stmt.query_map([field], |r| r.get(0))?.collect())
         .unwrap_or_default();
     for s in logged.iter().filter_map(|s| serde_json::from_str(s).ok()) {
-        if !is_ignored_state(&s) {
+        if !is_status_state(&s) {
             out.push(label(&s));
         }
     }

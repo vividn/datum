@@ -380,3 +380,56 @@ fn collect_repeated_state_live(
         )
     }))
 }
+
+/// da-udkd3: each entry dated after its field's FINISHED, which a sync, a
+/// restore or an import may bring though no write here makes one. The fields
+/// read are every field the first time, then those finished at the last run
+/// and those changed since; what is kept is the finished fields.
+pub(super) fn after_finished(db: &Db, plan: &Plan) -> Result<Option<Issue>> {
+    const KEPT: &str = "integrity_finished";
+    let fields = plan.since(db, KEPT).map(|(kept, changed)| {
+        (changed.into_iter().map(|(_, f, _)| f))
+            .chain(kept)
+            .filter(|f| !f.is_empty())
+            .collect::<BTreeSet<String>>()
+    });
+    let (finished, after) = db.after_finished(fields.as_ref())?;
+    plan.keep(db, KEPT, finished);
+    let Some((_, finish)) = after.first() else {
+        return Ok(None);
+    };
+    let rows = db.entries_of(&after.iter().map(|(h, _)| h.clone()).collect::<Vec<_>>())?;
+    let count = rows.len();
+    let (domain, category) = Source::AfterFinished.section();
+    Ok(Some(Issue {
+        domain,
+        severity: Severity::Warning,
+        category,
+        message: format!(
+            "{count} entr{y} dated after {its} field's FINISHED, which takes no entry after \
+             it: delete {each}, or change the FINISH entry's state to false",
+            y = if count == 1 { "y is" } else { "ies are" },
+            each = if count == 1 { "it" } else { "each" },
+            its = if count == 1 { "its" } else { "their" },
+        ),
+        count,
+        example: rows.first().map(|e| IssueExample {
+            id: Some(e.short_uid()),
+            field: Some(e.field.clone()),
+            detail: Some(format!("finished by {finish}")),
+        }),
+        entries: rows
+            .iter()
+            .map(|e| FlaggedEntry {
+                hid: e.hid.to_string(),
+                field: e.field.clone(),
+                state: e
+                    .state
+                    .as_ref()
+                    .map(render_state_for_flag)
+                    .unwrap_or_default(),
+            })
+            .collect(),
+        rendered_block: render_flagged_block(db, &rows),
+    }))
+}

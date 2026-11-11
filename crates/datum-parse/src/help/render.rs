@@ -59,6 +59,7 @@ const DRY_RUNS_ON_A_COPY: &[(&str, &str)] = &[
     ("edit", ""),
     ("track", ""),
     ("ignore", ""),
+    ("finish", ""),
     ("setup", ""),
     ("alias", "Of set and remove: "),
     ("kit", "Of uninstall: "),

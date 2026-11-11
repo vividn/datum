@@ -36,6 +36,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `remark` — Untimed words on a field, by its create time (alias: note)
 - `track` — Track a field in the now view
 - `ignore` — Ignore a field in the now view
+- `finish` — Finish a field for good: no entry after it
 - `flag` — Mark a field for review (lightweight 'come back to this')
 
 ## MUTATE

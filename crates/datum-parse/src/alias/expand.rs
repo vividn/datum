@@ -121,6 +121,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "why",
     "track",
     "ignore",
+    "finish",
     "grep",
     "check",
     "count",

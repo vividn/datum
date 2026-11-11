@@ -25,6 +25,27 @@ pub(crate) fn parse_status(tail: &[&str], track: bool) -> Result<Box<SpecSetArgs
     Ok(Box::new(out))
 }
 
+/// `finish F`: the field, its time flags and `--json` alone (da-udkd3), a
+/// list as `ignore`'s.
+pub(crate) fn parse_finish(tail: &[&str]) -> Result<Box<SpecSetArgs>> {
+    let (out, _, named) = super::spec::parse_spec_set(tail, true)?;
+    if !named {
+        return Err(ParseError::MissingRequiredKey("<FIELD>".to_string()));
+    }
+    let bare = SpecSetArgs {
+        field: out.field.clone(),
+        show: out.show,
+        time: out.time.clone(),
+        ..Default::default()
+    };
+    if out != bare {
+        return Err(ParseError::InvalidArg(
+            "finish takes a field and time flags alone: `datum setup` changes its spec".into(),
+        ));
+    }
+    Ok(Box::new(out))
+}
+
 /// One route for the leftover words (da-zqnt3): `-S` joins what `-R K`
 /// sends, and `-C` is the other route, not a second one.
 pub(crate) fn check_remainder_route(remainder: bool, string: bool, comment: bool) -> Result<()> {

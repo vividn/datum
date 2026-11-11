@@ -961,6 +961,7 @@ fn insert_keyed_in_tx(
     strategy: ConflictStrategy,
     keys: &KeyStrategies,
 ) -> Result<InsertOutcome> {
+    refuse_after_finish(conn, entry)?;
     let (outcome, written) = write_entry_in_tx(conn, entry, strategy, keys, false)?;
     // D5: post-write conflict detection. Runs inside the same
     // transaction so the conflict row is atomic with the insert.
@@ -972,6 +973,45 @@ fn insert_keyed_in_tx(
         )?;
     }
     Ok(outcome)
+}
+
+/// A field's FINISHED rows, spelled as `entries_field_states`' WHERE so the
+/// read seeks them by `(field, state)` and walks no history.
+pub(crate) const FINISHES_SQL: &str = "deleted_at IS NULL AND superseded_by IS NULL \
+     AND state IS NOT NULL AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL";
+
+/// A FINISHED field takes no new entry dated after it (da-udkd3); one with
+/// no `at`, or dated before, is written. Only a write made here asks: a
+/// sync, a restore or an import lands as it comes, and `datum check` names
+/// what came after.
+fn refuse_after_finish(conn: &Connection, entry: &Entry) -> Result<()> {
+    let Some(at) = &entry.at else {
+        return Ok(());
+    };
+    // The first FINISHED, compared here: an `at` in the WHERE would steer
+    // SQLite to the `(field, at)` index and the history before it.
+    let first: Option<(String, String)> = conn
+        .query_row(
+            &format!(
+                "SELECT MIN(at), hid FROM entries \
+                 WHERE field = ?1 AND state = ?2 AND {FINISHES_SQL} HAVING MIN(at) IS NOT NULL"
+            ),
+            params![
+                entry.field,
+                JsonValue::from(crate::shape::FINISHED_STATE_VALUE).to_string()
+            ],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    match first {
+        Some((finished, hid)) if finished < at.utc.to_rfc3339() => Err(DatumError::Other(format!(
+            "'{}' is FINISHED ({hid}), and this entry is dated after it, which a finished \
+             field refuses; if finishing it was a mistake, change that entry's state \
+             (`datum update {hid} state=false`)",
+            entry.field
+        ))),
+        _ => Ok(()),
+    }
 }
 
 /// [`insert_entry_in_tx`] minus the conflict detection: returns the row it

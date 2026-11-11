@@ -85,6 +85,8 @@ pub enum Command {
     /// [CHANGES] --track` / `--ignore`, with `track` or `ignore` set.
     Track(Box<SpecSetArgs>),
     Ignore(Box<SpecSetArgs>),
+    /// `finish F` (da-udkd3): the field and time flags alone, its FINISHED row.
+    Finish(Box<SpecSetArgs>),
 
     /// `datum meta <field> <text>` — record an out-of-band protocol
     /// note about how a field is being classified or interpreted.

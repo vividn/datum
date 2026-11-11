@@ -10,7 +10,7 @@
 
 use crate::cli::LogArgs;
 use crate::input::split_key_value;
-use crate::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
+use crate::shape::{FINISHED_STATE_VALUE, IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
 
 /// What a declared key asks of a log: the four ways an alias line names a
 /// key — `-k key`, `-k key=`, `-k key=default`, `key=value`.
@@ -101,7 +101,13 @@ pub fn takes_spec_keys(verb: &str, line: &LogArgs) -> bool {
             literal
                 || !matches!(
                     typed_state(line).as_deref(),
-                    Some("false" | "null" | IGNORED_STATE_VALUE | TRACKED_STATE_VALUE)
+                    Some(
+                        "false"
+                            | "null"
+                            | IGNORED_STATE_VALUE
+                            | TRACKED_STATE_VALUE
+                            | FINISHED_STATE_VALUE
+                    )
                 )
         }
         _ => false,

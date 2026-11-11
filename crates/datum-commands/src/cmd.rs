@@ -424,6 +424,7 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         Command::Debug(sub) => commands::debug::debug(sub, db),
         // One handler: `args` says which status (`track` or `ignore` set).
         Command::Track(args) | Command::Ignore(args) => commands::track::status(*args, db),
+        Command::Finish(args) => commands::track::finish(*args, db),
         Command::Meta(sub) => commands::meta::meta(sub, db),
         Command::Flag(args) => commands::flag::flag(args, db),
         Command::Grep(args) => commands::grep::grep(args, db),

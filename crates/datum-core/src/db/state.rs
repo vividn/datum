@@ -334,7 +334,7 @@ impl Db {
         let mut out = Vec::with_capacity(fields.len());
         for field in fields {
             let ignored = match states.get(&field) {
-                Some(state) => crate::shape::is_ignored_state(state),
+                Some(state) => crate::shape::is_hidden_state(state),
                 // A spec with nothing logged behind it is a standing
                 // declaration, not an event, so it vouches for the field at
                 // any anchor (da-m1l8). Once the field HAS rows, they decide

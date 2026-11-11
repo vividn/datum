@@ -503,7 +503,6 @@ impl FieldSpec {
     /// refused.
     pub fn refuses_state(&self, state: &JsonValue) -> Option<String> {
         use datum_parse::alias::sh_quote;
-        use datum_parse::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
         if !self.only_listed_states {
             return None;
         }
@@ -531,7 +530,7 @@ impl FieldSpec {
                  to another state, list `false` (`datum setup {states} --add-state false`), \
                  or `datum setup {allow} --allow-false`"
             )),
-            JsonValue::String(s) if s == IGNORED_STATE_VALUE || s == TRACKED_STATE_VALUE => None,
+            v if datum_parse::shape::is_status_state(v) => None,
             JsonValue::Bool(true) => Some(format!(
                 "field '{field}' takes only its listed states (only_listed_states): \
                  name one of [{}]",

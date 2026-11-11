@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use anyhow::Result;
 use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::Db;
-use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
+use datum_core::shape::{is_hidden_state, is_status_state};
 use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
 use serde_json::{json, Value as JsonValue};
 
@@ -177,10 +177,10 @@ pub fn compute_named_fields(db: &Db, names: &[String]) -> Result<JsonValue> {
     listing(db, &by_field)
 }
 
-/// da-5ifp: TRACKED and IGNORED are statuses, not states a field can be
+/// da-5ifp: TRACKED, IGNORED and FINISHED are statuses, not states a field can be
 /// switched to.
 fn is_a_state(state: &JsonValue) -> bool {
-    *state != TRACKED_STATE_VALUE && !is_ignored_state(state)
+    !is_status_state(state)
 }
 
 /// The names a state is painted by, as the page looks them up (a string as
@@ -207,7 +207,7 @@ fn listing(db: &Db, by_field: &BTreeMap<String, Vec<JsonValue>>) -> Result<JsonV
         by_field
             .iter()
             .map(|(field, states)| {
-                let ignored = latest.get(field).is_some_and(is_ignored_state);
+                let ignored = latest.get(field).is_some_and(is_hidden_state);
                 let spec = specs.get(field);
                 let color = field_hex(field, spec);
                 let mut state_names = BTreeSet::new();

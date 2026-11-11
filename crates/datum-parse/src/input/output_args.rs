@@ -200,7 +200,7 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // echo (da-ez40f); there is no silent mode to offer, and the
         // listing refuses it. `track F` and `ignore F` are `setup F --track`
         // and `--ignore`, echoing the row they write (da-te4id).
-        "setup" | "track" | "ignore" => &[Show::Default, Show::Json],
+        "setup" | "track" | "ignore" | "finish" => &[Show::Default, Show::Json],
         // `help --json` is the command table itself (da-r13j).
         "help" => &[Show::Default, Show::Json],
         // A group: `sync status`, `sync chain list`, `sync admin list`,

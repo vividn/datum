@@ -160,6 +160,16 @@ fn plant(category: &str) -> Plant {
                 }
             })
         }),
+        // A FINISHED written before an entry already after it, as a sync brings one.
+        "integrity_after_finished" => Two(|db| {
+            two(|field| {
+                for (h, state) in [(2, "later"), (1, datum_core::shape::FINISHED_STATE_VALUE)] {
+                    let mut e = log(field, state);
+                    e.at = Some(DatumTime::from_utc_and_tz(hour(h), "UTC").unwrap());
+                    db.insert_entry(&e).unwrap();
+                }
+            })
+        }),
         "integrity_warning_unreadable" => {
             Two(|db| two(|id| warn(db, id, &log("x", "x"), "not json", "double_open")))
         }

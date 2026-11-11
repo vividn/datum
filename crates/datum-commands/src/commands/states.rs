@@ -8,7 +8,7 @@
 use anyhow::Result;
 use datum_core::action::Action;
 use datum_core::db::Db;
-use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
+use datum_core::shape::is_status_state;
 use datum_core::time::Zone;
 use serde_json::{json, Value as JsonValue};
 
@@ -51,7 +51,7 @@ pub fn compute_states(db: &Db, field: &str) -> Result<JsonValue> {
         .field_state_uses(field)?
         .into_iter()
         // TRACKED and IGNORED are statuses, not states (da-5ifp).
-        .filter(|(s, ..)| *s != TRACKED_STATE_VALUE && !is_ignored_state(s))
+        .filter(|(s, ..)| !is_status_state(s))
         .collect();
     if spec.is_none() && used.is_empty() {
         anyhow::bail!("states: no field '{field}': nothing logged and no spec");

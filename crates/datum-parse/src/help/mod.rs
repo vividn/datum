@@ -22,6 +22,7 @@ mod fit;
 pub mod render;
 mod setup_flags;
 pub mod spec;
+mod status_bodies;
 mod upgrade_flags;
 
 pub use commands::{find_command, find_topic, page_name, COMMANDS, ENV_VARS, GLOBAL_FLAGS, TOPICS};

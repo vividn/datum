@@ -169,7 +169,8 @@ fn report(args: &CheckArgs, db: &Db) -> Result<(Report, Vec<FixReport>)> {
     }
     if run("integrity") {
         let (found, repeats) = integrity_pending(db, &plan)?;
-        let issues = integrity_issues(db, found)?;
+        let mut issues = integrity_issues(db, found)?;
+        issues.extend(integrity::after_finished(db, &plan)?);
         plan.keep(db, "integrity", repeats);
         checks.push(Check::of("integrity", issues));
     }

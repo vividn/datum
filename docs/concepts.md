@@ -79,6 +79,17 @@ One-line summaries of the model:
   "declared, nothing logged yet", which reads as `false` everywhere but
   the printed text, where `tail` draws it in gray. It is not what makes
   a field tracked, and no row carrying it is ever required.
+- **FINISHED** — the third status, which `datum finish` writes: the field
+  is done for good, an experiment ended, an issue closed. It is terminal.
+  A new entry dated after it is refused, naming the FINISH entry; one
+  dated before it, one with no time (a remark, a meta note) and the
+  field's spec are written as usual. The way back from a finish made by
+  mistake is to change that entry's state to `false` or `IGNORED`. A
+  finished field is hidden where an ignored one is (`now`, `fields`,
+  datum.day's collect tab, `info`'s `ignored`), and `tail` and `dayview`
+  still show its past. Sync refuses nothing: two copies converge as on
+  any entries, and `datum check integrity` names each entry dated after
+  its field's FINISHED (`integrity_after_finished`).
 - **Slug vs. hid** — `slug` is the human-readable id (`mood:2026-04-29T09:15Z`).
   `hid` is the short hash; both resolve to the same entry. `datum tail`
   leads each row with its `ref`: its ordinal, `_1` for the most recent
