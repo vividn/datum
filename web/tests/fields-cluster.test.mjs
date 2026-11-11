@@ -44,21 +44,16 @@ async function placed(page) {
 }
 
 /**
- * Wait until the output is back after leaving the setup place. The place keeps
- * the output shut (da-339ec), and the tab it is left for opens it again with a
- * glide once the slide back has landed. Until then the room the states stand in
- * shrinks every frame, and a read made then sees that frame's rows (da-jsrh8).
+ * Wait until any glide of the bar has landed after leaving the setup place: until
+ * then the room the states stand in changes every frame, and a read made then
+ * sees that frame's rows (da-jsrh8).
  */
 const rested = (page) =>
 	page.evaluate(async () => {
-		const shut = () => {
-			const { root } = window.datum.layout.current();
-			return root.tabs[root.active]?.output === 'closed';
-		};
 		// Two frames that start at or past the glide's scheduled end: the first runs its last step, the second sees it drawn.
 		for (let past = 0; past < 2; ) {
 			const t = await new Promise(requestAnimationFrame);
-			past = !shut() && t >= Number(document.querySelector('.shell').dataset.glideEnds) ? past + 1 : 0;
+			past = t >= Number(document.querySelector('.shell').dataset.glideEnds) ? past + 1 : 0;
 		}
 	});
 

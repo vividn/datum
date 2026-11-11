@@ -1,11 +1,11 @@
 // A tab's fixed command (da-339ec). vividn, 2026-11-09: «while on the setup
 // screen, there should be a special pill that appears, non dismissable at the
-// very begining of the input "setup", similarly for some other tabs», and
-// «keep the CLI output closed by default on this tab».
+// very begining of the input "setup", similarly for some other tabs».
 //
-// So on the setup tab the line runs as `setup <typed>`, the pill outlives
-// Backspace and the clear, its output starts closed and the device's fold
-// comes back on leaving; a tab with no command is the line it was.
+// So on the setup tab the line runs as `setup <typed>` and the pill outlives
+// Backspace and the clear; a tab with no command is the line it was. Its
+// output is the app's, open or closed as on every tab (da-qu9j8, which undid
+// the 11-09 «keep the CLI output closed by default on this tab»).
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +18,7 @@ after(stopApp);
 
 const BAR = '.prompt-bar';
 
-test('the setup tab: `setup` is a pill no key takes, a line runs after it, and its output starts closed', async () => {
+test('the setup tab: `setup` is a pill no key takes, a line runs after it, and its output stays as it was', async () => {
 	await withApp(async (app) => {
 		const { page } = app;
 		const pill = page.locator(`${BAR} .fixed`);
@@ -32,13 +32,13 @@ test('the setup tab: `setup` is a pill no key takes, a line runs after it, and i
 		await page.evaluate(() => window.datum.shell.open('setup'));
 		await pill.waitFor();
 		assert.equal((await pill.innerText()).trim(), 'setup');
-		await output.waitFor({ state: 'detached' });
+		assert.equal(await output.count(), 1, 'arriving on setup closed the output');
 
 		await box.fill('coffee');
 		await box.press('Enter');
 		await page.waitForFunction(() => window.datum.bar.last()?.line === 'setup coffee');
 		assert.equal(await page.evaluate(() => window.datum.bar.last().result.code), 0);
-		assert.equal(await output.count(), 0, 'the run did not leave the output closed on this tab');
+		assert.equal(await output.count(), 1, 'the run closed the output on this tab');
 		// A line that says the command already (the sync widget's `sync status ` prefill) is not said twice.
 		await box.fill('setup tea');
 		await box.press('Enter');
@@ -56,9 +56,9 @@ test('the setup tab: `setup` is a pill no key takes, a line runs after it, and i
 		await box.press('ArrowUp');
 		assert.equal(await box.inputValue(), 'tea');
 
-		// Back on collect: no pill, the output as this device left it, and a line as typed.
+		// Back on collect: no pill, the output as it was, and a line as typed.
 		await app.toCollect();
-		await output.waitFor();
+		assert.equal(await output.count(), 1);
 		assert.equal(await pill.count(), 0);
 		await box.fill('moment tea');
 		await box.press('Enter');

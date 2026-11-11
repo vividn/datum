@@ -409,7 +409,7 @@ export function inline(saved: Layout, taken: Set<NodeId>, lift = false): Tab {
 		mapTabs(saved.root, (tab) => migrated(without(tab, 'locked'))),
 		mint
 	);
-	// The root pane's `tall` is the tab's (da-py6pl), and so are its `command` and `output` (da-339ec).
+	// The root pane's `tall` is the tab's (da-py6pl), and so is its `command` (da-339ec); an old save's `output` goes (da-qu9j8).
 	const own = rootKeys(root);
 	const only = root.tabs.length === 1 ? root.tabs[0] : undefined;
 	if (only && (lift || isSplit(only.content)))

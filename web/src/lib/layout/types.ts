@@ -100,12 +100,10 @@ export interface Tab {
 	 * from other tabs, for now. Saved on the layout's root pane, as `tall`.
 	 */
 	command?: string;
-	/** A root tab whose output section starts CLOSED (da-339ec), the device's fold kept for the rest. */
-	output?: 'closed';
 }
 
 /** What a root tab keeps on its layout's root pane, and the pane gives back (shell.ts). */
-export const ROOT_KEYS = ['tall', 'command', 'output'] as const;
+export const ROOT_KEYS = ['tall', 'command'] as const;
 
 /**
  * A pane: the holder. Always at least one tab. The bar carries the title
@@ -118,9 +116,13 @@ export interface Pane {
 	/** Index into `tabs`. */
 	active: number;
 	bar: Bar;
-	/** On a saved layout's root pane only: its tab's `tall`, `command` and `output`. */
+	/** On a saved layout's root pane only: its tab's `tall` and `command`. */
 	tall?: number;
 	command?: string;
+	/**
+	 * An older save's (da-339ec): its root tab's output started closed. Read by nothing and dropped as it
+	 * loads, since the output section is open or closed for the whole app now (da-qu9j8).
+	 */
 	output?: 'closed';
 	/**
 	 * Takes its content's height (a row's width), not its ratio of the split: its

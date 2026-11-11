@@ -836,9 +836,7 @@ describe("the day strip's day height and its pin", () => {
 		// draws, and the handle works for the visit.
 		await withApp( // own app: a `prepare` that blocks the store
 			async (app) => {
-				// Nothing remembers a visit, so it is a first one, on `welcome` (da-u7vz8), whose output is shut
-				// (da-djys5): collect's glides open after arriving, the strip shrinking as it goes, and a still
-				// strip may be one whose glide has not begun. So the wait is for the height itself.
+				// Nothing remembers a visit, so it is a first one, on `welcome` (da-u7vz8).
 				await app.toCollect();
 				await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 				await until(() => valueOf(app), (v) => v === fallback);

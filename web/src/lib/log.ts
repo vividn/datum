@@ -193,7 +193,7 @@ export function attach(el: HTMLElement): () => void {
 	// is safe because a ResizeObserver delivers a first observation of its
 	// own accord: a box that changed between these two lines is measured
 	// again by that callback, and `remeasure` clamps `reveal` to it.
-	reveal.set(remembered() && !get(foldedHere) ? out() : 0);
+	reveal.set(remembered() ? out() : 0);
 	const observer = new ResizeObserver(remeasure);
 	observer.observe(el);
 	// Every observer this makes is disconnected by the teardown of the same
@@ -469,16 +469,3 @@ function glide(target: number, speed = 0, keep = true): void {
 	};
 	frame = requestAnimationFrame(step);
 }
-
-/**
- * Whether the root tab in front starts with its output CLOSED (da-339ec, its
- * layout's `output`): shut on arriving there, and the device's own fold put
- * back on leaving, neither remembered. vividn, 2026-11-09, of the setup tab:
- * «keep the CLI output closed by default on this tab».
- */
-export const foldedHere = writable(false);
-// A change only (a writable is quiet on the same value), and it wins over a
-// glide in flight: the tab in front says how its output starts.
-foldedHere.subscribe((closed) => {
-	if (out()) glide(closed ? 0 : remembered() ? out() : 0, 0, false);
-});

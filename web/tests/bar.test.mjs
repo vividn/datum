@@ -32,7 +32,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ON_COLLECT, atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { fold as foldBar, unfold as openBar, DESKTOP, PHONE, DAY, BAR, OUT, DOC, repl, barHeight, section, cliDoc } from './support/bar.mjs';
 import { withBar } from './support/layout.mjs';
 
@@ -627,8 +627,8 @@ describe('the arrow folds the output, and a drag does too', () => {
 	const output = (page) => page.locator(`${BAR} .section.output`);
 
 	// Every screen starts open now (da-mwp4m). vividn, 2026-10-27: «make the
-	// output section open by default, always above the input bar». On collect,
-	// one tap into a first visit: welcome, where it lands, opens shut (da-djys5).
+	// output section open by default, always above the input bar»: welcome,
+	// where a first visit lands, too (da-qu9j8).
 	test('a fresh phone starts open, and the fold it chooses survives a reload', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -640,7 +640,7 @@ describe('the arrow folds the output, and a drag does too', () => {
 			assert.equal(await output(page).count(), 0, 'the reload forgot the fold');
 			await openBar(page);
 			assert.deepEqual(app.errors, []);
-		}, { ...PHONE, home: ON_COLLECT });
+		}, { ...PHONE, home: null });
 	});
 
 	test('a fresh desktop starts open, and folds', async () => {
@@ -652,7 +652,7 @@ describe('the arrow folds the output, and a drag does too', () => {
 			await page.locator(`${BAR} input:not([disabled])`).waitFor();
 			assert.equal(await output(page).count(), 0, 'the reload forgot the fold');
 			assert.deepEqual(app.errors, []);
-		}, { viewport: { width: 1280, height: 900 }, home: ON_COLLECT });
+		}, { viewport: { width: 1280, height: 900 }, home: null });
 	});
 
 	test('the dashboard reflows when a person folds, and never when a command answers', async () => {

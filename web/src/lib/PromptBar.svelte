@@ -104,7 +104,7 @@
 	import CommandPane from '#lib/layout/CommandPane.svelte';
 	import { epoch } from '#lib/layout/engine.ts';
 	import { clockSecondsLabel, now } from '#lib/clock.ts';
-	import { closeLog, foldedHere, inLog, lifted, lowering, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
+	import { closeLog, inLog, lifted, lowering, openOutput, output, outputless, raise, shown } from '#lib/log.ts';
 	import { editing, layout } from '#lib/layout/current.ts';
 	import { APPLY, RESET, accept, discard } from '#lib/layout/mode.ts';
 	import { soleWidgetOf } from '#lib/layout/tree.ts';
@@ -141,7 +141,6 @@
 	$effect.pre(() => {
 		const tab = $layout.root.tabs[$layout.root.active];
 		outputless.set(soleWidgetOf(tab)?.widget.kind === 'cli');
-		foldedHere.set(tab?.output === 'closed');
 	});
 
 	/**
@@ -523,6 +522,10 @@
 					ontouchcancel={onTouchEnd}
 				>
 					<div class="track" bind:this={track}>
+						<!-- Empty, it says what it is (da-qu9j8), in its own type, and goes with the first command. -->
+						{#if !strip.length}
+							<p class="empty">Output section: entries and actions appear here as you make them and can be undone.</p>
+						{/if}
 						<!-- ROWS OF THE HISTORY, not a second rendering of them.
 						     vividn, 2026-09-21: "the output section … should actually
 						     *be* the first line of the repl. … It should also have the
@@ -790,6 +793,12 @@
 		height: var(--shown, 0px);
 		overflow: hidden;
 		border-bottom: 1px solid var(--tint);
+		/* SET APART FROM THE INPUT ROW (da-qu9j8): a ground a step towards
+		   `--tint`, between two grounds every ink is held legible on
+		   (brand.test.mjs). vividn, 2026-11-11: «a background texture/slightly
+		   different color to differentiate it more from the input bar». */
+		--output-ground: color-mix(in srgb, var(--ground), var(--tint) 45%);
+		background: var(--output-ground);
 	}
 
 	/* Where it rests at the notch, over the input, and not drawn. */
@@ -880,7 +889,22 @@
 		touch-action: pan-x;
 		position: relative;
 		z-index: 1;
-		background: var(--ground);
+		background: var(--output-ground);
+		/* What stands on a frame's border hides it with the ground under it (CliEntry.svelte). */
+		--ground: var(--output-ground);
+	}
+
+	/* What the section is, while it holds nothing: quiet, and legible. */
+	.empty {
+		flex: none;
+		box-sizing: border-box;
+		width: 100cqw;
+		align-self: center;
+		margin: 0;
+		padding-inline: 0.5rem;
+		color: var(--muted);
+		white-space: normal;
+		text-align: center;
 	}
 
 	/* Let go short of the ×, the strip springs back over it; under a finger, it follows. */
@@ -946,6 +970,8 @@
 		flex-direction: column;
 		flex: 1;
 		min-height: 0;
+		/* A step brighter than the history's, to stand out on the section's ground (da-qu9j8). */
+		border-color: var(--muted);
 	}
 
 	/* What Docs.svelte measures for its `+N` and its brace is the room the

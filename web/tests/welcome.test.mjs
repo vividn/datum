@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, chooser, exactly, manage, manageRoot, pane, rootMenuButton, titledPane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { BAR, unfold } from './support/bar.mjs';
+import { BAR, fold, unfold } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -89,29 +89,58 @@ describe('a first visit', () => {
 			}, device);
 		});
 
-	// vividn, 2026-11-10: «let's not show the output section by default on the welcome tab either (just like the
-	// setup tab)» (da-djys5).
+	// ONE STATE FOR EVERY TAB (da-qu9j8), open on a first visit. vividn, 2026-11-11: «we should keep the output section
+	// consistently open or closed (open by default) even on setup and welcome. That will prevent awkward resizes as
+	// you switch tabs». It reversed setup's (da-339ec) and welcome's (da-djys5), which each shut it on arriving.
 	for (const [what, device] of [
 		['a desktop', FRESH_DESKTOP],
 		['a phone', FRESH_PHONE]
 	])
-		test(`on ${what}, welcome opens with the output shut, a drag opens it, and collect's stands open`, async () => {
+		test(`on ${what}, the output section opens on welcome and switching tabs never opens or closes it`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				const output = page.locator(`${BAR} .section.output`);
 				await page.locator('.host.welcome').waitFor();
-				await output.waitFor({ state: 'detached' });
-				await app.idle();
-				assert.equal(await output.count(), 0, 'welcome opened with its output showing');
-				await unfold(page);
-				assert.equal(await output.count(), 1);
-
-				await page.locator('.root-bar [role="tab"]', { hasText: exactly('collection') }).click();
-				await until(() => front(page), ([name]) => name === 'collect');
 				await output.waitFor();
+				const tour = async (open) => {
+					for (const name of ['setup', 'collect', 'welcome', 'setup', 'collect']) {
+						await page.evaluate((n) => window.datum.shell.open(n), name);
+						await until(() => front(page), ([n]) => n === name);
+						await app.idle();
+						assert.equal(await output.count(), open ? 1 : 0, `on ${name} the output section is ${open ? 'closed' : 'open'}`);
+					}
+				};
+				await tour(true);
+				await fold(page);
+				await tour(false);
+				await unfold(page);
+				await tour(true);
 				assert.deepEqual(app.errors, []);
 			}, device);
 		});
+
+	// Empty, it says what it is (da-qu9j8). vividn, 2026-11-11: «when the output section is empty maybe we shuold put
+	// some help text (not too auffällig, but still legible)», and «give the output section a background texture/slightly
+	// different color to differentiate it more from the input bar».
+	test("an empty output section says what it is until the first command, on a ground of its own", async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const empty = page.locator(`${BAR} .section.output .empty`);
+			await empty.waitFor();
+			assert.match(await empty.innerText(), /output section/i);
+			const ground = (sel) => page.locator(`${BAR} ${sel}`).evaluate((el) => getComputedStyle(el).backgroundColor);
+			const [output, input, bar] = [await ground('.section.output .roll'), await ground('.section.input'), await ground('')];
+			const drawn = input === 'rgba(0, 0, 0, 0)' ? bar : input;
+			assert.notEqual(output, drawn, 'the output section is on the input row\'s ground');
+			assert.notEqual(output, 'rgba(0, 0, 0, 0)');
+
+			await page.locator(`${BAR} input`).fill('moment tea');
+			await page.locator(`${BAR} input`).press('Enter');
+			await page.locator(`${BAR} .section.output .group`).waitFor();
+			assert.equal(await empty.count(), 0, 'the empty words stayed beside a command');
+			assert.deepEqual(app.errors, []);
+		}, FRESH_DESKTOP);
+	});
 
 	// What it HAS and DOES, not its sentences (vividn, 2026-10-28: «seems like tests that quote word for word are kind
 	// of useless»): the copy is his to change without a test following it.
