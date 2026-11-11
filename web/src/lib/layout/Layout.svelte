@@ -85,7 +85,6 @@
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
 	import { keyOf, session, setSession, withSession } from './session.js';
-	import { modifyWidget } from './mode.js';
 	import { QUIET_MS, settled } from '#lib/run.ts';
 
 	let {
@@ -590,7 +589,7 @@
 			{least}
 			{tall}
 			kept={pane.id === rootId}
-			still={!!$editing && !isSplit(content) && (content.kind !== EMPTY_KIND || fixed) && !(KINDS[content.kind]?.modifies && !fixed)}
+			still={!!$editing && !isSplit(content) && (content.kind !== EMPTY_KIND || fixed)}
 			lit={!fixed && !!$editing?.pane}
 		>
 			{#if isSplit(content)}
@@ -713,12 +712,7 @@
 						{...kind.props ? kind.props(settings) : { settings }}
 						epoch={at}
 						{key}
-						{...kind.modifies && { modifying: !!$editing && !fixed }}
-						onchange={(moved: unknown) =>
-							fold &&
-							(kind.modifies && $editing && !fixed
-								? modifyWidget(tab.id, key, fold, moved)
-								: setSession(key, widget.settings, fold(settings, moved), kind.passing))}
+						onchange={(moved: unknown) => fold && setSession(key, widget.settings, fold(settings, moved), kind.passing)}
 					/>
 				{/if}
 			{:else}
