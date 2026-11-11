@@ -120,6 +120,13 @@ describe('a burst of changes', () => {
 							await new Promise((r) => setTimeout(r, 0));
 							dimmed ||= !!document.querySelector(`${scope} .picture.behind`);
 						}
+						// The burst's last change is where the follow LANDS: a click
+						// flies the window to its pill over 250ms, asking meanwhile
+						// for the window on now with the pill (`--center -15`), and
+						// the landing asks for the window about the pill. `idle` waits
+						// out no fly, so under load it came back between the two and
+						// the landing's run was asked and not yet back (da-s0kmn).
+						while (document.querySelector(`${scope} .nowview-band[data-flying]`)) await new Promise(requestAnimationFrame);
 						nowview.bursting = false;
 						return { dimmed, most: nowview.most, back: nowview.back };
 					},
