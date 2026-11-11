@@ -47,21 +47,31 @@ export const pageWait = (page, ms) => page.evaluate((ms) => new Promise((done) =
  * is up (`LONG_MS`, #lib/nowpoint.ts), and how long the first move takes to
  * arrive is the box's to say: on a loaded runner it came after the 400ms,
  * and a drag asked for as a pan was a range (da-9ol3b). So that press has no
- * wait to beat (`noWait`); one with a `hold` waits for the wait's mark.
+ * wait to beat (`noWait`), and its moves are STAMPED as made within 80 ms
+ * of it, never later than sent: a band reads a move's own `timeStamp` less
+ * the press's (da-343zv), which the timer swallowed never was (da-z7nte).
+ * One with a `hold` waits for the wait's mark, its moves stamped as sent.
  */
 export async function drag(page, from, to, { hold = false, shift = false } = {}) {
 	await page.mouse.move(from.x, from.y);
 	if (shift) await page.keyboard.down('Shift');
 	if (!hold) await page.evaluate(noWait);
-	await page.mouse.down();
+	// By CDP, whose `timestamp` (s since the epoch) is the event's `timeStamp`.
+	const cdp = await page.context().newCDPSession(page);
+	const t0 = Date.now() / 1000;
+	const mouse = (type, at, buttons, timestamp) =>
+		cdp.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1, modifiers: shift ? 8 : 0, timestamp });
+	await mouse('mousePressed', from, 1, hold ? undefined : t0);
 	if (hold) await longPressed(page);
-	await page.mouse.move(to.x, to.y, { steps: 8 });
+	for (let i = 1; i <= 8; i++)
+		await mouse('mouseMoved', { x: from.x + ((to.x - from.x) * i) / 8, y: from.y + ((to.y - from.y) * i) / 8 }, 1, hold ? undefined : Math.min(Date.now() / 1000, t0 + i / 100));
 	// Not a wait for rest: the drag held still past WINDOW_MS (80 ms, #lib/grip.ts),
 	// the time before a lift its speed is read over (`speedOver`), so the lift lets go
 	// at none and the band does not coast. Real time, not the page's timers: a test may
 	// hold those (`holdTimers`), and its frozen clock carries no speed anyway.
 	await page.waitForTimeout(100);
-	await page.mouse.up();
+	await mouse('mouseReleased', to, 0);
+	await cdp.detach();
 	if (shift) await page.keyboard.up('Shift');
 }
 
