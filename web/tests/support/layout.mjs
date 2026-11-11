@@ -203,20 +203,6 @@ export async function leaveLayoutMode(page, how = 'apply') {
 	await page.locator('.frame[data-layout-mode]').waitFor({ state: 'detached' });
 }
 
-/** Into one widget's modify mode (da-k5hu5) by Modify, first in its menu. */
-export async function modifyWidget(page, id) {
-	await menuButton(page, id).click();
-	await page.getByRole('menuitem', { name: 'Modify', exact: true }).click();
-	await pane(page, id).and(page.locator('.editing')).waitFor();
-}
-
-/** Out of a widget's modify mode by its own ✓ (`apply`) or ↺ (`reset`). */
-export async function leaveWidget(page, id, how = 'apply') {
-	const ways = pane(page, id).locator('> .titlebar .way-out');
-	await (how === 'reset' ? ways.first() : ways.last()).click();
-	await page.locator('.frame[data-layout-mode]').waitFor({ state: 'detached' });
-}
-
 /**
  * A pane's maximize badge (da-00am): before the tab names (da-bzhq). Its
  * own, not a child's. In layout mode it is the bar's HANDLE (da-vvcxc).

@@ -1,13 +1,6 @@
 // Collect's pinch (da-l1z6h). vividn, 2026-11-04: «let's add pinch to zoom
 // which changes font size and height of the rows to allow you to fit more or
-// less rows in the collect widget». And in modify mode alone, with the now
-// section's width, flip, and + and − rows (da-xi4up), vividn, 2026-11-10: «in
-// the collect widget for example some things that you could change in the
-// modify mode would be the now section width, have a button to flip left and
-// right, but a + button at the top of the line separating the fields section
-// from the time/now section and a - button on the bottom which changes the
-// number of rows in the widget», «let's move just into modify mode. We can
-// allow pinch zooming when in modify mode though in addition to the +/-».
+// less rows in the collect widget».
 //
 // The rows are `atRest`'s (fields-rest-pure.test.mjs), counted from the
 // buttons' height as drawn; this is the built app, read off what it draws.
@@ -15,7 +8,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp, todayAt } from './support/app.mjs';
-import { DESKTOP, PHONE, choose, leaveWidget, modifyWidget, pane, rested, pickOption, rootMenuButton } from './support/layout.mjs';
+import { PHONE, choose, rested } from './support/layout.mjs';
 import { pinch } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
@@ -149,243 +142,97 @@ async function swipe(page, by) {
 	return (await firstX(page)) - was;
 }
 
-/** The collect pane's id, which modify mode is entered on. */
-const COLLECT_PANE = 'section.pane[data-title="collect"]';
-const idOf = (page) => page.locator(COLLECT_PANE).getAttribute('data-pane');
-/** What the LAYOUT holds for the widget in pane `id`: its settings in the tree, no session over them. */
-const inTree = (page, id) =>
-	page.evaluate((id) => {
-		const find = (p) => {
-			if (p.id === id) return p.tabs[p.active].content.settings;
-			for (const t of p.tabs) if (!('kind' in t.content)) for (const c of t.content.children) { const got = find(c); if (got) return got; }
-			return null;
-		};
-		return find(window.datum.layout.current().root);
-	}, id);
-/** What this session holds over the collect widgets: each key's settings. */
-const heldOver = (page) => page.evaluate(() => Object.values(window.datum.layout.session()));
-/** The cover's controls and what it says: the rows the room holds, the now section's share. */
-const cover = (page) => page.locator(`${COLLECT_PANE} [data-modify]`);
-const stripBox = (page) => page.locator(`${COLLECT_PANE} [data-strip]`).boundingBox();
+const held = (page) => page.evaluate(() => Object.values(window.datum.layout.session()).map((s) => s.zoom));
 
-async function seeded(app, lines = SEED) {
-	for (const line of lines) assert.equal((await app.runLine(line)).code, 0, line);
-	await app.reload();
-	await app.page.locator(`${ROOM} .spot.shelf`).first().waitFor();
-	await app.idle();
-}
-
-/**
- * A DIAGNOSTIC (da-i44fw): the event trail around the phone's ⇄ tap, which
- * staging's fast lane loses and no other box has (#1937, #1939). It only
- * logs, so the test asserts what it did without it: every pointer, touch and
- * click event on the page, at its time and on its target, the flip button
- * leaving the page, and at each `mark` the tree's and the session's side and
- * width, the mode, and what is under the flip's middle. Printed whether the
- * test passes or fails; it goes once the cause is found.
- */
-const trail = {
-	arm: (page) =>
-		page.evaluate(() => {
-			const t0 = performance.now();
-			const log = (window.__trail = []);
-			const at = () => Math.round(performance.now() - t0);
-			const name = (el) => (el instanceof Element ? `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}` : String(el));
-			let moves = 0;
-			const flip = () => document.querySelector('[data-modify] .flip');
-			const boxOf = (el) => {
-				const b = el?.getBoundingClientRect();
-				return b ? `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)}` : 'none';
-			};
-			for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart', 'touchend', 'touchcancel', 'click', 'lostpointercapture'])
-				document.addEventListener(
-					type,
-					(e) =>
-						log.push(
-							`${at()} ${type}${e.pointerType ? ' ' + e.pointerType : ''} at ${Math.round(e.clientX ?? e.changedTouches?.[0]?.clientX)},${Math.round(e.clientY ?? e.changedTouches?.[0]?.clientY)} on ${name(e.target)}${e.target.isConnected ? '' : ' (gone)'}${e.defaultPrevented ? ' prevented' : ''}${moves ? ` after ${moves} moves` : ''}; flip ${boxOf(flip())}`
-						),
-					true
-				);
-			document.addEventListener('pointermove', () => moves++, true);
-			let held = flip();
-			new MutationObserver(() => {
-				const now = flip();
-				if (now !== held) log.push(`${at()} the flip button ${now ? 'replaced' : 'removed'}, now ${boxOf(now)}`);
-				held = now;
-			}).observe(document.body, { childList: true, subtree: true });
-			// Each write of the tree, read a frame at a time: the layout store has no hook of its own here.
-			let tree = window.datum.layout.current();
-			const watch = () => {
-				const now = window.datum.layout.current();
-				if (now !== tree) log.push(`${at()} the layout written; flip ${boxOf(flip())}`);
-				tree = now;
-				if (window.__trail === log) requestAnimationFrame(watch);
-			};
-			requestAnimationFrame(watch);
-			log.push(`${at()} armed`);
-		}),
-	mark: (page, id, what) =>
-		page.evaluate(
-			([id, what]) => {
-				const find = (p) => {
-					if (p.id === id) return p.tabs[p.active].content.settings;
-					for (const t of p.tabs) if (!('kind' in t.content)) for (const c of t.content.children) { const got = find(c); if (got) return got; }
-					return null;
-				};
-				const tree = find(window.datum.layout.current().root) ?? {};
-				const flip = document.querySelector('[data-modify] .flip');
-				const box = flip?.getBoundingClientRect();
-				const under = box ? document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) : null;
-				const strip = document.querySelector('section.pane[data-title="collect"] [data-strip]')?.getBoundingClientRect();
-				window.__trail?.push(
-					`${what}: tree side ${tree.side} nowWidth ${tree.nowWidth}; session ${JSON.stringify(window.datum.layout.session())}; ` +
-						`modifying ${!!document.querySelector('[data-modify]')}; strip x ${strip?.x} w ${strip?.width}; flip ${box ? `${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.width)}x${Math.round(box.height)}` : 'none'}; under its middle ${under ? under.tagName.toLowerCase() + '.' + (under.className?.split?.(' ')[0] ?? '') : 'nothing'}`
-				);
-			},
-			[id, what]
-		),
-	print: async (page, name) => console.log(`TRAIL ${name} (da-i44fw):\n  ${(await page.evaluate(() => window.__trail ?? ['never armed']).catch((e) => [`unread: ${e.message}`])).join('\n  ')}`)
-};
-
-/** A drag of the now width's handle `by` px across, with a mouse or a finger. */
-async function dragGrip(page, by, finger) {
-	const box = await cover(page).locator('.grip').boundingBox();
-	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
-	if (!finger) {
-		await page.mouse.move(x, y);
-		await page.mouse.down();
-		for (let i = 1; i <= 5; i++) await page.mouse.move(x + (by * i) / 5, y);
-		await page.mouse.up();
-	} else {
-		await touches(page, [['touchStart', [{ id: 4, x, y }], 30], ...[1, 2, 3, 4, 5].map((i) => ['touchMove', [{ id: 4, x: x + (by * i) / 5, y }], 30]), ['touchEnd', []]]);
-	}
-	await rested(page, page.locator(`${COLLECT_PANE} [data-strip]`));
-}
-
-describe('collect out of modify mode', () => {
-	test('a pinch and ctrl+wheel zoom nothing, and none of modify mode’s controls is drawn', async () => {
+describe('collect zoom', () => {
+	test('a pinch out fits fewer, larger rows and a pinch in more, smaller ones; the session keeps it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await seeded(app);
-			assert.equal(await cover(page).count(), 0, 'a control drawn out of modify mode');
-			const [start, scale] = [await rows(page), await scaleOf(page)];
-			await pinch(page, await rowsBox(page), 60, 180);
-			await rested(page, page.locator(ROOM));
-			const room = await page.locator(ROOM).boundingBox();
-			await page.mouse.move(room.x + room.width / 2, room.y + room.height / 2);
-			await page.keyboard.down('Control');
-			await page.mouse.wheel(0, -100);
-			await page.keyboard.up('Control');
-			await rested(page, page.locator(ROOM));
-			assert.equal(await scaleOf(page), scale, 'a pinch or ctrl+wheel zoomed the rows');
-			assert.deepEqual(await rows(page), start);
-			assert.deepEqual(await heldOver(page), [], 'something held in the session');
-		}, AT_REST);
-	});
-
-	test('two fingers on two fields, lifted one by one, log and open nothing, nor does a tap as they lift; a tap then logs', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await seeded(app);
-			const [a, b] = await page.locator(`${ROOM} .spot.shelf button[data-field]`).evaluateAll((all) => all.slice(0, 2).map((el) => el.dataset.field));
-			const scale = await scaleOf(page);
-			await pinchOver(page, [await middle(page, a), await middle(page, b)], 60, true);
-			// Past HOLD_MS (#lib/hold.ts, 450 ms) from the last finger down, by when a hold the gesture failed to call off has opened its field.
-			await page.waitForTimeout(600);
-			await app.idle();
-			assert.deepEqual(await app.entries(), [], 'the fingers logged');
-			assert.equal(await page.locator('.collect [data-back]').count(), 0, 'the fingers opened a field');
-			assert.equal(await scaleOf(page), scale, 'the fingers zoomed');
-			const tapped = await middle(page, a);
-			await page.touchscreen.tap(tapped.x, tapped.y);
-			await until(() => app.entries(), (rows) => rows.length === 1);
-			assert.deepEqual((await app.entries()).map((row) => row.field), [a], 'a tap afterwards logs');
-		}, AT_REST);
-	});
-
-	// vividn, 2026-11-06: «it doesnt seem like i can scroll or zoom on the
-	// collect widget anymore even after [resetting] the widget». A hold opens
-	// its field under the finger, so the finger lifts on the field's view and
-	// not on the rows (da-yn6my).
-	test('a hold that opens a field, then Back: a finger pans the rows, and so it does after «Reset widget»; in modify mode a pinch zooms them', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await seeded(app, WIDE);
-			assert.equal(await page.locator(ROOM).getAttribute('data-pans'), 'x', 'the rows run past the room, so a finger pans them');
-			const holdOpen = async () => {
-				const at = await middle(page, await page.locator(`${ROOM} .spot.shelf button[data-field]`).first().getAttribute('data-field'));
-				// 800 ms down is a hold, past HOLD_MS (#lib/hold.ts, 450 ms).
-				await touches(page, [['touchStart', [{ id: 8, ...at }], 800], ['touchEnd', []]]);
-				await rested(page, page.locator(COLLECT));
-				assert.equal(await page.locator('.collect [data-back]').count(), 1, 'the hold opened its field');
-				await page.keyboard.press('Escape');
-				await rested(page, page.locator(`${ROOM} .spot.shelf`).first());
-			};
-			const pans = async (when) => {
-				const scale = await scaleOf(page);
-				const moved = [await swipe(page, -150), await swipe(page, 150)];
-				assert.ok(moved[0] <= 0 && moved[1] >= 0 && moved[1] - moved[0] > 100, `${when}: a finger's swipes moved the rows ${moved.map(Math.round)} px`);
-				assert.equal(await scaleOf(page), scale, `${when}: a finger's swipes left the zoom alone`);
-			};
-			await holdOpen();
-			await pans('after a hold');
-			const id = await idOf(page);
-			await holdOpen();
-			await choose(page, id, 'Reset widget');
+			for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
+			await app.reload();
 			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
-			await pans('after a hold and «Reset widget»');
-			const scale = await scaleOf(page);
-			await modifyWidget(page, id);
-			await pinch(page, await rowsBox(page), 60, 180);
-			await rested(page, page.locator(ROOM));
-			assert.ok((await scaleOf(page)) > scale * 1.5, `in modify mode a pinch out took the zoom from ${scale} to ${await scaleOf(page)}`);
-		}, AT_REST);
-	});
-});
+			await app.idle();
+			const room = await rowsBox(page);
 
-describe('collect in modify mode', () => {
-	test('a pinch out fits fewer, larger rows and a pinch in more, smaller ones; ✓ keeps it in the layout, over a reload, and ↺ takes it back', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await seeded(app);
-			const id = await idOf(page);
 			const start = await rows(page);
 			assert.ok(start.rows > 4, `only ${start.rows} rows to begin with`);
-			await modifyWidget(page, id);
-			await pinch(page, await rowsBox(page), 60, 180);
+
+			await pinch(page, room, 60, 180);
 			const large = await rows(page);
 			assert.ok(large.height > start.height * 1.5, `a button ${start.height}px tall became ${large.height}px`);
 			assert.ok(large.font > start.font * 1.5, `a font of ${start.font}px became ${large.font}px`);
 			assert.ok(large.rows < start.rows, `${start.rows} rows became ${large.rows}`);
-			await pinch(page, await rowsBox(page), 160, 32);
+
+			await pinch(page, room, 160, 32);
 			const small = await rows(page);
 			assert.ok(small.height < start.height, `a button ${start.height}px tall became ${small.height}px`);
 			assert.ok(small.font >= 8, `a font of ${small.font}px is past legible`);
 			assert.ok(small.rows > start.rows, `${start.rows} rows became ${small.rows}`);
-			assert.equal((await inTree(page, id)).zoom, 0.65, 'the smallest zoom, in the layout');
-			assert.deepEqual(await heldOver(page), [], 'the zoom held in the session');
-			await leaveWidget(page, id, 'apply');
+			assert.deepEqual(await held(page), [0.65], 'the smallest zoom, held in the session');
+
 			await app.reload();
 			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
-			assert.deepEqual(await rows(page), small, 'a reload keeps the zoom ✓ kept');
+			assert.deepEqual(await rows(page), small, 'a reload keeps the zoom');
+		}, AT_REST);
+	});
 
-			await modifyWidget(page, id);
-			await pinch(page, await rowsBox(page), 60, 180);
-			assert.ok((await rows(page)).rows < small.rows);
-			await leaveWidget(page, id, 'reset');
-			assert.deepEqual(await rows(page), small, '↺ took the pinch back');
-			assert.equal((await inTree(page, id)).zoom, 0.65);
+	test('two fingers on two fields, lifted one by one, log and open nothing, nor does a tap as the rows settle; the zoom outlives a reload, and a tap then logs', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
+			await app.reload();
+			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+			await app.idle();
+			const [a, b] = await page.locator(`${ROOM} .spot.shelf button[data-field]`).evaluateAll((all) => all.slice(0, 2).map((el) => el.dataset.field));
+			const start = await rows(page);
+			const opened = async (what) => {
+				// Nothing is to happen, so no rest stands in for this: past HOLD_MS
+				// (#lib/hold.ts, 450 ms) from the last finger down, by when a hold
+				// the gesture failed to call off has opened its field.
+				await page.waitForTimeout(600);
+				await app.idle();
+				assert.deepEqual(await app.entries(), [], `${what} logged nothing`);
+				assert.equal(await page.locator('.collect [data-back]').count(), 0, `${what} opened no field`);
+				assert.equal(await page.locator(`${ROOM} [data-pilled]`).count(), 0, `${what} put no field pill on the bar`);
+			};
+
+			await pinchOver(page, [await middle(page, a), await middle(page, b)], 60);
+			const large = await rows(page);
+			assert.ok(large.height > start.height, `a button ${start.height}px tall became ${large.height}px`);
+			await opened('the pinch');
+			const [zoom] = await held(page);
+			assert.ok(zoom > 1, `the pinch held a zoom of ${zoom}`);
+
+			// Still, so the zoom stays and the tap lands on `a` (it logs there unguarded).
+			await pinchOver(page, [await middle(page, a), await middle(page, b)], 0, true);
+			await opened('a tap as the rows settle');
+			assert.deepEqual(await held(page), [zoom], 'two still fingers kept the zoom');
+
+			await app.reload();
+			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+			assert.deepEqual(await held(page), [zoom], 'a reload keeps the zoom held');
+			assert.deepEqual(await rows(page), large, 'and draws it');
+
+			const tapped = await middle(page, a);
+			await page.touchscreen.tap(tapped.x, tapped.y);
+			await until(
+				() => app.entries(),
+				(rows) => rows.length === 1
+			);
+			assert.deepEqual((await app.entries()).map((row) => row.field), [a], 'a tap afterwards logs');
 		}, AT_REST);
 	});
 
 	test('ctrl+wheel, a trackpad pinch, zooms the rows too', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await seeded(app);
-			const start = await rows(page);
-			await modifyWidget(page, await idOf(page));
+			for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
+			await app.reload();
+			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+			await app.idle();
 			const room = await page.locator(ROOM).boundingBox();
-			await page.mouse.move(room.x + room.width * 0.75, room.y + room.height / 2);
+			const start = await rows(page);
+			await page.mouse.move(room.x + room.width / 2, room.y + room.height / 2);
 			await page.keyboard.down('Control');
 			await page.mouse.wheel(0, -100);
 			await page.keyboard.up('Control');
@@ -395,138 +242,49 @@ describe('collect in modify mode', () => {
 		}, AT_REST);
 	});
 
-	for (const [name, device, finger] of [
-		['desktop', { ...DESKTOP, home: ON_COLLECT, clock: todayAt(15) }, false],
-		['phone', AT_REST, true]
-	]) {
-		test(`${name}: + and − change the rows by one, the zoom fitting them; ✓ keeps the rows in the layout`, async () => {
-			await withApp(async (app) => {
-				const { page } = app;
-				await seeded(app);
-				const id = await idOf(page);
-				await modifyWidget(page, id);
-				const n = (await rows(page)).rows;
-				assert.equal(Number(await cover(page).getAttribute('data-rows')), n, 'the cover counts the rows drawn');
-				const tap = (label) => (finger ? cover(page).getByRole('button', { name: label }).tap() : cover(page).getByRole('button', { name: label }).click());
-				await tap('more rows');
-				await until(async () => (await rows(page)).rows, (m) => m === n + 1);
-				// A row more until the zoom would pass its least (`ZOOM`), where + is disabled.
-				for (let more = n + 2; await cover(page).getByRole('button', { name: 'more rows' }).isEnabled(); more++) {
-					await tap('more rows');
-					await until(async () => (await rows(page)).rows, (m) => m === more);
-				}
-				const most = (await rows(page)).rows;
-				await tap('fewer rows');
-				await until(async () => (await rows(page)).rows, (m) => m === most - 1);
-				assert.equal(Number(await cover(page).getAttribute('data-rows')), most - 1);
-				await leaveWidget(page, id, 'apply');
-				const kept = await inTree(page, id);
-				assert.equal(kept.rows, most - 1, 'the rows, in the layout');
-				assert.equal(kept.zoom, undefined, 'a zoom left over the rows');
-				assert.equal(await cover(page).count(), 0, 'a control drawn out of modify mode');
-				assert.equal((await rows(page)).rows, most - 1, 'out of the mode the rows stay');
-			}, device);
-		});
-
-		test(`${name}: the handle on the now section's line changes its width, ⇄ puts it on the other side, and ↺ takes both back`, async () => {
-			await withApp(async (app) => {
-				const { page } = app;
-				await seeded(app);
-				const id = await idOf(page);
-				const pane = await page.locator(COLLECT_PANE).boundingBox();
-				const was = await stripBox(page);
-				await modifyWidget(page, id);
-				await trail.arm(page);
-				let wide;
-				try {
-					await trail.mark(page, id, 'before the drag');
-					await dragGrip(page, 80, finger);
-					await trail.mark(page, id, 'after the drag');
-					wide = await stripBox(page);
-					assert.ok(wide.width > was.width + 60, `a drag of 80px took the now section from ${was.width}px to ${wide.width}px`);
-					assert.ok(Math.abs(wide.x - was.x) < 2, 'the now section left its edge');
-					const share = (await inTree(page, id)).nowWidth;
-					assert.ok(share > 0.2, `the layout holds a share of ${share}`);
-					const flip = cover(page).getByRole('button', { name: 'flip' });
-					await trail.mark(page, id, 'before the tap');
-					await (finger ? flip.tap() : flip.click());
-					await trail.mark(page, id, 'after the tap');
-					await until(async () => (await stripBox(page)).x, (x) => x > pane.x + pane.width / 2);
-				} finally {
-					await trail.mark(page, id, 'at the end').catch(() => {});
-					await trail.print(page, name);
-				}
-				const right = await stripBox(page);
-				assert.ok(right.x + right.width > pane.x + pane.width - 30, 'the now section is not at the right edge');
-				assert.ok(Math.abs(right.width - wide.width) < 2, `the width ${wide.width}px became ${right.width}px on the right`);
-				assert.equal((await inTree(page, id)).side, 'right');
-				await leaveWidget(page, id, 'reset');
-				await until(async () => JSON.stringify(await stripBox(page)), (box) => box === JSON.stringify(was));
-				const back = await inTree(page, id);
-				assert.equal(back.nowWidth, undefined);
-				assert.notEqual(back.side, 'right');
-			}, device);
-		});
-	}
-
-	test('in another widget’s modify mode collect draws no control, and is still and dimmed', async () => {
-		await withApp(async ({ page }) => {
-			await pane(page, 'bar').locator('.bar').first().waitFor();
-			await modifyWidget(page, 'tail');
-			assert.equal(await pane(page, 'bar').locator('[data-modify]').count(), 0, 'collect drew its controls in the tail’s modify mode');
-			assert.equal(
-				await pane(page, 'bar').locator('> .content > .tab-body').first().evaluate((el) => el.inert && Number(getComputedStyle(el).opacity) < 1),
-				true,
-				'collect is live or bright in the tail’s modify mode'
-			);
-			await leaveWidget(page, 'tail', 'reset');
-			await modifyWidget(page, 'bar');
-			assert.equal(await pane(page, 'bar').locator('[data-modify]').count(), 1, 'collect drew no controls in its own modify mode');
-		}, DESKTOP);
-	});
-
-	// vremya, 2026-11-10: the session lays its settings over the layout's, so a
-	// side chosen in the menu, held in the session, would mask a flip written
-	// to the layout. A modify-mode change drops it there, and ↺ holds it again.
-	test('a side the session holds is dropped by ⇄ and held again by ↺; ✓ and the tab’s Save write the layout entry', async () => {
+	// vividn, 2026-11-06: «it doesnt seem like i can scroll or zoom on the
+	// collect widget anymore even after [resetting] the widget». A hold opens
+	// its field under the finger, so the finger lifts on the field's view and
+	// not on the rows; the rows kept it as down, and every touch after was a
+	// pinch against it (da-yn6my).
+	test('a hold that opens a field, then Back: a finger pans the rows and a pinch zooms them, and so they do after «Reset widget»', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await seeded(app);
-			const id = await idOf(page);
-			const pane = await page.locator(COLLECT_PANE).boundingBox();
-			const onRight = async () => {
-				const box = await stripBox(page);
-				return box.x > pane.x + pane.width / 2;
-			};
-			await pickOption(page, id, 'side', 'right');
-			await until(onRight, Boolean);
-			assert.deepEqual((await heldOver(page)).map((s) => s.side), ['right'], 'the menu’s side, held in the session');
-			await modifyWidget(page, id);
-			await cover(page).getByRole('button', { name: 'flip' }).click();
-			await until(onRight, (r) => !r);
-			assert.deepEqual(await heldOver(page), [], 'the session still holds the side');
-			assert.equal((await inTree(page, id)).side, 'left');
-			await leaveWidget(page, id, 'reset');
-			await until(onRight, Boolean);
-			assert.deepEqual((await heldOver(page)).map((s) => s.side), ['right'], '↺ did not hold the side again');
+			for (const line of WIDE) assert.equal((await app.runLine(line)).code, 0, line);
+			await app.reload();
+			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+			await app.idle();
+			assert.equal(await page.locator(ROOM).getAttribute('data-pans'), 'x', 'the rows run past the room, so a finger pans them');
 
-			await modifyWidget(page, id);
-			await cover(page).getByRole('button', { name: 'more rows' }).click();
-			const rowsNow = (await inTree(page, id)).rows;
-			assert.ok(rowsNow > 1);
-			await leaveWidget(page, id, 'apply');
-			await rootMenuButton(page).click();
-			await page.getByRole('menuitem', { name: 'Save', exact: true }).click();
-			// The layout entry the Save wrote, whatever the tab is named.
-			const saved = await until(
-				() =>
-					page.evaluate(async () => {
-						const mine = (await window.datum.layouts.listLayouts()).filter((l) => l.source === 'user');
-						return Promise.all(mine.map((l) => window.datum.layouts.loadLayout(l.name).then((t) => JSON.stringify(t))));
-					}),
-				(all) => all.length > 0
-			);
-			assert.ok(saved.some((l) => l.includes(`"rows":${rowsNow}`)), `the layout entry lacks the rows: ${saved}`);
-		}, { ...DESKTOP, home: ON_COLLECT, clock: todayAt(15) });
+			const holdOpen = async () => {
+				const at = await middle(page, await page.locator(`${ROOM} .spot.shelf button[data-field]`).first().getAttribute('data-field'));
+				// 800 ms down is a hold, past HOLD_MS (#lib/hold.ts, 450 ms).
+				await touches(page, [['touchStart', [{ id: 8, ...at }], 800], ['touchEnd', []]]);
+				// The field's view has glided in, so Escape is Back from it at rest.
+				await rested(page, page.locator(COLLECT));
+				assert.equal(await page.locator('.collect [data-back]').count(), 1, 'the hold opened its field');
+				await page.keyboard.press('Escape');
+				await rested(page, page.locator(`${ROOM} .spot.shelf`).first());
+			};
+			const works = async (when) => {
+				const scale = await scaleOf(page);
+				const moved = [await swipe(page, -150), await swipe(page, 150)];
+				assert.ok(moved[0] <= 0 && moved[1] >= 0 && moved[1] - moved[0] > 100, `${when}: a finger's swipes moved the rows ${moved.map(Math.round)} px`);
+				assert.equal(await scaleOf(page), scale, `${when}: a finger's swipes left the zoom alone`);
+				const room = await rowsBox(page);
+				await pinch(page, room, 60, 180);
+				await rested(page, page.locator(ROOM));
+				assert.ok((await scaleOf(page)) > scale * 1.5, `${when}: a pinch out took the zoom from ${scale} to ${await scaleOf(page)}`);
+				await pinch(page, room, 180, 60);
+				await rested(page, page.locator(ROOM));
+			};
+
+			await holdOpen();
+			await works('after a hold');
+			await holdOpen();
+			await choose(page, await page.locator('section.pane[data-title="collect"]').getAttribute('data-pane'), 'Reset widget');
+			await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+			await works('after a hold and «Reset widget»');
+		}, AT_REST);
 	});
 });

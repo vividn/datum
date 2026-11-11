@@ -25,10 +25,9 @@
 // widget scope whose pane goes (Close, Break out) widens to the tab's.
 
 import { get } from 'svelte/store';
-import { apply, editing, layout } from './current.js';
-import { findPane, findTab, setWidget } from './tree.js';
-import { isWidget, type NodeId } from './types.js';
-import { dropSession, overlay, restoreSession } from './session.js';
+import { editing, layout } from './current.js';
+import { findPane } from './tree.js';
+import type { NodeId } from './types.js';
 
 /** The two ways out, drawn the same on the tab and in the bar. */
 export const APPLY = '✓';
@@ -37,7 +36,6 @@ export const RESET = '↺';
 /** Enter modify mode on the root tab in front, or on one widget's pane of it. */
 export function enter(pane?: NodeId): void {
 	if (get(editing)) return;
-	held.clear();
 	const now = get(layout);
 	const tab = now.root.tabs[now.root.active];
 	if (tab) editing.set({ tab: tab.id, before: now, ...(pane && { pane }) });
@@ -49,47 +47,14 @@ layout.subscribe((now) => {
 });
 
 /** ✓: leave the mode, keeping the change on this device. */
-export function accept(): void {
-	held.clear();
-	editing.set(null);
-}
+export const accept = (): void => editing.set(null);
 
 /** ↺: leave it with the page as it was when it was entered. */
 export function discard(): void {
 	const e = get(editing);
 	if (!e) return;
 	layout.set(e.before);
-	for (const [key, settings] of held) restoreSession(key, settings);
-	held.clear();
 	editing.set(null);
-}
-
-/**
- * A WIDGET'S OWN CONTROLS IN MODIFY MODE (da-xi4up): collect's now width,
- * flip, rows and pinch. Out of the mode a widget moving a setting of its own
- * writes this session (session.ts); in it the setting is the LAYOUT's, so ↺
- * takes it back and the tab's Save saves it. `fold` is the kind's
- * `onChange`, folded onto the tree's settings read fresh. A setting it
- * changes is dropped from the session too, or the overlay would go on
- * masking it (vremya, 2026-11-10), and ↺ holds it again.
- */
-const held = new Map<string, Record<string, unknown>>();
-export function modifyWidget(
-	tabId: NodeId,
-	key: string,
-	fold: (settings: Record<string, unknown>, moved: unknown) => Record<string, unknown>,
-	moved: unknown
-): void {
-	let changed: string[] = [];
-	apply((l) => {
-		const now = findTab(l, tabId);
-		if (!now || !isWidget(now.content)) return l;
-		const settings = fold(now.content.settings, moved);
-		changed = Object.keys(overlay(now.content.settings, settings));
-		return setWidget(l, tabId, { ...now.content, settings });
-	});
-	const took = dropSession(key, changed);
-	if (Object.keys(took).length) held.set(key, { ...took, ...held.get(key) });
 }
 
 /**
