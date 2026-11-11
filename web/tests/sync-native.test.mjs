@@ -373,7 +373,14 @@ describe('datum.day and a native copy', () => {
 					// `sync run`, which would be a second endpoint on the native key.)
 					// Offline, its words under `-v` (da-a4fxr): the only member, so
 					// nothing synced and it fails (da-9d6uy).
-					const now = await native.run(['sync', '-v'], '', { DATUM_SYNC_TIMEOUT_S: '3' });
+					// `close()` resolves before the tab's sync worker is gone: a dial that
+					// reaches its endpoint meanwhile is answered by the QUIC handshake and
+					// never by the session, and times out, an error and no offline
+					// (da-dtn0p). So it dials again until the endpoint has gone.
+					const now = await until(
+						() => native.run(['sync', '-v'], '', { DATUM_SYNC_TIMEOUT_S: '3' }),
+						(r) => /: offline\b/.test(r.stdout)
+					);
 					assert.notEqual(now.code, 0, now.stdout);
 					// The state and when it was last seen, then `-v`'s words: what runs the other copy's sync.
 					assert.match(now.stdout, /: offline\b.*\b\d\d:\d\d\b/);
