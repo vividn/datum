@@ -8,9 +8,9 @@
 	one, a field's `y` is a hash of its NAME — a lane nobody chose — and the
 	lane's reset has nothing to undo until someone does.
 
-	No box is drawn at rest (da-r6wwe): a press and drag on any of the
-	field's marks moves its lane, and a tap on one draws a thin box round
-	that mark, whose hints size it — on a bar a dot at its top and bottom
+	No box is drawn at rest (da-r6wwe): a press and drag anywhere on the
+	band moves its lane up and down (da-w5l2f), and a tap on one of the
+	field's marks draws a thin box round that mark, whose hints size it — on a bar a dot at its top and bottom
 	centre, which move that edge of the lane. Anchored to a neighbour (⚓),
 	the band is that neighbour's lane at its full height, and the same drag
 	writes the RATIOS to it and not `y` / `height`, so the lane moves when
@@ -128,8 +128,8 @@
 		w?: number;
 		/** The press's x. */
 		ax?: number;
-		/** For `move`: the mark pressed, selected if it is let go where it was; whether it has moved since. */
-		mark?: { x: number; w: number };
+		/** For `move`: the mark pressed, selected if it is let go where it was, `null` for the band off any; whether it has moved since. */
+		mark?: { x: number; w: number } | null;
 		moved?: boolean;
 		/** For `pinch`: the fingers' distance apart as they landed. */
 		apart?: number;
@@ -317,14 +317,14 @@
 	const markAt = (x: number, y: number) =>
 		document.elementsFromPoint(x, y).find((el) => svg?.contains(el) && el.closest('g.field')?.getAttribute('data-field') === field);
 
-	/** Press the band: on a mark, the lane moves with it, and it is selected if let go where it was; elsewhere, nothing is. */
+	/** Press the band: anywhere, the lane moves with the press (da-w5l2f); a mark let go where it was is selected, and off one the box is let go. */
 	function press(e: PointerEvent) {
 		const mark = markAt(e.clientX, e.clientY);
-		if (!mark) return void (sel = null);
-		const r = mark.getBoundingClientRect();
+		const r = mark?.getBoundingClientRect();
 		const left = band!.getBoundingClientRect().left + band!.clientLeft;
+		if (!r) sel = null;
 		grab('move', e);
-		drag = { ...drag!, mark: { x: r.left - left, w: r.width } };
+		drag = { ...drag!, mark: r ? { x: r.left - left, w: r.width } : null };
 	}
 
 	function release() {
@@ -340,13 +340,11 @@
 
 	const apart = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
 
-	/** A second finger down pinches, whatever the first was doing; one on a mark does not scroll the dialog. */
+	/** A second finger down pinches, whatever the first was doing; a finger on the band moves the lane, and does not scroll the dialog. */
 	function touched(e: TouchEvent) {
-		if (e.touches.length === 2) {
-			e.preventDefault();
-			// At least a pixel apart, so the ratio is never over nothing.
-			drag = { mode: 'pinch', at: 0, y: lane.y, h: lane.h, b: dotH, apart: Math.max(1, apart(e.touches)) };
-		} else if (markAt(e.touches[0].clientX, e.touches[0].clientY)) e.preventDefault();
+		e.preventDefault();
+		// At least a pixel apart, so the ratio is never over nothing.
+		if (e.touches.length === 2) drag = { mode: 'pinch', at: 0, y: lane.y, h: lane.h, b: dotH, apart: Math.max(1, apart(e.touches)) };
 	}
 
 	/** Size by the pinch: the dot about its centre, its shape kept, or the lane about its middle. */
@@ -365,7 +363,7 @@
 	function slide(e: PointerEvent) {
 		if (!drag || drag.mode === 'pinch') return;
 		// A tap's jitter moves nothing.
-		if (drag.mark && !drag.moved && Math.hypot(e.clientX - (drag.ax ?? 0), e.clientY - drag.at) < 4) return;
+		if (drag.mark !== undefined && !drag.moved && Math.hypot(e.clientX - (drag.ax ?? 0), e.clientY - drag.at) < 4) return;
 		drag.moved = true;
 		const d = ((e.clientY - drag.at) / H) * frame.h;
 		const { y, h } = drag;
@@ -535,7 +533,7 @@
 		</div>
 	</div>
 
-	<!-- A finger on a mark drags it, and does not scroll the dialog. -->
+	<!-- A finger anywhere on it drags the lane, and does not scroll the dialog. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="band"

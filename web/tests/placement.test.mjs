@@ -231,6 +231,52 @@ describe('the Placement tab', () => {
 		});
 	});
 
+	// da-w5l2f, vividn, 2026-11-11: «dragging up and down anywhere within the placement tool should change the y placement of the data, not just when you start on a moment dot or bar».
+	test('a drag that starts off every mark moves the lane as one on a mark does; a tap there, or a drag on a control, moves nothing', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'coffee', '--verb', 'start']);
+			await app.run(['start', 'coffee', '-t', '-30']);
+			const hashed = await lane(app, 'coffee');
+			const { saved } = await openPlacement(page, 'coffee');
+			const y = async () => numbers(await page.locator(`${MODAL} .readout`).innerText())[0];
+			const before = await y();
+
+			// Near the start of the day, outside the lane on the side it has room to move to: no mark of the field is there.
+			const dir = hashed.y < 0.5 ? 1 : -1;
+			const band = await page.locator(`${MODAL} .placement .band`).boundingBox();
+			const empty = [band.x + 4, band.y + 1 + (hashed.y + (dir > 0 ? 0.17 : -0.05)) * H];
+			const onMark = await page.evaluate(([x, y]) => document.elementsFromPoint(x, y).some((el) => el.closest('g.field[data-field="coffee"]')), empty);
+			assert.equal(onMark, false, 'the press is off every mark of the field');
+
+			await page.mouse.click(...empty);
+			assert.equal(await page.locator(LANE_RESET).isDisabled(), true, 'a tap off the marks moves nothing');
+			assert.equal(await page.locator(BOX).count(), 0, 'nor selects anything');
+
+			const around = await page.locator(`${MODAL} .placement button.around`).boundingBox();
+			await pull(page, [around.x + around.width / 2, around.y + around.height / 2], 0, dir * 0.2 * H);
+			assert.equal(await page.locator(LANE_RESET).isDisabled(), true, 'a drag on a control moves nothing');
+			assert.equal(await y(), before);
+
+			// A sideways part is ignored, as on a mark.
+			await pull(page, empty, 30, dir * 0.2 * H);
+			const off = await y();
+			assert.equal(off, Number(round(hashed.y + dir * 0.2).toFixed(2)), `moved by the drag: ${before} → ${off}`);
+
+			await page.locator(LANE_RESET).click();
+			await page.locator(`${MODAL} .placement .band[data-drawn]`).waitFor();
+			await drag(page, 'coffee', dir * 0.2 * H);
+			assert.equal(await y(), off, 'by as much as a drag of the mark');
+
+			await page.locator(LANE_RESET).click();
+			await page.locator(`${MODAL} .placement .band[data-drawn]`).waitFor();
+			await pull(page, empty, 0, dir * 0.2 * H);
+			await done(page, saved);
+			const shown = await spec(app, 'coffee');
+			assert.deepEqual([shown.y, shown.height], [round(hashed.y + dir * 0.2), 0.12], 'and saved as one is');
+		});
+	});
+
 	// da-1r506: a `y` with no `height` is its band's CENTRE, so the lane is
 	// where `fields --json` resolves it, half a default height above `y`.
 	test('a `y` set with no `height` is drawn where the band is, centred on it', async () => {
