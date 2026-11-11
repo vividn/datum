@@ -19,7 +19,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { withBar } from './support/layout.mjs';
+import { rested, withBar } from './support/layout.mjs';
 import { liftFinger, touchDrag } from './support/pans.mjs';
 
 before(startApp);
@@ -73,7 +73,10 @@ async function framesOf(page, act) {
 		requestAnimationFrame(frame);
 	});
 	await act();
-	await page.waitForTimeout(600);
+	// What the last frame reads is the bar at rest: the glide a lift starts
+	// (rAF, `glide` in #lib/log.ts, up to GLIDE_MAX_MS) and the commands' flow to
+	// their lines (`el.animate` over FLOW_MS), both in the log's box.
+	await rested(page, page.locator('.log'));
 	return page.evaluate(() => {
 		const seen = window.__swipe;
 		removeEventListener('pointerup', seen.onUp, { capture: true });
@@ -165,7 +168,11 @@ test('a swipe down drifting left moves the bar, and never pulls the strip off th
 			requestAnimationFrame(frame);
 		});
 		await touchDrag(cdp, at, { x: -4, y: 6 }, 10, { lift: false });
-		await page.waitForTimeout(100);
+		// The bar where the held finger put it (46px open of the row's 106, so the
+		// strip is still drawn), and any slide of the strip or fade of its × the
+		// drag began run out: both in the strip's `.pull`. Not the whole bar, whose
+		// tab word fades for ACTION_MS after the last command (#lib/bar.ts).
+		await rested(page, page.locator('.prompt-bar .pull'));
 		const held = await shown();
 		const seen = await page.evaluate(() => {
 			const { slid, opacity } = window.__drift;
