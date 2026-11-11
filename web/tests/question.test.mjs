@@ -36,9 +36,10 @@ test('a command with no page code asks in a dialog, and the answer takes effect'
 		await dialog.locator('input').fill('datum');
 		await dialog.locator('input').press('Enter');
 		await dialog.waitFor({ state: 'detached' });
-		// The line runs again once the dialog has gone: its answer lands after.
-		const until = Date.now() + 10_000;
-		while ((await app.entries()).length && Date.now() < until) await page.waitForTimeout(100);
+		// The line runs again once the dialog has gone, and needs no wait: `confirm`
+		// unmounts the dialog and resolves in one call, `asking` sends the line again
+		// in the microtask after (#lib/dbio.ts), and the read below is sent after it,
+		// which the worker runs in the order sent (`rank`, #lib/cli.ts).
 		assert.deepEqual(await app.entries(), [], 'the name typed: purged');
 		assert.deepEqual(app.errors, []);
 	});
