@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp, todayAt } from './support/app.mjs';
-import { DESKTOP, PHONE, choose, leaveWidget, modifyWidget, pane, rested, pickOption, rootMenuButton } from './support/layout.mjs';
+import { DESKTOP, PHONE, choose, chooseRoot, leaveWidget, modifyWidget, pane, rested, pickOption, rootMenuButton } from './support/layout.mjs';
 import { pinch } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
@@ -503,5 +503,55 @@ describe('collect in modify mode', () => {
 			);
 			assert.ok(saved.some((l) => l.includes(`"rows":${rowsNow}`)), `the layout entry lacks the rows: ${saved}`);
 		}, { ...DESKTOP, home: ON_COLLECT, clock: todayAt(15) });
+	});
+
+	// vividn, 2026-11-11 (da-g9sp9): «resetting the layout should also reset some of the widget options, such as the
+	// number of rows in the collect widget». The rows modify mode wrote into the layout, and rows the session holds over
+	// it, as a + before modify mode left them there: the shipped tree comes back under the same keys, so the session's
+	// went on masking it.
+	test('Factory default puts the rows back, those in the layout and those the session holds over it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seeded(app);
+			const id = await idOf(page);
+			const start = (await rows(page)).rows;
+			assert.equal((await inTree(page, id)).rows, undefined, 'a plain collect tab ships with rows');
+			await modifyWidget(page, id);
+			await cover(page).getByRole('button', { name: 'more rows' }).tap();
+			await until(async () => (await rows(page)).rows, (m) => m === start + 1);
+			await leaveWidget(page, id, 'apply');
+			assert.equal((await inTree(page, id)).rows, start + 1);
+			// Rows held in the session over the widget, as a + before modify mode left them, and the page reloaded.
+			const holdRows = async (n) => {
+				await page.evaluate(({ id, rows }) => {
+					const root = window.datum.layout.current().root;
+					const find = (p) => {
+						if (p.id === id) return p.tabs[p.active];
+						for (const t of p.tabs) if (!('kind' in t.content)) for (const c of t.content.children) { const got = find(c); if (got) return got; }
+						return null;
+					};
+					const tab = find(root);
+					const key = [root.tabs[root.active].layout, tab.id, tab.content.id].join('\u0000');
+					const all = JSON.parse(localStorage.getItem('datum.layout.session.v1') ?? '{}');
+					localStorage.setItem('datum.layout.session.v1', JSON.stringify({ ...all, [key]: { ...all[key], rows } }));
+				}, { id, rows: n });
+				await app.reload();
+				await page.locator(`${ROOM} .spot.shelf`).first().waitFor();
+				await app.idle();
+				assert.equal((await rows(page)).rows, n, 'the session’s rows are not drawn');
+			};
+			const reset = async () => {
+				await chooseRoot(page, 'Factory default');
+				await until(async () => (await rows(page)).rows, (m) => m === start);
+				assert.equal((await inTree(page, id)).rows, undefined, 'the layout keeps its rows');
+				assert.ok(!(await heldOver(page)).some((s) => 'rows' in s), 'the session keeps its rows');
+			};
+			await holdRows(start - 1);
+			await reset();
+			// The session alone now differs from how the layout shipped, its tree as it shipped: the menu offers the reset still.
+			await holdRows(start - 1);
+			await reset();
+			assert.deepEqual(app.errors, []);
+		}, AT_REST);
 	});
 });

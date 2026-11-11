@@ -136,10 +136,10 @@ import {
 	saveLayout,
 	versions
 } from './store.js';
-import { EMPTY_KIND, allIds, closeTab, findTab, newId, newPane, newWidget, normalize, setActive, setWidget, shedLayout, soleWidgetOf } from './tree.js';
+import { EMPTY_KIND, allIds, closeTab, findTab, newId, newPane, newWidget, normalize, scopes, setActive, setWidget, shedLayout, soleWidgetOf } from './tree.js';
 import { unmaximize } from './maximize.js';
 import { KINDS, defaultsOfKind } from './registry.js';
-import { clearSession, keyOf } from './session.js';
+import { clearSession, keyOf, session } from './session.js';
 
 export { versions };
 
@@ -1292,13 +1292,21 @@ export const shippedTree = (name: string): Layout | null =>
 	pick(kitLayout(name), builtinLayout(name, mobile()));
 
 /**
- * Whether this copy differs from the tree that shipped under its name:
- * where «Factory default» has something to do (da-bfqw4). False for a name
- * nothing shipped.
+ * Whether this copy differs from the tree that shipped under its name, or
+ * this session holds a setting over one of its widgets (da-g9sp9): where
+ * «Factory default» has something to do (da-bfqw4). False for a name
+ * nothing shipped. `held` is the session, passed by a caller that redraws on it.
  */
-export function unlikeShipped(tab: Tab): boolean {
+export function unlikeShipped(tab: Tab, held: Record<string, unknown> = get(session)): boolean {
 	const shipped = tab.layout === undefined ? null : shippedTree(tab.layout);
-	return shipped !== null && differs(tab, baselineOf(shipped));
+	return shipped !== null && (differs(tab, baselineOf(shipped)) || heldOver([tab]).some((key) => key in held));
+}
+
+/** The session's keys for every tab inside `tabs`, they among them. */
+function heldOver(tabs: Tab[]): string[] {
+	const now = get(layout);
+	const ids = new Set(tabs.flatMap((t) => [...idsOf(t)]));
+	return [...scopes(now).keys()].filter((id) => ids.has(id)).map((id) => keyOf(now, id));
 }
 
 /**
@@ -1314,14 +1322,23 @@ export function unlikeShipped(tab: Tab): boolean {
  * writes the shipped tree over the save — and syncs it, as any save does.
  * With no save shadowing the built-in, the reset just discards this
  * device's draft and the dot clears.
+ *
+ * Its widgets' settings go back too (da-g9sp9, vividn, 2026-11-11:
+ * «resetting the layout should also reset some of the widget options, such
+ * as the number of rows in the collect widget»): what this session holds
+ * against every tab of every copy is dropped, as `Reset widget` drops it,
+ * since the shipped tree comes back with the same tab and widget ids and so
+ * under the same keys, where the held settings went on masking it.
  */
 export async function resetLayout(tabId: NodeId): Promise<void> {
 	const tab = copyOf(tabId);
 	if (!tab) return;
-	const shipped = shippedTree(tab.layout as string);
+	const name = tab.layout as string;
+	const shipped = shippedTree(name);
 	if (!shipped) return;
 	unmaximize();
-	await replaceCopies(tab.layout as string, shipped);
+	await replaceCopies(name, shipped);
+	for (const key of heldOver(layoutTabs(get(layout)).filter((t) => t.layout === name))) clearSession(key);
 }
 
 /**

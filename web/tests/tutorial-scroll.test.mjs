@@ -13,7 +13,8 @@ import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { settled, startSwitch, lessonTab } from './support/tutorial.mjs';
-import { leaveWidget, modifyWidget } from './support/layout.mjs';
+import { chooseRoot, leaveWidget, modifyWidget } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -255,6 +256,10 @@ test('a game’s collect opens at three rows, and a zoom moved by hand stands ov
 			await page.locator(`${room} .spot.shelf`).first().waitFor();
 			await app.idle();
 			assert.equal(await scale(), held, 'a reload keeps the zoom moved by hand');
+			// And Factory default takes it back to the lesson's three rows (da-g9sp9).
+			await chooseRoot(page, 'Factory default');
+			await until(shelved, (r) => r.length === 3);
+			assert.deepEqual(await shelved(), [0, 1, 2], 'three rows after Factory default');
 			assert.deepEqual(app.errors, []);
 		},
 		{ viewport: { width: 1280, height: 900 }, query: '?db=tutorial' }

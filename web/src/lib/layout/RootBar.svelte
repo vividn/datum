@@ -380,7 +380,7 @@
 					save: holds && dirty ? { run: doSave, sync: chained } : undefined,
 					reset: holds && dirty ? doRestore : undefined,
 					revert: holds && (saves[name ?? ''] ?? 0) > 0 ? doRestore : undefined,
-					factory: holds && active !== undefined && unlikeShipped(active) ? doReset : undefined,
+					factory: holds && active !== undefined && unlikeShipped(active, $session) ? doReset : undefined,
 					saveAs: holds ? doSaveAs : undefined,
 					extra: keep,
 					left: bump(-1),

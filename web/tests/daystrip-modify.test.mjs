@@ -10,9 +10,9 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
+import { ON_COLLECT, startApp, stopApp, withApp, todayAt } from './support/app.mjs';
 import { finger } from './support/press.mjs';
-import { DESKTOP, PHONE, leaveWidget, modifyWidget, pane, rootMenuButton } from './support/layout.mjs';
+import { DESKTOP, PHONE, chooseRoot, leaveWidget, modifyWidget, pane, rootMenuButton } from './support/layout.mjs';
 import { pillsOf } from './support/nowaxes.mjs';
 import { until } from './support/until.mjs';
 import { following, heard, modifyingStrip, settledAt, stripPane, toggleFreeze, valueOf, widthOf } from './support/daystrip.mjs';
@@ -238,4 +238,35 @@ describe('the dayview in modify mode', () => {
 			assert.deepEqual(app.errors, []);
 		}, TALL);
 	});
+});
+
+// vividn, 2026-11-11 (da-g9sp9): «resetting the layout should also reset some of the widget options». The dayview tab
+// ships a day height of 47 (DAYVIEW_TAB_DAY_HEIGHT): one modify mode wrote into the layout, and one the session holds
+// over it, as a drag before da-1tmd1 left there, both go with Factory default, the freeze held beside it too.
+test('Factory default puts the dayview tab’s day height back, the layout’s and the session’s', async () => {
+	await withApp(async (app) => {
+		const { page } = app;
+		const id = await opened(app);
+		await settledAt(app, 47);
+		await modifyingStrip(app, async () => {
+			await pull(page, '.today-line', 0, -20, false);
+			await until(() => valueOf(app), (v) => v === 67);
+		});
+		assert.equal((await inTree(page, id)).dayHeight, 67);
+		await toggleFreeze(app);
+		await until(() => heldOver(page), (s) => 'freezeToday' in s);
+		await page.evaluate(() => {
+			const all = JSON.parse(localStorage.getItem('datum.layout.session.v1'));
+			for (const s of Object.values(all)) if ('freezeToday' in s) s.dayHeight = 90;
+			localStorage.setItem('datum.layout.session.v1', JSON.stringify(all));
+		});
+		await app.reload();
+		await opened(app);
+		await settledAt(app, 90);
+		await chooseRoot(page, 'Factory default');
+		await settledAt(app, 47);
+		assert.equal((await inTree(page, id)).dayHeight, 47, 'the layout keeps the day height');
+		assert.deepEqual(await heldOver(page), {}, 'the session keeps the strip’s settings');
+		assert.deepEqual(app.errors, []);
+	}, { ...DESKTOP, home: { ...ON_COLLECT, active: 3 }, clock: todayAt(15) });
 });
