@@ -1350,10 +1350,25 @@
 	const stampFont = $derived(
 		Math.max(7, Math.min(14, Math.floor(Math.min(shownDayHeight / 3 - 4, shownLabelWidth / 4.2))))
 	);
-	/** How many of the three lines fit, tallest first — datum shrinks 3 → 2 → 1 the same way. */
-	const stampLines = $derived(Math.max(1, Math.min(3, Math.floor(shownDayHeight / (stampFont + 2)))));
-	const stamp = (iso: string | null, back: number, lines: number) =>
-		iso ? stampFor(iso, back).slice(0, lines) : [];
+	/** How many of the three lines fit a day, tallest first — datum shrinks 3 → 2 → 1 the same way. */
+	const stampLines = $derived(Math.min(3, Math.floor(shownDayHeight / (stampFont + 2))));
+	/** Too short a day for its date under its weekday, the stamps are the weeks'. */
+	const weekly = $derived(stampLines < 2);
+	/**
+	 * The stamp on the row `back` days before `iso`, `last` the newest row in
+	 * its column (da-4pak5). A day too short for two lines leaves the stamp
+	 * to its week, as a weekday alone says nothing of where in the past it
+	 * is: the week's date and year on its Monday, running down over its
+	 * days, as many lines as those days below it clear, so no two meet.
+	 */
+	function stamp(iso: string | null, back: number, last: number): string[] {
+		if (!iso) return [];
+		const [weekday, date, year] = stampFor(iso, back);
+		if (!weekly) return [weekday, date, year].slice(0, stampLines);
+		if (weekday !== 'Mon') return [];
+		const below = Math.min(7, back - last + 1) * dayPitch(shownDayHeight) - DIVIDER;
+		return [date, year].slice(0, Math.floor(below / (stampFont + 2)));
+	}
 	/**
 	 * The fields `check integrity` flags on each band's day (da-0lful). datum
 	 * draws each finding into the band itself, a group named for its field,
@@ -2270,9 +2285,9 @@
 				{#each rows as end, i (end)}
 					<div class="row" class:now={end === 0}>
 						{#if i > 0}<div class="sizer day-line" data-pans="xy" use:resizes={'y'}></div>{/if}
-						<div class="stamp" inert={modifying} style:font-size="{stampFont}px">
+						<div class="stamp" class:weekly inert={modifying} style:font-size="{stampFont}px">
 							{#if flagged[end]?.length}<IntegrityMark fields={flagged[end]} />{/if}
-							{#each stamp(geometry?.today ?? null, end, stampLines) as line}<span>{line}</span
+							{#each stamp(geometry?.today ?? null, end, freezeToday ? 1 : 0) as line}<span>{line}</span
 								>{/each}
 						</div>
 						{#if allday > 0}<div class="allday" inert={modifying} {@attach alldayMarks(shown[end], allday, day)}></div>{/if}
@@ -2392,9 +2407,9 @@
 
 		{#if freezeToday}
 			<div class="row now pinned">
-				<div class="stamp" inert={modifying} style:font-size="{stampFont}px">
+				<div class="stamp" class:weekly inert={modifying} style:font-size="{stampFont}px">
 					{#if flagged[0]?.length}<IntegrityMark fields={flagged[0]} />{/if}
-					{#each stamp(geometry?.today ?? null, 0, stampLines) as line}<span>{line}</span>{/each}
+					{#each stamp(geometry?.today ?? null, 0, 0) as line}<span>{line}</span>{/each}
 				</div>
 				{#if allday > 0}<div class="allday" inert={modifying} {@attach alldayMarks(shown[0], allday, day)}></div>{/if}
 				<div
@@ -2636,6 +2651,12 @@
 		color: var(--ink-bright);
 		line-height: 1.15;
 		white-space: nowrap;
+	}
+	/* A week's stamp starts at its Monday's top and runs down over the
+	   days after it (`stamp`). */
+	.stamp.weekly {
+		overflow: visible;
+		justify-content: flex-start;
 	}
 	/* A tap on either is that day's pill (`onDayClick`). */
 	.stamp,

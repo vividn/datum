@@ -47,7 +47,7 @@ export const settledRoom = (on, name, fn) =>
 			const day = (Math.floor(content) - axis - seam) / (1 + sliver);
 			const derived = Math.min(max, Math.max(min, Math.round(day)));
 			return Number(grip.getAttribute('aria-valuenow')) === derived;
-		}, [MIN_DAY, MAX_DAY, SLIVER]), (ok) => ok);
+		}, [FILL_MIN_DAY, FILL_MAX_DAY, SLIVER]), (ok) => ok);
 		await app.idle();
 		return fn(app);
 	});
@@ -206,14 +206,14 @@ export async function boxTo({ page }, px) {
  *
  * ⚑ CLAMPED, because `dayFilling` is: without this the helper and the
  * strip agree only while the derived height is inside
- * [`MIN_DAY_HEIGHT`, `MAX_DAY_HEIGHT`], and past the ceiling `settledAt`
+ * [`FILL_MIN_DAY_HEIGHT`, `FILL_MAX_DAY_HEIGHT`], and past the ceiling `settledAt`
  * would wait on an `aria-valuenow` the strip will never print — a hang
  * rather than a failure.
  */
 export const following = async (app) => {
 	const m = await metrics(app);
 	const day = (m.strip - m.axis - m.seam) / (1 + SLIVER);
-	return Math.min(MAX_DAY, Math.max(MIN_DAY, Math.round(day)));
+	return Math.min(FILL_MAX_DAY, Math.max(FILL_MIN_DAY, Math.round(day)));
 };
 
 /** «today frozen at the bottom»: the strip's freeze, a widget option (da-2hd21). */
@@ -243,9 +243,12 @@ export const frozen = async (app) => optionChecked(app.page, await stripPane(app
 /** Turn the freeze over, as a reader does: the switch in the dayview's options. */
 export const toggleFreeze = async (app) => toggleOption(app.page, await stripPane(app), FREEZE);
 
-/** The strip's own floor and ceiling (`panes.ts`), which `dayFilling` clamps to. */
-export const MIN_DAY = 40;
-export const MAX_DAY = 240;
+/** The range a day following its box is drawn in (`panes.ts`), which `dayFilling` clamps to. */
+export const FILL_MIN_DAY = 40;
+export const FILL_MAX_DAY = 240;
+/** The shortest and tallest day a reader may draw (`MIN_DAY_HEIGHT`, `MAX_DAY_HEIGHT`). */
+export const MIN_DAY = 16;
+export const MAX_DAY = 1000;
 /** The part of a day a pinned today leaves of yesterday (`SLIVER`, panes.ts). */
 export const SLIVER = 1 / 4;
 

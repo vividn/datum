@@ -1,7 +1,10 @@
 // Not a test: what a finger's drag on the day strip costs, at rest, on a
 // real history at phone size, for da-uovtn's PR body.
 //
-//   BACKUP=<a `db backup` file> node tests/support/measure-pans.mjs
+//   BACKUP=<a `db backup` file> [DAY_HEIGHT=<px>] node tests/support/measure-pans.mjs
+//
+// DAY_HEIGHT holds the strip's day height first, on the dayview tab: what a
+// pan costs at the shortest and tallest day (da-4pak5).
 //
 // A phone (390×844, touch, CPU 4×) on the collect tab, the backup restored
 // and drawn, then, each driven by CDP touch events a frame apart:
@@ -15,9 +18,11 @@ import { readFileSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { startApp, stopApp, withApp, ON_COLLECT } from './app.mjs';
 import { framesOf, liftFinger, readFrames, touchDrag, traceOf } from './pans.mjs';
+import { say as hold } from './daystrip.mjs';
 
 const backup = readFileSync(process.env.BACKUP, 'utf8');
-const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
+const DAY = Number(process.env.DAY_HEIGHT) || null;
+const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: DAY ? { ...ON_COLLECT, active: 3 } : ON_COLLECT };
 const MOVES = 30;
 const TODAY = '.band[data-days-ago="0"]';
 const NOWBAND = 'section.pane[data-title="nowview"] .nowview-band';
@@ -77,6 +82,7 @@ try {
 		const restored = await app.run(['db', 'restore', '-'], backup);
 		if (restored.code !== 0) throw new Error(restored.stderr);
 		await app.reload();
+		if (DAY) await hold(app, { dayHeight: DAY });
 		await page.locator(`${TODAY} svg.svg`).waitFor({ timeout: 600_000 });
 		await app.idle();
 		await page.waitForTimeout(2000);
@@ -106,7 +112,14 @@ try {
 			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -300, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
 		}, at);
 		await page.waitForFunction(() => !!document.querySelector('.unzoom'));
-		await page.waitForFunction(() => !document.querySelector('.band.stretched'));
+		// On screen: a day held off it stays stretched until scrolled to.
+		await page.waitForFunction(() => {
+			const box = document.querySelector('.stack').getBoundingClientRect();
+			return [...document.querySelectorAll('.band.stretched')].every((band) => {
+				const at = band.getBoundingClientRect();
+				return at.bottom <= box.top || at.top >= box.bottom;
+			});
+		});
 		await page.waitForTimeout(1500);
 		await app.idle();
 		await atRest(page, cdp, 'zoomed');

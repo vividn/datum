@@ -52,6 +52,7 @@ import {
 	DEFAULT_LABEL_WIDTH,
 	HOUR_FROM,
 	HOUR_TO,
+	FILL_MIN_DAY_HEIGHT,
 	MAX_DAY_HEIGHT,
 	MIN_DAY_HEIGHT,
 	NOWVIEW_HISTORY,
@@ -266,7 +267,7 @@ const tailScale = ({ type }: Record<string, unknown>): number =>
  * is what the number has to be true about.
  */
 const oneDay = ({ dayHeight }: Record<string, unknown>): number => {
-	const asked = typeof dayHeight === 'number' ? dayHeight : MIN_DAY_HEIGHT;
+	const asked = typeof dayHeight === 'number' ? dayHeight : FILL_MIN_DAY_HEIGHT;
 	return todayBox(Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, asked))) + STRIP_PADDING;
 };
 

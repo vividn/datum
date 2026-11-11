@@ -30,6 +30,8 @@ import {
 	grown,
 	boxTo,
 	following,
+	FILL_MIN_DAY,
+	FILL_MAX_DAY,
 	MIN_DAY,
 	MAX_DAY,
 	settledAt,
@@ -132,13 +134,13 @@ describe("the day strip's day height and its pin", () => {
 			//
 			// ⚑ +150 and not +180: at the default viewport +180 leaves the
 			// strip exactly 255px of content, which derives exactly
-			// `MAX_DAY_HEIGHT`. Asserting there asks nothing — the CLAMP
+			// `FILL_MAX_DAY_HEIGHT`. Asserting there asks nothing — the CLAMP
 			// would hold the number up even if the follow were broken — and
 			// it sits on the boundary besides. +150 derives 210, inside the
 			// range, so the number can only come from the box.
 			await boxTo(app, box + 150);
 			const free = await following(app);
-			assert.ok(free > MIN_DAY && free < MAX_DAY, `the last leg derives ${free}, which is clamped`);
+			assert.ok(free > FILL_MIN_DAY && free < FILL_MAX_DAY, `the last leg derives ${free}, which is clamped`);
 			await settledAt(app, free);
 			assert.equal(await valueOf(app), free);
 			// And the PICTURES were drawn at it — datum's own `height`, not
@@ -218,8 +220,9 @@ describe("the day strip's day height and its pin", () => {
 			assert.ok(tall > 40 + 20, `the tall box derives ${tall}, too near the floor to prove anything`);
 			await settledAt(app, tall);
 
-			// Dragged to the floor: down is shorter, and far enough to clamp.
-			await resize(app, '.today-line', 0, 400);
+			// Dragged to the floor a box derives, 40: down is shorter, a
+			// pixel a pixel, and the line's own floor is lower (da-4pak5).
+			await resize(app, '.today-line', 0, tall - FILL_MIN_DAY);
 			assert.equal(await valueOf(app), 40, 'the drag did not reach the floor');
 			await heardIs(app, 40);
 
@@ -249,14 +252,13 @@ describe("the day strip's day height and its pin", () => {
 	// setting should leave a reader in.
 	test('a held day height the strip cannot draw is clamped, and a non-number follows', async () => {
 		await shared.solo(async (app) => {
-			const floor = 40;
 			await say(app, { dayHeight: 0 });
-			await settledAt(app, floor);
-			assert.equal(await valueOf(app), floor, 'a held 0 did not land on the floor');
+			await settledAt(app, MIN_DAY);
+			assert.equal(await valueOf(app), MIN_DAY, 'a held 0 did not land on the floor');
 
-			await say(app, { dayHeight: 4000 });
-			await settledAt(app, 240);
-			assert.equal(await valueOf(app), 240, 'a held 4000 did not land on the ceiling');
+			await say(app, { dayHeight: 99999 });
+			await settledAt(app, MAX_DAY);
+			assert.equal(await valueOf(app), MAX_DAY, 'a held 99999 did not land on the ceiling');
 
 			// Not a number at all: nothing is held, so the box decides again.
 			await say(app, { dayHeight: null });
@@ -582,7 +584,7 @@ describe("the day strip's day height and its pin", () => {
 		await withApp(async (app) => { // own app: it reloads
 			await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 			const free = await following(app);
-			assert.ok(free - 30 >= MIN_DAY, `the box derives ${free}, too short to hold less`);
+			assert.ok(free - 30 >= FILL_MIN_DAY, `the box derives ${free}, too short to hold less`);
 			const laid = free - 30;
 			await say(app, { dayHeight: laid });
 			await settledAt(app, laid);

@@ -79,7 +79,7 @@ const desktop = sharedApp({ clock: NOW, ...DESKTOP });
  * a strip nobody has touched draws exactly ONE day and there is no band
  * but today's — and half this file points into YESTERDAY's. Nothing here
  * is about how tall a day is: this is how a reader gets a stack (the day
- * line over the ruler, whose value then holds), and 40 is `MIN_DAY_HEIGHT`, the most
+ * line over the ruler, whose value then holds), and 40 is `FILL_MIN_DAY_HEIGHT`, the most
  * past a strip's own box can show. Only the SETTING is touched, never a
  * pane's size: a strip given a bigger cell is a different layout, and two
  * of the tests below are about what a swipe does to the layout.
@@ -87,15 +87,17 @@ const desktop = sharedApp({ clock: NOW, ...DESKTOP });
 const stackOfDays = async (page) => {
 	// DRAGGED, as a reader does: in modify mode (da-1tmd1), ✓, and the tab's
 	// Save, so the layout's modified dot is not lit — two of the tests below
-	// read the root tab's name. Down is shorter (da-hsba), and 300px of it
-	// clamps at `MIN_DAY_HEIGHT`.
+	// read the root tab's name. Down is shorter (da-hsba), a pixel a pixel,
+	// so down by as much as the day is taller than 40.
 	const id = await stripPane({ page });
 	await modifyWidget(page, id);
-	const box = await page.locator('.today-line').boundingBox();
+	const line = page.locator('.today-line');
+	const box = await line.boundingBox();
 	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+	const down = Number(await line.getAttribute('aria-valuenow')) - 40;
 	await page.mouse.move(x, y);
 	await page.mouse.down();
-	await page.mouse.move(x, y + 300, { steps: 8 });
+	await page.mouse.move(x, y + down, { steps: 8 });
 	await page.mouse.up();
 	await page.waitForFunction(
 		() => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === 40

@@ -694,7 +694,7 @@ describe('snapsOfKind', () => {
 	test('is one day at the strip\'s day height, plus 16px of padding, and nothing for the others', async () => {
 		const { snapsOfKind } = await import('../src/lib/layout/registry.ts');
 		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 120 }), { width: [], height: [todayBox(120) + 16] });
-		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 1000 }).height, [todayBox(240) + 16], 'clamped as the strip draws it');
+		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 5000 }).height, [todayBox(1000) + 16], 'clamped as the strip draws it');
 		// And none at all while the day FOLLOWS the box (da-r0ydu): the day
 		// is derived from the height, so every height is already one whole
 		// day and there is no one of them to be drawn to.

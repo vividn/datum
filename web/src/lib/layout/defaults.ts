@@ -63,7 +63,7 @@ const strip = () => widgetPane('strip', 'daystrip', { ...STRIP });
  * section open». That pane is 578px there: (578 − 15 axis) ÷ 12 ≈ 47, and
  * the same 47 on every screen. A number in the tree, so the day line still
  * moves it and a reader's own height wins over it, as any held one does.
- * Above `MIN_DAY_HEIGHT` (40), so the date stamp keeps its three lines.
+ * Above `FILL_MIN_DAY_HEIGHT` (40), so the date stamp keeps its three lines.
  */
 export const DAYVIEW_TAB_DAY_HEIGHT = 47;
 

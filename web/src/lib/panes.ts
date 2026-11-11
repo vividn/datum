@@ -213,22 +213,41 @@ export function helpEnv(argv: string[], columns: number | null): string[] {
 export const DEFAULT_DAY_HEIGHT = 85;
 
 /**
- * How short and how tall the day-height handle may draw a day.
+ * How short and how tall a strip FOLLOWING ITS BOX draws a day
+ * (`dayFilling`, `dayUnderSliver`): the range one day may fill a pane at.
  *
  * The floor is the legibility one (da-m0cj), read off the layout's own
  * arithmetic: `compute_dayview` picks the label font as
  * `day_height / lines - 6`, capped at 20 and floored at 7, taking the most
  * lines that clear the floor — so 39 is the shortest day that still fits
  * datum's three label lines (Wed / Sep 09 / 2026), and 40 is the first
- * round number above it. Below that the date stamp starts dropping lines,
- * and the stamp is how a reader tells one band from another.
+ * round number above it.
  *
  * The ceiling is a screen: 240px of one day still leaves the CLI widget and the
  * widget bar room on a laptop, and the pane the strip sits in is what
  * caps the strip's own height (da-zb0d).
  */
-export const MIN_DAY_HEIGHT = 40;
-export const MAX_DAY_HEIGHT = 240;
+export const FILL_MIN_DAY_HEIGHT = 40;
+export const FILL_MAX_DAY_HEIGHT = 240;
+
+/**
+ * How short and how tall the reader may draw a day: the day line, the
+ * pinch, the arrow keys and a saved setting (da-4pak5, vividn, 2026-11-11:
+ * «allow zooming both in and out considerably more»).
+ *
+ * The floor is the pan's (da-4pak5): every day the stack holds is a layer
+ * of its own (`slide` in DayStrip.svelte), and a sideways pan's frame grows
+ * with their count. On a phone at 4x CPU, over 120 days of 144 points each,
+ * a move took 28ms at 40px a day, 60 at 16 and 75 at 12, against the pan
+ * tests' 16ms unthrottled. At 16px a phone's strip stands six weeks in its
+ * pane, and the date stamp, two lines no longer fitting a day, stamps each
+ * week on its Monday (`stamp` in DayStrip.svelte). At the ceiling one day
+ * is 1000px, its lanes a screen tall, its dots no bigger than a 240px day
+ * draws them (`dotScale` in dayLayers.ts). An hour across is the window's
+ * zoom (`MIN_SPAN`), not the day's height.
+ */
+export const MIN_DAY_HEIGHT = 16;
+export const MAX_DAY_HEIGHT = 1000;
 
 /**
  * The date-label column the STRIP draws itself, in pixels (da-iu9i).
@@ -392,7 +411,7 @@ export const todayBox = (dayHeight: number) => dayHeight + AXIS_HEIGHT;
  * the scroller, which is what a very tall strip is for.
  */
 export const dayFilling = (height: number): number =>
-	Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, Math.round(height - AXIS_HEIGHT)));
+	Math.min(FILL_MAX_DAY_HEIGHT, Math.max(FILL_MIN_DAY_HEIGHT, Math.round(height - AXIS_HEIGHT)));
 
 /** How much of yesterday a pinned today leaves showing above it, in days. */
 export const SLIVER = 1 / 4;
@@ -409,8 +428,8 @@ export const SLIVER = 1 / 4;
  */
 export const dayUnderSliver = (height: number): number =>
 	Math.min(
-		MAX_DAY_HEIGHT,
-		Math.max(MIN_DAY_HEIGHT, Math.round((height - AXIS_HEIGHT - SEAM) / (1 + SLIVER)))
+		FILL_MAX_DAY_HEIGHT,
+		Math.max(FILL_MIN_DAY_HEIGHT, Math.round((height - AXIS_HEIGHT - SEAM) / (1 + SLIVER)))
 	);
 
 /**

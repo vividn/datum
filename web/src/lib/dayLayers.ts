@@ -234,9 +234,10 @@ const NS = 'http://www.w3.org/2000/svg';
  * draws one at that day height. In the attributes, so no mark carries a
  * transform of its own to keep its size: Chrome's per-frame compositing
  * update costs one per such mark, every frame anything on the page changes
- * (da-syaz8). `y`: time runs down (`--orientation vertical`).
+ * (da-syaz8). `y`: time runs down (`--orientation vertical`). `dot`: the
+ * scale a point's dot and a label are drawn at, where it is not `across`.
  */
-export function layMarks(root: Element, along: number, across: number, y = false): void {
+export function layMarks(root: Element, along: number, across: number, y = false, dot = across): void {
 	const [kx, ky] = y ? [across, along] : [along, across];
 	const [at, length] = y ? ['y', 'height'] : ['x', 'width'];
 	const num = (el: Element, name: string) => Number(el.getAttribute(name));
@@ -244,10 +245,10 @@ export function layMarks(root: Element, along: number, across: number, y = false
 	const scale = (el: Element, name: string, by: number) => el.hasAttribute(name) && set(el, name, num(el, name) * by);
 	const scaleAll = (el: Element, names: string[], by: number) => names.forEach((n) => scale(el, n, by));
 	/** A mark centered at `at` along time, `length` long: its center moved, its length `by` times (one keeps it). */
-	const center = (el: Element, by: number) => {
-		const mid = (num(el, at) + num(el, length) / 2) * along;
-		set(el, length, num(el, length) * by);
-		set(el, at, mid - num(el, length) / 2);
+	const center = (el: Element, by: number, [a, l, k] = [at, length, along]) => {
+		const mid = (num(el, a) + num(el, l) / 2) * k;
+		set(el, l, num(el, l) * by);
+		set(el, a, mid - num(el, l) / 2);
 	};
 	/** A glyph's own stretch along x (`matrix(a 0 0 1 dx 0)`, dx its center's), about its new center. */
 	const stretch = (el: Element, mid: number) => {
@@ -265,10 +266,10 @@ export function layMarks(root: Element, along: number, across: number, y = false
 			stretch(el, num(el, 'cx') * kx);
 			scale(el, 'cx', kx);
 			scale(el, 'cy', ky);
-			scale(el, 'r', across);
+			scale(el, 'r', dot);
 		} else if (el.localName === 'use') {
-			center(el, across);
-			scaleAll(el, y ? ['x', 'width'] : ['y', 'height'], across);
+			center(el, dot);
+			center(el, dot, y ? ['x', 'width', across] : ['y', 'height', across]);
 			stretch(el, num(el, 'x') + num(el, 'width') / 2);
 		} else if (el.localName === 'text' && el.matches('.error-label')) {
 			// As datum sizes it: a twelfth of the day, between 7 and 11. Placed
@@ -283,7 +284,7 @@ export function layMarks(root: Element, along: number, across: number, y = false
 			stretch(el, num(el, 'x') * kx);
 			scale(el, 'x', kx);
 			scale(el, 'y', ky);
-			scale(el, 'font-size', across);
+			scale(el, 'font-size', dot);
 			if (el.hasAttribute('data-room')) cutToRoom(el, num(el, 'data-room') * along);
 		} else if (el.localName === 'line') {
 			scaleAll(el, ['x1', 'x2'], kx);
@@ -337,6 +338,14 @@ export function anchorStripes(svg: SVGElement): void {
 }
 
 /**
+ * The scale a band's dots and labels are drawn at (da-4pak5): its day
+ * height's, held to what a day from 20 to 240px draws. Shorter, a point is
+ * under a pixel and the day reads empty; taller, a dot is wider than an hour
+ * and a day of points one blob, where the lanes and blocks go on growing.
+ */
+const dotScale = (dayHeight: number) => Math.min(240, Math.max(20, dayHeight)) / LAYER_HEIGHT;
+
+/**
  * A day's layer as the day strip's row: `width` by `dayHeight`, as `dayview
  * --days 1` draws a band at that size — its blocks as long as their hours,
  * every other mark the size the day height gives it — and, with `now`, the
@@ -355,7 +364,7 @@ export function bandOf(layer: Layer, width: number, dayHeight: number, now?: num
 	// both ways: the strip draws them in a column of its own.
 	const allday = root.querySelector('g.allday');
 	allday?.remove();
-	layMarks(root, width / num(span, 'data-hi'), dayHeight / LAYER_HEIGHT);
+	layMarks(root, width / num(span, 'data-hi'), dayHeight / LAYER_HEIGHT, false, dotScale(dayHeight));
 	if (allday) {
 		layMarks(allday, dayHeight / LAYER_HEIGHT, dayHeight / LAYER_HEIGHT);
 		set(allday, 'data-width', (num(allday, 'data-width') * dayHeight) / LAYER_HEIGHT);

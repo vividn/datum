@@ -23,6 +23,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, ON_COLLECT } from './support/app.mjs';
 import { FRAME_MS, framesOf, liftFinger, readFrames, seedMarks, touchDrag, traceOf } from './support/pans.mjs';
+import { MIN_DAY, say, settledAt } from './support/daystrip.mjs';
 
 before(startApp);
 after(stopApp);
@@ -65,10 +66,19 @@ test('a vertical drag on the strip scrolls the stack from the first move past sl
 	}, ON_DAYVIEW);
 });
 
-test('a horizontal pan moves the pictures and redraws none of them, under the finger every frame', async () => {
+/**
+ * A horizontal pan moves the pictures and redraws none of them, under the
+ * finger every frame — with `day` held, at that day height.
+ */
+const panSideways = (day) => async () => {
 	await withApp(async (app) => {
 		const { page } = app;
 		await seedMarks(app);
+		if (day) {
+			await say(app, { dayHeight: day });
+			await settledAt(app, day);
+			await app.idle();
+		}
 		const at = await middleOf(page);
 		await page.locator('.strip').evaluate((strip, at) => {
 			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -300, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
@@ -103,7 +113,12 @@ test('a horizontal pan moves the pictures and redraws none of them, under the fi
 		// files too, 18–20ms a move with four at once, 12 alone.
 		assert.ok(trace.threadMs / MOVES < FRAME_MS, `the main thread took ${Math.round(trace.threadMs / MOVES)}ms a move`);
 	}, ON_DAYVIEW);
-});
+};
+
+test('a horizontal pan moves the pictures and redraws none of them, under the finger every frame', panSideways());
+
+// At the shortest day the stack holds months of bands (da-4pak5), and the pan moves them all.
+test('a horizontal pan at the shortest day height is as cheap', panSideways(MIN_DAY));
 
 test("the nowview's pan restyles none of its marks", async () => {
 	await withApp(async (app) => {
