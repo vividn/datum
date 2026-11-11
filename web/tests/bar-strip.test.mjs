@@ -425,7 +425,23 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			try {
 				await app.submit('occur bread');
 				await page.waitForFunction(() => window.__played.length === 1);
-				await page.waitForTimeout(500);
+				// The settle, run out: the command's answer landed (a new scrollback
+				// entry is an arrival, which cancels), then nothing mounting or
+				// dropping for four frames, the strip's own scroll event read. Not
+				// rested(): the slide is a minute long, and that is the point.
+				await app.idle();
+				await page.evaluate(async () => {
+					const shape = () => {
+						const roll = document.querySelector('.prompt-bar .roll');
+						return `${roll.querySelectorAll('.group').length} ${roll.scrollWidth} ${roll.scrollLeft}`;
+					};
+					for (let was = shape(), still = 0; still < 4; ) {
+						await new Promise((r) => requestAnimationFrame(r));
+						const now = shape();
+						still = now === was ? still + 1 : 0;
+						was = now;
+					}
+				});
 				state = await page.evaluate(() => window.__played[0].playState);
 			} finally {
 				// The app is shared: left stretched, the next test's slides
@@ -516,9 +532,12 @@ describe('the output is a strip of commands, the newest at the right', () => {
 			});
 			assert.ok(held.grew > 0, 'scrolling back mounted nothing');
 			assert.ok(Math.abs(held.moved) <= 1, `the reader was moved ${held.moved}px as older commands mounted`);
+			// Each scroll to the start mounts `GROW` more (`fill`), and the reader is
+			// kept on the group they were at, so it takes another to reach the first.
 			for (let i = 0; i < 10 && (await strip(page)).groups[0].line !== 'occur coffee'; i += 1) {
+				const was = await groups();
 				await roll.evaluate((el) => el.scrollTo({ left: 0 }));
-				await page.waitForTimeout(100);
+				await page.waitForFunction((was) => document.querySelectorAll('.prompt-bar .group').length > was, was);
 			}
 			await roll.evaluate((el) => el.scrollTo({ left: 0 }));
 			await page.waitForFunction(() => document.querySelector('.prompt-bar .roll').scrollLeft === 0);
