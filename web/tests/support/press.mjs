@@ -56,7 +56,10 @@ export async function drag(page, from, to, { hold = false, shift = false } = {})
 	await page.mouse.down();
 	if (hold) await longPressed(page);
 	await page.mouse.move(to.x, to.y, { steps: 8 });
-	// Real time, not the page's timers: a test may hold those (`holdTimers`), and its frozen clock carries no speed anyway.
+	// Not a wait for rest: the drag held still past WINDOW_MS (80 ms, #lib/grip.ts),
+	// the time before a lift its speed is read over (`speedOver`), so the lift lets go
+	// at none and the band does not coast. Real time, not the page's timers: a test may
+	// hold those (`holdTimers`), and its frozen clock carries no speed anyway.
 	await page.waitForTimeout(100);
 	await page.mouse.up();
 	if (shift) await page.keyboard.up('Shift');
