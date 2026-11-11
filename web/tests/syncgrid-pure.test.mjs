@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource();
-const { ago, barred, cellActs, deviceActs, expelWords } = await import('../src/lib/syncView.ts');
+const { ago, barred, cellActs, deviceActs, expelWords, loginCode } = await import('../src/lib/syncView.ts');
 
 const NOW = Date.UTC(2026, 10, 11, 12);
 const S = 1000;
@@ -88,4 +88,13 @@ test('removing a device names each database and points a lost one to Unjoin (da-
 	assert.match(expelWords('phone', ['home']), /^Expel phone from home\? It can no longer sync home until/);
 	assert.match(expelWords('phone', ['home', 'work', 'notes']), /^Expel phone from home, work and notes\? It can no longer sync them until/);
 	assert.match(expelWords('phone', ['home']), /Unjoin it instead/);
+});
+
+test('a login link’s code is its device key’s first 16 hex characters, in groups of 4 (da-ntp5c)', () => {
+	const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+	const json = JSON.stringify({ addr: { id: `8a88e3dd7409f195${'ab'.repeat(24)}` }, nonce: 'n' });
+	const bits = [...new TextEncoder().encode(json)].map((b) => b.toString(2).padStart(8, '0')).join('');
+	const base32 = (bits.match(/.{1,5}/g) ?? []).map((b) => A[parseInt(b.padEnd(5, '0'), 2)]).join('');
+	assert.equal(loginCode(`https://datum.day/sync/login#${base32}`), '8a88 e3dd 7409 f195');
+	assert.equal(loginCode('https://datum.day/sync/login#not-a-login'), '');
 });

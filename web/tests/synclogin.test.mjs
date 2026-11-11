@@ -85,7 +85,11 @@ describe('datum sync login', () => {
 				assert.match(words, /Only if you ran datum sync login yourself, just now/);
 				assert.match(words, /If someone sent you this link, close it\./);
 				// The code it shows is the one the CLI printed.
-				const [, shown] = /The page shows the code ([0-9a-f]{6})/.exec(login.stdout);
+				// Both sides say 64 bits of it, grouped (da-ntp5c): a side gone back to fewer fails.
+				const grouped = /^[0-9a-f]{4}( [0-9a-f]{4}){3}$/;
+				const [, shown] = /The page shows the code ([0-9a-f ]+):/.exec(login.stdout);
+				assert.match(shown, grouped);
+				assert.match(await card.locator('.code').innerText(), grouped);
 				assert.equal(await card.locator('.code').innerText(), shown);
 				await card.getByRole('button', { name: 'Sign in the CLI' }).click();
 				await page.locator(`${WIDGET} .card.login .done`).waitFor();

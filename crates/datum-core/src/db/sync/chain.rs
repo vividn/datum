@@ -430,6 +430,19 @@ pub fn login_of(link: &str) -> Option<(String, String)> {
     ))
 }
 
+/// The code a `datum sync login` shows beside its link, and datum.day beside
+/// the sign-in it asks for (da-ntp5c): the first 16 hex characters of the
+/// device key `id`, in groups of 4 (`8a88 e3dd 7409 f195`). 64 bits, since the
+/// key is long-lived and a matching one could be ground in advance; datum.day's
+/// `loginCode` (`web/src/lib/syncView.ts`) must say the same.
+pub fn login_code(id: &str) -> String {
+    let id: Vec<char> = id.chars().take(16).collect();
+    id.chunks(4)
+        .map(|c| c.iter().collect::<String>())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The PRF output a login's `message` carries, when this install's device
 /// key opens it and it names `nonce`: else why it is refused.
 pub fn open_login(message: &[u8], nonce: &str) -> std::result::Result<[u8; 32], String> {
@@ -2290,6 +2303,12 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_login_code_is_sixteen_hex_characters_in_groups_of_four() {
+        let id = "8a88e3dd7409f1952b6c00ff".repeat(3);
+        assert_eq!(login_code(&id[..64]), "8a88 e3dd 7409 f195");
+    }
 
     /// The chain `records` fold to, each written by one member at its HLC
     /// (`t` seconds), signed by `admin` when given: what each did.

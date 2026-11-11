@@ -1245,7 +1245,7 @@ fn login(db: &Db) -> Result<()> {
         if let Some((to, _)) = chain::login_of(link) {
             println!(
                 "The page shows the code {}: sign in only where it does.",
-                &to[..6]
+                chain::login_code(&to)
             );
         }
         println!("Waiting for the sign-in…");

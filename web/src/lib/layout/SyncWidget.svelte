@@ -1355,6 +1355,10 @@
 		user-select: all;
 		font-size: 0.8em;
 	}
+	/* A login's code is four groups that split nowhere (da-ntp5c). */
+	.login .code {
+		white-space: nowrap;
+	}
 	.what {
 		margin: 0.3rem 0;
 		padding-left: 1.2rem;

@@ -210,15 +210,18 @@ export const loggingIn = heldInTab('datum-sync-login');
 
 /**
  * The code a `datum sync login` link shows (da-mzqs4), which the CLI prints
- * beside it: the first six characters of the device key it names, read from
- * the link's base32 JSON. Empty for a link that does not read.
+ * beside it: the first 16 hex characters of the device key it names, read
+ * from the link's base32 JSON, in groups of 4 (`8a88 e3dd 7409 f195`, da-ntp5c).
+ * The CLI's `chain::login_code` must say the same. Empty for a link that does not read.
  */
 export function loginCode(link: string): string {
 	const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 	const bits = [...(link.split('#').pop() ?? '').toUpperCase()].map((c) => A.indexOf(c).toString(2).padStart(5, '0')).join('');
 	try {
 		const bytes = Uint8Array.from(bits.match(/.{8}/g) ?? [], (b) => parseInt(b, 2));
-		return String(JSON.parse(new TextDecoder().decode(bytes)).addr.id).slice(0, 6);
+		return String(JSON.parse(new TextDecoder().decode(bytes)).addr.id)
+			.slice(0, 16)
+			.replace(/(.{4})(?=.)/g, '$1 ');
 	} catch {
 		return '';
 	}
