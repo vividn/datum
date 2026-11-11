@@ -26,7 +26,7 @@ import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 import { reach } from './support/commands.mjs';
 import { COMMANDS } from '../src/lib/commands.ts';
-import { FIELD_FORM, fieldNamed } from './support/field.mjs';
+import { FIELD_FORM, fieldNamed, setupCommand, setupCommands } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -821,7 +821,7 @@ describe('`setup` under the pill', () => {
 
 			// And what it saves is the one `setup F`, with no pill after it.
 			await page.locator(`${MODAL} input.description`).fill('how it feels');
-			await page.locator(`${MODAL} button[type="submit"]`).click();
+			await setupCommand(page);
 			await until(async () => (await app.echoes()).at(-1), (e) => /^setup mood --from-json /.test(e));
 			await page.evaluate(() => window.datum.shell.leavePlace());
 			await page.locator(MODAL).waitFor({ state: 'detached' });
@@ -831,12 +831,12 @@ describe('`setup` under the pill', () => {
 		});
 	});
 
-	// Brought from another pane (da-wz84y): Cancel and Save go back, and wear the chevron; Revert stays.
-	test('long press, tap `setup`: its row is Cancel › · Revert · Save › · Redo, and Cancel and Save go back to the page', async () => {
+	// Brought from another pane (da-wz84y): cancel and save go back; revert stays. Commands, not buttons (da-r674m).
+	test('long press, tap `setup`: it has cancel as well as save, revert and redo, and cancel and save go back to the page', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			const dialog = page.locator('dialog.sheet[data-place="setup"]');
-			const button = (name) => page.locator(`${MODAL} .buttons button.${name}`);
+			const button = (name) => setupCommand(page, name === 'commit' ? undefined : name);
 			const description = page.locator(`${MODAL} input.description`);
 			// The pill stays through the tap and the leaving (da-upig4), so one hold serves both.
 			await longPress(page, 'mood');
@@ -844,16 +844,13 @@ describe('`setup` under the pill', () => {
 				await fieldPill(page).waitFor();
 				await specButton(page).click();
 				await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
-				const row = await page
-					.locator(`${MODAL} .buttons button`)
-					.evaluateAll((all) => all.map((b) => [b.textContent.trim(), getComputedStyle(b, '::after').content.includes('›')]));
-				assert.deepEqual(row, [['Cancel', true], ['Revert', false], ['Save', true], ['Redo', false]]);
+				assert.deepEqual(await setupCommands(page), [['save', false], ['revert', false], ['redo', false], ['cancel', true]]);
 				await description.fill(`by ${leave}`);
-				await button('revert').click();
+				await button('revert');
 				await until(() => description.inputValue(), (v) => v === '');
 				assert.equal(await dialog.isVisible(), true, 'Revert left');
 				await description.fill(`by ${leave}`);
-				await button(leave).click();
+				await button(leave);
 				await dialog.waitFor({ state: 'detached' });
 				await app.idle();
 			}
@@ -880,7 +877,7 @@ describe('`setup` under the pill', () => {
 			assert.equal(await fieldPill(page).count(), 1, 'the tap spent the pill');
 
 			// Dismissed, it runs nothing, and the pill stays: the tap kept it (da-upig4).
-			await page.locator(`${MODAL} button.cancel`).click();
+			await setupCommand(page, 'cancel');
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal(await fieldPill(page).count(), 1, 'a dismiss took the pill');

@@ -27,7 +27,7 @@ import { stripAnsi } from './support/tail.mjs';
 import { rested } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import {
-	FIELD_FORM as MODAL, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, pickImage, trackSomething
+	FIELD_FORM as MODAL, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, openPalette, pickImage, SETUP, setupCommand, trackSomething
 } from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
@@ -359,8 +359,9 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
-			const commit = page.locator(`${MODAL} button.commit`);
-			assert.equal(await commit.count(), 0, 'nothing named, and a button to save it');
+			// The setup modal's row of its commands (da-r674m), none while nothing is named.
+			const commit = page.locator(SETUP());
+			assert.equal(await commit.count(), 0, 'nothing named, and a command to save it');
 			await fill(page, 'mood', null);
 			assert.equal(await commit.isEnabled(), false, 'a name alone is not a field');
 			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
@@ -390,7 +391,7 @@ describe('in the app', () => {
 			await openIt(page);
 			await fill(page, 'mood', 'switch');
 			await addStates(page, ['good', 'bad']);
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 
 			await page.locator('.bar button[data-field="mood"]').waitFor();
 			assert.match((await app.echoes()).at(-1), /^setup mood --from-json .* --track$/);
@@ -430,7 +431,7 @@ describe('in the app', () => {
 				await page.locator(`${MODAL} .verb[aria-checked="true"]`).evaluateAll((all) => all.map((b) => b.dataset.verb)),
 				['occur']
 			);
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			const result = await ran;
 			assert.equal(result.code, 0, result.stderr);
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
@@ -448,7 +449,7 @@ describe('in the app', () => {
 			await page.locator(MODAL).waitFor();
 			assert.equal(await fieldNamed(page), 'sleep');
 			await page.locator(`${MODAL} button[data-verb="start"]`).click();
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await typed).code, 0);
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
 			assert.equal(JSON.parse((await app.run(['setup', 'sleep', '--json'])).stdout).verb, 'start');
@@ -468,7 +469,7 @@ describe('in the app', () => {
 			// Nor a size beside its kind, which nothing here sets.
 			await page.locator(`${MODAL} [data-tab="data"]`).click();
 			assert.equal((await page.locator(`${MODAL} [data-summary="basics"]`).innerText()).trim(), '▤ all day');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			await app.idle();
 			assert.equal(declared((await app.echoes()).at(-1)).spec.verb, 'allday');
 			assert.equal(JSON.parse((await app.run(['setup', 'steps', '--json'])).stdout).verb, 'allday');
@@ -535,7 +536,7 @@ describe('in the app', () => {
 			await page.keyboard.type('coffee');
 			await page.keyboard.press('Enter');
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
 			assert.equal(await page.evaluate(() => window.__taps), 3);
 		});
@@ -572,7 +573,7 @@ describe('in the app', () => {
 			await statePick.click();
 			await page.locator(`${MODAL} .state button.more`).first().click();
 			await page.locator(`${MODAL} .state input.meaning`).first().fill('up');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
@@ -603,7 +604,7 @@ describe('in the app', () => {
 			assert.doesNotMatch(untouched, /state_descriptions/);
 			const { saved: again } = await openField(page, 'sleep');
 			await page.locator(`${MODAL} input.description`).fill('day');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await again).code, 0);
 			const after = (await app.run(['setup', 'sleep', '--json'])).stdout;
 			assert.doesNotMatch(after, /state_descriptions/);
@@ -623,7 +624,7 @@ describe('in the app', () => {
 			await app.run(['setup', 'mood', '--from-json', JSON.stringify({ ...spec, zz_future_key: future })]);
 			const { saved } = await openField(page, 'mood');
 			await page.locator(`${MODAL} input.description`).fill('how I feel');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
 			const shown = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
@@ -651,7 +652,7 @@ describe('in the app', () => {
 				await page.locator(MODAL).waitFor();
 				await pickImage(page, name, svg);
 				assert.equal(await page.locator(`${MODAL} .picker`).count(), 0, 'the pick closed the picker');
-				await page.locator(`${MODAL} button.commit`).click();
+				await setupCommand(page);
 				return saved;
 			};
 
@@ -839,7 +840,7 @@ describe('in the app', () => {
 			await page.locator(MODAL).waitFor();
 			assert.equal(await fieldNamed(page), 'walk');
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await ran).code, 0);
 			assert.equal(JSON.parse((await app.run(['setup', 'walk', '--json'])).stdout).verb, 'occur');
 		});
@@ -869,7 +870,7 @@ describe('in the app', () => {
 			assert.equal(await row.locator('button.eq').getAttribute('aria-pressed'), 'true');
 			await row.locator('input.value').fill('2');
 			const before = (await app.echoes()).length;
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
 			await app.idle();
 			const echoes = (await app.echoes()).slice(before);
@@ -902,7 +903,7 @@ describe('in the app', () => {
 			await fill(page, 'coffee', null);
 			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			await page.locator(`${MODAL} h2`).waitFor();
 			assert.deepEqual(await tabs(), ['basics', 'data', 'aliases']);
 			// Three words across a 320px phone, none of them cut.
@@ -940,7 +941,7 @@ describe('in the app', () => {
 
 	/** Press Save, hold the save to ONE command that the CLI took, and leave the place, which Save stays in (da-hda4j). */
 	async function save(app, { saved, before }) {
-		await app.page.locator(`${MODAL} button.commit`).click();
+		await setupCommand(app.page);
 		const result = await saved;
 		assert.equal(result.code, 0, result.stderr);
 		await leaveField(app.page);
@@ -1027,7 +1028,7 @@ describe('in the app', () => {
 			assert.deepEqual(await modes(), ['-K', '-k', '-C']);
 			assert.equal(await rows.nth(1).locator('.line').count(), 0, 'plain -k has no line');
 			assert.equal(await rows.nth(2).locator('input.name').inputValue(), 'comment');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			await page.locator(`${MODAL} h2`).waitFor();
 			// Where the saved spec puts the keys and the rest of the line.
 			const sent = declared((await app.echoes()).at(-1)).spec;
@@ -1180,7 +1181,7 @@ describe('in the app', () => {
 			await picker.locator('[data-glyph="▲"]').click();
 			assert.equal(await picker.count(), 0, 'a pick folds the set away');
 			assert.equal(await field.getAttribute('data-glyph'), '▲');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await saved).code, 0);
 			await app.idle();
 			const echoes = await app.echoes();
@@ -1209,7 +1210,7 @@ describe('in the app', () => {
 			// Any one character: the first of whatever is typed.
 			await page.locator(`${MODAL} .picker input.any`).fill('✺✺');
 			assert.equal(await tile(page, 'the symbol of up').getAttribute('data-glyph'), '✺');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await saved).code, 0);
 			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).state_symbols, { up: '✺' });
 
@@ -1231,7 +1232,7 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} button.remove[aria-label="remove down"]`).click();
 			// A rename is the same row under a new name, and its glyph comes along.
 			await page.locator(`${MODAL} .state input.name`).nth(1).fill('level');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await saved).code, 0);
 			const shown = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
 			assert.deepEqual(shown.allowed_states, ['up', 'level']);
@@ -1252,7 +1253,7 @@ describe('in the app', () => {
 			await tile(page, "the field's symbol").click();
 			assert.doesNotMatch(await page.locator(`${MODAL} .picker`).innerText(), /by a key/);
 			await page.locator(`${MODAL} .picker [data-glyph="○"]`).click();
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await saved).code, 0);
 			const shown = (await app.run(['setup', 'tea', '--json'])).stdout;
 			assert.deepEqual(JSON.parse(shown).symbol_by, { key: 'size', map: { large: '☕' } });
@@ -1261,7 +1262,7 @@ describe('in the app', () => {
 			// Saved with only its description changed (a save needs a change, da-hda4j), the glyphs read back as they were.
 			const { saved: again } = await openField(page, 'tea');
 			await page.locator(`${MODAL} input.description`).fill('leaves');
-			await page.locator(`${MODAL} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await again).code, 0);
 			assert.deepEqual(JSON.parse((await app.run(['setup', 'tea', '--json'])).stdout), { ...JSON.parse(shown), description: 'leaves' });
 		});
@@ -1288,9 +1289,11 @@ describe('in the app', () => {
 				assert.ok(item.width >= 24, `${VERBS[i].verb} is ${item.width}px wide`);
 				assert.ok(item.x >= 0 && item.x + item.width <= screen.width + 1, `${VERBS[i].verb} is off the screen`);
 			}
-			for (const control of ['.verb', '.name-line .pill', 'button.commit']) {
-				if (control === 'button.commit') await page.locator(`${MODAL} ${control}`).scrollIntoViewIfNeeded();
-				const item = await page.locator(`${MODAL} ${control}`).last().boundingBox();
+			// Its save is the palette's (da-r674m), on the screen whatever the form's length, once it has slid in.
+			await openPalette(page);
+			await rested(page, page.locator('#bar-commands'));
+			for (const control of [`${MODAL} .verb`, `${MODAL} .name-line .pill`, SETUP()]) {
+				const item = await page.locator(control).last().boundingBox();
 				assert.ok(item.y >= 0 && item.y + item.height <= screen.height + 1, `${control} is off the screen`);
 			}
 		}, { viewport: PHONE });

@@ -8,7 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, NAMING, leaveField, openField, pickImage } from './support/field.mjs';
+import { FIELD_FORM, NAMING, leaveField, openField, pickImage, setupCommand, setupCommands } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -68,7 +68,7 @@ describe('the spec place, on a phone', () => {
 
 			const { saved } = await openField(page, 'tea');
 			await page.locator(`${FIELD_FORM} input.description`).fill('green');
-			await page.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
 			assert.match(result.argv.join(' '), /^setup tea --from-json /);
@@ -77,7 +77,7 @@ describe('the spec place, on a phone', () => {
 			assert.equal(await described(app, 'tea'), 'green');
 			assert.equal(await shown(page), 'setup', 'Save left the place');
 			// The form is read again from the save: a save point, with nothing to save.
-			await until(() => page.locator(`${FIELD_FORM} button.commit`).isDisabled(), (d) => d);
+			await until(() => setupCommands(page), (c) => c[0].join() === 'save,false');
 
 			await page.locator(`${FIELD_FORM} input.description`).fill('black');
 			await leaveField(page);
@@ -94,18 +94,14 @@ describe('the spec place, on a phone', () => {
 describe('a typed `setup F`', () => {
 	/**
 	 * Save the description `words` and see that it stayed: the person's own
-	 * row, with no Cancel, and «saved» under Save, which is said only where
-	 * Save stays — a leave on a phone slides back after the save has landed,
-	 * so the tab in front cannot say it in time.
+	 * commands, their cancel grayed, and the form still there once it saved.
 	 */
 	async function saveStays(app, words) {
 		const { page } = app;
-		const row = () => page.locator(`${FIELD_FORM} .buttons button`).allInnerTexts();
-		assert.deepEqual((await row()).map((t) => t.trim()), ['Revert', 'Save', 'Redo'], 'brought');
+		assert.deepEqual((await setupCommands(page)).find(([name]) => name === 'cancel'), ['cancel', false], 'brought');
 		await page.locator(`${FIELD_FORM} input.description`).fill(words);
-		await page.locator(`${FIELD_FORM} button.commit`).click();
-		await page.locator(`${FIELD_FORM} .buttons .saved`).waitFor();
-		assert.equal(await described(app, 'tea'), words);
+		await setupCommand(page);
+		await until(() => described(app, 'tea'), (d) => d === words);
 		assert.equal(await shown(page), 'setup', 'Save left');
 		assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 	}
@@ -163,7 +159,7 @@ describe('a refused save', () => {
 			await page.locator(`${FIELD_FORM} input.description`).fill('green');
 			const big = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="${'M0 0'.repeat(1200)}"/></svg>`;
 			await pickImage(page, 'big.svg', big);
-			await page.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			const result = await saved;
 			assert.notEqual(result.code, 0);
 			assert.match(result.stderr, /at most 4 kB/);
@@ -196,7 +192,7 @@ describe('the spec place, on a desktop', () => {
 			assert.deepEqual(await rootTabs(page), was, 'a desktop opened a tab');
 
 			await modal.locator(`${FIELD_FORM} input.description`).fill('green');
-			await modal.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
 			assert.equal(await described(app, 'tea'), 'green');
@@ -224,7 +220,7 @@ describe('the field widget in a pane', () => {
 			await pane.locator(`${FIELD_FORM} h2`).waitFor();
 			assert.equal((await pane.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 			await pane.locator(`${FIELD_FORM} input.description`).fill('green');
-			await pane.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			await until(() => described(app, 'tea'), (d) => d === 'green');
 
 			// No place to leave: the pane keeps the form, read again from the save.

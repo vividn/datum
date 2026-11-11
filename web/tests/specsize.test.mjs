@@ -52,7 +52,7 @@ describe('the field form', () => {
 							const panel = d.querySelector('[data-panel]');
 							const box = d.getBoundingClientRect();
 							return panel.dataset.panel === tab && panel.childElementCount > 0
-								? { width: box.width, height: box.height, done: d.querySelector('button.commit').getBoundingClientRect().bottom - box.bottom }
+								? { width: box.width, height: box.height, done: d.querySelector('.tabs').getBoundingClientRect().bottom - box.bottom }
 								: null;
 						}, tab),
 						(seen) => seen !== null
@@ -61,8 +61,8 @@ describe('the field form', () => {
 					assert.equal(await page.locator(MODAL).getByRole('tabpanel', { name: tab, exact: true }).count(), 1, `no tabpanel named ${tab}`);
 					assert.equal(await page.locator(MODAL).getByRole('tab', { name: tab, exact: true }).getAttribute('aria-controls'), `spec-panel-${tab}`);
 				}
-				// Done is in the box on every tab, however much of the panel scrolls.
-				for (const tab of TABS) assert.ok(sizes[tab].done <= 1, `${tab}: Done is ${sizes[tab].done}px below the box`);
+				// Its foot, the tab bar, is in the box on every tab, however much of the panel scrolls (its save is the palette's, da-r674m).
+				for (const tab of TABS) assert.ok(sizes[tab].done <= 1, `${tab}: the tab bar is ${sizes[tab].done}px below the box`);
 				const [first, ...rest] = TABS.map((tab) => sizes[tab]);
 				for (const [i, size] of rest.entries()) {
 					assert.ok(Math.abs(size.width - first.width) <= 1, `${TABS[i + 1]} width ${size.width} vs ${first.width}`);

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
 import { editedSpec, placeOf } from '../src/lib/track.ts';
-import { FIELD_FORM as MODAL, leaveField, nameField, openField } from './support/field.mjs';
+import { FIELD_FORM as MODAL, leaveField, nameField, openField, setupCommand } from './support/field.mjs';
 import { pinch } from './support/daystrip.mjs';
 
 /** The box a tap draws round a mark (da-r6wwe): none at rest. */
@@ -153,7 +153,7 @@ describe('the Placement tab', () => {
 
 	/** Save, and leave the place: Save stays on the spec (da-hda4j). */
 	async function done(page, saved) {
-		await page.locator(`${MODAL} button.commit`).click();
+		await setupCommand(page);
 		const result = await saved;
 		assert.equal(result.code, 0, result.stderr);
 		await leaveField(page);

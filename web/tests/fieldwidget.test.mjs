@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, trackSomething } from './support/field.mjs';
+import { FIELD_FORM, NAMING, PANEL, leaveField, declared, fieldNamed, nameField, openField, trackSomething, openPalette, SETUP, setupCommand, setupCommands } from './support/field.mjs';
 import { defaultColor } from '../src/lib/fields.ts';
 import { until } from './support/until.mjs';
 import { shellJoin } from '../src/lib/shellSplit.ts';
@@ -137,12 +137,12 @@ describe('the field widget', () => {
 			// The line goes above the shapes.
 			const top = async (sel) => (await page.locator(`${FIELD_FORM} ${sel}`).first().boundingBox()).y;
 			assert.ok((await top('.name-line')) < (await top('[data-status]')) && (await top('[data-status]')) < (await top('.verb')), 'not field, status, shapes');
-			assert.deepEqual(await page.locator(`${FIELD_FORM} .buttons button`).allInnerTexts(), ['cancel', 'save without tracking', 'start tracking']);
+			// Its buttons are commands, start tracking leading (da-r674m), and the form has no row of its own.
+			assert.equal(await page.locator(`${FIELD_FORM} :is(.buttons, button.commit, button.untracked)`).count(), 0, "a button row");
 			// None chosen, and every tab there before a save, none of them required; nothing saves without a shape.
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
 			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
-			assert.equal(await page.locator(`${FIELD_FORM} button.commit`).isEnabled(), false);
-			assert.equal(await page.locator(`${FIELD_FORM} button.untracked`).isEnabled(), false);
+			assert.deepEqual(await setupCommands(page), [['start tracking', false], ['save without tracking', false], ['cancel', true]]);
 
 			// The × starts over: the line is «track something» again, asking nothing for a name alone.
 			await pill.locator('button.clear').click();
@@ -153,7 +153,7 @@ describe('the field widget', () => {
 			// Saved without tracking, the spec is there and the field ignored, in one `setup F --ignore`.
 			await nameField(page, 'tea');
 			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
-			await page.locator(`${FIELD_FORM} button.untracked`).click();
+			await setupCommand(page, 'save without tracking');
 			const result = await saved;
 			assert.equal(declared(shellJoin(result.argv)).line, 'setup tea --from-json --ignore');
 			await until(() => status(page), (s) => s[0] === 'IGNORED');
@@ -171,7 +171,7 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
 			await page.locator(`${FIELD_FORM} .states + button.add`).click();
 			await page.locator(`${FIELD_FORM} .state input.name`).fill('good');
-			await page.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			await until(() => heading(page), (t) => t === 'mood');
 			const current = page.locator(`${FIELD_FORM} [data-status] .now b`);
 			await until(() => status(page), (s) => s[0] === 'TRACKED');
@@ -223,7 +223,7 @@ describe('the field widget', () => {
 			assert.equal(await typing(page), false, 'a shape opened the keyboard');
 
 			// Saved, it is tracked: one `setup F --track`. (A phone's CLI widget is folded away: the save says what it ran.)
-			await page.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
 			assert.equal(declared(shellJoin(result.argv)).line, 'setup coffee --from-json --track');
@@ -316,7 +316,7 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} .state input.meaning`).fill('a good day');
 			await page.locator(`${FIELD_FORM} input.description`).fill('how it feels');
 			const before = (await app.echoes()).length;
-			await page.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await saved).code, 0);
 			const echoes = (await app.echoes()).slice(before);
 			assert.equal(echoes.length, 1, echoes.join(' | '));
@@ -344,10 +344,11 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} input.description`).fill('short');
 			const before = (await app.echoes()).length;
 			// Save and another field asked for in one turn of the page, so the save is in flight when it lands.
-			await page.evaluate((form) => {
-				document.querySelector(`${form} button.commit`).click();
+			await openPalette(page);
+			await page.evaluate((save) => {
+				document.querySelector(save).click();
 				void window.datum.field('tea');
-			}, FIELD_FORM);
+			}, SETUP());
 			await until(async () => (await app.echoes()).length, (n) => n === before + 1);
 			await app.idle();
 			assert.equal((await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), 'tea', 'the save took the place away, or the field back');
@@ -375,7 +376,7 @@ describe('the field widget', () => {
 				await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
 				assert.equal(await row.locator('input.name').inputValue(), (await route())[0]);
 				await change();
-				await page.locator(`${FIELD_FORM} button.commit`).click();
+				await setupCommand(page);
 				assert.equal((await saved).code, 0);
 				assert.deepEqual(await route(), stored);
 			}
@@ -443,7 +444,7 @@ describe('the field widget', () => {
 
 			// Saved as a switch, off disabled is `never_false`.
 			await page.locator(`${FIELD_FORM} button[data-verb="switch"]`).click();
-			await page.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			assert.equal((await saved).code, 0);
 			const shown = JSON.parse((await app.run(['setup', 'thing', '--json'])).stdout);
 			assert.deepEqual([shown.allowed_states, shown.never_false], [['calm'], true]);
@@ -649,7 +650,7 @@ describe('the field widget', () => {
 				await onBox.click();
 				assert.equal(await onBox.isChecked(), true);
 
-				await page.locator(`${FIELD_FORM} button.commit`).click();
+				await setupCommand(page);
 				assert.equal((await saved).code, 0);
 				const shown = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
 				assert.deepEqual(shown.allowed_states, ['true', 'a', 'c', 'b']);
@@ -666,7 +667,7 @@ describe('the field widget', () => {
 				assert.deepEqual([await strike.isChecked(), await onBox.isChecked()], [false, true]);
 				assert.deepEqual(await names(), ['a', 'c', 'b']);
 				await onBox.click();
-				await page.locator(`${FIELD_FORM} button.commit`).click();
+				await setupCommand(page);
 				assert.equal((await again).code, 0);
 				assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['a', 'c', 'b']);
 
@@ -763,7 +764,7 @@ describe('the field widget', () => {
 			await page.evaluate(() => void window.datum.field());
 			await nameField(pane, 'nap');
 			await pane.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
-			await pane.locator(`${FIELD_FORM} button.commit`).click();
+			await setupCommand(page);
 			await until(async () => (await pane.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), (t) => t === 'nap');
 			assert.equal(JSON.parse((await app.run(['setup', 'nap', '--json'])).stdout).verb, 'start');
 			assert.equal(await page.locator('dialog[open]').count(), 0);
@@ -941,16 +942,16 @@ describe('the field widget', () => {
 				const form = verbs.closest('form');
 				return {
 					taller,
-					holds: ['[data-panel]', '.tabs', 'button.commit'].map((sel) => box.contains(form.querySelector(sel))),
+					holds: ['[data-panel]', '.tabs'].map((sel) => box.contains(form.querySelector(sel))),
 					shapes: verbs.getBoundingClientRect().bottom - box.getBoundingClientRect().top,
-					save: form.querySelector('button.commit').getBoundingClientRect().bottom - innerHeight
+					tabs: form.querySelector('.tabs').getBoundingClientRect().bottom - innerHeight
 				};
 			});
 			assert.ok(seen, 'nothing scrolls the shapes');
 			assert.ok(seen.taller > 0, 'the form fits the screen: nothing to scroll');
-			assert.deepEqual(seen.holds, [true, false, false], 'the shapes scroll with the panel, and the tabs and Save do not');
+			assert.deepEqual(seen.holds, [true, false], 'the shapes scroll with the panel, and the tabs do not');
 			assert.ok(seen.shapes <= 0, `scrolled down, the shapes are still ${seen.shapes}px in view`);
-			assert.ok(seen.save <= 0, `scrolled down, Save is ${seen.save}px under the screen`);
+			assert.ok(seen.tabs <= 0, `scrolled down, the tabs are ${seen.tabs}px under the screen`);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
@@ -998,7 +999,8 @@ test('a test that throws with the place open fails as itself', async () => {
 // the previous save (maybe we also then need a [redo] button for undoing that revert??)», and how far: «whole saved
 // history».
 const described = async (app, field) => JSON.parse((await app.run(['setup', field, '--json'])).stdout).description;
-const button = (page, name) => page.locator(`${FIELD_FORM} .buttons button.${name}`);
+/** Press the setup command its button was (da-r674m): `commit` is the primary, save or start tracking. */
+const press = (page, name) => setupCommand(page, name === 'commit' ? undefined : name);
 const description = (page) => page.locator(`${FIELD_FORM} input.description`);
 
 /** The widget opened, then `field` picked in its own list of fields: reached by the person themselves (da-wz84y). */
@@ -1012,8 +1014,11 @@ async function reach(page, field) {
 
 describe('a spec saves when it is left, and Revert and Redo walk its saved history', () => {
 	const desktop = sharedApp(DESKTOP);
-	/** Which of Revert, Save and Redo can be pressed. */
-	const enabled = async (page) => Object.fromEntries(await Promise.all(['revert', 'commit', 'redo'].map(async (b) => [b, await button(page, b).isEnabled()])));
+	/** Which of revert, save and redo can be pressed. */
+	const enabled = async (page) => {
+		const on = Object.fromEntries(await setupCommands(page));
+		return { revert: on.revert, commit: on.save, redo: on.redo };
+	};
 
 	test('going to another field saves the edits, and so does closing the place', async () => {
 		await desktop.solo(async (app) => {
@@ -1055,7 +1060,7 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 			const before = (await app.echoes()).length;
 			await description(page).fill('three');
 			assert.deepEqual(await enabled(page), { revert: true, commit: true, redo: false }, 'with edits');
-			await button(page, 'revert').click();
+			await press(page, 'revert');
 			await until(() => description(page).inputValue(), (v) => v === 'two');
 			assert.equal((await app.echoes()).length, before, 'dropping the edits ran something');
 			assert.equal(await described(app, 'tea'), 'two');
@@ -1063,7 +1068,7 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 			// At a save point: back a version a press, to the first, as `revert SPEC --to-version N`.
 			const { hid } = JSON.parse((await app.run(['history', 'spec:tea', '--json'])).stdout)[0];
 			for (const [shown, version] of [['one', 2], ['', 1]]) {
-				await button(page, 'revert').click();
+				await press(page, 'revert');
 				await until(() => description(page).inputValue(), (v) => v === shown);
 				assert.equal((await app.echoes()).at(-1), `revert ${hid} --to-version ${version}`);
 				assert.equal(await described(app, 'tea'), shown || null);
@@ -1072,7 +1077,7 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 
 			// Redo walks forward again, up to where the walk began.
 			for (const [shown, version] of [['one', 2], ['two', 3]]) {
-				await button(page, 'redo').click();
+				await press(page, 'redo');
 				await until(() => description(page).inputValue(), (v) => v === shown);
 				assert.equal((await app.echoes()).at(-1), `revert ${hid} --to-version ${version}`);
 				assert.equal(await described(app, 'tea'), shown);
@@ -1080,10 +1085,10 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 			assert.deepEqual(await enabled(page), { revert: true, commit: false, redo: false }, 'back where the walk began');
 
 			// A save is a new save point: the walk ahead of it is gone.
-			await button(page, 'revert').click();
+			await press(page, 'revert');
 			await until(() => description(page).inputValue(), (v) => v === 'one');
 			await description(page).fill('four');
-			await button(page, 'commit').click();
+			await press(page, 'commit');
 			await until(() => described(app, 'tea'), (d) => d === 'four');
 			await until(() => enabled(page), (e) => e.revert && !e.commit && !e.redo);
 			assert.equal(await description(page).inputValue(), 'four');
@@ -1098,70 +1103,59 @@ describe('a spec saves when it is left, and Revert and Redo walk its saved histo
 // where you came from. And then revert always just reverts to the last state without going back. If you navigate
 // there on your own, maybe no cancel button. I guess to follow our convention if hitting save or cancel takes you
 // somewhere else it should have a little chevron on it, right?»
-describe('the bottom row by how the person came', () => {
+// Its buttons are commands now (da-r674m): the row is the commands', each `[name, enabled]`, and what a save did is
+// the output section's.
+describe('the commands by how the person came', () => {
 	const desktop = sharedApp(DESKTOP);
-	/** The row as drawn: each button's words, and whether it wears the chevron. */
-	const row = (page) =>
-		page.locator(`${FIELD_FORM} .buttons button`).evaluateAll((all) => all.map((b) => [b.textContent.trim(), getComputedStyle(b, '::after').content.includes('›')]));
+	const row = setupCommands;
 	const place = (page) => page.locator('dialog.sheet[data-place="setup"]');
-	const saved = (page) => page.locator(`${FIELD_FORM} .buttons .saved`);
+	const OWN = [['save', false], ['revert', false], ['redo', false], ['cancel', false]];
+	// With a save behind it, revert steps back to it.
+	const SAVED = [['save', false], ['revert', true], ['redo', false], ['cancel', false]];
+	const BROUGHT = [['save', false], ['revert', false], ['redo', false], ['cancel', true]];
 
-	test('reached by its own list: Revert · Save · Redo and no Cancel; Save stays and says «saved», which fades; Revert stays', async () => {
+	test('reached by its own list: save · revert · redo, cancel grayed; save stays; revert stays', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			await app.run(['track', 'nap', '--verb', 'start']);
 			await app.redraw();
 			await reach(page, 'tea');
-			assert.deepEqual(await row(page), [['Revert', false], ['Save', false], ['Redo', false]]);
+			assert.deepEqual(await row(page), OWN);
 
 			await description(page).fill('green');
-			const rowBox = () => page.locator(`${FIELD_FORM} .buttons`).boundingBox();
-			const still = await rowBox();
-			await button(page, 'commit').click();
-			await saved(page).waitFor();
-			assert.equal((await saved(page).innerText()).trim(), 'saved');
-			// Its line is kept under the row always: the row does not move when it shows.
-			assert.deepEqual(await rowBox(), still, 'the row moved for «saved»');
+			await press(page, 'commit');
 			await until(() => described(app, 'tea'), (d) => d === 'green');
+			assert.match((await app.echoes()).at(-1), /^setup tea --from-json /);
 			assert.equal(await place(page).isVisible(), true, 'Save left the place');
 			assert.equal(await heading(page), 'tea');
-			await saved(page).waitFor({ state: 'detached' });
 
 			// At the save point Revert steps back a version, and stays.
-			await button(page, 'revert').click();
+			await press(page, 'revert');
 			await until(() => description(page).inputValue(), (v) => v === '');
 			assert.equal(await place(page).isVisible(), true, 'Revert left the place');
 
-			// Said of tea's save, it is not said of the next field picked.
-			await description(page).fill('black');
-			await button(page, 'commit').click();
-			await saved(page).waitFor();
-			await trackSomething(page);
-			await page.locator(`${PICKER} [data-chip="nap"]`).click();
-			await until(() => heading(page), (t) => t === 'nap');
-			assert.equal(await saved(page).count(), 0, '«saved» followed to nap');
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('brought from another pane: Cancel › · Revert · Save › · Redo; Revert stays, Cancel drops the edits and goes back, Save saves and goes back', async () => {
+	test('brought from another pane: cancel too; revert stays, cancel drops the edits and goes back, save saves and goes back', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			await app.redraw();
 			await openField(page, 'tea', undefined, true);
 			await description(page).waitFor();
-			assert.deepEqual(await row(page), [['Cancel', true], ['Revert', false], ['Save', true], ['Redo', false]]);
+			assert.deepEqual(await row(page), BROUGHT);
 
 			await description(page).fill('green');
-			await button(page, 'revert').click();
+			await press(page, 'revert');
 			await until(() => description(page).inputValue(), (v) => v === '');
 			assert.equal(await place(page).isVisible(), true, 'Revert left the place');
 
 			const before = (await app.echoes()).length;
 			await description(page).fill('green');
-			await button(page, 'cancel').click();
+			await press(page, 'cancel');
 			await place(page).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal((await app.echoes()).length, before, 'Cancel ran something');
@@ -1169,7 +1163,7 @@ describe('the bottom row by how the person came', () => {
 
 			await openField(page, 'tea', undefined, true);
 			await description(page).fill('green');
-			await button(page, 'commit').click();
+			await press(page, 'commit');
 			await place(page).waitFor({ state: 'detached' });
 			assert.equal(await described(app, 'tea'), 'green');
 
@@ -1177,20 +1171,18 @@ describe('the bottom row by how the person came', () => {
 			await openField(page, '', undefined, true);
 			await trackSomething(page);
 			await page.locator(`${PICKER} [data-chip="tea"]`).click();
-			await until(() => row(page), (r) => r.length === 3);
-			assert.deepEqual(await row(page), [['Revert', false], ['Save', false], ['Redo', false]]);
+			await until(() => row(page), (r) => JSON.stringify(r) === JSON.stringify(SAVED));
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('a new field keeps cancel · save without tracking · start tracking; brought, its cancel wears the chevron and goes back', async () => {
+	test('a new field keeps start tracking · save without tracking · cancel; brought, its cancel goes back', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
 			await openField(page, undefined, undefined, true);
 			await nameField(page, 'tea');
-			assert.deepEqual(await row(page), [['cancel', true], ['save without tracking', false], ['start tracking', false]]);
-			assert.equal(await button(page, 'cancel').getAttribute('data-away'), 'true');
-			await button(page, 'cancel').click();
+			assert.deepEqual(await row(page), [['start tracking', false], ['save without tracking', false], ['cancel', true]]);
+			await press(page, 'cancel');
 			await place(page).waitFor({ state: 'detached' });
 			assert.deepEqual(app.errors, []);
 		});
@@ -1207,9 +1199,9 @@ describe('the bottom row by how the person came', () => {
 				await openField(page, 'tea', undefined, true);
 				await description(page).waitFor();
 				await until(front, (t) => t === 'setup');
-				assert.deepEqual(await row(page), [['Cancel', true], ['Revert', false], ['Save', true], ['Redo', false]]);
+				assert.deepEqual(await row(page), BROUGHT);
 				await description(page).fill(leave);
-				await button(page, leave).click();
+				await press(page, leave);
 				await until(front, (t) => t === home);
 			}
 			assert.equal(await described(app, 'tea'), 'commit');

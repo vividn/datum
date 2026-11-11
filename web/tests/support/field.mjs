@@ -92,3 +92,37 @@ export async function fieldNamed(page) {
 	const pill = page.locator(`${FIELD_FORM} .name-line .pill`);
 	return (await pill.count()) ? pill.getAttribute('data-field') : '';
 }
+
+/** The setup modal's own row of its commands, on a desktop, where the modal covers the bar (da-r674m). */
+const MODAL = 'dialog.sheet[data-place="setup"]';
+const IN_MODAL = `${MODAL} .setup-commands`;
+
+/**
+ * Where the setup widget's commands are (da-r674m): the setup modal's row
+ * where one is open, else the ❯'s palette, opened if it is not.
+ */
+export async function openPalette(page) {
+	if (await page.locator(MODAL).count()) return page.locator(IN_MODAL);
+	// By the ❯'s state, not the palette's: one still sliding away after a run is there, and closed.
+	const shut = page.locator('.prompt-bar button[aria-controls="bar-commands"][aria-expanded="false"]');
+	if (await shut.count()) await shut.click();
+	const bar = page.locator('#bar-commands');
+	await bar.waitFor();
+	return bar;
+}
+
+/** The setup command `name`, or with none its primary: save, or start tracking, which the form's Save was. */
+const one = (name) => (name ? `[data-setup="${name}"]` : '[data-setup][data-primary]');
+export const SETUP = (name) => `:is(#bar-commands, ${IN_MODAL}) ${one(name)}`;
+
+/** Press one of the setup widget's commands, where they are. */
+export async function setupCommand(page, name) {
+	await (await openPalette(page)).locator(one(name)).click();
+}
+
+/** The setup commands, primary first and undo apart, each `[name, enabled]`. */
+export async function setupCommands(page) {
+	const at = await openPalette(page);
+	await at.locator(one()).waitFor();
+	return at.locator('[data-setup]:not([data-setup="undo"])').evaluateAll((els) => els.map((el) => [el.dataset.setup, !el.disabled]));
+}

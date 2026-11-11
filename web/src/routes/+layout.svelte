@@ -28,6 +28,8 @@
 	import { installConsole } from '#lib/console.ts';
 	import BarLog from '#lib/BarLog.svelte';
 	import { attach, glideEnds, logHeight, shown } from '#lib/log.ts';
+	import { commandsOpen } from '#lib/bar.ts';
+	import { setupCommands } from '#lib/fieldWidget.ts';
 	import PromptBar from '#lib/PromptBar.svelte';
 	import Waiting from '#lib/Waiting.svelte';
 	import Damaged from '#lib/Damaged.svelte';
@@ -181,7 +183,11 @@
 {#if demo}
 	{@render children?.()}
 {:else}
-<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px" data-glide-ends={$glideEnds}>
+<div
+	class="shell"
+	style="--shown: {$shown}px; --log-height: {$logHeight}px; --palette-room: {$commandsOpen && $setupCommands ? 1 : 0}"
+	data-glide-ends={$glideEnds}
+>
 	<RootBar />
 	{#if $damaged !== null}<Damaged db={$damaged} />{:else}<Waiting />{/if}
 
@@ -326,7 +332,13 @@
 	   of the screen exactly when the scroll runs out (#lib/log.ts). */
 	main {
 		flex: none;
-		height: calc(100cqh - var(--bar-height) - var(--log-height, 0px));
+		height: calc(100cqh - var(--bar-height) - var(--log-height, 0px) - var(--palette-over));
+		/* The palette's room while it holds the setup widget's commands (da-r674m), vividn, 2026-11-11: «even
+		   when the output section is closed, if the command pallete is open, the setup widget should adjust
+		   it's height so that you can still save stuff»: what of its height the bar does not already give,
+		   kept as a margin, so the bar stays where it stands. */
+		--palette-over: max(0px, var(--output-height) * var(--palette-room, 0) - var(--shown, 0px) - var(--log-height, 0px));
+		margin-block-end: var(--palette-over);
 		/* A flex item will not shrink under its content unless told, and this
 		   one has to reach ZERO: at the log's tallest the dashboard is gone
 		   and the bar's top is the top of the page. Without this it stopped

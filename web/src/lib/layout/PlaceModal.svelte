@@ -10,9 +10,15 @@
 	NAME, not a kind: `dayview` is a `daystrip`. The frame is #lib/Sheet.svelte:
 	Escape, the backdrop and the × close it, and `Open as tab` hands it to
 	the transient tab a phone gets, from where `Keep tab` keeps it.
+
+	The setup widget's commands are the bar's palette's (da-r674m), which a
+	modal makes inert, so the setup modal holds them itself, under the
+	widget: the same circles, its save or start tracking leading.
 -->
 <script lang="ts">
 	import Sheet from '#lib/Sheet.svelte';
+	import { setupCommands } from '#lib/fieldWidget.ts';
+	import CommandPane from './CommandPane.svelte';
 	import { act } from '#lib/act.ts';
 	import { epoch } from './engine.js';
 	import { KINDS } from './registry.js';
@@ -36,6 +42,11 @@
 			epoch={$epoch}
 			onchange={(moved: unknown) => kind?.onChange && (settings = kind.onChange(settings, moved))}
 		/>
+		{#if place === 'setup' && $setupCommands}
+			<div class="setup-commands" data-own-gestures>
+				<CommandPane epoch={$epoch} key="modal:setup" palette only />
+			</div>
+		{/if}
 	</Sheet>
 {/if}
 
@@ -51,6 +62,12 @@
 	   (da-laxpn, da-hbrfg). */
 	:global(dialog.sheet[data-place] .sheet-body > section.pane) {
 		flex: 1;
+	}
+
+	.setup-commands {
+		flex: none;
+		display: flex;
+		border-top: 1px solid var(--accent);
 	}
 
 	.as-tab {

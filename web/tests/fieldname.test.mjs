@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { along, widgetPane } from './support/layout.mjs';
-import { FIELD_FORM, NAMING, fieldNamed, openField, trackSomething } from './support/field.mjs';
+import { FIELD_FORM, NAMING, fieldNamed, openField, trackSomething, setupCommand } from './support/field.mjs';
 const { cases } = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL('../../tests/fixtures/field-name.json', import.meta.url)),
@@ -84,7 +84,7 @@ async function typeIntoTheForm(page, field) {
 
 /** Press Save on the open form, the way a user declares a field. */
 async function trackIt(app, field) {
-	await app.page.locator(`${FIELD_FORM} button.commit`).click();
+	await setupCommand(app.page);
 	await chipIndex(app, field);
 	// The widget stays on the field it made, over the page: left, to press the chip.
 	await app.page.keyboard.press('Escape');

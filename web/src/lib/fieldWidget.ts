@@ -105,3 +105,29 @@ export async function openField(
 	});
 	return left.finally(stop);
 }
+
+/**
+ * One of the setup widget's commands in the bar's palette (da-r674m), where
+ * its buttons were: vividn, 2026-11-11, «the command pallete is how you
+ * should save stuff from the setup screen! save should be the primary
+ * action». `local` runs nothing through the CLI, so the palette stays open
+ * for the next; `leave` goes back where the person came from; the rest run a
+ * command, and the output section shows it, as any run's.
+ */
+export interface SetupCommand {
+	name: string;
+	/** Its mark in the circle: a character. */
+	glyph: string;
+	enabled: boolean;
+	/** Why it is grayed, while it is. */
+	why?: string;
+	does?: 'local' | 'leave';
+	run: () => void;
+}
+
+/**
+ * The commands of the setup widget in front holding a field, the first its
+ * primary, and its `undo` (the form's own); null with none. A copy of the
+ * widget writes its own and clears only its own.
+ */
+export const setupCommands = writable<{ commands: SetupCommand[]; undo: SetupCommand } | null>(null);

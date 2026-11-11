@@ -66,7 +66,7 @@
 	import { clearUnlockedPills, commandsOpen, dropHids, fixed, pills, prefill, text, unfixed, type Pill } from '#lib/bar.ts';
 	import { openOutput } from '#lib/log.ts';
 	import { argumentsOf, opensField, withFlag, type Suggestion } from '#lib/commands.ts';
-	import { openField } from '#lib/fieldWidget.ts';
+	import { openField, setupCommands, type SetupCommand } from '#lib/fieldWidget.ts';
 	import { redoArgv } from '#lib/calls.ts';
 	import { withPills } from '#lib/selection.ts';
 	import { conflicts, fields, grammar, here, press, pressWithPills, ready } from './engine.js';
@@ -76,11 +76,14 @@
 		/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
 		key = '',
 		/** The ❯'s palette over the bar's output: one row of larger circles, scrolled sideways (da-qzzox). */
-		palette = false
+		palette = false,
+		/** The setup widget's commands and undo alone (da-r674m): the setup place's modal, which covers the bar. */
+		only = false
 	}: {
 		epoch?: number;
 		key?: string;
 		palette?: boolean;
+		only?: boolean;
 	} = $props();
 
 	let redoable = $state(false);
@@ -129,6 +132,15 @@
 		clearUnlockedPills(argumentsOf($pills).filter((p) => p.kind === 'field'));
 	}
 
+	/** A setup widget's command (da-r674m): one that runs closes the palette onto the output, as a run does; a local one keeps it. */
+	function setup(command: SetupCommand): void {
+		if (command.does !== 'local' && $commandsOpen) {
+			commandsOpen.set(false);
+			if (!command.does) openOutput();
+		}
+		command.run();
+	}
+
 	function fill({ name, line, keyboard, spend, held }: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }): void {
 		// A choice closes the widget over the output, as a run does (da-xw655);
 		// a hold stays, for the flags it opens.
@@ -160,6 +172,9 @@
 		fixed={$fixed}
 		onrun={runNow}
 		onsuggest={suggest}
+		setup={$setupCommands}
+		onsetup={setup}
+		{only}
 		online={fill}
 		onflag={(flag) =>
 			prefill.set({ line: unfixed(withFlag($fixed ? `${$fixed} ${$text}` : $text, flag.command, flag.flag), $fixed), keyboard: flag.keyboard })}

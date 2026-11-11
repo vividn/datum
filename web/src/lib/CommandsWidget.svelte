@@ -89,6 +89,14 @@
 	flags, and the commands that open a page. No lead circle, no hold: nothing
 	that would run as `setup <another command>`.
 
+	WITH THE SETUP WIDGET ON SCREEN holding a field (da-r674m,
+	`setupCommands` in #lib/fieldWidget.ts), its commands lead: the first,
+	save or start tracking, is the larger circle, filled in the accent once it
+	can run, the rest the first of the row, and undo is the form's own, its
+	reason in its title while it is grayed. vividn, 2026-11-11: «the command
+	pallete is how you should save stuff from the setup screen! save should be
+	the primary action».
+
 	THE PALETTE, the ❯'s commands over the bottom bar's output (da-qzzox,
 	vividn, 2026-11-04: «increase the size of the buttons in the command
 	pallette. It should be one row, horizontally scrollable»): `palette`
@@ -145,6 +153,7 @@
 		type Press
 	} from './commands.js';
 	import { act, type ActKind } from './act.js';
+	import type { SetupCommand } from './fieldWidget.js';
 	import { openBackups } from './backups.js';
 	import { openPlace } from './layout/shell.js';
 	import { ARMED, arm, helping } from './help.js';
@@ -176,7 +185,13 @@
 		/** A flag from a held command's list (da-st2xl). */
 		onflag,
 		/** The ready command's tap (da-h3jcu): it runs. */
-		onsuggest
+		onsuggest,
+		/** The setup widget's commands, its primary first, and its undo (da-r674m); null with none on screen. */
+		setup = null,
+		/** One of them pressed. */
+		onsetup,
+		/** Those commands and undo alone: the setup place's modal, over the bar (da-r674m). */
+		only = false
 	}: {
 		disabled?: boolean;
 		grammar?: Grammar | null;
@@ -191,9 +206,15 @@
 		online?: (line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }) => void;
 		onflag?: (flag: { command: string; flag: string; keyboard: boolean }) => void;
 		onsuggest?: (suggestion: Suggestion) => void;
+		setup?: { commands: SetupCommand[]; undo: SetupCommand } | null;
+		onsetup?: (command: SetupCommand) => void;
+		only?: boolean;
 	} = $props();
 
-	const suggested = $derived(fixed ? null : suggestionOf(pills, fields));
+	const suggested = $derived(fixed || setup ? null : suggestionOf(pills, fields));
+	/** The setup widget's commands after its primary, first in the row, as buttons. */
+	const setupRow = $derived((setup?.commands.slice(1) ?? []).map((c): CommandButton => ({ name: `setup: ${c.name}`, label: c.name, press: 'setup' })));
+	const setupOf = (command: CommandButton) => setup?.commands.find((c) => c.name === command.label);
 
 	/** The lead circle's tap: run what is ready, else write it on the line for the rest to be typed. */
 	function lead(s: Suggestion): void {
@@ -204,7 +225,7 @@
 	}
 
 	/** The presses whose kind is theirs whatever is loaded. */
-	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', menu: 'show' };
+	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', menu: 'show', setup: 'run' };
 
 	const kept = untrack(() => inProgress.get(key));
 	/** The submenu the bar shows in the base row's place, if any. */
@@ -327,7 +348,24 @@
 	{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}<span class="name">{name}</span>
 {/snippet}
 
-{#if suggested}
+{#if setup}
+	{@const primary = setup.commands[0]}
+	<button
+		class="lead"
+		class:palette
+		class:ready={primary.enabled}
+		use:act={'run'}
+		disabled={disabled || !primary.enabled}
+		style:--lead="var(--accent)"
+		data-setup={primary.name}
+		data-primary
+		data-glyph={primary.glyph}
+		title={primary.enabled ? primary.name : primary.why}
+		onclick={() => onsetup?.(primary)}
+	>
+		{@render face(primary.glyph, primary.name)}
+	</button>
+{:else if suggested}
 	{@const s = suggested}
 	{@const icon = ICONS[s.command]}
 	<button
@@ -349,7 +387,7 @@
 
 <ButtonRows
 	class="commands{palette ? ' palette' : ''}"
-	items={shown}
+	items={setup ? [...setupRow, ...(only ? [BASE[0]] : shown)] : shown}
 	key={(command) => command.name}
 	maxRows={lines}
 	pans={palette ? 'x' : undefined}
@@ -361,9 +399,34 @@
 	{#snippet children({ item: command }: { item: CommandButton })}
 		{@const icon = iconOf(command)}
 		{@const glyph = icon.length === 1 ? icon : undefined}
-		{#if command.name === 'undo'}
+		{#if command.press === 'setup'}
+			{@const c = setupOf(command)}
+			<!-- Gone with the widget while its row still stands, it draws nothing. -->
+			{#if c}<button
+				class="command round"
+				use:act={'run'}
+				disabled={disabled || !c.enabled}
+				data-setup={c.name}
+				data-glyph={c.glyph}
+				title={c.enabled ? c.name : c.why}
+				onclick={() => onsetup?.(c)}
+			>
+				{@render face(c.glyph, c.name)}
+			</button>{/if}
+		{:else if command.name === 'undo'}
+			{@const local = setup?.undo}
 			<span class="undo">
-				<button class="command round" use:act={'run'} {disabled} data-command="undo" data-glyph={glyph} aria-label="undo" title="run undo" onclick={() => press(command)}>
+				<button
+					class="command round"
+					use:act={'run'}
+					disabled={disabled || (local && !local.enabled)}
+					data-command="undo"
+					data-setup={local ? 'undo' : undefined}
+					data-glyph={glyph}
+					aria-label="undo"
+					title={!local ? 'run undo' : local.enabled ? (local.does === 'local' ? 'undo the last edit in the form' : 'undo the save') : local.why}
+					onclick={() => (local ? onsetup?.(local) : press(command))}
+				>
 					{@render face(icon, command.label)}
 				</button>
 				<button

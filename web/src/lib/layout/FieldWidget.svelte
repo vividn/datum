@@ -49,14 +49,16 @@
 
 	What Save and Cancel do depends on how the person came (da-wz84y),
 	vividn, 2026-10-26: «maybe it should depend on how you got there?».
-	Reached by their own pick in its list of fields, a spec's row is Revert ·
-	Save · Redo, and Save stays, a brief «saved» under it. Brought from
-	another pane (`away`: a hold on a field, then the setup command), it is
-	Cancel › · Revert · Save › · Redo: «a "cancel" button, that always goes
-	back to where you came from. And then revert always just reverts to the
-	last state without going back … if hitting save or cancel takes you
-	somewhere else it should have a little chevron on it». Cancel drops the
-	edits and goes back, Save saves and goes back; Revert and Redo never leave.
+	Reached by their own pick in its list of fields, a spec's save stays,
+	and the output section says what it wrote. Brought from another pane
+	(`away`: a hold on a field, then the setup command), it has a cancel too:
+	«a "cancel" button, that always goes back to where you came from. And
+	then revert always just reverts to the last state without going back».
+	Cancel drops the edits and goes back, save saves and goes back; revert
+	and redo never leave. They are all commands in the bar's palette
+	(da-r674m, FieldForm.svelte), and its undo, with no edit to take back,
+	is the CLI's of the save this widget made while that is the last command
+	run (`saved`, cleared by any press).
 -->
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
@@ -73,7 +75,7 @@
 	import { begin } from '#lib/tour.ts';
 	import type { TailListing } from '#lib/tail.ts';
 	import { VERBS, type Save, type Spec } from '#lib/track.ts';
-	import { fields, press } from './engine.js';
+	import { fields, onPress, press } from './engine.js';
 	import { leavePlace } from './shell.js';
 	import SetupHome from './SetupHome.svelte';
 
@@ -90,9 +92,9 @@
 	let empty = $state(true);
 	/** The spec's walk along its history: its entry, the version the walk began at, and the one it is at. */
 	let walk: { hid: string; top: number; at: number } | null = $state.raw(null);
-	/** A save that stayed, said under Save for a moment (da-wz84y). */
-	let saved = $state(false);
-	let unsay: ReturnType<typeof setTimeout> | undefined;
+	/** The field whose save this widget ran, while it is the last command run: what the form's undo takes back. */
+	let saved: string | null = $state(null);
+	onDestroy(onPress(() => (saved = null)));
 
 	const tracked = $derived($fields.filter((f) => !f.ignored));
 	/** With no field: none chosen and none typed, the form its one line over the catalog (da-gnba1). */
@@ -122,14 +124,9 @@
 			return [];
 		}
 	}
-	// Another field: what was said of the last one's save is not said of it.
 	$effect.pre(() => {
 		const asked = $editing;
-		if (browser)
-			untrack(() => {
-				saved = false;
-				void load(asked);
-			});
+		if (browser) untrack(() => void load(asked));
 	});
 
 	// The bar's field pill is this widget's field (da-upig4), vividn, 2026-11-11: «if you dismiss the field
@@ -195,10 +192,14 @@
 		if (save) await press(save.argv);
 	}
 
-	onDestroy(() => {
-		clearTimeout(unsay);
-		void flush();
-	});
+	onDestroy(() => void flush());
+
+	/** The save taken back by the CLI's undo, and the spec read again. */
+	async function unsave(): Promise<void> {
+		const asked = $editing;
+		await press(['undo']);
+		if (asked === $editing) await load(asked);
+	}
 
 	/** Revert: the edits dropped, their save with them, or with none, the spec a version back. */
 	function revert(): void {
@@ -265,6 +266,7 @@
 		// Refused, the form stays as it was, to be put right; and a reader who
 		// went to another field while the save ran stays where they went.
 		if ((result && result.code !== 0) || asked !== $editing) return;
+		if (result) saved = made || asked.field;
 		if (made) {
 			$editing = fresh = { field: made };
 			if (first) void begin(made);
@@ -274,12 +276,6 @@
 		const leaving = !save || (saving && $away);
 		if (leaving) leavePlace();
 		await load($editing);
-		// Said once the read has drawn the form afresh, so its fade and its end start together.
-		if (saving && !leaving && asked === $editing) {
-			saved = true;
-			clearTimeout(unsay);
-			unsay = setTimeout(() => (saved = false), 2000);
-		}
 	}
 </script>
 
@@ -297,7 +293,7 @@
 					bind:pending
 					bind:empty
 					away={$away}
-					{saved}
+					unsave={saved === readFor.field ? unsave : null}
 					back={!!walk && walk.at > 1}
 					ahead={!!walk && walk.at < walk.top}
 					onclose={close}

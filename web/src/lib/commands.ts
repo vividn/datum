@@ -46,7 +46,9 @@ export type Press =
 	/** Open the command's PLACE, a modal on a desktop and a tab on a phone (`openPlace`, da-6du3o, da-jozgv): `sync`, `conflicts`. */
 	| 'place'
 	/** Show one of the base row's submenus in its place (`MENUS`, da-fg4w4). */
-	| 'menu';
+	| 'menu'
+	/** One of the setup widget's commands (`setupCommands` in #lib/fieldWidget.ts, da-r674m): it runs. */
+	| 'setup';
 
 export interface CommandButton {
 	/** The CLI word — what runs, and what goes on the line; a submenu's name for a `menu`. */

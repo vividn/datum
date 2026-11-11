@@ -8,7 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
-import { FIELD_FORM, leaveField, openField } from './support/field.mjs';
+import { FIELD_FORM, leaveField, openField, setupCommand } from './support/field.mjs';
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
@@ -248,7 +248,7 @@ describe('a switch field’s states in collect, in the rows', () => {
 			const { saved } = await openField(page, 'mood');
 			await page.locator(`${FIELD_FORM} [aria-label="move d: drag, or the arrow keys"]`).focus();
 			for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowUp');
-			await page.locator(`${FIELD_FORM} .commit`).click();
+			await setupCommand(page);
 			await saved;
 			assert.deepEqual(JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout).allowed_states, ['d', 'a', 'b', 'c']);
 			await leaveField(page);

@@ -72,19 +72,30 @@
 	edited spec back in ONE `setup F --from-json` — the list entire, never a
 	stream of one-state changes. It is all handed up as `close`'s `Save` for
 	the widget to run; null runs nothing. A field's is `pending` too while it
-	differs, which the widget runs when the form is left, and its buttons are
-	Revert · Save · Redo, Revert and Redo handed up for the widget to walk the
-	spec's history (da-hda4j); a new field's are cancel · save without
-	tracking (`--ignore`) · start tracking (`--track`). Brought from
-	another pane (`away`, da-wz84y), a spec's row starts with Cancel, and
-	Cancel and a spec's Save wear the chevron, for they go back there; a Save
-	that stays says «saved» under it for a moment.
+	differs, which the widget runs when the form is left.
+
+	It has no buttons of its own at its foot: what they were are commands in
+	the bar's palette (da-r674m, `setupCommands` in #lib/fieldWidget.ts),
+	vividn, 2026-11-11: «the command pallete is how you should save stuff
+	from the setup screen! save should be the primary action». A spec's are
+	save · revert · redo · cancel, Revert and Redo handed up for the widget to
+	walk the spec's history (da-hda4j), Cancel only for a person brought from
+	another pane (`away`, da-wz84y); a new field's are start tracking
+	(`--track`) · save without tracking (`--ignore`) · cancel. Its `undo` is
+	the form's own: the last edit taken back, one a press, to the form as it
+	opened («a localized undo … (doesn't trigger a cli undo … unless the last
+	action was itself to save)»), and with none the CLI's undo of the save
+	the widget made last (`unsave`). An edit is what one gesture changed: a
+	press, a drag, a box's typing, ended by the next to begin.
 -->
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import { get } from 'svelte/store';
 	import { cubicOut } from 'svelte/easing';
 	import { act } from './act.js';
 	import DataKeys from './DataKeys.svelte';
+	import { setupCommands, type SetupCommand } from './fieldWidget.js';
+	import { layout } from './layout/current.js';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 	import { defaultColor, type FieldButton } from './fields.js';
 	import Glyph from './Glyph.svelte';
@@ -135,8 +146,8 @@
 		ahead = false,
 		/** Whether the person was brought here from another pane, so Cancel and a spec's Save go back there (da-wz84y). */
 		away = false,
-		/** Whether a save that stayed is being said under Save. */
-		saved = false,
+		/** The CLI's undo of the widget's save, while that save is the last thing it did; else null. */
+		unsave = null,
 		/** Beside the field's pill, or «manual setup ›» with none: the widget's own buttons. */
 		pick,
 		/** Hand a save up to run, or null to run nothing and leave. */
@@ -159,7 +170,7 @@
 		back?: boolean;
 		ahead?: boolean;
 		away?: boolean;
-		saved?: boolean;
+		unsave?: (() => void) | null;
 		pick?: Snippet;
 		onclose: (save: Save | null) => void;
 		onrun: (save: Save) => void;
@@ -223,9 +234,12 @@
 	const drafted = $derived(spec ? editedSpec(spec, edits) : draftSpec(field.trim(), edits, given));
 	const save: Save = $derived({ argv: spec ? specArgv(editedSpec(spec, edits)) : declareArgv(field.trim(), edits, false, given) });
 	let opened: string | undefined;
+	/** The form after each edit, as it opened first: what the local undo steps back through (da-r674m). */
+	let marks: string[] = [];
+	const snapshot = () => JSON.stringify([field, verb, edits]);
 	$effect.pre(() => {
-		const now = JSON.stringify([field, verb, edits]);
-		opened ??= now;
+		const now = snapshot();
+		if (opened === undefined) marks = [(opened = now)];
 		const changed = now !== opened;
 		dirty = changed;
 		pending = spec && changed && ready ? save : null;
@@ -380,9 +394,76 @@
 		field = name;
 		opened = undefined;
 	}
+
+	// ---- the local undo (da-r674m) ----
+	/** A gesture begins: what the ones before it changed is one edit, ended. Typing is one gesture till the next. */
+	function mark(): void {
+		const now = snapshot();
+		if (now !== marks.at(-1)) marks.push(now);
+	}
+
+	/** The last edit taken back: the one since the last mark (a name still being typed), else the one before it. */
+	function takeBack(): void {
+		if (snapshot() === marks.at(-1) && marks.length > 1) marks.pop();
+		const [f, v, e] = JSON.parse(marks.at(-1)!);
+		[field, verb] = [f, v];
+		({ color, description, keys, autoalias, aliases, neverFalse, symbol, place, icon, lookup } = e);
+		on = e.states.find(isOn) ?? null;
+		states = e.states.filter((r: StateRow) => !isOn(r));
+	}
+
+	// ---- its commands, in the bar's palette (da-r674m) ----
+	const unready = 'it needs a name and a kind first';
+	const commands: SetupCommand[] = $derived(
+		spec
+			? [
+					{ name: 'save', glyph: '✓', enabled: ready && dirty, why: dirty ? unready : 'nothing to save: no edits', run: () => finish(save) },
+					{ name: 'revert', glyph: '↺', enabled: dirty || back, why: 'no edits, and no saved version before this one', does: dirty ? 'local' : undefined, run: onrevert },
+					{ name: 'redo', glyph: '↻', enabled: !dirty && ahead, why: dirty ? 'save or revert the edits first' : 'no saved version after this one', run: onredo },
+					{ name: 'cancel', glyph: '✕', enabled: away, why: 'you came here yourself: nowhere to go back to', does: 'leave', run: () => finish(null) }
+				]
+			: [
+					{ name: 'start tracking', glyph: '●', enabled: ready, why: unready, run: () => finish(save) },
+					{ name: 'save without tracking', glyph: '○', enabled: ready, why: unready, run: () => finish({ argv: declareArgv(field.trim(), edits, true, given) }) },
+					{ name: 'cancel', glyph: '✕', enabled: true, does: 'leave', run: () => finish(null) }
+				]
+	);
+	const undo: SetupCommand = $derived({
+		name: 'undo',
+		glyph: '',
+		enabled: dirty || !!unsave,
+		why: 'no edit to undo, and the last thing done here was no save',
+		does: dirty ? 'local' : undefined,
+		run: dirty ? takeBack : () => unsave?.()
+	});
+
+	/** Whether this copy is the one on screen: not a tab kept behind the front one, nor the copy a tab slides in as. */
+	let root: HTMLElement | undefined = $state();
+	let front = $state(false);
+	$effect(() => {
+		void $layout;
+		void tick().then(() => (front = !!root?.isConnected && !root.closest('.tab-body.behind, .beside')));
+	});
+	$effect(() => {
+		if (blank || !front) return;
+		const mine = { commands, undo };
+		setupCommands.set(mine);
+		return () => get(setupCommands) === mine && setupCommands.set(null);
+	});
 </script>
 
-<div class="field-form" class:empty={blank} role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
+<!-- A gesture's start ends the edit before it (`mark`): the listeners only watch. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="field-form"
+	class:empty={blank}
+	role="region"
+	aria-label={spec ? `the spec of ${field}` : 'track a field'}
+	bind:this={root}
+	onpointerdowncapture={mark}
+	onfocusincapture={mark}
+	onkeydowncapture={(e) => (e.target as HTMLElement).matches('input:not([type="checkbox"]), textarea') || mark()}
+>
 	<form
 		onsubmit={(e) => {
 			e.preventDefault();
@@ -390,7 +471,7 @@
 		}}
 	>
 		<!-- vividn, 2026-10-28: «don't freeze the shapes at the top of the setup widget allow them to scroll with
-		     everything else» (da-uz2td): the shapes, name and tab in front scroll as one, over the tabs and buttons. -->
+		     everything else» (da-uz2td): the shapes, name and tab in front scroll as one, over the tabs. -->
 		<div class="scroll">
 			{#if blank}
 				<!-- vividn, 2026-11-10 (da-thlic): «more like in the design»: a card, its heading, what it is for, the button, the recent fields. -->
@@ -646,7 +727,7 @@
 				</p>
 			{/each}
 		</div>
-		<!-- Under the panel, over the buttons (da-nmhf2). -->
+		<!-- Under the panel (da-nmhf2). -->
 		<div class="tabs" role="tablist" bind:this={bar} style:--n={TABS.length}>
 			{#each TABS as name, i (name)}
 				<button
@@ -662,30 +743,6 @@
 					onkeydown={(e) => onTabKey(e, i)}>{name}</button
 				>
 			{/each}
-		</div>
-
-		<div class="buttons">
-			{#if spec}
-				{#if away}
-					<button type="button" class="cancel" data-away onclick={() => finish(null)}>Cancel</button>
-				{/if}
-				<button type="button" class="revert" use:act={dirty ? undefined : 'run'} disabled={!dirty && !back} onclick={onrevert}>Revert</button>
-				<span class="save">
-					<button class="commit" use:act={'run'} data-away={away || undefined} type="submit" disabled={!ready || !dirty}>Save</button>
-					{#if saved}<span class="saved" role="status">saved</span>{/if}
-				</span>
-				<button type="button" class="redo" use:act={'run'} disabled={dirty || !ahead} onclick={onredo}>Redo</button>
-			{:else}
-				<button type="button" class="cancel" data-away={away || undefined} onclick={() => finish(null)}>cancel</button>
-				<button
-					type="button"
-					class="untracked"
-					use:act={'run'}
-					disabled={!ready}
-					onclick={() => finish({ argv: declareArgv(field.trim(), edits, true, given) })}>save without tracking</button
-				>
-				<button class="commit" use:act={'run'} type="submit" disabled={!ready}>start tracking</button>
-			{/if}
 		</div>
 		{/if}
 	</form>
@@ -751,7 +808,7 @@
 		min-inline-size: 0;
 	}
 
-	/* The tabs and buttons stay put; the shapes, name and tab in front
+	/* The tabs stay put; the shapes, name and tab in front
 	   scroll here, which is never shorter than a few rows. */
 	.scroll {
 		display: flex;
@@ -1196,15 +1253,6 @@
 		margin: 0;
 	}
 
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
-		justify-content: flex-end;
-		gap: 0.5rem;
-	}
-
-	.buttons button,
 	.status button,
 	.fix,
 	.remove,
@@ -1288,61 +1336,13 @@
 		align-self: flex-start;
 	}
 
-	.commit {
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
-	/* Save writes the spec at once, so the double outline (#lib/act.ts). */
-	.commit:global([data-act='run']) {
-		border: 3px double var(--accent);
-		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
-	}
-
-	/* Revert and Redo at a save point step the spec along its history at once (da-hda4j). */
-	.revert:global([data-act='run']),
-	.redo:global([data-act='run']) {
-		border: 3px double var(--rule);
-		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
-	}
-
-	/* «saved», under Save, fading (da-wz84y): in a line kept under the row always, so the row stays still when it shows. */
-	.save {
-		position: relative;
-		display: flex;
-		padding-block-end: 0.9rem;
-	}
-
-	.saved {
-		position: absolute;
-		inset-block-end: 0;
-		inset-inline: 0;
-		text-align: center;
-		font-size: 0.75rem;
-		line-height: 1.2;
-		color: var(--accent);
-		animation: said 2s ease-in forwards;
-		pointer-events: none;
-	}
-
-	@keyframes said {
-		60% {
-			opacity: 1;
-		}
-		to {
-			opacity: 0;
-		}
-	}
-
-	.buttons button:disabled,
 	.remove:disabled {
 		opacity: 0.4;
 		cursor: default;
 	}
 
-	/* Stop and start tracking run `ignore F` and `track F` at once (da-juku7), and save without tracking its one `setup F`. */
-	.status button:global([data-act='run']),
-	.untracked:global([data-act='run']) {
+	/* Stop and start tracking run `ignore F` and `track F` at once (da-juku7). */
+	.status button:global([data-act='run']) {
 		border: 3px double var(--rule);
 		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
 	}

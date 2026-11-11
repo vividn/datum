@@ -12,7 +12,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { FIELD_FORM, nameField, openField } from './support/field.mjs';
+import { FIELD_FORM, nameField, openField, setupCommand } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -43,7 +43,7 @@ const stop = (page, selector) =>
 async function make(page, field, verb) {
 	await nameField(page, field);
 	await page.locator(`${FIELD_FORM} .verb[data-verb="${verb}"]`).click();
-	await page.locator(`${FIELD_FORM} button.commit`).click();
+	await setupCommand(page);
 }
 
 describe('the first field\'s tour', () => {

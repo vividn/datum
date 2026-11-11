@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { File as MemFile, OpenFile, WASI } from '../src/lib/vendor/browser_wasi_shim/index.js';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, exactly } from './support/layout.mjs';
-import { FIELD_FORM, NAMING, PANEL, declared, fieldNamed, leaveField, nameField } from './support/field.mjs';
+import { FIELD_FORM, NAMING, PANEL, declared, fieldNamed, leaveField, nameField, setupCommand } from './support/field.mjs';
 import { resolveLibAsSource } from './support/libhook.mjs';
 import { exec } from './support/process.mjs';
 import { until } from './support/until.mjs';
@@ -419,7 +419,7 @@ describe('each example', () => {
 
 				// Saved, it is ONE `setup F --track` with the whole form (da-2pbvd).
 				const before = (await app.echoes()).length;
-				await page.locator(`${FIELD_FORM} button.commit`).click();
+				await setupCommand(page);
 				const result = await saved;
 				assert.equal(result.code, 0, result.stderr);
 				const echoes = (await app.echoes()).slice(before);
