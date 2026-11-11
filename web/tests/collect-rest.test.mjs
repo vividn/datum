@@ -314,6 +314,23 @@ describe('the now strip is the last half second', () => {
 		const hex = JSON.parse((await app.runLine('fields --json')).stdout).find((f) => f.field === field).color;
 		return `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 	};
+	/**
+	 * Before a tap: its real age, read on `window` before the app's handler and after it. A tap's mark starts at
+	 * `gestureAt`, the page's held Date less that age, 28 ms of it on a loaded runner (da-svjz3, da-wwt6w), so the
+	 * two ages bound where the mark is drawn at the tap, and a tap stamped early fails them.
+	 */
+	const timeTap = (page) =>
+		page.evaluate(() => {
+			const age = (e) => performance.now() - e.timeStamp;
+			addEventListener('click', (e) => (window.__tapAge = [age(e)]), { capture: true, once: true });
+			addEventListener('click', (e) => window.__tapAge.push(age(e)), { once: true });
+		});
+	/** How far back of now the timed tap's mark starts on a strip `of` px wide: `mid` px, within `slack`. */
+	const tapAge = async (page, of) => {
+		const [early, late] = await page.evaluate(() => window.__tapAge);
+		assert.ok(late !== undefined, "the tap reached no listener after the app's");
+		return { mid: ((early + late) / 2) * (of / 500), slack: ((late - early) / 2) * (of / 500) + 3 };
+	};
 	/** How much of the strip `field` holds in `fill`, from its right edge, once it is `want` px within `slack`. */
 	const sweep = async (page, field, fill, want, slack = 3) =>
 		until(
@@ -325,13 +342,18 @@ describe('the now strip is the last half second', () => {
 		await withApp(async (app) => {
 			await seeded(app, SEED);
 			const { page } = app;
-			await page.locator(`${ROOM} [data-field="work"]`).click();
 			const fill = await colorOf(app, 'work');
+			// The files held, the tap's own sweep is the one drawn: the layer's, a second a unit, rounds the tap's age away.
+			await holdFiles(page);
+			await timeTap(page);
+			await page.locator(`${ROOM} [data-field="work"]`).click();
 			const of = (await page.locator(`${STRIP} svg.now-strip`).boundingBox()).width;
-			// At once: at the right edge, and no wider than the moments since the tap.
-			await sweep(page, 'work', fill, 0);
+			// At once: at the right edge, and as wide as the tap's age.
+			const { mid, slack } = await tapAge(page, of);
+			await sweep(page, 'work', fill, mid, slack);
 			await app.clock.forward(250);
-			await sweep(page, 'work', fill, of / 2);
+			await sweep(page, 'work', fill, mid + of / 2, slack);
+			await release(page);
 			await app.clock.forward(250);
 			await sweep(page, 'work', fill, of, 0.5);
 			await app.clock.forward(5000);
@@ -343,11 +365,17 @@ describe('the now strip is the last half second', () => {
 		await withApp(async (app) => {
 			await seeded(app, SEED);
 			const { page } = app;
+			// The files held, the tap's own dot is the one drawn, as the sweep's above.
+			await holdFiles(page);
+			await timeTap(page);
 			await page.locator(`${ROOM} [data-field="coffee"]`).click();
+			const of = (await page.locator(`${STRIP} svg.now-strip`).boundingBox()).width;
+			const { mid, slack } = await tapAge(page, of);
 			const dot = () => drawn(page, 'coffee').then((marks) => marks.find((m) => m.kind === 'circle'));
-			await until(dot, (d) => d && Math.abs(d.mid - d.of) <= 3);
+			await until(dot, (d) => d && Math.abs(of - d.mid - mid) <= slack);
 			await app.clock.forward(250);
-			const half = await until(dot, (d) => d && Math.abs(d.mid - d.of / 2) <= 3);
+			const half = await until(dot, (d) => d && Math.abs(of / 2 - d.mid - mid) <= slack);
+			await release(page);
 			// Gone once wholly past the left edge: its center's 250 ms more, and its radius in time.
 			await app.clock.forward(250 + Math.ceil(((half.right - half.left) / 2) * (500 / half.of)) + 20);
 			await until(dot, (d) => d === undefined);
@@ -506,21 +534,15 @@ describe('the now strip is the last half second', () => {
 					);
 				// The files held, the change waits, and the fields are back at the tap: its sweep is drawn on their strip.
 				await holdFiles(page);
-				// The tap's sweep is as wide as the click's real age when the app read it (`gestureAt`): the page's Date
-				// is held and the age is not, 28 ms of it on a loaded runner (da-svjz3). Read on `window` before the
-				// app's handler and after it, those ages bound the sweep at the tap, and a tap stamped early fails them.
-				await page.evaluate(() => {
-					const age = (e) => performance.now() - e.timeStamp;
-					addEventListener('click', (e) => (window.__tapAge = [age(e)]), { capture: true, once: true });
-					addEventListener('click', (e) => window.__tapAge.push(age(e)), { once: true });
-				});
+				// The tap's sweep is as wide as the click's real age when the app read it (`timeTap`).
+				await timeTap(page);
 				await bad.click();
 				await page.locator(`${BAR} .collect.open`).waitFor({ state: 'detached' });
 				const [tap] = await swept();
-				const [early, late] = await page.evaluate(() => window.__tapAge);
 				const of = (await page.locator(`${STRIP} svg.now-strip`).boundingBox()).width;
+				const { mid, slack } = await tapAge(page, of);
 				const width = tap.right - tap.left;
-				assert.ok(late !== undefined && width >= (early * of) / 500 - 3 && width <= (late * of) / 500 + 3, `the sweep at the tap is ${width}px, for a click ${early}–${late} ms old`);
+				assert.ok(Math.abs(width - mid) <= slack, `the sweep at the tap is ${width}px, where the click's age draws ${mid} ± ${slack}px`);
 				await app.clock.forward(250);
 				await swept(width + of / 2);
 				await release(page);
