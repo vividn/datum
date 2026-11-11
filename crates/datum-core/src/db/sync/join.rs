@@ -38,6 +38,10 @@ pub struct PendingJoin {
     /// A member's refusal that no retry changes (used, expired): the words.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<String>,
+    /// A redeem of it gave way once it had reached a member, which may have
+    /// admitted it: «invite already used» then dials plainly (da-6ziyj).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gave_way: bool,
 }
 
 impl Db {
@@ -69,6 +73,15 @@ impl Db {
     pub fn sync_join_refused(&self, why: &str) -> Result<()> {
         if let Some(mut join) = self.sync_join_pending()? {
             join.refused = Some(why.into());
+            self.sync_join_hold(&join)?;
+        }
+        Ok(())
+    }
+
+    /// Mark the pending join given way on once it had reached a member.
+    pub fn sync_join_gave_way(&self) -> Result<()> {
+        if let Some(mut join) = self.sync_join_pending()? {
+            join.gave_way = true;
             self.sync_join_hold(&join)?;
         }
         Ok(())
@@ -107,6 +120,8 @@ mod tests {
             ("b", Some("laptop"))
         );
         assert!(!held.since.is_empty());
+        db.sync_join_gave_way().unwrap();
+        assert!(db.sync_join_pending().unwrap().unwrap().gave_way);
         db.sync_join_refused("invite used").unwrap();
         let held = db.sync_join_pending().unwrap().unwrap();
         assert_eq!(held.refused.as_deref(), Some("invite used"));

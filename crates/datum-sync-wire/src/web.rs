@@ -342,6 +342,18 @@ impl Store for Cli {
         self.version.clone()
     }
 
+    async fn mark_gave_way(&self) -> Result<()> {
+        self.run(&["sync", "pending-join", "--gave-way"], None)
+            .await?;
+        Ok(())
+    }
+
+    async fn marked_gave_way(&self) -> Result<bool> {
+        let held = self.run(&["sync", "pending-join"], None).await?;
+        let j: serde_json::Value = serde_json::from_str(held.trim())?;
+        Ok(j["gave_way"].as_bool().unwrap_or(false))
+    }
+
     async fn holds(&self) -> Result<u64> {
         Ok(self.run(&["sync", "holds"], None).await?.trim().parse()?)
     }

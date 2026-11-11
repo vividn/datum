@@ -1290,9 +1290,10 @@ pub enum SyncCommand {
     /// for datum.day's network worker.
     EndpointKey,
     /// Hidden: `datum sync pending-join [--hold <TICKET> --about <JSON>
-    /// [--label <L>] [--user <U>] | --refused <WHY> | --clear]` — this copy's
-    /// pending join (da-4qpwf), for datum.day's store, which decodes the
-    /// ticket (`--about` is what it says of itself): kept, refused for good,
+    /// [--label <L>] [--user <U>] | --refused <WHY> | --gave-way | --clear]`
+    /// — this copy's pending join (da-4qpwf), for datum.day's store, which
+    /// decodes the ticket (`--about` is what it says of itself): kept,
+    /// refused for good, given way on once a member was reached (da-6ziyj),
     /// or ended; printed as JSON, its ticket too, or `null`.
     PendingJoin {
         hold: Option<String>,
@@ -1300,6 +1301,7 @@ pub enum SyncCommand {
         label: Option<String>,
         username: Option<String>,
         refused: Option<String>,
+        gave_way: bool,
         clear: bool,
     },
     /// Hidden: `datum sync holds` — how many entries this copy holds, for

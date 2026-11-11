@@ -94,7 +94,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::pin::pin;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -342,6 +342,12 @@ pub trait Store {
     }
     /// What this copy runs, said in its handshake (da-3zqyv).
     fn version(&self) -> Version;
+    /// Mark this copy's pending join, the invite [`redeem`] presents, given
+    /// way on once a member was reached, which may have admitted it: kept on
+    /// the join, so a restart before the next attempt keeps it (da-6ziyj).
+    async fn mark_gave_way(&self) -> Result<()>;
+    /// Whether the pending join is so marked.
+    async fn marked_gave_way(&self) -> Result<bool>;
 }
 
 fn short(id: &str) -> &str {
@@ -1400,6 +1406,12 @@ fn lost(rep: Report, e: anyhow::Error) -> anyhow::Error {
     Lost(rep, e).into()
 }
 
+/// `DATUM_SYNC_TEST_GIVE_WAY=1`, the first time this process asks.
+fn give_way_once() -> bool {
+    static GAVE: AtomicBool = AtomicBool::new(false);
+    env::<u8>("DATUM_SYNC_TEST_GIVE_WAY") == Some(1) && !GAVE.swap(true, Relaxed)
+}
+
 /// Why a copy applying another session's ops refuses one more.
 const BUSY_WHY: &str = "is busy applying another sync's changes; it syncs again once done";
 
@@ -1561,6 +1573,14 @@ async fn session(
             // with `refused` once this copy has recorded it.
             let crossing = below_floor((&hello.version, &hello.label), (&version, &label))
                 .map(|(why, _)| (why, crosses));
+            // Test knob: a redeem's dial, once welcomed, gives way once, as a
+            // page's does to a session served meanwhile (da-gvia0): the
+            // member has admitted it, and this copy has not heard (da-6ziyj).
+            if invite.is_some() && give_way_once() {
+                end(&mut s, &mut r, CLOSED_BUSY);
+                let why = format!("gave way to the session {label} dialed meanwhile");
+                return Err(Failed(Failure::Refused(Why::Busy), why).into());
+            }
             // Welcomed, it holds no order that it delete itself: a datum
             // before it, or a chain that does not take this copy's records.
             // Nothing is sent to a copy the chain expelled.
@@ -2310,26 +2330,6 @@ pub async fn may_redeem(store: &impl Store, ticket: &Ticket) -> Result<(String, 
     })
 }
 
-/// The invites, by secret, a redeem of this process gave way on once it had
-/// reached a member ([`redeem`]).
-static GAVE_WAY: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
-
-/// Mark `secret` given way on (`mark`), or say whether it was.
-fn gave_way_on(secret: &str, mark: bool) -> bool {
-    let mut set = GAVE_WAY.lock().unwrap_or_else(|e| e.into_inner());
-    match mark {
-        true => !set.insert(secret.into()),
-        false => set.contains(secret),
-    }
-}
-
-fn gave_way_off(secret: &str) {
-    GAVE_WAY
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(secret);
-}
-
 /// The inviting device itself answered that it does not hold the invite (a
 /// ticket it never made, or one a restore took back): no member will, so a
 /// pending join ends (da-4qpwf). The refusal's kind stays under it.
@@ -2420,7 +2420,7 @@ pub async fn redeem(
         // words that say what to do.
         let next = rep.as_ref().err().and_then(failure);
         if next == Some(Failure::Refused(Why::Busy)) {
-            gave_way_on(&ticket.secret, true);
+            store.mark_gave_way().await?;
         }
         // The maker not holding it, no member will: final (da-4qpwf).
         if Some(addr.id) == maker && next == Some(Failure::Refused(Why::UnknownInvite)) {
@@ -2437,22 +2437,19 @@ pub async fn redeem(
     // ticket reaches no one; this clock says why. Only then: a clock that
     // is wrong must not refuse an invite still served (da-l9kdr).
     let late = ticket.about.expires.is_some_and(|at| at <= unix_now());
-    // Used, after an attempt of this process gave way to a session served
-    // once it had reached a member (da-gvia0, da-vj3ly): that member may
-    // have admitted it before the dial closed, so it is a member now. A
-    // plain dial says which; refused, the invite's words stand (da-4qpwf).
+    // Used, after an attempt gave way to a session served once it had
+    // reached a member (da-gvia0, da-vj3ly), in this process or one before a
+    // restart (da-6ziyj): that member may have admitted it before the dial
+    // closed, so it is a member now. A plain dial says which; refused, the
+    // invite's words stand (da-4qpwf). Either way the caller ends the join.
     let used = rep.as_ref().err().and_then(failure) == Some(Failure::Refused(Why::InviteUsed));
-    if used && gave_way_on(&ticket.secret, false) {
+    if used && store.marked_gave_way().await? {
         for addr in ticket.addrs.iter().filter(|a| a.id != ep.id()) {
             let reach = asked.then(Asked::now);
             if let Ok(plain) = dial(store, ep, addr.clone(), None, reach.as_ref()).await {
-                gave_way_off(&ticket.secret);
                 return Ok(plain);
             }
         }
-    }
-    if rep.is_ok() {
-        gave_way_off(&ticket.secret);
     }
     match rep {
         Err(e) if late && failure(&e) == Some(Failure::Unreachable) => {

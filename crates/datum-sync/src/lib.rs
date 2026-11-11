@@ -528,6 +528,14 @@ impl Store for DbStore<'_> {
         Ok(self.0.sync_hold_records(&records.join("\n"))?)
     }
 
+    async fn mark_gave_way(&self) -> Result<()> {
+        Ok(self.0.sync_join_gave_way()?)
+    }
+
+    async fn marked_gave_way(&self) -> Result<bool> {
+        Ok(self.0.sync_join_pending()?.is_some_and(|j| j.gave_way))
+    }
+
     fn version(&self) -> Version {
         let (schema, floor) = datum_core::migrations::said_version();
         Version {

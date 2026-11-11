@@ -936,9 +936,10 @@ database as chained), a bare `sync` and datum.day's leader (`redeemPending`, at 
 redeem it once one answers. The handshake recording the member that admitted it ends it.
 A member's refusal no retry changes (used, expired, an invite past its time, the inviter
 itself not holding it, `Disowned`; `retries` in the wire crate) is kept on the join and ends its retries, except that «invite already used» after an
-attempt of the same process gave way once it reached a member (da-gvia0, da-vj3ly), which may
-have been admitted before it closed, dials the ticket's addresses plainly first (`GAVE_WAY` in
-`redeem`): `sync status` says «could not
+attempt gave way once it reached a member (da-gvia0, da-vj3ly), which may have been admitted
+before it closed, dials the ticket's addresses plainly first: the mark is the join's `gave_way`
+(`Store::mark_gave_way`), so a restart keeps it (da-6ziyj), and `DATUM_SYNC_TEST_GIVE_WAY=1`
+gives way once on demand. Refused, `sync status` says «could not
 join …: ask <inviter> for a new link». `sync status` and `chain list --json` show it as
 `pending_join`, never its ticket; the hidden `sync pending-join` is the page's store for it.
 A bare `chain invite` and datum.day's links last 7 days by default.

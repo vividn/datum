@@ -588,6 +588,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             label,
             username,
             refused,
+            gave_way,
             clear,
         } => {
             if let Some(ticket) = hold {
@@ -608,6 +609,9 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             }
             if let Some(why) = refused {
                 db.sync_join_refused(&why)?;
+            }
+            if gave_way {
+                db.sync_join_gave_way()?;
             }
             if clear {
                 db.sync_join_clear()?;

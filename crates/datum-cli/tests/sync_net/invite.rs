@@ -458,6 +458,31 @@ fn a_join_a_member_does_not_hold_yet_is_kept_while_the_inviter_sleeps() {
     });
 }
 
+/// A join whose dial gave way once the member had admitted it (a page's, to a
+/// session served meanwhile, da-gvia0; here on demand) is a member the joiner
+/// has not heard of: its next attempt, in another process, reads «invite
+/// already used», and dials plainly, since the mark is on the pending join
+/// (da-6ziyj). With the mark in one process's memory, or no plain dial, the
+/// join would end refused.
+#[test]
+fn a_join_that_gave_way_once_admitted_syncs_after_a_restart() {
+    let (a, mut c) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "from-a"]);
+    let (_inviting, ticket) = a.invite(&[]);
+    c.env = vec![("DATUM_SYNC_TEST_GIVE_WAY", "1")];
+    let joined = c.ok(&["sync", "chain", "join", &ticket]);
+    assert!(joined.contains("Joined: syncing starts when "), "{joined}");
+    assert!(!c.has("from-a"), "{joined}");
+    assert!(a.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
+    c.env = vec![];
+    let synced = c.ok(&["sync"]);
+    assert!(synced.contains("verify ok"), "{synced}");
+    assert!(c.has("from-a"), "{synced}");
+    let listed: serde_json::Value =
+        serde_json::from_str(&c.ok(&["sync", "chain", "list", "--json"])).unwrap();
+    assert!(listed["pending_join"].is_null(), "{listed}");
+}
+
 /// A stranger that dials without an invite is refused by the store's
 /// handshake (`sync_chain`'s `a_non_members_act_is_refused_open_chain_or_not`);
 /// here, the copy of this key, refused before it dials: the database's own

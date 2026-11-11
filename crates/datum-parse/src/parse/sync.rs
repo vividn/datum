@@ -102,7 +102,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             let o = opts(
                 &mut rest,
                 &["hold", "about", "label", "user", "refused"],
-                &["clear"],
+                &["clear", "gave-way"],
                 0..=0,
             )?;
             SyncCommand::PendingJoin {
@@ -111,6 +111,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 label: o.get("label"),
                 username: o.get("user"),
                 refused: o.get("refused"),
+                gave_way: o.on("gave-way"),
                 clear: o.on("clear"),
             }
         }
