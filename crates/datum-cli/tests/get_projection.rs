@@ -134,7 +134,8 @@ fn a_bad_output_flag_is_refused() {
 #[test]
 fn a_further_double_colon_is_a_hop_not_part_of_a_key() {
     let env = Env::new();
-    env.ok(&["occur", "coffee", "a::b=1", "a=2"]);
+    // A key holding `::` is no plain key, so it is a `-k` slot (da-8xg6b).
+    env.ok(&["occur", "coffee", "-k", "a::b", "1", "a=2"]);
     let stderr = env.err(&["get", "_::a::b"]);
     assert!(
         stderr.contains("_::a is 2, which refers to nothing"),

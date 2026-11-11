@@ -472,7 +472,7 @@ impl LogArgs {
     pub fn takes_positional_id(&self) -> bool {
         let timed = |t: &String| {
             matches!(
-                t.split_once('='),
+                crate::input::split_key_value(t),
                 Some(("at" | "occur_time" | "start_time" | "end_time", _))
             )
         };

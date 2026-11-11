@@ -68,6 +68,11 @@ describe('framesOf', () => {
 		assert.deepEqual(frames.map((f) => [f.name, f.value]), [['amount', '3'], ['size', undefined], ['cups', '5']]);
 	});
 
+	test('a word with no plain key before its `=` is bare, as the CLI reads it (da-8xg6b)', () => {
+		const frames = framesOf(`occur tea 'a = b' x/y?q=1 cups=5`, FIELDS);
+		assert.deepEqual(frames.map((f) => [f.name, f.value]), [['amount', 'a = b'], ['size', 'x/y?q=1'], ['cups', '5']]);
+	});
+
 	test("a flag is no key's, nor the word a valued flag takes", () => {
 		const frames = framesOf('occur tea -q -t 1400 3', FIELDS, ['-t']);
 		assert.deepEqual(frames.map((f) => [f.name, f.value]), [['amount', '3'], ['size', undefined], ['cups', undefined]]);

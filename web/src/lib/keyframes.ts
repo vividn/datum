@@ -37,6 +37,9 @@ export interface Frame extends Key {
 	value?: string;
 }
 
+/** A word is KEY=VALUE only where a plain key comes before its first `=` and no space after it, as the CLI's `split_key_value` reads it (da-8xg6b): `\p{White_Space}` is Rust's `char::is_whitespace`, where `\s` adds U+FEFF and lacks U+0085. */
+const keyed = (word: string): boolean => /^(?:\.?[\p{Alphabetic}\d_-]+(?:\.[\p{Alphabetic}\d_-]+)*\+?|\+)=(?!\p{White_Space})/u.test(word);
+
 /** The text a frame puts on the line when a positional cannot reach it. */
 export const writes = (key: Key): string => `${key.name}=`;
 
@@ -54,7 +57,7 @@ export function framesOf(line: string, fields: Keyed[], valued: string[] = []): 
 	const [word, field, ...rest] = shellSpans(line).tokens;
 	const command = pendingCommand(word?.text ?? '');
 	const button = KEYED.includes(command) ? fields.find((b) => b.field === field?.text) : undefined;
-	const bare = rest.filter((t, i) => !t.text.includes('=') && !t.text.startsWith('-') && !valued.includes(rest[i - 1]?.text));
+	const bare = rest.filter((t, i) => !keyed(t.text) && !t.text.startsWith('-') && !valued.includes(rest[i - 1]?.text));
 	const state = command === 'change' ? bare.shift()?.text : undefined;
 	const keys = state === undefined ? (command === 'change' ? undefined : button?.keys) : (button?.stateKeys?.[state] ?? button?.keys);
 	if (!keys?.length) return null;

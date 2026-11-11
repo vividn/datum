@@ -265,7 +265,7 @@ pub fn apply_switch_promote_override(mut argv: Vec<String>) -> Vec<String> {
             break; // the words after it are as typed (da-gqy3b)
         } else if super::regions::is_flag(tok) {
             i += usize::from(super::regions::is_value_flag(tok));
-        } else if !tok.contains('=') {
+        } else if crate::input::split_key_value(tok).is_none() {
             positionals.push(i);
         }
         i += 1;
@@ -1092,7 +1092,7 @@ fn drop_shared(first: &[String], second: Vec<String>) -> Vec<String> {
             1
         };
         let unit = &second[i..i + n];
-        let shared = (super::regions::is_flag(tok) || tok.contains('='))
+        let shared = (super::regions::is_flag(tok) || crate::input::split_key_value(tok).is_some())
             && first.windows(n).any(|w| w == unit);
         if !shared {
             out.extend_from_slice(unit);
@@ -1125,7 +1125,7 @@ fn side_has_dur_signal(tokens: &[String]) -> bool {
     while let Some(t) = tokens.next() {
         if super::regions::is_value_flag(t) {
             tokens.next();
-        } else if !t.starts_with('-') && !t.contains('=') {
+        } else if !t.starts_with('-') && crate::input::split_key_value(t).is_none() {
             bare += 1;
         }
     }

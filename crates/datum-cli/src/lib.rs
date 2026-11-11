@@ -584,7 +584,9 @@ fn edits_states(rest: &[String]) -> bool {
     rest.iter().any(|w| {
         let state = w
             .strip_prefix("state=")
-            .or((!w.contains('=')).then_some(w.as_str()));
+            .or(datum_parse::input::split_key_value(w)
+                .is_none()
+                .then_some(w.as_str()));
         w.starts_with("+=")
             || w.starts_with("-=")
             || state.is_some_and(|s| s.split(',').any(|p| p == "_0"))
@@ -697,9 +699,11 @@ fn asks(command: &Command) -> bool {
     match command {
         Command::Edit(_) => true,
         // `update_core::parse_update_payload`'s rule: no bare token, `_LAST`.
-        Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => {
-            a.id_or_slug.iter().chain(&a.rest).all(|t| t.contains('='))
-        }
+        Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => a
+            .id_or_slug
+            .iter()
+            .chain(&a.rest)
+            .all(|t| datum_parse::input::split_key_value(t).is_some()),
         Command::Retime(a) => a.slug.is_none(),
         _ => false,
     }

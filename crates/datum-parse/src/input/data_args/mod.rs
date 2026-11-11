@@ -46,6 +46,7 @@ use crate::input::TimeArgs;
 use crate::time::DatumTime;
 
 use accumulate::alter_datum_data;
+pub use classify::split_key_value;
 use classify::{
     datum_path, find_default_for_path, inferred_value_for_default, is_dot_scalar, split_first_eq,
 };
@@ -315,9 +316,9 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
         while !data_queue.is_empty() {
             let as_typed = data_queue.len() <= verbatim;
             let arg = data_queue.remove(0);
-            let (before_eq, after_eq) = match as_typed {
-                true => (arg.as_str(), None),
-                false => split_first_eq(&arg),
+            let (before_eq, after_eq) = match split_key_value(&arg).filter(|_| !as_typed) {
+                Some((k, v)) => (k, Some(v)),
+                None => (arg.as_str(), None),
             };
             let prev = prev_slot.take();
 

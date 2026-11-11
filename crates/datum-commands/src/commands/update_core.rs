@@ -775,7 +775,7 @@ pub(crate) fn parse_update_payload(
     let mut resolved_id: Option<String> = None;
     let mut positionals: Vec<String> = Vec::with_capacity(1 + args.rest.len());
     let mut consider = |tok: String| {
-        if resolved_id.is_none() && !tok.contains('=') {
+        if resolved_id.is_none() && datum_parse::input::split_key_value(&tok).is_none() {
             resolved_id = Some(tok);
         } else {
             positionals.push(tok);
@@ -823,7 +823,11 @@ pub(crate) fn parse_update_payload(
             anyhow::bail!("empty key name in spec '{spec}'");
         }
         match rhs {
-            Some(v) if !v.is_empty() => injected_immediates.push(format!("{name}={v}")),
+            // A key no positional could spell (`-k "my key=3"`) stays a
+            // spec, whose default sets it (da-8xg6b).
+            Some(v) if !v.is_empty() && datum_parse::input::split_key_value(spec).is_some() => {
+                injected_immediates.push(spec.clone())
+            }
             _ => data_args.keys.push(spec.clone()),
         }
     }
@@ -863,7 +867,7 @@ pub(crate) fn parse_update_payload(
         .chain(args.rest.iter())
         .chain(args.keys.iter())
     {
-        if let Some((k, v)) = token.split_once('=') {
+        if let Some((k, v)) = datum_parse::input::split_key_value(token) {
             // A key still in the payload was given a value after all — a
             // positional filling a `-k KEY=` slot, or a later `KEY=v`.
             if v.is_empty() && !k.is_empty() {

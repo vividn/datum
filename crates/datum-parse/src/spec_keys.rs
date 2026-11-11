@@ -9,6 +9,7 @@
 //! [`spec_key_words`], so an aliased line and a typed one bind alike.
 
 use crate::cli::LogArgs;
+use crate::input::split_key_value;
 use crate::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
 
 /// What a declared key asks of a log: the four ways an alias line names a
@@ -116,7 +117,7 @@ pub fn typed_state(line: &LogArgs) -> Option<String> {
         .iter()
         .rev()
         .find_map(|t| t.strip_prefix("state="));
-    let mut bare = line.rest.iter().filter(|t| !t.contains('='));
+    let mut bare = line.rest.iter().filter(|t| split_key_value(t).is_none());
     let state = match named {
         Some(s) => s.to_string(),
         None if line.string_state => bare.map(String::as_str).collect::<Vec<_>>().join(" "),
@@ -146,7 +147,7 @@ pub fn spec_key_words(
     let set = line
         .rest
         .iter()
-        .filter_map(|t| t.split_once('=').map(|(n, _)| n));
+        .filter_map(|t| split_key_value(t).map(|(n, _)| n));
     let named: Vec<&str> = slots.map(|k| parse_key_decl(k).0).chain(set).collect();
     let routed = line.remainder.is_some() || line.comment_remainder || line.string_state;
     let mut out = SpecKeyWords::default();

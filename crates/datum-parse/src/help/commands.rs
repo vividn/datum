@@ -1556,6 +1556,10 @@ the field need a key (`size=large`) unless the field's spec gives them
 one; a remark takes them as its text. After a bare `--` every word is
 taken as typed, no flag and no key: `datum moment jot -C -- see
 https://example.com/?a=b -t now` stores that sentence as the comment.
+A word is KEY=VALUE only where what comes before its first `=` is a
+key (letters, digits, `_` and `-`, joined by `.`) and no space follows
+the `=`: `a = b`, a sentence or a URL holding `=` is a value. A key
+with a space or another symbol is a `-k` slot: `-k 'my key' 3`.
 
 The options below are read by all six. Each command's own page lists only
 what is particular to it.

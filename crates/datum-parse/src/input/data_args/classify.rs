@@ -39,6 +39,27 @@ pub(super) fn split_first_eq(s: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Split a positional into KEY=VALUE, or `None` for a value (da-8xg6b,
+/// vividn, 2026-11-11): the part before its first `=` must be a plain key
+/// and no whitespace may follow the `=`. A plain key is segments joined by
+/// `.`, with an optional leading `.`, each of letters (any script), digits,
+/// `_` and `-`, and may end in a list operator's `+` (`key+=x`, `+=s`).
+/// So a sentence or a URL holding a `=` is one value; a key with spaces or
+/// symbols goes through `-k`. A `-k key=default` spec is no positional and
+/// keeps [`split_first_eq`].
+pub fn split_key_value(s: &str) -> Option<(&str, &str)> {
+    let (key, value) = s.split_once('=')?;
+    let seg = |g: &str| {
+        !g.is_empty()
+            && g.chars()
+                .all(|c| c.is_alphabetic() || c.is_ascii_digit() || c == '_' || c == '-')
+    };
+    let path = key.strip_suffix('+').unwrap_or(key);
+    let path = path.strip_prefix('.').unwrap_or(path);
+    let plain = (path.is_empty() && key == "+") || path.split('.').all(seg);
+    (plain && !value.starts_with(char::is_whitespace)).then_some((key, value))
+}
+
 /// Split a path into dotted segments.
 pub(super) fn path_segs(path: &str) -> Vec<&str> {
     path.split('.').collect()
@@ -132,6 +153,42 @@ fn matches_suffix(path: &str, suffix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_positional_splits_only_at_a_plain_key() {
+        for (tok, key, value) in [
+            ("cups=2", "cups", "2"),
+            (".title=x", ".title", "x"),
+            ("a.b=1", "a.b", "1"),
+            ("wake_time=7:30", "wake_time", "7:30"),
+            ("formula=x=y+1", "formula", "x=y+1"),
+            ("cups=", "cups", ""),
+            ("tags+=x", "tags+", "x"),
+            ("tags-=x", "tags-", "x"),
+            ("+=s", "+", "s"),
+            ("-=s", "-", "s"),
+            ("größe=3", "größe", "3"),
+        ] {
+            assert_eq!(split_key_value(tok), Some((key, value)), "{tok}");
+        }
+        for tok in [
+            "Fix the test. Its #[ignore = \"slow\"] hides it",
+            "youtube.com/results?search_query=query_string",
+            "a = b",
+            "a= b",
+            "a =b",
+            "=2",
+            "=",
+            ".=x",
+            "a..b=1",
+            "a.=1",
+            "my key=3",
+            "x/y=1",
+            "no equals",
+        ] {
+            assert_eq!(split_key_value(tok), None, "{tok}");
+        }
+    }
 
     #[test]
     fn datum_path_rewrites() {

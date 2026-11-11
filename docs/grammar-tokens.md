@@ -231,6 +231,7 @@ CHANGE dz0m3 activity:2026-11-05T20:01:08.756Z
 | token                | means                                               |
 |----------------------|-----------------------------------------------------|
 | `key=value`          | a data key; an empty key (`=2`) is raw data         |
+| `a = b` `x/y?q=1`    | no plain key before `=`, or a space after it: a value; such a key is `-k` |
 | `.key=`              | shorthand for `state.key=`                          |
 | `a.b=`               | a dotted path into nested data                      |
 | `a,b` `,a`           | a glued or leading comma → an array                 |

@@ -194,7 +194,7 @@ fn replay_side(
     prepare_log_args(action, &mut log_args)?;
     if matches!(action, Action::Switch) {
         for tok in &log_args.rest {
-            if !tok.contains('=') {
+            if datum_parse::input::split_key_value(tok).is_none() {
                 validate_switch_state_token(tok)?;
             }
         }

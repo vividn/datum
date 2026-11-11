@@ -61,7 +61,7 @@ fn field_slot(side: &[String]) -> Option<usize> {
             return None;
         } else if is_flag(tok) {
             i += usize::from(is_value_flag(tok));
-        } else if !tok.contains('=') {
+        } else if crate::input::split_key_value(tok).is_none() {
             return Some(i);
         }
         i += 1;
@@ -152,7 +152,10 @@ fn refuse_what_no_array_means(
         return Ok(());
     }
     let state = (verb == "switch").then(|| typed_state(&line)).flatten();
-    let words = line.rest.iter().filter(|t| !t.contains('='));
+    let words = line
+        .rest
+        .iter()
+        .filter(|t| crate::input::split_key_value(t).is_none());
     let takes_state = verb == "switch" && !line.rest.iter().any(|t| t.starts_with("state="));
     let words: Vec<&String> = match line.string_state && takes_state {
         // `-I` joins them all into the state.

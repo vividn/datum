@@ -407,13 +407,9 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
             i += 1;
             continue;
         }
-        if tok.contains('=') {
-            if let Some((name, _)) = tok.split_once('=') {
-                explicit_kv.push(name.to_string());
-                if name == "dur" {
-                    has_dur_kv = true;
-                }
-            }
+        if let Some((name, _)) = crate::input::split_key_value(tok) {
+            explicit_kv.push(name.to_string());
+            has_dur_kv |= name == "dur";
             i += 1;
             continue;
         }
@@ -569,7 +565,7 @@ fn classify_region(tokens: &[String]) -> RegionContent {
         } else if no_more_flags {
             positionals.push(format!("{TYPED}{tok}"));
             positional_at.push(i);
-        } else if tok.contains('=') {
+        } else if crate::input::split_key_value(tok).is_some() {
             kv.push(tok.clone());
         } else {
             positionals.push(tok.clone());
@@ -882,7 +878,7 @@ fn field_and_state(side: &[String]) -> (Option<&String>, Option<String>) {
             }
         } else if let Some(v) = t.strip_prefix("state=") {
             state_kv = Some(v.to_string());
-        } else if !t.contains('=') {
+        } else if crate::input::split_key_value(t).is_none() {
             bare.push(t);
         }
     }

@@ -1012,6 +1012,62 @@ fn occur_empty_key_token_is_raw_data() {
     }
 }
 
+/// da-8xg6b (vividn, 2026-11-11, extending da-c312; not datum parity): a
+/// positional is KEY=VALUE only when the part before its first `=` is a
+/// plain key and no space follows the `=`. Anything else is a value, so a
+/// sentence or a URL holding a `=` is stored whole.
+#[test]
+fn a_positional_is_a_key_only_before_a_plain_key() {
+    let data = |field: &str, argv: &[&str]| {
+        let db = fresh_db();
+        run_cli(argv, &db).unwrap_or_else(|e| panic!("{argv:?}: {e:#}"));
+        datum_core::test_util::logged_entries(&db, field)[0]
+            .data
+            .clone()
+            .unwrap()
+    };
+
+    let d = data(
+        "coffee",
+        &[
+            "occur",
+            "coffee",
+            "cups=2",
+            "a.b=1",
+            "formula=x=y+1",
+            "-k",
+            "my key",
+            "3",
+        ],
+    );
+    assert_eq!(
+        (&d["cups"], &d["a"]["b"], &d["formula"], &d["my key"]),
+        (&json!(2), &json!(1), &json!("x=y+1"), &json!(3))
+    );
+    let url = "youtube.com/results?search_query=query_string";
+    for tok in [url, "a = b", "a= b", "a =b"] {
+        let d = data("coffee", &["occur", "coffee", "-k", "url", tok]);
+        assert_eq!(d, json!({ "url": tok }), "{tok}");
+    }
+    let db = fresh_db();
+    let err = run_cli(&["occur", "coffee", url], &db).expect_err("no slot for the url");
+    assert!(format!("{err:#}").contains("no matching key"), "{err:#}");
+
+    // The text that lost two of canteen's issues, through an alias's slots.
+    let db = fresh_db();
+    let alias = "record issue -K title -k priority -k description";
+    run_cli(&["alias", "set", "issue", alias], &db).unwrap();
+    let text = r#"Fix the test. Its #[ignore = "slow"] hides it"#;
+    run_cli(&["issue", "Flaky", "1", text], &db).unwrap();
+    let d = datum_core::test_util::logged_entries(&db, "issue")[0]
+        .data
+        .clone();
+    assert_eq!(
+        d.unwrap(),
+        json!({ "title": "Flaky", "priority": 1, "description": text })
+    );
+}
+
 /// Explicit `state=<v>` on `occur` is also rejected — occur is stateless
 /// by definition; the user wants `switch`/`start`/`stop` for state changes.
 #[test]

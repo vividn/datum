@@ -16,7 +16,7 @@ use datum_core::{
     time::{parse_duration, resolve_timezone, DatumTime, DefaultDirection, TimeCtx, Zone},
     timezone_field::TIMEZONE_FIELD,
 };
-use datum_parse::input::TimeArgs;
+use datum_parse::input::{split_key_value, TimeArgs};
 use datum_parse::spec_keys::{parse_key_decl, KeyKind, SpecKeyWords};
 use serde_json::{json, Value as JsonValue};
 use std::collections::BTreeMap;
@@ -129,7 +129,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // silently become a `null` array element without this pre-check.
     if matches!(action, Action::Switch) {
         for token in &args.rest {
-            if token.contains('=') {
+            if split_key_value(token).is_some() {
                 continue;
             }
             validate_switch_state_token(token)?;
@@ -379,7 +379,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let extras: Vec<&str> = args
             .rest
             .iter()
-            .filter(|t| !t.contains('='))
+            .filter(|t| split_key_value(t).is_none())
             .map(String::as_str)
             .collect();
         let joined = extras.join(" ");
@@ -1425,7 +1425,7 @@ pub(crate) fn parse_log_args(
         if matches!(action, Action::Switch)
             && !args.string_state
             && switch_state_positional.is_none()
-            && !pos.contains('=')
+            && split_key_value(pos).is_none()
         {
             switch_state_positional = Some(pos.clone());
         } else {
@@ -1681,7 +1681,7 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     args.rest.pop();
     let mut post_bare: Vec<String> = Vec::with_capacity(post.len());
     for token in post {
-        if token.contains('=') {
+        if split_key_value(&token).is_some() {
             anyhow::bail!(
                 "change: only a bare state value may follow the `,` chain marker (got `{token}`)"
             );
@@ -1729,7 +1729,7 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     let leading_keyword_idx = args
         .rest
         .iter()
-        .position(|t| !t.contains('='))
+        .position(|t| split_key_value(t).is_none())
         .filter(|_| !args.string_state)
         .filter(|&i| {
             matches!(
@@ -1749,7 +1749,7 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
         // with no dur is still a legal shape — derive_verb rejects
         // `(state=set, fs=set, dur=None)` further downstream with a
         // clear error rather than silently producing the wrong row).
-        if let Some(dur_idx) = args.rest.iter().position(|t| !t.contains('=')) {
+        if let Some(dur_idx) = args.rest.iter().position(|t| split_key_value(t).is_none()) {
             let dur_token = args.rest.remove(dur_idx);
             if args.duration.duration.is_some() {
                 anyhow::bail!(
@@ -1843,9 +1843,7 @@ pub(crate) fn positional_id(action: Action, args: &LogArgs) -> Option<usize> {
     if !matches!(action, Action::Add) || !args.takes_positional_id() {
         return None;
     }
-    args.rest
-        .iter()
-        .position(|t| !matches!(t.split_once('='), Some((k, _)) if !k.is_empty()))
+    args.rest.iter().position(|t| split_key_value(t).is_none())
 }
 
 /// Move that word to `--id`, as typed: one that cannot be an id refuses.
