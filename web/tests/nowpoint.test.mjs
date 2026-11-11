@@ -686,11 +686,15 @@ describe('a drag along the band pans the window', () => {
 				);
 				await app.idle();
 
-				// A minute of clock on both sides of the seam, and a beat for
-				// anything the tick sets off.
+				// A minute of clock on both sides of the seam, and a beat of the
+				// page's clock for what the tick sets off: one run, which `idle`
+				// waits out, and, were the window to follow the selection again,
+				// a fly of FLY_MS (250, NowviewWidget.svelte) over animation
+				// frames, which held timers hold. A beat of the wall's clock lets
+				// none of them land, so it could not see the snap (da-x31h5).
 				await app.clock.forward(MINUTE);
 				await app.idle();
-				await page.waitForTimeout(250);
+				await page.clock.runFor(400);
 				await app.idle();
 
 				assert.ok(Math.abs((await instantUnder(page, x)) - panned) < 1000, 'the minute brought the window home');
