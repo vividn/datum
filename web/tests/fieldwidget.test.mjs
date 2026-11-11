@@ -784,8 +784,11 @@ describe('the field widget', () => {
 			const heading = pane.locator(`${FIELD_FORM} h2`);
 			const home = pane.locator(`${FIELD_FORM} button.track-something`);
 
-			// A field opened in it is the bar's pill.
-			await openField(page, 'tea');
+			// A field opened in it is the bar's pill. Not by openField, which waits for every form to go: a pane's
+			// stays, on nap or on none, and that wait outlived the test once it had mounted (da-fcd43).
+			await pane.locator(FIELD_FORM).waitFor();
+			await page.evaluate(() => void window.datum.field('tea'));
+			await until(async () => (await heading.allInnerTexts()).join().trim(), (t) => t === 'tea');
 			await until(() => pill.locator('.label').allInnerTexts(), (t) => t.join().trim() === 'tea');
 			// The bar's × clears the widget's field.
 			await pill.locator('button[aria-label="remove tea"]').click();
