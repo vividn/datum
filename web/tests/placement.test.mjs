@@ -54,12 +54,12 @@ describe('the spec it saves', () => {
 		assert.equal('render' in editedSpec(hidden, edit({ y: 0.3, height: 0.2 })), false);
 	});
 
-	test("an occur dot's label keys are placement too: kept when set, dropped when set to nothing (da-ro5xm)", () => {
-		const labelled = { ...base, key_above: 'weight', key_below: 'note' };
-		assert.deepEqual(placeOf(labelled), { y: 0.3, height: 0.2, key_above: 'weight', key_below: 'note' });
+	test("a field's labels are placement too: kept when set, dropped when the form leaves none (da-cepjy)", () => {
+		const labelled = { ...base, labels: [{ show: 'weight', at: 'over' }, { show: 'at', at: 'under' }] };
+		assert.deepEqual(placeOf(labelled), { y: 0.3, height: 0.2, labels: labelled.labels });
 		assert.deepEqual(editedSpec(labelled, edit(placeOf(labelled))), labelled);
-		const back = JSON.parse(JSON.stringify(editedSpec(labelled, edit({ y: 0.3, height: 0.2, key_below: 'note' }))));
-		assert.deepEqual([back.key_above, back.key_below], [undefined, 'note']);
+		const back = JSON.parse(JSON.stringify(editedSpec(labelled, edit({ y: 0.3, height: 0.2 }))));
+		assert.equal('labels' in back, false);
 	});
 
 	test("an occur dot's size is placement too: kept when set, dropped when the tab leaves it at 1", () => {
@@ -602,30 +602,75 @@ describe('the Placement tab', () => {
 		});
 	});
 
-	// da-ro5xm, vividn, 2026-11-09: «you can select up to 2 keys (one for above and one for below) to show».
-	test("a moment's dot takes one of its keys to print above it and one below, chosen among the field's keys", async () => {
-		await onSeam(async (app) => {
-			const { page } = app;
-			await app.run(['track', 'weight', '--verb', 'occur']);
-			await setPlace(app, 'weight', { y: 0.3, height: 0.2, data_keys: ['weight=', 'note='] });
-			let { saved } = await openPlacement(page, 'weight');
-			const pick = (slot) => page.locator(`${MODAL} .placement .dot-labels select[data-slot="${slot}"]`);
-			for (const slot of ['key_above', 'key_below']) {
-				assert.deepEqual(await pick(slot).locator('option').allInnerTexts(), ['nothing', 'weight', 'note'], slot);
-				assert.equal(await pick(slot).inputValue(), '', `${slot}: nothing at first`);
-			}
-			await pick('key_above').selectOption('weight');
-			await pick('key_below').selectOption('note');
-			await done(page, saved);
-			let shown = await spec(app, 'weight');
-			assert.deepEqual([shown.key_above, shown.key_below], ['weight', 'note']);
+	// da-cepjy, vividn, 2026-11-11: «let's change the above/below to be a button (+label) / you can add multiple labels /
+	// each label has a dropdown for things it can labeled with ... which let's you drag an example label ... around,
+	// snapping to a few predefined positions».
+	describe('labels on its marks', () => {
+		const row = (i) => `${MODAL} .placement .mark-labels .label-row[data-label="${i}"]`;
+		/** Drag row `i`'s sample label to the snap dot of `at`, from the label's middle, and let go. */
+		async function dragTo(page, i, at) {
+			const label = page.locator(`${row(i)} .sample-label`);
+			const from = await label.boundingBox();
+			const to = await page.locator(`${row(i)} .spot[data-spot="${at}"]`).boundingBox();
+			await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+			await page.mouse.down();
+			await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 4 });
+			await page.mouse.up();
+			await page.waitForFunction(([sel, at]) => document.querySelector(sel)?.getAttribute('data-at') === at, [`${row(i)} svg.sample`, at]);
+		}
 
-			({ saved } = await openPlacement(page, 'weight'));
-			assert.equal(await pick('key_above').inputValue(), 'weight', 'read back');
-			await pick('key_above').selectOption('');
-			await done(page, saved);
-			shown = await spec(app, 'weight');
-			assert.deepEqual([shown.key_above, shown.key_below], [undefined, 'note'], 'nothing clears it');
+		test("«+ label» adds a row showing a key, the field, its time or its state; its dot's label snaps to each of four places", async () => {
+			await onSeam(async (app) => {
+				const { page } = app;
+				await app.run(['track', 'weight', '--verb', 'occur']);
+				await setPlace(app, 'weight', { y: 0.3, height: 0.2, data_keys: ['weight=', 'note='] });
+				await app.run(['occur', 'weight', '-y', '-t', '07:12', 'weight=75.2', 'note=ok']);
+				let { saved } = await openPlacement(page, 'weight');
+				const add = page.locator(`${MODAL} .placement .mark-labels button.add`);
+				await add.click();
+				await add.click();
+				const shows = page.locator(`${row(0)} select[data-show]`);
+				assert.deepEqual(await shows.locator('option').evaluateAll((os) => os.map((o) => o.value)), ['weight', 'note', 'field', 'at', 'state']);
+				// The sample is a real value of the key, and the entry's time for `at`.
+				await page.waitForFunction((sel) => document.querySelector(sel)?.textContent === '75.2', `${row(0)} .sample-label`);
+				await page.locator(`${row(1)} select[data-show]`).selectOption('at');
+				assert.equal(await page.locator(`${row(1)} .sample-label`).textContent(), '07:12');
+				assert.deepEqual(await page.locator(`${row(0)} .spot`).evaluateAll((s) => s.map((c) => c.dataset.spot)), ['over', 'under', 'before', 'after']);
+				for (const at of ['after', 'under', 'before', 'over', 'under']) await dragTo(page, 0, at);
+				await done(page, saved);
+				let shown = await spec(app, 'weight');
+				assert.deepEqual(shown.labels, [
+					{ show: 'weight', at: 'under' },
+					{ show: 'at', at: 'over' }
+				]);
+				// Every picture draws them.
+				const drawn = (await app.run(['dayview', '-n', '2'])).stdout.match(/class="point-label [a-z-]+"[^>]*>[^<]*/g) ?? [];
+				assert.ok(drawn.some((t) => t.startsWith('class="point-label under"') && t.endsWith('>75.2')), JSON.stringify(drawn));
+				assert.ok(drawn.some((t) => t.startsWith('class="point-label over"') && t.endsWith('>07:12')), JSON.stringify(drawn));
+
+				({ saved } = await openPlacement(page, 'weight'));
+				await page.locator(`${row(0)} button.remove`).click();
+				await page.locator(`${row(0)} button.remove`).click();
+				await done(page, saved);
+				shown = await spec(app, 'weight');
+				assert.equal('labels' in shown, false, JSON.stringify(shown));
+			});
+		});
+
+		test("an on/off's bar takes its label at ten places: over and under its start, middle and end, inside and outside each end", async () => {
+			await onSeam(async (app) => {
+				const { page } = app;
+				await app.run(['track', 'walk', '--verb', 'start']);
+				await setPlace(app, 'walk', { y: 0.3, height: 0.2 });
+				const { saved } = await openPlacement(page, 'walk');
+				await page.locator(`${MODAL} .placement .mark-labels button.add`).click();
+				await page.locator(`${row(0)} select[data-show]`).selectOption('field');
+				const spots = await page.locator(`${row(0)} .spot`).evaluateAll((s) => s.map((c) => c.dataset.spot));
+				assert.deepEqual(spots, ['over-start', 'over-middle', 'over-end', 'under-start', 'under-middle', 'under-end', 'outside-start', 'inside-start', 'inside-end', 'outside-end']);
+				for (const at of [...spots.slice(1), spots[0], 'inside-end']) await dragTo(page, 0, at);
+				await done(page, saved);
+				assert.deepEqual((await spec(app, 'walk')).labels, [{ show: 'field', at: 'inside-end' }]);
+			});
 		});
 	});
 

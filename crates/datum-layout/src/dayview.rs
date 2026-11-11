@@ -217,6 +217,129 @@ pub struct DayviewBlock {
     /// renderer's `data-created`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_ms: Option<i64>,
+    /// What the bar prints beside it (da-cepjy), resolved by the caller.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<MarkLabel>,
+}
+
+/// Where a mark's label stands (da-cepjy), relative to TIME, so it holds
+/// when a view runs vertically: «over» is above a horizontal view's mark and
+/// left of a vertical one's, «before» left of it and above it. The first
+/// four are a dot's, the rest a bar's; each reads the other's as the side
+/// it is on ([`LabelAt::on_dot`], [`LabelAt::on_bar`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LabelAt {
+    Over,
+    Under,
+    Before,
+    After,
+    OverStart,
+    OverMiddle,
+    OverEnd,
+    UnderStart,
+    UnderMiddle,
+    UnderEnd,
+    OutsideStart,
+    InsideStart,
+    InsideEnd,
+    OutsideEnd,
+}
+
+impl LabelAt {
+    pub const ALL: [LabelAt; 14] = [
+        LabelAt::Over,
+        LabelAt::Under,
+        LabelAt::Before,
+        LabelAt::After,
+        LabelAt::OverStart,
+        LabelAt::OverMiddle,
+        LabelAt::OverEnd,
+        LabelAt::UnderStart,
+        LabelAt::UnderMiddle,
+        LabelAt::UnderEnd,
+        LabelAt::OutsideStart,
+        LabelAt::InsideStart,
+        LabelAt::InsideEnd,
+        LabelAt::OutsideEnd,
+    ];
+
+    /// The position's name, as a spec stores it.
+    pub fn name(self) -> &'static str {
+        match self {
+            LabelAt::Over => "over",
+            LabelAt::Under => "under",
+            LabelAt::Before => "before",
+            LabelAt::After => "after",
+            LabelAt::OverStart => "over-start",
+            LabelAt::OverMiddle => "over-middle",
+            LabelAt::OverEnd => "over-end",
+            LabelAt::UnderStart => "under-start",
+            LabelAt::UnderMiddle => "under-middle",
+            LabelAt::UnderEnd => "under-end",
+            LabelAt::OutsideStart => "outside-start",
+            LabelAt::InsideStart => "inside-start",
+            LabelAt::InsideEnd => "inside-end",
+            LabelAt::OutsideEnd => "outside-end",
+        }
+    }
+
+    /// The position named `name`, `None` for one this build has none of.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|at| at.name() == name)
+    }
+
+    /// Where a dot puts a label placed here: a bar's side of its own.
+    pub fn on_dot(self) -> Self {
+        use LabelAt::*;
+        match self {
+            OverStart | OverMiddle | OverEnd => Over,
+            UnderStart | UnderMiddle | UnderEnd => Under,
+            OutsideStart | InsideStart => Before,
+            InsideEnd | OutsideEnd => After,
+            dot => dot,
+        }
+    }
+
+    /// Where a bar puts a label placed here: a dot's side, at its middle or
+    /// outside its end.
+    pub fn on_bar(self) -> Self {
+        use LabelAt::*;
+        match self {
+            Over => OverMiddle,
+            Under => UnderMiddle,
+            Before => OutsideStart,
+            After => OutsideEnd,
+            bar => bar,
+        }
+    }
+}
+
+/// A bar's end in time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Start,
+    End,
+}
+
+impl LabelAt {
+    /// The end of a bar a bar's position stands at, `None` for its middle
+    /// (and a dot's).
+    pub fn edge(self) -> Option<Edge> {
+        use LabelAt::*;
+        match self {
+            OverStart | UnderStart | OutsideStart | InsideStart => Some(Edge::Start),
+            OverEnd | UnderEnd | InsideEnd | OutsideEnd => Some(Edge::End),
+            _ => None,
+        }
+    }
+}
+
+/// One label a mark prints (da-cepjy): its text, already cut, and where.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MarkLabel {
+    pub text: String,
+    pub at: LabelAt,
 }
 
 /// Fill mode for a block. Multi-state values (arrays) render as diagonal
@@ -255,13 +378,10 @@ pub struct DayviewPoint {
     /// (da-45wgz). Resolved by the caller, as `glyph` is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
-    /// The text printed just above the dot and just below it (da-ro5xm):
-    /// the values of the spec's `key_above` / `key_below`, resolved and cut
-    /// by the caller, as `glyph` is.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_above: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_below: Option<String>,
+    /// What the dot prints beside it (da-cepjy): the spec's `labels`,
+    /// resolved and cut by the caller, as `glyph` is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<MarkLabel>,
     /// A moment (`switch run -m`) at an instant the field holds an active
     /// state (da-lqo7x): drawn as a dotted line across its lane, not a dot.
     /// It asks the state around it, not its own (da-xo58u): `run -m` where
@@ -571,6 +691,9 @@ pub struct RenderedBlock {
     /// clock jumped under is a piece in each.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub span: usize,
+    /// As [`DayviewBlock::labels`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<MarkLabel>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -598,12 +721,9 @@ pub struct RenderedPoint {
     /// As [`DayviewPoint::icon`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
-    /// As [`DayviewPoint::label_above`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_above: Option<String>,
-    /// As [`DayviewPoint::label_below`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_below: Option<String>,
+    /// As [`DayviewPoint::labels`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<MarkLabel>,
     /// As [`DayviewPoint::moment`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub moment: bool,
@@ -1103,6 +1223,16 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                         title: b.title.clone(),
                         created_ms: b.created_ms,
                         span,
+                        // A label at an edge is drawn where the bar's own
+                        // edge is, and not where a day or a stretch cuts it.
+                        labels: (b.labels.iter())
+                            .filter(|l| match l.at.on_bar().edge() {
+                                Some(Edge::Start) => s == b.start_ms,
+                                Some(Edge::End) => e == b.end_ms,
+                                None => true,
+                            })
+                            .cloned()
+                            .collect(),
                     });
                 }
             }
@@ -1135,8 +1265,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     created_ms: p.created_ms,
                     glyph: p.glyph.clone(),
                     icon: p.icon,
-                    label_above: p.label_above.clone(),
-                    label_below: p.label_below.clone(),
+                    labels: p.labels.clone(),
                     moment: p.moment,
                     allday: p.allday,
                     span,
@@ -1302,8 +1431,7 @@ mod tests {
                     title: None,
                     created_ms: None,
                     glyph: None,
-                    label_above: None,
-                    label_below: None,
+                    labels: Vec::new(),
                     icon: false,
                     moment: false,
                     allday: true,
@@ -1568,8 +1696,7 @@ mod tests {
                         title: None,
                         created_ms: None,
                         glyph: None,
-                        label_above: None,
-                        label_below: None,
+                        labels: Vec::new(),
                         icon: false,
                         moment: false,
                         allday: false,
@@ -1611,6 +1738,7 @@ mod tests {
                 id: None,
                 title: None,
                 created_ms: None,
+                labels: Vec::new(),
             }],
             points: vec![],
             icon: None,
@@ -1662,6 +1790,7 @@ mod tests {
                     id: None,
                     title: None,
                     created_ms: None,
+                    labels: Vec::new(),
                 }],
                 points: vec![],
                 icon: None,
@@ -1739,6 +1868,7 @@ mod tests {
                     id: None,
                     title: None,
                     created_ms: None,
+                    labels: Vec::new(),
                 }],
                 points: vec![],
                 icon: None,
@@ -1789,8 +1919,7 @@ mod tests {
                 title: None,
                 created_ms: None,
                 glyph: None,
-                label_above: None,
-                label_below: None,
+                labels: Vec::new(),
                 icon: false,
                 moment: false,
                 allday: false,
@@ -1920,6 +2049,7 @@ mod tests {
                     id: None,
                     title: None,
                     created_ms: None,
+                    labels: Vec::new(),
                 }],
                 points: vec![],
                 icon: None,
@@ -1989,6 +2119,7 @@ mod tests {
                     id: None,
                     title: None,
                     created_ms: None,
+                    labels: Vec::new(),
                 }],
                 points: vec![DayviewPoint {
                     time_ms: at(at_h),
@@ -1998,8 +2129,7 @@ mod tests {
                     title: None,
                     created_ms: None,
                     glyph: None,
-                    label_above: None,
-                    label_below: None,
+                    labels: Vec::new(),
                     icon: false,
                     moment: false,
                     allday: false,

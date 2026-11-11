@@ -186,11 +186,15 @@ pub struct FieldEntry {
         skip_serializing_if = "Option::is_none"
     )]
     pub symbol_aspect: Option<f64>,
-    /// The data keys an occur dot prints above and below it — the spec's
-    /// `key_above` / `key_below` (da-ro5xm).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// What the field's marks print beside them — the spec's `labels`
+    /// (da-cepjy): `labels = [{ show = "weight", at = "over" }]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<crate::field_spec::Label>,
+    /// A data key printed over each dot and one under it, as a kit named
+    /// them before `labels` (da-ro5xm): read as two labels, never written.
+    #[serde(default, skip_serializing)]
     pub key_above: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub key_below: Option<String>,
     /// Other fields may be placed relative to this one — the spec's
     /// `anchorable` (da-fr02k).
@@ -892,8 +896,13 @@ impl FieldEntry {
         spec.presentation.icon = self.icon;
         spec.presentation.symbol_scale = self.symbol_scale;
         spec.presentation.symbol_aspect = self.symbol_aspect;
-        spec.presentation.key_above = self.key_above;
-        spec.presentation.key_below = self.key_below;
+        spec.presentation.labels = match self.labels.is_empty() {
+            false => self.labels,
+            true => [(self.key_above, "over"), (self.key_below, "under")]
+                .into_iter()
+                .filter_map(|(key, at)| Some(crate::field_spec::Label::new(key?, at)))
+                .collect(),
+        };
         spec.presentation.anchorable = self.anchorable;
         spec.presentation.z_index = self.z_index;
         spec.id_keys = self.id_keys;
@@ -1012,8 +1021,9 @@ impl FieldEntry {
             icon: spec.presentation.icon.clone(),
             symbol_scale: spec.presentation.symbol_scale,
             symbol_aspect: spec.presentation.symbol_aspect,
-            key_above: spec.presentation.key_above.clone(),
-            key_below: spec.presentation.key_below.clone(),
+            labels: spec.presentation.labels.clone(),
+            key_above: None,
+            key_below: None,
             anchorable: spec.presentation.anchorable,
             hidden: false,
             z_index: spec.presentation.z_index,

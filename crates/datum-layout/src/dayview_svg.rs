@@ -27,8 +27,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use crate::dayview::{
-    BlockFill, DayviewAxisTick, DayviewLayout, Orientation, RenderedBlock, RenderedDay,
-    RenderedField, RenderedPoint, RenderedSpan,
+    BlockFill, DayviewAxisTick, DayviewLayout, LabelAt, MarkLabel, Orientation, RenderedBlock,
+    RenderedDay, RenderedField, RenderedPoint, RenderedSpan, STANDARD_DOT,
 };
 
 pub(crate) const NOW_LINE_COLOR: &str = "#ffcc00";
@@ -485,6 +485,9 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         ),
                     );
                 }
+                for b in field.blocks.iter().filter(|b| b.span == si) {
+                    push_bar_labels(&mut out, layout, &geom, day, field, span, b);
+                }
                 if flow_now.is_none() {
                     out.push_str(&std::mem::take(&mut strip));
                 }
@@ -539,6 +542,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         );
                         continue;
                     }
+                    let aspect = field.glyph_aspect;
+                    push_labels(sink, p, (cx, cy), outer_r, aspect, layout.orientation);
                     push_dot(sink, &mut defs, &mut icons, field, p, (cx, cy), outer_r);
                 }
                 out.push_str(flow_close);
@@ -576,6 +581,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 );
                 for p in marks {
                     let xy = to_xy(layout, &geom, p.time_pos, day.day_offset + p.cross_pos);
+                    push_labels(&mut out, p, xy, p.r, field.glyph_aspect, layout.orientation);
                     push_dot(&mut out, &mut defs, &mut icons, field, p, xy, p.r);
                 }
                 out.push_str("</g>");
@@ -852,7 +858,6 @@ fn push_dot<'a>(
     (cx, cy): (f64, f64),
     outer_r: f64,
 ) {
-    push_labels(sink, p, (cx, cy), outer_r);
     let icon = (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
     // The disc is the mark — the pointer target, the title, the
     // data attributes — but it is never painted: a dot is its
@@ -931,25 +936,177 @@ fn push_dot<'a>(
     };
 }
 
-/// A dot's labels (da-ro5xm): its `key_above` value just over the mark and
-/// its `key_below` value just under it, centred on it, in its colour, at
-/// twice its radius. They let the pointer through to the dot.
-fn push_labels(sink: &mut String, p: &RenderedPoint, (cx, cy): (f64, f64), r: f64) {
-    let fs = r * 2.0;
-    let gap = r * 0.3;
-    for (text, y, dy, class) in [
-        (&p.label_above, cy - r - gap, "0", "above"),
-        (&p.label_below, cy + r + gap, "0.8em", "below"),
-    ] {
-        if let Some(t) = text {
-            let _ = write!(
-                sink,
-                r#"<text class="point-label {class}" x="{cx}" y="{y}" dy="{dy}" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none">{t}</text>"#,
-                c = p.fg_color,
-                t = escape_xml(t),
-            );
-        }
+/// A dot's labels (da-cepjy): each on its side of the mark, at twice its
+/// radius, in its colour. Placed from the dot's centre by an offset in ems,
+/// so a picture laid out again at another scale along time than across (a
+/// data layer at the page's size) keeps each beside its mark. They let the
+/// pointer through to the dot.
+fn push_labels(
+    sink: &mut String,
+    p: &RenderedPoint,
+    (cx, cy): (f64, f64),
+    r: f64,
+    aspect: f64,
+    orientation: Orientation,
+) {
+    use LabelAt::*;
+    let side = 0.5 * aspect + 0.15;
+    for l in &p.labels {
+        let at = l.at.on_dot();
+        let (anchor, dx, dy) = match (orientation, at) {
+            (Orientation::Horizontal, Over) | (Orientation::Vertical, Before) => {
+                ("middle", 0.0, -0.65)
+            }
+            (Orientation::Horizontal, Under) | (Orientation::Vertical, After) => {
+                ("middle", 0.0, 1.45)
+            }
+            (Orientation::Horizontal, Before) | (Orientation::Vertical, Over) => {
+                ("end", -side, 0.35)
+            }
+            _ => ("start", side, 0.35),
+        };
+        push_label(
+            sink,
+            l,
+            at,
+            (cx, cy),
+            (anchor, dx, dy),
+            r * 2.0,
+            &p.fg_color,
+            "",
+        );
     }
+}
+
+/// A bar's labels (da-cepjy): each at its edge or its middle, over it,
+/// under it, or at an end inside or outside it, at the standard dot's
+/// size, in the bar's colour, haloed in the ground's. One inside the bar is
+/// cut to the room it has there; along a horizontal time axis it carries
+/// that room in the axis's own units and its whole text, for a page that
+/// lays the picture out at another scale along time to cut it again.
+fn push_bar_labels(
+    sink: &mut String,
+    layout: &DayviewLayout,
+    geom: &PlotGeom,
+    day: &RenderedDay,
+    field: &RenderedField,
+    span: &RenderedSpan,
+    b: &RenderedBlock,
+) {
+    use LabelAt::*;
+    let color = match &b.fill {
+        BlockFill::Single(c) => c.as_str(),
+        BlockFill::MultiState(cs) => cs.iter().find(|c| *c != "none").map_or(TEXT_COLOR, |c| c),
+    };
+    let horizontal = layout.orientation == Orientation::Horizontal;
+    for l in &b.labels {
+        let at = l.at.on_bar();
+        // Along time: the start (0), the middle (1) or the end (2); across:
+        // the lane's near edge (0), its middle (1) or its far edge (2).
+        let along = match at.edge() {
+            Some(crate::dayview::Edge::Start) => 0,
+            None => 1,
+            Some(crate::dayview::Edge::End) => 2,
+        };
+        let across = match at {
+            OverStart | OverMiddle | OverEnd => 0,
+            UnderStart | UnderMiddle | UnderEnd => 2,
+            _ => 1,
+        };
+        let t = b.time_offset + f64::from(along) / 2.0 * b.time_extent;
+        let (near, far) = span.lane_at(t);
+        let lane = far - near;
+        let cross = near * layout.day_height
+            + lane * (field.cross_offset + f64::from(across) / 2.0 * field.cross_extent);
+        let xy = to_xy(layout, geom, t, day.day_offset + cross);
+        let fs = STANDARD_DOT * layout.day_height * lane;
+        // A text at an end of the bar runs from it into the bar, `pad` ems in.
+        let into = |pad: f64| [("start", pad), ("middle", 0.0), ("end", -pad)][along as usize];
+        let inset = LABEL_INSET_EM;
+        let place = match (horizontal, at) {
+            (true, OverStart | OverMiddle | OverEnd) => (into(0.0).0, 0.0, -0.25),
+            (true, UnderStart | UnderMiddle | UnderEnd) => (into(0.0).0, 0.0, 0.95),
+            (true, OutsideStart) => ("end", -0.3, 0.35),
+            (true, OutsideEnd) => ("start", 0.3, 0.35),
+            (true, _) => {
+                let (anchor, dx) = into(inset);
+                (anchor, dx, 0.35)
+            }
+            (false, OverStart | OverMiddle | OverEnd | UnderStart | UnderMiddle | UnderEnd) => {
+                let dy = [0.8, 0.35, -0.1][along as usize];
+                match across {
+                    0 => ("end", -0.3, dy),
+                    _ => ("start", 0.3, dy),
+                }
+            }
+            (false, OutsideStart) => ("middle", 0.0, -0.3),
+            (false, InsideStart) => ("middle", 0.0, 1.0),
+            (false, InsideEnd) => ("middle", 0.0, -0.3),
+            (false, _) => ("middle", 0.0, 1.05),
+        };
+        let inside = matches!(at, InsideStart | InsideEnd);
+        let room = match horizontal {
+            true => b.time_extent,
+            false => lane * field.cross_extent,
+        };
+        let (text, data) = match inside {
+            false => (l.text.clone(), String::new()),
+            true => {
+                // Clear of both ends: in from the one it stands at, and short
+                // of the other by as much.
+                let fits = ((room - 2.0 * inset * fs) / (fs * CHAR_ADVANCE_RATIO))
+                    .floor()
+                    .max(0.0);
+                let data = match horizontal {
+                    true => format!(r#" data-room="{room}" data-text="{}""#, escape_xml(&l.text)),
+                    false => String::new(),
+                };
+                (cut_to(&l.text, fits as usize), data)
+            }
+        };
+        if text.is_empty() && data.is_empty() {
+            continue;
+        }
+        let shown = MarkLabel { text, at };
+        let fill = if inside { TEXT_COLOR } else { color };
+        let halo = format!(r#" stroke="{BG_COLOR}" stroke-width="2" paint-order="stroke"{data}"#);
+        push_label(sink, &shown, at, xy, place, fs, fill, &halo);
+    }
+}
+
+/// How far, in ems, a label inside a bar stands in from the end it is at,
+/// and the room it leaves before the other (`cutToRoom` in datum.day's
+/// `dayLayers.ts` cuts by the same).
+const LABEL_INSET_EM: f64 = 0.3;
+
+/// `text` cut with `…` to `max` characters, nothing where not even the `…`
+/// fits.
+fn cut_to(text: &str, max: usize) -> String {
+    match (max, text.chars().count() > max) {
+        (0, _) => String::new(),
+        (_, false) => text.to_string(),
+        (_, true) => text.chars().take(max - 1).chain(['…']).collect(),
+    }
+}
+
+/// One mark label at `(x, y)`, offset by `(dx, dy)` ems and anchored there.
+#[allow(clippy::too_many_arguments)]
+fn push_label(
+    sink: &mut String,
+    l: &MarkLabel,
+    at: LabelAt,
+    (x, y): (f64, f64),
+    (anchor, dx, dy): (&str, f64, f64),
+    fs: f64,
+    fill: &str,
+    extra: &str,
+) {
+    let _ = write!(
+        sink,
+        r#"<text class="point-label {at}" x="{x}" y="{y}" dx="{dx}em" dy="{dy}em" text-anchor="{anchor}" font-size="{fs}" fill="{fill}" pointer-events="none"{extra}>{t}</text>"#,
+        at = at.name(),
+        t = escape_xml(&l.text),
+    );
 }
 
 /// The `<defs>` id of `field`'s icon: the name with anything an id or a
@@ -1835,6 +1992,7 @@ mod tests {
                         id: None,
                         title: None,
                         created_ms: None,
+                        labels: Vec::new(),
                     }],
                     points: vec![DayviewPoint {
                         time_ms: DAY_START + 8 * HOUR,
@@ -1844,8 +2002,7 @@ mod tests {
                         title: None,
                         created_ms: None,
                         glyph: None,
-                        label_above: None,
-                        label_below: None,
+                        labels: Vec::new(),
                         icon: false,
                         moment: false,
                         allday: false,
@@ -2610,5 +2767,296 @@ mod tests {
         // An ordinary day and a clock moved forward fork nothing.
         assert!(!jumped(&[(0, 0, 24, "UTC")]).contains("lane-edge"));
         assert!(!jumped(&[(0, 0, 7, "UTC+1"), (7, 8, 24, "UTC+2")]).contains("lane-edge"));
+    }
+
+    /// A label as drawn, in the picture's units: its text, its ink's box
+    /// along x (from the advance [`text_width`] estimates) and its line
+    /// from cap height to baseline.
+    #[derive(Debug)]
+    struct Drawn {
+        at: String,
+        text: String,
+        left: f64,
+        right: f64,
+        top: f64,
+        base: f64,
+        attrs: String,
+    }
+
+    fn labels_drawn(svg: &str) -> Vec<Drawn> {
+        let attr = |tag: &str, name: &str| -> String {
+            let key = format!(r#" {name}=""#);
+            tag.split(&key)
+                .nth(1)
+                .map_or("", |v| v.split('"').next().unwrap())
+                .to_string()
+        };
+        let num = |v: String| v.trim_end_matches("em").parse::<f64>().unwrap();
+        (svg.split(r#"<text class="point-label "#).skip(1))
+            .map(|t| {
+                let (tag, rest) = t.split_once('>').unwrap();
+                let text = rest.split('<').next().unwrap().to_string();
+                let fs = num(attr(tag, "font-size"));
+                let x = num(attr(tag, "x")) + num(attr(tag, "dx")) * fs;
+                let base = num(attr(tag, "y")) + num(attr(tag, "dy")) * fs;
+                let w = text_width(&text, fs);
+                let left = match attr(tag, "text-anchor").as_str() {
+                    "start" => x,
+                    "middle" => x - w / 2.0,
+                    _ => x - w,
+                };
+                Drawn {
+                    at: tag.split('"').next().unwrap().to_string(),
+                    text,
+                    left,
+                    right: left + w,
+                    top: base - 0.7 * fs,
+                    base,
+                    attrs: tag.to_string(),
+                }
+            })
+            .collect()
+    }
+
+    /// A day of one field: a bar 06:00–09:00 and a dot at 12:00, each
+    /// printing `labels`, each one's text its position's name.
+    fn labelled(orientation: Orientation, at: &[LabelAt]) -> String {
+        let labels: Vec<MarkLabel> = (at.iter())
+            .map(|a| MarkLabel {
+                text: a.name().to_string(),
+                at: *a,
+            })
+            .collect();
+        let mut config = one_day_with_block(false, orientation);
+        let f = &mut config.days[0].fields[0];
+        f.blocks[0].end_ms = DAY_START + 9 * HOUR;
+        f.blocks[0].labels = labels.clone();
+        f.points[0].time_ms = DAY_START + 12 * HOUR;
+        f.points[0].labels = labels;
+        render_dayview_svg(&compute_dayview(&config))
+    }
+
+    /// The box of the first mark `class` names: x, y, width, height.
+    fn mark_box(svg: &str, class: &str) -> [f64; 4] {
+        let tag = svg.split(class).nth(1).unwrap().split('>').next().unwrap();
+        let get = |name: &str| -> f64 {
+            let key = format!(r#" {name}=""#);
+            tag.split(&key)
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap()
+        };
+        match class.contains("circle") {
+            true => {
+                let r = get("r");
+                [get("cx") - r, get("cy") - r, 2.0 * r, 2.0 * r]
+            }
+            false => [get("x"), get("y"), get("width"), get("height")],
+        }
+    }
+
+    /// da-cepjy: a dot's labels stand where they are named, relative to
+    /// time: over and under it across time, before and after it along time,
+    /// so over is above a horizontal view's dot and left of a vertical one's.
+    #[test]
+    fn a_dots_labels_stand_where_they_are_named() {
+        use LabelAt::*;
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let svg = labelled(orientation, &[Over, Under, Before, After]);
+            let [x, y, w, h] = mark_box(&svg, r#"<circle class="point-bg""#);
+            let drawn = labels_drawn(&svg);
+            let dot: Vec<_> = drawn
+                .iter()
+                .filter(|d| {
+                    d.left > x - 60.0
+                        && d.right < x + w + 60.0
+                        && d.top > y - 30.0
+                        && d.base < y + h + 30.0
+                })
+                .collect();
+            assert_eq!(dot.len(), 4, "{orientation:?}: {drawn:#?}");
+            let side = |d: &Drawn| -> &str {
+                let mid = (d.left + d.right) / 2.0;
+                if d.base <= y + 1e-9 && (mid - (x + w / 2.0)).abs() < 1e-6 {
+                    "up"
+                } else if d.top >= y + h - 1e-9 && (mid - (x + w / 2.0)).abs() < 1e-6 {
+                    "down"
+                } else if d.right <= x + 1e-9 && d.top < y + h / 2.0 && d.base > y + h / 2.0 {
+                    "left"
+                } else if d.left >= x + w - 1e-9 && d.top < y + h / 2.0 && d.base > y + h / 2.0 {
+                    "right"
+                } else {
+                    "on it"
+                }
+            };
+            let want = match orientation {
+                Orientation::Horizontal => ["up", "down", "left", "right"],
+                Orientation::Vertical => ["left", "right", "up", "down"],
+            };
+            for (d, want) in dot.iter().zip(want) {
+                assert_eq!(
+                    (d.at.as_str(), side(d)),
+                    (d.text.as_str(), want),
+                    "{orientation:?}: {d:?}"
+                );
+            }
+        }
+    }
+
+    /// da-cepjy: a bar's ten positions: three over it and three under it, at
+    /// its start, middle and end, and at each end one inside and one outside.
+    #[test]
+    fn a_bars_labels_stand_at_its_ten_positions() {
+        use LabelAt::*;
+        let bar = [
+            OverStart,
+            OverMiddle,
+            OverEnd,
+            UnderStart,
+            UnderMiddle,
+            UnderEnd,
+            OutsideStart,
+            InsideStart,
+            InsideEnd,
+            OutsideEnd,
+        ];
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let svg = labelled(orientation, &bar);
+            let [x, y, w, h] = mark_box(&svg, r#"<rect class="block""#);
+            let (r, b) = (x + w, y + h);
+            let drawn = labels_drawn(&svg);
+            let on_bar: Vec<_> = drawn.iter().take(bar.len()).collect();
+            let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+            for (d, at) in on_bar.iter().zip(bar) {
+                assert_eq!(d.at, at.name(), "{orientation:?}");
+                let mid_x = (d.left + d.right) / 2.0;
+                let ok = match (orientation, at) {
+                    // Over is above a horizontal bar, at its start, middle or end.
+                    (Orientation::Horizontal, OverStart) => d.base <= y && near(d.left, x),
+                    (Orientation::Horizontal, OverMiddle) => {
+                        d.base <= y && near(mid_x, x + w / 2.0)
+                    }
+                    (Orientation::Horizontal, OverEnd) => d.base <= y && near(d.right, r),
+                    (Orientation::Horizontal, UnderStart) => d.top >= b && near(d.left, x),
+                    (Orientation::Horizontal, UnderMiddle) => {
+                        d.top >= b && near(mid_x, x + w / 2.0)
+                    }
+                    (Orientation::Horizontal, UnderEnd) => d.top >= b && near(d.right, r),
+                    (Orientation::Horizontal, OutsideStart) => d.right < x,
+                    (Orientation::Horizontal, InsideStart) => d.left > x && d.right < r,
+                    (Orientation::Horizontal, InsideEnd) => d.left > x && d.right < r,
+                    (Orientation::Horizontal, _) => d.left > r,
+                    // Over is left of a vertical bar, at its top, middle or bottom.
+                    (Orientation::Vertical, OverStart) => {
+                        d.right < x && d.top >= y && d.top < y + h / 2.0
+                    }
+                    (Orientation::Vertical, OverMiddle) => {
+                        d.right < x && d.top < y + h / 2.0 && d.base > y + h / 2.0
+                    }
+                    (Orientation::Vertical, OverEnd) => {
+                        d.right < x && d.base <= b && d.base > y + h / 2.0
+                    }
+                    (Orientation::Vertical, UnderStart) => {
+                        d.left > r && d.top >= y && d.top < y + h / 2.0
+                    }
+                    (Orientation::Vertical, UnderMiddle) => {
+                        d.left > r && d.top < y + h / 2.0 && d.base > y + h / 2.0
+                    }
+                    (Orientation::Vertical, UnderEnd) => {
+                        d.left > r && d.base <= b && d.base > y + h / 2.0
+                    }
+                    (Orientation::Vertical, OutsideStart) => d.base < y && near(mid_x, x + w / 2.0),
+                    (Orientation::Vertical, InsideStart) => d.top > y && d.base < y + h / 2.0,
+                    (Orientation::Vertical, InsideEnd) => d.base < b && d.top > y + h / 2.0,
+                    (Orientation::Vertical, _) => d.top > b && near(mid_x, x + w / 2.0),
+                };
+                // A vertical bar's lane is 15 wide: inside it, a name is cut.
+                let inside = matches!(at, InsideStart | InsideEnd);
+                let whole = d.text == at.name();
+                assert!(
+                    ok && (whole || inside && orientation == Orientation::Vertical),
+                    "{orientation:?} {at:?}: bar {:?}, {d:#?}",
+                    [x, y, w, h]
+                );
+            }
+        }
+    }
+
+    /// A label inside a bar that does not fit is cut with `…` to the room it
+    /// has, never moved; along a horizontal axis it carries that room and its
+    /// whole text. One at an edge a day cuts the bar at is not drawn there.
+    #[test]
+    fn a_label_inside_a_bar_is_cut_to_fit() {
+        let mut config = one_day_with_block(false, Orientation::Horizontal);
+        let long = "a long name for a short bar";
+        let f = &mut config.days[0].fields[0];
+        f.blocks[0].labels = vec![
+            MarkLabel {
+                text: long.into(),
+                at: LabelAt::InsideStart,
+            },
+            MarkLabel {
+                text: "ok".into(),
+                at: LabelAt::InsideEnd,
+            },
+        ];
+        let svg = render_dayview_svg(&compute_dayview(&config));
+        let [x, _, w, _] = mark_box(&svg, r#"<rect class="block""#);
+        let drawn = labels_drawn(&svg);
+        assert_eq!(drawn.len(), 2, "{drawn:#?}");
+        let cut = &drawn[0];
+        assert!(
+            cut.text.ends_with('…') && cut.text.chars().count() > 1,
+            "{cut:?}"
+        );
+        assert!(long.starts_with(cut.text.trim_end_matches('…')), "{cut:?}");
+        assert!(cut.left > x && cut.right <= x + w, "{cut:?} in {x} + {w}");
+        assert!(
+            cut.attrs.contains(&format!(r#"data-text="{long}""#)),
+            "{}",
+            cut.attrs
+        );
+        assert!(
+            cut.attrs.contains(&format!(r#"data-room="{w}""#)),
+            "{}",
+            cut.attrs
+        );
+        assert_eq!(drawn[1].text, "ok", "what fits is whole");
+
+        // Cut by the day at 06:00, the bar keeps its end's labels alone.
+        let f = &mut config.days[0].fields[0];
+        f.blocks[0].start_ms = DAY_START - HOUR;
+        f.blocks[0].labels = [LabelAt::OverStart, LabelAt::OverMiddle, LabelAt::OverEnd]
+            .map(|at| MarkLabel {
+                text: at.name().into(),
+                at,
+            })
+            .to_vec();
+        let svg = render_dayview_svg(&compute_dayview(&config));
+        let at: Vec<_> = labels_drawn(&svg).into_iter().map(|d| d.at).collect();
+        assert_eq!(at, ["over-middle", "over-end"]);
+    }
+
+    /// A dot reads a bar's position as the side it is on, and a bar a dot's.
+    #[test]
+    fn a_position_of_the_other_marks_is_read_as_its_side() {
+        use LabelAt::*;
+        for at in LabelAt::ALL {
+            assert_eq!(LabelAt::named(at.name()), Some(at));
+            assert!(
+                matches!(at.on_dot(), Over | Under | Before | After),
+                "{at:?}"
+            );
+            assert!(
+                !matches!(at.on_bar(), Over | Under | Before | After),
+                "{at:?}"
+            );
+        }
+        assert_eq!([OverEnd.on_dot(), InsideStart.on_dot()], [Over, Before]);
+        assert_eq!([Over.on_bar(), After.on_bar()], [OverMiddle, OutsideEnd]);
     }
 }

@@ -19,7 +19,8 @@
 #   place                where its lane is, as the spec's presentation reads
 #                        it: `y` the top edge with a `height`, a dot's centre
 #                        without; `symbol_scale` a dot's size
-#   key_above, key_below the data key drawn above and below each dot
+#   labels               what each mark prints and where: `{ show, at }`, a
+#                        data key (or field, at, state) and a position
 #   day                  its example day, local clocks: a moment's
 #                        `{ at = "HH:MM", <key> = value }`, an on/off's
 #                        `{ from, to }` (`to` before `from` runs past
@@ -58,7 +59,7 @@ kind = "occur"
 symbol = "⚖"
 color = "#8fbc8f"
 shows = "each weighing, in lbs or kg"
-choices = { lbs = { keys = ["lbs="], key_above = "lbs" }, kg = { keys = ["kg="], key_above = "kg" } }
+choices = { lbs = { keys = ["lbs="], labels = [{ show = "lbs", at = "over" }] }, kg = { keys = ["kg="], labels = [{ show = "kg", at = "over" }] } }
 place = { y = 0.3, symbol_scale = 1.2 }
 day = [{ at = "07:12", kg = 72.4, lbs = 159.6 }]
 
@@ -195,8 +196,7 @@ symbol = "💊"
 color = "#7fb8d4"
 shows = "what you took, and how much"
 keys = ["name", "dose="]
-key_above = "name"
-key_below = "dose"
+labels = [{ show = "name", at = "over" }, { show = "dose", at = "under" }]
 place = { y = 0.3 }
 day = [
   { at = "08:15", name = "ibuprofen", dose = "400mg" },
@@ -260,7 +260,7 @@ symbol = "🙂"
 color = "#e8c547"
 shows = "a level, -5 to +5"
 keys = ["level"]
-key_above = "level"
+labels = [{ show = "level", at = "over" }]
 symbol_by = { key = "level", map = { "-5" = "😭", "-4" = "😢", "-3" = "😞", "-2" = "🙁", "-1" = "😕", "0" = "😐", "1" = "🙂", "2" = "😊", "3" = "😄", "4" = "😁", "5" = "🤩" } }
 place = { y = 0.64 }
 day = [
@@ -279,7 +279,7 @@ color = "#d48ad4"
 shows = "the words for what you feel"
 keys = ["words"]
 remainder = "words"
-key_below = "words"
+labels = [{ show = "words", at = "under" }]
 place = { y = 0.68 }
 day = [{ at = "09:30", words = ["calm"] }, { at = "19:00", words = ["glad"] }]
 
@@ -291,7 +291,7 @@ symbol = "🔋"
 color = "#f0a830"
 shows = "a level, 0 to 10"
 keys = ["level"]
-key_above = "level"
+labels = [{ show = "level", at = "over" }]
 place = { y = 0.64 }
 day = [{ at = "08:00", level = 7 }, { at = "14:00", level = 4 }, { at = "20:00", level = 5 }]
 

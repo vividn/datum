@@ -68,10 +68,11 @@
 	lets go of a tapped mark's box, whose mark the new picture draws
 	elsewhere.
 
-	An occur field's dot can print one of its keys above it and one below
-	(da-ro5xm), vividn, 2026-11-09: «weight could show the weight key above
-	the weight»: two choices among the form's keys, `key_above` and
-	`key_below`, which every picture draws, the band here included.
+	A field's marks print labels (da-cepjy, which replaced da-ro5xm's key
+	above and key below): «+ label» adds one, showing a key of the form's, the
+	field, the entry's time or its state, placed by dragging it on a sample
+	dot or bar (`MarkLabels.svelte`), and every picture draws them, the band
+	here included.
 
 	A pinch on the band sizes the field (da-t038c), vividn, 2026-11-05: «two
 	finger zoom on the placement tool should change the size of the
@@ -89,6 +90,7 @@
 	import { STANDARD_DOT } from './panes.js';
 	import type { FieldListing } from './fields.js';
 	import type { Place, Spec } from './track.js';
+	import MarkLabels from './MarkLabels.svelte';
 
 	let {
 		field,
@@ -97,7 +99,7 @@
 		occur = false,
 		/** The spec a save would store, which the band draws: none is drawn for a field with no name yet (da-y72v8). */
 		spec = null,
-		/** The field's keys as the form holds them, which an occur dot may print above and below it (da-ro5xm). */
+		/** The field's keys as the form holds them, which its marks may print (da-cepjy). */
 		keys = [],
 		/** Go to the field whose setup a link names. */
 		onopen
@@ -269,7 +271,7 @@
 	function put(y: number, h: number, to = place.relative_to) {
 		const a = to ? lanes[to] : undefined;
 		// The dot's size is not the lane's, and goes along as it was.
-		const { symbol_scale, symbol_aspect, anchorable, render } = place;
+		const { symbol_scale, symbol_aspect, labels, anchorable, render } = place;
 		const at =
 			to && a?.spec && a.height > 0
 				? {
@@ -278,7 +280,7 @@
 						anchor_size_ratio: round(h / a.height)
 					}
 				: { y: round(y), height: round(h) };
-		place = { ...at, symbol_scale, symbol_aspect, anchorable, render };
+		place = { ...at, symbol_scale, symbol_aspect, labels, anchorable, render };
 	}
 
 	/** Anchor to `to`, the lane put inside its anchor's where it stood outside it. */
@@ -625,25 +627,17 @@
 			</button>
 			<span class="dims">{(scale * aspect).toFixed(2)} × {scale.toFixed(2)}</span>
 		</p>
-		<p class="row dot-labels">
-			{#each [['above', 'key_above'], ['below', 'key_below']] as const as [side, slot] (slot)}
-				<label>
-					{side}
-					<select
-						data-slot={slot}
-						value={place[slot] ?? ''}
-						onchange={(e) => (place = { ...place, [slot]: e.currentTarget.value || undefined })}
-					>
-						<option value="">nothing</option>
-						<!-- A key the spec names that the form no longer lists stays offered, so nothing is dropped unseen. -->
-						{#each [...new Set([...keys, ...(place[slot] ? [place[slot]] : [])])] as key (key)}
-							<option value={key}>{key}</option>
-						{/each}
-					</select>
-				</label>
-			{/each}
-		</p>
 	{/if}
+
+	<MarkLabels
+		labels={place.labels ?? []}
+		onchange={(labels) => (place = { ...place, labels: labels.length ? labels : undefined })}
+		{field}
+		bar={!occur}
+		{keys}
+		states={spec?.allowed_states ?? []}
+		color={spec?.color ?? null}
+	/>
 
 	<p class="row readout">
 		{@render reset('the lane', !placed, unplace)}
@@ -702,10 +696,6 @@
 
 	.labels {
 		display: grid;
-	}
-
-	.dot-labels {
-		gap: 0.75rem;
 	}
 
 	.labels > span {

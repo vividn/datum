@@ -86,7 +86,7 @@
 		const c = chosen(e, choiceOf(e));
 		const v = variant ? e.as?.[variant - 1] : undefined;
 		const as = v ? { ...c, kind: v.kind, shows: v.shows, day: v.day, spec: v.spec } : c;
-		return labelled ? { ...as, spec: { ...as.spec, key_above: c.key_above, key_below: c.key_below } } : as;
+		return labelled && c.labels ? { ...as, spec: { ...as.spec, labels: c.labels } } : as;
 	}
 	const now = $derived(shown && shaped(shown));
 
@@ -216,7 +216,7 @@
 	<p>{e.shows}</p>
 	{#if set}
 		<p class="taken">You track this already: Configure opens yours.</p>
-	{:else if base.as?.length || choices.length || c.key_above || c.key_below}
+	{:else if base.as?.length || choices.length || c.labels?.length}
 		<div class="options">
 			{#if base.as?.length}
 				{#each [{ kind: base.kind, label: base.label ?? base.kind }, ...base.as] as v, i (i)}
@@ -231,7 +231,7 @@
 					<button type="button" class="chip" aria-pressed={choiceOf(base) === name} data-choice={name} onclick={() => (choice = name)}>{name}</button>
 				{/each}
 			{/if}
-			{#if c.key_above || c.key_below}
+			{#if c.labels?.length}
 				<button type="button" class="chip" role="switch" aria-checked={labelled} data-label onclick={() => (labelled = !labelled)}
 					>{labelled ? '☑' : '☐'} show label</button
 				>

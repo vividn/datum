@@ -675,11 +675,12 @@ fn the_glyph_flags_are_refused_and_the_keys_read_as_symbol() {
     assert_eq!(env.svg_marks("coffee"), ["☕", "▲"]);
 }
 
-/// da-ro5xm: a moment's dot prints its `key_above` value over it and its
-/// `key_below` value under it, in the dayview and the nowview alike; an
-/// entry without the key prints nothing there, and a long value is cut.
+/// da-ro5xm, da-cepjy: a spec that named `key_above` / `key_below` draws its
+/// dot's keys over it and under it as before, in the dayview and the nowview
+/// alike, and is saved as two labels; an entry without the key prints
+/// nothing there, and a long value is cut.
 #[test]
-fn a_dot_prints_its_keys_above_and_below() {
+fn an_old_spec_prints_its_keys_over_and_under_and_saves_as_labels() {
     let env = Env::new();
     env.run(&[
         "occur",
@@ -708,15 +709,71 @@ fn a_dot_prints_its_keys_above_and_below() {
     };
     let want = |a: &str, b: &str| (a.to_string(), b.to_string());
     let want = vec![
-        want("above", "75.2"),
-        want("below", "after the…"),
-        want("below", "ok"),
+        want("over", "75.2"),
+        want("under", "after the…"),
+        want("under", "ok"),
     ];
     assert_eq!(labels(&env.run(&["dayview", "-n", "2"])), want);
     assert_eq!(labels(&env.run(&["nowview", "--context", "1h"])), want);
     let shown = env.run(&["setup", "weight"]);
     assert!(
-        shown.contains("key above  weight") && shown.contains("key below  note"),
+        shown.contains("labels  weight over · note under"),
         "{shown}"
     );
+    let stored = env.run(&["setup", "weight", "--json"]);
+    let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    assert_eq!(
+        stored["labels"],
+        serde_json::json!([
+            {"show": "weight", "at": "over"},
+            {"show": "note", "at": "under"},
+        ])
+    );
+    assert!(stored.get("key_above").is_none(), "{stored}");
+}
+
+/// da-cepjy: a bar prints its labels too, each showing a key, the field,
+/// the entry's time or its state; a position no label has is refused.
+#[test]
+fn a_bar_prints_its_field_time_state_and_keys() {
+    let env = Env::new();
+    env.run(&["switch", "mood", "calm", "-y", "-t", "09:00", "why=tea"]);
+    env.run(&["switch", "mood", "busy", "-y", "-t", "11:00"]);
+    let json = serde_json::json!({"field": "mood", "verb": "switch", "labels": [
+        {"show": "why", "at": "inside-start"},
+        {"show": "field", "at": "over-start"},
+        {"show": "at", "at": "under-end"},
+        {"show": "state", "at": "outside-end"},
+    ]});
+    env.run(&["setup", "mood", "--from-json", &json.to_string()]);
+    let svg = env.run(&["dayview", "-n", "2"]);
+    let labels: Vec<(String, String)> = (svg.split(r#"<text class="point-label "#).skip(1))
+        .map(|t| {
+            let at = t.split('"').next().unwrap().to_string();
+            let text = t.split('>').nth(1).unwrap().split('<').next().unwrap();
+            (at, text.to_string())
+        })
+        .collect();
+    let has = |at: &str, text: &str| labels.contains(&(at.to_string(), text.to_string()));
+    assert!(
+        has("inside-start", "tea") && has("over-start", "mood"),
+        "{labels:?}"
+    );
+    assert!(
+        has("under-end", "09:00") && has("outside-end", "calm"),
+        "{labels:?}"
+    );
+    assert!(
+        has("under-end", "11:00") && has("outside-end", "busy"),
+        "{labels:?}"
+    );
+    assert_eq!(
+        labels.iter().filter(|(_, t)| t == "tea").count(),
+        1,
+        "{labels:?}"
+    );
+
+    let bad = serde_json::json!({"field": "mood", "verb": "switch", "labels": [{"show": "why", "at": "above"}]});
+    let refused = env.fails(&["setup", "mood", "--from-json", &bad.to_string()]);
+    assert!(refused.contains("no label position 'above'"), "{refused}");
 }

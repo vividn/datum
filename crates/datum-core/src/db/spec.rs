@@ -668,6 +668,9 @@ impl Db {
         spec.presentation
             .validate_anchor_triple(&spec.field)
             .map_err(DatumError::InvalidFieldSpec)?;
+        spec.presentation
+            .validate_labels(&spec.field)
+            .map_err(DatumError::InvalidFieldSpec)?;
         // The spec it replaces is read before the lock, and `with` lands in
         // the same transaction: both or neither (da-2pbvd, da-8i7f0).
         let slug = self.compute_then_write_with(

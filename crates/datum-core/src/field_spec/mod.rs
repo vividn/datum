@@ -49,7 +49,9 @@ pub use interpolation::{
 };
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{
-    PresentationSpec, Render, ResolvedPosition, SymbolBy, DEFAULT_FIELD_HEIGHT, GLYPH_KEYS,
+    cut_label, Label, PresentationSpec, Render, ResolvedPosition, SymbolBy, BAR_LABEL_POSITIONS,
+    DEFAULT_FIELD_HEIGHT, DOT_LABEL_POSITIONS, GLYPH_KEYS, LABEL_AT, LABEL_FIELD, LABEL_MAX,
+    LABEL_STATE,
 };
 pub use spec::{
     parse_key_decl, verb_choice, verb_from_log, Covered, DeclaredKey, FieldSpec, KeyKind,

@@ -27,7 +27,7 @@ use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape,
 use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::state::FieldStateRows;
 use datum_core::time::ZoneTimeline;
-use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
+use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint, LabelAt, MarkLabel};
 use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
 
@@ -201,7 +201,14 @@ pub(crate) fn render_field_visuals(
     day_end_ms: i64,
 ) -> (Vec<DayviewBlock>, Vec<DayviewPoint>) {
     let mut blocks: Vec<DayviewBlock> = Vec::new();
+    // A region's labels read the entry that decided it, where it is in hand.
+    let labelled = spec.is_some_and(|s| !s.presentation.labels.is_empty());
+    let by_hid: HashMap<String, &Entry> = match labelled {
+        true => entries.iter().map(|e| (e.hid.to_string(), e)).collect(),
+        false => HashMap::new(),
+    };
     for r in regions {
+        let before = blocks.len();
         push_switch_region(
             &mut blocks,
             Some(&r.state),
@@ -213,6 +220,10 @@ pub(crate) fn render_field_visuals(
             day_start_ms,
             day_end_ms,
         );
+        if let Some(b) = blocks.get_mut(before).filter(|_| labelled) {
+            let entry = r.id.as_ref().and_then(|id| by_hid.get(id)).copied();
+            b.labels = mark_labels(entry, Some(&r.state), field, spec);
+        }
     }
     let mut points: Vec<DayviewPoint> = Vec::new();
     // Spans the field was explicitly OFF for (da-6gvw). Collected as the
@@ -287,9 +298,6 @@ pub(crate) fn dot_of(
     let fg = (entry.state.as_ref())
         .and_then(|v| state_value_rgb(v, field, spec))
         .unwrap_or_else(|| field_rgb(field, spec));
-    let [label_above, label_below] = spec.map_or_else(Default::default, |s| {
-        s.presentation.labels_for(entry.data.as_ref())
-    });
     DayviewPoint {
         time_ms: occur_ms,
         fg_color: rgb_to_hex(fg),
@@ -303,11 +311,40 @@ pub(crate) fn dot_of(
                 .icon_for(entry.state.as_ref(), entry.data.as_ref())
                 .is_some()
         }),
-        label_above,
-        label_below,
+        labels: mark_labels(Some(entry), entry.state.as_ref(), field, spec),
         moment,
         allday: false,
     }
+}
+
+/// What a mark of `entry` prints beside it (da-cepjy): the spec's labels,
+/// each at a position this build draws, `at` the clock the entry was logged
+/// by. With no entry in hand (a state carried in from before the fetch),
+/// only the field and `state` have anything to print.
+pub(crate) fn mark_labels(
+    entry: Option<&Entry>,
+    state: Option<&JsonValue>,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) -> Vec<MarkLabel> {
+    let Some(spec) = spec.filter(|s| !s.presentation.labels.is_empty()) else {
+        return Vec::new();
+    };
+    let at = (entry.and_then(|e| e.at.as_ref())).map(|t| clock_label(&t.local_time()));
+    let data = entry.and_then(|e| e.data.as_ref());
+    (spec
+        .presentation
+        .label_texts(field, state, data, at.as_deref()))
+    .into_iter()
+    // `setup` stores only positions this build names (`validate_labels`);
+    // one it does not name came from a newer datum's copy, and is not drawn.
+    .filter_map(|(text, at)| {
+        Some(MarkLabel {
+            text,
+            at: LabelAt::named(at)?,
+        })
+    })
+    .collect()
 }
 
 /// The glyph an occur dot of `entry` draws (da-gzowt), `None` for the
@@ -427,6 +464,7 @@ pub(crate) fn push_block_window(
         id: Some(entry.hid.to_string()),
         title: None,
         created_ms: None,
+        labels: mark_labels(Some(entry), entry.state.as_ref(), field, spec),
     });
 }
 
@@ -466,6 +504,7 @@ pub(crate) fn push_switch_region(
         id: id.map(str::to_string),
         title: None,
         created_ms: None,
+        labels: Vec::new(),
     });
 }
 

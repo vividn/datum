@@ -981,13 +981,13 @@ impl Block {
         if let Some(n) = pres.symbol_aspect {
             line("symbol aspect", n.to_string());
         }
-        for (name, key) in [
-            ("key above", &pres.key_above),
-            ("key below", &pres.key_below),
-        ] {
-            if let Some(k) = key {
-                line(name, k.clone());
-            }
+        if !pres.labels.is_empty() {
+            let labels: Vec<_> = pres
+                .labels
+                .iter()
+                .map(|l| format!("{} {}", l.show, l.at))
+                .collect();
+            line("labels", labels.join(" · "));
         }
         let position: Vec<String> = [("y", pres.y), ("height", pres.height), ("z", pres.z_index)]
             .into_iter()

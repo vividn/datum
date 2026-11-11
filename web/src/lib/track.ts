@@ -65,8 +65,8 @@ export interface Example {
 	shows: string;
 	/** Its words beside a variant's, where it has one. */
 	label?: string;
-	key_above?: string;
-	key_below?: string;
+	/** What its marks print when the catalog shows its labels (da-cepjy). */
+	labels?: Label[];
 	/** Its example day, the file's. */
 	day?: unknown;
 	/** @shallow a spec, whose keys `specShowArgv` reads as `Spec`. */
@@ -77,9 +77,20 @@ export interface Example {
 	as?: Variant[];
 }
 
+/**
+ * One label on a field's marks (da-cepjy), as the spec stores it: what it
+ * shows — a data key, or `field`, `at` (the entry's time) or `state` — and
+ * where, relative to time: a dot's `over`, `under`, `before`, `after`, a
+ * bar's `over-start` … `outside-end` (`BAR_SPOTS` in `Placement.svelte`).
+ */
+export interface Label {
+	show: string;
+	at: string;
+}
+
 /** One of an example's choices: its label key, and the spec it gives. */
 export interface Choice {
-	key_above?: string;
+	labels?: Label[];
 	/** @shallow as the example's. */
 	spec: Spec;
 }
@@ -333,9 +344,8 @@ export interface Place {
 	/** An occur dot's height over its lane's and its width over its height (da-c05v1, da-c1b6m); absent is 1. */
 	symbol_scale?: number;
 	symbol_aspect?: number;
-	/** The data keys an occur dot prints above it and below it (da-ro5xm); absent prints nothing. */
-	key_above?: string;
-	key_below?: string;
+	/** What the field's marks print beside them, in order (da-cepjy); absent prints nothing. */
+	labels?: Label[];
 	/** Other fields may be placed relative to this one (da-w5ruf); absent is no. */
 	anchorable?: boolean;
 	/** Whether the pictures draw the field (da-woyqh): false on none, a map by surface; absent is every one. */
@@ -350,8 +360,7 @@ const PLACE_KEYS = [
 	'anchor_size_ratio',
 	'symbol_scale',
 	'symbol_aspect',
-	'key_above',
-	'key_below',
+	'labels',
 	'anchorable',
 	'render'
 ] as const;

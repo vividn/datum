@@ -253,7 +253,7 @@ describe('a first visit', () => {
 			await until(() => front(page), (name) => name === 'collect');
 			const spec = JSON.parse((await app.run(['setup', 'weight', '--json'])).stdout);
 			const kg = EXAMPLES.find((e) => e.field === 'weight').choices.kg;
-			assert.deepEqual([spec.key_above, spec.keys, spec.y, spec.symbol_scale], ['kg', kg.spec.keys, kg.spec.y, kg.spec.symbol_scale]);
+			assert.deepEqual([spec.labels, spec.keys, spec.y, spec.symbol_scale], [kg.labels, kg.spec.keys, kg.spec.y, kg.spec.symbol_scale]);
 			const listed = JSON.parse((await app.run(['fields', '--json'])).stdout);
 			assert.equal(listed.find((f) => f.field === 'weight')?.ignored, false, 'weight is not tracked');
 			// One command: one undo takes back the spec and its TRACK row together.

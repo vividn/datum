@@ -498,6 +498,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 id: None,
                 title: None,
                 created_ms: None,
+                labels: Vec::new(),
             }],
             points: vec![DayviewPoint {
                 time_ms: DAY_START_MS + 14 * HOUR_MS + 30 * MIN_MS,
@@ -507,8 +508,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 title: None,
                 created_ms: None,
                 glyph: None,
-                label_above: None,
-                label_below: None,
+                labels: Vec::new(),
                 icon: false,
                 moment: false,
                 allday: false,
@@ -556,6 +556,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     id: None,
                     title: None,
                     created_ms: None,
+                    labels: Vec::new(),
                 },
                 DayviewBlock {
                     start_ms: DAY_START_MS + 13 * HOUR_MS,
@@ -565,6 +566,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     id: None,
                     title: None,
                     created_ms: None,
+                    labels: Vec::new(),
                 },
                 // An OFF sub-state is a gap in the stripes, as a false
                 // block is a hole (da-x2vw4): through the real resolver.
@@ -576,6 +578,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     id: None,
                     title: None,
                     created_ms: None,
+                    labels: Vec::new(),
                 },
             ],
             points: vec![],
@@ -625,6 +628,7 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
                 id: None,
                 title: None,
                 created_ms: None,
+                labels: Vec::new(),
             }],
             points: vec![],
             icon: None,
@@ -684,6 +688,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 id: None,
                 title: None,
                 created_ms: None,
+                labels: Vec::new(),
             }],
             points: vec![DayviewPoint {
                 time_ms: end_ms - 10 * MIN_MS,
@@ -693,8 +698,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 title: None,
                 created_ms: None,
                 glyph: None,
-                label_above: None,
-                label_below: None,
+                labels: Vec::new(),
                 icon: false,
                 moment: false,
                 allday: false,
@@ -770,6 +774,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
                 id: None,
                 title: None,
                 created_ms: None,
+                labels: Vec::new(),
             }],
             points: vec![],
             icon: None,
@@ -817,8 +822,7 @@ fn nowview_scene_at_instant() -> DayviewLayoutResult {
         title: None,
         created_ms: None,
         glyph: None,
-        label_above: None,
-        label_below: None,
+        labels: Vec::new(),
         icon: false,
         moment: false,
         allday: false,
@@ -831,6 +835,7 @@ fn nowview_scene_at_instant() -> DayviewLayoutResult {
         id: None,
         title: None,
         created_ms: None,
+        labels: Vec::new(),
     };
     let fields = vec![
         DayviewFieldInput {

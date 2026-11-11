@@ -181,6 +181,7 @@ fn block(start_ms: i64, end_ms: i64, color: &str, state: &str) -> DayviewBlock {
         id: None,
         title: None,
         created_ms: None,
+        labels: Vec::new(),
     }
 }
 
@@ -215,8 +216,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
                 title: None,
                 created_ms: None,
                 glyph: None,
-                label_above: None,
-                label_below: None,
+                labels: Vec::new(),
                 icon: false,
                 moment: false,
                 allday: false,

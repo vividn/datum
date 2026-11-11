@@ -34,6 +34,8 @@ export interface TailRow {
 	/** Which stamp `time` is — `occur`, or `create` for a timeless row. */
 	time_metric: string | null;
 	state_label: string | null;
+	/** The row's data, its keys and values as stored. */
+	data?: Record<string, unknown> | null;
 	quick_id: string | null;
 	/*
 	 * The row's state as the three values a transition is made of

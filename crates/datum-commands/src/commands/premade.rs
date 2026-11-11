@@ -48,10 +48,9 @@ pub struct Example {
     pub symbol_by: Option<Value>,
     #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub place: Map<String, Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key_above: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key_below: Option<String>,
+    /// What its marks print when the catalog shows its labels (da-cepjy).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<datum_core::field_spec::Label>,
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub day: Value,
     #[serde(default, rename = "as", skip_serializing_if = "Vec::is_empty")]
@@ -68,10 +67,9 @@ pub struct Example {
 #[derive(Serialize, Deserialize)]
 pub struct Choice {
     pub keys: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key_above: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key_below: Option<String>,
+    /// What its marks print when the catalog shows its labels (da-cepjy).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<datum_core::field_spec::Label>,
     #[serde(default, skip_deserializing)]
     pub spec: Value,
 }

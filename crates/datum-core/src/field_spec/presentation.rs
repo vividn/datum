@@ -148,14 +148,18 @@ pub struct PresentationSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol_aspect: Option<f64>,
 
-    /// The data key whose value an occur dot prints just above it, and the
-    /// one it prints just below (da-ro5xm): `weight` shows its `weight`.
-    /// An entry without the key prints nothing there. See
-    /// [`PresentationSpec::labels_for`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key_above: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key_below: Option<String>,
+    /// What the field's marks print beside them, and where (da-cepjy): a
+    /// dot's or a bar's labels, in order. See [`Label`] and
+    /// [`PresentationSpec::label_texts`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<Label>,
+    /// The two labels a spec named before `labels` (da-ro5xm): a data key
+    /// printed over each dot and one under it. Read and never written:
+    /// [`PresentationSpec::read`] folds them into `labels`.
+    #[serde(default, skip_serializing)]
+    key_above: Option<String>,
+    #[serde(default, skip_serializing)]
+    key_below: Option<String>,
 
     /// Other fields may be placed relative to this one (da-w5ruf): datum.day's
     /// setup offers only such a field, or one already anchoring another, as
@@ -163,6 +167,45 @@ pub struct PresentationSpec {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub anchorable: bool,
 }
+
+/// One label on a field's marks (da-cepjy, vividn, 2026-11-11: «you can add
+/// multiple labels / each label has a dropdown for things it can labeled
+/// with»): what it shows and where it stands.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Label {
+    /// One of the field's data keys, or [`LABEL_FIELD`], [`LABEL_AT`] or
+    /// [`LABEL_STATE`].
+    pub show: String,
+    /// Where, relative to TIME, so it holds when a view runs vertically:
+    /// one of [`DOT_LABEL_POSITIONS`] or [`BAR_LABEL_POSITIONS`]. A dot reads a
+    /// bar's position as the side it is on, and a bar a dot's.
+    pub at: String,
+}
+
+/// What a [`Label`] may show besides a data key: the field's name, the
+/// entry's time and its state.
+pub const LABEL_FIELD: &str = "field";
+pub const LABEL_AT: &str = "at";
+pub const LABEL_STATE: &str = "state";
+
+/// Where a dot's label may stand: over or under it across time, before or
+/// after it along time.
+pub const DOT_LABEL_POSITIONS: [&str; 4] = ["over", "under", "before", "after"];
+/// Where a bar's label may stand (vividn: «three snap points above them for
+/// above, above begin, above middle and above end», «both inside and
+/// outside of each edge»).
+pub const BAR_LABEL_POSITIONS: [&str; 10] = [
+    "over-start",
+    "over-middle",
+    "over-end",
+    "under-start",
+    "under-middle",
+    "under-end",
+    "outside-start",
+    "inside-start",
+    "inside-end",
+    "outside-end",
+];
 
 /// [`PresentationSpec::symbol_by`]: the data key to read and the symbol for
 /// each of its values.
@@ -270,7 +313,35 @@ impl PresentationSpec {
         for (state, symbol) in p.state_glyphs.take().unwrap_or_default() {
             p.state_symbols.entry(state).or_insert(symbol);
         }
+        // `labels` wins where a row holds both: it is what a datum since
+        // them writes, so the old keys beside it are an older copy's.
+        let old = [(p.key_above.take(), "over"), (p.key_below.take(), "under")];
+        if p.labels.is_empty() {
+            p.labels = (old.into_iter())
+                .filter_map(|(key, at)| Some(Label::new(key?, at)))
+                .collect();
+        }
         Ok(p)
+    }
+
+    /// Refused unless every label shows something, at a position there is.
+    pub fn validate_labels(&self, field_name: &str) -> std::result::Result<(), String> {
+        for l in &self.labels {
+            if l.show.trim().is_empty() {
+                return Err(format!("field '{field_name}': a label shows nothing"));
+            }
+            if !DOT_LABEL_POSITIONS.contains(&l.at.as_str())
+                && !BAR_LABEL_POSITIONS.contains(&l.at.as_str())
+            {
+                return Err(format!(
+                    "field '{field_name}': no label position '{}': a dot's are {}, a bar's {}",
+                    l.at,
+                    DOT_LABEL_POSITIONS.join(", "),
+                    BAR_LABEL_POSITIONS.join(", "),
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// True if any anchor field is set. Used for cycle and well-formedness
@@ -351,26 +422,39 @@ impl PresentationSpec {
             .filter(|_| self.symbol_override(state, data).is_none())
     }
 
-    /// What an occur dot of an entry holding `data` prints above it and
-    /// below it: the value of [`PresentationSpec::key_above`] and of
-    /// [`PresentationSpec::key_below`], a list's items joined by commas,
-    /// cut with `…` to [`LABEL_MAX`] characters. A key the entry lacks, or
-    /// holding an object, an empty string or nothing, prints nothing.
-    pub fn labels_for(&self, data: Option<&JsonValue>) -> [Option<String>; 2] {
-        [&self.key_above, &self.key_below].map(|key| {
-            let v = data?.get(key.as_deref()?)?;
-            let text = match v {
-                JsonValue::Array(items) => {
-                    let items: Vec<_> = items.iter().filter_map(scalar_key).collect();
-                    Some(items.join(",")).filter(|s| !s.is_empty())
-                }
-                _ => scalar_key(v).filter(|s| !s.is_empty()),
-            }?;
-            Some(match text.chars().count() > LABEL_MAX {
-                true => text.chars().take(LABEL_MAX - 1).chain(['…']).collect(),
-                false => text,
+    /// What each of [`PresentationSpec::labels`] prints on a mark of an
+    /// entry of `field` holding `state` and `data`, at the clock `at`, with
+    /// the label's position: a data key's value, a list's items joined by
+    /// commas, the state as it prints, the field's name or the time, cut
+    /// with `…` to [`LABEL_MAX`] characters. One that would print nothing
+    /// (a key the entry lacks, or holding an object, an empty string or
+    /// nothing) is left out.
+    pub fn label_texts<'a>(
+        &'a self,
+        field: &str,
+        state: Option<&JsonValue>,
+        data: Option<&JsonValue>,
+        at: Option<&str>,
+    ) -> Vec<(String, &'a str)> {
+        let text = |v: &JsonValue| match v {
+            JsonValue::Array(items) => {
+                let items: Vec<_> = items.iter().filter_map(scalar_key).collect();
+                Some(items.join(","))
+            }
+            _ => scalar_key(v),
+        };
+        let shown = |show: &str| match show {
+            LABEL_FIELD => Some(field.to_string()),
+            LABEL_AT => at.map(str::to_string),
+            LABEL_STATE => state.and_then(text),
+            key => data?.get(key).and_then(text),
+        };
+        (self.labels.iter())
+            .filter_map(|l| {
+                let t = shown(&l.show).filter(|t| !t.is_empty())?;
+                Some((cut_label(&t, LABEL_MAX), l.at.as_str()))
             })
-        })
+            .collect()
     }
 
     /// The state's symbol, else the `symbol_by` key's mapped value.
@@ -391,9 +475,28 @@ impl PresentationSpec {
     }
 }
 
-/// The most characters a dot's label prints, its `…` included
-/// ([`PresentationSpec::labels_for`]).
+/// The most characters a mark's label prints, its `…` included
+/// ([`PresentationSpec::label_texts`]).
 pub const LABEL_MAX: usize = 10;
+
+/// `text` cut with `…` to `max` characters, the `…` one of them; nothing
+/// where `max` is 0, as the layout's own cut inside a bar.
+pub fn cut_label(text: &str, max: usize) -> String {
+    match (max, text.chars().count() > max) {
+        (0, _) => String::new(),
+        (_, false) => text.to_string(),
+        (_, true) => text.chars().take(max - 1).chain(['…']).collect(),
+    }
+}
+
+impl Label {
+    pub fn new(show: impl Into<String>, at: impl Into<String>) -> Self {
+        Label {
+            show: show.into(),
+            at: at.into(),
+        }
+    }
+}
 
 /// A scalar JSON value as the word a symbol map is keyed by — a string as
 /// itself, a number or bool as it prints. Arrays and objects name nothing.
@@ -718,54 +821,103 @@ mod tests {
         );
     }
 
-    /// da-ro5xm: a dot prints its key above and its key below, nothing for a
-    /// key its entry lacks, and a long value cut to ten characters.
+    /// da-cepjy: each label prints what it shows, nothing for a key its
+    /// entry lacks, and a long value cut to ten characters.
     #[test]
-    fn a_dot_labels_its_keys_above_and_below() {
+    fn each_label_prints_what_it_shows() {
         let pres = PresentationSpec {
-            key_above: Some("weight".into()),
-            key_below: Some("note".into()),
+            labels: vec![
+                Label::new("weight", "over"),
+                Label::new("note", "under"),
+                Label::new("field", "after"),
+                Label::new("state", "before"),
+                Label::new("at", "over-start"),
+            ],
             ..PresentationSpec::default()
         };
         let data = serde_json::json!({"weight": 75.2, "note": "after the long run"});
+        let texts =
+            |state: Option<&JsonValue>, data: Option<&JsonValue>| -> Vec<(String, String)> {
+                (pres
+                    .label_texts("weight", state, data, Some("07:12"))
+                    .into_iter())
+                .map(|(t, at)| (t, at.to_string()))
+                .collect()
+            };
+        let two = |a: &str, b: &str| (a.to_string(), b.to_string());
         assert_eq!(
-            pres.labels_for(Some(&data)),
-            [Some("75.2".into()), Some("after the…".into())]
+            texts(Some(&serde_json::json!(["a", 2])), Some(&data)),
+            [
+                two("75.2", "over"),
+                two("after the…", "under"),
+                two("weight", "after"),
+                two("a,2", "before"),
+                two("07:12", "over-start"),
+            ]
         );
         assert_eq!("after the…".chars().count(), LABEL_MAX);
+        let cuts = ["", "…", "a…", "abc"].map(String::from);
+        assert_eq!([0, 1, 2, 3].map(|max| cut_label("abc", max)), cuts);
         let short = serde_json::json!({"note": "ok", "weight": {"kg": 75}});
-        assert_eq!(pres.labels_for(Some(&short)), [None, Some("ok".into())]);
-        let list = serde_json::json!({"weight": ["a", 2]});
-        assert_eq!(pres.labels_for(Some(&list))[0].as_deref(), Some("a,2"));
+        assert_eq!(
+            texts(None, Some(&short))[..2],
+            [two("ok", "under"), two("weight", "after")]
+        );
         let empty = serde_json::json!({"weight": "", "note": []});
         assert_eq!(
-            pres.labels_for(Some(&empty)),
-            [None, None],
+            texts(None, Some(&empty)).len(),
+            2,
             "an empty value prints nothing"
         );
-        assert_eq!(pres.labels_for(None), [None, None]);
+        assert!(PresentationSpec::default()
+            .label_texts("weight", None, Some(&data), None)
+            .is_empty());
+    }
+
+    /// A spec's labels are stored as `labels`, and one that named
+    /// `key_above` / `key_below` reads as two labels, over and under, and
+    /// is written back as them: nothing set is lost.
+    #[test]
+    fn the_old_label_keys_read_as_labels_and_save_as_them() {
+        #[derive(Deserialize)]
+        struct Wrap {
+            #[serde(flatten, deserialize_with = "PresentationSpec::read")]
+            p: PresentationSpec,
+        }
+        let read = |v: JsonValue| serde_json::from_value::<Wrap>(v).unwrap().p;
+        let old = read(serde_json::json!({"key_above": "weight", "key_below": "note"}));
+        let want = vec![Label::new("weight", "over"), Label::new("note", "under")];
+        assert_eq!(old.labels, want);
+        let json = serde_json::to_value(&old).unwrap();
         assert_eq!(
-            PresentationSpec::default().labels_for(Some(&data)),
-            [None, None],
-            "no key named prints nothing"
+            json,
+            serde_json::json!({"labels": [
+                {"show": "weight", "at": "over"},
+                {"show": "note", "at": "under"},
+            ]})
         );
+        assert_eq!(read(json).labels, want, "and reads back the same");
+        let below = read(serde_json::json!({"key_below": "note"}));
+        assert_eq!(below.labels, [Label::new("note", "under")]);
+        assert!(serde_json::to_value(PresentationSpec::default())
+            .unwrap()
+            .get("labels")
+            .is_none());
     }
 
     #[test]
-    fn the_label_keys_round_trip_through_a_stored_spec() {
-        let pres = PresentationSpec {
-            key_above: Some("weight".into()),
-            key_below: Some("note".into()),
+    fn a_label_must_show_something_at_a_position_there_is() {
+        let with = |l: Label| PresentationSpec {
+            labels: vec![l],
             ..PresentationSpec::default()
         };
-        let json = serde_json::to_value(&pres).unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({"key_above": "weight", "key_below": "note"})
-        );
-        let back: PresentationSpec = serde_json::from_value(json).unwrap();
-        assert_eq!(back, pres);
-        let none = serde_json::to_value(PresentationSpec::default()).unwrap();
-        assert!(none.get("key_above").is_none() && none.get("key_below").is_none());
+        for at in DOT_LABEL_POSITIONS.iter().chain(&BAR_LABEL_POSITIONS) {
+            assert!(
+                with(Label::new("k", *at)).validate_labels("f").is_ok(),
+                "{at}"
+            );
+        }
+        assert!(with(Label::new("k", "above")).validate_labels("f").is_err());
+        assert!(with(Label::new(" ", "over")).validate_labels("f").is_err());
     }
 }

@@ -284,11 +284,27 @@ export function layMarks(root: Element, along: number, across: number, y = false
 			scale(el, 'x', kx);
 			scale(el, 'y', ky);
 			scale(el, 'font-size', across);
+			if (el.hasAttribute('data-room')) cutToRoom(el, num(el, 'data-room') * along);
 		} else if (el.localName === 'line') {
 			scaleAll(el, ['x1', 'x2'], kx);
 			scaleAll(el, ['y1', 'y2'], ky);
 		}
 	}
+}
+
+/**
+ * A label inside a bar (da-cepjy), its text cut with `…` to the `room` px the
+ * bar now has, as datum cuts it (`push_bar_labels` in `dayview_svg.rs`): an
+ * advance of `CHAR_ADVANCE_RATIO` (0.6) em a character, and `LABEL_INSET_EM`
+ * (0.3 em) in from the end it stands at and short of the other. Its whole text is `data-text`: datum
+ * cut it to the bar at a second a unit, which is room for any.
+ */
+function cutToRoom(el: Element, room: number): void {
+	const fs = Number(el.getAttribute('font-size'));
+	const whole = [...(el.getAttribute('data-text') ?? '')];
+	const [advance, inset] = [0.6, 0.3];
+	const fits = Math.max(0, Math.floor((room - 2 * inset * fs) / (advance * fs)));
+	el.textContent = whole.length <= fits ? whole.join('') : fits ? [...whole.slice(0, fits - 1), '…'].join('') : '';
 }
 
 /** The patterns `anchorStripes` has made, page-wide, so each id names one. */

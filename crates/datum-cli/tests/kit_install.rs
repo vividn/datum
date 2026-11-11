@@ -225,8 +225,7 @@ symbol = "●"
 icon = '{ICON}'
 symbol_scale = 2.5
 symbol_aspect = 0.5
-key_above = "level"
-key_below = "why"
+labels = [{{ show = "level", at = "over" }}, {{ show = "why", at = "under" }}]
 anchorable = true
 tags = ["feel"]
 subfields.why = {{ value_type = "string" }}
@@ -264,6 +263,7 @@ fn a_kit_field_installs_what_spec_set_stores() {
         "icon": ICON,
         "symbol_scale": 2.5,
         "symbol_aspect": 0.5,
+        // The old keys, which `setup` reads as the kit's two labels.
         "key_above": "level",
         "key_below": "why",
         "anchorable": true,
@@ -292,6 +292,19 @@ fn a_kit_field_installs_what_spec_set_stores() {
     );
     assert_eq!(installed["derived_aliases"], serde_json::json!([]));
     assert_eq!(installed["anchorable"], true);
+}
+
+/// da-cepjy: a kit that names `key_above` / `key_below`, as kits did before
+/// `labels`, installs them as two labels, over and under.
+#[test]
+fn a_kits_old_label_keys_install_as_labels() {
+    let db = fresh_db();
+    let kit = "[kit]\nname = \"k\"\n\n[[field]]\nname = \"weight\"\nverb = \"occur\"\nkey_above = \"kg\"\nkey_below = \"note\"\n";
+    install(&db, kit, &[]).unwrap();
+    assert_eq!(
+        spec_json(&db, "weight")["labels"],
+        serde_json::json!([{"show": "kg", "at": "over"}, {"show": "note", "at": "under"}])
+    );
 }
 
 /// The sample kit's mood keeps the order a day goes in, not the alphabet.
@@ -336,8 +349,8 @@ fn kit_export_round_trips_the_whole_field() {
         "symbol_by",
         "symbol_scale = 2.5",
         "symbol_aspect = 0.5",
-        "key_above = \"level\"",
-        "key_below = \"why\"",
+        "show = \"level\"",
+        "at = \"under\"",
         "anchorable = true",
         "subfields",
         "worn out",
