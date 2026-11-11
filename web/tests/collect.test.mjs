@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
-import { choiceLines, pickOption } from './support/layout.mjs';
+import { choiceLines, pickOption, rested } from './support/layout.mjs';
 import { drag } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
@@ -167,7 +167,9 @@ describe('collect', () => {
 			await page.locator(`${VIEW} [data-back]`).click();
 			await page.locator(`${VIEW} [data-field="mood"]`).click();
 			await page.locator(`${VIEW} [data-open-field="mood"]`).waitFor();
-			await page.waitForTimeout(100);
+			// The drawer settles its side a frame after it mounts (CollectDrawer's
+			// requestAnimationFrame), then swings: rested once it has, wherever it went.
+			await rested(page, page.locator(DRAWER), { app });
 			assert.equal(await page.locator(DRAWER).getAttribute('data-drawer'), 'closed');
 		});
 	});
@@ -482,7 +484,8 @@ describe('collect', () => {
 			for (let x = box.x + box.width / 2; x <= box.x + box.width + 60; x += 10) await page.mouse.move(x, y);
 			await page.mouse.up();
 			for (let x = box.x + box.width - 4; x >= box.x + 4; x -= 10) await page.mouse.move(x, y);
-			await page.waitForTimeout(100);
+			// A close would be the moves' flush: rested on the section, which outlives the options.
+			await rested(page, page.locator(WHEN));
 			assert.equal(await more.count(), 1, 'a move with no button down closed the options');
 		});
 	});
