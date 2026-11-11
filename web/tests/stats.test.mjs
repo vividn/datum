@@ -163,6 +163,10 @@ describe('/stats', () => {
 			const r = await app.page.evaluate(() => window.datum.run(['occur', 'coffee', '-t', '-5']));
 			assert.equal(r.code, 0, r.stderr);
 			await app.idle();
+			// A window for what must NOT happen, not a wait for rest: a second stats
+			// run that starts after the first has landed, which `idle()` alone reads
+			// as done and `rested()` as at rest after four quiet frames. A run 300 ms
+			// after the first landed fails here, and passes with this taken out (da-wuxgd).
 			await app.page.waitForTimeout(500);
 			await app.idle();
 			const runs = (await seen()).filter((argv) => argv[0] === 'stats').map((argv) => argv.join(' '));
