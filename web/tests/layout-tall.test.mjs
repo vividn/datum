@@ -104,6 +104,10 @@ describe('a layout taller than the screen', () => {
 			await page.mouse.move(x, box.y + box.height / 2);
 			await page.mouse.down();
 			await page.mouse.move(x, bottom - 4, { steps: 3 });
+			// Both waits are the hold itself, not a wait for the page: held within
+			// HOLD_EDGE_PX of the bottom, the foot grows HOLD_PX_PER_S (Layout.svelte,
+			// 400 px/s) a second held, so each 400 ms is about 160 px, past the 50 asserted.
+			// A page at rest would be a hold that stopped growing.
 			await page.waitForTimeout(400);
 			const first = (await cellsOf(page, 'main'))[2].height;
 			await page.waitForTimeout(400);
