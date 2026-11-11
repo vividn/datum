@@ -481,7 +481,12 @@ async function openApp({
 	const context = engine
 		? await engine.launchPersistentContext(profile, options)
 		: await browser.newContext(options);
+	// A route handler still waiting when the test ends (`serveAt`'s fetch of
+	// a module, the pkarr relay's answer) throws once the context is gone:
+	// unrouted first, its error is dropped, never an unhandledRejection that
+	// fails the file after every test in it passed (da-y87co).
 	const close = async () => {
+		await context.unrouteAll({ behavior: 'ignoreErrors' });
 		await context.close();
 		if (profile) await rm(profile, { recursive: true, force: true });
 	};

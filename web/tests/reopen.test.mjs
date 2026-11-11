@@ -177,3 +177,32 @@ test('a boot that never becomes ready says what it was waiting on', async () => 
 		return true;
 	});
 });
+
+// A route handler still waiting when its test ends raises nothing after it
+// (da-y87co): on CI a `route.fetch` timed out 30 s after syncaccount's tests
+// had passed, and the unhandledRejection failed the file.
+test('a route handler still waiting when its test ends fails nothing after it', async () => {
+	const late = [];
+	const hear = (e) => late.push(e);
+	process.on('unhandledRejection', hear);
+	let release, reached;
+	const held = new Promise((r) => (release = r));
+	const asked = new Promise((r) => (reached = r));
+	const prepare = (context) =>
+		context.route('https://late.test/**', async () => {
+			reached();
+			await held;
+			throw new Error('a handler that outlived its test');
+		});
+	try {
+		await withApp(async (app) => {
+			await app.page.evaluate(() => void fetch('https://late.test/x').catch(() => {}));
+			await asked;
+		}, { prepare });
+		release();
+		await new Promise((r) => setTimeout(r, 500));
+		assert.deepEqual(late, []);
+	} finally {
+		process.off('unhandledRejection', hear);
+	}
+});
