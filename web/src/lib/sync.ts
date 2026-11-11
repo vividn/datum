@@ -316,7 +316,8 @@ export class Leader {
 	joining = false;
 	/** A join kept until a member admits it, which `redeem` tries (da-4qpwf). */
 	pendingJoin?: PendingJoin;
-	redeeming = false;
+	/** A redeem under way, and what it answers: a session's report once a member admitted this copy. */
+	redeeming?: Promise<SyncReport | null>;
 	/** A person's join under way, which a background redeem leaves alone. */
 	connecting = false;
 	paused?: string;
@@ -524,17 +525,19 @@ export class Leader {
 	 * as it starts and at every pull, until a member admits this copy, or
 	 * refuses it for good, which the CLI keeps on the join and says.
 	 */
-	async redeem(): Promise<void> {
-		if (!this.endpoint || !this.pendingJoin || this.pendingJoin.refused || this.paused || this.redeeming || this.connecting) return;
-		this.redeeming = true;
-		try {
-			const report = await ask<SyncReport | null>(this.db, { op: 'redeem' }).catch(() => null);
-			if (report) return this.done(report.id, report);
-			await this.refresh();
-		} finally {
-			this.redeeming = false;
-			this.progress();
-		}
+	redeem(): Promise<SyncReport | null> {
+		if (!this.endpoint || !this.pendingJoin || this.pendingJoin.refused || this.paused || this.redeeming || this.connecting) return Promise.resolve(null);
+		return (this.redeeming = (async () => {
+			try {
+				const report = await ask<SyncReport | null>(this.db, { op: 'redeem' }).catch(() => null);
+				if (report) this.done(report.id, report);
+				else await this.refresh();
+				return report;
+			} finally {
+				this.redeeming = undefined;
+				this.progress();
+			}
+		})());
 	}
 
 	/** A session's apply moved on; undefined once it is over. */
@@ -596,13 +599,22 @@ export class Leader {
 		if (c.op === 'said') return this.said();
 		if (c.op === 'connect') {
 			await this.start();
+			// A background redeem already dialing is waited out, not raced: both would send
+			// the one invite, and the second read «invite already used» (da-smeca).
+			const kept = this.pendingJoin?.chain;
+			let redeemed: SyncReport | null = null;
+			// One that failed admitted nothing, and the join dials.
+			while (this.redeeming) redeemed = await this.redeeming.catch(() => null);
 			// The join is kept before it dials: no background redeem of it meanwhile, which
 			// would take the invite from under the person's own (da-4qpwf).
 			this.connecting = true;
 			try {
+				// That redeem admitted this copy to the chain this link joins: the join is done.
+				const about = redeemed && kept ? await ticketAbout(c.ticket).catch(() => undefined) : undefined;
 				// The admit records the name it joins as, so the inviter holds it at once.
 				const label = c.label ?? suggestedLabel(this.db);
-				const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket, label }).finally(() => this.progress());
+				const joined = about?.chain && about.chain === kept ? redeemed : null;
+				const report = joined ?? (await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket, label }).finally(() => this.progress()));
 				// No member answered: the join is kept, and redeemed once one does (da-4qpwf).
 				if (report.pending) {
 					await this.refresh();
