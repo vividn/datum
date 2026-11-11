@@ -399,16 +399,14 @@ describe('the field widget', () => {
 			const at = (sel) => page.locator(`${FIELD_FORM} [data-panel="basics"] ${sel}`);
 			const own = at('.placement .band g.field[data-field="thing"]');
 			/** Wait for the band to draw the field's sample as `ok` says: its blocks' states, and how many dots. */
-			const drawn = async (what, ok) => {
-				for (const end = Date.now() + 5000; ; await page.waitForTimeout(50)) {
-					const seen = {
+			const drawn = (what, ok) =>
+				until(
+					async () => ({
 						blocks: await own.locator('rect.block').evaluateAll((all) => all.map((b) => b.dataset.state)),
 						dots: await own.locator('.point-fg').count()
-					};
-					if (ok(seen)) return;
-					if (Date.now() > end) assert.fail(`never drawn: ${what}, but ${JSON.stringify(seen)}`);
-				}
-			};
+					}),
+					ok
+				).catch((e) => assert.fail(`never drawn: ${what}: ${e.message}`));
 			const off = at('.states li.off input.offer');
 			const struck = async () => [await off.isChecked(), await off.isDisabled()];
 			await nameField(page, 'thing');
