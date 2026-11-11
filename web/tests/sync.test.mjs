@@ -360,12 +360,19 @@ describe('a pull down the rough patch', () => {
 					);
 					await b.page.evaluate(() => (window.__notReloaded = true));
 					assert.equal(await pull(b.page), 'not syncing');
+					// Not a wait for rest: nothing is meant to start, so nothing ends.
+					// It is the window a wrong sync would land in, a pull that dialed
+					// though paused (`syncing` in PaneFrame.svelte, `syncNow` in
+					// #lib/sync.ts): about nine times what this test's last pull takes
+					// to bring the write (337 ms, measured 2026-11-11).
 					await b.page.waitForTimeout(3000);
 					assert.equal(await countOf(b, 'pulled'), 0, 'a pull while paused synced');
 
 					// Resumed, nothing brings it by itself: the CONTROL.
 					assert.equal((await b.run(['sync', 'resume'])).code, 0);
 					await until(() => paused(b), (p) => !p);
+					// The same window, once resumed: the 30-s pull is off (above), so
+					// nothing is meant to dial either way.
 					await b.page.waitForTimeout(3000);
 					assert.equal(await countOf(b, 'pulled'), 0, 'the write reached b with no pull');
 
