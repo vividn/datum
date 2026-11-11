@@ -11,7 +11,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { chromium, webkit } from 'playwright';
+import { chromium, devices, webkit } from 'playwright';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
@@ -23,12 +23,13 @@ const PHONE = { width: 390, height: 640 };
 /**
  * The phone the bug was seen on is a Pixel 8 Pro running Brave, installed
  * (Android Chromium): chromium is asked as a mobile device, webkit, the
- * second engine, at a phone's size.
+ * second engine, as an iPhone (da-atwj6's bounce was seen on one), both at
+ * a phone's size.
  */
 const onPhone = (engine) => ({
 	engine,
 	viewport: PHONE,
-	...(engine === chromium ? { device: { isMobile: true, hasTouch: true } } : {})
+	device: engine === chromium ? { isMobile: true, hasTouch: true } : devices['iPhone 13']
 });
 
 /** The bottoms of the shell and of the bottom bar, and the visible height. */
@@ -58,6 +59,35 @@ const shrinkVisible = (page, height, target, event) =>
 			(target === 'visualViewport' ? visualViewport : window).dispatchEvent(new Event(event));
 		},
 		[height, target, event]
+	);
+
+/**
+ * Report the visual viewport as `height` tall and `offsetTop` down the
+ * layout viewport, and send its `scroll`, as iOS does under a rubber-band
+ * (the height unchanged, the top moved) or with a keyboard up (both).
+ */
+const moveVisible = (page, height, offsetTop) =>
+	page.evaluate(
+		([height, offsetTop]) => {
+			Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => height });
+			Object.defineProperty(visualViewport, 'offsetTop', { configurable: true, get: () => offsetTop });
+			visualViewport.dispatchEvent(new Event('scroll'));
+		},
+		[height, offsetTop]
+	);
+
+/** The tops of the shell and of the bottom bar's foot, after `moveVisible` has been heard. */
+const placed = (page) =>
+	page.evaluate(
+		() =>
+			new Promise((done) =>
+				requestAnimationFrame(() =>
+					done({
+						top: Math.round(document.querySelector('.shell').getBoundingClientRect().top),
+						bar: Math.round(document.querySelector('.prompt-bar').getBoundingClientRect().bottom)
+					})
+				)
+			)
 	);
 
 // CI launches chromium only; a webkit leg that cannot launch is skipped with
@@ -150,6 +180,55 @@ for (const engine of [chromium, webkit]) {
 							[TALL, TRUE]
 						)
 				}
+			);
+		});
+
+		// da-atwj6, vividn, 2026-11-11: «the whole app moving down or up when
+		// you try to scroll, often in the other direction». No engine here
+		// rubber-bands (mobile WebKit takes no wheel and no drag), so the
+		// bounce is played as iOS reports it.
+		// Only the document: a pane's scroll still chains to a tall layout's
+		// own scroller (layout-swipe.test.mjs).
+		test('the document never bounces', async () => {
+			await withApp(
+				async ({ page }) => {
+					const behavior = await page.evaluate(() => ({
+						html: getComputedStyle(document.documentElement).overscrollBehaviorY,
+						body: getComputedStyle(document.body).overscrollBehaviorY
+					}));
+					assert.deepEqual(behavior, { html: 'none', body: 'none' });
+				},
+				onPhone(engine)
+			);
+		});
+
+		test('a bounce moves the visual viewport and not the shell', async () => {
+			await withApp(
+				async ({ page }) => {
+					await fitsTo(page, 640);
+					for (const offsetTop of [-60, -20, 20, 60, 0]) {
+						await moveVisible(page, 640, offsetTop);
+						assert.deepEqual(await placed(page), { top: 0, bar: 640 }, `offsetTop ${offsetTop}`);
+					}
+				},
+				onPhone(engine)
+			);
+		});
+
+		test('with a keyboard up the bar sits above it, and a bounce there moves it no further', async () => {
+			await withApp(
+				async ({ page }) => {
+					await fitsTo(page, 640);
+					// A keyboard 240px tall, the visible part scrolled 120px down.
+					await moveVisible(page, 400, 120);
+					assert.deepEqual(await placed(page), { top: 120, bar: 520 });
+					// Bounced past either end of the room it leaves: held at the end.
+					await moveVisible(page, 400, -30);
+					assert.deepEqual(await placed(page), { top: 0, bar: 400 });
+					await moveVisible(page, 400, 300);
+					assert.deepEqual(await placed(page), { top: 240, bar: 640 });
+				},
+				onPhone(engine)
 			);
 		});
 

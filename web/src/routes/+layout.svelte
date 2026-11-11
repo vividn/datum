@@ -109,7 +109,11 @@
 	 * measured wrong sends no event to correct itself. vividn: a rotation
 	 * cured it, «so maybe just one size refresh is necessary after the page
 	 * loads». Not while pinch-zoomed: there the visible part is a
-	 * magnifier's view, not a smaller screen.
+	 * magnifier's view, not a smaller screen. The top is held to the room a
+	 * keyboard leaves, between 0 and the layout viewport less the visible
+	 * part (da-atwj6): an iOS rubber-band moves `offsetTop` past it with the
+	 * height unchanged, and the shell followed it a frame late, against the
+	 * finger.
 	 */
 	function followViewport() {
 		const viewport = window.visualViewport;
@@ -122,7 +126,8 @@
 				return;
 			}
 			root.setProperty('--viewport-height', `${viewport.height}px`);
-			root.setProperty('--viewport-top', `${viewport.offsetTop}px`);
+			const room = Math.max(0, document.documentElement.clientHeight - viewport.height);
+			root.setProperty('--viewport-top', `${Math.min(Math.max(viewport.offsetTop, 0), room)}px`);
 		};
 		measure();
 		const frame = requestAnimationFrame(measure);

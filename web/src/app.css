@@ -132,6 +132,14 @@
 	margin-inline-start: 0.35em;
 }
 
+/* The document never scrolls, so it never bounces either (da-atwj6): an
+   iOS rubber-band of the root moves the visual viewport, and the shell,
+   which follows it, moved under the finger. */
+html,
+body {
+	overscroll-behavior: none;
+}
+
 body {
 	margin: 0;
 	font-family: monospace;
