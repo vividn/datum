@@ -334,6 +334,11 @@ pub enum DbCommand {
     /// `datum db rename NEW` — the database `--db` names, under the name
     /// NEW, its sync chain and endpoint key with it (da-o7ay8).
     Rename(String),
+    /// `datum db ops export` — every op held, as JSON lines (da-tllzg).
+    OpsExport,
+    /// `datum db ops import [FILE | -]` — those lines applied, into a copy
+    /// in no sync chain (da-tllzg).
+    OpsImport(Option<String>),
 }
 
 #[derive(Debug, Default)]

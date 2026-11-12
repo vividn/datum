@@ -121,6 +121,7 @@ mod now_cmd;
 mod nowview_cmd;
 mod null_token;
 mod occur_cmd;
+mod ops_io;
 mod output_parity;
 mod parity;
 mod parity_repro;

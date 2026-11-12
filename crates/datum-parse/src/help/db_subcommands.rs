@@ -34,4 +34,8 @@ pub(super) const DB_SUBCOMMANDS: &[SubcommandSpec] = &[
     sub("config", &["datum db config [auto_setup [true | false] | timezone_follow [ask | auto]]"]),
     sub("attachment", &["datum db attachment [<HASH>]"]),
     sub("rename", &["datum db rename <NEW>"]),
+    sub(
+        "ops",
+        &["datum db ops export", "datum db ops import [FILE | -]"],
+    ),
 ];

@@ -2,7 +2,7 @@
 //!
 //! Houses every database administration verb: `purge`, `backup`,
 //! `restore`, `migrate`, `v2import`, `config`, the database's own
-//! settings, and `rename`. da-33g consolidated the standalone
+//! settings, `rename`, and `ops export | import`. da-33g consolidated the standalone
 //! `setup` / `backup` / `restore` / `migrate` top-level verbs under here,
 //! and da-a4ptr folded `db setup` into `db migrate`.
 
@@ -36,7 +36,40 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
         DbCommand::Config(args) => config(args, db),
         DbCommand::Attachment(hash) => attachment(hash, db),
         DbCommand::Rename(new) => rename::rename(&new, cli_db),
+        DbCommand::OpsExport => {
+            for line in db.ops_export()? {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        DbCommand::OpsImport(file) => ops_import(file, db),
     }
+}
+
+/// `datum db ops import [FILE | -]` (da-tllzg): `db ops export`'s lines,
+/// applied as a sync applies them, into a copy in no chain.
+fn ops_import(file: Option<String>, db: &Db) -> Result<()> {
+    let input = match file.as_deref() {
+        None | Some("-") => {
+            anyhow::ensure!(
+                !std::io::stdin().is_terminal(),
+                "give the ops on stdin or as a file: `datum db ops import ops.jsonl`"
+            );
+            std::io::read_to_string(std::io::stdin())?
+        }
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("db ops import: {path}: {e}"))?,
+    };
+    let s = db.ops_import(&input)?;
+    for why in &s.refused {
+        eprintln!("refused: {why}");
+    }
+    println!(
+        "applied {} · already had {} · held {} · conflicts {}",
+        s.applied, s.already_had, s.held, s.conflicts
+    );
+    anyhow::ensure!(s.refused.is_empty(), "{} op(s) refused", s.refused.len());
+    Ok(())
 }
 
 /// `datum db config [KEY [VALUE]]` (da-w6pp2): each setting is an entry

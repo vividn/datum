@@ -309,6 +309,7 @@ fn dry_runs_on_a_copy(command: &Command) -> bool {
         Command::Check(a) => a.fix,
         Command::Db(DbCommand::Config(a)) => a.value.is_some(),
         Command::Db(DbCommand::Attachment(hash)) => hash.is_none(),
+        Command::Db(DbCommand::OpsImport(_)) => true,
         // `--user` keeps this install's username, outside the database.
         Command::Sync(SyncCommand::Rename { user, .. }) => user.is_none(),
         Command::Sync(c) => matches!(
@@ -335,6 +336,8 @@ fn writes_nothing(command: &Command) -> bool {
         Command::Db(DbCommand::Backup(_)) => false,
         Command::Db(DbCommand::Config(a)) => a.value.is_none(),
         Command::Db(DbCommand::Attachment(hash)) => hash.is_some(),
+        // It signs the baselines a sync would, and changes no entry.
+        Command::Db(DbCommand::OpsExport) => true,
         Command::Check(a) => !a.fix,
         c => {
             only_reads(c)

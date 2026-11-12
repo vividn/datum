@@ -92,6 +92,7 @@ pub mod chain;
 mod debug;
 mod diagnose;
 mod join;
+mod ops_io;
 mod pause;
 pub mod peers;
 mod refold;
@@ -2394,12 +2395,17 @@ fn take_purged(conn: &Connection, words: &[Value]) -> Result<()> {
     Ok(())
 }
 
-/// A sender's removal, mark or purged seqs rather than ops. Canonical
-/// JSON: an op's first key is `alias_chain`.
+/// A sender's removal, mark, purged seqs or dormant records rather than
+/// ops. Canonical JSON: an op's first key is `alias_chain`.
 fn is_word(line: &str) -> bool {
-    ["{\"caught_up\"", "{\"remove\"", "{\"purged\""]
-        .iter()
-        .any(|w| line.starts_with(w))
+    [
+        "{\"caught_up\"",
+        "{\"remove\"",
+        "{\"purged\"",
+        "{\"dormant\"",
+    ]
+    .iter()
+    .any(|w| line.starts_with(w))
 }
 
 /// [`settle`]'s order for a line of ops: records first, then HLC. An
@@ -2420,7 +2426,7 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
     let before = chain.filter(&mine).cloned();
     let mut s = ApplySummary::default();
     let (mut got, mut words) = (Vec::new(), Vec::new());
-    let mut each = Vec::new();
+    let (mut each, mut chains) = (Vec::new(), BTreeSet::new());
     for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
         if is_word(line) {
             match serde_json::from_str::<Value>(line) {
@@ -2437,6 +2443,7 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
             false => each.push(line.to_string()),
         }
     }
+    ops_io::hold_dormant(tx, &chain, &words, &mut each, &mut s)?;
     for line in each.iter().map(String::as_str) {
         let op = match Op::parse(line) {
             Ok(op) => op,
@@ -2460,6 +2467,9 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
             ));
             continue;
         }
+        if op.is_chain() {
+            chains.insert(theirs.to_string());
+        }
         let held: Option<String> = tx
             .prepare_cached("SELECT body FROM ops WHERE endpoint = ?1 AND seq = ?2")?
             .query_row(params![op.endpoint, op.seq], |r| r.get(0))
@@ -2481,6 +2491,8 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
         }
     }
     take_purged(tx, &words)?;
+    // A chain `db ops import` brought the records of, this copy now joins.
+    ops_io::wake_dormant(tx, chains.iter().map(String::as_str))?;
     settle(tx, &mut s)?;
     settle_filter(tx, &mine, before.as_ref(), &got, &words, &mut s)?;
     Ok(s)
@@ -3184,6 +3196,7 @@ impl Db {
                 None => None,
             };
             let (mut lines, mut purged, mut after) = (Vec::new(), Map::new(), 0);
+            let mut dormant = Vec::new();
             let mut stmt = tx.prepare(
                 "SELECT endpoint, seq, body, applied, hid, hlc FROM ops
                  WHERE endpoint = ?1 AND seq >= ?2 AND applied > 0 ORDER BY seq",
@@ -3209,7 +3222,9 @@ impl Db {
                 if !sent || !serves(&e, applied) || past {
                     continue;
                 }
-                if applied == 3 {
+                if applied == ops_io::DORMANT {
+                    dormant.push(body);
+                } else if applied == 3 {
                     let runs = purged.entry(e).or_insert_with(|| json!([]));
                     let runs = runs.as_array_mut().expect("an array");
                     match runs.last_mut() {
@@ -3226,6 +3241,10 @@ impl Db {
             }
             if !purged.is_empty() {
                 lines.insert(after, json!({ "purged": purged }).to_string());
+            }
+            // Held dormant where they came (da-tllzg), and so where they go.
+            if !dormant.is_empty() {
+                lines.push(json!({ "dormant": dormant }).to_string());
             }
             drop(stmt);
             Ok(lines)

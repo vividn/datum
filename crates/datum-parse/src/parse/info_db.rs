@@ -41,7 +41,7 @@ pub(crate) fn parse_reparse_args(tail: &[&str]) -> Result<ReparseArgs> {
 pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing db subcommand (purge|backup|restore|migrate|v2import|config|attachment|rename)".into(),
+            "missing db subcommand (purge|backup|restore|migrate|v2import|config|attachment|rename|ops)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -67,6 +67,16 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
             }
             _ => Err(ParseError::InvalidArg(
                 "db rename takes the database's new name: `datum --db OLD db rename NEW`".into(),
+            )),
+        },
+        "ops" => match rest {
+            ["export"] => Ok(DbCommand::OpsExport),
+            ["import"] => Ok(DbCommand::OpsImport(None)),
+            ["import", file] if *file == "-" || !file.starts_with('-') => {
+                Ok(DbCommand::OpsImport(Some(file.to_string())))
+            }
+            _ => Err(ParseError::InvalidArg(
+                "db ops takes `export`, or `import [FILE | -]`".into(),
             )),
         },
         "import" => Err(ParseError::InvalidArg(

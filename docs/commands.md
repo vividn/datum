@@ -77,7 +77,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `backup` — Back up a database: one file, or a rotation on a schedule
 - `import` — Import entries from JSONL rows, every row or none
 - `export` — Print entries as the JSONL rows `import` reads
-- `db` — DB-lifecycle (purge, backup, restore, migrate, v2import, config, rename)
+- `db` — DB-lifecycle (purge, backup, restore, migrate, v2import, config, rename, ops)
 - `info` — Show health/metadata for DB(s)
 - `config` — Show or manage user configuration
 - `completions` — Shell tab completion: print, install or remove the script

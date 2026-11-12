@@ -77,3 +77,21 @@ What each kind of entry looks like:
 `datum export --jsonl [FIELD…]` prints each live entry, or each of the FIELDs', oldest first, leaving out the keys the
 import derives and every key with no value. The entries of datum's own fields (specs, aliases, layouts) are not
 exported: a field's setup goes with `datum kit export`.
+
+## Exact history: raw ops
+
+An import writes new changes, signed by the copy importing. To move a database's history whole instead, every author
+and every edit as they were made, copy its sync ops:
+
+```bash
+datum --db old db ops export > ops.jsonl
+datum --db new db ops import ops.jsonl     # or: db ops import - < ops.jsonl; --dry-run writes nothing
+```
+
+`db ops export` prints every op the database holds, one signed JSON line each. It first signs a baseline op for each
+entry no op covers yet (one `datum import` wrote), as a sync does, so an export writes to the database it reads; a
+paused copy, or a reader, signs none and refuses rather than leave such an entry out. `db ops import` applies the ops
+as a sync would, so the two copies hold the same ops and the same entries, and an op held already is skipped. The sync
+chain's own records are held but not applied, so the copy importing is in no chain; should it join that same chain,
+they apply with its first sync. A copy in a chain refuses the import, since its chain admitted none of the endpoints that signed them: there, export and
+import JSONL rows as above. Ops are not for writing by hand: each needs its endpoint's seq, its deps and a signature.

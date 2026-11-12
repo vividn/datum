@@ -23,6 +23,7 @@ mod first_sync;
 mod giving_up;
 mod identity;
 mod invite;
+mod ops_io;
 mod purge;
 mod readers;
 mod reenter;
