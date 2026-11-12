@@ -14,9 +14,22 @@
 <script lang="ts">
 	import { act } from '#lib/act.ts';
 	import { openTutorial } from '#lib/tutorial.ts';
+	import Sheet from '#lib/Sheet.svelte';
 	import { open, openPlace } from './shell.js';
 
 	const REPO = 'https://github.com/vividn/datum';
+	const GUIDE = 'https://datum.day/agents.md';
+	/** Short: the guide does the teaching. */
+	const PROMPT = `I track my life data with datum (https://datum.day). Read ${GUIDE} first, then help me with: `;
+
+	let ai = $state(false);
+	let copied = $state('');
+
+	const copy = () =>
+		(navigator.clipboard?.writeText(PROMPT) ?? Promise.reject()).then(
+			() => (copied = 'Copied.'),
+			() => (copied = 'This browser did not let the page copy it: select the prompt instead.')
+		);
 </script>
 
 <div class="welcome">
@@ -39,13 +52,26 @@
 		<button type="button" class="command" data-open="docs" use:act={'open'} onclick={() => void openPlace('docs')}>Read the docs</button>
 	</p>
 	<!-- vividn, 2026-10-21: «It should be clear on the front page of datum.day that you can point your agent there
-	     to help you get setup with your data.» The guide it reads is /agents.md; the public one, since the agent
-	     is not on this device. -->
+	     to help you get setup with your data.» Since 2026-11-12 a button, vividn: «replace the ai section with an
+	     "integrate with AI" button that pops up a modal with an explanation as well as … a copyable prompt to paste
+	     into a chat ai» (da-rlxux). The guide it names is /agents.md, the public one, since the AI is not on this
+	     device. «Generate an AI code» joins the modal once agent sync makes codes (da-f7orx). -->
 	<p>
-		Using an AI agent? Point it at <a href="https://datum.day/agents.md" target="_blank" rel="noopener">datum.day</a>
-		and it can help you set up, analyze your data, or build connectors to other data sources. AI agents love collecting data on themselves too.
+		<button type="button" class="command" data-open="ai" use:act={'open'} onclick={() => (ai = true)}>Integrate with AI</button>
 	</p>
-	<!-- Under the AI paragraph, right above open source (vividn, 2026-11-10, da-a6xba). -->
+	<Sheet title="Integrate with AI" bind:open={ai} onclose={() => (copied = '')} data-ai>
+		<p>
+			An AI can help you set up what to track, analyze your data, or build connectors to other data sources. Its guide is
+			<a href={GUIDE} target="_blank" rel="noopener">datum.day/agents.md</a>. AI agents love collecting data on themselves too.
+		</p>
+		<p>Paste this into a chat AI, then say what you want help with:</p>
+		<pre class="prompt">{PROMPT}</pre>
+		<p>
+			<button type="button" class="command" use:act={'run'} onclick={copy}>Copy prompt</button>
+			<span class="quiet" role="status">{copied}</span>
+		</p>
+	</Sheet>
+	<!-- Under the AI button, right above open source (vividn, 2026-11-10, da-a6xba). -->
 	<p>Local first. You own your data. Seamless sync between your devices. No one else sees or can access your data.</p>
 	<p>Datum is open source! (AGPL-3.0): <a href={REPO} target="_blank" rel="noopener">github.com/vividn/datum</a></p>
 </div>
@@ -90,5 +116,19 @@
 
 	a {
 		color: var(--accent-bright);
+	}
+
+	/* Selectable as one, wrapped to the sheet. */
+	.prompt {
+		margin: 0 0 0.5rem;
+		padding: 0.5rem;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		white-space: pre-wrap;
+		user-select: all;
+	}
+
+	.quiet {
+		color: var(--quiet);
 	}
 </style>

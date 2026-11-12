@@ -4,7 +4,7 @@
 	some basic ideas to be aware of, and a basic user flow».
 
 	Since da-uzyih.19 it is short (WelcomeText.svelte): the name, its
-	tagline, the tutorial, the line for an AI agent, the docs and the
+	tagline, the tutorial, the docs, the «Integrate with AI» button and the
 	source, on a phone's screen without scrolling. What it taught (fields,
 	shapes, the input bar, tabs and widgets) is the tutorial's first tabs.
 

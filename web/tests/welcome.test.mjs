@@ -145,9 +145,11 @@ describe('a first visit', () => {
 	// What it HAS and DOES, not its sentences (vividn, 2026-10-28: «seems like tests that quote word for word are kind
 	// of useless»): the copy is his to change without a test following it.
 	// The docs are a button since da-0d8l6, opening the docs place: `docs.test.mjs`.
-	const LINKS = ['https://datum.day/agents.md', 'https://github.com/vividn/datum'];
+	// The guide for agents is in the «Integrate with AI» modal since da-rlxux.
+	const BUTTONS = ['Track something', 'Tutorial', 'Read the docs', 'Integrate with AI'];
+	const LINKS = ['https://github.com/vividn/datum'];
 
-	test('what it has: the name, local first, Track something, the Tutorial button, the docs, the guide for agents and the repo, and no button of its own to close it', async () => {
+	test('what it has: the name, local first, Track something, the Tutorial button, the docs, Integrate with AI and the repo, and no button of its own to close it', async () => {
 		await withApp(async ({ page }) => {
 			const host = page.locator('.host.welcome');
 			assert.equal(await host.getByRole('heading', { level: 1 }).innerText(), 'datum');
@@ -156,10 +158,10 @@ describe('a first visit', () => {
 			const controls = await host.locator('div.welcome').locator('button, a').evaluateAll((all) =>
 				all.map((e) => (e.tagName === 'A' ? e.getAttribute('href') : e.textContent.trim()))
 			);
-			assert.deepEqual(controls, ['Track something', 'Tutorial', 'Read the docs', ...LINKS]);
+			assert.deepEqual(controls, [...BUTTONS, ...LINKS]);
 			// No worded button outside them: no «Close welcome» (da-6tk9t). The frame's own are icons.
 			const worded = (await host.getByRole('button').allInnerTexts()).map((t) => t.trim()).filter(Boolean);
-			assert.deepEqual(worded, ['Track something', 'Tutorial', 'Read the docs']);
+			assert.deepEqual(worded, BUTTONS);
 			for (const link of await host.getByRole('link').all()) assert.equal(await link.getAttribute('target'), '_blank');
 		}, FRESH_DESKTOP);
 	});
@@ -180,7 +182,7 @@ describe('a first visit', () => {
 		['a phone', FRESH_PHONE],
 		['a desktop', FRESH_DESKTOP]
 	])
-		test(`on ${what}, Track something stands filled above Tutorial and opens setup; local first comes after the AI line, before open source`, async () => {
+		test(`on ${what}, Track something stands filled above Tutorial and opens setup; local first comes after the AI button, before open source`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				const welcome = page.locator('.host.welcome div.welcome');
@@ -200,9 +202,9 @@ describe('a first visit', () => {
 				assert.equal(filled, accent);
 				assert.notEqual(ground, accent);
 
-				// The paragraphs' order: the AI line, then local first, then open source, last.
+				// The paragraphs' order: the AI button, then local first, then open source, last.
 				const order = await welcome.locator('p').evaluateAll((all) =>
-					all.map((p) => p.textContent).flatMap((t) => (/AI agent/.test(t) ? ['ai'] : /local first/i.test(t) ? ['local'] : /open source/i.test(t) ? ['source'] : []))
+					all.map((p) => p.textContent).flatMap((t) => (/Integrate with AI/.test(t) ? ['ai'] : /local first/i.test(t) ? ['local'] : /open source/i.test(t) ? ['source'] : []))
 				);
 				assert.deepEqual(order, ['ai', 'local', 'source']);
 
@@ -230,10 +232,10 @@ describe('a first visit', () => {
 	});
 
 	// da-s1ek1, vividn, 2026-10-21: «It should be clear on the front page of datum.day that you can point your agent
-	// there to help you get setup with your data.» One line, linking the guide an agent reads, on a phone's first screen.
-	test('its line for AI agents links the guide for agents, and is on a phone\'s first screen', async () => {
+	// there to help you get setup with your data.» A button since da-rlxux, on a phone's first screen.
+	test('its Integrate with AI button is on a phone\'s first screen', async () => {
 		await withApp(async ({ page }) => {
-			const line = page.locator('.host.welcome p', { has: page.locator('a[href="https://datum.day/agents.md"]') });
+			const line = page.locator('.host.welcome p', { has: page.getByRole('button', { name: 'Integrate with AI', exact: true }) });
 			assert.equal(await line.count(), 1);
 			// Read before any scrolling: the line ends inside the pane that scrolls the welcome, which is at its top.
 			const at = await line.evaluate((p) => {
@@ -245,6 +247,54 @@ describe('a first visit', () => {
 			assert.ok(at.bottom <= at.within, `the line ends at ${at.bottom}, below the pane's ${at.within}`);
 		}, FRESH_PHONE);
 	});
+
+	// da-rlxux, vividn, 2026-11-12: «an "integrate with AI" button that pops up a modal with an explanation as well
+	// as … a copyable prompt to paste into a chat ai». It opens a modal holding the guide for agents and a prompt
+	// naming it, its copy puts that prompt on the clipboard, and it closes as the app's other sheets do.
+	for (const [what, device] of [
+		['a phone', FRESH_PHONE],
+		['a desktop', FRESH_DESKTOP]
+	])
+		test(`on ${what}, Integrate with AI opens a modal whose Copy prompt copies its prompt; ×, Escape and the backdrop close it`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await page.evaluate(() => {
+					window.__copied = [];
+					Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => (window.__copied.push(t), Promise.resolve()) } });
+				});
+				const button = page.locator('.host.welcome').getByRole('button', { name: 'Integrate with AI', exact: true });
+				const sheet = page.locator('dialog[data-ai]');
+				const opened = async () => {
+					await button.click();
+					await sheet.waitFor();
+					assert.equal(await sheet.evaluate((d) => d.open && d.matches(':modal')), true, 'not a modal');
+				};
+
+				// It opens a sheet, so wears the `›`; Copy prompt acts at once (act.ts).
+				assert.equal(await button.getAttribute('data-act'), 'open');
+				await opened();
+				assert.equal(await sheet.getByRole('button', { name: 'Copy prompt', exact: true }).getAttribute('data-act'), 'run');
+				assert.equal(await sheet.locator('a[href="https://datum.day/agents.md"]').getAttribute('target'), '_blank');
+				const prompt = await sheet.locator('pre.prompt').textContent();
+				assert.match(prompt, /https:\/\/datum\.day\/agents\.md/);
+				await sheet.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+				await until(() => page.evaluate(() => window.__copied), (c) => c.length === 1);
+				assert.deepEqual(await page.evaluate(() => window.__copied), [prompt]);
+				await sheet.getByRole('status').filter({ hasText: /\S/ }).waitFor();
+
+				await sheet.getByRole('button', { name: 'close' }).click();
+				await sheet.waitFor({ state: 'detached' });
+				await opened();
+				// Said once copied, and not again on the next open.
+				assert.equal((await sheet.getByRole('status').textContent()).trim(), '');
+				await page.keyboard.press('Escape');
+				await sheet.waitFor({ state: 'detached' });
+				await opened();
+				await page.mouse.click(2, 2);
+				await sheet.waitFor({ state: 'detached' });
+				assert.deepEqual(app.errors, []);
+			}, device);
+		});
 
 	// «fits a phone screen without scrolling» again (da-uzyih.19), as it was until 2026-10-14.
 	test('on a phone it fits the screen without scrolling', async () => {
