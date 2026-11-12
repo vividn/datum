@@ -45,6 +45,7 @@ MUTATE:
   rekey    Rename an entry's data keys, in place
   retime   Move an entry's time, its `at` (alias: rt)
   rename   Give a field another name, its entries and spec with it
+  script   Run a script of command lines, stopping at the first that fails
   delete   Delete an entry (alias: del)
   undo     Undo the last command, all of it
   redo     Redo the last undone command (the inverse of undo)
@@ -101,7 +102,8 @@ GLOBAL OPTIONS:
 
 Run `datum <command> --help` for per-command flag detail.
 Environment variables datum reads: `datum help env`.
-With no subcommand, `datum` drops into an interactive REPL (inherits `--db`).
+With no subcommand, `datum` drops into an interactive REPL (inherits `--db`);
+off a terminal, it runs its stdin as `datum script -`.
 ";
 
 #[test]

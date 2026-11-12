@@ -1,7 +1,9 @@
 //! A REPL's lines run in one process (da-3f9nl), so what a command keeps in
 //! a `thread_local!` outlives its line unless something resets it. Each test
 //! here runs a line that sets one, then a line that must not see it, and
-//! holds the second to what it prints in a REPL of its own.
+//! holds the second to what it prints in a REPL of its own. Off a terminal
+//! the lines are a script (da-ygfeh), which runs each as the REPL does:
+//! `datum script --allow-partial -`, so a line after a failed one runs.
 //!
 //! The 17, and where each is held:
 //!
@@ -50,6 +52,7 @@ impl Env {
     fn repl(&self, lines: &[&str]) -> Output {
         use std::io::Write;
         let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .args(["script", "--allow-partial", "-"])
             .env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.home)
@@ -76,7 +79,8 @@ impl Env {
             .unwrap()
     }
 
-    /// What a REPL printed on stdout, past its banner, and on stderr, each
+    /// What a REPL printed on stdout, and on stderr but for its count of the
+    /// lines that failed, each
     /// hid named `<hid>` and each undo's `(the CREATE of <time>…)` `<time>`:
     /// the two sides of a comparison mint their own, and seed their own
     /// database, a second apart when a second turns between them.
@@ -107,14 +111,12 @@ impl Env {
                 .map(unstamp)
                 .collect::<String>()
         };
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        let (_banner, stdout) = stdout
-            .split_once("`exit` or Ctrl-D to quit.\n")
-            .expect("the REPL's banner");
-        let stdout = stdout.to_string();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stderr = stderr.split_inclusive('\n');
+        let stderr = stderr.filter(|l| !l.starts_with("Error: ") || !l.contains(" lines failed: "));
         (
-            mask(stdout),
-            mask(String::from_utf8_lossy(&out.stderr).into()),
+            mask(String::from_utf8_lossy(&out.stdout).into()),
+            mask(stderr.collect()),
         )
     }
 }
@@ -138,7 +140,12 @@ fn second_line_as_alone(seed: &[&str], first: &str, second: &str) -> String {
         (one.0 + &two.0, one.1 + &two.1),
         "`{second}` after `{first}` in one REPL printed otherwise than alone"
     );
-    assert!(out.status.success(), "the REPL exited {:?}", out.status);
+    assert_eq!(
+        out.status.success(),
+        out_1.status.success() && out_2.status.success(),
+        "the REPL exited {:?}",
+        out.status
+    );
     both.0 + &both.1
 }
 

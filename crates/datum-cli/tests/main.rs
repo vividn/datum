@@ -142,6 +142,7 @@ mod restore_merge_collision;
 mod retime_cmd;
 mod revert_cmd;
 mod row_width;
+mod script_cmd;
 mod setup_echo_json;
 mod show_env;
 mod show_flag_family;

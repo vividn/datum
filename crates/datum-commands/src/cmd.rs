@@ -389,6 +389,11 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         Command::Repl => Err(anyhow::anyhow!(
             "no subcommand given — `datum` with only global flags is REPL-only"
         )),
+        // So is `script`: a line of a script, or of a multi-command line, runs
+        // no script of its own.
+        Command::Script(_) => Err(anyhow::anyhow!(
+            "`script` runs a whole script, not a line of one"
+        )),
         Command::Occur(args) => run_log_with_alias(args, db, commands::occur::occur),
         Command::Start(args) => run_log_with_alias(args, db, commands::start::start),
         Command::Stop(args) => run_log_with_alias(args, db, commands::end::stop),

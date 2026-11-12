@@ -1358,7 +1358,8 @@ pub const TOP_LEVEL_EXAMPLES: &str = "  datum moment coffee                 a co
 pub const TOP_LEVEL_FOOTER: &str = "Run `datum <command> --help` for per-command flag detail.\n\
      Environment variables datum reads: `datum help env`.\n\
      With no subcommand, `datum` drops into an interactive REPL \
-     (inherits `--db`).";
+     (inherits `--db`);\n\
+     off a terminal, it runs its stdin as `datum script -`.";
 
 // ---------------------------------------------------------------------------
 // COMMANDS table — listed in display order for each category.
@@ -2781,6 +2782,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         display_input_name: false,
         subcommands: NO_SUBCOMMANDS,
     },
+    super::script::SCRIPT,
     CommandSpec {
         name: "delete",
         aliases: &["del"],

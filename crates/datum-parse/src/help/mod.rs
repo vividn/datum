@@ -21,6 +21,7 @@ pub mod commands;
 mod db_subcommands;
 mod fit;
 pub mod render;
+mod script;
 mod setup_flags;
 pub mod spec;
 mod status_bodies;

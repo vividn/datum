@@ -35,6 +35,9 @@ pub enum Command {
     /// the outer [`Cli`]. Reached when argv has only global flags (or is
     /// empty after `argv[0]`).
     Repl,
+    /// `datum script [FILE]`, and `datum < FILE`: a script of command lines
+    /// (da-ygfeh).
+    Script(ScriptArgs),
     Occur(LogArgs),
     Start(LogArgs),
     Stop(LogArgs),
@@ -718,6 +721,24 @@ pub struct UpdateArgs {
     pub all_or_nothing: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
+}
+
+/// `datum script [FILE|-] [--atomic | --allow-partial] [--dry-run] [--now T]
+/// [--tz ZONE] [--db DB]` (da-ygfeh).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ScriptArgs {
+    /// The script; `None` or `-` is stdin.
+    pub file: Option<String>,
+    /// Every line or none, one `undo` for them all.
+    pub atomic: bool,
+    /// Go on past a line that fails.
+    pub allow_partial: bool,
+    pub dry_run: bool,
+    /// Every «now» of the script is this one instant, read as `-t` reads.
+    pub now: Option<String>,
+    /// The zone every line reads its times in, as `TZ` would say.
+    pub tz: Option<String>,
+    pub db: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]

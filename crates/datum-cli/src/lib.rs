@@ -152,6 +152,15 @@ pub fn run(argv: Vec<String>) -> Result<()> {
             // A dry run asked of a line that does not parse without the flag
             // says why it does not: it never runs that line for real.
             _ => match args::parse_invocation_opening(without_dry_run(&argv)) {
+                // `script`'s dry run is its own, wherever the flag stands.
+                Ok((Invocation::Single(mut cli), opened))
+                    if matches!(cli.command, Command::Script(_)) =>
+                {
+                    if let Command::Script(a) = &mut cli.command {
+                        a.dry_run = true;
+                    }
+                    parsed = Ok((Invocation::Single(cli), opened));
+                }
                 Ok((invocation, opened)) => {
                     drop(parsed);
                     return dry_run(&argv, invocation, opened.as_ref());
@@ -260,6 +269,7 @@ pub(crate) fn dry_runs_itself(command: &Command) -> bool {
         Command::Delete(a) => a.dry_run,
         Command::Redo(a) => a.dry_run,
         Command::Rename(a) => a.dry_run,
+        Command::Script(a) => a.dry_run,
         Command::Kit(KitCommand::Install(a)) => a.dry_run,
         Command::Db(DbCommand::Restore(a)) => a.dry_run,
         Command::Db(DbCommand::V2import(a)) => a.dry_run,
@@ -899,13 +909,20 @@ fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
     // `--color always|never` outranks the environment for the whole run,
     // a REPL started under it included.
     let _color = cli.color.map(output::colors::ColorOverride::set);
-    if matches!(&cli.command, Command::Repl) {
+    if matches!(&cli.command, Command::Repl | Command::Script(_)) {
         drop(opened);
         #[cfg(feature = "native")]
-        return repl::run(cli.db.as_deref());
+        return match cli.command {
+            Command::Script(args) => repl::script(&args, cli.db.as_deref()),
+            // `datum < FILE` is `datum script -` (da-ygfeh).
+            _ if !std::io::IsTerminal::is_terminal(&std::io::stdin()) => {
+                repl::script(&Default::default(), cli.db.as_deref())
+            }
+            _ => repl::run(cli.db.as_deref()),
+        };
         // No line editor under WASI; the browser has its own REPL.
         #[cfg(not(feature = "native"))]
-        anyhow::bail!("repl is unavailable in this build");
+        anyhow::bail!("the repl and `script` are unavailable in this build");
     }
 
     // `datum config show`, `datum completions`, `setup --premade` (the file

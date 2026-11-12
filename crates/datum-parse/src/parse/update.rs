@@ -122,6 +122,56 @@ pub(crate) fn parse_comment_args(tail: &[&str]) -> Result<UpdateArgs> {
     Ok(args)
 }
 
+/// `datum script`'s line (da-ygfeh).
+pub(crate) fn parse_script_args(tail: &[&str]) -> Result<ScriptArgs> {
+    let mut args = ScriptArgs::default();
+    let mut it = tail.iter();
+    while let Some(tok) = it.next() {
+        let (name, given) = match split_flag(tok) {
+            FlagSplit::Long("atomic") => {
+                args.atomic = true;
+                continue;
+            }
+            FlagSplit::Long("allow-partial") => {
+                args.allow_partial = true;
+                continue;
+            }
+            FlagSplit::Long("dry-run" | "dryrun") => {
+                args.dry_run = true;
+                continue;
+            }
+            FlagSplit::Long(n @ ("now" | "tz" | "db")) => (n, it.next().copied()),
+            FlagSplit::LongAttached(n @ ("now" | "tz" | "db"), v) => (n, Some(v)),
+            FlagSplit::Positional(f) if args.file.is_none() => {
+                args.file = Some(f.into());
+                continue;
+            }
+            FlagSplit::Positional(_) => {
+                return Err(ParseError::InvalidArg(
+                    "script takes one file: datum script <FILE>".into(),
+                ))
+            }
+            f => return Err(unknown_flag(f)),
+        };
+        let slot = match name {
+            "now" => &mut args.now,
+            "tz" => &mut args.tz,
+            _ => &mut args.db,
+        };
+        let given =
+            given.ok_or_else(|| ParseError::InvalidArg(format!("--{name} requires a value")))?;
+        *slot = Some(given.to_string());
+    }
+    if args.atomic && args.allow_partial {
+        return Err(ParseError::InvalidArg(
+            "script: --atomic writes every line or none, and --allow-partial the lines that run: \
+             not both"
+                .into(),
+        ));
+    }
+    Ok(args)
+}
+
 /// `rename OLD NEW [--merge] [--dry-run]`.
 pub(crate) fn parse_rename_args(tail: &[&str]) -> Result<RenameArgs> {
     let (mut dry_run, mut merge) = (false, false);

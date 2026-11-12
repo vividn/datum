@@ -713,40 +713,32 @@ fn subprocess_help_flag() {
     );
 }
 
-/// da-wdo9: `datum` with no subcommand drops into the REPL, which on a
-/// closed stdin prints its banner and exits 0. This must be exercised
-/// through the real binary — the parser-layer unit tests
-/// (`parse_argv` → `Command::Repl`) pass either way, because the break
-/// lived one layer up in `parse_invocation`, where a zero-token tail
+/// da-wdo9: `datum` with no subcommand reads its lines, which off a
+/// terminal are a script (da-ygfeh): an empty one exits 0, and a line runs.
+/// This must be exercised through the real binary — the parser-layer unit
+/// tests (`parse_argv` → `Command::Repl`) pass either way, because the
+/// break lived one layer up in `parse_invocation`, where a zero-token tail
 /// reached the comma splitter and tripped the empty-side guard.
 #[test]
-fn subprocess_bare_invocation_enters_repl() {
+fn subprocess_bare_invocation_reads_its_lines() {
     let env = Env::new();
-    let out = env.run(&[]);
-    assert_ok(&out, "bare invocation");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("Type `help` for commands"),
-        "bare `datum` must print the REPL banner: stdout={stdout:?} stderr={}",
-        String::from_utf8_lossy(&out.stderr),
-    );
+    assert_ok(&env.run_with_stdin(&[], ""), "bare invocation");
+    assert_ok(&env.run_with_stdin(&[], "occur coffee\n"), "a line");
+    assert_eq!(env.entry_count(), 1);
 }
 
 /// da-wdo9 / da-g6nl: same for `datum --db NAME` — the global flag is
-/// consumed and the REPL opens against that DB.
+/// consumed and the lines run against that DB.
 #[test]
-fn subprocess_db_flag_without_subcommand_enters_repl() {
+fn subprocess_db_flag_without_subcommand_reads_its_lines() {
     let env = Env::new();
     for args in [&["--db", "test"][..], &["--db=test"][..]] {
-        let out = env.run(args);
+        let out = env.run_with_stdin(args, "occur coffee\n");
         assert_ok(&out, "--db without subcommand");
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            stdout.contains("Type `help` for commands"),
-            "`datum {args:?}` must print the REPL banner: stdout={stdout:?} stderr={}",
-            String::from_utf8_lossy(&out.stderr),
-        );
+        assert!(stdout.contains("coffee"), "`datum {args:?}`: {stdout}");
     }
+    assert!(!env.db.exists(), "the lines ran against the default db");
 }
 
 /// da-5c2lq: a line copied from `help`'s examples, `datum` and all, is
@@ -758,7 +750,7 @@ fn subprocess_repl_line_starting_with_datum_says_leave_it_off() {
     let out = env.run_with_stdin(&[], "datum occur coffee\n");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("inside the REPL, leave off `datum`: `occur coffee`"),
+        stderr.contains("error: line 1: leave off `datum`: `occur coffee`"),
         "stderr={stderr}"
     );
     assert_eq!(env.entry_count(), 0, "the copied line must write nothing");
@@ -766,7 +758,7 @@ fn subprocess_repl_line_starting_with_datum_says_leave_it_off() {
     let out = env.run_with_stdin(&[], "datum\n");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("error: inside the REPL, leave off `datum`: type a command, or `help`"),
+        stderr.contains("error: line 1: leave off `datum`: type a command, or `help`"),
         "stderr={stderr}"
     );
 
