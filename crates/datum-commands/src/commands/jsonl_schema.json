@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datum.day/schema/import-row.json",
+  "title": "datum import row",
+  "description": "One entry, one line of a JSONL file `datum import` reads and `datum export --jsonl` prints. docs/import.md is the spec in full.",
+  "type": "object",
+  "required": ["field"],
+  "additionalProperties": false,
+  "$defs": {
+    "time": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "A time as `datum -t` reads it: 2026-11-10T08:30:00+01:00, or 2026-11-10 08:30 in --tz's zone, else the machine's."
+        },
+        {
+          "type": "object",
+          "description": "The object export prints. With no offset_minutes, the zone is `timezone`, else --tz's, else the machine's.",
+          "required": ["utc"],
+          "additionalProperties": false,
+          "properties": {
+            "utc": { "type": "string", "format": "date-time" },
+            "offset_minutes": { "type": "integer" },
+            "timezone": { "type": ["string", "null"], "description": "An IANA zone, e.g. Europe/Berlin." },
+            "uncertainty": { "type": "string", "description": "How precisely the time is known, an ISO 8601 duration such as PT5M." }
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "field": { "type": "string", "minLength": 1, "description": "What is tracked: coffee, mood, sleep." },
+    "at": {
+      "$ref": "#/$defs/time",
+      "description": "When. Required for a timed entry: one with a state, a dur or a following_state, or of a field whose kind is timed. For a period, its END."
+    },
+    "state": { "description": "The state an on/off or change field takes at `at` (true, false, \"happy\"), or a moment's quantity." },
+    "dur": {
+      "type": ["string", "integer"],
+      "description": "How long it lasted, ending at `at`: an ISO 8601 duration (PT30M), 30m, 1:30, or seconds. MOMENT for a moment."
+    },
+    "following_state": { "description": "The state after a period's or moment's trailing edge; needs a dur." },
+    "data": { "type": "object", "description": "Any other keys of the entry. No key named at." },
+    "verb": {
+      "enum": ["point", "switch", "block", "block-switch", "point-switch"],
+      "description": "The stored shape. Derived from state, dur and following_state; given, it must be what they make."
+    },
+    "create_time": { "$ref": "#/$defs/time", "description": "When it was logged, kept as the entry's own. Omitted, the import's time." },
+    "lat": { "type": "number" },
+    "lon": { "type": "number" },
+    "location": { "type": "string" },
+    "raw_input": { "type": "string", "description": "The command line that logged it, if one did." },
+    "extra_metadata": { "type": "object", "description": "datum's own provenance, as export prints it." },
+    "user_asserted_last_state": { "description": "The state being left, as -l records it." },
+    "field_structure": { "type": "string" },
+    "deleted_at": { "type": "null", "description": "A deleted entry is not imported." },
+    "hid": { "description": "Derived by the import, and ignored." },
+    "slug": { "description": "Derived by the import, and ignored." },
+    "id_structure": { "description": "Derived by the import, and ignored." },
+    "content_hash": { "description": "Derived by the import, and ignored." },
+    "client_id": { "description": "Derived by the import, and ignored." },
+    "parser_version": { "description": "Derived by the import, and ignored." },
+    "modify_time": { "description": "Derived by the import, and ignored." },
+    "alias_chain": { "description": "Derived by the import, and ignored." }
+  }
+}

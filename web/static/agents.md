@@ -210,3 +210,4 @@ their datum.day as a database of its own, next to their own record.
 - The CLI skill, for agents that run commands: https://github.com/vividn/datum/blob/main/skills/datum/SKILL.md
 - Fields, kinds and keys in depth: https://github.com/vividn/datum/blob/main/docs/concepts.md
 - Every command: https://github.com/vividn/datum/blob/main/docs/commands.md
+- Importing data kept elsewhere, as JSONL rows (`datum import`): https://github.com/vividn/datum/blob/main/docs/import.md

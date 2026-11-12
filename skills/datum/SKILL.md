@@ -123,6 +123,12 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
   `datum undo _LAST` (or `<hid>`) steps what you fetched back one version
   instead. An entry another device changed since (a sync) is refused, not
   reverted.
+- **Import data kept elsewhere as JSONL rows**, one entry a line:
+  `{"field": "mood", "at": "2026-11-10 09:00", "state": "happy"}`. `datum import
+  rows.jsonl --dry-run` first; the import writes every row or none, naming a
+  refused one by its line, and one `undo` takes it back. Each timed row needs its
+  `at`. The spec is `docs/import.md` and `datum help import`, `datum import
+  --schema` its JSON Schema, and `datum export --jsonl` prints rows to copy.
 - **Check after bulk work:** `datum check` reports consistency problems, such as a
   state repeated with no change between.
 - **Time formats:** `datum help time` lists every form `-t`, `-d`, `-y`/`-q` and

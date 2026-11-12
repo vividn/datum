@@ -38,6 +38,10 @@ pub enum Command {
     /// `datum script [FILE]`, and `datum < FILE`: a script of command lines
     /// (da-ygfeh).
     Script(ScriptArgs),
+    /// `datum import [FILE|-]`: JSONL rows, one entry a line (da-jouhm).
+    Import(ImportArgs),
+    /// `datum export --jsonl [FIELD…]`: the rows `import` reads (da-jouhm).
+    Export(ExportArgs),
     Occur(LogArgs),
     Start(LogArgs),
     Stop(LogArgs),
@@ -725,6 +729,27 @@ pub struct UpdateArgs {
 
 /// `datum script [FILE|-] [--atomic | --allow-partial] [--dry-run] [--now T]
 /// [--tz ZONE] [--db DB]` (da-ygfeh).
+/// `datum import [FILE|-] [--allow-partial] [--dry-run] [--tz ZONE] [--schema]`
+/// (da-jouhm).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ImportArgs {
+    /// The rows; `None` or `-` is stdin.
+    pub file: Option<String>,
+    /// Write the rows that read, though another did not.
+    pub allow_partial: bool,
+    pub dry_run: bool,
+    /// The zone a time that names none is read in, as `TZ` would say.
+    pub tz: Option<String>,
+    /// Print the rows' JSON Schema, and import nothing.
+    pub schema: bool,
+}
+
+/// `datum export --jsonl [FIELD…]` (da-jouhm).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ExportArgs {
+    pub fields: Vec<String>,
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ScriptArgs {
     /// The script; `None` or `-` is stdin.

@@ -95,6 +95,7 @@ mod history_cmd;
 mod id_lists;
 mod ids_cmd;
 mod if_changed;
+mod import_jsonl;
 mod import_progress;
 mod info_setup_cmd;
 mod inline_alias;

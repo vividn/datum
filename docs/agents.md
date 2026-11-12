@@ -52,6 +52,14 @@ invite` and sends its person the link; once they join on datum.day, both copies 
 sets up fields and logs for them.
 [sync.md](sync.md) covers chains, admins and conflicts.
 
+## Bring in data kept elsewhere
+
+Data your person kept somewhere else (a spreadsheet, notes, what they told another AI) comes in as JSONL rows, one
+entry a line: `{"field": "mood", "at": "2026-11-10 09:00", "state": "happy"}`. `datum import rows.jsonl --dry-run`
+says what it would write, and `datum import rows.jsonl` writes every row or none, naming a refused one by its line;
+one `undo` takes it back. [import.md](import.md) is the spec, `datum import --schema` its JSON Schema, and `datum
+export --jsonl` prints rows to copy.
+
 ## Work on datum
 
 Agents changing datum's code start at [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).

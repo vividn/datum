@@ -46,6 +46,7 @@ pub use pcli::RenameArgs;
 pub use pcli::StatesArgs;
 pub use pcli::StatsWindowFlag;
 pub use pcli::UpdateStrategyArg;
+pub use pcli::{ExportArgs, ImportArgs};
 
 /// The `--show` level the shared layer swept out of argv (da-qt6z).
 ///

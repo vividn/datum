@@ -3009,6 +3009,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         display_input_name: false,
         subcommands: NO_SUBCOMMANDS,
     },
+    super::import::IMPORT,
+    super::import::EXPORT,
     CommandSpec {
         name: "db",
         aliases: &[],

@@ -38,6 +38,7 @@ pub mod ids;
 pub mod info;
 #[cfg(feature = "net")]
 pub mod install;
+pub mod jsonl;
 pub mod kit;
 pub mod kit_command;
 pub mod log_core;

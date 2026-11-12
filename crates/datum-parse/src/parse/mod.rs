@@ -302,6 +302,8 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "retime" | "rt" => Command::Retime(parse_retime_args(rest)?),
         "rename" => Command::Rename(parse_rename_args(rest)?),
         "script" => Command::Script(parse_script_args(rest)?),
+        "import" => Command::Import(parse_import_args(rest)?),
+        "export" => Command::Export(parse_export_args(rest)?),
 
         SETUP => Command::Spec(parse_spec_cmd(rest)?),
         "alias" => Command::Alias(parse_alias_cmd(rest)?),

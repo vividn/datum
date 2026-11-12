@@ -172,6 +172,54 @@ pub(crate) fn parse_script_args(tail: &[&str]) -> Result<ScriptArgs> {
     Ok(args)
 }
 
+/// `import [FILE|-] [--allow-partial] [--dry-run] [--tz ZONE] [--schema]`.
+pub(crate) fn parse_import_args(tail: &[&str]) -> Result<ImportArgs> {
+    let mut args = ImportArgs::default();
+    let mut it = tail.iter();
+    while let Some(tok) = it.next() {
+        match split_flag(tok) {
+            FlagSplit::Long("allow-partial") => args.allow_partial = true,
+            FlagSplit::Long("dry-run" | "dryrun") => args.dry_run = true,
+            FlagSplit::Long("schema") => args.schema = true,
+            FlagSplit::Long("tz") => {
+                let zone = it
+                    .next()
+                    .ok_or_else(|| ParseError::InvalidArg("--tz requires a value".into()))?;
+                args.tz = Some(zone.to_string());
+            }
+            FlagSplit::LongAttached("tz", v) => args.tz = Some(v.to_string()),
+            FlagSplit::Positional(f) if args.file.is_none() => args.file = Some(f.into()),
+            FlagSplit::Positional(_) => {
+                return Err(ParseError::InvalidArg(
+                    "import takes one file: datum import <FILE>, or `-` for stdin".into(),
+                ))
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(args)
+}
+
+/// `export --jsonl [FIELD…]`: `--jsonl` is the one format yet, and named, so
+/// another can come beside it.
+pub(crate) fn parse_export_args(tail: &[&str]) -> Result<ExportArgs> {
+    let mut args = ExportArgs::default();
+    let mut jsonl = false;
+    for tok in tail {
+        match split_flag(tok) {
+            FlagSplit::Long("jsonl") => jsonl = true,
+            FlagSplit::Positional(f) => args.fields.push(f.to_string()),
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    if !jsonl {
+        return Err(ParseError::InvalidArg(
+            "export takes a format: datum export --jsonl [FIELD…]".into(),
+        ));
+    }
+    Ok(args)
+}
+
 /// `rename OLD NEW [--merge] [--dry-run]`.
 pub(crate) fn parse_rename_args(tail: &[&str]) -> Result<RenameArgs> {
     let (mut dry_run, mut merge) = (false, false);

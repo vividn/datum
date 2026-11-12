@@ -152,12 +152,15 @@ pub fn run(argv: Vec<String>) -> Result<()> {
             // A dry run asked of a line that does not parse without the flag
             // says why it does not: it never runs that line for real.
             _ => match args::parse_invocation_opening(without_dry_run(&argv)) {
-                // `script`'s dry run is its own, wherever the flag stands.
+                // `script`'s and `import`'s dry runs are their own, wherever
+                // the flag stands.
                 Ok((Invocation::Single(mut cli), opened))
-                    if matches!(cli.command, Command::Script(_)) =>
+                    if matches!(cli.command, Command::Script(_) | Command::Import(_)) =>
                 {
-                    if let Command::Script(a) = &mut cli.command {
-                        a.dry_run = true;
+                    match &mut cli.command {
+                        Command::Script(a) => a.dry_run = true,
+                        Command::Import(a) => a.dry_run = true,
+                        _ => {}
                     }
                     parsed = Ok((Invocation::Single(cli), opened));
                 }
@@ -270,6 +273,7 @@ pub(crate) fn dry_runs_itself(command: &Command) -> bool {
         Command::Redo(a) => a.dry_run,
         Command::Rename(a) => a.dry_run,
         Command::Script(a) => a.dry_run,
+        Command::Import(a) => a.dry_run,
         Command::Kit(KitCommand::Install(a)) => a.dry_run,
         Command::Db(DbCommand::Restore(a)) => a.dry_run,
         Command::Db(DbCommand::V2import(a)) => a.dry_run,
@@ -316,7 +320,12 @@ fn dry_runs_on_a_copy(command: &Command) -> bool {
                 | SyncCommand::Rekey
                 | SyncCommand::Admin { .. }
         ),
-        c => matches!(c, Command::Reparse(_) | Command::FollowZone) || changes_entries(c),
+        c => {
+            matches!(
+                c,
+                Command::Reparse(_) | Command::FollowZone | Command::Import(_)
+            ) || changes_entries(c)
+        }
     }
 }
 
@@ -643,6 +652,7 @@ fn only_reads(command: &Command) -> bool {
             | Command::Dayview(_)
             | Command::Nowview(_)
             | Command::View(_)
+            | Command::Export(_)
             | Command::Kit(KitCommand::List | KitCommand::Export(_) | KitCommand::Show { .. })
             | Command::Db(DbCommand::Backup(_) | DbCommand::Attachment(Some(_)))
             | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
@@ -954,6 +964,7 @@ fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
             }))
             | Command::Alias(AliasCommand::Install { .. } | AliasCommand::Uninstall { .. })
     ) || matches!(&cli.command, Command::Nowview(a) if a.overlay)
+        || matches!(&cli.command, Command::Import(a) if a.schema)
     {
         drop(opened);
         let placeholder = datum_core::db::Db::open_in_memory()?;

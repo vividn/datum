@@ -417,6 +417,8 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         Command::Rekey(args) => commands::rekey::rekey(args, db),
         Command::Retime(args) => commands::retime::retime(args, db),
         Command::Rename(args) => commands::rename::rename(args, db),
+        Command::Import(args) => commands::jsonl::import(args, db),
+        Command::Export(args) => commands::jsonl::export(args, db),
         Command::Undo(args) => commands::undo::undo(args, db),
         Command::Redo(args) => commands::undo::redo(args, db),
         Command::Revert(args) => commands::undo::revert(args, db),
