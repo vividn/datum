@@ -523,6 +523,9 @@ fn next_look(refused: bool, again: &mut Duration) -> Duration {
 /// One that fails is tried again at the next look; Ctrl-C ends them all, and
 /// so does one whose file a newer datum migrated under it, with an error.
 fn run() -> Result<()> {
+    if let Err(e) = super::sync::kept() {
+        eprintln!("⚠ the account kept here: {e:#}");
+    }
     let (tx, rx) = std::sync::mpsc::channel();
     let mut running = BTreeSet::new();
     let mut first = true;

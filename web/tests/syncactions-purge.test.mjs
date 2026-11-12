@@ -19,13 +19,21 @@ import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './supp
 import { AT_DATUM_DAY, DESKTOP, addAdmin, authenticator, cli, openChain, runIn } from './support/syncactions.mjs';
 import { until } from './support/until.mjs';
 
-/** A PRF output, as `syncaccount.test.mjs` signs in with: its account key admins a chain made signed in. */
-const PRF = '07'.repeat(32);
-/** This tab signed in to that account (da-nf1p4) and `home` in a chain it locks: a reload signs it out. */
+/**
+ * This tab signed in with a passkey that gives PRF (da-nf1p4), and `home` in
+ * a chain its account locks, the passkey asked for it as the Sync widget asks
+ * (da-k04lr): a reload signs it out. The passkey, to count its prompts by.
+ */
 async function accountChain(app) {
-	await app.page.evaluate((s) => window.datum.sync.signIn(undefined, s), PRF);
-	await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']);
+	const passkey = await authenticator(app.page, { hasPrf: true });
+	await app.page.evaluate(() => window.datum.sync.signIn('my phone'));
+	const made = await app.page.evaluate(() => window.datum.sync.act('home', ['sync', 'new-invite', '--expires', '1d']));
+	assert.equal(made.code, 0, made.stderr);
+	return passkey;
 }
+/** How many times the passkey has been asked: its signature count. */
+const asked = async ({ cdp, authenticatorId }) =>
+	(await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials.reduce((n, c) => n + c.signCount, 0);
 
 let relay;
 before(async () => {
@@ -187,26 +195,28 @@ describe('the purge dialog in a locked chain', () => {
 });
 
 // da-t1492: a chain started signed in to a passkey's account is locked by the
-// account key, an `ed25519:` key as a key file's is, which the CLI signs with
-// itself while the tab is signed in: so the page offers its purge.
+// account key, an `ed25519:` key as a key file's is, which the page signs for
+// with the account's passkey, asked each time (da-k04lr): so it offers its purge.
 describe('the purge dialog in a chain the account locks', () => {
-	test('signed in, the whole chain is offered, and the account signs its purge with no passkey asked', async () => {
+	test('signed in, the whole chain is offered, and the account’s passkey is asked to sign its purge', async () => {
 		await withWallClock(async (app) => {
 			const dialog = app.page.locator('dialog.confirm');
 			await cli(app, ['--db', 'home', 'occur', 'tea']);
 			await app.goto('/repl?db=home');
-			await accountChain(app);
+			const passkey = await accountChain(app);
+			const before = await asked(passkey);
 			const said = app.submit('db purge');
 			said.catch(() => {});
 			await dialog.waitFor();
 			const text = await dialog.locator('p').innerText();
 			assert.doesNotMatch(text, /--admin-key/);
-			assert.match(text, /signed in/);
+			assert.match(text, /passkey/);
 			await dialog.getByRole('button', { name: 'chain', exact: true }).click();
 			await dialog.locator('input').fill('home');
 			await dialog.locator('input').press('Enter');
 			await said;
 			assert.equal((await runIn(app, ['--db', 'home', 'count', 'tea'])).stdout.trim(), '0');
+			assert.equal(await asked(passkey), before + 1);
 		}, AT_DATUM_DAY);
 	});
 });
@@ -267,18 +277,23 @@ describe('the hard restore dialog in a locked chain', () => {
 		}, AT_DATUM_DAY);
 	});
 
-	test('locked by the account this tab is signed in to: asked by name alone, and the account signs the restore of every copy (da-t1492)', async () => {
+	test('locked by the account this tab is signed in to: the account’s passkey is asked once the name is typed, and signs the restore of every copy (da-t1492, da-k04lr)', async () => {
 		await withWallClock(async (app) => {
-			// No authenticator: a passkey asked for would fail the run.
-			const ran = restore(app, () => accountChain(app));
+			let passkey;
+			let before = 0;
+			const ran = restore(app, async () => {
+				passkey = await accountChain(app);
+				before = await asked(passkey);
+			});
 			const dialog = app.page.locator('dialog.confirm[open]');
 			await dialog.waitFor();
-			assert.doesNotMatch(await dialog.locator('p').innerText(), /passkey/);
+			assert.match(await dialog.locator('p').innerText(), /passkey/);
 			await dialog.locator('input').fill('home');
 			await dialog.locator('input').press('Enter');
 			await ran;
 			assert.match((await app.stdouts()).at(-1), /\b2 written\b/);
 			assert.deepEqual([await count(app, 'tea'), await count(app, 'poison')], ['1', '0']);
+			assert.equal(await asked(passkey), before + 1);
 		}, AT_DATUM_DAY);
 	});
 });

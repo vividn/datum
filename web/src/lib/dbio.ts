@@ -292,8 +292,8 @@ function hard(argv: string[]): Promise<RunResult> {
 			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
 			// A locked chain's order takes an admin's signature (da-art6t): a
 			// passkey's this page asks for and hands the run beside the backup on
-			// its stdin (da-sd7xt), the account's the run signs with itself
-			// (da-t1492), a key file's only the CLI reads — said before the name.
+			// its stdin (da-sd7xt), the account's too, the same passkey asked each
+			// time (da-k04lr), a key file's only the CLI reads — said before the name.
 			const listed = chain ? await run(['--db', db, ...chainListArgv()]) : null;
 			const { admins } = listed?.code === 0 ? (JSON.parse(listed.stdout) as ChainList) : { admins: [] };
 			if (admins.length && !admins.some(pageSigns)) {
@@ -416,15 +416,15 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	let way = flags.find((f) => f === '--leave' || f === '--rejoin')?.slice(2) ?? null;
 	if (chain && !way) {
 		// A locked chain's order takes an admin's signature (da-x5lw4): a
-		// passkey's this page asks for (`syncAct`), the account's the run signs
-		// with itself (da-t1492), a key file's only the CLI reads — said before
-		// the name, which would otherwise be typed for nothing.
+		// passkey's this page asks for (`syncAct`), the account's too, its
+		// passkey asked each time (da-k04lr), a key file's only the CLI reads —
+		// said before the name, which would otherwise be typed for nothing.
 		const signed = admins.some((a) => a.key === get(account)?.key);
 		const offered = !admins.length || admins.some(pageSigns);
 		const whole = !admins.length
 			? 'chain wipes every copy in the chain, each as it next syncs.'
 			: signed
-				? 'chain wipes every copy in the chain, each as it next syncs, signed by the account this tab is signed in to.'
+				? 'chain wipes every copy in the chain, each as it next syncs; the chain is your account’s, so your passkey approves it once the name is typed.'
 				: offered
 					? 'chain wipes every copy in the chain, each as it next syncs; the chain is locked, so an admin’s passkey approves it once the name is typed.'
 					: 'the chain is locked by an admin key file, which only the CLI reads: `datum db purge --chain --admin-key <FILE>` wipes every copy in it.';
@@ -478,8 +478,8 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 
 /**
  * Whether this page signs for `admin`: a passkey's it asks for, and the
- * account key the tab is signed in to (#lib/account.ts), which the CLI signs
- * with itself (da-t1492). Any other `ed25519:` key is a key file only the CLI reads.
+ * account key the tab is signed in to (#lib/account.ts), whose passkey it
+ * asks for too (da-k04lr). Any other `ed25519:` key is a key file only the CLI reads.
  */
 const pageSigns = (admin: { key: string }): boolean => !admin.key.startsWith('ed25519:') || admin.key === get(account)?.key;
 

@@ -93,9 +93,20 @@ export async function createPasskey(label: string): Promise<string> {
  * `chain::verify_assertion` parses it. The challenge is `challengeOf` the link.
  */
 export async function approve(link: string): Promise<string> {
+	return (await approveAs(link)).code;
+}
+
+/**
+ * [`approve`], and the PRF output the passkey gave beside it, if it gave one
+ * (da-k04lr): the one prompt approves as a passkey admin and as the account
+ * key, an admin of each chain made signed in, whose signature the CLI makes
+ * of the PRF output (`sync account --approve`). The code carries both,
+ * joined by `.`, and the CLI keeps the one an admin's key verifies.
+ */
+export async function approveAs(link: string): Promise<{ code: string; prf: string | null }> {
 	const challenge = await challengeOf(link);
 	const cred = (await navigator.credentials.get({
-		publicKey: { rpId: RP_ID, challenge, userVerification: 'required' }
+		publicKey: { rpId: RP_ID, challenge, userVerification: 'required', extensions: { prf: { eval: { first: PRF_SALT } } } }
 	})) as PublicKeyCredential | null;
 	const r = cred?.response as AuthenticatorAssertionResponse | undefined;
 	if (!r) throw new Error('the passkey gave no approval');
@@ -103,7 +114,21 @@ export async function approve(link: string): Promise<string> {
 	const out: number[] = [];
 	for (const p of parts) out.push(p.length >> 8, p.length & 0xff, ...p);
 	out.push(...new Uint8Array(r.signature));
-	return b64url(new Uint8Array(out));
+	const webauthn = b64url(new Uint8Array(out));
+	const prf = prfOf(cred);
+	if (!prf) return { code: webauthn, prf };
+	const [{ run }, { accountApproveArgv }] = await Promise.all([import('./run.js'), import('./calls.js')]);
+	const signed = await run(accountApproveArgv(link), undefined, undefined, undefined, undefined, [`DATUM_ACCOUNT=${prf}`]);
+	const account = signed.code === 0 ? (JSON.parse(signed.stdout) as { code: string }).code : null;
+	return { code: account ? `${account}.${webauthn}` : webauthn, prf };
+}
+
+/** The PRF output an assertion gave, hex, or null. */
+function prfOf(cred: PublicKeyCredential | null): string | null {
+	const first = cred?.getClientExtensionResults().prf?.results?.first;
+	if (!first) return null;
+	const bytes = ArrayBuffer.isView(first) ? new Uint8Array(first.buffer, first.byteOffset, first.byteLength) : new Uint8Array(first);
+	return hex(bytes.slice().buffer);
 }
 
 /**
@@ -128,8 +153,8 @@ export async function prfOffered(): Promise<boolean> {
 }
 
 /**
- * Sign in with a passkey: the PRF output of an assertion, hex, which only the
- * page holds, for the session. `make` names a new passkey made first; even
+ * Sign in with a passkey: the PRF output of an assertion, hex, which the
+ * page holds only for the act it was asked for (da-k04lr). `make` names a new passkey made first; even
  * then the secret comes from an assertion, since an authenticator need not
  * answer PRF as it makes one. Throws `NO_PRF` where the passkey gives none.
  */
@@ -162,8 +187,7 @@ export async function signIn(make?: string): Promise<string> {
 			extensions: { prf: { eval: { first: PRF_SALT } } }
 		}
 	})) as PublicKeyCredential | null;
-	const first = cred?.getClientExtensionResults().prf?.results?.first;
-	if (!first) throw new Error(NO_PRF);
-	const bytes = ArrayBuffer.isView(first) ? new Uint8Array(first.buffer, first.byteOffset, first.byteLength) : new Uint8Array(first);
-	return hex(bytes.slice().buffer);
+	const prf = prfOf(cred);
+	if (!prf) throw new Error(NO_PRF);
+	return prf;
 }

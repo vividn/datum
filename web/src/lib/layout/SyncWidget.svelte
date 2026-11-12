@@ -80,7 +80,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, syncLogin, syncSignIn, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, signedIn, syncLogin, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -685,9 +685,10 @@
 			if (!(await prfOffered())) throw new Error(NO_PRF);
 			const label = make ? await ask('Name the passkey', 'make', 'datum') : undefined;
 			if (make && !label) return;
-			await syncSignIn(label ?? undefined);
-			// The account's chains this device is not in yet, joined (da-rnxp4).
-			await syncAccountRecord();
+			// The account's chains this device is not in yet, joined (da-rnxp4), while
+			// the passkey's answer is in hand: nothing keeps it after (da-k04lr).
+			const { prf } = await signedIn(label ?? undefined);
+			await syncAccountRecord(prf);
 		});
 
 	/** What signing a CLI in said (da-mzqs4), once it is signed in. */
@@ -696,11 +697,12 @@
 	/** Sign in the `datum sync login` this page was opened for, the tab signed in first if it is not. */
 	const loginHere = (link: string) =>
 		doing(async () => {
+			let prf: string | undefined;
 			if (!$account) {
 				if (!(await prfOffered())) throw new Error(NO_PRF);
-				await syncSignIn();
+				prf = (await signedIn()).prf;
 			}
-			await syncLogin(link);
+			await syncLogin(link, prf);
 			loggingIn.set(null);
 			loginSaid = 'The CLI is signed in to your account, and joins its chains.';
 		});
@@ -797,7 +799,7 @@
 			<!-- `datum sync login`'s link (da-mzqs4): the account goes to whoever made it, so it asks first. -->
 			<section class="card login">
 				<p class="head">Sign in a datum CLI?</p>
-				<p>The CLI that printed this link gets your account: it joins your account’s chains and can add or expel their devices.</p>
+				<p>The CLI that printed this link gets your account: it joins your account’s chains and reads which they are. It keeps no key that signs for the account: adding or expelling a device asks your passkey each time.</p>
 				<p class="only">
 					Only if you ran <code>datum sync login</code> yourself, just now, and it shows the code <code class="code">{loginCode($loggingIn)}</code>.
 					If someone sent you this link, close it.

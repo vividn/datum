@@ -12,9 +12,103 @@
 //! member online, and the chain's records give it the rest. Past one member
 //! a chain it is refused, naming the most that fit.
 
-use super::{hex, unhex};
+use super::chain::{approve_records, approved, batch, record_digest, Admin};
+use super::{digest, hex, unhex};
 use aes_gcm::aead::{Aead, KeyInit};
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+
+/// The account key's approval of what `link` carries, as a key file's would
+/// be (da-k04lr): the record's [`sign_ed25519`], or a batch's digest signed.
+pub fn approve_ed25519(link: &str, secret: &[u8; 32]) -> Option<String> {
+    let records = approve_records(link)?;
+    let d = match records.as_slice() {
+        [one] => record_digest(one),
+        all => digest(&batch(all)),
+    };
+    Some(hex(&SigningKey::from_bytes(secret).sign(&d).to_bytes()))
+}
+
+/// The signature of an approval `code` that `admins` take for every one of
+/// `records` (each carrying its `batch`, if any): a code may hold several,
+/// joined by `.`, as datum.day's does, its passkey asked once for both its
+/// WebAuthn assertion and the account key's (da-k04lr). None taken, the
+/// first, for the chain to refuse in its own words.
+pub fn pick_approval<'a>(admins: &[Admin], records: &[Value], code: &'a str) -> &'a str {
+    let mut each = code.trim().split('.');
+    let first = each.next().unwrap_or_default();
+    std::iter::once(first)
+        .chain(each)
+        .find(|sig| {
+            records.iter().all(|r| {
+                let mut r = r.clone();
+                r["sig"] = (*sig).into();
+                approved(admins, &r, &record_digest(&r)).is_ok()
+            })
+        })
+        .unwrap_or(first)
+}
+
+/// The admins a genesis names, to check an approval of it against.
+pub fn genesis_admins(genesis: &Value) -> Vec<Admin> {
+    let keys = genesis["admins"].as_array().into_iter().flatten();
+    keys.filter_map(|a| a["key"].as_str())
+        .map(|key| Admin {
+            key: key.into(),
+            label: String::new(),
+            added: String::new(),
+        })
+        .collect()
+}
+
+/// What datum.day asks a passkey's WebAuthn PRF of, as `prf.eval.first`: the
+/// same 32 bytes come back on every device the passkey is synced to, and
+/// nothing else produces them. The two keys below are derived from them.
+pub const ACCOUNT_PRF_SALT: &str = "datum.day account v1";
+
+/// An account's two keys, by HKDF-SHA256 (RFC 5869, no salt) of the PRF
+/// output with a fixed `info` each: `sign`, the Ed25519 secret of the
+/// account key, an admin of every chain made signed in; `seal`, the key for
+/// what only the account's own devices read. A device keeps `seal` and the
+/// account key's public half alone, never the PRF output (da-k04lr): the
+/// `info` strings differ, so `seal` gives nothing of `sign`, and every admin
+/// act asks the passkey again.
+pub struct AccountKeys {
+    pub sign: [u8; 32],
+    pub seal: [u8; 32],
+}
+
+fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
+    let mut k = [0u8; 64];
+    match key.len() > 64 {
+        true => k[..32].copy_from_slice(&Sha256::digest(key)),
+        false => k[..key.len()].copy_from_slice(key),
+    }
+    let pad = |b: u8| k.map(|x| x ^ b);
+    let inner = Sha256::new()
+        .chain_update(pad(0x36))
+        .chain_update(msg)
+        .finalize();
+    Sha256::new()
+        .chain_update(pad(0x5c))
+        .chain_update(inner)
+        .finalize()
+        .into()
+}
+
+/// HKDF-SHA256's first 32 bytes of output.
+pub(super) fn hkdf32(salt: &[u8], ikm: &[u8], info: &[u8]) -> [u8; 32] {
+    let prk = hmac_sha256(salt, ikm);
+    hmac_sha256(&prk, &[info, &[1]].concat())
+}
+
+pub fn account_keys(prf: &[u8; 32]) -> AccountKeys {
+    AccountKeys {
+        sign: hkdf32(&[], prf, b"datum account key v1"),
+        seal: hkdf32(&[], prf, b"datum account encryption key v1"),
+    }
+}
 
 /// The TXT record's name, under the account key's zone.
 const NAME: &str = "_datum";

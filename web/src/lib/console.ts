@@ -20,6 +20,7 @@
 // every build.
 
 import { run, runLine, setRunner, type CommandRunner, type RunResult } from './run.js';
+import { syncAct } from './syncView.js';
 import { press } from './layout/engine.js';
 import { storedEntries, type StoredEntry } from './backup.js';
 import { tailListing, type TailColumn, type TailRow } from './tail.js';
@@ -80,9 +81,11 @@ export interface DatumConsole {
 		/** Sign in the `datum sync login` a link names to this tab's account (da-mzqs4). */
 		login(link: string): Promise<void>;
 		/** Join the account's `chain` through `members` (addresses as JSON), with no invite. */
-		accountJoin(db: string, chain: string, members: string[]): Promise<SyncReport>;
-		/** Read the account record, join what it lists, publish it again (da-rnxp4). */
-		accountRecord(): Promise<void>;
+		accountJoin(db: string, chain: string, members: string[], prf: string): Promise<SyncReport>;
+		/** Read the account record, join what it lists, publish it again (da-rnxp4), with the passkey's PRF output (da-k04lr). */
+		accountRecord(prf: string): Promise<void>;
+		/** `datum --db <db> <argv>`, a `sync` act, approved with a passkey when the chain is locked (`syncAct`). */
+		act(db: string, argv: string[]): Promise<RunResult>;
 	};
 	/**
 	 * The live tree (da-jdop): what is on screen, and the one way to change
@@ -167,7 +170,7 @@ export function installConsole(target: Record<string, unknown>): void {
 		},
 		shell,
 		mode: { on: () => get(editing) !== null, enter: mode.enter, accept: mode.accept, discard: mode.discard },
-		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect, signIn: syncSignIn, login: syncLogin, accountJoin, accountRecord: syncAccountRecord },
+		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect, signIn: syncSignIn, login: syncLogin, accountJoin, accountRecord: syncAccountRecord, act: syncAct },
 		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		field: openField,

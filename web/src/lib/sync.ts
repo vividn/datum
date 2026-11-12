@@ -777,13 +777,10 @@ async function call<T>(db: string, c: Call): Promise<T> {
  * the database is in none.
  */
 export async function syncOffer(db: string, invite?: Invite): Promise<string> {
-	// Signed in, this tab writes it, as the account (da-nf1p4): the leader may be another tab's.
-	const env = accountEnv();
-	invite ??= env.length ? (JSON.parse(await ran(['--db', db, ...newInviteArgv()], env)) as Invite) : undefined;
-	const ticket = await call<string>(db, { op: 'offer', invite });
-	// A chain the account made, or one more member coming: the record says so (da-rnxp4).
-	if (env.length) void syncAccountRecord().catch(() => {});
-	return ticket;
+	// Signed in, this tab writes it, as the account (da-nf1p4): the leader may
+	// be another tab's. The account an admin, the passkey approves it (da-k04lr).
+	if (!invite && accountEnv().length) invite = await (await import('./syncView.js')).newInvite(db);
+	return call<string>(db, { op: 'offer', invite });
 }
 
 /** `argv` through the seam, with this tab's account; its stdout, or its failure thrown. */
@@ -799,10 +796,15 @@ async function ran(argv: string[], env?: string[]): Promise<string> {
  * test's). The account key, as the CLI derives it, comes back.
  */
 export async function syncSignIn(make?: string, secret?: string): Promise<string> {
+	return (await signedIn(make, secret)).key;
+}
+
+/** [`syncSignIn`], and the PRF output it signed in with, for the acts done as it signs in (da-k04lr). */
+export async function signedIn(make?: string, secret?: string): Promise<{ key: string; prf: string }> {
 	secret ??= await signIn(make);
-	const { key } = JSON.parse(await ran(accountArgv(), [`DATUM_ACCOUNT=${secret}`])) as { key: string };
-	setAccount(secret, key);
-	return key;
+	const { key, kept } = JSON.parse(await ran(accountArgv(), [`DATUM_ACCOUNT=${secret}`])) as { key: string; kept: string };
+	setAccount(kept, key);
+	return { key, prf: secret };
 }
 
 /**
@@ -812,9 +814,8 @@ export async function syncSignIn(make?: string, secret?: string): Promise<string
  * admit this copy. No member online, the join is kept and redeemed once one
  * is (da-4qpwf).
  */
-export async function accountJoin(db: string, chain: string, members: string[]): Promise<SyncReport> {
-	if (!accountEnv().length) throw new Error('not signed in');
-	const invite = JSON.parse(await ran(['--db', db, ...accountArgv(chain)])) as Invite;
+export async function accountJoin(db: string, chain: string, members: string[], prf: string): Promise<SyncReport> {
+	const invite = JSON.parse(await ran(['--db', db, ...accountArgv(chain)], [`DATUM_ACCOUNT=${prf}`])) as Invite;
 	const ticket = await call<string>(db, { op: 'offer', invite, chain, also: `[${members.join(',')}]` });
 	return syncConnect(db, ticket);
 }
@@ -825,19 +826,18 @@ export async function accountJoin(db: string, chain: string, members: string[]):
  * names, with its nonce, and the sync worker sends it over the relay from an
  * endpoint of the moment. The CLI's refusal is thrown.
  */
-export async function syncLogin(link: string): Promise<void> {
+export async function syncLogin(link: string, prf?: string): Promise<void> {
 	if (!accountEnv().length) throw new Error('not signed in');
-	const { message } = JSON.parse(await ran(accountSealArgv(link))) as { message: string };
+	// The account goes to the CLI: the passkey is asked for it, unless it just was (da-k04lr).
+	prf ??= await signIn();
+	const { message } = JSON.parse(await ran(accountSealArgv(link), [`DATUM_ACCOUNT=${prf}`])) as { message: string };
 	const key = hexOf(crypto.getRandomValues(new Uint8Array(32)).buffer);
 	await ask('', { op: 'login', link, key, relay: relay(), message });
 }
 
 /** n0's pkarr relay (iroh's `N0_DNS_PKARR_RELAY_PROD`); a test names its own as `datum.pkarrRelay`. */
 const PKARR = 'https://dns.iroh.link/pkarr';
-/** How often a signed-in tab publishes the record again: the relay's copy is a cache, not a store. */
-const REPUBLISH_MS = 30 * 60_000;
 let recording: Promise<void> = Promise.resolve();
-let republishing = false;
 
 function pkarr(): string {
 	try {
@@ -853,22 +853,19 @@ function pkarr(): string {
  * and published again with every chain of the account's on this device
  * (the CLI seals and signs it with the account's keys), so a device newly
  * signed in finds them. A device with none of its own publishes nothing,
- * so a new one never empties the record. Then again every `REPUBLISH_MS`
- * while signed in; one at a time.
+ * so a new one never empties the record. It takes `prf`, the passkey's PRF
+ * output, which signs it: so it is done as a passkey is asked, at a sign-in
+ * and an approval, and not on a timer (da-k04lr); one at a time.
  */
-export function syncAccountRecord(): Promise<void> {
-	const next = recording.then(accountRecord);
+export function syncAccountRecord(prf: string): Promise<void> {
+	const next = recording.then(() => accountRecord(prf));
 	recording = next.catch(() => {});
-	if (!republishing) {
-		republishing = true;
-		setInterval(() => accountEnv().length && void syncAccountRecord().catch(() => {}), REPUBLISH_MS);
-	}
 	return next;
 }
 
-async function accountRecord(): Promise<void> {
-	if (!accountEnv().length) return;
-	const { name } = JSON.parse(await ran(accountArgv())) as { name: string };
+async function accountRecord(prf: string): Promise<void> {
+	const env = [`DATUM_ACCOUNT=${prf}`];
+	const { name } = JSON.parse(await ran(accountArgv(), env)) as { name: string };
 	const url = `${pkarr()}/${name}`;
 	const got = await fetch(url);
 	if (!got.ok && got.status !== 404) throw new Error(`the account record could not be read (${got.status})`);
@@ -880,12 +877,12 @@ async function accountRecord(): Promise<void> {
 	let body = held;
 	let refused: unknown;
 	for (const db of dbs.length ? dbs.map((d) => ['--db', d]) : [[]]) {
-		const made = await ran([...db, ...accountRecordArgv(relay(), body)]).catch((e) => void (refused = e));
+		const made = await ran([...db, ...accountRecordArgv(relay(), body)], env).catch((e) => void (refused = e));
 		body = made ? ((JSON.parse(made) as { body: string | null }).body ?? body) : body;
 	}
 	if (held) {
-		const { joins } = JSON.parse(await ran(accountReadArgv(held))) as { joins: { chain: string; db: string; members: string[] }[] };
-		for (const j of joins) await accountJoin(j.db, j.chain, j.members);
+		const { joins } = JSON.parse(await ran(accountReadArgv(held), env)) as { joins: { chain: string; db: string; members: string[] }[] };
+		for (const j of joins) await accountJoin(j.db, j.chain, j.members, prf);
 	}
 	// Past what one packet holds, the joins still happen; the record stays as it was.
 	if (refused) throw refused;

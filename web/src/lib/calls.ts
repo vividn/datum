@@ -260,6 +260,11 @@ export function accountSealArgv(link: string): string[] {
 	return ['sync', 'account', '--seal', link];
 }
 
+/** The account key's approval code of what an approve link carries (da-k04lr): run with the passkey's PRF output. */
+export function accountApproveArgv(link: string): string[] {
+	return ['sync', 'account', '--approve', link];
+}
+
 export function endpointKeyArgv(): string[] {
 	return ['sync', 'endpoint-key'];
 }

@@ -16,14 +16,15 @@
 // `table` is the rest, and pure: the CLI's rows and the sync worker's
 // broadcast reachability (#lib/sync.ts `syncStates`) into clients × databases.
 
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { account } from './account.js';
 import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, lastEntryArgv, newInviteArgv, qrArgv, expelArgv, syncStatusArgv } from './calls.js';
 import { INTERNAL_DB, isDbName } from './database.js';
 import type { TailListing } from './tail.js';
 import { dateLabel, localTime } from './clock.js';
 import { cliError, run, type RunResult } from './run.js';
-import { approve, approveLink } from './passkey.js';
-import { syncs, type Invite, type Reach, type SyncState } from './sync.js';
+import { approveAs, approveLink } from './passkey.js';
+import { syncAccountRecord, syncs, type Invite, type Reach, type SyncState } from './sync.js';
 import type { TicketAbout } from './syncProtocol.js';
 
 /** One member of a chain as `sync status --json` has it: this copy left out. */
@@ -648,7 +649,10 @@ export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
 	const r = await run(['--db', db, ...argv], '');
 	const link = r.code !== 0 && approveLink(r.stderr);
 	if (!link) return r;
-	const done = await run(['--db', db, ...approveArgv(link)], await approve(link));
+	const { code, prf } = await approveAs(link);
+	const done = await run(['--db', db, ...approveArgv(link)], code);
+	// The passkey's answer in hand, the account's record says what the act changed (da-k04lr).
+	if (done.code === 0 && prf && get(account)) void syncAccountRecord(prf).catch(() => {});
 	return { ...done, stdout: [r.stdout.trimEnd(), done.stdout].filter(Boolean).join('\n') };
 }
 

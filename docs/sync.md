@@ -39,11 +39,12 @@ passkeys in iCloud Keychain (iOS and iPadOS 18.4, macOS 15.4 and later) and
 Google Password Manager do, and Windows Hello's stay on the one device. The
 passkey's PRF secret, asked with the fixed salt `datum.day account v1`, is the
 same on every device the passkey is on, and an account key is derived from it
-(HKDF-SHA256, info `datum account key v1`), held in the tab until it signs out
-or reloads, never stored. A chain started while signed in has that key as its
-admin, so it is locked and the account's: while signed in, the account signs
-its invites, expels and renames, and signed out they take an admin key as any
-locked chain's do. A device signed in to the same account joins that chain
+(HKDF-SHA256, info `datum account key v1`). A chain started while signed in
+has that key as its admin, so it is locked and the account's. No device keeps
+that key: it keeps a second key, which reads the account's record and signs
+nothing, so each invite, expel and rename in the account's chain asks for the
+passkey again, naming what it approves and in which chain. A stolen device
+that is signed in is no admin. A device signed in to the same account joins that chain
 with no invite from another device: it signs an invite with the account key
 and redeems it itself, and a member that lacks the invite writes it as the
 admin's before it admits the device. Like any join, it waits until a member is
@@ -56,8 +57,9 @@ encrypted with a second key derived from the passkey's secret. It lists each
 chain the account is an admin of, the database it is in and a member or a few
 to reach it through. Signing in reads it and joins each chain this device is
 not in, into a database of the same name (or `<name>-2` where that one holds
-data of its own); each signed-in device publishes it again with its own chains
-when it starts one and every half hour. It holds about ten chains. The relay
+data of its own); a device publishes it again with its own chains whenever
+the passkey is asked: at a sign-in, and at each approval, a chain's start
+among them. It holds about ten chains. The relay
 keeps it as a cache: until it is also published to the mainline DHT, a record
 the relay dropped is back once a signed-in device of the account runs again.
 
@@ -65,12 +67,13 @@ A terminal signs in by `datum sync login`: it prints a datum.day link, and
 opens it where it can. Open it on this computer or on a phone, sign in with
 the passkey there, and the page sends the account to the waiting CLI over
 the sync relays, sealed to this install's device key, so a CLI on a server
-signs in from a phone's browser. The CLI keeps the account in `account` in
-its data directory, readable by its user alone, joins the account's chains
-as a browser does, and signs as the account from then on. `datum sync
-status` says which account it is signed in to, and `datum sync logout`
-forgets it. Only open a login link from a `datum sync login` you ran
-yourself: whoever printed it gets the account.
+signs in from a phone's browser. The CLI joins the account's chains as a
+browser does, and keeps in `account` in its data directory, readable by its
+user alone, what reads the account's record and nothing that signs: an admin
+act there prints a link for the passkey to approve. `datum sync status` says
+which account it is signed in to, and `datum sync logout` forgets it. Only
+open a login link from a `datum sync login` you ran yourself: whoever
+printed it joins the account's chains.
 
 Per key the op with the later hybrid logical clock wins. Concurrent edits
 of one key, or a delete against a concurrent edit, leave the entry's

@@ -445,6 +445,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                         first.push(json!({"type": "revoke_standing", "device": d}));
                         done += "\nits device's standing admission is revoked: no new copy of it is admitted";
                     }
+                    // What a signed-in device took with it (da-k04lr): nothing that signs.
+                    if chain.admins.iter().any(|a| a.label == ACCOUNT) {
+                        done += "\nsigned in to your account or not, it held no key that signs for it: \
+                                 the account's admin acts ask your passkey";
+                    }
                     (json!({"type": record, "endpoint": m}), done)
                 }
                 SyncAdminAct::Role { role, filter } => {
@@ -724,7 +729,14 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 if let Some(b) = &batch {
                     r["batch"] = b.clone();
                 }
-                r["sig"] = code.trim().into();
+            }
+            let admins = match starts {
+                true => account::genesis_admins(&records[0]),
+                false => chain.admins.clone(),
+            };
+            let sig = account::pick_approval(&admins, &records, &code);
+            for r in &mut records {
+                r["sig"] = sig.into();
             }
             let what: Vec<&str> = records
                 .iter()
@@ -766,12 +778,13 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             with,
             read,
             seal,
+            approve,
         } => {
-            let (prf, account) = account()?.context(NOT_SIGNED_IN)?;
-            let key = chain::ed25519_admin_key(&account.sign);
-            let mut out = json!({"key": key, "name": account::name(&account.sign)});
-            let opened =
-                |body: &str| account::open(body, &account::public(&account.sign), &account.seal);
+            let a = account()?.context(NOT_SIGNED_IN)?;
+            let key = a.key.clone();
+            let mut out = json!({"key": key, "name": account::z32(&a.public), "kept": a.kept()});
+            let opened = |body: &str| account::open(body, &a.public, &a.seal);
+            let sign = || a.sign().context(ASK_PASSKEY);
             if record {
                 let mut mine = account::Record {
                     relay,
@@ -794,7 +807,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 let micros = account::stamp(now, held);
                 out["body"] = match mine.chains.is_empty() {
                     true => Value::Null,
-                    false => account::publish(&mine, &account.sign, &account.seal, micros)
+                    false => account::publish(&mine, &sign()?, &a.seal, micros)
                         .map_err(anyhow::Error::msg)?
                         .into(),
                 };
@@ -804,17 +817,23 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 out["joins"] = account_joins(db, r)?.into();
             }
             if let Some(link) = seal {
+                let prf = a.prf.context(ASK_PASSKEY)?;
                 let (to, nonce) = login_of(&link)?;
                 out["message"] = chain::seal_login(&to, &nonce, &prf)
                     .map_err(anyhow::Error::msg)?
                     .into();
                 out["to"] = to.into();
             }
+            if let Some(link) = approve {
+                out["code"] = account::approve_ed25519(&link, &sign()?)
+                    .context("not an approve link: https://datum.day/sync/approve#<record>")?
+                    .into();
+            }
             if let Some(id) = invite {
                 let caps = json!({});
                 let (secret, expires, id, mut record) =
                     invite_record(&id, std::time::Duration::from_secs(7 * 24 * 3600), caps);
-                record["sig"] = chain::sign_ed25519(&record, &account.sign).into();
+                record["sig"] = chain::sign_ed25519(&record, &sign()?).into();
                 out["secret"] = chain::carry_invite(&secret, &record).into();
                 out["expires"] = expires.into();
                 out["id"] = id.into();
@@ -828,7 +847,10 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
         SyncCommand::Logout => {
             let path = crate::config::account_path()?;
             match crate::config::forget_account()? {
-                true => println!("signed out: {} is gone", path.display()),
+                true => println!(
+                    "signed out: {} is gone, and this device no longer reads your account's chains. It held no key that signs for the account: each admin act asks your passkey",
+                    path.display()
+                ),
                 false => println!("not signed in: `datum sync login` signs in"),
             }
             if std::env::var_os("DATUM_ACCOUNT").is_some() {
@@ -1173,20 +1195,27 @@ pub(super) fn invite(
             eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
         }
     };
+    let mut records = Vec::new();
     if starts {
         let mut genesis = json!({
             "type": "genesis", "chain": datum_core::ids::new_ulid().to_lowercase(),
             "admins": [], "label": name, "created": chrono::Utc::now().to_rfc3339(),
         });
-        // Signed in, the chain is the account's: its key an admin (da-nf1p4).
-        if let Some((_, account)) = account()? {
-            let key = chain::ed25519_admin_key(&account.sign);
-            genesis["admins"] = json!([{"key": key, "label": ACCOUNT}]);
-            genesis["sig"] = chain::sign_ed25519(&genesis, &account.sign).into();
+        chain = Chain::default();
+        chain.id = genesis["chain"].as_str().unwrap_or_default().into();
+        // Signed in, the chain is the account's: its key an admin (da-nf1p4),
+        // the genesis approved with the invite, a passkey asked once (da-k04lr).
+        match account()? {
+            Some(a) => {
+                genesis["admins"] = json!([{"key": a.key, "label": ACCOUNT}]);
+                chain.admins = account::genesis_admins(&genesis);
+                records.push(genesis);
+            }
+            None => {
+                db.sync_chain_write(genesis, true)?;
+                describe();
+            }
         }
-        db.sync_chain_write(genesis, true)?;
-        describe();
-        chain = db.sync_chain()?;
         eprintln!(
             "started sync chain {}; this copy is its first member",
             chain.id
@@ -1206,7 +1235,12 @@ pub(super) fn invite(
         );
         println!("{said}");
     }
-    sign(db, record, &chain, admin_key)?;
+    records.push(record);
+    let genesis = records.len() > 1;
+    sign_all(db, records, &chain, admin_key)?;
+    if genesis {
+        describe();
+    }
     // In a chain it was in, only once the invite is signed: a refused
     // invite renames nothing.
     if !starts && label.is_some() {
@@ -1249,22 +1283,87 @@ fn account_joins(db: &Db, r: account::Record) -> Result<Vec<Value>> {
 
 const NOT_SIGNED_IN: &str = "not signed in: `datum sync login` signs in with a passkey";
 
-/// The account this process is signed in to, its PRF output and keys:
-/// `DATUM_ACCOUNT`, a passkey's PRF output as hex (`chain::ACCOUNT_PRF_SALT`),
-/// which datum.day hands each command while a tab is signed in and never
-/// stores (da-nf1p4); else the one `datum sync login` kept (da-mzqs4). Set
-/// but not 64 hex digits, it is refused: a broken one is no signing out.
-fn account() -> Result<Option<([u8; 32], chain::AccountKeys)>> {
-    let (hex, from) = match std::env::var("DATUM_ACCOUNT") {
-        Ok(hex) => (hex, "DATUM_ACCOUNT".to_string()),
-        Err(_) => match crate::config::kept_account()? {
-            Some(hex) => (hex, crate::config::account_path()?.display().to_string()),
-            None => return Ok(None),
-        },
+/// The account this process is signed in to (da-nf1p4): its key, its public
+/// half and its seal key, which read the account's record; and its PRF
+/// output only where a passkey was just asked for it, which alone signs.
+pub(crate) struct Account {
+    key: String,
+    public: [u8; 32],
+    seal: [u8; 32],
+    prf: Option<[u8; 32]>,
+}
+
+impl Account {
+    /// A passkey's PRF output, as hex, or what a device keeps: `{"key", "seal"}`.
+    fn read(text: &str) -> Option<Account> {
+        if let Some(prf) = chain::read_admin_secret(text) {
+            let keys = chain::account_keys(&prf);
+            return Some(Account {
+                key: chain::ed25519_admin_key(&keys.sign),
+                public: account::public(&keys.sign),
+                seal: keys.seal,
+                prf: Some(prf),
+            });
+        }
+        let v: Value = serde_json::from_str(text).ok()?;
+        let key = v["key"].as_str()?;
+        Some(Account {
+            public: chain::read_admin_secret(key.strip_prefix("ed25519:")?)?,
+            seal: chain::read_admin_secret(v["seal"].as_str()?)?,
+            key: key.into(),
+            prf: None,
+        })
+    }
+
+    /// What a device keeps of it: no PRF output, so it signs nothing (da-k04lr).
+    fn kept(&self) -> String {
+        json!({"key": self.key, "seal": hexed(&self.seal)}).to_string()
+    }
+
+    /// The account key's secret: only from a PRF output in hand.
+    fn sign(&self) -> Option<[u8; 32]> {
+        self.prf.map(|p| chain::account_keys(&p).sign)
+    }
+
+    pub(super) fn signs(&self) -> bool {
+        self.prf.is_some()
+    }
+}
+
+/// Said where an act needs the account key and holds no PRF output.
+const ASK_PASSKEY: &str = "this needs your passkey: a device signed in keeps no key that signs for the account, so datum.day asks the passkey for it (`DATUM_ACCOUNT` set to its PRF output, hex, signs too)";
+
+/// The account this process is signed in to: `DATUM_ACCOUNT`, which
+/// datum.day hands each command while a tab is signed in, its kept form or,
+/// just after the passkey was asked, the PRF output (da-nf1p4); else the
+/// one `datum sync login` kept (da-mzqs4). A kept PRF output, from before
+/// da-k04lr, is rewritten as it is read to the form that signs nothing, and
+/// signs nothing meanwhile. One that does not read is refused: a broken one
+/// is no signing out.
+pub(super) fn account() -> Result<Option<Account>> {
+    if let Ok(text) = std::env::var("DATUM_ACCOUNT") {
+        let a = Account::read(text.trim()).context(
+            "DATUM_ACCOUNT is not an account: a PRF output (64 hex digits) or the kept form, {\"key\": \"ed25519:<hex>\", \"seal\": \"<hex>\"}",
+        )?;
+        return Ok(Some(a));
+    }
+    kept()
+}
+
+/// The account `datum sync login` kept, its PRF output from before da-k04lr
+/// rewritten as it is read: `sync daemon run` reads it as it starts, which
+/// `datum upgrade` restarts it to, so no device keeps one past an upgrade.
+pub(crate) fn kept() -> Result<Option<Account>> {
+    let Some(text) = crate::config::kept_account()? else {
+        return Ok(None);
     };
-    let prf = chain::read_admin_secret(&hex)
-        .with_context(|| format!("{from} is not a PRF output: 64 hex digits"))?;
-    Ok(Some((prf, chain::account_keys(&prf))))
+    let path = crate::config::account_path()?;
+    let mut a =
+        Account::read(&text).with_context(|| format!("{} is not an account", path.display()))?;
+    if a.prf.take().is_some() {
+        crate::config::keep_account(&a.kept())?;
+    }
+    Ok(Some(a))
 }
 
 /// The device key and nonce a `datum sync login` link names.
@@ -1315,11 +1414,15 @@ fn login(db: &Db) -> Result<()> {
     let public = |prf: &[u8; 32]| account::public(&chain::account_keys(prf).sign);
     let (prf, record) = datum_sync::login(device, &nonce, limit, shown, opens, public)?;
     let keys = chain::account_keys(&prf);
-    let path = crate::config::keep_account(&hexed(&prf))?;
+    let kept = Account::read(&hexed(&prf)).context("no account")?;
+    let path = crate::config::keep_account(&kept.kept())?;
     println!(
         "signed in to account {}, kept in {} (readable by this user alone)",
-        chain::ed25519_admin_key(&keys.sign),
+        kept.key,
         path.display()
+    );
+    println!(
+        "it reads your account's chains; it signs nothing for the account: each admin act asks your passkey"
     );
     let body = match record {
         Ok(body) => body,
@@ -1837,22 +1940,18 @@ pub(super) fn sign(db: &Db, record: Value, chain: &Chain, admin_key: Option<&str
     sign_all(db, vec![record], chain, admin_key)
 }
 
-/// The signed-in account's signing key, where it is an admin of `chain`:
-/// then it signs the chain's acts (da-nf1p4), and no passkey is asked for
-/// (da-t1492).
-pub(super) fn account_admin(chain: &Chain) -> Result<Option<[u8; 32]>> {
-    let admin = |s: &[u8; 32]| {
-        chain
-            .admins
-            .iter()
-            .any(|a| a.key == chain::ed25519_admin_key(s))
-    };
-    Ok(account()?.map(|(_, a)| a.sign).filter(admin))
+/// The account signed in, where its key is an admin of `chain` (da-nf1p4).
+/// Only a PRF output a passkey was just asked for signs with it: what a
+/// device keeps of the account signs nothing (da-k04lr).
+pub(super) fn account_admin(chain: &Chain) -> Result<Option<Account>> {
+    let admin = |a: &Account| chain.admins.iter().any(|x| x.key == a.key);
+    Ok(account()?.filter(admin))
 }
 
 /// [`sign`] for records written together, in order: a key file signs each,
 /// and a passkey approves them all at once (da-7bjai), each record carrying
-/// the `batch` its one approval names.
+/// the `batch` its one approval names. `chain` holds the admins who sign: a
+/// genesis among `records` names its own.
 pub(super) fn sign_all(
     db: &Db,
     mut records: Vec<Value>,
@@ -1865,7 +1964,7 @@ pub(super) fn sign_all(
         match admin_key
             .map(|path| key_file(path, false))
             .transpose()?
-            .or(account)
+            .or(account.as_ref().and_then(Account::sign))
         {
             Some(secret) => {
                 for r in &mut records {
@@ -1877,15 +1976,18 @@ pub(super) fn sign_all(
                     [one] => (chain::approve_link(one), None),
                     all => (chain::approve_batch_link(all), Some(chain::batch(all))),
                 };
+                let each: Vec<String> = records.iter().map(approving).collect();
                 let what = match &batch {
-                    None => "this".to_string(),
-                    Some(_) => {
-                        let each: Vec<String> = records.iter().map(approving).collect();
-                        format!("these {}, at once: {}", records.len(), each.join("; "))
-                    }
+                    None => each.join(""),
+                    Some(_) => format!("these {}, at once: {}", records.len(), each.join("; ")),
+                };
+                let whose = match account {
+                    Some(_) => "the passkey of the account signed in here, an admin of it",
+                    None => "an admin's passkey",
                 };
                 eprintln!(
-                    "Approve {what} with your passkey:\n\n  {link}\n\nthen paste the approval code here, or press Enter once a browser holding this database has approved it:"
+                    "Approve {what}, in sync chain {}, with {whose}:\n\n  {link}\n\nthen paste the approval code here, or press Enter once a browser holding this database has approved it:",
+                    chain.id
                 );
                 let mut code = String::new();
                 std::io::stdin().read_line(&mut code)?;
@@ -1899,12 +2001,18 @@ pub(super) fn sign_all(
                     );
                     return Ok(());
                 }
-                ensure!(!code.trim().is_empty(), "no approval code");
+                ensure!(
+                    !code.trim().is_empty(),
+                    "no approval code: {what} takes {whose}, which signs on datum.day at the link above"
+                );
                 for r in &mut records {
                     if let Some(b) = &batch {
                         r["batch"] = b.clone();
                     }
-                    r["sig"] = code.trim().into();
+                }
+                let sig = account::pick_approval(&chain.admins, &records, &code);
+                for r in &mut records {
+                    r["sig"] = sig.into();
                 }
             }
         }
@@ -2291,7 +2399,7 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
     // The account this copy is signed in to (da-mzqs4): one unreadable is no account.
     // One that does not read is no account, and said below.
     let (signed, unread) = match account() {
-        Ok(a) => (a.map(|(_, k)| chain::ed25519_admin_key(&k.sign)), None),
+        Ok(a) => (a.map(|a| a.key), None),
         Err(e) => (None, Some(format!("{e:#}"))),
     };
     if json {

@@ -830,15 +830,25 @@ rest as the chain's refusal, and its own copy refuses them as they are typed.
 
 datum.day signs a tab in to sync with a passkey's WebAuthn PRF output (da-nf1p4,
 `signIn` in `web/src/lib/passkey.ts`, salt `chain::ACCOUNT_PRF_SALT`), read from an
-assertion, never the create, which an authenticator need not answer. It lives in the
-tab's memory alone (`#lib/account.ts`) and goes to every command `run` sends as
-`DATUM_ACCOUNT`; the CLI derives the account's keys from it (`chain::account_keys`,
-HKDF-SHA256 with fixed info strings): `sign`, the Ed25519 account key, and `seal`, for
-part 2's account record. Signed in, a genesis lists the account key as its admin and is
-signed by it, and `sign_all` signs a locked chain's acts with it where it is an admin
-(`account_admin`), so a `db restore --hard --chain --dry-run` names no order to approve,
-and datum.day's purge and restore dialogs offer that chain's order as one the run signs
-(`pageSigns` in `#lib/dbio.ts`, da-t1492).
+assertion, never the create, which an authenticator need not answer. The CLI derives the
+account's keys from it (`chain::account_keys`, HKDF-SHA256 with fixed info strings):
+`sign`, the Ed25519 account key, and `seal`, for part 2's account record.
+A device keeps nothing that signs (da-k04lr, vividn, 2026-11-12: «Passkey per admin
+act», reversing da-t1492): `DATUM_ACCOUNT` and the `account` file hold either the PRF
+output, which signs, or the kept form `{"key", "seal"}` (`sync account`'s `kept`), which
+cannot, the info strings separating `seal` from `sign`. The tab holds the kept form in its
+memory alone (`#lib/account.ts`) and `run` sends it to every command; the PRF output it
+holds only for the act it asked the passkey for (a sign-in's joins and record, sealing a
+CLI's login, an approval). Signed in, a genesis lists the account key as its admin and
+goes with the chain's first invite as one approval; `sign_all` signs a locked chain's acts
+with the account key only with the PRF output in hand (`account_admin`), and otherwise
+stops at the approve link, naming the act and the chain. The page's approval
+(`approveAs` in `#lib/passkey.ts`) asks the passkey once with the PRF extension too, and
+sends `<account sig>.<WebAuthn code>` (hidden `sync account --approve <LINK>` makes the
+first); a code may hold several signatures joined by `.`, and the CLI keeps the one an
+admin verifies (`chain::pick_approval`), in `sync approve`, a pasted code and `db restore
+--approval-code`. So datum.day's purge and restore dialogs offer the account's chain's
+order as one its passkey approves (`pageSigns` in `#lib/dbio.ts`).
 A device of the account joins with no invite from anyone: `sync account --invite
 <CHAIN>` (hidden) signs an `invite` with the account key and carries it in the secret it
 redeems, `<secret>.<base64url record>` (`chain::carry_invite`), and a member's
@@ -854,8 +864,8 @@ the account's chains, its database's name, up to three members' endpoint ids (th
 first, then the most recently seen) and the relay when not n0's. The CLI builds, signs
 and opens it (hidden `sync account --record [--relay] [--with <HEX>]` and `--read
 <HEX>`), so the account's secret never leaves it; the page only GETs and PUTs the bytes
-(`syncAccountRecord` in `#lib/sync.ts`), at sign-in, after a signed-in offer and every
-30 minutes while signed in. A publish is what this install holds united with what the
+(`syncAccountRecord` in `#lib/sync.ts`), at sign-in and after each approval: it signs
+with the account key, so only while the passkey's answer is in hand (da-k04lr). A publish is what this install holds united with what the
 record held, so a device with none of its own publishes nothing. A packet's DNS part is
 1000 bytes: over it each chain keeps fewer members, down to one, and past one each
 (about ten chains) `--record` is refused, naming the most. `--read` lists the chains no
@@ -871,11 +881,14 @@ PRF output and the nonce to the device key the link names (hidden `sync account 
 <LINK>`, `chain::seal_login`, a grant's seal), and sends it over the relay from an endpoint
 of the moment (`login` in the wire crate's `web`). The CLI answers every message: one
 sealed to another key or naming another nonce is refused, and the page told, and it waits
-on. Taken, it keeps the PRF output in `account` in the data directory, beside
-`device_key`, mode 0600, which `account()` reads when `DATUM_ACCOUNT` is unset; reads the
-account record from the pkarr relay over the same endpoint (`DATUM_SYNC_PKARR`, else n0's)
-and joins each chain it lists as a grant is joined, with an invite the account signs.
-`datum sync logout` removes the file; `sync status` names the account (`this.account`).
+on. Taken, it reads the account record from the pkarr relay over the same endpoint
+(`DATUM_SYNC_PKARR`, else n0's) and joins each chain it lists as a grant is joined, with
+an invite the account signs, and keeps the kept form, never the PRF output, in `account`
+in the data directory, beside `device_key`, mode 0600, which `account()` reads when
+`DATUM_ACCOUNT` is unset (da-k04lr). A PRF output kept there by an older datum is
+rewritten to the kept form whenever it is read, and by `sync daemon run` as it starts,
+which `datum upgrade` restarts it to. `datum sync logout` removes the file; `sync status`
+names the account (`this.account`).
 
 ### Expel, unjoin and purge
 

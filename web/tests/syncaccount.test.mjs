@@ -1,7 +1,10 @@
-// Signing in to sync with a passkey (da-nf1p4): its WebAuthn PRF output, held
-// in the tab, from which the CLI derives the account key — an admin of every
-// chain made signed in, and what signs the invite a device of the account
-// redeems to join one with no other device's invite.
+// Signing in to sync with a passkey (da-nf1p4): its WebAuthn PRF output, from
+// which the CLI derives the account key — an admin of every chain made signed
+// in, and what signs the invite a device of the account redeems to join one
+// with no other device's invite. The tab keeps what reads the account's
+// record and nothing that signs: each act the account signs asks the passkey
+// again (da-k04lr), and a test not about the prompt hands the run the PRF
+// output, as the page does once it has asked (`withPrf`).
 //
 // A passkey is Chromium's virtual authenticator (CDP `WebAuthn`), with PRF
 // (`hasPrf`) or without; the page is served as https://datum.day, the passkey's
@@ -30,6 +33,14 @@ after(async () => {
 });
 
 const signIn = (app, secret) => app.page.evaluate((s) => window.datum.sync.signIn(undefined, s), secret);
+/** `argv` run with the passkey's PRF output in hand, as the page runs what it just asked the passkey for. */
+const withPrf = (app, argv, prf = PRF) =>
+	app.page.evaluate(([a, p]) => window.datum.runQuiet(a, undefined, undefined, undefined, undefined, [`DATUM_ACCOUNT=${p}`]), [argv, prf]);
+/** A `sync` act in `datum` as the Sync widget runs one: a locked chain's approved with the passkey. */
+const act = (app, argv) => app.page.evaluate((a) => window.datum.sync.act('datum', a), argv);
+/** How many times the passkey has been asked: its signature count. */
+const asked = async ({ cdp, authenticatorId }) =>
+	(await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials.reduce((n, c) => n + c.signCount, 0);
 const account = (page) => page.locator(`${WIDGET} .account`);
 const chainOf = async (app) => JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
 
@@ -60,24 +71,35 @@ describe('signing in to sync with a passkey', () => {
 		});
 	}
 
-	test('a new passkey with PRF signs in, and a chain made then is the account’s: its key the admin, which signs the next invite', async () => {
+	test('a new passkey with PRF signs in, and a chain made then is the account’s: its key the admin, and the passkey is asked for each invite after (da-k04lr)', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
-			await authenticator(page, { hasPrf: true });
+			const passkey = await authenticator(page, { hasPrf: true });
 			await app.goto('/sync');
 			await newPasskey(page);
 			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
 			const key = await page.locator(`${WIDGET} .signed-in`).getAttribute('title');
 			assert.match(key, /^ed25519:[0-9a-f]{64}$/);
-			assert.equal((await app.run(['sync', 'new-invite'])).code, 0);
+			// Signed in, the tab holds nothing that signs: the run stops at the passkey.
+			const held = await app.run(['sync', 'new-invite']);
+			assert.notEqual(held.code, 0);
+			assert.match(held.stderr, /https:\/\/datum\.day\/sync\/approve#/);
+			assert.equal((await chainOf(app)).chain, null);
+			// As the widget runs it, the passkey approves the chain and its first invite at once.
+			let before = await asked(passkey);
+			const made = await act(app, ['sync', 'new-invite']);
+			assert.equal(made.code, 0, made.stderr);
+			assert.equal(await asked(passkey), before + 1);
 			const chain = await chainOf(app);
 			assert.deepEqual(
 				chain.admins.map((a) => a.key),
 				[key]
 			);
-			// Locked by the account, a second invite needs no passkey prompt: the account signs it.
-			const again = await app.run(['sync', 'new-invite']);
+			// Locked by the account, the next invite asks the passkey again.
+			before = await asked(passkey);
+			const again = await act(app, ['sync', 'new-invite']);
 			assert.equal(again.code, 0, again.stderr);
+			assert.equal(await asked(passkey), before + 1);
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
 	});
@@ -105,7 +127,7 @@ describe('signing in to sync with a passkey', () => {
 					assert.equal(await signIn(a, PRF), KEY);
 					assert.equal((await a.run(['occur', 'tea'])).code, 0);
 					// The first invite starts the chain; b never sees it.
-					assert.equal((await a.run(['sync', 'new-invite'])).code, 0);
+					assert.equal((await withPrf(a, ['sync', 'new-invite'])).code, 0);
 					const { chain } = await chainOf(a);
 					const endpoint = await until(() => a.page.evaluate(() => window.datum.sync.states().datum?.endpoint), Boolean);
 					// Part 2's account record says where its members are; here, the test does.
@@ -114,7 +136,7 @@ describe('signing in to sync with a passkey', () => {
 					// The first device paused: it is reached and refuses, and the join is kept.
 					assert.equal((await a.run(['sync', 'pause'])).code, 0);
 					assert.equal(await signIn(b, PRF), KEY);
-					const kept = await b.page.evaluate(([c, m]) => window.datum.sync.accountJoin('datum', c, [m]), [chain, member]);
+					const kept = await b.page.evaluate(([c, m, p]) => window.datum.sync.accountJoin('datum', c, [m], p), [chain, member, PRF]);
 					assert.equal(kept.pending, true, JSON.stringify(kept));
 					assert.match(kept.said ?? '', /paused/, JSON.stringify(kept));
 					assert.equal((await chainOf(b)).chain, null);
@@ -140,7 +162,7 @@ describe('signing in to sync with a passkey', () => {
 				await pkarr.prepare(context);
 			}
 		};
-		const record = (app) => app.page.evaluate(() => window.datum.sync.accountRecord());
+		const record = (app, prf = PRF) => app.page.evaluate((p) => window.datum.sync.accountRecord(p), prf);
 		await withWallClock(
 			(a) =>
 				withWallClock(async (b) => {
@@ -149,7 +171,7 @@ describe('signing in to sync with a passkey', () => {
 					await record(a);
 					assert.equal(pkarr.held.size, 0);
 					assert.equal((await a.run(['occur', 'tea'])).code, 0);
-					assert.equal((await a.run(['sync', 'new-invite'])).code, 0);
+					assert.equal((await withPrf(a, ['sync', 'new-invite'])).code, 0);
 					const { chain } = await chainOf(a);
 					await until(() => a.page.evaluate(() => window.datum.sync.states().datum?.endpoint), Boolean);
 					await record(a);
@@ -161,7 +183,7 @@ describe('signing in to sync with a passkey', () => {
 					const other = await b.run(['sync', 'account', '--read', body.toString('hex')]);
 					assert.notEqual(other.code, 0);
 					assert.match(other.stderr, /not this account's record/);
-					await record(b);
+					await record(b, '08'.repeat(32));
 					assert.equal((await chainOf(b)).chain, null);
 
 					// The same account's: it joins a's chain, which never invited it, and syncs.

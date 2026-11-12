@@ -278,50 +278,7 @@ pub fn read_admin_secret(text: &str) -> Option<[u8; 32]> {
 
 // ─── The account a passkey signs in to (da-nf1p4) ───────────────────────────
 
-/// What datum.day asks a passkey's WebAuthn PRF of, as `prf.eval.first`: the
-/// same 32 bytes come back on every device the passkey is synced to, and
-/// nothing else produces them. The two keys below are derived from them.
-pub const ACCOUNT_PRF_SALT: &str = "datum.day account v1";
-
-/// An account's two keys, by HKDF-SHA256 (RFC 5869, no salt) of the PRF
-/// output with a fixed `info` each: `sign`, the Ed25519 secret of the
-/// account key, an admin of every chain made signed in; `seal`, the key for
-/// what only the account's own devices read.
-pub struct AccountKeys {
-    pub sign: [u8; 32],
-    pub seal: [u8; 32],
-}
-
-fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
-    let mut k = [0u8; 64];
-    match key.len() > 64 {
-        true => k[..32].copy_from_slice(&Sha256::digest(key)),
-        false => k[..key.len()].copy_from_slice(key),
-    }
-    let pad = |b: u8| k.map(|x| x ^ b);
-    let inner = Sha256::new()
-        .chain_update(pad(0x36))
-        .chain_update(msg)
-        .finalize();
-    Sha256::new()
-        .chain_update(pad(0x5c))
-        .chain_update(inner)
-        .finalize()
-        .into()
-}
-
-/// HKDF-SHA256's first 32 bytes of output.
-fn hkdf32(salt: &[u8], ikm: &[u8], info: &[u8]) -> [u8; 32] {
-    let prk = hmac_sha256(salt, ikm);
-    hmac_sha256(&prk, &[info, &[1]].concat())
-}
-
-pub fn account_keys(prf: &[u8; 32]) -> AccountKeys {
-    AccountKeys {
-        sign: hkdf32(&[], prf, b"datum account key v1"),
-        seal: hkdf32(&[], prf, b"datum account encryption key v1"),
-    }
-}
+pub use super::account::{account_keys, AccountKeys, ACCOUNT_PRF_SALT};
 
 /// The separator of an invite carried in its own secret, which is hex.
 const CARRIED: char = '.';
@@ -1794,7 +1751,11 @@ impl Chain {
 
 /// `r`, whose digest is `d`, approved by one of `admins`: signed alone, or
 /// in a [`batch`] that names it.
-fn approved(admins: &[Admin], r: &Value, d: &[u8; 32]) -> std::result::Result<(), String> {
+pub(super) fn approved(
+    admins: &[Admin],
+    r: &Value,
+    d: &[u8; 32],
+) -> std::result::Result<(), String> {
     let sig = r["sig"].as_str().unwrap_or_default();
     let Some(batch) = r.get("batch") else {
         return admin_signed(admins, d, sig);
@@ -2514,8 +2475,11 @@ mod tests {
         let info: Vec<u8> = (0xf0..=0xf9).collect();
         let rfc1 = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf";
         let rfc3 = "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d";
-        assert_eq!(hex(&hkdf32(&salt, &ikm, &info)), rfc1);
-        assert_eq!(hex(&hkdf32(&[], &ikm, &[])), rfc3);
+        assert_eq!(
+            hex(&super::super::account::hkdf32(&salt, &ikm, &info)),
+            rfc1
+        );
+        assert_eq!(hex(&super::super::account::hkdf32(&[], &ikm, &[])), rfc3);
         let account = account_keys(&[7; 32]);
         assert_eq!(
             ed25519_admin_key(&account.sign),

@@ -5,7 +5,10 @@
 //
 // The page signs in with the known PRF output, as syncaccount.test's relay
 // tests do: a page served as https://datum.day, a passkey's relying party,
-// reaches no plain-http relay. Every copy here is real, the relay iroh's.
+// reaches no plain-http relay. So no passkey is asked here: what the page
+// does once it has asked one, it is handed (da-k04lr), the chain made and
+// the CLI sealed to with the PRF output in hand. Every copy here is real,
+// the relay iroh's.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,8 +35,8 @@ after(async () => {
 });
 
 const signIn = (app) => app.page.evaluate((s) => window.datum.sync.signIn(undefined, s), PRF);
-/** What sending `link`'s login says: `sent`, or the refusal. */
-const send = (app, link) => app.page.evaluate((l) => window.datum.sync.login(l).then(() => 'sent', (e) => e.message), link);
+/** What sending `link`'s login says, the passkey's PRF output in hand: `sent`, or the refusal. */
+const send = (app, link) => app.page.evaluate(([l, p]) => window.datum.sync.login(l, p).then(() => 'sent', (e) => e.message), [link, PRF]);
 
 /** `code`, a login link's fragment, with another nonce. */
 function renonced(code) {
@@ -63,9 +66,10 @@ describe('datum sync login', () => {
 				// The account's chain, made on the page and published in its record.
 				assert.equal(await signIn(app), KEY);
 				assert.equal((await app.run(['occur', 'tea'])).code, 0);
-				assert.equal((await app.run(['sync', 'new-invite'])).code, 0);
+				const made = await page.evaluate((p) => window.datum.runQuiet(['sync', 'new-invite'], undefined, undefined, undefined, undefined, [`DATUM_ACCOUNT=${p}`]), PRF);
+				assert.equal(made.code, 0, made.stderr);
 				await until(() => page.evaluate(() => window.datum.sync.states().datum?.endpoint), Boolean);
-				await page.evaluate(() => window.datum.sync.accountRecord());
+				await page.evaluate((p) => window.datum.sync.accountRecord(p), PRF);
 				assert.equal(pkarr.held.size, 1);
 
 				const login = native.spawn(['sync', 'login'], { DATUM_SYNC_PKARR: door });
@@ -91,8 +95,9 @@ describe('datum sync login', () => {
 				assert.match(shown, grouped);
 				assert.match(await card.locator('.code').innerText(), grouped);
 				assert.equal(await card.locator('.code').innerText(), shown);
-				await card.getByRole('button', { name: 'Sign in the CLI' }).click();
-				await page.locator(`${WIDGET} .card.login .done`).waitFor();
+				// Its button asks the passkey, which this page has none of: sent as it sends once asked.
+				await card.getByRole('button', { name: 'Sign in the CLI' }).waitFor();
+				assert.equal(await send(app, `https://datum.day/sync/login#${code}`), 'sent');
 				const exit = await new Promise((resolve) => (login.child.exitCode === null ? login.child.on('exit', resolve) : resolve(login.child.exitCode)));
 				assert.equal(exit, 0, login.stderr);
 				assert.match(login.stdout, new RegExp(`signed in to account ${KEY}`));

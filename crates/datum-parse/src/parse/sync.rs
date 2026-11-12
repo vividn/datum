@@ -207,7 +207,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "account" => {
             let o = opts(
                 &mut rest,
-                &["invite", "relay", "with", "read", "seal"],
+                &["invite", "relay", "with", "read", "seal", "approve"],
                 &["record"],
                 0..=0,
             )?;
@@ -218,6 +218,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 with: o.get("with"),
                 read: o.get("read"),
                 seal: o.get("seal"),
+                approve: o.get("approve"),
             }
         }
         "login" => SyncCommand::Login,

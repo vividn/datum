@@ -1,7 +1,8 @@
-//! A passkey's account (da-nf1p4): datum.day hands each command the PRF
-//! output as `DATUM_ACCOUNT` while signed in. A chain started so has the
-//! account key among its admins, which signs its acts after; and a device
-//! signed in to it admits itself with an invite that key signed.
+//! A passkey's account (da-nf1p4): `DATUM_ACCOUNT` holds its PRF output just
+//! after datum.day asked the passkey, and what a device keeps of it (`{"key",
+//! "seal"}`) otherwise. A chain started so has the account key among its
+//! admins, which signs its acts only with the PRF output in hand (da-k04lr);
+//! and a device signed in to it admits itself with an invite that key signed.
 
 use super::*;
 
@@ -11,6 +12,15 @@ const KEY: &str = "ed25519:f71518e0672bdcd79e5cb2e5a1143eaaa5699998a08f28b2fa107
 
 fn signed_in(c: &Copy, args: &[&str]) -> String {
     signed_in_as(PRF, c, args)
+}
+
+/// Signed in as `datum sync login` leaves a device (da-k04lr): the
+/// account's key and seal key in the data directory, no PRF output.
+fn keep(c: &Copy) {
+    let kept = json(&signed_in(c, &["sync", "account"]))["kept"].clone();
+    let home = c.tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("account"), kept.as_str().unwrap()).unwrap();
 }
 
 fn signed_in_as(prf: &str, c: &Copy, args: &[&str]) -> String {
@@ -42,7 +52,7 @@ fn a_chain_made_signed_in_is_the_accounts_and_its_devices_admit_themselves() {
     signed_in(&a, &["sync", "new-invite"]);
     assert!(a
         .fails(&["sync", "new-invite"], "")
-        .contains("Approve this"));
+        .contains("Approve an invite as a member, in sync chain"));
 
     // b, in no chain, signs in and redeems its own invite with a, which never invited it.
     let chain = list["chain"].as_str().unwrap();
@@ -83,7 +93,7 @@ fn a_chain_made_signed_in_is_the_accounts_and_its_devices_admit_themselves() {
         .output()
         .unwrap();
     assert!(!broken.status.success());
-    assert!(String::from_utf8_lossy(&broken.stderr).contains("DATUM_ACCOUNT is not a PRF output"));
+    assert!(String::from_utf8_lossy(&broken.stderr).contains("DATUM_ACCOUNT is not an account"));
 }
 
 /// The account record (da-rnxp4): a device signed in publishes the
@@ -155,10 +165,11 @@ fn signed_in_with(c: &Copy, args: &[&str], stdin: &str) -> String {
 }
 
 /// The account's chain is the account's to restore and purge (da-t1492):
-/// signed in, a hard restore of every copy names no order for a passkey to
-/// approve and runs with the backup on stdin, as datum.day hands it, and a
-/// purge of every copy runs with no approval code. Signed out, the dry run
-/// names the order an admin must approve.
+/// with its PRF output in hand, a hard restore of every copy names no order
+/// for a passkey to approve and runs with the backup on stdin, as datum.day
+/// hands it, and a purge of every copy runs with no approval code. Signed
+/// out, or signed in with what a device keeps (da-k04lr), the dry run names
+/// the order an admin must approve.
 #[test]
 fn the_account_signs_the_restore_and_the_purge_of_its_chain() {
     let a = Copy::new();
@@ -168,6 +179,8 @@ fn the_account_signs_the_restore_and_the_purge_of_its_chain() {
     a.ok(&["occur", "poison"]);
     let piped = ["db", "restore", "-", "--hard", "--chain"];
     let dry = [&piped[..], &["--dry-run", "--json"]].concat();
+    assert!(json(&a.ok_in(&dry, &bytes))["approve"].is_string());
+    keep(&a);
     assert!(json(&a.ok_in(&dry, &bytes))["approve"].is_string());
     assert!(json(&signed_in_with(&a, &dry, &bytes))["approve"].is_null());
     signed_in_with(&a, &[&piped[..], &["--yes"]].concat(), &bytes);
@@ -180,8 +193,11 @@ fn the_account_signs_the_restore_and_the_purge_of_its_chain() {
 
 /// What `datum sync login` keeps (da-mzqs4), `account` in the data
 /// directory, signs the install in with no `DATUM_ACCOUNT`: `sync status`
-/// names the account, and the page's `--seal` of a login link is to the
-/// device key and nonce the link names. `sync logout` forgets it.
+/// names the account. A PRF output kept there, from before da-k04lr, is
+/// rewritten as it is read to what signs nothing, so nothing on disk derives
+/// the account key: sealing a login, an approval or an invite asks the
+/// passkey. The page's `--seal` of a login link is to the device key and
+/// nonce the link names. `sync logout` forgets it.
 #[test]
 fn a_kept_account_signs_in_until_logout_forgets_it() {
     let (a, b) = (Copy::new(), Copy::new());
@@ -203,6 +219,18 @@ fn a_kept_account_signs_in_until_logout_forgets_it() {
         .ok(&["sync", "status"])
         .contains(&format!("signed in to account {KEY}")));
     assert_eq!(json(&a.ok(&["sync", "account"]))["key"], KEY);
+    let kept = std::fs::read_to_string(home.join("account")).unwrap();
+    assert!(!kept.contains(PRF), "{kept}");
+    assert_eq!(json(&kept)["key"], KEY);
+    let link = "https://datum.day/sync/approve#e30";
+    for asks in [
+        &["sync", "account", "--approve", link][..],
+        &["sync", "account", "--invite", "x"],
+        &["sync", "account", "--seal", link],
+    ] {
+        let why = a.fails(asks, "");
+        assert!(why.contains("this needs your passkey"), "{why}");
+    }
 
     let device = status(&b)["device"].as_str().unwrap().to_string();
     let login = serde_json::json!({"addr": {"id": device, "addrs": []}, "nonce": "n1"});
@@ -210,27 +238,96 @@ fn a_kept_account_signs_in_until_logout_forgets_it() {
         "https://datum.day/sync/login#{}",
         data_encoding::BASE32_NOPAD.encode(login.to_string().as_bytes())
     );
-    let sealed = json(&a.ok(&["sync", "account", "--seal", &link]));
+    let sealed = json(&signed_in(&a, &["sync", "account", "--seal", &link]));
     assert_eq!(sealed["to"], device.as_str());
     let message = json(sealed["message"].as_str().unwrap());
     assert!(
         message["eph"].is_string() && message["sealed"].is_string(),
         "{message}"
     );
-    let why = a.fails(
-        &[
-            "sync",
-            "account",
-            "--seal",
-            "https://datum.day/sync/login#nope",
-        ],
-        "",
-    );
-    assert!(why.contains("not a datum login link"), "{why}");
+    let nope = [
+        "sync",
+        "account",
+        "--seal",
+        "https://datum.day/sync/login#nope",
+    ];
+    let why = a.cmd(&nope).env("DATUM_ACCOUNT", PRF).output().unwrap();
+    assert!(String::from_utf8_lossy(&why.stderr).contains("not a datum login link"));
 
-    assert!(a.ok(&["sync", "logout"]).contains("signed out"));
+    let out = a.ok(&["sync", "logout"]);
+    assert!(out.contains("signed out"), "{out}");
+    assert!(out.contains("each admin act asks your passkey"), "{out}");
     assert!(!home.join("account").exists());
     assert_eq!(status(&a)["account"], serde_json::Value::Null);
     assert!(a.fails(&["sync", "account"], "").contains("not signed in"));
     assert!(a.ok(&["sync", "logout"]).contains("not signed in"));
+}
+
+/// An admin act asks the passkey each time (da-k04lr, vividn, 2026-11-12:
+/// «Passkey per admin act»): a device signed in keeps no key that signs for
+/// the account, so its admin act stops at an approve link, naming what and
+/// which chain, and is refused with no approval. The account's approval
+/// signs it, picked from a code that carries a passkey admin's too, as
+/// datum.day's does; an act that is no admin's asks nothing. Started signed
+/// in this way, a chain's genesis and first invite are one approval.
+#[test]
+fn an_admin_act_asks_the_passkey_and_the_device_signs_nothing() {
+    let a = Copy::new();
+    keep(&a);
+    // No chain yet: the genesis and the invite, at once, for the account.
+    let asked = a.fails(&["sync", "new-invite"], "");
+    assert!(
+        asked.contains("Approve these 2, at once: a new sync chain")
+            && asked.contains("the passkey of the account signed in here"),
+        "{asked}"
+    );
+    assert!(asked.contains("no approval code"), "{asked}");
+    assert!(a
+        .fails(&["sync", "chain", "list"], "")
+        .contains("in no sync chain"));
+    let link = |text: &str| {
+        let at = text.find("https://datum.day/sync/approve#").unwrap();
+        text[at..].split_whitespace().next().unwrap().to_string()
+    };
+    let approve = |l: &str| {
+        let code = json(&signed_in(&a, &["sync", "account", "--approve", l]))["code"].clone();
+        // A passkey admin's WebAuthn code beside it, as datum.day sends both.
+        format!("{}.AAAA", code.as_str().unwrap())
+    };
+    let first = link(&asked);
+    a.ok_in(&["sync", "approve", &first], &approve(&first));
+    let list = json(&a.ok(&["sync", "chain", "list", "--json"]));
+    assert_eq!(list["admins"][0]["key"], KEY, "{list}");
+
+    // In the account's chain, an invite asks again, every time.
+    let asked = a.fails(&["sync", "new-invite"], "");
+    assert!(
+        asked.contains("Approve an invite as a member, in sync chain")
+            && asked.contains("no approval code"),
+        "{asked}"
+    );
+    let again = link(&asked);
+    let wrong = a.fails(&["sync", "approve", &again], "AAAA");
+    assert!(wrong.contains("not signed by an admin"), "{wrong}");
+    a.ok_in(&["sync", "approve", &again], &approve(&again));
+
+    // What is no admin's act asks nothing.
+    a.ok(&["moment", "tea"]);
+    a.ok(&["sync", "chain", "rename", "kitchen"]);
+
+    // An expel asks as well, and, signed, says what the device took with it.
+    let b = Copy::new();
+    let made = signed_in(&a, &["sync", "new-invite"]);
+    let secret = json(made.lines().next().unwrap())["secret"].clone();
+    let hello = ["sync", "handshake", &b.id(), "--label", "b", "--addr", "{}"];
+    a.ok(&[
+        &hello[..],
+        &["--invite", secret.as_str().unwrap(), "--chain", ""],
+    ]
+    .concat());
+    let expel = ["sync", "chain", "expel", "b"];
+    let asked = a.fails(&expel, "");
+    assert!(asked.contains("Approve a revoke, in sync chain"), "{asked}");
+    let said = signed_in(&a, &expel);
+    assert!(said.contains("it held no key that signs for it"), "{said}");
 }

@@ -582,13 +582,17 @@ fn restore_chain(
                 "--approve-link is not an order restoring sync chain {chain}: the one to approve is \
                  the `approve` of `datum db restore <BACKUP> --hard --chain --dry-run --json`"
             );
-            record["sig"] = code.as_str().into();
+            record["sig"] =
+                datum_core::db::account::pick_approval(&held.admins, &[record.clone()], code)
+                    .into();
             Some(record)
         }
         None => None,
     };
-    // The account signed in, an admin here, signs it itself (da-t1492).
-    let signer = args.admin_key.is_some() || super::sync::account_admin(&held)?.is_some();
+    // A PRF output in hand, of an account that is an admin here, signs it
+    // itself; what a device keeps of the account signs nothing (da-k04lr).
+    let account = super::sync::account_admin(&held)?;
+    let signer = args.admin_key.is_some() || account.is_some_and(|a| a.signs());
     let approve = (args.dry_run && !held.is_open() && !signer)
         .then(|| chain::approve_link(&super::sync::wipe_record(&held, "data", true)));
     // A live set changed since `--if-unchanged` counted it stops here too.

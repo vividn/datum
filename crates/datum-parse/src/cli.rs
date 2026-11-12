@@ -1434,6 +1434,12 @@ pub enum SyncCommand {
     /// `--seal <LINK>` (da-mzqs4) prints the `message` a waiting `datum
     /// sync login` takes: the account sealed to the device key its link
     /// names, with its nonce.
+    ///
+    /// `--approve <LINK>` (da-k04lr) prints the account key's approval
+    /// `code` of what an approve link carries. `--record`, `--seal`,
+    /// `--invite` and `--approve` sign or seal for the account, so each takes
+    /// the PRF output a passkey was just asked for in `DATUM_ACCOUNT`: what a
+    /// device keeps of the account signs nothing.
     Account {
         invite: Option<String>,
         record: bool,
@@ -1441,6 +1447,7 @@ pub enum SyncCommand {
         with: Option<String>,
         read: Option<String>,
         seal: Option<String>,
+        approve: Option<String>,
     },
     /// `datum sync login` (da-mzqs4): print, and open where it can, a
     /// datum.day link where a passkey signs in, and wait for the account it
