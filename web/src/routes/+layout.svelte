@@ -38,7 +38,7 @@
 	import PlaceModal from '#lib/layout/PlaceModal.svelte';
 	import Tour from '#lib/Tour.svelte';
 	import { boot as bootEngine } from '#lib/layout/engine.ts';
-	import { boot as bootShell, openPlace } from '#lib/layout/shell.ts';
+	import { besideBar, boot as bootShell, openPlace } from '#lib/layout/shell.ts';
 	import { approving, joining } from '#lib/syncView.ts';
 	import { get, toStore } from 'svelte/store';
 	import { colorOf, currentDb, DEFAULT_DB, INTERNAL_DB, refusedDb } from '#lib/database.ts';
@@ -193,12 +193,13 @@
 	style="--shown: {$shown}px; --log-height: {$logHeight}px; --palette-room: {$commandsOpen && $setupCommands ? 1 : 0}"
 	data-glide-ends={$glideEnds}
 >
-	<RootBar />
+	<!-- Behind a sheet beside the bar, all but the bar is inert (da-njt0f). -->
+	<div class="veiled" inert={$besideBar}><RootBar /></div>
 	{#if $damaged !== null}<Damaged db={$damaged} />{:else}<Waiting />{/if}
 
 	<!-- The page. Moved by the bar and by nothing else: see the header. -->
 	<div class="pages" use:page_scroller>
-		<main>
+		<main inert={$besideBar}>
 			{#if refused !== null}
 				<!--
 					The one database the page may not be pointed at is the app's own
@@ -219,7 +220,7 @@
 			{/if}
 		</main>
 
-		<BarLog />
+		<div class="veiled" inert={$besideBar}><BarLog /></div>
 		<PromptBar />
 	</div>
 	<PlaceModal />
@@ -286,6 +287,10 @@
 		   The dashboard is the page less the bar and less the log, so all
 		   three follow one number and none of them can disagree. */
 		--bar-height: calc(var(--input-height) + var(--shown, 0px) + var(--bar-rule));
+		/* The palette's room over the bar where the output section does not give it (`main`, below), and
+		   so how far up the bar reaches: a sheet beside the bar stays over it (da-njt0f, Sheet.svelte). */
+		--palette-over: max(0px, var(--output-height) * var(--palette-room, 0) - var(--shown, 0px) - var(--log-height, 0px));
+		--bar-reach: calc(var(--bar-height) + var(--palette-over));
 		position: fixed;
 		top: var(--viewport-top, 0px);
 		left: 0;
@@ -322,6 +327,11 @@
 		container-type: size;
 	}
 
+	/* A box of no box of its own, there only to carry `inert`. */
+	.veiled {
+		display: contents;
+	}
+
 	.notice {
 		margin: 1rem 0.75rem;
 		color: var(--quiet);
@@ -341,8 +351,7 @@
 		/* The palette's room while it holds the setup widget's commands (da-r674m), vividn, 2026-11-11: «even
 		   when the output section is closed, if the command pallete is open, the setup widget should adjust
 		   it's height so that you can still save stuff»: what of its height the bar does not already give,
-		   kept as a margin, so the bar stays where it stands. */
-		--palette-over: max(0px, var(--output-height) * var(--palette-room, 0) - var(--shown, 0px) - var(--log-height, 0px));
+		   kept as a margin, so the bar stays where it stands (`--palette-over` on the shell). */
 		margin-block-end: var(--palette-over);
 		/* A flex item will not shrink under its content unless told, and this
 		   one has to reach ZERO: at the log's tallest the dashboard is gone

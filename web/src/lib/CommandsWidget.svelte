@@ -189,9 +189,7 @@
 		/** The setup widget's commands, its primary first, and its undo (da-r674m); null with none on screen. */
 		setup = null,
 		/** One of them pressed. */
-		onsetup,
-		/** Those commands and undo alone: the setup place's modal, over the bar (da-r674m). */
-		only = false
+		onsetup
 	}: {
 		disabled?: boolean;
 		grammar?: Grammar | null;
@@ -208,7 +206,6 @@
 		onsuggest?: (suggestion: Suggestion) => void;
 		setup?: { commands: SetupCommand[]; undo: SetupCommand } | null;
 		onsetup?: (command: SetupCommand) => void;
-		only?: boolean;
 	} = $props();
 
 	const suggested = $derived(fixed || setup ? null : suggestionOf(pills, fields));
@@ -334,7 +331,7 @@
 
 	/** Escape is Back, and marks the key taken so the line does not peel as well. */
 	function onKeyDown(event: KeyboardEvent): void {
-		if (event.key !== 'Escape' || !(menu || open || flagged) || event.defaultPrevented || document.querySelector('dialog[open]'))
+		if (event.key !== 'Escape' || !(menu || open || flagged) || event.defaultPrevented || document.querySelector('dialog:modal'))
 			return;
 		back();
 		event.preventDefault();
@@ -387,7 +384,7 @@
 
 <ButtonRows
 	class="commands{palette ? ' palette' : ''}"
-	items={setup ? [...setupRow, ...(only ? [BASE[0]] : shown)] : shown}
+	items={setup ? [...setupRow, ...shown] : shown}
 	key={(command) => command.name}
 	maxRows={lines}
 	pans={palette ? 'x' : undefined}

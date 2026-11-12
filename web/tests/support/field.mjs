@@ -98,16 +98,11 @@ export async function fieldNamed(page) {
 	return (await pill.count()) ? pill.getAttribute('data-field') : '';
 }
 
-/** The setup modal's own row of its commands, on a desktop, where the modal covers the bar (da-r674m). */
-const MODAL = 'dialog.sheet[data-place="setup"]';
-const IN_MODAL = `${MODAL} .setup-commands`;
-
 /**
- * Where the setup widget's commands are (da-r674m): the setup modal's row
- * where one is open, else the ❯'s palette, opened if it is not.
+ * Where the setup widget's commands are (da-r674m): the ❯'s palette, opened if it is not, on a desktop too,
+ * where the setup modal leaves the bar live (da-njt0f).
  */
 export async function openPalette(page) {
-	if (await page.locator(MODAL).count()) return page.locator(IN_MODAL);
 	// By the ❯'s state, not the palette's: one still sliding away after a run is there, and closed.
 	const shut = page.locator('.prompt-bar button[aria-controls="bar-commands"][aria-expanded="false"]');
 	if (await shut.count()) await shut.click();
@@ -118,7 +113,7 @@ export async function openPalette(page) {
 
 /** The setup command `name`, or with none its primary: save, or start tracking, which the form's Save was. */
 const one = (name) => (name ? `[data-setup="${name}"]` : '[data-setup][data-primary]');
-export const SETUP = (name) => `:is(#bar-commands, ${IN_MODAL}) ${one(name)}`;
+export const SETUP = (name) => `#bar-commands ${one(name)}`;
 
 /** Press one of the setup widget's commands, where they are. */
 export async function setupCommand(page, name) {

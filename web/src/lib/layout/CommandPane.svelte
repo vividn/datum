@@ -76,14 +76,11 @@
 		/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
 		key = '',
 		/** The ❯'s palette over the bar's output: one row of larger circles, scrolled sideways (da-qzzox). */
-		palette = false,
-		/** The setup widget's commands and undo alone (da-r674m): the setup place's modal, which covers the bar. */
-		only = false
+		palette = false
 	}: {
 		epoch?: number;
 		key?: string;
 		palette?: boolean;
-		only?: boolean;
 	} = $props();
 
 	let redoable = $state(false);
@@ -174,7 +171,6 @@
 		onsuggest={suggest}
 		setup={$setupCommands}
 		onsetup={setup}
-		{only}
 		online={fill}
 		onflag={(flag) =>
 			prefill.set({ line: unfixed(withFlag($fixed ? `${$fixed} ${$text}` : $text, flag.command, flag.flag), $fixed), keyboard: flag.keyboard })}

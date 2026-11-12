@@ -12,26 +12,32 @@
 	the transient tab a phone gets, from where `Keep tab` keeps it.
 
 	The setup widget's commands are the bar's palette's (da-r674m), which a
-	modal makes inert, so the setup modal holds them itself, under the
-	widget: the same circles, its save or start tracking leading.
+	modal makes inert, so the setup place's sheet is no modal: it stands
+	beside the bar, which stays live (da-njt0f, `besideBar` in shell.ts),
+	its palette open while the sheet is.
 -->
 <script lang="ts">
 	import Sheet from '#lib/Sheet.svelte';
-	import { setupCommands } from '#lib/fieldWidget.ts';
-	import CommandPane from './CommandPane.svelte';
 	import { act } from '#lib/act.ts';
+	import { commandsOpen } from '#lib/bar.ts';
 	import { epoch } from './engine.js';
 	import { KINDS } from './registry.js';
-	import { closeModalPlace, modalPlace, openPlace } from './shell.js';
+	import { besideBar, closeModalPlace, modalPlace, openPlace } from './shell.js';
 
 	const kind = $derived($modalPlace === null ? undefined : KINDS[$modalPlace.widget.kind]);
 	// The place's own until the widget moves one (a derived written to), and the place's again once it changes.
 	let settings: Record<string, unknown> = $derived($modalPlace?.widget.settings ?? {});
+	// Its commands shown while it is open, as the row under it showed them, so declaring stays three taps (da-ci85o).
+	$effect(() => {
+		if (!$besideBar) return;
+		commandsOpen.set(true);
+		return () => commandsOpen.set(false);
+	});
 </script>
 
 {#if kind && $modalPlace}
 	{@const place = $modalPlace.name}
-	<Sheet title={place} widget open data-place={place} onclose={closeModalPlace}>
+	<Sheet title={place} widget beside={$besideBar} open data-place={place} onclose={closeModalPlace}>
 		{#snippet head()}
 			<button type="button" class="as-tab" use:act={'open'} onclick={() => void openPlace(place, true)}
 				>Open as tab</button
@@ -42,11 +48,6 @@
 			epoch={$epoch}
 			onchange={(moved: unknown) => kind?.onChange && (settings = kind.onChange(settings, moved))}
 		/>
-		{#if place === 'setup' && $setupCommands}
-			<div class="setup-commands" data-own-gestures>
-				<CommandPane epoch={$epoch} key="modal:setup" palette only />
-			</div>
-		{/if}
 	</Sheet>
 {/if}
 
@@ -62,12 +63,6 @@
 	   (da-laxpn, da-hbrfg). */
 	:global(dialog.sheet[data-place] .sheet-body > section.pane) {
 		flex: 1;
-	}
-
-	.setup-commands {
-		flex: none;
-		display: flex;
-		border-top: 1px solid var(--accent);
 	}
 
 	.as-tab {

@@ -447,7 +447,8 @@ describe('in the app', () => {
 			await type(page, 'ignore run');
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
 			// Which fields are buttons: the order is the test above's.
-			const drawn = async () => (await listed(page.locator('.bar'), '[data-field]')).map((el) => `${el.tag}:${el.field}`).sort();
+			// The collect widget's bar, not the ❯'s palette, which a setup sheet opens and may still be sliding away (da-njt0f).
+			const drawn = async () => (await listed(page.locator('.bar:not(.commands)'), '[data-field]')).map((el) => `${el.tag}:${el.field}`).sort();
 			assert.deepEqual(await drawn(), ['BUTTON:tea', 'BUTTON:walk']);
 
 			// A second on: the clock is held, and a re-track at the instant

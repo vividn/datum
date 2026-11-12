@@ -1082,6 +1082,12 @@ let pushedFor: string | null = null;
 export const modalPlace = writable<{ name: string; widget: Widget } | null>(null);
 
 /**
+ * The setup place's modal is no modal (da-njt0f): it stands beside the bar, which stays live, and the rest
+ * of the page behind its veil is inert (routes/+layout.svelte), so the bar is all a Tab reaches outside it.
+ */
+export const besideBar = derived(modalPlace, (place) => place?.name === 'setup');
+
+/**
  * Open the place `kind` is: its root tab brought to the front if one holds
  * it; else, on a desktop, the widget in a modal (`modalPlace`); else, or
  * with `asTab`, a TRANSIENT tab — its built-in layout, italic, written

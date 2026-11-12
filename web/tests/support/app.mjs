@@ -1474,6 +1474,8 @@ function app(page, errors, query, clean, internal) {
 			// A modal left open (the Track form, the `+N` sheet) takes every
 			// pointer on the page: closed as a reader closes one, with Escape.
 			for (let i = 0; i < 3 && (await page.locator('dialog[open]').count()) > 0; i++) await page.keyboard.press('Escape');
+			// The setup sheet is no modal (da-njt0f): with the focus in the bar, Escape is the bar's, so its ×.
+			for (const close of await page.locator('dialog.sheet[open] > .sheet-head > button.close').all()) await close.click();
 			await page.waitForFunction(() => !document.querySelector('dialog[open]'));
 			// No commands bar left drilled or held: it outlives its widget now,
 			// as the line does (da-ria1a), so it is backed out as a reader would.

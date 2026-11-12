@@ -110,7 +110,7 @@ export function modifyWidget(
  * still that control's.
  */
 export function onKey(event: KeyboardEvent): void {
-	if (!get(editing) || document.querySelector('dialog[open]')) return;
+	if (!get(editing) || document.querySelector('dialog:modal')) return;
 	const free = event.target === document.body || event.target === document.documentElement;
 	if (event.key !== 'Escape' && !(event.key === 'Enter' && free)) return;
 	setTimeout(() => {

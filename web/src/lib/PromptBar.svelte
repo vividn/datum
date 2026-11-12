@@ -347,7 +347,7 @@
 		// since their own subcommands and flags (CommandsWidget) take the
 		// key before them and mounted after this listener.
 		if ($commandsOpen) {
-			if (!document.querySelector('dialog[open]'))
+			if (!document.querySelector('dialog:modal'))
 				setTimeout(() => event.defaultPrevented || commandsOpen.set(false));
 			return;
 		}
@@ -356,7 +356,7 @@
 			event.preventDefault();
 			return;
 		}
-		if (document.querySelector('dialog[open]')) return;
+		if (document.querySelector('dialog:modal')) return;
 		const was = [$pills, $text];
 		setTimeout(() => {
 			if (!event.defaultPrevented && was[0] === $pills && was[1] === $text) peel();
