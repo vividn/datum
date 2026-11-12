@@ -57,6 +57,13 @@ fn hello_with(member: &Copy, copy: &Copy, proof: &str) -> Output {
     )
 }
 
+/// How many ops of `copy`'s `member` holds: none after a refused dial
+/// (da-mmcbl), or its claim would travel on with the chain.
+fn held_of(member: &Copy, copy: &Copy) -> String {
+    let id = copy.id();
+    member.query(&format!("SELECT COUNT(*) FROM ops WHERE endpoint = '{id}'"))
+}
+
 fn stderr(out: &Output) -> String {
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
@@ -158,6 +165,7 @@ fn a_devices_fresh_copies_are_admitted_each_replacing_the_last_until_revoked() {
         "{}",
         stderr(&out)
     );
+    assert_eq!(held_of(&a, &third), "0", "a refused claim is not held");
 }
 
 /// In a locked chain a standing record takes an admin's signature, and one
@@ -183,9 +191,11 @@ fn a_standing_admission_takes_an_admin_and_expires() {
         "{}",
         stderr(&out)
     );
+    assert_eq!(held_of(&a, &copy), "0", "a refused claim is not held");
 
     let out = approve(&a, standing(Some("2099-01-01T00:00:00Z")), &admin);
     assert!(out.status.success(), "{}", stderr(&out));
     let out = hello(&a, &copy, &DEVICE, &copy);
     assert!(out.status.success(), "{}", stderr(&out));
+    assert_ne!(held_of(&a, &copy), "0", "an admitted claim is held");
 }

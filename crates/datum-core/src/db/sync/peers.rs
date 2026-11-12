@@ -425,6 +425,40 @@ mod tests {
             .is_some());
     }
 
+    /// A claim dated past how far a received op may run ahead of the
+    /// member's clock is refused at the door, which holds nothing of it
+    /// (da-mmcbl): applied, it would be held, and the admit after it refused.
+    #[test]
+    fn a_claim_dated_far_ahead_is_refused_and_not_held() {
+        let [a, x, y] = [(); 3].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        let device = [7u8; 32];
+        standing(&a, &device, json!({}));
+        crate::db::sync::SKEW.with(|s| s.set(3_600_000));
+        let proof = x.sync_standing_claim(&device, "c1").unwrap();
+        crate::db::sync::SKEW.with(|s| s.set(0));
+        let refused = knock(&a, &x, Some(&proof), None).unwrap_err().to_string();
+        assert!(
+            refused.contains("dated ahead of this copy's clock"),
+            "{refused}"
+        );
+        let held: i64 = a
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM ops WHERE endpoint = ?1",
+                [id(&x)],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(held, 0, "nothing of the dial is held");
+        // x's clock passed its own fast op, so a copy on time is another.
+        let proof = y.sync_standing_claim(&device, "c1").unwrap();
+        assert!(
+            knock(&a, &y, Some(&proof), None).unwrap(),
+            "a copy on time is admitted"
+        );
+    }
+
     /// A standing admit is the member's, at its clock, so a revoke and an
     /// expiry converge (vremya's, on #2030): a member that has not heard of
     /// the revoke admits a copy, and once the revoke reaches it, every copy

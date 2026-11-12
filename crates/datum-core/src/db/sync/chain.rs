@@ -2021,11 +2021,11 @@ impl Db {
                 }
             }
             let ep = endpoint(tx)?;
-            let record_was_standing = record["type"] == "claim";
+            let claim = record["type"] == "claim";
             let seq = push(tx, &ep, (CHAIN_HID, CHAIN_HID, None), "chain", record)?;
             let chain = Chain::load(tx)?;
-            // A joiner's own standing admit, to a chain it holds none of yet (da-tkbtu).
-            let joining = record_was_standing && !chain.exists();
+            // A joiner's own claim, to a chain it holds none of yet (da-tkbtu).
+            let joining = claim && !chain.exists();
             if let Some(why) = chain.rejected.get(&(ep.id, seq)).filter(|_| !joining) {
                 return Err(DatumError::Other(format!(
                     "the sync chain refuses it: {why}"

@@ -22,11 +22,12 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::params;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use super::{bind_device, bound_device, expired, hlc_time, role_of};
-use super::{check_signature, Chain, Filter, Role};
-use crate::db::sync::{unhex, Op};
+use super::{check_signature, Chain, Filter, Role, CHAIN_HID};
+use crate::db::sync::Op;
+use crate::db::sync::{advance, clock_ahead, format_hlc, next_hlc, now_ms, parse_hlc, unhex};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
 
@@ -204,8 +205,10 @@ impl Db {
 
     /// Admit `endpoint` by the standing admission its own claim in `proof`
     /// names (da-zkwiu, da-tkbtu), `proof` a [`Db::sync_standing_claim`]'s
-    /// after its prefix: apply its lines, then write the admit at this
-    /// copy's clock, or say why the chain refuses it.
+    /// after its prefix: judge the claim and an admit at this copy's clock
+    /// against the chain it holds, then apply its lines and write the admit,
+    /// or say why the chain refuses it, holding nothing of the dial
+    /// (da-mmcbl): a claim kept would travel on with the chain.
     pub fn sync_admit_standing(
         &self,
         endpoint: &str,
@@ -235,18 +238,54 @@ impl Db {
             DatumError::Other("no standing admission for this device in the sync chain".into())
         })?;
         reader_holds(st.role, label, holds)?;
-        self.sync_apply(proof)?;
         let record = json!({
             "type": "admit", "chain": chain.id, "endpoint": endpoint, "label": label,
             "via": "standing", "created": Utc::now().to_rfc3339(),
         });
+        if let Some(why) = self.sync_standing_judged(&op, &record)? {
+            return refuse(format!("the sync chain refuses it: {why}"));
+        }
+        self.sync_apply(proof)?;
         self.sync_chain_write(record, false)
+    }
+
+    /// How the chain this copy holds would refuse `claim` and then `admit`,
+    /// this copy's next op, at the HLC its write takes once the claim has
+    /// applied. A claim dated past [`MAX_CLOCK_AHEAD`](crate::db::sync::MAX_CLOCK_AHEAD) would be held, not
+    /// applied, so the admit after it is refused.
+    fn sync_standing_judged(&self, claim: &Op, admit: &Value) -> Result<Option<String>> {
+        let now = now_ms();
+        if clock_ahead(&claim.hlc, now).is_some() {
+            let at = hlc_time(&claim.hlc);
+            return Ok(Some(format!(
+                "its claim is dated ahead of this copy's clock ({at})"
+            )));
+        }
+        let me = self.sync_endpoint_id()?;
+        let next = next_hlc(&self.conn)?;
+        let hlc = match parse_hlc(&claim.hlc).filter(|_| claim.hlc >= next) {
+            Some(c) => {
+                let (ms, counter) = advance(Some(c), now);
+                format_hlc(ms, counter)
+            }
+            None => next,
+        };
+        let op = json!({"endpoint": me, "seq": i64::MAX, "hlc": hlc,
+            "hid": CHAIN_HID, "slug": CHAIN_HID, "kind": "chain", "effect": admit, "sig": ""});
+        let admit = Op::parse(&op.to_string())?;
+        let key = |o: &Op| (o.endpoint.clone(), o.seq);
+        let mut ops = Chain::records(&self.conn, "applied = 1")?;
+        ops.retain(|o| key(o) != key(claim));
+        ops.extend([claim.clone(), admit.clone()]);
+        let rejected = Chain::fold(ops).rejected;
+        Ok([claim, &admit]
+            .iter()
+            .find_map(|o| rejected.get(&key(o)).cloned()))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::Value;
 
     use super::super::{ed25519_admin_key, secret_hash, sign_ed25519, CHAIN_HID};
     use super::*;
