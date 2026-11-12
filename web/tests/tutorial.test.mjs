@@ -44,7 +44,7 @@ test('the Tutorial button opens the tutorial database, and the way back leaves d
 			);
 			for (const [tab, heading] of [['moment', 'Moments in a Café'], ['on-off', 'Turn the TV off'], ['change', 'Change of scenery']]) {
 				await lessonTab(page, tab).click();
-				await page.locator(`[data-pane="${tab}-about"] h1`, { hasText: heading }).waitFor();
+				await page.locator(`[data-pane="${tab}-about"] .text h4`, { hasText: heading }).waitFor();
 			}
 			await lessonTab(page, 'intro').click();
 			const named = await page.locator('section.pane').first().locator('p b').allInnerTexts();
@@ -181,13 +181,12 @@ test('every lesson ends on a button to the next, from the Introduction to the la
 			for (const [i, label] of labels.entries()) {
 				assert.equal(await front(page), LESSON_NAMES[i]);
 				const next = page.getByRole('button', { name: `Next: ${label}`, exact: true });
-				// The Introduction's Next has its reset under it (da-uzyih.4893), and nothing after that.
-				const atEnd = await next.evaluate(
-					(b, intro) =>
-						b.parentElement.classList.contains('tutorial') &&
-						(intro ? b.nextElementSibling?.textContent === 'Reset the tutorial' && !b.nextElementSibling.nextElementSibling : !b.nextElementSibling),
-					i === 0
-				);
+				// The Introduction's Next has its reset under it (da-uzyih.4893), and nothing after that. A game's is the last
+				// line of its discussion's text, an action link there (da-s80xg).
+				const atEnd = await next.evaluate((b, intro) => {
+					if (intro) return b.parentElement.classList.contains('tutorial') && b.nextElementSibling?.textContent === 'Reset the tutorial' && !b.nextElementSibling.nextElementSibling;
+					return !b.nextElementSibling && !!b.closest('.tutorial, .text')?.lastElementChild.contains(b);
+				}, i === 0);
 				assert.ok(atEnd, `${LESSON_NAMES[i]} ends on the next lesson, ${label}`);
 				await next.click();
 				await page.waitForFunction(
@@ -237,12 +236,14 @@ test('the Introduction is its three paragraphs and its way on; no tab holds why 
 			for (const tab of LESSON_NAMES) {
 				await lessonTab(page, tab).click();
 				await until(() => front(page), (f) => f === tab);
-				await page.locator('.host[data-widget="tutorial"]:visible h1').first().waitFor();
-				const held = await page.locator('.host[data-widget="tutorial"]:visible').evaluateAll((hosts) =>
+				// A game's words are text widgets (da-s80xg), its heading a small one.
+				const words = page.locator('.host:is([data-widget="tutorial"], [data-widget="text"]):visible');
+				await words.locator('h1, h4').first().waitFor();
+				const held = await words.evaluateAll((hosts) =>
 					hosts.flatMap((h) => [...h.querySelectorAll('h3, table, ul.shapes')].map((el) => el.outerHTML.slice(0, 60)))
 				);
 				assert.deepEqual(held, [], `${tab} holds no section, terms table or shapes`);
-				const text = await page.locator('.host[data-widget="tutorial"]:visible').allInnerTexts();
+				const text = await words.allInnerTexts();
 				assert.doesNotMatch(text.join('\n'), /why keep data/i);
 			}
 		},

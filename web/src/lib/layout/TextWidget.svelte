@@ -142,6 +142,13 @@
 	.text :global(:is(p, ul, ol, pre, table)) {
 		margin: 0 0 0.5rem;
 	}
+	/* No margin over the first line or under the last, so a pane its text sizes (`fit`) is the text's height. */
+	.text > :global(:first-child) {
+		margin-block-start: 0;
+	}
+	.text > :global(:last-child) {
+		margin-block-end: 0;
+	}
 	.text :global(:is(ul, ol)) {
 		padding-inline-start: 1.4rem;
 	}

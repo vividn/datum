@@ -109,13 +109,27 @@ test('a lesson’s game is a pane named «game» that runs a round; a tab saved 
 			};
 			assert.deepEqual(await round(), ['game', 'game']);
 
-			// The tab as a layout saved before the game was its own kind: the game pane the `tutorial` kind's.
-			const old = await page.evaluate(() => JSON.parse(JSON.stringify(window.datum.layouts.kitLayout('moment')).replaceAll('"kind":"game"', '"kind":"tutorial"')));
-			// The about, the discussion (da-zb1dr), and the game pane, the tutorial kind again.
-			assert.equal(JSON.stringify(old).match(/"kind":"tutorial"/g).length, 3, 'the game pane is the tutorial kind again');
+			// The tab as a layout saved before the game was its own kind: the game pane the `tutorial` kind's, and its about
+			// and discussion too, as they were before they were text widgets (da-s80xg).
+			const old = await page.evaluate(() => {
+				const tree = JSON.parse(JSON.stringify(window.datum.layouts.kitLayout('moment')).replaceAll('"kind":"game"', '"kind":"tutorial"'));
+				const walk = (node) => {
+					const widget = node.content;
+					const part = widget?.id?.match(/^moment-(about|discuss)-widget$/)?.[1];
+					if (part) Object.assign(widget, { kind: 'tutorial', settings: { lesson: 'moment', part } });
+					for (const child of Object.values(node)) if (child && typeof child === 'object') walk(child);
+				};
+				walk(tree);
+				return tree;
+			});
+			assert.equal(JSON.stringify(old).match(/"kind":"tutorial"/g).length, 3, 'the game, the about and the discussion are the tutorial kind again');
 			await page.evaluate((l) => window.datum.layouts.saveLayout(l), old);
 			await app.reload();
 			assert.deepEqual(await round(), ['tutorial', 'tutorial']);
+			// Its words are still drawn, and the discussion still ends on Next.
+			await page.locator('[data-pane="moment-about"] .text h4', { hasText: 'Moments in a Café' }).waitFor();
+			const next = page.locator('[data-pane="moment-discuss"]').getByRole('button', { name: 'Next: Turn the TV off', exact: true });
+			assert.equal(await next.count(), 1);
 			assert.deepEqual(app.errors, []);
 		},
 		{ ...PHONE, query: '?db=tutorial' }

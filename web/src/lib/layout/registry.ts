@@ -1166,7 +1166,7 @@ A run takes the logging commands alone; any other line, \`delete\` or \`db\` amo
 	tutorial: {
 		meta: meta('tutorial', 'tutorial', { lesson: 'intro' }),
 		component: TutorialWidget,
-		guide: `A lesson of the tutorial, which has a database of its own: its text, or, in a game's tab, its parts, its title and what its kind of data is over a nowview, the game and its collect, and under them what just happened.
+		guide: `A lesson of the tutorial, which has a database of its own: its text, or, in a game's tab, the game itself. A game's title and what its kind of data is, over its nowview, and what just happened, under its collect, are text widgets.
 
 ## The lessons
 

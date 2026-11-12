@@ -22,30 +22,27 @@
 
 	A lesson with no fields is a page of text, with nothing to start over.
 
-	A game's tab is five panes, taller than the screen (da-zb1dr): its
-	title and what its shape of data is (`part: 'about'`), its pane its
-	text's height (da-83y6w), short enough to leave the game and collect in
-	sight («it doesn't need to describe the game like this. Instead it should
-	be about what occur data is»; his
-	whole words are docs/basics.md); the nowview; the game
-	(GameWidget.svelte, da-2chdp), which this kind still draws for a lesson
-	with fields and no part, as a tab saved before that kind did; and the
-	collect widget filtered to its fields (da-2s9im), which this kind still
-	draws for `part: 'fields'`, as a tab saved before did; and under them what
-	just happened, at more length, and the way on (`part: 'discuss'`), its
-	text's height too. The game
-	scores what is logged, whatever logged it (`roundOf`).
+	A game's tab is five panes, taller than the screen (da-zb1dr), its
+	words `text` widgets holding each lesson's markdown (da-s80xg,
+	`withNowview` in defaults.ts); the game (GameWidget.svelte, da-2chdp),
+	which this kind still draws for a lesson with fields and no part, as a
+	tab saved before that kind did; and the collect widget filtered to its
+	fields (da-2s9im), which this kind still draws for `part: 'fields'`, as a
+	tab saved before did, as it draws a lesson's words for `part: 'about'` and
+	`'discuss'` (`lessonText`), a tab a reader saved before shadowing the
+	shipped one. The game scores what is logged, whatever logged it
+	(`roundOf`).
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { act } from '#lib/act.ts';
 	import Pane from '#lib/Pane.svelte';
-	import { VERBS } from '#lib/track.ts';
 	import { lessonNamed } from '#lib/tutorial.ts';
-	import { LESSONS } from './defaults.js';
+	import { LESSONS, lessonText } from './defaults.js';
 	import { open, resetTutorial } from './shell.js';
 	import GameWidget from './GameWidget.svelte';
 	import CollectPane from './CollectPane.svelte';
+	import TextWidget from './TextWidget.svelte';
 
 	let { settings = {} }: { settings?: Record<string, unknown> } = $props();
 
@@ -53,10 +50,8 @@
 	const intro = $derived(lesson === LESSONS[0]);
 	const next = $derived(LESSONS[LESSONS.indexOf(lesson) + 1]);
 
-	/** A game's pane: its title and what its shape of data is, or its fields; neither, the game itself. */
+	/** A game's pane: its fields, its words as a tab saved before had them, or the game itself. */
 	const part = $derived(lesson.fields.length ? settings.part : undefined);
-	/** The game's field kind, named as the setup widget names it. */
-	const shape = $derived(VERBS.find((v) => v.what === lesson.shape));
 
 	let resetting = $state(false);
 	/** Why the last reset failed, said under its button: a refusal before any command runs shows nowhere else (da-uzyih.4913). */
@@ -109,46 +104,13 @@
 
 {#if lesson.fields.length && !part}
 	<GameWidget {settings} />
+{:else if part === 'about' || part === 'discuss'}
+	<TextWidget text={lessonText(lesson, part)} />
 {:else}
 <Pane title={lesson.title}>
 	<div class="tutorial" class:fill={part === 'fields'}>
-		{#if part === 'about'}
-			<!-- A line, so the game and collect keep the screen under it; the terms are the discussion's, vividn's whole words on each shape docs/basics.md. -->
-			<h1 class="title">{lesson.title}</h1>
-			<p>
-				<span class="glyph" aria-hidden="true">{shape?.glyph}</span> <b>{shape?.what}</b>:
-				{#if lesson.name === 'moment'}
-					a dot on the timeline.
-				{:else if lesson.name === 'on-off'}
-					a period of time.
-				{:else}
-					a color per state.
-				{/if}
-			</p>
-		{:else if part === 'fields'}
+		{#if part === 'fields'}
 			<CollectPane only={lesson.fields} showIgnored />
-		{:else if part === 'discuss'}
-			<!-- Under the game and collect, scrolled to once a round is played: what it logged, and why. -->
-			<h2>Read more</h2>
-			{#if lesson.name === 'moment'}
-				<p>
-					Each tap logged an <b>entry</b> of its field at that instant, a dot on the timeline. A moment has no state and no
-					duration: it says that something happened, and when.
-				</p>
-				<p>Later, datum counts them: how often, at what hours, how many a day. Ex. medication, weight, coffee.</p>
-			{:else if lesson.name === 'on-off'}
-				<p>
-					Each tap turned its field on or off. While on, its <b>state</b> is true and its period grows on the timeline, so
-					the period's length is how long it lasted. You log only the changes, and several fields can be on at once.
-				</p>
-				<p>Later, datum adds the periods up: how long, how often, at what hours. Ex. sleep, screen time, work.</p>
-			{:else}
-				<p>
-					Each tap changed the field to a <b>state</b> you named, and its period changed color. It is in one state at a
-					time, until the next entry: entering a room leaves the last, so you log only the changes.
-				</p>
-				<p>Later, datum says how long you spent in each state, and when. Ex. where you are, your project.</p>
-			{/if}
 		{:else if intro}
 			<h1>The tutorial</h1>
 			<p>
@@ -188,8 +150,7 @@
 				</ul>
 			{/if}
 		{/if}
-		<!-- A game's way on is at the very bottom of its tab, under its discussion (da-zb1dr). -->
-		{#if next && part !== 'fields' && part !== 'about'}
+		{#if next && !part}
 			<button type="button" class="command next" use:act={'open'} onclick={() => void open(next.name)}
 				>Next: {next.title}</button
 			>
@@ -218,8 +179,7 @@
 		container-type: size;
 	}
 
-	h1,
-	h2 {
+	h1 {
 		margin: 0 0 0.3rem;
 		color: var(--ink-bright);
 		font-size: 1.4rem;
@@ -230,23 +190,8 @@
 		color: var(--ink-bright);
 	}
 
-	.glyph {
-		color: var(--accent-bright);
-	}
-
-	/* A game's title, small over its description (vividn, 2026-10-29: «make the title text a lot smaller»), and its discussion's. */
-	h1.title,
-	h2 {
-		font-size: 0.95rem;
-	}
-
 	ul {
 		padding-inline-start: 1.4rem;
-	}
-
-	/* The intro's line is its last: no margin under it to scroll to. */
-	h1.title + p {
-		margin-block-end: 0;
 	}
 
 	/* «where?» reads as a link in the sentence; it acts on this page, so it is a button. */

@@ -933,7 +933,7 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 	// database's to become.
 	test('a kind gated to a database is out of PICKABLE, and its database carries its tree', async () => {
 		const { KINDS, PICKABLE, pickableIn, titleOf } = await import('../src/lib/layout/registry.ts');
-		const { DEBUG_DB, DEBUG_LAYOUT, DEBUG_LAYOUT_TREE, BUILTIN_NAMES, LESSONS, TUTORIAL_DB, TUTORIAL_LAYOUTS } =
+		const { DEBUG_DB, DEBUG_LAYOUT, DEBUG_LAYOUT_TREE, BUILTIN_NAMES, LESSONS, TUTORIAL_DB, TUTORIAL_LAYOUTS, lessonText } =
 			await import('../src/lib/layout/defaults.ts');
 		const gated = Object.keys(KINDS).filter((kind) => KINDS[kind].db);
 		assert.deepEqual(gated, ['debug', 'seed', 'tutorial', 'game'], 'a new gated kind wants its line here');
@@ -959,11 +959,11 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		// it, da-6xeqy), and a game's about over the nowview, its game the game
 		// widget (da-2chdp), and under it the collect widget filtered to its
 		// fields, the ignored shown (da-uzyih.4908, da-2s9im), at three rows (da-je8ju), then its discussion (da-zb1dr),
-		// none a built-in's name.
+		// none a built-in's name. A game's about and discussion are text widgets of its words (da-s80xg).
 		const lessonsIn = (node) =>
 			!node || typeof node !== 'object'
 				? []
-				: ['tutorial', 'game', 'widgetbar'].includes(node.kind)
+				: ['tutorial', 'game', 'widgetbar', 'text'].includes(node.kind)
 					? [{ kind: node.kind, ...node.settings }]
 					: Object.values(node).flatMap(lessonsIn);
 		assert.deepEqual(TUTORIAL_LAYOUTS.map((l) => l.name), LESSONS.map((l) => l.name));
@@ -972,9 +972,15 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 			assert.ok(!BUILTIN_NAMES.includes(tree.name), `${tree.name} shadows a built-in`);
 			const game = ['moment', 'on-off', 'change'].includes(tree.name);
 			const lesson = { kind: 'tutorial', lesson: tree.name };
-			const { fields } = LESSONS.find((l) => l.name === tree.name);
+			const of = LESSONS.find((l) => l.name === tree.name);
+			const { fields } = of;
 			const lessons = game
-				? [{ ...lesson, part: 'about' }, { kind: 'game', lesson: tree.name }, { kind: 'widgetbar', fields, showIgnored: true, rows: 3 }, { ...lesson, part: 'discuss' }]
+				? [
+						{ kind: 'text', text: lessonText(of, 'about') },
+						{ kind: 'game', lesson: tree.name },
+						{ kind: 'widgetbar', fields, showIgnored: true, rows: 3 },
+						{ kind: 'text', text: lessonText(of, 'discuss') }
+					]
 				: [lesson];
 			assert.deepEqual(lessonsIn(tree.root), lessons);
 			// A game's tab is taller than the screen (da-zb1dr), a page of text fits one: a game's play fills the screen

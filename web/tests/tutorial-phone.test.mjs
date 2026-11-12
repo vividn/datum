@@ -184,12 +184,12 @@ test('each game reads title and shape, nowview, game, fields widget, discussion,
 					const pane = (part) => document.querySelector(`[data-pane="${tab}-${part}"]`);
 					const game = root.querySelector('.game');
 					const named = {
-						title: box(pane('about').querySelector('h1')),
-						shape: box(pane('about').querySelector('p')),
+						title: box(pane('about').querySelector('.text h4')),
+						shape: box(pane('about').querySelector('.text p')),
 						now: box(pane('now')),
 						game: box(game),
 						act: box(pane('fields').querySelector('.fields')),
-						discuss: box(pane('discuss').querySelector('h2'))
+						discuss: box(pane('discuss').querySelector('.text h4'))
 					};
 					const above = [...root.querySelectorAll('*')]
 						.filter((el) => !el.contains(game) && !game.contains(el) && box(el).height > 0 && box(el).top < box(game).top - 0.5)
@@ -215,8 +215,8 @@ test('each game reads title and shape, nowview, game, fields widget, discussion,
 				await lessonTab(page, tab).click();
 				await page.locator(`[data-pane="${tab}-lesson"] .game`).waitFor();
 				inOrder(tab, 'before', await parts(tab));
-				assert.deepEqual(await page.locator(`[data-pane="${tab}-about"] p b`).allInnerTexts(), words[tab].slice(0, 1));
-				assert.deepEqual(await page.locator(`[data-pane="${tab}-discuss"] p b`).allInnerTexts(), words[tab].slice(1));
+				assert.deepEqual(await page.locator(`[data-pane="${tab}-about"] p strong`).allInnerTexts(), words[tab].slice(0, 1));
+				assert.deepEqual(await page.locator(`[data-pane="${tab}-discuss"] p strong`).allInnerTexts(), words[tab].slice(1));
 
 				const start = app.clock.at();
 				if (tab === 'change') await startSwitch(page);

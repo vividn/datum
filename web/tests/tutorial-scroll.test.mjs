@@ -29,7 +29,7 @@ const measure = (page, tab) =>
 		const box = (el) => el.getBoundingClientRect().toJSON();
 		const pane = (part) => document.querySelector(`[data-pane="${tab}-${part}"]`);
 		const scroller = document.querySelector('section.holder.root > .content');
-		const next = pane('discuss').querySelector('button.next');
+		const next = pane('discuss').querySelector('button[data-action]');
 		/** How much of a pane's text is cut off, a scroll away inside it. */
 		const cut = (part) => {
 			const body = pane(part).querySelector('.body');
@@ -37,13 +37,13 @@ const measure = (page, tab) =>
 		};
 		/** How much taller a pane is than its text, the words and the button under them, and a line of it. */
 		const spare = (part) => {
-			const text = pane(part).querySelector('.tutorial');
+			const text = pane(part).querySelector('.text');
 			return { by: box(pane(part)).height - box(text).height, line: parseFloat(getComputedStyle(text).lineHeight) };
 		};
 		return {
 			cut: { about: cut('about'), discuss: cut('discuss') },
 			spare: { about: spare('about'), discuss: spare('discuss') },
-			aboutNext: pane('about').querySelectorAll('button.next').length,
+			aboutNext: pane('about').querySelectorAll('button[data-action]').length,
 			screen: box(scroller),
 			bar: box(document.querySelector('.prompt-bar')),
 			scrollTop: scroller.scrollTop,
@@ -56,8 +56,8 @@ const measure = (page, tab) =>
 			fields: [...pane('fields').querySelectorAll('.fields button[data-field]')].map(box),
 			rows: [...pane('fields').querySelectorAll('.fields .spot.shelf[data-row]')].map((s) => Number(s.dataset.row)),
 			discuss: box(pane('discuss')),
-			heading: box(pane('discuss').querySelector('div.tutorial > h2')),
-			headingText: pane('discuss').querySelector('div.tutorial > h2').textContent,
+			heading: box(pane('discuss').querySelector('.text > h4')),
+			headingText: pane('discuss').querySelector('.text > h4').textContent,
 			next: next && box(next)
 		};
 	}, tab);

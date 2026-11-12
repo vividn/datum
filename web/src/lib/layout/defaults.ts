@@ -16,6 +16,7 @@
 import type { Layout, Pane, Split, Tab } from './types.js';
 import { LAYOUT_VERSION } from './types.js';
 import { DEFAULT_LABEL_WIDTH, HOUR_FROM, HOUR_TO } from '#lib/panes.ts';
+import { VERBS } from '#lib/track.ts';
 
 const bar = { edge: 'top', align: 'start' } as const;
 
@@ -478,6 +479,10 @@ export interface Lesson {
 	shape?: string;
 	/** The fields its game's Reset ends the active states of: the lesson's own, by name (`coffee` …). */
 	fields: string[];
+	/** What a game's shape of data is, after its glyph and name (`lessonText`). */
+	about?: string;
+	/** A game's markdown under collect: what a round logged, and why, at more length. */
+	discuss?: string;
 }
 
 /**
@@ -494,9 +499,36 @@ export const LESSONS: Lesson[] = [
 	{ name: 'intro', title: 'Introduction', fields: [] },
 	// Each game's heading is its scene (da-83y6w, vividn, 2026-11-09: «let's title the first tab "Moments in a
 	// Café"», «let's retitle the other's too: "turn the TV off" "change of scenery"»), its tab its shape (`gameTitle`).
-	{ name: 'moment', title: 'Moments in a Café', shape: 'moment', fields: ['croissant', 'cake', 'bagel', 'coffee', 'tea'] },
-	{ name: 'on-off', title: 'Turn the TV off', shape: 'on/off', fields: ['tv', 'phone', 'reading'] },
-	{ name: 'change', title: 'Change of scenery', shape: 'change', fields: ['room'] },
+	{
+		name: 'moment',
+		title: 'Moments in a Café',
+		shape: 'moment',
+		fields: ['croissant', 'cake', 'bagel', 'coffee', 'tea'],
+		about: 'a dot on the timeline.',
+		discuss: `Each tap logged an **entry** of its field at that instant, a dot on the timeline. A moment has no state and no duration: it says that something happened, and when.
+
+Later, datum counts them: how often, at what hours, how many a day. Ex. medication, weight, coffee.`
+	},
+	{
+		name: 'on-off',
+		title: 'Turn the TV off',
+		shape: 'on/off',
+		fields: ['tv', 'phone', 'reading'],
+		about: 'a period of time.',
+		discuss: `Each tap turned its field on or off. While on, its **state** is true and its period grows on the timeline, so the period's length is how long it lasted. You log only the changes, and several fields can be on at once.
+
+Later, datum adds the periods up: how long, how often, at what hours. Ex. sleep, screen time, work.`
+	},
+	{
+		name: 'change',
+		title: 'Change of scenery',
+		shape: 'change',
+		fields: ['room'],
+		about: 'a color per state.',
+		discuss: `Each tap changed the field to a **state** you named, and its period changed color. It is in one state at a time, until the next entry: entering a room leaves the last, so you log only the changes.
+
+Later, datum says how long you spent in each state, and when. Ex. where you are, your project.`
+	},
 	{ name: 'input-bar', title: 'The input bar', fields: [] },
 	{ name: 'tabs', title: 'Tabs and widgets', fields: [] }
 ];
@@ -514,7 +546,20 @@ export const LESSONS: Lesson[] = [
  * on screen without having to scroll … the followup text widget can also clamp to its text size»). The screen is
  * the tab's scroller, so the bar's output section open or shut is in it (tutorial-scroll.test.mjs).
  */
-const withNowview = ({ name, fields }: Lesson): Layout => ({
+/**
+ * A game's words as markdown (da-s80xg): `about`, its title and what its shape of data is, the glyph and name
+ * `VERBS`', which a test holds to the CLI's; `discuss`, «Read more» and what a round logged, ending on Next, an action.
+ */
+export function lessonText(lesson: Lesson, part: 'about' | 'discuss'): string {
+	if (part === 'about') {
+		const verb = VERBS.find((v) => v.what === lesson.shape);
+		return `#### ${lesson.title}\n\n${verb?.glyph ?? ''} **${lesson.shape ?? ''}**: ${lesson.about ?? ''}`;
+	}
+	const next = LESSONS[LESSONS.indexOf(lesson) + 1];
+	return `#### Read more\n\n${lesson.discuss ?? ''}${next ? `\n\n[Next: ${next.title}](act:tab/${next.name})` : ''}`;
+}
+
+const withNowview = (lesson: Lesson, { name, fields } = lesson): Layout => ({
 	version: LAYOUT_VERSION,
 	name,
 	root: {
@@ -530,7 +575,7 @@ const withNowview = ({ name, fields }: Lesson): Layout => ({
 					// nowview is much too tall, it should be maybe 2/3 of it's current size»), the game 9/30 and collect 8/30
 					// as they were (da-je8ju, vividn, 2026-11-10: collect «goes to 2/3 of its current height»).
 					split(`${name}-play-split`, 'column', [0, 26 / 77, 27 / 77, 24 / 77], [
-						{ ...widgetPane(`${name}-about`, 'tutorial', { lesson: name, part: 'about' }), fit: true },
+						{ ...widgetPane(`${name}-about`, 'text', { text: lessonText(lesson, 'about') }), fit: true },
 						widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
 						widgetPane(`${name}-lesson`, 'game', { lesson: name }),
 						// The collect widget a person uses, filtered to the game's fields (da-2s9im, vividn, 2026-11-05:
@@ -541,7 +586,8 @@ const withNowview = ({ name, fields }: Lesson): Layout => ({
 						widgetPane(`${name}-fields`, 'widgetbar', { fields, showIgnored: true, rows: 3 })
 					])
 				),
-				{ ...widgetPane(`${name}-discuss`, 'tutorial', { lesson: name, part: 'discuss' }), fit: true }
+				// The way on is an action in the text (da-s80xg, vividn, 2026-11-11: «continue» as `act:tab/<next>`).
+				{ ...widgetPane(`${name}-discuss`, 'text', { text: lessonText(lesson, 'discuss') }), fit: true }
 			])
 		),
 		tall: 1
@@ -555,7 +601,7 @@ const withNowview = ({ name, fields }: Lesson): Layout => ({
  */
 export const gameTitle = (name: string): string | undefined => LESSONS.find((l) => l.name === name && l.fields.length)?.shape;
 
-/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, five panes, the game the `game` kind's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the change lesson's, da-6xeqy). */
+/** Each lesson's tab: the `tutorial` widget on its page, alone but for the games, five panes, their words `text` widgets (da-s80xg), the game the `game` kind's (the moment lesson's, da-nl1co, «On and off»'s, da-rru2t, and the change lesson's, da-6xeqy). */
 export const TUTORIAL_LAYOUTS: Layout[] = LESSONS.map((lesson) =>
 	lesson.fields.length ? withNowview(lesson) : only(lesson.name, 'tutorial', { lesson: lesson.name })
 );

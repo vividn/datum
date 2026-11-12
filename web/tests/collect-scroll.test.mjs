@@ -22,21 +22,28 @@ const FIELDS = `[data-pane="${TAB}-fields"]`;
 const SCROLLER = 'section.holder.root > .content';
 const FIRST = `${FIELDS} .fields button[data-field]`;
 
-/** The tutorial's moment tab, scrolled so collect's middle is the screen's: room to scroll both ways. */
+/**
+ * The tutorial's moment tab, scrolled to the middle of its range, collect in sight: the most room to scroll both
+ * ways. Centering collect left less under it than a drag's 60px once the discussion was a text widget its text's
+ * height (da-s80xg).
+ */
 async function onCollect(page) {
 	await page.locator('.root-bar [role="tab"]', { hasText: TAB }).click();
 	const button = page.locator(FIRST).first();
 	await button.waitFor();
-	await page.evaluate(
+	const inSight = await page.evaluate(
 		async ([fields, scroller]) => {
 			const s = document.querySelector(scroller);
+			s.scrollTop = (s.scrollHeight - s.clientHeight) / 2;
+			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 			const box = document.querySelector(fields).getBoundingClientRect();
 			const screen = s.getBoundingClientRect();
-			s.scrollTop += box.top + box.height / 2 - (screen.top + screen.height / 2);
-			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+			const middle = box.top + box.height / 2;
+			return middle > screen.top && middle < screen.bottom;
 		},
 		[FIELDS, SCROLLER]
 	);
+	assert.ok(inSight, "collect's middle is in sight with the page at the middle of its range");
 	return buttonAt(page);
 }
 
