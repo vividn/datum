@@ -841,6 +841,13 @@ export async function syncLogin(link: string, prf?: string): Promise<void> {
 /** n0's pkarr relay (iroh's `N0_DNS_PKARR_RELAY_PROD`); a test names its own as `datum.pkarrRelay`. */
 const PKARR = 'https://dns.iroh.link/pkarr';
 let recording: Promise<void> = Promise.resolve();
+/** How long n0's relay keeps the record past its signing (iroh-dns-server's `eviction`, 7 days). */
+export const RECORD_KEPT_MS = 7 * 86_400_000;
+const signedAt = writable<number | null | undefined>(undefined);
+/** When the account record the relay holds was signed (ms); null where it holds none, undefined until read. */
+export const recordSigned: Readable<number | null | undefined> = signedAt;
+/** A relay body's signed time, ms: `sig ‖ time ‖ packet`, the time 8 bytes of µs. */
+const signedOf = (hex: string): number => Number(BigInt(`0x${hex.slice(128, 144)}`) / 1000n);
 
 function pkarr(): string {
 	try {
@@ -859,6 +866,11 @@ function pkarr(): string {
  * so a new one never empties the record. It takes `prf`, the passkey's PRF
  * output, which signs it: so it is done as a passkey is asked, at a sign-in
  * and an approval, and not on a timer (da-k04lr); one at a time.
+ *
+ * n0's relay drops a packet 7 days after the time it was signed at, and a
+ * PUT of the same bytes keeps that time (iroh-dns-server's eviction,
+ * da-6vmak): only signing again keeps the record. `recordSigned` is when the
+ * record held was, which the Sync widget offers to renew.
  */
 export function syncAccountRecord(prf: string): Promise<void> {
 	const next = recording.then(() => accountRecord(prf));
@@ -873,6 +885,7 @@ async function accountRecord(prf: string): Promise<void> {
 	const got = await fetch(url);
 	if (!got.ok && got.status !== 404) throw new Error(`the account record could not be read (${got.status})`);
 	const held = got.ok ? hexOf(await got.arrayBuffer()) : undefined;
+	signedAt.set(held ? signedOf(held) : null);
 	// The CLI lists every database it can see, and a database is seen once a
 	// command names it: so each is named once, and the last run (and `--read`)
 	// holds them all. Each run's record is the next one's `--with`.
@@ -892,6 +905,22 @@ async function accountRecord(prf: string): Promise<void> {
 	if (!body || body === held) return;
 	const put = await fetch(url, { method: 'PUT', body: Uint8Array.from(body.match(/../g) ?? [], (h) => parseInt(h, 16)) });
 	if (!put.ok) throw new Error(`the account record could not be published (${put.status})`);
+	signedAt.set(signedOf(body));
+}
+
+/**
+ * Read when the relay's account record was signed, into `recordSigned`: the
+ * kept form names it, no passkey asked. After any publish under way, so it
+ * never sets an older time over a newer.
+ */
+export function readRecordSigned(): Promise<void> {
+	const next = recording.then(async () => {
+		const { name } = JSON.parse(await ran(accountArgv())) as { name: string };
+		const got = await fetch(`${pkarr()}/${name}`);
+		signedAt.set(got.ok ? signedOf(hexOf(await got.arrayBuffer())) : null);
+	});
+	recording = next.catch(() => {});
+	return next;
 }
 
 const hexOf = (b: ArrayBuffer): string => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');

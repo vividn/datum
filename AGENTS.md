@@ -865,7 +865,14 @@ first, then the most recently seen) and the relay when not n0's. The CLI builds,
 and opens it (hidden `sync account --record [--relay] [--with <HEX>]` and `--read
 <HEX>`), so the account's secret never leaves it; the page only GETs and PUTs the bytes
 (`syncAccountRecord` in `#lib/sync.ts`), at sign-in and after each approval: it signs
-with the account key, so only while the passkey's answer is in hand (da-k04lr). A publish is what this install holds united with what the
+with the account key, so only while the passkey's answer is in hand (da-k04lr). The relay
+keeps a packet 7 days past the time it was signed at, and a PUT of the same bytes keeps
+that time (iroh-dns-server's `eviction`, measured on n0's relay, da-6vmak), so only signing
+again keeps the record: a signed-in tab reads when the relay's was signed (`recordSigned`,
+no passkey), and past 5 days the Sync widget says when it lapses, with a button that asks
+the passkey once and signs it again; with none on the relay and a chain here whose admins
+include the account, it says a device signing in won't find them, the same button
+publishing it. Nothing asks unpressed. A publish is what this install holds united with what the
 record held, so a device with none of its own publishes nothing. A packet's DNS part is
 1000 bytes: over it each chain keeps fewer members, down to one, and past one each
 (about ten chains) `--record` is refused, naming the most. `--read` lists the chains no

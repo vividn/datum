@@ -12,7 +12,7 @@
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp } from './support/app.mjs';
+import { startApp, stopApp, withApp } from './support/app.mjs';
 import { countOf, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
 import { AT_DATUM_DAY, WIDGET, authenticator } from './support/syncactions.mjs';
 import { pkarrRelay } from './support/pkarr.mjs';
@@ -102,6 +102,81 @@ describe('signing in to sync with a passkey', () => {
 			assert.equal(await asked(passkey), before + 1);
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
+	});
+
+	test('the relay drops the account record 7 days after its signing: past 5 the widget says when, and its button re-signs it with one passkey tap, never unasked (da-6vmak)', async () => {
+		const pkarr = pkarrRelay();
+		const DAY = 86_400_000;
+		await withApp(async (app) => {
+			const { page } = app;
+			const passkey = await authenticator(page, { hasPrf: true });
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			// A chain made, the approval publishes the record, signed at the held clock.
+			const signed = app.clock.at();
+			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
+			await until(() => pkarr.held.size, (n) => n === 1);
+			const [first] = pkarr.held.values();
+			assert.equal(Number(first.readBigUInt64BE(64) / 1000n), signed);
+			const lapsing = page.locator(`${WIDGET} .account .lapsing`);
+			const renew = account(page).getByRole('button', { name: 'Renew with passkey' });
+			const before = await asked(passkey);
+
+			// A day on, nothing is said.
+			await app.clock.set(signed + DAY);
+			await page.waitForTimeout(1500);
+			assert.equal(await lapsing.count(), 0);
+			// Six days on, the notice, and the passkey still not asked.
+			await app.clock.set(signed + 6 * DAY);
+			await lapsing.waitFor();
+			assert.match(await lapsing.innerText(), /lapses in 1 day\b/);
+			assert.equal(await asked(passkey), before);
+
+			// The press asks it once, and the relay holds a record signed now.
+			await renew.click();
+			await until(() => Number([...pkarr.held.values()][0].readBigUInt64BE(64) / 1000n), (t) => t === signed + 6 * DAY);
+			assert.equal(await asked(passkey), before + 1);
+			await lapsing.waitFor({ state: 'detached' });
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+		}, { ...AT_DATUM_DAY, prepare: pkarr.prepare });
+	});
+
+	test('with no record on the relay (lapsed), the widget says so where a chain here is the account’s, and its button publishes one the next read finds; an account with no chain is told nothing (da-6vmak)', async () => {
+		const pkarr = pkarrRelay();
+		await withApp(async (app) => {
+			const { page } = app;
+			const passkey = await authenticator(page, { hasPrf: true });
+			// The Sync widget's half-hourly read, now.
+			const read = () => page.evaluate(() => window.datum.sync.recordSigned());
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			const lapsing = page.locator(`${WIDGET} .account .lapsing`);
+			// No chain of the account's: nothing to publish, and nothing said.
+			await read();
+			await page.waitForTimeout(1500);
+			assert.equal(pkarr.held.size, 0);
+			assert.equal(await lapsing.count(), 0);
+
+			// A chain the account is admin of, its record then gone from the relay.
+			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
+			await until(() => pkarr.held.size, (n) => n === 1);
+			pkarr.held.clear();
+			const before = await asked(passkey);
+			await read();
+			await lapsing.waitFor();
+			assert.match(await lapsing.innerText(), /isn’t on the relay/);
+			assert.equal(await asked(passkey), before);
+
+			// The press asks the passkey once and publishes it; the next read finds it.
+			await account(page).getByRole('button', { name: 'Renew with passkey' }).click();
+			await until(() => pkarr.held.size, (n) => n === 1);
+			assert.equal(await asked(passkey), before + 1);
+			await read();
+			await lapsing.waitFor({ state: 'detached' });
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+		}, { ...AT_DATUM_DAY, prepare: pkarr.prepare });
 	});
 
 	test('a passkey that gives no PRF is said plainly, and the tab stays signed out', async () => {

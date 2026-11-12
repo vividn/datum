@@ -59,9 +59,13 @@ to reach it through. Signing in reads it and joins each chain this device is
 not in, into a database of the same name (or `<name>-2` where that one holds
 data of its own); a device publishes it again with its own chains whenever
 the passkey is asked: at a sign-in, and at each approval, a chain's start
-among them. It holds about ten chains. The relay
-keeps it as a cache: until it is also published to the mainline DHT, a record
-the relay dropped is back once a signed-in device of the account runs again.
+among them. It holds about ten chains. The relay keeps it for 7 days after
+it was signed, and sending it again does not extend that: only signing it
+again does. So from day 5 the Sync widget of a signed-in tab says when the
+record lapses, with a button that asks your passkey once and signs it again.
+Once it has lapsed, the widget says so wherever a chain on this device is
+your account's, and the same button publishes it again, as does the next
+sign-in or approval on any device of the account.
 
 A terminal signs in by `datum sync login`: it prints a datum.day link, and
 opens it where it can. Open it on this computer or on a phone, sign in with

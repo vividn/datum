@@ -80,7 +80,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, signedIn, syncLogin, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, readRecordSigned, recordSigned, RECORD_KEPT_MS, signedIn, syncLogin, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -718,6 +718,32 @@
 			await syncAccountRecord(prf);
 		});
 
+	// The relay drops the account record 7 days after its signing (da-6vmak): read
+	// when it was, signed in and each half hour, no passkey asked.
+	$effect(() => {
+		if (!$account) return;
+		void readRecordSigned().catch(() => {});
+		const timer = setInterval(() => void readRecordSigned().catch(() => {}), 30 * 60_000);
+		return () => clearInterval(timer);
+	});
+	/** What the record's notice says: once 5 days have passed since its signing, when it lapses; else null. */
+	const lapsing = $derived.by(() => {
+		const at = $recordSigned;
+		if (!$account || at === undefined) return null;
+		// None on the relay (lapsed, or never published): said only where a chain here is the account's.
+		if (at === null)
+			return dbs.some((d) => d.admins?.some((a) => a.key === $account.key)) ? 'Your account’s chain list isn’t on the relay: a device signing in won’t find these chains' : null;
+		if ($now.getTime() - at <= 5 * 86_400_000) return null;
+		const days = Math.max(1, Math.ceil((at + RECORD_KEPT_MS - $now.getTime()) / 86_400_000));
+		return `Your account’s chain list on the relay lapses in ${days} ${days === 1 ? 'day' : 'days'}`;
+	});
+	/** Sign the record again, the passkey asked once: only on the press. */
+	const renewRecord = () =>
+		doing(async () => {
+			const { prf } = await signedIn();
+			await syncAccountRecord(prf);
+		});
+
 	/** What signing a CLI in said (da-mzqs4), once it is signed in. */
 	let loginSaid = $state<string | null>(null);
 
@@ -1300,6 +1326,10 @@
 			{#if $account}
 				<span class="signed-in" title={$account.key}>Signed in: chains started here are your account’s, and its devices join them</span>
 				<button type="button" class="command" use:act={'show'} disabled={busy} onclick={() => setAccount(null)}>Sign out</button>
+				{#if lapsing}
+					<span class="lapsing">{lapsing}</span>
+					<button type="button" class="command renew" use:act={'open'} disabled={busy} onclick={renewRecord}>Renew with passkey</button>
+				{/if}
 			{:else}
 				<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => signInHere(false)}>Sign in with a passkey</button>
 				<button type="button" class="command" use:act={'open'} disabled={busy} onclick={() => signInHere(true)}>New passkey</button>
