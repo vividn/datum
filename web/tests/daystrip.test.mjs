@@ -201,6 +201,22 @@ describe('the day strip', () => {
 		});
 	});
 
+	// da-adoxf: at three days to a phone the now-line is wider than minutes of
+	// the day, so a moment logged at now hid under it. Its mark is drawn after.
+	test('a moment logged now is drawn over the now-line', async () => {
+		await clocked.solo(async (app) => {
+			await app.submit('occur tea');
+			const mark = app.page.locator('.band[data-days-ago="0"] .point-bg[data-field="tea"]');
+			await mark.waitFor({ state: 'attached' });
+			await app.idle();
+			const after = await mark.evaluate((el) => {
+				const line = el.closest('svg').querySelector('.current-time-line');
+				return line && !!(line.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+			});
+			assert.equal(after, true, 'the now-line is drawn over the moment, or not at all');
+		});
+	});
+
 	// The bead's own case (da-iu9i): five days of the reader's data, and a
 	// picture of ONE day each, drawn bands-only. Each is the day's data layer
 	// scaled to the band (da-m6i2a), held whatever the size: so a new size

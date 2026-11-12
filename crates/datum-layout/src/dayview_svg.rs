@@ -333,6 +333,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         my = layout.plot.y,
     );
 
+    // A now-line with no strip beside it is drawn here, under every mark,
+    // so a moment logged at now stands over it (da-adoxf), as nowview's does.
+    // Everything after is over it: the gridlines, and where it runs on
+    // through the time axis, the axis's ticks and labels.
+    let under_marks = out.len();
+    let mut under = String::new();
+
     // Per-day rendering.
     for (i, day) in layout.days.iter().enumerate() {
         // The date-label strip: group and lines; the warning icon comes last.
@@ -740,7 +747,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         emit_clock_axis(&mut out, layout, &geom, opts, &flow_open);
     }
 
-    // Per-day now-lines. Emitted last so they sit above gridlines and data.
+    // Per-day now-lines. Beside a now strip, emitted last so they sit above
+    // gridlines and data; with none, under the marks (`under_marks`).
     // A plot with no time axis (nowview's snapshot) has no line to draw,
     // and a data layer leaves it to its viewer.
     for day in layout.days.iter().filter(|_| !opts.data_layer) {
@@ -756,9 +764,14 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         } else {
             (2, "4,2")
         };
+        let sink = if chunk.is_some() {
+            &mut out
+        } else {
+            &mut under
+        };
         let mut line = |class: &str, extra: &str, (x1, y1, x2, y2): (f64, f64, f64, f64)| {
             let _ = write!(
-                &mut out,
+                sink,
                 r#"<line class="{class}" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}"{extra} stroke="{c}" stroke-width="{stroke}" stroke-dasharray="{dash}"/>"#,
                 c = NOW_LINE_COLOR,
             );
@@ -837,6 +850,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             );
         }
     }
+    out.insert_str(under_marks, &under);
     out.push_str("</g>");
 
     if !defs.is_empty() {
@@ -2374,23 +2388,44 @@ mod tests {
     }
 
     #[test]
-    fn gridlines_rendered_over_data_and_under_now_line() {
-        // Gridlines must appear AFTER data blocks (so they overlay) and
-        // BEFORE the now line (so the now line stays on top). Mirrors
-        // original datum z-order (dayview.ts: data → axis → grid → now).
+    fn gridlines_rendered_over_data() {
+        // Gridlines must appear AFTER data blocks (so they overlay), as in
+        // the original datum (dayview.ts: data → axis → grid).
         let layout = compute_dayview(&one_day_with_block(false, Orientation::Horizontal));
         let svg = render_dayview_svg(&layout);
         let block_idx = svg.find(r#"class="block""#).expect("block present");
         let grid_idx = svg.find("gridline").expect("gridline present");
-        let now_idx = svg.find("current-time-line").expect("now line present");
         assert!(
             block_idx < grid_idx,
             "gridlines must be emitted after data blocks (block@{block_idx}, grid@{grid_idx})",
         );
-        assert!(
-            grid_idx < now_idx,
-            "now line must be emitted after gridlines (grid@{grid_idx}, now@{now_idx})",
-        );
+    }
+
+    /// da-adoxf: a moment logged at now is drawn over the now-line, which
+    /// shows either side of it, and so is a bar running to now. At three
+    /// days to a phone the line is wider than minutes of the day.
+    #[test]
+    fn a_mark_at_now_is_drawn_over_the_now_line() {
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let mut cfg = one_day_with_block(false, orientation);
+            let field = &mut cfg.days[0].fields[0];
+            field.points[0].time_ms = cfg.now_ms;
+            field.blocks[0].end_ms = cfg.now_ms;
+            let svg = render_dayview_svg(&compute_dayview(&cfg));
+            let now = svg.find("current-time-line").expect("a now-line");
+            let dot = svg.find(r#"class="point-"#).expect("the dot");
+            let bar = svg.find(r#"class="block""#).expect("the bar");
+            assert!(now < dot && now < bar, "{svg}");
+
+            // Beside a now strip the line stands a gap past now, over the
+            // marks and the gridlines, as nowview draws it.
+            cfg.right_panel_width = 40.0;
+            let svg = render_dayview_svg(&compute_dayview(&cfg));
+            let now = svg.find("current-time-line").expect("a now-line");
+            let grid = svg.rfind("gridline").expect("gridlines");
+            let dot = svg.rfind(r#"class="point-"#).expect("the dot");
+            assert!(now > dot && now > grid, "{svg}");
+        }
     }
 
     #[test]

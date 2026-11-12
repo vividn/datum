@@ -349,7 +349,7 @@ const dotScale = (dayHeight: number) => Math.min(240, Math.max(20, dayHeight)) /
  * A day's layer as the day strip's row: `width` by `dayHeight`, as `dayview
  * --days 1` draws a band at that size — its blocks as long as their hours,
  * every other mark the size the day height gives it — and, with `now`, the
- * state still running cut there and the now-line drawn. A day of one clock
+ * state still running cut there and the now-line drawn under it. A day of one clock
  * only: its 24 hours are the row's. A node of the page, sanitized as the
  * layer was, for `CliOutput` to draw as it is: serialized, a dense day was
  * parsed again at every draw, ~300 ms of main thread (da-mi2s6).
@@ -389,7 +389,8 @@ export function bandOf(layer: Layer, width: number, dayHeight: number, now?: num
 		const line = document.createElementNS(NS, 'line');
 		for (const [n, v] of Object.entries({ class: 'current-time-line', x1: x, x2: x, y1: 0, y2: dayHeight, stroke: '#ffcc00', 'stroke-width': 2, 'stroke-dasharray': '4,2' }))
 			line.setAttribute(n, String(v));
-		root.querySelector('.plot')!.append(line);
+		// Under the marks, so a moment logged at now stands over it (da-adoxf).
+		span.before(line);
 	}
 	return root;
 }
