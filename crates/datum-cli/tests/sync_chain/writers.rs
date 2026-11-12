@@ -191,3 +191,101 @@ fn a_writers_forged_acts_are_refused_by_a_member_open_chain_or_locked() {
         assert_eq!(member_of(&a, &w.id())["role"], "writer");
     }
 }
+
+/// A writer's bounds (da-mogvf, vividn, 2026-11-12: «Both limits»): it
+/// writes only its fields, and their specs, no alias, and changes only the
+/// entries it created. Its own copy refuses the rest as it is typed; an op
+/// of it signed anyway is refused on a member's fold and named in `sync
+/// status`. A member is unbounded.
+#[test]
+fn a_writer_writes_only_its_fields_and_changes_only_its_own_entries() {
+    let (a, b) = chained();
+    a.ok(&["occur", "mood", "-y", "-t", "9:00"]);
+    a.ok(&["occur", "tea", "-y", "-t", "9:30"]);
+    assert!(a.send(&b).0);
+    let w = Copy::new();
+    admit_writer(&a, &w, &["--fields", "mood"]);
+    let hid = |c: &Copy, f: &str| c.query(&format!("SELECT hid FROM entries WHERE field = '{f}'"));
+    let theirs = hid(&a, "mood");
+
+    for (args, why) in [
+        (
+            &["occur", "tea", "-y", "-t", "10:00"][..],
+            "this copy is a writer of «mood» in the sync chain, and this is «tea»",
+        ),
+        (
+            &["update", &theirs, "x=1"],
+            "this copy is a writer in the sync chain: it changes only the entries it created",
+        ),
+        (
+            &["alias", "set", "m", "occur mood"],
+            "no alias or other entry about the database",
+        ),
+    ] {
+        let out = w.fails(args, "");
+        assert!(out.contains(why), "{args:?}: {out}");
+    }
+
+    // Its own, in its fields, and the spec of a new field it writes: applied.
+    w.ok(&["occur", "mood", "-y", "-t", "11:00"]);
+    let mine = w.query(&format!(
+        "SELECT hid FROM entries WHERE field = 'mood' AND hid != '{theirs}'"
+    ));
+    w.ok(&["update", &mine, "x=2"]);
+    let (ok, text) = w.send(&a);
+    assert!(ok, "{text}");
+    assert_eq!(
+        a.query(&format!(
+            "SELECT json_extract(data, '$.x') FROM entries WHERE hid = '{mine}'"
+        )),
+        "2"
+    );
+
+    // Signed anyway: a tea entry of its own, and an edit of a's mood entry.
+    let body = |sql: &str| json(&a.query(&format!("SELECT body FROM ops WHERE {sql}")));
+    let mut tea = body(&format!("hid = '{}' AND kind = 'create'", hid(&a, "tea")));
+    tea["hid"] = "wtea0000000000000000000000".into();
+    tea["slug"] = "tea:2026-01-01T10:00:00.000Z".into();
+    tea["effect"]["create"]["hid"] = tea["hid"].clone();
+    tea["effect"]["create"]["slug"] = tea["slug"].clone();
+    let out = a.run(&["sync", "pipe", "apply"], &signed_as(&w, &a, tea));
+    let text = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        text.contains("a writer of «mood» in the sync chain, and this is «tea»"),
+        "{text}"
+    );
+
+    let mut edit = body(&format!("hid = '{mine}' AND kind = 'update'"));
+    edit["hid"] = theirs.clone().into();
+    edit["slug"] = a
+        .query(&format!("SELECT slug FROM entries WHERE hid = '{theirs}'"))
+        .into();
+    let out = a.run(&["sync", "pipe", "apply"], &signed_as(&w, &a, edit));
+    let text = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        text.contains("it changes only the entries it created"),
+        "{text}"
+    );
+    assert_eq!(
+        a.query(&format!(
+            "SELECT COUNT(*) FROM entries WHERE hid = 'wtea0000000000000000000000'
+             OR (hid = '{theirs}' AND json_extract(data, '$.x') IS NOT NULL)"
+        )),
+        "0"
+    );
+    let notices = json(&a.ok(&["sync", "status", "--json"]))["notices"].to_string();
+    assert!(
+        notices.contains("changes from w refused (a writer of «mood» in the sync chain"),
+        "{notices}"
+    );
+
+    // A member edits a's entry, and it reaches a.
+    b.ok(&["update", &theirs, "x=3"]);
+    assert!(b.send(&a).0);
+    assert_eq!(
+        a.query(&format!(
+            "SELECT json_extract(data, '$.x') FROM entries WHERE hid = '{theirs}'"
+        )),
+        "3"
+    );
+}

@@ -915,6 +915,12 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 }
                 _ => {}
             }
+            if role == datum_parse::cli::SyncRole::Writer {
+                let fields = caps["fields"].as_array().into_iter().flatten();
+                let fields: Vec<String> =
+                    fields.filter_map(|f| f.as_str().map(Into::into)).collect();
+                eprintln!("it writes {}", datum_core::db::writer::writes_said(&fields));
+            }
             let (secret, expires_at, _) = invite(
                 db,
                 expires,

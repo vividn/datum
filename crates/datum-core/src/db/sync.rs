@@ -99,6 +99,7 @@ pub mod status;
 mod summed;
 mod versions;
 mod window;
+pub mod writer;
 use super::alias::ALIAS_FIELD;
 use chain::{Chain, Filter, CHAIN_HID};
 pub use debug::DebugConflicts;
@@ -1060,9 +1061,7 @@ pub(super) fn emit(
         return Ok(());
     }
     let ep = endpoint(conn)?;
-    if let Some(why) = read_only(conn, &ep)? {
-        return Err(DatumError::Other(why.into()));
-    }
+    writer::may_sign(conn, &ep, &post, hid)?;
     if let Some(pre) = pre {
         if !has_ops(conn, hid)? {
             push_entry(conn, &ep, pre, "baseline", create_effect(pre))?;
@@ -2012,7 +2011,7 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
                 let made = op.queued.as_deref().unwrap_or(&op.hlc);
                 let wiped = chain.wiped(made).is_some()
                     || chain.dissolved().is_some() && op.endpoint != mine;
-                match chain.allows(&op.endpoint, &op.hlc) {
+                match writer::allowed(conn, &chain, op)? {
                     _ if wiped => scrub(conn, &op.endpoint, op.seq)?,
                     Ok(()) => {
                         let pre = fetch_by_hid(conn, &op.hid)?;
@@ -2170,7 +2169,7 @@ fn allow_again(conn: &Connection, chain: &Chain) -> Result<()> {
         .map(|b| Op::parse(&b?))
         .collect::<Result<_>>()?;
     for op in refused {
-        if chain.allows(&op.endpoint, &op.hlc).is_ok() {
+        if writer::allowed(conn, chain, &op)?.is_ok() {
             conn.execute(
                 "UPDATE ops SET applied = 0 WHERE endpoint = ?1 AND seq = ?2",
                 params![op.endpoint, op.seq],
@@ -2204,7 +2203,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
         let sql = "SELECT body FROM ops
                    WHERE endpoint = ?1 AND applied = 1 AND hlc >= ?2 AND hid != ?3";
         for op in bodies(sql, &[&m.endpoint, &from, &CHAIN_HID])? {
-            if let Err(why) = chain.allows(&op.endpoint, &op.hlc) {
+            if let Err(why) = writer::allowed(conn, chain, &op)? {
                 refuse(conn, chain, &op, &why, "refused", s)?;
                 hids.insert(op.hid);
             }

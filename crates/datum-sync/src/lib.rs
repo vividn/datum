@@ -910,6 +910,10 @@ fn who_admits(t: &Ticket) -> String {
 fn joins_as(t: &Ticket) -> String {
     let db = t.about.db.as_ref().map(|d| format!(", database {d}"));
     let role = t.about.role.as_ref().map(|r| match &t.about.fields {
+        _ if r == "writer" => format!(
+            ", as a writer: it writes {}",
+            datum_core::db::writer::writes_said(t.about.fields.iter().flatten())
+        ),
         Some(f) if f.is_empty() => format!(", as a {r} of no field"),
         Some(f) => format!(", as a {r} of {}", f.join(", ")),
         None => format!(", as a {r}"),

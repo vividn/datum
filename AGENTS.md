@@ -812,12 +812,16 @@ or specs filter's verify sums its rows afresh, reading from the window's start.
 
 A WRITER (da-o5o6m, `--writer`, `role <WHO> writer`; vividn, 2026-11-11: «yes to
 writer role, this will also be importnat later for building integrations with
-sensors and other streams of data») writes entries as a member does
-(`Chain::allows`) and no chain record but its own describe and departure
-(`Chain::acts`), and serves as a reader does, its own ops alone (`own_alone`):
-only a full member relays. It may be filtered as a reader is, and only its
-filter may name no field (`--fields ''`): it is sent the chain's records alone,
-and keeps what it writes.
+sensors and other streams of data») writes entries (`Chain::allows`) and no
+chain record but its own describe and departure (`Chain::acts`), and serves as
+a reader does, its own ops alone (`own_alone`): only a full member relays. It
+may be filtered as a reader is, and only its filter may name no field
+(`--fields ''`): it is sent the chain's records alone, and keeps what it writes.
+Its writes are bounded (da-mogvf, vividn, 2026-11-12: «Both limits»,
+`db/sync/writer.rs`): only its filter's fields where it names any, a spec of one
+of them too (a first log writes its field's spec), no alias or other meta
+entry, and only entries whose create is its own. Every copy's fold refuses the
+rest as the chain's refusal, and its own copy refuses them as they are typed.
 
 ### Signing in with a passkey
 

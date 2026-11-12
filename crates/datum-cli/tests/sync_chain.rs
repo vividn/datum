@@ -314,6 +314,15 @@ fn session(a: &Copy, b: &Copy) {
 /// A chain op `copy` never wrote but signed with its key, next after what
 /// `to` holds of it: what a member running other code could send.
 fn forged(copy: &Copy, to: &Copy, record: serde_json::Value) -> String {
+    let op = serde_json::json!({
+        "slug": "~chain", "hid": "~chain", "kind": "chain", "raw": null,
+        "alias_chain": null, "effect": record, "deps": {},
+    });
+    signed_as(copy, to, op)
+}
+
+/// `op` signed by `copy` as its next op `to` would take, made now.
+fn signed_as(copy: &Copy, to: &Copy, mut op: serde_json::Value) -> String {
     use ed25519_dalek::Signer;
     let id = copy.id();
     let seq: i64 = to
@@ -325,10 +334,10 @@ fn forged(copy: &Copy, to: &Copy, record: serde_json::Value) -> String {
     let hlc = chrono::Utc::now()
         .format("%Y-%m-%dT%H:%M:%S%.3fZ/0000")
         .to_string();
-    let mut op = serde_json::json!({
-        "endpoint": id, "seq": seq + 1, "hlc": hlc, "slug": "~chain", "hid": "~chain",
-        "kind": "chain", "raw": null, "alias_chain": null, "effect": record, "deps": {},
-    });
+    op["endpoint"] = id.into();
+    op["seq"] = (seq + 1).into();
+    op["hlc"] = hlc.into();
+    op.as_object_mut().unwrap().remove("sig");
     let secret = data_encoding::HEXLOWER
         .decode(
             copy.query("SELECT endpoint_secret FROM sync_local")

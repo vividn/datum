@@ -50,8 +50,8 @@ test('a reader’s invite says read only, a filtered one which fields; a member�
 	assert.match(said({ role: 'reader', fields: ['coffee', 'tea'] }), /Read only, of «coffee», «tea»: you’ll receive what they log of those/);
 	for (const more of [{ role: 'member' }, {}]) assert.doesNotMatch(said(more), /Read only/);
 	// A writer's (da-o5o6m): what you log goes to them, and of theirs what its filter lets through.
-	assert.match(said({ role: 'writer' }), /As a writer: what you log goes to them, and you’ll receive what they log, passing none of it on\./);
-	assert.match(said({ role: 'writer', fields: ['coffee'] }), /As a writer, of «coffee»: what you log goes to them, and you’ll receive what they log of those\./);
+	assert.match(said({ role: 'writer' }), /As a writer: what you log goes to them, and you’ll receive what they log, passing none of it on\. You change only the entries you log\./);
+	assert.match(said({ role: 'writer', fields: ['coffee'] }), /As a writer, of «coffee»: what you log of those goes to them, and you’ll receive what they log of those\. You change only the entries you log\./);
 	assert.match(said({ role: 'writer', fields: [] }), /you’ll receive nothing of theirs/);
 	assert.doesNotMatch(said({ role: 'writer' }), /Read only/);
 	// A new database is named after the inviter's database, where the ticket names it.

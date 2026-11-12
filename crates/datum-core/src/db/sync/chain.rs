@@ -992,7 +992,7 @@ impl Member {
     /// made before its admission is judged by the role it was admitted
     /// with, so admitting a member vouches for what it brings, and
     /// admitting a reader vouches for nothing.
-    fn role_at(&self, hlc: &str) -> Role {
+    pub(super) fn role_at(&self, hlc: &str) -> Role {
         let at = self.roles.iter().rev().find(|(t, _)| t.as_str() <= hlc);
         at.or(self.roles.first()).map_or(Role::Member, |r| r.1)
     }
@@ -1007,11 +1007,11 @@ impl Member {
         }
     }
 
-    /// The HLC from which some of its ops are refused, if any are: its
-    /// revoke, or when it first was a reader (all of them, admitted as one);
-    /// a purge refuses all of them, whenever made, so it is `""`, not its HLC.
+    /// The HLC from which some of its ops are refused, if any are: its revoke,
+    /// or when it first was a reader or a bounded writer (da-mogvf; all, admitted
+    /// as one); a purge refuses all of them, whenever made, so `""`, not its HLC.
     pub(super) fn refused_from(&self) -> Option<&str> {
-        let unwriting = self.roles.iter().position(|r| !r.1.writes());
+        let unwriting = self.roles.iter().position(|r| r.1 != Role::Member);
         let unwriting = unwriting.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
         let purged = self.purged.as_ref().map(|_| "");
         unwriting

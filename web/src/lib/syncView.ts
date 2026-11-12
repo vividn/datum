@@ -288,13 +288,17 @@ const readOnly = (fields?: string[]): string =>
 		? `Read only, of ${fields.map((f) => `«${f}»`).join(', ')}: you’ll receive what they log of those; nothing you log in it goes to them.`
 		: 'Read only: you’ll receive what they log here; nothing you log in it goes to them.';
 
-/** What a writer's invite admits (da-o5o6m): it writes as a member does, and passes on nothing of anyone else's. */
+/**
+ * What a writer's invite admits (da-o5o6m): it writes as a member does, and passes on nothing of anyone else's;
+ * it logs only its fields, where it names any, and changes only its own entries (da-mogvf).
+ */
 const writeOnly = (fields?: string[]): string =>
-	!fields
+	(!fields
 		? 'As a writer: what you log goes to them, and you’ll receive what they log, passing none of it on.'
 		: fields.length
-			? `As a writer, of ${fields.map((f) => `«${f}»`).join(', ')}: what you log goes to them, and you’ll receive what they log of those.`
-			: 'As a writer: what you log goes to them, and you’ll receive nothing of theirs.';
+			? `As a writer, of ${fields.map((f) => `«${f}»`).join(', ')}: what you log of those goes to them, and you’ll receive what they log of those.`
+			: 'As a writer: what you log goes to them, and you’ll receive nothing of theirs.') +
+	' You change only the entries you log.';
 
 /**
  * The ticket in what Enter code was given: a bare code, a join link, or the
