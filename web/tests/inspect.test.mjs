@@ -26,7 +26,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, sharedApp, todayAt, withApp } from './support/app.mjs';
-import { pinch } from './support/daystrip.mjs';
+import { heard, pinch } from './support/daystrip.mjs';
 import { rested } from './support/layout.mjs';
 import { longPressed } from './support/press.mjs';
 import { until } from './support/until.mjs';
@@ -502,10 +502,17 @@ describe('the same gestures on a band of the day strip', () => {
 			await page.keyboard.down('Control');
 			await page.mouse.wheel(0, -300);
 			await page.keyboard.up('Control');
-			const zoomed = await until(
-				() => todayWidth(page),
-				(w) => w > band.width * 1.5
+			// Read once the zoom has RESTED (da-88zkz): the wheel previews on
+			// the picture it has, and its pause commits the window and draws
+			// the picture again at it, a width that rounds a hair apart. So
+			// wait for the window to be heard, then for that redraw to land.
+			await until(
+				async () => (await heard(app, 'hourTo')) - (await heard(app, 'hourFrom')),
+				(span) => span < 24
 			);
+			await rested(page, page.locator(TODAY), { app });
+			const zoomed = await todayWidth(page);
+			assert.ok(zoomed > band.width * 1.5, `the wheel did not zoom: ${zoomed} over a band ${band.width} wide`);
 
 			// GROUND: over no mark, in the band's middle (da-r0ydu: a day is as
 			// tall as its widget, so its top few pixels are the divider's row).
@@ -527,6 +534,8 @@ describe('the same gestures on a band of the day strip', () => {
 				() => pillsOf(page),
 				(seen) => seen.length === 2 && seen[1].startsWith('time:')
 			);
+			// At rest too, so a give-back still on its way is read landed.
+			await rested(page, page.locator(TODAY), { app });
 			assert.equal(await todayWidth(page), zoomed, 'a tap on the ground gave the whole day back');
 		});
 	});
