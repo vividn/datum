@@ -69,6 +69,11 @@ export function discard(): void {
  * `onChange`, folded onto the tree's settings read fresh. A setting it
  * changes is dropped from the session too, or the overlay would go on
  * masking it (vremya, 2026-11-10), and ↺ holds it again.
+ *
+ * Out of the mode it is a widget writing one setting into the layout itself,
+ * as «Save options with layout» would that one: the text widget's keep
+ * (da-v42x5, vividn, 2026-11-12: «A keep writes the layout»). Nothing is
+ * held then, there being no ↺ to give it back to.
  */
 const held = new Map<string, Taken>();
 /** Forgotten as the mode ends, whatever ends it. */
@@ -91,6 +96,7 @@ export function modifyWidget(
 		return setWidget(l, tabId, { ...now.content, settings });
 	});
 	const took = dropSession(key, changed);
+	if (!get(editing)) return;
 	const was = held.get(key);
 	if (Object.keys({ ...took.kept, ...took.passing }).length)
 		held.set(key, { kept: { ...took.kept, ...was?.kept }, passing: { ...took.passing, ...was?.passing } });

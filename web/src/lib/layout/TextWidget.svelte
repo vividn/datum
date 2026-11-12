@@ -17,8 +17,10 @@
 	fetches it once, keeps it in `_internal`, beside the layouts, by its
 	SHA-256 (`db attachment`), and writes its target `attachment:<sha256>`, so
 	it is drawn from the database, which syncs, and no viewer asks the host
-	again. The new text is this widget's own setting moved, held for the
-	session until «Save options with layout» saves it, as any widget's is.
+	again. The new text is written into the layout itself, as «Save options
+	with layout» would that one setting (da-v42x5, vividn, 2026-11-12: «A keep
+	writes the layout»), so the tab's Save carries it to every device and none
+	asks the host again; a setting held for the session beside it stays held.
 
 	A link to one of datum's actions (#lib/actions.ts, da-uzl16) is a button
 	that does it, the reader's tap its yes, and `act:field/<name>` that
@@ -65,9 +67,11 @@
 		text?: string;
 		modifying?: boolean;
 		onchange?: (moved: { text: string }) => void;
+		/** A keep's text, written into the layout and not the session. */
+		onsave?: (moved: { text: string }) => void;
 	}
 
-	let { text = '', modifying = false, onchange }: Props = $props();
+	let { text = '', modifying = false, onchange, onsave }: Props = $props();
 
 	/** Each attachment read, its `data:` URL; one not here yet is asked again once another tab or a sync changes `_internal`. */
 	let held = $state<Record<string, string>>({});
@@ -118,7 +122,7 @@
 		// This write brought it: a miss once heard for its hash is asked again, by every widget naming it.
 		asked.delete(target.slice('attachment:'.length));
 		heard.changes++;
-		onchange?.({ text: text.replace(/(!\[[^\]]*\]\()([^)\s]+)\)/g, (whole, head: string, at: string) => (at === src ? `${head}${target})` : whole)) });
+		onsave?.({ text: text.replace(/(!\[[^\]]*\]\()([^)\s]+)\)/g, (whole, head: string, at: string) => (at === src ? `${head}${target})` : whole)) });
 	}
 
 	function tapped(event: MouseEvent) {

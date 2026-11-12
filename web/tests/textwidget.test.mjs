@@ -129,6 +129,58 @@ describe('the text widget', () => {
 		}, DESKTOP);
 	});
 
+	test('a keep writes the layout, not the session: a page holding the layout alone draws the kept copy, and a setting held beside it stays the session\'s (da-v42x5)', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const asked = [];
+			await page.route('https://example.com/**', (route) => {
+				asked.push(route.request().url());
+				return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: PNG });
+			});
+			const { pane, id } = await opened(app);
+			await modifyWidget(page, id);
+			await pane.locator('textarea').fill('![a](https://example.com/dot.png)');
+			await leaveWidget(page, id);
+			// A setting this session holds against the widget, as a widget's own control would set one.
+			const key = await page.evaluate(() => {
+				const tree = window.datum.layout.current();
+				const walk = (pane, outer) => {
+					for (const tab of pane.tabs) {
+						const scope = outer || tab.layout || '';
+						if (tab.content.kind === 'text') return `${scope}\u0000${tab.id}\u0000${tab.content.id}`;
+						const inner = tab.content.children?.map((child) => walk(child, scope)).find(Boolean);
+						if (inner) return inner;
+					}
+				};
+				const key = walk(tree.root, '');
+				localStorage.setItem('datum.layout.session.v1', JSON.stringify({ [key]: { beside: 'held' } }));
+				return key;
+			});
+			await app.reload();
+			assert.deepEqual(await page.evaluate(() => window.datum.layout.session()), { [key]: { beside: 'held' } }, 'the seeded setting is not held');
+
+			await pane.locator('.text button.keep').click();
+			await pane.locator('.text img').waitFor();
+			const text = () => page.evaluate(() => {
+				const found = (pane) => pane.tabs.flatMap((tab) => (tab.content.kind === 'text' ? [tab.content.settings] : (tab.content.children ?? []).flatMap(found)));
+				return found(window.datum.layout.current().root)[0];
+			});
+			const tree = await text();
+			assert.match(tree.text, /^!\[a\]\(attachment:[0-9a-f]{64}\)$/, 'the keep did not write the layout');
+			assert.equal(tree.beside, undefined, 'the keep saved the setting beside it too');
+			assert.deepEqual(await page.evaluate(() => window.datum.layout.session()), { [key]: { beside: 'held' } }, 'the session holds the kept text, or lost what it held beside it');
+
+			// What another device has: the layout, and no session of its own.
+			await page.evaluate(() => window.datum.layout.forgetSession());
+			asked.length = 0;
+			await app.reload();
+			await until(() => pane.locator('.text img').evaluateAll((els) => els.map((el) => el.complete && el.naturalWidth > 0)), (d) => JSON.stringify(d) === '[true]');
+			assert.equal(await pane.locator('.text button.keep').count(), 0, 'a page holding the layout alone asks to keep it again');
+			assert.deepEqual(asked, [], 'a page holding the layout alone asked the outside host');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
 	test('an attachment not kept is asked once, not again at each write here, and drawn once another tab keeps it (da-146rg)', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

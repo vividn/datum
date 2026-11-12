@@ -699,7 +699,11 @@
 				     `fold` is given the settings as SHOWN, so a change folds onto
 				     what this session already set rather than onto the tree
 				     underneath it; `setSession` keeps only what differs from the
-				     tree, so a setting moved back leaves nothing held. -->
+				     tree, so a setting moved back leaves nothing held.
+
+				     `onsave` is the one door past that: a setting the widget writes
+				     into the layout itself, as «Save options with layout» would that
+				     one, the text widget's keep alone (da-v42x5). -->
 				<!-- The tree is drawn before the CLI has answered (da-bhudz), with each
 				     widget's last output over it; the widget itself mounts once the
 				     bar can take a command, so the bar's own reads are not queued
@@ -719,6 +723,7 @@
 							(kind.modifies && $editing && !fixed
 								? modifyWidget(tab.id, key, fold, moved)
 								: setSession(key, widget.settings, fold(settings, moved), kind.passing))}
+						onsave={(moved: unknown) => fold && modifyWidget(tab.id, key, fold, moved)}
 					/>
 				{/if}
 			{:else}
