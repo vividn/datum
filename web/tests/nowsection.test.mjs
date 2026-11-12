@@ -81,6 +81,17 @@ const release = (page) => page.evaluate(() => window.release());
 const HISTORY_DOT = (field) => `${NOWVIEW} svg.svg circle.point-bg[data-field="${field}"]`;
 /** The history's own dot of `field`, newest: is it shown. */
 const historyDot = (page, field) => page.locator(HISTORY_DOT(field)).last().evaluate((dot) => getComputedStyle(dot).visibility);
+/**
+ * The history's dot of `field` at the instant `at`, once drawn: is it shown. Named by its instant, not by the count or
+ * the order of the dots, which a layer landing late can make another's (da-yapky); every dot of the field beside it,
+ * each instant and whether it is shown, for a message.
+ */
+async function historyDotAt(page, field, at) {
+	const dot = page.locator(`${HISTORY_DOT(field)}[data-at="${new Date(at).toISOString()}"]`);
+	await dot.waitFor({ state: 'attached' });
+	const every = await page.locator(HISTORY_DOT(field)).evaluateAll((dots) => dots.map((d) => `${d.dataset.at} ${getComputedStyle(d).visibility}`).join(', '));
+	return [await dot.evaluate((d) => getComputedStyle(d).visibility), `${field}'s dots: ${every}; strip mounted: ${await page.locator(STRIPS.nowview[0]).count()}`];
+}
 
 describe('the now section is collect’s now strip', () => {
 	for (const orientation of ['horizontal', 'vertical'])
@@ -89,7 +100,8 @@ describe('the now section is collect’s now strip', () => {
 				async (app) => {
 					await seeded(app);
 					const { page } = app;
-					const seeds = await page.locator(HISTORY_DOT('coffee')).count();
+					// The tap's entry is at the held now: the worker runs a gesture's command at the instant the page holds.
+					const tapped = app.clock.at();
 					await holdFiles(page);
 					// The tap's instant is the held now less the click's age as its handler reads it (`gestureAt`), real time,
 					// so a busy page lays the dot that much short of now's edge (da-kzm2v). The age read before every handler and after.
@@ -112,8 +124,8 @@ describe('the now section is collect’s now strip', () => {
 						assert.ok(dot.mid >= lo - 0.02 * dot.of && dot.mid <= hi + 0.02 * dot.of, `the ${name} dot enters at ${dot.mid} of ${dot.of}, not at the tap's instant (${hi.toFixed(2)}, ${before.toFixed(1)} ms short of now's edge)`);
 					}
 					// The layer holding the write landed: its dot in the history waits for the strip's.
-					await until(() => page.locator(HISTORY_DOT('coffee')).count(), (n) => n === seeds + 1);
-					assert.equal(await historyDot(page, 'coffee'), 'hidden', "the history's dot is drawn while the strip's crosses");
+					const [crossing, held] = await historyDotAt(page, 'coffee', tapped);
+					assert.equal(crossing, 'hidden', `the history's dot is drawn while the strip's crosses (${held})`);
 					await app.clock.forward(250);
 					for (const name of Object.keys(STRIPS))
 						await until(
@@ -133,7 +145,8 @@ describe('the now section is collect’s now strip', () => {
 						(seen) => Object.values(seen).every((d) => d.length === 0)
 					);
 					// Past the strip, the dot is the history's, at the now-line.
-					assert.equal(await historyDot(page, 'coffee'), 'visible', "the history's dot is not drawn once the strip's has crossed");
+					const [crossed, past] = await historyDotAt(page, 'coffee', tapped);
+					assert.equal(crossed, 'visible', `the history's dot is not drawn once the strip's has crossed (${past})`);
 					assert.deepEqual(app.errors, []);
 				},
 				{ clock: todayAt(15), desk: desk(orientation), viewport: { width: 1000, height: 800 } }
