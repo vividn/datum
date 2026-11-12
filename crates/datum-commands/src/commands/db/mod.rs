@@ -75,11 +75,22 @@ fn attachment(hash: Option<String>, db: &Db) -> Result<()> {
         println!("{}", kept.data_url());
         return Ok(());
     }
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(&mut std::io::stdin().lock(), &mut bytes)?;
-    let (name, _) = db.keep_attachment(&bytes)?;
+    let stdin = std::io::stdin();
+    let name = keep_from(&mut stdin.lock(), stdin.is_terminal(), db)?;
     println!("attachment:{name}");
     Ok(())
+}
+
+/// Keep the image `input` holds (da-kth0m): a terminal is refused at once,
+/// rather than waiting silently for Ctrl-D, and nothing read is said to be
+/// nothing, before the image check, each naming how to give one.
+fn keep_from(input: &mut impl std::io::Read, terminal: bool, db: &Db) -> Result<String> {
+    const HOW: &str = "`datum db attachment < picture.png`";
+    anyhow::ensure!(!terminal, "give the image on stdin: {HOW}");
+    let mut bytes = Vec::new();
+    input.read_to_end(&mut bytes)?;
+    anyhow::ensure!(!bytes.trim_ascii().is_empty(), "nothing on stdin: {HOW}");
+    Ok(db.keep_attachment(&bytes)?.0)
 }
 
 /// `datum db purge` — destructive, prompts for the database identifier
@@ -298,7 +309,33 @@ pub(crate) fn current_db_path(db: &Db) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::purge_headline;
+    use super::{keep_from, purge_headline};
+    use datum_core::db::Db;
+
+    /// da-kth0m: at a terminal it refuses before reading, and empty input
+    /// is named as nothing, each saying how to give an image.
+    #[test]
+    fn an_attachment_with_nothing_given_says_how_to_give_one() {
+        let db = Db::open_in_memory().unwrap();
+        let unread = &mut &b"data:image/gif;base64,R0lGODlhAQABAAAAACw="[..];
+        let err = keep_from(unread, true, &db).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            "give the image on stdin: `datum db attachment < picture.png`"
+        );
+        assert!(
+            !unread.is_empty(),
+            "a terminal is refused before it is read"
+        );
+        for empty in ["", "\n"] {
+            let err = keep_from(&mut empty.as_bytes(), false, &db).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "nothing on stdin: `datum db attachment < picture.png`"
+            );
+        }
+        assert!(keep_from(unread, false, &db).is_ok());
+    }
 
     /// da-nc8i1: the warning names every snapshot the purge removes.
     #[test]
