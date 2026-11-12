@@ -9,6 +9,23 @@ use crate::common::run_cli;
 use datum_core::db::Db;
 use datum_core::test_util::fresh_db;
 
+/// The shortest start of `hid`, three characters or more, that a log keeps
+/// as a field's name. A word read as a number or a literal is not kept, as
+/// in v2: `occur 0e3` logs on `0.0`, `occur inf` on `Infinity` (da-34e01).
+/// So a test logging on a field that only starts a hid names it from here.
+pub(crate) fn a_field_starting(hid: &str) -> &str {
+    (3..hid.len())
+        .map(|n| &hid[..n])
+        .find(|p| {
+            let kept = datum_parse::input::infer_type(p).map(|v| match v {
+                serde_json::Value::String(s) => s,
+                v => v.to_string(),
+            });
+            kept.as_deref() == Some(p)
+        })
+        .unwrap_or_else(|| panic!("no start of {hid} is kept as a field's name"))
+}
+
 /// The binary's stdout and stderr, and whether it succeeded.
 fn datum(db: &Path, args: &[&str]) -> (bool, String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_datum"))
@@ -198,7 +215,7 @@ fn a_write_takes_the_field_over_a_hid_it_starts() {
     let db = seeded(dir.path());
     let (_, hid, _) = datum(&db, &["get", "coffee::hid"]);
     let hid = hid.trim();
-    let field = &hid[..3];
+    let field = a_field_starting(hid);
     assert!(datum(&db, &["occur", field, "-y", "-t", "9:00"]).0);
 
     let (ok, out, err) = datum(&db, &["retime", field, "-y", "-t", "9:30"]);
@@ -216,4 +233,24 @@ fn a_write_takes_the_field_over_a_hid_it_starts() {
     let (ok, out, err) = datum(&db, &["retime", hid, "-y", "-t", "8:00"]);
     assert!(ok, "{err}");
     assert!(out.contains("coffee"), "{out}");
+}
+
+/// da-34e01: a hid whose first three characters a log reads as a number or
+/// a literal (`0e3` logs on `0.0`) gives a test the first longer start a
+/// log keeps, so a test naming a field by a hid's start does not flake.
+#[test]
+fn a_field_starting_a_hid_is_a_name_a_log_keeps() {
+    let db = fresh_db();
+    for (hid, field) in [
+        ("0e3m68hotnz6", "0e3m"),
+        ("1e23abcdefgh", "1e23a"),
+        ("infq0aaaaaaa", "infq"),
+        ("nanq0aaaaaaa", "nanq"),
+        ("123abcdefghi", "123"),
+        ("coffee000000", "cof"),
+    ] {
+        assert_eq!(a_field_starting(hid), field, "{hid}");
+        run_cli(&["occur", field, "-y", "-t", "9:00"], &db).unwrap();
+        assert!(db.field_has_entries(field).unwrap(), "{field}");
+    }
 }

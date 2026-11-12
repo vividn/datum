@@ -272,15 +272,16 @@ fn a_field_wins_over_a_hid_it_only_starts() {
             r.get(0)
         })
         .unwrap();
+    let short = crate::field_prefix::a_field_starting(&hid);
     let longer = format!("{hid}x");
-    for field in [&hid[..3], &longer] {
+    for field in [short, &longer] {
         let out = run_bin(tmp.path(), &["occur", field], "");
         assert!(out.status.success(), "{out:?}");
     }
 
-    let out = run_bin(tmp.path(), &["edit", &hid[..3]], "");
+    let out = run_bin(tmp.path(), &["edit", short], "");
     assert!(out.status.success(), "{out:?}");
-    assert_eq!(opened_field(tmp.path()), &hid[..3]);
+    assert_eq!(opened_field(tmp.path()), short);
 
     let out = run_bin(tmp.path(), &["edit", &hid], "");
     assert!(out.status.success(), "{out:?}");
