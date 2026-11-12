@@ -208,7 +208,8 @@ fn in_an_entrys_place_a_field_wins_over_a_hid() {
 
 /// da-zai4h: a write names an entry as `get` does. `retime tea` read the
 /// field `tea`'s one entry and a row whose hid starts `tea` as two matches,
-/// a flake once in 36³ rows.
+/// a flake once in 36³ rows. da-sr76g: `retime` and `delete` take the
+/// field's newest entry, as `edit` and `update` do.
 #[test]
 fn a_write_takes_the_field_over_a_hid_it_starts() {
     let dir = tempfile::tempdir().unwrap();
@@ -222,12 +223,49 @@ fn a_write_takes_the_field_over_a_hid_it_starts() {
     assert!(ok, "{err}");
     assert!(out.contains(field) && !out.contains("coffee"), "{out}");
 
-    // Two entries of the field: named, and nothing else.
+    // Two entries of the field: the newest, and nothing else.
     assert!(datum(&db, &["occur", field, "-y", "-t", "11:00"]).0);
-    let (ok, _, err) = datum(&db, &["retime", field, "-y", "-t", "9:45"]);
-    assert!(!ok && err.contains("ambiguous"), "{err}");
-    assert_eq!(err.matches(&format!("{field}:")).count(), 2, "{err}");
-    assert!(!err.contains("coffee"), "{err}");
+    // (hid, at, deleted) of the field's rows, newest first.
+    let rows = || -> Vec<(String, Option<String>, bool)> {
+        let conn = Db::open(db.to_str().unwrap()).unwrap();
+        let sql = format!(
+            "SELECT hid, CAST(at AS TEXT), deleted_at IS NOT NULL FROM entries \
+             WHERE field = '{field}' ORDER BY at DESC"
+        );
+        let mut stmt = conn.conn().prepare(&sql).unwrap();
+        let got = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        got
+    };
+    let before = rows();
+    let (newest, older) = (&before[0], &before[1]);
+    let (ok, out, err) = datum(&db, &["retime", field, "-y", "-t", "11:45"]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains(&newest.0[..5]) && !out.contains("coffee"),
+        "{out}"
+    );
+    let after = rows();
+    assert_eq!(after[0].0, newest.0);
+    assert_ne!(after[0].1, newest.1, "the newest moved");
+    assert_eq!(&after[1], older, "the older did not");
+
+    let (ok, out, err) = datum(&db, &["delete", field]);
+    assert!(ok, "{err}");
+    assert!(out.contains(&newest.0[..5]), "{out}");
+    let after = rows();
+    assert!(after.iter().any(|r| r.0 == newest.0 && r.2), "{after:?}");
+    assert!(after.contains(older), "{after:?}");
+
+    // A word that is no field, hid or slug is refused, and changes nothing.
+    for cmd in ["retime", "delete"] {
+        let (ok, _, err) = datum(&db, &[cmd, "zzzq"]);
+        assert!(!ok && err.contains("not found"), "{cmd}: {err}");
+    }
+    assert_eq!(rows(), after);
 
     // A whole hid is its entry.
     let (ok, out, err) = datum(&db, &["retime", hid, "-y", "-t", "8:00"]);

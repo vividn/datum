@@ -389,12 +389,10 @@ pub(crate) enum FieldName {
     /// Every live entry of the field, and an ambiguous prefix expands to
     /// all it matches (the read-only `get`).
     Every,
-    /// The field's newest entry (`update`, `merge`, `rekey`), the rule `edit`
-    /// and `history` take through [`resolve_prefix_or_tombstone`].
+    /// The field's newest entry (`update`, `merge`, `rekey`, `delete`,
+    /// `retime`, da-sr76g), the rule `edit` and `history` take through
+    /// [`resolve_prefix_or_tombstone`].
     Newest,
-    /// No field rule: a prefix many entries share is refused (`delete`,
-    /// `retime`).
-    Not,
 }
 
 /// Split a comma-separated id argument ([`id_list`]), resolve each token, and return a
@@ -420,8 +418,7 @@ pub(crate) fn resolve_batch(
         std::collections::HashSet::new();
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     for token in id_list(db, input) {
-        // da-d86vo: `update`, `merge` and `rekey` take a field's newest
-        // entry, decided before the rule below refuses a field of several.
+        // da-d86vo, da-sr76g: a write takes a field's newest entry.
         if names == FieldName::Newest {
             match resolve_newest(db, token) {
                 Ok(None) => {}
@@ -439,48 +436,24 @@ pub(crate) fn resolve_batch(
         }
         // da-tldkb: a plain name is a field before it is a hid or slug it
         // only starts, while the field has a live entry: `get` shows every
-        // one, a write takes its one or names them (da-zai4h: `retime tea`
-        // read a spec row whose hid starts `tea` as a second match). A
-        // whole hid or slug is its entry.
-        if expand_ambiguous || db.get_entry(token).is_err() {
-            let field = match id_field_named(db, token) {
-                Ok(field) => field,
-                Err(e) => {
-                    errors.push((token.to_string(), e));
-                    continue;
-                }
-            };
-            if let Some(field) = field {
-                // A write names as many as `resolve_prefix` does.
-                let limit = (!expand_ambiguous).then_some(16);
-                match db.entries_for_field_asc(&field, limit) {
+        // one (a write took its newest above).
+        if expand_ambiguous {
+            match id_field_named(db, token) {
+                Ok(None) => {}
+                Ok(Some(field)) => match db.entries_for_field_asc(&field, None) {
                     Ok(found) if found.is_empty() => {}
-                    Ok(found) if expand_ambiguous || found.len() == 1 => {
-                        entries.extend(found.into_iter().filter(|e| seen.insert(e.slug.clone())));
-                        continue;
-                    }
                     Ok(found) => {
-                        let candidates = found
-                            .into_iter()
-                            .map(|e| datum_core::error::PrefixCandidate {
-                                slug: e.slug,
-                                hid: e.hid,
-                            })
-                            .collect();
-                        errors.push((
-                            token.to_string(),
-                            datum_core::error::DatumError::AmbiguousPrefix {
-                                prefix: token.to_string(),
-                                candidates,
-                            }
-                            .into(),
-                        ));
+                        entries.extend(found.into_iter().filter(|e| seen.insert(e.slug.clone())));
                         continue;
                     }
                     Err(e) => {
                         errors.push((token.to_string(), e.into()));
                         continue;
                     }
+                },
+                Err(e) => {
+                    errors.push((token.to_string(), e));
+                    continue;
                 }
             }
         }

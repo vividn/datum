@@ -44,7 +44,7 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     } else if args.keep_meta {
         anyhow::bail!("--keep-meta goes with --all");
     } else {
-        resolve_batch(db, pattern, BatchMode::Live, FieldName::Not)
+        resolve_batch(db, pattern, BatchMode::Live, FieldName::Newest)
     };
 
     // Nothing resolved — propagate the first token error verbatim so single-token

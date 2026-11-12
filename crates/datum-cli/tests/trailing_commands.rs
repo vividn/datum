@@ -174,3 +174,93 @@ fn the_alias_page_says_the_rule() {
         assert!(page.contains(words), "{words}");
     }
 }
+
+/// da-sr76g (vividn, 2026-11-09: «It should be how the alias resolves, if
+/// there is no alias then nothing»): `retime` and `delete` after an alias
+/// take the newest entry it would match, its state the filter, so `outside
+/// retime` moves the newest `environment:outside` and `coffee delete` the
+/// newest coffee. A word that is no alias, field or command is refused.
+#[test]
+fn retime_and_delete_after_an_alias_take_its_newest_entry_in_its_state() {
+    let env = Env::new();
+    env.run(&["alias", "set", "envi", "switch environment"]);
+    env.run(&["alias", "set", "outside", "envi outside"]);
+    for (state, t) in [
+        ("outside", "9:00"),
+        ("inside", "10:00"),
+        ("outside", "11:00"),
+        ("inside", "12:00"),
+    ] {
+        env.run(&["switch", "environment", state, "-y", "-t", t]);
+    }
+    for t in ["9:00", "11:00"] {
+        env.run(&["occur", "coffee", "-y", "-t", t]);
+    }
+    // (field, state, at, deleted) by hid.
+    let rows = || -> Vec<(String, String, String, String, bool)> {
+        let db = datum_core::db::Db::open(env.db.to_str().unwrap()).unwrap();
+        let mut stmt = db
+            .conn()
+            .prepare(
+                "SELECT hid, field, COALESCE(json_extract(state, '$'), ''), CAST(at AS TEXT), \
+                 deleted_at IS NOT NULL FROM entries \
+                 WHERE field IN ('environment', 'coffee') ORDER BY hid",
+            )
+            .unwrap();
+        let got = stmt
+            .query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        got
+    };
+    // The hid of the newest live row of `field` in `state` ('' for any).
+    let newest = |field: &str, state: &str| -> String {
+        let mut live: Vec<_> = rows()
+            .into_iter()
+            .filter(|r| r.1 == field && (state.is_empty() || r.2 == state) && !r.4)
+            .collect();
+        live.sort_by(|a, b| a.3.cmp(&b.3));
+        live.pop().unwrap().0
+    };
+    // Only `hid` changed between `before` and `after`.
+    let only = |before: &[(String, String, String, String, bool)], hid: &str| {
+        let after = rows();
+        for (b, a) in before.iter().zip(&after) {
+            assert_eq!(b.0, a.0);
+            assert_eq!(b == a, b.0 != hid, "{b:?} → {a:?}");
+        }
+    };
+
+    let (before, target) = (rows(), newest("environment", "outside"));
+    env.run(&["outside", "retime", "-y", "-t", "8:00"]);
+    only(&before, &target);
+    let (before, target) = (rows(), newest("environment", "outside"));
+    env.run(&["outside", "delete"]);
+    only(&before, &target);
+
+    let (before, target) = (rows(), newest("coffee", ""));
+    env.run(&["coffee", "retime", "-y", "-t", "12:00"]);
+    only(&before, &target);
+    let (before, target) = (rows(), newest("coffee", ""));
+    env.run(&["coffee", "del"]);
+    only(&before, &target);
+
+    let before = rows();
+    for cmd in ["retime", "delete"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &env.db)
+            .env("NO_COLOR", "1")
+            .args(["outdoors", cmd])
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success() && err.contains("unknown subcommand"),
+            "{err}"
+        );
+    }
+    assert_eq!(rows(), before);
+}

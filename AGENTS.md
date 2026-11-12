@@ -419,7 +419,10 @@ is reported rather than read again. The owner's reads open as a write does.
   «tail», `datum outside tail` is `tail environment:outside`, `datum envi .
   tail` is `tail environment`. `.` takes a slot's default (a switch's state
   true, a start's dur none), and `...` is a `.` for every slot left
-  (`datum practice ... tail`). `datum help alias` says it.
+  (`datum practice ... tail`). `retime` and `delete` take the newest entry
+  the alias matches, `datum outside retime` being `retime
+  environment:outside:_`, as a field's name is its newest entry to them
+  (da-sr76g). `datum help alias` says it.
 
 ### An array of fields is one atomic command
 `moment a,b`, `start`, `stop`, `switch` and `flag` (each by any of its names) take

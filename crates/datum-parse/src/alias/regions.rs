@@ -834,10 +834,15 @@ fn untyped(t: &str) -> (String, bool) {
 /// The commands that read a state after their field (`tail F:S`).
 const STATE_FILTERED: &[&str] = &["tail", "head", "stats"];
 
+/// The commands that take a field's newest entry, and so the newest in a
+/// state as `F:S:_` (da-sr76g).
+const NEWEST_IN_STATE: &[&str] = &["retime", "delete"];
+
 /// The trailing command `tokens` run on the fields of `sides` (da-90pv8):
 /// `outside tail` (`outside` → `switch environment outside`) is `tail
 /// environment:outside`, the state a filter where the command takes one
-/// and the alias has one side: `F:S` filters one field, so `oov tail`
+/// and the alias has one side (`outside retime` is `retime
+/// environment:outside:_`, its newest entry in that state): `F:S` filters one field, so `oov tail`
 /// (`switch environment outside , occur body`) is `tail environment,body`,
 /// with no state. The sides' other data it ignores; whether the command
 /// takes several fields, or any, is the command's to say.
@@ -852,8 +857,11 @@ fn command_side(sides: &[Vec<String>], tokens: Vec<String>) -> Vec<String> {
     }
     let mut target = fields.join(",");
     if let [(Some(_), Some(state))] = read.as_slice() {
+        let name = find_command(&tokens[0]).map(|(c, _)| c.name);
         if STATE_FILTERED.contains(&tokens[0].as_str()) {
             target = format!("{target}:{state}");
+        } else if name.is_some_and(|n| NEWEST_IN_STATE.contains(&n)) {
+            target = format!("{target}:{state}:_");
         }
     }
     let mut side = tokens;
