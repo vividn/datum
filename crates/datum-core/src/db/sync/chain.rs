@@ -37,6 +37,16 @@
 //!     hash, and without the secret any of them could admit anyone through
 //!     an open invite. Once the admit folds, the invite is used and the
 //!     secret admits no one.
+//!   - `standing {device, caps, label, expires?}` (da-zkwiu): a code's
+//!     admission, an admin act as a revoke is. Any endpoint its device key
+//!     signs for ([`bind_device`]) may be admitted with `caps`, as often as
+//!     one comes, until `expires` or a `revoke_standing {device}`. A later
+//!     one for the same device replaces it. Its admit is `admit {endpoint,
+//!     label, via: "standing", device_key, device_sig, replaces}`, unsigned
+//!     as an invite's is: `replaces` names the device's earlier endpoints in
+//!     the chain, each revoked at the admit's HLC, its ops before it
+//!     standing. A copy made afresh needs a new endpoint (two copies with one
+//!     key would number their ops from one seq), and is still one device.
 //!   - `revoke {endpoint}`, `add_admin {key, label}`, `remove_admin {key}`
 //!     — the last only when the record says `unlock: true` (da-aam46),
 //!     which opens the chain again. Every act is judged at its own HLC, so
@@ -156,6 +166,10 @@ use super::{
 };
 use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
+
+mod standing;
+use standing::reader_holds;
+pub use standing::{standing_proof, Standing, STANDING};
 
 /// The fewest characters of an id that may name it: a one-letter prefix
 /// revoking whichever endpoint happens to start with it is a footgun.
@@ -1097,6 +1111,13 @@ pub struct Grant {
     pub own: Option<(String, String)>,
 }
 
+/// Whether `expires`, RFC 3339, is before the wall time of `hlc`.
+fn expired(hlc: &str, expires: &str) -> bool {
+    let wall = parse_hlc(hlc).map(|(ms, _)| ms).unwrap_or(i64::MAX);
+    let at = DateTime::parse_from_rfc3339(expires).map(|t| t.timestamp_millis());
+    wall > at.unwrap_or(i64::MIN)
+}
+
 #[derive(Debug)]
 struct Invite {
     secret_hash: String,
@@ -1114,6 +1135,8 @@ pub struct Chain {
     pub admins: Vec<Admin>,
     pub members: Vec<Member>,
     invites: BTreeMap<String, Invite>,
+    /// Each device's standing admission, by its device key (da-zkwiu).
+    pub standings: BTreeMap<String, Standing>,
     seen: BTreeSet<[u8; 32]>,
     /// The digests of the records the fold took.
     taken: BTreeSet<[u8; 32]>,
@@ -1456,20 +1479,19 @@ impl Chain {
             false => self.acts(&op.endpoint, &op.hlc),
         }
         .map_err(|why| format!("its writer is {why}"))?;
+        if kind == "admit" && s("via") == "standing" {
+            return self.admit_standing(op);
+        }
         if kind == "admit" {
             let via = s("via");
             let invite = self.invites.get_mut(&via).ok_or(UNKNOWN_INVITE)?;
-            let wall = parse_hlc(&op.hlc).map(|(ms, _)| ms).unwrap_or(i64::MAX);
-            let expires = DateTime::parse_from_rfc3339(&invite.expires)
-                .map(|t| t.timestamp_millis())
-                .unwrap_or(i64::MIN);
             if invite.used {
                 return Err("invite already used".into());
             }
             if sha256_hex(&s("secret")) != invite.secret_hash {
                 return Err("not the invite's secret".into());
             }
-            if wall > expires {
+            if expired(&op.hlc, &invite.expires) {
                 return Err(format!("invite expired ({})", invite.expires));
             }
             invite.used = true;
@@ -1609,6 +1631,8 @@ impl Chain {
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
+            "standing" => self.take_standing(op),
+            "revoke_standing" => self.revoke_standing(op),
             "revoke" => {
                 let m = self
                     .members
@@ -2133,8 +2157,13 @@ impl Db {
     /// Redeem an invite for `endpoint`, which `holds` that many entries:
     /// write its `admit`, or say why not. A reader invite refuses a redeemer
     /// with entries of its own, which as a reader it could never send and
-    /// its fold would hide (da-tti3w).
+    /// its fold would hide (da-tti3w). A secret that is a [`standing_proof`]
+    /// admits by its device's standing admission instead (da-zkwiu).
     pub fn sync_admit(&self, endpoint: &str, label: &str, secret: &str, holds: u64) -> Result<()> {
+        if let Some(proof) = secret.strip_prefix(STANDING) {
+            let (key, sig) = proof.split_once(':').unwrap_or((proof, ""));
+            return self.sync_admit_standing(endpoint, label, key, sig, holds);
+        }
         let (secret, carried) = carried_invite(secret);
         let mut chain = self.sync_chain()?;
         let hash = sha256_hex(secret);
@@ -2160,14 +2189,7 @@ impl Db {
             let why = format!("invite expired ({})", invite.expires);
             return Err(DatumError::Refused(Refusal::InviteExpired, why));
         }
-        if invite.role == Role::Reader && holds > 0 {
-            let entries = if holds == 1 { "entry" } else { "entries" };
-            return Err(DatumError::Other(format!(
-                "{label} holds {holds} {entries} of its own; a reader writes nothing, so joining \
-                 as one would hide them. Join from a fresh database (`--db`), or ask for a \
-                 member invite"
-            )));
-        }
+        reader_holds(invite.role, label, holds)?;
         let record = json!({
             "type": "admit", "chain": chain.id, "endpoint": endpoint, "label": label,
             "via": id, "secret": secret, "created": Utc::now().to_rfc3339(),

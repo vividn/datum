@@ -344,8 +344,10 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
             // `expel --unjoin --wipe` writes two, under one approval: what it
-            // wrote withdrawn, then its copy ordered deleted.
-            let mut first = None;
+            // wrote withdrawn, then its copy ordered deleted. An expel of a
+            // device's endpoint revokes its standing admission too (da-zkwiu),
+            // or the device's next copy would be admitted again.
+            let mut first = vec![];
             let (record, said) = match act {
                 SyncAdminAct::Expel {
                     unjoin,
@@ -390,7 +392,7 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                         );
                     }
                     let limit = wipe_limit(unjoin);
-                    let (preview, done) = match (&taken, wipe) {
+                    let (preview, mut done) = match (&taken, wipe) {
                         (None, false) => (
                             String::new(),
                             format!("expelled {who}: it syncs no more and keeps its copy; what it wrote stays"),
@@ -425,10 +427,17 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                         (true, false) => "purge",
                         (false, true) => "erase",
                         (true, true) => {
-                            first = Some(json!({"type": "purge", "endpoint": m}));
+                            first.push(json!({"type": "purge", "endpoint": m}));
                             "erase"
                         }
                     };
+                    let device = it.and_then(|m| m.device.as_deref());
+                    if let Some(d) = device
+                        .filter(|d| chain.standings.get(*d).is_some_and(|s| s.revoked.is_none()))
+                    {
+                        first.push(json!({"type": "revoke_standing", "device": d}));
+                        done += "\nits device's standing admission is revoked: no new copy of it is admitted";
+                    }
                     (json!({"type": record, "endpoint": m}), done)
                 }
                 SyncAdminAct::Role { role, filter } => {
