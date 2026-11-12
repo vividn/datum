@@ -105,6 +105,12 @@ debug = "line-tables-only"
 [profile.dev.package.curve25519-dalek]
 opt-level = 3
 
+# The same for SHA-256: an upgrade hashes its own exe, which in a test is
+# the 200 MB debug datum, and unoptimised that took 7.4 s a hash, three in
+# a row in sync_net's chain upgrade test, against its 10 s bound (da-ewpe6).
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.test]
 debug = "line-tables-only"
 
