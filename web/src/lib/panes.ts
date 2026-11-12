@@ -433,6 +433,23 @@ export const dayUnderSliver = (height: number): number =>
 	);
 
 /**
+ * The day height at which `n` WHOLE days fill a strip box `height` tall
+ * (da-jtqtg): today with its ruler and the seam over it, and `n - 1` days
+ * above, each with its divider — the same sum frozen or not. Floored, so
+ * the `n` days fit whole; no sliver, the `n`th day's top the box's.
+ *
+ * vividn, 2026-11-11: «let's have the default day height be such that you
+ * can see three days on this dayview by default», fitted. Clamped by the
+ * reader's range (`MIN_DAY_HEIGHT`..`MAX_DAY_HEIGHT`) and not the one-day
+ * fill's, so three days still fill a desktop pane taller than 3 × 240.
+ */
+export const daysFitting = (height: number, n: number): number =>
+	Math.min(
+		MAX_DAY_HEIGHT,
+		Math.max(MIN_DAY_HEIGHT, Math.floor((height - AXIS_HEIGHT - SEAM - (n - 1) * DIVIDER) / n))
+	);
+
+/**
  * One picture of the day strip, as argv: the single day `end` days back.
  *
  * One picture per DAY (da-iu9i), and each one bands only — no date

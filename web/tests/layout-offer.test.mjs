@@ -59,6 +59,7 @@ const FIRST_VISIT = [
 	['welcome', 'setup', 'collect', 'dayview'],
 	['welcome', 'setup', 'collect', 'dayview'],
 	['welcome', 'premade', 'setup', 'collect', 'dayview'],
+	['welcome', 'setup', 'collect', 'dayview'],
 	['welcome', 'setup', 'collect', 'dayview']
 ];
 

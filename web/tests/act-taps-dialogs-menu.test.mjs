@@ -6,7 +6,7 @@ import { everyLayer } from './support/taps.mjs';
 import { DESKTOP } from './support/layout.mjs';
 
 everyLayer('desktop', { ...DESKTOP, desk: null }, 'menu', [
-	'nowview: menu of the nowview pane',
-	'nowview: menu of the nowview pane › page: history',
+	'nowview: nowview',
+	'nowview: nowview › page: history',
 	'collect: menu of the collect pane'
 ]);

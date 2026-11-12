@@ -340,6 +340,7 @@
 		clampWindow,
 		dayFilling,
 		dayPitch,
+		daysFitting,
 		dayUnderSliver,
 		geometryArgv,
 		type DayviewJson,
@@ -368,6 +369,8 @@
 		 * flags which of the two is in force — the absence is the flag.
 		 */
 		dayHeight?: number | undefined;
+		/** How many whole days the box FITS while no day height is held (da-jtqtg): unset, one day and a sliver of yesterday. */
+		fitDays?: number | undefined;
 		/** How wide the strip's own date-stamp column is, in pixels. */
 		labelWidth?: number;
 		/** Is today pinned under the scroller, or the last band inside it? */
@@ -385,6 +388,7 @@
 		epoch = 0,
 		key = '',
 		dayHeight = undefined,
+		fitDays = undefined,
 		labelWidth: givenLabelWidth = DEFAULT_LABEL_WIDTH,
 		freezeToday = false,
 		hourFrom = HOUR_FROM,
@@ -446,7 +450,9 @@
 	 * default stands in — nothing is drawn at it, since every ask is gated
 	 * on a width the same measurement supplies.
 	 */
-	const boxDay = $derived.by(() => (height > 0 ? dayUnderSliver(height) : DEFAULT_DAY_HEIGHT));
+	const boxDay = $derived.by(() =>
+		height > 0 ? (fitDays ? daysFitting(height, fitDays) : dayUnderSliver(height)) : DEFAULT_DAY_HEIGHT
+	);
 	/** The day height SET: the reader's held height when there is one, else the box's. */
 	const setDay = $derived(heldDay ?? boxDay);
 	/**

@@ -575,7 +575,9 @@ async function tapIn(app, path, key, layout) {
  */
 const ROOT_LAYOUT = /^page: main$/;
 const PANE_LAYOUT = /: (add a tab to|menu of) the .* pane$/;
-const PANE_MENU = /: menu of the .* pane$/;
+// A tabbed pane's menu is its front tab, named by its words (`PaneMenu`'s
+// `children`), which are the pane's `data-title`: so its key is `X: X`.
+const PANE_MENU = /: menu of the .* pane$|^(.+): \1$/;
 export const SHARES = {
 	layout: { layout: true, test: (key) => ROOT_LAYOUT.test(key) },
 	pane: { layout: true, test: (key) => PANE_LAYOUT.test(key) },
