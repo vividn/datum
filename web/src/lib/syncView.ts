@@ -122,7 +122,7 @@ export interface Listed {
  */
 export interface Notice {
 	subject: string;
-	kind: 'endpoint' | 'member' | 'rejoin' | 'admin' | 'unlock' | 'wipe' | 'refused';
+	kind: 'endpoint' | 'member' | 'rejoin' | 'admin' | 'unlock' | 'wipe' | 'refused' | 'unwritten';
 	label: string;
 	/** What `sync chain ack` takes for it. */
 	who: string;

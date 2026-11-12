@@ -269,6 +269,7 @@ fn plant(category: &str) -> Plant {
             })
         }),
         "sync_refused" => Two(|db| notices(db, "refused")),
+        "sync_unwritten" => Two(|db| notices(db, "unwritten")),
         "sync_joined" => {
             Cannot("a copy joins one chain: every `member` notice is said as one line, its joining")
         }

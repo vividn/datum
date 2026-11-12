@@ -66,6 +66,7 @@ pub const CATEGORIES: &[(&str, &[&str])] = &[
             "sync_unfoldable",
             "sync_no_op",
             "sync_refused",
+            "sync_unwritten",
             "sync_joined",
             "sync_unlocked",
             "sync_wiped",

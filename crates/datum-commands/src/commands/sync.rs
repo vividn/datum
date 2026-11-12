@@ -2542,6 +2542,10 @@ fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
                 "admin" => format!("new sync admin {} ({}) added {at}", n.label, n.who()),
                 "unlock" => format!("sync chain unlocked by {} at {at}", n.label),
                 "refused" => format!("changes from {} refused ({}), since {at}", n.label, n.via),
+                "unwritten" => format!(
+                    "a change from {} this datum cannot write ({}), since {at}",
+                    n.label, n.via
+                ),
                 "wipe" => format!(
                     "sync chain {} by {} at {at}: what this copy held is in {} \
                      — `datum db restore {} --merge` brings it back",
@@ -2613,6 +2617,10 @@ fn notice_line(n: &Notice, text: &str) -> String {
             "⚠ {text} — yours? `datum sync chain invite` admits it; \
              `datum sync chain ack {who}` to acknowledge"
         ),
+        "unwritten" => format!(
+            "⚠ {text} — `datum upgrade` may write it; \
+             `datum sync chain ack {who}` to acknowledge"
+        ),
         _ => format!(
             "{warn}{text} — `datum sync chain list` to review, `datum sync chain ack {who}` to acknowledge"
         ),
@@ -2651,6 +2659,11 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
             "refused" => format!(
                 "changes from {} device(s) outside the sync chain were refused; \
                  they apply once the chain admits the device",
+                notices.len()
+            ),
+            "unwritten" => format!(
+                "changes from {} device(s) were refused, as this datum cannot write their rows; \
+                 they are tried again once this copy upgrades",
                 notices.len()
             ),
             _ => format!("{} new to the sync chain", notices.len()),

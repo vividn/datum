@@ -41,6 +41,7 @@ impl Source<'_> {
             Source::Integrity(K::SameStateRepeat) => (Domain::Entries, "repeated_state"),
             Source::Integrity(K::LastStateMismatch) => integrity!("last_state_mismatch"),
             Source::Notice("refused") => sync!("refused"),
+            Source::Notice("unwritten") => sync!("unwritten"),
             Source::Notice("member") => sync!("joined"),
             Source::Notice("unlock") => sync!("unlocked"),
             Source::Notice("wipe") => sync!("wiped"),

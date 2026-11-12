@@ -15,9 +15,9 @@ use super::*;
 fn the_fold_rule_is_fingerprinted() {
     const RECORDED: (u32, &str) = (
         3,
-        // da-95avu moved a name, and no row: the column, the key `Entry` writes
-        // and the ops as read say `at`, and the same ops give the same row.
-        "3aef657bfd179d8f94d9a53e1c593cd8a21a3e990c56e5ecdbd3e9a497084821",
+        // da-xjfol checks a row before `write_merged` writes it, as its writer
+        // did after: what it refuses was never written, and no row changes.
+        "ba023d7c87b54a49a9f54c4a26d4f11515287fb0a8c41f30939a69ab97376f47",
     );
     const ITEMS: &[&str] = &[
         "fn fold_into",

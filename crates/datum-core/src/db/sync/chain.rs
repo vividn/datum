@@ -1924,7 +1924,7 @@ impl Notice {
         match self.kind.as_str() {
             "endpoint" | "member" => Some(&self.subject),
             "rejoin" => self.subject.split(':').nth(1),
-            "refused" => self.subject.strip_prefix("refused:"),
+            "refused" | "unwritten" => self.subject.split_once(':').map(|(_, e)| e),
             _ => None,
         }
     }
@@ -2439,11 +2439,11 @@ impl Db {
             })
             .collect();
         let subjects: BTreeSet<&str> = hits.iter().map(|n| n.subject.as_str()).collect();
-        // An endpoint's rejoins (`rejoin:<id>:<hlc>`) and refusals
-        // (`refused:<id>`) are that endpoint's.
+        // A rejoin's (`rejoin:<id>:<hlc>`) or a refusal's subject names its endpoint.
         fn whose(s: &str) -> &str {
-            s.strip_prefix("rejoin:")
-                .or_else(|| s.strip_prefix("refused:"))
+            ["rejoin:", "refused:", "unwritten:"]
+                .into_iter()
+                .find_map(|p| s.strip_prefix(p))
                 .map_or(s, |r| r.split(':').next().unwrap_or(r))
         }
         let named_ids: BTreeSet<&str> = subjects.iter().map(|s| whose(s)).collect();

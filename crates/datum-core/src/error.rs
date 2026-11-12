@@ -97,6 +97,11 @@ pub enum DatumError {
     #[error("{1}")]
     Refused(Refusal, String),
 
+    /// A row a sync's fold gives that this copy's write check refuses
+    /// (da-xjfol): its op is refused alone, and the receive goes on.
+    #[error("{0}")]
+    RowRefused(String),
+
     #[error("{0}")]
     Other(String),
 }

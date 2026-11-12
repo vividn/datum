@@ -1892,6 +1892,10 @@ fn write_merged(
     if next.superseded_by.is_none() {
         next = merge_rows(conn, &next, &merged_into(conn, &next)?)?;
     }
+    // The check every row writer makes, made first so that its refusal
+    // alone is told from any other failure (da-xjfol).
+    super::spec::check_meta_entry(&next.slug, &next, next.data.as_ref())
+        .map_err(|e| DatumError::RowRefused(e.to_string()))?;
     match pre {
         Some(pre) => {
             if pre.superseded_by != next.superseded_by {
@@ -1961,6 +1965,17 @@ fn refold(conn: &Connection, hid: &str, kind: ChangeKind) -> Result<usize> {
 fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
     let before = s.refused.len();
     let mut chain = Chain::load(conn)?;
+    // An op whose row an older build refused is tried again by this one,
+    // which may write it: a refusal from version skew passes once this copy
+    // has upgraded (da-xjfol).
+    let other_build = "DELETE FROM _meta WHERE key = ?1 AND value != ?2";
+    if conn.execute(
+        other_build,
+        params![UNWRITTEN_BY, crate::migrations::said_build()],
+    )? > 0
+    {
+        allow_again(conn, &chain)?;
+    }
     let mut vector = vector_where(conn, None)?;
     // A filtered reader is never sent what its filter leaves out, so it
     // waits on no gap and no dep — the fold reads only the set of an
@@ -2001,12 +2016,39 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
                     _ if wiped => scrub(conn, &op.endpoint, op.seq)?,
                     Ok(()) => {
                         let pre = fetch_by_hid(conn, &op.hid)?;
-                        s.conflicts += apply_one(conn, op)?;
-                        s.applied += 1;
-                        let post = fetch_by_hid(conn, &op.hid)?;
-                        crate::integrity::moved(pre.as_ref(), post.as_ref());
+                        // `apply_one`'s `applied = 1` is inside it too, so a
+                        // refused row leaves its op for `refuse` to mark.
+                        conn.execute_batch("SAVEPOINT apply_one")?;
+                        let made = apply_one(conn, op);
+                        if made.is_err() {
+                            conn.execute_batch("ROLLBACK TO apply_one")?;
+                        }
+                        conn.execute_batch("RELEASE apply_one")?;
+                        match made {
+                            Ok(n) => {
+                                s.conflicts += n;
+                                s.applied += 1;
+                                let post = fetch_by_hid(conn, &op.hid)?;
+                                crate::integrity::moved(pre.as_ref(), post.as_ref());
+                            }
+                            // A row this copy's write check refuses (a spec
+                            // it cannot read, an attachment whose bytes are
+                            // not its name's) is refused alone, and the rest
+                            // of the batch goes on (da-xjfol): aborting the
+                            // receive stalled every later op of its sender.
+                            // Any other failure still aborts.
+                            Err(DatumError::RowRefused(why)) => {
+                                refuse(conn, &chain, op, &format!("its row: {why}"), UNWRITTEN, s)?;
+                                conn.execute(
+                                    "INSERT INTO _meta (key, value) VALUES (?1, ?2)
+                                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                                    params![UNWRITTEN_BY, crate::migrations::said_build()],
+                                )?;
+                            }
+                            Err(e) => return Err(e),
+                        }
                     }
-                    Err(why) => refuse(conn, &chain, op, &why, s)?,
+                    Err(why) => refuse(conn, &chain, op, &why, "refused", s)?,
                 }
                 let head = vector.entry(op.endpoint.clone()).or_default();
                 *head = (*head).max(op.seq);
@@ -2049,8 +2091,22 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
         }
     }
     s.refused.extend(kept);
+    // A device none of whose ops this copy refuses has nothing left to warn
+    // of: one written, or gone (a purge's order, a leave) and never coming.
+    conn.execute(
+        "DELETE FROM sync_notices WHERE kind = ?1 AND NOT EXISTS
+           (SELECT 1 FROM ops WHERE endpoint = substr(subject, length(?1 || ':') + 1)
+                                AND applied = 2)",
+        [UNWRITTEN],
+    )?;
     Ok(())
 }
+
+/// The notice kind of an op whose row this copy's write check refused.
+pub(crate) const UNWRITTEN: &str = "unwritten";
+
+/// The `_meta` key naming the build that last refused an op's row.
+const UNWRITTEN_BY: &str = "sync_unwritten_by";
 
 fn waiting_ops(conn: &Connection) -> Result<Vec<Op>> {
     conn.prepare_cached("SELECT body FROM ops WHERE applied = 0")?
@@ -2059,23 +2115,31 @@ fn waiting_ops(conn: &Connection) -> Result<Vec<Op>> {
         .collect()
 }
 
-/// Refuse an op the chain does not allow: it is kept, applied = 2, so it is
-/// not asked for again, and a membership that later allows it lets it wait
-/// again ([`reconsider`]). The first refused of an endpoint files its
-/// `refused` sync notice (da-0c2ne), which `datum sync chain ack` settles —
-/// but for a purged endpoint's, set aside on purpose (da-ry11c).
+/// Refuse an op the chain does not allow, or whose row this copy's write
+/// check refuses: it is kept, applied = 2, so it is not asked for again,
+/// and a membership that later allows it lets it wait again
+/// ([`reconsider`]), as does another build for a row ([`settle`]). The
+/// first refused of an endpoint files its sync notice of `kind`, `refused`
+/// (da-0c2ne) or [`UNWRITTEN`], which `datum sync chain ack` settles — but
+/// for a purged endpoint's, set aside on purpose (da-ry11c).
 fn refuse(
     conn: &Connection,
     chain: &Chain,
     op: &Op,
     why: &str,
+    kind: &str,
     s: &mut ApplySummary,
 ) -> Result<()> {
     conn.execute(
         "UPDATE ops SET applied = 2 WHERE endpoint = ?1 AND seq = ?2",
         params![op.endpoint, op.seq],
     )?;
-    s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
+    // An op refused again in one settle (a row's, tried again after each
+    // record) is said once; a chain's refusal never repeats there.
+    let line = format!("{}/{}: {why}", op.endpoint, op.seq);
+    if !s.refused.contains(&line) {
+        s.refused.push(line);
+    }
     let member = chain.member(&op.endpoint);
     // A purged endpoint's refusals are on purpose, and warn of nothing.
     if member.is_some_and(|m| m.purged.is_some()) {
@@ -2086,14 +2150,33 @@ fn refuse(
     let label = member.map_or(host.unwrap_or(&op.endpoint[..10]), |m| &m.label);
     conn.prepare_cached(
         "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via)
-         VALUES (?1, 'refused', ?2, ?3, ?4)",
+         VALUES (?1, ?5, ?2, ?3, ?4)",
     )?
     .execute(params![
-        format!("refused:{}", op.endpoint),
+        format!("{kind}:{}", op.endpoint),
         label,
         chain::hlc_time(&op.hlc),
-        why
+        why,
+        kind
     ])?;
+    Ok(())
+}
+
+/// The refused ops `chain` allows wait again.
+fn allow_again(conn: &Connection, chain: &Chain) -> Result<()> {
+    let refused: Vec<Op> = conn
+        .prepare_cached("SELECT body FROM ops WHERE applied = 2")?
+        .query_map([], |r| r.get::<_, String>(0))?
+        .map(|b| Op::parse(&b?))
+        .collect::<Result<_>>()?;
+    for op in refused {
+        if chain.allows(&op.endpoint, &op.hlc).is_ok() {
+            conn.execute(
+                "UPDATE ops SET applied = 0 WHERE endpoint = ?1 AND seq = ?2",
+                params![op.endpoint, op.seq],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -2110,14 +2193,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
             .map(|b| Op::parse(&b?))
             .collect()
     };
-    for op in bodies("SELECT body FROM ops WHERE applied = 2", &[])? {
-        if chain.allows(&op.endpoint, &op.hlc).is_ok() {
-            conn.execute(
-                "UPDATE ops SET applied = 0 WHERE endpoint = ?1 AND seq = ?2",
-                params![op.endpoint, op.seq],
-            )?;
-        }
-    }
+    allow_again(conn, chain)?;
     // A revoked endpoint's applied ops from its revoke on, and a reader's
     // from when it became one: its own, by key.
     let mut hids = BTreeSet::new();
@@ -2129,7 +2205,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
                    WHERE endpoint = ?1 AND applied = 1 AND hlc >= ?2 AND hid != ?3";
         for op in bodies(sql, &[&m.endpoint, &from, &CHAIN_HID])? {
             if let Err(why) = chain.allows(&op.endpoint, &op.hlc) {
-                refuse(conn, chain, &op, &why, s)?;
+                refuse(conn, chain, &op, &why, "refused", s)?;
                 hids.insert(op.hid);
             }
         }
