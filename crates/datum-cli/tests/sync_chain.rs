@@ -322,7 +322,18 @@ fn forged(copy: &Copy, to: &Copy, record: serde_json::Value) -> String {
 }
 
 /// `op` signed by `copy` as its next op `to` would take, made now.
-fn signed_as(copy: &Copy, to: &Copy, mut op: serde_json::Value) -> String {
+fn signed_as(copy: &Copy, to: &Copy, op: serde_json::Value) -> String {
+    signed_at(copy, to, op, chrono::Utc::now())
+}
+
+/// `op` signed by `copy` as its next op `to` would take, its clock saying
+/// `at`: a copy running other code sets its own.
+fn signed_at(
+    copy: &Copy,
+    to: &Copy,
+    mut op: serde_json::Value,
+    at: chrono::DateTime<chrono::Utc>,
+) -> String {
     use ed25519_dalek::Signer;
     let id = copy.id();
     let seq: i64 = to
@@ -331,9 +342,7 @@ fn signed_as(copy: &Copy, to: &Copy, mut op: serde_json::Value) -> String {
         ))
         .parse()
         .unwrap();
-    let hlc = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S%.3fZ/0000")
-        .to_string();
+    let hlc = at.format("%Y-%m-%dT%H:%M:%S%.3fZ/0000").to_string();
     op["endpoint"] = id.into();
     op["seq"] = (seq + 1).into();
     op["hlc"] = hlc.into();

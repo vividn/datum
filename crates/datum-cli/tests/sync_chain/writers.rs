@@ -289,3 +289,174 @@ fn a_writer_writes_only_its_fields_and_changes_only_its_own_entries() {
         "3"
     );
 }
+
+/// `on`'s create of `hid` signed again by `by` with `data`, its clock
+/// `minutes` from the original's and saying it saw nothing: a create of
+/// another's entry forged to own it.
+fn forged_create(on: &Copy, hid: &str, by: &Copy, to: &Copy, minutes: i64, data: i64) -> String {
+    let sql = format!("SELECT body FROM ops WHERE hid = '{hid}' AND kind = 'create'");
+    let mut op = json(&on.query(&sql));
+    let hlc = op["hlc"].as_str().unwrap();
+    let at = chrono::DateTime::parse_from_rfc3339(&hlc[..24]).unwrap();
+    op["deps"] = serde_json::json!({});
+    op["effect"]["create"]["data"] = serde_json::json!({ "x": data });
+    let at = at.with_timezone(&chrono::Utc) + chrono::Duration::minutes(minutes);
+    signed_at(by, to, op, at)
+}
+
+/// An edit of `hid` setting `x` to `data`, signed by `by`, its clock two
+/// minutes after the entry's create: after any [`forged_create`].
+fn forged_edit(on: &Copy, hid: &str, by: &Copy, to: &Copy, data: i64) -> String {
+    let sql = format!("SELECT body FROM ops WHERE hid = '{hid}' AND kind = 'create'");
+    let mut op = json(&on.query(&sql));
+    let hlc = op["hlc"].as_str().unwrap();
+    let at = chrono::DateTime::parse_from_rfc3339(&hlc[..24]).unwrap();
+    op["kind"] = "update".into();
+    op["deps"] = serde_json::json!({});
+    op["effect"] = serde_json::json!({ "set": { "data.x": data } });
+    signed_at(
+        by,
+        to,
+        op,
+        at.with_timezone(&chrono::Utc) + chrono::Duration::minutes(2),
+    )
+}
+
+/// `x` of entry `hid` on `copy`, `-` where it has no row.
+fn x_of(copy: &Copy, hid: &str) -> String {
+    let sql = format!(
+        "SELECT COALESCE((SELECT COALESCE(json_extract(data, '$.x'), '') FROM entries
+           WHERE hid = '{hid}' AND deleted_at IS NULL), '-')"
+    );
+    copy.query(&sql)
+}
+
+/// A writer forging a create of a member's entry, its clock a minute
+/// before the original's or after it, to own it and edit it (da-lgvu8,
+/// vremya's probe of #2039): refused, and its edit too, whether the copy
+/// held the original first or the forgery, which it refuses once the
+/// original comes. Ownership reads no clock, which a writer sets.
+#[test]
+fn a_writers_forged_create_of_a_members_entry_owns_nothing_at_any_clock() {
+    for minutes in [-1, 1] {
+        let (a, b) = chained();
+        let w = Copy::new();
+        admit_writer(&a, &w, &["--fields", "mood"]);
+        assert!(a.send(&b).0, "b hears of w");
+        a.ok(&["occur", "mood", "-y", "-t", "9:00", "x=1"]);
+        let theirs = a.query("SELECT hid FROM entries WHERE field = 'mood'");
+
+        // a holds the original: the forgery and the edit are refused.
+        for edit in [false, true] {
+            let op = match edit {
+                false => forged_create(&a, &theirs, &w, &a, minutes, 7),
+                true => forged_edit(&a, &theirs, &w, &a, 8),
+            };
+            let out = a.run(&["sync", "pipe", "apply"], &op);
+            let text = String::from_utf8_lossy(&out.stderr);
+            assert!(
+                text.contains("it changes only the entries it created"),
+                "{minutes}: {text}"
+            );
+        }
+        assert_eq!(x_of(&a, &theirs), "1", "{minutes}");
+
+        // b holds the forgery first, and the edit after it: both apply,
+        // until the original comes, and then neither stands.
+        b.ok_in(
+            &["sync", "pipe", "apply"],
+            &forged_create(&a, &theirs, &w, &b, minutes, 7),
+        );
+        b.ok_in(
+            &["sync", "pipe", "apply"],
+            &forged_edit(&a, &theirs, &w, &b, 8),
+        );
+        assert_eq!(x_of(&b, &theirs), "8", "{minutes}: the forgery alone");
+        a.send(&b);
+        assert_eq!(x_of(&b, &theirs), "1", "{minutes}");
+        let refused = format!(
+            "SELECT COUNT(*) FROM ops WHERE endpoint = '{}' AND applied = 2",
+            w.id()
+        );
+        assert_eq!(b.query(&refused), "2", "{minutes}");
+        b.send(&a);
+        assert_eq!(a.hash(), b.hash(), "{minutes}");
+    }
+}
+
+/// A writer forging a create of another writer's entry, in fields both
+/// write, saying it saw none, its clock before the original's or after
+/// it, held before the original or after (ístina, 11-12): it freezes the
+/// entry, neither writer's edit standing, and erases nothing; what it gave
+/// another value is a conflict, not a silent change. Every copy ends alike.
+/// Saying it saw the original, its create is refused.
+#[test]
+fn a_writers_forged_create_of_another_writers_entry_freezes_it_and_takes_nothing() {
+    for (minutes, first) in [(-1, true), (1, true), (-1, false), (1, false)] {
+        let at = format!("{minutes} {first}");
+        let (a, b) = chained();
+        let (v, w) = (Copy::new(), Copy::new());
+        admit_writer(&a, &v, &["--fields", "mood"]);
+        admit_writer(&a, &w, &["--fields", "mood"]);
+        assert!(a.send(&b).0, "b hears of v and w");
+        v.ok(&["occur", "mood", "-y", "-t", "9:00", "x=1"]);
+        assert!(v.send(&a).0);
+        let hers = a.query("SELECT hid FROM entries WHERE field = 'mood'");
+        let create = forged_create(&a, &hers, &w, &b, minutes, 7);
+
+        // `first`: b holds the forgery before v's create, else after it.
+        if first {
+            b.ok_in(&["sync", "pipe", "apply"], &create);
+        }
+        assert!(a.send(&b).0);
+        if !first {
+            b.ok_in(&["sync", "pipe", "apply"], &create);
+        }
+        // Each writer's edit after it, refused wherever the forgery is held.
+        b.run(
+            &["sync", "pipe", "apply"],
+            &forged_edit(&a, &hers, &w, &b, 8),
+        );
+        v.ok(&["update", &hers, "x=2"]);
+        v.send(&a);
+        b.send(&a);
+        a.send(&b);
+
+        // Not erased, and neither edit stands: the row is the later create's,
+        // a forgery dated after v's showing its value as one side of a conflict.
+        let shown = if minutes < 0 { "1" } else { "7" };
+        for c in [&a, &b] {
+            assert_eq!(x_of(c, &hers), shown, "{at}");
+            let conflicts = format!("SELECT conflicts FROM entries WHERE hid = '{hers}'");
+            assert!(c.query(&conflicts).contains("data.x"), "{at}");
+        }
+        for (who, n) in [(&v, 1), (&w, 1)] {
+            let refused = format!(
+                "SELECT COUNT(*) FROM ops WHERE endpoint = '{}' AND applied = 2",
+                who.id()
+            );
+            for c in [&a, &b] {
+                assert_eq!(c.query(&refused), n.to_string(), "{at}");
+            }
+        }
+        assert_eq!(a.hash(), b.hash(), "{at}");
+    }
+
+    // Saying it saw v's create: refused, and v's entry stands as v made it.
+    let (a, _) = chained();
+    let (v, w) = (Copy::new(), Copy::new());
+    admit_writer(&a, &v, &["--fields", "mood"]);
+    admit_writer(&a, &w, &["--fields", "mood"]);
+    v.ok(&["occur", "mood", "-y", "-t", "9:00", "x=1"]);
+    assert!(v.send(&a).0);
+    let hers = a.query("SELECT hid FROM entries WHERE field = 'mood'");
+    let mut create = json(&forged_create(&a, &hers, &w, &a, 1, 7));
+    create["deps"] = serde_json::json!({ v.id(): 1 });
+    let out = a.run(&["sync", "pipe", "apply"], &signed_as(&w, &a, create));
+    let text = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        text.contains("it changes only the entries it created"),
+        "{text}"
+    );
+    assert_eq!(x_of(&a, &hers), "1");
+}

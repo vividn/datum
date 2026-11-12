@@ -94,6 +94,7 @@ mod diagnose;
 mod join;
 mod pause;
 pub mod peers;
+mod refold;
 mod rejoin;
 pub mod status;
 mod summed;
@@ -2049,6 +2050,9 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
                     }
                     Err(why) => refuse(conn, &chain, op, &why, "refused", s)?,
                 }
+                if !wiped && op.effect.get("create").is_some() {
+                    refold::rejudge(conn, &chain, op, s)?;
+                }
                 let head = vector.entry(op.endpoint.clone()).or_default();
                 *head = (*head).max(op.seq);
                 continue;
@@ -2209,44 +2213,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
             }
         }
     }
-    let mut touched = Vec::new();
-    for hid in hids {
-        let pre = fetch_by_hid(conn, &hid)?;
-        touched.push(hid.clone());
-        match fold(&ops_of(conn, &hid)?, None) {
-            Some(r) => write_merged(conn, pre.as_ref(), entry_from(r)?, ChangeKind::SyncMerge)?,
-            None => {
-                let Some(pre) = pre else { continue };
-                history::record(conn, &pre, ChangeKind::SyncMerge)?;
-                let freed: Vec<Entry> = conn
-                    .prepare_cached("SELECT * FROM entries WHERE superseded_by = ?1")?
-                    .query_map(params![hid], row_to_entry)?
-                    .collect::<rusqlite::Result<_>>()?;
-                conn.execute("DELETE FROM entries WHERE hid = ?1", params![hid])?;
-                // One at a time, each still pointing at the gone row — out of
-                // the identity indexes — while `write_merged` decides it: two
-                // freed rows may share an identity, and the later merges into
-                // the earlier. One that stands alone points at nothing after.
-                for mut f in freed {
-                    touched.push(f.hid.0.clone());
-                    f.superseded_by = None;
-                    let own = own(conn, &f)?;
-                    write_merged(conn, Some(&f), own, ChangeKind::SyncMerge)?;
-                    conn.execute(
-                        "UPDATE entries SET superseded_by = NULL WHERE hid = ?1 AND superseded_by = ?2",
-                        params![f.hid, hid],
-                    )?;
-                }
-                if let Some(kept) = &pre.superseded_by {
-                    touched.push(kept.0.clone());
-                    rederive(conn, kept.as_str(), ChangeKind::SyncMerge)?;
-                }
-            }
-        }
-    }
-    for hid in touched {
-        refresh_conflicts(conn, &hid)?;
-    }
+    refold::without(conn, hids)?;
     // An endpoint the chain now allows has nothing left to warn of.
     conn.execute(
         "DELETE FROM sync_notices WHERE kind = 'refused' AND NOT EXISTS

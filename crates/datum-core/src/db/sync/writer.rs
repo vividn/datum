@@ -8,7 +8,7 @@
 use rusqlite::Connection;
 
 use super::chain::{Chain, Role};
-use super::{belongs_to, ops_of, own_alone, read_only, row, Endpoint, Op};
+use super::{belongs_to, own_alone, read_only, row, Endpoint, Op};
 use crate::db::{is_meta_field, SPEC_FIELD};
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
@@ -43,17 +43,16 @@ fn meta(field: &str) -> bool {
 
 /// Why an entry op of `endpoint` at `hlc`, a writer then, is refused, if it
 /// is: `field` is the one its entry belongs to after it (a spec's, the field
-/// it specifies), `meta` whether its row is an alias or the like, and `by()`
-/// the endpoint whose create the entry's ops open with: none, where no op
-/// held creates it, is no writer's own, and refused. Anyone else's op is no
-/// writer's, and passes.
+/// it specifies), `meta` whether its row is an alias or the like, and `own()`
+/// whether the entry is the writer's to change ([`owns`]). Anyone else's op
+/// is no writer's, and passes.
 fn bounds(
     chain: &Chain,
     endpoint: &str,
     hlc: &str,
     field: Option<&str>,
     meta: bool,
-    by: impl FnOnce() -> Result<Option<String>>,
+    own: impl FnOnce() -> Result<bool>,
 ) -> Result<std::result::Result<(), String>> {
     let Some(m) = chain.member(endpoint) else {
         return Ok(Ok(()));
@@ -71,7 +70,7 @@ fn bounds(
             writes.map_or(String::new(), words),
             field.map_or("no field".into(), |f| format!("«{f}»")),
         )),
-        _ if by()?.as_deref() != Some(endpoint) => Err(WRITES_OWN.into()),
+        _ if !own()? => Err(WRITES_OWN.into()),
         _ => Ok(()),
     })
 }
@@ -91,12 +90,45 @@ pub(super) fn allowed(
     let meta = row.and_then(|r| r["field"].as_str()).is_some_and(meta);
     let field = op.field.as_deref();
     bounds(chain, &op.endpoint, &op.hlc, field, meta, || {
-        // The create `op`'s entry opens with, `op` among its ops.
-        let mut ops = ops_of(conn, &op.hid)?;
-        ops.push(op.clone());
-        ops.sort_by(|a, b| a.order().cmp(&b.order()));
-        let create = ops.into_iter().find(|o| o.effect.get("create").is_some());
-        Ok(create.map(|o| o.endpoint))
+        owns(chain, op, &creates_of(conn, &op.hid)?)
+    })
+}
+
+/// Every create of `hid` this copy holds, applied, waiting or refused: the
+/// set ownership is judged from, which only grows, so every copy holding
+/// the same creates judges alike, in whatever order they came (da-lgvu8).
+pub(super) fn creates_of(conn: &Connection, hid: &str) -> Result<Vec<Op>> {
+    let mut ops: Vec<Op> = conn
+        .prepare_cached("SELECT body FROM ops WHERE hid = ?1 AND applied IN (0, 1, 2)")?
+        .query_map([hid], |r| r.get::<_, String>(0))?
+        .map(|b| Op::parse(&b?))
+        .collect::<Result<_>>()?;
+    ops.retain(|o| o.effect.get("create").is_some());
+    Ok(ops)
+}
+
+/// Whether writer op `op` keeps to its own entry, judged from `creates`, the
+/// entry's, and never by a clock, which a writer sets for itself (da-lgvu8).
+/// Its create stands unless a member created the entry too, or it saw
+/// another's create of it: a member's entry is never a writer's, and a
+/// create made over another's is no create of its own. Any other op stands
+/// only where every create is its own. So a writer forging a create of
+/// another writer's entry, saying it saw none, freezes it — neither's edits
+/// stand — and is a conflict on each key it gives another value: it takes
+/// nothing silently and erases nothing.
+fn owns(chain: &Chain, op: &Op, creates: &[Op]) -> Result<bool> {
+    let writer = |o: &Op| {
+        chain
+            .member(&o.endpoint)
+            .is_some_and(|m| m.role_at(&o.hlc) == Role::Writer)
+    };
+    let mine = |c: &Op| c.endpoint == op.endpoint;
+    Ok(if op.effect.get("create").is_some() {
+        !creates
+            .iter()
+            .any(|c| !mine(c) && (!writer(c) || op.saw(c)))
+    } else {
+        !creates.is_empty() && creates.iter().all(mine)
     })
 }
 
@@ -112,14 +144,21 @@ pub(super) fn may_sign(conn: &Connection, ep: &Endpoint, post: &Entry, hid: &Hid
     if !own_alone(conn, ep)? {
         return Ok(());
     }
-    let by = || {
-        let ops = ops_of(conn, hid.as_str())?;
-        let create = ops.into_iter().find(|o| o.effect.get("create").is_some());
-        Ok(Some(create.map_or(ep.id.clone(), |o| o.endpoint)))
+    // An entry with no create here is this copy's own.
+    let own = || {
+        let creates = creates_of(conn, hid.as_str())?;
+        Ok(creates.iter().all(|c| c.endpoint == ep.id))
     };
     let field = belongs_to(&row(post));
     let chain = Chain::load(conn)?;
-    match bounds(&chain, &ep.id, "~", field.as_deref(), meta(&post.field), by)? {
+    match bounds(
+        &chain,
+        &ep.id,
+        "~",
+        field.as_deref(),
+        meta(&post.field),
+        own,
+    )? {
         Err(why) => Err(DatumError::Other(format!("this copy is {why}"))),
         Ok(()) => Ok(()),
     }
