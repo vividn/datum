@@ -68,9 +68,10 @@ test('a vertical drag on the strip scrolls the stack from the first move past sl
 
 /**
  * A horizontal pan moves the pictures and redraws none of them, under the
- * finger every frame — with `day` held, at that day height.
+ * finger every frame — with `day` held, at that day height, and the window
+ * zoomed by a ctrl+wheel of `wheel`: -300 is eight and a half hours.
  */
-const panSideways = (day) => async () => {
+const panSideways = (day, wheel = -300) => async () => {
 	await withApp(async (app) => {
 		const { page } = app;
 		await seedMarks(app);
@@ -80,9 +81,9 @@ const panSideways = (day) => async () => {
 			await app.idle();
 		}
 		const at = await middleOf(page);
-		await page.locator('.strip').evaluate((strip, at) => {
-			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -300, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
-		}, at);
+		await page.locator('.strip').evaluate((strip, { at, deltaY }) => {
+			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
+		}, { at, deltaY: wheel });
 		// The wheel's window is a preview until its pause commits it, 120ms
 		// on, and a press before that pans nothing: the band says what the
 		// committed window cannot pan past, the whole day's `start end`
@@ -119,6 +120,10 @@ test('a horizontal pan moves the pictures and redraws none of them, under the fi
 
 // At the shortest day the stack holds months of bands (da-4pak5), and the pan moves them all.
 test('a horizontal pan at the shortest day height is as cheap', panSideways(MIN_DAY));
+
+// At the shortest window, ten minutes (da-652a5), the whole day is drawn 144
+// bands wide, and the ruler ticks every minute: the wheel's 2^10 is past it.
+test('a horizontal pan at the shortest window is as cheap', panSideways(undefined, -2000));
 
 test("the nowview's pan restyles none of its marks", async () => {
 	await withApp(async (app) => {

@@ -243,8 +243,8 @@ export const FILL_MAX_DAY_HEIGHT = 240;
  * pane, and the date stamp, two lines no longer fitting a day, stamps each
  * week on its Monday (`stamp` in DayStrip.svelte). At the ceiling one day
  * is 1000px, its lanes a screen tall, its dots no bigger than a 240px day
- * draws them (`dotScale` in dayLayers.ts). An hour across is the window's
- * zoom (`MIN_SPAN`), not the day's height.
+ * draws them (`dotScale` in dayLayers.ts). How much of the day goes across
+ * is the window's zoom (`MIN_SPAN`), not the day's height.
  */
 export const MIN_DAY_HEIGHT = 16;
 export const MAX_DAY_HEIGHT = 1000;
@@ -312,24 +312,34 @@ export const HOUR_TO = 24;
 const DAY_HOURS = 24;
 
 /**
- * The shortest window, in hours. An hour of one day across a whole band
- * is a minute to the millimetre — finer than anything a person logs.
+ * The shortest window, in hours: ten minutes (da-652a5, vividn, 2026-11-12:
+ * «Allow below an hour»). Across a phone's band that is a minute to 33px,
+ * every minute a tick of the ruler and every five named (`ruler` in
+ * DayStrip.svelte), and two moments logged a minute apart stand clear of
+ * each other. At rest the picture is drawn at the window's scale (`wide`),
+ * so the whole day is 144 bands wide, which the pan slides as it slides
+ * any width.
  */
-const MIN_SPAN = 1;
+const MIN_SPAN = 10 / 60;
 
-/** An hour, rounded to the minute — as fine as a window is ever stated. */
-const toMinute = (hour: number) => Math.round(hour * 60) / 60;
+/**
+ * An hour, rounded to a tenth of a second: as fine as a window is ever
+ * stated. Under a pan the window moves with the finger, so a step of it
+ * must be under a pixel, and at the floor a minute is 33px of a phone's
+ * band (da-652a5); a tenth of a second is half a pixel of a band 3000px wide.
+ */
+const stated = (hour: number) => Math.round(hour * 36_000) / 36_000;
 
 /**
  * `[from, to]` as a window the strip can draw: inside the day, at least
- * `MIN_SPAN` long, and stated to the minute.
+ * `MIN_SPAN` long, and `stated`.
  */
 export function clampWindow(from: number, to: number): [number, number] {
 	const a = Number.isFinite(from) ? from : HOUR_FROM;
 	const b = Number.isFinite(to) ? to : HOUR_TO;
 	const span = Math.min(DAY_HOURS, Math.max(MIN_SPAN, b - a || DAY_HOURS));
 	const start = Math.min(Math.max(a, 0), DAY_HOURS - span);
-	return [toMinute(start), toMinute(start + span)];
+	return [stated(start), stated(start + span)];
 }
 
 /** Whether `view` is the whole day — the one window that needs no map. */

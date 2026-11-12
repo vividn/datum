@@ -927,6 +927,60 @@ describe('the day strip zooms onto an hour range', () => {
 		});
 	});
 
+	// vividn, 2026-11-12: «Allow below an hour» (da-652a5). The floor is ten
+	// minutes, and a ruler on less than an hour counts in minutes.
+	test('a pinch past an hour narrows the window to ten minutes and no further, and the ruler names its minutes', async () => {
+		await settledRoom(phone, 'floor', async (app) => {
+			const { page } = app;
+			const box = await bandBox(app);
+			const minutes = async () => {
+				const [from, to] = await windowHeard(app);
+				return Math.round((to - from) * 60);
+			};
+			/** The ruler's names, as minutes of the day. */
+			const named = async () =>
+				(await rulerLabels(app)).map((label) => {
+					assert.match(label, /^\d\d:\d\d$/, `the ruler named ${label} on a window under an hour`);
+					const [h, m] = label.split(':').map(Number);
+					return h * 60 + m;
+				});
+			const steps = (of) => new Set(of.slice(1).map((m, i) => m - of[i]));
+			// Each pinch spreads the fingers three times as far: 8 hours, 2h40,
+			// under an hour, then twenty minutes, then the floor, twice.
+			const seen = [];
+			for (let i = 0; i < 6; i++) {
+				const was = i ? seen.at(-1) : 24 * 60;
+				await pinch(page, box, 100, 300);
+				seen.push(await until(minutes, (m) => Number.isFinite(m) && (m !== was || m === 10)));
+				// Under an hour, a quarter hour on a phone has room for its name.
+				if (seen.at(-1) < 60 && seen.at(-2) >= 60)
+					assert.deepEqual([...steps(await named())], [15], 'the ruler does not name the quarter hours');
+			}
+			assert.deepEqual(seen.slice(-2), [10, 10], `the window did not stop at ten minutes: ${seen}`);
+
+			// At the floor every minute is a tick, and the names step by
+			// five, or by one where a band is wide enough for that.
+			const names = await named();
+			assert.ok(names.length >= 2, `the ruler named ${names} at the floor`);
+			const [step] = steps(names);
+			assert.ok(steps(names).size === 1 && [1, 5].includes(step), `the ruler named ${names} at the floor`);
+			const { width, ticks } = await page.locator('.strip').evaluate((strip) => {
+				const width = strip.querySelector('.band').getBoundingClientRect().width;
+				const ticks = [...strip.querySelectorAll('.ruler line.tick')]
+					.map((line) => Number(line.getAttribute('x1')))
+					.filter((x) => x >= -1 && x <= width + 1);
+				return { width, ticks };
+			});
+			assert.ok(ticks.length >= 10, `the ruler ticked ${ticks.length} times across ten minutes`);
+			const apart = ticks.slice(1).map((x, i) => x - ticks[i]);
+			assert.ok(
+				apart.every((d) => Math.abs(d - width / 10) < 0.5),
+				`the ruler's ticks are not a minute apart: ${apart} across ${width}px`
+			);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	// vividn, 2026-10-22: «vertical zoom should affect the day height in an
 	// appropriate way so you really can just zoom in on data» (da-hm1j7).
 	test('a pinch down the strip makes the days taller, the pinched point staying under the fingers', async () => {

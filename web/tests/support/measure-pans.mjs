@@ -1,10 +1,12 @@
 // Not a test: what a finger's drag on the day strip costs, at rest, on a
 // real history at phone size, for da-uovtn's PR body.
 //
-//   BACKUP=<a `db backup` file> [DAY_HEIGHT=<px>] node tests/support/measure-pans.mjs
+//   BACKUP=<a `db backup` file> [DAY_HEIGHT=<px>] [WHEEL=<deltaY>] node tests/support/measure-pans.mjs
 //
 // DAY_HEIGHT holds the strip's day height first, on the dayview tab: what a
-// pan costs at the shortest and tallest day (da-4pak5).
+// pan costs at the shortest and tallest day (da-4pak5). WHEEL is the
+// ctrl+wheel that zooms the window before the pan, -300 (eight and a half
+// hours) unless said: -2000 is the ten-minute floor (da-652a5).
 //
 // A phone (390×844, touch, CPU 4×) on the collect tab, the backup restored
 // and drawn, then, each driven by CDP touch events a frame apart:
@@ -22,6 +24,7 @@ import { say as hold } from './daystrip.mjs';
 
 const backup = readFileSync(process.env.BACKUP, 'utf8');
 const DAY = Number(process.env.DAY_HEIGHT) || null;
+const WHEEL = Number(process.env.WHEEL) || -300;
 const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: DAY ? { ...ON_COLLECT, active: 3 } : ON_COLLECT };
 const MOVES = 30;
 const TODAY = '.band[data-days-ago="0"]';
@@ -108,9 +111,9 @@ try {
 
 		// 2. Zoomed in, sideways: the pan.
 		const at = await centre(page, TODAY);
-		await page.locator('.strip').evaluate((strip, at) => {
-			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -300, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
-		}, at);
+		await page.locator('.strip').evaluate((strip, { at, deltaY }) => {
+			strip.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }));
+		}, { at, deltaY: WHEEL });
 		await page.waitForFunction(() => !!document.querySelector('.unzoom'));
 		// On screen: a day held off it stays stretched until scrolled to.
 		await page.waitForFunction(() => {

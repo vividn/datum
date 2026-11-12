@@ -1398,6 +1398,11 @@
 
 	/** datum's own axis font: the strip's height less its padding. */
 	const AXIS_FONT = 9;
+	/** The steps below the hour the ruler counts in, in minutes. */
+	const MINUTES = [1, 5, 15, 30, 60];
+	/** What a step needs to be named, `HH:MM` and a gap, and to be ticked, in px. */
+	const LABEL_ROOM = 36;
+	const TICK_ROOM = 8;
 
 	/**
 	 * Which hours the ruler names, and where the text sits.
@@ -1409,26 +1414,47 @@
 	 * named `00`, inset like the leading one and the first to give way when
 	 * squeezed, as the CLI's axis closes (da-zyfbl); a window ending inside
 	 * the day has no 24 on the band to draw.
+	 *
+	 * A window that gives a quarter hour room for its `HH:MM` counts in
+	 * minutes (da-652a5): every half hour, quarter, five minutes or minute
+	 * named, the finest that has room, and the step under it a short tick.
 	 */
 	const ruler = $derived.by(() => {
-		if (!geometry) return [] as { x: number; at: number; label: string }[];
-		const half = AXIS_FONT * 0.6 + 3;
+		if (!geometry) return [] as { x: number; at: number; label: string; minor: boolean }[];
+		const hours = geometry.hours;
+		// Below the hour (da-652a5): the label step is the finest that
+		// leaves `HH:MM` room, and the ticks between are the step under it,
+		// while they stand clear of each other. In px a minute of the window.
+		const perMinute = zoomed ? bandWidth / ((view[1] - view[0]) * 60) : 0;
+		const named = MINUTES.find((m) => m * perMinute >= LABEL_ROOM) ?? 60;
+		const below = MINUTES[Math.max(0, MINUTES.indexOf(named) - 1)];
+		const every = named < 60 && below * perMinute >= TICK_ROOM ? below : named;
+		const marks = hours.flatMap((hour, i) => {
+			const next = hours[i + 1];
+			const marks = [{ hour, minute: 0, x: bandX(hour.x) }];
+			for (let minute = every; named < 60 && next && minute < 60; minute += every)
+				marks.push({ hour, minute, x: bandX(hour.x + ((next.x - hour.x) * minute) / 60) });
+			return marks;
+		});
 		let prev = -Infinity;
-		return geometry.hours
-			.map((hour) => ({ hour, x: bandX(hour.x) }))
+		return marks
 			// A window leaves most of the day off the ends of the band — but
 			// a pan slides the ruler under the rest (`slide`), so then it
-			// names the whole day and holds no label in at the ends.
-			.filter(({ x }) => sliding || (x >= -1 && x <= bandWidth + 1))
-			.map(({ hour, x }) => {
+			// names the whole day and holds no label in at the ends: its
+			// hours, and its minutes two bands either side, as far as a
+			// finger carries them before the lift.
+			.filter(({ x, minute }) => (sliding ? !minute || (x >= -2 * bandWidth && x <= 3 * bandWidth) : x >= -1 && x <= bandWidth + 1))
+			.map(({ hour, minute, x }) => {
+				const label = named < 60 ? `${hour.label}:${String(minute).padStart(2, '0')}` : hour.label;
+				const half = label.length * AXIS_FONT * 0.3 + 3;
 				const at = sliding ? x : clamp(x, half, Math.max(half, bandWidth - half));
 				// The majors are the hours datum names, thinned until two
 				// labels no longer touch. Zoomed in, the hours BETWEEN them
 				// have room too, and a ruler that named only every third of
 				// four hours on screen would be a ruler with one number on it.
-				const named = (hour.major || zoomed) && at - half >= prev;
-				if (named) prev = at + half;
-				return { x, at, label: named ? hour.label : '' };
+				const room = minute % named === 0 && (hour.major || zoomed) && at - half >= prev;
+				if (room) prev = at + half;
+				return { x, at, label: room ? label : '', minor: minute % named !== 0 };
 			});
 	});
 
@@ -2451,7 +2477,7 @@
 							y2="0.5"
 						/>
 						{#each ruler as tick}
-							<line class="tick" x1={tick.x} x2={tick.x} y1="0.5" y2="4.5" />
+							<line class="tick" class:minor={tick.minor} x1={tick.x} x2={tick.x} y1="0.5" y2={tick.minor ? 2.5 : 4.5} />
 							{#if tick.label}
 								<text
 									class="tick-label"
