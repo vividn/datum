@@ -91,17 +91,30 @@ const stackOfDays = async (page) => {
 	// so down by as much as the day is taller than 40.
 	const id = await stripPane({ page });
 	await modifyWidget(page, id);
+	// The drag sizes from the day at its press, and the line and its value
+	// are read before it: a box still settling from modify mode moves both
+	// in between (da-jlp5g, under load), and the drop lands short of 40 or
+	// the press misses the line. So, as a reader would, drag again from
+	// what the line says until it says 40.
 	const line = page.locator('.today-line');
-	const box = await line.boundingBox();
-	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
-	const down = Number(await line.getAttribute('aria-valuenow')) - 40;
-	await page.mouse.move(x, y);
-	await page.mouse.down();
-	await page.mouse.move(x, y + down, { steps: 8 });
-	await page.mouse.up();
-	await page.waitForFunction(
-		() => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === 40
-	);
+	const reads40 = () =>
+		page
+			.waitForFunction(() => Number(document.querySelector('.today-line')?.getAttribute('aria-valuenow')) === 40, null, {
+				timeout: 3_000
+			})
+			.then(() => true, () => false);
+	for (let tries = 0; ; tries++) {
+		const now = Number(await line.getAttribute('aria-valuenow'));
+		if (now === 40) break;
+		assert.ok(tries < 5, `the day line reads ${now} after ${tries} drags toward 40`);
+		const box = await line.boundingBox();
+		const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x, y + now - 40, { steps: 8 });
+		await page.mouse.up();
+		if (await reads40()) break;
+	}
 	await leaveWidget(page, id);
 	await rootMenuButton(page).click();
 	await page.getByRole('menuitem', { name: 'Save', exact: true }).click();
