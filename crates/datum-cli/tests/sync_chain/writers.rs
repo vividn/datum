@@ -493,3 +493,43 @@ fn a_writers_import_refuses_by_its_line_a_row_its_chain_refuses() {
     assert!(ok && !text.contains("refused"), "{text}");
     assert!(a.has("mood"));
 }
+
+/// A v2 backup's docs, one per field, each a moment.
+fn v2_backup(fields: &[&str]) -> String {
+    let docs: Vec<_> = fields
+        .iter()
+        .map(|f| {
+            let at = serde_json::json!({"utc": "2026-11-10T09:00:00.000Z", "o": 0});
+            serde_json::json!({"_id": format!("{f}:a"), "data": {"field": f, "occurTime": at},
+                "meta": {"createTime": at}})
+        })
+        .collect();
+    serde_json::json!({"backupTime": "2026-11-11T00:00:00Z", "docs": docs}).to_string()
+}
+
+/// `db v2import` on a writer's copy skips each doc its chain refuses, in a
+/// log's words, and imports the rest, which reach a member with nothing
+/// refused (da-xe39u). Before, the refused doc was written here alone.
+#[test]
+fn a_writers_v2import_skips_a_doc_its_chain_refuses() {
+    let (a, _b) = chained();
+    let w = Copy::new();
+    admit_writer(&a, &w, &["--fields", "mood"]);
+
+    let out = w.ok_in(&["db", "v2import", "-"], &v2_backup(&["mood", "tea"]));
+    assert!(
+        out.contains("1 imported (1 point, 0 block), 1 skipped (1 refused)."),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "refused  tea:a: this copy is a writer of «mood» in the sync chain, and this is «tea»"
+        ),
+        "{out}"
+    );
+    assert!(w.has("mood") && !w.has("tea"));
+
+    let (ok, text) = w.send(&a);
+    assert!(ok && !text.contains("refused"), "{text}");
+    assert!(a.has("mood"));
+}

@@ -69,6 +69,8 @@ What each kind of entry looks like:
 - In a database whose `auto_setup` is off, a row of a new field is refused: `datum setup <field>` first.
 - On a writer's copy in a sync chain, a row the writer may not write (another field than its own, an alias) is
   refused by its line in the words a log of it would be, so nothing is kept here that the chain would refuse.
+  `db v2import` skips such a doc as `refused`. On a reader's copy, or one that signed its departure, both are
+  refused whole, as a log is.
 
 ## Exporting
 

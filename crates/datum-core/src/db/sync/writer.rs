@@ -173,7 +173,9 @@ impl Db {
     /// an entry, in `may_sign`'s words, if it may not (da-vspq5): a path
     /// that writes rows with no op, as `import` does, judges each before it
     /// writes, since the baseline signed for it later is refused by every
-    /// other copy. None for a copy that is no writer, or in no chain.
+    /// other copy. None for a copy that is no writer, or in no chain. A
+    /// reader's or a departing copy's is refused whole, as a log of it is,
+    /// since its rows would sync nowhere (da-xe39u).
     #[allow(clippy::type_complexity)]
     pub fn sync_writer_bounds(
         &self,
@@ -183,7 +185,11 @@ impl Db {
         if !chain.exists() {
             return Ok(None);
         }
-        let me = endpoint(conn)?.id;
+        let ep = endpoint(conn)?;
+        if let Some(why) = read_only(conn, &ep)? {
+            return Err(DatumError::Other(why.into()));
+        }
+        let me = ep.id;
         let writer = chain
             .member(&me)
             .is_some_and(|m| m.role_at("~") == Role::Writer);

@@ -213,3 +213,23 @@ fn a_member_made_a_reader_and_a_member_again_writes_on_every_copy() {
     assert_eq!(a.hash(), b.hash());
     assert_eq!(a.hash(), c.hash());
 }
+
+/// `import` and `db v2import` on a reader's copy are refused whole, as a log
+/// is, and write nothing (da-xe39u): a reader signs no baseline, so the rows
+/// would have stayed here alone.
+#[test]
+fn a_readers_import_and_v2import_are_refused_as_a_log_is() {
+    let (a, _b) = chained();
+    let r = Copy::new();
+    assert!(admit_reader(&a, &r, "r", None).0);
+    let row = r#"{"field": "tea", "at": "2026-11-10T09:00:00Z", "dur": "MOMENT"}"#;
+    let out = r.fails(&["import", "-"], row);
+    assert!(out.contains(READ_ONLY), "{out}");
+    let at = serde_json::json!({"utc": "2026-11-10T09:00:00.000Z", "o": 0});
+    let backup = serde_json::json!({"docs": [
+        {"_id": "tea:a", "data": {"field": "tea", "occurTime": at}, "meta": {"createTime": at}},
+    ]});
+    let out = r.fails(&["db", "v2import", "-"], &backup.to_string());
+    assert!(out.contains(READ_ONLY), "{out}");
+    assert!(!r.has("tea"));
+}

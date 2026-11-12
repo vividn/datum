@@ -68,6 +68,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     // The slugs the docs' id structures have rendered so far.
     let mut rendered: HashSet<String> = HashSet::new();
     let delim = crate::config::resolve_id_delimiter(None);
+    // A writer's copy skips each doc its chain refuses, and a reader's or a
+    // departing copy refuses the whole import, as a log is (da-xe39u).
+    let writer = db.sync_writer_bounds()?;
     // (reason, id, detail) — id is the source `_id` (or a synthetic
     // <missing-_id at #N> if absent). detail is an optional explanation
     // (why it was refused, for `invalid-shape`).
@@ -406,6 +409,12 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             (dur_parse_warnings, states_normalized) = counted;
             continue;
         }
+        if let Some(why) = writer.as_ref().map(|w| w(&entry)).transpose()?.flatten() {
+            eprintln!("warning: skipping {doc_id}: {why}");
+            skipped_records.push((SkipReason::Refused, doc_id, Some(why)));
+            (dur_parse_warnings, states_normalized) = counted;
+            continue;
+        }
 
         // Tally based on dur shape (matches user-facing summary semantics:
         // dur=None or dur=zero → point, otherwise → block).
@@ -643,6 +652,8 @@ enum SkipReason {
     Duplicate,
     /// Its slug is held by a row with other content.
     SlugCollision,
+    /// A writer's copy may not write it: its chain would refuse it.
+    Refused,
 }
 
 impl SkipReason {
@@ -652,6 +663,7 @@ impl SkipReason {
             SkipReason::InvalidShape => "invalid-shape",
             SkipReason::Duplicate => "duplicate",
             SkipReason::SlugCollision => "slug-collision",
+            SkipReason::Refused => "refused",
         }
     }
 }
@@ -667,13 +679,14 @@ fn skip_breakdown(records: &[(SkipReason, String, Option<String>)]) -> String {
     if records.is_empty() {
         return String::new();
     }
-    let (mut nf, mut inv, mut dup, mut col) = (0usize, 0usize, 0usize, 0usize);
+    let (mut nf, mut inv, mut dup, mut col, mut rf) = (0usize, 0usize, 0usize, 0usize, 0usize);
     for (r, _, _) in records {
         match r {
             SkipReason::NoField => nf += 1,
             SkipReason::InvalidShape => inv += 1,
             SkipReason::Duplicate => dup += 1,
             SkipReason::SlugCollision => col += 1,
+            SkipReason::Refused => rf += 1,
         }
     }
     let mut parts = Vec::new();
@@ -688,6 +701,9 @@ fn skip_breakdown(records: &[(SkipReason, String, Option<String>)]) -> String {
     }
     if nf > 0 {
         parts.push(format!("{nf} no-field"));
+    }
+    if rf > 0 {
+        parts.push(format!("{rf} refused"));
     }
     format!(" ({})", parts.join(", "))
 }
