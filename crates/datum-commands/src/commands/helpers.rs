@@ -242,17 +242,6 @@ pub(crate) fn enforce_spec_lists_against(entry: &Entry, registry: &SpecRegistry)
     );
 }
 
-/// The newest live entry of the field `input` names, unless it is a whole hid.
-fn resolve_newest(db: &Db, input: &str) -> Result<Option<Entry>> {
-    if db.hid_exists(input)? {
-        return Ok(None);
-    }
-    match id_field_named(db, input)? {
-        Some(f) => Ok(db.entries_for_field(&f, Some(1))?.pop()),
-        None => Ok(None),
-    }
-}
-
 /// Resolve `input` to an entry via quickId matching, preserving the
 /// "Tombstoned" signal so update/edit can produce their tailored error.
 ///
@@ -263,14 +252,7 @@ fn resolve_newest(db: &Db, input: &str) -> Result<Option<Entry>> {
 /// exact id/slug lookup that includes tombstones, then one more attempt
 /// that scans tombstones by hid/slug prefix — so the undo / history / why
 /// commands still work on a soft-deleted row's short hid (e.g. `5arfa`).
-///
-/// da-o995g, da-d86vo: a whole hid is its entry; past that a field wins, as
-/// in `get`, over a hid or slug it only starts, and names its newest entry
-/// (not `<field>:_`, which skips future entries).
 pub(crate) fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
-    if let Some(e) = resolve_newest(db, input)? {
-        return Ok(e);
-    }
     match resolve_quickid_single(db, input) {
         Ok(e) => Ok(e),
         Err(datum_core::error::DatumError::NotFound(_)) => {
@@ -382,21 +364,6 @@ pub(crate) enum BatchMode {
     LiveOrTombstone,
 }
 
-/// What a token naming a field means to [`resolve_batch`] (da-tldkb,
-/// da-d86vo). A whole hid is its entry whatever the mode.
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum FieldName {
-    /// Every live entry of the field, and an ambiguous prefix expands to
-    /// all it matches (the read-only `get`).
-    Every,
-    /// The field's newest entry (`update`, `merge`, `rekey`), the rule `edit`
-    /// and `history` take through [`resolve_prefix_or_tombstone`].
-    Newest,
-    /// No field rule: a prefix many entries share is refused (`delete`,
-    /// `retime`).
-    Not,
-}
-
 /// Split a comma-separated id argument ([`id_list`]), resolve each token, and return a
 /// deduplicated entry list plus the tokens that failed to resolve. Wildcards
 /// (`*` / `?`) expand to every live match; literals go through the quickId
@@ -405,16 +372,16 @@ pub(crate) enum FieldName {
 /// `"abc,def,ghi,"` works without special casing. Duplicates (two tokens
 /// reaching the same slug) collapse in first-seen order.
 ///
-/// A field's name reads as [`FieldName`] says; past that an ambiguous prefix
-/// surfaces as a per-token `AmbiguousPrefix` error, which is the
-/// disambiguation UX for the mutating commands.
+/// When `expand_ambiguous` is set, a token whose bare prefix matches many
+/// live entries yields all of them (the read-only `get` path); otherwise an
+/// ambiguous prefix surfaces as a per-token `AmbiguousPrefix` error, which
+/// is the disambiguation UX for the mutating commands.
 pub(crate) fn resolve_batch(
     db: &Db,
     input: &str,
     mode: BatchMode,
-    names: FieldName,
+    expand_ambiguous: bool,
 ) -> (Vec<Entry>, Vec<(String, anyhow::Error)>) {
-    let expand_ambiguous = names == FieldName::Every;
     let mut entries: Vec<Entry> = Vec::new();
     let mut seen: std::collections::HashSet<datum_core::ids::Slug> =
         std::collections::HashSet::new();
@@ -464,21 +431,6 @@ pub(crate) fn resolve_batch(
                         errors.push((token.to_string(), e.into()));
                         continue;
                     }
-                }
-            }
-        }
-        if names == FieldName::Newest {
-            match resolve_newest(db, token) {
-                Ok(None) => {}
-                Ok(Some(e)) => {
-                    if seen.insert(e.slug.clone()) {
-                        entries.push(e);
-                    }
-                    continue;
-                }
-                Err(e) => {
-                    errors.push((token.to_string(), e));
-                    continue;
                 }
             }
         }

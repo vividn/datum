@@ -287,47 +287,6 @@ fn a_field_wins_over_a_hid_it_only_starts() {
     assert_eq!(opened_field(tmp.path()), "coffee");
 }
 
-/// da-d86vo: every command taking an entry's place reads a field the same
-/// way, as its NEWEST entry, though a hid starts with the field's name.
-#[test]
-fn update_history_why_and_edit_take_a_fields_newest_entry() {
-    let tmp = tempfile::tempdir().unwrap();
-    assert!(run_bin(tmp.path(), &["occur", "coffee"], "")
-        .status
-        .success());
-    let db = || Db::open(tmp.path().join("e.db").to_str().unwrap()).unwrap();
-    let hid_of = |sql: &str| -> String { db().conn().query_row(sql, [], |r| r.get(0)).unwrap() };
-    let hid = hid_of("SELECT hid FROM entries WHERE field = 'coffee'");
-    let field = &hid[..3];
-    for t in ["09:00", "11:00"] {
-        let out = run_bin(tmp.path(), &["occur", field, "-y", "-t", t], "");
-        assert!(out.status.success(), "{out:?}");
-    }
-    let newest = hid_of(&format!(
-        "SELECT hid FROM entries WHERE field = '{field}' ORDER BY at DESC LIMIT 1"
-    ));
-
-    let out = run_bin(tmp.path(), &["edit", field], "");
-    assert!(out.status.success(), "{out:?}");
-    let opened: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(tmp.path().join("opened.json")).unwrap())
-            .unwrap();
-    let at = db().get_entry(&newest).unwrap().at.unwrap().utc;
-    assert_eq!(opened["at"]["utc"], serde_json::json!(at), "edit: {opened}");
-
-    for cmd in ["history", "why"] {
-        let out = run_bin(tmp.path(), &[cmd, field], "");
-        assert!(out.status.success(), "{cmd}: {out:?}");
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains(&newest[..7]), "{cmd}: {stdout}");
-    }
-
-    let out = run_bin(tmp.path(), &["update", field, "cups=2"], "");
-    assert!(out.status.success(), "{out:?}");
-    let updated = hid_of("SELECT hid FROM entries WHERE json_extract(data, '$.cups') = 2");
-    assert_eq!(updated, newest, "update");
-}
-
 #[test]
 fn a_bare_edit_opens_the_last_entry() {
     let tmp = tempfile::tempdir().unwrap();

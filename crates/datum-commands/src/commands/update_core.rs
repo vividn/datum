@@ -214,7 +214,7 @@ pub fn update_batch_from_args(
         db,
         &pattern,
         crate::commands::helpers::BatchMode::LiveOrTombstone,
-        crate::commands::helpers::FieldName::Newest,
+        false,
     );
 
     if entries.is_empty() {

@@ -11,7 +11,7 @@ use datum_core::{
 use crate::{
     args::{DeleteArgs, OutputFlagsExt},
     commands::{
-        helpers::{registry_of, resolve_batch, BatchMode, FieldName},
+        helpers::{registry_of, resolve_batch, BatchMode},
         render_helpers::build_render_contexts,
     },
     render::{print_entry, show_delete},
@@ -44,7 +44,7 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     } else if args.keep_meta {
         anyhow::bail!("--keep-meta goes with --all");
     } else {
-        resolve_batch(db, pattern, BatchMode::Live, FieldName::Not)
+        resolve_batch(db, pattern, BatchMode::Live, false)
     };
 
     // Nothing resolved — propagate the first token error verbatim so single-token

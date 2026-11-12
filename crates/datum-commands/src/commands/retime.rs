@@ -21,7 +21,7 @@ use datum_core::{
 };
 
 use crate::args::{OutputFlagsExt, RetimeArgs};
-use crate::commands::helpers::{registry_of, resolve_batch, BatchMode, FieldName};
+use crate::commands::helpers::{registry_of, resolve_batch, BatchMode};
 use crate::commands::log_core::{build_time_anchored, zone_agrees};
 use crate::commands::reading::which_reading;
 use crate::commands::time_bounds::{parse_after, parse_before};
@@ -54,7 +54,7 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
             .slug
             .as_deref()
             .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
-        let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, FieldName::Not);
+        let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, false);
         // Any token that fails to resolve fails the whole command, the
         // same all-or-nothing contract get uses: a bad piece surfaces as
         // an error rather than being silently dropped, so retime never
