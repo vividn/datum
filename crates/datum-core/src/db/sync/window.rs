@@ -71,7 +71,9 @@ impl<'a> Judge<'a> {
     /// Whether an entry row passes: a spec by the field it specifies, or
     /// with `specs` always, as is an alias; any other entry by its field,
     /// and within a window by its time — `at`, else when it was made — or
-    /// for setting its field's state at the window's start.
+    /// for setting its field's state at the window's start. A time that
+    /// can't be read is not shown to be inside it, and fails (da-ibe8d), as
+    /// a NULL fails `rows_passing`'s bound in `sync.rs`.
     pub(super) fn row(&self, r: &Map<String, Value>) -> bool {
         let field = r.get("field").and_then(Value::as_str);
         match field {
@@ -83,7 +85,7 @@ impl<'a> Judge<'a> {
                 let hid = r.get("hid").and_then(Value::as_str);
                 let time = r["at"]["utc"].as_str().or(r["create_time"].as_str());
                 let time = time.and_then(|t| DateTime::parse_from_rfc3339(t).ok());
-                time.is_none_or(|t| t >= from)
+                time.is_some_and(|t| t >= from)
                     || hid.is_some_and(|h| self.governing.values().any(|g| g == h))
             }),
         }

@@ -160,3 +160,41 @@ fn the_entry_before_a_deleted_one_that_set_the_state_is_sent() {
     assert_eq!(r.query(live), "\"happy\"");
     assert_eq!(verify_with(&a, &r), verify_with(&r, &a));
 }
+
+/// An entry whose time can't be read, `at` nor its create time, is not
+/// shown to fall inside a window, so a windowed copy is not sent it
+/// (da-ibe8d): a member running other code signed it, as written here by
+/// hand into its database, and both sides' verify still agree.
+#[test]
+fn an_entry_whose_time_cannot_be_read_is_outside_every_window() {
+    use ed25519_dalek::Signer;
+    let (a, _b) = chained();
+    a.ok(&["occur", "coffee", "-t", "-600"]);
+    a.ok(&["occur", "coffee"]);
+    let (bad, good) = (nth(&a, "coffee", 0), nth(&a, "coffee", 1));
+    let mut op = json(&a.query(&format!("SELECT body FROM ops WHERE hid = '{bad}'")));
+    op.as_object_mut().unwrap().remove("sig");
+    op["effect"]["create"]["at"]["utc"] = "not a time".into();
+    op["effect"]["create"]["create_time"] = "not a time".into();
+    let secret = data_encoding::HEXLOWER
+        .decode(a.query("SELECT endpoint_secret FROM sync_local").as_bytes())
+        .unwrap();
+    let key = ed25519_dalek::SigningKey::from_bytes(&secret.try_into().unwrap());
+    let digest = Sha256::digest(datum_core::db::canonical_json(&op).as_bytes());
+    op["sig"] = data_encoding::HEXLOWER
+        .encode(&key.sign(&digest).to_bytes())
+        .into();
+    let body = datum_core::db::canonical_json(&op).replace('\'', "''");
+    // No row stores such a time: the op alone is what a session reads.
+    a.exec(&format!(
+        "UPDATE ops SET body = '{body}' WHERE hid = '{bad}';
+         DELETE FROM entries WHERE hid = '{bad}';"
+    ));
+
+    let r = Copy::new();
+    admit_with(&a, &r, &["--window", "1d"]);
+    let served = a.ok(&["sync", "pipe", "ops", "--since", "{}", "--peer", &r.id()]);
+    assert!(!served.contains(&bad), "{served}");
+    assert!(!holds(&r, &bad) && holds(&r, &good));
+    assert_eq!(verify_with(&a, &r), verify_with(&r, &a));
+}
