@@ -75,6 +75,19 @@ which account it is signed in to, and `datum sync logout` forgets it. Only
 open a login link from a `datum sync login` you ran yourself: whoever
 printed it joins the account's chains.
 
+A device signed in by a datum before `datum 3.2.2899-beta` (as `datum
+--version` prints it) kept the passkey's PRF output, which signs for the
+account. A newer datum rewrites the `account` file to the form that signs
+nothing as it first reads it, but the old bytes can outlive the file in freed
+disk blocks, snapshots and backups, and a `DATUM_ACCOUNT` set to it in a shell
+profile or script still signs: take it out. The PRF output is the same for
+the life of the passkey, so if such a device is lost or stolen, in each chain
+the account is an admin of add a new passkey as admin (the Sync widget's «Add
+passkey» on datum.day, which runs `datum sync admin add <PASSKEY-JSON>`), then
+remove the old account key, the admin labelled `account`: `datum sync admin
+remove account`. A device signed in only by 3.2.2899-beta or later holds
+nothing that signs.
+
 Per key the op with the later hybrid logical clock wins. Concurrent edits
 of one key, or a delete against a concurrent edit, leave the entry's
 `conflicts` naming each side — the same on every copy that holds both — which
