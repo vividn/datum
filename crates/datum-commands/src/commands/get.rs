@@ -7,7 +7,7 @@ use anyhow::Result;
 use datum_core::db::Db;
 
 use crate::args::{GetArgs, OutputFlagsExt};
-use crate::commands::helpers::{resolve_batch, BatchMode};
+use crate::commands::helpers::{resolve_batch, BatchMode, FieldName};
 use crate::render::{print_entry_pretty, show_action_with_context, Outcome};
 
 pub fn get(args: GetArgs, db: &Db) -> Result<()> {
@@ -50,8 +50,8 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     // tokens (trailing comma) drop, duplicates collapse by slug. Live
     // only — get never surfaces tombstones.
     // get renders every match, so an ambiguous prefix expands to all live
-    // entries (`expand_ambiguous = true`) rather than erroring.
-    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, true);
+    // entries (`FieldName::Every`) rather than erroring.
+    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, FieldName::Every);
 
     // A token that can't resolve fails the command, but only after the
     // ones that did are printed — `delete`'s precedent for a partly-bad
