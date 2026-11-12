@@ -47,15 +47,51 @@ fn an_entry_after_a_finish_is_refused_saying_how_to_undo_it() {
     let err = run_cli(&["moment", "exp", "-y", "-t", "11:00"], &db).unwrap_err();
     let said = format!("{err:#}");
     assert!(said.contains("FINISHED") && said.contains(&hid), "{said}");
-    assert!(
-        said.contains(&format!("datum update {hid} state=false")),
-        "{said}"
-    );
+    assert!(said.contains(&format!("datum del {hid}")), "{said}");
     // `ignore` is refused; `track` and a second `finish` write nothing.
     run_cli(&["ignore", "exp"], &db).unwrap_err();
     run_cli(&["track", "exp"], &db).unwrap();
     run_cli(&["finish", "exp"], &db).unwrap();
     assert_eq!(db.entries_for_field("exp", None).unwrap().len(), 2);
+}
+
+/// da-6iqxu: a field of moments has no off, so its undo is the delete,
+/// which leaves no state behind and takes moments again; a field with
+/// states, logged or allowed, is told to change the finish's state.
+#[test]
+fn the_undo_said_is_the_one_that_fits_the_field() {
+    let db = finished_db();
+    let hid = finish_hid(&db, "exp");
+    let advice = |field: &str| {
+        let err = run_cli(&["moment", field, "-y", "-t", "11:00"], &db).unwrap_err();
+        format!("{err:#}")
+    };
+    // A remark is a `point` row too, so it gives the field no states.
+    run_cli(&["remark", "exp", "a note"], &db).unwrap();
+    let said = advice("exp");
+    assert!(said.contains(&format!("datum del {hid}")), "{said}");
+    run_cli(&["del", &hid], &db).unwrap();
+    run_cli(&["moment", "exp", "-y", "-t", "11:00"], &db).unwrap();
+    assert_eq!(listing_of(&db, "exp")["states"], json!([]));
+
+    run_cli(&["start", "work", "-yy", "-t", "10:00"], &db).unwrap();
+    run_cli(&["finish", "work", "-y", "-t", "10:00"], &db).unwrap();
+    let work = finish_hid(&db, "work");
+    let said = advice("work");
+    assert!(
+        said.contains(&format!("datum update {work} state=false")),
+        "{said}"
+    );
+
+    run_cli(&["setup", "mood", "--add-state", "calm"], &db).unwrap();
+    run_cli(&["moment", "mood", "-yy", "-t", "10:00"], &db).unwrap();
+    run_cli(&["finish", "mood", "-y", "-t", "10:00"], &db).unwrap();
+    let mood = finish_hid(&db, "mood");
+    let said = advice("mood");
+    assert!(
+        said.contains(&format!("datum update {mood} state=false")),
+        "{said}"
+    );
 }
 
 #[test]

@@ -1004,14 +1004,46 @@ fn refuse_after_finish(conn: &Connection, entry: &Entry) -> Result<()> {
         )
         .optional()?;
     match first {
-        Some((finished, hid)) if finished < at.utc.to_rfc3339() => Err(DatumError::Other(format!(
-            "'{}' is FINISHED ({hid}), and this entry is dated after it, which a finished \
-             field refuses; if finishing it was a mistake, change that entry's state \
-             (`datum update {hid} state=false`)",
-            entry.field
-        ))),
+        Some((finished, hid)) if finished < at.utc.to_rfc3339() => {
+            // A field of moments alone has no off to change the finish to,
+            // so its undo is the delete (da-6iqxu).
+            let undo = if has_states(conn, &entry.field)? {
+                format!("change that entry's state (`datum update {hid} state=false`)")
+            } else {
+                format!("delete that entry (`datum del {hid}`)")
+            };
+            Err(DatumError::Other(format!(
+                "'{}' is FINISHED ({hid}), and this entry is dated after it, which a finished \
+                 field refuses; if finishing it was a mistake, {undo}",
+                entry.field
+            )))
+        }
         _ => Ok(()),
     }
+}
+
+/// Whether `field` has states of its own: allowed states in its spec, or a
+/// live entry that is no moment (nor remark) and holds no status.
+fn has_states(conn: &Connection, field: &str) -> Result<bool> {
+    use crate::shape::{FINISHED_STATE_VALUE, IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
+    let status = |s: &str| JsonValue::from(s).to_string();
+    Ok(conn.query_row(
+        &format!(
+            "SELECT EXISTS(SELECT 1 FROM entries WHERE field = ?1 AND {LIVE_SQL} \
+                 AND verb NOT IN ('point', 'point-switch') \
+                 AND COALESCE(state, '') NOT IN (?2, ?3, ?4)) \
+             OR EXISTS(SELECT 1 FROM entries WHERE slug = ?5 AND field = 'spec' AND {LIVE_SQL} \
+                 AND json_array_length(data, '$.allowed_states') > 0)"
+        ),
+        params![
+            field,
+            status(TRACKED_STATE_VALUE),
+            status(IGNORED_STATE_VALUE),
+            status(FINISHED_STATE_VALUE),
+            super::spec::spec_slug(field)
+        ],
+        |r| r.get(0),
+    )?)
 }
 
 /// [`insert_entry_in_tx`] minus the conflict detection: returns the row it

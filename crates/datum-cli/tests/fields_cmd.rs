@@ -84,10 +84,11 @@ fn plain_listing_has_a_header_and_hides_ignored_fields() {
     );
     assert_eq!(lines[1], "work   false true", "{out}");
     assert_eq!(lines[2], "x", "{out}");
+    // `old` is ignored, so it is not listed, and the footer says so (da-6iqxu).
     assert_eq!(
-        lines.len(),
-        3,
-        "`old` is ignored, so it is not listed:\n{out}"
+        lines[3..],
+        ["hidden: 1 ignored (`datum fields -A` lists it)"],
+        "{out}"
     );
 }
 

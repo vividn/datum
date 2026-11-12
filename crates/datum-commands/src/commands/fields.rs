@@ -84,18 +84,20 @@ fn by_recency(listing: &mut JsonValue, last: &HashMap<String, DateTime<Utc>>) {
 /// per field, so the second column reads as what it is — the set of states
 /// the field has been logged with, not its current one.
 ///
-/// Ignored fields are left out unless `include_ignored`; when one is shown
-/// a third `ignored` column says which. `--json` never comes through here:
+/// Ignored and finished fields are left out unless `include_ignored`, and a
+/// footer says how many and that `-A` lists them; when one is shown a third
+/// `ignored` column says which, `finished` for a finished one (da-6iqxu).
+/// `--json` never comes through here:
 /// it carries every field with its `ignored` flag, which is what the web
 /// widget bar reads.
 pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
     let ignored = |row: &JsonValue| row["ignored"] == json!(true);
-    let shown: Vec<&JsonValue> = listing
+    let finished = |row: &JsonValue| row["finished"] == json!(true);
+    let (shown, hidden): (Vec<&JsonValue>, Vec<&JsonValue>) = listing
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|row| include_ignored || !ignored(row))
-        .collect();
+        .partition(|row| include_ignored || !ignored(row));
     let mark = shown.iter().any(|row| ignored(row));
     let mut headers = vec!["field", "states"];
     if mark {
@@ -115,14 +117,33 @@ pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
                 states.join(" "),
             ];
             if mark {
-                cells.push(if ignored(row) { "true" } else { "" }.to_string());
+                let cell = match (finished(row), ignored(row)) {
+                    (true, _) => "finished",
+                    (_, true) => "true",
+                    _ => "",
+                };
+                cells.push(cell.to_string());
             }
             cells
         })
         .collect();
     use crate::render::term_layout::Give;
     let give = [Give::Field, Give::Text, Give::Whole];
-    format_grid(&headers, &give[..headers.len()], &rows)
+    let mut out = format_grid(&headers, &give[..headers.len()], &rows);
+    if !hidden.is_empty() {
+        let done = hidden.iter().filter(|row| finished(row)).count();
+        let kinds: Vec<String> = [(done, "finished"), (hidden.len() - done, "ignored")]
+            .into_iter()
+            .filter(|(n, _)| *n > 0)
+            .map(|(n, word)| format!("{n} {word}"))
+            .collect();
+        let them = if hidden.len() == 1 { "it" } else { "them" };
+        out.push_str(&format!(
+            "hidden: {} (`datum fields -A` lists {them})\n",
+            kinds.join(", ")
+        ));
+    }
+    out
 }
 
 /// `[{"field", "spec", "states", "color", "state_colors", "ignored",
@@ -291,13 +312,49 @@ mod tests {
         ]);
         let plain = format_listing(&listing, false);
         assert!(!plain.contains("old"), "ignored field leaked:\n{plain}");
-        assert!(!plain.contains("ignored"), "stray column:\n{plain}");
+        assert_eq!(
+            plain.lines().collect::<Vec<_>>(),
+            [
+                "field  states",
+                "work   false true",
+                "hidden: 1 ignored (`datum fields -A` lists it)"
+            ],
+        );
 
         let all = format_listing(&listing, true);
         let mut lines = all.lines();
         assert_eq!(lines.next(), Some("field  states      ignored"));
         assert_eq!(lines.next(), Some("old                true"));
         assert_eq!(lines.next(), Some("work   false true"));
+    }
+
+    /// da-6iqxu: a finished field is hidden as an ignored one is, the footer
+    /// counting each, and `-A` marks it `finished`, not `true`.
+    #[test]
+    fn finished_fields_are_counted_and_marked() {
+        let listing = json!([
+            {"field": "old", "states": [], "ignored": true},
+            {"field": "sauna", "states": [], "ignored": true, "finished": true},
+            {"field": "tea", "states": [], "ignored": true, "finished": true},
+            {"field": "work", "states": [false, true], "ignored": false},
+        ]);
+        let plain = format_listing(&listing, false);
+        assert_eq!(
+            plain.lines().last(),
+            Some("hidden: 2 finished, 1 ignored (`datum fields -A` lists them)"),
+            "{plain}"
+        );
+        let all = format_listing(&listing, true);
+        assert_eq!(
+            all.lines().collect::<Vec<_>>(),
+            [
+                "field  states      ignored",
+                "old                true",
+                "sauna              finished",
+                "tea                finished",
+                "work   false true",
+            ],
+        );
     }
 
     /// da-dhtp: the columns are laid out with the table's own width
