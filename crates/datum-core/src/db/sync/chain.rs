@@ -38,15 +38,8 @@
 //!     an open invite. Once the admit folds, the invite is used and the
 //!     secret admits no one.
 //!   - `standing {device, caps, label, expires?}` (da-zkwiu): a code's
-//!     admission, an admin act as a revoke is. Any endpoint its device key
-//!     signs for ([`bind_device`]) may be admitted with `caps`, as often as
-//!     one comes, until `expires` or a `revoke_standing {device}`. A later
-//!     one for the same device replaces it. Its admit is `admit {endpoint,
-//!     label, via: "standing", device_key, device_sig, replaces}`, unsigned
-//!     as an invite's is: `replaces` names the device's earlier endpoints in
-//!     the chain, each revoked at the admit's HLC, its ops before it
-//!     standing. A copy made afresh needs a new endpoint (two copies with one
-//!     key would number their ops from one seq), and is still one device.
+//!     admission, an admin act, its admits each its endpoint's own op
+//!     (da-tkbtu); `revoke_standing {device}` ends it. See `chain/standing.rs`.
 //!   - `revoke {endpoint}`, `add_admin {key, label}`, `remove_admin {key}`
 //!     — the last only when the record says `unlock: true` (da-aam46),
 //!     which opens the chain again. Every act is judged at its own HLC, so
@@ -169,7 +162,7 @@ use crate::error::{DatumError, Refusal, Result};
 
 mod standing;
 use standing::reader_holds;
-pub use standing::{standing_proof, Standing, STANDING};
+pub use standing::{Standing, STANDING};
 
 /// The fewest characters of an id that may name it: a one-letter prefix
 /// revoking whichever endpoint happens to start with it is a footgun.
@@ -783,6 +776,8 @@ pub struct Member {
     pub auto: bool,
     /// The device key its own latest `describe` bound it to (da-n0uj1.2).
     pub device: Option<String>,
+    /// `device` is its standing admit's (da-zkwiu), which a later admission clears.
+    pub(super) claimed: bool,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
     /// The HLC of its purge (da-ry11c): every op of its is refused.
@@ -1137,6 +1132,8 @@ pub struct Chain {
     invites: BTreeMap<String, Invite>,
     /// Each device's standing admission, by its device key (da-zkwiu).
     pub standings: BTreeMap<String, Standing>,
+    /// Each endpoint's own claim to a standing (da-tkbtu): its device key.
+    claims: BTreeMap<String, String>,
     seen: BTreeSet<[u8; 32]>,
     /// The digests of the records the fold took.
     taken: BTreeSet<[u8; 32]>,
@@ -1414,6 +1411,9 @@ impl Chain {
         let r = &op.effect;
         let s = |k: &str| r[k].as_str().unwrap_or_default().to_string();
         let kind = s("type");
+        if kind == "claim" {
+            return self.take_claim(op); // before it is seen (da-tkbtu)
+        }
         let d = record_digest(r);
         if !self.seen.insert(d) {
             return Err("a record already in the chain".into());
@@ -1547,7 +1547,7 @@ impl Chain {
                 (m.user, m.host, m.db) = (piece("user"), piece("host"), piece("db"));
                 m.auto = r["auto"] == true && m.host.is_some();
                 if own {
-                    m.device = bound_device(r);
+                    (m.device, m.claimed) = (bound_device(r), false);
                 }
                 m.last_act = op.hlc.clone();
                 Ok(())
@@ -1759,6 +1759,8 @@ impl Chain {
             m.rejoined = Some(hlc.into());
             m.last_act = hlc.into();
             m.via = via.into();
+            // A standing admit's tag stands no later admission; a describe's does (da-tkbtu).
+            m.device = m.device.take().filter(|_| !std::mem::take(&mut m.claimed));
             m.roles.push((from, role));
             m.filter = filter;
             return Ok(());
@@ -1782,6 +1784,7 @@ impl Chain {
             db: None,
             auto: false,
             device: None,
+            claimed: false,
             roles: vec![(hlc.into(), role)],
             filter,
         });
@@ -2018,9 +2021,12 @@ impl Db {
                 }
             }
             let ep = endpoint(tx)?;
+            let record_was_standing = record["type"] == "claim";
             let seq = push(tx, &ep, (CHAIN_HID, CHAIN_HID, None), "chain", record)?;
             let chain = Chain::load(tx)?;
-            if let Some(why) = chain.rejected.get(&(ep.id, seq)) {
+            // A joiner's own standing admit, to a chain it holds none of yet (da-tkbtu).
+            let joining = record_was_standing && !chain.exists();
+            if let Some(why) = chain.rejected.get(&(ep.id, seq)).filter(|_| !joining) {
                 return Err(DatumError::Other(format!(
                     "the sync chain refuses it: {why}"
                 )));
@@ -2161,8 +2167,7 @@ impl Db {
     /// admits by its device's standing admission instead (da-zkwiu).
     pub fn sync_admit(&self, endpoint: &str, label: &str, secret: &str, holds: u64) -> Result<()> {
         if let Some(proof) = secret.strip_prefix(STANDING) {
-            let (key, sig) = proof.split_once(':').unwrap_or((proof, ""));
-            return self.sync_admit_standing(endpoint, label, key, sig, holds);
+            return self.sync_admit_standing(endpoint, label, proof, holds);
         }
         let (secret, carried) = carried_invite(secret);
         let mut chain = self.sync_chain()?;

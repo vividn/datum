@@ -1217,6 +1217,12 @@ pub enum SyncCommand {
     /// Hidden: `datum sync pipe hold` — hold the chain's records on stdin, a
     /// peer's across a sync floor, refusing any other line (da-52vdj).
     Hold,
+    /// Hidden: `datum sync pipe standing --chain <ID>` — sign this copy's
+    /// own claim to that chain's standing admission, by the device whose
+    /// secret is hex on stdin, and print the proof a dial carries (da-tkbtu).
+    Standing {
+        chain: String,
+    },
     /// Hidden: `datum sync pipe known` — where this copy last saw each copy
     /// it syncs with, one address line each: datum.day's `known` (da-tvv4j).
     Known,

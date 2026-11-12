@@ -492,11 +492,17 @@ fn act(
 
 /// Hidden: `datum sync pipe …`, ops as JSON lines on stdin and stdout.
 fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "vector|ops|apply|records|hold|known|verify|digest|held";
+    const SET: &str = "vector|ops|apply|records|hold|standing|known|verify|digest|held";
     Ok(match rest.next().copied() {
         Some("vector") => SyncCommand::Vector,
         Some("records") => SyncCommand::Records,
         Some("hold") => SyncCommand::Hold,
+        Some("standing") => {
+            let o = opts(rest, &["chain"], &[], 0..=0)?;
+            SyncCommand::Standing {
+                chain: o.get("chain").unwrap_or_default(),
+            }
+        }
         Some("known") => SyncCommand::Known,
         // `--json` is the swept `--show json`, set by `apply_show`.
         Some("apply") => SyncCommand::Apply {
@@ -812,6 +818,10 @@ mod tests {
         assert_eq!(p(&["pipe", "records"]), SyncCommand::Records);
         assert_eq!(p(&["pipe", "known"]), SyncCommand::Known);
         assert_eq!(p(&["pipe", "hold"]), SyncCommand::Hold);
+        assert_eq!(
+            p(&["pipe", "standing", "--chain", "c1"]),
+            SyncCommand::Standing { chain: "c1".into() }
+        );
         assert_eq!(
             p(&["pipe", "apply"]),
             SyncCommand::Apply {

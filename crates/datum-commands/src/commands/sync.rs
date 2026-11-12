@@ -219,6 +219,13 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             std::io::stdin().read_to_string(&mut input)?;
             db.sync_hold_records(&input)?;
         }
+        SyncCommand::Standing { chain } => {
+            let mut input = String::new();
+            std::io::stdin().read_to_string(&mut input)?;
+            let device = datum_core::db::chain::read_admin_secret(&input)
+                .context("stdin is not a device secret, 32 bytes in hex")?;
+            println!("{}", db.sync_standing_claim(&device, &chain)?);
+        }
         SyncCommand::Known => {
             for p in db.sync_known_peers()? {
                 if !p.addrs.is_empty() {

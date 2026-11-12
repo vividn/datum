@@ -34,13 +34,25 @@ fn standing(expires: Option<&str>) -> serde_json::Value {
         "label": "agent", "expires": expires})
 }
 
-/// `copy`'s hello to `member` carrying `device`'s proof for `endpoint`.
-fn hello(member: &Copy, copy: &Copy, device: &[u8; 32], endpoint: &str) -> Output {
-    let proof = chain::standing_proof(device, &chain_of(member), endpoint);
+/// `signer`'s own claim to `member`'s chain's standing admission by
+/// `device`, as the proof a dial carries (da-tkbtu).
+fn proof(member: &Copy, device: &[u8; 32], signer: &Copy) -> String {
+    let secret: String = device.iter().map(|b| format!("{b:02x}")).collect();
+    let chain = chain_of(member);
+    let args = ["sync", "pipe", "standing", "--chain", &chain];
+    signer.ok_in(&args, &secret).trim().to_string()
+}
+
+/// `copy`'s hello to `member` carrying `device`'s proof for `signer`.
+fn hello(member: &Copy, copy: &Copy, device: &[u8; 32], signer: &Copy) -> Output {
+    hello_with(member, copy, &proof(member, device, signer))
+}
+
+fn hello_with(member: &Copy, copy: &Copy, proof: &str) -> Output {
     let id = copy.id();
     let args = ["sync", "handshake", &id, "--label", "agent", "--addr", "{}"];
     member.run(
-        &[&args[..], &["--invite", &proof, "--chain", ""]].concat(),
+        &[&args[..], &["--invite", proof, "--chain", ""]].concat(),
         "",
     )
 }
@@ -51,7 +63,7 @@ fn stderr(out: &Output) -> String {
 
 /// Two fresh copies of one device are admitted by its standing record, the
 /// second's admit revoking the first, whose ops stand; a hello with another
-/// device's proof or a proof for another endpoint is refused; every copy
+/// device's proof, another copy's admit, or one altered is refused; every copy
 /// folds the same membership; and an expel of the device's copy revokes the
 /// record, after which no copy of it is admitted.
 #[test]
@@ -61,15 +73,22 @@ fn a_devices_fresh_copies_are_admitted_each_replacing_the_last_until_revoked() {
     assert!(out.status.success(), "{}", stderr(&out));
 
     let first = Copy::new();
-    let out = hello(&a, &first, &DEVICE, &first.id());
+    let out = hello(&a, &first, &DEVICE, &first);
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(a.send(&first).0);
     first.ok(&["occur", "tea"]);
     assert!(first.send(&a).0);
     assert_eq!(member_of(&a, &first.id())["device"], device_key());
+    // A dial again is in already, and its admit, synced later, changes nothing.
+    let admitted = member_of(&a, &first.id());
+    let out = hello(&a, &first, &DEVICE, &first);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let (sent, said) = first.send(&a);
+    assert!(sent, "{said}");
+    assert_eq!(member_of(&a, &first.id()), admitted);
 
     let second = Copy::new();
-    let out = hello(&a, &second, &DEVICE, &second.id());
+    let out = hello(&a, &second, &DEVICE, &second);
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(a.send(&second).0);
     assert!(!member_of(&a, &first.id())["revoked"].is_null());
@@ -78,16 +97,20 @@ fn a_devices_fresh_copies_are_admitted_each_replacing_the_last_until_revoked() {
     second.ok(&["occur", "coffee"]);
     assert!(second.send(&a).0 && a.has("coffee"));
 
-    let stranger = Copy::new();
-    for (device, endpoint, why) in [
+    let (stranger, other) = (Copy::new(), Copy::new());
+    // Another copy's own claim, and the stranger's own with its time changed.
+    let theirs = proof(&a, &DEVICE, &other);
+    let altered = proof(&a, &DEVICE, &stranger).replace("\"created\":\"2", "\"created\":\"1");
+    assert!(altered.contains("\"created\":\"1"), "{altered}");
+    for (given, why) in [
         (
-            &[4u8; 32],
-            stranger.id(),
+            proof(&a, &[4u8; 32], &stranger),
             "no standing admission for this device",
         ),
-        (&DEVICE, second.id(), "not signed for by its device's key"),
+        (theirs, "carries no standing claim of its own"),
+        (altered, "standing claim: bad signature"),
     ] {
-        let out = hello(&a, &stranger, device, &endpoint);
+        let out = hello_with(&a, &stranger, &given);
         assert!(!out.status.success());
         assert!(stderr(&out).contains(why), "{}", stderr(&out));
     }
@@ -97,10 +120,38 @@ fn a_devices_fresh_copies_are_admitted_each_replacing_the_last_until_revoked() {
         assert_eq!(member_of(&a, &id), member_of(&b, &id));
     }
 
+    // Retired, first's own claim admits it again by neither route
+    // (da-tkbtu): the fold refuses it, and as a record it is never read.
+    let again = proof(&b, &DEVICE, &first);
+    let out = hello_with(&b, &first, &again);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("in the chain already"),
+        "{}",
+        stderr(&out)
+    );
+    let id = first.id();
+    let records = [
+        "sync",
+        "handshake",
+        &id,
+        "--label",
+        "agent",
+        "--addr",
+        "{}",
+        "--records",
+    ];
+    let refused = b.fails(&records, again.strip_prefix(chain::STANDING).unwrap());
+    assert!(
+        refused.contains("not a member of this sync chain"),
+        "{refused}"
+    );
+    assert!(!member_of(&b, &id)["revoked"].is_null());
+
     let out = a.ok(&["sync", "chain", "expel", &second.id()]);
     assert!(out.contains("standing admission is revoked"), "{out}");
     let third = Copy::new();
-    let out = hello(&a, &third, &DEVICE, &third.id());
+    let out = hello(&a, &third, &DEVICE, &third);
     assert!(!out.status.success());
     assert!(
         stderr(&out).contains("standing admission was revoked"),
@@ -125,7 +176,7 @@ fn a_standing_admission_takes_an_admin_and_expires() {
     let out = approve(&a, standing(Some("2026-01-01T00:00:00Z")), &admin);
     assert!(out.status.success(), "{}", stderr(&out));
     let copy = Copy::new();
-    let out = hello(&a, &copy, &DEVICE, &copy.id());
+    let out = hello(&a, &copy, &DEVICE, &copy);
     assert!(!out.status.success());
     assert!(
         stderr(&out).contains("standing admission expired (2026-01-01T00:00:00Z)"),
@@ -135,6 +186,6 @@ fn a_standing_admission_takes_an_admin_and_expires() {
 
     let out = approve(&a, standing(Some("2099-01-01T00:00:00Z")), &admin);
     assert!(out.status.success(), "{}", stderr(&out));
-    let out = hello(&a, &copy, &DEVICE, &copy.id());
+    let out = hello(&a, &copy, &DEVICE, &copy);
     assert!(out.status.success(), "{}", stderr(&out));
 }

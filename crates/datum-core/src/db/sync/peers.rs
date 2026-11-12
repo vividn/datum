@@ -357,6 +357,123 @@ mod tests {
         send(member, copy);
     }
 
+    /// A chain `c1` on `a` holding a standing admission for `device`, by
+    /// `standing`'s fields beside it, and how `a`'s door takes `copy`'s claim.
+    fn standing(a: &Db, device: &[u8; 32], with: Value) -> String {
+        let key = chain::bind_device(device, "", "").0;
+        let mut standing =
+            json!({"type": "standing", "chain": "c1", "device": key, "caps": {}, "label": "agent"});
+        standing
+            .as_object_mut()
+            .unwrap()
+            .extend(with.as_object().unwrap().clone());
+        a.sync_chain_write(standing, true).unwrap();
+        key
+    }
+
+    fn knock(member: &Db, copy: &Db, invite: Option<&str>, records: Option<&str>) -> Result<bool> {
+        member.sync_handshake(
+            &id(copy),
+            "agent",
+            "{}",
+            invite,
+            Some(""),
+            0,
+            records,
+            false,
+        )
+    }
+
+    /// A copy is admitted by its device's standing admission (da-zkwiu,
+    /// da-tkbtu), its own claim in an invite's place and the member's admit.
+    /// Retired, it is admitted again by neither route: the fold refuses its
+    /// admit, and a record of an endpoint held as revoked is never read
+    /// (vremya's, on #2030).
+    #[test]
+    fn a_retired_endpoint_is_admitted_again_by_no_route() {
+        let [a, b, x, y] = [(); 4].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        admit(&a, &b, "b", json!({}));
+        let device = [7u8; 32];
+        standing(&a, &device, json!({}));
+        let own = |proof: &str| proof.strip_prefix(chain::STANDING).unwrap().to_string();
+        let proof = x.sync_standing_claim(&device, "c1").unwrap();
+        knock(&a, &x, Some(&proof), None).unwrap();
+        let proof = y.sync_standing_claim(&device, "c1").unwrap();
+        knock(&a, &y, Some(&proof), None).unwrap();
+        send(&a, &b);
+        let held = b.sync_chain().unwrap();
+        assert!(held.member(&id(&y)).unwrap().revoked.is_none());
+        assert!(
+            held.member(&id(&x)).unwrap().revoked.is_some(),
+            "y retired x"
+        );
+
+        let again = x.sync_standing_claim(&device, "c1").unwrap();
+        let refused = knock(&b, &x, Some(&again), None).unwrap_err().to_string();
+        assert!(refused.contains("in the chain already"), "{refused}");
+        let (shown, read) = Chain::load_with(&b.conn, &own(&again)).unwrap();
+        assert_eq!(read, "", "a revoked endpoint's records are never read");
+        assert!(shown.member(&id(&x)).unwrap().revoked.is_some());
+        assert!(knock(&b, &x, None, Some(&own(&again))).is_err());
+        assert!(b
+            .sync_chain()
+            .unwrap()
+            .member(&id(&x))
+            .unwrap()
+            .revoked
+            .is_some());
+    }
+
+    /// A standing admit is the member's, at its clock, so a revoke and an
+    /// expiry converge (vremya's, on #2030): a member that has not heard of
+    /// the revoke admits a copy, and once the revoke reaches it, every copy
+    /// folds that admit after it and refuses it; past `expires` by the
+    /// member's clock, the door admits no one, whenever the claim says it
+    /// was made.
+    #[test]
+    fn a_standing_admit_after_its_revoke_or_expiry_admits_no_one() {
+        let [a, b, x, y] = [(); 4].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        admit(&a, &b, "b", json!({}));
+        let device = [7u8; 32];
+        let key = standing(&a, &device, json!({}));
+        send(&a, &b);
+        let revoke = json!({"type": "revoke_standing", "chain": "c1", "device": key});
+        a.sync_chain_write(revoke, true).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let proof = y.sync_standing_claim(&device, "c1").unwrap();
+        knock(&b, &y, Some(&proof), None).unwrap();
+        assert!(
+            b.sync_chain().unwrap().member(&id(&y)).is_some(),
+            "b had not heard"
+        );
+        send(&a, &b);
+        send(&b, &a);
+        for c in [&a, &b] {
+            assert!(c.sync_chain().unwrap().member(&id(&y)).is_none(), "undone");
+        }
+        let refused = knock(
+            &a,
+            &x,
+            Some(&x.sync_standing_claim(&device, "c1").unwrap()),
+            None,
+        );
+        let refused = refused.unwrap_err().to_string();
+        assert!(
+            refused.contains("standing admission was revoked"),
+            "{refused}"
+        );
+
+        let device = [8u8; 32];
+        let soon = chrono::Utc::now() + chrono::Duration::milliseconds(300);
+        standing(&a, &device, json!({"expires": soon.to_rfc3339()}));
+        let proof = x.sync_standing_claim(&device, "c1").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let refused = knock(&a, &x, Some(&proof), None).unwrap_err().to_string();
+        assert!(refused.contains("standing admission expired"), "{refused}");
+    }
+
     /// A device signed in to the chain's account admits itself (da-nf1p4):
     /// the invite its account key signed rides in its secret, and a member
     /// lacking it writes it, then admits, once. One a key no admin holds

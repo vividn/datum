@@ -1,24 +1,42 @@
 //! The standing admission (da-zkwiu): a device's code, which admits each
 //! fresh copy of it by its device key, replacing the copies before.
+//!
+//! `standing {device, caps, label, expires?}` is an admin act as a revoke
+//! is, until `expires` or a `revoke_standing {device}`; a later one for the
+//! same device replaces it. A copy joins by it in two records (da-tkbtu):
+//!
+//! - `claim {endpoint, device_key, device_sig}`, the endpoint's own op, so
+//!   its consent: the device's key signs for the endpoint ([`bind_device`]),
+//!   which the device's key does for any endpoint id it is shown, and the
+//!   endpoint's own signature says it agreed. Another's copy of it is
+//!   refused, and refused before it is seen, so a copy backdated before it
+//!   keeps it out neither.
+//! - `admit {endpoint, label, via: "standing"}`, a live member's, written at
+//!   the member's clock as an invite's admit is, which admits an endpoint
+//!   whose claim the chain holds, once, judging the standing's revoke and
+//!   expiry at the member's clock and not the joiner's. It retires the
+//!   device's other live endpoints in the chain, each revoked at the admit's
+//!   HLC, its ops before it standing. A copy made afresh needs a new endpoint
+//!   (two copies with one key would number their ops from one seq), and is
+//!   still one device.
 
 use chrono::{DateTime, Utc};
-use serde_json::{json, Value};
+use rusqlite::params;
+use serde_json::json;
 
-use super::{bind_device, bound_device, expired, hlc_time, role_of, Chain, Filter, Role};
+use super::{bind_device, bound_device, expired, hlc_time, role_of};
+use super::{check_signature, Chain, Filter, Role};
 use crate::db::sync::{unhex, Op};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
 
 /// What a dialer carries where an invite's secret goes to be admitted by
-/// its device's standing admission (da-zkwiu): `standing:<key>:<sig>`.
+/// its device's standing admission (da-zkwiu): then, a line each, every op
+/// it has signed up to its own claim ([`Db::sync_standing_claim`]).
 pub const STANDING: &str = "standing:";
 
-/// [`STANDING`]'s proof that `endpoint` in `chain` is the device's whose
-/// secret is `device`.
-pub fn standing_proof(device: &[u8; 32], chain: &str, endpoint: &str) -> String {
-    let (key, sig) = bind_device(device, chain, endpoint);
-    format!("{STANDING}{key}:{sig}")
-}
+/// Why another endpoint's copy of a claim is refused (da-tkbtu).
+const NOT_OWN: &str = "a standing claim is its endpoint's own op";
 
 /// A reader writes nothing, so a redeemer holding entries of its own may
 /// not join as one: its fold would hide them (da-tti3w).
@@ -94,12 +112,43 @@ impl Chain {
         Ok(())
     }
 
-    /// An admit by its device's standing admission (da-zkwiu): the device
-    /// key signs for the endpoint, and every endpoint it `replaces` is the
-    /// device's, revoked from the admit on.
+    /// A `claim` (da-tkbtu): its endpoint's own op, which a standing admit
+    /// of it then needs. A later one replaces it: a dial again.
+    pub(super) fn take_claim(&mut self, op: &Op) -> std::result::Result<(), String> {
+        let r = &op.effect;
+        let endpoint = r["endpoint"].as_str().unwrap_or_default();
+        if op.endpoint != endpoint {
+            return Err(NOT_OWN.into());
+        }
+        if !self.exists() || r["chain"] != self.id.as_str() {
+            return Err("a claim of another sync chain".into());
+        }
+        let device = bound_device(r).ok_or("not signed for by its device's key")?;
+        self.claims.insert(endpoint.into(), device);
+        Ok(())
+    }
+
+    /// An admit by its device's standing admission (da-zkwiu), a live
+    /// member's: of an endpoint whose own claim the chain holds (da-tkbtu)
+    /// and does not hold yet, at the member's clock. It retires the
+    /// device's other live endpoints from the admit on.
     pub(super) fn admit_standing(&mut self, op: &Op) -> std::result::Result<(), String> {
         let r = &op.effect;
-        let device = bound_device(r).ok_or("not signed for by its device's key")?;
+        let endpoint = r["endpoint"].as_str().unwrap_or_default();
+        let device = self.claims.get(endpoint).cloned();
+        let device = device.ok_or("no standing claim of its own by that endpoint")?;
+        // Once: a retired or revoked endpoint, its key an old copy's, comes
+        // back by an invite, and retires no one again. A live one's again,
+        // a dial again, changes nothing.
+        if let Some(m) = self.member(endpoint) {
+            if m.revoked.is_none() && m.device.as_deref() == Some(device.as_str()) {
+                return Ok(());
+            }
+            return Err(format!(
+                "{endpoint} is in the chain already: a standing admission admits an \
+                 endpoint once, and one retired comes back by an invite"
+            ));
+        }
         let st = self
             .standings
             .get(&device)
@@ -114,38 +163,14 @@ impl Chain {
             return Err(format!("its device's standing admission expired ({e})"));
         }
         let (role, filter) = (st.role, st.filter.clone());
-        let endpoint = r["endpoint"].as_str().unwrap_or_default();
-        let replaces: Vec<&str> = match &r["replaces"] {
-            Value::Null => vec![],
-            Value::Array(a) if a.iter().all(Value::is_string) => {
-                a.iter().filter_map(Value::as_str).collect()
-            }
-            _ => return Err("an admit's `replaces` is a list of endpoint ids".into()),
-        };
-        for e in &replaces {
-            let m = self.member(e).filter(|_| *e != endpoint);
-            if m.is_none_or(|m| m.device.as_deref() != Some(device.as_str())) {
-                return Err(format!(
-                    "replaces {e}, which is no other endpoint of its device"
-                ));
-            }
-        }
-        // A key proves nothing about an endpoint it did not make: one the
-        // chain holds as another device's, or as no device's, stays theirs.
-        if self
-            .member(endpoint)
-            .is_some_and(|m| m.device.as_deref() != Some(device.as_str()))
-        {
-            return Err(format!("{endpoint} is a member that is not its device's"));
-        }
         // As `invite <id>` names its invite: the device's key is `device`.
         let via = format!("standing {}", &device[..8]);
         let label = r["label"].as_str().unwrap_or_default();
         self.admit(endpoint, label, &op.hlc, &via, role, filter)?;
         for m in self.members.iter_mut() {
             if m.endpoint == endpoint {
-                m.device = Some(device.clone());
-            } else if replaces.contains(&m.endpoint.as_str()) && m.revoked.is_none() {
+                (m.device, m.claimed) = (Some(device.clone()), true);
+            } else if m.device.as_deref() == Some(device.as_str()) && m.revoked.is_none() {
                 m.revoked = Some(op.hlc.clone());
                 m.last_act = op.hlc.clone();
             }
@@ -155,34 +180,65 @@ impl Chain {
 }
 
 impl Db {
-    /// Admit `endpoint` by the standing admission of the device whose key
-    /// `device_sig` signed for it (da-zkwiu), replacing the device's live
-    /// endpoints in the chain: write its `admit`, or say why the chain
-    /// refuses it.
+    /// This copy's own claim to `chain` by the device whose secret is
+    /// `device` (da-tkbtu), signed as its next op, with the proof a dial
+    /// carries: [`STANDING`] and every op this copy has signed up to it,
+    /// entries too, since a member applies an endpoint's ops in seq order
+    /// and one missing would hold the claim behind it. A dial again signs
+    /// another.
+    pub fn sync_standing_claim(&self, device: &[u8; 32], chain: &str) -> Result<String> {
+        let me = self.sync_endpoint_id()?;
+        let (key, sig) = bind_device(device, chain, &me);
+        let record = json!({
+            "type": "claim", "chain": chain, "endpoint": me,
+            "device_key": key, "device_sig": sig, "created": Utc::now().to_rfc3339(),
+        });
+        self.sync_chain_write(record, true)?;
+        let lines = self
+            .conn
+            .prepare("SELECT body FROM ops WHERE endpoint = ?1 ORDER BY seq")?
+            .query_map(params![me], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(format!("{STANDING}{}", lines.join("\n")))
+    }
+
+    /// Admit `endpoint` by the standing admission its own claim in `proof`
+    /// names (da-zkwiu, da-tkbtu), `proof` a [`Db::sync_standing_claim`]'s
+    /// after its prefix: apply its lines, then write the admit at this
+    /// copy's clock, or say why the chain refuses it.
     pub fn sync_admit_standing(
         &self,
         endpoint: &str,
         label: &str,
-        device_key: &str,
-        device_sig: &str,
+        proof: &str,
         holds: u64,
     ) -> Result<()> {
+        let refuse = |why: String| Err(DatumError::Other(why));
+        let last = proof.lines().last().unwrap_or_default();
+        let op = Op::parse(last)?;
+        let r = &op.effect;
+        if op.endpoint != endpoint || r["type"] != "claim" {
+            return refuse(format!("{label} carries no standing claim of its own"));
+        }
+        if let Err(why) = check_signature(last, &op) {
+            return refuse(format!("{label}'s standing claim: {why}"));
+        }
+        let device_key = r["device_key"].as_str().unwrap_or_default();
         let chain = self.sync_chain()?;
+        // A dial again of a copy its claim admitted: it is in, and nothing is written.
+        let live =
+            |m: &super::Member| m.revoked.is_none() && m.device.as_deref() == Some(device_key);
+        if chain.member(endpoint).is_some_and(live) {
+            return Ok(());
+        }
         let st = chain.standings.get(device_key).ok_or_else(|| {
             DatumError::Other("no standing admission for this device in the sync chain".into())
         })?;
         reader_holds(st.role, label, holds)?;
-        let replaces: Vec<&str> = chain
-            .members
-            .iter()
-            .filter(|m| m.endpoint != endpoint && m.revoked.is_none())
-            .filter(|m| m.device.as_deref() == Some(device_key))
-            .map(|m| m.endpoint.as_str())
-            .collect();
+        self.sync_apply(proof)?;
         let record = json!({
             "type": "admit", "chain": chain.id, "endpoint": endpoint, "label": label,
-            "via": "standing", "device_key": device_key, "device_sig": device_sig,
-            "replaces": replaces, "created": Utc::now().to_rfc3339(),
+            "via": "standing", "created": Utc::now().to_rfc3339(),
         });
         self.sync_chain_write(record, false)
     }
@@ -190,8 +246,12 @@ impl Db {
 
 #[cfg(test)]
 mod tests {
-    use super::super::CHAIN_HID;
+    use serde_json::Value;
+
+    use super::super::{ed25519_admin_key, secret_hash, sign_ed25519, CHAIN_HID};
     use super::*;
+    use crate::db::sync::hex;
+    use ed25519_dalek::SigningKey;
 
     /// `refused` is a refusal that says `why`.
     fn refuses(refused: Option<String>, why: &str) {
@@ -201,59 +261,231 @@ mod tests {
         );
     }
 
-    /// A standing admit (da-zkwiu) replaces only its own device's endpoints,
-    /// whose ops before it stand, and the fold is the same in any order.
-    #[test]
-    fn a_standing_admit_replaces_its_own_devices_endpoints_alone() {
-        let [a, e1, e2, e3] = ["a1", "e1", "e2", "e3"].map(|h| h.repeat(32));
-        let device = [7u8; 32];
-        let key = bind_device(&device, "c1", &e1).0;
-        let mut ops = Vec::new();
-        let mut add = |rec: Value| {
-            let t = ops.len() + 1;
-            let mut rec = rec;
+    /// The endpoint id of the secret `[n; 32]`.
+    fn endpoint(n: u8) -> String {
+        hex(SigningKey::from_bytes(&[n; 32]).verifying_key().as_bytes())
+    }
+
+    /// The claim of `endpoint(n)` by `device` in chain `c1`, which its own
+    /// op must carry.
+    fn claim(device: &[u8; 32], n: u8) -> Value {
+        let (key, sig) = bind_device(device, "c1", &endpoint(n));
+        json!({"type": "claim", "endpoint": endpoint(n), "device_key": key, "device_sig": sig})
+    }
+
+    /// A member's standing admit of `endpoint(n)`.
+    fn admit(n: u8) -> Value {
+        json!({"type": "admit", "endpoint": endpoint(n), "label": "agent", "via": "standing"})
+    }
+
+    /// `rec` as the next of `ops`, `by`'s at `hlc` or the next second; and how
+    /// the fold refuses it, if it does. The fold reads no op signature.
+    fn add_at(ops: &mut Vec<Op>, by: &str, mut rec: Value, hlc: Option<&str>) -> Option<String> {
+        let t = ops.len() + 1;
+        rec["chain"] = "c1".into();
+        let hlc = hlc.map_or_else(|| format!("2026-11-12T00:00:{t:02}.000Z/0000"), Into::into);
+        let op = json!({
+            "endpoint": by, "seq": t, "hlc": hlc,
+            "hid": CHAIN_HID, "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+        });
+        ops.push(Op::parse(&op.to_string()).unwrap());
+        Chain::fold(ops.clone())
+            .rejected
+            .get(&(by.into(), t as i64))
+            .cloned()
+    }
+
+    fn add(ops: &mut Vec<Op>, by: &str, rec: Value) -> Option<String> {
+        add_at(ops, by, rec, None)
+    }
+
+    fn at(ops: &[Op], e: &str) -> super::super::Member {
+        Chain::fold(ops.to_vec()).member(e).unwrap().clone()
+    }
+
+    /// A chain `c1` whose admin `a`, `[9; 32]`'s key when `locked`, holds a
+    /// standing admission for `device`.
+    fn chain(ops: &mut Vec<Op>, device: &[u8; 32], locked: bool) -> impl Fn(Value) -> Value {
+        let signed = move |mut rec: Value| {
             rec["chain"] = "c1".into();
-            let op = json!({
-                "endpoint": a, "seq": t, "hlc": format!("2026-11-12T00:00:{t:02}.000Z/0000"),
-                "hid": CHAIN_HID, "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
-            });
-            ops.push(Op::parse(&op.to_string()).unwrap());
-            let chain = Chain::fold(ops.clone());
-            (
-                chain.rejected.get(&(a.clone(), t as i64)).cloned(),
-                ops.clone(),
-            )
+            if locked {
+                rec["sig"] = sign_ed25519(&rec, &[9u8; 32]).into();
+            }
+            rec
         };
-        let admit = |e: &str, replaces: &[&str]| {
-            let (key, sig) = bind_device(&device, "c1", e);
-            json!({"type": "admit", "endpoint": e, "label": "agent", "via": "standing",
-                "device_key": key, "device_sig": sig, "replaces": replaces})
+        let admins = match locked {
+            true => json!([{"key": ed25519_admin_key(&[9u8; 32]), "label": "k"}]),
+            false => json!([]),
         };
-        add(json!({"type": "genesis", "admins": [], "label": "a"}));
-        add(
-            json!({"type": "standing", "device": key, "caps": {"role": "writer"}, "label": "agent"}),
-        );
-        assert_eq!(add(admit(&e1, &[])).0, None);
-        refuses(add(admit(&e2, &[&a])).0, "no other endpoint of its device");
-        refuses(add(admit(&e2, &[&e2])).0, "no other endpoint of its device");
-        refuses(add(admit(&a, &[])).0, "not its device's");
-        let (none, held) = add(admit(&e2, &[&e1]));
-        assert_eq!(none, None);
-        let chain = Chain::fold(held.clone());
+        let genesis = json!({"type": "genesis", "admins": admins, "label": "a"});
+        assert_eq!(add(ops, &endpoint(1), signed(genesis)), None);
+        let key = bind_device(device, "", "").0;
+        let standing = json!({"type": "standing", "device": key, "caps": {}, "label": "agent"});
+        assert_eq!(add(ops, &endpoint(1), signed(standing)), None);
+        signed
+    }
+
+    /// A member admits by standing an endpoint whose own claim the chain
+    /// holds (da-tkbtu), once, retiring its device's other endpoints alone,
+    /// whose ops before it stand; the fold is the same in any order.
+    #[test]
+    fn a_standing_admit_retires_its_own_devices_endpoints_alone() {
+        let [a, e1, e2] = [1, 2, 3].map(endpoint);
+        let device = [7u8; 32];
+        let key = bind_device(&device, "", "").0;
+        let ops = &mut Vec::new();
+        let _ = chain(ops, &device, false);
+        let mut early = admit(2);
+        early["created"] = "before its claim".into();
+        refuses(add(ops, &a, early), "no standing claim of its own");
+        assert_eq!(add(ops, &e1, claim(&device, 2)), None);
+        assert_eq!(add(ops, &a, admit(2)), None);
+        refuses(add(ops, &a, claim(&device, 3)), "its endpoint's own op");
+        assert_eq!(add(ops, &a, claim(&device, 1)), None, "a claims itself");
+        refuses(add(ops, &a, admit(1)), "in the chain already");
+        assert_eq!(add(ops, &e2, claim(&device, 3)), None);
+        assert_eq!(add(ops, &a, admit(3)), None);
+        let chain = Chain::fold(ops.clone());
         let at = |e: &str| chain.member(e).unwrap();
         assert_eq!(at(&e1).revoked.as_deref(), Some(at(&e2).admitted.as_str()));
-        assert!(chain.allows(&e1, "2026-11-12T00:00:04.000Z/0000").is_ok());
+        assert!(chain.allows(&e1, "2026-11-12T00:00:05.000Z/0000").is_ok());
         assert!(chain.allows(&e1, &at(&e2).admitted).is_err());
-        assert_eq!(
-            (at(&e2).role(), at(&e2).device.as_deref()),
-            (Role::Writer, Some(key.as_str()))
-        );
+        assert_eq!(at(&e2).device.as_deref(), Some(key.as_str()));
         assert!(at(&a).revoked.is_none());
         let shown = |c: &Chain| format!("{:?} {:?}", c.members, c.standings);
-        let mut reversed = held.clone();
+        let mut reversed = ops.clone();
         reversed.reverse();
         assert_eq!(shown(&Chain::fold(reversed)), shown(&chain));
-        add(json!({"type": "revoke_standing", "device": key}));
-        refuses(add(admit(&e3, &[&e2])).0, "standing admission was revoked");
+        add(ops, &a, json!({"type": "revoke_standing", "device": key}));
+        assert_eq!(add(ops, &endpoint(4), claim(&device, 4)), None);
+        refuses(add(ops, &a, admit(4)), "standing admission was revoked");
+    }
+
+    /// A device claims no endpoint for itself: its endpoint x writing v's
+    /// claim is refused, so no admit of v by standing follows and x cannot
+    /// retire v (da-tkbtu, ístina's F16). And an invite's re-admission
+    /// clears the device tag a standing admit set, though not its own
+    /// describe's.
+    #[test]
+    fn a_device_claims_no_endpoint_that_did_not_claim_itself() {
+        let [a, x, v, w] = [1, 2, 3, 4].map(endpoint);
+        let device = [7u8; 32];
+        let key = bind_device(&device, "", "").0;
+        let ops = &mut Vec::new();
+        let _ = chain(ops, &device, false);
+        add(ops, &x, claim(&device, 2));
+        assert_eq!(add(ops, &a, admit(2)), None);
+        refuses(add(ops, &x, claim(&device, 3)), "its endpoint's own op");
+        refuses(add(ops, &x, admit(3)), "no standing claim of its own");
+        let invite = |id: &str| {
+            json!({"type": "invite", "invite_id": id, "secret_hash": crate::db::sync::sha256_hex(id),
+                "expires": "2099-01-01T00:00:00Z", "caps": {}})
+        };
+        let redeem = |e: &str, id: &str| json!({"type": "admit", "endpoint": e, "label": "v", "via": id, "secret": id});
+        add(ops, &a, invite("i"));
+        assert_eq!(add(ops, &a, redeem(&v, "i")), None);
+        assert_eq!(at(ops, &v).device, None);
+
+        // w is admitted by standing, retiring x; an invite re-admits it, and the tag goes.
+        add(ops, &w, claim(&device, 4));
+        assert_eq!(add(ops, &a, admit(4)), None);
+        assert_eq!(at(ops, &w).device, Some(key.clone()));
+        assert!(at(ops, &x).revoked.is_some());
+        add(ops, &a, invite("j"));
+        assert_eq!(add(ops, &a, redeem(&w, "j")), None);
+        assert_eq!(at(ops, &w).device, None);
+        add(ops, &endpoint(5), claim(&device, 5));
+        assert_eq!(add(ops, &a, admit(5)), None);
+        assert!(at(ops, &w).revoked.is_none(), "w is no longer the device's");
+
+        // w's own describe binds it, and an invite's re-admission keeps that.
+        let (_, sig) = bind_device(&device, "c1", &w);
+        let describe = json!({"type": "describe", "endpoint": w, "label": "w",
+            "device_key": key, "device_sig": sig});
+        add(ops, &w, describe);
+        add(ops, &a, invite("k"));
+        assert_eq!(add(ops, &a, redeem(&w, "k")), None);
+        assert_eq!(at(ops, &w).device, Some(key));
+    }
+
+    /// No copy of a claim or an admit undoes an admission (vremya's probe on
+    /// #2030): in a locked chain a member writing a retired endpoint's claim
+    /// or admit again, or a copy of a claim backdated before the original,
+    /// revokes no one, as its direct revoke is refused; nor does an admit
+    /// bring back a retired endpoint or one an admin revoked.
+    #[test]
+    fn a_claim_or_an_admit_written_again_is_refused() {
+        let [_, x, v, w] = [1, 2, 3, 4].map(endpoint);
+        let a = endpoint(1);
+        let device = [7u8; 32];
+        let ops = &mut Vec::new();
+        let signed = chain(ops, &device, true);
+        add(ops, &x, claim(&device, 2));
+        assert_eq!(add(ops, &a, admit(2)), None, "x is admitted");
+        let invite = json!({"type": "invite", "invite_id": "iv", "secret_hash": secret_hash("s"),
+            "expires": "2099-01-01T00:00:00Z", "caps": {}});
+        assert_eq!(add(ops, &a, signed(invite)), None);
+        let redeem =
+            json!({"type": "admit", "via": "iv", "secret": "s", "endpoint": v, "label": "v"});
+        assert_eq!(add(ops, &a, redeem), None, "v joins by invite");
+        let original = ops.len() + 1;
+        assert_eq!(add(ops, &w, claim(&device, 4)), None);
+        assert_eq!(add(ops, &a, admit(4)), None, "w is admitted, retiring x");
+        let revoke = json!({"type": "revoke", "endpoint": w});
+        assert!(add(ops, &v, revoke).is_some(), "an unsigned revoke");
+        let mut replay = claim(&device, 2);
+        replay["created"] = "again".into();
+        refuses(add(ops, &v, replay), "its endpoint's own op");
+        let mut readmit = admit(2);
+        readmit["created"] = "again".into();
+        refuses(add(ops, &v, readmit.clone()), "in the chain already");
+        // Backdated before w's own claim, v's copy of it would be the first seen.
+        let backdated = claim(&device, 4);
+        let before = format!("2026-11-12T00:00:{:02}.500Z/0000", original - 1);
+        refuses(
+            add_at(ops, &v, backdated, Some(&before)),
+            "its endpoint's own op",
+        );
+        add(ops, &x, claim(&device, 2));
+        readmit["created"] = "by an admin".into();
+        refuses(add(ops, &a, readmit), "in the chain already");
+        assert!(at(ops, &w).revoked.is_none(), "w stays");
+        assert!(at(ops, &x).revoked.is_some(), "x stays retired");
+
+        let revoke = json!({"type": "revoke", "endpoint": w, "created": "the admin's"});
+        assert_eq!(add(ops, &a, signed(revoke)), None, "an admin revokes w");
+        let mut again = admit(4);
+        again["created"] = "again".into();
+        refuses(add(ops, &a, again), "in the chain already");
+        assert!(at(ops, &w).revoked.is_some(), "w stays revoked");
+    }
+
+    /// A joiner dates its own claim, and not its admission (vremya's, on
+    /// #2030): a claim dated before the standing's revoke or expiry is
+    /// admitted by no member's admit after it, and the claim taken before
+    /// the revoke stands.
+    #[test]
+    fn a_claim_dated_before_its_standings_end_admits_no_one() {
+        let a = endpoint(1);
+        let device = [7u8; 32];
+        let key = bind_device(&device, "", "").0;
+        let ops = &mut Vec::new();
+        let _ = chain(ops, &device, false);
+        add(ops, &endpoint(2), claim(&device, 2));
+        assert_eq!(add(ops, &a, admit(2)), None);
+        add(ops, &a, json!({"type": "revoke_standing", "device": key}));
+        let dated = Some("2026-11-12T00:00:03.500Z/0000");
+        assert_eq!(add_at(ops, &endpoint(6), claim(&device, 6), dated), None);
+        refuses(add(ops, &a, admit(6)), "standing admission was revoked");
+        assert!(at(ops, &endpoint(2)).revoked.is_none(), "x stands");
+
+        let device = [8u8; 32];
+        let key = bind_device(&device, "", "").0;
+        let standing = json!({"type": "standing", "device": key, "caps": {}, "label": "agent2",
+            "expires": "2026-11-12T00:00:09Z"});
+        add(ops, &a, standing);
+        let dated = Some("2026-11-12T00:00:08.500Z/0000");
+        assert_eq!(add_at(ops, &endpoint(9), claim(&device, 9), dated), None);
+        refuses(add(ops, &a, admit(9)), "standing admission expired");
     }
 }
