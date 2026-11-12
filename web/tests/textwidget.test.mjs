@@ -129,6 +129,39 @@ describe('the text widget', () => {
 		}, DESKTOP);
 	});
 
+	test('an attachment not kept is asked once, not again at each write here, and drawn once another tab keeps it (da-146rg)', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const dot = `data:image/png;base64,${PNG.toString('base64')}`;
+			// Its hash from a database of its own, so `_internal` holds none of it.
+			const hash = (await app.run(['--db', 'elsewhere', 'db', 'attachment'], dot)).stdout.trim().slice('attachment:'.length);
+			assert.match(hash, /^[0-9a-f]{64}$/);
+			const { pane, id } = await opened(app);
+			const seen = await app.spyOnRunner();
+			await modifyWidget(page, id);
+			await pane.locator('textarea').fill(`![dot](attachment:${hash})`);
+			await leaveWidget(page, id);
+			await app.idle();
+			const asked = async () => (await seen()).filter((argv) => argv.includes(hash)).length;
+			assert.equal(await asked(), 1, 'not asked once as it was written');
+
+			// As the bar runs them: each bumps the epoch every pane reads again on.
+			for (const n of [1, 2, 3]) assert.equal((await page.evaluate((line) => window.datum.runLine(line), `moment tea${n}`)).code, 0);
+			await app.idle();
+			assert.equal(await asked(), 1, 'asked again at a write here, which cannot bring it');
+			assert.equal(await pane.locator('.text img').count(), 0);
+
+			const other = await app.newTab();
+			await other.run(['--db', '_internal', 'db', 'attachment'], dot);
+			await until(
+				() => pane.locator('.text img').evaluateAll((els) => els.map((el) => el.complete && el.naturalWidth > 0)),
+				(d) => JSON.stringify(d) === '[true]'
+			);
+			assert.equal(await asked(), 2, 'not asked once more for the change next door');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
 	test('↺ takes back what modify mode wrote', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

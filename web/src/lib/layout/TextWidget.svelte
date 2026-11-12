@@ -24,33 +24,60 @@
 	that does it, the reader's tap its yes, and `act:field/<name>` that
 	field's collect button itself (#lib/wireActions.ts).
 -->
+<script lang="ts" module>
+	import { run } from '#lib/run.ts';
+	import { onExternalChange } from '#lib/changes.ts';
+	import { attachmentArgv, keepAttachmentArgv } from '#lib/calls.ts';
+
+	/**
+	 * Each attachment asked and not answered with one, by hash, for every text
+	 * widget on the page: a lookup in flight, or one that found none (da-146rg).
+	 * So a hash is asked once however many widgets name it and however often
+	 * they draw, and a miss is asked again only once `_internal` changed in a
+	 * way this page did not: another tab, or a sync, may have brought it. A
+	 * write here brings none but a keep, which forgets its own hash.
+	 */
+	const asked = new Map<string, Promise<string | null>>();
+	/** Bumped as `asked` forgets, so each widget asks again what it no longer holds. */
+	const heard = $state({ changes: 0 });
+	onExternalChange(() => {
+		asked.clear();
+		heard.changes++;
+	}, '_internal');
+
+	function lookup(hash: string): Promise<string | null> {
+		const answer = asked.get(hash);
+		if (answer) return answer;
+		const asking = run(['--db', '_internal', ...attachmentArgv(hash)]).then((r) => (r.code === 0 ? r.stdout.trim() : null));
+		asked.set(hash, asking);
+		// Found, it is each widget's to hold, and no longer asked: unless a change cleared the map meanwhile and it was asked anew.
+		void asking.then((url) => url !== null && asked.get(hash) === asking && asked.delete(hash));
+		return asking;
+	}
+</script>
+
 <script lang="ts">
 	import Pane from '#lib/Pane.svelte';
 	import { markdown, OUTWARD, type Targets } from '#lib/markdown.ts';
 	import { wireActions } from '#lib/wireActions.ts';
-	import { run } from '#lib/run.ts';
-	import { attachmentArgv, keepAttachmentArgv } from '#lib/calls.ts';
 
 	interface Props {
 		text?: string;
 		modifying?: boolean;
-		epoch?: number;
 		onchange?: (moved: { text: string }) => void;
 	}
 
-	let { text = '', modifying = false, epoch = 0, onchange }: Props = $props();
+	let { text = '', modifying = false, onchange }: Props = $props();
 
-	/** Each attachment read, its `data:` URL; one not here yet is asked again at the next epoch, as sync may bring it. */
+	/** Each attachment read, its `data:` URL; one not here yet is asked again once another tab or a sync changes `_internal`. */
 	let held = $state<Record<string, string>>({});
 	/** Why the last tap kept nothing. */
 	let refused = $state('');
 
 	const ATTACHMENT = /!\[[^\]]*\]\(attachment:([0-9a-f]{64})\)/g;
 	$effect(() => {
-		void epoch;
-		for (const [, hash] of text.matchAll(ATTACHMENT))
-			if (!(hash in held))
-				void run(['--db', '_internal', ...attachmentArgv(hash)]).then((r) => r.code === 0 && (held[hash] = r.stdout.trim()));
+		void heard.changes;
+		for (const [, hash] of text.matchAll(ATTACHMENT)) if (!(hash in held)) void lookup(hash).then((url) => url !== null && (held[hash] = url));
 	});
 
 	const image = (src: string) =>
@@ -88,6 +115,9 @@
 			return;
 		}
 		const target = kept.stdout.trim();
+		// This write brought it: a miss once heard for its hash is asked again, by every widget naming it.
+		asked.delete(target.slice('attachment:'.length));
+		heard.changes++;
 		onchange?.({ text: text.replace(/(!\[[^\]]*\]\()([^)\s]+)\)/g, (whole, head: string, at: string) => (at === src ? `${head}${target})` : whole)) });
 	}
 
