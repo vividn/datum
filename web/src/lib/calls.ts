@@ -217,6 +217,34 @@ export function newInviteArgv(reader = false): string[] {
 	return ['sync', 'new-invite', ...(reader ? ['--reader'] : [])];
 }
 
+/** What an agent's code is to be (da-bdyor): `sync chain agent`'s level, and its other flags. */
+export interface AgentAsk {
+	level: 'full' | 'light' | 'write';
+	/** At `full` or `light`, it writes too. */
+	write?: boolean;
+	/** At `light`, how far back it reads, `1d` unless given. */
+	window?: string;
+	/** Until when the code admits a copy; never, unless given. */
+	expires?: string;
+	label?: string;
+}
+
+/** An agent's standing admission (da-bdyor), saying the device secret its code is made of before it is signed. */
+export function agentArgv(a: AgentAsk): string[] {
+	const flag = (name: string, v?: string) => (v ? [`--${name}`, v] : []);
+	const write = a.write && a.level !== 'write' ? ['--write'] : [];
+	return ['sync', 'chain', 'agent', '--level', a.level, ...write, ...flag('window', a.level === 'light' ? a.window : undefined), ...flag('expires', a.expires), ...flag('label', a.label), '--json'];
+}
+
+/** What `sync chain agent --json` says (da-bdyor): the device secret, and what its code says of it. */
+export interface AgentCode {
+	secret: string;
+	agent: string;
+	role: 'member' | 'reader' | 'writer';
+	/** RFC 3339, or null for a code that never expires. */
+	expires: string | null;
+}
+
 /** Every device this install's databases know of, against every chain they are in (da-n0uj1.3). */
 export function gridArgv(): string[] {
 	return ['sync', 'grid', '--json'];
@@ -579,7 +607,9 @@ export interface Reads {
 	 */
 	chainListArgv: Omit<ChainList, 'joining' | 'dissolved' | 'label'>;
 	adminListArgv: Admins;
-	newInviteArgv: Invite;
+	/** `agent` is an agent's code's alone (da-bdyor), which the page sets. */
+	newInviteArgv: Omit<Invite, 'agent'>;
+	agentArgv: AgentCode;
 	gridArgv: Grid;
 	/** The preview's: the `--yes` unjoin answers no JSON. */
 	unjoinArgv: PurgePreview;

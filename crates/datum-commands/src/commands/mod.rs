@@ -63,6 +63,7 @@ pub mod states;
 pub mod stats;
 pub mod switch;
 pub mod sync;
+pub mod sync_agent;
 #[cfg(feature = "net")]
 pub mod sync_daemon;
 pub mod sync_diagnose;

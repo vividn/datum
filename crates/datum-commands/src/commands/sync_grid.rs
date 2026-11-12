@@ -129,6 +129,12 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
         }
     }
     let this = |r: &Row| r.device.is_some() && r.device == mine;
+    // A device a live standing admission names is an agent's (da-bdyor).
+    let agent = |r: &Row| {
+        let live = |d: &str, c: &Chain| c.standings.get(d).is_some_and(|s| s.revoked.is_none());
+        let d = r.device.as_deref();
+        d.is_some_and(|d| columns.iter().any(|(_, _, c)| live(d, c)))
+    };
     rows.sort_by_key(|r| !this(r));
     let grants = super::sync_grant::seen(&columns);
     // A chain granted to this device and held nowhere here: a column of its own.
@@ -165,6 +171,7 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
                 "endpoint": r.device.is_none().then_some(&r.endpoint),
                 "label": r.label,
                 "this": this(r),
+                "agent": agent(r),
                 "cells": heads.iter().enumerate().map(|(j, (_, id, _))| (
                     id.clone(),
                     r.cells.get(j).and_then(Option::as_ref).map_or(Value::Null, |(cell, e)| {
@@ -230,7 +237,12 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
             };
             line.push((text, code));
         }
-        line.push((if this(r) { "(this device)" } else { "" }.into(), ""));
+        let note = match (this(r), agent(r)) {
+            (true, _) => "(this device)",
+            (_, true) => "(agent)",
+            _ => "",
+        };
+        line.push((note.into(), ""));
         table.push(line);
     }
     for line in super::sync::table(&table, 2) {

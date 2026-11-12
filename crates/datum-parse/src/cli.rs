@@ -1165,6 +1165,27 @@ pub enum SyncCommand {
         label: Option<String>,
         user: Option<String>,
     },
+    /// `datum sync chain agent --level full|light|write [--write] [--window
+    /// <DUR>] [--fields <F,…>] [--label <L>] [--expires <DUR>] [--admin-key
+    /// <FILE>] [--json]` (da-bdyor): a new device key, a standing admission
+    /// for it with the level's role and filter, and the code that restores
+    /// a copy of it: `datum-agent:…`.
+    Agent {
+        label: String,
+        /// `full`, `light` or `write`, for its words.
+        level: String,
+        role: SyncRole,
+        filter: Option<SyncFilter>,
+        expires_secs: Option<u64>,
+        admin_key: Option<String>,
+        show: Show,
+    },
+    /// `datum sync restore [<CODE>]` (da-bdyor): a fresh copy of the agent
+    /// whose code it is (else `DATUM_AGENT_CODE`), admitted by its standing
+    /// admission, synced at its level.
+    Restore {
+        code: Option<String>,
+    },
     /// `datum sync chain leave [--force] [--dry-run]` — leave this copy's
     /// chain, keeping every entry, under a new endpoint key (da-j8c4l), once
     /// a member holds its departure; `--force` leaves telling no one

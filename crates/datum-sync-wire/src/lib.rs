@@ -466,6 +466,9 @@ pub struct About {
     pub role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fields: Option<Vec<String>>,
+    /// An agent's code (da-bdyor): the label its copies join as.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
 }
 
 /// Seconds since the epoch, in a browser too.
@@ -2793,6 +2796,7 @@ mod tests {
                         db: Some("home".into()),
                         role: Some("reader".into()),
                         fields: Some(vec!["coffee".into()]),
+                        agent: None,
                     },
                 },
             ),

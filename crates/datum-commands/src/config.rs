@@ -342,25 +342,7 @@ pub fn device_key() -> Result<String> {
     }
     let path = data_dir()?.join("device_key");
     if !path.exists() {
-        // Written aside and linked in, so two first needs at once agree on
-        // one key and none reads it half written.
-        // Named by the new key, as a process id panics under WASI.
-        let secret = datum_core::db::chain::new_admin_secret();
-        let aside = path.with_extension(&secret[..16]);
-        let mut f = std::fs::OpenOptions::new();
-        f.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::mode(&mut f, 0o600);
-        std::io::Write::write_all(&mut f.open(&aside)?, secret.as_bytes())
-            .with_context(|| format!("Writing the device key to {aside:?}"))?;
-        let linked = std::fs::hard_link(&aside, &path);
-        let _ = std::fs::remove_file(&aside);
-        match linked {
-            Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
-                return Err(e).with_context(|| format!("Writing the device key to {path:?}"));
-            }
-            _ => {}
-        }
+        keep_device_key(&path, &datum_core::db::chain::new_admin_secret())?;
     }
     let key = std::fs::read_to_string(&path)
         .with_context(|| format!("Reading the device key from {path:?}"))?;
@@ -371,6 +353,47 @@ pub fn device_key() -> Result<String> {
         path.display()
     );
     Ok(key.into())
+}
+
+/// Write `secret` as the device key at `path` unless one is there: aside
+/// and linked in, so two first needs at once agree on one key and none reads
+/// it half written. Named by the key, as a process id panics under WASI.
+fn keep_device_key(path: &Path, secret: &str) -> Result<()> {
+    let aside = path.with_extension(&secret[..16]);
+    let mut f = std::fs::OpenOptions::new();
+    f.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut f, 0o600);
+    std::io::Write::write_all(&mut f.open(&aside)?, secret.as_bytes())
+        .with_context(|| format!("Writing the device key to {aside:?}"))?;
+    let linked = std::fs::hard_link(&aside, path);
+    let _ = std::fs::remove_file(&aside);
+    match linked {
+        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
+            Err(e).with_context(|| format!("Writing the device key to {path:?}"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Make `secret` (hex) this install's device key, as an agent's restore
+/// does (da-bdyor): kept where none is yet, and refused where this install
+/// is another device already, whose key would sign for none of its copies.
+pub fn set_device_key(secret: &str) -> Result<()> {
+    let path = data_dir()?.join("device_key");
+    if read_env("DATUM_DEVICE_KEY").is_none() && !path.exists() {
+        keep_device_key(&path, secret)?;
+    }
+    anyhow::ensure!(
+        device_key()?.eq_ignore_ascii_case(secret),
+        "this install already has a device key other than the agent's ({}): restore an \
+         agent's code in a fresh data directory, `DATUM_HOME=<dir>`",
+        match read_env("DATUM_DEVICE_KEY") {
+            Some(_) => "DATUM_DEVICE_KEY".into(),
+            None => path.display().to_string(),
+        }
+    );
+    Ok(())
 }
 
 /// Where `datum sync login` keeps the account this install is signed in to

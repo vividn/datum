@@ -16,6 +16,7 @@ use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use tempfile::TempDir;
 
 mod admission;
+mod agent;
 mod catch_up;
 mod closing;
 mod diff;

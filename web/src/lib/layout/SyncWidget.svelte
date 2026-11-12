@@ -127,6 +127,9 @@
 	import { ask, confirm } from '#lib/confirm.ts';
 	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
 	import {
+		agentArgv,
+		type AgentAsk,
+		type AgentCode,
 		adminAddArgv,
 		adminListArgv,
 		adminRemoveArgv,
@@ -199,6 +202,9 @@
 	type Where = 'top' | 'foot';
 	/** «+ add device ▾» unfolded, at the grid's foot. */
 	let adding = $state(false);
+	/** «Add agent ▾» unfolded (da-bdyor): what its code is to be, as chosen; and the last code made. */
+	let agentAsk = $state<Required<AgentAsk> | null>(null);
+	let agentCode = $state<{ db: string; label: string; code: string; until: string | null } | null>(null);
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = $state({});
 	/**
@@ -314,7 +320,7 @@
 	 */
 	const devices = $derived.by((): GridRow[] => {
 		if (!grid) return [];
-		const me = grid.devices.find((r) => r.this) ?? { device: grid.device, endpoint: null, label: named, this: true, cells: {} };
+		const me = grid.devices.find((r) => r.this) ?? { device: grid.device, endpoint: null, label: named, this: true, agent: false, cells: {} };
 		const live = grid.devices.filter((r) => !r.this && (Object.values(r.cells).some((c) => c && LIVE.includes(c.state)) || Object.keys(r.grants ?? {}).length || r.sealed?.length));
 		return [me, ...live];
 	});
@@ -533,6 +539,27 @@
 				const link = joinLink(ticket);
 				const expires = Date.parse(invite.expires);
 				offer = { db, ticket, link, svg: await qr(link), until: when(expires), expires, id: invite.id, relay, reader };
+			} finally {
+				waiting = '';
+			}
+		});
+	}
+
+	/**
+	 * An agent's code for `db` (da-bdyor): its standing admission, signed as
+	 * any admin act is, then the code, a ticket whose secret is the agent's
+	 * device key, made by this tab's sync as an invite's is.
+	 */
+	function addAgent(db: string, ask: Required<AgentAsk>): Promise<void> {
+		return doing(async () => {
+			copied = '';
+			waiting = 'Making the code…';
+			try {
+				const r = ok(await syncAct(db, agentArgv({ ...ask, expires: ask.expires || undefined, label: ask.label.trim() || undefined })));
+				const a: AgentCode = JSON.parse(r.stdout.split('\n')[0]);
+				const ticket = await syncOffer(db, { secret: a.secret, expires: a.expires ?? '', id: '', role: a.role, agent: a.agent });
+				agentCode = { db, label: a.agent, code: `datum-agent:${ticket}`, until: a.expires ? when(Date.parse(a.expires)) : null };
+				agentAsk = null;
 			} finally {
 				waiting = '';
 			}
@@ -982,7 +1009,64 @@
 				</div>
 			</form>
 		{/snippet}
+		<!-- «Add agent» (da-bdyor): a code an agent with nothing kept restores a copy from, at the level chosen. -->
+		{#snippet agentCard(ask: Required<AgentAsk>)}
+			<form
+				class="card agent"
+				data-db={db}
+				onsubmit={(e) => {
+					e.preventDefault();
+					void addAgent(db, ask);
+				}}
+			>
+				<label class="name">Name <input type="text" bind:value={ask.label} spellcheck="false" autocomplete="off" /></label>
+				<label class="name"
+					>It gets <select bind:value={ask.level}>
+						<option value="full">everything, for analysis</option>
+						<option value="light">recent data and every field’s setup, for context</option>
+						<option value="write">nothing: it only writes</option>
+					</select></label
+				>
+				{#if ask.level === 'light'}
+					<label class="name"
+						>Recent: the last <select bind:value={ask.window}>
+							<option value="1h">hour</option>
+							<option value="1d">day</option>
+							<option value="7d">week</option>
+						</select></label
+					>
+				{/if}
+				{#if ask.level !== 'write'}<label class="name"><input type="checkbox" bind:checked={ask.write} /> it writes too</label>{/if}
+				<label class="name"
+					>The code works <select bind:value={ask.expires}>
+						<option value="">until you remove the agent</option>
+						<option value="1d">for a day</option>
+						<option value="7d">for a week</option>
+						<option value="30d">for 30 days</option>
+					</select></label
+				>
+				<div class="actions">
+					<button type="submit" class="command" use:act={'run'} disabled={busy}>Make code</button>
+					<button type="button" class="command close" use:act={'show'} onclick={() => (agentAsk = null)}>Cancel</button>
+				</div>
+			</form>
+		{/snippet}
 		<div class="actions ways" data-db={db}>{@render ways('top')}</div>
+		{#if agentCode}
+			<section class="card agentcode" data-db={agentCode.db}>
+				<p class="head">
+					The code for {agentCode.label}, {agentCode.until ? `until ${agentCode.until}` : 'until you remove it'}. Give it to the agent: each time it starts with nothing kept, it runs
+					<code>datum sync restore '…'</code> with it and syncs. Whoever holds the code is this agent; Remove on its row revokes it.
+				</p>
+				<code class="code ticket">{agentCode.code}</code>
+				<div class="actions">
+					<button type="button" class="command" use:act={'run'} onclick={() => agentCode && copy('code', agentCode.code)}>Copy code</button>
+					<button type="button" class="command" use:act={'run'} onclick={() => agentCode && copy('CLI command', `datum sync restore '${agentCode.code}'`)}>Copy CLI command</button>
+					<button type="button" class="command" use:act={'show'} onclick={() => (agentCode = null)}>Done</button>
+				</div>
+				{#if copied}<p class="quiet copied" role="status">{copied}</p>{/if}
+			</section>
+		{/if}
 		{#if entering?.at === 'top'}{@render enterField(entering)}{/if}
 		{#if offer}
 			<section class="card offer" data-db={offer.db} data-role={offer.reader ? 'reader' : 'member'}>
@@ -1063,7 +1147,7 @@
 												aria-haspopup="true"
 												aria-expanded={device?.row === row}
 												onclick={() => toggle({ row: rowKey(row) })}>{row.label}</button
-											>{/if}</th
+											>{/if}{#if row.agent}<span class="kind">agent</span>{/if}</th
 									>
 									{#each drawn as col (col.chain ?? col.db)}
 										{@const g = glance(row, col, +$now)}
@@ -1095,8 +1179,16 @@
 							<tr class="add">
 								<td colspan={drawn.length + (columns.length > here.length ? 2 : 1)}
 									><button type="button" class="cell add" use:act={'show'} aria-expanded={adding} onclick={() => (adding = !adding)}>+ add device ▾</button>
+									{#if cur.chain}<button
+											type="button"
+											class="cell agent"
+											use:act={'show'}
+											aria-expanded={!!agentAsk}
+											onclick={() => (agentAsk = agentAsk ? null : { level: 'full', write: false, window: '1d', expires: '', label: 'agent' })}>Add agent ▾</button
+										>{/if}
 									{#if adding}<div class="actions">{@render ways('foot')}</div>
-										{#if entering?.at === 'foot'}{@render enterField(entering)}{/if}{/if}</td
+										{#if entering?.at === 'foot'}{@render enterField(entering)}{/if}{/if}
+									{#if agentAsk}{@render agentCard(agentAsk)}{/if}</td
 								>
 							</tr>
 						</tfoot>

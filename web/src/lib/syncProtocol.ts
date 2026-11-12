@@ -47,6 +47,8 @@ export interface TicketAbout {
 	role?: 'member' | 'reader' | 'writer';
 	/** A filtered reader's or writer's fields: a writer's may be none. */
 	fields?: string[];
+	/** An agent's code (da-bdyor): the label its copies join as. */
+	agent?: string;
 	/** Read, never written: whether the inviter's address names its relay, without which no other device reaches it. */
 	relay?: boolean;
 }

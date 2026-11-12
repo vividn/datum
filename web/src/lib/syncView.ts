@@ -524,6 +524,8 @@ export interface Grid {
 		endpoint: string | null;
 		label: string;
 		this: boolean;
+		/** A device a live standing admission names: an agent's (da-bdyor). */
+		agent: boolean;
 		cells: Record<string, GridCell | null>;
 		/**
 		 * By chain, the grant its column shows.

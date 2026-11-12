@@ -80,6 +80,7 @@ export const SYNC_TESTS = [
 	'tests/syncactions-purge.test.mjs',
 	'tests/syncaccount.test.mjs',
 	'tests/syncactions.test.mjs',
+	'tests/syncagent.test.mjs',
 	'tests/syncapplying.test.mjs',
 	'tests/syncgate.test.mjs',
 	'tests/syncgrid.test.mjs',

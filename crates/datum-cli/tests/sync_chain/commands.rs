@@ -94,14 +94,14 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
         top,
         [
             "status", "grid", "pause", "resume", "login", "logout", "pin", "unpin", "diff",
-            "refold", "chain", "admin", "daemon"
+            "refold", "restore", "chain", "admin", "daemon"
         ]
     );
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "join", "leave", "list", "rename", "expel", "purge", "role", "ack", "rekey",
-            "reenter", "upgrade"
+            "invite", "join", "agent", "leave", "list", "rename", "expel", "purge", "role", "ack",
+            "rekey", "reenter", "upgrade"
         ]
     );
     // `revoke` and `revert` were renamed `expel` and `unjoin`, and cut

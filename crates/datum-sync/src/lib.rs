@@ -796,6 +796,7 @@ fn link(db: &Db, me: EndpointAddr, secret: &str, expires: Duration) -> Result<St
         db: name.map(|s| s.to_string_lossy().into_owned()),
         role,
         fields,
+        ..Default::default()
     };
     let secret = secret.into();
     Ticket {
@@ -817,6 +818,58 @@ pub fn grant_link(db: &Db, secret: &str, expires: Duration) -> Result<String> {
         me = me.with_relay_url(url.parse().context("DATUM_SYNC_RELAY")?);
     }
     link(db, me, secret, expires)
+}
+
+/// What an agent's code starts with (da-bdyor).
+pub const AGENT: &str = "datum-agent:";
+
+/// The code of the agent whose device secret is `device`, hex (da-bdyor): a
+/// ticket as [`grant_link`] makes, its secret the device's, saying the label
+/// its copies join as, as what, and until when (unix seconds).
+pub fn agent_code(
+    db: &Db,
+    device: &str,
+    label: &str,
+    role: &str,
+    fields: Option<Vec<String>>,
+    expires: Option<u64>,
+) -> Result<String> {
+    let mut t = Ticket::decode(&grant_link(db, device, Duration::ZERO)?)?;
+    let about = &mut t.about;
+    (about.agent, about.role, about.fields) = (Some(label.into()), Some(role.into()), fields);
+    about.expires = expires;
+    Ok(format!("{AGENT}{}", t.encode()?))
+}
+
+/// An agent's code, read (da-bdyor).
+pub struct Agent {
+    pub device: [u8; 32],
+    pub chain: String,
+    pub label: Option<String>,
+    pub expires: Option<u64>,
+    ticket: Ticket,
+}
+
+impl Agent {
+    pub fn decode(code: &str) -> Result<Agent> {
+        let not = "not an agent's code: `datum sync chain agent` makes one, datum-agent:…";
+        let ticket = Ticket::decode(code.trim().strip_prefix(AGENT).context(not)?).context(not)?;
+        let device = datum_core::db::chain::read_admin_secret(&ticket.secret).context(not)?;
+        let a = &ticket.about;
+        Ok(Agent {
+            device,
+            chain: a.chain.clone().context(not)?,
+            label: a.agent.clone(),
+            expires: a.expires,
+            ticket,
+        })
+    }
+
+    /// The join link a copy redeems carrying `proof`, its own standing claim.
+    pub fn link(mut self, proof: String) -> Result<String> {
+        self.ticket.secret = proof;
+        self.ticket.link()
+    }
 }
 
 /// `datum sync login` (da-mzqs4): wait under this install's device key

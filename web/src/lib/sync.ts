@@ -130,6 +130,8 @@ export interface Invite {
 	id: string;
 	/** Whom it admits (da-wm9wb): the page makes no filtered reader's invite. */
 	role?: 'member' | 'reader' | 'writer';
+	/** An agent's code (da-bdyor): the label its copies join as; its secret is the device's. */
+	agent?: string;
 }
 
 /** An offer of `chain`, the account's, through `also`: a ticket this copy redeems itself (da-nf1p4). */
@@ -649,9 +651,10 @@ export class Leader {
 		// Any member can admit the redeemer.
 		const also = c.also ?? JSON.stringify(this.peers.map((p) => JSON.parse(p.addr)));
 		// What the redeemer is asked before it joins (da-l9kdr).
-		const expires = Math.floor(Date.parse(invite.expires) / 1000);
+		// An agent's code may never expire (da-bdyor): its `expires` is empty, and the ticket says none.
+		const expires = invite.expires ? Math.floor(Date.parse(invite.expires) / 1000) : undefined;
 		const from = c.chain ? 'a device of your account' : this.label;
-		const about = JSON.stringify({ from, chain: c.chain ?? this.chainId, expires, db: this.db, role: invite.role } satisfies TicketAbout);
+		const about = JSON.stringify({ from, chain: c.chain ?? this.chainId, expires, db: this.db, role: invite.role, agent: invite.agent } satisfies TicketAbout);
 		return ask<string>(this.db, { op: 'ticket', secret: invite.secret, also, about });
 	}
 

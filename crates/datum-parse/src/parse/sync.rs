@@ -221,6 +221,9 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 approve: o.get("approve"),
             }
         }
+        "restore" => SyncCommand::Restore {
+            code: opts(&mut rest, &[], &[], 0..=1)?.positional.pop(),
+        },
         "login" => SyncCommand::Login,
         "logout" => SyncCommand::Logout,
         "qr" => SyncCommand::Qr {
@@ -229,7 +232,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         other => return Err(unknown(
             "sync",
             other,
-            "status|grid|diff|refold|chain|admin|daemon|pause|resume|pin|unpin|login|logout|help",
+            "status|grid|diff|refold|chain|admin|daemon|pause|resume|pin|unpin|restore|login|logout|help",
         )),
     };
     match rest.next() {
@@ -244,7 +247,8 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|join|leave|list|rename|expel|purge|role|ack|rekey|reenter|upgrade";
+    const SET: &str =
+        "invite|join|agent|leave|list|rename|expel|purge|role|ack|rekey|reenter|upgrade";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = [
@@ -451,11 +455,86 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             }
             SyncCommand::Ack { who, all }
         }
+        Some("agent") => parse_agent(rest)?,
         Some("rekey") => SyncCommand::Rekey,
         Some("reenter") => SyncCommand::Reenter,
         Some("upgrade") => SyncCommand::Upgrade,
         Some(other) => return Err(unknown("sync chain", other, SET)),
         None => return Err(missing("sync chain", SET)),
+    })
+}
+
+/// `datum sync chain agent` (da-bdyor): its level is a role and a filter.
+/// `full` reads everything (`--write`: a member); `light` reads a window,
+/// one day unless `--window` says, and every spec and alias (`--write`: a
+/// writer of it); `write` is a writer sent nothing but the chain's records,
+/// of `--fields` alone where given.
+fn parse_agent(rest: &mut Rest) -> Result<SyncCommand> {
+    let values = ["level", "label", "window", "fields", "expires", "admin-key"];
+    let o = opts(rest, &values, &["write"], 0..=0)?;
+    let level = o.get("level").unwrap_or_default();
+    let refuse_at =
+        |flags: &[&str]| refuse(&o, flags, &format!("does not go with --level {level}"));
+    let write = o.on("write");
+    let named = |f: Option<String>| {
+        let f = f.unwrap_or_default();
+        let f = f.split(',').map(str::trim).filter(|f| !f.is_empty());
+        SyncFields::Named(f.map(Into::into).collect())
+    };
+    let (role, filter) = match level.as_str() {
+        "full" => {
+            refuse_at(&["window", "fields"])?;
+            (
+                if write {
+                    SyncRole::Member
+                } else {
+                    SyncRole::Reader
+                },
+                None,
+            )
+        }
+        "light" => {
+            refuse_at(&["fields"])?;
+            let window = o.filter(SyncRole::Reader)?.and_then(|f| f.window_secs);
+            let filter = SyncFilter {
+                fields: None,
+                window_secs: Some(window.unwrap_or(24 * 3600)),
+                specs: true,
+            };
+            (
+                if write {
+                    SyncRole::Writer
+                } else {
+                    SyncRole::Reader
+                },
+                Some(filter),
+            )
+        }
+        "write" => {
+            refuse_at(&["window", "write"])?;
+            let filter = SyncFilter {
+                fields: Some(named(o.get("fields"))),
+                ..SyncFilter::default()
+            };
+            (SyncRole::Writer, Some(filter))
+        }
+        _ => {
+            return Err(ParseError::InvalidArg(
+                "`sync chain agent` takes --level full, light or write".into(),
+            ))
+        }
+    };
+    Ok(SyncCommand::Agent {
+        label: o.get("label").unwrap_or_else(|| "agent".into()),
+        level,
+        role,
+        filter,
+        expires_secs: match o.get("expires") {
+            Some(_) => Some(o.expires()?),
+            None => None,
+        },
+        admin_key: o.get("admin-key"),
+        show: Show::Default,
     })
 }
 
@@ -712,6 +791,76 @@ mod tests {
 
     fn p(argv: &[&str]) -> SyncCommand {
         parse_sync_cmd(argv).unwrap()
+    }
+
+    /// An agent's level is a role and a filter (da-bdyor).
+    #[test]
+    fn an_agents_level_is_a_role_and_a_filter() {
+        let agent = |argv: &[&str]| match p(&[&["chain", "agent"], argv].concat()) {
+            SyncCommand::Agent {
+                role,
+                filter,
+                expires_secs,
+                label,
+                ..
+            } => (role, filter, expires_secs, label),
+            c => panic!("{c:?}"),
+        };
+        let full = agent(&["--level", "full"]);
+        assert_eq!(full, (SyncRole::Reader, None, None, "agent".into()));
+        assert_eq!(agent(&["--level", "full", "--write"]).0, SyncRole::Member);
+        let light = SyncFilter {
+            fields: None,
+            window_secs: Some(24 * 3600),
+            specs: true,
+        };
+        assert_eq!(agent(&["--level", "light"]).1, Some(light.clone()));
+        let written = agent(&["--level", "light", "--write", "--window", "2h"]);
+        let two_hours = SyncFilter {
+            window_secs: Some(7200),
+            ..light
+        };
+        assert_eq!((written.0, written.1), (SyncRole::Writer, Some(two_hours)));
+        let argv = [
+            "--level",
+            "write",
+            "--fields",
+            "tea,coffee",
+            "--label",
+            "bot",
+            "--expires",
+            "30d",
+        ];
+        assert_eq!(
+            agent(&argv),
+            (
+                SyncRole::Writer,
+                Some(named(&["tea", "coffee"])),
+                Some(30 * 24 * 3600),
+                "bot".into()
+            )
+        );
+        assert_eq!(agent(&["--level", "write"]).1, Some(named(&[])));
+        for bad in [
+            &[][..],
+            &["--level", "huge"],
+            &["--level", "full", "--window", "1d"],
+            &["--level", "write", "--write"],
+            &["--level", "light", "--fields", "a"],
+        ] {
+            assert!(
+                parse_sync_cmd(&[&["chain", "agent"], bad].concat()).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(matches!(
+            p(&["restore"]),
+            SyncCommand::Restore { code: None }
+        ));
+        assert!(matches!(
+            p(&["restore", "c"]),
+            SyncCommand::Restore { code: Some(_) }
+        ));
     }
 
     fn named(fields: &[&str]) -> SyncFilter {

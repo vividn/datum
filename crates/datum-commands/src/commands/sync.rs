@@ -992,6 +992,29 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 &install,
             )?;
         }
+        SyncCommand::Agent {
+            label,
+            level,
+            role,
+            filter,
+            expires_secs,
+            admin_key,
+            show,
+        } => super::sync_agent::agent(
+            db,
+            label,
+            &level,
+            role,
+            filter,
+            expires_secs,
+            admin_key.as_deref(),
+            show == ShowFlag::Json,
+        )?,
+        #[cfg(feature = "net")]
+        SyncCommand::Restore { code } => {
+            db.sync_refuse_debug()?;
+            super::sync_agent::restore(db, code)?
+        }
         #[cfg(feature = "net")]
         SyncCommand::Diff { who, show } => {
             let chain = db.sync_chain()?;
@@ -1588,7 +1611,7 @@ fn who_enters(
 
 /// `label`, or why no member or admin may carry it — before anything is
 /// signed; the chain refuses it too.
-fn checked(label: String) -> Result<String> {
+pub(super) fn checked(label: String) -> Result<String> {
     match chain::label_problem(&label) {
         Some(why) => bail!(why),
         None => Ok(label),
@@ -2702,7 +2725,7 @@ fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
 }
 
 /// An RFC 3339 instant on this reader's clock: the time alone today.
-fn local(at: &str) -> String {
+pub(super) fn local(at: &str) -> String {
     on_readers_clock(at, "%H:%M")
 }
 
