@@ -115,6 +115,12 @@ pub fn import(args: ImportArgs, db: &Db) -> Result<()> {
     let mut fields: HashMap<String, Field> = HashMap::new();
     let (mut rows, mut lines, mut refused) = (Vec::new(), Vec::new(), Vec::new());
     let mut zoneless = false;
+    // A writer's copy judges each row as a log would be: a row its chain
+    // refuses is refused by its line, not kept here alone (da-vspq5).
+    let writer = db.sync_writer_bounds()?;
+    let refuses = |entry: &Entry| -> Result<Option<String>> {
+        Ok(writer.as_ref().map(|w| w(entry)).transpose()?.flatten())
+    };
     for (i, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
@@ -122,7 +128,11 @@ pub fn import(args: ImportArgs, db: &Db) -> Result<()> {
         // A row with no create_time is the import's, a millisecond apart, so
         // two untimed rows of one field keep two slugs.
         let created = now + Duration::milliseconds(i as i64);
-        match read_row(line, created, &client, db, &mut fields, &mut zoneless) {
+        let read = read_row(line, created, &client, db, &mut fields, &mut zoneless);
+        match read.and_then(|e| match refuses(&e)? {
+            Some(why) => bail!("{why}"),
+            None => Ok(e),
+        }) {
             Ok(entry) => {
                 rows.push(entry);
                 lines.push(i + 1);

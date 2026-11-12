@@ -8,8 +8,8 @@
 use rusqlite::Connection;
 
 use super::chain::{Chain, Role};
-use super::{belongs_to, own_alone, read_only, row, Endpoint, Op};
-use crate::db::{is_meta_field, SPEC_FIELD};
+use super::{belongs_to, endpoint, own_alone, read_only, row, Endpoint, Op};
+use crate::db::{is_meta_field, Db, SPEC_FIELD};
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::ids::Hid;
@@ -144,23 +144,53 @@ pub(super) fn may_sign(conn: &Connection, ep: &Endpoint, post: &Entry, hid: &Hid
     if !own_alone(conn, ep)? {
         return Ok(());
     }
+    let chain = Chain::load(conn)?;
+    judged(conn, &chain, &ep.id, post, hid)?.map_err(DatumError::Other)
+}
+
+/// Why writer `me` may not sign `post`, in `may_sign`'s words, if it may not.
+fn judged(
+    conn: &Connection,
+    chain: &Chain,
+    me: &str,
+    post: &Entry,
+    hid: &Hid,
+) -> Result<std::result::Result<(), String>> {
     // An entry with no create here is this copy's own.
     let own = || {
         let creates = creates_of(conn, hid.as_str())?;
-        Ok(creates.iter().all(|c| c.endpoint == ep.id))
+        Ok(creates.iter().all(|c| c.endpoint == me))
     };
     let field = belongs_to(&row(post));
-    let chain = Chain::load(conn)?;
-    match bounds(
-        &chain,
-        &ep.id,
-        "~",
-        field.as_deref(),
-        meta(&post.field),
-        own,
-    )? {
-        Err(why) => Err(DatumError::Other(format!("this copy is {why}"))),
-        Ok(()) => Ok(()),
+    Ok(
+        bounds(chain, me, "~", field.as_deref(), meta(&post.field), own)?
+            .map_err(|why| format!("this copy is {why}")),
+    )
+}
+
+impl Db {
+    /// Where this copy is a writer in its sync chain, why it may not sign
+    /// an entry, in `may_sign`'s words, if it may not (da-vspq5): a path
+    /// that writes rows with no op, as `import` does, judges each before it
+    /// writes, since the baseline signed for it later is refused by every
+    /// other copy. None for a copy that is no writer, or in no chain.
+    #[allow(clippy::type_complexity)]
+    pub fn sync_writer_bounds(
+        &self,
+    ) -> Result<Option<Box<dyn Fn(&Entry) -> Result<Option<String>> + '_>>> {
+        let conn = self.conn();
+        let chain = Chain::load(conn)?;
+        if !chain.exists() {
+            return Ok(None);
+        }
+        let me = endpoint(conn)?.id;
+        let writer = chain
+            .member(&me)
+            .is_some_and(|m| m.role_at("~") == Role::Writer);
+        Ok(writer.then(|| {
+            Box::new(move |e: &Entry| Ok(judged(conn, &chain, &me, e, &e.hid)?.err()))
+                as Box<dyn Fn(&Entry) -> Result<Option<String>>>
+        }))
     }
 }
 

@@ -460,3 +460,36 @@ fn a_writers_forged_create_of_another_writers_entry_freezes_it_and_takes_nothing
     );
     assert_eq!(x_of(&a, &hers), "1");
 }
+
+/// An import on a writer's copy judges each row as a log would be
+/// (da-vspq5): a row of its field is written and reaches a member; a row of
+/// another field is refused by its line, in the words a log is refused in,
+/// and with it nothing is written; `--allow-partial` writes the rest and
+/// exits 1. Before, the refused row was written here alone, and its
+/// baseline refused by every other copy.
+#[test]
+fn a_writers_import_refuses_by_its_line_a_row_its_chain_refuses() {
+    let (a, _b) = chained();
+    let w = Copy::new();
+    admit_writer(&a, &w, &["--fields", "mood"]);
+    let mood = r#"{"field": "mood", "at": "2026-11-10T09:00:00Z", "dur": "MOMENT"}"#;
+    let tea = r#"{"field": "tea", "at": "2026-11-10T09:30:00Z", "dur": "MOMENT"}"#;
+    let rows = format!("{mood}\n{tea}\n");
+
+    let out = w.fails(&["import", "-"], &rows);
+    assert!(
+        out.contains(
+            "error: line 2: this copy is a writer of «mood» in the sync chain, and this is «tea»"
+        ),
+        "{out}"
+    );
+    assert!(!w.has("mood") && !w.has("tea"), "nothing written");
+
+    let out = w.fails(&["import", "-", "--allow-partial"], &rows);
+    assert!(out.contains("error: line 2:"), "{out}");
+    assert!(w.has("mood") && !w.has("tea"));
+
+    let (ok, text) = w.send(&a);
+    assert!(ok && !text.contains("refused"), "{text}");
+    assert!(a.has("mood"));
+}
