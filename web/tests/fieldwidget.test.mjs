@@ -1132,6 +1132,8 @@ describe('the commands by how the person came', () => {
 			assert.match((await app.echoes()).at(-1), /^setup tea --from-json /);
 			assert.equal(await place(page).isVisible(), true, 'Save left the place');
 			assert.equal(await heading(page), 'tea');
+			// The save point is the form's once the spec is read again: a Revert before that drops the edits, and the read puts them back.
+			await until(() => row(page), (r) => JSON.stringify(r) === JSON.stringify(SAVED));
 
 			// At the save point Revert steps back a version, and stays.
 			await press(page, 'revert');
