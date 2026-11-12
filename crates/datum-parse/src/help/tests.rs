@@ -1047,7 +1047,16 @@ fn help_json_lists_db_subcommands() {
         .collect();
     assert_eq!(
         names,
-        ["purge", "backup", "restore", "migrate", "v2import", "config", "rename"]
+        [
+            "purge",
+            "backup",
+            "restore",
+            "migrate",
+            "v2import",
+            "config",
+            "attachment",
+            "rename"
+        ]
     );
     assert_eq!(db["subcommands"][1]["usage"].as_array().unwrap().len(), 5);
     assert_eq!(db["bare"], false);

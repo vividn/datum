@@ -445,6 +445,16 @@ export function deleteLayoutArgv(hid: string): string[] {
 	return ['del', hid];
 }
 
+/** Keep the image on stdin, a `data:` URL of it, by its hash (da-wgf4a); it prints `attachment:<hash>`. */
+export function keepAttachmentArgv(): string[] {
+	return ['db', 'attachment'];
+}
+
+/** The attachment `hash`, printed as a `data:` URL. */
+export function attachmentArgv(hash: string): string[] {
+	return ['db', 'attachment', hash];
+}
+
 // ---- a kit's widgets (da-gh37k) -----------------------------------------------------
 
 /** Every installed kit's `[kit]` table, its widgets in it. */

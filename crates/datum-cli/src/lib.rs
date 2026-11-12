@@ -294,6 +294,7 @@ fn dry_runs_on_a_copy(command: &Command) -> bool {
         Command::Meta(c) => matches!(c, MetaCommand::Add { .. }),
         Command::Check(a) => a.fix,
         Command::Db(DbCommand::Config(a)) => a.value.is_some(),
+        Command::Db(DbCommand::Attachment(hash)) => hash.is_none(),
         // `--user` keeps this install's username, outside the database.
         Command::Sync(SyncCommand::Rename { user, .. }) => user.is_none(),
         Command::Sync(c) => matches!(
@@ -314,6 +315,7 @@ fn writes_nothing(command: &Command) -> bool {
     match command {
         Command::Db(DbCommand::Backup(_)) => false,
         Command::Db(DbCommand::Config(a)) => a.value.is_none(),
+        Command::Db(DbCommand::Attachment(hash)) => hash.is_some(),
         Command::Check(a) => !a.fix,
         c => {
             only_reads(c)
@@ -632,7 +634,7 @@ fn only_reads(command: &Command) -> bool {
             | Command::Nowview(_)
             | Command::View(_)
             | Command::Kit(KitCommand::List | KitCommand::Export(_) | KitCommand::Show { .. })
-            | Command::Db(DbCommand::Backup(_))
+            | Command::Db(DbCommand::Backup(_) | DbCommand::Attachment(Some(_)))
             | Command::Spec(SpecCommand::List { .. } | SpecCommand::Show { .. })
             | Command::Alias(AliasCommand::List { .. } | AliasCommand::Show { .. })
             | Command::Sync(SyncCommand::Status { .. } | SyncCommand::Grid { .. })

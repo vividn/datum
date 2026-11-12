@@ -236,6 +236,23 @@ fn a_dbs_auto_setup_syncs_to_every_copy() {
     b.ok(&["occur", "newfield", "--setup"]);
 }
 
+/// da-wgf4a: an image kept on one copy, as datum.day's «tap to keep» keeps
+/// it (a `data:` URL on stdin), is drawn on another from the entry sync
+/// brought, with no request to the host it came from; the same image kept
+/// on both copies, the same entry, is still one.
+#[test]
+fn an_attachment_syncs_to_every_copy_once() {
+    let (a, b) = (Copy::new(), Copy::new());
+    let url = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+    let target = a.ok_in(&["db", "attachment"], url);
+    assert!(target.starts_with("attachment:"), "{target}");
+    assert_eq!(b.ok_in(&["db", "attachment"], url), target);
+    converged(&a, &b);
+    assert_eq!(b.ok(&["db", "attachment", target.trim()]).trim(), url);
+    let rows = b.ok(&["tail", "attachment", "--json"]);
+    assert_eq!(rows.matches("\"attachment:").count(), 1, "{rows}");
+}
+
 /// Every op names who and what signed it (da-zjc9w), and a second copy
 /// reads that back from the ops it was sent: the CLI's host, installation,
 /// program and build, and on a scripted run the script `DATUM_SCRIPT` names.

@@ -320,6 +320,10 @@ pub enum DbCommand {
     /// `datum db config [KEY [true|false]]` — the database's own settings,
     /// entries that sync (da-w6pp2).
     Config(DbConfigArgs),
+    /// `datum db attachment [HASH]` — keep the image on stdin, raw or a
+    /// `data:` URL, by its hash, printing `attachment:<hash>`; with HASH,
+    /// print that one as a `data:` URL (da-wgf4a).
+    Attachment(Option<String>),
     /// `datum db rename NEW` — the database `--db` names, under the name
     /// NEW, its sync chain and endpoint key with it (da-o7ay8).
     Rename(String),

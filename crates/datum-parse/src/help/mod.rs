@@ -18,6 +18,7 @@
 //! thin shims for the existing CLI entry point.
 
 pub mod commands;
+mod db_subcommands;
 mod fit;
 pub mod render;
 mod setup_flags;

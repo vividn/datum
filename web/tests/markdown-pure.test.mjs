@@ -43,6 +43,16 @@ test('an image its target refuses is a link to it, which loads nothing (da-ipk3v
 	);
 });
 
+test('with keep, an image its target refuses is a button to keep it, and attachment: a target, drawn where held and said where not; without, attachment: is no image (da-wgf4a)', () => {
+	const hash = 'a'.repeat(64);
+	const keeping = { ...to, keep: true, image: (src) => (src === `attachment:${hash}` ? 'data:image/png;base64,AA' : null) };
+	assert.equal(
+		markdown(`![a](https://example.com/p.png?a=1&b=2) ![b](attachment:${hash}) ![c](attachment:${'b'.repeat(64)})`, keeping),
+		'<p><button type="button" class="keep" data-keep="https://example.com/p.png?a=1&amp;b=2" title="a">image from example.com, tap to keep</button> <img alt="b" src="data:image/png;base64,AA"> <span class="refused" title="c">an image not on this device yet</span></p>'
+	);
+	assert.equal(markdown(`![b](attachment:${hash})`, to), '<p>b</p>');
+});
+
 test('a paragraph joins its lines; a code block keeps them, escaped', () => {
 	assert.equal(md('one\ntwo\n\n```bash\na < b\n  c\n```'), '<p>one two</p>\n<pre><code>a &lt; b\n  c</code></pre>');
 });

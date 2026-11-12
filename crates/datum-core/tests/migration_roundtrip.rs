@@ -39,6 +39,8 @@ mod v80;
 mod v81;
 #[path = "migration_roundtrip/v82.rs"]
 mod v82;
+#[path = "migration_roundtrip/v83.rs"]
+mod v83;
 
 fn fresh_at(version: u32) -> Db {
     let db = Db::open_in_memory().unwrap();
@@ -266,6 +268,7 @@ fn every_pair_has_a_roundtrip_test() {
         (79, 80),
         (80, 81),
         (81, 82),
+        (82, 83),
     ];
     assert_eq!(
         covered.len(),

@@ -12,9 +12,15 @@
 //! | `index`   | `index:<kit_id>/<name>`| [`IndexEntry`] + `kit_id`     |
 //! | `kit`     | `kit:<name>`           | [`KitMeta`] + `kit_id`        |
 //! | `setting` | `setting:<name>`       | [`SettingEntry`]              |
+//! | `attachment` | `attachment:<sha256>` | [`AttachmentEntry`]          |
 //!
 //! A `setting` is the database's own (da-w6pp2): an entry, so every copy of
 //! the database holds it, as vividn chose («yes it should sync»).
+//!
+//! An `attachment` is an image kept once by the SHA-256 of its bytes
+//! (da-wgf4a): a text widget's `attachment:<sha256>` draws it, so no viewer
+//! asks the host it came from. An entry, it syncs, backs up and is undone as
+//! any is; written again, the same bytes are the same entry and write nothing.
 //!
 //! Only an index's DEFINITION travels: the SQLite index it describes is this
 //! device's, derived from the definitions by [`Db::derive_kit_indices`].
@@ -62,6 +68,110 @@ pub const SETTINGS: &[&str] = &["auto_setup", "timezone_follow"];
 pub struct SettingEntry {
     pub name: String,
     pub value: JsonValue,
+}
+
+/// The field an image kept by its hash is logged under (da-wgf4a).
+pub const ATTACHMENT_FIELD: &str = "attachment";
+
+/// The most bytes an attachment holds.
+pub const ATTACHMENT_MAX: usize = 1 << 20;
+
+/// An attachment as its entry holds it: `name` the SHA-256 of the bytes, in
+/// hex, `type` the image type they are, `bytes` them in base64.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AttachmentEntry {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub media_type: String,
+    pub bytes: String,
+}
+
+impl AttachmentEntry {
+    /// As a `data:` URL, which an `<img>` draws.
+    pub fn data_url(&self) -> String {
+        format!("data:{};base64,{}", self.media_type, self.bytes)
+    }
+}
+
+/// The image type `bytes` are, by their first bytes: png, jpeg, gif, webp or
+/// svg, which datum.day draws only as an `<img>`, so a script in it never runs.
+fn image_type(bytes: &[u8]) -> Option<&'static str> {
+    match bytes {
+        [0x89, b'P', b'N', b'G', ..] => Some("image/png"),
+        [0xFF, 0xD8, 0xFF, ..] => Some("image/jpeg"),
+        [b'G', b'I', b'F', b'8', ..] => Some("image/gif"),
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Some("image/webp"),
+        _ if is_svg(bytes) => Some("image/svg+xml"),
+        _ => None,
+    }
+}
+
+/// Whether `bytes` are an SVG document: UTF-8 whose root element is `<svg>`,
+/// after a BOM and whatever a document puts before its root (an XML
+/// declaration, comments, a doctype).
+fn is_svg(bytes: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let mut rest = text.trim_start_matches('\u{feff}');
+    loop {
+        rest = rest.trim_start();
+        let past = |open: &str, close: &str| Some(rest.strip_prefix(open)?.split_once(close)?.1);
+        match past("<?", "?>")
+            .or_else(|| past("<!--", "-->"))
+            .or_else(|| past("<!", ">"))
+        {
+            Some(after) => rest = after,
+            None => {
+                return rest.strip_prefix("<svg").is_some_and(|after| {
+                    after.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/')
+                })
+            }
+        }
+    }
+}
+
+/// The bytes `input` holds: a `data:` URL's (`data:image/png;base64,…`), as
+/// a page hands one over, else `input` itself.
+fn unwrapped(input: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>> {
+    let Some(url) = std::str::from_utf8(input)
+        .ok()
+        .and_then(|t| t.trim().strip_prefix("data:"))
+    else {
+        return Ok(input.into());
+    };
+    let Some((_, b64)) = url.split_once(";base64,") else {
+        return Err(DatumError::Other(
+            "a data: URL is kept from its base64 (`data:<type>;base64,…`), and this one has none"
+                .into(),
+        ));
+    };
+    data_encoding::BASE64
+        .decode(b64.as_bytes())
+        .map(Into::into)
+        .map_err(|e| DatumError::Other(format!("the data: URL's base64 does not read: {e}")))
+}
+
+/// `bytes` as an attachment, or why they cannot be one.
+fn attachment_of(bytes: &[u8]) -> Result<AttachmentEntry> {
+    use sha2::{Digest, Sha256};
+    if bytes.len() > ATTACHMENT_MAX {
+        return Err(DatumError::Other(format!(
+            "this image is {:.1} MB, and an attachment holds at most {} MB",
+            bytes.len() as f64 / (1 << 20) as f64,
+            ATTACHMENT_MAX >> 20
+        )));
+    }
+    let Some(media_type) = image_type(bytes) else {
+        return Err(DatumError::Other(
+            "an attachment is an image: png, jpeg, gif, webp or svg, and this is none".into(),
+        ));
+    };
+    Ok(AttachmentEntry {
+        name: data_encoding::HEXLOWER.encode(&Sha256::digest(bytes)),
+        media_type: media_type.into(),
+        bytes: data_encoding::BASE64.encode(bytes),
+    })
 }
 
 /// The data key naming the kit that shipped a definition, as for specs.
@@ -150,6 +260,7 @@ pub(crate) fn check_definition_entry(
         INDEX_FIELD,
         KIT_FIELD,
         SETTING_FIELD,
+        ATTACHMENT_FIELD,
     ]
     .contains(&field)
         || entry.deleted_at.is_some()
@@ -161,6 +272,10 @@ pub(crate) fn check_definition_entry(
         let (what, see) = match field {
             KIT_FIELD => ("kits' `[kit]` tables".to_string(), "datum kit install"),
             SETTING_FIELD => ("the database's settings".to_string(), "datum db config"),
+            ATTACHMENT_FIELD => (
+                "images kept by their hash".to_string(),
+                "datum db attachment",
+            ),
             _ => (format!("kit {field}s"), "datum kit install"),
         };
         return refuse(format!(
@@ -172,6 +287,21 @@ pub(crate) fn check_definition_entry(
         COMMAND_FIELD => serde_json::from_value::<CommandEntry>(data.clone()).map(|c| c.name),
         KIT_FIELD => serde_json::from_value::<KitMeta>(data.clone()).map(|k| k.name),
         SETTING_FIELD => serde_json::from_value::<SettingEntry>(data.clone()).map(|s| s.name),
+        ATTACHMENT_FIELD => match serde_json::from_value::<AttachmentEntry>(data.clone()) {
+            // Its name, type and size are its bytes', checked on every
+            // write, a copy's by sync too.
+            Ok(a) => match data_encoding::BASE64.decode(a.bytes.as_bytes()) {
+                Ok(bytes) => match attachment_of(&bytes) {
+                    Ok(kept) if kept.name == a.name && kept.media_type == a.media_type => {
+                        Ok(a.name)
+                    }
+                    Ok(_) => return refuse("its name and type are not its bytes'".into()),
+                    Err(e) => return refuse(e.to_string()),
+                },
+                Err(e) => return refuse(format!("its bytes are not base64: {e}")),
+            },
+            Err(e) => Err(e),
+        },
         _ => serde_json::from_value::<IndexEntry>(data.clone()).map(|i| i.name),
     };
     let name = match parsed {
@@ -267,6 +397,26 @@ impl Db {
             None,
         )?;
         self.write_definition(SETTING_FIELD, data)
+    }
+
+    /// Keep `bytes`, an image or a `data:` URL of one, as the attachment named by their hash
+    /// (da-wgf4a): the name, and whether this wrote it. The same bytes kept
+    /// again are the entry already there, and write nothing.
+    pub fn keep_attachment(&self, bytes: &[u8]) -> Result<(String, bool)> {
+        let kept = attachment_of(&unwrapped(bytes)?)?;
+        let held = self.attachment(&kept.name)?.is_some();
+        if !held {
+            self.write_definition(ATTACHMENT_FIELD, definition_data(&kept, None)?)?;
+        }
+        Ok((kept.name, !held))
+    }
+
+    /// The attachment named `name`, the SHA-256 of its bytes in hex.
+    pub fn attachment(&self, name: &str) -> Result<Option<AttachmentEntry>> {
+        let Some(row) = self.definition_entry(&format!("{ATTACHMENT_FIELD}:{name}"))? else {
+            return Ok(None);
+        };
+        Ok(row.data.and_then(|d| serde_json::from_value(d).ok()))
     }
 
     /// Install a kit's `field` definitions (each `(name, data)`), marked
@@ -405,5 +555,67 @@ mod tests {
         );
         assert!(built(&db, "kit_k__one"));
         assert!(db.load_spec("b").unwrap().is_none());
+    }
+
+    /// An image kept twice is one entry, named by its hash; one over the cap
+    /// or not an image is refused, and a row whose name is not its bytes'
+    /// hash is refused as it is written, as a copy's would be by sync
+    /// (da-wgf4a).
+    #[test]
+    fn an_attachment_is_kept_once_by_its_hash() {
+        let db = Db::open_in_memory().unwrap();
+        let png = b"\x89PNG\r\n\x1a\n a picture";
+        let (name, new) = db.keep_attachment(png).unwrap();
+        assert!(new);
+        assert_eq!(name.len(), 64);
+        let (again, new) = db.keep_attachment(png).unwrap();
+        assert_eq!((again.as_str(), new), (name.as_str(), false));
+        let rows: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM entries WHERE field = 'attachment'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 1);
+        let kept = db.attachment(&name).unwrap().unwrap();
+        assert_eq!(kept.media_type, "image/png");
+        assert_eq!(
+            data_encoding::BASE64.decode(kept.bytes.as_bytes()).unwrap(),
+            png
+        );
+
+        let big = [&png[..], &vec![0u8; ATTACHMENT_MAX][..]].concat();
+        let err = db.keep_attachment(&big).unwrap_err().to_string();
+        assert!(err.contains("at most 1 MB"), "{err}");
+        let err = db.keep_attachment(b"hello").unwrap_err().to_string();
+        assert!(err.contains("an image"), "{err}");
+        assert!(db
+            .keep_attachment(
+                b"<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>"
+            )
+            .is_ok());
+        for not_svg in [
+            &b"<html><body><svg/></body></html>"[..],
+            b"<!-- <svg> --><svgx/>",
+        ] {
+            assert!(db.keep_attachment(not_svg).is_err());
+        }
+        let err = db
+            .keep_attachment(b"data:image/svg+xml,<svg/>")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("base64"), "{err}");
+        let long = format!("<!-- {} -->\n<!DOCTYPE svg>\n<svg/>", "x".repeat(2000));
+        assert!(db.keep_attachment(long.as_bytes()).is_ok());
+
+        let mut forged = kept.clone();
+        forged.name = "0".repeat(64);
+        let err = db
+            .write_definition(ATTACHMENT_FIELD, definition_data(&forged, None).unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not its bytes'"), "{err}");
     }
 }

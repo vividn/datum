@@ -278,6 +278,8 @@ const SAMPLES = {
 	layoutHistoryArgv: [[LAYOUT.name]],
 	layoutRevertArgv: [[LAYOUT.name], [LAYOUT.name, 1]],
 	deleteLayoutArgv: [[HID]],
+	keepAttachmentArgv: [[]],
+	attachmentArgv: [['a'.repeat(64)]],
 	deleteHidsArgv: [[[HID]]],
 	endArgv: [['mood', 'calm'], ['mood', ['calm', 'happy']]],
 	trackArgv: [[['coffee']], [['coffee', 'tea']]],
@@ -287,7 +289,7 @@ const SAMPLES = {
 };
 
 /** What a call that reads its standard input is given. */
-const STDIN = { mergeArgv: BACKUP, restoreArgv: BACKUP, restorePreviewArgv: BACKUP, kitInstallArgv: KIT, tutorialKitArgv: KIT };
+const STDIN = { keepAttachmentArgv: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', mergeArgv: BACKUP, restoreArgv: BACKUP, restorePreviewArgv: BACKUP, kitInstallArgv: KIT, tutorialKitArgv: KIT };
 
 /**
  * Run on a database of its own: an invite takes a member, and the seeded

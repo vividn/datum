@@ -19,6 +19,11 @@
 // embed one of `EMBEDS` is a placeholder it mounts the component into; a run
 // the vocabulary refuses is its text and why. Without `act`, none of them is
 // a link at all, as any scheme not kept.
+//
+// Where the caller's `keep` says (da-wgf4a), an image its `image` refuses is a
+// button, «image from example.com, tap to keep», `data-keep` its target, which
+// the caller wires, and `attachment:<sha256>`, an image kept in the database,
+// is a target too, drawn from where `image` says or, not held here yet, said.
 
 import { actionOf, refusal, said, type Action } from './actions.js';
 
@@ -29,6 +34,8 @@ export interface Targets {
 	image: (src: string) => string | null;
 	/** Whether an action is drawn as one (a button, or an embed's placeholder); absent, no action is. */
 	act?: (action: Action) => boolean;
+	/** Whether an image `image` refuses is a button to keep it, and `attachment:` a target an image may have; absent, neither. */
+	keep?: boolean;
 }
 
 const escape = (text: string): string =>
@@ -68,6 +75,10 @@ function keeps(target: string, schemes: string[]): boolean {
 function picture(alt: string, src: string, to: Targets): string {
 	const url = to.image(src);
 	if (url !== null) return `<img alt="${alt}" src="${escape(url)}">`;
+	const title = alt ? ` title="${alt}"` : '';
+	if (src.startsWith('attachment:')) return `<span class="refused"${title}>an image not on this device yet</span>`;
+	if (to.keep)
+		return `<button type="button" class="keep" data-keep="${escape(src)}"${title}>image from ${escape(new URL(src, 'https://doc/').host)}, tap to keep</button>`;
 	return `<a ${to.link(src)}${alt ? ` title="${alt}"` : ''}>image: ${escape(src.replace(/^https?:\/\//i, ''))}</a>`;
 }
 
@@ -79,7 +90,7 @@ function inline(text: string, to: Targets): string {
 	let out = escape(text).replace(/(`+)(.+?)\1/g, (_, __, code: string) => hold(`<code>${code.trim() || code}</code>`));
 	out = out
 		.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt: string, src: string) =>
-			hold(keeps(unescaped(src), IMAGES) ? picture(alt, unescaped(src), to) : alt)
+			hold(keeps(unescaped(src), to.keep ? [...IMAGES, 'attachment:'] : IMAGES) ? picture(alt, unescaped(src), to) : alt)
 		)
 		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) => {
 			const action = to.act ? actionOf(unescaped(href)) : null;

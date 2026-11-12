@@ -114,7 +114,8 @@ pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
 
 pub use alias::{InstallAliasesReport, KitAliasOutcome, ALIAS_FIELD};
 pub use definition::{
-    SettingEntry, COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, SETTINGS, SETTING_FIELD, VIEW_FIELD,
+    AttachmentEntry, SettingEntry, ATTACHMENT_FIELD, ATTACHMENT_MAX, COMMAND_FIELD, INDEX_FIELD,
+    KIT_FIELD, SETTINGS, SETTING_FIELD, VIEW_FIELD,
 };
 pub use holder::lock_holder;
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};

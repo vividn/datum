@@ -35,6 +35,9 @@ const drawn = (pane) =>
 		link: [el.querySelector('a')?.textContent, el.querySelector('a')?.getAttribute('href')]
 	}));
 
+/** A 1×1 PNG. */
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+
 const WANT = { h1: 'Morning', em: 'slow', strong: 'then', items: ['coffee', 'walk'], link: ['datum', 'https://datum.day'] };
 
 describe('the text widget', () => {
@@ -64,7 +67,7 @@ describe('the text widget', () => {
 		}, DESKTOP);
 	});
 
-	test("an image from datum.day's own origin is drawn; any other is a link to it, and nothing asks its host (da-ipk3v)", async () => {
+	test("an image from datum.day's own origin is drawn; any other is a button to keep it, and nothing asks its host (da-ipk3v, da-wgf4a)", async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const asked = [];
@@ -78,9 +81,50 @@ describe('the text widget', () => {
 			const ours = pane.locator('.text img[alt="ours"]');
 			await until(() => ours.evaluate((el) => el.complete && el.naturalWidth), (w) => w > 0);
 			assert.deepEqual(await pane.locator('.text img').evaluateAll((els) => els.map((el) => el.getAttribute('src'))), ['/favicon.png'], 'the outside image was drawn as an image');
-			const link = pane.locator('.text a');
-			assert.deepEqual([await link.textContent(), await link.getAttribute('href')], ['image: example.com/watching.png', 'https://example.com/watching.png']);
+			const keep = pane.locator('.text button.keep');
+			assert.deepEqual([await keep.textContent(), await keep.getAttribute('data-keep')], ['image from example.com, tap to keep', 'https://example.com/watching.png']);
 			assert.deepEqual(asked, [], 'the page asked the outside host');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a tap keeps an outside image: fetched once, kept once by its hash, its every target written as the kept copy and drawn from the database after a reload with no request; one over the cap is refused, saying so (da-wgf4a)', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const asked = [];
+			await page.route('https://example.com/**', (route) => {
+				asked.push(route.request().url());
+				if (route.request().url().endsWith('gone.png')) return route.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: '' });
+				const body = route.request().url().endsWith('big.png') ? Buffer.concat([PNG, Buffer.alloc(1 << 20)]) : PNG;
+				return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body });
+			});
+			const { pane, id } = await opened(app);
+			await modifyWidget(page, id);
+			await pane.locator('textarea').fill('![a](https://example.com/dot.png) and ![b](https://example.com/dot.png)\n\n![big](https://example.com/big.png) ![gone](https://example.com/gone.png)');
+			await leaveWidget(page, id);
+			const keep = pane.locator('.text button.keep');
+			assert.equal(await keep.count(), 4);
+			assert.deepEqual(asked, [], 'the page asked the outside host before a tap');
+
+			await keep.first().click();
+			const drawnImages = () => pane.locator('.text img').evaluateAll((els) => els.map((el) => [el.getAttribute('src').slice(0, 22), el.complete && el.naturalWidth > 0]));
+			const BOTH = [['data:image/png;base64,', true], ['data:image/png;base64,', true]];
+			await until(drawnImages, (d) => JSON.stringify(d) === JSON.stringify(BOTH));
+			assert.deepEqual(asked, ['https://example.com/dot.png'], 'not fetched once');
+			const kept = async () => JSON.parse((await app.run(['--db', '_internal', 'tail', 'attachment', '--json'])).stdout).rows.length;
+			assert.equal(await kept(), 1, 'the image used twice is not kept once');
+
+			await pane.locator('.text button.keep').first().click();
+			await until(() => pane.locator('p.refused').textContent(), (t) => /at most 1 MB/.test(t ?? ''));
+			assert.equal(await kept(), 1, 'the image over the cap was kept');
+			await pane.locator('.text button.keep').last().click();
+			await until(() => pane.locator('p.refused').textContent(), (t) => /example\.com answered 404/.test(t ?? ''));
+			assert.equal(await pane.locator('.text button.keep').count(), 2, 'a refused image lost its target');
+
+			asked.length = 0;
+			await app.reload();
+			await until(drawnImages, (d) => JSON.stringify(d) === JSON.stringify(BOTH));
+			assert.deepEqual(asked, [], 'a reload asked the outside host for a kept image');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

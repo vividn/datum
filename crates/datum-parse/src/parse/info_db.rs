@@ -41,7 +41,7 @@ pub(crate) fn parse_reparse_args(tail: &[&str]) -> Result<ReparseArgs> {
 pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing db subcommand (purge|backup|restore|migrate|v2import|config|rename)".into(),
+            "missing db subcommand (purge|backup|restore|migrate|v2import|config|attachment|rename)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -52,6 +52,15 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
         "migrate" => Ok(DbCommand::Migrate(parse_migrate_cmd(rest)?)),
         "v2import" => Ok(DbCommand::V2import(parse_db_import(rest)?)),
         "config" => Ok(DbCommand::Config(parse_db_config(rest)?)),
+        "attachment" => match rest {
+            [] => Ok(DbCommand::Attachment(None)),
+            [hash] if !hash.starts_with('-') => Ok(DbCommand::Attachment(Some(
+                hash.trim_start_matches("attachment:").to_string(),
+            ))),
+            _ => Err(ParseError::InvalidArg(
+                "db attachment keeps the image on stdin, or takes one attachment's hash".into(),
+            )),
+        },
         "rename" => match rest {
             [new] if !new.starts_with('-') && !new.is_empty() => {
                 Ok(DbCommand::Rename(new.to_string()))

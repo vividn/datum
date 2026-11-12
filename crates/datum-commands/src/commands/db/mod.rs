@@ -34,6 +34,7 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
         DbCommand::V2import(args) => import::import(args, db),
         DbCommand::Config(args) => config(args, db),
+        DbCommand::Attachment(hash) => attachment(hash, db),
         DbCommand::Rename(new) => rename::rename(&new, cli_db),
     }
 }
@@ -59,6 +60,25 @@ fn config(args: crate::args::DbConfigArgs, db: &Db) -> Result<()> {
             None => println!("{key} true (default)"),
         }
     }
+    Ok(())
+}
+
+/// `datum db attachment [HASH]` (da-wgf4a): with no HASH, keep the image on
+/// stdin, its bytes or a `data:` URL of them, as the entry named by their
+/// SHA-256, and print `attachment:<hash>`, the target a text widget draws it
+/// by; with one, print that attachment as a `data:` URL.
+fn attachment(hash: Option<String>, db: &Db) -> Result<()> {
+    if let Some(hash) = hash {
+        let Some(kept) = db.attachment(&hash)? else {
+            anyhow::bail!("no attachment {hash}");
+        };
+        println!("{}", kept.data_url());
+        return Ok(());
+    }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::stdin().lock(), &mut bytes)?;
+    let (name, _) = db.keep_attachment(&bytes)?;
+    println!("attachment:{name}");
     Ok(())
 }
 

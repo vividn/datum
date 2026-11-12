@@ -28,7 +28,9 @@ use crate::verb::Verb;
 use datum_parse::field_template::{is_template, literal, matches, parts, ties};
 
 use super::alias::ALIAS_FIELD;
-use super::definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, SETTING_FIELD, VIEW_FIELD};
+use super::definition::{
+    ATTACHMENT_FIELD, COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, SETTING_FIELD, VIEW_FIELD,
+};
 use super::insert::{insert_new_in_tx, save_existing_entry_with_kind_in_tx};
 use super::kit_layout::LAYOUT_FIELD;
 use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport, LIVE_SQL};
@@ -55,8 +57,8 @@ pub(crate) const SPEC_DISPLACED_KEY: &str = "displaced";
 
 /// Fields whose entries describe the database rather than the life it
 /// records — specs, layouts, aliases (da-b3752), views, kit commands,
-/// kit index definitions (da-fwwtn), kits' `[kit]` tables (da-xnzc7) and the
-/// database's settings (da-w6pp2). One rule keeps them all off the
+/// kit index definitions (da-fwwtn), kits' `[kit]` tables (da-xnzc7), the
+/// database's settings (da-w6pp2) and images kept by their hash (da-wgf4a). One rule keeps them all off the
 /// life-data surfaces — tail, now, dayview, nowview, stats, fields —
 /// unless asked for by name (`tail spec`) or with `--show-meta` / `-A`.
 pub const META_FIELDS: &[&str] = &[
@@ -68,11 +70,12 @@ pub const META_FIELDS: &[&str] = &[
     INDEX_FIELD,
     KIT_FIELD,
     SETTING_FIELD,
+    ATTACHMENT_FIELD,
 ];
 
 /// [`META_FIELDS`] as a SQL predicate on `entries.field`.
 pub(crate) const NOT_META_FIELD_SQL: &str =
-    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit', 'setting')";
+    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit', 'setting', 'attachment')";
 
 pub fn is_meta_field(field: &str) -> bool {
     META_FIELDS.contains(&field)
@@ -146,7 +149,7 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, client_id: &str) -> E
 
 /// Refuse a write under a field the database reserves: a spec
 /// ([`check_spec_entry`]), an alias ([`super::alias::check_alias_entry`]),
-/// or a view, command, index, kit or setting ([`super::definition::check_definition_entry`]).
+/// or a view, command, index, kit, setting or attachment ([`super::definition::check_definition_entry`]).
 /// Every row writer in `insert.rs` calls this.
 pub(crate) fn check_meta_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
     check_spec_entry(slug, entry, data)?;
@@ -592,7 +595,7 @@ impl Db {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT json_extract(data, '$.field') AS f FROM entries
              WHERE {SPEC_DOC_SQL}
-               AND f NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit', 'setting')
+               AND f NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit', 'setting', 'attachment')
              ORDER BY f"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;

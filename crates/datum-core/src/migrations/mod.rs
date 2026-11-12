@@ -64,7 +64,7 @@ use v81_v90::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 82;
+pub const CURRENT_SCHEMA_VERSION: u32 = 83;
 
 /// The migrations, each by its `to`, past which a copy below their schema
 /// can no longer sync (da-ryhmi): one that changes the shape of what syncs,
@@ -702,5 +702,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "dayview_kept: a past day's digest kept until a write reaches it, which triggers on entries and integrity_warnings say (da-7z5i9)",
         apply: m81_to_82_dayview_kept,
         down: down_82_to_81_dayview_kept,
+    },
+    Migration {
+        from: 82,
+        to: 83,
+        summary: "`attachment` is reserved: an image kept by its hash is the entry `attachment:<sha256>`, synced (da-wgf4a)",
+        apply: m82_to_83_attachment_is_reserved,
+        down: down_83_to_82_attachment_is_reserved,
     },
 ];
