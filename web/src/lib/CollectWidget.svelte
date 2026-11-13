@@ -883,8 +883,10 @@
 	});
 	/** Whether off is offered: a change field its spec lets be off, or an on/off field. */
 	const offable = $derived(picking?.shape.kind === 'on/off' || (picking?.shape.kind === 'change' && !picking.neverFalse));
-	/** The open view's states (da-qryu8, vividn, 2026-11-11): off first where offered, then on where the field takes `true`, then `listed`. */
-	const stated = $derived([...(offable ? ['false'] : []), ...(listed.includes('true') ? ['true'] : []), ...listed.filter((s) => s !== 'true')]);
+	/** Whether on is offered: the spec lists `true`, read from the field's own row, so on is in the first frame; a `true` only used is not (da-i6kpg). */
+	const takesOn = $derived(picking?.shape.kind === 'change' && !!picking.shape.declared && picking.shape.states.includes('true'));
+	/** The open view's states (da-qryu8, vividn, 2026-11-11): off first where offered, then on where the spec takes `true`, then `listed`. */
+	const stated = $derived([...(offable ? ['false'] : []), ...(takesOn ? ['true'] : []), ...listed.filter((s) => s !== 'true')]);
 	/** Where the open view stands: its first row, then each state, by `sized`'s keys. */
 	const laid = $derived.by(() => {
 		// The first row's key is `open`, with no colon, so no state's `o:` key can be it.

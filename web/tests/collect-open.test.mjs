@@ -378,6 +378,37 @@ describe('a field opened in collect', () => {
 		});
 	});
 
+	// vividn, 2026-11-13: «The on button in the collect widget state view often appears a second after the other ones,
+	// causing lower states to shift … Also it seems to appear even when on is not enabled for a field?» (da-i6kpg)
+	test('a `true` only used, not in the spec, offers no on, before `states` answers or after', async () => {
+		await opening(['setup spot --verb switch --states false,a,b', 'switch spot true -t 09:00', 'switch spot zed -t 10:00'], 'spot', async ({ page }, button) => {
+			const release = await hold(page, ['states']);
+			try {
+				await button.click();
+				assert.deepEqual(await listed(page, 'b'), ['off', 'a', 'b']);
+			} finally {
+				await release();
+			}
+			assert.deepEqual(await listed(page, 'zed'), ['off', 'a', 'b', 'zed']);
+		});
+	});
+
+	test('a spec listing `true` draws on in the first frame, second after off, and nothing moves when `states` answers', async () => {
+		await opening(['setup spot --verb switch --states false,a,b,true', 'switch spot true -t 09:00', 'switch spot zed -t 10:00'], 'spot', async ({ page }, button) => {
+			const seen = await placesShown(page, '.collect.open [data-state]', 'state');
+			const release = await hold(page, ['states']);
+			try {
+				await button.click();
+				assert.deepEqual(await listed(page, 'b'), ['off', 'true', 'a', 'b']);
+				assert.ok((await held(page)).some((a) => a[0] === 'states'), 'on waited for the listing');
+			} finally {
+				await release();
+			}
+			assert.deepEqual(await listed(page, 'zed'), ['off', 'true', 'a', 'b', 'zed']);
+			assert.deepEqual(Object.entries(await seen()).filter(([, places]) => places.length > 1), [], 'a state shown moved');
+		});
+	});
+
 	test('the spec’s states in its order, then every other used, the last used first, none twice', async () => {
 		// `head`, which once shared the first row's key.
 		const lines = ['setup mood --verb switch --states false,good,bad', 'switch mood head -t 08:00', 'switch mood zed -t 09:00', 'switch mood yak -t 10:00', 'switch mood good -t 11:00', 'switch mood ox -t 12:00', 'off mood -t 13:00'];
