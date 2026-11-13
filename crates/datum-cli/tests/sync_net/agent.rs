@@ -68,6 +68,53 @@ fn a_restore_with_no_member_online_says_nothing_keeps_trying() {
     );
 }
 
+/// A write code's restore kept pending, no member online, holds its writes
+/// to the code's fields, in the words the chain's record says after the
+/// first sync (da-8jd6s): before, the copy had no record of itself, so no
+/// bounds, and it imported a row every member then refused.
+#[test]
+fn a_pending_write_restore_writes_only_the_codes_fields() {
+    let a = alone();
+    let code = code(
+        &a,
+        &[
+            "--level", "write", "--fields", "coffee", "--label", "narrow",
+        ],
+    );
+    let mut w = Copy::new();
+    w.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "2")];
+    let out = w.ok(&["sync", "restore", &code]);
+    assert!(out.contains("This sandbox keeps nothing"), "{out}");
+
+    let said = "this copy is a writer of «coffee» in the sync chain, and this is «tea»";
+    let coffee = r#"{"field": "coffee", "at": "2026-11-10T09:00:00Z", "dur": "MOMENT"}"#;
+    let tea = r#"{"field": "tea", "at": "2026-11-10T09:30:00Z", "dur": "MOMENT"}"#;
+    let out = w.fails(&["import", "-"], &format!("{coffee}\n{tea}\n"));
+    assert!(out.contains(&format!("error: line 2: {said}")), "{out}");
+    let out = w.fails(&["occur", "tea"], "");
+    assert!(out.contains(said), "{out}");
+    assert_eq!(
+        (count(&w, "coffee"), count(&w, "tea")),
+        ("0".into(), "0".into())
+    );
+    w.ok(&["occur", "coffee"]);
+    assert_eq!(count(&w, "coffee"), "1");
+}
+
+/// A reader's restore kept pending writes nothing, as the reader's record
+/// refuses once it is synced (da-8jd6s).
+#[test]
+fn a_pending_read_restore_writes_nothing() {
+    let a = alone();
+    let code = code(&a, &["--level", "full", "--label", "claude"]);
+    let mut r = Copy::new();
+    r.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "2")];
+    r.ok(&["sync", "restore", &code]);
+    let out = r.fails(&["occur", "tea"], "");
+    assert!(out.contains("reader"), "{out}");
+    assert_eq!(count(&r, "tea"), "0");
+}
+
 /// A full code restores everything into a fresh home, as a reader; a
 /// second fresh home from the same code is the same device, one row of the
 /// grid, its first copy retired; and the code in the env does the same.

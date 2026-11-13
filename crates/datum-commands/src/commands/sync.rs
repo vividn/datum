@@ -653,6 +653,8 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     from: about["from"].as_str().map(Into::into),
                     chain: about["chain"].as_str().map(Into::into),
                     expires: about["expires"].as_u64(),
+                    role: about["role"].as_str().map(Into::into),
+                    fields: serde_json::from_value(about["fields"].clone()).ok(),
                     ..Default::default()
                 })?;
             }

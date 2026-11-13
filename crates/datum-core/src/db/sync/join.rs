@@ -8,7 +8,7 @@
 //! it removes it ([`Db::sync_handshake`]), so the native and the page's
 //! store both end it alike.
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::db::Db;
@@ -32,6 +32,13 @@ pub struct PendingJoin {
     /// When the invite expires, unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires: Option<u64>,
+    /// The role it joins as, and a reader's or writer's fields, as the
+    /// ticket says: what this copy's writes are judged by until the chain's
+    /// own record of it takes over (da-8jd6s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<String>>,
     /// When it was stored, RFC 3339.
     #[serde(default)]
     pub since: String,
@@ -44,16 +51,19 @@ pub struct PendingJoin {
     pub gave_way: bool,
 }
 
+/// The pending join on `conn`, if any.
+pub(super) fn pending(conn: &Connection) -> Result<Option<PendingJoin>> {
+    let held: Option<String> = conn
+        .prepare_cached("SELECT value FROM _meta WHERE key = 'sync_join'")?
+        .query_row([], |r| r.get(0))
+        .optional()?;
+    Ok(held.and_then(|v| serde_json::from_str(&v).ok()))
+}
+
 impl Db {
     /// The pending join, if any.
     pub fn sync_join_pending(&self) -> Result<Option<PendingJoin>> {
-        let held: Option<String> = self
-            .conn
-            .query_row("SELECT value FROM _meta WHERE key = 'sync_join'", [], |r| {
-                r.get(0)
-            })
-            .optional()?;
-        Ok(held.and_then(|v| serde_json::from_str(&v).ok()))
+        pending(&self.conn)
     }
 
     /// Store `join` as the pending join, replacing any.

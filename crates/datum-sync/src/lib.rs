@@ -1034,6 +1034,8 @@ pub fn connect(
             from: t.about.from.clone(),
             chain: t.about.chain.clone(),
             expires: t.about.expires,
+            role: t.about.role.clone(),
+            fields: t.about.fields.clone(),
             ..Default::default()
         })?;
         let kept = held();

@@ -7,8 +7,10 @@
 
 use rusqlite::Connection;
 
-use super::chain::{Chain, Role};
-use super::{belongs_to, endpoint, own_alone, read_only, row, Endpoint, Op};
+use std::collections::BTreeSet;
+
+use super::chain::{Chain, Filter, Member, Role};
+use super::{belongs_to, endpoint, join, own_alone, read_only, row, Endpoint, Op, READ_ONLY};
 use crate::db::{is_meta_field, Db, SPEC_FIELD};
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
@@ -41,20 +43,19 @@ fn meta(field: &str) -> bool {
     field != SPEC_FIELD && is_meta_field(field)
 }
 
-/// Why an entry op of `endpoint` at `hlc`, a writer then, is refused, if it
+/// Why an entry op of member `m` at `hlc`, a writer then, is refused, if it
 /// is: `field` is the one its entry belongs to after it (a spec's, the field
 /// it specifies), `meta` whether its row is an alias or the like, and `own()`
 /// whether the entry is the writer's to change ([`owns`]). Anyone else's op
 /// is no writer's, and passes.
 fn bounds(
-    chain: &Chain,
-    endpoint: &str,
+    m: Option<&Member>,
     hlc: &str,
     field: Option<&str>,
     meta: bool,
     own: impl FnOnce() -> Result<bool>,
 ) -> Result<std::result::Result<(), String>> {
-    let Some(m) = chain.member(endpoint) else {
+    let Some(m) = m else {
         return Ok(Ok(()));
     };
     if m.role_at(hlc) != Role::Writer {
@@ -89,7 +90,7 @@ pub(super) fn allowed(
     let row = op.effect.get("create").or_else(|| op.effect.get("set"));
     let meta = row.and_then(|r| r["field"].as_str()).is_some_and(meta);
     let field = op.field.as_deref();
-    bounds(chain, &op.endpoint, &op.hlc, field, meta, || {
+    bounds(chain.member(&op.endpoint), &op.hlc, field, meta, || {
         owns(chain, op, &creates_of(conn, &op.hid)?)
     })
 }
@@ -141,17 +142,65 @@ pub(super) fn may_sign(conn: &Connection, ep: &Endpoint, post: &Entry, hid: &Hid
     if let Some(why) = read_only(conn, ep)? {
         return Err(DatumError::Other(why.into()));
     }
-    if !own_alone(conn, ep)? {
+    let pending = joining(conn)?;
+    if !own_alone(conn, ep)? && pending.is_none() {
         return Ok(());
     }
     let chain = Chain::load(conn)?;
-    judged(conn, &chain, &ep.id, post, hid)?.map_err(DatumError::Other)
+    let Some(m) = judged_as(&chain, &ep.id, pending)? else {
+        return Ok(());
+    };
+    judged(conn, &m, &ep.id, post, hid)?.map_err(DatumError::Other)
 }
 
-/// Why writer `me` may not sign `post`, in `may_sign`'s words, if it may not.
+/// The join this copy is still trying, if any: one a member refused for
+/// good joins nothing, and judges nothing.
+fn joining(conn: &Connection) -> Result<Option<join::PendingJoin>> {
+    Ok(join::pending(conn)?.filter(|j| j.refused.is_none()))
+}
+
+/// The member this copy, `me`, is judged as: the chain's record of it, else,
+/// while its join is pending, what the ticket says it joins as (da-8jd6s),
+/// so a writer's refusal reads the same before its first sync as after. A
+/// reader's ticket refuses every write, as the reader's record does.
+fn judged_as(
+    chain: &Chain,
+    me: &str,
+    pending: Option<join::PendingJoin>,
+) -> Result<Option<Member>> {
+    if let Some(m) = chain.member(me) {
+        return Ok(Some(m.clone()));
+    }
+    let Some(join) = pending else {
+        return Ok(None);
+    };
+    let role = join
+        .role
+        .as_deref()
+        .and_then(Role::parse)
+        .unwrap_or(Role::Member);
+    if !role.writes() {
+        return Err(DatumError::Other(READ_ONLY.into()));
+    }
+    let fields: Option<BTreeSet<String>> = join.fields.map(|f| f.into_iter().collect());
+    Ok(Some(Member {
+        endpoint: me.into(),
+        roles: vec![(String::new(), role)],
+        filter: fields.map(|f| Filter {
+            fields: Some(f),
+            of: 0,
+            window: None,
+            specs: false,
+        }),
+        ..Default::default()
+    }))
+}
+
+/// Why writer `me`, judged as `m`, may not sign `post`, in `may_sign`'s
+/// words, if it may not.
 fn judged(
     conn: &Connection,
-    chain: &Chain,
+    m: &Member,
     me: &str,
     post: &Entry,
     hid: &Hid,
@@ -163,7 +212,7 @@ fn judged(
     };
     let field = belongs_to(&row(post));
     Ok(
-        bounds(chain, me, "~", field.as_deref(), meta(&post.field), own)?
+        bounds(Some(m), "~", field.as_deref(), meta(&post.field), own)?
             .map_err(|why| format!("this copy is {why}")),
     )
 }
@@ -182,7 +231,8 @@ impl Db {
     ) -> Result<Option<Box<dyn Fn(&Entry) -> Result<Option<String>> + '_>>> {
         let conn = self.conn();
         let chain = Chain::load(conn)?;
-        if !chain.exists() {
+        let pending = joining(conn)?;
+        if !chain.exists() && pending.is_none() {
             return Ok(None);
         }
         let ep = endpoint(conn)?;
@@ -190,11 +240,10 @@ impl Db {
             return Err(DatumError::Other(why.into()));
         }
         let me = ep.id;
-        let writer = chain
-            .member(&me)
-            .is_some_and(|m| m.role_at("~") == Role::Writer);
-        Ok(writer.then(|| {
-            Box::new(move |e: &Entry| Ok(judged(conn, &chain, &me, e, &e.hid)?.err()))
+        let m = judged_as(&chain, &me, pending)?;
+        let writer = m.filter(|m| m.role_at("~") == Role::Writer);
+        Ok(writer.map(|m| {
+            Box::new(move |e: &Entry| Ok(judged(conn, &m, &me, e, &e.hid)?.err()))
                 as Box<dyn Fn(&Entry) -> Result<Option<String>>>
         }))
     }
