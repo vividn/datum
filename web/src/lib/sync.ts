@@ -1092,3 +1092,24 @@ export function maskTicket(line: string): string {
 	}
 	return line;
 }
+
+/**
+ * The sync commands whose answer holds a secret (da-odkpz): `chain agent
+ * --json` the agent's device key, `new-invite` an invite's, `account` the
+ * account's kept key, `pending-join` the ticket it keeps.
+ */
+const SECRET_ANSWERS = [['chain', 'agent'], ['new-invite'], ['account'], ['pending-join']];
+
+/**
+ * Whether `line` is one of them, its flags and their values anywhere: the
+ * scrollback stores no secret on disk, so it keeps such a line's command and
+ * not what it printed. A command not one of them read as one costs only its
+ * stored output.
+ */
+export function answersSecret(line: string): boolean {
+	const [sync, ...rest] = words(shellSplit(line));
+	return sync === 'sync' && SECRET_ANSWERS.some((c) => rest.some((_, i) => c.every((w, j) => rest[i + j] === w)));
+}
+
+/** What the scrollback keeps in place of such an answer. */
+export const SECRET_KEPT = 'output not kept: it held a secret';

@@ -17,7 +17,7 @@ import { derived, get, writable } from 'svelte/store';
 import { browser } from '$app/env';
 import type { RunResult } from './run.js';
 import { noteRun } from './bar.js';
-import { maskTicket, syncStates } from './sync.js';
+import { answersSecret, maskTicket, SECRET_KEPT, syncStates } from './sync.js';
 import { currentDb, DEFAULT_DB } from './database.js';
 import { parseEcho, type EchoDoc } from './echo.js';
 
@@ -184,7 +184,10 @@ function save(): void {
 function persist(): void {
 	clearTimeout(pending);
 	const { scrollback, history } = get(cli);
-	let keep = scrollback.slice(-KEEP);
+	// Shown as it ran, but never on disk (da-odkpz).
+	let keep = scrollback
+		.slice(-KEEP)
+		.map((c) => (c.result.stdout && answersSecret(c.line) ? { ...c, result: { ...c.result, stdout: SECRET_KEPT } } : c));
 	for (;;) {
 		try {
 			localStorage.setItem(

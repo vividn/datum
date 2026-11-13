@@ -51,6 +51,7 @@
 	import { parseEcho } from '#lib/echo.ts';
 	import { marks, type Command } from '#lib/cliStore.ts';
 	import { step } from '#lib/layout/engine.ts';
+	import { answersSecret } from '#lib/sync.ts';
 
 	let {
 		entry,
@@ -132,7 +133,8 @@
 	}
 </script>
 
-<div class="frame" class:marked={!!mark} class:struck={!!mark?.undone}>
+<!-- `data-secret`: its answer stays out of the copy kept for the next visit (Stale.svelte, da-odkpz). -->
+<div class="frame" class:marked={!!mark} class:struck={!!mark?.undone} data-secret={answersSecret(entry.line) || undefined}>
 	<div class="head" class:capped={!!cap} class:all class:struck={!!mark?.undone}>
 		<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
 	</div>

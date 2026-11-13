@@ -62,7 +62,7 @@
 		const next: Record<string, string> = {};
 		for (const body of document.querySelectorAll<HTMLElement>('[data-kept]')) {
 			const id = body.dataset.kept as string;
-			const html = body.querySelector(':scope > [data-stale]') ? load()[id] : body.innerHTML;
+			const html = body.querySelector(':scope > [data-stale]') ? load()[id] : drawn(body);
 			if (html) next[id] = html;
 		}
 		let size = Object.values(next).reduce((sum, html) => sum + html.length, 0);
@@ -79,6 +79,13 @@
 		}
 	}
 
+	/** `body`'s content, less a command's that printed a secret (`data-secret`, da-odkpz). */
+	function drawn(body: HTMLElement): string {
+		if (!body.querySelector('[data-secret]')) return body.innerHTML;
+		const copy = body.cloneNode(true) as HTMLElement;
+		for (const secret of copy.querySelectorAll('[data-secret]')) secret.remove();
+		return copy.innerHTML;
+	}
 	/** The page's own rules, for a shadow root to adopt: read again only when a sheet is added. */
 	let sheets: { count: number; adopted: CSSStyleSheet[] } | null = null;
 
