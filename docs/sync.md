@@ -38,7 +38,8 @@ role <WHO> member|reader|writer` changes a member's role. The change stands to
 what the copy making it holds of that member's writes: those keep the role and
 fields they were written under, and every later one takes the new, whatever
 date it carries, so a device cannot escape a change by dating its writes
-before it.
+before it. Its chain records too: an ask to upgrade or a grant dated before
+the change is judged by the new role.
 
 A reader's or writer's filter may also hold a window: `--window 1d` passes
 the entries of the last day, back to the hour, and for each field the entry

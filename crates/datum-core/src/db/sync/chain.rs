@@ -145,7 +145,8 @@
 //!   `revoke` or `erase` carries the `seq` of the endpoint's ops it stands
 //!   to (da-l0as8, F18): the signing copy's head of them, so an op past it is
 //!   judged by the record whatever HLC its signer gave it. A record from
-//!   before that goes by the HLC. A role's filter is judged with it ([`Step`]).
+//!   before that goes by the HLC. A role's filter is judged with it ([`Step`]),
+//!   and so is every chain record but a role or revoke, by the whole fold (da-va3vp).
 //! - **Readers (da-9yvb6)** are served everything and serve only their own
 //!   ops: they never relay. A reader's copy refuses a write locally. A
 //!   filtered reader (da-u81u1) is served only its fields' entries, each
@@ -1080,6 +1081,8 @@ pub struct Chain {
     taken: BTreeSet<[u8; 32]>,
     /// The records that did nothing, by `(endpoint, seq)`, and why.
     pub rejected: BTreeMap<(String, i64), String>,
+    /// The records whose writer the whole fold refuses (da-va3vp).
+    late: BTreeMap<(String, i64), String>,
     /// Each removal of the last admin (da-aam46): the admin's label, and
     /// the HLC it was removed at.
     pub unlocks: Vec<(String, String)>,
@@ -1284,14 +1287,18 @@ impl Chain {
 
     fn fold(mut ops: Vec<Op>) -> Chain {
         ops.sort_by(|a, b| (&a.hlc, &a.endpoint).cmp(&(&b.hlc, &b.endpoint)));
-        let mut chain = Chain::default();
-        for op in &ops {
-            if let Err(why) = chain.step(op) {
-                chain.rejected.insert((op.endpoint.clone(), op.seq), why);
+        Self::judged(&ops)
+    }
+
+    /// One pass over `ops`, sorted, onto this chain.
+    fn fold_once(mut self, ops: &[Op]) -> Chain {
+        for op in ops {
+            if let Err(why) = self.step(op) {
+                self.rejected.insert((op.endpoint.clone(), op.seq), why);
             }
         }
-        chain.assemble();
-        chain
+        self.assemble();
+        self
     }
 
     /// Label each member whose label was not given (da-xijlw) with the least
@@ -1421,6 +1428,7 @@ impl Chain {
             true => self.live(&op.endpoint, &op.hlc, op.seq),
             false => self.acts(&op.endpoint, &op.hlc, op.seq),
         }
+        .and_then(|()| self.late_for(op))
         .map_err(|why| format!("its writer is {why}"))?;
         if kind == "admit" && s("via") == "standing" {
             return self.admit_standing(op);
