@@ -1248,13 +1248,11 @@ describe('in the app', () => {
 			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} button.remove[aria-label="remove down"]`).click();
-			// A rename is the same row under a new name, and its glyph comes along.
-			await page.locator(`${MODAL} .state input.name`).nth(1).fill('level');
 			await setupCommand(page);
 			assert.equal((await saved).code, 0);
 			const shown = JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
-			assert.deepEqual(shown.allowed_states, ['up', 'level']);
-			assert.deepEqual(shown.state_symbols, { up: '▲', level: '■' });
+			assert.deepEqual(shown.allowed_states, ['up', 'flat']);
+			assert.deepEqual(shown.state_symbols, { up: '▲', flat: '■' });
 		});
 	});
 

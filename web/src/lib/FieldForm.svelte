@@ -57,7 +57,11 @@
 	SYMBOL its dots draw (da-ogyxa) stand on one line, the symbol in the
 	colour, each a popup (da-rpfws); the symbol is a character or an .svg
 	(the spec's `icon`); a state is told apart by its colour alone, its own
-	symbol kept under its `…` as advanced (da-puzij). A
+	symbol kept under its `…` as advanced (da-puzij). A saved state's name is
+	a word: its `…` renames it everywhere (`rename F --state`, its dry run
+	said first, a second press running it) and archives it (`setup F
+	--archive-state`), each at once, the archived listed under the states
+	with Bring back (`--add-state`, da-sbgff). A
 	`symbol_by` (a symbol by a data key's value) is not edited here and a
 	save leaves it as it was. A field with no name yet has no colour to
 	show: its swatch is empty, not the pink an empty name hashes to. The data keys
@@ -95,6 +99,8 @@
 	import { get } from 'svelte/store';
 	import { cubicOut } from 'svelte/easing';
 	import { act } from './act.js';
+	import { stripAnsi } from './ansi.js';
+	import { renameStateArgv } from './calls.js';
 	import DataKeys from './DataKeys.svelte';
 	import { setupCommands, type SetupCommand } from './fieldWidget.js';
 	import { layout } from './layout/current.js';
@@ -102,6 +108,7 @@
 	import { defaultColor, type FieldButton } from './fields.js';
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
+	import { run, type RunResult } from './run.js';
 	import Sheet from './Sheet.svelte';
 	import { shellJoin } from './shellSplit.js';
 	import Swatch from './Swatch.svelte';
@@ -156,6 +163,8 @@
 		onclose,
 		/** Run a command and stay: tracking or ignoring the field. */
 		onrun,
+		/** Run a write on the saved spec at once and read it again: a state renamed, archived or brought back (da-sbgff). */
+		onact,
 		onrevert,
 		onredo,
 		/** Go to another field, `''` a new one: the pill's ×, the modal's list, an anchor's link in the placement. */
@@ -176,6 +185,7 @@
 		pick?: Snippet;
 		onclose: (save: Save | null) => void;
 		onrun: (save: Save) => void;
+		onact: (argv: string[]) => Promise<RunResult>;
 		onrevert: () => void;
 		onredo: () => void;
 		onopen: (field: string) => void;
@@ -190,7 +200,9 @@
 	/** On is `true` listed among the states (da-ksx39), as a field listing `false` keeps off: its own row under off, saved first. */
 	const isOn = (s: StateRow) => s.name.trim() === 'true';
 	const rowsOf = (s: Spec | null) => (s ? stateRows(s) : []);
-	let states: StateRow[] = $state(rowsOf(opening).filter((r) => !isOn(r)));
+	let states: StateRow[] = $state(rowsOf(opening).filter((r) => !isOn(r)).map((r) => ({ ...r, saved: true })));
+	/** The states archived, kept for their past rows: listed under the states, each brought back by its `…`. */
+	const archived = opening?.archived ?? [];
 	let on: StateRow | null = $state(rowsOf(opening).find(isOn) ?? null);
 	let symbol = $state(opening?.symbol ?? '');
 	let keys: KeyRow[] = $state(opening ? keyRows(opening) : []);
@@ -321,6 +333,31 @@
 	/** The state a handle is dragging, and the one whose options are open. */
 	let held: StateRow | null = $state(null);
 	let shown: StateRow | null = $state(null);
+	/** The archived state whose options are open. */
+	let shownArchived: string | null = $state(null);
+
+	// ---- a saved state renamed by its `…` (da-sbgff): the CLI's dry run first, a second press the rename ----
+	let renameTo = $state('');
+	/** What the CLI said of `to`: its dry run, or its refusal. */
+	let told: { to: string; line: string; ok: boolean } | null = $state(null);
+	const said = (r: RunResult) => stripAnsi(r.code === 0 ? r.stdout : r.stderr).trim();
+
+	function options(state: StateRow) {
+		shown = shown === state ? null : state;
+		[renameTo, told] = [state.name, null];
+	}
+
+	async function renameState(old: string) {
+		const to = renameTo.trim();
+		if (!to || to === old) return;
+		if (told?.ok && told.to === to) {
+			const done = await onact(renameStateArgv(field, old, to));
+			if (done.code !== 0) told = { to, line: said(done), ok: false };
+			return;
+		}
+		const dry = await run(renameStateArgv(field, old, to, true));
+		told = { to, line: said(dry), ok: dry.code === 0 };
+	}
 
 	// A drag follows the pointer on the window: the row moves in the DOM as it goes, which would end a capture on the handle.
 	function grab(e: PointerEvent, state: StateRow) {
@@ -609,20 +646,27 @@
 										onkeydown={(e) => nudge(e, i)}>⠿</button
 									>
 									<Swatch bind:value={state.color} fallback={defaultColor(state.name.trim())} label="the color of {which}" />
-									<input
-										class="name"
-										bind:value={state.name}
-										placeholder="state"
-										aria-label="the state's name"
-										spellcheck="false"
-										autocapitalize="none"
-									/>
+									<!-- A saved state's name is a word, renamed everywhere by its … (da-sbgff, vividn, 2026-11-13: «disable
+									     direct text editing for other states as well, preferring to use a rename button inside of the ...»);
+									     one added and not yet saved is typed here. -->
+									{#if state.saved}
+										<span class="name">{state.name}</span>
+									{:else}
+										<input
+											class="name"
+											bind:value={state.name}
+											placeholder="state"
+											aria-label="the state's name"
+											spellcheck="false"
+											autocapitalize="none"
+										/>
+									{/if}
 									<button
 										type="button"
 										class="remove more"
 										aria-label="the options of {which}"
 										aria-expanded={shown === state}
-										onclick={() => (shown = shown === state ? null : state)}>…</button
+										onclick={() => options(state)}>…</button
 									>
 									<button
 										type="button"
@@ -632,6 +676,39 @@
 									>
 									{#if shown === state}
 										<div class="options">
+											{#if state.saved}
+												{@const to = renameTo.trim()}
+												{@const confirming = !!told?.ok && told.to === to}
+												<!-- Each acts at once, as the CLI does, and not on the form's save: «Put options for archiving
+												     state inside the ... section in addition to the rename». -->
+												<span class="row">
+													<input
+														class="rename-to"
+														bind:value={renameTo}
+														aria-label="rename {state.name} to"
+														spellcheck="false"
+														autocapitalize="none"
+														enterkeyhint="go"
+														onkeydown={(e) => e.key === 'Enter' && !e.isComposing && (e.preventDefault(), renameState(state.name))}
+													/>
+													<!-- Its first press arms it, the dry run said; the second runs the rename. -->
+													<button
+														type="button"
+														class="at-once"
+														use:act={confirming ? 'run' : 'arm'}
+														disabled={!to || to === state.name}
+														onclick={() => renameState(state.name)}>{confirming ? 'confirm rename' : 'rename'}</button
+													>
+												</span>
+												{#if told && told.to === to}<p class="told" class:refused={!told.ok}>{told.line}</p>{/if}
+												<button
+													type="button"
+													class="at-once"
+													use:act={'run'}
+													title="off the list, its past entries drawn as they were"
+													onclick={() => onact(['setup', field, '--archive-state', state.name])}>archive</button
+												>
+											{/if}
 											<input class="meaning" bind:value={state.description} placeholder="what it means" aria-label="what {which} means" />
 											<span class="advanced">advanced</span>
 											<span class="row">
@@ -646,6 +723,33 @@
 						<button type="button" class="add" onclick={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
 							>+ state</button
 						>
+						{#if archived.length}
+							<!-- Archived states stay reachable (da-sbgff): «Bring back» lists one again, so archiving is never one-way. -->
+							<span class="advanced">archived</span>
+							<ul class="states archived" aria-label="archived states">
+								{#each archived as name (name)}
+									<li class="gone">
+										<span></span>
+										<span class="swatch" style:background={opening?.state_colors[name] || defaultColor(name)} aria-hidden="true"></span>
+										<span class="name">{name}</span>
+										<button
+											type="button"
+											class="remove more"
+											aria-label="the options of {name}"
+											aria-expanded={shownArchived === name}
+											onclick={() => (shownArchived = shownArchived === name ? null : name)}>…</button
+										>
+										{#if shownArchived === name}
+											<div class="options">
+												<button type="button" class="at-once" use:act={'run'} onclick={() => onact(['setup', field, '--add-state', name])}
+													>bring back</button
+												>
+											</div>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
 						<label class="row" title="a bare state names the entry FIELD:<state>, as change reading dune names book:dune">
 							<span class="label">each state is a</span>
 							<input class="lookup" bind:value={lookup} placeholder="field, e.g. book" spellcheck="false" autocapitalize="none" />
@@ -1128,7 +1232,8 @@
 
 	.state,
 	.off,
-	.on {
+	.on,
+	.gone {
 		position: relative;
 		display: grid;
 		grid-template-columns: 1.4rem 28px minmax(0, 1fr) auto auto;
@@ -1191,7 +1296,8 @@
 	}
 
 	.off .swatch,
-	.on .swatch {
+	.on .swatch,
+	.gone .swatch {
 		grid-column: 2;
 		box-sizing: border-box;
 		block-size: 28px;
@@ -1226,9 +1332,31 @@
 		min-inline-size: 0;
 	}
 
+	/* An archived state is dimmed: kept for its past rows, offered by no button. */
+	.gone > :not(.options) {
+		opacity: 0.55;
+	}
+
+	.told {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.8rem;
+		white-space: pre-wrap;
+	}
+
+	.told.refused {
+		color: var(--ink-bright);
+	}
+
+	.options .at-once {
+		align-self: flex-start;
+	}
+
 	/* Off and on are words, not boxes to type in (vividn, 2026-11-11). */
 	.off .name,
-	.on .name {
+	.on .name,
+	.state > span.name,
+	.gone .name {
 		color: var(--ink);
 	}
 
@@ -1305,6 +1433,7 @@
 	.status button,
 	.fix,
 	.remove,
+	.at-once,
 	.add {
 		box-sizing: border-box;
 		min-block-size: 24px;
@@ -1385,6 +1514,7 @@
 		align-self: flex-start;
 	}
 
+	.at-once:disabled,
 	.remove:disabled {
 		opacity: 0.4;
 		cursor: default;

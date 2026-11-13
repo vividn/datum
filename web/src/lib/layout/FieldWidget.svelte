@@ -71,7 +71,7 @@
 	import { stripAnsi } from '#lib/ansi.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
 	import { answerField, away, editing } from '#lib/fieldWidget.ts';
-	import { run } from '#lib/run.ts';
+	import { run, type RunResult } from '#lib/run.ts';
 	import { begin } from '#lib/tour.ts';
 	import type { TailListing } from '#lib/tail.ts';
 	import { VERBS, type Save, type Spec } from '#lib/track.ts';
@@ -224,6 +224,15 @@
 		$editing = { field };
 	}
 
+	/** A write on the saved spec from the form (da-sbgff): its edits saved first, as leaving does, so they are kept, then the spec read again. */
+	async function write(argv: string[]): Promise<RunResult> {
+		const asked = $editing;
+		await flush();
+		const result = await press(argv);
+		if (result.code === 0 && asked === $editing) await load(asked);
+		return result;
+	}
+
 	/** The field renamed: asked, its dry run shown, run, and the form on the new name. A name that exists says so, and offers the merge with its dry run (da-icna7). */
 	async function rename(): Promise<void> {
 		const old = $editing.field;
@@ -300,6 +309,7 @@
 					onrevert={revert}
 					onredo={() => walk && void step(walk.at + 1)}
 					onrun={(save) => press(save.argv)}
+					onact={write}
 					onopen={go}
 				>
 					{#snippet pick()}

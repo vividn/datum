@@ -727,7 +727,7 @@ describe('the Placement tab', () => {
 
 			// A state's colour is drawn as the form changes it, before any save.
 			const happy = page.locator(`${MODAL} .state`).nth(0);
-			assert.equal(await happy.locator('input.name').inputValue(), 'happy');
+			assert.equal((await happy.locator('.name').innerText()).trim(), 'happy');
 			await happy.locator('.swatch[aria-expanded]').click();
 			const pick = happy.locator('.set .swatch').nth(3);
 			const color = await pick.getAttribute('data-color');

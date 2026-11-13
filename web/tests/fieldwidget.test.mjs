@@ -570,7 +570,7 @@ describe('the field widget', () => {
 				await app.run(['track', 'mood', '--verb', 'switch', '--states', 'a,b,c', '--state-description', 'a=first']);
 				const { saved } = await openField(page, 'mood');
 				const rows = page.locator(`${FIELD_FORM} .states li.state`);
-				const names = () => rows.locator('input.name').evaluateAll((all) => all.map((i) => i.value));
+				const names = () => rows.locator('.name').evaluateAll((all) => all.map((n) => n.value ?? n.textContent.trim()));
 				const off = page.locator(`${FIELD_FORM} .states li.off`);
 				const strike = off.locator('input.offer');
 				// da-ksx39, vividn, 2026-11-11: «remove the "x" button on off, and instead have it be a checkbox to the left /
@@ -730,7 +730,7 @@ describe('the field widget', () => {
 				await app.run(['track', 'mood', '--verb', 'switch', '--states', 'a,b,c']);
 				const { saved } = await openField(page, 'mood');
 				const rows = page.locator(`${FIELD_FORM} .states li.state`);
-				const names = () => rows.locator('input.name').evaluateAll((all) => all.map((i) => i.value).join(''));
+				const names = () => rows.locator('.name').evaluateAll((all) => all.map((n) => n.textContent.trim()).join(''));
 				await page.locator(`${FIELD_FORM} [aria-label="the options of b"]`).click();
 				const grip = await page.locator(`${FIELD_FORM} [aria-label="move a: drag, or the arrow keys"]`).boundingBox();
 				const [a, b] = [await rows.nth(0).boundingBox(), await rows.nth(1).boundingBox()];
@@ -763,6 +763,63 @@ describe('the field widget', () => {
 				assert.deepEqual(app.errors, []);
 			}, size);
 		});
+
+	// da-sbgff, vividn, 2026-11-13: «disable direct text editing for other states as well, preferring to use a rename
+	// button inside of the ..., which then renames that state everywhere», and «Put options for archiving state inside
+	// the ... section in addition to the rename».
+	test('a saved state\'s name is a word: its … renames it everywhere after a dry run, and archives it, which Bring back undoes', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'mood', '--verb', 'switch', '--states', 'good,meh']);
+			await app.run(['switch', 'mood', 'meh', '-y', '-t', '10:00']);
+			const spec = async () => JSON.parse((await app.run(['setup', 'mood', '--json'])).stdout);
+			await openField(page, 'mood');
+			const rows = page.locator(`${FIELD_FORM} .states li.state`);
+			const names = () => rows.locator('.name').evaluateAll((all) => all.map((n) => n.value ?? n.textContent.trim()));
+			await until(names, (n) => n.join() === 'good,meh');
+			assert.equal(await rows.locator('input.name').count(), 0, 'a saved state\'s name can be typed in');
+			// One added is typed until it is saved: the rename saves it first, as leaving does, so it is kept.
+			await page.locator(`${FIELD_FORM} .states + button.add`).click();
+			await rows.last().locator('input.name').fill('bad');
+
+			await page.locator(`${FIELD_FORM} [aria-label="the options of meh"]`).click();
+			const to = page.locator(`${FIELD_FORM} input[aria-label="rename meh to"]`);
+			assert.equal(await to.inputValue(), 'meh');
+			const rename = page.locator(`${FIELD_FORM} .options button.at-once`, { hasText: 'rename' });
+			assert.equal(await rename.isDisabled(), true, 'an unchanged name renames nothing');
+			await to.fill('okay');
+			await rename.click();
+			const told = page.locator(`${FIELD_FORM} .options .told`);
+			assert.match(await told.innerText(), /would rename mood:meh → mood:okay: 1 entry/);
+			assert.deepEqual((await spec()).allowed_states, ['good', 'meh'], 'the dry run wrote');
+			assert.equal((await rename.innerText()).trim(), 'confirm rename');
+			await rename.click();
+			await until(names, (n) => n.join() === 'good,okay,bad');
+			assert.deepEqual((await spec()).allowed_states, ['good', 'okay', 'bad']);
+			const [entry] = JSON.parse((await app.run(['tail', 'mood', '--json'])).stdout).rows;
+			assert.equal(entry.state, 'okay');
+
+			// A refusal is said as the CLI says it.
+			await page.locator(`${FIELD_FORM} [aria-label="the options of good"]`).click();
+			await page.locator(`${FIELD_FORM} input[aria-label="rename good to"]`).fill('okay');
+			await rename.click();
+			await until(() => page.locator(`${FIELD_FORM} .told.refused`).innerText(), (t) => /already a state of `mood`/.test(t));
+
+			// Archived, it leaves the list for the group under it; Bring back lists it again.
+			const gone = page.locator(`${FIELD_FORM} ul.archived li.gone .name`);
+			await page.locator(`${FIELD_FORM} .options button.at-once`, { hasText: 'archive' }).click();
+			await until(names, (n) => n.join() === 'okay,bad');
+			assert.deepEqual(await gone.allInnerTexts(), ['good']);
+			assert.deepEqual((await spec()).archived, ['good']);
+			await page.locator(`${FIELD_FORM} ul.archived [aria-label="the options of good"]`).click();
+			await page.locator(`${FIELD_FORM} ul.archived button.at-once`, { hasText: 'bring back' }).click();
+			await until(names, (n) => n.join() === 'okay,bad,good');
+			assert.equal(await gone.count(), 0);
+			assert.equal((await spec()).archived, undefined);
+			await leaveField(page);
+			assert.deepEqual(app.errors, []);
+		});
+	});
 
 	// `setup`, in the fields submenu (da-fg4w4): `track` writes its word on the line now, as any command does.
 	test('`setup` in the commands widget opens it on a new field, and writes no line', async () => {

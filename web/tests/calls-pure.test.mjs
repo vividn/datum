@@ -155,6 +155,9 @@ seed(
 	})
 );
 seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', anchor_pos_ratio: 0.5, anchor_size_ratio: 0.5, state_descriptions: { happy: 'up' }, state_symbols: { happy: 'h' }, state_lookup_field: 'feeling', comment_remainder: true }));
+// An archived state, which the setup form lists under the states (da-sbgff).
+seed(['setup', 'mood', '--add-state', 'gone']);
+seed(['setup', 'mood', '--archive-state', 'gone']);
 // A field a template covers, whose spec names it.
 seed(['setup', 'job__%hid:8%', '--verb', 'occur']);
 seed(['occur', 'job__abcd1234']);
@@ -212,6 +215,7 @@ const SAMPLES = {
 	entriesHistoryArgv: [[[HID]], [[HID, HID]]],
 	stepArgv: [[[HID]]],
 	revertToVersionArgv: [[HID, 1]],
+	renameStateArgv: [['mood', 'calm', 'serene', true], ['mood', 'calm', 'serene']],
 	renameFieldArgv: [['coffee', 'drink', true], ['mood', 'feeling'], ['coffe', 'coffee', true, true], ['coffe', 'coffee', false, true]],
 	bandArgv: [[400, 40], [400, 40, 3]],
 	geometryArgv: [[400, 40]],

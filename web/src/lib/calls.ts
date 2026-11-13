@@ -129,6 +129,11 @@ export function renameFieldArgv(old: string, to: string, dry = false, merge = fa
 	return ['rename', old, to, ...(merge ? ['--merge'] : []), ...(dry ? ['--dry-run'] : [])];
 }
 
+/** A state of `field` renamed everywhere, its entries and its setup (da-sbgff, `rename F --state OLD NEW`). */
+export function renameStateArgv(field: string, old: string, to: string, dry = false): string[] {
+	return ['rename', field, '--state', old, to, ...(dry ? ['--dry-run'] : [])];
+}
+
 /** A command's entries stepped back by its button, or forward again by a second press (da-25q3k, da-k5vg1). */
 export function stepArgv(hids: string[]): string[] {
 	return ['revert', hids.join(',')];

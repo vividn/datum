@@ -125,6 +125,8 @@ export interface StateRow {
 	color: string;
 	description: string;
 	glyph?: string;
+	/** A state the spec lists, as the form opened: its name a word, renamed only by its `…` (da-sbgff). */
+	saved?: boolean;
 }
 
 /** A spec as `setup F --json` prints it; only the keys the modal edits are named. */
@@ -134,6 +136,8 @@ export interface Spec {
 	color: string | null;
 	description: string | null;
 	allowed_states: string[] | null;
+	/** The states `setup --archive-state` took off the list, kept for their past rows; left out when none. */
+	archived?: string[];
 	state_colors: Record<string, string>;
 	/** Left out of `setup F --json` when empty, as the CLI serialises it. */
 	state_descriptions?: Record<string, string>;
