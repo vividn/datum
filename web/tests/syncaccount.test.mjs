@@ -42,6 +42,12 @@ const act = (app, argv) => app.page.evaluate((a) => window.datum.sync.act('datum
 const asked = async ({ cdp, authenticatorId }) =>
 	(await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials.reduce((n, c) => n + c.signCount, 0);
 const account = (page) => page.locator(`${WIDGET} .account`);
+/**
+ * Every account record publish under way done, then the relay's signed time read
+ * (`readRecordSigned`, which waits on them). A sign-in and an act each publish,
+ * the act's not awaited: one still running when the clock moves signs then.
+ */
+const settled = (app) => app.page.evaluate(() => window.datum.sync.recordSigned());
 const chainOf = async (app) => JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
 
 /** Make a passkey from the widget, which signs the tab in. */
@@ -116,7 +122,8 @@ describe('signing in to sync with a passkey', () => {
 			// A chain made, the approval publishes the record, signed at the held clock.
 			const signed = app.clock.at();
 			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
-			await until(() => pkarr.held.size, (n) => n === 1);
+			await settled(app);
+			assert.equal(pkarr.held.size, 1);
 			const [first] = pkarr.held.values();
 			assert.equal(Number(first.readBigUInt64BE(64) / 1000n), signed);
 			const lapsing = page.locator(`${WIDGET} .account .lapsing`);
@@ -161,7 +168,8 @@ describe('signing in to sync with a passkey', () => {
 
 			// A chain the account is admin of, its record then gone from the relay.
 			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
-			await until(() => pkarr.held.size, (n) => n === 1);
+			await settled(app);
+			assert.equal(pkarr.held.size, 1);
 			pkarr.held.clear();
 			const before = await asked(passkey);
 			await read();
