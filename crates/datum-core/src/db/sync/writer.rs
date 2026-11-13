@@ -9,7 +9,7 @@ use rusqlite::Connection;
 
 use std::collections::BTreeSet;
 
-use super::chain::{Chain, Filter, Member, Role};
+use super::chain::{Chain, Filter, Member, Role, Step};
 use super::{belongs_to, endpoint, join, own_alone, read_only, row, Endpoint, Op, READ_ONLY};
 use crate::db::{is_meta_field, Db, SPEC_FIELD};
 use crate::entry::Entry;
@@ -43,26 +43,28 @@ fn meta(field: &str) -> bool {
     field != SPEC_FIELD && is_meta_field(field)
 }
 
-/// Why an entry op of member `m` at `hlc`, a writer then, is refused, if it
-/// is: `field` is the one its entry belongs to after it (a spec's, the field
-/// it specifies), `meta` whether its row is an alias or the like, and `own()`
-/// whether the entry is the writer's to change ([`owns`]). Anyone else's op
-/// is no writer's, and passes.
+/// Why an entry op of member `m` at `hlc` and `seq`, a writer then, is
+/// refused, if it is, by the step it is judged by, its fields among it
+/// (da-l0as8): `field` is the one its entry belongs to after it (a spec's,
+/// the field it specifies), `meta` whether its row is an alias or the like,
+/// and `own()` whether the entry is the writer's to change ([`owns`]).
+/// Anyone else's op is no writer's, and passes.
 fn bounds(
     m: Option<&Member>,
     hlc: &str,
+    seq: i64,
     field: Option<&str>,
     meta: bool,
     own: impl FnOnce() -> Result<bool>,
 ) -> Result<std::result::Result<(), String>> {
-    let Some(m) = m else {
+    let Some(step) = m.and_then(|m| m.step_at(hlc, seq)) else {
         return Ok(Ok(()));
     };
-    if m.role_at(hlc) != Role::Writer {
+    if step.role != Role::Writer {
         return Ok(Ok(()));
     }
     // Sent no field (`--fields ''`, a sensor), it writes any.
-    let writes = m.filter.as_ref().and_then(|f| f.fields.as_ref());
+    let writes = step.filter.as_ref().and_then(|f| f.fields.as_ref());
     let writes = writes.filter(|w| !w.is_empty());
     Ok(match () {
         _ if meta => Err(WRITES_NO_META.into()),
@@ -84,15 +86,20 @@ pub(super) fn allowed(
     chain: &Chain,
     op: &Op,
 ) -> Result<std::result::Result<(), String>> {
-    if let Err(why) = chain.allows(&op.endpoint, &op.hlc) {
+    if let Err(why) = chain.allows(&op.endpoint, &op.hlc, op.seq) {
         return Ok(Err(why));
     }
     let row = op.effect.get("create").or_else(|| op.effect.get("set"));
     let meta = row.and_then(|r| r["field"].as_str()).is_some_and(meta);
     let field = op.field.as_deref();
-    bounds(chain.member(&op.endpoint), &op.hlc, field, meta, || {
-        owns(chain, op, &creates_of(conn, &op.hid)?)
-    })
+    bounds(
+        chain.member(&op.endpoint),
+        &op.hlc,
+        op.seq,
+        field,
+        meta,
+        || owns(chain, op, &creates_of(conn, &op.hid)?),
+    )
 }
 
 /// Every create of `hid` this copy holds, applied, waiting or refused: the
@@ -121,7 +128,7 @@ fn owns(chain: &Chain, op: &Op, creates: &[Op]) -> Result<bool> {
     let writer = |o: &Op| {
         chain
             .member(&o.endpoint)
-            .is_some_and(|m| m.role_at(&o.hlc) == Role::Writer)
+            .is_some_and(|m| m.role_at(&o.hlc, o.seq) == Role::Writer)
     };
     let mine = |c: &Op| c.endpoint == op.endpoint;
     Ok(if op.effect.get("create").is_some() {
@@ -183,15 +190,21 @@ fn judged_as(
         return Err(DatumError::Other(READ_ONLY.into()));
     }
     let fields: Option<BTreeSet<String>> = join.fields.map(|f| f.into_iter().collect());
+    let filter = fields.map(|f| Filter {
+        fields: Some(f),
+        of: 0,
+        window: None,
+        specs: false,
+    });
     Ok(Some(Member {
         endpoint: me.into(),
-        roles: vec![(String::new(), role)],
-        filter: fields.map(|f| Filter {
-            fields: Some(f),
-            of: 0,
-            window: None,
-            specs: false,
-        }),
+        roles: vec![Step {
+            hlc: String::new(),
+            seq: None,
+            role,
+            filter: filter.clone(),
+        }],
+        filter,
         ..Default::default()
     }))
 }
@@ -211,10 +224,15 @@ fn judged(
         Ok(creates.iter().all(|c| c.endpoint == me))
     };
     let field = belongs_to(&row(post));
-    Ok(
-        bounds(Some(m), "~", field.as_deref(), meta(&post.field), own)?
-            .map_err(|why| format!("this copy is {why}")),
-    )
+    Ok(bounds(
+        Some(m),
+        "~",
+        i64::MAX,
+        field.as_deref(),
+        meta(&post.field),
+        own,
+    )?
+    .map_err(|why| format!("this copy is {why}")))
 }
 
 impl Db {
@@ -241,7 +259,7 @@ impl Db {
         }
         let me = ep.id;
         let m = judged_as(&chain, &me, pending)?;
-        let writer = m.filter(|m| m.role_at("~") == Role::Writer);
+        let writer = m.filter(|m| m.role_at("~", i64::MAX) == Role::Writer);
         Ok(writer.map(|m| {
             Box::new(move |e: &Entry| Ok(judged(conn, &m, &me, e, &e.hid)?.err()))
                 as Box<dyn Fn(&Entry) -> Result<Option<String>>>

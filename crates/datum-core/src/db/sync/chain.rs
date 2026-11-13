@@ -42,7 +42,7 @@
 //!   - `standing {device, caps, label, expires?}` (da-zkwiu): a code's
 //!     admission, an admin act, its admits each its endpoint's own op
 //!     (da-tkbtu); `revoke_standing {device}` ends it. See `chain/standing.rs`.
-//!   - `revoke {endpoint}`, `add_admin {key, label}`, `remove_admin {key}`
+//!   - `revoke {endpoint, seq?}`, `add_admin {key, label}`, `remove_admin {key}`
 //!     — the last only when the record says `unlock: true` (da-aam46),
 //!     which opens the chain again. Every act is judged at its own HLC, so
 //!     a member's act refused while the chain was locked stays refused, and
@@ -62,15 +62,16 @@
 //!     An admin act, as a revoke is. `all` DISSOLVES the chain too: the fold
 //!     takes no record after it, and a copy holding it is in no chain to its
 //!     user, while it keeps its key and the records, to pass the order on.
-//!   - `role {endpoint, role}` (da-9yvb6): `member`, `reader` or `writer`
-//!     from its HLC on, an admin act like a revoke. A writer (da-o5o6m)
+//!   - `role {endpoint, role, seq?}` (da-9yvb6): `member`, `reader` or `writer`
+//!     from its HLC on, or past its `seq` (da-l0as8), an admin act like a revoke. A writer (da-o5o6m)
 //!     writes entries as a member does and no chain record but its own
 //!     describe and departure, and serves as a reader does: its own ops
 //!     alone, so only a member relays. A reader's or writer's `role` or
 //!     invite `caps` may carry a filter (da-u81u1): `fields`, the fields it
 //!     is sent (a writer's may be none), and `of`, how many the database
-//!     had when it was written. The latest record's filter stands; one
-//!     without `fields` clears it.
+//!     had when it was written. The latest record's filter is what it is
+//!     sent, and each write is bounded by its own step's; one without
+//!     `fields` clears it.
 //!   - `describe {endpoint, client, label, kind, user, host, db, auto}`
 //!     (da-rcb5m): what a member is — the client it runs in (one per CLI
 //!     data directory or browser profile, shared by every db there, so one
@@ -140,7 +141,11 @@
 //!   was no reader when it made it, and, if revoked, made it before the
 //!   revoke ([`Chain::allows`]): admitting an endpoint vouches for the data
 //!   it brings, and a reader's is refused whenever it was made. A copy with
-//!   no chain allows every op.
+//!   no chain allows every op. «When» is the op's seq where the `role`,
+//!   `revoke` or `erase` carries the `seq` of the endpoint's ops it stands
+//!   to (da-l0as8, F18): the signing copy's head of them, so an op past it is
+//!   judged by the record whatever HLC its signer gave it. A record from
+//!   before that goes by the HLC. A role's filter is judged with it ([`Step`]).
 //! - **Readers (da-9yvb6)** are served everything and serve only their own
 //!   ops: they never relay. A reader's copy refuses a write locally. A
 //!   filtered reader (da-u81u1) is served only its fields' entries, each
@@ -163,8 +168,11 @@ use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
 
 mod redeemer;
+mod roles;
 mod standing;
 use redeemer::admits_other;
+use roles::cut;
+pub use roles::Step;
 use standing::reader_holds;
 pub(crate) use standing::{in_use_twice, two_places, TWO_PLACES};
 pub use standing::{Standing, STANDING};
@@ -745,6 +753,9 @@ pub struct Member {
     pub(super) returned: bool,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
+    /// The seq of its ops the revoke stands to (da-l0as8): where it carries
+    /// one, its ops past it are refused whatever their HLC, and not by it.
+    pub revoked_seq: Option<i64>,
     /// The HLC of its purge (da-ry11c): every op of its is refused.
     pub purged: Option<String>,
     /// The HLC of its departure (da-dsob1): revoked from then on too.
@@ -757,9 +768,9 @@ pub struct Member {
     pub(super) last_act: String,
     /// The HLC of its latest re-admission (da-j8c4l), if it rejoined.
     pub rejoined: Option<String>,
-    /// Its role from each HLC on, oldest first: its admission's, then each
+    /// Its role from each step on, oldest first: its admission's, then each
     /// `role` record's.
-    pub roles: Vec<(String, Role)>,
+    pub roles: Vec<Step>,
     /// A reader's filter, from its latest role (da-u81u1): none, sent all.
     pub filter: Option<Filter>,
 }
@@ -945,46 +956,6 @@ fn role_of(v: &Value) -> std::result::Result<Role, String> {
         None => None,
     }
     .ok_or_else(|| format!("a role is member, reader or writer, not {v}"))
-}
-
-impl Member {
-    /// Its role now.
-    pub fn role(&self) -> Role {
-        self.roles.last().map_or(Role::Member, |r| r.1)
-    }
-
-    /// Its role at `hlc`: the latest role it took at or before `hlc`. An op
-    /// made before its admission is judged by the role it was admitted
-    /// with, so admitting a member vouches for what it brings, and
-    /// admitting a reader vouches for nothing.
-    pub(super) fn role_at(&self, hlc: &str) -> Role {
-        let at = self.roles.iter().rev().find(|(t, _)| t.as_str() <= hlc);
-        at.or(self.roles.first()).map_or(Role::Member, |r| r.1)
-    }
-
-    /// Why an unpurge of it would be refused, if it would: it is not purged,
-    /// or an act about it came after the purge.
-    fn unpurge_refused(&self) -> Option<&'static str> {
-        match &self.purged {
-            None => Some("not purged"),
-            Some(p) if *p != self.last_act => Some("an act about it came after its purge"),
-            Some(_) => None,
-        }
-    }
-
-    /// The HLC from which some of its ops are refused, if any are: its revoke,
-    /// or when it first was a reader or a bounded writer (da-mogvf; all, admitted
-    /// as one); a purge refuses all of them, whenever made, so `""`, not its HLC.
-    pub(super) fn refused_from(&self) -> Option<&str> {
-        let unwriting = self.roles.iter().position(|r| r.1 != Role::Member);
-        let unwriting = unwriting.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
-        let purged = self.purged.as_ref().map(|_| "");
-        unwriting
-            .into_iter()
-            .chain(self.revoked.as_deref())
-            .chain(purged)
-            .min()
-    }
 }
 
 /// A purge order (da-qzrj9): every entry op made before `hlc` is gone.
@@ -1182,27 +1153,27 @@ impl Chain {
         self.members.iter().find(|m| m.endpoint == endpoint)
     }
 
-    /// Why an op of `endpoint` at `hlc` is refused, if it is.
-    pub fn allows(&self, endpoint: &str, hlc: &str) -> std::result::Result<(), String> {
-        self.live(endpoint, hlc)?;
+    /// Why an op of `endpoint` at `hlc`, its `seq`th, is refused, if it is.
+    pub fn allows(&self, endpoint: &str, hlc: &str, seq: i64) -> std::result::Result<(), String> {
+        self.live(endpoint, hlc, seq)?;
         match self.member(endpoint) {
-            Some(m) if !m.role_at(hlc).writes() => Err(READER.into()),
+            Some(m) if !m.role_at(hlc, seq).writes() => Err(READER.into()),
             _ => Ok(()),
         }
     }
 
-    /// Why a chain record of `endpoint` at `hlc` is refused, if it is: as
-    /// [`Chain::allows`], and a writer writes entries alone (da-o5o6m).
-    fn acts(&self, endpoint: &str, hlc: &str) -> std::result::Result<(), String> {
-        self.allows(endpoint, hlc)?;
+    /// Why a chain record of `endpoint` at `hlc` and `seq` is refused, if it
+    /// is: as [`Chain::allows`], and a writer writes entries alone (da-o5o6m).
+    fn acts(&self, endpoint: &str, hlc: &str, seq: i64) -> std::result::Result<(), String> {
+        self.allows(endpoint, hlc, seq)?;
         match self.member(endpoint) {
-            Some(m) if m.role_at(hlc) == Role::Writer => Err(WRITER.into()),
+            Some(m) if m.role_at(hlc, seq) == Role::Writer => Err(WRITER.into()),
             _ => Ok(()),
         }
     }
 
-    /// Why `endpoint` could not write at `hlc`, reader or not.
-    fn live(&self, endpoint: &str, hlc: &str) -> std::result::Result<(), String> {
+    /// Why `endpoint` could not write its op at `hlc` and `seq`, reader or not.
+    fn live(&self, endpoint: &str, hlc: &str, seq: i64) -> std::result::Result<(), String> {
         match self.member(endpoint) {
             _ if !self.exists() => Ok(()),
             None => Err("not a member of the sync chain".into()),
@@ -1212,11 +1183,13 @@ impl Chain {
                 "set aside: its endpoint was unjoined ({})",
                 hlc_time(p)
             )),
-            Some(Member {
-                revoked: Some(r),
-                left,
-                ..
-            }) if hlc >= r.as_str() => Err(format!(
+            Some(
+                m @ Member {
+                    revoked: Some(r),
+                    left,
+                    ..
+                },
+            ) if m.revoked_at(hlc, seq) => Err(format!(
                 "made after its endpoint {} ({})",
                 if left.is_some() {
                     "left"
@@ -1445,8 +1418,8 @@ impl Chain {
             return Err("a copy leaves the chain only itself".into());
         }
         match own {
-            true => self.live(&op.endpoint, &op.hlc),
-            false => self.acts(&op.endpoint, &op.hlc),
+            true => self.live(&op.endpoint, &op.hlc, op.seq),
+            false => self.acts(&op.endpoint, &op.hlc, op.seq),
         }
         .map_err(|why| format!("its writer is {why}"))?;
         if kind == "admit" && s("via") == "standing" {
@@ -1594,7 +1567,12 @@ impl Chain {
                     .iter_mut()
                     .find(|m| m.endpoint == s("endpoint"))
                     .ok_or("not a member")?;
-                m.roles.push((op.hlc.clone(), role));
+                m.roles.push(Step {
+                    hlc: op.hlc.clone(),
+                    seq: cut(r)?,
+                    role,
+                    filter: filter.clone(),
+                });
                 m.filter = filter;
                 m.last_act = op.hlc.clone();
                 Ok(())
@@ -1606,19 +1584,20 @@ impl Chain {
                     .find(|m| m.endpoint == op.endpoint)
                     .ok_or("not a member")?;
                 m.left = Some(op.hlc.clone());
-                m.revoked.get_or_insert_with(|| op.hlc.clone());
+                m.revoke(&op.hlc, None);
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
             "standing" => self.take_standing(op),
             "revoke_standing" => self.revoke_standing(op),
             "revoke" => {
+                let seq = cut(r)?;
                 let m = self
                     .members
                     .iter_mut()
                     .find(|m| m.endpoint == s("endpoint"))
                     .ok_or("not a member")?;
-                m.revoked.get_or_insert_with(|| op.hlc.clone());
+                m.revoke(&op.hlc, seq);
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
@@ -1640,12 +1619,13 @@ impl Chain {
                     return Err("already unjoined".into());
                 } else {
                     m.purged = Some(op.hlc.clone());
-                    m.revoked.get_or_insert_with(|| op.hlc.clone());
+                    m.revoke(&op.hlc, None);
                 }
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
             "erase" | "erased" => {
+                let seq = cut(r)?;
                 if s("endpoint") == op.endpoint {
                     return Err("a copy does not wipe itself: it leaves".into());
                 }
@@ -1658,7 +1638,7 @@ impl Chain {
                     (true, Some(_), _) => return Err("ordered to delete its copy already".into()),
                     (true, None, _) => {
                         m.erase = Some(op.hlc.clone());
-                        m.revoked.get_or_insert_with(|| op.hlc.clone());
+                        m.revoke(&op.hlc, seq);
                         m.last_act = op.hlc.clone();
                     }
                     (false, None, _) => return Err("not ordered to delete its copy".into()),
@@ -1731,6 +1711,7 @@ impl Chain {
         // by the role it is admitted with now. A purged one's purge goes
         // too: it rejoins as at a first connection, all it made with it.
         if let Some(m) = self.members.iter_mut().find(|m| m.endpoint == endpoint) {
+            let seq = m.revoked_seq.take();
             let from = m.revoked.take().unwrap_or_else(|| hlc.into());
             m.purged = None;
             m.left = None;
@@ -1740,7 +1721,12 @@ impl Chain {
             m.via = via.into();
             // A standing admit's tag stands no later admission; a describe's does (da-tkbtu).
             m.device = m.device.take().filter(|_| !std::mem::take(&mut m.claimed));
-            m.roles.push((from, role));
+            m.roles.push(Step {
+                hlc: from,
+                seq,
+                role,
+                filter: filter.clone(),
+            });
             m.filter = filter;
             return Ok(());
         }
@@ -1750,6 +1736,7 @@ impl Chain {
             admitted: hlc.into(),
             via: via.into(),
             revoked: None,
+            revoked_seq: None,
             purged: None,
             left: None,
             erase: None,
@@ -1765,7 +1752,12 @@ impl Chain {
             device: None,
             claimed: false,
             returned: false,
-            roles: vec![(hlc.into(), role)],
+            roles: vec![Step {
+                hlc: hlc.into(),
+                seq: None,
+                role,
+                filter: filter.clone(),
+            }],
             filter,
         });
         Ok(())
@@ -2470,7 +2462,7 @@ mod tests {
 
     /// The chain `records` fold to, each written by one member at its HLC
     /// (`t` seconds), signed by `admin` when given: what each did.
-    fn fold(
+    pub(super) fn fold(
         records: &[(u32, Value, Option<&[u8; 32]>)],
     ) -> (Chain, Vec<std::result::Result<(), String>>) {
         let mut chain = Chain::default();
@@ -2936,7 +2928,7 @@ mod tests {
             let m = chain
                 .member(&b)
                 .map(|m| (m.purged.is_some(), m.revoked.is_some()));
-            (done, m, chain.allows(&b, &at(1)).is_ok())
+            (done, m, chain.allows(&b, &at(1), 1).is_ok())
         };
         let it = |kind: &str, who: &str| json!({"type": kind, "endpoint": who});
         assert_eq!(
@@ -3089,7 +3081,7 @@ mod tests {
             let m = chain
                 .member(&b)
                 .map(|m| (m.erase.is_some(), m.erased.is_some()));
-            (done, m, chain.allows(&b, &at(t)).is_ok())
+            (done, m, chain.allows(&b, &at(t), 1).is_ok())
         };
         let admins = json!([{"key": ed25519_admin_key(&secret), "label": "k"}]);
         let genesis = json!({"type": "genesis", "admins": admins, "label": "a"});
@@ -3197,7 +3189,7 @@ mod tests {
                     "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
                 });
                 let done = chain.step(&Op::parse(&op.to_string()).unwrap());
-                (done, chain.allows(&r, &at(t)).is_ok())
+                (done, chain.allows(&r, &at(t), 1).is_ok())
             };
             let describe = |who: &str| json!({"type": "describe", "endpoint": who, "label": "x"});
             let role =
@@ -3234,11 +3226,11 @@ mod tests {
             }
             // Promoted at 10: allowed from then on, and not before.
             assert_eq!(step(&mut chain, 10, &a, role(&r, "member")), (Ok(()), true));
-            assert!(chain.allows(&r, &at(9)).is_err());
+            assert!(chain.allows(&r, &at(9), 1).is_err());
             // A member demoted at 12: allowed before it, refused after.
             assert_eq!(step(&mut chain, 12, &a, role(&a, "reader")).0, Ok(()));
-            assert!(chain.allows(&a, &at(11)).is_ok());
-            assert_eq!(chain.allows(&a, &at(13)), Err(READER.into()));
+            assert!(chain.allows(&a, &at(11), 1).is_ok());
+            assert_eq!(chain.allows(&a, &at(13), 1), Err(READER.into()));
             assert_eq!(
                 step(&mut chain, 14, &a, role(&r, "admin")).0.unwrap_err(),
                 format!("its writer is {READER}")
@@ -3300,8 +3292,8 @@ mod tests {
             (Some(at(6).as_str()), Some(at(6).as_str()))
         );
         assert!(chain.member(&r).unwrap().left.is_some());
-        assert!(chain.allows(&a, &at(5)).is_ok());
-        assert!(chain.allows(&a, &at(7)).is_err());
+        assert!(chain.allows(&a, &at(5), 1).is_ok());
+        assert!(chain.allows(&a, &at(7), 1).is_err());
         let again = step(&mut chain, 7, &a, leave(&a)).unwrap_err();
         assert!(again.contains("made after its endpoint left"), "{again}");
     }

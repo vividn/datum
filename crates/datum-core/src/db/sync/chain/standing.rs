@@ -507,8 +507,10 @@ mod tests {
         let chain = Chain::fold(ops.clone());
         let at = |e: &str| chain.member(e).unwrap();
         assert_eq!(at(&e1).revoked.as_deref(), Some(at(&e2).admitted.as_str()));
-        assert!(chain.allows(&e1, "2026-11-12T00:00:05.000Z/0000").is_ok());
-        assert!(chain.allows(&e1, &at(&e2).admitted).is_err());
+        assert!(chain
+            .allows(&e1, "2026-11-12T00:00:05.000Z/0000", 1)
+            .is_ok());
+        assert!(chain.allows(&e1, &at(&e2).admitted, 1).is_err());
         assert_eq!(at(&e2).device.as_deref(), Some(key.as_str()));
         assert!(at(&a).revoked.is_none());
         let shown = |c: &Chain| format!("{:?} {:?}", c.members, c.standings);
@@ -692,7 +694,7 @@ mod tests {
         let signed = chain(ops, &device, true);
         add(ops, &agent, claim(&device, 2));
         assert_eq!(add(ops, &a, admit(2)), None);
-        assert_eq!(at(ops, &agent).role_at("9999"), Role::Member);
+        assert_eq!(at(ops, &agent).role_at("9999", i64::MAX), Role::Member);
         let own = |n: u8| {
             let mut r = json!({"type": "add_admin", "key": ed25519_admin_key(&[n; 32]),
                 "label": "mine", "chain": "c1"});

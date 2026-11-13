@@ -2209,15 +2209,15 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
     };
     allow_again(conn, chain)?;
     // A revoked endpoint's applied ops from its revoke on, and a reader's
-    // from when it became one: its own, by key.
+    // from when it became one, by HLC or by seq (da-l0as8): its own, by key.
     let mut hids = BTreeSet::new();
     for m in &chain.members {
-        let Some(from) = m.refused_from() else {
+        let Some((from, past)) = m.refused_from() else {
             continue;
         };
         let sql = "SELECT body FROM ops
-                   WHERE endpoint = ?1 AND applied = 1 AND hlc >= ?2 AND hid != ?3";
-        for op in bodies(sql, &[&m.endpoint, &from, &CHAIN_HID])? {
+                   WHERE endpoint = ?1 AND applied = 1 AND (hlc >= ?2 OR seq > ?4) AND hid != ?3";
+        for op in bodies(sql, &[&m.endpoint, &from, &CHAIN_HID, &past])? {
             if let Err(why) = writer::allowed(conn, chain, &op)? {
                 refuse(conn, chain, &op, &why, "refused", s)?;
                 hids.insert(op.hid);

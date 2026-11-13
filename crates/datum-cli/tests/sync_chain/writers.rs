@@ -538,3 +538,75 @@ fn a_writers_v2import_skips_a_doc_its_chain_refuses() {
     assert!(ok && !text.contains("refused"), "{text}");
     assert!(a.has("mood"));
 }
+
+/// ístina (11-13), da-l0as8: a writer's fields are judged as they stood when it
+/// wrote, by the role record's seq. A narrowing keeps, on the member, a row the
+/// writer wrote with the right, whatever it narrows to.
+#[test]
+fn a_narrowing_keeps_a_row_written_with_the_right() {
+    for narrow_to in ["mood", "mood,tea,juice"] {
+        let (a, _b) = chained();
+        let w = Copy::new();
+        admit_writer(&a, &w, &["--fields", "mood,tea"]);
+        w.ok(&["occur", "tea", "-y", "-t", "10:00"]);
+        let (ok, text) = w.send(&a);
+        assert!(ok, "{text}");
+        assert!(
+            a.has("tea"),
+            "the writer's tea, written with the right, reached the member"
+        );
+        let head = a.query(&format!(
+            "SELECT MAX(seq) FROM ops WHERE endpoint = '{}'",
+            w.id()
+        ));
+        a.ok(&[
+            "sync", "chain", "role", "w", "writer", "--fields", narrow_to,
+        ]);
+        let cut = "SELECT json_extract(body, '$.effect.seq') FROM ops
+                   WHERE json_extract(body, '$.effect.type') = 'role'";
+        assert_eq!(
+            a.query(cut),
+            head,
+            "the record stands to the writer's ops held"
+        );
+        assert!(a.has("tea"), "narrowed to {narrow_to}");
+        // Its tea past the narrowing, signed before it heard of it, is judged
+        // by the narrowing, whatever HLC it carries.
+        w.ok(&["occur", "tea", "-y", "-t", "11:00"]);
+        let (_, text) = w.send(&a);
+        let teas = a.query("SELECT COUNT(*) FROM entries WHERE field = 'tea'");
+        assert_eq!(teas, if narrow_to == "mood" { "1" } else { "2" }, "{text}");
+    }
+}
+
+/// ístina (11-13), da-l0as8: a writer's tea op, refused while it writes only
+/// mood, stays refused once it is widened to tea: the role record stands to the
+/// writer's ops the member held, the refused one among them.
+#[test]
+fn a_widening_lands_no_row_written_without_the_right() {
+    for widen_to in ["mood,tea", "mood,juice"] {
+        let (a, _b) = chained();
+        a.ok(&["occur", "tea", "-y", "-t", "9:30"]);
+        let w = Copy::new();
+        admit_writer(&a, &w, &["--fields", "mood"]);
+        let hid = a.query("SELECT hid FROM entries WHERE field = 'tea'");
+        let mut tea = json(&a.query(&format!(
+            "SELECT body FROM ops WHERE hid = '{hid}' AND kind = 'create'"
+        )));
+        tea["hid"] = "wtea0000000000000000000000".into();
+        tea["slug"] = "tea:2026-01-01T10:00:00.000Z".into();
+        tea["effect"]["create"]["hid"] = tea["hid"].clone();
+        tea["effect"]["create"]["slug"] = tea["slug"].clone();
+        let out = a.run(&["sync", "pipe", "apply"], &signed_as(&w, &a, tea));
+        let text = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            text.contains("a writer of «mood» in the sync chain, and this is «tea»"),
+            "{text}"
+        );
+        let held =
+            || a.query("SELECT COUNT(*) FROM entries WHERE hid = 'wtea0000000000000000000000'");
+        assert_eq!(held(), "0");
+        a.ok(&["sync", "chain", "role", "w", "writer", "--fields", widen_to]);
+        assert_eq!(held(), "0", "widened to {widen_to}");
+    }
+}

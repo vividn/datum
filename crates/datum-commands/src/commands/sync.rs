@@ -355,6 +355,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
             // device's endpoint revokes its standing admission too (da-zkwiu),
             // or the device's next copy would be admitted again.
             let mut first = vec![];
+            // A record that demotes or expels stands to the subject's ops this
+            // copy holds (da-l0as8): its ops past them are judged by it,
+            // whatever HLC they carry.
+            let stands_to =
+                |m: &str| -> Result<i64> { Ok(db.sync_vector()?.get(m).copied().unwrap_or(0)) };
             let (record, said) = match act {
                 SyncAdminAct::Expel {
                     unjoin,
@@ -465,7 +470,11 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                         done += "\nsigned in to your account or not, it held no key that signs for it: \
                                  the account's admin acts ask your passkey";
                     }
-                    (json!({"type": record, "endpoint": m}), done)
+                    let mut r = json!({"type": record, "endpoint": m});
+                    if record != "purge" {
+                        r["seq"] = stands_to(&m)?.into();
+                    }
+                    (r, done)
                 }
                 SyncAdminAct::Role { role, filter } => {
                     let m = member(&chain, &who)?;
@@ -498,7 +507,8 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                             .map(|f| format!(" of those fields ({})", f.describe()))
                             .unwrap_or_default()
                     );
-                    let mut r = json!({"type": "role", "endpoint": m, "role": role});
+                    let seq = stands_to(&m)?;
+                    let mut r = json!({"type": "role", "endpoint": m, "role": role, "seq": seq});
                     let said = match &filter {
                         Some(f) => {
                             for (k, v) in f.to_json().as_object().into_iter().flatten() {

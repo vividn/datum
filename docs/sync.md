@@ -34,7 +34,11 @@ changes only the entries it created and writes no alias or other entry about
 the database; filtered to fields (`--fields a,b` or `--kit <KIT>`), it writes
 only those and their specs, and with `--fields ''` it is sent the chain's
 records alone, for a sensor or an agent that only logs. `datum sync chain
-role <WHO> member|reader|writer` changes a member's role.
+role <WHO> member|reader|writer` changes a member's role. The change stands to
+what the copy making it holds of that member's writes: those keep the role and
+fields they were written under, and every later one takes the new, whatever
+date it carries, so a device cannot escape a change by dating its writes
+before it.
 
 A reader's or writer's filter may also hold a window: `--window 1d` passes
 the entries of the last day, back to the hour, and for each field the entry
@@ -63,10 +67,10 @@ writer, so `full --write` is refused there until the chain is locked.
 
 A device you have lost, or that someone else may hold, should be unjoined
 (`datum sync chain expel <WHO> --unjoin`, the Sync widget's «Unjoin»), which
-sets aside everything it wrote, not only removed. Removing it trusts the
-device's own clock for what it wrote before the removal, so until every member
-has heard of the removal, it could still send writes dated earlier through
-one that has not, and they would stand.
+sets aside everything it wrote, not only removed. Removing it keeps what the
+removing copy held of its writes and refuses every later one, whatever date it
+carries; but a member that has not heard of the removal yet still takes them,
+until it does.
 
 On datum.day a person can sign in to sync with a passkey (the Sync widget's
 «Sign in with a passkey»), where the browser and passkey give WebAuthn's PRF:
