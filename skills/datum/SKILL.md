@@ -154,7 +154,8 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
     writes blind.
 
   The code is your identity in the chain: keep it secret, out of repositories
-  and logs. **Remove** on your row of the Sync widget's grid revokes it.
+  and logs. It expires in 30 days unless your person chose otherwise (up to
+  `never`), and **Remove** on your row of the Sync widget's grid revokes it.
 - **Trying sync? Set `DATUM_SYNC_NO_DAEMON=1` first.** A copy's first
   `sync chain invite` or `connect` installs a background sync service for your
   user (a systemd user unit or launchd agent), even on a throwaway db. If one

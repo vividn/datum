@@ -224,7 +224,7 @@ export interface AgentAsk {
 	write?: boolean;
 	/** At `light`, how far back it reads, `1d` unless given. */
 	window?: string;
-	/** Until when the code admits a copy; never, unless given. */
+	/** How long the code admits a copy, as `--expires` reads it: 30 days unless given, `never` for no end (da-4cw3v). */
 	expires?: string;
 	label?: string;
 }

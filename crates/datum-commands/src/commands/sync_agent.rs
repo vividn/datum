@@ -54,6 +54,9 @@ pub(super) fn agent(
     let device = chain::read_admin_secret(&secret).context("a new device key")?;
     let device = chain::bind_device(&device, "", "").0;
     let expires = expires_secs.map(|s| chrono::Utc::now() + chrono::Duration::seconds(s as i64));
+    // A standing admission makes its device an agent, never an admin
+    // (`Chain.agents`, `Chain::agent_refuses`): one offered for a person's own
+    // device would inherit that rule.
     let record = json!({
         "type": "standing", "chain": chain.id, "device": device, "caps": caps,
         "label": label, "expires": expires.map(|e| e.to_rfc3339()),
@@ -95,15 +98,19 @@ pub(super) fn agent(
         Some(f) => format!("a {}, {}", role.as_str(), f.describe()),
         None => format!("a {}", role.as_str()),
     };
-    let until = match expires {
-        Some(e) => format!(", or until {}", local(&e.to_rfc3339())),
-        None => String::new(),
-    };
     println!("agent {label} ({level}): {what}");
-    println!(
-        "Its code makes a fresh copy of it each time, retiring the copy before, until \
-         `datum sync chain expel {label}`{until}. Whoever holds it is this agent:"
-    );
+    println!("Its code makes a fresh copy of it each time, retiring the copy before.");
+    match expires {
+        Some(e) => println!(
+            "Anyone with this code is this agent until it expires or you remove it.\n\
+             It expires {}; `datum sync chain expel {label}` removes it. The code:",
+            local(&e.to_rfc3339())
+        ),
+        None => println!(
+            "Anyone with this code is this agent until you remove it: it never expires \
+             (--expires never).\n`datum sync chain expel {label}` removes it. The code:"
+        ),
+    }
     println!();
     println!(
         "{}",

@@ -40,9 +40,13 @@ test('«Add agent» makes a code a fresh native copy restores from, and marks th
 				await writes.check();
 				await card.getByLabel('It gets').selectOption('full');
 				assert.equal(await writes.count(), 0);
+				// A code lapses in 30 days unless chosen otherwise, its date said on the card (da-4cw3v).
+				assert.equal(await card.getByLabel('It expires').inputValue(), '30d');
 				await card.getByRole('button', { name: 'Make code' }).click();
 				const code = (await widget.locator('.agentcode .ticket').textContent()).trim();
 				assert.match(code, /^datum-agent:[A-Z2-7]+$/);
+				const on = await app.page.evaluate(() => new Date(Date.now() + 30 * 864e5).toLocaleDateString([], { dateStyle: 'medium' }));
+				assert.ok((await widget.locator('.agentcode').textContent()).includes(on), on);
 
 				const restored = await native.run(['sync', 'restore', code]);
 				assert.equal(restored.code, 0, restored.stderr);

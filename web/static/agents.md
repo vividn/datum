@@ -90,14 +90,15 @@ datum --db alex sync                    # after writing
 Each restore is a fresh copy of the same device, one row in their grid, and retires the copy before it. The level
 they choose says what you hold:
 
-- **full**: every entry, to read and analyze. With «it writes too» you write as well.
+- **full**: every entry, to read and analyze. With «it writes too» you write as well, once their chain has an admin.
 - **light**: every spec and alias, the last day of entries (the window they set) and each field's state at its start,
   for context. With «it writes too» you write as well.
 - **write**: no entries, only what you write. You cannot see a field's state, so a `change`, `-l` or `_LAST` writes
   blind.
 
 The code is your identity in their chain: whoever holds it is you, so keep it secret, out of a repository and out of a
-log. **Remove** on your row of their Sync widget's grid revokes it, and an expiry, when they set one, ends it.
+log. It expires in 30 days unless they chose otherwise (60 or 90 days, 6 months, a year, never), and **Remove** on your
+row of their Sync widget's grid revokes it sooner.
 
 **Share a database with your person.** Keep their record in a database named for them, and send them the link
 `sync chain invite` prints; they open it on datum.day and agree, and from then on what either side writes, both hold.

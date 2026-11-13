@@ -37,15 +37,17 @@ datum --db <name> sync                    # after writing
 Each restore makes a fresh copy of the same device, one row in the person's grid, and retires the copy before it. The
 code's level says what that copy holds:
 
-- **full**: every entry, to read and analyze. A reader, or with `--write` a member.
+- **full**: every entry, to read and analyze. A reader, or with `--write` a member, which a chain with no admin
+  refuses: lock it first (`datum sync admin add`, or a passkey on datum.day).
 - **light**: every spec and alias, the entries of the last `--window` (`1d` by default) and each field's state at its
   start, for context. A reader, or with `--write` a writer.
 - **write**: no entries, only the entries it writes, of the `--fields` named where any are. It cannot see a field's
   state, so a `change`, `-l` or `_LAST` there writes blind.
 
 The code is the agent's identity: whoever holds it is that agent, so keep it secret, out of a repository and out of a
-log. `--expires 30d` bounds it, and **Remove** on the agent's row of the Sync widget's grid (`datum sync chain expel
-<ENDPOINT>`, its copy's endpoint in `datum sync chain list`) revokes it: after that the code admits nothing.
+log. It expires in 30 days unless `--expires` says otherwise (`60d`, `90d`, `6mo`, `1y`, `never`, or any duration;
+the same choices in **Add agent**), and **Remove** on the agent's row of the Sync widget's grid (`datum sync chain expel
+<LABEL>`) revokes it sooner: after either the code admits nothing. An agent never holds admin rights.
 
 ## Keep your own record
 

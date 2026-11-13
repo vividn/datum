@@ -250,7 +250,13 @@ const SAMPLES = {
 	userArgv: [['bea'], ['']],
 	expelArgv: [[MEMBER]],
 	newInviteArgv: [[], [true]],
-	agentArgv: [[{ level: 'full' }], [{ level: 'light', write: true, window: '1h', expires: '7d', label: 'bot' }], [{ level: 'write' }]],
+	agentArgv: [
+		[{ level: 'full' }],
+		[{ level: 'light', write: true, window: '1h', expires: '7d', label: 'bot' }],
+		[{ level: 'write' }],
+		// «Add agent»'s expiry choices (da-4cw3v), each one `--expires` reads.
+		...['30d', '60d', '90d', '6mo', '1y', 'never'].map((expires) => [{ level: 'full', expires }])
+	],
 	accountArgv: [[], ['c1']],
 	accountRecordArgv: [[], ['http://127.0.0.1:1/', 'ab']],
 	accountReadArgv: [['ab']],

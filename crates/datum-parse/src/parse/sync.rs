@@ -11,8 +11,12 @@ use crate::cli::*;
 use crate::error::{ParseError, Result};
 use crate::input::Show;
 
+const DAY: u64 = 24 * 3600;
 /// How long an invite holds unless `--expires` says (da-4qpwf).
-const WEEK: u64 = 7 * 24 * 3600;
+const WEEK: u64 = 7 * DAY;
+/// The longest `--expires`: a hundred years, well inside what a clock can
+/// be added to; `never` is an agent's code with no end (vividn, #2065).
+const MOST: u64 = 100 * 365 * DAY;
 
 pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     let Some((sub, rest)) = tail.split_first() else {
@@ -529,9 +533,11 @@ fn parse_agent(rest: &mut Rest) -> Result<SyncCommand> {
         level,
         role,
         filter,
-        expires_secs: match o.get("expires") {
-            Some(_) => Some(o.expires()?),
-            None => None,
+        // A code is its device's secret: it lapses in 30 days unless
+        // `--expires` says otherwise, `never` included (da-4cw3v).
+        expires_secs: match o.get("expires").as_deref() {
+            Some("never") => None,
+            _ => Some(o.expires_or(30 * DAY)?),
         },
         admin_key: o.get("admin-key"),
         show: Show::Default,
@@ -736,12 +742,31 @@ impl Opts {
         let Some(value) = self.values.get("expires") else {
             return Ok(default);
         };
-        u64::try_from(crate::time::parse_duration(value)?.num_seconds())
-            .ok()
-            .filter(|s| *s > 0)
-            .ok_or_else(|| {
-                ParseError::InvalidArg(format!("--expires must be a positive duration: {value}"))
-            })
+        // Months of 30 days and years of 365, which no other duration
+        // takes: `m` is a minute (da-4cw3v).
+        let long = [("mo", 30 * DAY), ("y", 365 * DAY)]
+            .iter()
+            .find_map(|(unit, secs)| {
+                // Digits and a point alone: `inf`, `nan` and `1e3` are no
+                // count of months that f64 should read.
+                let n = value.strip_suffix(unit)?;
+                let plain = n.bytes().all(|b| b.is_ascii_digit() || b == b'.');
+                let n: f64 = n.parse().ok().filter(|_| plain)?;
+                Some((n * *secs as f64) as u64)
+            });
+        let secs = long.or_else(|| {
+            let secs = crate::time::parse_duration(value).ok()?.num_seconds();
+            u64::try_from(secs).ok()
+        });
+        match secs.filter(|s| *s > 0) {
+            Some(secs) if secs > MOST => Err(ParseError::InvalidArg(format!(
+                "--expires is at most 100y: {value} is longer (an agent's code takes `never`)"
+            ))),
+            Some(secs) => Ok(secs),
+            None => Err(ParseError::InvalidArg(format!(
+                "--expires must be a positive duration: {value}"
+            ))),
+        }
     }
 }
 
@@ -807,7 +832,25 @@ mod tests {
             c => panic!("{c:?}"),
         };
         let full = agent(&["--level", "full"]);
-        assert_eq!(full, (SyncRole::Reader, None, None, "agent".into()));
+        assert_eq!(
+            full,
+            (SyncRole::Reader, None, Some(30 * DAY), "agent".into())
+        );
+        // A code is its device's secret, so it lapses unless asked not to
+        // (da-4cw3v): months of 30 days, years of 365.
+        for (expires, secs) in [
+            ("60d", Some(60 * DAY)),
+            ("90d", Some(90 * DAY)),
+            ("6mo", Some(180 * DAY)),
+            ("1y", Some(365 * DAY)),
+            ("1.5y", Some(365 * DAY * 3 / 2)),
+            ("2h", Some(7200)),
+            ("1day", Some(DAY)),
+            ("never", None),
+        ] {
+            let argv = ["--level", "full", "--expires", expires];
+            assert_eq!(agent(&argv).2, secs, "{expires}");
+        }
         assert_eq!(agent(&["--level", "full", "--write"]).0, SyncRole::Member);
         let light = SyncFilter {
             fields: None,
@@ -847,6 +890,15 @@ mod tests {
             &["--level", "full", "--window", "1d"],
             &["--level", "write", "--write"],
             &["--level", "light", "--fields", "a"],
+            &["--level", "full", "--expires", "0s"],
+            &["--level", "full", "--expires", "mo"],
+            // No number f64 reads but a plain one, and nothing past 100
+            // years, which `now` could not be added to (vremya, #2065).
+            &["--level", "full", "--expires", "infy"],
+            &["--level", "full", "--expires", "nany"],
+            &["--level", "full", "--expires", "1e3y"],
+            &["--level", "full", "--expires", "300000y"],
+            &["--level", "full", "--expires", "100000000d"],
         ] {
             assert!(
                 parse_sync_cmd(&[&["chain", "agent"], bad].concat()).is_err(),

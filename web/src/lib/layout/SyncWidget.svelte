@@ -204,6 +204,8 @@
 	let adding = $state(false);
 	/** «Add agent ▾» unfolded (da-bdyor): what its code is to be, as chosen; and the last code made. */
 	let agentAsk = $state<Required<AgentAsk> | null>(null);
+	/** The expiry typed when «after…» is chosen, as `--expires` reads it (da-4cw3v). */
+	let ownExpiry = $state('');
 	let agentCode = $state<{ db: string; label: string; code: string; until: string | null } | null>(null);
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = $state({});
@@ -555,10 +557,12 @@
 			copied = '';
 			waiting = 'Making the code…';
 			try {
-				const r = ok(await syncAct(db, agentArgv({ ...ask, expires: ask.expires || undefined, label: ask.label.trim() || undefined })));
+				const expires = (ask.expires === 'custom' ? ownExpiry.trim() : ask.expires) || undefined;
+				const r = ok(await syncAct(db, agentArgv({ ...ask, expires, label: ask.label.trim() || undefined })));
 				const a: AgentCode = JSON.parse(r.stdout.split('\n')[0]);
 				const ticket = await syncOffer(db, { secret: a.secret, expires: a.expires ?? '', id: '', role: a.role, agent: a.agent });
-				agentCode = { db, label: a.agent, code: `datum-agent:${ticket}`, until: a.expires ? when(Date.parse(a.expires)) : null };
+				const until = a.expires ? new Date(a.expires).toLocaleDateString([], { dateStyle: 'medium' }) : null;
+				agentCode = { db, label: a.agent, code: `datum-agent:${ticket}`, until };
 				agentAsk = null;
 			} finally {
 				waiting = '';
@@ -1065,14 +1069,21 @@
 				<!-- A full agent that writes is a member, which in a chain with no admin could lock it as its first admin (ístina's F19): the CLI refuses it there. -->
 				{#if ask.level === 'full' && !cur.admins?.length}<p class="name">It writes too only once the chain has an admin (Add admin, below): with none, an agent that writes everything could lock you out.</p>
 				{:else if ask.level !== 'write'}<label class="name"><input type="checkbox" bind:checked={ask.write} /> it writes too</label>{/if}
+				<!-- A code is its device's secret, so it lapses unless asked not to (da-4cw3v); Remove revokes it sooner. -->
 				<label class="name"
-					>The code works <select bind:value={ask.expires}>
-						<option value="">until you remove the agent</option>
-						<option value="1d">for a day</option>
-						<option value="7d">for a week</option>
-						<option value="30d">for 30 days</option>
+					>It expires <select bind:value={ask.expires}>
+						<option value="30d">in 30 days</option>
+						<option value="60d">in 60 days</option>
+						<option value="90d">in 90 days</option>
+						<option value="6mo">in 6 months</option>
+						<option value="1y">in a year</option>
+						<option value="never">never</option>
+						<option value="custom">after…</option>
 					</select></label
 				>
+				{#if ask.expires === 'custom'}<label class="name"
+						>After <input type="text" bind:value={ownExpiry} required pattern={'\\S+'} placeholder="45d, 3mo, 12h" spellcheck="false" autocomplete="off" /></label
+					>{/if}
 				<div class="actions">
 					<button type="submit" class="command" use:act={'run'} disabled={busy}>Make code</button>
 					<button type="button" class="command close" use:act={'show'} onclick={() => (agentAsk = null)}>Cancel</button>
@@ -1083,8 +1094,12 @@
 		{#if agentCode}
 			<section class="card agentcode" data-db={agentCode.db}>
 				<p class="head">
-					The code for {agentCode.label}, {agentCode.until ? `until ${agentCode.until}` : 'until you remove it'}. Give it to the agent: each time it starts with nothing kept, it runs
-					<code>datum sync restore '…'</code> with it and syncs. Whoever holds the code is this agent; Remove on its row revokes it.
+					The code for {agentCode.label}. Give it to the agent: each time it starts with nothing kept, it runs
+					<code>datum sync restore '…'</code> with it and syncs.
+				</p>
+				<p class="head">
+					{#if agentCode.until}Anyone with this code is this agent until it expires or you remove it. It expires {agentCode.until}; Remove on its row revokes it sooner.{:else}Anyone
+						with this code is this agent until you remove it: it never expires. Remove on its row revokes it.{/if}
 				</p>
 				<code class="code ticket">{agentCode.code}</code>
 				<div class="actions">
@@ -1212,7 +1227,7 @@
 											class="cell agent"
 											use:act={'show'}
 											aria-expanded={!!agentAsk}
-											onclick={() => (agentAsk = agentAsk ? null : { level: 'full', write: false, window: '1d', expires: '', label: 'agent' })}>Add agent ▾</button
+											onclick={() => (agentAsk = agentAsk ? null : { level: 'full', write: false, window: '1d', expires: '30d', label: 'agent' })}>Add agent ▾</button
 										>{/if}
 									{#if adding}<div class="actions">{@render ways('foot')}</div>
 										{#if entering?.at === 'foot'}{@render enterField(entering)}{/if}{/if}

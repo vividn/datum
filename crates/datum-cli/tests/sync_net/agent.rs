@@ -111,6 +111,41 @@ fn a_light_code_holds_a_day_and_a_write_code_writes_its_fields() {
     assert_eq!(count(&a, "tea"), "1");
 }
 
+/// A code is its device's secret, so with no `--expires` it lapses 30 days
+/// on, said as a date beside it; `--expires never` makes one that does not,
+/// and says so (da-4cw3v).
+#[test]
+fn a_code_expires_in_30_days_unless_never_is_asked() {
+    let a = alone();
+    let made = |args: &[&str]| {
+        let argv = [&["sync", "chain", "agent", "--level", "full"], args].concat();
+        let out: serde_json::Value =
+            serde_json::from_str(&a.ok(&[&argv[..], &["--json"]].concat())).unwrap();
+        (a.ok(&argv), out["expires"].clone())
+    };
+    let (said, expires) = made(&[]);
+    let expires = expires.as_str();
+    assert!(
+        expires.is_some(),
+        "a code made with no --expires expires: {said}"
+    );
+    let expires = chrono::DateTime::parse_from_rfc3339(expires.unwrap()).unwrap();
+    let days = (expires.to_utc() - chrono::Utc::now()).num_hours() as f64 / 24.0;
+    assert!((29.9..=30.0).contains(&days), "{days}");
+    let on = expires
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    assert!(
+        said.contains("Anyone with this code is this agent until it expires or you remove it")
+            && said.contains(&format!("It expires {on}")),
+        "{said}"
+    );
+    let (said, expires) = made(&["--expires", "never"]);
+    assert!(expires.is_null(), "{expires}");
+    assert!(said.contains("it never expires"), "{said}");
+}
+
 /// A code expelled or past its expiry restores nothing, saying why.
 #[test]
 fn a_revoked_or_expired_code_restores_nothing() {

@@ -19,6 +19,10 @@
 //!   HLC, its ops before it standing. A copy made afresh needs a new endpoint
 //!   (two copies with one key would number their ops from one seq), and is
 //!   still one device.
+//!
+//! A standing admission makes its device an agent, and an agent is never
+//! an admin (`Chain.agents`, `Chain::agent_refuses`): one offered for a person's
+//! own device would inherit that rule.
 
 use chrono::{DateTime, Utc};
 use rusqlite::params;

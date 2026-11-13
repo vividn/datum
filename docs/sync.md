@@ -54,10 +54,12 @@ reader (a member with `--write`), light a reader of the last `--window` and
 every spec and alias (a writer with `--write`), write a writer sent no
 entries, limited to `--fields` where named. Each restore is a fresh copy of
 the same device, one row of the grid, and the endpoints it held before are
-revoked as it is admitted; what they wrote stands. Whoever holds the code is
-that agent until it expires (`--expires`) or its copy is expelled (`datum
-sync chain expel <ENDPOINT>`, «Remove» on its row), after which it admits
-nothing.
+revoked as it is admitted; what they wrote stands. Anyone with the code is
+that agent until it expires, in 30 days unless `--expires` says (`60d`,
+`90d`, `6mo`, `1y`, `never`, any duration), or it is removed (`datum sync
+chain expel <LABEL>`, «Remove» on its row), after which it admits nothing.
+An agent is never an admin, and in a chain with no admin it is at most a
+writer, so `full --write` is refused there until the chain is locked.
 
 A device you have lost, or that someone else may hold, should be unjoined
 (`datum sync chain expel <WHO> --unjoin`, the Sync widget's «Unjoin»), which
