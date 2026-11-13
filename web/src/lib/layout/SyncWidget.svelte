@@ -77,6 +77,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import Pane from '#lib/Pane.svelte';
+	import AgentForm from './AgentForm.svelte';
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
@@ -127,9 +128,6 @@
 	import { ask, confirm } from '#lib/confirm.ts';
 	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
 	import {
-		agentArgv,
-		type AgentAsk,
-		type AgentCode,
 		adminAddArgv,
 		adminListArgv,
 		adminRemoveArgv,
@@ -202,11 +200,8 @@
 	type Where = 'top' | 'foot';
 	/** «+ add device ▾» unfolded, at the grid's foot. */
 	let adding = $state(false);
-	/** «Add agent ▾» unfolded (da-bdyor): what its code is to be, as chosen; and the last code made. */
-	let agentAsk = $state<Required<AgentAsk> | null>(null);
-	/** The expiry typed when «after…» is chosen, as `--expires` reads it (da-4cw3v). */
-	let ownExpiry = $state('');
-	let agentCode = $state<{ db: string; label: string; code: string; until: string | null } | null>(null);
+	/** «Add agent ▾» unfolded (da-bdyor): its form, then the code it made. */
+	let agentOpen = $state(false);
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = $state({});
 	/**
@@ -541,29 +536,6 @@
 				const link = joinLink(ticket);
 				const expires = Date.parse(invite.expires);
 				offer = { db, ticket, link, svg: await qr(link), until: when(expires), expires, id: invite.id, relay, reader };
-			} finally {
-				waiting = '';
-			}
-		});
-	}
-
-	/**
-	 * An agent's code for `db` (da-bdyor): its standing admission, signed as
-	 * any admin act is, then the code, a ticket whose secret is the agent's
-	 * device key, made by this tab's sync as an invite's is.
-	 */
-	function addAgent(db: string, ask: Required<AgentAsk>): Promise<void> {
-		return doing(async () => {
-			copied = '';
-			waiting = 'Making the code…';
-			try {
-				const expires = (ask.expires === 'custom' ? ownExpiry.trim() : ask.expires) || undefined;
-				const r = ok(await syncAct(db, agentArgv({ ...ask, expires, label: ask.label.trim() || undefined })));
-				const a: AgentCode = JSON.parse(r.stdout.split('\n')[0]);
-				const ticket = await syncOffer(db, { secret: a.secret, expires: a.expires ?? '', id: '', role: a.role, agent: a.agent });
-				const until = a.expires ? new Date(a.expires).toLocaleDateString([], { dateStyle: 'medium' }) : null;
-				agentCode = { db, label: a.agent, code: `datum-agent:${ticket}`, until };
-				agentAsk = null;
 			} finally {
 				waiting = '';
 			}
@@ -1039,77 +1011,7 @@
 				</div>
 			</form>
 		{/snippet}
-		<!-- «Add agent» (da-bdyor): a code an agent with nothing kept restores a copy from, at the level chosen. -->
-		{#snippet agentCard(ask: Required<AgentAsk>)}
-			<form
-				class="card agent"
-				data-db={db}
-				onsubmit={(e) => {
-					e.preventDefault();
-					void addAgent(db, { ...ask, write: ask.write && (ask.level !== 'full' || !!cur.admins?.length) });
-				}}
-			>
-				<label class="name">Name <input type="text" bind:value={ask.label} spellcheck="false" autocomplete="off" /></label>
-				<label class="name"
-					>It gets <select bind:value={ask.level}>
-						<option value="full">everything, for analysis</option>
-						<option value="light">recent data and every field’s setup, for context</option>
-						<option value="write">nothing: it only writes</option>
-					</select></label
-				>
-				{#if ask.level === 'light'}
-					<label class="name"
-						>Recent: the last <select bind:value={ask.window}>
-							<option value="1h">hour</option>
-							<option value="1d">day</option>
-							<option value="7d">week</option>
-						</select></label
-					>
-				{/if}
-				<!-- A full agent that writes is a member, which in a chain with no admin could lock it as its first admin (ístina's F19): the CLI refuses it there. -->
-				{#if ask.level === 'full' && !cur.admins?.length}<p class="name">It writes too only once the chain has an admin (Add admin, below): with none, an agent that writes everything could lock you out.</p>
-				{:else if ask.level !== 'write'}<label class="name"><input type="checkbox" bind:checked={ask.write} /> it writes too</label>{/if}
-				<!-- A code is its device's secret, so it lapses unless asked not to (da-4cw3v); Remove revokes it sooner. -->
-				<label class="name"
-					>It expires <select bind:value={ask.expires}>
-						<option value="30d">in 30 days</option>
-						<option value="60d">in 60 days</option>
-						<option value="90d">in 90 days</option>
-						<option value="6mo">in 6 months</option>
-						<option value="1y">in a year</option>
-						<option value="never">never</option>
-						<option value="custom">after…</option>
-					</select></label
-				>
-				{#if ask.expires === 'custom'}<label class="name"
-						>After <input type="text" bind:value={ownExpiry} required pattern={'\\S+'} placeholder="45d, 3mo, 12h" spellcheck="false" autocomplete="off" /></label
-					>{/if}
-				<div class="actions">
-					<button type="submit" class="command" use:act={'run'} disabled={busy}>Make code</button>
-					<button type="button" class="command close" use:act={'show'} onclick={() => (agentAsk = null)}>Cancel</button>
-				</div>
-			</form>
-		{/snippet}
 		<div class="actions ways" data-db={db}>{@render ways('top')}</div>
-		{#if agentCode}
-			<section class="card agentcode" data-db={agentCode.db}>
-				<p class="head">
-					The code for {agentCode.label}. Give it to the agent: each time it starts with nothing kept, it runs
-					<code>datum sync restore '…'</code> with it and syncs.
-				</p>
-				<p class="head">
-					{#if agentCode.until}Anyone with this code is this agent until it expires or you remove it. It expires {agentCode.until}; Remove on its row revokes it sooner.{:else}Anyone
-						with this code is this agent until you remove it: it never expires. Remove on its row revokes it.{/if}
-				</p>
-				<code class="code ticket">{agentCode.code}</code>
-				<div class="actions">
-					<button type="button" class="command" use:act={'run'} onclick={() => agentCode && copy('code', agentCode.code)}>Copy code</button>
-					<button type="button" class="command" use:act={'run'} onclick={() => agentCode && copy('CLI command', `datum sync restore '${agentCode.code}'`)}>Copy CLI command</button>
-					<button type="button" class="command" use:act={'show'} onclick={() => (agentCode = null)}>Done</button>
-				</div>
-				{#if copied}<p class="quiet copied" role="status">{copied}</p>{/if}
-			</section>
-		{/if}
 		{#if entering?.at === 'top'}{@render enterField(entering)}{/if}
 		{#if offer}
 			<section class="card offer" data-db={offer.db} data-role={offer.reader ? 'reader' : 'member'}>
@@ -1226,12 +1128,12 @@
 											type="button"
 											class="cell agent"
 											use:act={'show'}
-											aria-expanded={!!agentAsk}
-											onclick={() => (agentAsk = agentAsk ? null : { level: 'full', write: false, window: '1d', expires: '30d', label: 'agent' })}>Add agent ▾</button
+											aria-expanded={agentOpen}
+											onclick={() => (agentOpen = !agentOpen)}>Add agent ▾</button
 										>{/if}
 									{#if adding}<div class="actions">{@render ways('foot')}</div>
 										{#if entering?.at === 'foot'}{@render enterField(entering)}{/if}{/if}
-									{#if agentAsk}{@render agentCard(agentAsk)}{/if}</td
+									{#if agentOpen}<AgentForm {db} locked={!!cur.admins?.length} disabled={busy} ondone={() => void read()} onclose={() => (agentOpen = false)} />{/if}</td
 								>
 							</tr>
 						</tfoot>

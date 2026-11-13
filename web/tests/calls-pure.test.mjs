@@ -254,6 +254,8 @@ const SAMPLES = {
 		[{ level: 'full' }],
 		[{ level: 'light', write: true, window: '1h', expires: '7d', label: 'bot' }],
 		[{ level: 'write' }],
+		// Its fields, as typed in the form: spaces dropped (da-f7orx).
+		[{ level: 'write', fields: 'coffee, mood' }],
 		// «Add agent»'s expiry choices (da-4cw3v), each one `--expires` reads.
 		...['30d', '60d', '90d', '6mo', '1y', 'never'].map((expires) => [{ level: 'full', expires }])
 	],

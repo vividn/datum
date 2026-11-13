@@ -227,20 +227,25 @@ export interface AgentAsk {
 	/** How long the code admits a copy, as `--expires` reads it: 30 days unless given, `never` for no end (da-4cw3v). */
 	expires?: string;
 	label?: string;
+	/** At `write`, the only fields it writes, comma-separated: blank, any. */
+	fields?: string;
 }
 
 /** An agent's standing admission (da-bdyor), saying the device secret its code is made of before it is signed. */
 export function agentArgv(a: AgentAsk): string[] {
 	const flag = (name: string, v?: string) => (v ? [`--${name}`, v] : []);
 	const write = a.write && a.level !== 'write' ? ['--write'] : [];
-	return ['sync', 'chain', 'agent', '--level', a.level, ...write, ...flag('window', a.level === 'light' ? a.window : undefined), ...flag('expires', a.expires), ...flag('label', a.label), '--json'];
+	return ['sync', 'chain', 'agent', '--level', a.level, ...write, ...flag('window', a.level === 'light' ? a.window : undefined), ...flag('fields', a.level === 'write' ? a.fields?.replace(/\s+/g, '') : undefined), ...flag('expires', a.expires), ...flag('label', a.label), '--json'];
 }
 
 /** What `sync chain agent --json` says (da-bdyor): the device secret, and what its code says of it. */
 export interface AgentCode {
 	secret: string;
 	agent: string;
+	level: AgentAsk['level'];
 	role: 'member' | 'reader' | 'writer';
+	/** At `write`, the fields it may write; null for any. */
+	fields: string[] | null;
 	/** RFC 3339, or null for a code that never expires. */
 	expires: string | null;
 }

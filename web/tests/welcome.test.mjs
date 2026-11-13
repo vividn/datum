@@ -32,6 +32,7 @@ import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, chooser, exactly, manage, manageRoot, pane, rootMenuButton, titledPane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { BAR, fold, unfold } from './support/bar.mjs';
+import { relayed, startRelay, withWallClock } from './support/sync.mjs';
 
 before(startApp);
 after(stopApp);
@@ -433,4 +434,61 @@ test('the built app says «Track» only as a verb', () => {
 		.filter((text) => !titles.some((title) => text.includes(title)))
 		.flatMap((text) => text.match(/\bTrack\b(?! timezone| something).{0,20}/g) ?? []);
 	assert.deepEqual([...new Set(said)], ['Track what matters to you']);
+});
+
+// da-f7orx, vividn, 2026-11-12: «a way to generate a nice AI code». The modal makes an agent's code with the Sync
+// widget's own form (AgentForm.svelte), 30 days preselected, and a database in no chain starts one first, as its first
+// share does (da-5wlnr): `sync chain agent` refuses a copy in none.
+describe('Generate an AI code', () => {
+	let relay;
+	before(async () => (relay = await startRelay()));
+	after(() => relay?.stop());
+
+	const chainOf = async (app) => JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout).chain;
+
+	/** The modal opened, «Generate an AI code» pressed, saying it starts a chain where `fresh`, and its code made: the card. */
+	async function generate(page, fresh) {
+		await page.locator('.host.welcome').getByRole('button', { name: 'Integrate with AI', exact: true }).click();
+		const sheet = page.locator('dialog[data-ai]');
+		await sheet.getByRole('button', { name: 'Generate an AI code', exact: true }).click();
+		const form = sheet.locator('form.card.agent');
+		assert.equal(await form.getByLabel('It expires').inputValue(), '30d');
+		assert.equal(await sheet.getByText('starts its sync chain first').count(), fresh ? 1 : 0);
+		await form.getByLabel('Name').fill('claude');
+		await form.getByRole('button', { name: 'Make code' }).click();
+		const card = sheet.locator('.agentcode');
+		assert.match((await card.locator('.ticket').textContent()).trim(), /^datum-agent:[A-Z2-7]+$/);
+		// What the code lets it do, and until when.
+		assert.equal((await card.locator('.can').textContent()).trim(), 'A reader: it reads everything and writes nothing.');
+		const on = await page.evaluate(() => new Date(Date.now() + 30 * 864e5).toLocaleDateString([], { dateStyle: 'medium' }));
+		assert.ok((await card.textContent()).includes(on), on);
+		// The chain started, the line saying it would goes.
+		assert.equal(await sheet.getByText('starts its sync chain first').count(), 0);
+	}
+
+	test('on a database in no chain, it starts one, says so, and makes a code; 30 days preselected', async () => {
+		await withWallClock(
+			async (app) => {
+				assert.equal(await chainOf(app), null);
+				await generate(app.page, true);
+				assert.notEqual(await chainOf(app), null);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...FRESH_DESKTOP, prepare: relayed(relay) }
+		);
+	});
+
+	test('on a chained database, it makes a code in that chain and starts no other', async () => {
+		await withWallClock(
+			async (app) => {
+				assert.equal((await app.run(['sync', 'new-invite'])).code, 0);
+				const chain = await chainOf(app);
+				assert.notEqual(chain, null);
+				await generate(app.page, false);
+				assert.equal(await chainOf(app), chain);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...FRESH_DESKTOP, prepare: relayed(relay) }
+		);
+	});
 });
