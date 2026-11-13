@@ -2044,6 +2044,30 @@ fn a_fork_of_one_endpoint_is_refused_not_merged() {
     }
 }
 
+/// A third copy sent both sides of `m`'s fork shares no key: it names the
+/// endpoint that signed twice and keeps what it had (da-hdd9w).
+#[test]
+fn a_fork_of_another_endpoint_names_it_and_asks_no_rekey() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee"]);
+    a.sql("UPDATE sync_local SET path = ''");
+    let copy = twin(&a);
+    a.ok(&["occur", "tea"]);
+    copy.ok(&["occur", "juice"]);
+    let m = endpoint(&a);
+    let n = a.query("SELECT MAX(seq) FROM ops WHERE endpoint = ?1", &m);
+    let third = Copy::new();
+    a.send(&third);
+    let out = third.run(&["sync", "pipe", "apply"], &copy.ops_for(&third));
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    let said = format!("{m}/{n}: {m} signed two different ops at seq {n}; this copy keeps");
+    assert!(err.contains(&said) && !err.contains(SHARED), "{err}");
+    assert!(!err.contains("rekey"), "{err}");
+    assert_eq!(live(&third, "tea"), 1, "the op it had stands");
+    assert_eq!(live(&third, "juice"), 0);
+}
+
 /// A keep-both pair on B: A's `habit` kept, B's own superseded under the
 /// same slug. Returns (kept, superseded) hids.
 fn keep_both_pair(a: &Copy, b: &Copy) -> (String, String) {

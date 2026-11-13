@@ -16,7 +16,7 @@ use rusqlite::{params, types::Value as Sql, Connection};
 use serde_json::{json, Map, Value};
 
 use super::chain::{Chain, CHAIN_HID};
-use super::{check_signature, ApplySummary, Op, PURGED, UNCOVERED_SQL};
+use super::{check_signature, ApplySummary, Op, PURGED, SHARED_KEY, UNCOVERED_SQL};
 use crate::db::Db;
 use crate::db::WriteBatch;
 use crate::error::{DatumError, Result};
@@ -207,4 +207,18 @@ pub(super) fn wake_dormant<'a>(
         wake.execute(params![DORMANT, CHAIN_HID, id])?;
     }
     Ok(())
+}
+
+/// Why a received op at a seq this copy holds another op at, or of its own
+/// endpoint past what it signed, is refused. Of this copy's own endpoint, a
+/// copy shares its key; of another's, that endpoint signed two different
+/// ops at the seq, and this copy shares no key (da-hdd9w).
+pub(super) fn second_at_seq(chain: &Chain, op: &Op, mine: &str) -> String {
+    let (e, n) = (&op.endpoint, op.seq);
+    if e == mine {
+        return format!("{e}/{n}: {SHARED_KEY}");
+    }
+    let label = chain.member(e).map(|m| m.label.as_str());
+    let who = label.filter(|l| !l.is_empty()).unwrap_or(e);
+    format!("{e}/{n}: {who} signed two different ops at seq {n}; this copy keeps the one it had")
 }

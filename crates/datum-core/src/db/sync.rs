@@ -2495,9 +2495,7 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
             }
             // A stub is an op a purge order took (da-qzrj9).
             Some(body) if body == op.body || body.is_empty() => s.already_had += 1,
-            _ => s
-                .refused
-                .push(format!("{}/{}: {SHARED_KEY}", op.endpoint, op.seq)),
+            _ => s.refused.push(ops_io::second_at_seq(&chain, &op, &mine)),
         }
     }
     take_purged(tx, &words)?;
