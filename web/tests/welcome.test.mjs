@@ -454,6 +454,16 @@ describe('Generate an AI code', () => {
 		const form = sheet.locator('form.card.agent');
 		assert.equal(await form.getByLabel('It expires').inputValue(), '30d');
 		assert.equal(await sheet.getByText('starts its sync chain first').count(), fresh ? 1 : 0);
+		// Its fields are drawn on the page's ground, as the Sync widget's are, never the browser's white (da-cjfz6).
+		const ground = await form.getByLabel('Name').evaluate((input) => {
+			const probe = input.parentElement.appendChild(document.createElement('span'));
+			probe.style.background = 'var(--page)';
+			const page = getComputedStyle(probe).backgroundColor;
+			probe.remove();
+			return { input: getComputedStyle(input).backgroundColor, page };
+		});
+		assert.equal(ground.input, ground.page);
+		assert.notEqual(ground.input, 'rgb(255, 255, 255)');
 		await form.getByLabel('Name').fill('claude');
 		await form.getByRole('button', { name: 'Make code' }).click();
 		const card = sheet.locator('.agentcode');

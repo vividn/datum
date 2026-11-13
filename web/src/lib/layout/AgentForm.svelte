@@ -44,7 +44,7 @@
 
 	/** What the code lets the agent do: its role, and what it reads and writes. */
 	function can(a: AgentCode, window: string): string {
-		const reads = a.level === 'full' ? 'everything' : a.level === 'light' ? `the last ${RECENT[window] ?? window} and every field’s setup` : 'nothing';
+		const reads = a.level === 'full' ? 'everything' : a.level === 'light' ? `the last ${RECENT[window] ?? window} and field setups` : 'nothing';
 		const writes = a.role === 'reader' ? 'nothing' : a.level === 'write' ? (a.fields?.length ? `only ${a.fields.join(', ')}` : 'entries in any field') : 'entries';
 		return `A ${a.role}: it reads ${reads} and writes ${writes}.`;
 	}
@@ -79,14 +79,10 @@
 
 {#if made}
 	<section class="card agentcode" data-db={db}>
+		<p class="head">Code for {made.label}: the agent runs <code>datum sync restore '…'</code> with it.</p>
 		<p class="head">
-			The code for {made.label}. Give it to the agent: each time it starts with nothing kept, it runs
-			<code>datum sync restore '…'</code> with it and syncs.
-		</p>
-		<p class="head can">{made.can}</p>
-		<p class="head">
-			{#if made.until}Anyone with this code is this agent until it expires or you remove it. It expires {made.until}; Remove on its row in Sync revokes it
-				sooner.{:else}Anyone with this code is this agent until you remove it: it never expires. Remove on its row in Sync revokes it.{/if}
+			<span class="can">{made.can}</span>
+			{#if made.until}Anyone with it is this agent until {made.until}; Remove in Sync revokes it.{:else}Anyone with it is this agent until you Remove it in Sync.{/if}
 		</p>
 		<code class="code ticket">{made.code}</code>
 		<div class="actions">
@@ -108,9 +104,9 @@
 		<label class="name">Name <input type="text" bind:value={ask.label} spellcheck="false" autocomplete="off" /></label>
 		<label class="name"
 			>It gets <select bind:value={ask.level}>
-				<option value="full">everything, for analysis</option>
-				<option value="light">recent data and every field’s setup, for context</option>
-				<option value="write">nothing: it only writes</option>
+				<option value="full">everything</option>
+				<option value="light">recent data and field setups</option>
+				<option value="write">nothing (it only writes)</option>
 			</select></label
 		>
 		{#if ask.level === 'light'}
@@ -123,9 +119,7 @@
 			<label class="name">Only the fields <input type="text" bind:value={ask.fields} placeholder="coffee, mood (blank: any)" spellcheck="false" autocomplete="off" /></label>
 		{/if}
 		<!-- A full agent that writes is a member, which in a chain with no admin could lock it as its first admin (ístina's F19): the CLI refuses it there. -->
-		{#if ask.level === 'full' && !locked}<p class="name">
-				It writes too only once the chain has an admin (Add admin, in Sync): with none, an agent that writes everything could lock you out.
-			</p>
+		{#if ask.level === 'full' && !locked}<p class="name">To write too, it needs an admin first (Add admin, in Sync).</p>
 		{:else if ask.level !== 'write'}<label class="name"><input type="checkbox" bind:checked={ask.write} /> it writes too</label>{/if}
 		<!-- A code is its device's secret, so it lapses unless asked not to (da-4cw3v); Remove revokes it sooner. -->
 		<label class="name"
@@ -174,6 +168,16 @@
 		align-items: center;
 		gap: 0.4rem;
 		margin-top: 0.5rem;
+	}
+	/* The Sync widget's own fields (`.join input` there), since the form opens inside it: never the browser's white. */
+	input[type='text'],
+	select {
+		background: var(--page);
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		padding: 0.2rem 0.4rem;
+		color: var(--ink-bright);
+		font: inherit;
 	}
 	.quiet {
 		color: var(--muted);
