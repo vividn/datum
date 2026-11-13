@@ -32,6 +32,14 @@ pub(super) fn agent(
 ) -> Result<()> {
     let chain = db.sync_chain()?;
     ensure!(chain.exists() && chain.dissolved().is_none(), NO_CHAIN);
+    // An open chain lets a member write its first `add_admin`, which locks
+    // it: a member agent could lock the person out (ístina's F19).
+    ensure!(
+        !(chain.is_open() && role == Role::Member),
+        "in a chain with no admin, an agent can be at most a writer: lock the chain first \
+         (`datum sync admin add …`, or sign in on datum.day), or give it `--level write` / \
+         `light --write`"
+    );
     let label = checked(label.trim().into())?;
     ensure!(
         !label.is_empty(),

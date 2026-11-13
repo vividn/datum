@@ -151,3 +151,31 @@ fn a_revoked_or_expired_code_restores_nothing() {
     assert!(said.contains("in another sync chain"), "{said}");
     assert_eq!(key(), before);
 }
+
+/// In an open chain a member's caps would let the agent add its own key as
+/// the first admin and lock the person out (ístina's F19): `full --write`
+/// is refused there, saying how, and writes no standing record. Locked, an
+/// `add_admin` takes an admin's signature, so the chain makes it.
+#[test]
+fn a_member_agent_is_refused_in_an_open_chain_and_made_in_a_locked_one() {
+    let a = alone();
+    let standings =
+        || a.query("SELECT COUNT(*) FROM ops WHERE body LIKE '%\"type\":\"standing\"%'");
+    let full_write = ["sync", "chain", "agent", "--level", "full", "--write"];
+    let said = a.fails(&full_write, "");
+    assert!(
+        said.contains("in a chain with no admin, an agent can be at most a writer")
+            && said.contains("`--level write` / `light --write`"),
+        "{said}"
+    );
+    assert_eq!(standings(), "0");
+    code(&a, &["--level", "light", "--write"]);
+    assert_eq!(standings(), "1", "a writer is made in an open chain");
+
+    let key = a.tmp.path().join("admin.key");
+    std::fs::write(&key, "11".repeat(32)).unwrap();
+    let key = key.to_str().unwrap();
+    a.ok(&["sync", "admin", "add", key]);
+    code(&a, &["--level", "full", "--write", "--admin-key", key]);
+    assert_eq!(standings(), "2");
+}

@@ -527,4 +527,44 @@ mod tests {
         assert_eq!(add_at(ops, &endpoint(9), claim(&device, 9), dated), None);
         refuses(add(ops, &a, admit(9)), "standing admission expired");
     }
+
+    /// A member-level agent, admitted by its standing, adds its own key as
+    /// the first admin of an open chain and locks it (ístina's F19), which is
+    /// why `sync chain agent` makes none there; in a locked chain its
+    /// `add_admin`, unsigned or signed by its own key, is refused.
+    #[test]
+    fn a_member_agent_adds_an_admin_only_to_an_open_chain() {
+        let agent = endpoint(2);
+        let own =
+            json!({"type": "add_admin", "key": ed25519_admin_key(&[5u8; 32]), "label": "mine"});
+        let mut signed = own.clone();
+        signed["chain"] = "c1".into();
+        signed["sig"] = sign_ed25519(&signed, &[5u8; 32]).into();
+        for locked in [false, true] {
+            let device = [7u8; 32];
+            let ops = &mut Vec::new();
+            let _ = chain(ops, &device, locked);
+            add(ops, &agent, claim(&device, 2));
+            assert_eq!(add(ops, &endpoint(1), admit(2)), None);
+            assert_eq!(at(ops, &agent).role_at("9999"), Role::Member);
+            match locked {
+                false => assert_eq!(
+                    add(ops, &agent, signed.clone()),
+                    None,
+                    "open: it locks the chain"
+                ),
+                true => {
+                    assert!(
+                        add(ops, &agent, own.clone()).is_some(),
+                        "an unsigned add_admin"
+                    );
+                    assert!(
+                        add(ops, &agent, signed.clone()).is_some(),
+                        "signed by its own key"
+                    );
+                    assert_eq!(Chain::fold(ops.clone()).admins.len(), 1);
+                }
+            }
+        }
+    }
 }

@@ -33,7 +33,13 @@ test('«Add agent» makes a code a fresh native copy restores from, and marks th
 				await widget.getByRole('button', { name: 'Add agent ▾' }).click();
 				const card = widget.locator('.card.agent');
 				await card.getByLabel('Name').fill('claude');
+				// The chain has no admin, so a full agent cannot write (ístina's F19): the CLI refuses that member.
+				const writes = card.getByRole('checkbox', { name: 'it writes too' });
+				await card.getByLabel('It gets').selectOption('light');
+				assert.equal(await writes.count(), 1);
+				await writes.check();
 				await card.getByLabel('It gets').selectOption('full');
+				assert.equal(await writes.count(), 0);
 				await card.getByRole('button', { name: 'Make code' }).click();
 				const code = (await widget.locator('.agentcode .ticket').textContent()).trim();
 				assert.match(code, /^datum-agent:[A-Z2-7]+$/);

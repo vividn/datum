@@ -1042,7 +1042,7 @@
 				data-db={db}
 				onsubmit={(e) => {
 					e.preventDefault();
-					void addAgent(db, ask);
+					void addAgent(db, { ...ask, write: ask.write && (ask.level !== 'full' || !!cur.admins?.length) });
 				}}
 			>
 				<label class="name">Name <input type="text" bind:value={ask.label} spellcheck="false" autocomplete="off" /></label>
@@ -1062,7 +1062,9 @@
 						</select></label
 					>
 				{/if}
-				{#if ask.level !== 'write'}<label class="name"><input type="checkbox" bind:checked={ask.write} /> it writes too</label>{/if}
+				<!-- A full agent that writes is a member, which in a chain with no admin could lock it as its first admin (ístina's F19): the CLI refuses it there. -->
+				{#if ask.level === 'full' && !cur.admins?.length}<p class="name">It writes too only once the chain has an admin (Add admin, below): with none, an agent that writes everything could lock you out.</p>
+				{:else if ask.level !== 'write'}<label class="name"><input type="checkbox" bind:checked={ask.write} /> it writes too</label>{/if}
 				<label class="name"
 					>The code works <select bind:value={ask.expires}>
 						<option value="">until you remove the agent</option>
