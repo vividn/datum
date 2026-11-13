@@ -78,6 +78,27 @@ export DATUM_HOME=/persistent/datum DATUM_CONFIG_HOME=/persistent/datum-config
 To check it held, `datum --db alex sync status --json` prints your device key as `this.device`: the next session
 should print the same.
 
+**With no persistent storage, restore from a code.** Your person makes you one on a device in their chain:
+datum.day's **Sync** widget, **Add agent**, or `datum sync chain agent --level full --label "Alex's agent"`. At the
+start of every session, restore; after writing, sync, since an entry not yet synced is lost with the sandbox:
+
+```bash,no_run
+datum --db alex sync restore '<CODE>'   # or DATUM_AGENT_CODE=<CODE> in the env, and `datum --db alex sync restore`
+datum --db alex sync                    # after writing
+```
+
+Each restore is a fresh copy of the same device, one row in their grid, and retires the copy before it. The level
+they choose says what you hold:
+
+- **full**: every entry, to read and analyze. With «it writes too» you write as well.
+- **light**: every spec and alias, the last day of entries (the window they set) and each field's state at its start,
+  for context. With «it writes too» you write as well.
+- **write**: no entries, only what you write. You cannot see a field's state, so a `change`, `-l` or `_LAST` writes
+  blind.
+
+The code is your identity in their chain: whoever holds it is you, so keep it secret, out of a repository and out of a
+log. **Remove** on your row of their Sync widget's grid revokes it, and an expiry, when they set one, ends it.
+
 **Share a database with your person.** Keep their record in a database named for them, and send them the link
 `sync chain invite` prints; they open it on datum.day and agree, and from then on what either side writes, both hold.
 `--label` names your copy in what they see («Join the sync chain of «Alex's agent»»); without it they see your

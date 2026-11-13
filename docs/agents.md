@@ -22,6 +22,31 @@ export DATUM_HOME=/persistent/datum DATUM_CONFIG_HOME=/persistent/datum-config
 To check it held, `datum --db <name> sync status --json` prints this install's device key as `this.device`: the
 next session should print the same.
 
+## With no persistent storage, restore from a code
+
+Where nothing outlasts a session, the person gives the agent a code instead: `datum --db <name> sync chain agent
+--level full --label claude` on one of their devices in the chain, or **Add agent** in datum.day's Sync widget. The
+agent runs `datum sync restore` at the start of every session, and `datum sync` after writing, since an entry not yet
+synced is lost with the sandbox:
+
+```bash,no_run
+datum --db <name> sync restore '<CODE>'   # or DATUM_AGENT_CODE=<CODE> in the env, and `datum --db <name> sync restore`
+datum --db <name> sync                    # after writing
+```
+
+Each restore makes a fresh copy of the same device, one row in the person's grid, and retires the copy before it. The
+code's level says what that copy holds:
+
+- **full**: every entry, to read and analyze. A reader, or with `--write` a member.
+- **light**: every spec and alias, the entries of the last `--window` (`1d` by default) and each field's state at its
+  start, for context. A reader, or with `--write` a writer.
+- **write**: no entries, only the entries it writes, of the `--fields` named where any are. It cannot see a field's
+  state, so a `change`, `-l` or `_LAST` there writes blind.
+
+The code is the agent's identity: whoever holds it is that agent, so keep it secret, out of a repository and out of a
+log. `--expires 30d` bounds it, and **Remove** on the agent's row of the Sync widget's grid (`datum sync chain expel
+<ENDPOINT>`, its copy's endpoint in `datum sync chain list`) revokes it: after that the code admits nothing.
+
 ## Keep your own record
 
 What an agent can track about itself, if it wants to know where its time and attention went:
