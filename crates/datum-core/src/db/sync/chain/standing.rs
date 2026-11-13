@@ -68,7 +68,52 @@ pub struct Standing {
     pub(super) admitted: bool,
 }
 
+/// The Ed25519 key of an admin key, a key file's or a passkey's: an agent's
+/// device key signs as either (da-ebxg5).
+fn ed25519_of(key: &str) -> Option<[u8; 32]> {
+    match super::AdminKey::parse(key).ok()? {
+        super::AdminKey::Ed25519(k) | super::AdminKey::PasskeyEd25519(k) => Some(k.to_bytes()),
+        super::AdminKey::Es256(_) => None,
+    }
+}
+
 impl Chain {
+    /// The standing admission that admitted `endpoint`, if it is an agent's
+    /// copy (da-ebxg5).
+    pub fn agent(&self, endpoint: &str) -> Option<&Standing> {
+        self.standings.get(self.agents.get(endpoint)?)
+    }
+
+    /// Why `op`, a record of `kind` not about its writer alone, is refused as
+    /// an agent's (da-ebxg5). An agent is never an admin (vividn, 2026-11-13:
+    /// «the agent tokens should never be able to get admin rights»): no admin
+    /// is its key (a standing's device key, or the endpoint of a copy one
+    /// admitted), its copy adds none, and with no admin it writes no act one
+    /// would sign but a `message`, so it invites no sidekick to add one.
+    /// Its copy is one for good, whatever it describes or is admitted by since.
+    pub(super) fn agent_refuses(
+        &self,
+        op: &Op,
+        kind: &str,
+        message: bool,
+    ) -> std::result::Result<(), String> {
+        let key = ed25519_of(op.effect["key"].as_str().unwrap_or_default());
+        let mut agents = self.standings.keys().chain(self.agents.keys());
+        if kind == "add_admin" && key.is_some_and(|k| agents.any(|a| unhex::<32>(a) == Some(k))) {
+            return Err("an agent's key, and an agent is never an admin".into());
+        }
+        if self.agents.contains_key(&op.endpoint)
+            && (kind == "add_admin" || self.is_open() && !message)
+        {
+            return Err(
+                "an agent's copy, and an agent is never an admin: it adds none, and in a \
+                        chain with no admin writes no act an admin would sign"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
     /// A `standing` record: its device's endpoints are admitted from here on.
     pub(super) fn take_standing(&mut self, op: &Op) -> std::result::Result<(), String> {
         let r = &op.effect;
@@ -76,6 +121,14 @@ impl Chain {
         let device = s("device");
         if unhex::<32>(&device).is_none() {
             return Err("a standing admission names a device key".into());
+        }
+        // An agent is never an admin (da-ebxg5).
+        if self
+            .admins
+            .iter()
+            .any(|a| ed25519_of(&a.key) == unhex::<32>(&device))
+        {
+            return Err("an admin's key: an agent is never an admin".into());
         }
         let role = role_of(&r["caps"]["role"])?;
         let filter = Filter::parse(&r["caps"], role)?;
@@ -171,6 +224,7 @@ impl Chain {
         let via = format!("standing {}", &device[..8]);
         let label = r["label"].as_str().unwrap_or_default();
         self.admit(endpoint, label, &op.hlc, &via, role, filter)?;
+        self.agents.insert(endpoint.into(), device.clone());
         // Its first admit is news; one after it, the device again (da-w27bp).
         let st = self.standings.get_mut(&device).expect("judged above");
         let returned = std::mem::replace(&mut st.admitted, true);
@@ -296,6 +350,7 @@ mod tests {
     use super::super::{ed25519_admin_key, secret_hash, sign_ed25519, CHAIN_HID};
     use super::*;
     use crate::db::sync::hex;
+    use data_encoding::BASE64URL_NOPAD;
     use ed25519_dalek::SigningKey;
 
     /// `refused` is a refusal that says `why`.
@@ -565,43 +620,83 @@ mod tests {
         refuses(add(ops, &a, admit(9)), "standing admission expired");
     }
 
-    /// A member-level agent, admitted by its standing, adds its own key as
-    /// the first admin of an open chain and locks it (ístina's F19), which is
-    /// why `sync chain agent` makes none there; in a locked chain its
-    /// `add_admin`, unsigned or signed by its own key, is refused.
+    /// An agent is never an admin (da-ebxg5; vividn, 2026-11-13): a
+    /// member-level agent made in a locked chain, the chain then unlocked,
+    /// adds no admin, nor invites a sidekick to, and its describe does not
+    /// shed it; while locked, an admin's own `add_admin` it relays is
+    /// refused too.
     #[test]
-    fn a_member_agent_adds_an_admin_only_to_an_open_chain() {
-        let agent = endpoint(2);
-        let own =
-            json!({"type": "add_admin", "key": ed25519_admin_key(&[5u8; 32]), "label": "mine"});
-        let mut signed = own.clone();
-        signed["chain"] = "c1".into();
-        signed["sig"] = sign_ed25519(&signed, &[5u8; 32]).into();
-        for locked in [false, true] {
-            let device = [7u8; 32];
-            let ops = &mut Vec::new();
-            let _ = chain(ops, &device, locked);
-            add(ops, &agent, claim(&device, 2));
-            assert_eq!(add(ops, &endpoint(1), admit(2)), None);
-            assert_eq!(at(ops, &agent).role_at("9999"), Role::Member);
-            match locked {
-                false => assert_eq!(
-                    add(ops, &agent, signed.clone()),
-                    None,
-                    "open: it locks the chain"
-                ),
-                true => {
-                    assert!(
-                        add(ops, &agent, own.clone()).is_some(),
-                        "an unsigned add_admin"
-                    );
-                    assert!(
-                        add(ops, &agent, signed.clone()).is_some(),
-                        "signed by its own key"
-                    );
-                    assert_eq!(Chain::fold(ops.clone()).admins.len(), 1);
-                }
-            }
+    fn an_agent_adds_no_admin_locked_or_unlocked() {
+        let [a, agent, sidekick] = [1, 2, 3].map(endpoint);
+        let device = [7u8; 32];
+        let ops = &mut Vec::new();
+        let signed = chain(ops, &device, true);
+        add(ops, &agent, claim(&device, 2));
+        assert_eq!(add(ops, &a, admit(2)), None);
+        assert_eq!(at(ops, &agent).role_at("9999"), Role::Member);
+        let own = |n: u8| {
+            let mut r = json!({"type": "add_admin", "key": ed25519_admin_key(&[n; 32]),
+                "label": "mine", "chain": "c1"});
+            r["sig"] = sign_ed25519(&r, &[n; 32]).into();
+            r
+        };
+        refuses(
+            add(ops, &agent, signed(own(5))),
+            "an agent is never an admin",
+        );
+        let unlock = json!({"type": "remove_admin", "key": ed25519_admin_key(&[9u8; 32]),
+            "unlock": true});
+        assert_eq!(add(ops, &a, signed(unlock)), None);
+        assert!(Chain::fold(ops.clone()).is_open());
+
+        refuses(add(ops, &agent, own(6)), "an agent's copy");
+        let describe = json!({"type": "describe", "endpoint": agent, "label": "plain"});
+        assert_eq!(add(ops, &agent, describe), None);
+        refuses(add(ops, &agent, own(4)), "an agent's copy");
+        let invite = json!({"type": "invite", "invite_id": "iv", "secret_hash": secret_hash("s"),
+            "expires": "2099-01-01T00:00:00Z", "caps": {}});
+        refuses(add(ops, &agent, invite), "an agent's copy");
+        let role = json!({"type": "role", "endpoint": a, "role": "reader"});
+        refuses(add(ops, &agent, role), "an agent's copy");
+        let admitted = json!({"type": "admit", "via": "iv", "secret": "s",
+            "endpoint": sidekick, "label": "s"});
+        assert!(
+            add(ops, &agent, admitted).is_some(),
+            "no invite to admit by"
+        );
+        let chain = Chain::fold(ops.clone());
+        assert!(chain.admins.is_empty());
+        assert!(chain.member(&sidekick).is_none());
+        assert!(chain.agent(&agent).is_some());
+        assert!(chain.agent(&a).is_none());
+        assert_eq!(add(ops, &a, own(1)), None, "a person's copy locks it");
+    }
+
+    /// No `add_admin` names an agent's key, its device's (as a key file's
+    /// or a passkey's) or its copy's endpoint's, even signed by an admin;
+    /// nor does a standing name an admin's key (da-ebxg5).
+    #[test]
+    fn no_admin_is_an_agents_key() {
+        let a = endpoint(1);
+        let device = [7u8; 32];
+        let ops = &mut Vec::new();
+        let signed = chain(ops, &device, true);
+        add(ops, &endpoint(2), claim(&device, 2));
+        assert_eq!(add(ops, &a, admit(2)), None);
+        let raw = |n: [u8; 32]| *SigningKey::from_bytes(&n).verifying_key().as_bytes();
+        let passkey = format!("eddsa:{}", BASE64URL_NOPAD.encode(&raw(device)));
+        let keys = [
+            ed25519_admin_key(&device),
+            passkey,
+            ed25519_admin_key(&[2u8; 32]),
+        ];
+        for key in keys {
+            let r = json!({"type": "add_admin", "key": key, "label": "agent"});
+            refuses(add(ops, &a, signed(r)), "an agent's key");
         }
+        assert_eq!(Chain::fold(ops.clone()).admins.len(), 1);
+        let other = json!({"type": "standing", "device": hex(&raw([9u8; 32])), "caps": {},
+            "label": "admin"});
+        refuses(add(ops, &a, signed(other)), "an admin's key");
     }
 }

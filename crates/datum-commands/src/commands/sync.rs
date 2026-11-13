@@ -469,6 +469,14 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 }
                 SyncAdminAct::Role { role, filter } => {
                     let m = member(&chain, &who)?;
+                    // A member may add the first admin: no agent is one there (da-ebxg5).
+                    ensure!(
+                        !(chain.is_open()
+                            && role.as_str() == "member"
+                            && chain.agent(&m).is_some()),
+                        "{}",
+                        super::sync_agent::AT_MOST_A_WRITER
+                    );
                     let role = role.as_str();
                     let filter = resolve(db, filter)?;
                     // Nothing to sign: in a locked chain, a passkey tap for nothing.
@@ -529,10 +537,10 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     } else {
                         ensure!(
                             allow_unlock,
-                            "this is the last admin: removing it UNLOCKS the chain, so any device can add, expel or rename devices. Pass --allow-unlock to do it"
+                            "this is the last admin: removing it UNLOCKS the chain, so any device but an agent can add, expel or rename devices. Pass --allow-unlock to do it"
                         );
                         r["unlock"] = true.into();
-                        (r, format!("removed admin {}: the chain is unlocked, so any device can add, expel or rename devices", a.label))
+                        (r, format!("removed admin {}: the chain is unlocked, so any device but an agent can add, expel or rename devices", a.label))
                     }
                 }
             };

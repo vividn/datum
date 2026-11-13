@@ -202,3 +202,73 @@ fn a_code_restored_again_tells_the_member_of_no_new_device() {
     Copy::new().ok(&["sync", "restore", &bot]);
     assert_eq!(joined(&a), [2, 2], "another device");
 }
+
+/// An agent is never an admin (da-ebxg5; vividn, 2026-11-13): a `full
+/// --write` agent made in a locked chain stays a member once the chain is
+/// unlocked, and its copy refuses the `add_admin` it would write there, so
+/// neither copy is locked (`standing.rs` tests the fold refusing one it
+/// receives); nor
+/// is a `full` agent promoted to a member of the open chain.
+#[test]
+fn an_agent_locks_no_unlocked_chain_and_is_promoted_to_no_member() {
+    let a = alone();
+    let key = a.tmp.path().join("admin.key");
+    std::fs::write(&key, "11".repeat(32)).unwrap();
+    let key = key.to_str().unwrap();
+    a.ok(&["sync", "admin", "add", key]);
+    let claude = code(
+        &a,
+        &[
+            "--level",
+            "full",
+            "--write",
+            "--label",
+            "claude",
+            "--admin-key",
+            key,
+        ],
+    );
+    let bot = code(
+        &a,
+        &["--level", "full", "--label", "bot", "--admin-key", key],
+    );
+    let _runs = a.serve(&["sync", "run"]);
+    let agent = Copy::new();
+    agent.ok(&["sync", "restore", &claude]);
+    Copy::new().ok(&["sync", "restore", &bot]);
+    a.ok(&[
+        "sync",
+        "admin",
+        "remove",
+        "admin.key",
+        "--allow-unlock",
+        "--admin-key",
+        key,
+    ]);
+
+    agent.ok(&["sync"]);
+    let mine = agent.tmp.path().join("mine.key");
+    std::fs::write(&mine, "22".repeat(32)).unwrap();
+    let said = agent.fails(&["sync", "admin", "add", mine.to_str().unwrap()], "");
+    assert!(said.contains("an agent is never an admin"), "{said}");
+    agent.run(&["sync"]);
+    let admins = |c: &Copy| c.ok(&["sync", "admin", "list", "--json"]);
+    for copy in [&a, &agent] {
+        let admins: serde_json::Value = serde_json::from_str(&admins(copy)).unwrap();
+        assert_eq!(admins["admins"], serde_json::json!([]), "{admins}");
+    }
+
+    let said = a.fails(&["sync", "chain", "role", "bot", "member"], "");
+    assert!(
+        said.contains("in a chain with no admin, an agent can be at most a writer"),
+        "{said}"
+    );
+    let list = a.ok(&["sync", "chain", "list", "--json"]);
+    let list: serde_json::Value = serde_json::from_str(&list).unwrap();
+    let bot = list["members"].as_array().unwrap().iter();
+    let bot: Vec<_> = bot
+        .filter(|m| m["label"] == "bot")
+        .map(|m| &m["role"])
+        .collect();
+    assert_eq!(bot, [&serde_json::json!("reader")], "{list}");
+}

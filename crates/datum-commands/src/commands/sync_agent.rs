@@ -16,6 +16,11 @@ use crate::args::SyncFilter;
 const AFTER: &str =
     "Run `datum sync` after writing: an entry not yet synced is lost with this sandbox";
 
+/// Why an open chain makes no agent a member (ístina's F19), nor
+/// promotes one to it (da-ebxg5).
+pub(super) const AT_MOST_A_WRITER: &str = "in a chain with no admin, an agent can be at most a \
+    writer: lock the chain first (`datum sync admin add …`, or sign in on datum.day)";
+
 /// `datum sync chain agent`: the standing record, signed as an admin act,
 /// and the agent's code; `--json` says it for datum.day, which makes the
 /// code itself from the secret, its CLI having no network.
@@ -36,9 +41,7 @@ pub(super) fn agent(
     // it: a member agent could lock the person out (ístina's F19).
     ensure!(
         !(chain.is_open() && role == Role::Member),
-        "in a chain with no admin, an agent can be at most a writer: lock the chain first \
-         (`datum sync admin add …`, or sign in on datum.day), or give it `--level write` / \
-         `light --write`"
+        "{AT_MOST_A_WRITER}, or give it `--level write` / `light --write`"
     );
     let label = checked(label.trim().into())?;
     ensure!(

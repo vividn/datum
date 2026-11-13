@@ -1094,6 +1094,9 @@ pub struct Chain {
     pub standings: BTreeMap<String, Standing>,
     /// Each endpoint's own claim to a standing (da-tkbtu): its device key.
     claims: BTreeMap<String, String>,
+    /// Each endpoint a standing admitted, an agent's copy, for good: its
+    /// device key (da-ebxg5).
+    agents: BTreeMap<String, String>,
     seen: BTreeSet<[u8; 32]>,
     /// The digests of the records the fold took.
     taken: BTreeSet<[u8; 32]>,
@@ -1468,7 +1471,11 @@ impl Chain {
         // An endpoint describes itself and leaves unsigned, and a grant, an
         // erased or an upgrade is a message; anything else takes an admin, once there
         // is one: its writer is a live member already.
-        if !self.is_open() && !own && !matches!(kind.as_str(), "grant" | "erased" | "upgrade") {
+        let message = matches!(kind.as_str(), "grant" | "erased" | "upgrade");
+        if !own {
+            self.agent_refuses(op, &kind, message)?;
+        }
+        if !self.is_open() && !own && !message {
             approved(&self.admins, r, &d)?;
         }
         match kind.as_str() {
