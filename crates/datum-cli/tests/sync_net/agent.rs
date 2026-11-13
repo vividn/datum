@@ -32,6 +32,24 @@ fn grid(a: &Copy) -> serde_json::Value {
     serde_json::from_str(&a.ok(&["sync", "grid", "--json"])).unwrap()
 }
 
+/// A restore names the database it restores into, beside the inviter's
+/// (da-kui6j): told only «database data», an agent wrote `--db data` into a
+/// new database in no chain.
+#[test]
+fn a_restore_names_the_database_it_restores_into() {
+    let a = alone();
+    let code = code(&a, &["--level", "full", "--label", "claude"]);
+    let _runs = a.serve(&["sync", "run"]);
+    let mine = Copy::of("bob", "mine.db");
+    let out = mine.run(&["sync", "restore", &code]);
+    let told = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success()
+            && told.contains("(its database «data») into this install's database «mine»"),
+        "{told}"
+    );
+}
+
 /// A full code restores everything into a fresh home, as a reader; a
 /// second fresh home from the same code is the same device, one row of the
 /// grid, its first copy retired; and the code in the env does the same.

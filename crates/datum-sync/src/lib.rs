@@ -959,9 +959,20 @@ fn who_admits(t: &Ticket) -> String {
 
 /// What else a ticket says it joins (da-wm9wb): the inviting database, and
 /// as what, a member, a reader or writer (da-o5o6m), or one of some fields. None for a
-/// ticket made before it said either.
-fn joins_as(t: &Ticket) -> String {
-    let db = t.about.db.as_ref().map(|d| format!(", database {d}"));
+/// ticket made before it said either. And the database it joins into here,
+/// `here`, named as the inviter names its own (da-kui6j): an agent reading
+/// only the inviter's name wrote into a new database of that name, in no chain.
+fn joins_as(t: &Ticket, here: &Db) -> String {
+    let theirs = t
+        .about
+        .db
+        .as_ref()
+        .map(|d| format!(" (its database «{d}»)"));
+    let ours = here
+        .path()
+        .and_then(|p| p.file_stem())
+        .map(|d| format!(" into this install's database «{}»", d.to_string_lossy()));
+    let db = theirs.unwrap_or_default() + &ours.unwrap_or_default();
     let role = t.about.role.as_ref().map(|r| match &t.about.fields {
         _ if r == "writer" => format!(
             ", as a writer: it writes {}",
@@ -971,7 +982,7 @@ fn joins_as(t: &Ticket) -> String {
         Some(f) => format!(", as a {r} of {}", f.join(", ")),
         None => format!(", as a {r}"),
     });
-    db.unwrap_or_default() + &role.unwrap_or_default()
+    db + &role.unwrap_or_default()
 }
 
 /// Until when a ticket's invite holds, on the reader's clock.
@@ -1027,7 +1038,7 @@ pub fn connect(
         held();
         eprintln!(
             "joining {from}'s sync chain{}: trying {who} now",
-            joins_as(&t)
+            joins_as(&t, db)
         );
         let ep = datum_sync_wire::bind_now(db.sync_endpoint_secret()?, &net()?).await?;
         let ep = bound(db, ep);

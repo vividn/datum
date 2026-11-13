@@ -163,7 +163,9 @@ fn a_filtered_reader_over_the_link_gets_its_fields_and_verifies() {
 
 /// A ticket says the inviting database's name and whom it admits, a filtered
 /// reader's fields too, and `join` says them as it joins (da-wm9wb): what a
-/// join card names a new database after, and how it says «read only».
+/// join card names a new database after, and how it says «read only». It
+/// names the database it joins into here as well, never only the inviter's
+/// (da-kui6j).
 #[test]
 fn an_invites_ticket_names_its_database_and_whom_it_admits() {
     let a = Copy::of("ann", "home.db");
@@ -173,18 +175,23 @@ fn an_invites_ticket_names_its_database_and_whom_it_admits() {
         serde_json::from_slice(&data_encoding::BASE32_NOPAD.decode(code).unwrap()).unwrap()
     };
     for (caps, role, fields, said) in [
-        (&[][..], "member", None, ", database home, as a member:"),
+        (
+            &[][..],
+            "member",
+            None,
+            " (its database «home») into this install's database «away», as a member:",
+        ),
         (
             &["--reader"][..],
             "reader",
             None,
-            ", database home, as a reader:",
+            " (its database «home») into this install's database «away», as a reader:",
         ),
         (
             &["--fields", "coffee"][..],
             "reader",
             Some(serde_json::json!(["coffee"])),
-            ", database home, as a reader of coffee:",
+            " (its database «home») into this install's database «away», as a reader of coffee:",
         ),
     ] {
         let (mut inviting, link) = a.invite(caps);
@@ -192,7 +199,7 @@ fn an_invites_ticket_names_its_database_and_whom_it_admits() {
         assert_eq!(t["db"], "home", "{t}");
         assert_eq!(t["role"], role, "{t}");
         assert_eq!(t.get("fields").cloned(), fields, "{t}");
-        let out = Copy::new().run(&["sync", "chain", "join", &link]);
+        let out = Copy::of("bob", "away.db").run(&["sync", "chain", "join", &link]);
         let told = String::from_utf8_lossy(&out.stderr);
         assert!(
             out.status.success() && told.contains(said),
