@@ -2581,11 +2581,13 @@ fn status(db: &Db, json: bool, show_revoked: bool, no_grants: bool) -> Result<()
         &mine[..10]
     );
     // An empty field here reads as «not shared», not «nothing logged».
+    // A writer is filtered too (da-pbli4): the role is the member's.
     if let Some(f) = chain.filter(&mine) {
+        let role = chain.member(&mine).map_or("reader", |m| m.role().as_str());
         let fields: Vec<&str> = f.fields.iter().flatten().map(String::as_str).collect();
         match fields.is_empty() {
-            true => println!("a reader, {}", f.describe()),
-            false => println!("a reader, {}: {}", f.describe(), fields.join(", ")),
+            true => println!("a {role}, {}", f.describe()),
+            false => println!("a {role}, {}: {}", f.describe(), fields.join(", ")),
         }
     }
     match chain.member(&mine).map(|m| (&m.left, &m.revoked)) {

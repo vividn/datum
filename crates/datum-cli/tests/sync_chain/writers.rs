@@ -205,6 +205,11 @@ fn a_writer_writes_only_its_fields_and_changes_only_its_own_entries() {
     assert!(a.send(&b).0);
     let w = Copy::new();
     admit_writer(&a, &w, &["--fields", "mood"]);
+    let status = w.ok(&["sync", "status"]);
+    assert!(
+        status.contains("a writer, filtered: 1 of 2 fields: mood"),
+        "{status}"
+    );
     let hid = |c: &Copy, f: &str| c.query(&format!("SELECT hid FROM entries WHERE field = '{f}'"));
     let theirs = hid(&a, "mood");
 
