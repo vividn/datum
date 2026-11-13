@@ -44,7 +44,8 @@
 	/**
 	 * An agent's code needs a chain: a database in none starts one, as it is
 	 * first shared, with the name kept under ✎ (da-5wlnr). Only an invite
-	 * starts one, and this one is never shown, so it admits no one.
+	 * starts one, and this one is never shown, so it admits no one: a
+	 * reader's, so a secret recovered would admit no more (da-ca5r3).
 	 */
 	async function chain(): Promise<void> {
 		if (!agent || agent.chained) return;
@@ -55,7 +56,7 @@
 		const name = deviceName();
 		const named = name && name !== suggestedLabel(db) ? name : undefined;
 		if (named) await ok(labelCheckArgv(named));
-		await newInvite(db);
+		await newInvite(db, true);
 		// Started, whatever the rename does: a retry makes no second invite.
 		agent.chained = true;
 		if (named) await ok(renameArgv(named));

@@ -472,6 +472,9 @@ describe('Generate an AI code', () => {
 				assert.equal(await chainOf(app), null);
 				await generate(app.page, true);
 				assert.notEqual(await chainOf(app), null);
+				// The invite that started it, never shown, admits a reader at most (da-ca5r3).
+				const records = (await app.run(['sync', 'pipe', 'records'])).stdout.trim().split('\n').map((l) => JSON.parse(l).effect);
+				assert.equal(records.find((e) => e.type === 'invite')?.caps?.role, 'reader');
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...FRESH_DESKTOP, prepare: relayed(relay) }
