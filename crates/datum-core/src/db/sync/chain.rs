@@ -735,6 +735,9 @@ pub struct Member {
     pub device: Option<String>,
     /// `device` is its standing admit's (da-zkwiu), which a later admission clears.
     pub(super) claimed: bool,
+    /// Admitted by a standing record that had admitted another endpoint
+    /// before: its device coming back, which is no news (da-w27bp).
+    pub(super) returned: bool,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
     /// The HLC of its purge (da-ry11c): every op of its is refused.
@@ -1742,6 +1745,7 @@ impl Chain {
             auto: false,
             device: None,
             claimed: false,
+            returned: false,
             roles: vec![(hlc.into(), role)],
             filter,
         });
@@ -1801,7 +1805,7 @@ pub(super) fn note(conn: &Connection, chain: &Chain, quiet: bool) -> Result<()> 
             m.label,
             hlc_time(&m.admitted),
             m.via,
-            quiet
+            quiet || m.returned
         ])?;
         // A rejoin vouches for what it brings, as an admission does: told
         // once per re-admission (da-j8c4l).

@@ -179,3 +179,26 @@ fn a_member_agent_is_refused_in_an_open_chain_and_made_in_a_locked_one() {
     code(&a, &["--level", "full", "--write", "--admin-key", key]);
     assert_eq!(standings(), "2");
 }
+
+/// The member's notices of a device joining, in `sync status` and `datum check`.
+fn joined(a: &Copy) -> [usize; 2] {
+    [a.ok(&["sync", "status"]), a.ok(&["check"])]
+        .map(|out| out.matches("⚠ another device joined: ").count())
+}
+
+/// Two restores from one code are one device, told once on the member;
+/// another code's restore is another device, told too (da-w27bp).
+#[test]
+fn a_code_restored_again_tells_the_member_of_no_new_device() {
+    let a = alone();
+    let claude = code(&a, &["--level", "full", "--label", "claude"]);
+    let bot = code(&a, &["--level", "full", "--label", "bot"]);
+    let _runs = a.serve(&["sync", "run"]);
+
+    Copy::new().ok(&["sync", "restore", &claude]);
+    assert_eq!(joined(&a), [1, 1]);
+    Copy::new().ok(&["sync", "restore", &claude]);
+    assert_eq!(joined(&a), [1, 1], "the same device, again");
+    Copy::new().ok(&["sync", "restore", &bot]);
+    assert_eq!(joined(&a), [2, 2], "another device");
+}

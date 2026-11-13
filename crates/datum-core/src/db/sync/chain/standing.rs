@@ -63,6 +63,9 @@ pub struct Standing {
     pub expires: Option<String>,
     pub hlc: String,
     pub revoked: Option<String>,
+    /// It has admitted an endpoint: a notice of a new device is told once
+    /// per standing record (da-w27bp).
+    pub(super) admitted: bool,
 }
 
 impl Chain {
@@ -85,14 +88,14 @@ impl Chain {
         };
         let label = s("label");
         let hlc = op.hlc.clone();
-        let revoked = None;
         let st = Standing {
             label,
             role,
             filter,
             expires,
             hlc,
-            revoked,
+            revoked: None,
+            admitted: false,
         };
         self.standings.insert(device, st);
         Ok(())
@@ -168,9 +171,12 @@ impl Chain {
         let via = format!("standing {}", &device[..8]);
         let label = r["label"].as_str().unwrap_or_default();
         self.admit(endpoint, label, &op.hlc, &via, role, filter)?;
+        // Its first admit is news; one after it, the device again (da-w27bp).
+        let st = self.standings.get_mut(&device).expect("judged above");
+        let returned = std::mem::replace(&mut st.admitted, true);
         for m in self.members.iter_mut() {
             if m.endpoint == endpoint {
-                (m.device, m.claimed) = (Some(device.clone()), true);
+                (m.device, m.claimed, m.returned) = (Some(device.clone()), true, returned);
             } else if m.device.as_deref() == Some(device.as_str()) && m.revoked.is_none() {
                 m.revoked = Some(op.hlc.clone());
                 m.last_act = op.hlc.clone();
@@ -398,6 +404,37 @@ mod tests {
         add(ops, &a, json!({"type": "revoke_standing", "device": key}));
         assert_eq!(add(ops, &endpoint(4), claim(&device, 4)), None);
         refuses(add(ops, &a, admit(4)), "standing admission was revoked");
+    }
+
+    /// A standing record's first admit is news, and each after it its device
+    /// coming back (da-w27bp); a standing record issued again, or another
+    /// device's, is news once more.
+    #[test]
+    fn a_standing_records_first_admit_alone_is_news() {
+        let a = endpoint(1);
+        let device = [7u8; 32];
+        let key = bind_device(&device, "", "").0;
+        let ops = &mut Vec::new();
+        let _ = chain(ops, &device, false);
+        for n in [2, 3, 4] {
+            add(ops, &endpoint(n), claim(&device, n));
+            assert_eq!(add(ops, &a, admit(n)), None);
+        }
+        let returned = |ops: &[Op], n: u8| at(ops, &endpoint(n)).returned;
+        assert_eq!([2, 3, 4].map(|n| returned(ops, n)), [false, true, true]);
+
+        let again = json!({"type": "standing", "device": key, "caps": {}, "label": "again"});
+        assert_eq!(add(ops, &a, again), None);
+        let other = [8u8; 32];
+        let standing = json!({"type": "standing", "device": bind_device(&other, "", "").0,
+            "caps": {}, "label": "bot"});
+        assert_eq!(add(ops, &a, standing), None);
+        for (d, n) in [(&device, 5), (&device, 6), (&other, 7), (&other, 8)] {
+            add(ops, &endpoint(n), claim(d, n));
+            assert_eq!(add(ops, &a, admit(n)), None);
+        }
+        let news = [5, 6, 7, 8].map(|n| returned(ops, n));
+        assert_eq!(news, [false, true, false, true]);
     }
 
     /// A device claims no endpoint for itself: its endpoint x writing v's
