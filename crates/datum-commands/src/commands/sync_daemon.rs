@@ -366,6 +366,14 @@ fn opted_out() -> bool {
     std::env::var(NO_DAEMON).is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
+/// Whether a daemon is installed here, which keeps a pending join trying
+/// (da-a2lxa).
+pub fn installed() -> bool {
+    Manager::here()
+        .and_then(|m| m.path().ok())
+        .is_some_and(|p| p.exists())
+}
+
 /// Whether `sync status` should say a chained copy has no daemon: one could
 /// be installed here, none is, and `DATUM_SYNC_NO_DAEMON` is not why.
 pub fn missing() -> bool {

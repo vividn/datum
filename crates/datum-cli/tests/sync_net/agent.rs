@@ -50,6 +50,24 @@ fn a_restore_names_the_database_it_restores_into() {
     );
 }
 
+/// A restore with no member online installs no daemon, so it says nothing
+/// here keeps trying and names `datum sync`, and that the sandbox keeps
+/// nothing (da-a2lxa).
+#[test]
+fn a_restore_with_no_member_online_says_nothing_keeps_trying() {
+    let a = alone();
+    let code = code(&a, &["--level", "full", "--label", "claude"]);
+    let mut agent = Copy::new();
+    agent.env = vec![("DATUM_SYNC_DIAL_TIMEOUT_S", "2")];
+    let out = agent.ok(&["sync", "restore", &code]);
+    assert!(
+        !out.contains("daemon keeps trying")
+            && out.contains("Nothing here keeps trying: run `datum sync` again")
+            && out.contains("This sandbox keeps nothing"),
+        "{out}"
+    );
+}
+
 /// A full code restores everything into a fresh home, as a reader; a
 /// second fresh home from the same code is the same device, one row of the
 /// grid, its first copy retired; and the code in the env does the same.

@@ -1000,15 +1000,16 @@ fn until(expires: Option<u64>) -> Option<String> {
 /// ([`redeem_pending`]). A copy that may not join (in another chain, with
 /// data of its own) is refused before anything is stored, and a refusal no
 /// retry changes (a used or expired invite) ends the join saying what to do
-/// next (da-0tawk). `held` runs once the join is stored, `admitted` once it
-/// is welcomed (da-qr7gz). `name`: the label it joins as (`--label`), else
+/// next (da-0tawk). `held` runs once the join is stored, and says whether a
+/// daemon here keeps trying it (da-a2lxa); `admitted` runs once it is
+/// welcomed (da-qr7gz). `name`: the label it joins as (`--label`), else
 /// [`named`]; `username`: the person's, else the user it runs as (da-xza37).
 pub fn connect(
     db: &Db,
     ticket: &str,
     name: Option<&str>,
     username: Option<&str>,
-    held: &dyn Fn(),
+    held: &dyn Fn() -> bool,
     admitted: &dyn Fn(),
 ) -> Result<()> {
     let ticket = ticket.trim();
@@ -1035,7 +1036,7 @@ pub fn connect(
             expires: t.about.expires,
             ..Default::default()
         })?;
-        held();
+        let kept = held();
         eprintln!(
             "joining {from}'s sync chain{}: trying {who} now",
             joins_as(&t, db)
@@ -1071,10 +1072,12 @@ pub fn connect(
                 let holds = until(t.about.expires)
                     .map(|at| format!("; the invite holds until {at}"))
                     .unwrap_or_default();
-                println!(
-                    "Joined: syncing starts when {who} is online{holds}. \
-                     The sync daemon keeps trying, and `datum sync` tries now"
-                );
+                let retries = if kept {
+                    "The sync daemon keeps trying, and `datum sync` tries now"
+                } else {
+                    "Nothing here keeps trying: run `datum sync` again once a member is online"
+                };
+                println!("Joined: syncing starts when {who} is online{holds}. {retries}");
             }
             Err(e) => {
                 db.sync_join_clear()?;

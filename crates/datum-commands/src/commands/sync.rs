@@ -1006,12 +1006,16 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     super::sync_daemon::auto_install(db);
                 }
             };
+            let held = || {
+                install();
+                super::sync_daemon::installed()
+            };
             datum_sync::connect(
                 db,
                 &ticket,
                 label.as_deref(),
                 username.as_deref(),
-                &install,
+                &held,
                 &install,
             )?;
         }

@@ -354,6 +354,40 @@ fn a_join_with_the_inviter_offline_returns_at_once_and_syncs_once_it_is_up() {
     });
 }
 
+/// A join kept with no member online says the daemon keeps trying only
+/// where one is installed here; with none, that `datum sync` must be run
+/// again (da-a2lxa).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_kept_join_says_the_daemon_keeps_trying_only_where_one_is_installed() {
+    let a = Copy::new();
+    let (inviting, ticket) = a.invite(&[]);
+    drop(inviting);
+    let joined = |unit: bool| {
+        let mut c = Copy::new();
+        let config = c.tmp.path().join("xdg");
+        let units = config.join("systemd/user");
+        std::fs::create_dir_all(&units).unwrap();
+        if unit {
+            std::fs::write(units.join("datum-sync.service"), "").unwrap();
+        }
+        let config: &'static str = Box::leak(config.display().to_string().into_boxed_str());
+        c.env = vec![
+            ("XDG_CONFIG_HOME", config),
+            ("DATUM_SYNC_DIAL_TIMEOUT_S", "2"),
+        ];
+        c.ok(&["sync", "chain", "join", &ticket])
+    };
+    let with = joined(true);
+    assert!(with.contains("The sync daemon keeps trying"), "{with}");
+    let without = joined(false);
+    assert!(
+        !without.contains("daemon keeps trying")
+            && without.contains("Nothing here keeps trying: run `datum sync` again"),
+        "{without}"
+    );
+}
+
 /// An invite that expires before any member is reached refuses the join
 /// kept for it, in words, and the retries end: `status` says to ask for a
 /// new link (da-4qpwf).

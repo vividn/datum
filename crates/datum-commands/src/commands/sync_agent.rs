@@ -163,9 +163,19 @@ pub(super) fn restore(db: &Db, code: Option<String>) -> Result<()> {
     let _first = super::sync_daemon::first_sync(db)?;
     let proof = db.sync_standing_claim(&a.device, &a.chain)?;
     let label = a.label.clone();
-    datum_sync::connect(db, &a.link(proof)?, label.as_deref(), None, &|| {}, &|| {})?;
+    // A restore installs no daemon, so nothing here keeps its join trying.
+    datum_sync::connect(
+        db,
+        &a.link(proof)?,
+        label.as_deref(),
+        None,
+        &|| false,
+        &|| {},
+    )?;
     if db.sync_chain()?.member(&me).is_some() {
         println!("{AFTER}");
+    } else {
+        println!("This sandbox keeps nothing: in a fresh one, restore the code again");
     }
     Ok(())
 }
