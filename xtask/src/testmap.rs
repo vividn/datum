@@ -35,12 +35,17 @@ const COHORTS: [&str; 2] = ["workspace", "e2e-full"];
 /// The tests that read README.md, docs/ and datum.day's guide for agents as
 /// data, which coverage cannot see: a change to a doc runs them (seconds) where
 /// it would run none, so a drift between the docs and the binary is caught on
-/// the PR (da-1nqv4).
-const DOC_READERS: [&str; 4] = [
+/// the PR (da-1nqv4). A test naming a doc's path fails
+/// `every_test_naming_a_doc_is_listed_as_reading_it` until it is here (da-c1pd8).
+const DOC_READERS: [&str; 8] = [
+    "alias_install::the_help_names_the_loops_commands",
+    "docs_links::an_anchor_no_heading_has_is_broken",
     "docs_links::every_relative_link_in_the_docs_resolves",
     "readme_anti_drift::readme_autogen_sections_in_sync",
     "readme_anti_drift::every_generated_block_has_markers_in_its_file",
     "readme_snippets::markdown_bash_snippets_run_against_datum_binary",
+    "unit_removed::no_measurement_unit_outside_the_keep_list",
+    "vocabulary::the_user_docs_say_the_new_words",
 ];
 /// The test holding each published copy of the release key to the one built
 /// in, and the files it reads, install.sh among them (da-mc8b1).
@@ -970,6 +975,8 @@ mod tests {
             assert_eq!(names(p)[1..], DOC_READERS, "{p}");
         }
         assert_eq!(names("docs/grammar-tokens.md"), DOC_READERS);
+        let vocabulary = "vocabulary::the_user_docs_say_the_new_words".to_string();
+        assert!(names("docs/agents.md").contains(&vocabulary));
         assert_eq!(names("web/static/install.sh"), [RELEASE_KEY_READER]);
         for p in ["AGENTS.md", "web/README.md", "docs/parity-audit/notes.txt"] {
             assert!(names(p).is_empty(), "{p}");
@@ -996,6 +1003,110 @@ mod tests {
         {
             assert!(is_doc(doc), "{doc}");
         }
+    }
+
+    /// Every test under crates/ whose body names a doc's path is listed as
+    /// reading it, and so is one test of a file that names one elsewhere (a
+    /// const, a helper): coverage cannot see what a test reads, so a new
+    /// reader of the docs fails here until it is listed (da-c1pd8). Its
+    /// `read_dir(` puts it in every run (`tree_walks`). readme_anti_drift
+    /// names no path: it reads `xtask::AUTOGEN_BLOCKS`.
+    #[test]
+    fn every_test_naming_a_doc_is_listed_as_reading_it() {
+        fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+            for entry in fs::read_dir(dir).unwrap().flatten() {
+                let (p, name) = (entry.path(), entry.file_name());
+                if p.is_dir() && name != "target" && !name.to_string_lossy().starts_with('.') {
+                    walk(&p, out);
+                } else if p.extension() == Some("rs".as_ref()) {
+                    out.push(p);
+                }
+            }
+        }
+        let names_a_doc = |l: &str| {
+            let l = l.replace("[\"docs\"]", "").replace("\"docs\":", "");
+            let marks = [
+                "docs/",
+                "\"docs\"",
+                "/docs\"",
+                "README.md",
+                "agents.md",
+                "SKILL.md",
+            ];
+            !l.trim_start().starts_with("//") && marks.iter().any(|m| l.contains(m))
+        };
+        // A name is `<the file's module>::…::<test>`, the module its path in
+        // the crate's tests/ or src/: tests/main.rs declares each test file a
+        // module. A reader in a test binary of its own has no module to its name.
+        let listed = |module: &str, test: Option<&str>| {
+            let mut all = DOC_READERS.iter().chain([&RELEASE_KEY_READER]);
+            all.any(|n| {
+                n.starts_with(module) && test.is_none_or(|t| n.ends_with(&format!("::{t}")))
+            })
+        };
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut files = Vec::new();
+        walk(&root.join("crates"), &mut files);
+        assert!(files.len() > 300, "the walk found {} files", files.len());
+        let mut unlisted = Vec::new();
+        for path in files {
+            let text = fs::read_to_string(&path).unwrap();
+            let rel = path.strip_prefix(&root).unwrap().to_string_lossy();
+            let module = rel
+                .splitn(4, '/')
+                .nth(3)
+                .unwrap_or("lib")
+                .trim_end_matches(".rs");
+            let module = match module.trim_end_matches("/mod") {
+                "lib" | "main" => String::new(),
+                m => format!("{}::", m.replace('/', "::")),
+            };
+            if !text.contains("CARGO_MANIFEST_DIR") && !text.contains("include_str!(") {
+                continue;
+            }
+            let test_file = rel.contains("/tests/") || rel.ends_with("/tests.rs");
+            let lines: Vec<&str> = text
+                .lines()
+                .skip_while(|l| !test_file && !l.trim_start().starts_with("#[cfg(test)]"))
+                .collect();
+            let (mut named, mut in_a_test) = (lines.iter().any(|l| names_a_doc(l)), false);
+            for (i, _) in lines
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.trim() == "#[test]")
+            {
+                let at = i + lines[i..].iter().position(|l| l.contains("fn ")).unwrap();
+                let indent = &lines[at][..lines[at].len() - lines[at].trim_start().len()];
+                let end = at
+                    + lines[at..]
+                        .iter()
+                        .position(|l| *l == format!("{indent}}}"))
+                        .unwrap();
+                if lines[at..end].iter().any(|l| names_a_doc(l)) {
+                    in_a_test = true;
+                    let test = lines[at]
+                        .split("fn ")
+                        .nth(1)
+                        .unwrap()
+                        .split('(')
+                        .next()
+                        .unwrap();
+                    if !listed(&module, Some(test)) {
+                        unlisted.push(format!("{rel}: {test}"));
+                    }
+                }
+            }
+            named &= !in_a_test;
+            if named && !listed(&module, None) {
+                unlisted.push(format!("{rel}: no test of it"));
+            }
+        }
+        assert!(
+            unlisted.is_empty(),
+            "these read a doc, and DOC_READERS does not name them (nor is_doc, perhaps, \
+             the doc):\n{}",
+            unlisted.join("\n")
+        );
     }
 
     #[test]

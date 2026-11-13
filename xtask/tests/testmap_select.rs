@@ -5,11 +5,15 @@ use std::path::Path;
 use std::process::Command;
 
 const KEY: &str = "commands::install::tests::the_release_key_is_quoted_where_it_is_published";
-const DOCS: [&str; 4] = [
+const DOCS: [&str; 8] = [
+    "alias_install::the_help_names_the_loops_commands",
+    "docs_links::an_anchor_no_heading_has_is_broken",
     "docs_links::every_relative_link_in_the_docs_resolves",
     "readme_anti_drift::every_generated_block_has_markers_in_its_file",
     "readme_anti_drift::readme_autogen_sections_in_sync",
     "readme_snippets::markdown_bash_snippets_run_against_datum_binary",
+    "unit_removed::no_measurement_unit_outside_the_keep_list",
+    "vocabulary::the_user_docs_say_the_new_words",
 ];
 
 fn git(dir: &Path, args: &[&str]) -> String {
