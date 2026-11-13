@@ -73,48 +73,22 @@ fn parse_unsigned_duration(s: &str) -> Result<Duration> {
         return parse_iso_duration(s);
     }
 
-    // Colon-separated: MM, HH:MM, or HH:MM:SS or DD:HH:MM:SS
+    // Colon-separated: HH:MM, HH:MM:SS or DD:HH:MM:SS
     if s.contains(':') {
-        let parts: Vec<&str> = s.split(':').collect();
-        return match parts.len() {
-            2 => {
-                let h: i64 = parts[0]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let m: i64 = parts[1]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                Ok(Duration::minutes(h * 60 + m))
-            }
-            3 => {
-                let h: i64 = parts[0]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let m: i64 = parts[1]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let sec: i64 = parts[2]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                Ok(Duration::seconds(h * 3600 + m * 60 + sec))
-            }
-            4 => {
-                let d: i64 = parts[0]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let h: i64 = parts[1]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let m: i64 = parts[2]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let sec: i64 = parts[3]
-                    .parse()
-                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                Ok(Duration::seconds(d * 86400 + h * 3600 + m * 60 + sec))
-            }
-            _ => Err(ParseError::InvalidTime(s.to_string())),
+        let weights: &[f64] = match s.split(':').count() {
+            2 => &[3600.0, 60.0],
+            3 => &[3600.0, 60.0, 1.0],
+            4 => &[86400.0, 3600.0, 60.0, 1.0],
+            _ => return Err(ParseError::InvalidTime(s.to_string())),
         };
+        let mut total = 0.0;
+        for (part, w) in s.split(':').zip(weights) {
+            let n: i64 = part
+                .parse()
+                .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+            total += n as f64 * w;
+        }
+        return seconds(total, s);
     }
 
     parse_compound_duration(s)
@@ -128,7 +102,7 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
     }
     let bytes = s.as_bytes();
     let mut i = 0;
-    let mut total_secs: i64 = 0;
+    let mut total_secs = 0.0;
     let mut segments = 0;
 
     while i < bytes.len() {
@@ -151,16 +125,16 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
         let unit = &s[unit_start..i];
 
         let secs = match unit {
-            "s" | "sec" | "secs" | "second" | "seconds" => n as i64,
-            "m" | "min" | "mins" | "minute" | "minutes" => (n * 60.0) as i64,
-            "h" | "hr" | "hrs" | "hour" | "hours" => (n * 3600.0) as i64,
-            "d" | "day" | "days" => (n * 86400.0) as i64,
+            "s" | "sec" | "secs" | "second" | "seconds" => n.trunc(),
+            "m" | "min" | "mins" | "minute" | "minutes" => (n * 60.0).trunc(),
+            "h" | "hr" | "hrs" | "hour" | "hours" => (n * 3600.0).trunc(),
+            "d" | "day" | "days" => (n * 86400.0).trunc(),
             "" => {
                 // Bare number is only allowed as the entire input (default: minutes).
                 if segments != 0 || i != bytes.len() {
                     return Err(ParseError::InvalidTime(s.to_string()));
                 }
-                (n * 60.0) as i64
+                (n * 60.0).trunc()
             }
             _ => {
                 return Err(ParseError::InvalidTime(format!(
@@ -175,7 +149,15 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
     if segments == 0 {
         return Err(ParseError::InvalidTime(s.to_string()));
     }
-    Ok(Duration::seconds(total_secs))
+    seconds(total_secs, s)
+}
+
+/// `secs` as a Duration, refused where it is past chrono's range
+/// (about 292 million years) rather than panicking (da-20lte).
+fn seconds(secs: f64, s: &str) -> Result<Duration> {
+    // `as` saturates, and a saturated i64 is past `Duration::MAX`.
+    Duration::try_seconds(secs as i64)
+        .ok_or_else(|| ParseError::InvalidTime(format!("Duration out of range: '{s}'")))
 }
 
 /// Uncertainty produced by `n` stacked `-q` flags. The offset scaling is
@@ -225,7 +207,7 @@ pub fn parse_iso_duration(s: &str) -> Result<Duration> {
     // Week form (`PnW`) is mutually exclusive with the rest of the grammar.
     if rest.ends_with('W') && !rest.contains('T') {
         let n: f64 = rest[..rest.len() - 1].parse().map_err(|_| err())?;
-        return Ok(Duration::seconds((sign * n * 7.0 * 86400.0) as i64));
+        return seconds(sign * n * 7.0 * 86400.0, s);
     }
 
     let mut total: f64 = 0.0;
@@ -265,7 +247,7 @@ pub fn parse_iso_duration(s: &str) -> Result<Duration> {
     if !buf.is_empty() || !had_any {
         return Err(err());
     }
-    Ok(Duration::seconds((sign * total) as i64))
+    seconds(sign * total, s)
 }
 
 /// Format a `chrono::Duration` as a canonical ISO 8601 string (`PT0S`,
@@ -405,6 +387,32 @@ mod tests {
                 "{rendered}"
             );
         }
+    }
+
+    #[test]
+    fn a_duration_past_chronos_range_is_an_error_not_a_panic() {
+        for s in [
+            "99999999999999999999d",
+            "9223372036854775s1s",
+            "106751991168d",
+            "106751991167300d106751991167300d",
+            "2562047788015215:00",
+            "106751991168:00:00:00",
+            "P300000000Y",
+            "P20000000000W",
+            "-99999999999999999999d",
+            &"9".repeat(400),
+        ] {
+            assert!(
+                matches!(parse_duration(s), Err(ParseError::InvalidTime(_))),
+                "{s}"
+            );
+        }
+        // The largest still parse.
+        assert_eq!(
+            parse_duration("106751991167d").unwrap(),
+            Duration::days(106751991167)
+        );
     }
 
     #[test]
