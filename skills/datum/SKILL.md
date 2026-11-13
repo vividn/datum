@@ -141,20 +141,6 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
   (`export DATUM_HOME=/persistent/datum DATUM_CONFIG_HOME=/persistent/datum-config`),
   and check it held: `datum --db <name> sync status --json` prints the same
   `this.device` in the next session.
-- **With no persistent storage, restore from a code.** Your person runs
-  `datum sync chain agent --level <full|light|write> --label <you>` (datum.day's
-  Sync widget: **Add agent**) and gives you the code. At the start of every
-  session run `datum --db <name> sync restore '<CODE>'` (or set
-  `DATUM_AGENT_CODE` and run `datum --db <name> sync restore`), and `datum --db
-  <name> sync` after writing: an entry not yet synced is lost with the sandbox.
-  - **full**: every entry, to read and analyze.
-  - **light**: every spec and alias, the last day of entries (`--window`) and
-    each field's state at its start.
-  - **write**: no entries, only what you write, so a `switch`, `-l` or `_LAST`
-    writes blind.
-
-  The code is your identity in the chain: keep it secret, out of repositories
-  and logs. **Remove** on your row of the Sync widget's grid revokes it.
 - **Trying sync? Set `DATUM_SYNC_NO_DAEMON=1` first.** A copy's first
   `sync chain invite` or `connect` installs a background sync service for your
   user (a systemd user unit or launchd agent), even on a throwaway db. If one

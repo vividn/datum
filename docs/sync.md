@@ -26,39 +26,6 @@ change to an entry is an op signed by this copy's endpoint key (which is
 also its iroh identity), and two copies that hold the same ops hold the
 same entries. `datum sync help` lists the whole tree.
 
-A member writes and relays: it serves every op it holds. An invite with
-`--reader` makes a reader, served the record and writing nothing; one with
-`--writer` makes a writer, which writes entries as a member does and, like a
-reader, serves only its own ops, so only a member ever relays. A writer
-changes only the entries it created and writes no alias or other entry about
-the database; filtered to fields (`--fields a,b` or `--kit <KIT>`), it writes
-only those and their specs, and with `--fields ''` it is sent the chain's
-records alone, for a sensor or an agent that only logs. `datum sync chain
-role <WHO> member|reader|writer` changes a member's role.
-
-A reader's or writer's filter may also hold a window: `--window 1d` passes
-the entries of the last day, back to the hour, and for each field the entry
-that set its state at the window's start, so a field that last changed a
-week ago still reads as what it is. `--specs` passes every spec and alias
-whatever else the filter says, and neither is windowed. The window is judged
-again at every sync: an entry that aged out is dropped from the filtered
-copy, unless it holds an op of the copy's own.
-
-An agent with no persistent storage comes back from a code. `datum sync
-chain agent --level full|light|write` (datum.day's «Add agent») makes a new
-device key and a standing admission for it, an admin act in a locked chain,
-and prints `datum-agent:…`, which holds that key and a member to dial.
-`datum sync restore <CODE>` in a fresh home makes it this install's device
-key and admits a new endpoint by it, at the level's role and filter: full a
-reader (a member with `--write`), light a reader of the last `--window` and
-every spec and alias (a writer with `--write`), write a writer sent no
-entries, limited to `--fields` where named. Each restore is a fresh copy of
-the same device, one row of the grid, and the endpoints it held before are
-revoked as it is admitted; what they wrote stands. Whoever holds the code is
-that agent until it expires (`--expires`) or its copy is expelled (`datum
-sync chain expel <ENDPOINT>`, «Remove» on its row), after which it admits
-nothing.
-
 A device you have lost, or that someone else may hold, should be unjoined
 (`datum sync chain expel <WHO> --unjoin`, the Sync widget's «Unjoin»), which
 sets aside everything it wrote, not only removed. Removing it trusts the
