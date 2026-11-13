@@ -12,7 +12,7 @@
 //! member online, and the chain's records give it the rest. Past one member
 //! a chain it is refused, naming the most that fit.
 
-use super::chain::{approve_records, approved, batch, record_digest, Admin};
+use super::chain::{approve_records, approved, batch, record_digest, Admin, Role};
 use super::{digest, hex, unhex};
 use aes_gcm::aead::{Aead, KeyInit};
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
@@ -351,7 +351,7 @@ pub fn union(mine: Record, held: Option<Record>) -> Record {
 impl crate::db::Db {
     /// This copy's chain as the account record lists it, under the name
     /// `db`, when `key` (`ed25519:<hex>`) is one of its admins: this copy
-    /// first, then each other live member, the most recently seen first.
+    /// first, then each other live full member, the most recently seen first.
     pub fn sync_account_listed(&self, key: &str, db: &str) -> crate::error::Result<Option<Listed>> {
         let chain = self.sync_chain_served()?;
         if !chain.exists() || chain.admins.iter().all(|a| a.key != key) {
@@ -365,6 +365,9 @@ impl crate::db::Db {
             .members
             .iter()
             .filter(|m| m.revoked.is_none() && m.purged.is_none() && m.left.is_none())
+            // A joiner sends its full member's secret to each listed member in turn, and a
+            // reader or a writer admits no one, so it is no address to send it to (da-omsdk).
+            .filter(|m| m.role() == Role::Member)
             .filter(|m| m.endpoint != me)
             .map(|m| m.endpoint.clone())
             .collect();

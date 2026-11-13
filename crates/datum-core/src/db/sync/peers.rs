@@ -644,6 +644,45 @@ mod tests {
         assert!(b.sync_chain().unwrap().member(&id(&b)).is_some());
     }
 
+    /// The account record lists full members alone (da-omsdk): a device
+    /// joining through it sends its full member's secret to each listed
+    /// member in turn, and a reader or a writer, which admits no one, would
+    /// hold it and could redeem it first.
+    #[test]
+    fn the_account_record_lists_no_reader_or_writer() {
+        let [a, b, r, w] = [(); 4].map(|()| Db::open_in_memory().unwrap());
+        let account = chain::account_keys(&[7; 32]);
+        let key = chain::ed25519_admin_key(&account.sign);
+        let mut g = json!({"type": "genesis", "chain": "c1", "label": "a",
+                           "admins": [{"key": key, "label": "account"}]});
+        g["sig"] = chain::sign_ed25519(&g, &account.sign).into();
+        a.sync_chain_write(g, true).unwrap();
+        let join = |db: &Db, label: &str, caps: Value| {
+            let mut i = json!({
+                "type": "invite", "chain": "c1", "invite_id": label, "caps": caps,
+                "secret_hash": chain::secret_hash(label), "expires": "2099-01-01T00:00:00Z",
+            });
+            i["sig"] = chain::sign_ed25519(&i, &account.sign).into();
+            let secret = chain::carry_invite(label, &i);
+            let hello = a.sync_handshake(
+                &id(db),
+                label,
+                "{}",
+                Some(&secret),
+                Some(""),
+                0,
+                None,
+                false,
+            );
+            assert!(hello.unwrap());
+        };
+        join(&b, "b", json!({}));
+        join(&r, "r", json!({"role": "reader"}));
+        join(&w, "w", json!({"role": "writer"}));
+        let listed = a.sync_account_listed(&key, "datum").unwrap().unwrap();
+        assert_eq!(listed.members, [id(&a), id(&b)]);
+    }
+
     /// A session's file purged under it takes no peer row (da-otz0d): each of
     /// the three that write one asks who the copy is, and no key is minted.
     #[test]

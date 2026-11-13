@@ -861,7 +861,8 @@ The account record (da-rnxp4, `db/sync/account.rs`) is a pkarr packet under the
 account key, published to n0's pkarr relay (`https://dns.iroh.link/pkarr`; a test's is
 `datum.pkarrRelay`): one TXT record `_datum`, AES-256-GCM under `seal`, listing each of
 the account's chains, its database's name, up to three members' endpoint ids (this copy
-first, then the most recently seen) and the relay when not n0's. The CLI builds, signs
+first, then the most recently seen; full members alone, since a joiner sends its secret to
+each, da-omsdk) and the relay when not n0's. The CLI builds, signs
 and opens it (hidden `sync account --record [--relay] [--with <HEX>]` and `--read
 <HEX>`), so the account's secret never leaves it; the page only GETs and PUTs the bytes
 (`syncAccountRecord` in `#lib/sync.ts`), at sign-in and after each approval: it signs
