@@ -80,6 +80,7 @@ pub use progress::with_progress;
 mod query;
 mod record;
 mod rename;
+mod rename_state;
 mod row_mapper;
 pub(crate) mod spec;
 mod spec_alias_index;
@@ -130,6 +131,7 @@ pub use now::{
 };
 pub use record::{key_before, members, KeyDrift};
 pub use rename::FieldRenamed;
+pub use rename_state::StateRenamed;
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, Closer, META_FIELDS, SPEC_FIELD};
 pub use spool::{busy, Drained, Spool};

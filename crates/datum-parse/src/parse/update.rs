@@ -220,14 +220,15 @@ pub(crate) fn parse_export_args(tail: &[&str]) -> Result<ExportArgs> {
     Ok(args)
 }
 
-/// `rename OLD NEW [--merge] [--dry-run]`.
+/// `rename OLD NEW [--merge] [--dry-run]`, or `rename FIELD --state OLD NEW`.
 pub(crate) fn parse_rename_args(tail: &[&str]) -> Result<RenameArgs> {
-    let (mut dry_run, mut merge) = (false, false);
+    let (mut dry_run, mut merge, mut state) = (false, false, false);
     let mut pos = Vec::new();
     for (i, tok) in tail.iter().enumerate() {
         match split_flag(tok) {
             FlagSplit::Long("dry-run") => dry_run = true,
             FlagSplit::Long("merge") => merge = true,
+            FlagSplit::Long("state") => state = true,
             FlagSplit::Positional("--") => {
                 pos.extend_from_slice(&tail[i + 1..]);
                 break;
@@ -236,15 +237,22 @@ pub(crate) fn parse_rename_args(tail: &[&str]) -> Result<RenameArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    match pos[..] {
-        [old, new] => Ok(RenameArgs {
-            old: old.into(),
-            new: new.into(),
-            dry_run,
-            merge,
-        }),
-        _ => Err(ParseError::InvalidArg(
+    let args = |field: Option<&str>, old: &str, new: &str| RenameArgs {
+        old: old.into(),
+        new: new.into(),
+        field: field.map(Into::into),
+        dry_run,
+        merge,
+    };
+    match (state, &pos[..]) {
+        (false, [old, new]) => Ok(args(None, old, new)),
+        (true, [field, old, new]) => Ok(args(Some(field), old, new)),
+        (false, _) => Err(ParseError::InvalidArg(
             "rename takes two fields: datum rename <OLD> <NEW>".into(),
+        )),
+        (true, _) => Err(ParseError::InvalidArg(
+            "rename --state takes a field and two states: datum rename <FIELD> --state <OLD> <NEW>"
+                .into(),
         )),
     }
 }

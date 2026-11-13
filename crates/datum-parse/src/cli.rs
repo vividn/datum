@@ -775,6 +775,8 @@ pub struct ScriptArgs {
 pub struct RenameArgs {
     pub old: String,
     pub new: String,
+    /// `--state` (da-zbkqb): OLD and NEW are states of this field.
+    pub field: Option<String>,
     /// `--dry-run`: say what would move, and move nothing.
     pub dry_run: bool,
     /// `--merge`: NEW may exist, and takes OLD's entries (da-icna7).

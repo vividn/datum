@@ -1380,11 +1380,25 @@ mod tests {
             let want = RenameArgs {
                 old: "mood".into(),
                 new: "feeling".into(),
+                field: None,
                 dry_run: true,
                 merge: false,
             };
             assert_eq!(a, want);
         }
+        // `--state` (da-zbkqb): a field, then the state and its new name.
+        let Command::Rename(a) = parse_argv(&argv(&["rename", "mood", "--state", "meh", "okay"]))
+            .unwrap()
+            .command
+        else {
+            panic!("expected Rename")
+        };
+        assert_eq!(
+            (a.field.as_deref(), &*a.old, &*a.new),
+            (Some("mood"), "meh", "okay")
+        );
+        assert!(parse_argv(&argv(&["rename", "mood", "--state", "meh"])).is_err());
+        assert!(parse_argv(&argv(&["rename", "--state", "a", "b"])).is_err());
         let Command::Rename(a) = parse_argv(&argv(&["rename", "a", "b", "--merge"]))
             .unwrap()
             .command

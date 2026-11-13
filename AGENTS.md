@@ -550,6 +550,15 @@ and differs the same way: a `restore` row with a new hid, its old row deleted
 naming it, since `superseded_by` stands once set and a row moved in by an edit
 could not be undone out. Its side's device reads `backup`.
 
+`rename FIELD --state OLD NEW` (da-zbkqb, `db/rename_state.rs`) renames one
+state of one field in place: every live entry holding it — its state, a list's
+member, an object's `id`, `following_state`, `-l`'s, an `end -l`'s
+`data.last_state` — and the spec's `allowed_states`, `archived` and state-keyed
+maps, edited as JSON so a key this build does not read stays; its derived alias
+follows. Each row an edit that syncs, the whole one write and one `undo`. NEW
+known to the field, a deleted entry's included, takes `--merge`, NEW's spec
+keys winning; a `state_lookup_field`'s document keeps its name.
+
 ### History and the clock
 
 An entry's history is read from the same ops (`db/sync/versions.rs`, da-s4erq):

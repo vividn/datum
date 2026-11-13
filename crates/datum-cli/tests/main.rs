@@ -135,6 +135,7 @@ mod record_refs;
 mod redo_cmd;
 mod ref_column;
 mod rename_merge;
+mod rename_state;
 mod render_state_group;
 mod reparse_cmd;
 mod repeat_marker;

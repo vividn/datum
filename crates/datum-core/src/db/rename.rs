@@ -330,7 +330,7 @@ fn spec_differences(gone: &Entry, kept: &Entry) -> Vec<(String, String, String)>
 
 /// Does an alias expansion name `field`: as a word, in a comma list of
 /// fields, or with a state (`mood:happy`)?
-fn names_field(expansion: &str, field: &str) -> bool {
+pub(super) fn names_field(expansion: &str, field: &str) -> bool {
     datum_parse::shell_split(expansion).iter().any(|word| {
         word.split(',')
             .any(|w| w == field || w.strip_prefix(field).is_some_and(|r| r.starts_with(':')))
