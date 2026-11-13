@@ -221,8 +221,15 @@ fn joined(a: &Copy) -> [usize; 2] {
         .map(|out| out.matches("⚠ another device joined: ").count())
 }
 
+/// The member's notices of an agent's code in use in two places (da-wtdw8).
+fn two_places(a: &Copy, label: &str) -> [usize; 2] {
+    let said = format!("⚠ agent {label}'s code is in use in two places: ");
+    [a.ok(&["sync", "status"]), a.ok(&["check"])].map(|out| out.matches(&said).count())
+}
+
 /// Two restores from one code are one device, told once on the member;
-/// another code's restore is another device, told too (da-w27bp).
+/// another code's restore is another device, told too (da-w27bp). Neither
+/// is a code in use in two places (da-wtdw8).
 #[test]
 fn a_code_restored_again_tells_the_member_of_no_new_device() {
     let a = alone();
@@ -236,6 +243,58 @@ fn a_code_restored_again_tells_the_member_of_no_new_device() {
     assert_eq!(joined(&a), [1, 1], "the same device, again");
     Copy::new().ok(&["sync", "restore", &bot]);
     assert_eq!(joined(&a), [2, 2], "another device");
+    assert_eq!(two_places(&a, "claude"), [0, 0]);
+}
+
+/// One home a session, restoring at each one's start: a session a minute
+/// after the last, which logged and synced, tells the member nothing
+/// (vremya, on #2069: «a leak alarm that fires when nothing leaked is how
+/// a real one gets ignored»).
+#[test]
+fn back_to_back_sessions_restoring_one_code_tell_of_no_two_places() {
+    let a = alone();
+    let bot = code(
+        &a,
+        &["--level", "write", "--fields", "tea", "--label", "bot"],
+    );
+    let _runs = a.serve(&["sync", "run"]);
+    for _ in 0..2 {
+        let session = Copy::new();
+        session.ok(&["sync", "restore", &bot]);
+        session.ok(&["occur", "tea"]);
+        session.ok(&["sync"]);
+    }
+    assert_eq!(count(&a, "tea"), "2");
+    assert_eq!(two_places(&a, "bot"), [0, 0]);
+}
+
+/// Two homes restoring from one code, the first logging after the
+/// second's restore: the first's sync tells the member, once, that the
+/// agent's code is in use in two places, naming the agent and how to
+/// remove it (da-wtdw8).
+#[test]
+fn a_replaced_copy_logging_after_tells_the_member_its_code_is_in_two_places() {
+    let a = alone();
+    let bot = code(
+        &a,
+        &["--level", "write", "--fields", "tea", "--label", "bot"],
+    );
+    let _runs = a.serve(&["sync", "run"]);
+    let first = Copy::new();
+    first.ok(&["sync", "restore", &bot]);
+    Copy::new().ok(&["sync", "restore", &bot]);
+    assert_eq!(two_places(&a, "bot"), [0, 0], "a restore alone");
+
+    first.ok(&["occur", "tea"]);
+    first.run(&["sync"]);
+    first.run(&["sync"]);
+    assert_eq!(two_places(&a, "bot"), [1, 1]);
+    let status = a.ok(&["sync", "status"]);
+    assert!(
+        status.contains("not yours? remove the agent, `datum sync chain expel bot`"),
+        "{status}"
+    );
+    assert_eq!(count(&a, "tea"), "0");
 }
 
 /// An agent is never an admin (da-ebxg5; vividn, 2026-11-13): a `full

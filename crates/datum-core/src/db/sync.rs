@@ -2149,6 +2149,16 @@ fn refuse(
     if member.is_some_and(|m| m.purged.is_some()) {
         return Ok(());
     }
+    // An agent's copy a later restore replaced, writing after it: its code is
+    // in use in two places (da-wtdw8), which says more than a refusal.
+    let revoked = member.and_then(|m| m.revoked.as_deref());
+    let after = revoked.is_some_and(|r| r <= op.hlc.as_str());
+    if kind == "refused"
+        && after
+        && chain::in_use_twice(conn, chain, &op.endpoint, chain::hlc_time(&op.hlc))?
+    {
+        return Ok(());
+    }
     // A device outside the chain has no label in it: the host it says it is.
     let host = op.origin.as_ref().and_then(|o| o["host"].as_str());
     let label = member.map_or(host.unwrap_or(&op.endpoint[..10]), |m| &m.label);

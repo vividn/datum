@@ -162,6 +162,7 @@ use crate::error::{DatumError, Refusal, Result};
 
 mod standing;
 use standing::reader_holds;
+pub(crate) use standing::{in_use_twice, two_places, TWO_PLACES};
 pub use standing::{Standing, STANDING};
 
 /// The fewest characters of an id that may name it: a one-letter prefix
@@ -1867,9 +1868,10 @@ pub struct PurgePreview {
 pub struct Notice {
     pub subject: String,
     /// `endpoint`, `member` (one found on joining), `rejoin`, `admin`,
-    /// `unlock`, `wipe` or `refused` (an endpoint whose ops the chain
+    /// `unlock`, `wipe`, `refused` (an endpoint whose ops the chain
     /// refused, `refused:<endpoint>`, `via` saying why; gone once it allows
-    /// them, da-0c2ne).
+    /// them, da-0c2ne), or [`TWO_PLACES`] (an agent's code, `label`, whose
+    /// copy replaced at `at` was in use at `via`, da-wtdw8).
     pub kind: String,
     pub label: String,
     pub at: String,
@@ -1884,6 +1886,7 @@ impl Notice {
             "unlock" => "unlock",
             "member" => "joined",
             "wipe" => &self.subject,
+            TWO_PLACES => &self.label,
             _ => {
                 let id = self.endpoint().unwrap_or(&self.subject);
                 &id[..id.len().min(18)]

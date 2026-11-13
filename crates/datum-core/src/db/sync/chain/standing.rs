@@ -25,7 +25,8 @@
 //! own device would inherit that rule.
 
 use chrono::{DateTime, Utc};
-use rusqlite::params;
+use rusqlite::types::Value as Sql;
+use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 
 use super::{bind_device, bound_device, expired, hlc_time, role_of};
@@ -242,6 +243,60 @@ impl Chain {
         }
         Ok(())
     }
+
+    /// The device and standing admission of `endpoint`, an agent's copy a
+    /// later restore of its code replaced, and when (da-wtdw8): retired,
+    /// not expelled nor departed.
+    pub(super) fn replaced(&self, endpoint: &str) -> Option<(&str, &Standing, &str)> {
+        let device = self.agents.get(endpoint)?;
+        let at = self.member(endpoint)?.revoked.as_deref()?;
+        let by = |m: &super::Member| {
+            m.endpoint != endpoint
+                && m.admitted == at
+                && self.agents.get(&m.endpoint) == Some(device)
+        };
+        self.members.iter().any(by).then_some(())?;
+        Some((device, self.standings.get(device)?, at))
+    }
+}
+
+/// The notice kind of an agent's code in use in two places (da-wtdw8).
+pub(crate) const TWO_PLACES: &str = "two_places";
+
+/// Two places use one agent's code (da-wtdw8): `endpoint`, a copy a later
+/// restore replaced, was in use at `at`, after it.
+/// Told once per standing record. Whether `endpoint` is such a copy.
+pub(crate) fn in_use_twice(
+    conn: &Connection,
+    chain: &Chain,
+    endpoint: &str,
+    at: &str,
+) -> Result<bool> {
+    let Some((sql, values)) = two_places(chain, endpoint, at) else {
+        return Ok(false);
+    };
+    conn.prepare_cached(sql)?
+        .execute(rusqlite::params_from_iter(values))?;
+    Ok(true)
+}
+
+/// [`in_use_twice`]'s notice as a statement, for a write of its own.
+pub(crate) fn two_places(
+    chain: &Chain,
+    endpoint: &str,
+    at: &str,
+) -> Option<(&'static str, Vec<Sql>)> {
+    let (device, st, replaced) = chain.replaced(endpoint)?;
+    let values = [
+        format!("{TWO_PLACES}:{device}:{}", st.hlc),
+        TWO_PLACES.into(),
+        st.label.clone(),
+        hlc_time(replaced).into(),
+        at.into(),
+    ];
+    let sql = "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via)
+               VALUES (?1, ?2, ?3, ?4, ?5)";
+    Some((sql, values.map(Sql::Text).into()))
 }
 
 impl Db {

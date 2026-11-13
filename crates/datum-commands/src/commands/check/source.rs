@@ -45,6 +45,7 @@ impl Source<'_> {
             Source::Notice("member") => sync!("joined"),
             Source::Notice("unlock") => sync!("unlocked"),
             Source::Notice("wipe") => sync!("wiped"),
+            Source::Notice("two_places") => sync!("two_places"),
             Source::Notice(_) => sync!("new_member"),
             Source::Conflicts => sync!("conflict"),
             Source::AfterFinished => integrity!("after_finished"),

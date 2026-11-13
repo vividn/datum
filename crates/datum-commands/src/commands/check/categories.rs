@@ -70,6 +70,7 @@ pub const CATEGORIES: &[(&str, &[&str])] = &[
             "sync_joined",
             "sync_unlocked",
             "sync_wiped",
+            "sync_two_places",
             "sync_new_member",
             "sync_upgrade",
             "sync_unsent",

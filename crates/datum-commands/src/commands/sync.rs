@@ -2721,6 +2721,11 @@ fn said(db: &Db, mut notices: Vec<Notice>) -> Vec<(Notice, String)> {
             let text = match n.kind.as_str() {
                 "endpoint" => format!("another device joined: {}, at {at}", n.label),
                 "rejoin" => format!("{} joined again, at {at}", n.label),
+                "two_places" => format!(
+                    "agent {}'s code is in use in two places: a copy replaced at {at} was in use at {}",
+                    n.label,
+                    local(&n.via)
+                ),
                 "admin" => format!("new sync admin {} ({}) added {at}", n.label, n.who()),
                 "unlock" => format!("sync chain unlocked by {} at {at}", n.label),
                 "refused" => format!("changes from {} refused ({}), since {at}", n.label, n.via),
@@ -2803,6 +2808,10 @@ fn notice_line(n: &Notice, text: &str) -> String {
             "⚠ {text} — `datum upgrade` may write it; \
              `datum sync chain ack {who}` to acknowledge"
         ),
+        "two_places" => format!(
+            "⚠ {text} — not yours? remove the agent, `datum sync chain expel {who}`, and make \
+             a new code; `datum sync chain ack {who}` to acknowledge"
+        ),
         _ => format!(
             "{warn}{text} — `datum sync chain list` to review, `datum sync chain ack {who}` to acknowledge"
         ),
@@ -2846,6 +2855,10 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
             "unwritten" => format!(
                 "changes from {} device(s) were refused, as this datum cannot write their rows; \
                  they are tried again once this copy upgrades",
+                notices.len()
+            ),
+            "two_places" => format!(
+                "{} agent code(s) in use in two places at once, the tell of a leaked code",
                 notices.len()
             ),
             _ => format!("{} new to the sync chain", notices.len()),

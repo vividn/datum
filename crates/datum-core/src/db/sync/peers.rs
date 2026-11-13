@@ -292,10 +292,17 @@ impl Db {
                         }
                         Some(_) => {}
                         None => {
+                            // A copy a restore replaced, still dialing (da-wtdw8).
+                            let at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+                            if let Some((sql, values)) = chain::two_places(&shown, id, &at) {
+                                let mut batch = crate::db::WriteBatch::default();
+                                batch.push(sql, values);
+                                self.write(&batch)?;
+                            }
                             return Err(DatumError::Refused(
                                 Refusal::NotMember,
                                 self.not_a_member(label)?,
-                            ))
+                            ));
                         }
                     }
                 }
@@ -423,6 +430,93 @@ mod tests {
             .unwrap()
             .revoked
             .is_some());
+    }
+
+    /// How many notices of `kind` `db` holds.
+    fn noticed(db: &Db, kind: &str) -> i64 {
+        let sql = "SELECT COUNT(*) FROM sync_notices WHERE kind = ?1";
+        db.conn.query_row(sql, [kind], |r| r.get(0)).unwrap()
+    }
+
+    /// An agent's copy a restore replaced, still writing after it, is its
+    /// code in use in two places (da-wtdw8): a member holding the restore
+    /// says so once its entry arrives, and a member that heard of the entry
+    /// first says so once the restore does, each once and in place of the
+    /// refusal it would otherwise warn of.
+    #[test]
+    fn a_replaced_copy_writing_after_its_restore_tells_of_two_places() {
+        let [a, b, x, y] = [(); 4].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        admit(&a, &b, "b", json!({}));
+        let device = [7u8; 32];
+        standing(&a, &device, json!({}));
+        knock(
+            &a,
+            &x,
+            Some(&x.sync_standing_claim(&device, "c1").unwrap()),
+            None,
+        )
+        .unwrap();
+        send(&a, &b);
+        knock(
+            &a,
+            &y,
+            Some(&y.sync_standing_claim(&device, "c1").unwrap()),
+            None,
+        )
+        .unwrap();
+        assert_eq!(noticed(&a, chain::TWO_PLACES), 0, "x wrote no entry");
+
+        log(&x, "tea");
+        log(&x, "tea");
+        send(&x, &b);
+        assert_eq!(noticed(&b, chain::TWO_PLACES), 0, "b has not heard of y");
+        send(&b, &a);
+        send(&a, &b);
+        for c in [&a, &b] {
+            assert_eq!(
+                [chain::TWO_PLACES, "refused"].map(|k| noticed(c, k)),
+                [1, 0]
+            );
+        }
+        let n = a.sync_notices_unacked().unwrap();
+        let n = n.iter().find(|n| n.kind == chain::TWO_PLACES).unwrap();
+        assert_eq!((n.label.as_str(), n.who()), ("agent", "agent"));
+        assert!(n.at < n.via, "replaced at {}, in use at {}", n.at, n.via);
+    }
+
+    /// A copy a restore replaced, dialing after it, is its code in use in
+    /// two places (da-wtdw8), told once a standing record; the restore
+    /// alone, its entries logged before it, tells nothing (vremya, on
+    /// #2069: an agent's next session is the ordinary case).
+    #[test]
+    fn a_replaced_copy_dialing_after_its_restore_tells_of_two_places() {
+        let [a, x, y] = [(); 3].map(|()| Db::open_in_memory().unwrap());
+        genesis(&a, "a");
+        let device = [7u8; 32];
+        standing(&a, &device, json!({}));
+        let restore = |c: &Db| {
+            knock(
+                &a,
+                c,
+                Some(&c.sync_standing_claim(&device, "c1").unwrap()),
+                None,
+            )
+        };
+        restore(&x).unwrap();
+        log(&x, "tea");
+        send(&x, &a);
+        restore(&y).unwrap();
+        assert_eq!(
+            noticed(&a, chain::TWO_PLACES),
+            0,
+            "x logged before y's restore"
+        );
+        let refused = knock(&a, &x, None, None).unwrap_err().to_string();
+        assert!(refused.contains("not a member"), "{refused}");
+        assert_eq!(noticed(&a, chain::TWO_PLACES), 1, "it dialed after");
+        knock(&a, &x, None, None).unwrap_err();
+        assert_eq!(noticed(&a, chain::TWO_PLACES), 1, "once a standing record");
     }
 
     /// A claim dated past how far a received op may run ahead of the

@@ -275,6 +275,7 @@ fn plant(category: &str) -> Plant {
         }
         "sync_unlocked" => Two(|db| notices(db, "unlock")),
         "sync_wiped" => Two(|db| notices(db, "wipe")),
+        "sync_two_places" => Two(|db| notices(db, "two_places")),
         "sync_new_member" => Two(|db| notices(db, "endpoint")),
         "sync_upgrade" | "sync_unsent" => Cannot(
             "each finding is an issue of its own, printed whole: a member's newer schema, \
