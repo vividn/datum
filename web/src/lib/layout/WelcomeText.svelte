@@ -13,12 +13,13 @@
 -->
 <script lang="ts">
 	import { browser } from '$app/env';
+	import { account } from '#lib/account.ts';
 	import { act } from '#lib/act.ts';
 	import { labelCheckArgv, renameArgv } from '#lib/calls.ts';
 	import { deviceName } from '#lib/clientId.ts';
 	import { currentDb } from '#lib/database.ts';
 	import { cliError } from '#lib/run.ts';
-	import { suggestedLabel } from '#lib/sync.ts';
+	import { passkeySignIn, suggestedLabel } from '#lib/sync.ts';
 	import { newInvite, readSync, syncAct } from '#lib/syncView.ts';
 	import { openTutorial } from '#lib/tutorial.ts';
 	import Sheet from '#lib/Sheet.svelte';
@@ -35,6 +36,20 @@
 	/** «Generate an AI code» unfolded (da-f7orx): whether the page's database is in a sync chain, and one with an admin. */
 	let agent = $state<{ chained: boolean; locked: boolean } | null>(null);
 	const db = browser ? currentDb() : '';
+	/** Signing in with a passkey (da-zkmjo): the Sync widget's sign-in, and what it says of a failure. */
+	let signing = $state(false);
+	let signFailure = $state('');
+	const signIn = async () => {
+		signing = true;
+		signFailure = '';
+		try {
+			await passkeySignIn();
+		} catch (e) {
+			signFailure = (e as Error).message;
+		} finally {
+			signing = false;
+		}
+	};
 
 	const generate = async () => {
 		const [d] = await readSync([db]);
@@ -117,6 +132,14 @@
 	</Sheet>
 	<!-- Under the AI button, right above open source (vividn, 2026-11-10, da-a6xba). -->
 	<p>Local first. You own your data. Seamless sync between your devices. No one else sees or can access your data.</p>
+	<!-- vividn, 2026-11-13: «Let's also add a login button on the welcome screen rather than burying it only in sync»
+	     (da-zkmjo). Signed out alone; «New passkey» stays in Sync. -->
+	{#if !$account}
+		<p>
+			<button type="button" class="command" use:act={'open'} disabled={signing} onclick={signIn}>Sign in with a passkey</button>
+		</p>
+		{#if signFailure}<p class="failure" role="alert">{signFailure}</p>{/if}
+	{/if}
 	<p>Datum is open source! (AGPL-3.0): <a href={REPO} target="_blank" rel="noopener">github.com/vividn/datum</a></p>
 </div>
 
@@ -174,5 +197,9 @@
 
 	.quiet {
 		color: var(--quiet);
+	}
+
+	.failure {
+		color: var(--error);
 	}
 </style>

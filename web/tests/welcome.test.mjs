@@ -147,10 +147,11 @@ describe('a first visit', () => {
 	// of useless»): the copy is his to change without a test following it.
 	// The docs are a button since da-0d8l6, opening the docs place: `docs.test.mjs`.
 	// The guide for agents is in the «Integrate with AI» modal since da-rlxux.
-	const BUTTONS = ['Track something', 'Tutorial', 'Read the docs', 'Integrate with AI'];
+	/** A fresh tab is signed out, so the welcome offers the Sync widget's sign-in (da-zkmjo). */
+	const BUTTONS = ['Track something', 'Tutorial', 'Read the docs', 'Integrate with AI', 'Sign in with a passkey'];
 	const LINKS = ['https://github.com/vividn/datum'];
 
-	test('what it has: the name, local first, Track something, the Tutorial button, the docs, Integrate with AI and the repo, and no button of its own to close it', async () => {
+	test('what it has: the name, local first, Track something, the Tutorial button, the docs, Integrate with AI, Sign in with a passkey while signed out, and the repo, and no button of its own to close it', async () => {
 		await withApp(async ({ page }) => {
 			const host = page.locator('.host.welcome');
 			assert.equal(await host.getByRole('heading', { level: 1 }).innerText(), 'datum');

@@ -59,7 +59,7 @@ import { cliError, dbOf, run, type RunResult } from './run.js';
 import type { ChainList, Member, Notice, PendingJoin, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
 import { accountEnv, setAccount } from './account.js';
-import { signIn } from './passkey.js';
+import { NO_PRF, prfOffered, signIn } from './passkey.js';
 import { listDatabases } from './databases.js';
 
 const PULL_MS = 30_000;
@@ -808,6 +808,21 @@ export async function signedIn(make?: string, secret?: string): Promise<{ key: s
 	const { key, kept } = JSON.parse(await ran(accountArgv(), [`DATUM_ACCOUNT=${secret}`])) as { key: string; kept: string };
 	setAccount(kept, key);
 	return { key, prf: secret };
+}
+
+/**
+ * Sign this tab in with a passkey (da-nf1p4), a new one when `name` gives its
+ * label (none given, nothing is done), and join the account's chains this
+ * device is not in yet (da-rnxp4) while the passkey's answer is in hand:
+ * nothing keeps it after (da-k04lr). The Sync widget's and the welcome's, so
+ * the two say the same of a failure (da-zkmjo).
+ */
+export async function passkeySignIn(name?: () => Promise<string | null | undefined>): Promise<void> {
+	if (!(await prfOffered())) throw new Error(NO_PRF);
+	const label = name && (await name());
+	if (name && !label) return;
+	const { prf } = await signedIn(label || undefined);
+	await syncAccountRecord(prf);
 }
 
 /**

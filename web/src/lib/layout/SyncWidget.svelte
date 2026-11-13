@@ -81,7 +81,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, readRecordSigned, recordSigned, RECORD_KEPT_MS, signedIn, syncLogin, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, passkeySignIn, readRecordSigned, recordSigned, RECORD_KEPT_MS, signedIn, syncLogin, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -683,16 +683,7 @@
 		});
 
 	/** Sign this tab in to sync with a passkey, a new one when `make` (da-nf1p4). */
-	const signInHere = (make: boolean) =>
-		doing(async () => {
-			if (!(await prfOffered())) throw new Error(NO_PRF);
-			const label = make ? await ask('Name the passkey', 'make', 'datum') : undefined;
-			if (make && !label) return;
-			// The account's chains this device is not in yet, joined (da-rnxp4), while
-			// the passkey's answer is in hand: nothing keeps it after (da-k04lr).
-			const { prf } = await signedIn(label ?? undefined);
-			await syncAccountRecord(prf);
-		});
+	const signInHere = (make: boolean) => doing(() => passkeySignIn(make ? () => ask('Name the passkey', 'make', 'datum') : undefined));
 
 	// The relay drops the account record 7 days after its signing (da-6vmak): read
 	// when it was, signed in and each half hour, no passkey asked.

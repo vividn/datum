@@ -201,6 +201,49 @@ describe('signing in to sync with a passkey', () => {
 		}, AT_DATUM_DAY);
 	});
 
+	test('the welcome signs in with the Sync widget’s sign-in: offered while signed out, gone once in, and the Sync widget then signed in to the same account (da-zkmjo)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const welcome = page.locator('.host.welcome');
+			const button = welcome.getByRole('button', { name: 'Sign in with a passkey' });
+			await button.waitFor();
+			// The account's passkey, made in Sync, then signed out of.
+			await authenticator(page, { hasPrf: true });
+			await page.evaluate(() => window.datum.shell.openPlace('sync'));
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			const key = await page.locator(`${WIDGET} .signed-in`).getAttribute('title');
+			await account(page).getByRole('button', { name: 'Sign out' }).click();
+			await page.evaluate(() => window.datum.shell.open('welcome'));
+			await button.click();
+			await button.waitFor({ state: 'detached' });
+			// Signed in, the welcome offers no sign-in at all.
+			assert.equal(await welcome.getByRole('button', { name: /sign in|passkey/i }).count(), 0);
+			assert.equal(await welcome.locator('.failure').count(), 0);
+			await page.evaluate(() => window.datum.shell.openPlace('sync'));
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			assert.equal(await page.locator(`${WIDGET} .signed-in`).getAttribute('title'), key);
+		}, { ...AT_DATUM_DAY, home: null, prepare: pkarrRelay().prepare });
+	});
+
+	test('the welcome says what the Sync widget says of a passkey with no PRF, and stays signed out (da-zkmjo)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await authenticator(page);
+			// No passkey here: the welcome's sign-in makes none, so the one it asks for is the widget's.
+			await page.evaluate(() => window.datum.shell.openPlace('sync'));
+			await newPasskey(page);
+			const said = await page.locator(`${WIDGET} .failure`).innerText();
+			await page.evaluate(() => window.datum.shell.open('welcome'));
+			const welcome = page.locator('.host.welcome');
+			await welcome.getByRole('button', { name: 'Sign in with a passkey' }).click();
+			const failure = welcome.locator('.failure');
+			await failure.waitFor();
+			assert.equal(await failure.innerText(), said);
+			assert.equal(await welcome.getByRole('button', { name: 'Sign in with a passkey' }).count(), 1);
+		}, { ...AT_DATUM_DAY, home: null });
+	});
+
 	test('a second device signed in to the same account joins its chain with no invite, and syncs once the first is online', async () => {
 		// Served as itself: a page at https://datum.day reaches no plain-http relay.
 		const opts = { prepare: relayed(relay) };
