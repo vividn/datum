@@ -1143,8 +1143,51 @@
 	/* Off and on have a checkbox where a handle stands, and no … or ✕: their swatch and name stay in their columns. */
 	.offer {
 		justify-self: center;
+	}
+
+	/* The form's checkboxes are drawn as its inputs are (da-yybfo, vividn: «the check boxes look out of style with
+	   the rest of the app»): checked, filled with the row's color and a mark in the page's. */
+	.offer,
+	.autoalias {
+		appearance: none;
+		display: inline-grid;
+		place-content: center;
+		box-sizing: border-box;
+		inline-size: 18px;
+		block-size: 18px;
 		margin: 0;
-		accent-color: var(--c, var(--accent));
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		background: var(--raised);
+		vertical-align: middle;
+		cursor: pointer;
+	}
+
+	.offer:checked,
+	.autoalias:checked {
+		border-color: var(--c, var(--accent));
+		background: var(--c, var(--accent));
+	}
+
+	.offer:checked::before,
+	.autoalias:checked::before {
+		content: '';
+		inline-size: 4px;
+		block-size: 9px;
+		border: solid var(--page);
+		border-width: 0 2px 2px 0;
+		transform: translateY(-1px) rotate(45deg);
+	}
+
+	.offer:focus-visible,
+	.autoalias:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.offer:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.off .swatch,
@@ -1161,19 +1204,22 @@
 		background: var(--c);
 	}
 
-	/* Not offered, its swatch and name dimmed; off's line struck through too. */
+	/* Not offered, off or on: its swatch and name dimmed and struck, and its checkbox left clear, being what offers
+	   it again (da-yybfo, vividn: «Don't cross out the whole line for off, just the color box and the word off»). */
 	.disabled .swatch,
 	.disabled > .name {
 		opacity: 0.5;
 	}
 
-	.off.disabled::after {
-		content: '';
-		position: absolute;
-		inset-inline: 0;
-		inset-block-start: 50%;
-		border-block-start: 1px solid var(--ink-bright);
-		pointer-events: none;
+	.disabled > .name {
+		text-decoration: line-through;
+	}
+
+	.disabled .swatch {
+		background-image: linear-gradient(var(--ink-bright), var(--ink-bright));
+		background-position: center;
+		background-size: 100% 1px;
+		background-repeat: no-repeat;
 	}
 
 	.state .name {

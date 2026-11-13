@@ -472,6 +472,8 @@ describe('the field widget', () => {
 				for (const [other, sel] of Object.entries(inside)) {
 					assert.equal(await page.locator(`${FIELD_FORM} ${sel}`).count(), other === name ? 1 : 0, `on ${name}, ${other}'s ${sel}`);
 				}
+				// The app draws it, as it does the form's checkboxes on basics (da-yybfo).
+				if (name === 'aliases') assert.equal(await page.locator(`${FIELD_FORM} input.autoalias`).evaluate((b) => getComputedStyle(b).appearance), 'none');
 			}
 			// The arrows walk the bar, the focus with them, and stop at either end.
 			await tab('basics').focus();
@@ -638,17 +640,46 @@ describe('the field widget', () => {
 				assert.deepEqual(await names(), ['a', 'c', 'b']);
 				assert.equal(await handle('c').evaluate((el) => el === document.activeElement), true, 'the moved handle lost the focus');
 
-				// Off's checkbox unchecked strikes the whole line, and checked again brings it back.
-				const across = () => off.evaluate((li) => getComputedStyle(li, '::after').borderTopStyle);
-				assert.deepEqual([await strike.isChecked(), await across()], [true, 'none']);
+				// da-yybfo, vividn, 2026-11-13: «the check boxes look out of style with the rest of the app»: drawn by the
+				// app, on the form's raised ground. And «Don't cross out the whole line for off, just the color box and the
+				// word off, similarly cross out on when it is not enabled»: a row not offered strikes its swatch and name,
+				// never its checkbox, and draws no line across the row.
+				const raised = await page.evaluate(() => {
+					const probe = document.body.appendChild(document.createElement('i'));
+					probe.style.background = 'var(--raised)';
+					const ground = getComputedStyle(probe).backgroundColor;
+					probe.remove();
+					return ground;
+				});
+				const boxes = page.locator(`${FIELD_FORM} input.offer`);
+				for (const box of await boxes.all())
+					assert.deepEqual(
+						await box.evaluate((b) => [getComputedStyle(b).appearance, b.checked || getComputedStyle(b).backgroundColor]),
+						['none', (await box.isChecked()) || raised]
+					);
+				/** Whether each of a row's name, swatch and checkbox is struck, and whether a line crosses the row. */
+				const struck = (li) =>
+					li.evaluate((row) => {
+						const css = (sel, pseudo) => getComputedStyle(row.querySelector(sel), pseudo);
+						const across = (el) => [getComputedStyle(el).backgroundImage, getComputedStyle(el, '::after').content].some((v) => v !== 'none');
+						return {
+							name: css('.name').textDecorationLine.includes('line-through'),
+							swatch: css('.swatch').backgroundImage !== 'none',
+							box: css('input').textDecorationLine.includes('line-through') || across(row.querySelector('input')),
+							row: across(row)
+						};
+					});
+				const clear = { name: false, swatch: false, box: false, row: false };
+				assert.deepEqual([await strike.isChecked(), await struck(off)], [true, clear]);
+				assert.deepEqual([await onBox.isChecked(), await struck(onRow)], [false, { ...clear, name: true, swatch: true }]);
 				await strike.click();
-				assert.deepEqual([await strike.isChecked(), await across()], [false, 'solid']);
+				assert.deepEqual([await strike.isChecked(), await struck(off)], [false, { ...clear, name: true, swatch: true }]);
 				await strike.click();
 				assert.equal(await strike.isChecked(), true);
 				await strike.click();
-				// On checked lists `true`, first.
+				// On checked lists `true`, first, and is struck no more.
 				await onBox.click();
-				assert.equal(await onBox.isChecked(), true);
+				assert.deepEqual([await onBox.isChecked(), await struck(onRow)], [true, clear]);
 
 				await setupCommand(page);
 				assert.equal((await saved).code, 0);
