@@ -683,6 +683,49 @@ mod tests {
         assert_eq!(listed.members, [id(&a), id(&b)]);
     }
 
+    /// F20 (da-3bkpl): a joiner sends its account's invite to every member
+    /// it dials, a reader too where a record lists one. The invite names the
+    /// joiner, so the reader, redeeming it first from a fresh endpoint, is
+    /// refused and writes nothing, and the joiner is admitted after it.
+    #[test]
+    fn an_account_join_invite_admits_the_joiner_alone() {
+        let [a, r, x, j] = [(); 4].map(|()| Db::open_in_memory().unwrap());
+        let account = chain::account_keys(&[7; 32]);
+        let key = chain::ed25519_admin_key(&account.sign);
+        let mut g = json!({"type": "genesis", "chain": "c1", "label": "a",
+                           "admins": [{"key": key, "label": "account"}]});
+        g["sig"] = chain::sign_ed25519(&g, &account.sign).into();
+        a.sync_chain_write(g, true).unwrap();
+        let carried = |secret: &str, caps: Value, redeemer: &Db| {
+            let mut i = json!({
+                "type": "invite", "chain": "c1", "invite_id": secret, "caps": caps,
+                "secret_hash": chain::secret_hash(secret), "expires": "2099-01-01T00:00:00Z",
+                "redeemer": id(redeemer),
+            });
+            i["sig"] = chain::sign_ed25519(&i, &account.sign).into();
+            chain::carry_invite(secret, &i)
+        };
+        let hello = |db: &Db, secret: &str| {
+            a.sync_handshake(&id(db), "", "{}", Some(secret), Some(""), 0, None, false)
+        };
+        assert!(hello(&r, &carried("r", json!({"role": "reader"}), &r)).unwrap());
+        let joins = carried("j", json!({}), &j);
+        let ops = || a.sync_chain_records().unwrap().len();
+        let held = ops();
+        // The reader holds the joiner's secret: from its own endpoint or a
+        // fresh one, it admits neither.
+        for taker in [&r, &x] {
+            let why = hello(taker, &joins).unwrap_err().to_string();
+            assert!(why.contains("the invite admits another endpoint"), "{why}");
+        }
+        assert_eq!(ops(), held);
+        assert!(a.sync_chain().unwrap().member(&id(&x)).is_none());
+        assert!(hello(&j, &joins).unwrap());
+        let chain = a.sync_chain().unwrap();
+        assert_eq!(chain.member(&id(&j)).unwrap().role(), chain::Role::Member);
+        assert_eq!(chain.member(&id(&r)).unwrap().role(), chain::Role::Reader);
+    }
+
     /// A session's file purged under it takes no peer row (da-otz0d): each of
     /// the three that write one asks who the copy is, and no key is minted.
     #[test]

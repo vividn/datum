@@ -862,7 +862,10 @@ A device of the account joins with no invite from anyone: `sync account --invite
 <CHAIN>` (hidden) signs an `invite` with the account key and carries it in the secret it
 redeems, `<secret>.<base64url record>` (`chain::carry_invite`), and a member's
 `sync_admit` writes the carried invite as its own op when it lacks it (the chain takes it
-only as an admin's) and then admits: no fold rule changes. The page builds the ticket
+only as an admin's) and then admits. Its secret goes to every member the joiner dials, so
+the invite names its `redeemer`, the endpoint that signed in, and every copy refuses an
+admit of it for any other, using nothing (da-3bkpl); a member before that admits by the
+secret alone, which the fold refuses once it updates. The page builds the ticket
 with the members' addresses (`accountJoin` in `#lib/sync.ts`) and joins as any pending
 join does (da-4qpwf). Which chains and members: the account record.
 

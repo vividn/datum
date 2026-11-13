@@ -858,6 +858,9 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                 let caps = json!({});
                 let (secret, expires, id, mut record) =
                     invite_record(&id, std::time::Duration::from_secs(7 * 24 * 3600), caps);
+                // Its secret goes to every member the joiner dials: it admits
+                // this copy alone (da-3bkpl).
+                record["redeemer"] = db.sync_endpoint_id()?.into();
                 record["sig"] = chain::sign_ed25519(&record, &sign()?).into();
                 out["secret"] = chain::carry_invite(&secret, &record).into();
                 out["expires"] = expires.into();
@@ -1497,6 +1500,14 @@ fn login(db: &Db) -> Result<()> {
         let members: Vec<String> = serde_json::from_value(j["members"].clone())?;
         let (secret, _, _, mut invite) =
             invite_record(id, std::time::Duration::from_secs(7 * 24 * 3600), json!({}));
+        // It admits the copy `chain join` joins with alone (da-3bkpl): `name`,
+        // a free database of this install, not `db`, which `login` runs on;
+        // opened for its key, which the join keeps, as it holds nothing.
+        let path =
+            crate::config::locate_db(Some(name)).context("Cannot determine data directory")?;
+        invite["redeemer"] = Db::open(&path.to_string_lossy())?
+            .sync_endpoint_id()?
+            .into();
         invite["sig"] = chain::sign_ed25519(&invite, &keys.sign).into();
         let secret = chain::carry_invite(&secret, &invite);
         let g = super::sync_grant::Granted {

@@ -30,6 +30,8 @@
 //!   - `invite {invite_id, secret_hash, expires, caps}`: pre-authorised, so
 //!     any member admits its redeemer; one-time, until `expires`. `caps`
 //!     holds the role it grants: `{"role": "reader"}` or `"writer"`, or `{}` for a member.
+//!     An account's join invite names its `redeemer`, the one endpoint it
+//!     admits (da-3bkpl): see `chain/redeemer.rs`.
 //!   - `admit {endpoint, label, via, secret}`: unsigned, written by the
 //!     member that redeemed invite `via`, valid while the invite is unused
 //!     and unexpired and `secret` hashes to it. The secret is carried so
@@ -160,7 +162,9 @@ use super::{
 use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
 
+mod redeemer;
 mod standing;
+use redeemer::admits_other;
 use standing::reader_holds;
 pub(crate) use standing::{in_use_twice, two_places, TWO_PLACES};
 pub use standing::{Standing, STANDING};
@@ -1081,6 +1085,8 @@ struct Invite {
     used: bool,
     role: Role,
     filter: Option<Filter>,
+    /// The one endpoint it admits, where it names one (da-3bkpl).
+    redeemer: Option<String>,
 }
 
 /// Membership: the fold of the chain's records.
@@ -1452,6 +1458,10 @@ impl Chain {
             if invite.used {
                 return Err("invite already used".into());
             }
+            // Before it is used: the endpoint it names is admitted after.
+            if let Some(why) = admits_other(invite.redeemer.as_deref(), &s("endpoint")) {
+                return Err(why.into());
+            }
             if sha256_hex(&s("secret")) != invite.secret_hash {
                 return Err("not the invite's secret".into());
             }
@@ -1531,6 +1541,7 @@ impl Chain {
                         used: false,
                         role,
                         filter,
+                        redeemer: r["redeemer"].as_str().map(Into::into),
                     },
                 );
                 Ok(())
@@ -2145,6 +2156,14 @@ impl Db {
             return self.sync_admit_standing(endpoint, label, proof, holds);
         }
         let (secret, carried) = carried_invite(secret);
+        // Refused before its invite is written (da-3bkpl); one held already,
+        // the fold refuses the admit.
+        if let Some(why) = carried
+            .as_ref()
+            .and_then(|r| admits_other(r["redeemer"].as_str(), endpoint))
+        {
+            return Err(DatumError::Other(why.into()));
+        }
         let mut chain = self.sync_chain()?;
         let hash = sha256_hex(secret);
         // An invite the redeemer's account signed (da-nf1p4), new here: this

@@ -58,6 +58,14 @@ fn a_chain_made_signed_in_is_the_accounts_and_its_devices_admit_themselves() {
     let chain = list["chain"].as_str().unwrap();
     let own = json(&signed_in(&b, &["sync", "account", "--invite", chain]));
     let secret = own["secret"].as_str().unwrap();
+    // Its secret names b (da-3bkpl): another copy bringing it first admits no one.
+    let d = Copy::new();
+    let taker = ["sync", "handshake", &d.id(), "--label", "d", "--addr", "{}"];
+    let why = a.fails(
+        &[&taker[..], &["--invite", secret, "--chain", ""]].concat(),
+        "",
+    );
+    assert!(why.contains("the invite admits another endpoint"), "{why}");
     let hello = ["sync", "handshake", &b.id(), "--label", "b", "--addr", "{}"];
     a.ok(&[&hello[..], &["--invite", secret, "--chain", ""]].concat());
     let list = json(&a.ok(&["sync", "chain", "list", "--json"]));
