@@ -155,8 +155,10 @@ fn a_devices_fresh_copies_are_admitted_each_replacing_the_last_until_revoked() {
     );
     assert!(!member_of(&b, &id)["revoked"].is_null());
 
-    let out = a.ok(&["sync", "chain", "expel", &second.id()]);
+    // Both copies are labelled `agent`: the label names the live one (da-vffi4).
+    let out = a.ok(&["sync", "chain", "expel", "agent"]);
     assert!(out.contains("standing admission is revoked"), "{out}");
+    assert!(!member_of(&a, &second.id())["revoked"].is_null());
     let third = Copy::new();
     let out = hello(&a, &third, &DEVICE, &third);
     assert!(!out.status.success());
@@ -166,6 +168,30 @@ fn a_devices_fresh_copies_are_admitted_each_replacing_the_last_until_revoked() {
         stderr(&out)
     );
     assert_eq!(held_of(&a, &third), "0", "a refused claim is not held");
+}
+
+/// A code no copy has restored yet is expelled by its label or device key:
+/// its standing admission alone is revoked, and no copy of it is admitted
+/// (da-vffi4).
+#[test]
+fn an_unused_code_is_expelled_by_its_label_or_device() {
+    let (a, _b) = chained();
+    let out = approve(&a, standing(None), "");
+    assert!(out.status.success(), "{}", stderr(&out));
+    let said = a.fails(&["sync", "chain", "expel", "agent", "--unjoin"], "");
+    assert!(said.contains("no copy has restored yet"), "{said}");
+    let out = a.ok(&["sync", "chain", "expel", &device_key()[..8]]);
+    assert!(out.contains("its code admits no copy"), "{out}");
+    let said = a.fails(&["sync", "chain", "expel", "agent"], "");
+    assert!(said.contains("names 0 members"), "{said}");
+    let copy = Copy::new();
+    let out = hello(&a, &copy, &DEVICE, &copy);
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("standing admission was revoked"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 /// In a locked chain a standing record takes an admin's signature, and one

@@ -903,7 +903,10 @@ The command is `expel`, and its flags say how far it goes (da-zfss8, which cut
 `sync chain unjoin` and `wipe`, as da-n0uj1.1 did `revoke` and `revert`, with no
 alias); the chain records keep their types, `revoke`, `purge` and `erase`, on every
 copy and on the wire. `sync chain expel <WHO>` writes a `revoke`: the device stops
-syncing, keeping its copy, and what it wrote stays. `--unjoin` (da-ry11c; `chain
+syncing, keeping its copy, and what it wrote stays. An agent's label names its live
+copy, the copies its restores retired aside, and its standing admission is revoked
+with it; a code no copy has restored yet is its standing admission alone, which a
+plain expel revokes (da-vffi4). `--unjoin` (da-ry11c; `chain
 purge <WHO>` is refused naming it) previews, and with `--yes` writes a `purge` record:
 every copy refuses every op that endpoint signed and folds its entries again
 without them — what it made goes, its edits and deletes are undone — and expels

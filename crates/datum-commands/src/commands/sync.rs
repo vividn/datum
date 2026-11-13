@@ -362,7 +362,22 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     yes,
                     show,
                 } => {
-                    let m = member(&chain, &who)?;
+                    let m = match (member(&chain, &who), unused_standing(&chain, &who)) {
+                        (Ok(m), _) => m,
+                        (Err(_), Some(device)) => {
+                            ensure!(
+                                !unjoin && !wipe,
+                                "{who} is an agent's code no copy has restored yet: \
+                                 a plain expel revokes it"
+                            );
+                            let r = json!({"type": "revoke_standing", "chain": chain.id,
+                                "device": device, "created": chrono::Utc::now().to_rfc3339()});
+                            sign(db, r, &chain, admin_key.as_deref())?;
+                            println!("revoked {who}'s standing admission: its code admits no copy");
+                            return Ok(());
+                        }
+                        (Err(e), None) => return Err(e),
+                    };
                     let it = chain.member(&m);
                     let mut taken = None;
                     if unjoin {
@@ -1901,6 +1916,8 @@ fn unjoin_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
 /// The chain member `who` names, by label or a prefix of its endpoint id;
 /// else by a prefix of the device key it is bound to (da-n0uj1.4), one that
 /// left aside: a device that left and joined again is its new endpoint.
+/// Of several, the one live: each restore of an agent's code admits a new
+/// endpoint under its label and device, retiring the one before (da-vffi4).
 fn member(chain: &Chain, who: &str) -> Result<String> {
     let by_device = |m: &chain::Member| {
         m.left.is_none() && m.device.as_deref().is_some_and(|d| names(who, "", d))
@@ -1913,9 +1930,27 @@ fn member(chain: &Chain, who: &str) -> Result<String> {
     if hits.is_empty() {
         hits = chain.members.iter().filter(|m| by_device(m)).collect();
     }
+    let live = |m: &&chain::Member| m.revoked.is_none() && m.left.is_none();
+    if hits.iter().filter(|m| live(m)).count() == 1 {
+        hits.retain(live);
+    }
     match hits.as_slice() {
         [m] => Ok(m.endpoint.clone()),
         _ => bail!("{who} names {} members of this chain", hits.len()),
+    }
+}
+
+/// The device of the live standing admission `who` names by its label or a
+/// prefix of its device key, where no member is bound to that device: an
+/// agent's code no copy has restored yet (da-vffi4).
+fn unused_standing(chain: &Chain, who: &str) -> Option<String> {
+    let bound = |d: &str| chain.members.iter().any(|m| m.device.as_deref() == Some(d));
+    let hits: Vec<_> = (chain.standings.iter())
+        .filter(|(d, s)| s.revoked.is_none() && !bound(d) && names(who, &s.label, d))
+        .collect();
+    match hits.as_slice() {
+        [(d, _)] => Some(d.to_string()),
+        _ => None,
     }
 }
 
