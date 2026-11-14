@@ -418,3 +418,46 @@ fn a_revoked_device_rejoins_by_a_fresh_invite_and_data_goes_both_ways() {
         "{list}"
     );
 }
+
+/// A dial carrying an `expel --wipe` order tells the expelled copy nothing
+/// of where the members are (da-in2vl): its first frame, read by an endpoint
+/// holding that copy's key at its address, carries the order and no `known`,
+/// so a device that does not obey learns no member's or reader's address.
+#[test]
+fn a_wipe_dial_tells_the_expelled_copy_no_members_address() {
+    let (a, e) = paired();
+    let r = Copy::new();
+    let (mut inviting, ticket) = a.invite(&["--reader"]);
+    r.ok(&["sync", "chain", "join", &ticket]);
+    assert!(inviting.finish().0);
+    a.ok(&["sync", "chain", "expel", &e.id(), "--wipe", "--yes"]);
+
+    let secret = e.query("SELECT endpoint_secret FROM sync_local");
+    let key: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&secret[2 * i..2 * i + 2], 16).unwrap())
+        .collect();
+    let at = format!("127.0.0.1:{}", e.port).parse().unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let net = datum_sync_wire::Net::Local(at);
+    let ep = rt
+        .block_on(datum_sync_wire::bind(key.try_into().unwrap(), &net))
+        .unwrap();
+    assert_eq!(ep.id().to_string(), e.id());
+    let _syncing = a.serve(&["sync"]);
+    let hello: serde_json::Value = rt.block_on(async {
+        let first = async {
+            let conn = ep.accept().await.unwrap().await.unwrap();
+            let (_s, mut r) = conn.accept_bi().await.unwrap();
+            let mut n = [0u8; 4];
+            r.read_exact(&mut n).await.unwrap();
+            let mut frame = vec![0u8; u32::from_be_bytes(n) as usize];
+            r.read_exact(&mut frame).await.unwrap();
+            serde_json::from_slice(&frame).unwrap()
+        };
+        tokio::time::timeout(Duration::from_secs(60), first)
+            .await
+            .expect("a's dial")
+    });
+    assert!(!hello["wipe"].as_array().unwrap().is_empty());
+    assert_eq!(hello["known"], serde_json::json!([]));
+}

@@ -77,3 +77,6 @@ data-encoding = { workspace = true }
 blake2 = "0.10"
 # A pseudo-terminal for a question asked on one (da-6i7l1).
 libc = { workspace = true }
+# An expelled copy's endpoint, reading the first frame a wipe dial sends it (da-in2vl).
+datum-sync-wire = { path = "../datum-sync-wire" }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }

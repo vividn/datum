@@ -1458,9 +1458,11 @@ async fn session(
         proves: invite.is_none(),
         typed: true,
         busy: true,
-        known: match invite {
-            Some(_) => Vec::new(),
-            None => known(store).await,
+        // Neither a redeemer nor a copy ordered to delete itself is told
+        // where the members are (da-in2vl).
+        known: match (invite, &order) {
+            (None, None) => known(store).await,
+            _ => Vec::new(),
         },
         round: round(),
         waits: true,

@@ -574,6 +574,7 @@ dependencies = [
  "datum-commands",
  "datum-core",
  "datum-parse",
+ "datum-sync-wire",
  "datum-test-util",
  "ed25519-dalek 2.2.0",
  "libc",
@@ -585,6 +586,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+ "tokio",
  "xtask",
 ]
 
