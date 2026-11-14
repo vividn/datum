@@ -112,7 +112,7 @@ export const read = (page) =>
 			y,
 			widget: box(root.querySelector('.nowview')),
 			band: box(root.querySelector('.nowview-band')),
-			handles: [...root.querySelectorAll('.nowview-handles .handle')].map((h) => (y ? [box(h).top, box(h).bottom] : [box(h).left, box(h).right])),
+			handles: [...root.querySelectorAll('.nowview-handles .handle')].map((h) => ({ axis: h.dataset.axis, span: y ? [box(h).top, box(h).bottom] : [box(h).left, box(h).right] })),
 			picture,
 			frame,
 			relRow,
@@ -126,8 +126,45 @@ export const read = (page) =>
 		};
 	}, [CHANGE, DOT, NOW]);
 
-/** Whether a place along time is clear of every handle, which a press there would take. */
-export const clear = (g, p) => g.handles.every(([a, b]) => p < a - 4 || p > b + 4);
+/**
+ * Each axis's labelled ticks drawn and shown inside the window, short of now
+ * by more than a diamond (28px): where each mark is along time, and what a
+ * handle on it says — the relative label's words, the clock mark's time
+ * (da-273ug).
+ */
+export const ticksOf = (page) =>
+	page.locator(NOWVIEW).evaluate((root, now) => {
+		const svg = root.querySelector('svg.svg');
+		const y = !!svg.querySelector('[data-lo][data-axis="y"]');
+		const frame = svg.closest('.picture').getBoundingClientRect();
+		const along = (e) => {
+			const b = e.getBoundingClientRect();
+			return y ? b.top + b.height / 2 : b.left + b.width / 2;
+		};
+		// Now along time, by two of the clock's marks.
+		const [m, n] = [...svg.querySelectorAll('.clock-mark')].map((e) => ({ at: Date.parse(e.getAttribute('data-at')), p: along(e) }));
+		const hi = Math.min(y ? frame.bottom : frame.right, m.p + ((now - m.at) * (n.p - m.p)) / (n.at - m.at)) - 28;
+		const hhmmss = (t) => new Date(t).toISOString().slice(11, new Date(t).getUTCSeconds() ? 19 : 16);
+		const of = (sel, word) =>
+			[...svg.querySelectorAll(sel)]
+				.filter((l) => getComputedStyle(l).visibility !== 'hidden' && l.textContent)
+				.map((l) => ({ at: along(l.previousElementSibling), word: word(l) }))
+				.filter((t) => t.at >= (y ? frame.top : frame.left) && t.at <= hi);
+		return {
+			rel: of('.tick-label', (l) => l.textContent),
+			abs: of('.clock-label', (l) => hhmmss(Date.parse(l.previousElementSibling.getAttribute('data-at'))))
+		};
+	}, NOW);
+
+/** The tick of `ticksOf`'s nearest now, along time. */
+export const rightmost = (ticks) => ticks.reduce((a, b) => (b.at > a.at ? b : a));
+
+/**
+ * Whether a place along time is clear of every handle, which a press there would
+ * take, or of the handle of the axis `on` alone: a press on one axis is only
+ * ever its own handle's.
+ */
+export const clear = (g, p, on) => g.handles.every(({ axis, span: [a, b] }) => (on && axis !== on) || p < a - 4 || p > b + 4);
 
 /** A point `along` time and `across` the band, whichever way time runs. */
 export const pt = (g, along, across) => (g.y ? { x: across, y: along } : { x: along, y: across });

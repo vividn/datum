@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, draft, rested } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { PANE, handle, notch, asked, handled, beside, hover, farIs, soloNowview, pinch, TOUCH } from './support/nowview.mjs';
+import { PANE, handle, notch, asked, askedMinutes, wheelStep, handled, beside, hover, farIs, soloNowview, pinch, TOUCH } from './support/nowview.mjs';
 
 before(startApp);
 after(stopApp);
@@ -209,10 +209,10 @@ describe('the nowview widget zooms', () => {
 				await app.idle();
 				await farIs(page, '-30m');
 
-				// The handles pick up from where the wheel left the window.
-				await hover(page, '-30m');
-				await notch(page, '30m').click();
-				await asked(page, '60m');
+				// The handles pick up from where the wheel left the window: a rung over the tick's time.
+				const step = await hover(page, '-30m').then(() => wheelStep(page, 1));
+				await notch(page, step.word).click();
+				await askedMinutes(page, (30 * step.step) / step.held);
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...DESKTOP }
@@ -232,9 +232,8 @@ describe('the nowview widget zooms', () => {
 					.locator(`${PANE} svg.svg .current-time-line`)
 					.evaluateAll((ls) => ls.map((l) => l.getBoundingClientRect().left));
 				assert.ok(lines.every((x) => x >= box.x + box.width), `the now line is in the window: ${lines} of ${JSON.stringify(box)}`);
-				// Its ticks count from now, three hours on, and the handle stands in
-				// the window's middle, at -3h: the words `farIs` halves.
-				await farIs(page, '-6h');
+				// Its ticks count from now, three hours on: the window 08:45–09:15.
+				await farIs(page, '-195m');
 
 				await pinch(page, box, 80, 120);
 				await asked(page, '20m');

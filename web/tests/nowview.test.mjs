@@ -22,7 +22,19 @@ import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, pastTheWindow, rested, settled, swipe } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { PANE, handle, notch, asked, handled, beside, hover, farIs, soloNowview, TOUCH } from './support/nowview.mjs';
+import { PANE, handle, handleWords, notch, asked, handled, beside, hover, farIs, onTicks, soloNowview, TOUCH } from './support/nowview.mjs';
+import { registerHooks } from 'node:module';
+
+// panes.ts imports its neighbours as `.js`, as Vite resolves them.
+registerHooks({
+	resolve(specifier, context, next) {
+		if (/^\.\/.*\.js$/.test(specifier) && context.parentURL?.includes('/src/lib/'))
+			return next(specifier.replace(/\.js$/, '.ts'), context);
+		return next(specifier, context);
+	}
+});
+
+const { historyArg, ladderAround, stepMinutes } = await import('../src/lib/panes.ts');
 
 before(startApp);
 after(stopApp);
@@ -44,6 +56,19 @@ const wheelOf = (page) =>
 		return { at: w.querySelector('.notch.held').dataset.at, up: of(1), down: of(-1) };
 	});
 
+/**
+ * The window `n` rungs of the ladder up (down, for `n` < 0) from a handle saying
+ * `words` makes of a window `w` minutes long: the window scaled about the
+ * anchor by the rung over the handle's time. A handle stands on its axis's
+ * rightmost tick (da-273ug), so its words are that tick's.
+ */
+const steppedFrom = (w, words, n) => {
+	const h = stepMinutes(words.replace(/^t?[-+]/, ''));
+	const { up, down } = ladderAround(h);
+	const rung = n > 0 ? up[n - 1] : down[-n - 1];
+	return { rung, window: historyArg((w * stepMinutes(rung)) / h) };
+};
+
 /** Every nowview widget's settings in a layout tree. */
 function nowviewSettings(node, out = []) {
 	if (node?.kind === 'nowview') out.push(node.settings);
@@ -57,9 +82,10 @@ describe('the nowview widget', () => {
 	test('a diamond on each axis, over no label, and no − / +', async () => {
 		await shared.solo(async ({ page }) => {
 			const where = await beside(page, PANE);
-			assert.equal(where.far, '-15m');
+			// On the 30m window's rightmost relative tick (da-273ug).
+			assert.equal(where.far, '-10m');
 			assert.deepEqual(where.wrong, []);
-			assert.deepEqual(await handled(page), ['-15m']);
+			assert.deepEqual(await handled(page), ['-10m']);
 			const clock = await page.locator(`${PANE} .nowview-handles .handle[data-axis="abs"]`).getAttribute('data-at');
 			assert.match(clock, /^\d\d:\d\d(:\d\d)?$/);
 			assert.equal(await page.locator(`${PANE} .nowview-steps, ${PANE} .step`).count(), 0, 'the − / + are still drawn');
@@ -101,9 +127,11 @@ describe('the nowview widget', () => {
 		});
 	});
 
-	// da-5whsm: the diamonds stay where they stand, and one the pill stands
-	// under counts, and scales, from the window's right edge, as panned back.
-	test('with the cursor set the window centres on it, and the diamonds stay, counting from the right edge', async () => {
+	// da-5whsm: the diamonds stay where they stand. On its tick near now
+	// (da-273ug), the relative one stands past the pill the window centres on,
+	// so it counts from the pill: a pill standing under it is what counts from
+	// the window's right edge.
+	test('with the cursor set the window centres on it, and the diamonds stay, counting from the pill', async () => {
 		await withApp(
 			async ({ page }) => {
 				const rel = page.locator(`${PANE} .nowview-handles .handle[data-axis="rel"]`);
@@ -116,7 +144,7 @@ describe('the nowview widget', () => {
 					PANE
 				);
 				const where = await beside(page, PANE);
-				assert.match(where.far, /^-\d+m$/);
+				assert.match(where.far, /^t\+\d+m$/);
 				assert.deepEqual(where.wrong, []);
 				const now = await rel.boundingBox();
 				assert.ok(Math.abs(now.x - was.x) <= 0.5 && Math.abs(now.y - was.y) <= 0.5, `the diamond went from ${was.x} to ${now.x}`);
@@ -125,27 +153,32 @@ describe('the nowview widget', () => {
 		);
 	});
 
-	test('click the handle of a 30m window, at -15m: the numbers step it to -20m, a 40m window, then -30m, and stay open', async () => {
+	test('click the handle of a 30m window, on its tick: the numbers step it a rung over the tick, then another, and stay open', async () => {
 		await shared.room('steps', async (app) => {
 			const { page } = app;
 			await beside(page, PANE);
+			const words = await handleWords(page);
 			await hover(page, '-30m');
-			// The next step either way clear, those beyond it fading.
+			// The next step either way clear, those beyond it fading: the ladder about the tick's time.
 			const wheel = await wheelOf(page);
-			assert.deepEqual(wheel.up.map(([s]) => s), ['20m', '30m', '45m', '60m']);
-			assert.deepEqual(wheel.down.map(([s]) => s), ['10m', '5m', '2m', '1m']);
+			const { up, down } = ladderAround(stepMinutes(words.slice(1)));
+			assert.equal(wheel.at, words);
+			assert.deepEqual(wheel.up.map(([s]) => s), up.slice(0, 4));
+			assert.deepEqual(wheel.down.map(([s]) => s), down.slice(0, 4));
 			for (const side of [wheel.up, wheel.down]) {
 				assert.equal(side[0][1], 1, `the next step is not clear: ${JSON.stringify(side)}`);
 				assert.ok(side[1][1] < 1 && side[2][1] < side[1][1] && side[3][1] < side[2][1], `the steps beyond do not fade: ${JSON.stringify(side)}`);
 			}
 			const seen = await app.spyOnRunner();
 
-			await notch(page, '20m').click();
-			await asked(page, '40m');
-			assert.equal((await wheelOf(page)).at, '-20m', 'the wheel closed or did not move on');
-			await notch(page, '30m').click();
-			await asked(page, '60m');
-			assert.deepEqual((await wheelOf(page)).up.map(([s]) => s), ['45m', '60m', '90m', '2h']);
+			const one = steppedFrom(30, words, 1);
+			await notch(page, one.rung).click();
+			await asked(page, one.window);
+			assert.equal((await wheelOf(page)).at, `-${one.rung}`, 'the wheel closed or did not move on');
+			const two = steppedFrom(stepMinutes(one.window), `-${one.rung}`, 1);
+			await notch(page, two.rung).click();
+			await asked(page, two.window);
+			assert.deepEqual((await wheelOf(page)).up.map(([s]) => s), ladderAround(stepMinutes(two.rung)).up.slice(0, 4));
 
 			// Leaving the handle closes the wheel.
 			await page.mouse.move(1, 1);
@@ -160,34 +193,38 @@ describe('the nowview widget', () => {
 
 	// vividn, on the clock's handle: «sensible round absolute times that you can
 	// pick that scale in a similar fashion. does not have to be powers of two».
-	test('on the clock’s 14:45 in a 30m window to 15:00, 14:40 makes the window 40m; the relative numbers end at 30s and 12h', async () => {
+	test('on the clock’s 14:50 tick in a 30m window to 15:00, 14:40 makes the window 60m; the relative numbers end at 30s and 12h', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				await beside(page, PANE);
 				await app.spyOnRunner();
-				assert.equal(await page.locator(`${PANE} .nowview-handles .handle[data-axis="abs"]`).getAttribute('data-at'), '14:45');
-				await hover(page, '14:45');
+				assert.equal(await page.locator(`${PANE} .nowview-handles .handle[data-axis="abs"]`).getAttribute('data-at'), '14:50');
+				await hover(page, '14:50');
 				const wheel = await wheelOf(page);
-				assert.deepEqual(wheel.up.map(([s]) => s), ['14:40', '14:30', '14:15', '14:00']);
-				assert.deepEqual(wheel.down.map(([s]) => s), ['14:50', '14:55', '14:58', '14:59']);
+				assert.deepEqual(wheel.up.map(([s]) => s), ['14:45', '14:40', '14:30', '14:15']);
+				assert.deepEqual(wheel.down.map(([s]) => s), ['14:55', '14:58', '14:59', '14:59:30']);
 				await notch(page, '14:40').click();
-				await asked(page, '40m');
+				await asked(page, '60m');
 				await app.idle();
 				assert.deepEqual(app.errors, [], 'datum did not take a window off the ladder');
 			},
 			{ viewport: { width: 460, height: 700 }, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
 		);
-		// Past the ladder's ends a handle's wheel has no step that way (da-wd6h5).
-		for (const [history, far, side] of [
-			['24h', '-24h', 'up'],
-			['1m', '-1m', 'down']
+		// Past the ladder's ends a handle's wheel has no step that way (da-wd6h5):
+		// its steps that way are the ladder's past the tick's time, to its end.
+		for (const [history, far, side, end] of [
+			['24h', '-24h', 'up', '12h'],
+			['1m', '-1m', 'down', '30s']
 		]) {
 			await withApp(
 				async ({ page }) => {
 					await beside(page, PANE);
+					const ladder = ladderAround(stepMinutes((await handleWords(page)).slice(1)))[side];
 					await hover(page, far);
-					assert.deepEqual((await wheelOf(page))[side], [], `${history}'s wheel goes on ${side}`);
+					const steps = (await wheelOf(page))[side].map(([s]) => s);
+					assert.deepEqual(steps, ladder.slice(0, 4), `${history}'s wheel goes on ${side}`);
+					assert.ok(ladder.length <= 4 && (!ladder.length || ladder.at(-1) === end), `${history}'s ladder ${side}: ${ladder}`);
 				},
 				{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history })) }
 			);
@@ -200,9 +237,10 @@ describe('the nowview widget', () => {
 				const { page } = app;
 				await beside(page, PANE);
 				await app.spyOnRunner();
+				const words = await handleWords(page);
 				const box = await handle(page, '-30m').boundingBox();
 				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 0, -68);
-				await asked(page, '60m');
+				await asked(page, steppedFrom(30, words, 2).window);
 				// A swipe's lift takes its notch and puts the wheel away.
 				await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
 				assert.deepEqual(app.errors, []);
@@ -220,6 +258,7 @@ describe('the nowview widget', () => {
 			async (app) => {
 				const { page } = app;
 				await beside(page, PANE);
+				const ladder = ladderAround(stepMinutes((await handleWords(page)).slice(1))).up;
 				const box = await handle(page, '-30m').boundingBox();
 				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
 				await hover(page, '-30m');
@@ -233,16 +272,16 @@ describe('the nowview widget', () => {
 				await page.locator('.nowview-wheel .notch.picked[data-k="4"]').waitFor();
 				const { up, down } = await wheelOf(page);
 				const clear = Object.fromEntries([...up, ...down]);
-				// -15m's longer steps, as many as show around the pick: picked 60m.
-				assert.deepEqual(up.map(([s]) => s), ['20m', '30m', '45m', '60m', '90m', '2h', '3h', '6h']);
-				assert.equal(clear['60m'], 1, `the pick is not clear: ${JSON.stringify(up)}`);
-				assert.ok(clear['45m'] === 1 && clear['90m'] === 1, `its neighbours are not clear: ${JSON.stringify(up)}`);
-				assert.ok(clear['30m'] < 1 && clear['20m'] < clear['30m'], `no fade below the pick: ${JSON.stringify(up)}`);
-				assert.ok(clear['2h'] < 1 && clear['3h'] < clear['2h'], `no fade above the pick: ${JSON.stringify(up)}`);
+				// The tick's longer steps, as many as show around the pick: picked the fourth.
+				assert.deepEqual(up.map(([s]) => s), ladder.slice(0, 8));
+				assert.equal(clear[ladder[3]], 1, `the pick is not clear: ${JSON.stringify(up)}`);
+				assert.ok(clear[ladder[2]] === 1 && clear[ladder[4]] === 1, `its neighbours are not clear: ${JSON.stringify(up)}`);
+				assert.ok(clear[ladder[1]] < 1 && clear[ladder[0]] < clear[ladder[1]], `no fade below the pick: ${JSON.stringify(up)}`);
+				assert.ok(clear[ladder[5]] < 1 && clear[ladder[6]] < clear[ladder[5]], `no fade above the pick: ${JSON.stringify(up)}`);
 				const size = await page.locator('.nowview-wheel .notch.picked').evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
 				assert.ok(size > 11, `the notches' words are ${size}px`);
 				await page.mouse.up();
-				await page.locator('.nowview-wheel .notch.held[data-at="-60m"]').waitFor();
+				await page.locator(`.nowview-wheel .notch.held[data-at="-${ladder[3]}"]`).waitFor();
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
@@ -255,8 +294,9 @@ describe('the nowview widget', () => {
 				const { page } = app;
 				await beside(page, PANE);
 				await app.spyOnRunner();
+				const words = await handleWords(page);
 				await handle(page, '-30m').tap();
-				await page.locator('.nowview-wheel .notch.held[data-at="-15m"]').waitFor();
+				await page.locator(`.nowview-wheel .notch.held[data-at="${words}"]`).waitFor();
 				const seen = await page.locator(PANE).evaluate((p) => {
 					const h = p.querySelector('.nowview-handles .handle').getBoundingClientRect();
 					const all = [...document.querySelectorAll('.nowview-wheel .notch')];
@@ -281,7 +321,7 @@ describe('the nowview widget', () => {
 				// Up two of them, from the one it stands on.
 				const on = await page.locator('.nowview-wheel .notch.held').boundingBox();
 				await swipe(page, on.x + on.width / 2, on.y + on.height / 2, 0, -68);
-				await asked(page, '60m');
+				await asked(page, steppedFrom(30, words, 2).window);
 				await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
 				assert.deepEqual(app.errors, []);
 			},
@@ -298,7 +338,7 @@ describe('the nowview widget', () => {
 				const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 				await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
 				assert.equal(await page.locator('.nowview-wheel').count(), 0, 'open as the finger landed');
-				await page.locator('.nowview-wheel .notch.held[data-at="-15m"]').waitFor();
+				await page.locator(`.nowview-wheel .notch.held[data-at="${await handleWords(page)}"]`).waitFor();
 				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 				await page.locator('.nowview-wheel .notch.held').waitFor();
 			},
@@ -322,10 +362,11 @@ describe('the nowview widget', () => {
 				assert.equal(await page.locator('.handle.dragged').textContent(), '');
 				await page.mouse.up();
 				await asked(page, '60m');
-				await handle(page, '-60m').waitFor();
+				await farIs(page, '-60m');
 
-				// And to anywhere: three quarters of the way back is 80m, off the
-				// ladder, which datum is asked for as it is.
+				// And to anywhere: three quarters of the way back is about 80m, off
+				// the ladder, which datum is asked for as it is. About: on its tick
+				// near now (da-273ug), a pixel is a percent of the diamond's reach.
 				const again = await handle(page, '-60m').boundingBox();
 				const [x2, y2] = [again.x + again.width / 2, again.y + again.height / 2];
 				const now2 = await anchorX(page);
@@ -333,7 +374,11 @@ describe('the nowview widget', () => {
 				await page.mouse.down();
 				await page.mouse.move(now2 - (now2 - x2) * 0.75, y2, { steps: 6 });
 				await page.mouse.up();
-				await asked(page, '80m');
+				const last = () => page.evaluate(() => window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1));
+				const argv = await until(last, (a) => a && a[a.indexOf('--history') + 1] !== '60m');
+				const history = argv[argv.indexOf('--history') + 1];
+				const got = history.endsWith('s') ? parseFloat(history) / 60 : stepMinutes(history);
+				assert.ok(Math.abs(got - 80) / 80 < 0.03 && !ladderAround(0).up.includes(history), `asked for ${history}`);
 				await app.idle();
 				assert.deepEqual(app.errors, []);
 			},
@@ -345,7 +390,9 @@ describe('the nowview widget', () => {
 	// nowsection is visible. Let's have them scale from the right edge too, so
 	// that when you are panned far in the past they still have a nice zoooming
 	// effect».
-	test('panned an hour back, the diamonds stand where they do on now, and a drag scales about the right edge', async () => {
+	// The diamond stands on its rightmost tick (da-273ug), which a pan moves
+	// along the window: on another tick panned back than on now.
+	test('panned an hour back, the diamonds stand on their ticks, and a drag scales about the right edge', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -364,6 +411,7 @@ describe('the nowview widget', () => {
 						const [from, to] = ['from', 'to'].map((k) => Date.parse(g.dataset[k]));
 						return { right, at: from + ((right - lo) / (hi - lo)) * (to - from) };
 					});
+				await onTicks(page);
 				const panned = await xOf();
 				const edge = await rightEdge();
 				await app.spyOnRunner();
@@ -379,16 +427,16 @@ describe('the nowview widget', () => {
 				assert.ok(argv.includes('--center'), `a drag panned back went home: ${argv.join(' ')}`);
 				const kept = await until(rightEdge, (e) => Math.abs(e.at - edge.at) <= 15_000);
 				assert.ok(Math.abs(kept.at - edge.at) <= 15_000, `the right edge moved ${(kept.at - edge.at) / 1000}s`);
-				assert.ok(Math.abs((await xOf()) - panned) <= 1, 'the diamond moved with the window');
+				await onTicks(page);
 
-				// On now, the diamonds stand where they stood panned back.
+				// On now, on their ticks again.
 				await page.locator(`${PANE} .nowview-now`).click();
 				await until(
 					() => page.locator(`${PANE} .nowview-now`).count(),
 					(n) => n === 0
 				);
 				await app.idle();
-				assert.ok(Math.abs((await xOf()) - panned) <= 1, `on now at ${await xOf()}, panned back at ${panned}`);
+				await onTicks(page);
 				assert.deepEqual(app.errors, []);
 			},
 			{
@@ -481,7 +529,7 @@ describe('the nowview widget', () => {
 						await page.mouse.up();
 					}
 					await asked(page, '60m');
-					await handle(page, '-60m').waitFor();
+					await farIs(page, '-60m');
 					assert.equal(await page.evaluate(() => window.getSelection().toString()), '');
 					// And none of a handle's words can be taken, whatever the drag.
 					// Read in one pass in the page, so no redraw lands between the
@@ -504,13 +552,14 @@ describe('the nowview widget', () => {
 				const { page } = app;
 				await beside(page, PANE);
 				await app.spyOnRunner();
+				const one = steppedFrom(30, await handleWords(page), 1);
 				await handle(page, '-30m').focus();
 				await page.keyboard.press('ArrowUp');
-				await asked(page, '40m');
+				await asked(page, one.window);
 				await page.keyboard.press('ArrowUp');
-				await asked(page, '60m');
+				await asked(page, steppedFrom(stepMinutes(one.window), `-${one.rung}`, 1).window);
 				await page.keyboard.press('ArrowDown');
-				await asked(page, '40m');
+				await asked(page, one.window);
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
@@ -526,9 +575,11 @@ describe('the nowview widget', () => {
 		await withApp(async (app) => { // reloads, and saves `main`
 			const { page } = app;
 			await app.spyOnRunner();
+			await beside(page, PANE);
+			const one = steppedFrom(30, await handleWords(page), 1);
 			await hover(page, '-30m');
-			await notch(page, '30m').click();
-			await asked(page, '60m');
+			await notch(page, one.rung).click();
+			await asked(page, one.window);
 			assert.equal(
 				await page.locator('.root-bar [role="tab"].modified').count(),
 				0,
@@ -536,7 +587,7 @@ describe('the nowview widget', () => {
 			);
 
 			await app.reload();
-			await farIs(page, '-60m');
+			await farIs(page, `-${one.window}`);
 			assert.equal(
 				await page.locator('.root-bar [role="tab"].modified').count(),
 				0,
@@ -548,7 +599,7 @@ describe('the nowview widget', () => {
 
 			// Now it is the draft's, and survives a reload on its own.
 			await app.reload();
-			await farIs(page, '-60m'); // the draft kept the handed-over window
+			await farIs(page, `-${one.window}`); // the draft kept the handed-over window
 
 			// The root bar's save icon, on the `main` tab (da-0a5o).
 			await chooseRoot(page, 'Save');
@@ -557,7 +608,7 @@ describe('the nowview widget', () => {
 			const saved = await other.page.evaluate(() => window.datum.layouts.loadLayout('main'));
 			assert.deepEqual(
 				nowviewSettings(saved.root).map((s) => s.history),
-				['60m']
+				[one.window]
 			);
 		});
 	});
@@ -618,7 +669,7 @@ describe('the nowview handles stay off the picture', () => {
 				// than behind a tab of it (da-hkjp), so there is nothing to
 				// tap: it is already drawn.
 				const where = await beside(page, `section[data-pane="nowview"]`);
-				assert.equal(where.far, '-15m');
+				assert.equal(where.far, '-10m');
 				assert.deepEqual(where.wrong, []);
 				assert.deepEqual(app.errors, []);
 			},
@@ -643,11 +694,12 @@ describe('the nowview handles stay off the picture', () => {
 					page.evaluate(() =>
 						window.__datumSeen.filter((a) => a[0] === 'nowview').map((a) => a[a.indexOf('--history') + 1])
 					);
+				const one = steppedFrom(30, await handleWords(page, '-', 'section[data-pane="side"]'), 1);
 				await handle(page, '-30m', 'section[data-pane="side"]').tap();
-				await notch(page, '30m').tap();
-				await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview' && a.includes('60m')));
+				await notch(page, one.rung).tap();
+				await page.waitForFunction((w) => window.__datumSeen.some((a) => a[0] === 'nowview' && a.includes(w)), one.window);
 				// A finger's wheel stays until a press lands elsewhere.
-				assert.equal((await wheelOf(page)).at, '-30m');
+				assert.equal((await wheelOf(page)).at, `-${one.rung}`);
 
 				// A sideways drag on the far handle, either way, is the
 				// handle's: the window scales, and the pane keeps its tab.
@@ -655,13 +707,14 @@ describe('the nowview handles stay off the picture', () => {
 				await pastTheWindow(page);
 				const was = (await histories()).length;
 				const box = await handle(page, '-60m', 'section[data-pane="side"]').boundingBox();
-				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 60, 0);
+				// Away from now: on its tick near now, the diamond has the room that way (da-273ug).
+				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, -40, 0);
 				await page.waitForFunction((n) => window.__datumSeen.filter((a) => a[0] === 'nowview').length > n, was);
 				await settled(page);
 				await app.idle();
 				assert.equal(await activeTab(page, 'side'), 'nowview', 'a drag on a handle moved the tab');
 				const scaled = (await histories()).at(-1);
-				assert.notEqual(scaled, '60m', 'a drag toward now did not rescale the window');
+				assert.notEqual(scaled, one.window, 'a drag of the handle did not rescale the window');
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...TOUCH, viewport: { width: 390, height: 664 } }
@@ -674,8 +727,9 @@ describe('the nowview handles stay off the picture', () => {
 				const { page } = app;
 				await beside(page, PANE);
 				await app.spyOnRunner();
+				const one = steppedFrom(30, await handleWords(page), 1);
 				await hover(page, '-30m');
-				const box = await notch(page, '20m').boundingBox();
+				const box = await notch(page, one.rung).boundingBox();
 				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 				await page.mouse.down();
 				await page.locator(`${PANE} svg.svg`).evaluate((svg) => (svg.dataset.old = '1'));
@@ -685,7 +739,7 @@ describe('the nowview handles stay off the picture', () => {
 					return svg && !svg.dataset.old;
 				}, PANE);
 				await page.mouse.up();
-				await asked(page, '40m');
+				await asked(page, one.window);
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...DESKTOP, clock: todayAt(12, 0) }

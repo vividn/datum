@@ -8,7 +8,7 @@ import { startApp, stopApp } from './support/app.mjs';
 import { finger } from './support/press.mjs';
 import { placeBar } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { bothWays, NOW, NOWVIEW, withAxes, read, pt, timePill, drewPill, minutesOf } from './support/nowaxes.mjs';
+import { bothWays, NOW, NOWVIEW, withAxes, read, pt, timePill, drewPill, minutesOf, ticksOf, rightmost } from './support/nowaxes.mjs';
 
 before(startApp);
 after(stopApp);
@@ -31,8 +31,8 @@ bothWays((vertical) => {
 			const g = await read(page);
 			const [start, length] = g.y ? [g.frame.top, g.frame.height] : [g.frame.left, g.frame.width];
 			const [from, across] = g.y ? [at.y + at.height / 2, at.x + at.width / 2] : [at.x + at.width / 2, at.y + at.height / 2];
-			// About 0.4 along, as on now with no pill: the pill moves the window's picture, not the handle.
-			assert.ok((from - start) / length > 0.3 && (from - start) / length < 0.55, `it stands ${(from - start) / length} along`);
+			// Where it stood on now with no pill, on its tick (da-273ug): the pill moves the window's picture, not the handle.
+			assert.ok((from - start) / length > 0.3 && (from - start) / length < 1, `it stands ${(from - start) / length} along`);
 			assert.ok(Math.abs(at.x - before.x) <= 0.5 && Math.abs(at.y - before.y) <= 0.5, `it went from ${before.x},${before.y} to ${at.x},${at.y}`);
 			await finger(page, pt(g, from, across), pt(g, from + 30, across));
 			await until(
@@ -127,4 +127,66 @@ bothWays((vertical) => {
 				assert.ok(Math.abs(got - want) / want < 0.03, `the window came to ${got}m, the finger to ${want}m`);
 			});
 		});
+
+	/** Each diamond's place along time and its words, by axis. */
+	const diamonds = (page) =>
+		page.locator(`${NOWVIEW} .nowview-handles .handle`).evaluateAll((hs) =>
+			Object.fromEntries(
+				hs.map((h) => {
+					const r = h.getBoundingClientRect();
+					const y = !!h.closest('.vertical');
+					return [h.dataset.axis, { at: y ? r.top + r.height / 2 : r.left + r.width / 2, word: h.dataset.at }];
+				})
+			)
+		);
+	/** Wait until each diamond is on its axis's rightmost tick, within a pixel, saying its time. */
+	const onTicks = (page) =>
+		until(
+			async () => [await diamonds(page), await ticksOf(page)],
+			([d, t]) => ['rel', 'abs'].every((k) => d[k] && t[k].length && Math.abs(d[k].at - rightmost(t[k]).at) <= 1 && d[k].word === rightmost(t[k]).word)
+		);
+
+	// vividn, 2026-11-13 (da-273ug): on the rightmost tick, a diamond «let's you
+	// zoom in more easily using it, right now it's much easier to zoom out than in».
+	test('the relative diamond dragged to the window\'s far end zooms in past the middle place\'s 2×, and lands on a tick', async () => {
+		await withAxes(vertical, async (app) => {
+			const { page } = app;
+			await app.spyOnRunner();
+			const [d] = await onTicks(page);
+			const g = await read(page);
+			const anchor = g.pos.dot + ((NOW - g.instants.dot) * (g.pos.dot - g.pos.change)) / (g.instants.dot - g.instants.change);
+			const h = await page.locator(`${NOWVIEW} .handle[data-axis="rel"]`).boundingBox();
+			const across = vertical ? h.x + h.width / 2 : h.y + h.height / 2;
+			const lo = (vertical ? g.frame.top : g.frame.left) + 2;
+			await finger(page, pt(g, d.rel.at, across), pt(g, lo, across));
+			const seen = await until(
+				() => page.evaluate(() => window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1)),
+				(a) => a?.[a.indexOf('--history') + 1] !== '30m'
+			);
+			const got = minutesOf(seen[seen.indexOf('--history') + 1]);
+			const want = (30 * (anchor - d.rel.at)) / (anchor - lo);
+			assert.ok(Math.abs(got - want) / want < 0.03, `the window came to ${got}m, the finger to ${want}m`);
+			// Halfway to the anchor, the far end was twice in: from the tick, more.
+			assert.ok(30 / got > 2.5, `the drag zoomed in ${30 / got}×`);
+			await app.idle();
+			await onTicks(page);
+		});
+	});
+
+	test('after a step of the numbers, each diamond is on its axis\'s rightmost tick again', async () => {
+		await withAxes(vertical, async (app) => {
+			const { page } = app;
+			await app.spyOnRunner();
+			const h = await page.locator(`${NOWVIEW} .handle[data-axis="rel"]`).boundingBox();
+			await finger(page, { x: h.x + h.width / 2, y: h.y + h.height / 2 });
+			await page.locator('.nowview-wheel .notch.held').waitFor();
+			await page.locator('.nowview-wheel .notch[data-k="1"]').click();
+			await until(
+				() => page.evaluate(() => window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1)),
+				(a) => a && a[a.indexOf('--history') + 1] !== '30m'
+			);
+			await app.idle();
+			await onTicks(page);
+		});
+	});
 });

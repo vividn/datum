@@ -290,8 +290,8 @@ describe('a nowview pan stops at now, and a flick coasts', () => {
 		);
 	});
 
-	// A handle belongs to the window's end (da-tglm6), not to a label, so a pan
-	// moves the picture under it.
+	// A handle is read at rest, on its axis's rightmost tick (da-273ug), so a
+	// pan in hand moves the picture under it, and the handle stays.
 	test('mid-drag, each handle stands where it stands at rest', async () => {
 		await withApp(
 			async (app) => {

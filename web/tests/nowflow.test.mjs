@@ -169,14 +169,23 @@ describe('the nowview flows', () => {
 		);
 	});
 
-	// The clock's labels slide with the flow; its axis's handle stands at the
-	// window's end, and what it says moves on with the clock (da-tglm6).
-	test('the clock axis’s handle stays at the window’s end as the labels slide, its time moving on', async () => {
+	// The clock's labels slide with the flow, and its axis's handle stands on
+	// the rightmost of them a diamond short of now (da-273ug, vividn: «on the
+	// first tick mark of each axis … By first I mean furthest to the right»),
+	// sliding with it and saying its time, with no new picture asked.
+	test('the clock axis’s handle rides its rightmost tick as the labels slide, saying its time', async () => {
 		const held = (page) =>
 			page.locator(NOWVIEW).evaluate((root) => {
 				const h = root.querySelector('.nowview-handles .handle[data-axis="abs"]');
-				const label = [...root.querySelectorAll('svg.svg .clock-label')].find((l) => getComputedStyle(l).visibility !== 'hidden');
-				return { text: h?.dataset.at, at: h?.getBoundingClientRect().left, label: label?.getBoundingClientRect().left };
+				const r = h?.getBoundingClientRect();
+				const at = r && r.left + r.width / 2;
+				const shown = [...root.querySelectorAll('svg.svg .clock-label')].filter((l) => getComputedStyle(l).visibility !== 'hidden');
+				const mark = (l) => {
+					const b = l.previousElementSibling.getBoundingClientRect();
+					return b.left + b.width / 2;
+				};
+				const on = shown.find((l) => Math.abs(mark(l) - at) <= 1);
+				return { text: h?.dataset.at, at, on: on?.textContent, later: shown.filter((l) => mark(l) > at + 1).map((l) => l.textContent), label: shown[0] && mark(shown[0]) };
 			});
 		await withApp(
 			async (app) => {
@@ -188,8 +197,11 @@ describe('the nowview flows', () => {
 				const seen = await app.spyOnRunner();
 				await app.clock.forward(3_000);
 				const slid = await held(page);
-				assert.ok(Math.abs(slid.at - before.at) < 0.5, `the handle moved: ${JSON.stringify([before, slid])}`);
-				assert.notEqual(slid.text, before.text);
+				for (const h of [before, slid]) {
+					assert.ok(h.on && (h.text === h.on || h.text.endsWith(h.on)), `the handle is on no tick, or says another time: ${JSON.stringify(h)}`);
+					// Past it, at most the one a diamond's width short of now.
+					assert.ok(h.later.length <= 1, `a later tick than the handle's: ${JSON.stringify(h)}`);
+				}
 				assert.ok(slid.label < before.label - 1, `the label did not slide: ${JSON.stringify([before, slid])}`);
 				assert.deepEqual((await seen()).filter((a) => a[0] === 'nowview'), [], 'datum was asked for a new picture');
 				assert.deepEqual(app.errors, []);

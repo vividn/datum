@@ -25,6 +25,7 @@ import { fold as foldBar } from './support/bar.mjs';
 import { DESKTOP, enterLayoutMode, leaveLayoutMode, pane, pickOption, titles, toggleOption } from './support/layout.mjs';
 import { FREEZE } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
+import { farIs } from './support/nowview.mjs';
 
 before(startApp);
 after(stopApp);
@@ -171,9 +172,9 @@ describe('a fresh phone', () => {
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.collect')), null);
 
 			// The nowview is the default window, asked for
-			// without anything being tapped: its far handle says so. (A write
+			// without anything being tapped: its relative ticks say so. (A write
 			// asks it for its day's data alone now, not its window, da-0e06p.)
-			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-15m"]').waitFor();
+			await farIs(page, '-30m', 'section.pane[data-title="nowview"]');
 			assert.deepEqual(app.errors, []);
 		});
 	});

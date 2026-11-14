@@ -27,10 +27,12 @@ bothWays((vertical) => {
 	test('a scrub on the clock axis is -t HH:MM, and on the relative axis a relative -t', async () => {
 		await withAxes(vertical, async ({ page }) => {
 			let g = await read(page);
-			// Between two clock marks, clear of the handles.
-			const [a, b] = g.clock.slice(1);
-			const [from, to] = [a.p + (b.p - a.p) * 0.3, a.p + (b.p - a.p) * 0.6];
-			assert.ok(clear(g, from) && clear(g, to), 'a handle is in the way');
+			// Between two clock marks, clear of each axis's handle, which stands on a tick (da-273ug).
+			const [from, to] =
+				g.clock
+					.map((a, i, c) => c[i + 1] && [a.p + (c[i + 1].p - a.p) * 0.3, a.p + (c[i + 1].p - a.p) * 0.6])
+					.find((p) => p && p.every((q) => clear(g, q, 'abs') && clear(g, q, 'rel'))) ?? [];
+			assert.ok(from !== undefined, 'a handle is in the way between every two clock marks');
 			await finger(page, pt(g, from, g.absRow), pt(g, to, g.absRow));
 			await timePill(page, (t) => /^-t \d\d:\d\d$/.test(t));
 			// With none, and with a relative one: a relative time, and no length.
@@ -57,7 +59,7 @@ bothWays((vertical) => {
 			const [a, b] = g.clock;
 			const at = (t) => pt(g, a.p + ((t - a.at) * (b.p - a.p)) / (b.at - a.at), g.relRow);
 			const [ten, quarter] = [T - 10 * 60_000, T - 25 * 60_000];
-			assert.ok(clear(g, vertical ? at(quarter).y : at(quarter).x), 'a handle is in the way');
+			assert.ok(clear(g, vertical ? at(ten).y : at(ten).x, 'rel'), 'a handle is in the way');
 			const lengthIs = async (want) => {
 				const said = await until(() => pillsOf(page), (p) => p.includes(`dur:${want}`));
 				assert.deepEqual(said.filter((p) => /^(time|dur):/.test(p)), ['time:-t 15:00', `dur:${want}`]);
@@ -96,11 +98,14 @@ bothWays((vertical) => {
 			// On clock marks, whose time a press near takes whole, before the
 			// pill's own instant, which a relative pill reads off the minute's clock.
 			const P = await page.evaluate(() => window.datum.cursor.at().getTime());
-			const marks = g.clock.filter((m) => m.at < P - 60_000 && m.at > P - 60 * 60_000 && clear(g, m.p)).sort((x, y) => y.at - x.at);
-			assert.ok(marks.length >= 2, `no two clock marks before the pill: ${JSON.stringify(g.clock)}`);
-			const [ten, twenty, later] = [marks[0].at, marks[1].at, P + 5 * 60_000];
+			// The scrub starts on one clear of the clock's handle, which stands on a mark (da-273ug); a tap under it is its time still.
+			const marks = g.clock.filter((m) => m.at < P - 60_000 && m.at > P - 60 * 60_000).sort((x, y) => y.at - x.at);
+			const from = marks.find((m) => clear(g, m.p, 'abs'));
+			const to = marks.find((m) => m !== from);
+			assert.ok(from && to, `no two clock marks before the pill, one clear of the handle: ${JSON.stringify(g.clock)}`);
+			const [ten, twenty, later] = [from.at, to.at, P + 5 * 60_000];
 			const [m1, m2] = [ten, twenty].map((t) => `${(P - t) / 60_000}m`);
-			assert.ok(clear(g, vertical ? at(later).y : at(later).x), 'a handle is in the way');
+			assert.ok(clear(g, vertical ? at(later).y : at(later).x, 'abs'), 'a handle is in the way');
 			const timed = (p) => p.filter((x) => /^(time|dur):/.test(x));
 			const lengthIs = async (want) => {
 				const said = await until(() => pillsOf(page), (p) => p.includes(`dur:${want}`));
@@ -175,15 +180,17 @@ bothWays((vertical) => {
 			const { page } = app;
 			// A pill first, so the picture under the scrub is the one a pill draws.
 			let g = await read(page);
-			assert.ok(clear(g, g.pos.dot - 36) && clear(g, g.pos.dot + 9), 'a handle is in the way');
-			await finger(page, pt(g, g.pos.dot - 36, g.absRow));
+			// From the side of the dot clear of the clock's handle, which stands on a tick (da-273ug).
+			const s = [-1, 1].find((s) => clear(g, g.pos.dot + 36 * s, 'abs') && clear(g, g.pos.dot + 30 * s, 'abs'));
+			assert.ok(s, 'a handle is in the way on both sides of the dot');
+			await finger(page, pt(g, g.pos.dot + 36 * s, g.absRow));
 			await timePill(page, (t) => t.startsWith('-t '));
 			await drewPill(app);
 			g = await read(page);
 			const exact = `-t ${hhmm(g.instants.dot)}`;
-			await finger(page, pt(g, g.pos.dot - 30, g.absRow), pt(g, g.pos.dot + 2, g.absRow));
+			await finger(page, pt(g, g.pos.dot + 30 * s, g.absRow), pt(g, g.pos.dot - 2 * s, g.absRow));
 			await timePill(page, exact);
-			await finger(page, pt(g, g.pos.dot - 30, g.absRow), pt(g, g.pos.dot + 9, g.absRow));
+			await finger(page, pt(g, g.pos.dot + 30 * s, g.absRow), pt(g, g.pos.dot - 9 * s, g.absRow));
 			const said = await timePill(page, (t) => t !== exact && /^-t \d\d:\d\d$/.test(t));
 			assert.notEqual(said, exact, 'the scrub stopped on the dot from 9px away');
 		});

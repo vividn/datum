@@ -631,7 +631,7 @@ describe('a release is seamless', () => {
 			async (app) => {
 				const { page } = app;
 				await seeded(app);
-				const far = await page.locator(`${PANE} .nowview-handles .handle[data-at="-15m"]`).boundingBox();
+				const far = await page.locator(`${PANE} .nowview-handles .handle[data-axis="rel"]`).boundingBox();
 				const [x, y] = [far.x + far.width / 2, far.y + far.height / 2];
 				await page.mouse.move(x, y);
 				await page.mouse.down();

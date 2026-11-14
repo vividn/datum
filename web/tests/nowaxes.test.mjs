@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp } from './support/app.mjs';
 import { finger } from './support/press.mjs';
 import { until } from './support/until.mjs';
-import { bothWays, NOWVIEW, withAxes, read, pt, pillsOf } from './support/nowaxes.mjs';
+import { bothWays, NOWVIEW, withAxes, read, pt, pillsOf, ticksOf, rightmost } from './support/nowaxes.mjs';
 
 before(startApp);
 after(stopApp);
@@ -58,10 +58,12 @@ bothWays((vertical) => {
 		});
 	});
 
-	// vividn, on #1445: «move them to the middle of the axis … small white
-	// diamonds, 2:1 ratio so they are longer along the axis than sticking out».
-	test('one white 2:1 diamond on each axis’s line in its middle, a press on it no scrub, and no label under it', async () => {
+	// vividn, on #1445: «small white diamonds, 2:1 ratio so they are longer
+	// along the axis than sticking out», and 2026-11-13 (da-273ug): «on the
+	// first tick mark of each axis … By first I mean furthest to the right».
+	test('one white 2:1 diamond on each axis’s line, on its rightmost tick, a press on it no scrub, and no label under it', async () => {
 		await withAxes(vertical, async ({ page }) => {
+			const ticks = await ticksOf(page);
 			const seen = await page.locator(NOWVIEW).evaluate((root) => {
 				const svg = root.querySelector('svg.svg');
 				const y = !!svg.querySelector('[data-lo][data-axis="y"]');
@@ -86,24 +88,29 @@ bothWays((vertical) => {
 							out: y ? w : t,
 							clip: d.clipPath,
 							fill: d.backgroundColor,
-							place: y ? (cy - frame.top) / frame.height : (cx - frame.left) / frame.width,
+							place: y ? cy : cx,
 							off: h.dataset.axis === 'rel' ? (y ? cx - line.right : cy - line.top) : y ? cx - line.left : cy - line.bottom,
+							// On a tick, its label stands beside it: the diamond may reach 2px
+							// into the label's box across the axis, its descent, which no digit's ink reaches.
 							under: shown.filter((l) => {
 								const b = box(l);
-								return b.left < cx + w / 2 && cx - w / 2 < b.right && b.top < cy + t / 2 && cy - t / 2 < b.bottom;
+								const [a, c] = [Math.min(cx + w / 2, b.right) - Math.max(cx - w / 2, b.left), Math.min(cy + t / 2, b.bottom) - Math.max(cy - t / 2, b.top)];
+								return a > 0 && c > 0 && (y ? a : c) > 2;
 							}).map((l) => l.textContent)
 						};
 					}).sort((a, b) => a.axis.localeCompare(b.axis))
 				};
 			});
 			assert.deepEqual(seen.cut, [], 'the window\'s far end cuts a label in two');
-			assert.deepEqual(seen.handles.map((h) => [h.axis, h.at]), [['abs', '14:47:30'], ['rel', '-15m']]);
+			assert.deepEqual(seen.handles.map((h) => h.axis), ['abs', 'rel']);
 			for (const h of seen.handles) {
 				// da-6i27j: «a just a tiny bit bigger», 20 × 10 from 16 × 8.
 				assert.deepEqual([h.along, h.out], [20, 10], `${h.axis}: ${h.along} along, ${h.out} out`);
 				assert.match(h.clip, /^polygon/);
 				assert.equal(h.fill, seen.stroke === 'white' ? 'rgb(255, 255, 255)' : seen.stroke);
-				assert.ok(h.place > 0.3 && h.place < 0.55, `${h.axis} stands ${h.place} along`);
+				const tick = rightmost(ticks[h.axis]);
+				assert.ok(Math.abs(h.place - tick.at) <= 1, `${h.axis} stands at ${h.place}, its rightmost tick at ${tick.at}: ${JSON.stringify(ticks[h.axis])}`);
+				assert.equal(h.at, tick.word);
 				assert.ok(Math.abs(h.off) <= 1, `${h.axis} is ${h.off}px off its line`);
 				assert.deepEqual(h.under, []);
 			}

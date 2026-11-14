@@ -32,6 +32,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESK } from './support/desk.mjs';
+import { askedMinutes, farIs, wheelStep } from './support/nowview.mjs';
 import { FIELD_FORM, NAMING, openField, trackSomething } from './support/field.mjs';
 import {
 	DESKTOP,
@@ -401,18 +402,21 @@ describe('widget options', () => {
 			});
 			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
 
-			// The 45m picture, not the 30m one still drawn: -30m from a stale
-			// -15m handle is a 90m window (da-hkkx3).
-			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-at="-23m"]').click(); // the wheel opens over it
-			await page.locator('.nowview-wheel .notch.held[data-at="-23m"]').waitFor();
-			await page.locator('.nowview-wheel .notch[data-step="30m"]').click();
-			await page.waitForFunction(() => {
+			// The 45m picture, not the 30m one still drawn: a step from a stale
+			// handle scales the wrong window (da-hkkx3).
+			await farIs(page, '-45m', 'section.pane[data-title="nowview"]');
+			await page.locator('section.pane[data-title="nowview"] .nowview-handles .handle[data-axis="rel"]').click(); // the wheel opens over it
+			await page.locator('.nowview-wheel .notch.held').waitFor();
+			const step = await wheelStep(page, 1);
+			await page.locator(`.nowview-wheel .notch[data-step="${step.word}"]`).click();
+			await askedMinutes(page, (45 * step.step) / step.held);
+			const history = await page.evaluate(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
-				return argv?.[argv.indexOf('--history') + 1] === '60m';
+				return argv[argv.indexOf('--history') + 1];
 			});
-			assert.ok((await choiceLines(page, nowview, 'history')).includes('✓ 60m'));
+			assert.ok((await choiceLines(page, nowview, 'history')).includes(`✓ ${history}`));
 			assert.equal(await dotted(page, room), false, 'the widget’s own handle dirtied the layout');
-			assert.ok(!(await tree(page)).includes('"history":"60m"'), 'the widget’s own handle reached the tree');
+			assert.ok(!(await tree(page)).includes(`"history":"${history}"`), 'the widget’s own handle reached the tree');
 			assert.deepEqual(app.errors, []);
 		});
 	});

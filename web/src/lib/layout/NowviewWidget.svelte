@@ -1705,10 +1705,12 @@
 	let roomy = $state(true);
 
 	/**
-	 * A diamond HANDLE on each axis's line (da-tglm6): halfway from the
-	 * window's far end to the anchor, so a drag has room both ways and a
-	 * centered anchor is not under it, or the window's middle where the anchor
-	 * is off the window or next to its far end. With no pill the anchor's place is the window's
+	 * A diamond HANDLE on each axis's line (da-tglm6): on its labelled tick
+	 * nearest the anchor (`tickNear`, da-273ug), so it stands on a gradation,
+	 * and a drag from it to the far end zooms in as far as the window holds
+	 * ticks; where the axis shows none, halfway from the window's far end to
+	 * the anchor, or the window's middle where the anchor is off the window or
+	 * next to its far end. With no pill the anchor's place is the window's
 	 * end, where now is on now, so a pan leaves the diamonds put (da-2x9eq), and a
 	 * pill keeps them where they stood with none (`bare`, da-5whsm). Its words (`-15m`, or a clock's
 	 * `14:40`, none of which it draws) say the time at the diamond, its
@@ -1719,7 +1721,7 @@
 	 * snapshot — or the anchor stands at the window's end, nothing to scale
 	 * about.
 	 */
-	type Handle = { text: string; minutes: number; sign: 1 | -1; x: number; y: number; clock?: number };
+	type Handle = { text: string; minutes: number; sign: 1 | -1; near: boolean; x: number; y: number; clock?: number };
 	let farHandle = $state.raw<Handle | null>(null);
 	let clockHandle = $state.raw<Handle | null>(null);
 	const handles = $derived([farHandle, clockHandle].filter((h): h is Handle => !!h));
@@ -1753,19 +1755,46 @@
 		return m >= 10 || s < 60 || s % 60 === 0 ? historyArg(m < 10 ? m : Math.round(m)) : `${Math.floor(s / 60)}m${s % 60}s`;
 	};
 
-	/** The handles, where the window starts: written only when they moved, being read at every slide. */
-	let handleAt = 0;
+	/** Where each axis's handle stands, from where the window starts: written only when they moved, being read at every slide. */
+	let handleAt = { rel: 0, abs: 0 };
+	/** The instant of the tick each handle stands on, where it stands on one. */
+	let handleTick: { rel: number | null; abs: number | null } = { rel: null, abs: null };
 	let handleHalfway = false;
 	/**
-	 * How far along the window the handles stand with no pill, a share of it:
+	 * How far along the window each handle stands with no pill, a share of it:
 	 * a pill keeps them there, as now leaving the view does, across a resize
 	 * too, the now strip being a fixed share (da-5whsm, vividn: «the white
 	 * diamonds in the nowview still shift places if you select a time. They
 	 * should stay in the same place»).
 	 */
-	let bare: number | null = null;
-	/** Whether the anchor stands under the handles, which then count and scale from the window's right edge, as panned past now. */
-	let handleNear = false;
+	let bare: { rel: number; abs: number } | null = null;
+	/** Whether the anchor stands under a handle, which then counts and scales from the window's right edge, as panned past now. */
+	let handleNear = { rel: false, abs: false };
+
+	/**
+	 * The labelled tick of the axis `on` nearest `end` along it, a diamond
+	 * short of it at least and inside the window from `lo` (da-273ug, vividn:
+	 * «on the first tick mark of each axis, then it is always aligned to some
+	 * major degredation, and also let's you zoom in more easily», «By first I
+	 * mean furthest to the right»): where its mark is on screen, and its
+	 * instant, a clock mark's own or the relative label's words from the
+	 * instant they count from. A label hidden (`clearFar`, `clearCut`) is none.
+	 */
+	function tickNear(svg: SVGSVGElement, on: 'rel' | 'abs', lo: number, end: number): { pos: number; at: number } | null {
+		const live = svg.classList.contains('axis-live') ? '.live-axis ' : '';
+		let best: { pos: number; at: number } | null = null;
+		for (const l of svg.querySelectorAll<SVGElement>(on === 'abs' ? '.clock-label' : `${live}.tick-label`)) {
+			const mark = l.previousElementSibling;
+			if (l.style.visibility === 'hidden' || !l.textContent || !mark) continue;
+			const r = mark.getBoundingClientRect();
+			const pos = axis?.y ? r.top + r.height / 2 : r.left + r.width / 2;
+			const word = /^t?([-+])(.+)$/.exec(l.textContent);
+			const at = on === 'abs' ? Date.parse(mark.getAttribute('data-at') ?? '') : word ? instantMs() + stepMinutes(word[2]) * (word[1] === '-' ? -60_000 : 60_000) : NaN;
+			if (Number.isFinite(at) && pos >= lo && pos <= end - HANDLE_PX && (!best || pos > best.pos)) best = { pos, at };
+		}
+		return best;
+	}
+
 	function readHandles(): void {
 		// Not before the widget is mounted: the flow's effect runs as it is
 		// set up, above where the handles are declared.
@@ -1784,31 +1813,42 @@
 		if (svg && !panned) {
 			const end = (axis?.y ? svg.getBoundingClientRect().y : svg.getBoundingClientRect().x) + (toEnd ? xOf(svg, endMs) : anchorX(svg));
 			handleHalfway = end > lo + 2 * HANDLE_PX && end <= hi;
-			handleAt = (kept ? lo + bare! * (hi - lo) : handleHalfway ? (lo + end) / 2 : (lo + hi) / 2) - start;
-			if (!pill && hi > lo) bare = (handleAt + start - lo) / (hi - lo);
-			handleNear = kept && Math.abs(end - start - handleAt) < HANDLE_PX;
+			const fallback = (handleHalfway ? (lo + end) / 2 : (lo + hi) / 2) - start;
+			for (const on of ['rel', 'abs'] as const) {
+				// On the axis's tick nearest the anchor, or the window's right edge past it; where none, as before it.
+				const tick = kept ? null : tickNear(svg, on, lo, Math.min(end, hi));
+				handleTick[on] = tick?.at ?? null;
+				handleAt[on] = kept ? lo + bare![on] * (hi - lo) - start : tick ? tick.pos - start : fallback;
+				handleNear[on] = kept && Math.abs(end - start - handleAt[on]) < HANDLE_PX;
+			}
+			if (!pill && hi > lo) bare = { rel: (handleAt.rel + start - lo) / (hi - lo), abs: (handleAt.abs + start - lo) / (hi - lo) };
 		}
-		// The time at the diamond, which the handle's words and numbers name.
-		const here = kept ? instantAlong(handleAt + start) : handleHalfway ? (far + endMs) / 2 : Number.isFinite(was) ? was : axis ? instantAlong((lo + hi) / 2) : NaN;
-		// To the second: the flow's now is a few ms off the clock, and 15.0001m has 15m as a step below it.
-		const off = Math.round(((handleNear ? instantAlong(hi) : instantMs()) - here) / 1000) / 60;
-		const none = !svg || !axis || zoom || !(Math.abs(off) >= 1 / 60);
+		const reading = (on: 'rel' | 'abs') => {
+			// The time at the diamond, which the handle's words and numbers name.
+			const here =
+				handleTick[on] ?? (kept ? instantAlong(handleAt[on] + start) : handleHalfway ? (far + endMs) / 2 : Number.isFinite(was) ? was : axis ? instantAlong((lo + hi) / 2) : NaN);
+			// To the second: the flow's now is a few ms off the clock, and 15.0001m has 15m as a step below it.
+			const off = Math.round(((handleNear[on] ? instantAlong(hi) : instantMs()) - here) / 1000) / 60;
+			return { here, off, sign: (off < 0 ? 1 : -1) as 1 | -1, near: handleNear[on] };
+		};
+		const [r, a] = [reading('rel'), reading('abs')];
+		const ok = (o: { off: number }) => !!svg && !!axis && !zoom && Math.abs(o.off) >= 1 / 60;
 		const line = (selector: string) => svg?.querySelector(selector)?.getBoundingClientRect();
-		const [rel, abs] = none ? [] : [line('path.axis'), line('path.clock-axis')];
-		const sign = off < 0 ? 1 : -1;
-		const at = (edge: number) => (axis?.y ? { x: edge - home.x, y: handleAt } : { x: handleAt, y: edge - home.y });
+		const [rel, abs] = [ok(r) ? line('path.axis') : undefined, ok(a) ? line('path.clock-axis') : undefined];
+		const at = (on: 'rel' | 'abs', edge: number) => (axis?.y ? { x: edge - home.x, y: handleAt[on] } : { x: handleAt[on], y: edge - home.y });
 		const same = (a: Handle | null, b: Handle | null) =>
 			a && b ? a.text === b.text && Math.abs(a.x - b.x) <= 0.25 && Math.abs(a.y - b.y) <= 0.25 : a === b;
 		const nextFar: Handle | null = rel
 			? {
-					text: `${counted && !handleNear ? 't' : ''}${sign < 0 ? '-' : '+'}${sayMinutes(Math.abs(off))}`,
-					minutes: Math.abs(off),
-					sign,
-					...at(axis?.y ? rel.right : rel.top)
+					text: `${counted && !r.near ? 't' : ''}${r.sign < 0 ? '-' : '+'}${sayMinutes(Math.abs(r.off))}`,
+					minutes: Math.abs(r.off),
+					sign: r.sign,
+					near: r.near,
+					...at('rel', axis?.y ? rel.right : rel.top)
 				}
 			: null;
 		const nextClock: Handle | null = abs
-			? { text: clockWord(here), minutes: Math.abs(off), sign, clock: here, ...at(axis?.y ? abs.left : abs.bottom) }
+			? { text: clockWord(a.here), minutes: Math.abs(a.off), sign: a.sign, near: a.near, clock: a.here, ...at('abs', axis?.y ? abs.left : abs.bottom) }
 			: null;
 		if (!same(nextFar, farHandle)) farHandle = nextFar;
 		if (!same(nextClock, clockHandle)) clockHandle = nextClock;
@@ -2302,7 +2342,7 @@
 		// panned far in the past they still have a nice zoooming effect»);
 		// and so it does about a pill standing under the diamond (da-5whsm).
 		const right = ends()[1];
-		const edge = handleNear || (!counted && (vertical ? box.y : box.x) + anchorX(svg) > right);
+		const edge = h.near || (!counted && (vertical ? box.y : box.x) + anchorX(svg) > right);
 		const anchor = edge ? right : (vertical ? box.y : box.x) + anchorX(svg);
 		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
 		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, edge, on: h, was: isOpenOn(h), turned: isOpenOn(h) ? (wheel?.pick ?? 0) : 0, mode: 'press', touch: event.pointerType !== 'mouse' };

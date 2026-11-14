@@ -66,11 +66,22 @@ const saysFields = (page, want) =>
 		(seen) => seen.join() === want.join()
 	);
 
-/** The centre of a mark the picture drew for `field`, on screen. */
+/**
+ * The centre of a mark the picture drew for `field`, on screen, or the nearest
+ * point along it no window handle takes: a diamond stands on its axis's
+ * rightmost tick (da-273ug) and is grabbed a little way into the band.
+ */
 async function markOf(page, field, kind = '[data-from]') {
 	const box = await page.locator(`${NOWVIEW} svg.svg .field[data-field="${field}"] ${kind}`).first().boundingBox();
 	assert.ok(box, `nothing drawn for ${field} in the nowview`);
-	return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const y = box.y + box.height / 2;
+	for (const dx of [0, -40, 40, -80, 80]) {
+		const x = box.x + box.width / 2 + dx;
+		if (x < box.x || x > box.x + box.width) continue;
+		const free = await page.evaluate(({ x, y }) => !document.elementFromPoint(x, y)?.closest('.nowview-handles'), { x, y });
+		if (free) return { x, y };
+	}
+	assert.fail(`every point along ${field}'s mark is under a handle`);
 }
 
 /** The pills as `kind:text` — what each PUTS on the command line, which is what it means. */
