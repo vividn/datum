@@ -562,7 +562,7 @@
 					<button
 						type="button"
 						class="verb"
-						class:on={verb === choice.verb}
+						class:picked={verb === choice.verb}
 						role="radio"
 						aria-checked={verb === choice.verb}
 						data-verb={choice.verb}
@@ -1065,7 +1065,7 @@
 		border-color: var(--accent);
 	}
 
-	.verb.on {
+	.verb.picked {
 		border-color: var(--accent);
 		box-shadow: 0 0 0 1px var(--accent);
 	}
