@@ -6,9 +6,10 @@
 	(da-57vj4, da-b9glf). Tap or hold one and big numbers open off to its side,
 	scrolled by a mouse wheel: the ladder's steps on the relative axis (down to 30s, halving past 5m through
 	the 2m and 1m a game needs, up to 12h), round clock times on the clock's.
-	A tap or a swipe between them gives the handle that time in the same
-	place, so the window rescales by their ratio, and a drag along the axis
-	moves the handle's time under the finger, smoothly, the axis's labels those
+	A tap on one gives the handle that time in the same place, so the window
+	rescales by their ratio, and so does the lift of a swipe that opened them
+	from the diamond; a swipe once they are open only turns them (da-k7ddx).
+	A drag along the axis moves the handle's time under the finger, smoothly, the axis's labels those
 	of the window it would land on. Never to the snapshot of each
 	field's state, which is `showHistory` turned off in the widget's menu
 	(da-hklaz). The window is the widget's setting, handed out with
@@ -2303,7 +2304,8 @@
 	 * A press on a handle or the numbers, in hand. Undecided until it travels:
 	 * a handle's along the axis is the drag, and across it the swipe, and the
 	 * axis it travels first decides, once, as the pinch's does; the numbers'
-	 * is the swipe either way. Still, a hold opens the numbers and a tap
+	 * is the swipe either way, which takes its pick at the lift only when it
+	 * opened them. Still, a hold opens the numbers and a tap
 	 * turns them over.
 	 */
 	let grip: {
@@ -2351,7 +2353,7 @@
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
 	}
 
-	/** A press on the numbers: a tap is the number's own click, and one that travels swipes them. */
+	/** A press on the numbers: a tap takes the number at its lift, and one that travels swipes them. */
 	function grabNumbers(event: PointerEvent): void {
 		if (event.button > 0 || !wheel) return;
 		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, edge: false, on: null, was: true, turned: wheel.pick, mode: 'press', touch: event.pointerType !== 'mouse' };
@@ -2400,8 +2402,20 @@
 		ungrip();
 		if (was.mode === 'scale') commit();
 		else if (was.mode === 'wheel' && wheel) {
-			stepTo(rungAt(wheel.pick));
-			if (was.touch) wheel = null;
+			// Open as it was pressed, a swipe only browses: they stay open on
+			// the pick, for a tap on a number to take (da-k7ddx, vividn: «you
+			// can just scroll through it with a swipe (without selecting
+			// anything) so you can explore your options and choose one
+			// easily»). A press on the diamond that opened them takes its pick.
+			if (!was.was) {
+				stepTo(rungAt(wheel.pick));
+				if (was.touch) wheel = null;
+			}
+		} else if (!was.on && wheel) {
+			// A tap on a number takes it at its own lift: a browser may send no
+			// click for a tap soon after a swipe.
+			const k = (event.target as Element | null)?.closest?.<HTMLElement>('.notch[data-k]')?.dataset.k;
+			if (k !== undefined) stepTo(rungAt(Number(k)));
 		} else if (was.on && was.mode === 'press') {
 			// A tap turns the numbers over; a hold has opened them, and leaves them.
 			if (was.was) wheel = null;
@@ -2786,7 +2800,7 @@
 					tabindex="-1"
 					style:--k={n.k}
 					style:--fade={n.fade}
-					onclick={() => stepTo(n.rung)}>{n.rung.word}</button
+					onclick={(e) => e.detail === 0 && stepTo(n.rung)}>{n.rung.word}</button
 				>
 			{/each}
 			<span class="notch held" class:picked={wheel.pick === 0} data-at={wheel.text} style:--k={0} style:--fade={FADE[Math.min(Math.abs(wheel.pick), SHOWN)]} aria-hidden="true"

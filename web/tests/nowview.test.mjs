@@ -280,7 +280,12 @@ describe('the nowview widget', () => {
 				assert.ok(clear[ladder[5]] < 1 && clear[ladder[6]] < clear[ladder[5]], `no fade above the pick: ${JSON.stringify(up)}`);
 				const size = await page.locator('.nowview-wheel .notch.picked').evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
 				assert.ok(size > 11, `the notches' words are ${size}px`);
+				// Pressed with them open, the drag only turned them: its lift takes
+				// nothing, and a click on the pick takes it (da-k7ddx).
 				await page.mouse.up();
+				await page.locator('.nowview-wheel .notch.picked[data-k="4"]').waitFor();
+				assert.equal(await page.locator('.nowview-wheel .notch.held').getAttribute('data-at'), await handleWords(page), 'the lift took a number');
+				await page.locator('.nowview-wheel .notch.picked').click();
 				await page.locator(`.nowview-wheel .notch.held[data-at="-${ladder[3]}"]`).waitFor();
 				assert.deepEqual(app.errors, []);
 			},
@@ -288,7 +293,7 @@ describe('the nowview widget', () => {
 		);
 	});
 
-	test('the numbers stand off to the handle’s side, big: a tap opens them, a swipe on them takes one, and a tap on the handle puts them away', async () => {
+	test('the numbers stand off to the handle’s side, big: a tap opens them, a swipe on them only browses, a tap on one takes it, and a tap on the handle puts them away', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -318,11 +323,20 @@ describe('the nowview widget', () => {
 				await handle(page, '-30m').tap();
 				await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
 				await handle(page, '-30m').tap();
-				// Up two of them, from the one it stands on.
+				// Up two of them, from the one it stands on: the lift chooses
+				// nothing and leaves them open on the pick (da-k7ddx, vividn:
+				// «scroll through it with a swipe (without selecting anything)»).
 				const on = await page.locator('.nowview-wheel .notch.held').boundingBox();
 				await swipe(page, on.x + on.width / 2, on.y + on.height / 2, 0, -68);
+				await page.locator('.nowview-wheel .notch.picked[data-k="2"]').waitFor();
+				await page.waitForTimeout(300);
+				const windows = await page.evaluate(() => window.__datumSeen.filter((a) => a[0] === 'nowview' && a.includes('--history')).map((a) => a[a.indexOf('--history') + 1]));
+				assert.deepEqual(windows.filter((w) => w !== '30m'), [], 'the swipe changed the window');
+				assert.equal(await page.locator('.nowview-wheel .notch.held').getAttribute('data-at'), words, 'the swipe took a number');
+				assert.equal(await page.locator('.nowview-wheel .notch.picked').getAttribute('data-k'), '2', 'the numbers moved on after the lift');
+				// A tap on the picked number takes it.
+				await page.locator('.nowview-wheel .notch.picked').tap();
 				await asked(page, steppedFrom(30, words, 2).window);
-				await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
