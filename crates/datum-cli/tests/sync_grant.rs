@@ -1272,6 +1272,18 @@ fn a_wiped_device_deletes_its_copy_online_at_once_and_offline_once_back() {
     let own = o.json("home", &["sync", "status", "--json"]);
     assert!(own["chain"].is_null(), "{own}");
     eventually("olga wiped", || cell(&o).as_deref() == Some("wiped"));
+    // No member sees another's disk: a person reads each copy's own word,
+    // beside its expulsion, where a program reads `wiped` (da-4fo6v).
+    let list = g.ok("home", &["sync", "chain", "list", "--show-revoked"]);
+    let said: Vec<&str> = list
+        .lines()
+        .filter(|l| l.contains(", said it deleted its copy "))
+        .collect();
+    assert_eq!(said.len(), 2, "{list}");
+    assert!(said.iter().all(|l| l.contains("  EXPELLED ")), "{list}");
+    assert!(!list.contains("WIPED"), "{list}");
+    let grid = g.ok("home", &["sync", "grid"]);
+    assert_eq!(grid.matches("said wiped").count(), 2, "{grid}");
     // What each synced stays on gina's copy; what olga had not is nowhere.
     assert!(g.has("home", "tea") && g.has("home", "mate"));
     assert!(!g.has("home", "yerba") && !o.has("home", "yerba"));

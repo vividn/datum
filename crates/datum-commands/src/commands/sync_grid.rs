@@ -55,6 +55,15 @@ impl Cell {
         }
     }
 
+    /// What a person reads: a wiped copy is its own report, since no member
+    /// sees its disk (da-4fo6v). `--json` keeps `word`.
+    fn said(self) -> &'static str {
+        match self {
+            Cell::Wiped => "said wiped",
+            c => c.word(),
+        }
+    }
+
     fn word(self) -> &'static str {
         match self {
             Cell::Unjoined => "unjoined",
@@ -220,9 +229,9 @@ pub fn grid(db: &Db, json: bool) -> Result<()> {
             let cell = r.cells.get(j).and_then(Option::as_ref).map(|c| c.0);
             let apart = apart_of(r, j);
             let standing = cell.map(|c| match apart {
-                Some(a) if a.this_updates => format!("{} ⚠ update this", c.word()),
-                Some(_) => format!("{} ⚠ update it", c.word()),
-                None => c.word().to_string(),
+                Some(a) if a.this_updates => format!("{} ⚠ update this", c.said()),
+                Some(_) => format!("{} ⚠ update it", c.said()),
+                None => c.said().to_string(),
             });
             let grant = of(r, id).map(|g| g.word().to_string());
             let text = match (standing, grant) {

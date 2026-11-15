@@ -2325,8 +2325,13 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                     )
                 }
                 (_, Some(l)) => format!("  LEFT {}", at(l)),
+                // No member sees the other device's disk: a copy that obeyed
+                // is shown by its own word, beside its expulsion (da-4fo6v).
+                // The fold takes an `erased` only after its `erase`: one
+                // without would say no more than its expulsion.
                 _ => match (m.erased.as_deref(), m.erase.as_deref()) {
-                    (Some(w), _) => format!("  WIPED {}", at(w)),
+                    (Some(w), Some(e)) =>
+                        format!("  EXPELLED {}, said it deleted its copy {}", at(e), at(w)),
                     (_, Some(e)) => format!("  EXPELLED {}, asked to delete its copy", at(e)),
                     _ => revoked
                         .map(|r| format!("  EXPELLED {r}"))
