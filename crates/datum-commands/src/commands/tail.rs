@@ -13,6 +13,7 @@ use datum_core::{
 };
 
 use crate::args::{OutputFlagsExt, TailArgs};
+use crate::commands::follow_zone::lived_zone;
 use crate::commands::helpers::{load_registry_opt, registry_of, resolve_prefix_or_tombstone};
 use crate::commands::render_helpers::build_table_contexts;
 use crate::commands::time_bounds::parse_since;
@@ -506,7 +507,7 @@ pub fn tail_entries_with_default_count(
     default_count: Option<usize>,
     db: &Db,
 ) -> Result<Vec<Entry>> {
-    let mut params = tail_params(args)?;
+    let mut params = tail_params(args, db)?;
     if args.count.is_none() {
         if let Some(n) = default_count {
             params.limit = Some(n);
@@ -544,7 +545,7 @@ pub fn split_columns(raw: &[String]) -> Vec<String> {
 ///   computed date, with a ±1-day pad to absorb timezone offsets; no default
 ///   limit (unless `-n` is set).
 /// * `-t` (alone or with `-d`/`-y`) → upper-bound only (classic tail).
-pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
+pub fn tail_params(args: &TailArgs, db: &Db) -> Result<ListParams> {
     let metric: TimeMetric = args
         .metric
         .parse()
@@ -557,7 +558,7 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
     let (start_utc, end_utc) = if !has_date && !has_time {
         (None, None)
     } else {
-        let window = build_window(args)?;
+        let window = build_window(args, db)?;
         if is_date_only {
             // Pad by ±1 day so timezone skew doesn't drop border rows; caller
             // can further refine if needed, but for tail the pad is harmless
@@ -616,7 +617,7 @@ struct TailWindow {
     day_end_utc: chrono::DateTime<Utc>,
 }
 
-fn build_window(args: &TailArgs) -> Result<TailWindow> {
+fn build_window(args: &TailArgs, db: &Db) -> Result<TailWindow> {
     // da-nxm6: `-z`/`--timezone` resolves to an IANA name (or the host
     // locale's name when omitted) and feeds two surfaces: the
     // `TimeBuilder` that anchors the reference moment, and the day-
@@ -629,7 +630,8 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
             resolve_timezone(spec)
                 .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))?,
         ),
-        None => None,
+        // da-s3773: no `-z`, the zone a log of these flags is placed in.
+        None => lived_zone(db, &args.time, datum_core::time::DatumTime::now().utc)?,
     };
     let point = args
         .time

@@ -707,7 +707,7 @@ fn t13_date_only_window_no_default_limit() {
 
     let mut args = tail_args();
     args.time.date = Some("2024-03-16".to_string());
-    let params = tail_params(&args).unwrap();
+    let params = tail_params(&args, &db).unwrap();
     assert!(params.limit.is_none(), "date-only ⇒ no default limit");
 
     let got = db.list_entries(&params).unwrap();
@@ -737,7 +737,7 @@ fn t14_timezone_aware_day_window() {
 
     let mut args = tail_args();
     args.time.date = Some("2024-03-16".to_string());
-    let params = tail_params(&args).unwrap();
+    let params = tail_params(&args, &db).unwrap();
     let got = db.list_entries(&params).unwrap();
     // ±1 day pad keeps the entry reachable regardless of the runner's local tz.
     assert_eq!(got.len(), 1);
@@ -939,7 +939,7 @@ fn tail_z_flag_shifts_day_window_to_supplied_zone() {
     let mut args = tail_args();
     args.time.date = Some("2024-03-16".to_string());
     args.time.timezone = Some("Pacific/Auckland".to_string());
-    let params = tail_params(&args).unwrap();
+    let params = tail_params(&args, &db).unwrap();
     let got = db.list_entries(&params).unwrap();
     assert_eq!(
         got.len(),

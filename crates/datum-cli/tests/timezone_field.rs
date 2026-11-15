@@ -1318,3 +1318,121 @@ mod follow {
         env.refused(&["db", "config", "auto_setup", "auto"]);
     }
 }
+
+/// A reader's time flags are read in the zone a log of them is (da-s3773):
+/// the day `-yyyt 3` names was lived in Berlin, though the machine is now in
+/// Bangkok, so `tail` stops at 03:00 Berlin, where `occur` logs.
+mod read {
+    use super::*;
+
+    const BANGKOK: &str = "Asia/Bangkok";
+
+    fn ok(env: &Env, args: &[&str]) -> String {
+        let out = env.run_in(BANGKOK, args);
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// The slugs `tail` lists, newest first.
+    fn tailed(env: &Env, args: &[&str]) -> Vec<String> {
+        let out = ok(env, &[&["tail"], args, &["--json"]].concat());
+        let out: Value = serde_json::from_str(&out).unwrap();
+        let rows = out["rows"].as_array().unwrap();
+        rows.iter()
+            .map(|r| r["slug"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// The slug of the entry an echo names.
+    fn slug(echo: &str) -> String {
+        let echo: Value = serde_json::from_str(echo).unwrap();
+        echo["docs"][0]["id"].as_str().unwrap().to_string()
+    }
+
+    /// The time and zone of the entry `slug` names.
+    fn at(env: &Env, slug: &str) -> datum_core::time::DatumTime {
+        let db = Db::open(env.path().to_str().unwrap()).unwrap();
+        let entry = db.get_entry(slug).unwrap();
+        entry.at.unwrap()
+    }
+
+    /// Logs `body` at `-yyy -t clock`, its slug.
+    fn body(env: &Env, clock: &str) -> String {
+        slug(&ok(
+            env,
+            &["occur", "body", "-yyy", "-t", clock, "--show", "json"],
+        ))
+    }
+
+    /// Berlin from five days back until two days back, Bangkok since.
+    fn travelled() -> Env {
+        let env = Env::new();
+        ok(
+            &env,
+            &["timezone", "Europe/Berlin", "-yyyyy", "-t", "12:00"],
+        );
+        ok(&env, &["timezone", BANGKOK, "-yy", "-t", "12:00"]);
+        env
+    }
+
+    #[test]
+    fn tail_yyyt_3_stops_at_3_in_the_zone_that_day_was_lived_in() {
+        let env = travelled();
+        let early = body(&env, "1:30");
+        let late = body(&env, "3:30");
+        let got = tailed(&env, &["body", "-yyyt", "3"]);
+        assert!(
+            got.contains(&early),
+            "01:30 Berlin is before 03:00 Berlin: {got:?}"
+        );
+        assert!(!got.contains(&late), "03:30 Berlin is after it: {got:?}");
+    }
+
+    /// One rule for writing and reading: `tail -yyyt 3` holds the entry
+    /// `occur -yyyt 3` logs, and a minute earlier does not; so does
+    /// nowview's instant.
+    #[test]
+    fn occur_and_tail_agree_on_the_instant() {
+        let env = travelled();
+        let echo = ok(&env, &["occur", "probe", "-yyyt", "3", "--show", "json"]);
+        let probe = slug(&echo);
+        assert_eq!(tailed(&env, &["probe", "-yyyt", "3"]), [probe.as_str()]);
+        assert!(tailed(&env, &["probe", "-yyy", "-t", "2:59"]).is_empty());
+
+        let at = at(&env, &probe);
+        assert_eq!(at.timezone.as_deref(), Some("Europe/Berlin"));
+        let now: Value =
+            serde_json::from_str(&ok(&env, &["nowview", "-yyyt", "3", "--json"])).unwrap();
+        assert_eq!(now["at_ms"], json!(at.utc.timestamp_millis()));
+
+        // `--center` alone is read so too: as `-z` naming that day's zone.
+        let day = (at.utc + chrono::Duration::minutes(at.offset_minutes.into())).date_naive();
+        let center = format!("{day} 03:00");
+        let window = |zone: &[&str]| {
+            let line = [
+                &["nowview", "--center", &center, "--context", "30m"],
+                zone,
+                &["--json"],
+            ];
+            let out: Value = serde_json::from_str(&ok(&env, &line.concat())).unwrap();
+            (out["start_ms"].clone(), out["end_ms"].clone())
+        };
+        assert_eq!(window(&[]), window(&["-z", "Europe/Berlin"]));
+        assert_ne!(window(&[]), window(&["-z", BANGKOK]));
+    }
+
+    /// With no zone field and no move, the machine's zone, as before.
+    #[test]
+    fn with_no_zone_declared_the_bound_is_the_machines() {
+        let env = Env::new();
+        let early = body(&env, "2:30");
+        let late = body(&env, "3:30");
+        let got = tailed(&env, &["body", "-yyyt", "3"]);
+        assert!(got.contains(&early) && !got.contains(&late), "{got:?}");
+        assert_eq!(at(&env, &early).timezone.as_deref(), Some(BANGKOK));
+    }
+}

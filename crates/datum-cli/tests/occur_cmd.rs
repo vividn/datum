@@ -948,7 +948,7 @@ fn flag_and_tail_compose_their_time_flags_as_occur_does() {
         let tail = match parse_invocation_with_db(argv, &db).expect("tail") {
             Invocation::Single(cli) => match cli.command {
                 Command::Tail(args) => {
-                    datum_commands::commands::tail::tail_params(&args).expect("tail")
+                    datum_commands::commands::tail::tail_params(&args, &db).expect("tail")
                 }
                 other => panic!("not tail: {other:?}"),
             },

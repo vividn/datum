@@ -46,6 +46,7 @@ use crate::commands::field_visuals::{
     punch_holes, render_field_visuals, rgb_to_hex, state_label, switch_regions, title_marks,
     SwitchRegion,
 };
+use crate::commands::follow_zone::lived_zone;
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb};
 
 /// The SVG's height when `--height` is not given: the band's cross extent,
@@ -133,18 +134,28 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     // da-5flt: the shared time flags name the instant, resolved against
     // the clock at every render so `--watch` and `-q` move with it.
     let now = DatumTime::now();
-    let built = args.time.build(&now)?;
+    // da-s3773: no `-z`, the flags are read in the zone a log of them is.
+    let mut time = args.time.clone();
+    let mut built = time.build(&now)?;
+    if !built.unmodified && time.timezone.is_none() {
+        time.timezone = lived_zone(db, &time, now.utc)?;
+        built = time.build(&now)?;
+    }
     let at = (!built.unmodified)
         .then(|| built.time.map(|t| t.utc))
         .flatten();
-    // da-zccjs: `--center` is any `-t` value, read in the same zone.
+    // da-zccjs: `--center` is any `-t` value, read in the same zone; alone,
+    // in the zone a log of it is.
     let center = match &args.center {
         Some(v) => {
-            let flags = datum_parse::input::time_args::TimeArgs {
+            let mut flags = datum_parse::input::time_args::TimeArgs {
                 time: Some(v.clone()),
-                timezone: args.time.timezone.clone(),
+                timezone: time.timezone.clone(),
                 ..Default::default()
             };
+            if flags.timezone.is_none() {
+                flags.timezone = lived_zone(db, &flags, now.utc)?;
+            }
             let built = flags
                 .build(&now)
                 .with_context(|| format!("invalid --center: '{v}'"))?;

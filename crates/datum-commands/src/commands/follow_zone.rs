@@ -80,14 +80,41 @@ pub(crate) fn declared_zone(
     action: Action,
     now: DateTime<Utc>,
 ) -> Result<Option<String>> {
-    if zone_is_settled(&args.time) {
+    declared_by(db, &args.time, |zone| read_in(args, action, zone, now))
+}
+
+/// [`declared_zone`] for flags read by `read`, in a zone or the host's.
+fn declared_by(
+    db: &Db,
+    time: &TimeArgs,
+    read: impl Fn(Option<&str>) -> Option<DatumTime>,
+) -> Result<Option<String>> {
+    if zone_is_settled(time) {
         return Ok(None);
     }
     let declared = db.declared_zones()?;
     let zone = declared
-        .reading_itself(|zone| Some(read_in(args, action, Some(zone), now)?.utc))
-        .or_else(|| declared.at(read_in(args, action, None, now)?.utc));
+        .reading_itself(|zone| Some(read(Some(zone))?.utc))
+        .or_else(|| declared.at(read(None)?.utc));
     Ok(zone.map(str::to_string))
+}
+
+/// The zone a reader's time flags are read in where no `-z` or offset says
+/// (da-s3773): the one a log of the same flags is placed in, the `timezone`
+/// field's at the instant, else the entries around it, else the host's
+/// (`None`). So `tail -yyyt 3` stops at the instant `occur -yyyt 3` logs at.
+pub(crate) fn lived_zone(db: &Db, time: &TimeArgs, now: DateTime<Utc>) -> Result<Option<String>> {
+    let read = |zone: Option<&str>| {
+        let time = TimeArgs {
+            timezone: zone.map(str::to_string),
+            ..time.clone()
+        };
+        build_time_from_flags(&time, now).ok()
+    };
+    Ok(match declared_by(db, time, read)? {
+        Some(zone) => Some(zone),
+        None => neighbours_by(db, time, read, now),
+    })
 }
 
 /// The time the line names, read in `zone`, or the host's: the flags', or an
@@ -160,11 +187,21 @@ pub(crate) fn neighbours_zone(
     action: Action,
     now: DateTime<Utc>,
 ) -> Option<String> {
-    if zone_is_settled(&args.time) {
+    neighbours_by(db, &args.time, |zone| read_in(args, action, zone, now), now)
+}
+
+/// [`neighbours_zone`] for flags read by `read`, in a zone or the host's.
+fn neighbours_by(
+    db: &Db,
+    time: &TimeArgs,
+    read: impl Fn(Option<&str>) -> Option<DatumTime>,
+    now: DateTime<Utc>,
+) -> Option<String> {
+    if zone_is_settled(time) {
         return None;
     }
     let around = |zone: Option<&str>| -> Option<(String, Option<String>)> {
-        let at = read_in(args, action, zone, now)?;
+        let at = read(zone)?;
         if at.utc >= now {
             return None;
         }
