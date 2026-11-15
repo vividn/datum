@@ -161,7 +161,7 @@ test('the switch game: started by switching room to where the person is, a move 
 			await page.locator(`${PANE} .game[aria-busy="false"]`).waitFor();
 			assert.equal(await page.locator(`${PANE} .game`).getAttribute('data-phase'), 'neutral');
 			assert.equal(await page.locator(`${PANE} .game .cue`).count(), 1, 'the cue back at rest');
-			assert.equal(await page.locator(`${PANE} .game`).getByRole('button').count(), 0, 'and no button: no Reset, no Start');
+			assert.deepEqual(await page.locator(`${PANE} .game`).getByRole('button').allInnerTexts(), ['How to play'], 'and no Reset, no Start: How to play alone');
 			assert.deepEqual((await rows(app)).map((r) => r.hid), entries.map((r) => r.hid), 'nothing written or deleted');
 			assert.equal(await house.getAttribute('data-room'), await cuedRoom(page), 'the dot at rest where the cue says');
 			assert.deepEqual(app.errors, []);

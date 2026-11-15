@@ -171,7 +171,7 @@
 {/snippet}
 
 <div class="lesson">
-	<GameBox {duration} {fields} onstart={begin} onend={finish} onreset={() => shared.settled()}>
+	<GameBox lesson="moment" {duration} {fields} onstart={begin} onend={finish} onreset={() => shared.settled()}>
 		{#snippet neutral()}
 			{@render table()}
 		{/snippet}

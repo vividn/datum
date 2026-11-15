@@ -116,7 +116,7 @@
 {/snippet}
 
 <div class="lesson">
-	<GameBox bind:this={box} duration={ROUND_MS} {fields} bind:phase={$phase} onstart={begin} onend={finish} onreset={reset} {cue}>
+	<GameBox lesson="change" bind:this={box} duration={ROUND_MS} {fields} bind:phase={$phase} onstart={begin} onend={finish} onreset={reset} {cue}>
 		{#snippet neutral()}{@render plan(next, 0)}{/snippet}
 		{#snippet game(t)}{@render plan(changes, t)}{/snippet}
 	</GameBox>
@@ -168,10 +168,11 @@
 		stroke-width: 1.5;
 	}
 
+	/* Under «How to play», in a phone's short box: at 0.75rem every room's cue wraps to three lines (41 px), not four. */
 	.cue {
 		margin: 0;
-		font-size: 0.85rem;
-		line-height: 1.25;
+		font-size: 0.75rem;
+		line-height: 1.15;
 		color: var(--ink-bright);
 	}
 </style>

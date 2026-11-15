@@ -29,13 +29,22 @@
 	`cue`, drawn at rest in Start's place, and calls `begin` when its moment
 	comes. The game-over screen draws no cue, only the result and Reset
 	(da-uzyih.4880): the cue is back with the neutral scene.
+
+	At rest «How to play» stands above Start, or the cue, the two centered in
+	their column (da-op236, vividn, 2026-11-15: «moving the start button down a
+	little bit so that the two buttons are centered vertically»): it starts the
+	game's tour (#lib/howToPlay.ts), which starts no round. In the other phases
+	it keeps its place, unseen, so «End now» and «Reset» stand where Start did.
 -->
 <script lang="ts">
 	import { onDestroy, type Snippet } from 'svelte';
 	import { act } from '#lib/act.ts';
 	import { keep, startOver, type Outcome, type Phase } from '#lib/tutorial.ts';
+	import { howToPlay } from '#lib/howToPlay.ts';
 
 	interface Props {
+		/** The lesson whose tour «How to play» starts. */
+		lesson: string;
 		/** How long a game lasts, in ms; read as it runs, so `onstart` may set it. */
 		duration: number;
 		/** The lesson's fields: TRACKED while a game runs, IGNORED after, their active states ended by Reset. */
@@ -54,7 +63,7 @@
 		cue?: Snippet;
 	}
 
-	let { duration, fields, neutral, game, onstart, onend, onreset, phase = $bindable('neutral'), cue }: Props = $props();
+	let { lesson, duration, fields, neutral, game, onstart, onend, onreset, phase = $bindable('neutral'), cue }: Props = $props();
 	let start = 0;
 	let elapsed = $state(0);
 	let outcome: Outcome[] = $state.raw([]);
@@ -64,6 +73,7 @@
 	/** The game's fields TRACKED, which their IGNORED waits for; the box is busy until they land. */
 	let kept: Promise<unknown> = Promise.resolve();
 	let keeping = $state(false);
+	let box: HTMLElement;
 
 	export function begin(): void {
 		if (busy || phase === 'scoring' || phase === 'playing') return;
@@ -122,7 +132,7 @@
 	onDestroy(() => cancelAnimationFrame(frame));
 </script>
 
-<section class="game" aria-label="the game" data-phase={phase} aria-busy={busy || keeping}>
+<section class="game" bind:this={box} aria-label="the game" data-phase={phase} aria-busy={busy || keeping}>
 	<div class="stage">
 		{#if phase === 'playing'}
 			{@render game(elapsed)}
@@ -138,6 +148,8 @@
 			{@render neutral()}
 		{/if}
 		<div class="controls">
+			<!-- Held in its place while a round runs and after, so «End now» and «Reset» stand where Start does. -->
+			<button type="button" class="command how" class:away={phase !== 'neutral'} use:act={'open'} onclick={() => howToPlay(lesson, box)}>How to play</button>
 			{#if phase === 'done'}
 				<button type="button" class="command go" use:act={'run'} disabled={busy} onclick={reset}>Reset</button>
 			{:else if cue && phase !== 'playing'}
@@ -196,8 +208,10 @@
 		inset-inline-end: 0.25rem;
 		inline-size: var(--controls, 5rem);
 		display: flex;
-		justify-content: flex-end;
-		align-items: center;
+		flex-direction: column;
+		justify-content: center;
+		align-items: flex-end;
+		gap: 0.25rem;
 	}
 
 	.controls button {
@@ -205,6 +219,19 @@
 		padding-inline: 0.25rem;
 		border-color: var(--accent);
 		color: var(--ink-bright);
+	}
+
+	/* Smaller than Start, so the pair, or it and the change game's cue, fit a phone's short box. */
+	.controls .how {
+		inline-size: 5rem;
+		min-block-size: 1.5rem;
+		padding-block: 0;
+		font-size: 0.75rem;
+		line-height: 1.1;
+	}
+
+	.how.away {
+		visibility: hidden;
 	}
 
 	/* The bar is the time gone, filling the button from its start edge under the word. */

@@ -99,7 +99,7 @@
 {/snippet}
 
 <div class="lesson">
-	<GameBox {duration} {fields} onstart={begin} onend={finish} onreset={() => shared.settled()}>
+	<GameBox lesson="on-off" {duration} {fields} onstart={begin} onend={finish} onreset={() => shared.settled()}>
 		{#snippet neutral()}{@render den(null)}{/snippet}
 		{#snippet game(t)}{@render den(t / 1000)}{/snippet}
 	</GameBox>
