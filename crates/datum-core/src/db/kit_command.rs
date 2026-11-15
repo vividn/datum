@@ -73,9 +73,7 @@ impl InstallCommandsReport {
 }
 
 /// Validate one command entry. Surface install-time errors so the user
-/// sees the problem before the command is stored. Reject Level 3 (`script`)
-/// explicitly so kits that ship one fail clearly rather than silently
-/// installing dead rows.
+/// sees the problem before the command is stored.
 pub fn validate_command(c: &CommandEntry) -> Result<()> {
     if c.name.trim().is_empty() {
         return Err(DatumError::Other(
@@ -90,19 +88,46 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
             c.name, c.name
         )));
     }
-    if c.script.is_some() {
+    let has_expands = c.expands_to.is_some();
+    let has_view = c.view.is_some();
+    if [has_expands, has_view, c.script.is_some()]
+        .iter()
+        .filter(|&&b| b)
+        .count()
+        != 1
+    {
         return Err(DatumError::Other(format!(
-            "kit command '{}': scripted commands not yet supported (Level 3 deferred)",
+            "kit command '{}': must set exactly one of `expands_to` (Level 1), `view` (Level 2) or `script` (Level 3)",
             c.name
         )));
     }
-    let has_expands = c.expands_to.is_some();
-    let has_view = c.view.is_some();
-    if has_expands == has_view {
-        return Err(DatumError::Other(format!(
-            "kit command '{}': must set exactly one of `expands_to` (Level 1) or `view` (Level 2)",
-            c.name
-        )));
+    if let Some(script) = &c.script {
+        // Level 3 (da-et0lm): datum command lines, filled from `args`; no
+        // view, so none of its fields.
+        if !c.columns.is_empty()
+            || !c.labels.is_empty()
+            || !c.formats.is_empty()
+            || c.sort.is_some()
+            || !c.color_rules.is_empty()
+            || c.empty.is_some()
+            || !c.switches.is_empty()
+            || !c.flags.is_empty()
+        {
+            return Err(DatumError::Other(format!(
+                "kit command '{}': a script command cannot set columns/labels/formats/sort/color_rules/empty/switches/flags",
+                c.name
+            )));
+        }
+        check_args(c)?;
+        let names = arg_names(c);
+        if let Some(bad) = placeholders(script).find(|p| !names.contains(p)) {
+            return Err(DatumError::Other(format!(
+                "kit command '{}': script's «{{{bad}}}» is not one of its args ({})",
+                c.name,
+                names.join(", ")
+            )));
+        }
+        return Ok(());
     }
     if has_expands {
         // Level 1: forbid Level 2 fields so an author who fat-fingers
@@ -122,27 +147,11 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
             )));
         }
     } else {
-        // Level 2: an argument is the named parameter `:key`, so its name is
-        // a column name too (da-7ramf); and `key:=value` is refused, as an
-        // argument the caller cannot fill is no argument.
-        if let Some(bad) = c.args.iter().find(|a| {
-            let (name, kind) = datum_parse::spec_keys::parse_key_decl(a);
-            !crate::kit_color_rule::is_column_name(name)
-                || matches!(kind, datum_parse::spec_keys::KeyKind::Assign(_))
-        }) {
-            return Err(DatumError::Other(format!(
-                "kit command '{}': argument `{bad}` is not `key`, `key=` or `key=default` with a name of letters, digits and `_`",
-                c.name
-            )));
-        }
+        check_args(c)?;
         // A switch is the flag `--name` and the parameter `:name`, so it is a
         // name, and neither an argument's nor one of the flags every command
         // already reads.
-        let arg_names: Vec<&str> = c
-            .args
-            .iter()
-            .map(|a| datum_parse::spec_keys::parse_key_decl(a).0)
-            .collect();
+        let arg_names = arg_names(c);
         if let Some(bad) = c.switches.iter().find(|n| {
             !crate::kit_color_rule::is_column_name(n)
                 || arg_names.contains(&n.as_str())
@@ -182,6 +191,40 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Refuse an argument that is not `key`, `key=` or `key=default` of a column
+/// name: in a view it is the named parameter `:key` (da-7ramf), and
+/// `key:=value` is no argument the caller can fill.
+fn check_args(c: &CommandEntry) -> Result<()> {
+    if let Some(bad) = c.args.iter().find(|a| {
+        let (name, kind) = datum_parse::spec_keys::parse_key_decl(a);
+        !crate::kit_color_rule::is_column_name(name)
+            || matches!(kind, datum_parse::spec_keys::KeyKind::Assign(_))
+    }) {
+        return Err(DatumError::Other(format!(
+            "kit command '{}': argument `{bad}` is not `key`, `key=` or `key=default` with a name of letters, digits and `_`",
+            c.name
+        )));
+    }
+    Ok(())
+}
+
+/// The names of a command's `args`.
+fn arg_names(c: &CommandEntry) -> Vec<&str> {
+    c.args
+        .iter()
+        .map(|a| datum_parse::spec_keys::parse_key_decl(a).0)
+        .collect()
+}
+
+/// Each `{name}` in a script, a name being a column name: braces around
+/// anything else (a JSON value) are the line's own text.
+fn placeholders(script: &str) -> impl Iterator<Item = &str> {
+    script.split('{').skip(1).filter_map(|s| {
+        let name = &s[..s.find('}')?];
+        crate::kit_color_rule::is_column_name(name).then_some(name)
+    })
 }
 
 impl Db {

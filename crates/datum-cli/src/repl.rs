@@ -9,6 +9,7 @@
 use std::io::BufRead;
 
 use anyhow::{Context, Result};
+use datum_commands::args::{Cli, Command, Invocation};
 use datum_commands::config;
 use datum_core::db::Db;
 use datum_parse::cli::ScriptArgs;
@@ -74,10 +75,25 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
 /// it, the half-typed line unsaved.
 pub fn readline(base: &[String], db_hint: Option<&str>) -> Result<()> {
     let (db, path) = open(db_hint)?;
+    read_lines(base, &db, Some(&path))
+}
+
+/// [`readline`]'s loop on `db`, the file at `path` (a copy with none).
+fn read_lines(base: &[String], db: &Db, path: Option<&str>) -> Result<()> {
     let mut rl = DefaultEditor::new()?;
     // Quiet: `DATUM_SHOW` keeps each line's `raw_input` as typed, and a
-    // `--show` of the base's own, or the caller's `DATUM_SHOW`, wins.
-    if std::env::var_os("DATUM_SHOW").is_none() {
+    // `--show` of the base's own, or the caller's `DATUM_SHOW`, wins. Put
+    // back as it ends, for a kit script's next line.
+    struct Quiet(bool);
+    impl Drop for Quiet {
+        fn drop(&mut self) {
+            if self.0 {
+                std::env::remove_var("DATUM_SHOW");
+            }
+        }
+    }
+    let _quiet = Quiet(std::env::var_os("DATUM_SHOW").is_none());
+    if _quiet.0 {
         std::env::set_var("DATUM_SHOW", "none");
     }
     // A parse error's hint is about the command, which the base is: the
@@ -96,11 +112,41 @@ pub fn readline(base: &[String], db_hint: Option<&str>) -> Result<()> {
             argv.push("--".into());
         }
         argv.push(line);
-        if let Err(e) = run_argv(argv, &named, &db, Some(&path)) {
+        if let Err(e) = run_argv(argv, &named, db, path) {
             eprintln!("error: {e:#}");
         }
         datum_commands::args::reset_duplicate_noop();
     }
+}
+
+/// A kit command's script (da-et0lm): each of its lines, filled, run in
+/// order as `datum <line>` on `db`, the file at `path`; a `readline` line
+/// reads its lines until Ctrl-D. The first line refused stops it, naming
+/// that line.
+pub fn kit_script(
+    name: &str,
+    lines: Vec<(usize, String, Vec<String>)>,
+    db: &Db,
+    path: &str,
+) -> Result<()> {
+    for (n, line, words) in lines {
+        let mut argv = vec!["datum".to_string()];
+        argv.extend(words);
+        // A `readline` line reads its lines here; a REPL's or a `script`'s
+        // still refuses one.
+        let result = match datum_commands::args::parse_invocation_with_db(argv.clone(), db) {
+            Ok(Invocation::Single(Cli {
+                command: Command::Readline(base),
+                ..
+            })) => read_lines(&base, db, Some(path)),
+            _ => run_argv(argv, &line, db, Some(path)),
+        };
+        datum_commands::args::reset_duplicate_noop();
+        result.with_context(|| {
+            format!("kit command '{name}' stopped at line {n}, «{line}»: the lines after it did not run")
+        })?;
+    }
+    Ok(())
 }
 
 /// The database `db_hint` names, opened to write, and its path.

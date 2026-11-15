@@ -1557,6 +1557,12 @@ laid out the same way.
   kind, `KitWidget.svelte`). It draws the command's `--json` rows from
   their `row_cells` in their `row_color` and `row_background`, and a tap runs the row action,
   each `{column}` that row's value.
+  A kit COMMAND may be a `script` (da-et0lm): datum command lines run in
+  order in its database, each `{arg}` filled from its `args` (a missing
+  one refuses before any runs; one no arg names refuses the install), a
+  `readline` line reading until Ctrl-D, the first line refused stopping
+  it, named by number and text. Never a shell, and native only yet
+  (`kit_script` in `repl.rs`).
   A NEW DEFAULT IS OFFERED, ONCE (da-cr0w2): a change to what a first
   visit opens is a sentence appended to `NEW_DEFAULTS` (`defaults.ts`), and
   a device that started before it is asked at boot (`offerDefaults`,

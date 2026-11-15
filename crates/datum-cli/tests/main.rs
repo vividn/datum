@@ -110,6 +110,7 @@ mod kit_layouts;
 mod kit_ls;
 mod kit_name_clash;
 mod kit_reinstall;
+mod kit_script;
 mod last_state_and_moment;
 mod mark_titles;
 mod migrate_cmd;

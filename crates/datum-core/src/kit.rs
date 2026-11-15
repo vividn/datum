@@ -62,8 +62,8 @@ pub struct KitToml {
     /// `[[command]]` declarations. Two flavours:
     /// - Level 1 (`expands_to`): alias-style splice before the parser runs.
     /// - Level 2 (`view` + `columns`/...): dispatch to a structured renderer.
-    ///   Level 3 (`script`) is parsed and reserved for forward-compat but the
-    ///   renderer errors at execution time. Slice 6 (da-d4t.6).
+    /// - Level 3 (`script`): datum command lines run in order (da-et0lm).
+    ///   Slice 6 (da-d4t.6).
     #[serde(default, rename = "command", skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<CommandEntry>,
 }
@@ -513,9 +513,9 @@ impl AliasEntry {
     }
 }
 
-/// A `[[command]]` entry. Both Level 1 and Level 2 share this struct;
+/// A `[[command]]` entry. All three levels share this struct;
 /// validation at install time enforces that exactly one of `expands_to`
-/// / `view` / `script` is set (script is rejected with a clear error).
+/// / `view` / `script` is set.
 ///
 /// Level 1 fields:
 /// - `expands_to`: alias-style argv splice text (shell-tokenised at install).
@@ -541,9 +541,10 @@ impl AliasEntry {
 ///   `:name` to 1 when given and 0 when not (vividn, 09-28: «all=true seems
 ///   kind of bizarre»).
 ///
-/// Level 3 (forward-compat):
-/// - `script`: reserved; the renderer errors with "scripted commands not
-///   yet supported" at execution time.
+/// Level 3 (da-et0lm):
+/// - `script`: datum command lines, one a line, run in order in the kit's
+///   database, each `{arg}` filled from `args` as the line's words are
+///   read; a line refused stops it there. Never a shell.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandEntry {
     pub name: String,
@@ -571,8 +572,7 @@ pub struct CommandEntry {
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub switches: Vec<String>,
-    /// Level 3 placeholder. Round-trips but install rejects it with
-    /// "scripted commands not yet supported (Level 3 deferred)".
+    /// Level 3: the lines it runs.
     #[serde(default)]
     pub script: Option<String>,
 }
@@ -2178,9 +2178,7 @@ color = "red"
     }
 
     #[test]
-    fn level3_script_round_trips_for_forward_compat() {
-        // The TOML can declare a script field; install rejects it but
-        // round-trip preserves it (so future versions could honour it).
+    fn level3_script_round_trips() {
         let toml = r#"
 [kit]
 name = "future"

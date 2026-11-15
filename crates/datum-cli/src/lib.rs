@@ -1162,6 +1162,16 @@ fn try_kit_level2_dispatch() -> Result<Option<()>> {
     let Some(cmd) = db.get_kit_command(name)? else {
         return Ok(None);
     };
+    if cmd.script_text.is_some() {
+        let lines = commands::kit_command::script_lines(&cmd, &expanded[2..])?;
+        #[cfg(feature = "native")]
+        return repl::kit_script(name, lines, &db, &path).map(Some);
+        #[cfg(not(feature = "native"))]
+        {
+            drop(lines);
+            anyhow::bail!("kit command '{name}' runs a script, which only the datum CLI runs yet");
+        }
+    }
     if cmd.view_name.is_none() {
         return Ok(None);
     }

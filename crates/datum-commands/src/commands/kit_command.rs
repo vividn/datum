@@ -1,4 +1,5 @@
-//! Level 2 kit command renderer (slice 6 / da-d4t.6).
+//! Level 2 kit command renderer (slice 6 / da-d4t.6), and a Level 3
+//! command's lines, filled ([`script_lines`], da-et0lm).
 //!
 //! Dispatches an unknown verb that resolves to a Level-2 kit command
 //! (the entry `command:<name>`, da-fwwtn): runs the named view, projects/labels/sorts/colorises
@@ -140,27 +141,104 @@ impl Call {
                 _ => data.push(w.clone()),
             }
         }
-        let args = DataArgs {
-            data,
-            keys: cmd.args.clone(),
-            ..Default::default()
-        };
-        call.params =
-            handle_data_args(&args).with_context(|| format!("kit command '{}'", cmd.name))?;
-        let names: Vec<&str> = cmd.args.iter().map(|a| parse_key_decl(a).0).collect();
-        if let Some(k) = call.params.keys().find(|k| !names.contains(&k.as_str())) {
-            anyhow::bail!(
-                "kit command '{}' takes no argument '{k}' (it takes: {})",
-                cmd.name,
-                names.join(", ")
-            );
-        }
+        call.params = fill_args(cmd, data)?;
         for s in &cmd.switches {
             call.params
                 .insert(s.clone(), i64::from(on.contains(&s.as_str())).into());
         }
         Ok(call)
     }
+}
+
+/// The words of a call filling `cmd`'s `args`, as an alias's slots are.
+fn fill_args(cmd: &InstalledKitCommand, data: Vec<String>) -> Result<Map<String, JsonValue>> {
+    let args = DataArgs {
+        data,
+        keys: cmd.args.clone(),
+        ..Default::default()
+    };
+    let params = handle_data_args(&args).with_context(|| format!("kit command '{}'", cmd.name))?;
+    let names: Vec<&str> = cmd.args.iter().map(|a| parse_key_decl(a).0).collect();
+    if let Some(k) = params.keys().find(|k| !names.contains(&k.as_str())) {
+        anyhow::bail!(
+            "kit command '{}' takes no argument '{k}' (it takes: {})",
+            cmd.name,
+            names.join(", ")
+        );
+    }
+    Ok(params)
+}
+
+/// A Level 3 command's lines (da-et0lm): each line of its `script` but a
+/// blank or a `#` one, with its number and its text, split into words as a
+/// typed line is, and each `{arg}` in a word filled from `extra_args`, so a
+/// value is one word whatever it holds. A word that was only an optional
+/// argument left out goes. A missing argument refuses before any line runs.
+pub fn script_lines(
+    cmd: &InstalledKitCommand,
+    extra_args: &[String],
+) -> Result<Vec<(usize, String, Vec<String>)>> {
+    if let Some(w) = extra_args
+        .iter()
+        .find(|w| w.starts_with('-') && w.parse::<f64>().is_err())
+    {
+        anyhow::bail!("kit command '{}': unknown flag {w}", cmd.name)
+    }
+    let params = fill_args(cmd, extra_args.to_vec())?;
+    let fills: HashMap<&str, String> = cmd
+        .args
+        .iter()
+        .map(|a| {
+            let name = parse_key_decl(a).0;
+            let value = match params.get(name) {
+                Some(JsonValue::String(s)) => s.clone(),
+                Some(v) => v.to_string(),
+                None => String::new(),
+            };
+            (name, value)
+        })
+        .collect();
+    let script = cmd.script_text.as_deref().unwrap_or_default();
+    Ok(script
+        .lines()
+        .enumerate()
+        .map(|(n, line)| (n + 1, line.trim()))
+        .filter(|(_, line)| !line.is_empty() && !line.starts_with('#'))
+        .map(|(n, line)| {
+            let words = datum_parse::shell_split(line)
+                .into_iter()
+                .filter_map(|w| {
+                    let filled = fill(&w, &fills);
+                    (!filled.is_empty() || w.is_empty()).then_some(filled)
+                })
+                .collect();
+            (n, line.to_string(), words)
+        })
+        .collect())
+}
+
+/// `word` with each `{name}` of `fills` replaced by its value, in one pass,
+/// so a value is never read again for a placeholder of its own.
+fn fill(word: &str, fills: &HashMap<&str, String>) -> String {
+    let (mut out, mut rest) = (String::new(), word);
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        match after
+            .find('}')
+            .and_then(|end| Some((end, fills.get(&after[..end])?)))
+        {
+            Some((end, value)) => {
+                out.push_str(value);
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push('{');
+                rest = after;
+            }
+        }
+    }
+    out + rest
 }
 
 fn prepare(name: &str, extra_args: &[String], db: &Db) -> Result<(InstalledKitCommand, Call)> {
@@ -171,7 +249,7 @@ fn prepare(name: &str, extra_args: &[String], db: &Db) -> Result<(InstalledKitCo
 
     if cmd.script_text.is_some() {
         anyhow::bail!(
-            "kit command '{}': scripted commands not yet supported (Level 3 deferred)",
+            "internal: kit command '{}' is Level 3 (script); its lines run as typed ones",
             cmd.name
         );
     }
@@ -592,6 +670,16 @@ fn row_paint(
 
 #[cfg(test)]
 mod tests {
+    /// A value is filled once: one holding another arg's `{name}`, or braces
+    /// that name nothing, is kept as given (da-et0lm).
+    #[test]
+    fn a_script_word_is_filled_in_one_pass() {
+        let fills = HashMap::from([("a", "{b}".to_string()), ("b", "X".to_string())]);
+        assert_eq!(fill("{a}-{b}", &fills), "{b}-X");
+        assert_eq!(fill(r#"{"k":1} {a"#, &fills), r#"{"k":1} {a"#);
+        assert_eq!(fill("{{b}}", &fills), "{X}");
+    }
+
     use super::*;
     use serde_json::json;
 
