@@ -228,9 +228,10 @@ logs the device's zone, the next logs `IGNORED`.
 Where it holds a zone, an entry is in the field's zone at its instant, past or
 present (da-mvt5i): `-yy -t 8` two days ago in Lisbon is 8:00 in Lisbon. `-z` and
 an offset win, and the entries around it decide where the field claims nothing.
-A reader's flags are read the same (`lived_zone`, da-s3773): `tail` (and `head`)
-and `nowview` name the instant `occur` would log at, so `tail -yyyt 3` stops at
-3:00 of the zone that day was lived in.
+A reader's flags are read the same (`lived_zone`, da-s3773): `tail` (and `head`),
+`nowview` and `stats` (da-x0w1k) name the instant `occur` would log at, so `tail
+-yyyt 3` stops at 3:00 of the zone that day was lived in, and `stats -yyyt 3`
+starts there.
 Which zone depends on the instant it gives, so each stretch reads the flags, and
 an `at=` key on them (da-87wvg), in its own zone
 (`Declared::reading_itself`, `commands/follow_zone.rs`); the hour

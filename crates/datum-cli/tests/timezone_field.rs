@@ -1425,6 +1425,41 @@ mod read {
         assert_ne!(window(&[]), window(&["-z", BANGKOK]));
     }
 
+    /// `stats FIELD ARGS`'s count and earliest entry.
+    fn stats(env: &Env, args: &[&str]) -> (Value, Value) {
+        let out = ok(env, &[&["stats"], args, &["--show", "json"]].concat());
+        let out: Value = serde_json::from_str(&out).unwrap();
+        (out["total_count"].clone(), out["earliest"].clone())
+    }
+
+    /// `stats -yyyt 3` starts at the instant `occur -yyyt 3` logs at
+    /// (da-x0w1k): read in Berlin, where that day was lived, not in Bangkok,
+    /// the zone of now, whose 03:00 is the evening before in Berlin.
+    #[test]
+    fn stats_yyyt_3_starts_where_occur_yyyt_3_logs() {
+        let env = travelled();
+        body(&env, "2:59");
+        let three = body(&env, "3:00");
+        let (count, earliest) = stats(&env, &["body", "-yyyt", "3"]);
+        assert_eq!(count, json!(1), "only the 03:00 Berlin entry");
+        let earliest = chrono::DateTime::parse_from_rfc3339(earliest.as_str().unwrap()).unwrap();
+        assert_eq!(earliest.to_utc(), at(&env, &three).utc);
+        // `-z` still wins: 03:00 in Bangkok holds both.
+        assert_eq!(
+            stats(&env, &["body", "-yyyt", "3", "-z", BANGKOK]).0,
+            json!(2)
+        );
+    }
+
+    /// With no zone field and no move, `stats`'s clock is the machine's.
+    #[test]
+    fn stats_with_no_zone_declared_reads_the_machines_clock() {
+        let env = Env::new();
+        body(&env, "2:59");
+        body(&env, "3:00");
+        assert_eq!(stats(&env, &["body", "-yyyt", "3"]).0, json!(1));
+    }
+
     /// With no zone field and no move, the machine's zone, as before.
     #[test]
     fn with_no_zone_declared_the_bound_is_the_machines() {

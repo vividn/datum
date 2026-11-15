@@ -34,6 +34,7 @@ use serde_json::Value as JsonValue;
 
 use crate::args::{ShowFlag, StatsArgs, StatsPeriod, StatsWindowFlag};
 use crate::commands::field_visuals::state_label;
+use crate::commands::follow_zone::lived_zone;
 use crate::commands::time_bounds::{bound_date, parse_since, parse_until};
 use crate::config::resolve_week_start;
 use crate::render::colors::{field_hex, paint, parse_hex, Rgb};
@@ -1001,9 +1002,12 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// hour of skew in every boundary otherwise. That timeline is returned
 /// too, so the periods line reads the same zones without a second query.
 ///
-/// The timing flags are composed in that timeline's zone at now, never the
-/// host's (da-4tj7q): the date and the clock they name are the database's,
-/// so a host a day ahead of it does not count the day before the one named.
+/// The timing flags are composed in the zone the instant they name was lived
+/// in, as a log of them is placed (`lived_zone`, da-x0w1k): `-yyyt 3` starts
+/// at the instant `occur -yyyt 3` logs at. Where the database says nothing
+/// of it, in that timeline's zone at now, never the host's (da-4tj7q): the
+/// date and the clock they name are the database's, so a host a day ahead of
+/// it does not count the day before the one named.
 ///
 /// The zones are read from [`ZONES_BEFORE`] the earliest instant resolved
 /// in them — the window's start, or `reach` before its end, which is where
@@ -1011,8 +1015,8 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// begin within [`ZONES_TRUSTED`] of that (da-cwpr1), so `--today` reads
 /// days of history and not years. That second read stops [`ZONES_AFTER`]
 /// past the window's end, so a day in the past does not read on to now
-/// (da-l8240); the flags are composed in the zone of now the first read
-/// holds. What each margin covers is beside it.
+/// (da-l8240); the flags are composed in one zone, read once. What each
+/// margin covers is beside it.
 fn resolve_window(
     args: &StatsArgs,
     db: &Db,
@@ -1025,7 +1029,8 @@ fn resolve_window(
     let since = now - reach - ZONES_BEFORE;
     let mut zones = window_zones(args, db, since, None)?;
     let here = zones.zone_at(now).clone();
-    let window = |zones: &ZoneTimeline| fold_window(args, &order, zones, &here, now);
+    let flags = flags_zone(args, &order, db, &here, now)?;
+    let window = |zones: &ZoneTimeline| fold_window(args, &order, zones, &here, &flags, now);
     let earliest = |(start, end): Bounds| {
         let anchor = end.min(now);
         start.map_or(anchor, |s| s.min(anchor)) - reach
@@ -1036,7 +1041,7 @@ fn resolve_window(
         zones = window_zones(args, db, earliest(bounds) - ZONES_BEFORE, until)?;
         bounds = window(&zones)?;
     }
-    refuse_empty_window(bounds, &zones, &args.time, &here, now)?;
+    refuse_empty_window(bounds, &zones, &args.time, &flags, now)?;
     let (start, end) = bounds;
     Ok((start, end, zones))
 }
@@ -1104,13 +1109,34 @@ fn refuse_two_starts(args: &StatsArgs, order: &[StatsWindowFlag]) -> Result<()> 
     Ok(())
 }
 
+/// The zone the timing flags are composed in: the one the instant they name
+/// was lived in (`lived_zone`), else `here`, the timeline's at now. `-z`
+/// is `here` already, and an offset on `-t` is believed as it is built.
+fn flags_zone(
+    args: &StatsArgs,
+    order: &[StatsWindowFlag],
+    db: &Db,
+    here: &Zone,
+    now: DateTime<Utc>,
+) -> Result<Zone> {
+    if args.time.timezone.is_some() || !order.contains(&StatsWindowFlag::Time) {
+        return Ok(here.clone());
+    }
+    match lived_zone(db, &args.time, now)? {
+        Some(name) => Ok(Zone::named(&name)?),
+        None => Ok(here.clone()),
+    }
+}
+
 /// The window the flags in `order` name, read in `zones`, with `here` the
-/// zone at `now`: the slice positional first, then the flags.
+/// zone at `now` and `flags` the one the timing flags are composed in: the
+/// slice positional first, then the flags.
 fn fold_window(
     args: &StatsArgs,
     order: &[StatsWindowFlag],
     zones: &ZoneTimeline,
     here: &Zone,
+    flags: &Zone,
     now: DateTime<Utc>,
 ) -> Result<Bounds> {
     // The flags from the last back, each setting the ends no later one did.
@@ -1124,7 +1150,7 @@ fn fold_window(
         if start.is_some() && end.is_some() {
             break;
         }
-        let (s, e) = flag_ends(*flag, args, zones, here, now)?;
+        let (s, e) = flag_ends(*flag, args, zones, here, flags, now)?;
         start = start.or(s);
         end = end.or(e);
     }
@@ -1141,6 +1167,7 @@ fn flag_ends(
     args: &StatsArgs,
     zones: &ZoneTimeline,
     here: &Zone,
+    flags: &Zone,
     now: DateTime<Utc>,
 ) -> Result<Ends> {
     let through_now = now + TICK;
@@ -1161,11 +1188,11 @@ fn flag_ends(
             (None, until.transpose()?)
         }
         StatsWindowFlag::Time => {
-            let builder = args.time.builder(TimeCtx::at(here.local_naive(now)))?;
+            let builder = args.time.builder(TimeCtx::at(flags.local_naive(now)))?;
             let only_date = builder.is_only_date();
-            let at = builder.build_at(now, here.clone(), None);
+            let at = builder.build_at(now, flags.clone(), None);
             if only_date {
-                let (s, e) = day_window(here.local_naive(at.utc).date(), zones)?;
+                let (s, e) = day_window(flags.local_naive(at.utc).date(), zones)?;
                 (Some(Some(s)), Some(e))
             } else {
                 (Some(Some(at.utc)), None)
@@ -1182,7 +1209,7 @@ fn refuse_empty_window(
     (start, end): Bounds,
     zones: &ZoneTimeline,
     time: &TimeArgs,
-    here: &Zone,
+    flags: &Zone,
     now: DateTime<Utc>,
 ) -> Result<()> {
     let Some(s) = start else {
@@ -1201,7 +1228,7 @@ fn refuse_empty_window(
             show(end),
             show(s),
             zones.zone_at(s).name(),
-            last_clock_hint(time, here, now, end)?,
+            last_clock_hint(time, flags, now, end)?,
         );
     }
     if s > now {
