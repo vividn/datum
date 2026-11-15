@@ -91,15 +91,17 @@
 		side = 'left',
 		/** How far from that edge the section stands: the strip's width. */
 		offset = 0,
-		/** The section's own width, for the rows to stand past it. */
+		/** The section's own width, for a field's view and the cards to stand past it. */
 		width = $bindable(0),
+		/** Where its far line ends past the strip's edge, for the rows to stand a margin past it (da-tpcw9): 0 closed. */
+		reach = $bindable(0),
 		/** No length to give: a moment field is open, so the dur half is off (vividn, 11-03 16:07). */
 		noLength = false,
 		/** Open, or a clock alone (da-iunoo): the session's, as collect's zoom is. */
 		shown = false,
 		/** The clock tapped: whether it is open now, for the session to keep. */
 		onshown
-	}: { disabled?: boolean; side?: 'left' | 'right'; offset?: number; width?: number; noLength?: boolean; shown?: boolean; onshown?: (shown: boolean) => void } = $props();
+	}: { disabled?: boolean; side?: 'left' | 'right'; offset?: number; width?: number; reach?: number; noLength?: boolean; shown?: boolean; onshown?: (shown: boolean) => void } = $props();
 	const lengthOff = $derived(disabled || noLength);
 
 	/**
@@ -141,9 +143,10 @@
 	const CLOCK_PX = 24;
 	/** The column's width open, which the section's grows to. */
 	let natural = $state(0);
-	// The rows stand past where the section is going, gliding as it does; closed, past the clock's far half.
+	// What stands past it stands past where it is going, gliding as it does; closed, past the clock's far half, or the line.
 	$effect(() => {
-		width = expanded ? natural + LINES_PX - ON_STRIP_PX : CLOCK_PX / 2;
+		reach = expanded ? natural + LINES_PX - ON_STRIP_PX : 0;
+		width = expanded ? reach : CLOCK_PX / 2;
 	});
 	/** The halves stay while the section closes over them. */
 	const closing = (_: Element) => ({ duration: prefersReducedMotion.current ? 0 : GLIDE_MS });

@@ -130,7 +130,8 @@ describe('collect: the time section', () => {
 				assert.deepEqual(await drawn(page, side, { ...closed.near, rule: closed.rule, dpr: closed.dpr }), [closed.dpr], `not one line drawn: ${at}`);
 				assert.ok(Math.abs(closed.clock.x - closed.near.x) <= 1, `the clock is not on the line: ${at}`);
 				assert.ok(Math.abs(closed.clock.y - closed.clock.mid) <= 2, `the clock is not halfway down: ${at}`);
-				assert.ok(closed.rows >= closed.clock.x + 12 - 1, `the rows stand under the clock: ${at}`);
+				// Past the line by the picture's margin (da-tpcw9, collect-clock-gaps.test.mjs), the clock lying over both alike.
+				assert.ok(closed.rows > closed.near.x + 1, `the rows stand on the line: ${at}`);
 				if (SHOTS) await page.locator(WIDGET).screenshot({ path: `${SHOTS}/closed-${side}.png` });
 
 				await page.locator(CLOCK).click();

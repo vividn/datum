@@ -215,8 +215,9 @@ describe('collect', () => {
 			assert.ok(Math.abs(box.x + box.width / 2 - boundary) <= 2, `the clock is not on the boundary: ${geometry}`);
 			assert.ok(box.width >= 24 && box.height >= 24, `the clock is under a finger's 24px: ${geometry}`);
 			assert.ok(Math.abs(box.y + box.height / 2 - (when.y + when.height / 2)) <= 2, `the clock is not in the middle: ${geometry}`);
-			// No column of its own: the rows start right past the clock's far half, clear of its press.
-			assert.ok(rows.x >= box.x + box.width - 1 && rows.x - boundary <= box.width / 2 + 2 * 6 + 1, `the rows do not start at the strip: ${geometry}`);
+			// No column of its own: the rows start right past the line, by the picture's margin from it (da-tpcw9), the active
+			// section's fields a gap further; the clock lies over the strip's picture and the rows' margin alike.
+			assert.ok(rows.x > boundary + 1 && rows.x - boundary <= 10 + 6 + 1, `the rows do not start at the strip: ${geometry}`);
 			const hit = await clock.evaluate((b) => {
 				const r = b.getBoundingClientRect();
 				return b.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));

@@ -506,9 +506,18 @@
 	 * that the now section has consistent margins around it»).
 	 */
 	const PICTURE_GAP = 10;
-	/** The time and duration section's width past the strip (da-us1n1), its clock's far half while closed (da-s2hht); the rows stand past both. */
+	/** The time and duration section's width past the strip (da-us1n1), its clock's far half while closed (da-s2hht); a field's view and the cards stand past both. */
 	let whenW = $state(0);
 	const edge = $derived(strip + whenW);
+	/** Where the section's far line ends past the strip: the strip's own edge while closed. */
+	let whenReach = $state(0);
+	/**
+	 * The rows stand as far past the line as the picture stands short of it,
+	 * the line lying on the strip's last pixel (da-tpcw9, vividn, 2026-11-15:
+	 * «the margin on the clock line should be symmetric between now section
+	 * and fields section»): closed, the clock lies over both alike.
+	 */
+	const rowsFrom = $derived(strip + whenReach + PICTURE_GAP - 1 - GAP);
 	/** Where each field stands at rest, and the active section's outline. */
 	/** A row's height at rest: its tallest button's. */
 	const rowH = $derived.by(() => {
@@ -520,7 +529,7 @@
 	const shelves = $derived(
 		atRest(
 			clustered.map((b) => ({ ...b, w: sizes.get(`f:${b.field}`)?.w ?? 0 })),
-			{ height: paneH, rowH, gap: GAP, strip: edge }
+			{ height: paneH, rowH, gap: GAP, strip: rowsFrom }
 		)
 	);
 	/** The strip and the active section stay while the section is under half the widget, the time section beside the strip not counted; past it the section pans too. */
@@ -1621,7 +1630,7 @@
 				{:else if resting}
 					<!-- At rest (da-lw7ue): the strip, the active section, then each row by recency. -->
 					<svg class="backing" aria-hidden="true">
-						<path d={frozen ? shelves.backing : `M0 0H${edge}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
+						<path d={frozen ? shelves.backing : `M0 0H${rowsFrom}V${paneH}H0Z`} transform={side === 'right' ? `matrix(-1 0 0 1 ${paneW} 0)` : undefined} />
 					</svg>
 					{#if shelves.outline}
 						<svg class="dotted" class:frozen style:transform={frozen ? null : `translateX(${shift.x}px)`} aria-hidden="true">
@@ -1658,7 +1667,7 @@
 	{/if}
 	<!-- After the rows, the view or the cards, so a field or an entry comes first in the Tab order; it stands between them and the strip.
 	     Beside the cards too (da-awikb), so a time chosen there goes on the bar beside the hid pill for `retime`. -->
-	{#if resting || card}<CollectWhen {disabled} {side} offset={strip} noLength={picking?.shape.kind === 'moment'} shown={timeOpen} onshown={ontime} bind:width={whenW} />{/if}
+	{#if resting || card}<CollectWhen {disabled} {side} offset={strip} noLength={picking?.shape.kind === 'moment'} shown={timeOpen} onshown={ontime} bind:width={whenW} bind:reach={whenReach} />{/if}
 	{/snippet}
 </ButtonRows>
 {#if modifying}
