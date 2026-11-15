@@ -1199,6 +1199,11 @@ fn a_wiped_device_deletes_its_copy_online_at_once_and_offline_once_back() {
     o.ok("home", &["occur", "mate"]);
     o.ok("home", &["sync"]);
     let tom = t.run("home");
+    // Tom's tea goes by the dial his run makes as it starts: held on gina's
+    // copy before the order, which tom obeys before any op moves.
+    eventually("gina holding tea and mate", || {
+        g.has("home", "tea") && g.has("home", "mate")
+    });
     let chain = g.json("home", &["sync", "status", "--json"])["chain"]
         .as_str()
         .unwrap()
