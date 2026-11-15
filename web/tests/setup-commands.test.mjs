@@ -167,9 +167,18 @@ describe('setup on a desktop: the bar stays live beside its modal', () => {
 			await until(() => described(app, 'tea'), (d) => d === 'green');
 			assert.equal(await sheet(page, 'setup').isVisible(), true, 'save left the place');
 
-			// Escape in the sheet closes it, as a modal's does.
-			await description(page).press('Escape');
-			await sheet(page, 'setup').waitFor({ state: 'detached' });
+			// Escape in the sheet closes it, as a modal's does: pressed once the save's own reads have landed, with the
+			// box holding the focus. On a loaded runner it once stayed open (da-8oqbo), so a miss says where the key went.
+			await app.idle();
+			await description(page).focus();
+			assert.equal(await description(page).evaluate((el) => el === document.activeElement), true, 'the box lost the focus');
+			await page.keyboard.press('Escape');
+			await sheet(page, 'setup')
+				.waitFor({ state: 'detached' })
+				.catch(async (e) => {
+					e.message += `\nthe focus: ${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160))}`;
+					throw e;
+				});
 			// And the palette it opened goes with it.
 			await page.locator('.prompt-bar button[aria-controls="bar-commands"][aria-expanded="false"]').waitFor();
 			assert.deepEqual(app.errors, []);
