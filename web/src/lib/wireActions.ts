@@ -1,7 +1,8 @@
 // The actions and embeds in markdown drawn with `act` (#lib/markdown.ts,
 // da-uzl16), made live: each action's button does it on a tap, the tap being
 // the reader's yes, and wears the outline its kind's tap means (#lib/act.ts);
-// each embed's placeholder gets its component. `use:wireActions={html}` on
+// each embed's placeholder gets its component, and each fold's button opens
+// and shuts its text, scrolled into view as it opens (da-78eme). `use:wireActions={html}` on
 // the element the HTML is drawn in, so a new HTML wires again.
 
 import { mount, unmount } from 'svelte';
@@ -19,6 +20,14 @@ export function wireActions(node: HTMLElement, _html: string) {
 			act(button, TAP[action.kind]);
 			button.onclick = () => void perform(action);
 		}
+		for (const fold of node.querySelectorAll<HTMLButtonElement>('button.fold'))
+			fold.onclick = () => {
+				const open = fold.getAttribute('aria-expanded') !== 'true';
+				const text = fold.nextElementSibling as HTMLElement;
+				fold.setAttribute('aria-expanded', String(open));
+				text.hidden = !open;
+				if (open) text.scrollIntoView({ block: 'nearest' });
+			};
 		for (const at of node.querySelectorAll<HTMLElement>('[data-embed="field"]'))
 			embeds.push(mount(FieldEmbed, { target: at, props: { name: at.dataset.name! } }));
 	};

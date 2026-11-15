@@ -6,7 +6,8 @@
 // collect fill the screen, the shell's and not the window's, the bar's output section open or shut (da-83y6w,
 // vividn, 2026-11-09: «the intro block is much too big … make sure the complete game and collect widget are on
 // screen without having to scroll … the followup text widget can also clamp to its text size»), but for the 13/90 at
-// its foot where the discussion's top shows (da-44yfo).
+// its foot where the discussion shows (da-44yfo): folded, «Read more ▸» and Next on one row, so the tab fits the
+// screen, and unfolded the text, scrolled to, with Next under it (da-78eme).
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -56,8 +57,10 @@ const measure = (page, tab) =>
 			fields: [...pane('fields').querySelectorAll('.fields button[data-field]')].map(box),
 			rows: [...pane('fields').querySelectorAll('.fields .spot.shelf[data-row]')].map((s) => Number(s.dataset.row)),
 			discuss: box(pane('discuss')),
-			heading: box(pane('discuss').querySelector('.text > h4')),
-			headingText: pane('discuss').querySelector('.text > h4').textContent,
+			fold: box(pane('discuss').querySelector('.text > button.fold')),
+			expanded: pane('discuss').querySelector('.text > button.fold').getAttribute('aria-expanded'),
+			para: box(pane('discuss').querySelector('.text > .folded > p')),
+			paraShown: pane('discuss').querySelector('.text > .folded > p').checkVisibility(),
 			next: next && box(next)
 		};
 	}, tab);
@@ -140,7 +143,7 @@ for (const [screen, device] of [
 
 						const rest = await measure(page, tab);
 						assert.ok(rest.screen.bottom <= rest.bar.top + 0.5, `${at}: the screen (bottom ${rest.screen.bottom}) ends over the bar (${rest.bar.top})`);
-						assert.ok(rest.scrollable > 0, `${at}: the tab is taller than the screen`);
+						assert.ok(rest.scrollable <= 0.5, `${at}: folded, the tab fits the screen, scrolling ${rest.scrollable}px`);
 						const order = ['about', 'now', 'game', 'collect', 'discuss'];
 						for (const [a, b] of order.slice(1).map((b, i) => [order[i], b]))
 							assert.ok(rest[a].bottom <= rest[b].top + 0.5, `${at}: ${a} (bottom ${rest[a].bottom}) above ${b} (top ${rest[b].top})`);
@@ -157,18 +160,30 @@ for (const [screen, device] of [
 						assert.equal(rest.fields.length, fields, `${at}: collect draws each of the game's fields`);
 						for (const [i, field] of rest.fields.entries())
 							assert.ok(inside(field, rest.screen), `${at}: collect's field ${i} (bottom ${field.bottom}) is in sight, the screen's bottom ${rest.screen.bottom}`);
-						// Of the screen, the nowview 26/90, two thirds of its 13/30 (da-44yfo, vividn, 2026-11-11: «maybe 2/3 of
-						// it's current size»), the game 9/30 and collect 8/30 as they were (da-je8ju: collect «goes to 2/3 of its
-						// current height»), and collect's zoom three rows (vividn: «be 3 rows»): a game's fields span the band, so
-						// its rows at three are the top, the middle and the bottom; at two or four they are not.
+						// Of the screen, the nowview 19.5/90, three quarters of its 26/90 (da-78eme, vividn, 2026-11-15: «remake
+						// the now view 3/4 of its size giving that extra room to the game»), the game 33.5/90, its 27 and the 6.5
+						// given up, and collect 8/30 as it was (da-je8ju: collect «goes to 2/3 of its current height»), and
+						// collect's zoom three rows (vividn: «be 3 rows»): a game's fields span the band, so its rows at three are
+						// the top, the middle and the bottom; at two or four they are not.
 						const play = rest.now.height + rest.lesson.height + rest.collect.height;
 						const shares = ['now', 'lesson', 'collect'].map((part) => rest[part].height / play);
-						for (const [i, want] of [26 / 77, 27 / 77, 24 / 77].entries())
+						for (const [i, want] of [19.5 / 77, 33.5 / 77, 24 / 77].entries())
 							assert.ok(Math.abs(shares[i] - want) < 0.01, `${at}: the nowview, game and collect share the play ${shares}`);
-						// What the nowview gave up, 13/90 of the screen, is where the discussion begins: its heading, «Read more»,
-						// in sight as the tab opens, a sign there is more below (da-44yfo, vividn: «so you know there is more text»).
-						assert.equal(rest.headingText, 'Read more');
-						assert.ok(inside(rest.heading, rest.screen), `${at}: «Read more» (bottom ${rest.heading.bottom}) is in sight as the tab opens, the screen's bottom ${rest.screen.bottom}`);
+						assert.ok(
+							Math.abs(rest.now.height - (rest.lesson.height * 19.5) / 33.5) < 2,
+							`${at}: the nowview ${rest.now.height}px is 19.5/33.5 of the game's ${rest.lesson.height}px`
+						);
+						// The last 13/90 of the screen is the discussion, folded: «Read more ▸» and Next under it, in sight as the
+						// tab opens, its text hidden (da-78eme, vividn: «collapse the read more section into just a read more
+						// <collapse arrow>»).
+						const fold = page.locator(`[data-pane="${tab}-discuss"]`).getByRole('button', { name: 'Read more', exact: true });
+						assert.equal(await fold.count(), 1, `${at}: the discussion folds behind «Read more»`);
+						assert.equal(rest.expanded, 'false', `${at}: folded as the tab opens`);
+						assert.equal(rest.paraShown, false, `${at}: the discussion's text is hidden as the tab opens`);
+						for (const part of ['fold', 'next'])
+							assert.ok(inside(rest[part], rest.screen), `${at}: ${part} (bottom ${rest[part].bottom}) is in sight as the tab opens, the screen's bottom ${rest.screen.bottom}`);
+						// Beside it, on its row, so the folded discussion is one line and fits a phone.
+						assert.ok(rest.next.left >= rest.fold.right && rest.next.top < rest.fold.bottom, `${at}: Next is beside «Read more»`);
 						// The change game's one field, room, stands in one row whatever the count, so it cannot show three.
 						if (tab !== 'change') assert.deepEqual([...new Set(rest.rows)].sort(), [0, 1, 2], `${at}: collect's fields stand in three rows`);
 
@@ -201,14 +216,28 @@ for (const [screen, device] of [
 							await settled(page, `[data-pane="${tab}-lesson"]`);
 						}
 
+						// A tap unfolds the text, scrolled so its top is in sight, and the tab scrolls down through it.
+						await scrollTo(page, 0);
+						await fold.click();
+						const open = await measure(page, tab);
+						assert.equal(open.expanded, 'true', `${at}: a tap unfolds it`);
+						assert.ok(open.paraShown, `${at}: the discussion's text is drawn once unfolded`);
+						assert.ok(inside(open.para, open.screen), `${at}: its first paragraph (${open.para.top}–${open.para.bottom}) is scrolled into sight, the screen ${open.screen.top}–${open.screen.bottom}`);
+						assert.ok(open.scrollable > 0, `${at}: unfolded, the tab is taller than the screen`);
 						// At the very bottom, the discussion, and Next its last thing, in sight.
-						await scrollTo(page, rest.scrollable);
+						await scrollTo(page, open.scrollable);
 						const end = await measure(page, tab);
 						assert.ok(end.next, `${at}: the discussion ends on Next`);
 						assert.ok(end.next.top >= end.collect.bottom, `${at}: Next is under collect`);
+						assert.ok(end.next.top >= end.para.bottom, `${at}: unfolded, Next is under the text`);
 						assert.ok(inside(end.next, end.screen), `${at}: Next is in sight at the bottom`);
 						const button = page.locator(`[data-pane="${tab}-discuss"]`).getByRole('button', { name: `Next: ${NEXT[tab]}`, exact: true });
 						assert.equal(await button.count(), 1, `${at}: Next names the next lesson`);
+						// A second tap folds it again.
+						await fold.click();
+						const shut = await measure(page, tab);
+						assert.deepEqual([shut.expanded, shut.paraShown], ['false', false], `${at}: a second tap folds it`);
+						assert.ok(shut.scrollable <= 0.5, `${at}: folded again, the tab fits the screen`);
 					}
 				}
 				assert.deepEqual(app.errors, []);

@@ -18,7 +18,9 @@
 // (#lib/actions.ts, da-uzl16) is a button, which the caller wires, and an
 // embed one of `EMBEDS` is a placeholder it mounts the component into; a run
 // the vocabulary refuses is its text and why. Without `act`, none of them is
-// a link at all, as any scheme not kept.
+// a link at all, as any scheme not kept. So is a fold (da-78eme): `::: Label`,
+// its blocks, then `:::` alone, drawn as a button, «Label ▸», over its blocks
+// hidden, which the caller opens and shuts (#lib/wireActions.ts).
 //
 // Where the caller's `keep` says (da-wgf4a), an image its `image` refuses is a
 // button, «image from example.com, tap to keep», `data-keep` its target, which
@@ -118,6 +120,7 @@ const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const ROW = /^\s*\|/;
+const FOLD = /^\s*:::\s*(.*?)\s*$/;
 
 /** Whether `line` starts a block of its own, so a paragraph ends before it. */
 const starts = (line: string) => FENCE.test(line) || HEADING.test(line) || ITEM.test(line) || RULE.test(line) || ROW.test(line);
@@ -149,6 +152,16 @@ function blocks(lines: string[], to: Targets): string {
 			for (i++; i < lines.length && !closes(lines[i]); i++) code.push(lines[i].slice(Math.min(indent, lines[i].length - lines[i].trimStart().length)));
 			i++;
 			out.push(`<pre><code>${escape(code.join('\n'))}</code></pre>`);
+			continue;
+		}
+		const fold = to.act && line.match(FOLD);
+		if (fold && fold[1]) {
+			const body: string[] = [];
+			for (i++; i < lines.length && lines[i].match(FOLD)?.[1] !== ''; i++) body.push(lines[i]);
+			i++;
+			out.push(
+				`<button type="button" class="fold" aria-expanded="false">${inline(fold[1], to)}<span class="arrow" aria-hidden="true">▸</span></button><div class="folded" hidden>${blocks(body, to)}</div>`
+			);
 			continue;
 		}
 		const heading = line.match(HEADING);

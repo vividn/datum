@@ -53,6 +53,15 @@ test('with keep, an image its target refuses is a button to keep it, and attachm
 	assert.equal(markdown(`![b](attachment:${hash})`, to), '<p>b</p>');
 });
 
+test('with act, a fold is a button over its blocks hidden, shut on its own line; without, its lines are text (da-78eme)', () => {
+	const source = '::: Read **more**\n\npara one\n\n- an item\n\n:::\n\nafter';
+	assert.equal(
+		markdown(source, { ...to, act: () => true }),
+		'<button type="button" class="fold" aria-expanded="false">Read <strong>more</strong><span class="arrow" aria-hidden="true">▸</span></button><div class="folded" hidden><p>para one</p>\n<ul><li>an item</li></ul></div>\n<p>after</p>'
+	);
+	assert.equal(md(source), '<p>::: Read <strong>more</strong></p>\n<p>para one</p>\n<ul><li>an item</li></ul>\n<p>:::</p>\n<p>after</p>');
+});
+
 test('a paragraph joins its lines; a code block keeps them, escaped', () => {
 	assert.equal(md('one\ntwo\n\n```bash\na < b\n  c\n```'), '<p>one two</p>\n<pre><code>a &lt; b\n  c</code></pre>');
 });

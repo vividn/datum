@@ -541,14 +541,16 @@ Later, datum says how long you spent in each state, and when. Ex. where you are,
  * game; the collect widget filtered to its fields; and under them the discussion and the way on.
  *
  * The intro and the discussion take their text's height (`fit`), and the intro, the nowview, the game and collect
- * fill the screen, so all four are in sight at once and the discussion is scrolled to (da-83y6w, vividn, 2026-11-09:
- * «the intro block is much too big … the nowview can be taller. make sure the complete game and collect widget are
- * on screen without having to scroll … the followup text widget can also clamp to its text size»). The screen is
- * the tab's scroller, so the bar's output section open or shut is in it (tutorial-scroll.test.mjs).
+ * fill the screen, so all four are in sight at once and the discussion, unfolded, is scrolled to (da-83y6w, vividn,
+ * 2026-11-09: «the intro block is much too big … the nowview can be taller. make sure the complete game and collect
+ * widget are on screen without having to scroll … the followup text widget can also clamp to its text size»). The
+ * screen is the tab's scroller, so the bar's output section open or shut is in it (tutorial-scroll.test.mjs).
  */
 /**
  * A game's words as markdown (da-s80xg): `about`, its title and what its shape of data is, the glyph and name
- * `VERBS`', which a test holds to the CLI's; `discuss`, «Read more» and what a round logged, ending on Next, an action.
+ * `VERBS`', which a test holds to the CLI's; `discuss`, what a round logged folded behind «Read more» (da-78eme,
+ * vividn, 2026-11-15: «collapse the read more section into just a read more <collapse arrow> that then expands the
+ * text»), then Next, an action, outside the fold so the way on is never behind it.
  */
 export function lessonText(lesson: Lesson, part: 'about' | 'discuss'): string {
 	if (part === 'about') {
@@ -556,7 +558,7 @@ export function lessonText(lesson: Lesson, part: 'about' | 'discuss'): string {
 		return `#### ${lesson.title}\n\n${verb?.glyph ?? ''} **${lesson.shape ?? ''}**: ${lesson.about ?? ''}`;
 	}
 	const next = LESSONS[LESSONS.indexOf(lesson) + 1];
-	return `#### Read more\n\n${lesson.discuss ?? ''}${next ? `\n\n[Next: ${next.title}](act:tab/${next.name})` : ''}`;
+	return `::: Read more\n\n${lesson.discuss ?? ''}\n\n:::${next ? `\n\n[Next: ${next.title}](act:tab/${next.name})` : ''}`;
 }
 
 const withNowview = (lesson: Lesson, { name, fields } = lesson): Layout => ({
@@ -565,16 +567,17 @@ const withNowview = (lesson: Lesson, { name, fields } = lesson): Layout => ({
 	root: {
 		...holder(
 			name,
-			// The play takes the screen but the 13/90 the nowview gave up, where the discussion's top shows, as a sign there
-			// is more below (da-44yfo, vividn, 2026-11-11: «see at least a bit of the "What just happened" text widget at the
-			// bottom of each tutorial tab so you know there is more text»).
+			// The play takes the screen but its last 13/90, where the discussion shows, a sign there is more (da-44yfo,
+			// vividn, 2026-11-11: «see at least a bit of the "What just happened" text widget at the bottom of each tutorial
+			// tab so you know there is more text»): folded, «Read more ▸» and Next, so the tab fits the screen (da-78eme).
 			split(`${name}-split`, 'column', [77 / 90, 13 / 90], [
 				holder(
 					`${name}-play`,
-					// Of the screen, the nowview 26/90, two thirds of the 13/30 it had (da-44yfo, vividn, 2026-11-11: «the
-					// nowview is much too tall, it should be maybe 2/3 of it's current size»), the game 9/30 and collect 8/30
-					// as they were (da-je8ju, vividn, 2026-11-10: collect «goes to 2/3 of its current height»).
-					split(`${name}-play-split`, 'column', [0, 26 / 77, 27 / 77, 24 / 77], [
+					// Of the screen, the nowview 19.5/90, three quarters of the 26/90 it had (da-78eme, vividn, 2026-11-15:
+					// «remake the now view 3/4 of its size giving that extra room to the game»), itself two thirds of the 13/30
+					// before that (da-44yfo), the game 33.5/90, its 27 and the 6.5 the nowview gave up, and collect 8/30 as it was
+					// (da-je8ju, vividn, 2026-11-10: collect «goes to 2/3 of its current height»).
+					split(`${name}-play-split`, 'column', [0, 19.5 / 77, 33.5 / 77, 24 / 77], [
 						{ ...widgetPane(`${name}-about`, 'text', { text: lessonText(lesson, 'about') }), fit: true },
 						widgetPane(`${name}-now`, 'nowview', { history: '2m', orientation: 'horizontal' }),
 						widgetPane(`${name}-lesson`, 'game', { lesson: name }),

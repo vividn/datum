@@ -24,7 +24,8 @@
 
 	A link to one of datum's actions (#lib/actions.ts, da-uzl16) is a button
 	that does it, the reader's tap its yes, and `act:field/<name>` that
-	field's collect button itself (#lib/wireActions.ts).
+	field's collect button itself (#lib/wireActions.ts), and a fold, `:::
+	Label` … `:::`, a button that opens its text and shuts it (da-78eme).
 -->
 <script lang="ts" module>
 	import { run } from '#lib/run.ts';
@@ -195,6 +196,43 @@
 	.text :global(code) {
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.9em;
+	}
+	/* Folded, the fold and the block after it stand on one row, so a tutorial game's discussion, «Read more ▸» and
+	   Next, is one line and its tab fits a phone (da-78eme); open, its text takes the width between them. */
+	.text:has(> :global(button.fold)) {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		column-gap: 0.5rem;
+	}
+	.text:has(> :global(button.fold)) > :global(*) {
+		flex: 1 0 100%;
+	}
+	.text:has(> :global(button.fold)) > :global(:is(button.fold, .folded + *)) {
+		flex: 0 1 auto;
+	}
+	.text > :global(.folded) {
+		margin-block: 0.5rem;
+	}
+	/* A fold's button reads as the heading it stands for, its arrow turning down as it opens. */
+	.text :global(button.fold) {
+		margin: 0;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-weight: bold;
+		color: var(--ink-bright);
+		cursor: pointer;
+	}
+	.text :global(button.fold .arrow) {
+		display: inline-block;
+		margin-inline-start: 0.35em;
+		transition: transform 120ms;
+	}
+	.text :global(button.fold[aria-expanded='true'] .arrow) {
+		transform: rotate(90deg);
 	}
 	.refused,
 	.text :global(.refused) {

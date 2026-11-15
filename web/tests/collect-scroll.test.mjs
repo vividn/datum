@@ -25,12 +25,14 @@ const FIRST = `${FIELDS} .fields button[data-field]`;
 /**
  * The tutorial's moment tab, scrolled to the middle of its range, collect in sight: the most room to scroll both
  * ways. Centering collect left less under it than a drag's 60px once the discussion was a text widget its text's
- * height (da-s80xg).
+ * height (da-s80xg). Its range is the discussion's text, unfolded here: folded, the tab fits the screen (da-78eme).
  */
 async function onCollect(page) {
 	await page.locator('.root-bar [role="tab"]', { hasText: TAB }).click();
 	const button = page.locator(FIRST).first();
 	await button.waitFor();
+	const fold = page.locator(`[data-pane="${TAB}-discuss"]`).getByRole('button', { name: 'Read more', exact: true });
+	if ((await fold.getAttribute('aria-expanded')) === 'false') await fold.click();
 	const inSight = await page.evaluate(
 		async ([fields, scroller]) => {
 			const s = document.querySelector(scroller);
