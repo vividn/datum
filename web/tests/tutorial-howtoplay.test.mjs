@@ -58,6 +58,15 @@ for (const [what, device] of [
 					const below = controls.bottom - bottom.bottom;
 					assert.ok(over > 0 && Math.abs(over - below) <= 2, `${tab}: the pair centered in its column, ${over} over and ${below} under`);
 
+					// Its words inside the button, and the button inside the box (da-hv9tk): the words ran 17 px past it on a phone.
+					const fit = await page.locator(`${pane} .controls .how`).evaluate((el) => {
+						const box = el.closest('.game').getBoundingClientRect();
+						const r = el.getBoundingClientRect();
+						return { past: el.scrollWidth - el.clientWidth, right: r.right, edge: box.right - 1 };
+					});
+					assert.ok(fit.past <= 0, `${tab}: How to play's words ${fit.past} px past its button`);
+					assert.ok(fit.right <= fit.edge, `${tab}: How to play's right ${fit.right} inside the box's ${fit.edge}`);
+
 					// From the keyboard.
 					await how.focus();
 					await page.keyboard.press('Enter');

@@ -221,13 +221,16 @@
 		color: var(--ink-bright);
 	}
 
-	/* Smaller than Start, so the pair, or it and the change game's cue, fit a phone's short box. */
+	/* Smaller than Start, so the pair, or it and the change game's cue, fit a phone's short box. Its words wrap, two
+	   lines in Start's width: on one they ran 17 px past the button (da-hv9tk). */
 	.controls .how {
 		inline-size: 5rem;
 		min-block-size: 1.5rem;
-		padding-block: 0;
+		padding-block: 0.1rem;
 		font-size: 0.75rem;
 		line-height: 1.1;
+		white-space: normal;
+		text-wrap: balance;
 	}
 
 	.how.away {
