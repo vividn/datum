@@ -670,7 +670,7 @@ fn retime_refuses_a_z_that_disagrees() {
     }
     let after = env.only().at.unwrap();
     assert_eq!((after.utc, &after.timezone), (before.utc, &before.timezone));
-    env.ok(&["retime", "_LAST", "-t", "11:00", "-z", "Asia/Tokyo"]);
+    env.ok(&["retime", "_LAST", "11:00", "-z", "Asia/Tokyo"]);
     let at = env.only().at.unwrap();
     assert_eq!(at.utc.to_rfc3339(), "2026-06-01T02:00:00+00:00");
 

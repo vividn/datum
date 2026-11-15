@@ -327,8 +327,11 @@ fn a_zone_typed_in_any_case_is_stored_canonically() {
         let hid = datum_core::test_util::logged_entries(&db, "event")[0]
             .hid
             .clone();
-        run_cli(&["retime", &hid, "-t", "1100", "-z", "asia/tokyo"], &db)
-            .unwrap_or_else(|e| panic!("retime -z asia/tokyo: {e:#}"));
+        run_cli(
+            &["retime", &hid, "-y", "-t", "1100", "-z", "asia/tokyo"],
+            &db,
+        )
+        .unwrap_or_else(|e| panic!("retime -z asia/tokyo: {e:#}"));
         assert!(
             zones(&db).contains(&Some("Asia/Tokyo".to_string())),
             "retime -z asia/tokyo: {:?}",
@@ -871,8 +874,15 @@ fn relative_time_beside_a_named_day_needs_a_clock() {
     assert!(logged().iter().any(|e| at(e) == "2026-10-05 18:24"));
 
     let hid = logged()[0].hid.clone();
-    run_cli(&["retime", &hid, "-d", "2026-10-01", "-t", "+5"], &db).expect("retime");
-    run_cli(&["retime", &hid, "-y", "-q"], &db).expect("retime");
+    // retime's flags read from now, as a log's (da-1f9d5), so the rule is theirs;
+    // from the entry's own time, under `-r`, they have its clock.
+    let err = run_cli(&["retime", &hid, "-d", "2026-10-01", "-t", "+5"], &db).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("needs a clock when the day moves"),
+        "{err:#}"
+    );
+    run_cli(&["retime", &hid, "-d", "2026-10-01"], &db).expect("retime");
+    run_cli(&["retime", &hid, "-r", "-y", "-q"], &db).expect("retime");
     assert!(logged().iter().any(|e| at(e).starts_with("2026-09-30")));
 }
 

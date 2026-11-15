@@ -175,12 +175,12 @@ fn a_json_echo_is_that_lines() {
 fn a_dry_run_is_that_lines() {
     let printed = second_line_as_alone(
         &["occur tea -y -t 9:00"],
-        "retime tea -t 9:30 --dry-run",
-        "retime tea -t 10:00",
+        "retime tea -y -t 9:30 --dry-run",
+        "retime tea -y -t 10:00",
     );
     assert!(printed.contains("DRYRUN"), "no dry run: {printed}");
     let env = Env::new();
-    env.repl(&["occur tea -y -t 9:00", "retime tea -t 9:30 --dry-run"]);
+    env.repl(&["occur tea -y -t 9:00", "retime tea -y -t 9:30 --dry-run"]);
     assert_eq!(
         env.query("SELECT strftime('%H:%M', at, 'localtime') FROM entries WHERE field = 'tea'"),
         "09:00"

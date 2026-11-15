@@ -2905,7 +2905,7 @@ fn stating_the_zone_drops_the_neighbours_marker_on_every_copy() {
         let field = format!("tea{i}");
         a.ok(&["occur", &field, "-d", "2024-06-15", "-t", "12:00"]);
         let hid = a.hid(&field);
-        a.ok(&["retime", &hid, "-t", "12:30"]);
+        a.ok(&["retime", &hid, "12:30"]);
         converged(&a, &b);
         assert_eq!(meta(&b, &hid), r#"{"tz_from":"neighbours"}"#, "{how:?}");
 

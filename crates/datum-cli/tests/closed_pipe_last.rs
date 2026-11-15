@@ -138,7 +138,7 @@ fn a_cut_off_retime_is_what_a_bare_undo_reverts() {
     let env = Env::new();
     let tea = env.occur("tea", "0900");
     env.occur("coffee", "0910");
-    env.cut_off(&["retime", &tea, "-t", "0930"]);
+    env.cut_off(&["retime", &tea, "-y", "-t", "0930"]);
     assert_eq!(env.live(), ["coffee=null", "tea=null"]);
     env.ok(&["undo"]);
     assert_eq!(env.live(), ["tea=null", "coffee=null"]);

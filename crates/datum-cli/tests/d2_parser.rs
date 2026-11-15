@@ -129,7 +129,7 @@ fn retime_overwrites_uncertainty_from_new_input() {
     // Retime with a ±5m uncertainty on the fresh input — it replaces, not
     // merges. da-ivld: id_structure defaults to `%at%`, so the
     // retime auto-rekeys the slug; look the row back up by stable hid.
-    run_cli(&["retime", &slug, "-t", "13:00±5m"], &db).expect("retime -t");
+    run_cli(&["retime", &slug, "-y", "-t", "13:00±5m"], &db).expect("retime -t");
 
     let after = db.get_entry(&hid).unwrap();
     let _ = UncertaintyUnit::Exact; // keep the import live for the reference below.

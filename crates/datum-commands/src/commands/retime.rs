@@ -5,12 +5,13 @@
 //! "set to now". Time targeting is done through three layered paths:
 //!
 //! * `--offset <ISO>` — explicit duration shift (legacy).
-//! * Time-args group (`-t`/`-y`/`-q`/`-d`/...), the positional being one
-//!   more `-t` value (`retime <id> 1040`, `retime <id> -5`) — resolved
+//! * Time flags (`-t`/`-y`/`-q`/`-d`/`-D`) read from now, as a log's do
+//!   (da-1f9d5): `-qqq` is 15 minutes ago, `-t 10:40` 10:40 today. A day
+//!   alone (`-y`, `-d`) keeps the entry's clock (da-bjxr6).
+//! * A positional alone (`retime <id> 1040`, `retime <id> -5`) is resolved
 //!   against each entry's OWN at, in its own zone (da-jix52).
-//! * With `-r/--relative` the same args are a pure shift of the entry's
-//!   at: `-y` moves it a calendar day and keeps its clock. So does `-y`
-//!   or `-d` alone without it, `-D` making the whole day (da-bjxr6).
+//! * With `-r/--relative` the flags are a pure shift of the entry's at:
+//!   `-y` moves it a calendar day and keeps its clock, `-qqq` 15 minutes.
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -21,8 +22,9 @@ use datum_core::{
 };
 
 use crate::args::{OutputFlagsExt, RetimeArgs};
+use crate::commands::follow_zone::lived_zone;
 use crate::commands::helpers::{registry_of, resolve_batch, BatchMode, FieldName};
-use crate::commands::log_core::{build_time_anchored, zone_agrees};
+use crate::commands::log_core::{build_time_anchored, build_time_from_flags, zone_agrees};
 use crate::commands::reading::which_reading;
 use crate::commands::time_bounds::{parse_after, parse_before};
 use crate::render::{show_retime, OutputArgs};
@@ -153,6 +155,9 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
         }
     }
 
+    // What was typed: a from-now read below fills `-z` with the lived zone.
+    let zone_stated = args.time.timezone.is_some();
+
     // Path 1 — explicit ISO duration via --offset.
     if let Some(offset_str) = args.offset.as_deref() {
         let offset = datum_core::time::parse_duration(offset_str)
@@ -180,36 +185,66 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
         return report(db, &moved, &output);
     }
 
-    // Path 2b — a target built from the time-args, each entry's own time
-    // standing where "now" does for a log (da-jix52): `1040` is 10:40 on
-    // the entry's day, `-5` five minutes before it. With no time-args there
-    // is nothing to read from the entry, and the target is now; under `-r`
-    // no time-args is no shift, and the entry stays where it is.
+    // Path 2b — a target built from the time-args (da-1f9d5, vividn,
+    // 2026-11-15: «retime -tttt should be absolute not relative … Only with
+    // -rtttt should it be relative (or without flags and -3 minutes)»). A
+    // time flag reads from now, as a log's does and in the zone a log's is
+    // (da-s3773): `-qqq` is 15 minutes ago, `-t 10:40` 10:40 today. Under
+    // `-r`, or a positional alone, each entry's own time stands where now
+    // does (da-jix52): `1040` is 10:40 on the entry's day, `-5` five minutes
+    // before it. With no time-args the target is now; under `-r` no
+    // time-args is no shift, and the entry stays where it is.
     let now = DatumTime::now().utc;
     let placed = args.relative || args.time != Default::default();
-    // da-bjxr6: a day alone, `-y` or `-d` with no clock and no `-D`, moves
-    // the entry that many days at its own clock as `-r` does (vividn,
-    // 2026-11-07: «retime -y would work to move an entry to the same time,
-    // just a day in the past»). A day `-t` names stays the whole day.
-    let shift = args.relative
-        || !args.time.full_day
-            && args.time.time_values().next().is_none()
-            && args.time.quick == 0
-            && (args.time.yesterday > 0 || args.time.date.is_some());
+    let mut from_now = args.time_flags && !args.relative;
+    #[cfg(feature = "test-util")]
+    if from_now {
+        crate::commands::reading::refuse_bare_clock(&args.time)?;
+    }
+    // da-bjxr6: a day alone, `-y` or `-d` with no clock and no `-D`, keeps
+    // the entry's own clock (vividn, 2026-11-07: «retime -y would work to
+    // move an entry to the same time, just a day in the past»): under `-r`
+    // that many days from the entry's, otherwise the day it names from
+    // today. A day `-t` names stays the whole day.
+    let day_alone = !args.time.full_day
+        && args.time.time_values().next().is_none()
+        && args.time.quick == 0
+        && (args.time.yesterday > 0 || args.time.date.is_some());
+    if from_now && day_alone {
+        let mut read = args.time.clone();
+        if read.timezone.is_none() {
+            read.timezone = lived_zone(db, &read, now)?;
+        }
+        let day = build_time_from_flags(&read, now)?.local_time().date_naive();
+        args.time.date = Some(day.to_string());
+        args.time.yesterday = 0;
+        from_now = false;
+    }
+    let shift = args.relative || day_alone;
+    let anchored = placed && !from_now;
+    if from_now && args.time.timezone.is_none() {
+        args.time.timezone = lived_zone(db, &args.time, now)?;
+    }
     // `+5`, `-y -t +5`, `-z` alone, anything under `-r`: no clock time is
     // stated, so how well the entry's time is known stays as it was.
     let shifted = args.relative
-        || placed && (args.time.time.as_deref()).is_none_or(|t| t.starts_with(['+', '-']));
+        || anchored && (args.time.time.as_deref()).is_none_or(|t| t.starts_with(['+', '-']));
+    let build = |time: &datum_parse::input::TimeArgs, own: &DatumTime| match anchored {
+        true => build_time_anchored(time, own.utc, Some(own), shift),
+        false => build_time_anchored(time, now, None, false),
+    };
     // da-z3fzv: a wall time a fall-back night repeats is asked about as a
     // log's is (da-6i7l1), before the write, of the first entry the args
-    // make it of; the answer is every entry's.
+    // make it of; the answer is every entry's. The args are those built
+    // above: a from-now day alone is its date by now, which names no clock
+    // and so asks nothing.
     if placed {
         let read = |own: &DatumTime, later| {
             let time = datum_parse::input::TimeArgs {
                 later,
                 ..args.time.clone()
             };
-            build_time_anchored(&time, own.utc, Some(own), shift).ok()
+            build(&time, own).ok()
         };
         let mut owns = Vec::new();
         for filter in &filters {
@@ -230,21 +265,14 @@ pub fn retime(mut args: RetimeArgs, db: &Db) -> Result<()> {
     }
     let mut moved = Vec::new();
     for filter in &filters {
-        moved.extend(
-            db.set_start_time(filter, args.time.timezone.is_some(), |own| {
-                let (at, anchor) = if placed {
-                    (own.utc, Some(own))
-                } else {
-                    (now, None)
-                };
-                let mut t = build_time_anchored(&args.time, at, anchor, shift)
-                    .map_err(|e| datum_core::error::DatumError::Other(format!("{e:#}")))?;
-                if shifted && t.uncertainty.is_none() {
-                    t.uncertainty.clone_from(&own.uncertainty);
-                }
-                Ok(t)
-            })?,
-        );
+        moved.extend(db.set_start_time(filter, zone_stated, |own| {
+            let mut t = build(&args.time, own)
+                .map_err(|e| datum_core::error::DatumError::Other(format!("{e:#}")))?;
+            if shifted && t.uncertainty.is_none() {
+                t.uncertainty.clone_from(&own.uncertainty);
+            }
+            Ok(t)
+        })?);
     }
     report(db, &moved, &output)
 }

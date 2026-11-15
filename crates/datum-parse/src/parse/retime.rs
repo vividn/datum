@@ -67,6 +67,10 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
             )))
         }
     };
+    // da-1f9d5: a time flag reads from now, the positional from the entry.
+    let t = &composed.time;
+    let time_flags =
+        t.time.is_some() || t.yesterday > 0 || t.quick > 0 || t.date.is_some() || t.full_day;
     // It IS a `-t` value from here on, so the two cannot disagree.
     if let Some(when) = when {
         composed.time.push_time(when);
@@ -105,6 +109,7 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
         after: composed.after,
         before: composed.before,
         relative: composed.relative,
+        time_flags,
         output: composed.output,
     })
 }

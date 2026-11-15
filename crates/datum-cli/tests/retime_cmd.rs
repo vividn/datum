@@ -31,9 +31,10 @@ fn time_of(db: &datum_core::db::Db, hid: &str) -> datum_core::time::DatumTime {
 }
 
 /// da-jix52: on an entry at 2026-10-05 09:15 (Berlin), `retime <hid> 1040`
-/// and `retime <hid> -t 1040` both give 10:40 on THAT day — not 1040
-/// minutes later, and not 10:40 today — and `+5` gives 09:20. The entry's
-/// own zone is what its day is read in, so the host's does not matter.
+/// gives 10:40 on THAT day — not 1040 minutes later, and not 10:40 today —
+/// and `+5` gives 09:20. The entry's own zone is what its day is read in, so
+/// the host's does not matter. A positional alone reads from the entry; a
+/// time flag reads from now (da-1f9d5), unless `-r`.
 #[test]
 fn retime_positional_and_t_are_read_from_the_entrys_own_time() {
     // 09:15 in Berlin (+02:00), retimed by `argv` in a database of its own.
@@ -45,18 +46,16 @@ fn retime_positional_and_t_are_read_from_the_entrys_own_time() {
     };
     for (argv, want) in [
         (&["1040"][..], "2026-10-05T08:40:00Z"),
-        (&["-t", "1040"], "2026-10-05T08:40:00Z"),
         (&["+5"], "2026-10-05T07:20:00Z"),
-        (&["-t", "+5"], "2026-10-05T07:20:00Z"),
         (&["-1h"], "2026-10-05T06:15:00Z"),
         // da-ciajj: the sign is every unit's — these were 06:45, -60 + 30.
         (&["-1h30m"], "2026-10-05T05:45:00Z"),
         (&["-1h 30m"], "2026-10-05T05:45:00Z"),
         (&["-1:30"], "2026-10-05T05:45:00Z"),
-        (&["-t", "-1h30m"], "2026-10-05T05:45:00Z"),
+        (&["-r", "-t", "-1h30m"], "2026-10-05T05:45:00Z"),
+        (&["-r", "-t", "+5"], "2026-10-05T07:20:00Z"),
         (&["+1h30m"], "2026-10-05T08:45:00Z"),
         (&["yesterday 10am"], "2026-10-04T08:00:00Z"),
-        (&["-y", "1000"], "2026-10-04T08:00:00Z"),
     ] {
         let after = retimed(argv);
         assert_eq!(after.utc, utc(want), "{argv:?}");
@@ -66,6 +65,55 @@ fn retime_positional_and_t_are_read_from_the_entrys_own_time() {
     let after = retimed(&["yesterday"]);
     assert_eq!(after.utc, utc("2026-10-03T22:00:00Z"));
     assert_eq!(after.uncertainty.as_deref(), Some("P1D"));
+}
+
+/// da-1f9d5 (vividn, 2026-11-15: «retime -tttt should be absolute not
+/// relative (ie relative to now rather than relative to the occur time).
+/// Only with -rtttt should it be relative (or without flags and -3
+/// minutes)»): on an entry at 14:00 yesterday, now 18:00, a time flag reads
+/// from now, in the zone a log's is (the `timezone` field's here), `-r`
+/// makes it a shift of the entry's time, and a positional alone reads from
+/// the entry. A day alone keeps the entry's clock (da-bjxr6).
+#[test]
+fn retime_flags_read_from_now_and_r_or_a_positional_from_the_entry() {
+    use datum_parse::time::clock::{install, uninstall, MockClock};
+    let now = datum_core::time::DatumTime::from_utc_and_tz(utc("2026-11-10T18:00:00Z"), "UTC");
+    let prev = install(std::sync::Arc::new(MockClock::new(now.unwrap())));
+    let retimed = |argv: &[&str]| {
+        let db = fresh_db();
+        run_cli(
+            &["switch", "timezone", "UTC", "-t", "2026-11-01T00:00"],
+            &db,
+        )
+        .unwrap();
+        let hid = point_in(&db, "coffee", "2026-11-09T14:00:00Z", "UTC");
+        run_cli(&[&["retime", &hid][..], argv].concat(), &db).unwrap();
+        time_of(&db, &hid)
+    };
+    let cases = [
+        (&["-qqq"][..], "2026-11-10T17:45:00Z"),
+        (&["-tttt"], "2026-11-10T17:57:00Z"),
+        (&["-t", "10:40"], "2026-11-10T10:40:00Z"),
+        (&["-y", "-t", "9"], "2026-11-09T09:00:00Z"),
+        (&["-yy"], "2026-11-08T14:00:00Z"),
+        (&["-rqqq"], "2026-11-09T13:45:00Z"),
+        (&["-r", "-qqq"], "2026-11-09T13:45:00Z"),
+        (&["-rtttt"], "2026-11-09T13:57:00Z"),
+        (&["-ryy"], "2026-11-07T14:00:00Z"),
+        (&["-3"], "2026-11-09T13:57:00Z"),
+        (&["1040"], "2026-11-09T10:40:00Z"),
+    ];
+    let got: Vec<_> = cases.iter().map(|(argv, _)| retimed(argv)).collect();
+    let whole = retimed(&["-yD"]);
+    uninstall();
+    if let Some(p) = prev {
+        install(p);
+    }
+    for ((argv, want), after) in cases.iter().zip(got) {
+        assert_eq!(after.utc, utc(want), "{argv:?}");
+    }
+    assert_eq!(whole.utc, utc("2026-11-09T00:00:00Z"));
+    assert_eq!(whole.uncertainty.as_deref(), Some("P1D"));
 }
 
 /// da-fdc7o: `update <hid> at=T` reads T as `retime <hid> T` does,
@@ -147,7 +195,7 @@ fn retime_batch_reads_each_entry_from_its_own_time() {
     assert_eq!(time_of(&db, &tokyo).timezone.as_deref(), Some("Asia/Tokyo"));
 
     // The bulk filter is the same path: every row from its own time.
-    run_cli(&["retime", "--field", "tea", "-t", "+5"], &db).unwrap();
+    run_cli(&["retime", "--field", "tea", "-r", "-t", "+5"], &db).unwrap();
     assert_eq!(time_of(&db, &tokyo).utc, utc("2026-10-01T01:45:00Z"));
     assert_eq!(time_of(&db, &berlin).utc, utc("2026-10-05T08:40:00Z"));
 }
@@ -465,7 +513,7 @@ fn retime_echoes_the_header_then_the_moved_line() {
             "-1d 10:00:00+0 → -1d 11:00:00+0  walk   on   30m",
         ),
     ] {
-        let printed = datum(&["retime", field, "-t", to]);
+        let printed = datum(&["retime", field, "-y", "-t", to]);
         let lines: Vec<&str> = printed.lines().collect();
         let header: Vec<&str> = lines[0].split(' ').collect();
         assert_eq!((header.len(), header[0]), (3, "RETIME"), "{printed}");
@@ -475,25 +523,27 @@ fn retime_echoes_the_header_then_the_moved_line() {
         assert_eq!(lines[1..], [line], "{printed}");
     }
     let doc: serde_json::Value = serde_json::from_str(&datum(&[
-        "retime", "coffee", "-t", "09:40", "--show", "json",
+        "retime", "coffee", "-y", "-t", "09:40", "--show", "json",
     ]))
     .unwrap();
     let doc = &doc["docs"][0];
     assert_eq!(doc["action"], "RETIME");
     assert_eq!(doc["info_time"], "-1d 09:30:00+0 → -1d 09:40:00+0");
-    // da-bjxr6: `-y` keeps the clock, so the new side says it, dated; it
+    // da-bjxr6: `-yy` keeps the clock, so the new side says it, dated; it
     // was the date alone, a whole day.
     let doc: serde_json::Value =
-        serde_json::from_str(&datum(&["retime", "coffee", "-y", "--show", "json"])).unwrap();
+        serde_json::from_str(&datum(&["retime", "coffee", "-yy", "--show", "json"])).unwrap();
     let moved = doc["docs"][0]["info_time"].as_str().unwrap().to_string();
     let (_, new) = moved.split_once(" → ").unwrap();
     assert!(new.ends_with(" 09:40:00+0"), "{moved}");
 }
 
-/// da-bjxr6: on an entry, `-y` and `-d` with no clock move it that many days
-/// at its own clock, a calendar day in its zone (vividn, 2026-11-07: «retime
+/// da-bjxr6: on an entry, `-r -y` and `-r -d -1` move it that many days at
+/// its own clock, a calendar day in its zone (vividn, 2026-11-07: «retime
 /// -y would work to move an entry to the same time, just a day in the
-/// past»), and `-yD` makes it the whole day before. These were all `P1D`.
+/// past»), `-d <date>` to that date at its clock, and `-d <date> -D` makes
+/// it that whole day. These were all `P1D`. Without `-r`, `-y` counts from
+/// today (da-1f9d5): `retime_flags_read_from_now_and_r_or_a_positional_from_the_entry`.
 #[test]
 fn retime_a_day_back_keeps_the_entrys_clock_and_d_makes_it_all_day() {
     // 14:20 in Berlin on 2026-10-26, the day after the clocks went back, so
@@ -505,9 +555,9 @@ fn retime_a_day_back_keeps_the_entrys_clock_and_d_makes_it_all_day() {
         time_of(&db, &hid)
     };
     for (argv, want) in [
-        (&["-y"][..], "2026-10-25T13:20:00Z"),
-        (&["-yy"], "2026-10-24T12:20:00Z"),
-        (&["-d", "-1"], "2026-10-25T13:20:00Z"),
+        (&["-r", "-y"][..], "2026-10-25T13:20:00Z"),
+        (&["-ryy"], "2026-10-24T12:20:00Z"),
+        (&["-r", "-d", "-1"], "2026-10-25T13:20:00Z"),
         (&["-d", "2026-10-01"], "2026-10-01T12:20:00Z"),
     ] {
         let after = retimed(argv);
@@ -515,7 +565,12 @@ fn retime_a_day_back_keeps_the_entrys_clock_and_d_makes_it_all_day() {
         assert_eq!(after.uncertainty, None, "{argv:?}");
         assert_eq!(after.timezone.as_deref(), Some("Europe/Berlin"));
     }
-    for argv in [&["-yD"][..], &["-y", "-D"]] {
+    // A whole day from the flags is read in the zone a log's is, the host's
+    // here, so the line names Berlin's (da-1f9d5).
+    for argv in [
+        &["-d", "2026-10-25", "-D", "-z", "Europe/Berlin"][..],
+        &["-Dd", "2026-10-25", "-z", "Europe/Berlin"],
+    ] {
         let after = retimed(argv);
         assert_eq!(after.utc, utc("2026-10-24T22:00:00Z"), "{argv:?}");
         assert_eq!(after.uncertainty.as_deref(), Some("P1D"), "{argv:?}");
@@ -531,7 +586,7 @@ fn retime_a_day_back_keeps_the_entrys_clock_and_d_makes_it_all_day() {
         .insert(&db);
     let (hid, dur) = (walk.hid.to_string(), walk.dur.clone());
     let before = walk.at.unwrap().utc;
-    run_cli(&["retime", &hid, "-y"], &db).unwrap();
+    run_cli(&["retime", &hid, "-r", "-y"], &db).unwrap();
     let after = db.get_entry(&hid).unwrap();
     let at = after.at.unwrap();
     assert_eq!(at.utc, before - chrono::Duration::days(1));
@@ -540,8 +595,20 @@ fn retime_a_day_back_keeps_the_entrys_clock_and_d_makes_it_all_day() {
     // An entry that is a whole day stays a whole day, the day before.
     let db = fresh_db();
     let hid = point_in(&db, "coffee", "2026-10-26T13:20:00Z", "Europe/Berlin");
-    run_cli(&["retime", &hid, "-D"], &db).unwrap();
-    run_cli(&["retime", &hid, "-y"], &db).unwrap();
+    run_cli(
+        &[
+            "retime",
+            &hid,
+            "-d",
+            "2026-10-26",
+            "-D",
+            "-z",
+            "Europe/Berlin",
+        ],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["retime", &hid, "-r", "-y"], &db).unwrap();
     let after = time_of(&db, &hid);
     assert_eq!(after.utc, utc("2026-10-24T22:00:00Z"));
     assert_eq!(after.uncertainty.as_deref(), Some("P1D"));

@@ -737,8 +737,8 @@ describe('collect', () => {
 				await input.press('Enter');
 				await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'retime'));
 				const ran = (await seen()).find((a) => a[0] === 'retime' && !a.includes('--dry-run'));
-				// −5m is the CLI's `-q`, which `retime` reads from the entry's own time.
-				assert.deepEqual(ran, ['retime', hid, '-q']);
+				// −5m is the CLI's `-q`, which `retime -r` reads from the entry's own time (da-1f9d5).
+				assert.deepEqual(ran, ['retime', hid, '-r', '-q']);
 				await app.idle();
 				const [entry] = JSON.parse((await app.run(['tail', 'mood', '-n', '1', '--json'])).stdout).rows;
 				assert.equal(entry.hid, hid);

@@ -127,7 +127,8 @@ describe('a command tap focuses the line without the keyboard', () => {
 			const echoes = (await app.echoes()).length;
 			await commands(page).locator('button[data-command="retime"]').tap();
 			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, echoes);
-			assert.equal((await app.echoes()).at(-1), `retime ${entry.hid} -t -5`);
+			// A shift goes with `-r`, which reads it from the entry's own time (da-1f9d5).
+			assert.equal((await app.echoes()).at(-1), `retime ${entry.hid} -r -t -5`);
 			await app.idle();
 			const [moved] = await app.entries(1);
 			assert.equal(moved.hid, entry.hid);
@@ -141,7 +142,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 			const before = (await app.echoes()).length;
 			await commands(page).locator('button[data-command="retime"]').tap();
 			await page.waitForFunction((n) => document.querySelectorAll('.cli .echo').length > n, before);
-			assert.equal((await app.echoes()).at(-1), `retime ${entry.hid} -t -10`);
+			assert.equal((await app.echoes()).at(-1), `retime ${entry.hid} -r -t -10`);
 			assert.equal((await state(page)).text, '', 'the single tap put something on the line');
 		});
 	});

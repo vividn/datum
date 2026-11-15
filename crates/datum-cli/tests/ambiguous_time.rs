@@ -225,7 +225,7 @@ fn the_page_is_told_the_options_and_answers_on_a_second_run() {
 }
 
 /// da-z3fzv: retime is asked as a log is, of the time it builds from the
-/// entry's own: `-t 02:30` on a tea logged at 01:00 that night.
+/// entry's own: `02:30` on a tea logged at 01:00 that night.
 #[test]
 fn retime_is_asked_which_reading() {
     use std::io::Write;
@@ -240,7 +240,7 @@ fn retime_is_asked_which_reading() {
             cmd.env("DATUM_NO_DEFAULT_ANSWER", "1");
         }
         let mut child = cmd
-            .args(["retime", "-t", "02:30"])
+            .args(["retime", "_LAST", "02:30"])
             .stdin(Stdio::piped())
             .spawn()
             .unwrap();
@@ -273,8 +273,7 @@ fn retime_is_asked_which_reading() {
 
 /// da-605u9: retiming several entries asks about the first the new time
 /// makes ambiguous, not just the first entry: a tea the day before, where
-/// `-t 02:30` is one instant, then one on the fall-back night, named by a
-/// comma list and by `--field`.
+/// `02:30` on its day is one instant, then one on the fall-back night.
 #[test]
 fn a_retime_of_several_asks_about_a_later_ambiguous_one() {
     let dir = tempfile::tempdir().unwrap();
@@ -290,20 +289,17 @@ fn a_retime_of_several_asks_about_a_later_ambiguous_one() {
     );
     let list = format!("{},{}", hids[0].0, hids[1].0);
     let before = teas(&dir);
-    for targets in [&[list.as_str()][..], &["--field", "tea"]] {
-        let out = run(&dir, &["retime", "-t", "02:30"])
-            .args(targets)
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        let err = said(&out);
-        assert_eq!(out.status.code(), Some(12), "{targets:?}: {err}");
-        assert!(
-            err.contains(&format!("1  {FIRST}")) && err.contains(&format!("2  {SECOND}")),
-            "{targets:?}: {err}"
-        );
-        assert_eq!(teas(&dir), before, "{targets:?}: nothing moved");
-    }
+    let out = run(&dir, &["retime", &list, "02:30"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let err = said(&out);
+    assert_eq!(out.status.code(), Some(12), "{err}");
+    assert!(
+        err.contains(&format!("1  {FIRST}")) && err.contains(&format!("2  {SECOND}")),
+        "{err}"
+    );
+    assert_eq!(teas(&dir), before, "nothing moved");
 }
 
 /// da-job98: an `at=` key is a wall time as `-t` is, and unanswered

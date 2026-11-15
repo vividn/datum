@@ -225,7 +225,16 @@ fn old_ops_replay_to_the_same_rows_on_a_fresh_copy() {
     // Written now: the op says `at`, an edit of an old row's time too.
     old.ok(&["occur", "later", "-d", "2026-10-07", "-t", "09:00"]);
     // 16:00 in its own zone, two hours ahead of UTC that day.
-    old.ok(&["retime", "zoned", "-d", "2026-10-03", "-t", "16:00"]);
+    old.ok(&[
+        "retime",
+        "zoned",
+        "-d",
+        "2026-10-03",
+        "-t",
+        "16:00",
+        "-z",
+        "Europe/Berlin",
+    ]);
     let newest = old.query("SELECT body FROM ops ORDER BY rowid DESC LIMIT 1");
     assert!(newest.contains("\"at\":{"), "{newest}");
     assert!(!newest.contains("occur_time"), "{newest}");

@@ -85,7 +85,7 @@ test('a stale _LAST retimed into a repeated hour asks both, and stores the readi
 			await app.submit('occur tea -d 2026-10-25 -t 04:00');
 			await app.clock.forward(16 * 60 * 1000);
 
-			await type(page, 'retime -t 02:30');
+			await type(page, 'retime -d 2026-10-25 -t 02:30');
 			const dialog = page.locator('dialog.confirm');
 			const asks = (re) =>
 				page.waitForFunction((src) => new RegExp(src).test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''), re.source);

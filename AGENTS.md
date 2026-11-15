@@ -334,7 +334,9 @@ is reported rather than read again. The owner's reads open as a write does.
   a `-t` that names one) needs a clock, and without one is refused wherever
   the anchor is now (`TimeBuilder::shift_needs_clock`): shift then day and
   day then shift part at midnight and at DST. `-y -t 18:30 -t -6` is 18:24
-  yesterday. `retime` anchors on the entry's own time, a clock, and takes them.
+  yesterday. `retime`'s flags read from now as a log's do; its positional T,
+  and its flags under `-r`, anchor on the entry's own time, a clock, and take
+  them (da-1f9d5).
   A relative `at=` on a log is one more `-t ±N` to the rule
   (`-y at=-6` is refused), and `-D` wins over the key as over `-t`
   (`-D at=18:30` is the whole day); on `update` its anchor is the

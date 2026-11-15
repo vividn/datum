@@ -22,6 +22,7 @@ const { COMMANDS, argumentsOf, commandsUnder, fires, fits, grammarOf, roleOf, ta
 	'../src/lib/commands.ts'
 );
 const { hidPill, picked, pickOf, withPills } = await import('../src/lib/selection.ts');
+const { relArg } = await import('../src/lib/nowpoint.ts');
 
 const entry = (name, usage, flags = [], aliases = []) => ({ name, aliases, usage, flags });
 const T = { short: 't', long: 'time', takes_value: true };
@@ -161,6 +162,19 @@ describe('what a press runs with the pills', () => {
 			'14:30'
 		]);
 		assert.deepEqual(withPills(GRAMMAR, ['delete'], [two]).argv, ['delete', 'abcde12345xy,fghij']);
+	});
+
+	// da-1f9d5: retime reads a time flag from now, `-r` from the entry's own time.
+	test('a time that is a shift goes to retime with -r, a clock without it', () => {
+		const pill = (text) => ({ id: 'cursor', kind: 'time', text });
+		// Every word a relative selection is spelt with (`relArg`), not shapes picked by hand.
+		const rels = [5, 10, 20, 7, 1, 25, 125, 1 / 3, 7.5, 61.25].map(relArg);
+		assert.ok(rels.some((t) => t.startsWith('-q')) && rels.some((t) => t.endsWith('s')), rels.join(' | '));
+		for (const text of rels)
+			assert.deepEqual(withPills(GRAMMAR, ['retime'], [one, pill(text)]).argv, ['retime', 'abcde12345xy', '-r', ...text.split(' ')], text);
+		for (const text of ['-t 14:30', '-y', '-D'])
+			assert.deepEqual(withPills(GRAMMAR, ['retime'], [one, pill(text)]).argv, ['retime', 'abcde12345xy', ...text.split(' ')], text);
+		assert.deepEqual(withPills(GRAMMAR, ['tail'], [pill('-q')]).argv, ['tail', '-q'], 'only retime');
 	});
 
 	// `update A B note=x` takes B as a STATE (measured, vremya 09-17): several

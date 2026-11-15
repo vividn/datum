@@ -795,9 +795,8 @@ pub struct RetimeArgs {
     /// Mutually exclusive with `time` / `relative` (the parser enforces).
     pub offset: Option<String>,
     /// Time-arg group (`-t`/`-y`/`-q`/`-d`/`-z`/`-D`/`-T`), with the
-    /// positional time in the `-t` slot (da-jix52). Each entry's own
-    /// at is what these resolve against; when no flag in the group
-    /// is set, the command treats the request as "set to now".
+    /// positional time in the `-t` slot (da-jix52). When no flag in the
+    /// group is set, the command treats the request as "set to now".
     pub time: TimeArgs,
     pub field: Option<String>,
     pub after: Option<String>,
@@ -805,6 +804,10 @@ pub struct RetimeArgs {
     /// `-r`/`--relative`: read `time` as a pure shift of the entry's
     /// at — `-y` moves it a day and keeps its clock.
     pub relative: bool,
+    /// A time flag (`-t`/`-q`/`-y`/`-d`/`-D`) was typed, the positional
+    /// aside: without `-r` they read from now, as a log's do, and a
+    /// positional alone from the entry's own time (da-1f9d5).
+    pub time_flags: bool,
     /// `--show` / `-A` / `-o`: each moved row echoes as a write does (da-amc4h).
     pub output: OutputArgs,
 }

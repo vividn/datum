@@ -162,7 +162,11 @@ export function withPills(
 	const hid = used.find((p) => p.kind === 'hid');
 	const field = used.find((p) => p.kind === 'field');
 	const ids = hid ? [hid.text] : [];
-	const rest = used.filter((p) => p !== hid && p !== field).flatMap((p) => shellSplit(pillWord(p)));
+	// da-1f9d5: retime reads a time flag from now, so a time that is a shift
+	// (`-q`, `-t -7`: collect's −5m, a relative selection) goes with `-r`,
+	// and moves each entry from its own time.
+	const shift = takes === grammar?.get('retime') && used.some((p) => p.kind === 'time' && /^-(q+|t [+-]\S+)$/.test(p.text));
+	const rest = [...(shift ? ['-r'] : []), ...used.filter((p) => p !== hid && p !== field).flatMap((p) => shellSplit(pillWord(p)))];
 	return {
 		argv: [...argv.slice(0, 1), ...ids, ...argv.slice(1), ...(field ? [field.text] : []), ...rest],
 		used

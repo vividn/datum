@@ -677,7 +677,8 @@ fn scan_placeholders(s: &str, mut f: impl FnMut(usize)) {
 ///
 /// The prefix predicate spans every value-less short flag across the
 /// concern modules (the count-stackable `y`/`q`, plus the boolean
-/// switches `S`/`C`/`l`/`m`/`F`/`A`/`D`/`T`). Mixing is fine: `-yS`,
+/// switches `S`/`C`/`l`/`m`/`F`/`A`/`D`/`T`, and `r`, retime's `--relative`
+/// and tail's `--reverse`, so `-rtttt` is `-r -t -4`, da-1f9d5). Mixing is fine: `-yS`,
 /// `-Sy`, `-CR` all expand. Value-taking shorts (`c`/`k`/`K`/`R`/`o`/
 /// `d`/`t`/`z`) can only appear as the terminal char, and take the rest
 /// of the token as their value: `-yt20` is `-y -t 20`.
@@ -735,7 +736,8 @@ fn expand_stacked(s: &str) -> Option<Vec<String>> {
     // Switch shorts: every value-less flag across the concern modules.
     // Value-taking shorts (c/k/K/R/o/d/t/z) are intentionally excluded —
     // they can only appear as the terminal char in a bundle.
-    let is_switch = |c: char| matches!(c, 'y' | 'q' | 'S' | 'C' | 'm' | 'F' | 'A' | 'D' | 'T');
+    let is_switch =
+        |c: char| matches!(c, 'y' | 'q' | 'r' | 'S' | 'C' | 'm' | 'F' | 'A' | 'D' | 'T');
     let prefix_len = chars.iter().take_while(|c| is_switch(**c)).count();
 
     // All-switch run (e.g. `-yy`, `-qqq`, `-SC`, `-CT`).
