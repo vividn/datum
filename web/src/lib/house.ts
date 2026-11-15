@@ -50,23 +50,26 @@ export interface Room {
 /**
  * The plan, in its viewBox (`PLAN`): four rooms two by two, the bathroom and
  * the living room over the bedroom and the kitchen, and the garden against
- * the house's right wall.
+ * the house's right wall. Its shape is the game box's stage beside the
+ * buttons' column, about 2.3 wide to 1 tall on a phone and on a desktop
+ * alike, so the house fills it (da-1orow); each room's name stands in its top
+ * left, over the furniture and the spots.
  */
 export const ROOMS: Room[] = [
 	{
 		state: 'kitchen',
 		x: 104,
-		y: 56,
+		y: 70,
 		width: 100,
-		height: 52,
-		at: [154, 86],
+		height: 66,
+		at: [154, 108],
 		spots: [
-			[186, 86],
-			[130, 84]
+			[186, 108],
+			[130, 105.5]
 		],
 		things: [
-			{ name: 'counter', shapes: [[120, 94, 32, 12, 1]] },
-			{ name: 'stove', shapes: [[176, 58, 24, 18, 1], [182, 63, 2.5], [194, 63, 2.5], [182, 71, 2.5], [194, 71, 2.5]] }
+			{ name: 'counter', shapes: [[120, 118, 32, 12, 1]] },
+			{ name: 'stove', shapes: [[176, 72.5, 24, 18, 1], [182, 77.5, 2.5], [194, 77.5, 2.5], [182, 85.5, 2.5], [194, 85.5, 2.5]] }
 		]
 	},
 	{
@@ -74,31 +77,31 @@ export const ROOMS: Room[] = [
 		x: 104,
 		y: 4,
 		width: 100,
-		height: 52,
-		at: [154, 34],
+		height: 66,
+		at: [154, 42],
 		spots: [
-			[127, 30],
-			[183, 32]
+			[127, 37],
+			[183, 39.5]
 		],
 		things: [
-			{ name: 'sofa', shapes: [[112, 40, 30, 14, 3], [112, 49, 30, 5, 1]] },
-			{ name: 'table', shapes: [[172, 42, 22, 10, 2]] }
+			{ name: 'sofa', shapes: [[112, 49.5, 30, 14, 3], [112, 58.5, 30, 5, 1]] },
+			{ name: 'table', shapes: [[172, 52, 22, 10, 2]] }
 		]
 	},
 	{
 		state: 'bedroom',
 		x: 4,
-		y: 56,
+		y: 70,
 		width: 100,
-		height: 52,
-		at: [54, 86],
+		height: 66,
+		at: [54, 108],
 		spots: [
-			[50, 99],
-			[88, 84]
+			[50, 124.5],
+			[88, 105.5]
 		],
 		things: [
-			{ name: 'bed', shapes: [[8, 76, 34, 28, 2], [10, 79, 8, 22, 2]] },
-			{ name: 'wardrobe', shapes: [[78, 94, 22, 12, 1]] }
+			{ name: 'bed', shapes: [[8, 95.5, 34, 28, 2], [10, 98.5, 8, 22, 2]] },
+			{ name: 'wardrobe', shapes: [[78, 118, 22, 12, 1]] }
 		]
 	},
 	{
@@ -106,15 +109,15 @@ export const ROOMS: Room[] = [
 		x: 4,
 		y: 4,
 		width: 100,
-		height: 52,
-		at: [54, 34],
+		height: 66,
+		at: [54, 42],
 		spots: [
-			[46, 42],
-			[80, 24]
+			[46, 52],
+			[86, 36]
 		],
 		things: [
-			{ name: 'bath', shapes: [[8, 22, 28, 31, 6], [11, 25, 22, 25, 5]] },
-			{ name: 'sink', shapes: [[88, 13, 5]] }
+			{ name: 'bath', shapes: [[8, 30, 28, 31, 6], [11, 33, 22, 25, 5]] },
+			{ name: 'sink', shapes: [[92, 15.5, 5]] }
 		]
 	},
 	{
@@ -122,39 +125,39 @@ export const ROOMS: Room[] = [
 		x: 204,
 		y: 4,
 		width: 112,
-		height: 104,
-		at: [264, 60],
+		height: 132,
+		at: [264, 75],
 		spots: [
-			[270, 38],
-			[246, 78],
-			[280, 66]
+			[270, 47],
+			[246, 98],
+			[280, 82.5]
 		],
 		things: [
-			{ name: 'tree', shapes: [[292, 30, 13], [298, 86, 10]] },
-			{ name: 'bench', shapes: [[232, 88, 28, 8, 1]] },
-			flowers('cosmos', '#f783ac', [258, 14], [268, 20], [263, 25]),
-			flowers('daisies', '#f8f9fa', [270, 91], [279, 98], [268, 102])
+			{ name: 'tree', shapes: [[292, 37, 13], [298, 108, 10]] },
+			{ name: 'bench', shapes: [[232, 110.5, 28, 8, 1]] },
+			flowers('cosmos', '#f783ac', [214, 124], [224, 129], [219, 119]),
+			flowers('daisies', '#f8f9fa', [270, 113.5], [279, 122.5], [268, 128.5])
 		]
 	}
 ];
 
-export const PLAN = { width: 320, height: 112 };
+export const PLAN = { width: 320, height: 140 };
 
 /** The walls, with a gap at each doorway. */
 export const WALLS = [
-	'M204 22 V4 H4 V108 H204 V90 M204 74 V38',
-	'M104 4 V22 M104 38 V74 M104 90 V108',
-	'M4 56 H46 M62 56 H146 M162 56 H204'
+	'M204 29 V4 H4 V136 H204 V111 M204 95 V45',
+	'M104 4 V29 M104 45 V95 M104 111 V136',
+	'M4 70 H46 M62 70 H146 M162 70 H204'
 ].join(' ');
 
 /** Each doorway: the two places it joins, and its middle, where a walk through it crosses. */
 export const DOORS: { between: [string, string]; at: [number, number] }[] = [
-	{ between: ['bathroom', 'livingroom'], at: [104, 30] },
-	{ between: ['bedroom', 'kitchen'], at: [104, 82] },
-	{ between: ['bathroom', 'bedroom'], at: [54, 56] },
-	{ between: ['livingroom', 'kitchen'], at: [154, 56] },
-	{ between: ['livingroom', 'garden'], at: [204, 30] },
-	{ between: ['kitchen', 'garden'], at: [204, 82] }
+	{ between: ['bathroom', 'livingroom'], at: [104, 37] },
+	{ between: ['bedroom', 'kitchen'], at: [104, 103] },
+	{ between: ['bathroom', 'bedroom'], at: [54, 70] },
+	{ between: ['livingroom', 'kitchen'], at: [154, 70] },
+	{ between: ['livingroom', 'garden'], at: [204, 37] },
+	{ between: ['kitchen', 'garden'], at: [204, 103] }
 ];
 
 /** The dot taking a place: the state, and when it crosses the doorway into it, in ms from the round's start. */

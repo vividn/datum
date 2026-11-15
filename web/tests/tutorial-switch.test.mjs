@@ -13,11 +13,11 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { PHONE } from './support/layout.mjs';
+import { DESKTOP, PHONE } from './support/layout.mjs';
 import { cuedRoom, isStatus, startSwitch, switchRoom, lessonTab } from './support/tutorial.mjs';
 import { until } from './support/until.mjs';
 import { finger } from './support/press.mjs';
-import { DOORS, ROOMS, WALK_MS, WALLS, dotAt } from '../src/lib/house.ts';
+import { DOORS, PLAN, ROOMS, WALK_MS, WALLS, dotAt } from '../src/lib/house.ts';
 
 before(startApp);
 after(stopApp);
@@ -412,3 +412,50 @@ test('where motion is unwelcome the dot jumps from room to room', async () => {
 		{ ...PHONE, query: '?db=tutorial', reducedMotion: 'reduce' }
 	);
 });
+
+// da-1orow, vividn: «Make the rooms bigger to fill the extra space of the game
+// and make the font size of the room names bigger to match». Each name's size
+// in px before, at aca6cc6fd: 11 of the plan's units, the plan 320×112.
+const NAMES_BEFORE = { phone: 8.0, desktop: 14.6 };
+for (const [size, device] of [['phone', PHONE], ['desktop', DESKTOP]])
+	test(`on a ${size} the house fills the stage beside the buttons, and each room's name is larger than it was, in its room, clear of its furniture and the dot`, async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seeded(app);
+				const m = await page.locator(`${PANE} .game .stage`).evaluate((stage, plan) => {
+					const rect = (el) => el.getBoundingClientRect();
+					const pad = parseFloat(getComputedStyle(stage).paddingTop);
+					const svg = stage.querySelector('.house');
+					// The house as drawn: the plan through the svg's own scale and offset.
+					const ctm = svg.getScreenCTM();
+					const names = [...svg.querySelectorAll('text')].map((t) => {
+						const b = t.getBBox();
+						return { room: t.dataset.room, px: ctm.a * parseFloat(getComputedStyle(t).fontSize), box: [b.x, b.y, b.x + b.width, b.y + b.height] };
+					});
+					return {
+						room: { width: rect(stage.querySelector('.controls')).left - rect(stage).left - pad, height: rect(stage).height - 2 * pad },
+						house: { width: plan.width * ctm.a, height: plan.height * ctm.d },
+						names
+					};
+				}, PLAN);
+				for (const side of ['width', 'height'])
+					assert.ok(m.house[side] >= 0.9 * m.room[side], `the house ${m.house[side]} of the stage's ${m.room[side]} px ${side}`);
+
+				const bounds = (s) => (s.length === 3 ? [s[0] - s[2], s[1] - s[2], s[0] + s[2], s[1] + s[2]] : [s[0], s[1], s[0] + s[2], s[1] + s[3]]);
+				const meets = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+				assert.equal(m.names.length, ROOMS.length);
+				for (const { room, px, box } of m.names) {
+					assert.ok(px > NAMES_BEFORE[size], `${room}: its name ${px} px, ${NAMES_BEFORE[size]} before`);
+					const r = roomOf(room);
+					// Inside the walls' ink, 1.5 of the plan's units in from each edge.
+					assert.ok(box[0] >= r.x + 1.5 && box[1] >= r.y + 1.5 && box[2] <= r.x + r.width - 1.5 && box[3] <= r.y + r.height - 1.5, `${room}: its name ${box} past its walls`);
+					for (const { name, shapes } of r.things)
+						for (const s of shapes) assert.ok(!meets(box, bounds(s)), `${room}: its name ${box} over the ${name}`);
+					for (const [x, y] of [r.at, ...r.spots]) assert.ok(!meets(box, [x - 6, y - 6, x + 6, y + 6]), `${room}: its name ${box} under the dot at ${x},${y}`);
+				}
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...device, query: '?db=tutorial' }
+		);
+	});

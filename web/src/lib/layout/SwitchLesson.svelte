@@ -95,7 +95,7 @@
 	<svg class="house" viewBox="0 0 {PLAN.width} {PLAN.height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="the house, and where the person is" data-room={stateAt(walk, t)}>
 		{#each ROOMS as r (r.state)}
 			<rect class={r.state === 'garden' ? 'garden' : 'floor'} x={r.x} y={r.y} width={r.width} height={r.height} style:--room={colors[r.state]} />
-			<text x={r.x + 6} y={r.y + 14} data-room={r.state} style:--room={colors[r.state]}>{r.state}</text>
+			<text x={r.x + 6} y={r.y + 19} data-room={r.state} style:--room={colors[r.state]}>{r.state}</text>
 		{/each}
 		{#each ROOMS as r (r.state)}
 			{#each r.things as { name, shapes, colors: fills } (name)}
@@ -157,9 +157,11 @@
 		stroke-width: 1;
 	}
 
+	/* A room's name, in the plan's units: as large as «livingroom» fits its room's width, 11 px on a 390 px phone, in its
+	   top left over its furniture and where the dot stands (da-1orow). */
 	text {
 		fill: var(--room, var(--muted));
-		font-size: 11px;
+		font-size: 15px;
 	}
 
 	.dot {
