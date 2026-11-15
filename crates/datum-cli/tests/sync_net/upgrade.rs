@@ -61,7 +61,7 @@ fn across_a_sync_floor_the_copy_below_upgrades_and_a_checkout_warns() {
     let (a_runs, _) = up(&a);
     let out = b.run(&["sync"]);
     let said = String::from_utf8_lossy(&out.stdout);
-    assert!(said.contains("to datum 9.9.9-beta (abcdef1)"), "{said}");
+    assert!(said.contains("→ datum 9.9.9-beta (abcdef1)"), "{said}");
     assert!(b.exe_holds(RELEASE));
     drop(a_runs);
 
@@ -128,7 +128,7 @@ fn a_pin_holds_an_upgrade_past_it_and_a_floor_above_it() {
 
     b.ok(&["sync", "unpin"]);
     let said = String::from_utf8(b.run(&["sync"]).stdout).unwrap();
-    assert!(said.contains("to datum 9.9.9-beta (abcdef1)"), "{said}");
+    assert!(said.contains("→ datum 9.9.9-beta (abcdef1)"), "{said}");
     assert!(b.exe_holds(RELEASE));
 }
 

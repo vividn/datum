@@ -109,13 +109,17 @@ impl Home {
     }
 
     fn run_with(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
+        self.command(args, env).output().unwrap()
+    }
+
+    fn command(&self, args: &[&str], env: &[(&str, &str)]) -> Command {
         let path = format!(
             "{}:{}",
             self.path("fake").display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        Command::new(self.exe())
-            .args(args)
+        let mut cmd = Command::new(self.exe());
+        cmd.args(args)
             .env("PATH", path)
             .env("HOME", self.path("home"))
             .env("SHELL", "/bin/bash")
@@ -134,9 +138,8 @@ impl Home {
             .env("NO_COLOR", "1")
             .env_remove("DATUM_CONFIG")
             .env_remove("ZDOTDIR")
-            .envs(env.iter().copied())
-            .output()
-            .unwrap()
+            .envs(env.iter().copied());
+        cmd
     }
 
     fn ok(&self, args: &[&str]) -> String {
@@ -332,7 +335,7 @@ fn upgrade_to_installs_a_kept_release_verified() {
     );
     assert_eq!(std::fs::read(h.exe()).unwrap(), before);
     let said = h.ok(&["upgrade", "--to", "3.0.5"]);
-    assert!(said.contains("to datum 3.0.5-beta (abcdef1)"), "{said}");
+    assert!(said.contains("→ datum 3.0.5-beta (abcdef1)"), "{said}");
     assert_eq!(std::fs::read(h.exe()).unwrap(), kept);
 }
 
@@ -497,8 +500,16 @@ fn upgrade_refuses_a_mismatch_and_swaps_in_a_good_release() {
     assert!(h.ok(&["upgrade", "--check"]).contains("a newer datum"));
     assert_eq!(std::fs::read(h.exe()).unwrap(), before);
 
-    let said = h.ok(&["upgrade"]);
-    assert!(said.contains("datum 9.9.9"), "{said}");
+    let this = h.ok(&["--version"]);
+    let out = h.run(&["upgrade"]);
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains(&format!("{} → datum 9.9.9", this.trim())),
+        "{said}"
+    );
+    // Piped, it says no step (da-m9wg3).
+    assert!(out.stderr.is_empty(), "{out:?}");
     assert_eq!(std::fs::read(h.exe()).unwrap(), stub);
     assert_eq!(
         h.log().matches("restart datum-sync.service").count(),
@@ -506,6 +517,53 @@ fn upgrade_refuses_a_mismatch_and_swaps_in_a_good_release() {
         "install, then upgrade: {}",
         h.log()
     );
+}
+
+/// With stderr a terminal, `upgrade` says each step there as it starts,
+/// and stdout's result is the same (da-m9wg3).
+#[test]
+fn upgrade_says_its_steps_on_a_terminal() {
+    use std::io::Read;
+    let h = Home::new();
+    h.ok(&["install", "--daemon"]);
+    let this = h.ok(&["--version"]);
+    let this = this.trim();
+    // stderr on a terminal: what it said there, and stdout.
+    let upgrade = || {
+        let (mut master, slave) = crate::ambiguous_time::pty();
+        // The command, holding the pty's other end, is gone before the read.
+        let out = h.command(&["upgrade"], &[]).stderr(slave).output().unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let mut steps = Vec::new();
+        // A pty's master reads EIO once its other end is closed.
+        let _ = master.read_to_end(&mut steps);
+        let steps = String::from_utf8_lossy(&steps).into_owned();
+        (steps, String::from_utf8(out.stdout).unwrap())
+    };
+    let first = format!("{this} · checking for a newer release…");
+
+    // Up to date, it says the first step alone.
+    h.release(&std::fs::read(h.exe()).unwrap(), None);
+    let (steps, said) = upgrade();
+    assert!(steps.contains(&first), "{steps}");
+    assert!(!steps.contains("downloading"), "{steps}");
+    assert!(said.contains("datum is up to date"), "{said}");
+
+    h.release(b"#!/bin/sh\necho datum 9.9.9\n", None);
+    let (steps, said) = upgrade();
+    let at = |line: &str| {
+        steps
+            .find(line)
+            .unwrap_or_else(|| panic!("{line}: {steps}"))
+    };
+    let order = [
+        at(&first),
+        at("downloading datum 9.9.9…"),
+        at("verifying it against the signed SHA256SUMS…"),
+    ];
+    assert!(order.is_sorted(), "{steps}");
+    assert!(said.contains(&format!("{this} → datum 9.9.9")), "{said}");
+    assert!(!said.contains("checking"), "{said}");
 }
 
 /// `upgrade --to <major>.<minor>` is that minor's newest build (da-ec8y8):
@@ -545,7 +603,7 @@ fn upgrade_to_a_minor_installs_its_newest_build() {
         "datum 3.4.30-beta (abcdef1) is released",
     );
     let said = h.ok(&["upgrade", "--to", "v3.4"]);
-    assert!(said.contains("to datum 3.4.30-beta (abcdef1)"), "{said}");
+    assert!(said.contains("→ datum 3.4.30-beta (abcdef1)"), "{said}");
     assert_eq!(std::fs::read(h.exe()).unwrap(), kept);
 }
 
@@ -680,7 +738,7 @@ fn a_plain_upgrade_installs_only_a_newer_signed_version() {
     h.release_in("v0.1.1", older, None);
     h.sign_in("v0.1.1", &TEST_KEY);
     let said = h.ok(&["upgrade", "--to", "0.1.1"]);
-    assert!(said.contains("to datum 0.1.1-beta (abcdef1)"), "{said}");
+    assert!(said.contains("→ datum 0.1.1-beta (abcdef1)"), "{said}");
     assert_eq!(std::fs::read(h.exe()).unwrap(), older);
 }
 

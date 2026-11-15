@@ -253,6 +253,10 @@ fn replace(check: bool, to: Option<&str>) -> Result<()> {
             println!("{said}");
         }
     }
+    say(&format!(
+        "datum {} · checking for a newer release…",
+        said_build()
+    ));
     let (url, want, signed) = resolve(to)?;
     // A plain upgrade goes only forward: a cache serving an older SHA256SUMS,
     // or a release URL serving an older signed release, offers a build this
@@ -289,6 +293,7 @@ fn replace(check: bool, to: Option<&str>) -> Result<()> {
     // only one left, and a failed rename keeps it.
     let mut kept = false;
     let swapped: Result<String> = (|| {
+        say(&format!("downloading {signed}…"));
         let said = fetch(&url, &want, &part, to)?;
         if check {
             return Ok(said);
@@ -319,7 +324,12 @@ fn replace(check: bool, to: Option<&str>) -> Result<()> {
         println!("{said} is released: `datum upgrade --to {v}` installs it");
         return Ok(());
     }
-    println!("upgraded {} to {}", exe.display(), swapped?);
+    println!(
+        "upgraded {}: datum {} → {}",
+        exe.display(),
+        said_build(),
+        swapped?
+    );
     if recorded.is_none() {
         record(&Installed {
             exe: exe.clone(),
@@ -552,6 +562,7 @@ fn minor_only(to: &str) -> bool {
 /// was given one. What its `--version` says.
 fn fetch(url: &str, want: &str, part: &Path, to: Option<&str>) -> Result<String> {
     curl(url, Some(part))?;
+    say("verifying it against the signed SHA256SUMS…");
     let got = sha256(part)?;
     ensure!(
         got == want,
@@ -582,6 +593,14 @@ fn fetch(url: &str, want: &str, part: &Path, to: Option<&str>) -> Result<String>
         );
     }
     Ok(said.trim().to_string())
+}
+
+/// A step of `upgrade` as it starts, on stderr and only on a terminal
+/// (da-m9wg3): the daily unit and a script read stdout's result alone.
+fn say(step: &str) {
+    if std::io::stderr().is_terminal() {
+        eprintln!("{step}");
+    }
 }
 
 /// What `datum install` recorded of `exe`, which `upgrade` upgrades; `None`
