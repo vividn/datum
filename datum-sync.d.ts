@@ -76,8 +76,11 @@ export class Node {
      * Sync with the peer at `addr` (the JSON `sync_peers` keeps); the
      * report, as JSON. A session served before this one is past its
      * handshake takes its turn ([`Dialing`]), and it fails as busy.
+     * `asked`, a person waiting (the first sync after a load, one asked
+     * for): the member is reached in [`Asked`]'s few seconds from its turn,
+     * as `datum sync`'s, not in the idle limit (da-612uv).
      */
-    dial(addr: string): Promise<string>;
+    dial(addr: string, asked: boolean): Promise<string>;
     id(): string;
     /**
      * Redeem this database's pending join, if it holds one a member has not
@@ -138,7 +141,7 @@ export interface InitOutput {
     readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => number;
     readonly node_close: (a: number) => number;
     readonly node_connect: (a: number, b: number, c: number, d: number, e: number) => number;
-    readonly node_dial: (a: number, b: number, c: number) => number;
+    readonly node_dial: (a: number, b: number, c: number, d: number) => number;
     readonly node_id: (a: number, b: number) => void;
     readonly node_redeemPending: (a: number) => number;
     readonly node_serve: (a: number, b: number) => number;

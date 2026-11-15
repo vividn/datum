@@ -232,13 +232,17 @@ export class Node {
      * Sync with the peer at `addr` (the JSON `sync_peers` keeps); the
      * report, as JSON. A session served before this one is past its
      * handshake takes its turn ([`Dialing`]), and it fails as busy.
+     * `asked`, a person waiting (the first sync after a load, one asked
+     * for): the member is reached in [`Asked`]'s few seconds from its turn,
+     * as `datum sync`'s, not in the idle limit (da-612uv).
      * @param {string} addr
+     * @param {boolean} asked
      * @returns {Promise<string>}
      */
-    dial(addr) {
+    dial(addr, asked) {
         const ptr0 = passStringToWasm0(addr, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.node_dial(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.node_dial(this.__wbg_ptr, ptr0, len0, asked);
         return takeObject(ret);
     }
     /**
