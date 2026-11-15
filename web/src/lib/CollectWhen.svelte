@@ -1,6 +1,8 @@
 <!--
 	Collect's time and duration section (da-us1n1), open a column between the
-	now strip and the rows, at rest and beside a field's view alike. vividn,
+	now strip and the rows, at rest, beside a field's view and beside the
+	entries selected alike, so a time chosen goes beside the hid pill for
+	`retime` (da-awikb). vividn,
 	2026-11-05: «two sections: (time) (-1m) (-5m) ---- (dur) (1m) (5m).
 	clicking time or dur gives you more advanced options … these more
 	advanced options appear by expanding out this section to reveal more

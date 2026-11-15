@@ -63,8 +63,9 @@
 	field has a required key or it is dragged open: a tap putting `key=` on
 	the line, with `+ data` taking the caret there. Its time and
 	length are the TIME AND DURATION SECTION's (CollectWhen.svelte, da-us1n1),
-	a column between the now strip and the rows, at rest and beside a field's
-	view alike, a clock alone on the strip's edge until it is tapped open
+	a column between the now strip and the rows, at rest, beside a field's
+	view and beside the entries selected alike (where a time chosen is
+	`retime`'s, beside the hid pill, da-awikb), a clock alone on the strip's edge until it is tapped open
 	(da-iunoo, da-s2hht, the session's
 	`timeOpen`): `time −1m −5m · dur 1m 5m`, summing into the page's selection
 	(#lib/cursor.ts), so they are the nowview's own pills. A state tapped LOGS AT ONCE with them (vividn, 16:07: one
@@ -1442,7 +1443,7 @@
 	{#if card || resting}{@render present()}{/if}
 	{#if card}
 		<!-- The entries selected (da-xdz73), oldest first (da-ug56t), beside the now strip: each its field and time, then its data. -->
-		<div class="collect open entry" data-entry={hids} style:left={side === 'left' ? `${strip}px` : null} style:right={side === 'right' ? `${strip}px` : null}>
+		<div class="collect open entry" data-entry={hids} style:left={side === 'left' ? `${edge}px` : null} style:right={side === 'right' ? `${edge}px` : null}>
 			<div class="head">
 				<!-- The hid pill that opened the cards, with its ×, in back's place (da-dswuc): a press anywhere on it closes them. -->
 				{#if hidOpener}<span class="opener" data-back data-open-hid={hids}><PillChip pill={hidOpener} closes={unselect} {disabled} /></span>{/if}
@@ -1607,9 +1608,10 @@
 		{#if here}
 			{#key here.field}<CollectDrawer keys={here.keys} {disabled} edge={side === 'right' ? 'left' : 'right'} onkey={putKey} onmore={() => focusLine(true)} />{/key}
 		{/if}
-		<!-- After the rows and the view, so a field comes first in the Tab order; it stands between them and the strip. -->
-		{#if resting}<CollectWhen {disabled} {side} offset={strip} noLength={here?.shape.kind === 'moment'} shown={timeOpen} onshown={ontime} bind:width={whenW} />{/if}
 	{/if}
+	<!-- After the rows, the view or the cards, so a field or an entry comes first in the Tab order; it stands between them and the strip.
+	     Beside the cards too (da-awikb), so a time chosen there goes on the bar beside the hid pill for `retime`. -->
+	{#if resting || card}<CollectWhen {disabled} {side} offset={strip} noLength={picking?.shape.kind === 'moment'} shown={timeOpen} onshown={ontime} bind:width={whenW} />{/if}
 	{/snippet}
 </ButtonRows>
 {#if modifying}

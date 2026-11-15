@@ -720,6 +720,32 @@ describe('collect', () => {
 			});
 		});
 
+		// da-awikb. vividn, 2026-11-15: «keep the clock button and openable time
+		// section when you have data entry selected so that you can do relative
+		// retime operations easily».
+		test('the time section stays beside the cards, and −5m on the bar beside the hid retimes the entry 5 minutes earlier', async () => {
+			await selected(async (app, hid) => {
+				const { page } = app;
+				await page.locator(`${WHEN} [data-when-clock]`).waitFor();
+				await tap(page, '[data-earlier="5"]');
+				await saysPill(page, 'time', '−5m');
+				assert.equal(await page.locator(`${ENTRY} [data-card="${hid}"]`).count(), 1, 'the cards still show');
+				assert.deepEqual((await barPills(page)).map((p) => p.split(':')[0]).sort(), ['hid', 'time']);
+				const seen = await app.spyOnRunner();
+				const input = page.locator('.prompt-bar input');
+				await input.fill('retime');
+				await input.press('Enter');
+				await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'retime'));
+				const ran = (await seen()).find((a) => a[0] === 'retime' && !a.includes('--dry-run'));
+				// −5m is the CLI's `-q`, which `retime` reads from the entry's own time.
+				assert.deepEqual(ran, ['retime', hid, '-q']);
+				await app.idle();
+				const [entry] = JSON.parse((await app.run(['tail', 'mood', '-n', '1', '--json'])).stdout).rows;
+				assert.equal(entry.hid, hid);
+				assert.equal(Date.parse(entry.time), todayAt(13, 55));
+			});
+		});
+
 		test('a field with no button of its own, as timezone, is named as text and no link', async () => {
 			await selected(async (app) => {
 				assert.equal((await app.run(['switch', 'timezone', 'Etc/UTC', '-t', '14:30'])).code, 0);
