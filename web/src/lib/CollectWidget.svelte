@@ -883,9 +883,15 @@
 	});
 	/** Whether off is offered: a change field its spec lets be off, or an on/off field. */
 	const offable = $derived(picking?.shape.kind === 'on/off' || (picking?.shape.kind === 'change' && !picking.neverFalse));
-	/** Whether on is offered: the spec lists `true`, read from the field's own row, so on is in the first frame; a `true` only used is not (da-i6kpg). */
-	const takesOn = $derived(picking?.shape.kind === 'change' && !!picking.shape.declared && picking.shape.states.includes('true'));
-	/** The open view's states (da-qryu8, vividn, 2026-11-11): off first where offered, then on where the spec takes `true`, then `listed`. */
+	/**
+	 * Whether on is offered: an on/off field, whatever state it is in (da-j7mx5, vividn, 2026-11-15: «if you long press a
+	 * on/off field, both "on" and "off" buttons should be available»), or the spec lists `true`, read from the field's own
+	 * row, so on is in the first frame; a `true` only used is not (da-i6kpg).
+	 */
+	const takesOn = $derived(
+		picking?.shape.kind === 'on/off' || (picking?.shape.kind === 'change' && !!picking.shape.declared && picking.shape.states.includes('true'))
+	);
+	/** The open view's states (da-qryu8, vividn, 2026-11-11): off first where offered, then on where offered, then `listed`. */
 	const stated = $derived([...(offable ? ['false'] : []), ...(takesOn ? ['true'] : []), ...listed.filter((s) => s !== 'true')]);
 	/** Where the open view stands: its first row, then each state, by `sized`'s keys. */
 	const laid = $derived.by(() => {
@@ -1325,7 +1331,9 @@
 		if (el.dataset.state !== undefined && picking)
 			return clicks === 'one' || together ? gather(picking, el.dataset.state) : choose(picking, el.dataset.state, true);
 		// An on/off field's off runs in either mode, so the other mode's tap is its own.
-		if (el.dataset.off !== undefined && picking) return picking.shape.kind === 'change' ? choose(picking, 'false', clicks !== 'one') : off(picking);
+		// Gathering, an on/off field's off joins the array as its on does: `[true,false]`.
+		if (el.dataset.off !== undefined && picking)
+			return picking.shape.kind === 'change' ? choose(picking, 'false', clicks !== 'one') : together ? gather(picking, 'false') : off(picking);
 		const button = buttons.find((b) => b.field === el.dataset.field);
 		if (button) hold(button);
 	};
@@ -1529,14 +1537,14 @@
 								<!-- Off, the first state where it is offered (da-qryu8): empty, an outline alone. -->
 								<button
 									class="widget states"
-									use:act={clicks === 'two' && here.shape.kind === 'change' ? 'arm' : 'run'}
+									use:act={(clicks === 'two' && here.shape.kind === 'change') || (together && here.shape.kind === 'on/off') ? 'arm' : 'run'}
 									class:on={!here.active}
-									class:chosen={chosen === 'false'}
+									class:chosen={together ? together.includes('false') : chosen === 'false'}
 									style={vars(offLook(here))}
 									{disabled}
 									data-off
 									title={shellJoin(['off', here.field])}
-									onclick={() => ((together = null), off(here))}
+									onclick={() => (together && here.shape.kind === 'on/off' ? gather(here, 'false') : ((together = null), off(here)))}
 								>{#if !here.active}<span class="repeat" data-repeat>!</span>{/if}off</button>
 							{:else}
 								{@const parts = sets.get(state)}

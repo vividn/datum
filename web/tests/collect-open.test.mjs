@@ -328,7 +328,7 @@ describe('a field opened in collect', () => {
 			await pickOption(page, 'bar', 'a tap', 'opens and chooses, 2-click');
 			await button.click();
 			await page.locator(`${OPEN} [data-off]`).waitFor();
-			assert.deepEqual((await items(page)).map((i) => [i.role, i.state]), [['head', undefined], ['state', 'off']], 'an on/off field’s one state is not off');
+			assert.deepEqual((await items(page)).map((i) => [i.role, i.state]), [['head', undefined], ['state', 'off'], ['state', 'true']], 'an on/off field’s states are not off, then on');
 			assert.equal(await page.locator(`${OPEN} [data-off] [data-repeat]`).count(), 0, 'work is on: off says !');
 			const seen = await app.spyOnRunner();
 			await page.locator(`${OPEN} [data-off]`).click();
@@ -354,6 +354,47 @@ describe('a field opened in collect', () => {
 			await app.idle();
 			const [row] = JSON.parse((await app.run(['tail', 'work', '-n', '1', '--json'])).stdout).rows;
 			assert.equal(row.state, false);
+		});
+	});
+
+	// vividn, 2026-11-15: «if you long press a on/off field, both "on" and "off" buttons should be available inside the
+	// state view screen» (da-j7mx5). Before, its view offered off alone. A hold is a right click; in 1-click mode it opens.
+	describe('an on/off field held open offers off and on, whatever it is in', () => {
+		const ON = (page) => page.locator(`${OPEN} [data-state="true"]`);
+		const OFF = (page) => page.locator(`${OPEN} [data-off]`);
+		const lastState = async (app) => JSON.parse((await app.run(['tail', 'work', '-n', '1', '--json'])).stdout).rows[0]?.state;
+		const opened = async (page, button) => {
+			await button.click({ button: 'right' });
+			await ON(page).waitFor();
+			assert.deepEqual((await items(page)).map((i) => [i.role, i.state]), [['head', undefined], ['state', 'off'], ['state', 'true']]);
+		};
+
+		test('off logs false, then on logs true', async () => {
+			await opening(['setup work --verb start', 'start work -t 14:00'], 'work', async (app, button) => {
+				const { page } = app;
+				await opened(page, button);
+				await OFF(page).click();
+				await until(() => lastState(app), (s) => s === false);
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+				await app.clock.forward(60_000);
+				await opened(page, button);
+				assert.equal(await ON(page).textContent(), 'on');
+				await ON(page).click();
+				await until(() => lastState(app), (s) => s === true);
+				await page.locator(OPEN).waitFor({ state: 'detached' });
+			});
+		});
+
+		test('a hold on on, then off, gathers the booleans: [true,false]', async () => {
+			await opening(['setup work --verb start', 'start work -t 14:00', 'off work -t 14:30'], 'work', async (app, button) => {
+				const { page } = app;
+				await opened(page, button);
+				await ON(page).click({ button: 'right' });
+				await OFF(page).click();
+				await until(() => page.evaluate(() => window.datum.bar.pills().find((p) => p.kind === 'state')?.text), (t) => t === 'true,false');
+				await page.locator(`${HEAD} [data-transition]`).click();
+				await until(() => lastState(app), (s) => JSON.stringify(s) === '[true,false]');
+			});
 		});
 	});
 
