@@ -33,3 +33,18 @@ test('a pending join says it waits for its first sync, or why it was refused and
 	const refused = pendingWords({ ...p, refused: 'invite expired' });
 	assert.match(refused, /^Could not join laptop’s sync chain: invite expired\. Ask laptop for a new link\.$/);
 });
+
+test('a page dials the member seen or synced last first, and one its last try never reached last (da-612uv)', async () => {
+	const { likeliest } = await import('../src/lib/sync.ts');
+	const m = (endpoint, state, last_synced, last_seen) => ({ endpoint, state, last_synced, last_seen });
+	const order = (ms) => likeliest(ms).map((x) => x.endpoint);
+	const joined = [
+		m('first', 'synced', '2026-11-14T08:00:00Z', '2026-11-14T08:00:00Z'),
+		m('down', 'offline', '2026-11-15T09:00:00Z', '2026-11-15T09:00:00Z'),
+		m('never', 'never', null, null),
+		m('seen', 'error', '2026-11-13T08:00:00Z', '2026-11-15T08:00:00Z'),
+		m('last', 'synced', '2026-11-15T07:00:00Z', null)
+	];
+	assert.deepEqual(order(joined), ['seen', 'last', 'first', 'never', 'down']);
+	assert.deepEqual(joined.map((x) => x.endpoint), ['first', 'down', 'never', 'seen', 'last'], 'the list itself is left as it was');
+});

@@ -294,6 +294,16 @@ function failInjected(): void {
  * alike, as `DATUM_SYNC_TIMEOUT_S` shortens the CLI's: a test's lever
  * (da-eqjri). Whole, as the wire counts them.
  */
+/**
+ * The members in the order a page dials them, one session at a time
+ * (da-612uv): the one seen or synced most recently first, and one whose last
+ * try never reached it last. An always-on machine leads by this alone.
+ */
+export function likeliest<M extends Member>(members: M[]): M[] {
+	const at = (m: Member) => Math.max(Date.parse(m.last_synced ?? '') || 0, Date.parse(m.last_seen ?? '') || 0);
+	return [...members].sort((a, b) => Number(a.state === 'offline') - Number(b.state === 'offline') || at(b) - at(a));
+}
+
 function shortTimeout(): number | undefined {
 	try {
 		const s = Number(localStorage.getItem('datum.syncTimeoutS'));
@@ -396,7 +406,7 @@ export class Leader {
 		this.version = status?.this ?? this.version;
 		this.paused = status?.paused ?? undefined;
 		this.notices = status?.notices ?? [];
-		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
+		this.peers = likeliest((status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr));
 		this.lastSynced = Math.max(0, ...(status?.members ?? []).map((m) => Date.parse(m.last_synced ?? '') || 0));
 		if (listed) await this.start();
 		// It joined as the name its admit records: one it was told stays, the
@@ -444,13 +454,14 @@ export class Leader {
 		}
 	}
 
-	async dial(p: Peer): Promise<void> {
+	/** `asked`: a person waits on it, and the member is reached in 5 s, not the idle minute (da-612uv). */
+	async dial(p: Peer, asked = false): Promise<void> {
 		if (this.busy.has(p.endpoint)) return void this.again.add(p.endpoint);
 		let ended = () => {};
 		this.busy.set(p.endpoint, new Promise((r) => (ended = r)));
 		this.post();
 		try {
-			this.done(p.endpoint, await ask<SyncReport>(this.db, { op: 'dial', addr: p.addr }));
+			this.done(p.endpoint, await ask<SyncReport>(this.db, { op: 'dial', addr: p.addr, asked }));
 		} catch (e) {
 			this.errors.set(p.endpoint, (e as Error).message);
 			this.erred.set(p.endpoint, Date.now());
@@ -484,7 +495,7 @@ export class Leader {
 				const endpoint = this.endpoint;
 				for (;;) {
 					await this.busy.get(p.endpoint);
-					await (this.busy.get(p.endpoint) ?? this.dial(p));
+					await (this.busy.get(p.endpoint) ?? this.dial(p, true));
 					if (this.paused || this.endpoint !== endpoint || !this.errors.get(p.endpoint)?.endsWith(CARRIED)) return;
 					const served = this.serves.has(p.endpoint);
 					await new Promise<void>((r) => {

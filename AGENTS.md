@@ -720,7 +720,9 @@ own copy applies, its apply waiting its turn, so it says each member's answer
 and an offline one reads offline (da-ahivt). datum.day runs one session at a
 time, applying or not (da-dwm2y): its CLI runs one process at a time, so a
 second session's handshake waited behind the first's verify with nothing sent.
-Its dials wait their turn, and a session served while another is open is
+Its dials wait their turn, the member seen or synced last first and one its last try
+never reached last (`likeliest` in `#lib/sync.ts`), and the first sync after a load, or one
+asked for, reaches each in 5 s, as `datum sync` does (da-612uv); a session served while another is open is
 refused as busy, except that a dial short of its handshake, perhaps
 connecting to a copy that is offline, gives its turn to the session served
 and is closed as busy, to go again at its next (da-gvia0); of two pages

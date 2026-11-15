@@ -56,7 +56,7 @@ export interface TicketAbout {
 export type SyncRequest =
 	| ({ id: number; db: string } & (
 			| { op: 'start'; key: string; relay?: string; idle?: number; label: string; datum: string; schema: number; floor: number }
-			| { op: 'dial'; addr: string }
+			| { op: 'dial'; addr: string; asked?: boolean }
 			| { op: 'connect'; ticket: string; label?: string }
 			/** Redeem the database's pending join, if a member answers: its report, or null with none (da-4qpwf). */
 			| { op: 'redeem' }

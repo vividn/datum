@@ -527,10 +527,14 @@ impl Node {
     /// Sync with the peer at `addr` (the JSON `sync_peers` keeps); the
     /// report, as JSON. A session served before this one is past its
     /// handshake takes its turn ([`Dialing`]), and it fails as busy.
-    pub async fn dial(&self, addr: String) -> Result<String, JsError> {
+    /// `asked`, a person waiting (the first sync after a load, one asked
+    /// for): the member is reached in [`Asked`]'s few seconds from its turn,
+    /// as `datum sync`'s, not in the idle limit (da-612uv).
+    pub async fn dial(&self, addr: String, asked: bool) -> Result<String, JsError> {
         let addr: EndpointAddr = serde_json::from_str(&addr).map_err(js)?;
         let peer = addr.id.to_string();
         let turn = self.turn().await;
+        let asked = asked.then(Asked::now);
         let (abort, registration) = AbortHandle::new_pair();
         let by = Rc::default();
         self.cli.dialing.replace(Some(Dialing {
@@ -541,7 +545,7 @@ impl Node {
             by: Rc::clone(&by),
             _turn: turn,
         }));
-        let dialed = dial(&self.cli, &self.ep, addr, None, None);
+        let dialed = dial(&self.cli, &self.ep, addr, None, asked.as_ref());
         let Ok(rep) = Abortable::new(dialed, registration).await else {
             let by = by.take().unwrap_or_default();
             return report(Err(match by == peer {

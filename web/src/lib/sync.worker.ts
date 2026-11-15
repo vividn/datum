@@ -73,7 +73,7 @@ async function answer(request: Exclude<SyncRequest, { ran: number }>): Promise<u
 	if (request.op === 'start') return node.id();
 	switch (request.op) {
 		case 'dial':
-			return JSON.parse(await node.dial(request.addr));
+			return JSON.parse(await node.dial(request.addr, request.asked === true));
 		case 'connect':
 			return JSON.parse(await node.connect(request.ticket, request.label));
 		case 'redeem':
