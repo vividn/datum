@@ -2646,8 +2646,8 @@ mod tests {
         // Each label upright along its end, across the band, so it takes
         // its height of the axis and not its length, and its foot toward
         // the stretch it names: 07:00's back, 08:00's on.
-        assert!(svg.contains(r#"<g transform="translate(705.35 25)"><text class="zone-label" dy="0.35em" text-anchor="middle" transform="rotate(90)" font-size="11""#));
-        assert!(svg.contains(r#"<g transform="translate(794.65 75)"><text class="zone-label" dy="0.35em" text-anchor="middle" transform="rotate(-90)" font-size="11""#));
+        assert!(svg.contains(r#"<g transform="translate(706.4 50)"><text class="zone-label" dy="0.35em" text-anchor="middle" transform="rotate(90)" font-size="14""#));
+        assert!(svg.contains(r#"<g transform="translate(793.6 50)"><text class="zone-label" dy="0.35em" text-anchor="middle" transform="rotate(-90)" font-size="14""#));
         // Down a vertical axis the band runs sideways, and so does the text.
         let vertical = DayviewConfig {
             orientation: Orientation::Vertical,

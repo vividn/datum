@@ -811,6 +811,11 @@ const ZONE_LABEL_PAD: f64 = 1.5;
 const ZONE_LABEL_DROP: f64 = 0.35;
 const ZONE_LABEL_CAPS: f64 = 0.75;
 
+/// A zone label's smallest font, and the largest a dead zone's takes with
+/// the whole band to itself (da-tlwpv); a lane's stays at 11.
+const ZONE_LABEL_MIN: f64 = 6.0;
+const ZONE_LABEL_MAX: f64 = 14.0;
+
 /// Air between two lanes, a share of the band (vividn, 2026-10-26: «a
 /// small margin between the two horizontal bars, let's try 8% of the day
 /// height», then «let's reduce it to 5%», da-0b9z4).
@@ -867,22 +872,51 @@ fn place_spans(
             reach = reach.max(hi(end));
             end += 1;
         }
-        // Each lane's share of the band and where it starts across it. The
-        // two ends of a dead zone share the band as two lanes do, with no
-        // bars to keep apart.
-        let k = end - i;
-        let (width, step) = match k {
-            1 => (0.5, 0.5),
-            _ => {
-                let width = (1.0 - (k - 1) as f64 * LANE_GAP) / k as f64;
-                (width, width + LANE_GAP)
-            }
-        };
         // The text runs across the band, so its length is a lane's and
         // only its height is the axis's.
         let widest = (i..end).map(|s| spans[s].label.chars().count()).max();
-        let fits = (day_height * width - 2.0 * ZONE_LABEL_PAD) / (widest.unwrap_or(1) as f64 * 0.6);
-        let font_size = fits.clamp(6.0, 11.0);
+        let fits = |width: f64| {
+            (day_height * width - 2.0 * ZONE_LABEL_PAD) / (widest.unwrap_or(1) as f64 * 0.6)
+        };
+        // Each lane's share of the band, where it starts across it, and the
+        // labels' size.
+        let k = end - i;
+        let (width, step, font_size) = if k == 1 {
+            // The ends of a dead zone each take the whole band, as no lane
+            // splits it (vividn, 2026-11-15: «the label can be the whole
+            // row»), their capitals and air both in the hole along the axis,
+            // so a short hole makes them smaller (da-tlwpv).
+            let hole = |a: f64, b: f64| {
+                let n = 1.0 + f64::from(u8::from(a > EPS && b < extent - EPS));
+                // The air at each end, and three times it between two, whose
+                // strokes eat into it.
+                (b - a - (2.0 * n + 1.0) * ZONE_LABEL_PAD) / (n * ZONE_LABEL_CAPS)
+            };
+            let mut whole = fits(1.0).min(ZONE_LABEL_MAX);
+            if lo(i) > EPS {
+                whole = whole.min(hole((0..i).map(hi).fold(0.0, f64::max), lo(i)));
+            }
+            if hi(i) < extent - EPS {
+                whole = whole.min(hole(
+                    hi(i),
+                    spans.get(i + 1).map_or(extent, |n| n.lo * extent),
+                ));
+            }
+            // A hole too short even for the smallest share the band as two
+            // lanes do, a label each, with no bars to keep apart.
+            if whole >= ZONE_LABEL_MIN {
+                (1.0, 0.0, whole)
+            } else {
+                (0.5, 0.5, fits(0.5).clamp(ZONE_LABEL_MIN, 11.0))
+            }
+        } else {
+            let width = (1.0 - (k - 1) as f64 * LANE_GAP) / k as f64;
+            (
+                width,
+                width + LANE_GAP,
+                fits(width).clamp(ZONE_LABEL_MIN, 11.0),
+            )
+        };
         // vividn, 2026-10-26: the label «actually on the edge of [the]
         // break, there can be a bit of room between the label and the S
         // so that it is obvious that it pertain to the broken timeline»,
@@ -2175,13 +2209,14 @@ mod tests {
         let day = jumped(vec![span(0, 0, 2, "UTC+1"), span(2, 3, 24, "UTC+2")], 2.5);
         let dead: Vec<[f64; 2]> = day.dead_zones.iter().map(|z| z.map(px)).collect();
         assert_eq!(dead, [[200.0, 100.0]]);
-        // Each end's offset in the zone, the earlier one nearest, across
-        // the band with its foot 1.5px from the end it names: 11px text
-        // whose baseline is 0.35em from its middle.
+        // Each end's offset in the zone, across the whole band (da-tlwpv)
+        // with its foot 1.5px from the end it names: 14px text whose
+        // baseline is 0.35em from its middle.
         assert_eq!(
             labels(&day),
-            [("UTC+1", 205.35, 25.0), ("UTC+2", 294.65, 75.0)]
+            [("UTC+1", 206.4, 50.0), ("UTC+2", 293.6, 50.0)]
         );
+        assert!(day.zone_labels.iter().all(|l| l.font_size == 14.0));
         let feet: Vec<bool> = day.zone_labels.iter().map(|l| l.names_earlier).collect();
         assert_eq!(feet, [true, false], "each foot toward its own stretch");
         // The block stops at 02:00 and goes on from 03:00; half an hour
@@ -2271,6 +2306,45 @@ mod tests {
         assert_eq!(at(&early), [11.35, 7.0]);
         let late = [span(0, 0, 23, "UTC+2"), span(23, 22, 24, "UTC+1")];
         assert_eq!(at(&late), [41.0, 38.65]);
+    }
+
+    /// da-tlwpv: a dead zone's two labels each take the whole band, at
+    /// the middle of it, as large as the hole lets both stand in it with
+    /// their air: 14px in a six hour jump, smaller in a one hour jump on a
+    /// narrow day, and in lanes again where even 6px would not fit.
+    #[test]
+    fn a_dead_zone_label_takes_the_whole_band_and_shrinks_to_its_hole() {
+        let placed = |spans: &[DayviewSpan], extent: f64| {
+            let (_, _, labels) = place_spans(spans, extent, 100.0);
+            let along = |l: &RenderedZoneLabel| {
+                // Its foot toward its own end, its capitals away from it.
+                let foot = l.time_pos
+                    + if l.names_earlier { -1.0 } else { 1.0 } * ZONE_LABEL_DROP * l.font_size;
+                let top =
+                    foot + if l.names_earlier { 1.0 } else { -1.0 } * ZONE_LABEL_CAPS * l.font_size;
+                (foot.min(top), foot.max(top))
+            };
+            let (a, b) = (along(&labels[0]), along(&labels[1]));
+            if labels[0].cross_pos == labels[1].cross_pos {
+                assert!(
+                    a.1 + 2.0 * ZONE_LABEL_PAD <= b.0 + 1e-9,
+                    "they keep apart along the axis: {a:?} {b:?}"
+                );
+            }
+            (labels.iter())
+                .map(|l| (px(l.cross_pos), px(l.font_size)))
+                .collect::<Vec<_>>()
+        };
+        let six = [span(0, 0, 2, "UTC+1"), span(2, 8, 24, "UTC+7")];
+        assert_eq!(placed(&six, 2400.0), [(50.0, 14.0), (50.0, 14.0)]);
+        let dst = [span(0, 0, 2, "UTC+1"), span(2, 3, 24, "UTC+2")];
+        // 20px an hour: 7.5px of air and two labels' capitals, 1.5em.
+        assert_eq!(placed(&dst, 480.0), [(50.0, 8.33), (50.0, 8.33)]);
+        // 10px an hour: lanes, 11px each.
+        assert_eq!(placed(&dst, 240.0), [(25.0, 11.0), (75.0, 11.0)]);
+        // A backward jump's lanes keep their labels, 11px at each lane's middle.
+        let back = [span(0, 0, 3, "UTC+2"), span(3, 2, 24, "UTC+1")];
+        assert_eq!(placed(&back, 2400.0), [(23.75, 11.0), (76.25, 11.0)]);
     }
 
     /// Two jumps back whose repeats overlap: 06:00 → 04:00, then 08:00 →
