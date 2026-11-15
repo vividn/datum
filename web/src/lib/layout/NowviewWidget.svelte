@@ -3,12 +3,15 @@
 	and a small white diamond HANDLE in the middle of each of its two time axes
 	(da-tglm6, vividn on #1445: «move them to the middle of the axis … small
 	white diamonds, 2:1 ratio»), which replaced the labels that were handles
-	(da-57vj4, da-b9glf). Tap or hold one and big numbers open off to its side,
-	scrolled by a mouse wheel: the ladder's steps on the relative axis (down to 30s, halving past 5m through
+	(da-57vj4, da-b9glf). Tap or hold one and big numbers open off to its left
+	(its right where the screen has no room), turned by a mouse wheel or a
+	swipe, smoothly and the way the finger goes, a flick coasting on to a step
+	(da-ux1h8): the ladder's steps on the relative axis (down to 30s, halving past 5m through
 	the 2m and 1m a game needs, up to 12h), round clock times on the clock's.
 	A tap on one gives the handle that time in the same place, so the window
-	rescales by their ratio, and so does the lift of a swipe that opened them
-	from the diamond; a swipe once they are open only turns them (da-k7ddx).
+	rescales by their ratio, and closes them, and so does the lift of a swipe
+	that opened them from the diamond; a swipe once they are open only turns
+	them (da-k7ddx).
 	A drag along the axis moves the handle's time under the finger, smoothly, the axis's labels those
 	of the window it would land on. Never to the snapshot of each
 	field's state, which is `showHistory` turned off in the widget's menu
@@ -2226,22 +2229,45 @@
 
 	/** A pick on the ladder: no further either way than it has numbers. */
 	const clampPick = (pick: number) => Math.max(-around.down.length, Math.min(around.up.length, pick));
+	/** How clear a number `d` steps from the pick is, between FADE's steps as the numbers turn. */
+	const fadeAt = (d: number) => {
+		const i = Math.min(Math.floor(d), SHOWN);
+		return i === SHOWN ? FADE[SHOWN] : FADE[i] + (FADE[i + 1] - FADE[i]) * (d - i);
+	};
+	/** The step nearest a pick part way between two, which a turn settles on and the picture marks picked. */
+	const nearest = (pick: number) => clampPick(Math.round(pick));
 	/** The numbers as drawn around the pick: how many steps from the handle, the rung, how clear. */
 	const notches = $derived.by(() => {
 		const pick = wheel?.pick ?? 0;
+		const at = Math.round(pick);
 		const out: { k: number; rung: Rung; fade: number }[] = [];
-		for (let k = pick - SHOWN; k <= pick + SHOWN; k++) {
+		for (let k = at - SHOWN; k <= at + SHOWN; k++) {
 			const rung = rungAt(k);
-			if (rung) out.push({ k, rung, fade: FADE[Math.abs(k - pick)] });
+			if (rung) out.push({ k, rung, fade: fadeAt(Math.abs(k - pick)) });
 		}
 		return out;
+	});
+	/**
+	 * Whether the numbers open right of the handle: left of it they would leave
+	 * the screen (da-ux1h8). Read again as their words change and as the
+	 * widget's box moves (a resize, a turned phone), and once right, right
+	 * until they close.
+	 */
+	let rightward = $state(false);
+	const words = $derived(notches.map((n) => n.rung.word).join());
+	$effect(() => {
+		void [words, boxAt];
+		if (!wheelEl || rightward || vertical) return;
+		const left = Math.min(...[...wheelEl.querySelectorAll('.notch')].map((n) => n.getBoundingClientRect().left));
+		if (left < 0) rightward = true;
 	});
 
 	const isOpenOn = (h: Handle) => !!wheel && wheel.onClock === (h.clock !== undefined);
 
 	function open(h: Handle): void {
 		if (isOpenOn(h)) return;
-		turnedNumbers = 0;
+		glideTo(null);
+		rightward = false;
 		wheel = { minutes: h.minutes, text: h.text, sign: h.sign, x: h.x, y: h.y, pick: 0, onClock: h.clock !== undefined };
 	}
 
@@ -2277,21 +2303,67 @@
 		if (!(to && wheelEl?.contains(to)) && !wheelEl?.matches(':hover')) close();
 	}
 
-	/** What a mouse wheel has turned the open numbers short of a step. */
-	let turnedNumbers = 0;
+	// ── the numbers turn smoothly (da-ux1h8) ──
+	//
+	// vividn, 2026-11-15: «Make the scrolling smooth rather than notched.
+	// Flip direction so that scrolling matches thumb direction, should be
+	// able to do momentum scrolling.» The pick runs between the steps as the
+	// finger or the wheel moves it, and comes to rest on one.
+
+	/** How fast a wheel's turn eases in, in ms, and how long the wheel is still before the pick settles on a step. */
+	const WHEEL_EASE_MS = 50;
+	const WHEEL_REST_MS = 120;
+	/** The frame the numbers glide on, while they do, the pick it glides to, and the wheel's settle. */
+	let turning = $state(0);
+	let pickAim = 0;
+	let wheelRest: ReturnType<typeof setTimeout> | undefined;
+	const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	/**
+	 * Glide the pick to `to`, its distance falling by e every `tau` ms, so it
+	 * leaves at the speed it was let go at when `to` is where that speed coasts
+	 * to; at once under reduced motion. `null` stops a glide where it is.
+	 */
+	function glideTo(to: number | null, tau = GLIDE_MS): void {
+		cancelAnimationFrame(turning);
+		turning = 0;
+		clearTimeout(wheelRest);
+		if (to === null || !wheel) return;
+		pickAim = to;
+		if (reduced()) {
+			wheel = { ...wheel, pick: to };
+			return;
+		}
+		let then = performance.now();
+		const frame = (t: number) => {
+			if (!wheel) return void (turning = 0);
+			const left = (wheel.pick - to) * Math.exp(-Math.max(0, Math.min(t - then, 64)) / tau);
+			then = t;
+			wheel = { ...wheel, pick: Math.abs(left) < 0.005 ? to : to + left };
+			turning = wheel.pick === to ? 0 : requestAnimationFrame(frame);
+		};
+		turning = requestAnimationFrame(frame);
+	}
 
 	/**
 	 * A notch of a mouse wheel turns the pick a number, up the longer, as a
-	 * swipe does; a trackpad's small deltas add up to one. A tap on a number
-	 * takes it (da-n22c5).
+	 * swipe does, and the numbers move as a list under that wheel would; a
+	 * trackpad's small deltas turn them part way, and the pick settles on the
+	 * nearest once the wheel is still. A tap on a number takes it (da-n22c5).
 	 */
 	function onNumbersWheel(event: WheelEvent): void {
 		if (!wheel) return;
 		event.preventDefault();
-		turnedNumbers += event.deltaY;
-		const steps = Math.trunc(turnedNumbers / (NOTCH / 2));
-		turnedNumbers -= (steps * NOTCH) / 2;
-		if (steps) wheel = { ...wheel, pick: clampPick(wheel.pick - steps) };
+		const to = clampPick((turning ? pickAim : wheel.pick) - event.deltaY / (NOTCH / 2));
+		glideTo(to, WHEEL_EASE_MS);
+		wheelRest = setTimeout(() => glideTo(nearest(to), WHEEL_EASE_MS), WHEEL_REST_MS);
+	}
+
+	/** A number taken: the handle has its time, and the numbers close. */
+	function take(rung: Rung | undefined): void {
+		stepTo(rung);
+		glideTo(null);
+		wheel = null;
 	}
 
 	function onWheelKey(event: KeyboardEvent): void {
@@ -2325,12 +2397,17 @@
 		turned: number;
 		mode: 'press' | 'wheel' | 'scale';
 		touch: boolean;
+		/** The finger's last moves along the numbers, for the speed its lift coasts them at; whether its press stopped them gliding. */
+		track: Sample[];
+		caught: boolean;
 	} | null = $state(null);
 	/** Where a dragged handle is drawn, along the axis on screen. */
 	let dragged = $state(0);
 	let holding: ReturnType<typeof setTimeout> | undefined;
 
 	const across = (dx: number, dy: number) => (vertical ? dx : -dy);
+	/** How far apart the numbers are drawn, along the way they turn. */
+	const notchPx = () => (vertical ? NOTCH_PX.y : NOTCH_PX.x);
 
 	function grab(event: PointerEvent, h: Handle, from?: number): void {
 		const svg = svgEl();
@@ -2347,7 +2424,9 @@
 		const edge = h.near || (!counted && (vertical ? box.y : box.x) + anchorX(svg) > right);
 		const anchor = edge ? right : (vertical ? box.y : box.x) + anchorX(svg);
 		const cross = vertical ? boxAt.x + h.x : boxAt.y + h.y;
-		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, edge, on: h, was: isOpenOn(h), turned: isOpenOn(h) ? (wheel?.pick ?? 0) : 0, mode: 'press', touch: event.pointerType !== 'mouse' };
+		const caught = !!turning;
+		glideTo(null);
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at, cross, anchor, edge, on: h, was: isOpenOn(h), turned: isOpenOn(h) ? (wheel?.pick ?? 0) : 0, mode: 'press', touch: event.pointerType !== 'mouse', track: [], caught };
 		dragged = at;
 		holding = setTimeout(() => open(h), LONG_MS);
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
@@ -2356,7 +2435,9 @@
 	/** A press on the numbers: a tap takes the number at its lift, and one that travels swipes them. */
 	function grabNumbers(event: PointerEvent): void {
 		if (event.button > 0 || !wheel) return;
-		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, edge: false, on: null, was: true, turned: wheel.pick, mode: 'press', touch: event.pointerType !== 'mouse' };
+		const caught = !!turning;
+		glideTo(null);
+		grip = { id: event.pointerId, x: event.clientX, y: event.clientY, at: 0, cross: 0, anchor: 0, edge: false, on: null, was: true, turned: wheel.pick, mode: 'press', touch: event.pointerType !== 'mouse', track: [], caught };
 		for (const [type, handler] of GRIP) window.addEventListener(type, handler);
 	}
 
@@ -2391,8 +2472,9 @@
 			}
 		}
 		if (grip.mode === 'wheel' && wheel) {
-			const notch = vertical ? NOTCH_PX.y : NOTCH_PX.x;
-			wheel = { ...wheel, pick: clampPick(grip.turned + Math.round(across(dx, dy) / notch)) };
+			// The numbers go the way the finger does, as a list under it would.
+			wheel = { ...wheel, pick: clampPick(grip.turned - across(dx, dy) / notchPx()) };
+			grip.track = tracked(grip.track, -across(event.clientX, event.clientY), event.timeStamp);
 		}
 	}
 
@@ -2402,20 +2484,25 @@
 		ungrip();
 		if (was.mode === 'scale') commit();
 		else if (was.mode === 'wheel' && wheel) {
-			// Open as it was pressed, a swipe only browses: they stay open on
-			// the pick, for a tap on a number to take (da-k7ddx, vividn: «you
-			// can just scroll through it with a swipe (without selecting
-			// anything) so you can explore your options and choose one
-			// easily»). A press on the diamond that opened them takes its pick.
-			if (!was.was) {
-				stepTo(rungAt(wheel.pick));
-				if (was.touch) wheel = null;
+			// Open as it was pressed, a swipe only browses: they stay open,
+			// coasting on at the speed it let go at to the step it slows on,
+			// for a tap on a number to take (da-k7ddx, vividn: «you can just
+			// scroll through it with a swipe (without selecting anything) so
+			// you can explore your options and choose one easily»). A press on
+			// the diamond that opened them takes the step nearest its lift.
+			if (!was.was) take(rungAt(nearest(wheel.pick)));
+			else {
+				const v = reduced() ? 0 : speedOver(was.track, -across(event.clientX, event.clientY), event.timeStamp) / notchPx();
+				glideTo(nearest(wheel.pick + v * GLIDE_MS));
 			}
 		} else if (!was.on && wheel) {
 			// A tap on a number takes it at its own lift: a browser may send no
-			// click for a tap soon after a swipe.
-			const k = (event.target as Element | null)?.closest?.<HTMLElement>('.notch[data-k]')?.dataset.k;
-			if (k !== undefined) stepTo(rungAt(Number(k)));
+			// click for a tap soon after a swipe. One that stopped them gliding
+			// only did that, and they settle on the nearest step.
+			const on = (event.target as Element | null)?.closest?.<HTMLElement>('.notch');
+			if (was.caught || !on) glideTo(nearest(wheel.pick));
+			else if (on.dataset.k === undefined) wheel = null;
+			else take(rungAt(Number(on.dataset.k)));
 		} else if (was.on && was.mode === 'press') {
 			// A tap turns the numbers over; a hold has opened them, and leaves them.
 			if (was.was) wheel = null;
@@ -2428,7 +2515,7 @@
 		const turned = grip.turned;
 		ungrip();
 		zoom = null;
-		if (wheel) wheel = { ...wheel, pick: turned };
+		if (wheel) wheel = { ...wheel, pick: nearest(turned) };
 	}
 
 	function ungrip(): void {
@@ -2778,7 +2865,9 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="nowview-wheel"
+			class:rightward
 			data-pans={pans}
+			data-turning={turning ? '' : undefined}
 			bind:this={wheelEl}
 			style:left="{vertical ? Math.max(NOTCH_PX.y / 2, Math.min(innerWidth - NOTCH_PX.y / 2, boxAt.x + wheel.x)) : boxAt.x + wheel.x}px"
 			style:top="{boxAt.y + wheel.y}px"
@@ -2794,16 +2883,16 @@
 				<button
 					type="button"
 					class="notch"
-					class:picked={n.k === wheel.pick}
+					class:picked={n.k === Math.round(wheel.pick)}
 					data-step={n.rung.step}
 					data-k={n.k}
 					tabindex="-1"
 					style:--k={n.k}
 					style:--fade={n.fade}
-					onclick={(e) => e.detail === 0 && stepTo(n.rung)}>{n.rung.word}</button
+					onclick={(e) => e.detail === 0 && take(n.rung)}>{n.rung.word}</button
 				>
 			{/each}
-			<span class="notch held" class:picked={wheel.pick === 0} data-at={wheel.text} style:--k={0} style:--fade={FADE[Math.min(Math.abs(wheel.pick), SHOWN)]} aria-hidden="true"
+			<span class="notch held" class:picked={Math.round(wheel.pick) === 0} data-at={wheel.text} style:--k={0} style:--fade={fadeAt(Math.abs(wheel.pick))} aria-hidden="true"
 				>{wheel.text}</span
 			>
 		</div>
@@ -3066,8 +3155,10 @@
 		outline: 1px solid var(--ink);
 	}
 
-	/* The numbers, off to the handle's side and big enough to read past a
-	   thumb (vividn: «same ladder, but bigger font and off to the side»):
+	/* The numbers, off to the handle's left and big enough to read past a
+	   thumb (vividn: «same ladder, but bigger font and off to the side»; «Open
+	   menu on left side of diamond», da-ux1h8), to its right where the
+	   screen has no room left of it:
 	   stacked up and down it when time runs across, side by side under it
 	   when time runs down, and turned by `--turn` as a swipe picks. Each is as
 	   tall as they are apart, so the pointer crosses no gap between them. */
@@ -3082,7 +3173,7 @@
 	}
 	.notch {
 		position: absolute;
-		left: var(--beside);
+		right: var(--beside);
 		top: 0;
 		box-sizing: border-box;
 		min-width: 4.5rem;
@@ -3103,7 +3194,12 @@
 		opacity: var(--fade);
 		cursor: pointer;
 	}
+	.rightward .notch {
+		right: auto;
+		left: var(--beside);
+	}
 	.vertical .notch {
+		right: auto;
 		left: 0;
 		top: var(--beside);
 		min-width: 0;

@@ -121,7 +121,7 @@ describe('the nowview widget zooms', () => {
 	// pick, as a swipe does; a click takes a time.
 	const inMinutes = (h) => parseFloat(h) * (h.endsWith('h') ? 60 : h.endsWith('s') ? 1 / 60 : 1);
 	for (const kind of ['rel', 'abs'])
-		test(`a click opens the ${kind} handle's numbers, a hover does not, a mouse wheel turns the pick through them, and a click takes it`, async () => {
+		test(`a click opens the ${kind} handle's numbers, a hover does not, a mouse wheel turns the pick through them, and a click takes it and closes them`, async () => {
 			await withApp(
 				async (app) => {
 					const { page } = app;
@@ -139,25 +139,25 @@ describe('the nowview widget zooms', () => {
 							return a?.[a.indexOf('--history') + 1];
 						});
 					const picked = () => page.locator('.nowview-wheel .notch.picked').evaluate((n) => ({ k: Number(n.dataset.k ?? 0), word: n.textContent.trim() }));
-					const pickIs = (k) => page.locator(`.nowview-wheel .notch.picked${k ? `[data-k="${k}"]` : '.held'}`).waitFor();
-					// What a closed set of numbers was turned short of a step is gone with them.
-					await page.mouse.wheel(0, -60);
+					const pickIs = (k) => page.locator(`.nowview-wheel:not([data-turning]) .notch.picked${k ? `[data-k="${k}"]` : '.held'}`).waitFor();
+					// What a closed set of numbers was turned short of a step is gone with them:
+					// a turn under half a step settles back, and two would be over half.
+					await page.mouse.wheel(0, -40);
 					await page.mouse.down();
 					await page.mouse.up();
 					await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
 					await page.mouse.down();
 					await page.mouse.up();
 					await page.locator('.nowview-wheel .notch.held').waitFor();
-					await page.mouse.wheel(0, -60);
-					// The turn has landed: `onNumbersWheel` moves the pick as it hears the
-					// wheel, with no timer, so a wrong step is drawn once the numbers are still.
-					await rested(page, page.locator('.nowview-wheel'), { app });
+					await page.mouse.wheel(0, -40);
+					// The turn has landed, and settled on a step once the wheel was still.
+					await pickIs(0);
 					assert.equal((await picked()).k, 0, 'two short turns made a step across a close');
 					// A notch a number, up the longer, and the window waits for a click.
 					for (let i = 0; i < 3; i++) await page.mouse.wheel(0, -100);
 					await pickIs(3);
-					// Past what those turns left short of a step, the other way.
-					await page.mouse.wheel(0, 160);
+					// The other way, a notch a number too.
+					await page.mouse.wheel(0, 100);
 					await pickIs(2);
 					// What a wrong take would have set off has landed: a step is `rescale`,
 					// whose window the CLI is asked for, so it is asked once the CLI is idle.
@@ -167,11 +167,19 @@ describe('the nowview widget zooms', () => {
 					// The time taken is the one picked.
 					const { word } = await picked();
 					await page.locator('.nowview-wheel .notch.picked').click();
-					await page.locator(`.nowview-wheel .notch.held[data-at="${word}"]`).waitFor();
+					// Taken, they close (da-ux1h8), and open again on it.
+					await page.locator('.nowview-wheel').waitFor({ state: 'detached' });
 					const longer = await until(history, (m) => m && inMinutes(m) > 30);
+					await rested(page, null, { app });
+					const again = await page.locator(`${PANE} .handle[data-axis="${kind}"]`).boundingBox();
+					await page.mouse.move(again.x + again.width / 2, again.y + again.height / 2);
+					await page.mouse.down();
+					await page.mouse.up();
+					await page.locator('.nowview-wheel .notch.held').waitFor();
 					// The pick stops at the ladder's end.
 					for (let i = 0; i < 30; i++) await page.mouse.wheel(0, -100);
-					// The thirty turns have landed, and anything they asked of the CLI.
+					// The thirty turns have landed and settled, and anything they asked of the CLI.
+					await page.locator('.nowview-wheel:not([data-turning])').waitFor({ state: 'attached' });
 					await rested(page, page.locator('.nowview-wheel'), { app });
 					const end = await page.locator('.nowview-wheel').evaluate((w) => {
 						const ks = [...w.querySelectorAll('.notch[data-k]')].map((n) => Number(n.dataset.k));
