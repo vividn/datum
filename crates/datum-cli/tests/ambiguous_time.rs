@@ -471,8 +471,9 @@ fn reparse_keeps_the_reading_picked() {
     }
 }
 
-/// A key edited since to neither reading replays as the first, so the
-/// drift shows.
+/// A key holding neither reading replays as the first, so the drift shows.
+/// An edit is not replayed (da-chg16), so the row is put back to unedited,
+/// as a value moved by hand or by a bug is.
 #[test]
 fn reparse_shows_a_key_edited_since_as_the_first() {
     let dir = tempfile::tempdir().unwrap();
@@ -493,6 +494,14 @@ fn reparse_shows_a_key_edited_since_as_the_first() {
         .output()
         .unwrap();
     assert!(edited.status.success(), "{}", said(&edited));
+    let unedited = Connection::open(dir.path().join("t.db"))
+        .unwrap()
+        .execute(
+            "UPDATE entries SET modify_time = create_time WHERE field = 'tea'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(unedited, 1);
 
     let out = run(&dir, &["reparse", &hid])
         .stdin(Stdio::null())

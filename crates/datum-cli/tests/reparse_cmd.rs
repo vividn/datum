@@ -733,3 +733,91 @@ fn reparse_replays_the_first_row_of_a_line_of_several_sides() {
         );
     }
 }
+
+/// da-chg16: `raw_input` is the line that created the row, so an entry
+/// changed since is not replayed: the replay would undo the change. Through
+/// the binary, as vividn's transcript ran it: the dry run says so, no delta,
+/// and `--fix` leaves the edit standing.
+#[test]
+fn reparse_does_not_undo_a_later_update() {
+    let tmp = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", tmp.path().join("t.db"))
+            .env("DATUM_HOME", tmp.path())
+            .env("DATUM_CONFIG_HOME", tmp.path())
+            .env("HOME", tmp.path())
+            .env("NO_COLOR", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    run(&["occur", "coffee", "size=small"]);
+    run(&["occur", "tea"]);
+    run(&["update", "_2", "size=large"]);
+
+    let dry = run(&["reparse", "coffee"]);
+    assert!(
+        dry.contains("changed since it was written (update at ")
+            && dry.contains(": update _2 size=large): not replayed"),
+        "{dry}"
+    );
+    assert!(!dry.contains("delta"), "{dry}");
+    assert!(
+        dry.contains("0 would change, 1 skipped: changed since written."),
+        "{dry}"
+    );
+
+    let fix = run(&["reparse", "coffee", "--fix"]);
+    assert!(
+        fix.contains("0 fixed, 1 skipped: changed since written."),
+        "{fix}"
+    );
+    let got = run(&["get", "coffee", "--show", "json"]);
+    assert!(got.contains(r#"size: \"large\""#), "{got}");
+
+    // A row never edited reparses as it did.
+    assert!(run(&["reparse", "tea"]).contains("tea:"), "clean");
+    assert!(!run(&["reparse", "tea"]).contains("changed since"));
+}
+
+/// da-chg16: a `--fix`'s own write is no later change, so a row it fixed
+/// stays replayable, while an edit after it is one.
+#[test]
+fn reparse_fix_stays_replayable_until_an_edit() {
+    let db = fresh_db();
+    run_cli(&["switch", "mood", "happy"], &db).unwrap();
+    let hid = datum_core::test_util::logged_entries(&db, "mood")[0]
+        .hid
+        .to_string();
+    let state = |db: &datum_core::db::Db| db.get_entry(&hid).unwrap().state.unwrap();
+    // What a parser fix does to a row: its line now reads otherwise.
+    let line = |raw: &str| {
+        db.conn()
+            .execute(
+                "UPDATE entries SET raw_input = ?2 WHERE hid = ?1",
+                params![hid.as_str(), raw],
+            )
+            .unwrap();
+    };
+
+    line("switch mood calm");
+    run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+    assert_eq!(state(&db), "calm");
+    line("switch mood glad");
+    run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+    assert_eq!(state(&db), "glad", "fixed once, replayable again");
+
+    run_cli(&["update", &hid, "note=x"], &db).unwrap();
+    line("switch mood calm");
+    run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+    let after = db.get_entry(&hid).unwrap();
+    assert_eq!(after.state.unwrap(), "glad", "the edit stands");
+    assert_eq!(after.data, Some(serde_json::json!({"note": "x"})));
+}

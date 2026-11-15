@@ -27,6 +27,13 @@
 //! stamps its `raw_input` on one row alone, the first side's that logs, so
 //! that row replays that side and any side the insert merged into it. The
 //! line's other rows hold no `raw_input`, and are skipped.
+//!
+//! `raw_input` is the line that CREATED the row, so an entry changed since
+//! (`update`, `edit`, `retime`, another copy's edit) is not replayed: the
+//! replay would undo the change (da-chg16). A row is as written while its
+//! `modify_time` is its `create_time`, or while its content is what a
+//! `--fix` wrote, which stamps the content hash it wrote as
+//! `extra_metadata.reparsed`, so its own write is no later change.
 
 use std::collections::BTreeMap;
 
@@ -246,7 +253,7 @@ fn replay_side(
     };
     // da-1ppce: a wall time a fall-back night repeats was answered when it
     // was logged, and the line does not say which: each key takes the
-    // reading the row holds, the first where it holds neither (a later edit).
+    // reading the row holds, the first where it holds neither.
     let mut later = BTreeMap::new();
     let parsed = loop {
         let err = match parse_log_args(&log_args, action, Some(base.clone()), Some(&later)) {
@@ -479,9 +486,38 @@ fn diff_shape(shape: &ReparsedShape, entry: &Entry) -> Vec<Delta> {
 }
 
 /// The `data` `reparse --fix` would write to `entry`: `None` when its line
-/// is missing or no longer parses, which is when the command cannot help.
+/// is missing or no longer parses, or the entry changed since it was
+/// written, which is when the command cannot help.
 pub(crate) fn replayed_data(entry: &Entry) -> Option<JsonValue> {
+    if !as_written(entry) {
+        return None;
+    }
     replay_shape(entry).ok().flatten()?.data
+}
+
+/// Where a `--fix` stamps the content hash it wrote.
+const REPARSED: &str = "reparsed";
+
+/// Whether `entry` is as its line wrote it: never modified since its
+/// create, or holding what a `--fix` replayed from that line.
+fn as_written(entry: &Entry) -> bool {
+    entry.modify_time <= entry.create_time
+        || (entry.extra_metadata.as_ref())
+            .and_then(|m| m.get(REPARSED))
+            .and_then(JsonValue::as_str)
+            == Some(entry.expected_content_hash().as_str())
+}
+
+/// The change since `entry` was written, its kind, time and line, as the
+/// entry's history has its last version.
+fn change_since_written(db: &Db, entry: &Entry) -> String {
+    match db.versions(entry).ok().and_then(|v| v.into_iter().last()) {
+        Some(v) => match v.raw {
+            Some(raw) => format!("{} at {}: {raw}", v.kind, v.time),
+            None => format!("{} at {}", v.kind, v.time),
+        },
+        None => format!("modified at {}", entry.modify_time.to_rfc3339()),
+    }
 }
 
 fn drift(entry: &Entry, deltas: &[Delta]) -> String {
@@ -507,6 +543,10 @@ fn apply_fix(entry: &Entry, shape: &ReparsedShape, db: &Db) -> Result<()> {
     updated.parser_version = CURRENT_PARSER_VERSION;
     updated.modify_time = chrono::Utc::now();
     updated.content_hash = updated.expected_content_hash();
+    updated
+        .extra_metadata
+        .get_or_insert_with(|| serde_json::json!({}))[REPARSED] =
+        updated.content_hash.clone().into();
     db.save_existing_entry(&updated)?;
     Ok(())
 }
@@ -524,6 +564,7 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
     let mut drifted = 0usize;
     let mut fixed = 0usize;
     let mut refused = 0usize;
+    let mut changed = 0usize;
 
     // Comma-aware tokenisation (da-obes): `reparse a,b` resolves the
     // same as `reparse a b`, matching get/del/update/retime. Unlike
@@ -566,6 +607,16 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
                 Err(e) => return Err(e),
             };
 
+            if !as_written(&entry) {
+                lines.push(format!(
+                    "{}: changed since it was written ({}): not replayed",
+                    entry.slug,
+                    change_since_written(db, &entry)
+                ));
+                changed += 1;
+                continue;
+            }
+
             let deltas = diff_shape(&shape, &entry);
             if deltas.is_empty() {
                 lines.push(format!("{}: clean", entry.slug));
@@ -592,6 +643,10 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
     let refused = match refused {
         0 => String::new(),
         n => format!(", {n} no longer parse{}", if n == 1 { "s" } else { "" }),
+    };
+    let refused = match changed {
+        0 => refused,
+        n => format!("{refused}, {n} skipped: changed since written"),
     };
     if args.fix {
         println!("\nreparse: {scanned} scanned, {drifted} drifted, {fixed} fixed{refused}.");
