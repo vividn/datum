@@ -668,6 +668,59 @@ describe('collect at rest on a phone', () => {
 		}, AT_REST);
 	});
 
+	/**
+	 * One finger drawn `dx` slowly from (x, y) and held there: `during` is read before it lifts, and the pan once it
+	 * has rested after. Slow, and still before the lift, so no glide: what moves after is the spring.
+	 */
+	async function held(page, x, y, dx, during) {
+		const cdp = await page.context().newCDPSession(page);
+		const t0 = Date.now() / 1000;
+		const at = (type, touchPoints, i) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints, timestamp: t0 + (i * 60) / 1000 });
+		try {
+			await at('touchStart', [{ x, y }], 0);
+			for (let i = 1; i <= 8; i++) await at('touchMove', [{ x: x + (dx * i) / 8, y }], i);
+			const read = await during();
+			await at('touchEnd', [], 12);
+			// `+ 0`: a pan of none reads -0, which is not 0 to `assert.equal`.
+			return { during: read + 0, after: (await rests(page)) + 0 };
+		} finally {
+			await cdp.detach();
+		}
+	}
+
+	// da-3bo6b, vividn, 2026-11-15: «add an elastic effect when overscrolling left and right in the collect widget».
+	for (const reducedMotion of [null, 'reduce'])
+		test(`a drag past either end of the rows ${reducedMotion ? 'moves them not at all under reduced motion' : 'stretches them, less than the finger, and they spring back'}`, async () => {
+			await withApp(
+				async (app) => {
+					await seeded(app, CROWD);
+					const { page } = app;
+					assert.equal(await page.locator(ROOM).getAttribute('data-pans'), 'x', 'the rows fit: nothing to pan');
+					const room = await page.locator(ROOM).boundingBox();
+					const [x, y] = [room.x + room.width * 0.85, room.y + room.height / 2];
+					const elastic = !reducedMotion;
+					const logged = (await app.entries(200)).length;
+
+					// At the start: a finger right is past it.
+					const start = await held(page, room.x + room.width * 0.4, y, 80, () => panned(page));
+					if (elastic) assert.ok(start.during < -10 && start.during > -80, `80px past the start stretched the rows ${-start.during}px`);
+					else assert.equal(start.during, 0, 'under reduced motion the rows did not move past the start');
+					assert.equal(start.after, 0, 'and they are back at the start');
+
+					// Panned to the far end, then a finger left is past it.
+					let end = null;
+					for (let i = 0; i < 20 && end !== (end = await rests(page)); i++) await swipe(page, x, y, -room.width * 0.6, 0, 8, 60, 200);
+					const far = await held(page, x, y, -80, () => panned(page));
+					if (elastic) assert.ok(far.during - end > 10 && far.during - end < 80, `80px past the end stretched the rows ${far.during - end}px`);
+					else assert.equal(far.during, end, 'under reduced motion the rows did not move past the end');
+					assert.equal(far.after, end, 'and they are back at the end');
+					assert.equal((await app.entries(200)).length, logged, 'nothing logged');
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...AT_REST, ...(reducedMotion && { reducedMotion }) }
+			);
+		});
+
 	// da-rh5oa: a field's view and the way back draw no strip of their own, which on a phone cost a forced layout
 	// in the tap's frame; at rest the strip stands outside the room, and a drag on it still pans the rows.
 	test('one now strip for the fields and a field’s view, and a drag that starts on it pans the rows', async () => {

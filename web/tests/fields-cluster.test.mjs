@@ -7,7 +7,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
-import { along, draft, widgetPane } from './support/layout.mjs';
+import { along, draft, rested as still, widgetPane } from './support/layout.mjs';
 import { FIELD_FORM, leaveField, openField, setupCommand } from './support/field.mjs';
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'cli'), widgetPane('bar', 'widgetbar')));
@@ -75,6 +75,8 @@ async function dragBy(page, dx, dy) {
 	await page.mouse.down();
 	for (let i = 1; i <= 5; i++) await page.mouse.move(x + (dx * i) / 5, y + (dy * i) / 5);
 	await page.mouse.up();
+	// A drag let go past an end springs back to it (da-3bo6b): read where they rest.
+	await still(page, page.locator(`${ROOM} .spot`).first());
 	return seen(page);
 }
 

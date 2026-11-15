@@ -28,7 +28,8 @@
 	fields right against its own part of the section (da-il6ni), the most
 	recently used first (`fieldRows`, the order taken on
 	load and on coming back to the foreground). A drag pans those sideways,
-	gliding on after a swipe, and up and down scrolls the page (da-tsomc);
+	gliding on after a swipe, stretching past either end and springing back
+	(da-3bo6b), and up and down scrolls the page (da-tsomc);
 	the strip and the active section stay, until the section is wider than
 	half the widget and pans with them. A field
 	that starts glides into the section, and one that ends out of it into the
@@ -1080,6 +1081,31 @@
 	}
 
 	/**
+	 * Past either end a drag stretches the rows, less the further it goes, and
+	 * they spring back as it lets go (da-3bo6b, vividn, 2026-11-15: «add an
+	 * elastic effect when overscrolling left and right in the collect widget»):
+	 * iOS's rubber band, `d·(1 − 1/(1 + 0.55·over/d))`, d the room's width. The
+	 * pan is ours and the room `overflow: hidden`, so no browser's own bounce is
+	 * there to fight. Only where the rows pan sideways, and none under
+	 * `prefers-reduced-motion`.
+	 */
+	const BAND = 0.55;
+	const banded = (over: number) => Math.sign(over) * paneW * (1 - 1 / (1 + (BAND * Math.abs(over)) / paneW));
+	/** `banded` undone: how far past the end a drag is that stretches the rows `by`, so a drag caught mid-spring starts where they are. */
+	const unbanded = (by: number) => Math.sign(by) * (paneW / BAND) * (1 / (1 - Math.min(Math.abs(by) / paneW, 0.99)) - 1);
+	/** Where a drag would be to stretch the rows to `x`. */
+	const loose = (x: number) => kept(x, 0).x + unbanded(x - kept(x, 0).x);
+	/** The reader's motion setting, asked once and read live: a drag reads it at every move. Made at the first, not at init, where a prerender has no `matchMedia`. */
+	let reduced: MediaQueryList | undefined;
+	const elastic = () => paneW > 0 && pans.includes('x') && !(reduced ??= matchMedia('(prefers-reduced-motion: reduce)')).matches;
+	function stretched(x: number, y: number) {
+		const at = kept(x, y);
+		return elastic() ? { x: at.x + banded(x - at.x), y: at.y } : at;
+	}
+	/** The time constant of the spring back, in ms: critically damped, so it settles without swinging past the end. */
+	const SPRING = 90;
+
+	/**
 	 * The axes a drag pans the cluster along, those it overruns (`kept`),
 	 * declared to PaneFrame as `data-pans` so a drag along one is the room's
 	 * and never also the pane's tab swipe (da-ut8e5); along an axis it fits
@@ -1152,7 +1178,7 @@
 				id: e.pointerId,
 				x: e.clientX,
 				y: e.clientY,
-				from: shift,
+				from: { x: loose(shift.x), y: shift.y },
 				moving: false,
 				xs: [{ at: e.clientX, t: e.timeStamp }],
 				ys: [{ at: e.clientY, t: e.timeStamp }]
@@ -1168,7 +1194,7 @@
 		if (!drag.moving && e.pointerType === 'touch' && Math.abs(dy) > Math.abs(dx)) return void (drag = null);
 		if (!drag.moving) (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		drag.moving = true;
-		pan = kept(drag.from.x + dx, drag.from.y + dy);
+		pan = stretched(drag.from.x + dx, drag.from.y + dy);
 	}
 	function up(e: PointerEvent) {
 		if (drag?.id !== e.pointerId) return;
@@ -1180,15 +1206,36 @@
 		// stops where the mouse lets go. A cancel carries nothing on.
 		const v = e.type === 'pointerup' && drag.moving && e.pointerType !== 'mouse' ? { x: speedOver(drag.xs, e.clientX, e.timeStamp), y: speedOver(drag.ys, e.clientY, e.timeStamp) } : null;
 		drag = null;
-		if (v && (v.x || v.y)) glideOn(shift, v);
+		const end = kept(shift.x, shift.y);
+		// Let go stretched past an end, the rows spring back to it.
+		if (end.x !== shift.x) springBack(end, unbanded(shift.x - end.x), 0);
+		else if (v && (v.x || v.y)) glideOn(shift, v);
 	}
-	/** Pan on from `from` at `v` px/ms, decaying by `TAU`, and as far as `kept` allows. */
+	/**
+	 * Pan on from `from` at `v` px/ms, decaying by `TAU`, and as far as `kept`
+	 * allows: a glide that reaches an end overshoots it as far as its speed
+	 * there carries, and springs back.
+	 */
 	function glideOn(from: { x: number; y: number }, v: { x: number; y: number }) {
 		const t0 = performance.now();
 		const step = (now: number) => {
 			const fade = Math.exp(-(now - t0) / TAU);
-			pan = kept(from.x + v.x * TAU * (1 - fade), from.y + v.y * TAU * (1 - fade));
+			const x = from.x + v.x * TAU * (1 - fade);
+			pan = kept(x, from.y + v.y * TAU * (1 - fade));
+			if (pan.x !== x && elastic()) return springBack(pan, 0, v.x * fade);
 			coast = Math.hypot(v.x, v.y) * fade > 0.01 ? requestAnimationFrame(step) : 0;
+		};
+		coast = requestAnimationFrame(step);
+	}
+	/** Back to `end` from `over` px past it, in a drag's terms, going on at `v` px/ms: drawn stretched, as a drag is. */
+	function springBack(end: { x: number; y: number }, over: number, v: number) {
+		const t0 = performance.now();
+		const step = (now: number) => {
+			const t = now - t0;
+			const o = (over + (v + over / SPRING) * t) * Math.exp(-t / SPRING);
+			const going = t < SPRING || Math.abs(o) > 0.5;
+			pan = going ? { x: end.x + banded(o), y: end.y } : end;
+			coast = going ? requestAnimationFrame(step) : 0;
 		};
 		coast = requestAnimationFrame(step);
 	}
