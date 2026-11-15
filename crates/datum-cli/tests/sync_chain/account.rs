@@ -339,3 +339,85 @@ fn an_admin_act_asks_the_passkey_and_the_device_signs_nothing() {
     let said = signed_in(&a, &expel);
     assert!(said.contains("it held no key that signs for it"), "{said}");
 }
+
+/// One passkey signs in and is the admin (da-wsx4k): datum.day's kept form
+/// names the passkey it signed in with, which a chain started signed in lists
+/// as an admin beside the account key, so its WebAuthn code alone approves;
+/// and a passkey naming an account adds both to a locked chain in one
+/// approval, as datum.day moves a chain to a new passkey. Neither signs: the
+/// kept form holds no PRF output, and the act stops at its approve link.
+#[test]
+fn the_sign_in_passkey_is_an_admin_of_the_chains_it_starts() {
+    let a = Copy::new();
+    let mut kept = json(
+        json(&signed_in(&a, &["sync", "account"]))["kept"]
+            .as_str()
+            .unwrap(),
+    );
+    kept["passkey"] = json(&passkey_json());
+    let out = a
+        .cmd(&["sync", "new-invite"])
+        .env("DATUM_ACCOUNT", kept.to_string())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    let at = err
+        .find("https://datum.day/sync/approve#")
+        .expect("an approve link");
+    let link = err[at..].split_whitespace().next().unwrap();
+    // A batch's challenge (`chain::batch`): the digest of its records' digests.
+    let texts: Vec<String> = serde_json::from_slice(
+        &BASE64URL_NOPAD
+            .decode(link.rsplit('#').next().unwrap().as_bytes())
+            .unwrap(),
+    )
+    .unwrap();
+    let digests: Vec<String> = texts
+        .iter()
+        .map(|t| data_encoding::HEXLOWER.encode(&Sha256::digest(t.as_bytes())))
+        .collect();
+    let challenge = Sha256::digest(serde_json::to_string(&digests).unwrap().as_bytes());
+    a.ok_in(&["sync", "approve", link], &approval_code(&challenge));
+    let list = json(&a.ok(&["sync", "chain", "list", "--json"]));
+    let keys: Vec<_> = list["admins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys.len(), 2, "{list}");
+    assert_eq!(keys[0], KEY);
+    assert!(keys[1].starts_with("es256:"), "{list}");
+    assert_eq!(list["admins"][1]["label"], "phone");
+
+    // A chain the account locks alone takes a new passkey and its account in one approval.
+    let b = Copy::new();
+    signed_in(&b, &["sync", "new-invite"]);
+    let other = json(&signed_in_as(&"08".repeat(32), &b, &["sync", "account"]))["key"].clone();
+    let mut both = json(&passkey_json());
+    both["account"] = other.clone();
+    let asked = b.fails(&["sync", "admin", "add", &both.to_string()], "");
+    assert!(asked.contains("Approve these 2, at once"), "{asked}");
+    signed_in(&b, &["sync", "admin", "add", &both.to_string()]);
+    let list = json(&b.ok(&["sync", "chain", "list", "--json"]));
+    let keys: Vec<_> = list["admins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["key"].clone())
+        .collect();
+    assert_eq!(keys.len(), 3, "{list}");
+    assert_eq!((&keys[0], &keys[1]), (&KEY.into(), &other));
+    assert!(keys[2].as_str().unwrap().starts_with("es256:"), "{list}");
+
+    // An open chain takes its first admin alone.
+    let c = Copy::new();
+    c.ok(&["sync", "new-invite"]);
+    let why = c.fails(&["sync", "admin", "add", &both.to_string()], "");
+    assert!(
+        why.contains("an open chain takes its first admin alone"),
+        "{why}"
+    );
+}

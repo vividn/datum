@@ -22,7 +22,7 @@ import { until } from './support/until.mjs';
 /**
  * This tab signed in with a passkey that gives PRF (da-nf1p4), and `home` in
  * a chain its account locks, the passkey asked for it as the Sync widget asks
- * (da-k04lr): a reload signs it out. The passkey, to count its prompts by.
+ * (da-k04lr). The passkey, to count its prompts by.
  */
 async function accountChain(app) {
 	const passkey = await authenticator(app.page, { hasPrf: true });

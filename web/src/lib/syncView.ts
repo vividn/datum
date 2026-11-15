@@ -23,8 +23,8 @@ import { INTERNAL_DB, isDbName } from './database.js';
 import type { TailListing } from './tail.js';
 import { dateLabel, localTime } from './clock.js';
 import { cliError, run, type RunResult } from './run.js';
-import { approveAs, approveLink } from './passkey.js';
-import { syncAccountRecord, syncs, type Invite, type Reach, type SyncState } from './sync.js';
+import { approveAs, approveLink, signedBy } from './passkey.js';
+import { heard, NOT_THE_PASSKEY, syncAccountRecord, syncs, type Invite, type Reach, type SyncState } from './sync.js';
 import type { TicketAbout } from './syncProtocol.js';
 
 /** One member of a chain as `sync status --json` has it: this copy left out. */
@@ -645,13 +645,16 @@ export function unjoinWords(label: string, db: string, p: PurgePreview): string 
 /**
  * `datum --db <db> <argv>`, a `sync` act, approved with a passkey when the
  * chain is locked: the stdout of both runs, `new-invite`'s secret being the
- * first's.
+ * first's. `only` names the passkey to approve with, by its credential id; `expect`, the admin key that must
+ * have approved, checked before the record is written: a stored passkey proving itself (da-wsx4k).
  */
-export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
+export async function syncAct(db: string, argv: string[], only?: ArrayBuffer, expect?: string): Promise<RunResult> {
 	const r = await run(['--db', db, ...argv], '');
 	const link = r.code !== 0 && approveLink(r.stderr);
 	if (!link) return r;
-	const { code, prf } = await approveAs(link);
+	const { code, prf, proof } = await approveAs(link, only);
+	if (expect && !(await signedBy(expect, proof))) throw new Error(NOT_THE_PASSKEY);
+	await heard(proof);
 	const done = await run(['--db', db, ...approveArgv(link)], code);
 	// The passkey's answer in hand, the account's record says what the act changed (da-k04lr).
 	if (done.code === 0 && prf && get(account)) void syncAccountRecord(prf).catch(() => {});

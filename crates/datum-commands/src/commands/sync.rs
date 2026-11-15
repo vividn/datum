@@ -521,6 +521,23 @@ fn command(cmd: SyncCommand, db: &Db, ask: &mut dyn FnMut(&str) -> Result<bool>)
                     (r, said)
                 }
                 SyncAdminAct::AddAdmin => {
+                    // A passkey naming its account adds that key too, in one approval:
+                    // datum.day moving a chain to one passkey for signing in and admin (da-wsx4k).
+                    if let Some(a) = serde_json::from_str::<Value>(&who)
+                        .ok()
+                        .and_then(|v| v["account"].as_str().map(String::from))
+                    {
+                        ensure!(!chain.is_open(), "an open chain takes its first admin alone: add the passkey, then its account");
+                        ensure!(
+                            a.strip_prefix("ed25519:")
+                                .and_then(chain::read_admin_secret)
+                                .is_some(),
+                            "not an account key: {a}"
+                        );
+                        if !chain.admins.iter().any(|x| x.key == a) {
+                            first.push(json!({"type": "add_admin", "key": a, "label": ACCOUNT}));
+                        }
+                    }
                     let (key, l) = match who.trim_start().starts_with('{') {
                         true => passkey(&who)?,
                         false => (
@@ -1273,6 +1290,16 @@ pub(super) fn invite(
         match account()? {
             Some(a) => {
                 genesis["admins"] = json!([{"key": a.key, "label": ACCOUNT}]);
+                // Its sign-in passkey too, as a passkey admin: one passkey for both (da-wsx4k).
+                if let Some((key, label)) = a
+                    .passkey
+                    .as_ref()
+                    .and_then(|p| passkey(&p.to_string()).ok())
+                {
+                    if let Some(admins) = genesis["admins"].as_array_mut() {
+                        admins.push(json!({"key": key, "label": label}));
+                    }
+                }
                 chain.admins = account::genesis_admins(&genesis);
                 records.push(genesis);
             }
@@ -1351,11 +1378,15 @@ const NOT_SIGNED_IN: &str = "not signed in: `datum sync login` signs in with a p
 /// The account this process is signed in to (da-nf1p4): its key, its public
 /// half and its seal key, which read the account's record; and its PRF
 /// output only where a passkey was just asked for it, which alone signs.
+/// datum.day's kept form also names the passkey it signed in with
+/// (da-wsx4k): its public key, as `admin add` takes it, which a chain
+/// started signed in lists as an admin beside the account key.
 pub(crate) struct Account {
     key: String,
     public: [u8; 32],
     seal: [u8; 32],
     prf: Option<[u8; 32]>,
+    passkey: Option<Value>,
 }
 
 impl Account {
@@ -1368,6 +1399,7 @@ impl Account {
                 public: account::public(&keys.sign),
                 seal: keys.seal,
                 prf: Some(prf),
+                passkey: None,
             });
         }
         let v: Value = serde_json::from_str(text).ok()?;
@@ -1377,12 +1409,20 @@ impl Account {
             seal: chain::read_admin_secret(v["seal"].as_str()?)?,
             key: key.into(),
             prf: None,
+            passkey: v
+                .get("passkey")
+                .filter(|p| passkey(&p.to_string()).is_ok())
+                .cloned(),
         })
     }
 
     /// What a device keeps of it: no PRF output, so it signs nothing (da-k04lr).
     fn kept(&self) -> String {
-        json!({"key": self.key, "seal": hexed(&self.seal)}).to_string()
+        let mut kept = json!({"key": self.key, "seal": hexed(&self.seal)});
+        if let Some(p) = &self.passkey {
+            kept["passkey"] = p.clone();
+        }
+        kept.to_string()
     }
 
     /// The account key's secret: only from a PRF output in hand.

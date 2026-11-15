@@ -81,7 +81,7 @@
 	import { onAnyChange } from '#lib/changes.ts';
 	import { currentDb, INTERNAL_DB, withDb } from '#lib/database.ts';
 	import { listDatabases } from '#lib/databases.ts';
-	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, passkeySignIn, readRecordSigned, recordSigned, RECORD_KEPT_MS, signedIn, syncLogin, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
+	import { deliverMs, inviting, joinLink, pendingWords, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncAccountRecord, passkeySignIn, readRecordSigned, recognise, signedInWith, heard as proving, NOT_THE_PASSKEY, recordSigned, RECORD_KEPT_MS, signedIn, syncLogin, syncStates, ticketAbout, type Invite, type SyncState } from '#lib/sync.ts';
 	import {
 		ackNotice,
 		approvalWords,
@@ -123,8 +123,8 @@
 		type PurgePreview
 	} from '#lib/syncView.ts';
 	import type { TicketAbout } from '#lib/syncProtocol.ts';
-	import { approve, approveRecords, createPasskey, NO_PRF, prfOffered } from '#lib/passkey.ts';
-	import { account, setAccount } from '#lib/account.ts';
+	import { adminKeyOf, approve, approveRecords, createPasskey, NO_PRF, prfOffered, signIn } from '#lib/passkey.ts';
+	import { account, accountPasskey, provenPasskey, setAccount } from '#lib/account.ts';
 	import { ask, confirm } from '#lib/confirm.ts';
 	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
 	import {
@@ -673,14 +673,89 @@
 
 	const addAdmin = (d: DbSync) =>
 		doing(async () => {
-			const label = await ask('Name the passkey', 'add', 'passkey');
-			if (!label) return;
-			ok(await syncAct(d.db, adminAddArgv(await createPasskey(label))));
+			// Signed in, the admin passkey is the sign-in passkey, no second credential (da-wsx4k); one this browser
+			// cannot name is made anew, for signing in and admin. A stored one proves itself first, by an
+			// assertion: a locked chain's approval, checked before the record is written, or one asked for.
+			let passkey = $account && ((await recognise(dbs.flatMap((x) => x.admins ?? []))) ? provenPasskey() : accountPasskey());
+			let expect: string | undefined;
+			if (passkey && !provenPasskey()) {
+				if (d.admins?.length) expect = adminKeyOf(passkey) ?? undefined;
+				else {
+					await proving((await signIn()).proof);
+					if (!provenPasskey()) throw new Error(NOT_THE_PASSKEY);
+				}
+			}
+			if ($account && !passkey) {
+				const one = await movedToOne();
+				if (!one || one.moved.includes(d.db)) return;
+				passkey = one.passkey;
+			}
+			if (!passkey) {
+				const label = await ask('Name the passkey', 'add', 'passkey');
+				if (!label) return;
+				passkey = await createPasskey(label);
+			}
+			// A locked chain its account is no admin of takes the account too, in the one approval: so the chain is
+			// the account's, and this is how a chain the move to one passkey missed is moved.
+			if ($account && d.admins?.length && !d.admins.some((a) => a.key === $account.key)) passkey = JSON.stringify({ ...JSON.parse(passkey), account: $account.key });
+			ok(await syncAct(d.db, adminAddArgv(passkey), undefined, expect));
 			// Remembered, so an approval card can say a key is this browser's.
 			const before = new Set((d.admins ?? []).map((a) => a.key));
 			const { admins } = JSON.parse(ok(await syncAct(d.db, adminListArgv())).stdout) as Admins;
 			markOwn(admins.map((a) => a.key).filter((k) => !before.has(k)));
 		});
+
+	/**
+	 * A new passkey that signs in and approves, for an account whose sign-in passkey this browser cannot name as
+	 * an admin (one made before da-wsx4k): signed in with it, a new account, and each chain here the old account
+	 * administers takes it and its account as admins, the older passkey approving. Its public key and the
+	 * databases moved; null if none was named.
+	 */
+	async function movedToOne(): Promise<{ passkey: string; moved: string[] } | null> {
+		const label = await ask('Name the passkey', 'make', 'datum');
+		if (!label) return null;
+		const old = $account?.key;
+		const was = signedInWith();
+		const { key, prf } = await signedIn(label);
+		const passkey = accountPasskey()!;
+		const moved: string[] = [];
+		const missed: string[] = [];
+		for (const d of dbs.filter((d) => d.chain && d.admins?.some((a) => a.key === old))) {
+			waiting = `Approve with your older passkey: ${d.db} takes the new one as its admin…`;
+			// One not approved is said, and the rest go on: «Add passkey» on it moves it later, the older passkey approving.
+			const r = await syncAct(d.db, adminAddArgv(JSON.stringify({ ...JSON.parse(passkey), account: key })), was).catch((e: Error) => ({ code: 1, stderr: e.message }));
+			(r.code === 0 ? moved : missed).push(d.db);
+		}
+		waiting = '';
+		await syncAccountRecord(prf);
+		oneSaid = missed.length
+			? `One passkey now signs you in. ${missed.join(', ')} did not take it: «Add passkey» there, approved with your older passkey, moves ${missed.length === 1 ? 'it' : 'each'}; keep the older passkeys until then.`
+			: 'One passkey now signs you in and approves. Your older datum passkeys can be removed from your password manager.';
+		return { passkey, moved };
+	}
+	let oneSaid = $state('');
+
+	/**
+	 * Whether this tab knows the account's sign-in passkey as an admin passkey; and the accounts told «Not now».
+	 * Offered only where this tab signed in, whose assertion matched no admin: after a reload nothing tells a
+	 * passkey from before apart from one synced here, and «Add admin» finds out as it is asked.
+	 */
+	let known = $state(false);
+	const NOT_NOW = 'datum.onePasskeyNotNow';
+	let notNow = $state<string[]>(browser ? (() => { try { return JSON.parse(localStorage.getItem(NOT_NOW) ?? '[]'); } catch { return []; } })() : []);
+	$effect(() => {
+		const admins = dbs.flatMap((d) => d.admins ?? []);
+		if ($account) void recognise(admins).then((k) => (known = k));
+	});
+	const offerOne = $derived(!!$account && !known && !!signedInWith() && !notNow.includes($account.key));
+	function notNowOne(): void {
+		notNow = [...notNow, $account!.key];
+		try {
+			localStorage.setItem(NOT_NOW, JSON.stringify(notNow));
+		} catch {
+			// Offered again at the next load.
+		}
+	}
 
 	/** Sign this tab in to sync with a passkey, a new one when `make` (da-nf1p4). */
 	const signInHere = (make: boolean) => doing(() => passkeySignIn(make ? () => ask('Name the passkey', 'make', 'datum') : undefined));
@@ -1231,11 +1306,17 @@
 				{/if}
 			</div>
 		{/if}
-		<!-- The account a passkey signs in to (da-nf1p4): this tab's alone, gone at a reload. -->
+		<!-- The account a passkey signs in to (da-nf1p4): kept in this browser until «Sign out» (da-wsx4k). -->
 		<div class="actions account" data-signed={$account ? 'in' : 'out'}>
 			{#if $account}
 				<span class="signed-in" title={$account.key}>Signed in: chains started here are your account’s, and its devices join them</span>
 				<button type="button" class="command" use:act={'show'} disabled={busy} onclick={() => setAccount(null)}>Sign out</button>
+				{#if offerOne}
+					<span class="one">Your sign-in passkey isn’t an admin passkey here: one passkey can do both</span>
+					<button type="button" class="command make-one" use:act={'open'} disabled={busy} onclick={() => doing(movedToOne)}>Make one passkey for signing in and admin</button>
+					<button type="button" class="command" use:act={'show'} disabled={busy} onclick={notNowOne}>Not now</button>
+				{/if}
+				{#if oneSaid}<span class="quiet one-said" role="status">{oneSaid}</span>{/if}
 				{#if lapsing}
 					<span class="lapsing">{lapsing}</span>
 					<button type="button" class="command renew" use:act={'open'} disabled={busy} onclick={renewRecord}>Renew with passkey</button>

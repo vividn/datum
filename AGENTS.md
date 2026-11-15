@@ -850,11 +850,24 @@ account's keys from it (`chain::account_keys`, HKDF-SHA256 with fixed info strin
 A device keeps nothing that signs (da-k04lr, vividn, 2026-11-12: «Passkey per admin
 act», reversing da-t1492): `DATUM_ACCOUNT` and the `account` file hold either the PRF
 output, which signs, or the kept form `{"key", "seal"}` (`sync account`'s `kept`), which
-cannot, the info strings separating `seal` from `sign`. The tab holds the kept form in its
-memory alone (`#lib/account.ts`) and `run` sends it to every command; the PRF output it
-holds only for the act it asked the passkey for (a sign-in's joins and record, sealing a
-CLI's login, an approval). Signed in, a genesis lists the account key as its admin and
-goes with the chain's first invite as one approval; `sign_all` signs a locked chain's acts
+cannot, the info strings separating `seal` from `sign`. The browser keeps the kept form in
+`localStorage` until «Sign out» (`#lib/account.ts`, da-wsx4k, vividn, 2026-11-15: «yes stay
+signed in, and add that as the chain's passkey»), so a reload stays signed in, and `run`
+sends it to every command; the PRF output it holds only for the act it asked the passkey for
+(a sign-in's joins and record, sealing a CLI's login, an approval), never stored. Beside it,
+by account key, it keeps the sign-in passkey's public key, which only its create says. What
+is stored anything on the origin could have written, so the key is an admin only once this
+tab has PROVEN it (`provenPasskey`, in memory): by its create, or an assertion it made since
+the tab loaded, the sign-in's or an approval's (`heard`), a locked chain's «Add admin»
+checking its approval against the key before the record is written (`syncAct`'s `expect`)
+and an open chain's asking one (vremya's review). Proven, the kept form it sends names it as
+`passkey`, so a genesis signed in lists the account key and that passkey as its admins, and
+«Add admin» signed in registers it, no second credential. A browser the passkey was synced
+to finds it among the chains' passkey admins by this tab's sign-in assertion (`recognise`
+in `#lib/sync.ts`), never a stored one; one made before offers once, after a sign-in, to
+make one passkey for both, which `admin add` of a passkey naming its new `account` gives each of
+the old account's chains in one approval. A genesis goes with the chain's first invite as
+one approval; `sign_all` signs a locked chain's acts
 with the account key only with the PRF output in hand (`account_admin`), and otherwise
 stops at the approve link, naming the act and the chain. The page's approval
 (`approveAs` in `#lib/passkey.ts`) asks the passkey once with the PRF extension too, and

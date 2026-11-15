@@ -43,10 +43,14 @@ test('an agent code, an invite, the pending join and the account are shown once,
 		// A command that answers no secret is kept whole.
 		await app.submit('tail coffee');
 
-		const disk = await stored(app);
+		const { 'datum.account': signedIn, ...disk } = await stored(app);
 		assert.match(disk['datum.stale.v1'] ?? '', /tail coffee/, 'no copy of the CLI widget was kept: its half is untested');
+		// The account is kept in its own key, as signing in keeps it (da-wsx4k), and nowhere else: its seal key
+		// is looked for, since the kept form's quotes are escaped in a store's JSON.
+		const { seal } = JSON.parse(account);
+		assert.ok(signedIn?.includes(seal), 'the account was not kept: the test tests nothing');
 		const all = JSON.stringify(disk);
-		for (const s of [agent.secret, secret, 'TICKETSECRET', account]) assert.ok(!all.includes(s), `${s} is on disk`);
+		for (const s of [agent.secret, secret, 'TICKETSECRET', seal]) assert.ok(!all.includes(s), `${s} is on disk`);
 		const kept = JSON.parse(disk['datum.repl.v1']);
 		assert.deepEqual(
 			kept.scrollback.map((c) => [c.line, c.result.stdout === 'output not kept: it held a secret']),

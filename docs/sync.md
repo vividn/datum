@@ -80,9 +80,13 @@ Google Password Manager do, and Windows Hello's stay on the one device. The
 passkey's PRF secret, asked with the fixed salt `datum.day account v1`, is the
 same on every device the passkey is on, and an account key is derived from it
 (HKDF-SHA256, info `datum account key v1`). A chain started while signed in
-has that key as its admin, so it is locked and the account's. No device keeps
-that key: it keeps a second key, which reads the account's record and signs
-nothing, so each invite, expel and rename in the account's chain asks for the
+has that key as its admin, so it is locked and the account's, and the passkey
+itself as an admin passkey, so one passkey signs in and approves; «Add admin»
+while signed in adds that passkey too, and makes none. A sign-in passkey
+made before datum.day did both is offered once to be replaced by one that
+does both, which each chain of the account takes, the older one approving. No device keeps that key: it keeps a second key, which
+reads the account's record and signs nothing, and a browser keeps it until
+you sign out, so a reload stays signed in, so each invite, expel and rename in the account's chain asks for the
 passkey again, naming what it approves and in which chain. A stolen device
 that is signed in is no admin. A device signed in to the same account joins that chain
 with no invite from another device: it signs an invite with the account key

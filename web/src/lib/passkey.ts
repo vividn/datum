@@ -68,6 +68,11 @@ export function approveLink(text: string): string | null {
  * `{"alg", "publicKey", "label"}` (`chain::passkey_admin_key`).
  */
 export async function createPasskey(label: string): Promise<string> {
+	return (await made(label)).passkey;
+}
+
+/** A new passkey, asked for PRF where `prf`: its credential, and its public key as `admin add` takes it (the create alone says it). */
+async function made(label: string, prf = false): Promise<{ cred: PublicKeyCredential; passkey: string }> {
 	const cred = (await navigator.credentials.create({
 		publicKey: {
 			rp: { id: RP_ID, name: 'datum' },
@@ -77,13 +82,75 @@ export async function createPasskey(label: string): Promise<string> {
 				{ type: 'public-key', alg: -8 },
 				{ type: 'public-key', alg: -7 }
 			],
-			authenticatorSelection: { residentKey: 'required', userVerification: 'required' }
+			authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+			extensions: prf ? { prf: {} } : undefined
 		}
 	})) as PublicKeyCredential | null;
 	const response = cred?.response as AuthenticatorAttestationResponse | undefined;
 	const key = response?.getPublicKey();
-	if (!response || !key) throw new Error('no passkey was made');
-	return JSON.stringify({ alg: response.getPublicKeyAlgorithm(), publicKey: b64url(key), label });
+	if (!cred || !response || !key) throw new Error('no passkey was made');
+	return { cred, passkey: JSON.stringify({ alg: response.getPublicKeyAlgorithm(), publicKey: b64url(key), label }) };
+}
+
+/** An assertion's signed parts: what `signedBy` checks a passkey admin's key against. */
+export type Proof = { data: Uint8Array<ArrayBuffer>; sig: Uint8Array<ArrayBuffer>; id: ArrayBuffer };
+
+/** The SPKI prefix of each passkey admin key's kind (`chain::passkey_admin_key`), and its COSE alg. */
+const SPKI: Record<string, [string, number]> = {
+	es256: ['3059301306072a8648ce3d020106082a8648ce3d030107034200', -7],
+	eddsa: ['302a300506032b6570032100', -8]
+};
+
+/** The admin key (`es256:…`, `eddsa:…`) of a passkey as `admin add` takes it, its JSON, as `chain::passkey_admin_key` makes it; null if it reads as none. */
+export function adminKeyOf(passkey: string): string | null {
+	try {
+		const { alg, publicKey } = JSON.parse(passkey) as { alg: number; publicKey: string };
+		const kind = Object.keys(SPKI).find((k) => SPKI[k][1] === alg);
+		if (!kind) return null;
+		const spki = unb64url(publicKey);
+		const head = SPKI[kind][0].match(/../g)!.map((h) => parseInt(h, 16));
+		return head.every((b, i) => spki[i] === b) ? `${kind}:${b64url(spki.subarray(head.length))}` : null;
+	} catch {
+		return null;
+	}
+}
+
+/** A chain's passkey admin key (`es256:…`, `eddsa:…`) as `admin add` takes it, or null for any other key. */
+export function adminPasskey(key: string, label: string): string | null {
+	const [kind, raw] = key.split(':');
+	const [prefix, alg] = SPKI[kind] ?? [];
+	if (!prefix || !raw) return null;
+	const der = Uint8Array.from(prefix.match(/../g)!, (h) => parseInt(h, 16));
+	return JSON.stringify({ alg, publicKey: b64url(new Uint8Array([...der, ...unb64url(raw)])), label });
+}
+
+/**
+ * Whether the passkey admin `key` made the assertion `p`: so a key read from
+ * storage proves itself before it becomes an admin, and a sign-in recognises
+ * its passkey among a chain's admins on a device that did not make it (a
+ * passkey synced to it), with no prompt more.
+ */
+export async function signedBy(key: string, p: Proof): Promise<boolean> {
+	const [kind, raw] = key.split(':');
+	try {
+		if (kind === 'eddsa') {
+			const k = await crypto.subtle.importKey('raw', unb64url(raw), { name: 'Ed25519' }, false, ['verify']);
+			return await crypto.subtle.verify({ name: 'Ed25519' }, k, p.sig, p.data);
+		}
+		if (kind !== 'es256') return false;
+		const k = await crypto.subtle.importKey('raw', unb64url(raw), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+		// WebAuthn's ES256 signature is DER; WebCrypto's is r ‖ s, 32 bytes each.
+		const rs = new Uint8Array(64);
+		for (let at = 2, half = 0; half < 2; half++) {
+			const n = p.sig[at + 1];
+			const v = p.sig.subarray(at + 2 + Math.max(0, n - 32), at + 2 + n);
+			rs.set(v, 32 * (half + 1) - v.length);
+			at += 2 + n;
+		}
+		return await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, k, rs, p.data);
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -101,12 +168,15 @@ export async function approve(link: string): Promise<string> {
  * (da-k04lr): the one prompt approves as a passkey admin and as the account
  * key, an admin of each chain made signed in, whose signature the CLI makes
  * of the PRF output (`sync account --approve`). The code carries both,
- * joined by `.`, and the CLI keeps the one an admin's key verifies.
+ * joined by `.`, and the CLI keeps the one an admin's key verifies. `only`
+ * names the passkey to ask, by its credential id; `proof` is the assertion's
+ * signed parts, to check which passkey approved.
  */
-export async function approveAs(link: string): Promise<{ code: string; prf: string | null }> {
+export async function approveAs(link: string, only?: ArrayBuffer): Promise<{ code: string; prf: string | null; proof: Proof }> {
 	const challenge = await challengeOf(link);
+	const allowCredentials: PublicKeyCredentialDescriptor[] | undefined = only && [{ type: 'public-key', id: only }];
 	const cred = (await navigator.credentials.get({
-		publicKey: { rpId: RP_ID, challenge, userVerification: 'required', extensions: { prf: { eval: { first: PRF_SALT } } } }
+		publicKey: { rpId: RP_ID, challenge, userVerification: 'required', allowCredentials, extensions: { prf: { eval: { first: PRF_SALT } } } }
 	})) as PublicKeyCredential | null;
 	const r = cred?.response as AuthenticatorAssertionResponse | undefined;
 	if (!r) throw new Error('the passkey gave no approval');
@@ -116,11 +186,19 @@ export async function approveAs(link: string): Promise<{ code: string; prf: stri
 	out.push(...new Uint8Array(r.signature));
 	const webauthn = b64url(new Uint8Array(out));
 	const prf = prfOf(cred);
-	if (!prf) return { code: webauthn, prf };
+	const proof = await proofOf(cred!);
+	if (!prf) return { code: webauthn, prf, proof };
 	const [{ run }, { accountApproveArgv }] = await Promise.all([import('./run.js'), import('./calls.js')]);
 	const signed = await run(accountApproveArgv(link), undefined, undefined, undefined, undefined, [`DATUM_ACCOUNT=${prf}`]);
 	const account = signed.code === 0 ? (JSON.parse(signed.stdout) as { code: string }).code : null;
-	return { code: account ? `${account}.${webauthn}` : webauthn, prf };
+	return { code: account ? `${account}.${webauthn}` : webauthn, prf, proof };
+}
+
+/** An assertion's signed parts: its authenticator data and its client data's SHA-256, its signature, and its credential id. */
+async function proofOf(cred: PublicKeyCredential): Promise<Proof> {
+	const r = cred.response as AuthenticatorAssertionResponse;
+	const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', r.clientDataJSON));
+	return { data: new Uint8Array([...new Uint8Array(r.authenticatorData), ...hash]), sig: new Uint8Array(r.signature), id: cred.rawId };
 }
 
 /** The PRF output an assertion gave, hex, or null. */
@@ -157,26 +235,17 @@ export async function prfOffered(): Promise<boolean> {
  * page holds only for the act it was asked for (da-k04lr). `make` names a new passkey made first; even
  * then the secret comes from an assertion, since an authenticator need not
  * answer PRF as it makes one. Throws `NO_PRF` where the passkey gives none.
+ * Beside it, a new passkey's public key, for the chains' admin (da-wsx4k),
+ * and the assertion's signed parts, to recognise one made elsewhere by.
  */
-export async function signIn(make?: string): Promise<string> {
+export async function signIn(make?: string): Promise<{ prf: string; passkey: string | null; proof: Proof }> {
 	let allow: PublicKeyCredentialDescriptor[] | undefined;
+	let passkey: string | null = null;
 	if (make) {
-		const cred = (await navigator.credentials.create({
-			publicKey: {
-				rp: { id: RP_ID, name: 'datum' },
-				user: { id: crypto.getRandomValues(new Uint8Array(16)), name: make, displayName: make },
-				challenge: crypto.getRandomValues(new Uint8Array(32)),
-				pubKeyCredParams: [
-					{ type: 'public-key', alg: -8 },
-					{ type: 'public-key', alg: -7 }
-				],
-				authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-				extensions: { prf: {} }
-			}
-		})) as PublicKeyCredential | null;
-		if (!cred) throw new Error('no passkey was made');
-		if (cred.getClientExtensionResults().prf?.enabled === false) throw new Error(NO_PRF);
-		allow = [{ type: 'public-key', id: cred.rawId }];
+		const m = await made(make, true);
+		if (m.cred.getClientExtensionResults().prf?.enabled === false) throw new Error(NO_PRF);
+		allow = [{ type: 'public-key', id: m.cred.rawId }];
+		passkey = m.passkey;
 	}
 	const cred = (await navigator.credentials.get({
 		publicKey: {
@@ -189,5 +258,5 @@ export async function signIn(make?: string): Promise<string> {
 	})) as PublicKeyCredential | null;
 	const prf = prfOf(cred);
 	if (!prf) throw new Error(NO_PRF);
-	return prf;
+	return { prf, passkey, proof: await proofOf(cred!) };
 }

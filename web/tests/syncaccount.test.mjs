@@ -50,6 +50,22 @@ const account = (page) => page.locator(`${WIDGET} .account`);
 const settled = (app) => app.page.evaluate(() => window.datum.sync.recordSigned());
 const chainOf = async (app) => JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout);
 
+/** The passkeys the virtual authenticator holds. */
+const credentials = async ({ cdp, authenticatorId }) => (await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials;
+/** Every value the page stores, by name: `localStorage`, `sessionStorage` and every IndexedDB store. */
+const stored = (page) =>
+	page.evaluate(async () => {
+		const out = [...Object.entries(localStorage), ...Object.entries(sessionStorage)];
+		const done = (r) => new Promise((ok, no) => ((r.onsuccess = () => ok(r.result)), (r.onerror = () => no(r.error))));
+		for (const { name } of await indexedDB.databases()) {
+			const db = await done(indexedDB.open(name));
+			for (const s of db.objectStoreNames) out.push([`${name}/${s}`, JSON.stringify(await done(db.transaction(s).objectStore(s).getAll()))]);
+			db.close();
+		}
+		return out;
+	});
+const PASSKEYS = 'datum.accountPasskeys';
+
 /** Make a passkey from the widget, which signs the tab in. */
 async function newPasskey(page) {
 	await account(page).getByRole('button', { name: 'New passkey' }).click();
@@ -96,10 +112,14 @@ describe('signing in to sync with a passkey', () => {
 			const made = await act(app, ['sync', 'new-invite']);
 			assert.equal(made.code, 0, made.stderr);
 			assert.equal(await asked(passkey), before + 1);
+			// Its admins: the account, and the passkey it signed in with (da-wsx4k).
 			const chain = await chainOf(app);
 			assert.deepEqual(
-				chain.admins.map((a) => a.key),
-				[key]
+				chain.admins.map((a) => [a.key.replace(/^(es256|eddsa):.*/, 'passkey'), a.label]),
+				[
+					[key, 'account'],
+					['passkey', 'my phone']
+				]
 			);
 			// Locked by the account, the next invite asks the passkey again.
 			before = await asked(passkey);
@@ -185,6 +205,225 @@ describe('signing in to sync with a passkey', () => {
 			await lapsing.waitFor({ state: 'detached' });
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 		}, { ...AT_DATUM_DAY, prepare: pkarr.prepare });
+	});
+
+	test('signed in, a reload stays signed in and nothing stored signs; «Sign out» outlasts a reload too (da-wsx4k)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await app.goto('/sync');
+			assert.equal(await signIn(app, PRF), KEY);
+			await app.reload();
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			assert.equal(await page.locator(`${WIDGET} .signed-in`).getAttribute('title'), KEY);
+			assert.equal(JSON.parse((await app.run(['sync', 'account'])).stdout).key, KEY);
+			// Kept, it reads the account and signs nothing: the account's act stops at the passkey.
+			const held = await app.run(['sync', 'new-invite']);
+			assert.match(held.stderr, /https:\/\/datum\.day\/sync\/approve#/);
+			const all = await stored(page);
+			assert.ok(all.some(([, v]) => v.includes(KEY)), 'the account is stored nowhere: the search tests nothing');
+			assert.deepEqual(
+				all.filter(([, v]) => v.includes(PRF)).map(([k]) => k),
+				[]
+			);
+			await account(page).getByRole('button', { name: 'Sign out' }).click();
+			await app.reload();
+			await page.locator(`${WIDGET} .account[data-signed="out"]`).waitFor();
+			assert.notEqual((await app.run(['sync', 'account'])).code, 0);
+		}, AT_DATUM_DAY);
+	});
+
+	test('signed in, «Add admin» makes no passkey: the chain’s admin is the one signed in with, and it approves the chain’s acts (da-wsx4k)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const passkey = await authenticator(page, { hasPrf: true });
+			await app.goto('/sync');
+			// An open chain, started signed out.
+			assert.equal((await app.run(['sync', 'new-invite'])).code, 0);
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			assert.equal((await credentials(passkey)).length, 1);
+			const chain = page.locator(`${WIDGET} .chain[data-db="datum"]`);
+			await chain.getByRole('button', { name: 'Add admin' }).click();
+			await chain.locator('.admin').waitFor();
+			assert.equal((await credentials(passkey)).length, 1);
+			assert.equal(await page.locator('dialog.ask').count(), 0);
+			const { admins } = await chainOf(app);
+			assert.deepEqual(
+				admins.map((a) => [a.key.replace(/^(es256|eddsa):.*/, 'passkey'), a.label]),
+				[['passkey', 'my phone']]
+			);
+			// Locked by it, an act asks it once, and is done.
+			const before = await asked(passkey);
+			const made = await act(app, ['sync', 'new-invite']);
+			assert.equal(made.code, 0, made.stderr);
+			assert.equal(await asked(passkey), before + 1);
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
+	});
+
+	test('a browser that did not make the sign-in passkey knows it among the chain’s admins by its sign-in’s signature, and offers no other (da-wsx4k)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const passkey = await authenticator(page, { hasPrf: true });
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
+			await until(() => page.locator(`${WIDGET} .chain[data-db="datum"] .admin`).count(), (n) => n === 2);
+			// As a device it was synced to: the passkey's public key never known here.
+			const made = await page.evaluate((k) => localStorage.getItem(k), PASSKEYS);
+			await page.evaluate((k) => localStorage.removeItem(k), PASSKEYS);
+			await account(page).getByRole('button', { name: 'Sign out' }).click();
+			await account(page).getByRole('button', { name: 'Sign in with a passkey' }).click();
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			assert.equal(await until(() => page.evaluate((k) => localStorage.getItem(k), PASSKEYS), (v) => v !== null), made);
+			await until(() => account(page).locator('.make-one').count(), (n) => n === 0);
+			assert.equal((await credentials(passkey)).length, 1);
+			// After a reload nothing tells a passkey from before from this one: nothing is offered, and the key stays kept.
+			await app.reload();
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			assert.equal(await account(page).locator('.make-one').count(), 0);
+			assert.equal(await page.evaluate((k) => localStorage.getItem(k), PASSKEYS), made);
+		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
+	});
+
+	test('a sign-in passkey from before is offered once to become one passkey for signing in and admin: the chain takes it and its account, the older one approving; and the new one approves alone (da-wsx4k)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const passkey = await authenticator(page, { hasPrf: true });
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			const old = await page.locator(`${WIDGET} .signed-in`).getAttribute('title');
+			// As before da-wsx4k: no passkey of the account known, and its chain locked by the account alone.
+			await page.evaluate((k) => localStorage.removeItem(k), PASSKEYS);
+			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
+			assert.deepEqual(
+				(await chainOf(app)).admins.map((a) => a.key),
+				[old]
+			);
+			await page.locator(`${WIDGET} .chain[data-db="datum"] .admin`).waitFor();
+			const [{ credentialId: older }] = await credentials(passkey);
+			const make = account(page).locator('.make-one');
+			await make.click();
+			await page.locator('dialog.ask input').fill('one passkey');
+			await page.locator('dialog.ask').getByRole('button', { name: 'make' }).click();
+			await account(page).locator('.one-said').waitFor();
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+			assert.equal((await credentials(passkey)).length, 2);
+			const key = await page.locator(`${WIDGET} .signed-in`).getAttribute('title');
+			assert.notEqual(key, old);
+			assert.deepEqual(
+				(await chainOf(app)).admins.map((a) => [a.key.replace(/^(es256|eddsa):.*/, 'passkey'), a.label]),
+				[
+					[old, 'account'],
+					[key, 'account'],
+					['passkey', 'one passkey']
+				]
+			);
+			assert.equal(await make.count(), 0);
+			// The older passkey gone from the password manager, the new one approves alone.
+			await passkey.cdp.send('WebAuthn.removeCredential', { authenticatorId: passkey.authenticatorId, credentialId: older });
+			const before = await asked(passkey);
+			const again = await act(app, ['sync', 'new-invite']);
+			assert.equal(again.code, 0, again.stderr);
+			assert.equal(await asked(passkey), before + 1);
+		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
+	});
+
+	test('«Not now» ends the offer of one passkey for that account: signing in again does not bring it back (da-wsx4k)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await authenticator(page, { hasPrf: true });
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			await page.evaluate((k) => localStorage.removeItem(k), PASSKEYS);
+			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
+			const make = account(page).locator('.make-one');
+			await make.waitFor();
+			await account(page).getByRole('button', { name: 'Not now' }).click();
+			await make.waitFor({ state: 'detached' });
+			await account(page).getByRole('button', { name: 'Sign out' }).click();
+			await account(page).getByRole('button', { name: 'Sign in with a passkey' }).click();
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			await page.locator(`${WIDGET} .chain[data-db="datum"] .admin`).waitFor();
+			assert.equal(await make.count(), 0);
+		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
+	});
+
+	test('a chain the move to one passkey misses is said, with the older passkey kept for it (da-wsx4k)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const passkey = await authenticator(page, { hasPrf: true });
+			const { cdp, authenticatorId } = passkey;
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			const old = await page.locator(`${WIDGET} .signed-in`).getAttribute('title');
+			await page.evaluate((k) => localStorage.removeItem(k), PASSKEYS);
+			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
+			const chain = page.locator(`${WIDGET} .chain[data-db="datum"]`);
+			await chain.locator('.admin').waitFor();
+			// The older passkey away as the move asks it: the chain is not moved, and the widget says so.
+			const [older] = await credentials(passkey);
+			await cdp.send('WebAuthn.removeCredential', { authenticatorId, credentialId: older.credentialId });
+			await account(page).locator('.make-one').click();
+			await page.locator('dialog.ask input').fill('one passkey');
+			await page.locator('dialog.ask').getByRole('button', { name: 'make' }).click();
+			const said = account(page).locator('.one-said');
+			await said.waitFor();
+			assert.match(await said.innerText(), /datum did not take it/);
+			assert.match(await said.innerText(), /keep the older passkeys/);
+			assert.deepEqual(
+				(await chainOf(app)).admins.map((a) => a.key),
+				[old]
+			);
+			assert.notEqual(await page.locator(`${WIDGET} .signed-in`).getAttribute('title'), old);
+		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
+	});
+
+	test('a passkey key stored for the account is no admin until an assertion proves it: another key written there is listed by no chain and refused by «Add passkey», the true one proven by the approval (da-wsx4k)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await authenticator(page, { hasPrf: true });
+			await app.goto('/sync');
+			await newPasskey(page);
+			await page.locator(`${WIDGET} .account[data-signed="in"]`).waitFor();
+			const key = await page.locator(`${WIDGET} .signed-in`).getAttribute('title');
+			const made = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), PASSKEYS))[key];
+			// Another public key written for the account, as anything on the origin could.
+			const other = await page.evaluate(async () => {
+				const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+				const spki = new Uint8Array(await crypto.subtle.exportKey('spki', pair.publicKey));
+				const publicKey = btoa(String.fromCharCode(...spki)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+				return JSON.stringify({ alg: -7, publicKey, label: 'not mine' });
+			});
+			const write = (passkey) => page.evaluate(([k, a, p]) => localStorage.setItem(k, JSON.stringify({ [a]: p })), [PASSKEYS, key, passkey]);
+			await write(other);
+			const admins = async () => (await chainOf(app)).admins.map((a) => [a.key.replace(/^(es256|eddsa):.*/, 'passkey'), a.label]);
+			// A chain started signed in lists the account alone.
+			assert.equal((await act(app, ['sync', 'new-invite'])).code, 0);
+			assert.deepEqual(await admins(), [[key, 'account']]);
+			// «Add passkey» is approved by the true passkey, which is not the key stored: refused, nothing written.
+			const chain = page.locator(`${WIDGET} .chain[data-db="datum"]`);
+			await chain.locator('.admin').waitFor();
+			await chain.getByRole('button', { name: 'Add passkey' }).click();
+			await page.locator(`${WIDGET} .failure`).waitFor();
+			assert.match(await page.locator(`${WIDGET} .failure`).innerText(), /not the one kept for your account/);
+			assert.deepEqual(await admins(), [[key, 'account']]);
+			// The true key, unproven after a reload, is proven by the approval and added.
+			await write(made);
+			await app.reload();
+			await chain.locator('.admin').waitFor();
+			await chain.getByRole('button', { name: 'Add passkey' }).click();
+			await until(() => chain.locator('.admin').count(), (n) => n === 2);
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+			assert.deepEqual(await admins(), [
+				[key, 'account'],
+				['passkey', 'my phone']
+			]);
+		}, { ...AT_DATUM_DAY, prepare: pkarrRelay().prepare });
 	});
 
 	test('a passkey that gives no PRF is said plainly, and the tab stays signed out', async () => {

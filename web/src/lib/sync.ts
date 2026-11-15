@@ -51,15 +51,15 @@
 // as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay. So
 // are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`).
 
-import { writable, type Readable } from 'svelte/store';
+import { get, writable, type Readable } from 'svelte/store';
 import { accountArgv, accountReadArgv, accountRecordArgv, accountSealArgv, chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, run, type RunResult } from './run.js';
 import type { ChainList, Member, Notice, PendingJoin, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
-import { accountEnv, setAccount } from './account.js';
-import { NO_PRF, prfOffered, signIn } from './passkey.js';
+import { account, accountEnv, accountPasskey, keepPasskey, prove, provenPasskey, setAccount } from './account.js';
+import { adminKeyOf, adminPasskey, NO_PRF, prfOffered, signedBy, signIn, type Proof } from './passkey.js';
 import { listDatabases } from './databases.js';
 
 const PULL_MS = 30_000;
@@ -813,12 +813,60 @@ export async function syncSignIn(make?: string, secret?: string): Promise<string
 	return (await signedIn(make, secret)).key;
 }
 
-/** [`syncSignIn`], and the PRF output it signed in with, for the acts done as it signs in (da-k04lr). */
+/**
+ * [`syncSignIn`], and the PRF output it signed in with, for the acts done as it signs in (da-k04lr). A new
+ * passkey's public key is kept as the account's, its chains' admin passkey (da-wsx4k), proven by its create;
+ * the assertion proves a stored one, and recognises a passkey made elsewhere among the chains' admins.
+ */
 export async function signedIn(make?: string, secret?: string): Promise<{ key: string; prf: string }> {
-	secret ??= await signIn(make);
-	const { key, kept } = JSON.parse(await ran(accountArgv(), [`DATUM_ACCOUNT=${secret}`])) as { key: string; kept: string };
+	const asked = secret ? null : await signIn(make);
+	const prf = secret ?? asked!.prf;
+	const { key, kept } = JSON.parse(await ran(accountArgv(), [`DATUM_ACCOUNT=${prf}`])) as { key: string; kept: string };
+	if (asked?.passkey) keepPasskey(key, asked.passkey);
+	signedInBy = asked && { ...asked.proof, key };
 	setAccount(kept, key);
-	return { key, prf: secret };
+	if (asked) await heard(asked.proof);
+	return { key, prf };
+}
+
+/**
+ * This tab's sign-in assertion and its account, in memory alone: the account's own passkey, since its PRF
+ * output is the account, where an approval may be any admin's. Stored, anything on the origin could forge one.
+ */
+let signedInBy: (Proof & { key: string }) | null = null;
+const ours = () => (signedInBy && signedInBy.key === get(account)?.key ? signedInBy : null);
+
+/** The credential id of the passkey this tab signed in with, if it did since it loaded. */
+export const signedInWith = (): ArrayBuffer | undefined => ours()?.id;
+
+/** An assertion made in this tab, a sign-in's or an approval's: the stored passkey of the account proven, if it made it. */
+export async function heard(p: Proof): Promise<void> {
+	const hint = accountPasskey();
+	const admin = hint && adminKeyOf(hint);
+	if (hint && admin && (await signedBy(admin, p))) prove(hint);
+}
+
+/** Said where the passkey that approved is not the one kept for the account. */
+export const NOT_THE_PASSKEY = 'That passkey is not the one kept for your account here: approve with the passkey you sign in with.';
+
+/**
+ * Whether this tab has the account's passkey proven (`provenPasskey`), finding it among `admins`, the chains'
+ * here, by the sign-in's assertion where it must (da-wsx4k): a passkey synced from the device that made it,
+ * whose public key only the create said.
+ */
+export async function recognise(admins: { key: string; label: string }[]): Promise<boolean> {
+	const key = get(account)?.key;
+	if (!key) return false;
+	if (provenPasskey()) return true;
+	const p = ours();
+	for (const a of p ? admins : []) {
+		const passkey = adminPasskey(a.key, a.label);
+		if (passkey && p && (await signedBy(a.key, p))) {
+			keepPasskey(key, passkey);
+			return true;
+		}
+	}
+	return false;
 }
 
 /**
@@ -858,7 +906,7 @@ export async function accountJoin(db: string, chain: string, members: string[], 
 export async function syncLogin(link: string, prf?: string): Promise<void> {
 	if (!accountEnv().length) throw new Error('not signed in');
 	// The account goes to the CLI: the passkey is asked for it, unless it just was (da-k04lr).
-	prf ??= await signIn();
+	prf ??= (await signIn()).prf;
 	const { message } = JSON.parse(await ran(accountSealArgv(link), [`DATUM_ACCOUNT=${prf}`])) as { message: string };
 	const key = hexOf(crypto.getRandomValues(new Uint8Array(32)).buffer);
 	await ask('', { op: 'login', link, key, relay: relay(), message });
