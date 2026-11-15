@@ -51,7 +51,7 @@ use classify::{
     datum_path, find_default_for_path, inferred_value_for_default, is_dot_scalar, split_first_eq,
 };
 
-pub use coerce::{bracket_value, comma_items, infer_type, KeyType};
+pub use coerce::{bracket_value, comma_items, infer_type, state_word, KeyType};
 
 /// Canonical flag set for the data concern.
 ///
@@ -236,6 +236,8 @@ pub(crate) struct Compat<'a> {
     pub(crate) literal: bool,
     /// See [`DataArgs::later`].
     pub(crate) later: Option<&'a BTreeMap<String, bool>>,
+    /// See [`DataArgs::string_state`]: a state's words stay as typed.
+    pub(crate) string_state: bool,
 }
 
 /// Resolve `DataArgs` into the final `DatumData` object.
@@ -268,6 +270,7 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
         types: Some(&args.types),
         literal: args.literal,
         later: args.later.as_ref(),
+        string_state: args.string_state,
     };
 
     // Clone the bits we mutate; the input bag is treated as read-only.
@@ -385,7 +388,11 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
                     default_value,
                     false,
                     is_required,
-                    compat,
+                    // A word after `--` is as typed, a state word too.
+                    Compat {
+                        string_state: compat.string_state || as_typed,
+                        ..compat
+                    },
                 )?;
                 consumed = true;
                 prev_slot = (path == "state.id").then(|| data_value.to_string());

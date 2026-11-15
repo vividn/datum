@@ -1106,6 +1106,34 @@ fn switch_on_is_true_and_the_literal_is_quoted_str_marked_or_string_state() {
     assert_eq!(e.following_state, Some(json!(true)));
 }
 
+/// da-bbsxc (vividn, 2026-11-15): a state's words are read the same alone or
+/// in a list: `change f on,off` is `[true,false]` as `change f off` is
+/// `false`; `start`, `end` and `stop` too, and `state=` alike. `-I`, a quoted
+/// word and `str://` keep the words.
+#[test]
+fn state_words_are_true_and_false_in_a_list_as_alone() {
+    for (words, want) in [
+        (&["change", "f", "on,off"][..], json!([true, false])),
+        (&["change", "f", "off,on"], json!([false, true])),
+        (
+            &["change", "f", "start,end,stop"],
+            json!([true, false, false]),
+        ),
+        (&["change", "f", "dim,on"], json!(["dim", true])),
+        (&["change", "f", "state=on,off"], json!([true, false])),
+        (&["change", "f", "on"], json!(true)),
+        (&["change", "f", "off"], json!(false)),
+        (&["change", "f", "-I", "on,off"], json!(["on", "off"])),
+        (&["change", "f", r#""on",off"#], json!(["on", false])),
+        (&["change", "f", "str://on,off"], json!("on,off")),
+    ] {
+        let db = fresh_db();
+        run_cli(words, &db).expect("log");
+        let entry = &datum_core::test_util::logged_entries(&db, "f")[0];
+        assert_eq!(entry.state, Some(want), "{words:?}");
+    }
+}
+
 /// da-47ge3: an alias for `switch F` followed by a typed `off` or `on`
 /// stores `false` or `true`, with a flag typed after it (which the alias's
 /// region puts ahead of the state) or before the state on a typed switch;

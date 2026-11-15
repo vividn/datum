@@ -2408,7 +2408,8 @@ pub const COMMANDS: &[CommandSpec] = &[
              as `datum off light` does, and `datum change light on` turns it \
              on, as `datum on light` does; a state named off is \
              `'\"off\"'` or `str://off`, one named on `'\"on\"'` or \
-             `str://on`, and `-I` keeps either word as typed.\n\n\
+             `str://on`, and `-I` keeps either word as typed. So in a \
+             list: `datum change light on,off` is `[true,false]`.\n\n\
              An array of fields (`datum change a,b x`, no spaces) is one change \
              on each, at one instant, all or none, one `undo`: `datum change a,b \
              x,y` puts both in the states x and y.\n\n\

@@ -189,6 +189,9 @@ pub(super) fn infer_typed_value(
         .and_then(|t| t.get(path))
         .copied();
     let Some(ty) = declared.or_else(|| KeyType::of_suffix(path)) else {
+        if state_key.is_some() && !compat.string_state {
+            return Ok(state_value(value));
+        }
         return bracket_value(path, value).map_or_else(|| Ok(infer_type(value)), |v| v.map(Some));
     };
     if ty.is_list() {
@@ -434,6 +437,38 @@ fn wall_clock() -> Option<DatumTime> {
 fn resolve_date_arg(d: &DateArg, base: Option<NaiveDateTime>) -> Option<chrono::NaiveDate> {
     d.absolute
         .or_else(|| Some(base?.date() + chrono::Duration::days(d.days_offset)))
+}
+
+/// What a state word means (da-bbsxc): `on` and `start` are true, `off`,
+/// `end` and `stop` false, the words the commands are named by. Any other
+/// word is no state word.
+pub fn state_word(word: &str) -> Option<bool> {
+    match word {
+        "on" | "start" => Some(true),
+        "off" | "end" | "stop" => Some(false),
+        _ => None,
+    }
+}
+
+/// A state's value, read as [`infer_type`] reads any value, with each state
+/// word its [`state_word`], alone or as an element of a comma list alike:
+/// `change f on,off` is `[true,false]`, as `change f off` is `false`
+/// (vividn, 2026-11-15). A quoted word and `str://` stay text, and the
+/// bracket form is JSON, read before this.
+fn state_value(value: &str) -> Option<Value> {
+    let read = |v: &str| state_word(v).map(Value::Bool).or_else(|| infer_type(v));
+    let list = (json(value).is_none() && !value.starts_with(STR_MARK))
+        .then(|| comma_items(value))
+        .flatten();
+    match list {
+        Some(items) => Some(Value::Array(
+            items
+                .into_iter()
+                .map(|v| read(v).unwrap_or(Value::Null))
+                .collect(),
+        )),
+        None => read(value),
+    }
 }
 
 /// Port of datum's `inferType`: turn a raw string into the most specific

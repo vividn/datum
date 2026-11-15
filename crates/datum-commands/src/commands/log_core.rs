@@ -1701,13 +1701,11 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     }
     let following_state = post_bare.into_iter().next().unwrap();
     // `end`/`stop`/`off` after the comma is the field off, as before it
-    // (vividn's B9, da-9e02u), and `on` is it on (N14, da-j1qfc); under `-I`
-    // every word is the literal state.
-    let following_state = match following_state.as_str() {
-        "end" | "stop" | "off" if !args.string_state => "false".to_string(),
-        "on" if !args.string_state => "true".to_string(),
-        _ => following_state,
-    };
+    // (vividn's B9, da-9e02u), and `on` is it on (N14, da-j1qfc): the state
+    // words are read as any state's (`state_word`, da-bbsxc), literal under `-I`.
+    let following_state = datum_parse::input::state_word(&following_state)
+        .filter(|_| !args.string_state)
+        .map_or(following_state, |on| on.to_string());
     args.rest.push(format!("following_state={following_state}"));
     // da-b4k5: in chain context the `end`/`stop`/`off`/`start`/`on` keywords
     // mean the same thing they do as a standalone verb — `false` for the
@@ -1731,19 +1729,11 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
         .iter()
         .position(|t| split_key_value(t).is_none())
         .filter(|_| !args.string_state)
-        .filter(|&i| {
-            matches!(
-                args.rest[i].as_str(),
-                "end" | "stop" | "off" | "start" | "on"
-            )
-        });
+        .filter(|&i| datum_parse::input::state_word(&args.rest[i]).is_some());
     if let Some(idx) = leading_keyword_idx {
         let keyword = args.rest.remove(idx);
-        let state_kv = match keyword.as_str() {
-            "start" | "on" => "state=true",
-            _ => "state=false",
-        };
-        args.rest.push(state_kv.to_string());
+        let on = datum_parse::input::state_word(&keyword).unwrap_or_default();
+        args.rest.push(format!("state={on}"));
         // Peel the next bare positional as the duration. It's not
         // required (the bead's repro always supplies one, but a chain
         // with no dur is still a legal shape — derive_verb rejects
