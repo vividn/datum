@@ -129,6 +129,7 @@ mod png_output;
 mod premade;
 mod range_shorthand_cmd;
 mod read_only_open;
+mod readline;
 mod readme_anti_drift;
 mod readme_snippets;
 mod record_refs;

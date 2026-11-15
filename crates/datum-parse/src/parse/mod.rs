@@ -252,6 +252,23 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     //
     // The leading half's survivors are the globals the loop above already
     // consumed, so only its `--show` matters; a later one outranks it.
+    // `readline`'s words are its base command's, its `--show` among them,
+    // read again with each line it runs (da-xloff).
+    if sub == "readline" {
+        let base = &tail[sub_idx + 1..];
+        if base.is_empty() {
+            return Err(ParseError::InvalidArg(
+                "readline takes a command: datum readline <command> [args…]".into(),
+            ));
+        }
+        return Ok(Cli {
+            db,
+            color,
+            width: None,
+            iso_times: false,
+            command: Command::Readline(base.iter().map(|w| w.to_string()).collect()),
+        });
+    }
     let (before, _) = input::take_show(&tail[..sub_idx])?;
     let (after, swept) = input::take_show(&tail[sub_idx + 1..])?;
     let show = after.or(before);

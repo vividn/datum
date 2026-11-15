@@ -484,6 +484,14 @@ pub fn handle_log_data_args(args: &DataArgs) -> Result<(DatumData, Option<String
 
         if rkey == "comment" && remainder_as_string {
             push_comment(&mut datum_data, &remainder_data.join(" "));
+        } else if remainder_as_string && verbatim_left > 0 && remainder_data == [""] {
+            // An empty word after `--` is a value, as `readline`'s empty Enter
+            // gives it: `-SR line -- ""` keeps `line: ""` (da-xloff).
+            accumulate::set_path(
+                &mut datum_data,
+                &datum_path(rkey),
+                Value::String(String::new()),
+            );
         } else if remainder_as_string {
             let joined = remainder_data.join(" ");
             alter_datum_data(

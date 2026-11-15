@@ -21,6 +21,7 @@ pub mod commands;
 mod db_subcommands;
 mod fit;
 mod import;
+mod rename;
 pub mod render;
 mod script;
 mod setup_flags;

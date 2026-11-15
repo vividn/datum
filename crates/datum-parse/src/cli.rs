@@ -38,6 +38,9 @@ pub enum Command {
     /// `datum script [FILE]`, and `datum < FILE`: a script of command lines
     /// (da-ygfeh).
     Script(ScriptArgs),
+    /// `datum readline <command> [args…]`: each line typed runs
+    /// `<command> [args…] -- <line>` (da-xloff).
+    Readline(Vec<String>),
     /// `datum import [FILE|-]`: JSONL rows, one entry a line (da-jouhm).
     Import(ImportArgs),
     /// `datum export --jsonl [FIELD…]`: the rows `import` reads (da-jouhm).

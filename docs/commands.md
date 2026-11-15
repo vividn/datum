@@ -49,6 +49,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `retime` — Move an entry's time, its `at` (alias: rt)
 - `rename` — Give a field another name, its entries and spec with it
 - `script` — Run a script of command lines, stopping at the first that fails
+- `readline` — Run a command on each line typed, the line as its last word
 - `delete` — Delete an entry (alias: del)
 - `undo` — Undo the last command, all of it
 - `redo` — Redo the last undone command (the inverse of undo)

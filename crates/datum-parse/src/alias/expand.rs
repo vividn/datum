@@ -137,6 +137,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "rt",
     "rename",
     "script",
+    "readline",
     "import",
     "export",
     "dayview",

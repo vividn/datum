@@ -273,6 +273,8 @@ pub(crate) fn dry_runs_itself(command: &Command) -> bool {
         Command::Redo(a) => a.dry_run,
         Command::Rename(a) => a.dry_run,
         Command::Script(a) => a.dry_run,
+        // Each line is the base command's, its `--dry-run` with it.
+        Command::Readline(_) => true,
         Command::Import(a) => a.dry_run,
         Command::Kit(KitCommand::Install(a)) => a.dry_run,
         Command::Db(DbCommand::Restore(a)) => a.dry_run,
@@ -922,11 +924,15 @@ fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
     // `--color always|never` outranks the environment for the whole run,
     // a REPL started under it included.
     let _color = cli.color.map(output::colors::ColorOverride::set);
-    if matches!(&cli.command, Command::Repl | Command::Script(_)) {
+    if matches!(
+        &cli.command,
+        Command::Repl | Command::Script(_) | Command::Readline(_)
+    ) {
         drop(opened);
         #[cfg(feature = "native")]
         return match cli.command {
             Command::Script(args) => repl::script(&args, cli.db.as_deref()),
+            Command::Readline(base) => repl::readline(&base, cli.db.as_deref()),
             // `datum < FILE` is `datum script -` (da-ygfeh).
             _ if !std::io::IsTerminal::is_terminal(&std::io::stdin()) => {
                 repl::script(&Default::default(), cli.db.as_deref())

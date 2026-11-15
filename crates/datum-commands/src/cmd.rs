@@ -394,6 +394,9 @@ fn dispatch_inner(mut cli: Cli, db: &Db) -> Result<()> {
         Command::Script(_) => Err(anyhow::anyhow!(
             "`script` runs a whole script, not a line of one"
         )),
+        Command::Readline(_) => Err(anyhow::anyhow!(
+            "`readline` reads a terminal's lines, not a line of a script"
+        )),
         Command::Occur(args) => run_log_with_alias(args, db, commands::occur::occur),
         Command::Start(args) => run_log_with_alias(args, db, commands::start::start),
         Command::Stop(args) => run_log_with_alias(args, db, commands::end::stop),

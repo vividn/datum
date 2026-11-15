@@ -67,6 +67,42 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// `datum readline <command> [args…]` (da-xloff): each line typed runs
+/// `<command> [args…] -- <line>` against one database, the line one word
+/// exactly as typed, an empty one included, stamped at its Enter. Nothing
+/// is echoed; a refusal prints and the loop goes on. Ctrl-D or Ctrl-C ends
+/// it, the half-typed line unsaved.
+pub fn readline(base: &[String], db_hint: Option<&str>) -> Result<()> {
+    let (db, path) = open(db_hint)?;
+    let mut rl = DefaultEditor::new()?;
+    // Quiet: `DATUM_SHOW` keeps each line's `raw_input` as typed, and a
+    // `--show` of the base's own, or the caller's `DATUM_SHOW`, wins.
+    if std::env::var_os("DATUM_SHOW").is_none() {
+        std::env::set_var("DATUM_SHOW", "none");
+    }
+    // A parse error's hint is about the command, which the base is: the
+    // line after `--` is never read as one.
+    let named = base.join(" ");
+    loop {
+        let line = match rl.readline("") {
+            Ok(line) => line,
+            Err(ReadlineError::Eof | ReadlineError::Interrupted) => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut argv = vec!["datum".to_string()];
+        argv.extend_from_slice(base);
+        // A `--` of the base's own already ends its flags.
+        if !base.iter().any(|w| w == "--") {
+            argv.push("--".into());
+        }
+        argv.push(line);
+        if let Err(e) = run_argv(argv, &named, &db, Some(&path)) {
+            eprintln!("error: {e:#}");
+        }
+        datum_commands::args::reset_duplicate_noop();
+    }
+}
+
 /// The database `db_hint` names, opened to write, and its path.
 fn open(db_hint: Option<&str>) -> Result<(Db, String)> {
     let resolved = config::resolve_db(db_hint)?;
@@ -244,7 +280,11 @@ fn lands_whole(line: &str, db: &Db) -> Result<()> {
 fn run_line(line: &str, db: &Db, path: Option<&str>) -> Result<()> {
     let mut argv = vec!["datum".to_string()];
     argv.extend(shell_split(line));
+    run_argv(argv, line, db, path)
+}
 
+/// [`run_line`] of a line already split into `argv`.
+fn run_argv(argv: Vec<String>, line: &str, db: &Db, path: Option<&str>) -> Result<()> {
     let parse = |argv| datum_commands::args::parse_invocation_with_db(argv, db);
     // `run`'s dry-run seam (da-7r1v4) on the REPL's open database, which is
     // always there: keep the two alike.

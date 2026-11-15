@@ -38,18 +38,19 @@ LOGGING:
   flag     Mark a field for review (lightweight 'come back to this')
 
 MUTATE:
-  edit     Open an entry in the configured editor
-  update   Replace keys on an existing entry
-  comment  Add a comment to an existing entry
-  merge    Merge values into an entry, collecting a key's into a list
-  rekey    Rename an entry's data keys, in place
-  retime   Move an entry's time, its `at` (alias: rt)
-  rename   Give a field another name, its entries and spec with it
-  script   Run a script of command lines, stopping at the first that fails
-  delete   Delete an entry (alias: del)
-  undo     Undo the last command, all of it
-  redo     Redo the last undone command (the inverse of undo)
-  revert   Step entries back, or take back a field's last command
+  edit      Open an entry in the configured editor
+  update    Replace keys on an existing entry
+  comment   Add a comment to an existing entry
+  merge     Merge values into an entry, collecting a key's into a list
+  rekey     Rename an entry's data keys, in place
+  retime    Move an entry's time, its `at` (alias: rt)
+  rename    Give a field another name, its entries and spec with it
+  script    Run a script of command lines, stopping at the first that fails
+  readline  Run a command on each line typed, the line as its last word
+  delete    Delete an entry (alias: del)
+  undo      Undo the last command, all of it
+  redo      Redo the last undone command (the inverse of undo)
+  revert    Step entries back, or take back a field's last command
 
 READ:
   tail     Show recent entries
