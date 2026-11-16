@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const built = path.join(web, 'build');
@@ -168,6 +169,68 @@ describe('after a deploy', () => {
 				const offline = await page.goto(root, { waitUntil: 'commit' });
 				assert.equal(offline.status(), 200);
 				assert.equal(await offline.text(), shell);
+			} finally {
+				await page.context().setOffline(false);
+			}
+		});
+	});
+});
+
+// A planted cache (da-dvvl9): `caches.match` looks in every cache on the
+// origin, the one created first answering, so a cache any script on the
+// origin made under another name answered for every build after it. Planted
+// here before a build's worker installs, as a script run once on the origin
+// would be before the next deploy: one under no build's name, which the
+// activate deletes, and one under a kept build's (`datum/v/<version>-`),
+// which it keeps and which still answers nothing.
+describe('with a cache planted under another name', () => {
+	test("the page gets this build's bytes, and the planted cache is gone", async () => {
+		await withApp(async ({ page, reload }) => {
+			await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+			const build = await page.evaluate(async () => {
+				const name = (await caches.keys()).find((key) => key.startsWith('datum-'));
+				const cache = await caches.open(name);
+				const chunk = (await cache.keys())
+					.map((request) => new URL(request.url).pathname)
+					.find((path) => path.startsWith('/_app/immutable/') && path.endsWith('.js'));
+				const shell = await (await cache.match('/')).text();
+				const code = await (await cache.match(chunk)).text();
+				for (const planted of ['planted', 'datum/v/0.0.0-kept']) {
+					const foreign = await caches.open(planted);
+					for (const path of ['/', chunk, '/elsewhere']) await foreign.put(path, new Response('planted'));
+				}
+				// A new build's install: its cache is made after the planted ones.
+				await caches.delete(name);
+				await (await navigator.serviceWorker.getRegistration()).unregister();
+				return { name, chunk, shell, code };
+			});
+
+			await reload();
+			await until(
+				() => page.evaluate(async () => (await navigator.serviceWorker.ready).active?.state),
+				(state) => state === 'activated'
+			);
+			assert.deepEqual((await page.evaluate(() => caches.keys())).sort(), ['datum/v/0.0.0-kept', build.name].sort());
+
+			// A path no cache holds, so the shell is what answers it, and `/`
+			// offline below, which the planted caches hold.
+			const away = new URL('/slow', page.url()).href;
+			await page.context().route(away, () => new Promise(() => {}));
+			const slow = await page.goto(away, { waitUntil: 'commit' });
+			assert.equal(await slow.text(), build.shell, 'a slow navigation');
+			await page.context().unroute(away);
+
+			const root = new URL('/', page.url()).href;
+
+			await page.context().setOffline(true);
+			try {
+				const offline = await page.goto(root, { waitUntil: 'commit' });
+				assert.equal(await offline.text(), build.shell, 'an offline navigation');
+				const asked = await page.evaluate(async (chunk) => ({
+					chunk: await (await fetch(chunk)).text(),
+					elsewhere: (await fetch('/elsewhere')).status
+				}), build.chunk);
+				assert.deepEqual(asked, { chunk: build.code, elsewhere: 503 });
 			} finally {
 				await page.context().setOffline(false);
 			}

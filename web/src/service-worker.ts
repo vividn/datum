@@ -16,7 +16,8 @@ const BASE = new URL('./', location.href).pathname.replace(/\/$/, '');
 
 /**
  * Both builds' workers share the origin's caches, so each names its own by
- * its base and clears only those: the root's never deletes a kept build's.
+ * its base and clears its own older ones: the root's never deletes a kept
+ * build's. A cache named for no build's base is no build's, and goes too.
  */
 const CACHE_PREFIX = `datum${BASE}-`;
 const CACHE_NAME = `${CACHE_PREFIX}${version}`;
@@ -89,6 +90,16 @@ const IMMUTABLE = `${BASE}/_app/immutable/`;
 const ANY = { ignoreVary: true };
 
 /**
+ * This build's copy of a request, from its own cache alone. `caches.match`
+ * looks in every cache on the origin, the one created first answering, so a
+ * cache any script on the origin once made under another name answered for
+ * every build after it, through each deploy (da-dvvl9).
+ */
+async function cached(request: Request | string): Promise<Response | undefined> {
+	return (await caches.open(CACHE_NAME)).match(request, ANY);
+}
+
+/**
  * Precache one asset, deciding whether the HTTP cache may answer for it.
  *
  * Under `/_app/immutable/` a name means one set of bytes forever, so the
@@ -121,7 +132,8 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 	event.waitUntil(
 		caches.keys().then(async (keys) => {
 			for (const key of keys) {
-				if (key !== CACHE_NAME && key.startsWith(CACHE_PREFIX)) await caches.delete(key);
+				const builds = key.startsWith('datum-') || key.startsWith('datum/v/');
+				if (key !== CACHE_NAME && (key.startsWith(CACHE_PREFIX) || !builds)) await caches.delete(key);
 			}
 		})
 	);
@@ -140,8 +152,8 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 
 /** Serve from the cache, and fill it on a miss so the next visit is offline-safe. */
 async function cacheFirst(request: Request): Promise<Response> {
-	const cached = await caches.match(request, ANY);
-	if (cached) return cached;
+	const hit = await cached(request);
+	if (hit) return hit;
 	const response = await fetch(request);
 	if (response.ok) (await caches.open(CACHE_NAME)).put(request, response.clone());
 	return response;
@@ -170,8 +182,8 @@ async function navigate(request: Request): Promise<Response> {
 	clearTimeout(timer);
 	if (response && response.status < 500) return response;
 	return (
-		(await caches.match(request, ANY)) ??
-		(await caches.match(SHELL, ANY)) ??
+		(await cached(request)) ??
+		(await cached(SHELL)) ??
 		response ??
 		new Response('Offline', { status: 503 })
 	);
@@ -205,7 +217,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 	// names the wrong thing.
 	event.respondWith(
 		fetch(event.request)
-			.catch(async () => (await caches.match(event.request, ANY)) ?? new Response('Offline', { status: 503 }))
+			.catch(async () => (await cached(event.request)) ?? new Response('Offline', { status: 503 }))
 			.then(isolated)
 	);
 });
