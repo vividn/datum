@@ -477,8 +477,7 @@ impl Db {
                 .iter()
                 .any(|(n, ddl)| n == name && stored(ddl) == *sql)
             {
-                self.conn
-                    .execute_batch(&format!("DROP INDEX IF EXISTS \"{name}\""))?;
+                run_kit_ddl(&self.conn, &format!("DROP INDEX IF EXISTS \"{name}\""))?;
             }
         }
         for (name, ddl) in declared {
@@ -486,7 +485,7 @@ impl Db {
                 .iter()
                 .any(|(n, sql)| *n == name && stored(&ddl) == *sql)
             {
-                if let Err(e) = self.conn.execute_batch(&ddl) {
+                if let Err(e) = run_kit_ddl(&self.conn, &ddl) {
                     failed.push((name, e.into()));
                 }
             }
@@ -554,5 +553,45 @@ impl Db {
             "ORDER BY json_extract(data, '$.field')",
             params![kit_id],
         )
+    }
+}
+
+/// Runs one statement of a kit index's DDL. A kit is third-party content, so
+/// a string holding a second statement is refused rather than run, whatever
+/// `IndexEntry::build_ddl` let through (da-xpbah).
+fn run_kit_ddl(conn: &rusqlite::Connection, sql: &str) -> rusqlite::Result<()> {
+    conn.execute(sql, []).map(drop)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_kit_ddl;
+
+    #[test]
+    fn kit_ddl_runs_one_statement_and_refuses_a_second() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE entries (field TEXT)", [])
+            .unwrap();
+        let tables = |conn: &rusqlite::Connection| -> i64 {
+            conn.query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'entries'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        let err = run_kit_ddl(
+            &conn,
+            "CREATE INDEX IF NOT EXISTS \"kit_t__x\" ON entries(field); DROP TABLE entries",
+        )
+        .unwrap_err();
+        assert!(matches!(err, rusqlite::Error::MultipleStatement), "{err}");
+        assert_eq!(tables(&conn), 1, "the second statement ran");
+        run_kit_ddl(
+            &conn,
+            "CREATE INDEX IF NOT EXISTS \"kit_t__x\" ON entries(field)",
+        )
+        .unwrap();
+        run_kit_ddl(&conn, "DROP INDEX IF EXISTS \"kit_t__x\"").unwrap();
     }
 }
