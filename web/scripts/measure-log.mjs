@@ -26,10 +26,11 @@
 //  4. `--leave`: taps, then after D ms closes the tab or freezes it (CDP
 //     `Page.setWebLifecycleState`), and says whether A ever got the entry.
 //
-// Usage:  pnpm run build && cargo build --release -p datum-cli
+// Usage:  DATUM_TEST_LEVERS=1 pnpm run build && cargo build --release -p datum-cli
 //         node scripts/measure-log.mjs [--entries N] [--presses N] [--layout phone|desktop|dayview]
 //                                     [--throttle R] [--leave] [--json out]
 // DATUM_BIN names the native datum (default target/release/datum).
+// DATUM_TEST_LEVERS=1: the page reads `datum.syncRelay`, the local relay, only in a test build (da-ha2pe).
 
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';

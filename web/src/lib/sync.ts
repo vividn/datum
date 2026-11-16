@@ -49,7 +49,10 @@
 //
 // A relay other than n0's is named in `localStorage` (`datum.syncRelay`),
 // as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay. So
-// are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`).
+// are the tests' short timeouts (`datum.syncTimeoutS`, `shortTimeout`), the
+// pkarr relay and every lever below. Only a build made for tests reads them
+// (`DATUM_TEST_LEVERS=1` at build time, `__DATUM_TEST_LEVERS__`, da-ha2pe):
+// production reads none, so nothing planted on the origin moves its sync.
 
 import { get, writable, type Readable } from 'svelte/store';
 import { accountArgv, accountReadArgv, accountRecordArgv, accountSealArgv, chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, unsetRenameArgv, vectorArgv } from './calls.js';
@@ -199,9 +202,9 @@ function syncWorker(): Worker {
 	worker.onmessage = ({ data }: MessageEvent<SyncEvent>) => {
 		if ('run' in data) {
 			if (data.argv.includes('apply') && held()) return;
-			if (data.argv.includes('verify') && lever(HOLD_VERIFY_KEY)) return;
+			if (__DATUM_TEST_LEVERS__ && data.argv.includes('verify') && lever(HOLD_VERIFY_KEY)) return;
 			const gate = data.argv.includes('apply') ? gated() : Promise.resolve();
-			const failed = data.argv.includes('verify') && lever(FAIL_VERIFY_KEY);
+			const failed = __DATUM_TEST_LEVERS__ && data.argv.includes('verify') && lever(FAIL_VERIFY_KEY);
 			const post = (result: { code: number; stdout: string; stderr: string }) => worker?.postMessage({ ran: data.run, result });
 			void gate.then(() => (failed ? Promise.reject(new Error('failed by datum.syncFailVerify')) : cli(data.argv, data.stdin, true))).then(
 				(r) => {
@@ -243,6 +246,7 @@ function ask<T>(db: string, op: Op): Promise<T> {
 }
 
 function lever(key: string): boolean {
+	if (!__DATUM_TEST_LEVERS__) return false;
 	try {
 		return localStorage.getItem(key) !== null;
 	} catch {
@@ -251,6 +255,7 @@ function lever(key: string): boolean {
 }
 
 function held(): boolean {
+	if (!__DATUM_TEST_LEVERS__) return false;
 	try {
 		if (localStorage.getItem(HOLD_KEY) !== null) return true;
 		const after = localStorage.getItem(HOLD_AFTER_KEY);
@@ -267,6 +272,7 @@ function held(): boolean {
 
 let applies = 0;
 async function gated(): Promise<void> {
+	if (!__DATUM_TEST_LEVERS__) return;
 	let n: number;
 	try {
 		n = Number(localStorage.getItem(GATE_KEY) ?? Infinity);
@@ -279,6 +285,7 @@ async function gated(): Promise<void> {
 
 /** Throws while `FAIL_KEY` counts down (da-zyox0's injection, da-olsuv). */
 function failInjected(): void {
+	if (!__DATUM_TEST_LEVERS__) return;
 	let n = 0;
 	try {
 		n = Number(localStorage.getItem(FAIL_KEY));
@@ -305,6 +312,7 @@ export function likeliest<M extends Member>(members: M[]): M[] {
 }
 
 function shortTimeout(): number | undefined {
+	if (!__DATUM_TEST_LEVERS__) return undefined;
 	try {
 		const s = Number(localStorage.getItem('datum.syncTimeoutS'));
 		return Number.isInteger(s) && s > 0 ? s : undefined;
@@ -314,6 +322,7 @@ function shortTimeout(): number | undefined {
 }
 
 function relay(): string | undefined {
+	if (!__DATUM_TEST_LEVERS__) return undefined;
 	try {
 		return localStorage.getItem('datum.syncRelay') ?? undefined;
 	} catch {
@@ -924,6 +933,7 @@ export const recordSigned: Readable<number | null | undefined> = signedAt;
 const signedOf = (hex: string): number => Number(BigInt(`0x${hex.slice(128, 144)}`) / 1000n);
 
 function pkarr(): string {
+	if (!__DATUM_TEST_LEVERS__) return PKARR;
 	try {
 		return localStorage.getItem('datum.pkarrRelay') ?? PKARR;
 	} catch {

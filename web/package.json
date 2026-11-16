@@ -13,7 +13,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "precheck:watch": "node scripts/ensure-wasm.mjs",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "pretest": "pnpm run build",
+    "pretest": "DATUM_TEST_LEVERS=1 pnpm run build",
     "test": "node scripts/test.mjs",
     "test:fixtures": "node scripts/capture-cli-fixtures.mjs",
     "build:cli-wasm": "node scripts/build-cli-wasm.mjs"

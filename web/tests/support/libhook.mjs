@@ -25,8 +25,10 @@ import { registerHooks } from 'node:module';
 const EMPTY_MODULE = 'data:text/javascript,export default {}';
 const APP_ENV = 'data:text/javascript,export const browser = false';
 
-/** Register the resolve hook. */
+/** Register the resolve hook, and define what vite defines for a test build:
+ * `__DATUM_TEST_LEVERS__`, so sync's levers read here as in `pnpm test`'s build (da-ha2pe). */
 export function resolveLibAsSource() {
+	globalThis.__DATUM_TEST_LEVERS__ = true;
 	registerHooks({
 		resolve(specifier, context, next) {
 			if (specifier.endsWith('.svelte')) return { url: EMPTY_MODULE, shortCircuit: true };

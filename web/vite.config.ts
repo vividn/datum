@@ -142,7 +142,10 @@ function repoKitFiles(): Plugin {
 export default defineConfig({
 	define: {
 		__DATUM_VERSION__: JSON.stringify(build.version),
-		__DATUM_COMMIT__: JSON.stringify(build.commit)
+		__DATUM_COMMIT__: JSON.stringify(build.commit),
+		// A build made for tests, `pnpm test`'s: only it reads sync's test levers
+		// from localStorage (da-ha2pe). A build-time constant, which no storage sets.
+		__DATUM_TEST_LEVERS__: JSON.stringify(process.env.DATUM_TEST_LEVERS === '1')
 	},
 	plugins: [
 		sveltekit({
