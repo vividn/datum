@@ -800,11 +800,13 @@ one `refused:<endpoint>` per device however many ops, gone once the chain admits
 it. `integrity_warnings` holds timeline problems alone, and `check` derives each
 finding's domain and category from its source (`Source` in `check.rs`), so a
 sync finding cannot print as `integrity_*`.
-So is an op whose row this copy's write check refuses (a spec it cannot read, an
-attachment whose bytes are not its name's): refused alone, the rest of its batch
-landing, one `unwritten:<endpoint>` naming the check, and tried again once
-another build runs the copy (`_meta` `sync_unwritten_by`, da-xjfol). The
-database's own failure still aborts the receive.
+So is an op whose row this copy does not write (a spec it cannot read, an
+attachment whose bytes are not its name's, a following state with no duration):
+refused alone, the rest of its batch landing, one `unwritten:<endpoint>` naming
+why, and tried again once another build runs the copy (`_meta`
+`sync_unwritten_by`, da-xjfol). Only the moment's failure aborts the receive, to
+be tried again whole: the lock, the disk, memory, the file (`of_the_moment` in
+`db/sync.rs`, da-tk8g3).
 
 ### Filtered readers
 

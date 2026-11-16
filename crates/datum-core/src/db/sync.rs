@@ -96,6 +96,7 @@ mod ops_io;
 mod pause;
 pub mod peers;
 mod refold;
+mod refused;
 mod rejoin;
 pub mod status;
 mod summed;
@@ -107,6 +108,8 @@ use chain::{Chain, Filter, CHAIN_HID};
 pub use debug::DebugConflicts;
 pub use diagnose::{row_diff, FoldCheck, Named, Orphan, Stale};
 pub use join::PendingJoin;
+pub(crate) use refused::UNWRITTEN;
+use refused::{of_the_moment, refuse, UNWRITTEN_BY};
 pub use rejoin::Reentry;
 pub use status::Apart;
 use summed::{add, summed};
@@ -2035,13 +2038,25 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
                                 let post = fetch_by_hid(conn, &op.hid)?;
                                 crate::integrity::moved(pre.as_ref(), post.as_ref());
                             }
-                            // A row this copy's write check refuses (a spec
-                            // it cannot read, an attachment whose bytes are
-                            // not its name's) is refused alone, and the rest
-                            // of the batch goes on (da-xjfol): aborting the
-                            // receive stalled every later op of its sender.
-                            // Any other failure still aborts.
-                            Err(DatumError::RowRefused(why)) => {
+                            // The moment's failure (the lock, the disk)
+                            // aborts, for the receive to be tried again whole.
+                            Err(e) if of_the_moment(&e) => return Err(e),
+                            // Any other is the row's: one this copy's write
+                            // check refuses (a spec it cannot read, an
+                            // attachment whose bytes are not its name's), a
+                            // following state with no duration, a fold serde
+                            // cannot read. It is refused alone, as
+                            // UNWRITTEN whatever its cause, and the rest
+                            // of the batch goes on (da-xjfol, da-tk8g3):
+                            // aborting stalled every later op of its sender.
+                            // A kit index's error never reaches here: the
+                            // index is dropped and the write retried
+                            // (`past_kit_indexes`, da-9uvmk).
+                            Err(e) => {
+                                let why = match e {
+                                    DatumError::RowRefused(why) => why,
+                                    e => e.to_string(),
+                                };
                                 refuse(conn, &chain, op, &format!("its row: {why}"), UNWRITTEN, s)?;
                                 conn.execute(
                                     "INSERT INTO _meta (key, value) VALUES (?1, ?2)
@@ -2049,7 +2064,6 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
                                     params![UNWRITTEN_BY, crate::migrations::said_build()],
                                 )?;
                             }
-                            Err(e) => return Err(e),
                         }
                     }
                     Err(why) => refuse(conn, &chain, op, &why, "refused", s)?,
@@ -2109,74 +2123,11 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
     Ok(())
 }
 
-/// The notice kind of an op whose row this copy's write check refused.
-pub(crate) const UNWRITTEN: &str = "unwritten";
-
-/// The `_meta` key naming the build that last refused an op's row.
-const UNWRITTEN_BY: &str = "sync_unwritten_by";
-
 fn waiting_ops(conn: &Connection) -> Result<Vec<Op>> {
     conn.prepare_cached("SELECT body FROM ops WHERE applied = 0")?
         .query_map([], |r| r.get::<_, String>(0))?
         .map(|b| Op::parse(&b?))
         .collect()
-}
-
-/// Refuse an op the chain does not allow, or whose row this copy's write
-/// check refuses: it is kept, applied = 2, so it is not asked for again,
-/// and a membership that later allows it lets it wait again
-/// ([`reconsider`]), as does another build for a row ([`settle`]). The
-/// first refused of an endpoint files its sync notice of `kind`, `refused`
-/// (da-0c2ne) or [`UNWRITTEN`], which `datum sync chain ack` settles — but
-/// for a purged endpoint's, set aside on purpose (da-ry11c).
-fn refuse(
-    conn: &Connection,
-    chain: &Chain,
-    op: &Op,
-    why: &str,
-    kind: &str,
-    s: &mut ApplySummary,
-) -> Result<()> {
-    conn.execute(
-        "UPDATE ops SET applied = 2 WHERE endpoint = ?1 AND seq = ?2",
-        params![op.endpoint, op.seq],
-    )?;
-    // An op refused again in one settle (a row's, tried again after each
-    // record) is said once; a chain's refusal never repeats there.
-    let line = format!("{}/{}: {why}", op.endpoint, op.seq);
-    if !s.refused.contains(&line) {
-        s.refused.push(line);
-    }
-    let member = chain.member(&op.endpoint);
-    // A purged endpoint's refusals are on purpose, and warn of nothing.
-    if member.is_some_and(|m| m.purged.is_some()) {
-        return Ok(());
-    }
-    // An agent's copy a later restore replaced, writing after it: its code is
-    // in use in two places (da-wtdw8), which says more than a refusal.
-    let revoked = member.and_then(|m| m.revoked.as_deref());
-    let after = revoked.is_some_and(|r| r <= op.hlc.as_str());
-    if kind == "refused"
-        && after
-        && chain::in_use_twice(conn, chain, &op.endpoint, chain::hlc_time(&op.hlc))?
-    {
-        return Ok(());
-    }
-    // A device outside the chain has no label in it: the host it says it is.
-    let host = op.origin.as_ref().and_then(|o| o["host"].as_str());
-    let label = member.map_or(host.unwrap_or(&op.endpoint[..10]), |m| &m.label);
-    conn.prepare_cached(
-        "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via)
-         VALUES (?1, ?5, ?2, ?3, ?4)",
-    )?
-    .execute(params![
-        format!("{kind}:{}", op.endpoint),
-        label,
-        chain::hlc_time(&op.hlc),
-        why,
-        kind
-    ])?;
-    Ok(())
 }
 
 /// The refused ops `chain` allows wait again.

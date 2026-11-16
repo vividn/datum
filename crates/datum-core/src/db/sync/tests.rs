@@ -605,3 +605,43 @@ fn an_old_ops_names_read_as_todays() {
     assert_eq!(content(&row("%occur_time%")), content(&row("%at%")));
     assert_ne!(content(&row("%pr%:%occur_time%")), content(&row("%at%")));
 }
+
+/// Only the moment's failure aborts a receive; any other error writing an
+/// op's row is that row's, refused alone (da-tk8g3). An extended code reads
+/// as its primary.
+#[test]
+fn only_the_moments_failure_aborts_a_receive() {
+    let sqlite = |code| {
+        DatumError::Db(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(code),
+            None,
+        ))
+    };
+    for code in [
+        rusqlite::ffi::SQLITE_BUSY,
+        rusqlite::ffi::SQLITE_LOCKED,
+        rusqlite::ffi::SQLITE_IOERR_WRITE,
+        rusqlite::ffi::SQLITE_FULL,
+        rusqlite::ffi::SQLITE_NOMEM,
+        rusqlite::ffi::SQLITE_READONLY,
+        rusqlite::ffi::SQLITE_INTERRUPT,
+        rusqlite::ffi::SQLITE_CORRUPT,
+        rusqlite::ffi::SQLITE_NOTADB,
+        rusqlite::ffi::SQLITE_CANTOPEN,
+        rusqlite::ffi::SQLITE_PROTOCOL,
+    ] {
+        assert!(of_the_moment(&sqlite(code)), "{code}");
+    }
+    assert!(of_the_moment(&DatumError::Io(std::io::Error::other(
+        "disk"
+    ))));
+    for row in [
+        sqlite(rusqlite::ffi::SQLITE_CONSTRAINT_CHECK),
+        sqlite(rusqlite::ffi::SQLITE_ERROR),
+        DatumError::Other("following_state requires a duration when state is set".into()),
+        DatumError::from(serde_json::from_str::<u8>("x").unwrap_err()),
+        DatumError::RowRefused("its name and type are not its bytes'".into()),
+    ] {
+        assert!(!of_the_moment(&row), "{row}");
+    }
+}
