@@ -725,14 +725,15 @@
 	 * (da-j6frl), while `still()` says they are still wanted. The place is
 	 * the one before the first, so a scroll offset's rounding is not
 	 * carried on — unless the body was resized meanwhile, which chose a
-	 * place of its own (da-vcdil). `homing`: a reader at the default view
-	 * is kept there.
+	 * place of its own (da-vcdil), or the reader scrolled it, whose place
+	 * that is (da-8822s). `homing`: a reader at the default view is kept
+	 * there.
 	 */
 	async function lay(fresh: Shown[], down: boolean, still: () => boolean, homing = false): Promise<void> {
-		let a = anchor(), sized = resizes;
+		let a = anchor(), sized = resizes, put = scroller?.scrollTop;
 		for (let done = 0; done < fresh.length; done += DRAW) {
 			if (!still()) return;
-			if (sized !== resizes) [a, sized] = [anchor(), resizes];
+			if (sized !== resizes || scroller?.scrollTop !== put) [a, sized] = [anchor(), resizes];
 			const homed = homing && atHome();
 			const end = fresh.length - done;
 			rows = down
@@ -751,6 +752,7 @@
 				home();
 				a = anchor();
 			} else await keep(a);
+			put = scroller?.scrollTop;
 			if (done + DRAW < fresh.length) await new Promise((resolve) => setTimeout(resolve));
 		}
 	}

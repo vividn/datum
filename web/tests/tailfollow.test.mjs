@@ -273,7 +273,9 @@ describe('the tail resized keeps its place', () => {
 
 	// Scrolled that far up, the page above is asked for, and lands a chunk a
 	// task: a resize between two chunks once had the next put back the place
-	// from before the resize, the top row, as on a loaded CI runner.
+	// from before the resize, the top row, as on a loaded CI runner; and the
+	// scroll itself, landing between two chunks of the rows laid above the
+	// first screen, once had the next put the pane back at now (da-8822s).
 	test('resized while the page above lands, the middle row stays in the middle', async () => {
 		await APP.solo(async (app) => {
 			const { page } = app;
