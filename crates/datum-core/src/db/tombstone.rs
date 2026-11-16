@@ -39,15 +39,14 @@ impl Db {
             // stored hash disagrees with `expected_content_hash` forever after.
             let mut live = pre.clone();
             live.deleted_at = None;
-            tx.execute(
-                "UPDATE entries SET deleted_at = NULL, modify_time = ?2, content_hash = ?3
-             WHERE hid = ?1",
-                params![
-                    pre.hid,
-                    Utc::now().to_rfc3339(),
-                    live.expected_content_hash()
-                ],
-            )?;
+            let (now, hash) = (Utc::now().to_rfc3339(), live.expected_content_hash());
+            super::past_kit_indexes(tx, || {
+                tx.execute(
+                    "UPDATE entries SET deleted_at = NULL, modify_time = ?2, content_hash = ?3
+                 WHERE hid = ?1",
+                    params![pre.hid, now, hash],
+                )
+            })?;
             super::sync::emit(tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)
         })
     }
@@ -296,16 +295,15 @@ pub fn soft_delete_in_tx(
             }
         }
     }
-    conn.execute(
-        "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3, data = ?4
-         WHERE hid = ?2",
-        params![
-            now.to_rfc3339(),
-            pre.hid,
-            dead.expected_content_hash(),
-            dead.data.as_ref().map(|v| v.to_string())
-        ],
-    )?;
+    let (when, hash) = (now.to_rfc3339(), dead.expected_content_hash());
+    let data = dead.data.as_ref().map(|v| v.to_string());
+    super::past_kit_indexes(conn, || {
+        conn.execute(
+            "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3, data = ?4
+             WHERE hid = ?2",
+            params![when, pre.hid, hash, data],
+        )
+    })?;
     super::sync::emit(conn, Some(&pre), &pre.hid, kind)?;
     Ok(dead)
 }

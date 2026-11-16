@@ -108,8 +108,8 @@ fn viewing<T, E: From<DatumError>>(
 
 fn apply(tx: &Connection, batch: &WriteBatch) -> Result<()> {
     for (sql, params) in &batch.statements {
-        tx.prepare_cached(sql)?
-            .execute(rusqlite::params_from_iter(params))?;
+        let mut stmt = tx.prepare_cached(sql)?;
+        super::past_kit_indexes(tx, || stmt.execute(rusqlite::params_from_iter(params)))?;
     }
     Ok(())
 }

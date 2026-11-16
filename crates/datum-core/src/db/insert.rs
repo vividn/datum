@@ -205,10 +205,12 @@ impl Db {
     /// not slug: a keep-both pair shares its slug (da-3qvnq). Errors
     /// [`DatumError::NotFound`] when the hid doesn't match.
     pub fn set_entry_verb(&self, hid: &str, verb: &str) -> Result<()> {
-        let affected = self.conn.execute(
-            "UPDATE entries SET verb = ?2 WHERE hid = ?1",
-            params![hid, verb],
-        )?;
+        let affected = super::past_kit_indexes(&self.conn, || {
+            self.conn.execute(
+                "UPDATE entries SET verb = ?2 WHERE hid = ?1",
+                params![hid, verb],
+            )
+        })?;
         if affected == 0 {
             return Err(DatumError::NotFound(hid.to_string()));
         }
@@ -225,10 +227,12 @@ impl Db {
     /// editable data. Errors [`DatumError::NotFound`] when the hid
     /// doesn't match a row.
     pub fn set_entry_content_hash(&self, hid: &str, content_hash: &str) -> Result<()> {
-        let affected = self.conn.execute(
-            "UPDATE entries SET content_hash = ?2 WHERE hid = ?1",
-            params![hid, content_hash],
-        )?;
+        let affected = super::past_kit_indexes(&self.conn, || {
+            self.conn.execute(
+                "UPDATE entries SET content_hash = ?2 WHERE hid = ?1",
+                params![hid, content_hash],
+            )
+        })?;
         if affected == 0 {
             return Err(DatumError::NotFound(hid.to_string()));
         }
@@ -429,10 +433,12 @@ impl Db {
                     }
                     Some(pre) => {
                         history::record(tx, &pre, ChangeKind::UserEdit)?;
-                        tx.execute(
-                            "UPDATE entries SET deleted_at = NULL, slug = ?2 WHERE hid = ?1",
-                            params![entry.hid, entry.slug],
-                        )
+                        super::past_kit_indexes(tx, || {
+                            tx.execute(
+                                "UPDATE entries SET deleted_at = NULL, slug = ?2 WHERE hid = ?1",
+                                params![entry.hid, entry.slug],
+                            )
+                        })
                         .map_err(|e| match collision_kind(&e) {
                             Some(CollisionKind::Slug) => DatumError::Duplicate(format!(
                                 "Cannot restore {} to {}: another entry holds that slug",
@@ -796,11 +802,10 @@ pub(super) fn save_existing_entry_with_kind_in_tx(
     // write too: `retime -z` drops a zone's `tz_from` (da-n79py). Only when
     // it moved: every write to `entries` runs its triggers.
     if entry.extra_metadata != pre.extra_metadata {
-        conn.prepare_cached("UPDATE entries SET extra_metadata = ?2 WHERE hid = ?1")?
-            .execute(params![
-                pre.hid,
-                entry.extra_metadata.as_ref().map(|v| v.to_string())
-            ])?;
+        let mut stmt =
+            conn.prepare_cached("UPDATE entries SET extra_metadata = ?2 WHERE hid = ?1")?;
+        let meta = entry.extra_metadata.as_ref().map(|v| v.to_string());
+        super::past_kit_indexes(conn, || stmt.execute(params![pre.hid, meta]))?;
     }
     super::sync::emit(conn, Some(&pre), &pre.hid, change_kind)
 }
@@ -1134,10 +1139,12 @@ fn write_entry_in_tx(
                 // Clear the tombstone first, keyed on the retained hid, then
                 // overwrite the now-live row's mutable columns with the new
                 // content. The hid carries over so history/undo stay linked.
-                conn.execute(
-                    "UPDATE entries SET deleted_at = NULL WHERE hid = ?1",
-                    params![ghost.hid],
-                )?;
+                super::past_kit_indexes(conn, || {
+                    conn.execute(
+                        "UPDATE entries SET deleted_at = NULL WHERE hid = ?1",
+                        params![ghost.hid],
+                    )
+                })?;
                 raw_overwrite_mutables(conn, &ghost.hid, &entry.slug, entry, None)?;
                 super::sync::emit(conn, Some(&ghost), &ghost.hid, ChangeKind::UserEdit)?;
                 let revived = fetch_entry_any(conn, &ghost.hid.0)?;
@@ -1643,7 +1650,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.superseded_by,
         history::writing(),
     ];
-    stmt.execute(&all[..n])?;
+    super::past_kit_indexes(conn, || stmt.execute(&all[..n]))?;
     Ok(())
 }
 
@@ -1709,7 +1716,7 @@ fn raw_overwrite_mutables(
         data_value,
     );
 
-    conn.prepare_cached(
+    let mut stmt = conn.prepare_cached(
         r#"UPDATE entries SET
             content_hash = ?2,
             field = ?3,
@@ -1735,8 +1742,8 @@ fn raw_overwrite_mutables(
             id_structure = ?23,
             field_structure = ?24
            WHERE hid = ?1"#,
-    )?
-    .execute(params![
+    )?;
+    let p = params![
         hid,
         content_hash,
         entry.field,
@@ -1769,7 +1776,8 @@ fn raw_overwrite_mutables(
             .map(|v| v.to_string()),
         entry.id_structure.as_deref(),
         entry.field_structure.as_deref(),
-    ])?;
+    ];
+    super::past_kit_indexes(conn, || stmt.execute(p))?;
     Ok(())
 }
 
@@ -1826,7 +1834,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
             extra_metadata = ?26
            WHERE hid = ?1"#,
     )?;
-    let affected = stmt.execute(params![
+    let p = params![
         entry.hid,
         entry.slug,
         content_hash,
@@ -1861,7 +1869,8 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
             .as_ref()
             .map(|v| v.to_string()),
         entry.extra_metadata.as_ref().map(|v| v.to_string()),
-    ])?;
+    ];
+    let affected = super::past_kit_indexes(conn, || stmt.execute(p))?;
     if affected == 0 {
         return Err(DatumError::NotFound(entry.hid.to_string()));
     }
@@ -1911,9 +1920,8 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         entry.data.as_ref(),
     );
 
-    let affected = conn
-        .prepare_cached(
-            r#"UPDATE entries SET
+    let mut stmt = conn.prepare_cached(
+        r#"UPDATE entries SET
             content_hash = ?2,
             field = ?3,
             verb = ?4,
@@ -1941,44 +1949,45 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             extra_metadata = ?26,
             slug = ?27
            WHERE hid = ?1"#,
-        )?
-        .execute(params![
-            entry.hid,
-            content_hash,
-            entry.field,
-            verb_str,
-            state_str,
-            entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
-            entry.following_state.as_ref().map(|v| v.to_string()),
-            entry.data.as_ref().map(|v| v.to_string()),
-            occur_str,
-            occur_offset,
-            occur_tz,
-            entry.at_uncertainty(),
-            entry.dur_uncertainty(),
-            entry.lat,
-            entry.lon,
-            entry.location.as_deref(),
-            entry.modify_time.to_rfc3339(),
-            entry.client_id,
-            entry.deleted_at.map(|t| t.to_rfc3339()),
-            entry.id_structure.as_deref(),
-            entry.field_structure.as_deref(),
-            // §5 #11: nullable in the type, written as empty-string when None
-            // so the bind round-trips against historical NOT NULL versions of
-            // the column during a migration walk (m31→m32 relaxes the
-            // constraint, but earlier migrations still see the old shape).
-            // The row mapper restores None on read.
-            entry.raw_input.as_deref().unwrap_or(""),
-            entry.alias_chain.as_ref().map(|v| v.to_string()),
-            entry.parser_version,
-            entry
-                .user_asserted_last_state
-                .as_ref()
-                .map(|v| v.to_string()),
-            entry.extra_metadata.as_ref().map(|v| v.to_string()),
-            entry.slug,
-        ])?;
+    )?;
+    let p = params![
+        entry.hid,
+        content_hash,
+        entry.field,
+        verb_str,
+        state_str,
+        entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
+        entry.following_state.as_ref().map(|v| v.to_string()),
+        entry.data.as_ref().map(|v| v.to_string()),
+        occur_str,
+        occur_offset,
+        occur_tz,
+        entry.at_uncertainty(),
+        entry.dur_uncertainty(),
+        entry.lat,
+        entry.lon,
+        entry.location.as_deref(),
+        entry.modify_time.to_rfc3339(),
+        entry.client_id,
+        entry.deleted_at.map(|t| t.to_rfc3339()),
+        entry.id_structure.as_deref(),
+        entry.field_structure.as_deref(),
+        // §5 #11: nullable in the type, written as empty-string when None
+        // so the bind round-trips against historical NOT NULL versions of
+        // the column during a migration walk (m31→m32 relaxes the
+        // constraint, but earlier migrations still see the old shape).
+        // The row mapper restores None on read.
+        entry.raw_input.as_deref().unwrap_or(""),
+        entry.alias_chain.as_ref().map(|v| v.to_string()),
+        entry.parser_version,
+        entry
+            .user_asserted_last_state
+            .as_ref()
+            .map(|v| v.to_string()),
+        entry.extra_metadata.as_ref().map(|v| v.to_string()),
+        entry.slug,
+    ];
+    let affected = super::past_kit_indexes(conn, || stmt.execute(p))?;
     if affected == 0 {
         return Err(DatumError::NotFound(entry.hid.to_string()));
     }

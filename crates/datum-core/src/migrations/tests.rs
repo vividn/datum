@@ -1303,7 +1303,7 @@ fn v40_reads_an_index_back_out_of_its_ddl() {
         index("\"a)b\", [c)d], `e)f`", None, false),
         index(
             "lower(field), (occur_time)",
-            Some("field IN ('x)', (SELECT 1))"),
+            Some("field IN ('x)', (1))"),
             false,
         ),
     ] {

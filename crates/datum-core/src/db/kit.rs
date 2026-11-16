@@ -556,6 +556,77 @@ impl Db {
     }
 }
 
+/// The kit indexes this process dropped because one refused a write, as
+/// `(SQLite name, why)`, until [`take_dropped_kit_indexes`] (da-9uvmk).
+static DROPPED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// What [`past_kit_indexes`] dropped since it was last asked: the CLI says
+/// each on stderr as a command ends.
+pub fn take_dropped_kit_indexes() -> Vec<(String, String)> {
+    std::mem::take(&mut DROPPED.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// `write`, one statement writing `entries`, run past any kit index that
+/// refuses it (da-9uvmk). An index is this device's, not the data's: one
+/// that will not build is no reason not to open, and one whose expression
+/// errors on a row (an overflow, malformed JSON) is no reason not to write
+/// it, locally or on a sync's apply. So where `write` fails with SQLite's
+/// own error while a kit index is built, every kit index is dropped and
+/// `write` runs again; once it lands each is built again, and one that will
+/// not build over the row now there is the one that refused it: left
+/// dropped, kept for [`take_dropped_kit_indexes`], and named by `datum
+/// check` as an index that does not build. Failing again, the indexes are
+/// put back and the first error stands: it was no index's.
+pub(crate) fn past_kit_indexes<T>(
+    conn: &rusqlite::Connection,
+    mut write: impl FnMut() -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    use rusqlite::ErrorCode::{TooBig, Unknown};
+    let err = match write() {
+        Err(e) if matches!(e.sqlite_error_code(), Some(Unknown | TooBig)) => e,
+        done => return done,
+    };
+    let built: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT name, sql FROM sqlite_master
+             WHERE type = 'index' AND tbl_name = 'entries' AND name LIKE 'kit!_%' ESCAPE '!'",
+        )?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    if built.is_empty() {
+        return Err(err);
+    }
+    conn.execute_batch("SAVEPOINT past_kit_indexes")?;
+    let past = (|| {
+        for (name, _) in &built {
+            run_kit_ddl(conn, &format!("DROP INDEX \"{name}\""))?;
+        }
+        let out = write()?;
+        let refused: Vec<(String, String)> = built
+            .iter()
+            .filter_map(|(name, sql)| {
+                let e = run_kit_ddl(conn, sql).err()?;
+                Some((name.clone(), e.to_string()))
+            })
+            .collect();
+        Ok::<_, rusqlite::Error>((out, refused))
+    })();
+    match past {
+        Ok((out, refused)) => {
+            conn.execute_batch("RELEASE past_kit_indexes")?;
+            DROPPED
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend(refused);
+            Ok(out)
+        }
+        Err(_) => {
+            conn.execute_batch("ROLLBACK TO past_kit_indexes; RELEASE past_kit_indexes")?;
+            Err(err)
+        }
+    }
+}
+
 /// Runs one statement of a kit index's DDL. A kit is third-party content, so
 /// a string holding a second statement is refused rather than run, whatever
 /// `IndexEntry::build_ddl` let through (da-xpbah).

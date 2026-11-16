@@ -71,10 +71,12 @@ pub(super) fn without(conn: &Connection, hids: BTreeSet<String>) -> Result<()> {
                     f.superseded_by = None;
                     let own = own(conn, &f)?;
                     write_merged(conn, Some(&f), own, ChangeKind::SyncMerge)?;
-                    conn.execute(
-                        "UPDATE entries SET superseded_by = NULL WHERE hid = ?1 AND superseded_by = ?2",
-                        params![f.hid, hid],
-                    )?;
+                    super::super::past_kit_indexes(conn, || {
+                        conn.execute(
+                            "UPDATE entries SET superseded_by = NULL WHERE hid = ?1 AND superseded_by = ?2",
+                            params![f.hid, hid],
+                        )
+                    })?;
                 }
                 if let Some(kept) = &pre.superseded_by {
                     touched.push(kept.0.clone());

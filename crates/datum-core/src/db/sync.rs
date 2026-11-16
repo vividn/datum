@@ -85,7 +85,7 @@ use crate::migrations::{peek_schema_version, CURRENT_SCHEMA_VERSION};
 use super::insert::{apply_entry_state, try_insert};
 use super::row_mapper::row_to_entry;
 use super::spec::{SPEC_FIELD, SPEC_KIT_KEY};
-use super::{Db, WriteBatch};
+use super::{past_kit_indexes, Db, WriteBatch};
 
 pub mod account;
 pub mod chain;
@@ -1359,7 +1359,8 @@ fn refresh_conflicts(conn: &Connection, hid: &str) -> Result<bool> {
     let mut new = false;
     for e in rows {
         let found = conflicts_of(conn, &e)?.map(|c| canonical_json(&c));
-        new |= write.execute(params![e.hid, found])? > 0 && found.is_some();
+        new |=
+            past_kit_indexes(conn, || write.execute(params![e.hid, found]))? > 0 && found.is_some();
     }
     Ok(new)
 }
@@ -1877,7 +1878,7 @@ fn write_merged(
         for b in found {
             if rank(&next)? < rank(&b)? {
                 history::record(conn, &b, kind)?;
-                conn.execute(repoint, params![b.hid, next.hid])?;
+                past_kit_indexes(conn, || conn.execute(repoint, params![b.hid, next.hid]))?;
                 demoted.push(b.hid.0);
             } else if next.superseded_by.is_none() {
                 // A row older than its ops is signed as it stands before
@@ -1885,7 +1886,7 @@ fn write_merged(
                 if !has_ops(conn, &b.hid)? && read_only(conn, &endpoint(conn)?)?.is_none() {
                     push_entry(conn, &endpoint(conn)?, &b, "baseline", create_effect(&b))?;
                 }
-                conn.execute(repoint, params![next.hid, b.hid])?;
+                past_kit_indexes(conn, || conn.execute(repoint, params![next.hid, b.hid]))?;
                 next.superseded_by = Some(b.hid.clone());
             }
         }
@@ -1900,10 +1901,12 @@ fn write_merged(
     match pre {
         Some(pre) => {
             if pre.superseded_by != next.superseded_by {
-                conn.execute(
-                    "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1",
-                    params![next.hid, next.superseded_by],
-                )?;
+                past_kit_indexes(conn, || {
+                    conn.execute(
+                        "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1",
+                        params![next.hid, next.superseded_by],
+                    )
+                })?;
             }
             // Bookkeeping alone is no change of content, and no history.
             if row(pre) != row(&next) {

@@ -282,7 +282,8 @@ fn insert(
         change_kind.as_str(),
         author,
     ];
-    stmt.execute(&all[..n])?;
+    // Its trigger writes the entry's `author` (`entry_author.sql`).
+    crate::db::past_kit_indexes(executor, || stmt.execute(&all[..n]))?;
     Ok(())
 }
 

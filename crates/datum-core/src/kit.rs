@@ -1227,9 +1227,8 @@ pub const ALLOWED_INDEX_TABLES: &[&str] = &["entries"];
 
 /// SQL keywords that have no business appearing inside a kit's index
 /// expression or WHERE clause. The validator rejects any of these as a
-/// whole-word match (case-insensitive). Note that `SELECT`/`FROM` are
-/// allowed: the bead's own design example uses a `field IN (SELECT …
-/// FROM … WHERE …)` partial-index predicate.
+/// whole-word match (case-insensitive). `SELECT` is refused apart, with
+/// SQLite's reason: it builds no index holding a subquery (da-9uvmk).
 const FORBIDDEN_DDL_KEYWORDS: &[&str] = &[
     "ATTACH",
     "DETACH",
@@ -1288,6 +1287,18 @@ pub fn validate_index_entry(entry: &IndexEntry) -> Result<()> {
     )?;
     if let Some(w) = &entry.where_clause {
         validate_sql_fragment(&format!("kit index '{}' where", entry.name), w)?;
+    }
+    // SQLite refuses a subquery in an index's expression and in a partial
+    // index's WHERE, so a kit naming one would never build (da-9uvmk).
+    for part in std::iter::once(&entry.expression).chain(&entry.where_clause) {
+        let code = code_outside_quotes(part).unwrap_or_default();
+        if contains_word(&code.to_ascii_uppercase(), "SELECT", false) {
+            return Err(DatumError::Other(format!(
+                "kit index '{}': a subquery (SELECT) is not allowed: SQLite builds no \
+                 index holding one",
+                entry.name
+            )));
+        }
     }
     if entry.unique {
         return Err(DatumError::Other(format!(
@@ -1921,7 +1932,7 @@ name = "chores"
 name = "chore_next_due"
 on = "entries"
 expression = "COALESCE(json_extract(data,'$.next_time'), start_time)"
-where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
+where = "field = 'chore'"
 "##;
         let kit = KitToml::from_str(src).unwrap();
         assert_eq!(kit.indices.len(), 1);
@@ -1929,7 +1940,7 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
         assert_eq!(i.name, "chore_next_due");
         assert_eq!(i.on, "entries");
         assert!(!i.unique);
-        assert!(i.where_clause.as_deref().unwrap().contains("field_specs"));
+        assert_eq!(i.where_clause.as_deref(), Some("field = 'chore'"));
     }
 
     #[test]
@@ -2044,11 +2055,10 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
     }
 
     #[test]
-    fn allows_select_subquery_in_where() {
-        // SELECT/FROM are deliberately *not* on the blocklist so the
-        // bead's own design example (chore-tracking partial index)
-        // remains expressible.
-        let entry = IndexEntry {
+    fn refuses_a_subquery_which_sqlite_never_builds() {
+        // SQLite: «subqueries prohibited in partial index WHERE clauses»,
+        // and in index expressions alike (da-9uvmk).
+        let mut entry = IndexEntry {
             name: "chore_next_due".into(),
             on: "entries".into(),
             expression: "COALESCE(json_extract(data,'$.next_time'), start_time)".into(),
@@ -2057,7 +2067,13 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
             ),
             unique: false,
         };
+        let err = entry.build_ddl("chores").unwrap_err().to_string();
+        assert!(err.contains("subquery"), "msg = {err}");
+        entry.where_clause = Some("json_extract(data, '$.select') = 'x'".into());
         entry.build_ddl("chores").unwrap();
+        entry.expression = "(SELECT 1)".into();
+        let err = entry.build_ddl("chores").unwrap_err().to_string();
+        assert!(err.contains("subquery"), "msg = {err}");
     }
 
     #[test]

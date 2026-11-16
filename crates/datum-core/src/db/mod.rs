@@ -119,7 +119,10 @@ pub use definition::{
     KIT_FIELD, SETTINGS, SETTING_FIELD, VIEW_FIELD,
 };
 pub use holder::lock_holder;
-pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
+pub(crate) use kit::past_kit_indexes;
+pub use kit::{
+    take_dropped_kit_indexes, InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome,
+};
 pub use kit_command::{
     validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,
 };

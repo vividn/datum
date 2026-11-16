@@ -456,6 +456,9 @@ pub const EXIT_UNANSWERED: i32 = 12;
 /// The exit code of a command that ended in `result`, its error printed: the
 /// binary's, and each of datum.day's commands' ([`reactor`]).
 pub fn exit_code(result: Result<()>) -> i32 {
+    for (index, why) in datum_core::db::take_dropped_kit_indexes() {
+        eprintln!("warning: kit index {index} refused a write ({why}): dropped, and the write landed; `datum check` names it until the kit is fixed or uninstalled");
+    }
     match result {
         Ok(()) if args::took_duplicate_noop() => EXIT_DUPLICATE,
         Ok(()) => 0,
