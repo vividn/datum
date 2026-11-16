@@ -389,8 +389,17 @@ fn read_row(
     };
     entry.modify_time = entry.create_time;
     entry.slug = build_slug(&entry.field, entry.at.as_ref(), &entry.create_time);
-    entry.lat = number("lat")?;
-    entry.lon = number("lon")?;
+    // A place on Earth (da-qpuh8). A number a float cannot hold exactly is
+    // past 2^53, far outside both, so none is stored rounded either.
+    let degrees = |k: &str, most: f64| -> Result<Option<f64>> {
+        let n = number(k)?;
+        if let Some(v) = get(k).filter(|_| n.is_some_and(|n| !(-most..=most).contains(&n))) {
+            bail!("`{k}` is {v}, outside -{most}…{most}");
+        }
+        Ok(n)
+    };
+    entry.lat = degrees("lat", 90.0)?;
+    entry.lon = degrees("lon", 180.0)?;
     entry.location = text("location")?;
     entry.raw_input = text("raw_input")?;
     entry.field_structure = text("field_structure")?;

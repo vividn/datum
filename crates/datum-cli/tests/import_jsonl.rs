@@ -383,3 +383,74 @@ fn a_csv_row_without_at_is_refused_by_its_line_and_nothing_is_written() {
     assert!(!err.contains("line 2:"), "{err}");
     assert_eq!(env.export("a"), "");
 }
+
+/// da-qpuh8: an entry's `lat` and `lon` are a place on Earth, so a latitude
+/// past ±90 or a longitude past ±180 is refused by its line, in a CSV and in
+/// JSONL alike; a number past 2^53, which a float would round, is far past
+/// both.
+#[test]
+fn a_lat_or_lon_off_the_earth_is_refused_by_its_line() {
+    let env = Env::new();
+    let bad = [
+        ("1000", ""),
+        ("-91", ""),
+        ("", "181"),
+        ("", "-500"),
+        ("9007199254740993", ""),
+    ];
+    let good = [("52.52", ""), ("", "13.405"), ("-0", ""), ("90", "-180")];
+    let rows = || bad.iter().chain(&good).enumerate();
+    let json = |(i, (lat, lon)): (usize, &(&str, &str))| {
+        let mut row = serde_json::json!({"field": "p", "at": format!("2026-11-10 0{i}:00")});
+        for (k, v) in [("lat", lat), ("lon", lon)] {
+            if !v.is_empty() {
+                row[k] = serde_json::from_str(v).unwrap();
+            }
+        }
+        row.to_string()
+    };
+    let jsonl: Vec<String> = rows().map(json).collect();
+    let jsonl: Vec<&str> = jsonl.iter().map(String::as_str).collect();
+    let csv: String = rows()
+        .map(|(i, (lat, lon))| format!("p,2026-11-10 0{i}:00,{lat},{lon}\n"))
+        .collect();
+    let csv = format!("field,at,lat,lon\n{csv}");
+    let csv = csv.replacen(",52.52,", ", 52.52 ,", 1);
+
+    for (db, out, first) in [
+        ("a", env.import("a", &jsonl, &["--allow-partial"]), 1),
+        ("b", import_csv(&env, "b", &csv, &["--allow-partial"]), 2),
+    ] {
+        assert_eq!(out.status.code(), Some(1), "{db}");
+        let err = text(&out.stderr);
+        for (i, (lat, lon)) in bad.iter().enumerate() {
+            let (k, v) = if lat.is_empty() {
+                ("lon", lon)
+            } else {
+                ("lat", lat)
+            };
+            let said = format!("line {}: `{k}` is {v}, outside", first + i);
+            assert!(err.contains(&said), "{db}: {said}\n{err}");
+        }
+        let kept: Vec<(serde_json::Value, serde_json::Value)> = env
+            .export(db)
+            .lines()
+            .map(|l| {
+                let r: serde_json::Value = serde_json::from_str(l).unwrap();
+                (r["lat"].clone(), r["lon"].clone())
+            })
+            .collect();
+        use serde_json::json;
+        let null = serde_json::Value::Null;
+        assert_eq!(
+            kept,
+            [
+                (json!(52.52), null.clone()),
+                (null.clone(), json!(13.405)),
+                (json!(-0.0), null),
+                (json!(90.0), json!(-180.0)),
+            ],
+            "{db}"
+        );
+    }
+}

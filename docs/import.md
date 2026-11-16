@@ -51,7 +51,7 @@ What each kind of entry looks like:
   `state`, `dur` and `following_state`; given, it must be what they make.
 - **`create_time`**: when it was logged. Given, it is the entry's own; omitted, the import's time. An untimed row's
   identity is its field and create time, so give it one if the file may be imported twice.
-- **`lat`**, **`lon`** (numbers), **`location`** (a string); **`raw_input`**, the command line that logged it;
+- **`lat`**, **`lon`** (numbers, a latitude from −90 to 90 and a longitude from −180 to 180), **`location`** (a string); **`raw_input`**, the command line that logged it;
   **`extra_metadata`**, **`user_asserted_last_state`** and **`field_structure`**, as export prints them.
 - Derived by the import, and **ignored** if given: `hid`, `slug`, `id_structure`, `content_hash`, `client_id`,
   `parser_version`, `modify_time`, `alias_chain`.
