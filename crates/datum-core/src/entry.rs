@@ -238,6 +238,18 @@ pub fn gains_at_key(before: &Entry, after: &Entry) -> bool {
     has(after) && !has(before)
 }
 
+/// Why an entry's `lat` or `lon` holding `v`, written as `shown`, is no place
+/// on Earth (da-qpuh8): a latitude past ±90, a longitude past ±180. Every
+/// writer of a location from outside asks it (da-4onoa).
+pub fn off_the_earth(key: &str, v: f64, shown: impl std::fmt::Display) -> Option<String> {
+    let most = match key {
+        "lat" => 90.0,
+        "lon" => 180.0,
+        _ => unreachable!("`{key}` holds no degrees"),
+    };
+    (!(-most..=most).contains(&v)).then(|| format!("`{key}` is {shown}, outside -{most}…{most}"))
+}
+
 fn default_parser_version() -> u32 {
     CURRENT_PARSER_VERSION
 }

@@ -368,3 +368,88 @@ fn a_stale_last_asks_first_and_a_no_opens_nothing() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("[Y/n]"));
     assert!(tmp.path().join("opened.json").exists());
 }
+
+fn tea_place(dir: &Path) -> (Option<f64>, Option<f64>) {
+    Db::open(dir.join("e.db").to_str().unwrap())
+        .unwrap()
+        .conn()
+        .query_row(
+            "SELECT lat, lon FROM entries WHERE field = 'tea'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+}
+
+/// [`edit_tea`] setting `key` to `v`.
+fn edit_place(dir: &Path, key: &str, v: &str) -> Output {
+    edit_tea(dir, &format!("s|\"{key}\": [^,]*|\"{key}\": {v}|"))
+}
+
+/// da-4onoa: an edit's `lat` and `lon` are a place on Earth, as an import's
+/// are (da-qpuh8): past ±90 or ±180 is refused, naming the key and the value,
+/// and the entry stays as it was.
+#[test]
+fn a_lat_or_lon_off_the_earth_is_refused_and_nothing_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    seed_tea(tmp.path());
+    for (k, v) in [
+        ("lat", "1000"),
+        ("lat", "-91"),
+        ("lon", "181"),
+        ("lon", "-500"),
+    ] {
+        let out = edit_place(tmp.path(), k, v);
+        assert!(!out.status.success(), "{k} {v} must be refused: {out:?}");
+        let said = format!("`{k}` is {v}, outside");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(&said), "{said}\n{stderr}");
+        assert_eq!(tea_place(tmp.path()), (None, None), "{k} {v}");
+    }
+    for (k, v, want) in [
+        ("lat", "52.52", (Some(52.52), None)),
+        ("lon", "13.405", (Some(52.52), Some(13.405))),
+        ("lat", "90", (Some(90.0), Some(13.405))),
+        ("lon", "-180", (Some(90.0), Some(-180.0))),
+        ("lat", "-0", (Some(-0.0), Some(-180.0))),
+    ] {
+        let out = edit_place(tmp.path(), k, v);
+        assert!(out.status.success(), "{k} {v}: {out:?}");
+        assert_eq!(tea_place(tmp.path()), want, "{k} {v}");
+    }
+}
+
+/// A row already off the Earth (written before the check) stays editable: the
+/// check reads only a place the edit changes, as a zone left stays.
+#[test]
+fn a_row_already_off_the_earth_can_be_edited_and_repaired() {
+    let tmp = tempfile::tempdir().unwrap();
+    seed_tea(tmp.path());
+    // A backup's row carries its lat whole, as a restore writes it back.
+    let backup = tmp.path().join("b.jsonl");
+    let path = backup.to_str().unwrap();
+    assert!(run_bin(tmp.path(), &["db", "backup", path], "")
+        .status
+        .success());
+    let lines: Vec<String> = std::fs::read_to_string(&backup)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            let mut row: serde_json::Value = serde_json::from_str(l).unwrap();
+            if row["field"] == "tea" {
+                row["lat"] = 1000.into();
+            }
+            row.to_string()
+        })
+        .collect();
+    std::fs::write(&backup, lines.join("\n") + "\n").unwrap();
+    let restore = ["db", "restore", path, "--hard", "--yes"];
+    assert!(run_bin(tmp.path(), &restore, "").status.success());
+    assert_eq!(tea_place(tmp.path()), (Some(1000.0), None));
+    let out = edit_place(tmp.path(), "lon", "13.405");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(tea_place(tmp.path()), (Some(1000.0), Some(13.405)));
+    let out = edit_place(tmp.path(), "lat", "52.52");
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(tea_place(tmp.path()), (Some(52.52), Some(13.405)));
+}

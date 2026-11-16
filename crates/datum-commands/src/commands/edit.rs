@@ -218,6 +218,18 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         println!("No changes — entry {} unmodified", existing.slug);
         return Ok(());
     }
+    // da-4onoa: a place the edit changed is on Earth; one it left stays.
+    for (k, now, was) in [
+        ("lat", edited_view.lat, view.lat),
+        ("lon", edited_view.lon, view.lon),
+    ] {
+        if let Some(why) = now
+            .filter(|_| now != was)
+            .and_then(|v| datum_core::entry::off_the_earth(k, v, v))
+        {
+            anyhow::bail!("{why}");
+        }
+    }
 
     let mut updated = existing.clone();
     edited_view.apply_to(&mut updated);
