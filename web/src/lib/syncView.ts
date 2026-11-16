@@ -17,13 +17,13 @@
 // broadcast reachability (#lib/sync.ts `syncStates`) into clients × databases.
 
 import { get, writable } from 'svelte/store';
-import { account } from './account.js';
+import { account, provenPasskey } from './account.js';
 import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, lastEntryArgv, newInviteArgv, qrArgv, expelArgv, syncStatusArgv } from './calls.js';
 import { INTERNAL_DB, isDbName } from './database.js';
 import type { TailListing } from './tail.js';
 import { dateLabel, localTime } from './clock.js';
 import { cliError, run, type RunResult } from './run.js';
-import { approveAs, approveLink, signedBy } from './passkey.js';
+import { adminKeyOf, approveAs, approveLink, signedBy } from './passkey.js';
 import { heard, NOT_THE_PASSKEY, syncAccountRecord, syncs, type Invite, type Reach, type SyncState } from './sync.js';
 import type { TicketAbout } from './syncProtocol.js';
 
@@ -684,32 +684,29 @@ export async function qr(text: string): Promise<string> {
 	return (await run(qrArgv(text))).stdout;
 }
 
-const OWN_KEYS = 'datum.syncPasskeys';
+/**
+ * The admin keys of the passkeys this tab made or proved, in its memory alone (da-jqs2p): what is stored, anything
+ * on the origin could have written, so a key a card vouches for is one this tab holds proof of, as for the
+ * sign-in passkey (`provenPasskey`).
+ */
+const own = new Set<string>();
 
-/** The admin keys of the passkeys made in this browser (`add admin`). */
-export function ownKeys(): Set<string> {
-	try {
-		return new Set(JSON.parse(localStorage.getItem(OWN_KEYS) ?? '[]'));
-	} catch {
-		return new Set();
-	}
+/** The admin keys of the passkeys made or proved in this tab: an approval card's «made in this browser». */
+export function ownKeys(): ReadonlySet<string> {
+	const passkey = provenPasskey();
+	const key = passkey && adminKeyOf(passkey);
+	return key ? new Set([...own, key]) : own;
 }
 
-/** Remember `keys` as passkeys made in this browser. */
-export function markOwn(keys: string[]): void {
-	try {
-		localStorage.setItem(OWN_KEYS, JSON.stringify([...ownKeys(), ...keys]));
-	} catch {
-		// Not remembered: its approval card says it is not this browser's.
-	}
-}
+/** Remember `keys` as passkeys this tab made or proved. */
+export const markOwn = (keys: string[]): void => keys.forEach((k) => own.add(k));
 
 /**
  * What approving `r` does, in words, resolved against `d`, the held copy
  * of its chain, if any (da-bjxts): a link is anyone's to send, so the card
  * names the device, the database and the key before the passkey signs.
  */
-export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined, own: Set<string>): string[] {
+export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined, own: ReadonlySet<string>): string[] {
 	const where = d ? `in ${d.db}` : 'in a chain this browser holds no copy of';
 	const short = (id: unknown) => String(id ?? '').slice(0, 10);
 	const who = (ep: unknown) => {

@@ -113,7 +113,6 @@
 		table,
 		ticketOf,
 		type Admin,
-		type Admins,
 		type DbSync,
 		type Grid,
 		type GridCell,
@@ -129,7 +128,6 @@
 	import { cliError, QUIET_MS, settled, type RunResult } from '#lib/run.ts';
 	import {
 		adminAddArgv,
-		adminListArgv,
 		adminRemoveArgv,
 		labelCheckArgv,
 		leaveArgv,
@@ -699,10 +697,9 @@
 			// the account's, and this is how a chain the move to one passkey missed is moved.
 			if ($account && d.admins?.length && !d.admins.some((a) => a.key === $account.key)) passkey = JSON.stringify({ ...JSON.parse(passkey), account: $account.key });
 			ok(await syncAct(d.db, adminAddArgv(passkey), undefined, expect));
-			// Remembered, so an approval card can say a key is this browser's.
-			const before = new Set((d.admins ?? []).map((a) => a.key));
-			const { admins } = JSON.parse(ok(await syncAct(d.db, adminListArgv())).stdout) as Admins;
-			markOwn(admins.map((a) => a.key).filter((k) => !before.has(k)));
+			// Made or proved in this tab, every way here: an approval card in it may say the key is this browser's.
+			const key = adminKeyOf(passkey);
+			if (key) markOwn([key]);
 		});
 
 	/**

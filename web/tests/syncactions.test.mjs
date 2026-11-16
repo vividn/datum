@@ -373,25 +373,44 @@ describe('the sync widget’s actions', () => {
 		}, AT_DATUM_DAY);
 	});
 
-	test('a link adding an admin says whose key it is: its label, its fingerprint, and that this browser did not make it', async () => {
+	test('a link adding an admin says whose key it is: its label, its fingerprint, and whether this tab made it, never by a key stored (da-jqs2p)', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
 			await openChain(app);
 			await app.goto('/sync?db=home');
 			await addAdmin(page);
+			const mine = (await members(app)).admins[0].key;
 			// «Please approve my new phone», carrying the sender's own key.
 			const asked = await runIn(app, ['--db', 'home', 'sync', 'admin', 'add', foreignPasskey('my new phone')]);
 			const link = /https:\/\/datum\.day\/sync\/approve#\S+/.exec(asked.stderr)[0];
-			const { key } = JSON.parse(Buffer.from(link.split('#')[1], 'base64url').toString());
+			const record = JSON.parse(Buffer.from(link.split('#')[1], 'base64url').toString());
+			// Anything on the origin can write the browser's storage: the key planted there is still not this browser's.
+			await page.evaluate((key) => localStorage.setItem('datum.syncPasskeys', JSON.stringify([key])), record.key);
 
-			await app.goto(`/sync/approve#${link.split('#')[1]}`);
-			const what = page.locator(`${WIDGET} .approve .what`);
-			await what.waitFor();
-			const [adds, whose, ...more] = await what.locator('li').allInnerTexts();
-			for (const fact of ['«my new phone»', key.slice(6, 18), 'home']) assert.ok(adds.includes(fact), `${fact}: ${adds}`);
-			assert.match(whose, /\bnot\b/i, 'this browser did not make it');
+			// Each link followed in this document, which holds the passkey «Add admin» made, as a link in the page is.
+			const card = page.locator(`${WIDGET} .approve`);
+			const words = async (r) => {
+				const href = `/sync/approve#${Buffer.from(JSON.stringify(r)).toString('base64url')}`;
+				await page.evaluate((href) => {
+					const a = Object.assign(document.createElement('a'), { href });
+					document.body.append(a);
+					a.click();
+					a.remove();
+				}, href);
+				await card.locator('.what').waitFor();
+				const said = await card.locator('.what li').allInnerTexts();
+				await card.getByRole('button', { name: 'dismiss' }).click();
+				await card.waitFor({ state: 'detached' });
+				return said;
+			};
+			const [adds, whose, ...more] = await words(record);
+			for (const fact of ['«my new phone»', record.key.slice(6, 18), 'home']) assert.ok(adds.includes(fact), `${fact}: ${adds}`);
+			assert.match(whose, /^Not a passkey made in this browser/, 'a key only stored is not vouched for');
 			assert.deepEqual(more, []);
+			// The passkey this tab made is.
+			const [, ours] = await words({ ...record, key: mine, label: 'my phone' });
+			assert.equal(ours, 'A passkey made in this browser.');
 		}, AT_DATUM_DAY);
 	});
 });

@@ -23,7 +23,7 @@ import type { DayviewJson, PaneSpec } from './panes.js';
 import type { AllFieldsStats, FieldStats } from './stats.js';
 import { shellSplit } from './shellSplit.js';
 import type { Invite } from './sync.js';
-import type { Admins, ChainList, Grid, PurgePreview, SyncStatus } from './syncView.js';
+import type { ChainList, Grid, PurgePreview, SyncStatus } from './syncView.js';
 import type { TailListing, TailPage } from './tail.js';
 import type { Premade, Spec } from './track.js';
 import type { Refs } from './selection.js';
@@ -361,10 +361,6 @@ export function adminAddArgv(key: string): string[] {
 	return ['sync', 'admin', 'add', key];
 }
 
-export function adminListArgv(): string[] {
-	return ['sync', 'admin', 'list', '--json'];
-}
-
 export function adminRemoveArgv(key: string, unlock = false): string[] {
 	return ['sync', 'admin', 'remove', key, ...(unlock ? ['--allow-unlock'] : [])];
 }
@@ -616,7 +612,6 @@ export interface Reads {
 	 * no seeded database holds any of them. `sync_chain::labels` holds `label` natively.
 	 */
 	chainListArgv: Omit<ChainList, 'joining' | 'dissolved' | 'label'>;
-	adminListArgv: Admins;
 	/** `agent` is an agent's code's alone (da-bdyor), which the page sets. */
 	newInviteArgv: Omit<Invite, 'agent'>;
 	agentArgv: AgentCode;
