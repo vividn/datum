@@ -236,3 +236,150 @@ fn schema_is_json_and_opens_no_database() {
     assert_eq!(schema["required"], serde_json::json!(["field"]));
     assert!(!env.db("a").exists());
 }
+
+/// `--csv` (da-tkppz): a header, then a row an entry, mapped onto the rows
+/// above.
+fn import_csv(env: &Env, db: &str, csv: &str, flags: &[&str]) -> Output {
+    env.datum(db, &[&["import", "-", "--csv"][..], flags].concat(), csv)
+}
+
+#[test]
+fn a_two_field_csv_imports_as_the_equivalent_jsonl_would() {
+    let env = Env::new();
+    // walk is on/off, so its states are true and false; mood's are text.
+    for db in ["a", "b"] {
+        env.ok(db, &["setup", "walk", "--kind", "on"]);
+    }
+    // A cell is the text it is unless something types it: `2` and `red,blue`
+    // stay text, `wake_time` is an instant by its name, `lat` and `lon` are
+    // numbers, and `following_state` is the row's own.
+    let csv = "field,at,state,dur,create_time,cups,where,tags,wake_time,following_state,lat,lon,location\n\
+        coffee,2026-11-10T08:30:00+01:00,,MOMENT,2026-11-10T08:31:00Z,2,\"the café, upstairs\",\"red,blue\",2026-11-10T07:00:00+01:00,,52.5,13.4,Berlin\n\
+        mood,2026-11-10 09:00,true,,2026-11-10T09:01:00Z,,,,,,,,\n\
+        walk,2026-11-10 10:00,true,30,2026-11-10T10:01:00Z,,,,,false,,,\n";
+    let out = import_csv(&env, "a", csv, &[]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let rows = [
+        r#"{"field": "coffee", "at": "2026-11-10T08:30:00+01:00", "dur": "MOMENT", "create_time": "2026-11-10T08:31:00Z", "data": {"cups": "2", "where": "the café, upstairs", "tags": "red,blue", "wake_time": {"utc": "2026-11-10T06:00:00.000Z", "o": 1, "tz": "Europe/Berlin"}}, "lat": 52.5, "lon": 13.4, "location": "Berlin"}"#,
+        r#"{"field": "mood", "at": "2026-11-10 09:00", "state": "true", "create_time": "2026-11-10T09:01:00Z"}"#,
+        r#"{"field": "walk", "at": "2026-11-10 10:00", "state": true, "dur": "30", "following_state": false, "create_time": "2026-11-10T10:01:00Z"}"#,
+    ];
+    assert!(env.import("b", &rows, &[]).status.success());
+    let a = env.export("a");
+    assert_eq!(a.lines().count(), 3, "{a}");
+    assert_eq!(a, env.export("b"));
+}
+
+/// vividn, 2026-11-15: an import does not change what the file says, so a
+/// cell is text unless the field's spec types its key; the summary names a
+/// column that reads as numbers and was kept as text.
+#[test]
+fn a_csv_cell_is_text_unless_the_spec_types_its_key() {
+    let env = Env::new();
+    env.ok(
+        "b",
+        &[
+            "setup",
+            "typed",
+            "--from-json",
+            r#"{"verb": "occur", "subfields": {"v": {"value_type": "number"}}}"#,
+        ],
+    );
+    let cells = ["inf", "0e3", "2.50", "01234", "true"];
+    let csv = |field: &str| {
+        let rows: String = cells
+            .iter()
+            .enumerate()
+            .map(|(i, v)| format!("{field},2026-11-10 0{i}:00,{v}\n"))
+            .collect();
+        format!("field,at,v\n{rows}")
+    };
+    let data = |db: &str| -> Vec<serde_json::Value> {
+        env.export(db)
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()["data"]["v"].clone())
+            .collect()
+    };
+
+    let out = import_csv(&env, "a", &csv("plain"), &[]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(data("a"), cells.map(serde_json::Value::from));
+    // Not every cell reads as a number, so the summary names no column.
+    assert!(
+        !text(&out.stdout).contains("kept as text"),
+        "{}",
+        text(&out.stdout)
+    );
+
+    // A number column: what reads as a number is one; the rest are refused
+    // by their lines, as `datum moment typed v=inf` is.
+    let out = import_csv(&env, "b", &csv("typed"), &["--allow-partial"]);
+    assert_eq!(out.status.code(), Some(1));
+    let err = text(&out.stderr);
+    for line in [2, 5, 6] {
+        assert!(err.contains(&format!("line {line}: v:")), "{err}");
+    }
+    assert_eq!(data("b"), [serde_json::json!(0.0), serde_json::json!(2.5)]);
+
+    let out = import_csv(
+        &env,
+        "c",
+        "field,at,v,state,dur,following_state\n\
+         n,2026-11-10 08:00,1,,,\n\
+         n,2026-11-10 09:00,2.50,,,\n\
+         w,2026-11-10 10:00,,yes,30m,false\n",
+        &[],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let said = text(&out.stdout);
+    assert!(
+        said.contains("n: every `v` cell reads as a number, and is kept as text"),
+        "{said}"
+    );
+    // Each column by its own name: w is no on/off field.
+    assert!(
+        said.contains("w: every `following_state` cell reads as true or false, and is kept as text: w is not on/off"),
+        "{said}"
+    );
+    assert!(!said.contains("w: every `state`"), "{said}");
+}
+
+#[test]
+fn a_one_field_csv_takes_its_field_from_the_flag() {
+    let env = Env::new();
+    let csv = "at,state\n2026-11-10 07:00,low\n2026-11-10 12:00,high\n";
+    let out = import_csv(&env, "a", csv, &["--field", "energy"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("energy  2 imported (new field)"),
+        "{}",
+        text(&out.stdout)
+    );
+    // A `field` column beside the flag is one too many.
+    let both = import_csv(
+        &env,
+        "b",
+        "field,at\nx,2026-11-10 07:00\n",
+        &["--field", "y"],
+    );
+    assert_eq!(both.status.code(), Some(1));
+    assert_eq!(env.export("b"), "");
+}
+
+#[test]
+fn a_csv_row_without_at_is_refused_by_its_line_and_nothing_is_written() {
+    let env = Env::new();
+    // The quoted cell spans two lines, so the bad row starts on line 4.
+    let csv = "field,at,state,note\n\
+        mood,2026-11-10 09:00,happy,\"a long\nmorning\"\n\
+        mood,,sad,\n";
+    let out = import_csv(&env, "a", csv, &[]);
+    assert_eq!(out.status.code(), Some(1));
+    let err = text(&out.stderr);
+    assert!(
+        err.contains("line 4:") && err.contains("`at` is required"),
+        "{err}"
+    );
+    assert!(!err.contains("line 2:"), "{err}");
+    assert_eq!(env.export("a"), "");
+}

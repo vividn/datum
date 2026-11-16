@@ -70,7 +70,7 @@ ADMIN:
   alias        Manage aliases
   check        Run database consistency checks
   backup       Back up a database: one file, or a rotation on a schedule
-  import       Import entries from JSONL rows, every row or none
+  import       Import entries from JSONL or CSV rows, every row or none
   export       Print entries as the JSONL rows `import` reads
   db           DB-lifecycle (purge, backup, restore, migrate, v2import, config, rename, ops)
   info         Show health/metadata for DB(s)

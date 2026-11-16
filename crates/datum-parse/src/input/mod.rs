@@ -29,7 +29,8 @@ pub mod time_args;
 
 pub use consolidate_keys::consolidate_keys;
 pub use data_args::{
-    handle_data_args, infer_type, split_key_value, state_word, DataArgs, DatumData, KeyType,
+    handle_data_args, infer_type, split_key_value, state_word, typed_value, DataArgs, DatumData,
+    KeyType,
 };
 pub use duration_args::{DurationArgs, DurationIntent};
 pub use flag_registry::{

@@ -129,6 +129,9 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
   refused one by its line, and one `undo` takes it back. Each timed row needs its
   `at`. The spec is `docs/import.md` and `datum help import`, `datum import
   --schema` its JSON Schema, and `datum export --jsonl` prints rows to copy.
+  A CSV goes in as it is: `datum import --csv sheet.csv`, its header naming the
+  columns (`field`, `at`, `state`, `dur`, `following_state`, …, the rest data keys), `--field F` for
+  a file of one field.
 - **Check after bulk work:** `datum check` reports consistency problems, such as a
   state repeated with no change between.
 - **Time formats:** `datum help time` lists every form `-t`, `-d`, `-y`/`-q` and

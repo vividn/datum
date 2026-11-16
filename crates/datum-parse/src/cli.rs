@@ -737,8 +737,8 @@ pub struct UpdateArgs {
 
 /// `datum script [FILE|-] [--atomic | --allow-partial] [--dry-run] [--now T]
 /// [--tz ZONE] [--db DB]` (da-ygfeh).
-/// `datum import [FILE|-] [--allow-partial] [--dry-run] [--tz ZONE] [--schema]`
-/// (da-jouhm).
+/// `datum import [FILE|-] [--csv [--field F]] [--allow-partial] [--dry-run]
+/// [--tz ZONE] [--schema]` (da-jouhm, da-tkppz).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ImportArgs {
     /// The rows; `None` or `-` is stdin.
@@ -750,6 +750,10 @@ pub struct ImportArgs {
     pub tz: Option<String>,
     /// Print the rows' JSON Schema, and import nothing.
     pub schema: bool,
+    /// The file is CSV: a header row, then a row an entry.
+    pub csv: bool,
+    /// `--field F`: every CSV row's field, for a file with no `field` column.
+    pub field: Option<String>,
 }
 
 /// `datum export --jsonl [FIELD…]` (da-jouhm).

@@ -9,6 +9,7 @@ datum import rows.jsonl            # or: datum import - < rows.jsonl
 datum import rows.jsonl --dry-run  # what it would import, writing nothing
 datum export --jsonl > all.jsonl   # every entry; or name fields: export --jsonl coffee mood
 datum import --schema              # the rows' JSON Schema
+datum import --csv sheet.csv       # CSV: a header row, then a row an entry
 ```
 
 ## A row
@@ -71,6 +72,34 @@ What each kind of entry looks like:
   refused by its line in the words a log of it would be, so nothing is kept here that the chain would refuse.
   `db v2import` skips such a doc as `refused`. On a reader's copy, or one that signed its departure, both are
   refused whole, as a log is.
+
+## CSV
+
+`datum import --csv <file>` reads a CSV file as the rows above: a header row naming its columns, then a row an entry.
+
+```csv
+field,at,state,dur,cups,note
+coffee,2026-11-10T08:30:00+01:00,,MOMENT,2,
+mood,2026-11-10 09:00,happy,,,"slept well, for once"
+```
+
+- The columns `field`, `at`, `state`, `dur`, `following_state`, `create_time`, `lat`, `lon` and `location` are the
+  row's own keys; every other column is a key of its `data`. An empty cell gives no key.
+- **A cell is the text it is**, unless something types it, so an import does not change what the file says: `2.50`,
+  `0e3`, `01234` and `red,blue` are stored as written. A `data` cell is typed when the field's spec gives its key a
+  `value_type` (`subfields.cups = { value_type = "number" }`, in a kit's `[[field]]` or `setup --from-json`), or when
+  the key's name does (`wake_time`, `due_date`), as `key=value` on a command line is; a typed cell that does not parse
+  is refused by its line, as a log of it would be. `lat` and `lon` are numbers.
+- A `state` or `following_state` of `true` or `false` is a boolean on an on/off field (`datum setup walk --kind on`),
+  and text on any other. So a period of an on/off field is `state` `true`, its `dur` and `following_state` `false`, as
+  `datum on walk 30m` writes it. A CSV state has no other type: JSONL's `"state": 2` is a number.
+- `at` and `create_time` are times as above, and `dur` is read as `dur=` reads it, so `30` is thirty minutes.
+- The summary names each column kept as text whose every cell reads as a number, or as `true` or `false`, and how to
+  type it: run `--dry-run` first to see them.
+- `--field F` is every row's field, for a file of one field with no `field` column. A file with one and the flag too is
+  refused.
+- A cell is quoted to hold a comma, a quote (`""`) or a line break. A refused row is named by the line it starts on.
+- Everything else is the JSONL import's: every row or none, `--allow-partial`, `--dry-run`, `--tz`, one `undo`.
 
 ## Exporting
 

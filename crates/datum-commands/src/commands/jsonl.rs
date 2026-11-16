@@ -121,23 +121,32 @@ pub fn import(args: ImportArgs, db: &Db) -> Result<()> {
     let refuses = |entry: &Entry| -> Result<Option<String>> {
         Ok(writer.as_ref().map(|w| w(entry)).transpose()?.flatten())
     };
-    for (i, line) in text.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
+    let (read, untyped): (Rows, Vec<String>) = if args.csv {
+        csv_rows(&text, args.field.as_deref(), db)?
+    } else {
+        let rows = text
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| !line.trim().is_empty())
+            .map(|(i, line)| (i + 1, serde_json::from_str(line).context("not JSON")))
+            .collect();
+        (rows, Vec::new())
+    };
+    for (n, row) in read {
         // A row with no create_time is the import's, a millisecond apart, so
         // two untimed rows of one field keep two slugs.
-        let created = now + Duration::milliseconds(i as i64);
-        let read = read_row(line, created, &client, db, &mut fields, &mut zoneless);
+        let created = now + Duration::milliseconds(n as i64);
+        let read =
+            row.and_then(|row| read_row(row, created, &client, db, &mut fields, &mut zoneless));
         match read.and_then(|e| match refuses(&e)? {
             Some(why) => bail!("{why}"),
             None => Ok(e),
         }) {
             Ok(entry) => {
                 rows.push(entry);
-                lines.push(i + 1);
+                lines.push(n);
             }
-            Err(e) => refused.push((i + 1, format!("{e:#}"))),
+            Err(e) => refused.push((n, format!("{e:#}"))),
         }
     }
     let total = rows.len() + refused.len();
@@ -221,6 +230,9 @@ pub fn import(args: ImportArgs, db: &Db) -> Result<()> {
         let zone = zone.as_deref().unwrap_or("UTC");
         println!("A time naming no zone was read in {zone}.");
     }
+    for line in &untyped {
+        println!("{line}");
+    }
     let s = if imported == 1 { "y" } else { "ies" };
     let dry = if args.dry_run {
         " (dry run: nothing written)"
@@ -263,16 +275,15 @@ fn write_specs(db: &Db, rows: &[Entry]) -> Result<()> {
     Ok(())
 }
 
-/// One line's entry, or why it is refused.
+/// One row's entry, or why it is refused.
 fn read_row(
-    line: &str,
+    row: Value,
     created: DateTime<Utc>,
     client: &str,
     db: &Db,
     fields: &mut HashMap<String, Field>,
     zoneless: &mut bool,
 ) -> Result<Entry> {
-    let row: Value = serde_json::from_str(line).context("not JSON")?;
     let Value::Object(row) = row else {
         bail!("not a JSON object");
     };
@@ -398,6 +409,217 @@ fn read_row(
     Ok(entry)
 }
 
+/// The columns a CSV row gives the row's own keys, as text; `lat` and `lon`
+/// are numbers, `state` and `following_state` as [`StateKind`] reads them,
+/// and any other column is a `data` key.
+const CSV_KEYS: &[&str] = &["field", "at", "dur", "create_time", "location"];
+
+/// Each row read, by the line it starts on.
+type Rows = Vec<(usize, Result<Value>)>;
+
+/// What a field's spec says of its CSV cells: the types its keys declare, and
+/// whether it is on/off, so a `true` or `false` state is one.
+struct CellTypes {
+    keys: BTreeMap<String, datum_parse::input::KeyType>,
+    on_off: bool,
+}
+
+/// `--csv` (da-tkppz): each row after the header as the JSON row it maps to,
+/// with the line it starts on, and the summary's lines on the columns kept as
+/// text that read as numbers or booleans. A cell is the text it is, unless
+/// the field's spec types its key or the key's name does (`…_time`, `…_date`),
+/// as on a command line, and a state is `true` or `false` only on an on/off
+/// field (vividn, 2026-11-15: an import does not change what the file says).
+/// An empty cell gives no key.
+fn csv_rows(text: &str, field: Option<&str>, db: &Db) -> Result<(Rows, Vec<String>)> {
+    let mut records = csv_records(text.strip_prefix('\u{feff}').unwrap_or(text))?.into_iter();
+    let Some((_, header)) = records.next() else {
+        bail!("a CSV import takes a header row naming its columns");
+    };
+    let header: Vec<&str> = header.iter().map(|h| h.trim()).collect();
+    if let Some(i) = header.iter().position(|h| h.is_empty()) {
+        bail!("header column {} has no name", i + 1);
+    }
+    if let Some(h) = header
+        .iter()
+        .enumerate()
+        .find_map(|(i, h)| header[..i].contains(h).then_some(h))
+    {
+        bail!("the header names `{h}` twice");
+    }
+    match (field, header.contains(&"field")) {
+        (Some(_), true) => {
+            bail!("--field names every row's field, and the header has a `field` column too")
+        }
+        (None, false) => bail!(
+            "the header has no `field` column: name one, or give --field <F> for a file of one field"
+        ),
+        _ => {}
+    }
+    let mut specs: HashMap<String, CellTypes> = HashMap::new();
+    // Per field and column kept as text: whether every cell read as a number,
+    // and whether every one as a boolean.
+    let mut untyped: BTreeMap<(String, String), (bool, bool)> = BTreeMap::new();
+    let mut rows = Vec::new();
+    for (n, cells) in records {
+        if cells.iter().all(|c| c.trim().is_empty()) {
+            continue;
+        }
+        if cells.len() != header.len() {
+            let why = format!(
+                "{} cells, where the header names {} columns",
+                cells.len(),
+                header.len()
+            );
+            rows.push((n, Err(anyhow::anyhow!(why))));
+            continue;
+        }
+        let cell = |key: &str| {
+            header
+                .iter()
+                .position(|h| *h == key)
+                .map(|i| cells[i].trim())
+                .filter(|c| !c.is_empty())
+        };
+        let name = field
+            .or_else(|| cell("field"))
+            .unwrap_or_default()
+            .to_string();
+        if !specs.contains_key(&name) {
+            let spec = db.load_spec(&name).ok().flatten();
+            specs.insert(
+                name.clone(),
+                CellTypes {
+                    keys: spec.as_ref().map(|s| s.key_types()).unwrap_or_default(),
+                    on_off: spec.is_some_and(|s| matches!(s.verb, Action::Start | Action::Stop)),
+                },
+            );
+        }
+        let types = &specs[&name];
+        let mut kept = |key: &str, cell: &str| {
+            let read = datum_parse::input::infer_type(cell);
+            let t = untyped
+                .entry((name.clone(), key.to_string()))
+                .or_insert((true, true));
+            t.0 &= read.as_ref().is_some_and(Value::is_number);
+            t.1 &= read.as_ref().is_some_and(Value::is_boolean);
+            Value::String(cell.into())
+        };
+        let read = (|| -> Result<Value> {
+            let (mut row, mut data) = (Map::new(), Map::new());
+            if field.is_some() {
+                row.insert("field".into(), name.clone().into());
+            }
+            for (key, cell) in header.iter().zip(&cells) {
+                let cell = cell.trim();
+                if cell.is_empty() {
+                    continue;
+                }
+                let value = match *key {
+                    k if CSV_KEYS.contains(&k) => Some(cell.into()),
+                    "lat" | "lon" => Some(
+                        datum_parse::input::infer_type(cell)
+                            .filter(Value::is_number)
+                            .unwrap_or(cell.into()),
+                    ),
+                    "state" | "following_state" => {
+                        let flag = ["true", "false"]
+                            .iter()
+                            .find(|b| types.on_off && cell.eq_ignore_ascii_case(b));
+                        Some(match flag {
+                            Some(b) => Value::Bool(*b == "true"),
+                            None => kept(key, cell),
+                        })
+                    }
+                    k => {
+                        let value = match datum_parse::input::typed_value(k, cell, &types.keys) {
+                            Some(typed) => typed?,
+                            None => Some(kept(k, cell)),
+                        };
+                        data.extend(value.map(|v| (k.to_string(), v)));
+                        None
+                    }
+                };
+                if let Some(v) = value {
+                    row.insert((*key).into(), v);
+                }
+            }
+            if !data.is_empty() {
+                row.insert("data".into(), Value::Object(data));
+            }
+            Ok(Value::Object(row))
+        })();
+        rows.push((n, read));
+    }
+    let said = untyped
+        .into_iter()
+        .filter_map(|((field, key), (numbers, bools))| {
+            let reads = match (numbers, bools) {
+                (true, _) => "a number",
+                (_, true) => "true or false",
+                _ => return None,
+            };
+            // No flag types a key: a spec's subfield does, which `setup
+            // --from-json` writes whole and a kit's `[[field]]` installs.
+            let how = match (key.as_str(), numbers) {
+                ("state" | "following_state", false) => format!("{field} is not on/off: `datum setup {field} --kind on` first"),
+                ("state" | "following_state", true) => "a CSV state has no type; a JSONL row's `\"state\": 2` is a number".into(),
+                _ => {
+                    let ty = if numbers { "number" } else { "bool" };
+                    format!(
+                        "to type it, give {field}'s spec `subfields.{key} = {{ value_type = \"{ty}\" }}` first \
+                         (in a kit's [[field]]; `setup --from-json` replaces the whole spec)"
+                    )
+                }
+            };
+            Some(format!(
+                "{field}: every `{key}` cell reads as {reads}, and is kept as text: {how}"
+            ))
+        })
+        .collect();
+    Ok((rows, said))
+}
+
+/// RFC 4180 records, each with the line it starts on: a quoted cell may hold
+/// commas, line breaks and `""` for a quote.
+fn csv_records(text: &str) -> Result<Vec<(usize, Vec<String>)>> {
+    let (mut records, mut record, mut cell) = (Vec::new(), Vec::new(), String::new());
+    // `start` is the line the record being read began on, set again after
+    // each record from `line`, which counts every line break, quoted or not.
+    let (mut line, mut start, mut quoted) = (1, 1, false);
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if quoted && chars.peek() == Some(&'"') => {
+                chars.next();
+                cell.push('"');
+            }
+            '"' if quoted => quoted = false,
+            '"' if cell.is_empty() => quoted = true,
+            ',' if !quoted => record.push(std::mem::take(&mut cell)),
+            '\r' if !quoted && chars.peek() == Some(&'\n') => {}
+            '\n' if !quoted => {
+                record.push(std::mem::take(&mut cell));
+                records.push((start, std::mem::take(&mut record)));
+                line += 1;
+                start = line;
+            }
+            c => {
+                line += usize::from(c == '\n');
+                cell.push(c);
+            }
+        }
+    }
+    if quoted {
+        bail!("line {start}: a quoted cell is never closed");
+    }
+    if !cell.is_empty() || !record.is_empty() {
+        record.push(cell);
+        records.push((start, record));
+    }
+    Ok(records)
+}
+
 /// A time as `-t` reads it, or the object `export` prints. Sets `zoneless`
 /// where it names no zone and takes this machine's (or `--tz`'s).
 fn read_time(v: &Value, zoneless: &mut bool) -> Result<DatumTime> {
@@ -505,6 +727,23 @@ mod tests {
         ] {
             assert!(!names_offset(bare), "{bare}");
         }
+    }
+
+    #[test]
+    fn a_quoted_cell_holds_commas_quotes_and_line_breaks() {
+        let records = csv_records("a,b\r\n\"x, \"\"y\"\"\",\"two\nlines\"\n\nlast,\n").unwrap();
+        let want = |n: usize, cells: &[&str]| (n, cells.iter().map(|c| c.to_string()).collect());
+        assert_eq!(
+            records,
+            vec![
+                want(1, &["a", "b"]),
+                want(2, &["x, \"y\"", "two\nlines"]),
+                want(4, &[""]),
+                want(5, &["last", ""]),
+            ]
+        );
+        let first = csv_records("\"a\nb\",c\nd,e").unwrap();
+        assert_eq!(first, vec![want(1, &["a\nb", "c"]), want(3, &["d", "e"])]);
     }
 
     /// The schema names exactly the keys a row may give, read or derived.

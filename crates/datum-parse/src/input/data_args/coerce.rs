@@ -138,6 +138,26 @@ impl KeyType {
     }
 }
 
+/// A value as its key's type reads it, the type declared in `types` or given
+/// by the key's name (`…_time`, `…_date`); `None` where nothing types the
+/// key, so the caller keeps the text: an import's cell (da-tkppz, vividn,
+/// 2026-11-15: an import does not change what the file says).
+pub fn typed_value(
+    key: &str,
+    value: &str,
+    types: &std::collections::BTreeMap<String, KeyType>,
+) -> Option<Result<Option<Value>>> {
+    types
+        .get(key)
+        .copied()
+        .or_else(|| KeyType::of_suffix(key))?;
+    let compat = Compat {
+        types: Some(types),
+        ..Default::default()
+    };
+    Some(infer_typed_value(key, value, false, compat))
+}
+
 /// Infer the JSON shape for a value: as its key's [`KeyType`] when it has
 /// one, else by the generic [`infer_type`].
 ///

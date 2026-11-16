@@ -85,7 +85,8 @@ Data your person kept somewhere else (a spreadsheet, notes, what they told anoth
 entry a line: `{"field": "mood", "at": "2026-11-10 09:00", "state": "happy"}`. `datum import rows.jsonl --dry-run`
 says what it would write, and `datum import rows.jsonl` writes every row or none, naming a refused one by its line;
 one `undo` takes it back. [import.md](import.md) is the spec, `datum import --schema` its JSON Schema, and `datum
-export --jsonl` prints rows to copy.
+export --jsonl` prints rows to copy. A spreadsheet's CSV goes in as it is: `datum import --csv sheet.csv`, its header
+naming the columns (`field`, `at`, `state`, `dur`, `following_state`, …, the rest data keys), `--field F` for a file of one field.
 
 ## Work on datum
 

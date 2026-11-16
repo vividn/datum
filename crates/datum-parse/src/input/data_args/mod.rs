@@ -51,7 +51,7 @@ use classify::{
     datum_path, find_default_for_path, inferred_value_for_default, is_dot_scalar, split_first_eq,
 };
 
-pub use coerce::{bracket_value, comma_items, infer_type, state_word, KeyType};
+pub use coerce::{bracket_value, comma_items, infer_type, state_word, typed_value, KeyType};
 
 /// Canonical flag set for the data concern.
 ///

@@ -172,7 +172,7 @@ pub(crate) fn parse_script_args(tail: &[&str]) -> Result<ScriptArgs> {
     Ok(args)
 }
 
-/// `import [FILE|-] [--allow-partial] [--dry-run] [--tz ZONE] [--schema]`.
+/// `import [FILE|-] [--csv [--field F]] [--allow-partial] [--dry-run] [--tz ZONE] [--schema]`.
 pub(crate) fn parse_import_args(tail: &[&str]) -> Result<ImportArgs> {
     let mut args = ImportArgs::default();
     let mut it = tail.iter();
@@ -188,6 +188,14 @@ pub(crate) fn parse_import_args(tail: &[&str]) -> Result<ImportArgs> {
                 args.tz = Some(zone.to_string());
             }
             FlagSplit::LongAttached("tz", v) => args.tz = Some(v.to_string()),
+            FlagSplit::Long("csv") => args.csv = true,
+            FlagSplit::Long("field") => {
+                let field = it
+                    .next()
+                    .ok_or_else(|| ParseError::InvalidArg("--field requires a value".into()))?;
+                args.field = Some(field.to_string());
+            }
+            FlagSplit::LongAttached("field", v) => args.field = Some(v.to_string()),
             FlagSplit::Positional(f) if args.file.is_none() => args.file = Some(f.into()),
             FlagSplit::Positional(_) => {
                 return Err(ParseError::InvalidArg(
@@ -196,6 +204,11 @@ pub(crate) fn parse_import_args(tail: &[&str]) -> Result<ImportArgs> {
             }
             f => return Err(unknown_flag(f)),
         }
+    }
+    if args.field.is_some() && !args.csv {
+        return Err(ParseError::InvalidArg(
+            "--field requires --csv: datum import --csv <FILE> --field <F>".into(),
+        ));
     }
     Ok(args)
 }
