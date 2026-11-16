@@ -4,7 +4,7 @@
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp } from './support/app.mjs';
+import { startApp, stopApp, settled } from './support/app.mjs';
 import { finger } from './support/press.mjs';
 import { placeBar } from './support/layout.mjs';
 import { until } from './support/until.mjs';
@@ -46,7 +46,8 @@ bothWays((vertical) => {
 	// the axis labels as you are dragging … the axis labels that you will have as
 	// soon as you let go, so that it is seamless».
 	test('mid-drag the axis wears the labels the release will, and the handle no word', async () => {
-		await withAxes(vertical, async ({ page }) => {
+		await withAxes(vertical, async (app) => {
+			const { page } = app;
 			const labels = (sel) =>
 				page.locator(NOWVIEW).evaluate((root, sel) => {
 					const svg = root.querySelector('svg.svg');
@@ -71,6 +72,10 @@ bothWays((vertical) => {
 			const from = g.y ? y : x;
 			const to = from + ((g.y ? g.frame.bottom : g.frame.right) - from) * 0.35;
 			await page.mouse.move(g.y ? x : to, g.y ? to : y, { steps: 8 });
+			// The rule of the window the finger is at, not an earlier step's: the rule
+			// is asked one run at a time, and a release while it is out lays none, so
+			// under load the read saw one step's rule and the release the old labels (da-nekpt).
+			await settled(app);
 			await page.locator(`${NOWVIEW} svg.svg.axis-live .live-axis .tick-label`).first().waitFor({ state: 'attached' });
 			assert.equal(await page.locator('.handle.dragged').textContent(), '', 'the dragged handle says something');
 			const during = await until(() => labels('.live-axis .tick-label'), (l) => l.length > 0);
