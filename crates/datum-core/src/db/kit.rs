@@ -627,6 +627,23 @@ pub(crate) fn past_kit_indexes<T>(
     }
 }
 
+/// Drops every kit index on `entries`, for [`Db::derive_kit_indices`] to
+/// build again: a migration runs with none, so no index refuses what it
+/// writes, and an open is never refused for one (da-1hviu).
+pub(crate) fn drop_kit_indexes(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let names: Vec<String> = conn
+        .prepare(
+            "SELECT name FROM sqlite_master
+             WHERE type = 'index' AND tbl_name = 'entries' AND name LIKE 'kit!_%' ESCAPE '!'",
+        )?
+        .query_map([], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for name in names {
+        run_kit_ddl(conn, &format!("DROP INDEX \"{name}\""))?;
+    }
+    Ok(())
+}
+
 /// Runs one statement of a kit index's DDL. A kit is third-party content, so
 /// a string holding a second statement is refused rather than run, whatever
 /// `IndexEntry::build_ddl` let through (da-xpbah).

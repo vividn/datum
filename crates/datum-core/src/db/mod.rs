@@ -708,6 +708,9 @@ impl Db {
             _ => None,
         };
 
+        if from < to {
+            kit::drop_kit_indexes(&self.conn)?;
+        }
         let applied = crate::migrations::migrate_to_current(&self.conn)?;
         // schema.sql lands the final shape: any indexes / tables the
         // migration registry doesn't create (because they were always part

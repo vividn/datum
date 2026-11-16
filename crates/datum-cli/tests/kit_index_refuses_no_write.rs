@@ -198,3 +198,30 @@ fn the_uninstall_of_a_kit_whose_index_errors_on_it_lands() {
     let kits = String::from_utf8(c.run(&["kit", "list"], "").stdout).unwrap();
     assert!(!kits.contains("f26del"), "{kits}");
 }
+
+/// A migration's writes are no index's either (da-1hviu): v75→v76 renames
+/// the key `occur_time` to `at` in each row's `conflicts`, which this index
+/// errors on. The open migrates, and the index that refuses the row now
+/// there is left unbuilt and named, as a write's is.
+#[test]
+fn a_migration_an_index_errors_on_still_opens() {
+    let c = Copy::new();
+    let on_at = format!(
+        "(CASE WHEN json_extract(conflicts, '$.at') IS NOT NULL THEN {OVERFLOW} ELSE 0 END)"
+    );
+    c.install("f26mig", &[("at", &on_at), ("plain", "field")]);
+    c.ok(&["occur", "probe", "x=ok"]);
+    {
+        let conn = rusqlite::Connection::open(c.db()).unwrap();
+        datum_core::migrations::migrate_down_to(&conn, 75).unwrap();
+        conn.execute(
+            "UPDATE entries SET conflicts = '{\"occur_time\":[1,2]}' WHERE field = 'probe'",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(c.built(), ["kit_f26mig__at", "kit_f26mig__plain"]);
+    c.ok(&["tail", "probe"]);
+    assert_eq!(c.built(), ["kit_f26mig__plain"]);
+    assert!(c.check().contains("kit_f26mig__at"), "{}", c.check());
+}
