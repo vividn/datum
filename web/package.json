@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^4.0.0",
-    "@sveltejs/kit": "^3.1.0",
+    "@sveltejs/kit": "^3.1.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@types/node": "^22.0.0",
     "playwright": "^1.63.0",
