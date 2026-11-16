@@ -1443,10 +1443,17 @@ mod read {
         let (count, earliest) = stats(&env, &["body", "-yyyt", "3"]);
         assert_eq!(count, json!(1), "only the 03:00 Berlin entry");
         let earliest = chrono::DateTime::parse_from_rfc3339(earliest.as_str().unwrap()).unwrap();
-        assert_eq!(earliest.to_utc(), at(&env, &three).utc);
-        // `-z` still wins: 03:00 in Bangkok holds both.
+        let three = at(&env, &three);
+        assert_eq!(earliest.to_utc(), three.utc);
+        // `-z` still wins: 03:00 in Bangkok on that day holds both. The day
+        // is named, since `-yyy -z Bangkok` counts back from Bangkok's today,
+        // a day ahead of Berlin's from 17:00 to 23:00 UTC (da-ocpkn).
+        let day = (three.utc + chrono::Duration::minutes(three.offset_minutes.into()))
+            .format("%Y-%m-%d 03:00")
+            .to_string();
+        assert_eq!(stats(&env, &["body", "-t", &day]).0, json!(1));
         assert_eq!(
-            stats(&env, &["body", "-yyyt", "3", "-z", BANGKOK]).0,
+            stats(&env, &["body", "-t", &day, "-z", BANGKOK]).0,
             json!(2)
         );
     }
