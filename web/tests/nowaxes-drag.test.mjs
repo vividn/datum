@@ -87,6 +87,85 @@ bothWays((vertical) => {
 		});
 	});
 
+	// vividn: «there should never be a difference between what is seen while
+	// still holding your finger down and then when you release» (da-3gosp).
+	// Each nowview run takes 600 ms, so the drag is let go of while a later
+	// step's rule is still out: the rule laid stays until the new picture lands,
+	// and the axis changes once, from the labels held to those it lands with.
+	test('let go of while its last rule is out, the axis keeps the rule held until the new picture, and changes once', async () => {
+		await withAxes(vertical, async (app) => {
+			const { page } = app;
+			await page.evaluate((sel) => {
+				window.__runs = [];
+				const previous = window.datum.setRunner(async (argv, ...rest) => {
+					if (argv[0] !== 'nowview') return previous(argv, ...rest);
+					const run = { from: performance.now(), to: null };
+					window.__runs.push(run);
+					await new Promise((r) => setTimeout(r, 600));
+					return previous(argv, ...rest).finally(() => (run.to = performance.now()));
+				});
+				// The labels on the axis inside the frame: the live rule's while one is laid.
+				window.__labels = () => {
+					const svg = document.querySelector(`${sel} svg.svg`);
+					const y = !!svg.querySelector('[data-lo][data-axis="y"]');
+					const f = svg.closest('.picture').getBoundingClientRect();
+					const pick = svg.classList.contains('axis-live') ? '.live-axis .tick-label' : '.plot > .tick-label';
+					return [...svg.querySelectorAll(pick)]
+						.filter((l) => {
+							const b = l.getBoundingClientRect();
+							const a = y ? b.top : b.left;
+							return getComputedStyle(l).visibility !== 'hidden' && a >= (y ? f.top : f.left) && a < (y ? f.bottom : f.right);
+						})
+						.map((l) => l.textContent)
+						.sort()
+						.join(' ');
+				};
+			}, NOWVIEW);
+			const h = await page.locator(`${NOWVIEW} .handle[data-axis="rel"]`).boundingBox();
+			const [x, y] = [h.x + h.width / 2, h.y + h.height / 2];
+			await page.mouse.move(x, y);
+			await page.mouse.down();
+			const g = await read(page);
+			const from = g.y ? y : x;
+			const to = from + ((g.y ? g.frame.bottom : g.frame.right) - from) * 0.35;
+			const half = (from + to) / 2;
+			await page.mouse.move(g.y ? x : half, g.y ? half : y, { steps: 4 });
+			// Halfway's rule laid, the rest of the way asks for a later step's, and the drag is let go of while it is out.
+			await page.locator(`${NOWVIEW} svg.svg.axis-live .live-axis .tick-label`).first().waitFor({ state: 'attached' });
+			await page.mouse.move(g.y ? x : to, g.y ? to : y, { steps: 4 });
+			const up = await page.evaluate((sel) => {
+				window.__frames = [];
+				const svg = () => document.querySelector(`${sel} svg.svg`);
+				const step = () => {
+					window.__frames.push({ t: performance.now(), live: svg()?.classList.contains('axis-live'), words: window.__labels() });
+					if (!window.__stop) requestAnimationFrame(step);
+				};
+				step();
+				return performance.now();
+			}, NOWVIEW);
+			const out = await page.evaluate(() => window.__runs.filter((r) => r.to === null).length);
+			await page.mouse.up();
+			// Every run answered, the release's picture among them, and drawn.
+			await page.waitForFunction(() => window.__runs.length && window.__runs.every((r) => r.to !== null));
+			await settled(app);
+			await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+			const { frames, runs } = await page.evaluate(() => ((window.__stop = true), { frames: window.__frames, runs: window.__runs }));
+			assert.ok(out > 0, 'no rule was out at the release');
+			const landed = Math.max(...runs.filter((r) => r.from >= up).map((r) => r.to));
+			const shown = frames.filter((f, i) => i === 0 || f.live !== frames[i - 1].live || f.words !== frames[i - 1].words);
+			const said = JSON.stringify(shown.map((f) => `${Math.round(f.t - up)}ms ${f.live ? 'rule' : 'picture'}: ${f.words}`));
+			const [held, after] = [shown[0], shown.at(-1)];
+			assert.ok(held.live && !after.live, `the axis went ${said}`);
+			assert.ok(
+				shown.every((f) => f.words === held.words || f.words === after.words),
+				`between the release and the new picture the axis read ${said}`
+			);
+			const first = frames.find((f) => !f.live);
+			assert.ok(first.t >= landed - 1, `the rule went out ${Math.round(landed - first.t)} ms before the new picture answered: ${said}`);
+			assert.ok(frames.slice(frames.indexOf(first)).every((f) => !f.live), `the rule came back after the picture: ${said}`);
+		});
+	});
+
 	// Tabs hang 8px into the widget from a bar beside them (CI on #1445).
 	for (const edge of ['top', 'left'])
 		test(`with the bar on the ${edge}, every tab keeps its taps`, async () => {

@@ -2109,10 +2109,11 @@
 
 	/** The sized argv the gesture in hand, let go of, would ask for, as words: `null` where it would ask for none. */
 	let ruleFor = 'null';
+	type Rule = { words: string; svg: string };
 	/** Datum's picture of the window last asked for a gesture, by its argv's words. */
-	let ruled: { words: string; svg: string } | null = null;
+	let ruled: Rule | null = null;
 	/** Which picture holds which of them. */
-	let laid: { svg: Element; words: string } | null = null;
+	let laid: { svg: Element; show: Rule | null } | null = null;
 	let ruling = false;
 
 	/** The sized argv the window a gesture would land on is asked with: as `spec`, once it has. */
@@ -2139,16 +2140,18 @@
 	 * Lay the rule of the window the gesture is at into the picture, or take
 	 * it out where there is none; and ask datum for it, where it is not the
 	 * one held. Let go of, the gesture asks nothing more: datum's picture of
-	 * the window is on its way, and only that window's rule is laid meanwhile.
+	 * the window is on its way, and the rule laid stays until that window's
+	 * own answers, so the release takes no label out and lays no other
+	 * step's (da-3gosp).
 	 */
 	function rule(): void {
 		const svg = svgEl();
-		const show = zoom && ruleFor !== 'null' && (!zoom.held || ruled?.words === ruleFor) ? ruled : null;
-		if (svg && (laid?.svg !== svg || laid.words !== (show?.words ?? ''))) {
+		const show = !zoom || ruleFor === 'null' ? null : zoom.held && ruled?.words !== ruleFor ? (laid?.show ?? null) : ruled;
+		if (svg && (laid?.svg !== svg || laid.show?.words !== show?.words)) {
 			const had = svg.classList.contains('axis-live');
 			// Where the picture draws an instant's data: slid with the clock, on now.
 			graftAxis(svg, show?.svg ?? null, -slid);
-			laid = { svg, words: show?.words ?? '' };
+			laid = { svg, show };
 			if (had && !zoom) place();
 		}
 		if (zoom) clearCut();
