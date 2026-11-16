@@ -1,8 +1,9 @@
-// Sync's test levers and relay overrides are read from localStorage only in a
-// build made for tests (da-ha2pe): `pnpm test`'s, built with
-// `DATUM_TEST_LEVERS=1`, which vite turns into `__DATUM_TEST_LEVERS__`. A
-// production build reads none, so a key anything on the origin planted once
-// cannot hold this page's sync or route it through another relay. Each read is
+// Sync's test levers and relay overrides, and the day strip's lift hold
+// (da-zl2xa), are read from localStorage only in a build made for tests
+// (da-ha2pe): `pnpm test`'s, built with `DATUM_TEST_LEVERS=1`, which vite turns
+// into `__DATUM_TEST_LEVERS__`. A production build reads none, so a key
+// anything on the origin planted once cannot hold this page's sync, route it
+// through another relay, or hold the strip's picture past every press. Each read is
 // behind the constant, so production's bundle holds none of the keys at all:
 // a read that escaped it would carry its key's name into the bundle.
 
@@ -25,7 +26,8 @@ const KEYS = [
 	'datum.syncFailVerify',
 	'datum.syncTimeoutS',
 	'datum.syncRelay',
-	'datum.pkarrRelay'
+	'datum.pkarrRelay',
+	'datum.liftHoldMs'
 ];
 const prod = fs.mkdtempSync(path.join(os.tmpdir(), 'datum-prod-'));
 // Its own `.svelte-kit`, as kept-build's: the other files' `vite preview` serves `.svelte-kit/output`.
@@ -49,7 +51,7 @@ function named(dir) {
 	return Object.fromEntries(KEYS.map((k) => [k, texts.filter(([, t]) => t.includes(k)).map(([f]) => path.relative(dir, f))]));
 }
 
-test('a production build reads none of sync’s test levers or relay overrides', () => {
+test('a production build reads none of the test levers or relay overrides', () => {
 	assert.deepEqual(named(prod), Object.fromEntries(KEYS.map((k) => [k, []])));
 });
 

@@ -793,7 +793,9 @@ export function picture(node: HTMLElement, { text, svg: given, unsynced }: Pictu
 	let late: PictureOf | null = null;
 	// A task, or what a test says in `datum.liftHoldMs`: a runner whose next
 	// read lands inside the task then reads inside it every run (da-49ssb).
+	// Read only in a build made for tests (da-zl2xa), as sync's levers are.
 	const liftHold = () => {
+		if (!__DATUM_TEST_LEVERS__) return 0;
 		try {
 			return Number(localStorage.getItem('datum.liftHoldMs')) || 0;
 		} catch {
