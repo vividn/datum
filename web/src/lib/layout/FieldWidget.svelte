@@ -66,7 +66,7 @@
 	import FieldForm from '#lib/FieldForm.svelte';
 	import Pane from '#lib/Pane.svelte';
 	import { act } from '#lib/act.ts';
-	import { commandsOpen, fieldPill, setFieldPill } from '#lib/bar.ts';
+	import { fieldPill, setFieldPill } from '#lib/bar.ts';
 	import { renameFieldArgv, specHistoryArgv, specShowArgv, revertToVersionArgv, touchedArgv, type SpecVersion } from '#lib/calls.ts';
 	import { stripAnsi } from '#lib/ansi.ts';
 	import { ask, choose, confirm } from '#lib/confirm.ts';
@@ -143,8 +143,7 @@
 	// And back: the field read is the bar's pill, in its colour — none on a new one. Only once the read is
 	// of the field asked for, so a pill that moved the field is not taken back by the read before. Not a
 	// field this widget just made (`fresh`): its pill would open collect's view on it, over the chip the
-	// tour points at. And it leaves the command widget as it was, which a pill added opens (da-lnirx):
-	// on a phone that covers the form's own buttons.
+	// tour points at. The palette it opens (da-lnirx) is the form's own (da-prs2l).
 	let fresh: typeof $editing | null = null;
 	$effect(() => {
 		const [field, color] = [readFor.field, $fields.find((f) => f.field === readFor.field)?.color];
@@ -152,9 +151,7 @@
 			if (readFor !== $editing || readFor === fresh || $fieldPill === (field || null)) return;
 			if (!field) return setFieldPill(null);
 			if (color === undefined) return;
-			const open = $commandsOpen;
 			setFieldPill(field, color);
-			$commandsOpen = open;
 		});
 	});
 

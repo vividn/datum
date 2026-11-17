@@ -14,12 +14,12 @@
 	The setup widget's commands are the bar's palette's (da-r674m), which a
 	modal makes inert, so the setup place's sheet is no modal: it stands
 	beside the bar, which stays live (da-njt0f, `besideBar` in shell.ts),
-	its palette open while the sheet is.
+	its palette open while they are on screen (da-prs2l, `setupCommands` in
+	#lib/fieldWidget.ts, which owns it on a phone tab too).
 -->
 <script lang="ts">
 	import Sheet from '#lib/Sheet.svelte';
 	import { act } from '#lib/act.ts';
-	import { commandsOpen } from '#lib/bar.ts';
 	import { epoch } from './engine.js';
 	import { KINDS } from './registry.js';
 	import { besideBar, closeModalPlace, modalPlace, openPlace } from './shell.js';
@@ -27,12 +27,6 @@
 	const kind = $derived($modalPlace === null ? undefined : KINDS[$modalPlace.widget.kind]);
 	// The place's own until the widget moves one (a derived written to), and the place's again once it changes.
 	let settings: Record<string, unknown> = $derived($modalPlace?.widget.settings ?? {});
-	// Its commands shown while it is open, as the row under it showed them, so declaring stays three taps (da-ci85o).
-	$effect(() => {
-		if (!$besideBar) return;
-		commandsOpen.set(true);
-		return () => commandsOpen.set(false);
-	});
 </script>
 
 {#if kind && $modalPlace}

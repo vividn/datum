@@ -1264,6 +1264,8 @@ describe('the commands by how the person came', () => {
 			await openField(page, '', undefined, true);
 			await trackSomething(page);
 			await page.locator(`${PICKER} [data-chip="tea"]`).click();
+			// On tea, the palette is open on its own (da-prs2l): a ❯ pressed as it opens would clear the line, tea's pill with it.
+			await until(() => fieldNamed(page), (f) => f === 'tea');
 			await until(() => row(page), (r) => JSON.stringify(r) === JSON.stringify(SAVED));
 			assert.deepEqual(app.errors, []);
 		});

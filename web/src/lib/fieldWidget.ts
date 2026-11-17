@@ -125,9 +125,5 @@ export interface SetupCommand {
 	run: () => void;
 }
 
-/**
- * The commands of the setup widget in front holding a field, the first its
- * primary, and its `undo` (the form's own); null with none. A copy of the
- * widget writes its own and clears only its own.
- */
-export const setupCommands = writable<{ commands: SetupCommand[]; undo: SetupCommand } | null>(null);
+/** The setup widget's commands (da-r674m), kept beside the palette they hold open (`setupCommands` in #lib/bar.ts). */
+export { setupCommands } from './bar.js';

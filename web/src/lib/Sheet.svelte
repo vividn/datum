@@ -56,10 +56,14 @@
 		...rest
 	}: Props = $props();
 
-	/** Escape in a modal is the browser's; beside the bar, the sheet's own, and not a dialog's inside it, nor the bar's. */
+	/**
+	 * Escape in a modal is the browser's; beside the bar, the sheet's own, and not a dialog's inside it, nor the
+	 * bar's line. The palette's is the sheet's too: it holds the sheet's commands, open while they are (da-prs2l).
+	 */
+	const inPalette = (at: EventTarget | null): boolean => beside && at instanceof Element && !!at.closest('#bar-commands');
 	function onkeydown(e: KeyboardEvent): void {
 		const at = e.target as Element;
-		if (!beside || e.key !== 'Escape' || e.defaultPrevented || (at !== document.body && at.closest('dialog') !== sheet)) return;
+		if (!beside || e.key !== 'Escape' || e.defaultPrevented || (at !== document.body && !inPalette(at) && at.closest('dialog') !== sheet)) return;
 		e.preventDefault();
 		sheet?.close();
 	}
@@ -72,7 +76,7 @@
 	});
 </script>
 
-<svelte:window onkeydown={(e) => open && e.target === document.body && onkeydown(e)} />
+<svelte:window onkeydown={(e) => open && (e.target === document.body || inPalette(e.target)) && onkeydown(e)} />
 
 {#if open}
 	{#if beside}

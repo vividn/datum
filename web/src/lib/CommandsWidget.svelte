@@ -95,7 +95,8 @@
 	can run, the rest the first of the row, and undo is the form's own, its
 	reason in its title while it is grayed. vividn, 2026-11-11: «the command
 	pallete is how you should save stuff from the setup screen! save should be
-	the primary action».
+	the primary action». They and Help are the whole bar (`SETUP_BAR`,
+	da-prs2l): no backup, restore or page, whatever is loaded.
 
 	THE PALETTE, the ❯'s commands over the bottom bar's output (da-qzzox,
 	vividn, 2026-11-04: «increase the size of the buttons in the command
@@ -144,6 +145,7 @@
 		iconOf,
 		MAX_ROWS,
 		MENUS,
+		SETUP_BAR,
 		subcommandsOf,
 		suggestionOf,
 		type Suggestion,
@@ -243,17 +245,19 @@
 		if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
 	});
 	const shown = $derived(
-		fixed
-			? fixedCommands(grammar, fixed)
-			: flagged
-				? flagsOf(grammar, flagged)
-				: open
-					? subcommandsOf(grammar, open)
-					: argumentsOf(pills).length
-						? listed
-						: menu
-							? [BACK, ...MENUS[menu]]
-							: BASE
+		setup
+			? SETUP_BAR
+			: fixed
+				? fixedCommands(grammar, fixed)
+				: flagged
+					? flagsOf(grammar, flagged)
+					: open
+						? subcommandsOf(grammar, open)
+						: argumentsOf(pills).length
+							? listed
+							: menu
+								? [BACK, ...MENUS[menu]]
+								: BASE
 	);
 	/**
 	 * The lines the bar is dealt into, at most: the palette is ONE row

@@ -727,6 +727,12 @@ export function subcommandsOf(grammar: Grammar | null, name: string): CommandBut
 }
 
 /**
+ * The bar beside the setup widget's own commands (da-prs2l): its undo and Help, nothing else. vividn,
+ * 2026-11-17: «remove all the commands not related to setting up (like db back restore, etc)».
+ */
+export const SETUP_BAR: CommandButton[] = [UNDO, HELP];
+
+/**
  * The bar on a tab with a fixed command (da-zx826, `fixed` in #lib/bar.ts),
  * where a line runs as `<command> <line>`. vividn, 2026-11-09: «show setups
  * own options or other pages you can go to. like db and sync and stuff could

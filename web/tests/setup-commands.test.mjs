@@ -8,9 +8,10 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, fold, unfold } from './support/bar.mjs';
-import { FIELD_FORM, PANEL, SETUP, nameField, openField, openPalette, setupCommand, setupCommands } from './support/field.mjs';
+import { FIELD_FORM, PANEL, SETUP, fieldNamed, nameField, openField, openPalette, setupCommand, setupCommands } from './support/field.mjs';
+import { exactly } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -96,6 +97,9 @@ describe('setup in the palette', () => {
 			await description(page).fill('black');
 			await setupCommand(page, 'save');
 			await until(() => described(app, 'tea'), (d) => d === 'black');
+			// Once the form has read the save back: before, its undo is still the edit's. The palette stays open over a
+			// save now (da-prs2l), so nothing else waits for that.
+			await until(() => undo(page).getAttribute('title'), (t) => t === 'undo the save');
 			await setupCommand(page, 'undo');
 			await until(() => described(app, 'tea'), (d) => d === null);
 			await until(() => description(page).inputValue(), (v) => v === '');
@@ -232,5 +236,65 @@ describe('setup on a desktop: the bar stays live beside its modal', () => {
 			await sheet(page, 'docs').waitFor({ state: 'detached' });
 			assert.deepEqual(app.errors, []);
 		});
+	});
+});
+
+// vividn, 2026-11-17 (da-prs2l): «The command pallette should always be open when you are in the manual setup screen,
+// right now if you use a premade and hit configure it doesn't open. Also remove all the commands not related to
+// setting up (like db back restore, etc)». On a phone, a device's first visit, its setup tab.
+describe('the palette while a setup form is in front', () => {
+	const FRESH = { ...PHONE, home: null };
+	/** The ❯, which says whether the palette is open. */
+	const toggle = (page) => page.locator('.prompt-bar button[aria-controls="bar-commands"]');
+	/** Every button the palette draws, by what it is: a setup command, a command, a menu. */
+	const listed = (page) =>
+		page
+			.locator('#bar-commands button:not(.probe *)')
+			.evaluateAll((all) => all.map((b) => b.dataset.setup ?? b.dataset.command ?? b.dataset.menu ?? b.textContent.trim()));
+	/** The setup tab, a premade's preview, its Configure: the form filled and nothing pressed after. */
+	const rootTab = (page, name) => page.locator('.root-bar [role="tab"]', { hasText: exactly(name) });
+	async function configure(page, example) {
+		await rootTab(page, 'setup').click();
+		await page.locator(`.host.setup button.row[data-example="${example}"]`).click();
+		await page.locator('dialog .preview:has([data-preview]) button.configure').click();
+		await until(() => fieldNamed(page), (v) => v === example);
+	}
+
+	test("a premade's Configure opens it, the form's primary first, no ❯ pressed", async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await configure(page, 'medication');
+			await page.locator(SETUP()).waitFor();
+			assert.equal(await toggle(page).getAttribute('aria-expanded'), 'true');
+			assert.equal((await listed(page))[0], 'start tracking');
+			assert.deepEqual(app.errors, []);
+		}, FRESH);
+	});
+
+	test("it holds the form's commands, its undo and Help, and nothing else: no backup, no restore, no menu", async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await configure(page, 'medication');
+			await openPalette(page);
+			await page.locator(SETUP()).waitFor();
+			assert.deepEqual(await listed(page), ['start tracking', 'save without tracking', 'cancel', 'undo', 'redo', 'help']);
+			assert.deepEqual(app.errors, []);
+		}, FRESH);
+	});
+
+	test('a tap on the form leaves it open, and leaving setup closes it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await configure(page, 'medication');
+			await openPalette(page);
+			await page.locator(`${FIELD_FORM} [data-tab="data"]`).click();
+			await page.locator(`${FIELD_FORM} [data-tab="basics"]`).click();
+			await app.idle();
+			assert.equal(await toggle(page).getAttribute('aria-expanded'), 'true', 'a tap on the form closed it');
+			await page.locator(SETUP()).waitFor();
+			await rootTab(page, 'collection').click();
+			await until(() => toggle(page).getAttribute('aria-expanded'), (open) => open === 'false');
+			assert.deepEqual(app.errors, []);
+		}, FRESH);
 	});
 });

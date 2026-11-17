@@ -41,6 +41,7 @@ import { onAnyChange } from './changes.js';
 import { argumentsOf, hidsOf, pendingCommand, pillWord, roleOf, type LogCommand } from './commands.js';
 import { currentDb } from './database.js';
 import { parseEcho } from './echo.js';
+import type { SetupCommand } from './fieldWidget.js';
 import { layout } from './layout/current.js';
 import { pressWithPills } from './layout/engine.js';
 import { run, type RunResult } from './run.js';
@@ -481,6 +482,33 @@ export const dropHids = (gone: string[]): void => {
  * (`pressWithPills`) and on a choice that fills the line (CommandPane).
  */
 export const commandsOpen = writable(false);
+
+/**
+ * The commands of the setup widget in front holding a field, the first its
+ * primary, and its `undo` (the form's own); null with none. A copy of the
+ * widget writes its own and clears only its own.
+ */
+export const setupCommands = writable<{ commands: SetupCommand[]; undo: SetupCommand } | null>(null);
+
+// In bar.ts beside the palette, not in #lib/fieldWidget.ts, so neither is read before it is made.
+// The palette is open while they are on screen, on a phone tab as on a desktop sheet (da-prs2l), vividn,
+// 2026-11-17: «The command pallette should always be open when you are in the manual setup screen». They
+// coming opens it; nothing closes it while they stand (a run, a tap, Escape, the `❯`: each is opened again);
+// their going closes it. A form re-publishing its commands goes through null and back in one effect, so
+// the close waits a microtask to see that they are gone for good.
+let onScreen = false;
+setupCommands.subscribe((setup) => {
+	if (setup && !onScreen) commandsOpen.set((onScreen = true));
+	else if (!setup && onScreen)
+		queueMicrotask(() => {
+			if (get(setupCommands) || !onScreen) return;
+			onScreen = false;
+			commandsOpen.set(false);
+		});
+});
+commandsOpen.subscribe((open) => {
+	if (!open && get(setupCommands)) commandsOpen.set(true);
+});
 
 // A pill ADDED opens it, and the last one gone closes it (da-lnirx).
 // vividn, 2026-10-27: «pills and filters activate the command widget to
