@@ -216,7 +216,7 @@ async function flush(at: string, db: string, vertical: boolean): Promise<void> {
 }
 
 /** The SHA-256 of a picture as `--digests` takes it: the SVG as printed, less its newline. */
-async function sha256(text: string): Promise<string | null> {
+export async function sha256(text: string): Promise<string | null> {
 	if (!crypto.subtle) return null;
 	const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text.replace(/\n$/, ''))));
 	return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');

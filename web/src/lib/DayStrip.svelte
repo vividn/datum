@@ -241,8 +241,12 @@
 	 * A band's picture or the geometry, by the epoch it was asked at (see
 	 * `cache`), and the day's data layer a band was drawn from (da-m6i2a).
 	 */
-	/** A band's picture: a run's, or the page's node laid out from its data layer (`bandFrom`), whose stdout is empty. */
-	type Band = RunResult & { svg?: SVGSVGElement };
+	/**
+	 * A band's picture: a run's, or the page's node laid out from its data
+	 * layer (`bandFrom`), whose stdout is empty, or, `kept` its date, a run's
+	 * kept past a reload, not yet checked (da-dozvg).
+	 */
+	type Band = RunResult & { svg?: SVGSVGElement; kept?: string };
 	type Asked = { epoch: number; end: number | 'geometry'; run: Promise<Band>; layer?: Promise<Layer> };
 	/** Every picture asked at one size, by its argv (see `cache`). */
 	type Cache = { key: string; size: string; runs: Map<string, Asked> };
@@ -305,8 +309,8 @@
 	import { on } from 'svelte/events';
 	import { browser } from '$app/env';
 	import { currentDb } from './database.js';
-	import { keptDays, keptNow, type Kept } from './heldDays.js';
-	import { anchorStripes, bandOf, heldLayer, layers, oneClock, standIn, type Layer } from './dayLayers.js';
+	import { bandSize, keepDay, keptDays, keptNow, type Kept } from './heldDays.js';
+	import { anchorStripes, bandOf, heldLayer, layers, oneClock, sha256, standIn, type Layer } from './dayLayers.js';
 	import { sanitizeSvg } from './svgSafe.js';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
@@ -921,12 +925,24 @@
 	 * A day's band from its data layer (da-m6i2a): the layer scaled to the
 	 * band, today's cut at now, or, a day the clock changed in, the CLI's own
 	 * picture of it, whose lanes bend along the change as no scaling can.
+	 * That picture of a past day is kept past a reload, as a layer is
+	 * (da-dozvg): vividn, 2026-11-17, «Days with UTC offset changes don't
+	 * seem to be cached on the dayview». It stands in only where `unchecked`,
+	 * the band's own layer held from an earlier epoch, so `check` reads it
+	 * once the day is on screen.
 	 */
-	async function bandFrom(layer: Layer, at: { wide: number; dayHeight: number }, end: number): Promise<Band> {
+	async function bandFrom(layer: Layer, at: { wide: number; dayHeight: number }, end: number, unchecked = false): Promise<Band> {
 		const argv = bandArgv(at.wide, at.dayHeight, end);
 		if (layer.error || !layer.doc()) return { argv, code: 1, stdout: '', stderr: layer.error ?? '' };
-		if (!oneClock(layer)) return run(argv, undefined, undefined, `${queueKey}:${end}`, undefined, undefined, true);
-		return { argv, code: 0, stdout: '', svg: bandOf(layer, at.wide, at.dayHeight, end === 0 ? Date.now() : undefined), stderr: '' };
+		if (oneClock(layer))
+			return { argv, code: 0, stdout: '', svg: bandOf(layer, at.wide, at.dayHeight, end === 0 ? Date.now() : undefined), stderr: '' };
+		const size = bandSize(at.wide, at.dayHeight);
+		const kept = end > 0 && unchecked ? keptNow(db)?.get(size)?.get(dateOf(end)) : undefined;
+		if (kept) return { argv, code: 0, stdout: kept, stderr: '', kept: dateOf(end) };
+		const result = await run(argv, undefined, undefined, `${queueKey}:${end}`, undefined, undefined, true);
+		// By the CLI's today, which a guess is not.
+		if (end > 0 && !guessed && result.code === 0 && result.stdout) keepDay(db, size, dateOf(end), result.stdout);
+		return result;
 	}
 
 	/**
@@ -1057,7 +1073,8 @@
 		for (const end of missing) {
 			const i = fresh.indexOf(end);
 			const { epoch, run: layer } = i < 0 ? heldLayer(dateOf(end))! : { epoch: at.epoch, run: answers[i] };
-			cache.runs.set(id(end), { epoch: Math.min(epoch, at.epoch), end, layer, run: layer.then((layer) => bandFrom(layer, at, end)) });
+			const band = layer.then((layer) => bandFrom(layer, at, end, epoch < at.epoch));
+			cache.runs.set(id(end), { epoch: Math.min(epoch, at.epoch), end, layer, run: band });
 		}
 
 		// The geometry first: the gridlines, the ruler and the date stamps
@@ -1145,13 +1162,14 @@
 		if (held.every((asked) => checking.get(asked) === at.epoch)) return;
 		for (const asked of held) checking.set(asked, at.epoch);
 		const fresh = layers(ends.map(dateOf), at.epoch);
+		const standing = Promise.all(held.map((asked) => asked.run)).then((bands) => bandsStand(at, bands));
 		void Promise.all(
 			ends.map(async (end, i) => {
 				const asked = held[i];
-				const [now, was] = await Promise.all([fresh[i], asked.layer]);
+				const [now, was, stands] = await Promise.all([fresh[i], asked.layer, standing]);
 				if (checking.get(asked) === at.epoch) checking.delete(asked);
 				if (cache !== mine || mine.runs.get(id(end)) !== asked || asked.epoch >= at.epoch) return null;
-				if (!now.error && now.text === was?.text) return void (asked.epoch = at.epoch), null;
+				if (!now.error && now.text === was?.text && stands[i]) return void (asked.epoch = at.epoch), null;
 				mine.runs.delete(id(end));
 				return end;
 			})
@@ -1159,6 +1177,28 @@
 			const ends = again.filter((end): end is number => end !== null);
 			if (ends.length && cache === mine) draw(at, ends);
 		});
+	}
+
+	/**
+	 * Does each of `bands` stand? A run's does; one kept past a reload
+	 * (`bandFrom`) if its digest is the one `--digests` gives now with the
+	 * band's own flags, one run for them all, at their absolute dates. No
+	 * answer is none standing: the CLI draws it again.
+	 */
+	async function bandsStand(at: { wide: number; dayHeight: number }, bands: Band[]): Promise<boolean[]> {
+		const dates = bands.flatMap((band) => band.kept ?? []);
+		if (!dates.length) return bands.map(() => true);
+		const newest = [...dates].sort().at(-1)!;
+		const back = (date: string) => Math.round((Date.parse(newest) - Date.parse(date)) / 86_400_000);
+		const argv = [...bandArgv(at.wide, at.dayHeight), '--end-date', newest, '--show', 'json', '--digests', dates.map(back).join(',')];
+		const result = await run(argv, undefined, undefined, undefined, undefined, undefined, true);
+		let digests: Record<string, string> = {};
+		try {
+			digests = JSON.parse(result.stdout).digests ?? {};
+		} catch {
+			// No digest: not standing.
+		}
+		return Promise.all(bands.map(async (band) => !band.kept || digests[back(band.kept)] === (await sha256(band.stdout))));
 	}
 
 	/** Each held picture a `check` is out for, and the epoch it is checked at. */

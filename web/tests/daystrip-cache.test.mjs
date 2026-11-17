@@ -380,6 +380,43 @@ describe('the day strip across a reload (da-crq76)', () => {
 		});
 	});
 
+	// vividn, 2026-11-17: «Days with UTC offset changes don't seem to be
+	// cached on the dayview and have to be rerendered every time you open the
+	// app». A day the clock changed in is the CLI's own band, not its layer
+	// laid out, so its band is what is kept (da-dozvg). Berlin, two days
+	// after its clocks went back.
+	test('a reload draws a day the clock changed in from the store, its band checked and not asked', async () => {
+		await withApp(
+			async (app) => {
+				await seedLines(app, ['occur coffee -d 2026-10-25 -t 12:00', 'occur coffee -y -t 12:00']);
+				await pictures(app);
+				// On screen, so it is drawn as of the seed and kept so: a day off
+				// screen keeps its picture from before a write.
+				await scrollToDay(app, 2);
+				await app.page.waitForFunction(() => document.querySelector('.band[data-days-ago="2"] .point-bg'));
+				await app.idle();
+				const before = await pictures(app);
+				// Day 2, 2026-10-25, is the one drawn by its band argv.
+				assert.ok((await viewsOf(booted(app), app)).includes(2), 'the clock change was not drawn by its band');
+				await until(() => keptRows(app), (rows) => rows.some(({ size, date }) => size.startsWith('band ') && date === '2026-10-25'));
+
+				await app.reload();
+				const after = await pictures(app);
+				await scrollToDay(app, 2);
+				const bandCheck = (argv) => argv.includes('--digests') && !argv.includes('--data-layer');
+				await until(booted(app), (argvs) => argvs.some(bandCheck));
+				await app.idle();
+
+				assert.deepEqual(await viewsOf(booted(app), app), [0], 'the reload asked the CLI for an earlier day');
+				const checked = (await booted(app)()).filter(bandCheck);
+				assert.equal(checked.length, 1, 'the kept band was not checked by one run of its own flags');
+				assert.equal(after[2], before[2], 'the clock change is not the picture it was');
+				assert.equal(await band(app, 2), before[2], 'the clock change was not kept on screen once checked');
+			},
+			{ ...PHONE, timezone: 'Europe/Berlin', clock: Date.UTC(2026, 9, 27, 12), prepare: (context) => Promise.all([twoLayouts(context), recordBoot(context)]) }
+		);
+	});
+
 	// What a write on another tab, a sync or a newer datum leaves: a kept
 	// picture that is not the one the CLI draws now.
 	test('a kept picture the CLI no longer draws is redrawn after the check, and kept again', async () => {

@@ -8,7 +8,9 @@
 // drawn down the page) and date, and the layers start from it; the one
 // `dayview --digests` check then redraws the days whose layer changed, a new
 // datum's drawing included. Today's is its latest, which stands in until
-// today is drawn again (da-8xy6u).
+// today is drawn again (da-8xy6u). A past day the clock changed in keeps the
+// CLI's own picture of its band too (`bandSize`, da-dozvg), checked by a
+// `--digests` run of the band's flags as a layer is by its own.
 //
 // IndexedDB and not OPFS: OPFS is the database worker's, under the
 // `datum-cli-files` lock with sync access handles, and a picture kept there
@@ -27,6 +29,9 @@ const STORE = 'days';
 const MONTH = 31;
 /** The band argvs a database keeps, the least recently used dropped: a resize is a new one. */
 const SIZES = 3;
+/** The size a day strip's band is kept at, `wide` px by `dayHeight`: a group of sizes of its own, beside the layers'. */
+export const bandSize = (wide: number, dayHeight: number) => `band ${wide}x${dayHeight}`;
+const groupOf = (size: string) => (size.startsWith('band ') ? 'band' : 'layer');
 /** How long a strip waits for the store before it draws without it. */
 const PATIENCE = 500;
 
@@ -131,7 +136,7 @@ export async function moveDays(from: string, to: string): Promise<void> {
 	await new Promise((resolve) => (tx.oncomplete = tx.onerror = tx.onabort = resolve));
 }
 
-/** Write `row`, if any, and drop from `kept` and the store the dates past `MONTH` of each size and the sizes past `SIZES`. */
+/** Write `row`, if any, and drop from `kept` and the store the dates past `MONTH` of each size and the sizes past `SIZES` of each group. */
 function write(db: string, kept: Kept, row?: Row): void {
 	const old: [string, string][] = [];
 	for (const [size, days] of kept)
@@ -139,7 +144,7 @@ function write(db: string, kept: Kept, row?: Row): void {
 			days.delete(date);
 			old.push([size, date]);
 		}
-	const gone = [...kept.keys()].slice(0, Math.max(0, kept.size - SIZES));
+	const gone = [...kept.keys()].filter((size, i, all) => all.slice(i + 1).filter((s) => groupOf(s) === groupOf(size)).length >= SIZES);
 	for (const size of gone) kept.delete(size);
 	if (!row && !old.length && !gone.length) return;
 	void open()
