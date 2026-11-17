@@ -64,10 +64,19 @@ fn ops_import(file: Option<String>, db: &Db) -> Result<()> {
     for why in &s.refused {
         eprintln!("refused: {why}");
     }
+    for why in &s.past_head {
+        eprintln!("not stubbed: {why}");
+    }
     println!(
         "applied {} · already had {} · held {} · conflicts {}",
         s.applied, s.already_had, s.held, s.conflicts
     );
+    if s.stubs > 0 {
+        println!(
+            "stubbed {}: seqs the skipped line names, held as a purge's",
+            s.stubs
+        );
+    }
     anyhow::ensure!(s.refused.is_empty(), "{} op(s) refused", s.refused.len());
     Ok(())
 }

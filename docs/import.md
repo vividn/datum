@@ -120,7 +120,9 @@ datum --db new db ops import ops.jsonl     # or: db ops import - < ops.jsonl; --
 `db ops export` prints every op the database holds, one signed JSON line each. It first signs a baseline op for each
 entry no op covers yet (one `datum import` wrote), as a sync does, so an export writes to the database it reads; a
 paused copy, or a reader, signs none and refuses rather than leave such an entry out. `db ops import` applies the ops
-as a sync would, so the two copies hold the same ops and the same entries, and an op held already is skipped. The sync
+as a sync would, so the two copies hold the same ops and the same entries, and an op held already is skipped. The seqs
+a purge took are named on one unsigned `skipped` line and held as its stubs, said as `stubbed N`: never at a seq an op
+in the file fills, which is refused, nor past its endpoint's last op there, and at most 4,194,304 in all. The sync
 chain's own records are held but not applied, so the copy importing is in no chain; should it join that same chain,
 they apply with its first sync. A copy in a chain refuses the import, since its chain admitted none of the endpoints that signed them: there, export and
 import JSONL rows as above. Ops are not for writing by hand: each needs its endpoint's seq, its deps and a signature.

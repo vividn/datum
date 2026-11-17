@@ -1114,6 +1114,11 @@ pub struct ApplySummary {
     pub refused: Vec<String>,
     /// A purge order took this copy's data now (da-qzrj9).
     pub wiped: bool,
+    /// `db ops import`'s alone (da-9jdsf): the seqs its `skipped` line had
+    /// held as a purge's stubs, and each run it left past its endpoint's
+    /// last signed op in the file.
+    pub stubs: i64,
+    pub past_head: Vec<String>,
 }
 
 /// The ops of `hid` that are applied, in fold order.

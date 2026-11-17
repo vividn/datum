@@ -12,6 +12,8 @@
 //! named on one `{"skipped": {endpoint: [[from, to], …]}}` line, and held
 //! as the purge's stubs.
 
+use std::collections::{BTreeMap, HashMap};
+
 use rusqlite::{params, types::Value as Sql, Connection};
 use serde_json::{json, Map, Value};
 
@@ -88,27 +90,40 @@ impl Db {
                 chain.id
             )));
         }
-        let (mut held, mut ops, mut records) = (WriteBatch::default(), Vec::new(), Vec::new());
-        for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let (mut ops, mut records, mut skipped, mut parsed) = (Vec::new(), vec![], vec![], vec![]);
+        let lines = lines.lines().map(str::trim).enumerate();
+        for (n, line) in lines.filter(|(_, l)| !l.is_empty()) {
             if line.starts_with("{\"skipped\":") {
-                stubs(&mut held, line)?;
+                skipped.push((n + 1, line));
                 continue;
             }
             match Op::parse(line) {
-                Ok(op) if op.is_chain() => records.push(line),
+                Ok(op) => {
+                    match op.is_chain() {
+                        true => records.push(line),
+                        false => ops.push(line.to_string()),
+                    }
+                    parsed.push((op, line));
+                }
                 // `sync_apply` names an unreadable one.
-                _ => ops.push(line.to_string()),
+                Err(_) => ops.push(line.to_string()),
             }
         }
         // As a copy holding them dormant serves them: so they are held.
         if !records.is_empty() {
             ops.push(json!({ "dormant": records }).to_string());
         }
+        let (held, mut stubbed) = stubs(&skipped, &parsed)?;
         // Before the ops, so each op after a stub finds its predecessor held.
         // On their own, as `sync_apply` commits in chunks: an import cut
         // short is run again, and what is held already is skipped.
         self.write(&held)?;
-        self.sync_apply(&ops.join("\n"))
+        let mut s = self.sync_apply(&ops.join("\n"))?;
+        stubbed.refused.append(&mut s.refused);
+        s.refused = stubbed.refused;
+        s.stubs = stubbed.stubs;
+        s.past_head = stubbed.past_head;
+        Ok(s)
     }
 }
 
@@ -166,31 +181,99 @@ pub(super) fn hold_dormant(
     Ok(())
 }
 
-/// The stubs a `skipped` line names, as a purge's are held.
-fn stubs(held: &mut WriteBatch, line: &str) -> Result<()> {
-    let word: Value = serde_json::from_str(line)
-        .map_err(|e| DatumError::Other(format!("unreadable skipped line {line}: {e}")))?;
-    for (e, runs) in word["skipped"].as_object().into_iter().flatten() {
-        for run in runs.as_array().into_iter().flatten() {
-            let (Some(from), Some(to)) = (run[0].as_i64(), run[1].as_i64()) else {
-                return Err(DatumError::Other(format!(
-                    "a skipped run is [from, to], two seqs: {run}"
-                )));
-            };
-            for seq in from..=to {
-                held.push(
-                    "INSERT OR IGNORE INTO ops (endpoint, seq, hlc, hid, slug, kind, applied, body)
-                     VALUES (?1, ?2, '', ?3, '', 'purged', 3, '')",
-                    vec![
-                        Sql::Text(e.clone()),
-                        Sql::Integer(seq),
-                        Sql::Text(PURGED.into()),
-                    ],
-                );
+/// The most seqs a file's `skipped` lines may name in all (da-9jdsf). A
+/// purge's stubs are the ops it took, at most every op a copy held: the
+/// largest copy measured, vividn's phone, held 287k entries (da-dwm2y), a
+/// few ops each, and this is several times that. Holding it all takes
+/// seconds, where a run to 2^63 never ended.
+const MOST_SKIPPED: i64 = 1 << 22;
+
+/// The stubs a file's `skipped` lines name, as a purge's are held: one
+/// statement a run, the runs bounded. The lines are unsigned (da-9jdsf), so
+/// a seq a signed op in the file fills is refused, never stubbed, and that
+/// op applies; and an endpoint with signed ops in the file is stubbed only
+/// below the highest of them. A stub above it holds back no op of the file,
+/// so leaving it out costs the import nothing, where a forged one would make
+/// that endpoint's next op read as a second at its seq. An endpoint with no
+/// signed op in the file is held as the line says, until a stub can be
+/// checked (da-lnmyf).
+fn stubs(lines: &[(usize, &str)], ops: &[(Op, &str)]) -> Result<(WriteBatch, ApplySummary)> {
+    let (mut runs, mut total) = (Vec::new(), 0i64);
+    for &(n, line) in lines {
+        let bad = |why: String| {
+            DatumError::Other(format!("db ops import: line {n}, the skipped line: {why}"))
+        };
+        let word: Value = serde_json::from_str(line).map_err(|e| bad(e.to_string()))?;
+        for (e, rs) in word["skipped"].as_object().into_iter().flatten() {
+            for run in rs.as_array().into_iter().flatten() {
+                let (Some(from), Some(to)) = (run[0].as_i64(), run[1].as_i64()) else {
+                    return Err(bad(format!("a run is [from, to], two seqs: {run}")));
+                };
+                if from < 1 || to < from {
+                    return Err(bad(format!("{e}: [{from}, {to}] is no run of seqs")));
+                }
+                total = total.saturating_add(to - from + 1);
+                if total > MOST_SKIPPED {
+                    return Err(bad(format!(
+                        "its runs name more than {MOST_SKIPPED} seqs, more than a purge leaves"
+                    )));
+                }
+                runs.push((e.clone(), from, to));
             }
         }
     }
-    Ok(())
+    let mut of: HashMap<&str, BTreeMap<i64, &(Op, &str)>> = HashMap::new();
+    for op in ops {
+        of.entry(&op.0.endpoint).or_default().insert(op.0.seq, op);
+    }
+    let signed = |(op, body): &(Op, &str)| check_signature(body, op).is_ok();
+    let (mut held, mut s) = (WriteBatch::default(), ApplySummary::default());
+    for (e, from, to) in runs {
+        let mine = of.get(e.as_str());
+        let head = mine
+            .and_then(|m| m.values().rev().find(|op| signed(op)))
+            .map(|op| op.0.seq);
+        let filled: Vec<i64> = (mine.into_iter().flat_map(|m| m.range(from..=to)))
+            .filter(|(_, op)| signed(op))
+            .map(|(&n, _)| n)
+            .collect();
+        for n in &filled {
+            s.refused.push(format!(
+                "{e}/{n}: the skipped line names a seq an op in the file fills, so no stub"
+            ));
+        }
+        if let Some(h) = head.filter(|&h| h < to) {
+            s.past_head.push(format!(
+                "{e}/{}..{to}: no stub past its last op in the file, {h}",
+                from.max(h + 1)
+            ));
+        }
+        let top = head.map_or(to, |h| to.min(h - 1));
+        let mut next = from;
+        for end in filled
+            .iter()
+            .map(|n| n - 1)
+            .filter(|&end| end < top)
+            .chain([top])
+        {
+            if next <= end {
+                held.push(
+                    "WITH RECURSIVE s(n) AS (SELECT ?2 UNION ALL SELECT n + 1 FROM s WHERE n < ?3)
+                     INSERT OR IGNORE INTO ops (endpoint, seq, hlc, hid, slug, kind, applied, body)
+                     SELECT ?1, n, '', ?4, '', 'purged', 3, '' FROM s",
+                    vec![
+                        Sql::Text(e.clone()),
+                        Sql::Integer(next),
+                        Sql::Integer(end),
+                        Sql::Text(PURGED.into()),
+                    ],
+                );
+                s.stubs += end - next + 1;
+            }
+            next = end.saturating_add(2);
+        }
+    }
+    Ok((held, s))
 }
 
 /// The dormant records of the chains `ids` names wait to apply: this copy
