@@ -113,14 +113,13 @@ impl Db {
         if !records.is_empty() {
             ops.push(json!({ "dormant": records }).to_string());
         }
-        let (held, mut stubbed) = stubs(&skipped, &parsed)?;
+        let (held, stubbed) = stubs(&skipped, &parsed)?;
         // Before the ops, so each op after a stub finds its predecessor held.
         // On their own, as `sync_apply` commits in chunks: an import cut
         // short is run again, and what is held already is skipped.
         self.write(&held)?;
         let mut s = self.sync_apply(&ops.join("\n"))?;
-        stubbed.refused.append(&mut s.refused);
-        s.refused = stubbed.refused;
+        s.stubs_refused = stubbed.stubs_refused;
         s.stubs = stubbed.stubs;
         s.past_head = stubbed.past_head;
         Ok(s)
@@ -238,7 +237,7 @@ fn stubs(lines: &[(usize, &str)], ops: &[(Op, &str)]) -> Result<(WriteBatch, App
             .map(|(&n, _)| n)
             .collect();
         for n in &filled {
-            s.refused.push(format!(
+            s.stubs_refused.push(format!(
                 "{e}/{n}: the skipped line names a seq an op in the file fills, so no stub"
             ));
         }

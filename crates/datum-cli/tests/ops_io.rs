@@ -227,6 +227,10 @@ fn a_skipped_seq_a_signed_op_in_the_file_fills_is_refused_and_the_op_applies() {
         err.contains(&format!("refused: {e}/{n}: the skipped line")),
         "{err}"
     );
+    // Every op applied, so the closing line names a stub and no op (da-9oumk).
+    let last = err.lines().last().unwrap_or_default();
+    assert!(last.contains("1 stub(s) refused"), "{err}");
+    assert!(!last.contains("op(s) refused"), "{err}");
     assert!(
         text(&out.stdout).contains("already had 0"),
         "{}",
@@ -254,6 +258,35 @@ fn a_skipped_seq_a_signed_op_in_the_file_fills_is_refused_and_the_op_applies() {
         env.ok("b", &["db", "ops", "export"]),
         ops,
         "no stub carried on"
+    );
+}
+
+/// An op genuinely refused is still said as an op, beside a stub the
+/// skipped line had to give up, each counted by its own name (da-9oumk).
+#[test]
+fn a_refused_op_is_said_as_an_op_beside_a_refused_stub() {
+    let env = Env::new();
+    for f in ["one", "two", "three"] {
+        env.ok("a", &["moment", f, "-y", "-t", "9:00"]);
+    }
+    let ops = env.ok("a", &["db", "ops", "export"]);
+    let (e, n, _) = op_at(&ops, "two:");
+    // three's body no longer matches its signature.
+    let ops: String = ops
+        .lines()
+        .map(|l| match l.contains("\"three:") {
+            true => l.replace("three", "thrice"),
+            false => l.to_string(),
+        } + "\n")
+        .collect();
+
+    let out = env.datum("b", &["db", "ops", "import"], &skipping(&e, n, n, &ops));
+    assert!(!out.status.success());
+    let err = text(&out.stderr);
+    let last = err.lines().last().unwrap_or_default();
+    assert!(
+        last.contains("1 stub(s) refused") && last.contains("1 op(s) refused"),
+        "{err}"
     );
 }
 

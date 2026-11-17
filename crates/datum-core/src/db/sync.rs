@@ -1119,6 +1119,9 @@ pub struct ApplySummary {
     /// last signed op in the file.
     pub stubs: i64,
     pub past_head: Vec<String>,
+    /// `db ops import`'s alone (da-9oumk): each seq its `skipped` line named
+    /// that a signed op in the file fills, refused as a stub, never an op.
+    pub stubs_refused: Vec<String>,
 }
 
 /// The ops of `hid` that are applied, in fold order.

@@ -61,7 +61,7 @@ fn ops_import(file: Option<String>, db: &Db) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("db ops import: {path}: {e}"))?,
     };
     let s = db.ops_import(&input)?;
-    for why in &s.refused {
+    for why in s.stubs_refused.iter().chain(&s.refused) {
         eprintln!("refused: {why}");
     }
     for why in &s.past_head {
@@ -77,7 +77,20 @@ fn ops_import(file: Option<String>, db: &Db) -> Result<()> {
             s.stubs
         );
     }
-    anyhow::ensure!(s.refused.is_empty(), "{} op(s) refused", s.refused.len());
+    // Each kind by its own name (da-9oumk): a stub refused is the file's
+    // skipped line corrected, every op it names applying, and still an exit
+    // a script hears, since the file was not what it said.
+    let mut refused = vec![];
+    if !s.stubs_refused.is_empty() {
+        refused.push(format!(
+            "{} stub(s) refused (the skipped line named a seq an op in the file fills)",
+            s.stubs_refused.len()
+        ));
+    }
+    if !s.refused.is_empty() {
+        refused.push(format!("{} op(s) refused", s.refused.len()));
+    }
+    anyhow::ensure!(refused.is_empty(), "{}", refused.join(" · "));
     Ok(())
 }
 
