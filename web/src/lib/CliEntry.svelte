@@ -111,6 +111,8 @@
 	let told = $state(false);
 	let busy = $state(false);
 	const note = $props.id();
+	/** The command's height, which the step's column starts under. */
+	let tall = $state(0);
 
 	/** A mouse's hover already shows the note, which its click keeps; a tap or a key toggles it. */
 	async function press(event: MouseEvent): Promise<void> {
@@ -135,7 +137,7 @@
 
 <!-- `data-secret`: its answer stays out of the copy kept for the next visit (Stale.svelte, da-odkpz). -->
 <div class="frame" class:marked={!!mark} class:struck={!!mark?.undone} data-secret={answersSecret(entry.line) || undefined}>
-	<div class="head" class:capped={!!cap} class:all class:struck={!!mark?.undone}>
+	<div class="head" class:capped={!!cap} class:all class:struck={!!mark?.undone} bind:offsetHeight={tall}>
 		<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
 	</div>
 	{#if cap}
@@ -190,6 +192,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<span
 			class="step"
+			style:top={tall ? `calc(${tall}px - var(--label) / 2)` : undefined}
 			onpointerenter={(e) => e.pointerType === 'mouse' && (told = refused)}
 			onpointerleave={(e) => e.pointerType === 'mouse' && (told = false)}
 			onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && (told = false)}
@@ -231,12 +234,14 @@
 		isolation: isolate;
 		min-width: 0;
 		margin-block: calc(var(--label) / 2);
-		padding: 0 0.45em calc(var(--label) / 2);
+		padding: 0 var(--pad) calc(var(--label) / 2);
 		border: 1px solid var(--quiet);
 		border-radius: 0.45em;
 		line-height: 1.35;
 		/* The label's height: its type, a step down, on one line. */
 		--label: calc(0.75em * 1.2);
+		/* Its sides' padding, which a marked frame's entries add to (below). */
+		--pad: 0.45em;
 		/* The gutter the step stands in, which pushes the entries right. */
 		--gutter: 2.1em;
 	}
@@ -277,8 +282,13 @@
 		text-overflow: ellipsis;
 	}
 
-	.frame.marked {
-		padding-left: var(--gutter);
+	/* The gutter pushes the entries right, never the command, which starts
+	   at the frame's left over the step as in an unmarked frame (da-j2p45).
+	   vividn, 2026-11-17: «Put the CLI command on each output box all the
+	   way on the left side of the box (over the undo button) [that] way you
+	   can see more of the command». */
+	.frame.marked > :global(:not(.head, .stamp, .step)) {
+		margin-left: calc(var(--gutter) - var(--pad));
 	}
 
 	/* ON THE BOTTOM BORDER at its left, the command's size; its ground hides
@@ -307,7 +317,9 @@
 		color: var(--accent);
 	}
 
-	/* THE GUTTER, between the frame's two labels, the symbol at its middle. */
+	/* THE GUTTER, between the frame's two labels, the symbol at its middle.
+	   It starts under the command's last line, which a wrap in the history
+	   makes more than one (`tall`), so no line of the command lies over it. */
 	.step {
 		position: absolute;
 		top: calc(var(--label) / 2);
@@ -331,7 +343,7 @@
 	}
 
 	/* THE HIT BOX is the whole gutter: as tall as a finger, and over no word
-	   of the entry or the command, which both start past it. */
+	   of the entry, which starts past it, or of the command, above it. */
 	.step > button::before {
 		content: '';
 		position: absolute;

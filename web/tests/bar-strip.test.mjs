@@ -357,6 +357,50 @@ describe('the output is a strip of commands, the newest at the right', () => {
 		}, screen);
 	});
 
+	// vividn, 2026-11-17: «Put the CLI command on each output box all the way
+	// on the left side of the box (over the undo button) [that] way you can see
+	// more of the command» (da-j2p45). A read has no undo; a log has one.
+	for (const [name, screen] of [['a phone', PHONE], ['a desktop', DESKTOP]]) test(`on ${name}, a command with an undo starts where one without starts, over the undo, which starts under it`, async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const long = 'occur coffee beans=ethiopian grind=fine water=94C roast=medium origin=yirgacheffe method=aeropress';
+			const measure = (surface) =>
+				surface.evaluate((el) => {
+					const frame = el.querySelector('.frame').getBoundingClientRect();
+					const echo = el.querySelector('.echo');
+					const e = echo.getBoundingClientRect();
+					const step = el.querySelector('.step')?.getBoundingClientRect();
+					return {
+						in: e.left - frame.left,
+						short: frame.right - e.right,
+						cut: echo.scrollWidth > echo.clientWidth,
+						lines: Math.round(e.height / parseFloat(getComputedStyle(echo).lineHeight)),
+						echo: { top: e.top, bottom: e.bottom, left: e.left, right: e.right },
+						step: step && { top: step.top, bottom: step.bottom, left: step.left, right: step.right }
+					};
+				});
+			const entry = (line) => page.locator('.cli .entry').filter({ has: page.locator('.echo', { hasText: `❯ ${line}` }) }).last();
+			await app.submit('tail');
+			const bare = { bar: await measure(page.locator(OUT)), log: await measure(entry('tail')) };
+			await app.submit(long);
+			await page.locator(`${OUT} .step button`).waitFor();
+			await entry(long).locator('.step button').waitFor();
+			const marked = { bar: await measure(page.locator(OUT)), log: await measure(entry(long)) };
+			for (const surface of ['bar', 'log']) {
+				const [b, m] = [bare[surface], marked[surface]];
+				const say = `${surface}: ${JSON.stringify({ bare: b, marked: m })}`;
+				assert.ok(Math.abs(m.in - b.in) < 0.5, `the command does not start where an unmarked one does: ${say}`);
+				const over = m.step.left < m.echo.right && m.step.right > m.echo.left && m.step.top < m.echo.bottom - 0.5 && m.step.bottom > m.echo.top;
+				assert.ok(!over, `the undo lies under a line of the command: ${say}`);
+				assert.ok(m.step.top >= m.echo.bottom - 0.5, `the undo does not start under the command: ${say}`);
+			}
+			// Cut to one line in the bar, it runs to the frame's right as far as from its left.
+			assert.ok(marked.bar.cut && Math.abs(marked.bar.short - marked.bar.in) < 1, `the bar's command is not the frame's width: ${JSON.stringify(marked.bar)}`);
+			if (screen === PHONE) assert.ok(marked.log.lines > 1, `the history's command did not wrap, so its undo's top went untested: ${JSON.stringify(marked.log)}`);
+			assert.deepEqual(app.errors, []);
+		}, screen);
+	});
+
 	// A group was 21rem a document whatever it held, so a 390px phone showed
 	// one command whole (count it on staging: 1). Each is its documents' own
 	// width now, and at least the 22ch its head reads in.
