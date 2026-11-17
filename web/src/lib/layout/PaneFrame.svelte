@@ -597,6 +597,8 @@
 		fresh: boolean;
 		/** It began on the swipe strip, where a tap and a pull down mean something too. */
 		strip: boolean;
+		/** It began in the strip's reach, under it: sideways first, or it is the output's. */
+		reach?: boolean;
 		/** No frame above takes along this axis what this one lets through. */
 		last: boolean;
 		state: 'pending' | 'ours' | 'theirs' | 'pull';
@@ -790,6 +792,57 @@
 
 	/** Until a gesture has moved this far it has not said which way it is going. */
 	const COMMIT_PX = 10;
+
+	/**
+	 * THE STRIP'S REACH (da-2rk14): how far under its drawn foot a swipe still
+	 * starts on it, over the top of the output section (`data-strip-reach`,
+	 * PromptBar.svelte). vividn, 2026-11-17: «Increase the swiping hit box of
+	 * the [swipe] strip downward a bit, when swiping in that region better to
+	 * switch tabs then scroll the output section». Only a touch whose first
+	 * move goes across is the tab's; a tap, or a drag up or down, is the
+	 * output's. Heard on the window, since the output is no part of this frame:
+	 * until its axis is known the move is kept from the output, whose strip
+	 * would otherwise begin its sideways scroll.
+	 */
+	const STRIP_REACH_PX = 16;
+	let stripEl: HTMLElement | undefined = $state();
+
+	function onReachStart(event: TouchEvent) {
+		const t = event.touches[0];
+		if (!stripEl || !(event.target as Element | null)?.closest?.('[data-strip-reach]')) return;
+		const { left, right, bottom } = stripEl.getBoundingClientRect();
+		if (t.clientX < left || t.clientX > right || t.clientY < bottom || t.clientY > bottom + STRIP_REACH_PX) return;
+		touch = {
+			x: t.clientX,
+			y: t.clientY,
+			target: event.target,
+			panners: [],
+			fresh: false,
+			strip: false,
+			reach: true,
+			last: !frameAbove(),
+			state: event.touches.length > 1 ? 'theirs' : 'pending'
+		};
+	}
+
+	function onReachMove(event: TouchEvent) {
+		if (!touch?.reach) return;
+		onTouchMove(event);
+		if (touch?.state !== 'pending') return;
+		event.preventDefault();
+		event.stopPropagation();
+	}
+
+	$effect(() => {
+		if (!stripped) return;
+		const offs = [
+			on(window, 'touchstart', onReachStart, { capture: true }),
+			on(window, 'touchmove', onReachMove, { capture: true, passive: false }),
+			on(window, 'touchend', (e) => touch?.reach && onTouchEnd(e)),
+			on(window, 'touchcancel', () => touch?.reach && cancel())
+		];
+		return () => offs.forEach((off) => off());
+	});
 
 	/**
 	 * The first move that commits an axis decides whose the gesture is, and
@@ -1226,6 +1279,7 @@
 		<div
 			class="swipe-strip"
 			class:gripped
+			bind:this={stripEl}
 			style:--slide="{SLIDE_MS}ms"
 			style:background-position={vertical ? `0 ${worn + offset}px` : `${worn + offset}px 0`}
 			ontouchstart={onTouchStart}

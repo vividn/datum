@@ -120,6 +120,8 @@ async function wideRepl(app) {
 // bottommost widget be the dedicated intertab swiping space» (da-k5kwu).
 describe('the swipe strip', () => {
 	const STRIP = '.swipe-strip';
+	/** PaneFrame's `STRIP_REACH_PX`. */
+	const STRIP_REACH = 16;
 	const box = (page, selector) => page.locator(selector).boundingBox();
 
 	/**
@@ -429,6 +431,68 @@ describe('the swipe strip', () => {
 				assert.ok(frames.every((f) => f.gap < 1), `the texture left the tab in its glide: ${JSON.stringify(frames)}`);
 				assert.equal((await read()).x, -main.width, 'it did not go the whole way with the tab');
 				assert.ok(await page.locator(STRIP).evaluate((el) => !el.classList.contains('gripped')));
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
+	});
+
+	// vividn, 2026-11-17 (da-2rk14): «Increase the swiping hit box of the
+	// [swipe] strip downward a bit, when swiping in that region better to
+	// switch tabs then scroll the output section». PaneFrame's
+	// `STRIP_REACH_PX`, 16: a sideways swipe begun in it moves the tab, and a
+	// tap or a drag up or down there is the output's, as under it.
+	test('its reach over the output: a swipe across moves the tab, a tap and a drag down are the output\'s, and under it a swipe scrolls the output', async () => {
+		await withApp(
+			async ({ page, submit }) => {
+				for (const n of [1, 2, 3, 4, 5]) await submit(`occur reach${n}`);
+				const roll = page.locator('.prompt-bar .section.output .roll');
+				assert.ok(await roll.evaluate((el) => el.scrollWidth > el.clientWidth + 100), 'the output does not scroll sideways: this case needs more commands');
+				const open = async () => {
+					await page.getByRole('button', { name: 'hide the output' }).waitFor();
+					await rested(page, page.locator('.prompt-bar'));
+					const strip = await box(page, STRIP);
+					return strip.y + strip.height;
+				};
+				let foot = await open();
+				const inReach = () => foot + 8;
+				const left = () => roll.evaluate((el) => el.scrollLeft);
+				const groups = () => roll.locator('.group').count();
+
+				// A tap in the reach is the output's.
+				const tapped = await page.evaluate(({ x, y }) => {
+					const el = document.elementFromPoint(x, y);
+					window.__tapped = false;
+					el.addEventListener('click', () => (window.__tapped = true), { once: true });
+					return !!el.closest('[data-strip-reach]');
+				}, { x: 195, y: inReach() });
+				assert.ok(tapped, 'the reach is not over the output section');
+				await page.touchscreen.tap(195, inReach());
+				await until(() => page.evaluate(() => window.__tapped), (t) => t === true);
+				assert.equal(await page.locator(`${STRIP} span`).count(), 0, 'a tap in the reach told the strip\'s words');
+
+				// A drag down from it closes the output, as from anywhere on it.
+				await swipe(page, 195, inReach(), 0, 70);
+				await page.getByRole('button', { name: 'show the output' }).waitFor();
+				assert.equal(await shown(page), 'main', 'a drag down moved the tab');
+				await page.locator('.prompt-bar input').press('PageUp');
+				foot = await open();
+
+				// Under the reach a swipe across scrolls the output, as it always did.
+				const before = await left();
+				await swipe(page, 120, foot + STRIP_REACH + 6, 160, 0);
+				const settled = async () => {
+					const was = await left();
+					await page.waitForTimeout(150);
+					return was === (await left()) ? was : null;
+				};
+				const scrolled = await until(settled, (at) => at !== null && at < before - 50);
+				assert.equal(await shown(page), 'main', 'a swipe under the reach moved the tab');
+
+				// In it, the same swipe the other way moves the tab, and the output stays where it was.
+				await swipe(page, 300, inReach(), -220, 0);
+				await until(() => shown(page), (name) => name === 'tail');
+				assert.equal(await left(), scrolled, 'the swipe in the reach scrolled the output too');
+				assert.equal(await groups(), 5, 'the swipe in the reach cleared the output');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);

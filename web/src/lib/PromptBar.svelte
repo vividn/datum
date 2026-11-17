@@ -482,8 +482,11 @@
 		     is where it has finished. Clipped while it is part-way, from the
 		     top: what shows first is the foot of the row, next to the input.
 		     While the log closes it is laid out unseen where it will rest
-		     (`unseen`), for the log's commands to flow to (da-jzvrp). -->
-		<div class="section output" class:unseen={$shown === 0}>
+		     (`unseen`), for the log's commands to flow to (da-jzvrp). Its top
+		     is the swipe strip's reach, `data-strip-reach` (da-2rk14,
+		     PaneFrame.svelte): a swipe there that goes across first moves the
+		     root's tab. -->
+		<div class="section output" class:unseen={$shown === 0} data-strip-reach>
 			<!-- The × and the strip, with ONE right edge: the section's padding
 			     is outside it, so nothing of the × shows past the strip at rest. -->
 			<div class="pull">
