@@ -38,8 +38,8 @@
 // that ran it, a `web/src/` file selects by its changed lines (the `skip` rule,
 // da-17v3h, da-9msgc): a line selects the tests that ran the innermost function
 // around it, or the file's whole set outside every function (a top level, a
-// `<style>`), and a comment, blank or import line, or an insert that only adds
-// definitions, selects nothing. The last is a regex, not a parser. `select`
+// `<style>`), and a comment or blank line, or an insert that only adds
+// definitions at a module's top level, selects nothing. The last is a regex, not a parser. `select`
 // names each file the rule left out of what the file's set would have run.
 // Measured in shadow from 2026-10-31 to 11-16 (the `testmap-shadow` branch's
 // `runs/`, one record a PR run): of 72 red runs it would have let 7 go green,
@@ -173,18 +173,31 @@ export function choose({ map, behind, changed, tests, narrow, acts = [] }) {
 	return { picked, notes, sweep };
 }
 
-/** A line no rule reads: a comment, a blank, an import. */
-const TRIVIAL = /^\s*(\/\/.*|\/\*.*|\*.*|<!--.*-->\s*|import\s.*|\}\s*from\s.*|)$/;
-/** A line that only defines: a type, a function, a binding to a literal, a rune or an arrow. */
+/**
+ * A line no rule reads: a comment, a blank. Not an import, which changes what its binding
+ * calls (da-wps2i); a `*` line only as a doc comment's, a tab-indented ` *`, since code
+ * continued onto a line starting `*` multiplies.
+ */
+const TRIVIAL = /^\s*(\/\/.*|\/\*((?!\*\/).)*(\*\/\s*)?|<!--((?!-->).)*(-->\s*)?|)$|^\t* \*(\s.*|\/)?$/;
+/**
+ * A line that only defines: a type, a function, or a binding whose value ends on the line
+ * with nothing called in it (da-wps2i): a literal, a rune of one, or an arrow, whose body
+ * runs only when it is called.
+ */
 const DEFINITION =
-	/^\s*(export\s+)?(type\s|interface\s|(async\s+)?function[\s*]|(let|const|var)\s+[\w$[{][^=]*(=\s*(\$state(\.raw)?\(|\$derived(\.by)?\(|null\b|undefined\b|true\b|false\b|-?\d|['"`[{]|\(?[^()=]*\)?\s*(:[^=]*)?=>)|;?\s*$))/;
+	/^\s*(export\s+)?(type\s+[\w$]|interface\s+[\w$]|(async\s+)?function[\s*]|(let|const|var)\s+[\w$[{][^=;()]*(=\s*(null|undefined|true|false|-?\d[\w.]*|'[^'\\]*'|"[^"\\]*"|`[^`()\\]*`|\[[^()=;]*\]|\{[^()=;]*\}|\$(state(\.raw)?|derived)(<[^()]*>)?\([^()]*\)|(async\s+)?(\([^()]*\)|[\w$]+)\s*(:[^=;]*)?=>(?!.*,\s*[\w$]+\s*=(?![=>]))[^;]*)(\s+as\s+const)?)?\s*;?\s*$)/;
 
-/** Whether new lines only add definitions: nothing runs that another changed line did not name. */
-export function definitionsOnly(texts) {
+/**
+ * Whether new lines only add definitions at the module's top level, `top` tabs in (a
+ * `.svelte` script's is one): nothing runs that another changed line did not name. One
+ * inside a function can shadow what the function called (da-wps2i).
+ */
+export function definitionsOnly(texts, top = 0) {
 	const real = texts.filter((t) => !TRIVIAL.test(t));
 	if (!real.length) return true;
 	const depth = (t) => t.length - t.trimStart().length;
 	const least = Math.min(...real.map(depth));
+	if (least > top) return false;
 	return real.filter((t) => depth(t) === least && !/^\s*[)\]}]/.test(t)).every((t) => DEFINITION.test(t));
 }
 
@@ -207,12 +220,12 @@ export function hunksOf(diff) {
 	return hunks;
 }
 
-/** The lines of the change's old side that the rule reads: what `TRIVIAL` and `definitionsOnly` leave. */
-export function linesThatCount(hunks) {
+/** The lines of the change's old side that the rule reads: what `TRIVIAL` and `definitionsOnly` leave; `top` is `definitionsOnly`'s. */
+export function linesThatCount(hunks, top = 0) {
 	const keep = new Set();
 	for (const { a, b, old, new: added } of hunks) {
 		if ([...old, ...added].every((t) => TRIVIAL.test(t))) continue;
-		if (b === 0 && definitionsOnly(added)) continue;
+		if (b === 0 && definitionsOnly(added, top)) continue;
 		const real = old.flatMap((t, i) => (TRIVIAL.test(t) ? [] : [a + i]));
 		for (const l of real.length ? real : [Math.max(a, 1), a + 1]) keep.add(l);
 	}
@@ -493,7 +506,7 @@ function changedLines(map, base) {
 			const path = `:(top)web/${p}`; // git runs in web/, and a pathspec reads from there
 			const hunks = hunksOf(git('diff', '-U0', '--no-renames', `${base}...HEAD`, '--', path));
 			const lag = hunksOf(git('diff', '-U0', '--no-renames', map.commit, mergeBase, '--', path));
-			memo.set(p, linesThatCount(hunks).flatMap((l) => toMapLines(l, lag)));
+			memo.set(p, linesThatCount(hunks, p.endsWith('.svelte') ? 1 : 0).flatMap((l) => toMapLines(l, lag)));
 		}
 		return memo.get(p);
 	};

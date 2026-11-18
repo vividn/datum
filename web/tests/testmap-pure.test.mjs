@@ -288,10 +288,9 @@ const FILES = {
 };
 const BY_FILE = [...BOOTS, 'tests/deep.test.mjs'];
 
-test('comments, blanks and imports count for nothing, nor does an insert of definitions alone', () => {
+test('comments and blanks count for nothing, nor does an insert of definitions alone', () => {
 	const of = (diff) => linesThatCount(hunksOf(diff));
 	assert.deepEqual(of('@@ -2 +2 @@\n-// old\n+// new\n'), []);
-	assert.deepEqual(of('@@ -1,0 +2 @@\n+import y from "./y";\n'), []);
 	assert.deepEqual(of('@@ -5,0 +6,3 @@\n+function added() {\n+\treturn 2;\n+}\n'), []);
 	assert.ok(definitionsOnly(['export const n = 1;', "let s = $state('');", 'type T = string;']));
 	assert.ok(!definitionsOnly(['mount();']));
@@ -302,6 +301,47 @@ test('comments, blanks and imports count for nothing, nor does an insert of defi
 	assert.deepEqual(of('@@ -4 +4 @@\n-\treturn x;\n+\treturn y;\n'), [4]);
 	assert.deepEqual(of('@@ -4 +4 @@\n--- x\n+++ y\n'), [4]);
 	assert.deepEqual(of('@@ -4 +4 @@\n-\treturn x;\n\\ No newline at end of file\n+\treturn y;\n\\ No newline at end of file\n'), [4]);
+});
+
+// ístina's probe (da-wps2i): one-hunk changes that each run different code. All twelve count.
+test('an import, a definition inside a function, and a binding that calls count (da-wps2i)', () => {
+	const insert = (lines, top) => linesThatCount([{ a: 10, b: 0, c: 11, d: lines.length, old: [], new: lines }], top);
+	const replace = (from, to) => linesThatCount([{ a: 10, b: 1, c: 10, d: 1, old: [from], new: [to] }]);
+	const counts = {
+		// The controls, which counted before.
+		'a call inserted alone': insert(['\tleak(token);']),
+		'a binding to a call': insert(['\tconst x = load();']),
+		'a changed call': replace('\tescape(s);', '\tidentity(s);'),
+		// 1. An import changes what its binding calls.
+		'an import renamed to another export': replace("import { escape } from './escape';", "import { identity as escape } from './util';"),
+		'a multi-line import pointed elsewhere': replace("} from './escape';", "} from './util';"),
+		'a side-effect import added': insert(["import './polyfill-that-patches-fetch';"]),
+		// 2. A definition inside a function shadows; a .svelte script's top level is one tab in.
+		'a nested function that shadows (hoisted)': insert(['\tfunction isAllowed() {', '\t\treturn true;', '\t}']),
+		'a const that shadows an outer name': insert(['\t\tconst isAdmin = true;']),
+		'a nested definition in a .svelte script': insert(['\t\tconst isAdmin = true;'], 1),
+		// 3. A binding is a definition only when its value ends on the line with nothing called.
+		'a binding, then a call on the same line': insert(['const ok = true; leak(token);']),
+		'an object literal whose member calls': insert(['const cfg = {', '\tlimit: computeLimit(),', '};']),
+		'$state whose argument calls': insert(['let rows = $state(readAll());']),
+		'an arrow, then a second declarator that calls': insert(['const f = (x) => g(x, 1), y = h();']),
+		'a template literal that calls': insert(['const KEY = `${prefix()}.v1`;']),
+		// A `*` line is a doc comment's only as a tab-indented ` *`; a comment closed before code is code.
+		'an expression continued on a * line': replace('\t\t* rate', '\t\t* 0'),
+		'code after a closed block comment': insert(['/* why */ leak(token);']),
+	};
+	for (const [what, lines] of Object.entries(counts)) assert.notDeepEqual(lines, [], what);
+	// What still counts for nothing: top-level definitions, at a .svelte script's one tab too, and doc comments.
+	const none = {
+		'top-level bindings, types and an arrow': insert(['export const n = 1;', "let s = $state('');", 'type T = string;', 'const f = (a) => {', '\treturn a;', '};']),
+		'a one-line arrow that calls with arguments': insert(['const g = (a, b) => sum(a, b);']),
+		'a template and a list as const': insert(['const KEY = `${PREFIX}.v1`;', "export const KEYS = ['a', 'b'] as const;"]),
+		'a function at the top level': insert(['function added() {', '\treturn 2;', '}']),
+		'a .svelte top-level definition': insert(["\tlet open = $state(false);", '\tconst label = $derived(open ? 1 : 2);'], 1),
+		'a doc comment': replace('\t * old words', '\t * new words'),
+		'a block comment closed on its line': insert(['\t/** why */']),
+	};
+	for (const [what, lines] of Object.entries(none)) assert.deepEqual(lines, [], what);
 });
 
 test("a changed line reads back to the map's own lines across what moved since", () => {

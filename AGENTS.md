@@ -1812,7 +1812,7 @@ net for what a scoped run cannot reach.
 
 A `web/src/` file selects by its changed lines (the skip rule, da-9msgc, measured in shadow by da-17v3h on the
 `testmap-shadow` branch): a line selects the tests that ran the innermost function around it, the file's whole set
-outside every function, and nothing for a comment, import or an insert of definitions alone. `select` names each
+outside every function, and nothing for a comment or an insert of definitions alone at a module's top level (da-wps2i). `select` names each
 file it skipped; staging's full web run catches what it misses.
 
 A PR's CI runs no web suite for a change under `crates/` (da-q587o): one that
