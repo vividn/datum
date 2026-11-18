@@ -1,14 +1,34 @@
 // The web test map's selection (da-e0gtq), with no browser: which test
-// files a PR's changed files run, and the source-map reading the map is
-// built with, and the preload that records a process at its exit.
+// files a PR's changed files run, by file and by changed line (the skip rule,
+// da-9msgc), the source-map reading the map is built with, and the preload
+// that records a process at its exit.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { MAX_BEHIND, READS_TESTS, READS_TREE, SYNC_TESTS, UPGRADE_TESTS, actLines, choose, decodeMappings, ours, sourceAt } from '../scripts/testmap.mjs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+	MAX_BEHIND,
+	READS_TESTS,
+	READS_TREE,
+	SYNC_TESTS,
+	UPGRADE_TESTS,
+	actLines,
+	choose,
+	decodeMappings,
+	definitionsOnly,
+	functionsOf,
+	hunksOf,
+	linesOf,
+	linesThatCount,
+	narrowing,
+	ours,
+	sourceAt,
+	toMapLines
+} from '../scripts/testmap.mjs';
 
 const MAP = {
 	commit: 'abc123',
@@ -240,4 +260,130 @@ test('the preload writes what a process ran when it exits, by itself or by proce
 		// A support module counts by its top level alone: until.mjs's functions never ran.
 		assert.ok(out[0].node.includes('tests/support/until.mjs'), JSON.stringify(out[0].node));
 	}
+});
+
+// The skip rule (da-17v3h's shadow, CI's own since da-9msgc): a source and the
+// functions of it five tests ran.
+const SOURCE = 'src/lib/a.ts';
+const BOOTS = ['tests/boot.test.mjs', 'tests/boot2.test.mjs', 'tests/boot3.test.mjs'];
+const TEXT = `import x from './x';
+// about mount
+export function mount() {
+	return x;
+}
+
+export function deep() {
+	return 1;
+}
+export const top = 1;
+`;
+// `mount` (3-5) ran in every boot test; `deep` (7-9) in one.
+const FUNCTIONS = functionsOf([
+	{ source: SOURCE, first: 3, last: 5, tests: new Set(BOOTS) },
+	{ source: SOURCE, first: 7, last: 9, tests: new Set(['tests/deep.test.mjs']) }
+]);
+const FILES = {
+	...Object.fromEntries([...BOOTS, 'tests/deep.test.mjs'].map((t) => [t, [SOURCE]])),
+	'tests/other.test.mjs': ['src/lib/b.ts']
+};
+const BY_FILE = [...BOOTS, 'tests/deep.test.mjs'];
+
+test('comments, blanks and imports count for nothing, nor does an insert of definitions alone', () => {
+	const of = (diff) => linesThatCount(hunksOf(diff));
+	assert.deepEqual(of('@@ -2 +2 @@\n-// old\n+// new\n'), []);
+	assert.deepEqual(of('@@ -1,0 +2 @@\n+import y from "./y";\n'), []);
+	assert.deepEqual(of('@@ -5,0 +6,3 @@\n+function added() {\n+\treturn 2;\n+}\n'), []);
+	assert.ok(definitionsOnly(['export const n = 1;', "let s = $state('');", 'type T = string;']));
+	assert.ok(!definitionsOnly(['mount();']));
+	// Git gives a change group's deletions, then its additions: the comment counts for nothing, the code does.
+	assert.deepEqual(of('@@ -1,2 +1,2 @@\n-// a\n-\tb();\n+// x\n+\ty();\n'), [2]);
+	// A line that runs, a changed one, and a deleted `-- x` that reads like a header.
+	assert.deepEqual(of('@@ -5,0 +6 @@\n+\tmount();\n'), [5, 6]);
+	assert.deepEqual(of('@@ -4 +4 @@\n-\treturn x;\n+\treturn y;\n'), [4]);
+	assert.deepEqual(of('@@ -4 +4 @@\n--- x\n+++ y\n'), [4]);
+	assert.deepEqual(of('@@ -4 +4 @@\n-\treturn x;\n\\ No newline at end of file\n+\treturn y;\n\\ No newline at end of file\n'), [4]);
+});
+
+test("a changed line reads back to the map's own lines across what moved since", () => {
+	// Two lines inserted after 5, then lines 10-11 deleted, then 20 changed.
+	const lag = hunksOf('@@ -5,0 +6,2 @@\n+a\n+b\n@@ -10,2 +11,0 @@\n-c\n-d\n@@ -20 +20 @@\n-e\n+f\n');
+	assert.deepEqual(toMapLines(5, lag), [5]);
+	assert.deepEqual(toMapLines(6, lag), [5, 6]);
+	assert.deepEqual(toMapLines(8, lag), [6]);
+	assert.deepEqual(toMapLines(11, lag), [9]);
+	assert.deepEqual(toMapLines(12, lag), [12]);
+	assert.deepEqual(toMapLines(20, lag), [20]);
+	assert.deepEqual(toMapLines(21, lag), [21]);
+});
+
+test('a function read back from a bundle takes the lines of its own source', () => {
+	// offset, source, line from 0
+	const flat = [[0, 0, 9], [10, 1, 2], [20, 1, 4], [30, 0, 7], [40, 1, 6], [50, 1, 90]];
+	assert.deepEqual(linesOf(flat, 12, 45, 1), [3, 7]);
+	assert.equal(linesOf(flat, 31, 39, 1), null);
+});
+
+test('the skip rule takes the innermost function, the whole file outside any, and a support module by file', () => {
+	const map = { files: FILES, functions: FUNCTIONS };
+	const skip = (lines) => [...narrowing(map, () => lines)(SOURCE, BY_FILE)].sort();
+	assert.deepEqual(skip([4]), BOOTS);
+	assert.deepEqual(skip([8]), ['tests/deep.test.mjs']);
+	assert.deepEqual(skip([10]), BY_FILE);
+	assert.deepEqual(skip([]), []);
+	assert.deepEqual(narrowing(map, () => [])('tests/support/s.mjs', ['tests/deep.test.mjs']), ['tests/deep.test.mjs']);
+});
+
+/** `select` run in a throwaway repository whose PR branch makes `edit` to a.ts: its web.tests and stdout, for a map holding `functions` or none. */
+function selected(t, edit) {
+	const dir = mkdtempSync(join(tmpdir(), 'datum-skip-'));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const work = join(dir, 'work');
+	const env = { ...process.env, GIT_DIR: undefined, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', CI: '1' };
+	const git = (...a) => execFileSync('git', a, { cwd: work, env, encoding: 'utf8' }).trim();
+	const put = (path, text) => {
+		mkdirSync(dirname(join(work, path)), { recursive: true });
+		writeFileSync(join(work, path), text);
+	};
+	mkdirSync(work);
+	git('init', '-q', '-b', 'staging');
+	mkdirSync(join(work, 'web/scripts'), { recursive: true });
+	copyFileSync(fileURLToPath(new URL('../scripts/testmap.mjs', import.meta.url)), join(work, 'web/scripts/testmap.mjs'));
+	put(`web/${SOURCE}`, TEXT);
+	for (const f of Object.keys(FILES)) put(`web/${f}`, '');
+	git('add', '.');
+	git('commit', '-q', '-m', 'base');
+	const commit = git('rev-parse', 'HEAD');
+	git('checkout', '-q', '-b', 'pr');
+	put(`web/${SOURCE}`, edit(TEXT));
+	git('commit', '-qam', 'pr');
+	return (functions = FUNCTIONS) => {
+		const mapPath = join(dir, 'map.json');
+		writeFileSync(mapPath, JSON.stringify({ commit, files: FILES, always: [], ...(functions && { functions }) }));
+		const out = join(dir, 'sel');
+		const r = spawnSync(process.execPath, [join(work, 'web/scripts/testmap.mjs'), 'select', mapPath, 'staging', out], { cwd: work, env, encoding: 'utf8' });
+		assert.equal(r.status, 0, r.stderr);
+		const listed = join(out, 'web.tests');
+		return { tests: readFileSync(listed, 'utf8').split('\n').filter(Boolean), stdout: r.stdout };
+	};
+}
+
+test("select runs what the shadow recorded as skip: a line in a function its tests, a comment nothing, a top level the file's set (da-9msgc)", (t) => {
+	const inMount = selected(t, (s) => s.replace('return x;', 'return x + 1;'));
+	const skip = inMount();
+	assert.deepEqual(skip.tests, BOOTS);
+	assert.match(skip.stdout, /skip rule \(da-9msgc\): 1 files .* skipped/);
+	assert.match(skip.stdout, /tests\/deep\.test\.mjs ✗ web\/src\/lib\/a\.ts/);
+	// A map with no functions selects by file, as before.
+	const plain = inMount(null);
+	assert.deepEqual(plain.tests, BY_FILE);
+	assert.match(plain.stdout, /by file: the map holds no functions/);
+	assert.deepEqual(selected(t, (s) => s.replace('// about mount', '// of mount'))().tests, []);
+	assert.deepEqual(selected(t, (s) => s.replace('top = 1', 'top = 2'))().tests, BY_FILE);
+});
+
+test('a skip rule that fails selects by file and says so', (t) => {
+	// Functions with no `fns`: the rule throws as it reads them.
+	const { tests, stdout } = selected(t, (s) => s.replace('return x;', 'return x + 1;'))({});
+	assert.deepEqual(tests, BY_FILE);
+	assert.match(stdout, /::warning::the skip rule failed, so this selects by file/);
 });

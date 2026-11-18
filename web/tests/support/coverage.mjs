@@ -15,7 +15,7 @@
 //   started before the page can navigate and taken before it closes. What is
 //   kept is each function's `start-end` offsets in its script: the start lies
 //   inside the one source file the function was compiled from, and the end
-//   says which of its lines it covers, for the shadow rules (da-17v3h);
+//   says which of its lines it covers, for the skip rule (da-9msgc);
 //   workers and the service worker are not seen, and `index` leaves their
 //   sources unmapped.
 //

@@ -34,9 +34,17 @@
 // other change that can reach the web, a `web/src/` or support file no set
 // holds, or a map missing or more than MAX_BEHIND commits behind the base.
 //
-// The map also holds `functions`, each function's source lines and the tests
-// that ran it. `select` never reads it: it is for `testmap-shadow.mjs`, which
-// logs what two narrower rules would have picked (da-17v3h).
+// Where the map holds `functions`, each function's source lines and the tests
+// that ran it, a `web/src/` file selects by its changed lines (the `skip` rule,
+// da-17v3h, da-9msgc): a line selects the tests that ran the innermost function
+// around it, or the file's whole set outside every function (a top level, a
+// `<style>`), and a comment, blank or import line, or an insert that only adds
+// definitions, selects nothing. The last is a regex, not a parser. `select`
+// names each file the rule left out of what the file's set would have run.
+// Measured in shadow from 2026-10-31 to 11-16 (the `testmap-shadow` branch's
+// `runs/`, one record a PR run): of 72 red runs it would have let 7 go green,
+// all flakes. A narrower rule, `narrow`, would have let two real breaks
+// through, and was dropped.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -163,6 +171,89 @@ export function choose({ map, behind, changed, tests, narrow, acts = [] }) {
 	for (const t of map.always) pick(t, 'reads src/ or the build as data');
 	for (const t of tests) if (!(t in map.files)) pick(t, 'not in the map');
 	return { picked, notes, sweep };
+}
+
+/** A line no rule reads: a comment, a blank, an import. */
+const TRIVIAL = /^\s*(\/\/.*|\/\*.*|\*.*|<!--.*-->\s*|import\s.*|\}\s*from\s.*|)$/;
+/** A line that only defines: a type, a function, a binding to a literal, a rune or an arrow. */
+const DEFINITION =
+	/^\s*(export\s+)?(type\s|interface\s|(async\s+)?function[\s*]|(let|const|var)\s+[\w$[{][^=]*(=\s*(\$state(\.raw)?\(|\$derived(\.by)?\(|null\b|undefined\b|true\b|false\b|-?\d|['"`[{]|\(?[^()=]*\)?\s*(:[^=]*)?=>)|;?\s*$))/;
+
+/** Whether new lines only add definitions: nothing runs that another changed line did not name. */
+export function definitionsOnly(texts) {
+	const real = texts.filter((t) => !TRIVIAL.test(t));
+	if (!real.length) return true;
+	const depth = (t) => t.length - t.trimStart().length;
+	const least = Math.min(...real.map(depth));
+	return real.filter((t) => depth(t) === least && !/^\s*[)\]}]/.test(t)).every((t) => DEFINITION.test(t));
+}
+
+/** A `-U0` diff of one file: `{a, b, c, d, old, new}` per hunk, `@@ -a,b +c,d @@`. */
+export function hunksOf(diff) {
+	const lines = diff.split('\n');
+	const hunks = [];
+	for (let i = 0; i < lines.length; i++) {
+		const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(lines[i]);
+		if (!m) continue;
+		const [a, b, c, d] = [m[1], m[2] ?? 1, m[3], m[4] ?? 1].map(Number);
+		const body = [];
+		for (let left = b + d; left > 0; i++) {
+			if (lines[i + 1]?.startsWith('\\')) continue;
+			body.push(lines[i + 1]?.slice(1) ?? '');
+			left--;
+		}
+		hunks.push({ a, b, c, d, old: body.slice(0, b), new: body.slice(b) });
+	}
+	return hunks;
+}
+
+/** The lines of the change's old side that the rule reads: what `TRIVIAL` and `definitionsOnly` leave. */
+export function linesThatCount(hunks) {
+	const keep = new Set();
+	for (const { a, b, old, new: added } of hunks) {
+		if ([...old, ...added].every((t) => TRIVIAL.test(t))) continue;
+		if (b === 0 && definitionsOnly(added)) continue;
+		const real = old.flatMap((t, i) => (TRIVIAL.test(t) ? [] : [a + i]));
+		for (const l of real.length ? real : [Math.max(a, 1), a + 1]) keep.add(l);
+	}
+	return [...keep];
+}
+
+/** A line of a diff's new side (`lag`, the map's commit to the base) on its old side, the map's: a changed line is its hunk's. */
+export function toMapLines(line, lag) {
+	let delta = 0;
+	for (const { a, b, c, d } of lag) {
+		const start = d ? c : c + 1;
+		if (line < start) break;
+		if (line < start + d) {
+			const first = Math.max(a, 1);
+			return b ? Array.from({ length: b }, (_, i) => first + i) : [first, a + 1];
+		}
+		delta = (b ? a + b : a + 1) - (start + d);
+	}
+	return [line + delta];
+}
+
+/**
+ * `choose`'s `narrow`, the skip rule: each changed line's innermost function's
+ * tests, the file's set `by` for a line outside every function. `changedLines(p)`
+ * is a source's changed lines in the map's coordinates. A support module is by
+ * file: node loads it alone, its top level counting.
+ */
+export function narrowing(map, changedLines) {
+	const { tests, sets, fns } = map.functions;
+	const setOf = (fn) => sets[fn[2]].map((i) => tests[i]);
+	const around = (p, line) => {
+		const holding = (fns[p] ?? []).filter(([first, last]) => first <= line && line <= last);
+		const least = Math.min(...holding.map(([first, last]) => last - first));
+		return holding.length ? holding.filter(([first, last]) => last - first === least).flatMap(setOf) : null;
+	};
+	return (p, by) => {
+		if (p.startsWith('tests/support/')) return by;
+		const out = new Set();
+		for (const line of changedLines(p)) for (const t of around(p, line) ?? by) out.add(t);
+		return out;
+	};
 }
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -361,12 +452,12 @@ function index(raw, out) {
 		files: Object.fromEntries(Object.entries(files).sort().map(([t, s]) => [t, [...s].sort()])),
 		always
 	};
-	// The shadow rules' alone: losing it must not lose the map.
+	// The skip rule's alone: losing it must not lose the map, which then selects by file.
 	try {
 		map.functions = functionsOf(placed(ranges, unmapped));
-		console.log(`functions, for the shadow rules: ${Object.values(map.functions.fns).flat().length} in ${Object.keys(map.functions.fns).length} sources, ${map.functions.sets.length} sets of tests`);
+		console.log(`functions, for the skip rule: ${Object.values(map.functions.fns).flat().length} in ${Object.keys(map.functions.fns).length} sources, ${map.functions.sets.length} sets of tests`);
 	} catch (e) {
-		console.log(`::warning::no functions in the web map, so the shadow rules log nothing: ${e.message}`);
+		console.log(`::warning::no functions in the web map, so a PR selects by file: ${e.message}`);
 	}
 	writeFileSync(out, JSON.stringify(map) + '\n');
 	const sources = new Set(Object.values(map.files).flat());
@@ -393,13 +484,41 @@ export function inputs(mapPath, base) {
 	return { map, behind, changed, tests };
 }
 
+/** `narrowing`'s `changedLines`: the PR's lines that count in a source, read back across what moved from the map's commit to the merge base. */
+function changedLines(map, base) {
+	const mergeBase = git('merge-base', base, 'HEAD').trim();
+	const memo = new Map();
+	return (p) => {
+		if (!memo.has(p)) {
+			const path = `:(top)web/${p}`; // git runs in web/, and a pathspec reads from there
+			const hunks = hunksOf(git('diff', '-U0', '--no-renames', `${base}...HEAD`, '--', path));
+			const lag = hunksOf(git('diff', '-U0', '--no-renames', map.commit, mergeBase, '--', path));
+			memo.set(p, linesThatCount(hunks).flatMap((l) => toMapLines(l, lag)));
+		}
+		return memo.get(p);
+	};
+}
+
 function select(mapPath, base, out) {
 	mkdirSync(out, { recursive: true });
 	for (const f of ['FULL', 'web.tests', 'SWEEP']) rmSync(join(out, f), { force: true });
 	const { map, behind, changed, tests } = inputs(mapPath, base);
 	if (map) console.log(`web test map of ${map.commit}: ${Object.keys(map.files).length} test files`);
 	const acts = actLines(git('diff', '-U0', '--no-renames', `${base}...HEAD`, '--', 'src'));
-	const { full, picked, notes, sweep } = choose({ map, behind, changed, tests, acts });
+	const byFile = choose({ map, behind, changed, tests, acts });
+	let chosen = byFile;
+	if (map && !map.functions) console.log('by file: the map holds no functions');
+	else if (map && !byFile.full) {
+		try {
+			chosen = choose({ map, behind, changed, tests, acts, narrow: narrowing(map, changedLines(map, base)) });
+			const skipped = [...byFile.picked].filter(([t]) => !chosen.picked.has(t));
+			console.log(`by changed line, the skip rule (da-9msgc): ${skipped.length} files the changed files' sets hold skipped`);
+			for (const [t, why] of skipped) console.log(`  ${t} ✗ ${why}: no changed line its functions ran`);
+		} catch (e) {
+			console.log(`::warning::the skip rule failed, so this selects by file: ${e.message}`);
+		}
+	}
+	const { full, picked, notes, sweep } = chosen;
 	if (sweep.length) {
 		console.log('THE DOUBLE-OUTLINE SWEEP RUNS, live (da-isvl4): the diff adds or takes out a use:act line');
 		for (const l of acts) console.log(`  ${l.trim()}`);
