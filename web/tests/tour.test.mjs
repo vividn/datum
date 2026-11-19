@@ -13,6 +13,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { FIELD_FORM, nameField, openField, setupCommand } from './support/field.mjs';
+import { pickOption } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -98,6 +99,41 @@ describe('the first field\'s tour', () => {
 				assert.equal(await front(page), 'setup');
 				assert.deepEqual(app.errors, []);
 			}, options);
+		});
+
+	// The button's stop says what a tap does as the press decides it, by the
+	// widget's `clicks` (da-x0xpp): in 1-click, the default, a tap logs a
+	// moment; in 2-click it opens it. Checked for the act it names, and then
+	// that the tap after the tour does that act.
+	for (const [clicks, choice, says, does] of [
+		['1-click', null, /\blogs\b/, 'logs'],
+		['2-click', 'opens and chooses, 2-click', /\bopens\b/, 'opens']
+	])
+		test(`${clicks}: the moment's stop says a tap ${does} it, and a tap after the tour ${does} it`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				if (choice) await pickOption(page, 'bar', 'a tap', choice);
+				await openField(page);
+				await page.locator(FIELD_FORM).waitFor();
+				await make(page, 'coffee', 'occur');
+				const button = '[data-widget="widgetbar"] button[data-field="coffee"]';
+				const { say } = await until(() => stop(page, button), (s) => s.round && !!s.say?.includes('coffee'));
+				assert.match(say, says);
+				assert.doesNotMatch(say, does === 'logs' ? /\bopens\b/ : /\blogs\b/);
+				await page.keyboard.press('Escape');
+				await page.locator('.tour').waitFor({ state: 'detached' });
+
+				const rows = async () => JSON.parse((await app.run(['tail', 'coffee', '--json'])).stdout).rows.length;
+				const saved = await rows();
+				// A minute on: at the held instant the moment is the TRACKED row's slug.
+				await app.clock.forward(60_000);
+				await page.locator(button).click();
+				if (does === 'opens') await page.locator('[data-widget="widgetbar"] [data-open-field="coffee"]').waitFor();
+				else await until(rows, (n) => n === saved + 1);
+				await app.idle();
+				assert.equal(await rows(), saved + (does === 'logs' ? 1 : 0));
+				assert.deepEqual(app.errors, []);
+			}, { viewport: { width: 1280, height: 900 }, tour: true });
 		});
 
 	test('a fields widget on the page already: the place shuts and the tour stays on that page', async () => {

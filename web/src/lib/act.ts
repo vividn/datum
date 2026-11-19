@@ -36,3 +36,7 @@ export function act(node: HTMLElement, kind?: ActKind) {
 	set(kind);
 	return { update: set };
 }
+
+/** What a tap on `node` does, as `act` wrote it: a tour says it (#lib/tour.ts, da-x0xpp). */
+export const actOf = (node: Element): ActKind | undefined =>
+	node instanceof HTMLElement ? (node.dataset.act as ActKind | undefined) : undefined;

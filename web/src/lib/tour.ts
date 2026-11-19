@@ -27,6 +27,7 @@
 // it, start it.
 
 import { get, writable } from 'svelte/store';
+import { actOf } from './act.js';
 import type { FieldButton } from './fields.js';
 import { HOLD_MS } from './hold.js';
 import { fields } from './layout/engine.js';
@@ -51,8 +52,9 @@ export const tour = writable<Stop[]>([]);
 const KEY = 'datum.tour';
 
 /**
- * What a tap on the button does, for each kind of field: said, not asked
- * for, since a tap in the tour only moves it on (da-q8koz).
+ * What a tap on the button does where it opens the field, for each kind of
+ * field: said, not asked for, since a tap in the tour only moves it on
+ * (da-q8koz).
  */
 const TAP: Record<FieldButton['shape']['kind'], (f: string) => string> = {
 	moment: (f) => `A tap on ${f} opens it: set its time and data, then log it.`,
@@ -61,6 +63,19 @@ const TAP: Record<FieldButton['shape']['kind'], (f: string) => string> = {
 	record: (f) => `A tap on ${f} starts a ${f} entry in the bar below.`,
 	allday: (f) => `A tap on ${f} opens it: set its day and data, then log it.`
 };
+
+/**
+ * What a tap on `button` does, as its press decides it: `pressKind`'s answer
+ * with the widget's `clicks`, read off the button as its outline is drawn
+ * from it (`data-act`, `actOf`), so the sentence cannot drift from the press again
+ * (da-x0xpp). A tap that runs logs it, or turns it on or off; one that fills
+ * starts the entry in the bar; one that shows opens it.
+ */
+function tapSays(button: Element, field: string, shape: FieldButton['shape']['kind']): string {
+	const act = actOf(button);
+	if (act === 'run') return shape === 'on/off' ? `A tap on ${field} turns it on or off.` : `A tap on ${field} logs it.`;
+	return TAP[act === 'fill' ? 'record' : shape](field);
+}
 
 // The section and not its host: the host is `display: contents`, never drawn.
 export const FIELDS = '[data-widget="widgetbar"] > section';
@@ -106,14 +121,15 @@ export async function begin(field: string): Promise<void> {
 	if (had()) return;
 	leavePlace();
 	if (!shown(FIELDS)) await open('collect');
-	if (!(await drawn(buttonOf(field)))) return;
+	const button = await drawn(buttonOf(field));
+	if (!button) return;
 	try {
 		localStorage.setItem(KEY, 'seen');
 	} catch {}
 	const shape = get(fields).find((f) => f.field === field)?.shape.kind ?? 'moment';
 	tour.set(
 		[
-			{ at: buttonOf(field), say: TAP[shape](field) },
+			{ at: buttonOf(field), say: tapSays(button, field, shape) },
 			{ at: NOWVIEW, say: 'Your recent history appears here. Tap a time to enter something that happened then but you forgot to record.' },
 			{ at: DAYVIEW, say: 'Longer history lives here. Scroll up to see earlier days. You can select times here too.' }
 		].filter((s) => shown(s.at))
