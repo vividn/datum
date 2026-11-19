@@ -255,21 +255,32 @@ fn trusted(
     Err(format!("{} goes through too many links", link.display()))
 }
 
-/// Whether group `gid` can hold no one but `uid` (da-y30od), by `alone`
-/// over every account NSS enumerates and the group's members. It proves only
-/// that this user is enumerable: an account NSS does not list whose primary
-/// gid is this one (a misconfigured gid collision) is missed, and so is a
-/// group password in gshadow, which lets a non-member in by `newgrp`: no
-/// process but root's can read gshadow. One scan at a time: `getpwent` and
-/// `getgrent` share state, and a daemon's threads each join grants.
+/// Whether group `gid` can hold no one but `uid` (da-y30od), by `private`
+/// over every account and group line NSS enumerates and `getgrgid`'s merged
+/// view. It proves only that this user is enumerable: an account NSS does not
+/// list whose primary gid is this one (a misconfigured gid collision) is
+/// missed. So is a group source that neither enumerates (sssd's default) nor
+/// merges into `getgrgid` (`[SUCCESS=merge]`), and a group password in
+/// gshadow, which lets a non-member in by `newgrp`: no process but root's can
+/// read gshadow. One scan at a time: `getpwent`, `getgrent` and `getgrgid`
+/// share state, and a daemon's threads each join grants.
 fn private_group(gid: u32, uid: u32) -> bool {
     use std::ffi::CStr;
     static NSS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _held = NSS.lock().unwrap_or_else(|e| e.into_inner());
-    let mut accounts = Vec::new();
+    // SAFETY: called only on a non-null group, whose list ends in a null.
+    let names = |g: *mut libc::group| unsafe {
+        let (mut m, mut names) = ((*g).gr_mem, Vec::new());
+        while !(*m).is_null() {
+            names.push(CStr::from_ptr(*m).to_owned());
+            m = m.add(1);
+        }
+        names
+    };
+    let (mut accounts, mut groups) = (Vec::new(), Vec::new());
     // SAFETY: under `NSS`, each entry is copied before the next call reuses
     // its buffer.
-    let members = unsafe {
+    let looked_up = unsafe {
         libc::setpwent();
         loop {
             let p = libc::getpwent();
@@ -280,34 +291,38 @@ fn private_group(gid: u32, uid: u32) -> bool {
             accounts.push(((*p).pw_uid, (*p).pw_gid, name));
         }
         libc::endpwent();
-        let mut groups = Vec::new();
         libc::setgrent();
         loop {
             let g = libc::getgrent();
             if g.is_null() {
                 break;
             }
-            let (mut m, mut members) = ((*g).gr_mem, Vec::new());
-            while !(*m).is_null() {
-                members.push(CStr::from_ptr(*m).to_owned());
-                m = m.add(1);
-            }
-            groups.push(((*g).gr_gid, members));
+            groups.push(((*g).gr_gid, names(g)));
         }
         libc::endgrent();
-        members_of(gid, groups)
+        let g = libc::getgrgid(gid);
+        (!g.is_null()).then(|| names(g))
     };
-    members.is_some_and(|members| alone(gid, uid, &accounts, &members))
+    private(gid, uid, &accounts, groups, looked_up)
 }
 
-/// The members of every one of `groups`' lines with `gid`, or none where no
-/// line has it: a second line with the gid (`groupadd -o`, an NSS source
-/// merging groups) can add a member `getgrgid`, which returns the first,
-/// never shows, and login gives them the gid all the same (da-txvrk).
-fn members_of(gid: u32, groups: Vec<(u32, Vec<CString>)>) -> Option<Vec<CString>> {
-    let mut lines = groups.into_iter().filter(|g| g.0 == gid).peekable();
-    lines.peek()?;
-    Some(lines.flat_map(|g| g.1).collect())
+/// Whether `alone` holds over group `gid`'s members: the union of
+/// `looked_up`, `getgrgid`'s list, and every one of `groups`' lines with
+/// `gid`. A second line (`groupadd -o`, an NSS source's own) can add a member
+/// `getgrgid`, which returns the first, never shows (da-txvrk), and a source
+/// that does not enumerate is seen only through `getgrgid`'s merge
+/// (da-wmv3c). With no line and no lookup the gid is no one's to vouch for.
+fn private(
+    gid: u32,
+    uid: u32,
+    accounts: &[(u32, u32, CString)],
+    groups: Vec<(u32, Vec<CString>)>,
+    looked_up: Option<Vec<CString>>,
+) -> bool {
+    let mut lists = (groups.into_iter().filter(|g| g.0 == gid).map(|g| g.1))
+        .chain(looked_up)
+        .peekable();
+    lists.peek().is_some() && alone(gid, uid, accounts, &lists.flatten().collect::<Vec<_>>())
 }
 
 /// Whether `accounts` (uid, primary gid, name) and `members`, group `gid`'s
@@ -1045,20 +1060,31 @@ mod tests {
         );
     }
 
-    /// Every line with the gid gives its members, a second line's too, and
-    /// no line with it gives none (da-txvrk).
+    /// A group's members are every line with its gid and `getgrgid`'s
+    /// list, and a gid with neither is no private group (da-wmv3c).
     #[test]
-    fn a_groups_members_are_every_line_with_its_gid() {
+    fn a_groups_members_are_every_line_with_its_gid_and_its_lookup() {
         let n = |s: &str| CString::new(s).unwrap();
-        let groups = || {
-            vec![
-                (1001, vec![n("me")]),
-                (1002, vec![n("third")]),
-                (1001, vec![n("other")]),
-            ]
-        };
-        assert_eq!(members_of(1001, groups()), Some(vec![n("me"), n("other")]));
-        assert_eq!(members_of(1003, groups()), None);
-        assert_eq!(members_of(1002, vec![(1002, vec![])]), Some(vec![]));
+        let accounts = [(0, 0, n("root")), (1001, 1001, n("me"))];
+        let private = |groups, looked_up| private(1001, 1001, &accounts, groups, looked_up);
+        assert!(!private(vec![(1002, vec![])], None), "no line, no lookup");
+        assert!(
+            !private(vec![(1001, vec![n("me")])], Some(vec![n("other")])),
+            "a member only in the lookup"
+        );
+        assert!(
+            !private(
+                vec![
+                    (1001, vec![n("me")]),
+                    (1002, vec![n("third")]),
+                    (1001, vec![n("other")])
+                ],
+                Some(vec![n("me")])
+            ),
+            "a member only in a second line"
+        );
+        assert!(private(vec![(1001, vec![n("me")])], Some(vec![n("me")])));
+        assert!(private(vec![], Some(vec![])), "the lookup alone");
+        assert!(private(vec![(1001, vec![])], None), "a line alone");
     }
 }
