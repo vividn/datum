@@ -932,3 +932,52 @@ fn dry_run_says_what_it_would_set_up_and_writes_nothing() {
     assert!(!h.path("bk").exists());
     assert!(!h.path("ctl.log").exists());
 }
+
+/// Installed through a link to a versioned binary, the timer names the link
+/// (da-tmmzh), so an upgrade that moves it and deletes the old version
+/// leaves the timer running the new one; a binary gone is said by `status`
+/// and `datum check`.
+#[test]
+fn a_timer_installed_through_a_link_follows_it_across_an_upgrade() {
+    let h = Home::new();
+    let bk = h.dir("bk");
+    let versions = crate::sync_daemon::Versions::new(h.path("bin/datum"));
+    // Run by name, found on PATH, as a shell runs it.
+    let out = (h.command("datum").args(["backup", "--to", &bk, "--auto"]))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let (_, service, _) = h.unit_into(&bk);
+    let link = versions.link.display().to_string();
+    assert!(
+        service.contains(&format!("ExecStart=\"{link}\" --db ")),
+        "{service}"
+    );
+
+    versions.upgrade();
+    let out = h.run_service(&service);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(std::fs::read_dir(format!("{bk}/data")).unwrap().count(), 2);
+    let status = |h: &Home| {
+        let out = h
+            .command(&link)
+            .args(["backup", "status"])
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert!(!status(&h).contains("its binary"), "{}", status(&h));
+    assert!(
+        !h.check().contains("backup_daemon_missing"),
+        "{}",
+        h.check()
+    );
+
+    std::fs::remove_file(&versions.link).unwrap();
+    let said = String::from_utf8(h.datum(&["backup", "status"]).stdout).unwrap();
+    assert!(
+        said.contains(&format!("its binary {link} is missing, so it cannot start")),
+        "{said}"
+    );
+    assert!(h.check().contains("backup_daemon_missing"), "{}", h.check());
+}

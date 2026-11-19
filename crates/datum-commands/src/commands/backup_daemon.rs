@@ -29,7 +29,7 @@ use super::backup_restore::derive_source_db;
 use super::backup_rotation::{
     ago, canon, label, newest, rename_rotation, rotation_name, set_schedule, Schedule,
 };
-use super::sync_daemon::{ctl, linger_note, quoted, ENV};
+use super::sync_daemon::{binary_word, ctl, linger_note, named_exe, quoted, unit_exe, ENV};
 use crate::args::BackupDaemonAct;
 use crate::config;
 
@@ -40,6 +40,8 @@ const TO_KEY: &str = "X-Datum-To=";
 /// The line in the service of the daemon that backs up every database.
 const ALL_LINE: &str = "X-Datum-All=yes";
 const NOT_ALL: &str = "--all or --db, not both: --all backs up every database datum knows";
+/// What installs a backup daemon again, onto the datum that runs it.
+const REINSTALL: &str = "`datum backup --auto` with its --db or --all, --to and --every";
 const NO_SYSTEMD: &str = "no systemd here, and a backup on a schedule is a systemd user timer: \
      `datum backup --to DIR --auto` sets the rotation up in DIR, and `datum backup --to DIR` \
      takes its step, from what starts jobs here";
@@ -132,6 +134,9 @@ pub fn daemon(act: BackupDaemonAct, cli_db: Option<&str>) -> Result<()> {
                 }
                 if timer_stopped(unit) {
                     println!("  {}", stopped(unit, body));
+                }
+                if let Some(word) = binary_word(body, REINSTALL) {
+                    println!("  {word}");
                 }
                 if body.lines().any(|l| l == ALL_LINE) {
                     for (name, path) in config::known_dbs() {
@@ -368,8 +373,9 @@ fn install(
     // install's (a restart from inside the service starts no second run).
     let running_old = std::env::var_os("INVOCATION_ID").is_some()
         && before.is_some_and(|b| exec_start(&b).contains(" --every "));
+    // Refused before anything is written.
+    let exe = unit_exe()?;
     set_schedule(to, step_db.as_deref(), schedule)?;
-    let exe = std::env::current_exe().context("finding this datum binary")?;
     let which = match all {
         true => "db backup --all".into(),
         false => format!("--db \"{}\" db backup", quoted(&p.source)),
@@ -631,6 +637,15 @@ pub fn findings(db: &Path) -> Vec<(&'static str, String)> {
     {
         if timer_stopped(unit) {
             found.push(("backup_daemon_missing", stopped(unit, body)));
+        }
+        // Another datum's binary may be meant (root's copy, say): a missing
+        // one never is.
+        let gone = named_exe(body).is_some_and(|p| !p.exists());
+        if let Some(word) = binary_word(body, REINSTALL).filter(|_| gone) {
+            found.push((
+                "backup_daemon_missing",
+                format!("the backup daemon into {}: {word}", into(body)),
+            ));
         }
         match last_run(unit).get("Result").map(String::as_str) {
             None | Some("" | "success") => {}

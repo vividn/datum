@@ -130,6 +130,34 @@ impl Home {
     }
 }
 
+/// An installer's versioned binaries behind a link (da-tmmzh): this datum as
+/// `v1/datum` and `v2/datum`, hard links beside the
+/// build so nothing is copied, and `link` → v1. `upgrade` moves the link to
+/// v2 and deletes v1, as a cleanup keeping one version does.
+pub(crate) struct Versions {
+    dir: TempDir,
+    pub link: PathBuf,
+}
+
+impl Versions {
+    pub fn new(link: PathBuf) -> Self {
+        let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+        for v in ["v1", "v2"] {
+            let at = dir.path().join(v);
+            std::fs::create_dir(&at).unwrap();
+            std::fs::hard_link(env!("CARGO_BIN_EXE_datum"), at.join("datum")).unwrap();
+        }
+        std::os::unix::fs::symlink(dir.path().join("v1/datum"), &link).unwrap();
+        Self { dir, link }
+    }
+
+    pub fn upgrade(&self) {
+        std::fs::remove_file(&self.link).unwrap();
+        std::os::unix::fs::symlink(self.dir.path().join("v2/datum"), &self.link).unwrap();
+        std::fs::remove_dir_all(self.dir.path().join("v1")).unwrap();
+    }
+}
+
 #[test]
 fn install_status_and_uninstall() {
     let h = Home::new();
@@ -563,4 +591,49 @@ fn a_rename_onto_a_database_that_holds_data_says_to_purge_it_first() {
     assert!(h.ok(&["--db", "finance", "tail"]).contains("coffee"));
     let registry = std::fs::read_to_string(h.path("dc%onf/dbs.toml")).unwrap();
     assert!(!registry.contains("finance-2"), "{registry}");
+}
+
+/// Installed through a link to a versioned binary, the unit names the link
+/// (da-tmmzh), so an upgrade that moves it and deletes the old version
+/// leaves the daemon starting on the new one; a binary gone is said by
+/// `status`.
+#[test]
+fn a_daemon_installed_through_a_link_follows_it_across_an_upgrade() {
+    let h = Home::new();
+    let versions = Versions::new(h.path("bin/datum"));
+    // Run by name, found on PATH, as a shell runs it.
+    let out = (h.command("datum").args(["sync", "daemon", "install"]))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let service = std::fs::read_to_string(h.service()).unwrap();
+    let link = versions.link.display().to_string();
+    let run = format!("\"{link}\" sync daemon run");
+    assert!(service.contains(&format!("ExecStart={run}\n")), "{service}");
+
+    versions.upgrade();
+    // Started as systemd would: still running a moment on.
+    let mut daemon = Killed(
+        h.command("sh")
+            .args(["-c", &format!("exec {run}")])
+            .spawn()
+            .unwrap(),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert!(daemon.0.try_wait().unwrap().is_none(), "it exited");
+    drop(daemon);
+    let out = h
+        .command(&link)
+        .args(["sync", "daemon", "status"])
+        .output()
+        .unwrap();
+    let said = String::from_utf8(out.stdout).unwrap();
+    assert!(!said.contains("its binary"), "{said}");
+
+    std::fs::remove_file(&versions.link).unwrap();
+    let said = h.ok(&["sync", "daemon", "status"]);
+    assert!(
+        said.contains(&format!("its binary {link} is missing, so it cannot start")),
+        "{said}"
+    );
 }

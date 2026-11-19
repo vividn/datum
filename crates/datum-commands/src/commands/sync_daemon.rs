@@ -114,7 +114,7 @@ impl Manager {
     /// this binary.
     fn install(self) -> Result<PathBuf> {
         let path = self.path()?;
-        let exe = std::env::current_exe().context("finding this datum binary")?;
+        let exe = unit_exe()?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }
@@ -159,6 +159,92 @@ pub(super) fn ctl(program: &str, args: &[&str]) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// The path a daemon's unit names this datum by (da-tmmzh): the one it was
+/// run by, as typed (a relative one read from the working directory) or
+/// found on PATH, where that reaches this binary through a link, so the
+/// unit follows the link to whatever version an installer puts behind it
+/// (`bin/datum → versions/<v>`, which keeps two versions; Homebrew's Cellar
+/// after `brew cleanup`); otherwise the binary itself. Refused where the
+/// binary is gone, removed or replaced as it ran: a unit naming it would
+/// never start.
+pub(super) fn unit_exe() -> Result<PathBuf> {
+    let exe = std::env::current_exe().context("finding this datum binary")?;
+    let this = std::fs::canonicalize(&exe).with_context(|| {
+        format!(
+            "this datum ({}) was removed or replaced as it ran, so a unit naming it would never \
+             start: run the datum installed now",
+            exe.display()
+        )
+    })?;
+    let run_by = std::env::args_os().next().map(PathBuf::from).and_then(|a| {
+        match a.as_os_str().as_encoded_bytes().contains(&b'/') {
+            true => Some(a),
+            false => std::env::split_paths(&std::env::var_os("PATH")?)
+                .map(|d| d.join(&a))
+                .find(|p| p.is_file()),
+        }
+    });
+    Ok((run_by.and_then(|p| std::path::absolute(p).ok()))
+        .filter(|p| std::fs::canonicalize(p).is_ok_and(|c| c == this))
+        .unwrap_or(exe))
+}
+
+/// The binary a unit's or agent's text names: its `ExecStart=`'s quoted
+/// first word, or its `ProgramArguments`' first string.
+pub(super) fn named_exe(body: &str) -> Option<PathBuf> {
+    if let Some(line) = body.lines().find_map(|l| l.strip_prefix("ExecStart=\"")) {
+        let (mut s, mut chars) = (String::new(), line.chars());
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => return Some(s.replace("%%", "%").into()),
+                '\\' => s.extend(chars.next()),
+                c => s.push(c),
+            }
+        }
+        return None;
+    }
+    let s = (body
+        .split("<key>ProgramArguments</key><array><string>")
+        .nth(1))?
+    .split("</string>")
+    .next()?;
+    Some(
+        (s.replace("&lt;", "<").replace("&gt;", ">"))
+            .replace("&amp;", "&")
+            .into(),
+    )
+}
+
+/// Whether the binary a unit names is `exe`'s file, read through any link:
+/// `None` where it is missing, `Some(false)` where the text names none.
+fn names(body: &str, exe: &Path) -> Option<bool> {
+    let Some(named) = named_exe(body) else {
+        return Some(false);
+    };
+    let at = std::fs::canonicalize(named).ok()?;
+    Some(std::fs::canonicalize(exe).is_ok_and(|e| e == at))
+}
+
+/// What a status says of the binary a unit names (da-tmmzh), where it is
+/// missing or is not this datum; `fix` the command that installs it again.
+/// Missing is said even where this datum cannot find itself.
+pub(super) fn binary_word(body: &str, fix: &str) -> Option<String> {
+    let named = named_exe(body)?;
+    let shown = named.display();
+    if std::fs::canonicalize(&named).is_err() {
+        return Some(format!(
+            "its binary {shown} is missing, so it cannot start: {fix} installs it onto this datum"
+        ));
+    }
+    let this = std::env::current_exe().ok()?;
+    (names(body, &this) == Some(false)).then(|| {
+        format!(
+            "it runs {shown}, which is not this datum ({}): {fix} installs it onto this one",
+            this.display()
+        )
+    })
 }
 
 /// A value inside a systemd unit's double quotes: `%` would be a specifier.
@@ -227,6 +313,10 @@ fn status(manager: Option<Manager>) -> Result<()> {
         return Ok(());
     }
     println!("installed: the {} ({})", m.name(), path.display());
+    let body = std::fs::read_to_string(&path).unwrap_or_default();
+    if let Some(word) = binary_word(&body, "`datum sync --auto`") {
+        println!("{word}");
+    }
     match m.running() {
         true => println!("running"),
         false => println!("not running: `datum sync --auto` starts it again"),
@@ -320,17 +410,17 @@ pub fn findings(exe: &Path, syncs: bool) -> Vec<(&'static str, String)> {
         };
     };
     let shown = exe.display().to_string();
-    let names = match m {
-        Manager::Systemd => format!("ExecStart=\"{}\"", quoted(&shown)),
-        Manager::Launchd => format!("<string>{}</string>", xml(&shown)),
+    let word = match names(&body, exe) {
+        Some(true) => None,
+        None => Some(format!(
+            "the sync daemon's binary is missing, so it cannot start: `datum install` points it at {shown}"
+        )),
+        Some(false) => Some(format!(
+            "the sync daemon runs another datum than {shown}: `datum install` points it here"
+        )),
     };
-    if !body.contains(&names) {
-        return vec![(
-            "install_daemon_binary",
-            format!(
-                "the sync daemon runs another datum than {shown}: `datum install` points it here"
-            ),
-        )];
+    if let Some(word) = word {
+        return vec![("install_daemon_binary", word)];
     }
     match running_exe(m) {
         Some(running) if running != exe => vec![(

@@ -1206,7 +1206,10 @@ install's databases are in, by device key and chain id, read only, da-n0uj1.3),
 invite [<DEVICE> | --like <DB>]` (below) `| join | leave | list | rename | expel [--unjoin] [--wipe] | ack | rekey`,
 `admin list | add | remove`, `--auto | --no-auto` (`daemon install | uninstall`, da-tsna7), `daemon status` (a systemd
 user unit / launchd agent running the hidden `sync daemon run`, which is `sync
-run` for every chained db `known_dbs` lists; a copy's first `chain invite` /
+run` for every chained db `known_dbs` lists; it and a backup timer name datum by
+the link it was run through where one reaches it, so an upgrade that moves the link
+and deletes the old version leaves them starting, and `status` says a binary that
+is gone or is not this datum (da-tmmzh); a copy's first `chain invite` /
 `join` keeps a db opened by path in the registry under its absolute path, so
 the daemon finds it too (da-zrl7n), and installs it unless
 `DATUM_SYNC_NO_DAEMON=1`, and `datum install` and `datum upgrade` restart it onto a new binary; a `join`

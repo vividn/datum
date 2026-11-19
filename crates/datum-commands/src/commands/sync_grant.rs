@@ -658,7 +658,8 @@ pub(super) fn free_name(want: &str, chain: &str) -> Result<String> {
 pub(super) fn join(g: &Granted, quiet: bool) -> Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
-    let mut c = Command::new(std::env::current_exe()?);
+    // Run by the path this one was, so a daemon its join installs names it.
+    let mut c = Command::new(super::sync_daemon::unit_exe()?);
     c.args(["--db", &g.name, "sync", "chain", "join"])
         .stdin(Stdio::piped());
     if let Ok(at) = std::env::var("DATUM_SYNC_BIND") {
