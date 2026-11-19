@@ -650,13 +650,14 @@ fn a_daemon_installed_through_a_link_follows_it_across_an_upgrade() {
 
 /// A link in a directory group or other may write is not named (da-d1uhd):
 /// whoever can write it would decide what the daemon runs. The unit names
-/// the file, and `status` says why.
+/// the file, and `status` says why. Other's write, since a group's may be
+/// this user's alone (da-y30od).
 #[test]
 fn a_daemon_installed_through_a_link_others_can_write_names_the_file() {
     let h = Home::new();
     let versions = Versions::new(h.path("bin/datum"));
     let bin = h.path("bin");
-    Versions::mode_dir(&versions.link, 0o775);
+    Versions::mode_dir(&versions.link, 0o757);
     let out = (h.command("datum").args(["sync", "daemon", "install"]))
         .output()
         .unwrap();

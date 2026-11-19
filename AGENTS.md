@@ -1211,7 +1211,8 @@ the link it was run through where one reaches it, so an upgrade that moves the l
 and deletes the old version leaves them starting, and `status` says a binary that
 is gone or is not this datum (da-tmmzh); only a link no one but this user and root
 can change, each link on the way and the directories above owned by them and not
-group- or other-writable unless sticky, and otherwise the file, `status` saying
+group- or other-writable unless sticky (a group may write that is this user's
+alone, with no ACL, da-y30od), and otherwise the file, `status` saying
 which and why (da-d1uhd); a copy's first `chain invite` /
 `join` keeps a db opened by path in the registry under its absolute path, so
 the daemon finds it too (da-zrl7n), and installs it unless

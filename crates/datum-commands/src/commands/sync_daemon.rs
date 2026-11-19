@@ -10,6 +10,7 @@
 //! service stops at logout, and `status` says so.
 
 use std::collections::BTreeSet;
+use std::ffi::CString;
 use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -197,19 +198,30 @@ fn chosen() -> Result<(PathBuf, Option<(PathBuf, String)>)> {
         .filter(|p| std::fs::canonicalize(p).is_ok_and(|c| c == this));
     // SAFETY: getuid cannot fail.
     let uid = unsafe { libc::getuid() };
-    Ok(match run_by.map(|p| (trusted(&p, &this, uid), p)) {
-        Some((Ok(()), p)) => (p, None),
-        Some((Err(why), p)) => (exe, Some((p, why))),
-        None => (exe, None),
-    })
+    let private = |g| private_group(g, uid);
+    Ok(
+        match run_by.map(|p| (trusted(&p, &this, uid, &private), p)) {
+            Some((Ok(()), p)) => (p, None),
+            Some((Err(why), p)) => (exe, Some((p, why))),
+            None => (exe, None),
+        },
+    )
 }
 
 /// Whether no one but `uid` and root can change what `link` reaches
 /// (da-d1uhd): each link followed from it to `this`, and every directory
 /// above each, as typed and as resolved, is owned by `uid` or root, and no
 /// directory is writable by group or other unless it is sticky (`/tmp`),
-/// where no one else can move what is ours. Else why not.
-fn trusted(link: &Path, this: &Path, uid: u32) -> std::result::Result<(), String> {
+/// where no one else can move what is ours, or only by a group `private`
+/// says holds no one but `uid` and with no ACL, whose mask the group bits
+/// would be (da-y30od: Debian's umask 002 makes `~/.local/bin` 0775).
+/// Else why not.
+fn trusted(
+    link: &Path,
+    this: &Path,
+    uid: u32,
+    private: &dyn Fn(u32) -> bool,
+) -> std::result::Result<(), String> {
     use std::os::unix::fs::MetadataExt;
     let mut hop = link.to_path_buf();
     // `this`'s own directories go unchecked: a unit naming the file is what
@@ -228,7 +240,10 @@ fn trusted(link: &Path, this: &Path, uid: u32) -> std::result::Result<(), String
             if m.uid() != uid && m.uid() != 0 {
                 return Err(format!("{} belongs to another user", p.display()));
             }
-            if !m.is_symlink() && m.mode() & 0o022 != 0 && m.mode() & 0o1000 == 0 {
+            // The group's write counts unless the group is this user's alone
+            // and no ACL makes the bits a mask.
+            let group = m.mode() & 0o020 != 0 && !(private(m.gid()) && !has_acl(p));
+            if !m.is_symlink() && (m.mode() & 0o002 != 0 || group) && m.mode() & 0o1000 == 0 {
                 return Err(format!("{} is writable by group or other", p.display()));
             }
         }
@@ -238,6 +253,80 @@ fn trusted(link: &Path, this: &Path, uid: u32) -> std::result::Result<(), String
         }
     }
     Err(format!("{} goes through too many links", link.display()))
+}
+
+/// Whether group `gid` can hold no one but `uid` (da-y30od), by `alone`
+/// over every account NSS enumerates and the group's members. It proves only
+/// that this user is enumerable: an account NSS does not list whose primary
+/// gid is this one (a misconfigured gid collision) is missed. One scan at a
+/// time: `getpwent` and `getgrgid` share state, and a daemon's threads each
+/// join grants.
+fn private_group(gid: u32, uid: u32) -> bool {
+    use std::ffi::CStr;
+    static NSS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _held = NSS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut accounts = Vec::new();
+    // SAFETY: under `NSS`, each entry is copied before the next call reuses
+    // its buffer.
+    let members = unsafe {
+        libc::setpwent();
+        loop {
+            let p = libc::getpwent();
+            if p.is_null() {
+                break;
+            }
+            let name = CStr::from_ptr((*p).pw_name).to_owned();
+            accounts.push(((*p).pw_uid, (*p).pw_gid, name));
+        }
+        libc::endpwent();
+        let g = libc::getgrgid(gid);
+        if g.is_null() {
+            return false;
+        }
+        let (mut m, mut members) = ((*g).gr_mem, Vec::new());
+        while !(*m).is_null() {
+            members.push(CStr::from_ptr(*m).to_owned());
+            m = m.add(1);
+        }
+        members
+    };
+    alone(gid, uid, &accounts, &members)
+}
+
+/// Whether `accounts` (uid, primary gid, name) and `members`, group `gid`'s
+/// list, leave it no one but `uid`: `uid` is among them with `gid` its
+/// primary, no other account has it as primary, and no other name is a
+/// member. Where NSS does not enumerate this user (sssd and the like), the
+/// scan cannot be complete, so it is not.
+fn alone(gid: u32, uid: u32, accounts: &[(u32, u32, CString)], members: &[CString]) -> bool {
+    let Some((_, primary, name)) = accounts.iter().find(|a| a.0 == uid) else {
+        return false;
+    };
+    *primary == gid
+        && accounts.iter().all(|a| a.0 == uid || a.1 != gid)
+        && members.iter().all(|m| m == name)
+}
+
+/// Whether `p` may carry a POSIX ACL: anything but its absence (or a file
+/// system with none) is taken as one.
+fn has_acl(p: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let Ok(path) = CString::new(p.as_os_str().as_bytes()) else {
+            return true;
+        };
+        let name = c"system.posix_acl_access";
+        // SAFETY: both are NUL-terminated; a null buffer of 0 asks the size.
+        let n = unsafe { libc::lgetxattr(path.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0) };
+        let e = std::io::Error::last_os_error().raw_os_error();
+        !(n < 0 && matches!(e, Some(libc::ENODATA) | Some(libc::ENOTSUP)))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = p;
+        true
+    }
 }
 
 /// What a status says of the path a unit names this datum by (da-d1uhd):
@@ -792,10 +881,10 @@ mod tests {
         let me = unsafe { libc::getuid() };
 
         mode(0o755);
-        assert_eq!(trusted(&link, &this, me), Ok(()));
+        assert_eq!(trusted(&link, &this, me, &|_| false), Ok(()));
         for m in [0o775, 0o757] {
             mode(m);
-            let why = trusted(&link, &this, me).unwrap_err();
+            let why = trusted(&link, &this, me, &|_| false).unwrap_err();
             assert_eq!(
                 why,
                 format!("{} is writable by group or other", bin.display())
@@ -816,7 +905,7 @@ mod tests {
         std::fs::remove_file(&link).unwrap();
         std::os::unix::fs::symlink("../versions/datum", &link).unwrap();
         let this = std::fs::canonicalize(&link).unwrap();
-        let why = trusted(&link, &this, me).unwrap_err();
+        let why = trusted(&link, &this, me, &|_| false).unwrap_err();
         let shared = std::fs::canonicalize(&shared).unwrap();
         assert_eq!(
             why,
@@ -833,7 +922,109 @@ mod tests {
             }
             me => me + 1,
         };
-        let why = trusted(&link, &this, reader).unwrap_err();
+        let why = trusted(&link, &this, reader, &|_| false).unwrap_err();
         assert!(why.ends_with("belongs to another user"), "{why}");
+    }
+
+    /// A link in a 0775 directory of this user's private group is trusted,
+    /// and not where the group holds another, nor where the group bits are
+    /// an ACL's mask granting another user write (da-y30od).
+    #[test]
+    fn a_private_group_may_write_where_no_acl_lets_another() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let (bin, file) = (tmp.path().join("bin"), tmp.path().join("datum"));
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(&file, "").unwrap();
+        let link = bin.join("datum");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        let this = std::fs::canonicalize(&file).unwrap();
+        // SAFETY: getuid cannot fail.
+        let me = unsafe { libc::getuid() };
+        let gid = std::fs::metadata(&bin).unwrap().gid();
+        let ours = move |g| g == gid;
+
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o775)).unwrap();
+        assert_eq!(trusted(&link, &this, me, &ours), Ok(()));
+        let why = trusted(&link, &this, me, &|_| false).unwrap_err();
+        assert_eq!(
+            why,
+            format!("{} is writable by group or other", bin.display())
+        );
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o757)).unwrap();
+        assert!(trusted(&link, &this, me, &ours).is_err());
+
+        #[cfg(target_os = "linux")]
+        {
+            // 0755 and `user:nobody:rwx`, as `setfacl -m` writes it: the mode
+            // shows the mask, 0775.
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let mut acl = 2u32.to_le_bytes().to_vec();
+            for (tag, perm, id) in [
+                (1u16, 7u16, u32::MAX),
+                (2, 7, 65534),
+                (4, 5, u32::MAX),
+                (0x10, 7, u32::MAX),
+                (0x20, 5, u32::MAX),
+            ] {
+                acl.extend(
+                    tag.to_le_bytes()
+                        .iter()
+                        .chain(&perm.to_le_bytes())
+                        .chain(&id.to_le_bytes()),
+                );
+            }
+            let path = CString::new(bin.to_str().unwrap()).unwrap();
+            let name = c"system.posix_acl_access";
+            // SAFETY: NUL-terminated names, `acl` read for its length.
+            let rc = unsafe {
+                libc::lsetxattr(
+                    path.as_ptr(),
+                    name.as_ptr(),
+                    acl.as_ptr().cast(),
+                    acl.len(),
+                    0,
+                )
+            };
+            if rc != 0 {
+                eprintln!(
+                    "no ACL on this file system ({}): its case is untested",
+                    std::io::Error::last_os_error()
+                );
+                return;
+            }
+            assert_eq!(std::fs::metadata(&bin).unwrap().mode() & 0o777, 0o775);
+            let why = trusted(&link, &this, me, &ours).unwrap_err();
+            assert_eq!(
+                why,
+                format!("{} is writable by group or other", bin.display())
+            );
+        }
+    }
+
+    /// A group is private only where the accounts and members fed say no
+    /// one but this user can be in it (da-y30od).
+    #[test]
+    fn a_group_is_private_only_where_no_other_account_can_be_in_it() {
+        let n = |s: &str| CString::new(s).unwrap();
+        let me = (1001, 1001, n("me"));
+        let root = (0, 0, n("root"));
+        let alone = |accounts: &[(u32, u32, CString)], members: &[CString]| {
+            alone(1001, 1001, accounts, members)
+        };
+        assert!(alone(&[root.clone(), me.clone()], &[]));
+        assert!(alone(&[root.clone(), me.clone()], &[n("me")]));
+        let other = (1002, 1001, n("other"));
+        assert!(!alone(&[me.clone(), other], &[]), "another's primary");
+        assert!(
+            !alone(std::slice::from_ref(&me), &[n("me"), n("other")]),
+            "another member"
+        );
+        assert!(!alone(&[root], &[]), "this user not enumerated");
+        assert!(
+            !alone(&[(1001, 100, n("me"))], &[]),
+            "another primary of mine"
+        );
     }
 }
