@@ -126,6 +126,16 @@ describe('the pills ride with the text', () => {
 			await withCoffee(app);
 			await setPill(page, { text: '-t 14:30', locked: true });
 			await page.locator(`${BAR} .pill`).waitFor();
+			// Read where it waits only once the bar stands still: the seeded
+			// line's box eases back to an empty one's 3px, the pill with it,
+			// and a read mid-ease named a place 13.6px right of rest (da-snyyw).
+			await page.waitForFunction(() => {
+				const input = document.querySelector('.prompt-bar input');
+				const left = document.querySelector('.prompt-bar .pill').getBoundingClientRect().left;
+				const still = input.style.width === '3px' && left === window.__pillWas;
+				window.__pillWas = left;
+				return still;
+			});
 			const { pill: waiting, caret } = await pillAt(page);
 			// The box's width, which the pills follow (da-0eqgg): the ghost watch records it too.
 			const placed = await page.evaluate(() => parseFloat(document.querySelector('.prompt-bar input').style.width));
@@ -168,7 +178,7 @@ describe('the pills ride with the text', () => {
 							caret: document.querySelector('.prompt-bar .line > .prompt').getBoundingClientRect().right
 						};
 					});
-					throw new Error(`the locked pill never came back to ${waiting} (❯ at ${caret}): ${JSON.stringify(bar)}`, { cause: e });
+					throw new Error(`the locked pill never came back to ${waiting} (❯ at ${caret}, box ${placed}px): ${JSON.stringify(bar)}`, { cause: e });
 				});
 			assert.equal(await page.locator(`${BAR} .pill`).count(), 1, 'a locked pill was spent');
 			assert.deepEqual(app.errors, []);
