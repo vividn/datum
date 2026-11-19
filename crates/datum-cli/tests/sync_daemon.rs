@@ -133,7 +133,9 @@ impl Home {
 /// An installer's versioned binaries behind a link (da-tmmzh): this datum as
 /// `v1/datum` and `v2/datum`, hard links beside the
 /// build so nothing is copied, and `link` → v1. `upgrade` moves the link to
-/// v2 and deletes v1, as a cleanup keeping one version does.
+/// v2 and deletes v1, as a cleanup keeping one version does. The link's
+/// directory and the one above it, the test's home, are set to 0755,
+/// whatever the umask, so a unit names the link (da-d1uhd).
 pub(crate) struct Versions {
     dir: TempDir,
     pub link: PathBuf,
@@ -148,7 +150,15 @@ impl Versions {
             std::fs::hard_link(env!("CARGO_BIN_EXE_datum"), at.join("datum")).unwrap();
         }
         std::os::unix::fs::symlink(dir.path().join("v1/datum"), &link).unwrap();
+        Versions::mode_dir(link.parent().unwrap(), 0o755);
+        Versions::mode_dir(&link, 0o755);
         Self { dir, link }
+    }
+
+    /// The directory `path` is in, set to `mode`.
+    pub fn mode_dir(path: &Path, mode: u32) {
+        let dir = path.parent().unwrap();
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
     }
 
     pub fn upgrade(&self) {
@@ -634,6 +644,55 @@ fn a_daemon_installed_through_a_link_follows_it_across_an_upgrade() {
     let said = h.ok(&["sync", "daemon", "status"]);
     assert!(
         said.contains(&format!("its binary {link} is missing, so it cannot start")),
+        "{said}"
+    );
+}
+
+/// A link in a directory group or other may write is not named (da-d1uhd):
+/// whoever can write it would decide what the daemon runs. The unit names
+/// the file, and `status` says why.
+#[test]
+fn a_daemon_installed_through_a_link_others_can_write_names_the_file() {
+    let h = Home::new();
+    let versions = Versions::new(h.path("bin/datum"));
+    let bin = h.path("bin");
+    Versions::mode_dir(&versions.link, 0o775);
+    let out = (h.command("datum").args(["sync", "daemon", "install"]))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let file = std::fs::canonicalize(&versions.link).unwrap();
+    let service = std::fs::read_to_string(h.service()).unwrap();
+    let run = format!("\"{}\" sync daemon run", file.display());
+    assert!(service.contains(&format!("ExecStart={run}\n")), "{service}");
+
+    let out = (h.command("datum").args(["sync", "daemon", "status"]))
+        .output()
+        .unwrap();
+    let said = String::from_utf8(out.stdout).unwrap();
+    let why = format!(
+        "it runs the file {}, not the link {} this datum was run by: {} is writable by group or other",
+        file.display(),
+        versions.link.display(),
+        bin.display()
+    );
+    assert!(said.contains(&why), "{said}");
+
+    Versions::mode_dir(&versions.link, 0o755);
+    let out = (h.command("datum").args(["sync", "daemon", "install"]))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8(
+        (h.command("datum").args(["sync", "daemon", "status"]))
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let link = versions.link.display();
+    assert!(
+        said.contains(&format!("it runs datum by the link {link}")),
         "{said}"
     );
 }

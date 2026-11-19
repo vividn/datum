@@ -29,7 +29,9 @@ use super::backup_restore::derive_source_db;
 use super::backup_rotation::{
     ago, canon, label, newest, rename_rotation, rotation_name, set_schedule, Schedule,
 };
-use super::sync_daemon::{binary_word, ctl, linger_note, named_exe, quoted, unit_exe, ENV};
+use super::sync_daemon::{
+    binary_word, chosen_word, ctl, linger_note, named_exe, quoted, unit_exe, ENV,
+};
 use crate::args::BackupDaemonAct;
 use crate::config;
 
@@ -135,7 +137,7 @@ pub fn daemon(act: BackupDaemonAct, cli_db: Option<&str>) -> Result<()> {
                 if timer_stopped(unit) {
                     println!("  {}", stopped(unit, body));
                 }
-                if let Some(word) = binary_word(body, REINSTALL) {
+                if let Some(word) = binary_word(body, REINSTALL).or_else(|| chosen_word(body)) {
                     println!("  {word}");
                 }
                 if body.lines().any(|l| l == ALL_LINE) {

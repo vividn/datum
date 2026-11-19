@@ -166,10 +166,17 @@ pub(super) fn ctl(program: &str, args: &[&str]) -> Result<()> {
 /// found on PATH, where that reaches this binary through a link, so the
 /// unit follows the link to whatever version an installer puts behind it
 /// (`bin/datum → versions/<v>`, which keeps two versions; Homebrew's Cellar
-/// after `brew cleanup`); otherwise the binary itself. Refused where the
-/// binary is gone, removed or replaced as it ran: a unit naming it would
-/// never start.
+/// after `brew cleanup`), and only where no one but this user and root can
+/// change what it reaches (`trusted`, da-d1uhd); otherwise the binary itself.
+/// Refused where the binary is gone, removed or replaced as it ran: a unit
+/// naming it would never start.
 pub(super) fn unit_exe() -> Result<PathBuf> {
+    Ok(chosen()?.0)
+}
+
+/// `unit_exe`'s path, and the link this datum was run by where it was
+/// refused, with why.
+fn chosen() -> Result<(PathBuf, Option<(PathBuf, String)>)> {
     let exe = std::env::current_exe().context("finding this datum binary")?;
     let this = std::fs::canonicalize(&exe).with_context(|| {
         format!(
@@ -186,9 +193,70 @@ pub(super) fn unit_exe() -> Result<PathBuf> {
                 .find(|p| p.is_file()),
         }
     });
-    Ok((run_by.and_then(|p| std::path::absolute(p).ok()))
-        .filter(|p| std::fs::canonicalize(p).is_ok_and(|c| c == this))
-        .unwrap_or(exe))
+    let run_by = (run_by.and_then(|p| std::path::absolute(p).ok()))
+        .filter(|p| std::fs::canonicalize(p).is_ok_and(|c| c == this));
+    // SAFETY: getuid cannot fail.
+    let uid = unsafe { libc::getuid() };
+    Ok(match run_by.map(|p| (trusted(&p, &this, uid), p)) {
+        Some((Ok(()), p)) => (p, None),
+        Some((Err(why), p)) => (exe, Some((p, why))),
+        None => (exe, None),
+    })
+}
+
+/// Whether no one but `uid` and root can change what `link` reaches
+/// (da-d1uhd): each link followed from it to `this`, and every directory
+/// above each, as typed and as resolved, is owned by `uid` or root, and no
+/// directory is writable by group or other unless it is sticky (`/tmp`),
+/// where no one else can move what is ours. Else why not.
+fn trusted(link: &Path, this: &Path, uid: u32) -> std::result::Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let mut hop = link.to_path_buf();
+    // `this`'s own directories go unchecked: a unit naming the file is what
+    // it falls back to. A hop is checked before it is followed, so one that
+    // is no link (`bin/../v1/datum`, through a linked directory) is checked
+    // too. 40 hops is the kernel's own bound (a link changed into a loop
+    // after `chosen` resolved it).
+    for _ in 0..40 {
+        if hop == this {
+            return Ok(());
+        }
+        let dir = hop.parent().unwrap_or(Path::new("/")).to_path_buf();
+        let real = std::fs::canonicalize(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        for p in hop.ancestors().chain(real.ancestors()) {
+            let m = std::fs::symlink_metadata(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            if m.uid() != uid && m.uid() != 0 {
+                return Err(format!("{} belongs to another user", p.display()));
+            }
+            if !m.is_symlink() && m.mode() & 0o022 != 0 && m.mode() & 0o1000 == 0 {
+                return Err(format!("{} is writable by group or other", p.display()));
+            }
+        }
+        match std::fs::read_link(&hop) {
+            Ok(to) => hop = dir.join(to),
+            Err(_) => return Ok(()),
+        }
+    }
+    Err(format!("{} goes through too many links", link.display()))
+}
+
+/// What a status says of the path a unit names this datum by (da-d1uhd):
+/// a link or the file, as the unit says, and for the file, the link this
+/// datum was run by that a unit would not name as the files stand now, and
+/// why. A binary gone is `binary_word`'s, said before this.
+pub(super) fn chosen_word(body: &str) -> Option<String> {
+    let named = named_exe(body)?;
+    let shown = named.display();
+    if std::fs::canonicalize(&named).ok()? != named {
+        return Some(format!("it runs datum by the link {shown}"));
+    }
+    Some(match chosen().ok().and_then(|c| c.1) {
+        Some((link, why)) => format!(
+            "it runs the file {shown}, not the link {} this datum was run by: {why}",
+            link.display()
+        ),
+        None => format!("it runs the file {shown}"),
+    })
 }
 
 /// The binary a unit's or agent's text names: its `ExecStart=`'s quoted
@@ -314,7 +382,8 @@ fn status(manager: Option<Manager>) -> Result<()> {
     }
     println!("installed: the {} ({})", m.name(), path.display());
     let body = std::fs::read_to_string(&path).unwrap_or_default();
-    if let Some(word) = binary_word(&body, "`datum sync --auto`") {
+    let word = binary_word(&body, "`datum sync --auto`");
+    if let Some(word) = word.or_else(|| chosen_word(&body)) {
         println!("{word}");
     }
     match m.running() {
@@ -701,5 +770,70 @@ mod tests {
         assert_eq!(secs, [1, 2, 4, 8, 16, 32, 60, 60]);
         assert_eq!(next_look(false, &mut again), LOOK);
         assert_eq!(next_look(true, &mut again), LOOK_AGAIN);
+    }
+
+    /// A link is trusted in a directory of this user's at 0755, and not
+    /// where group or other may write it, or another non-root user owns it
+    /// (da-d1uhd).
+    #[test]
+    fn a_link_is_trusted_only_where_no_one_else_can_change_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        // Made under the umask: 0755, so only `bin` decides.
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let (bin, file) = (tmp.path().join("bin"), tmp.path().join("datum"));
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(&file, "").unwrap();
+        let link = bin.join("datum");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        let this = std::fs::canonicalize(&file).unwrap();
+        let mode = |m| std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(m)).unwrap();
+        // SAFETY: getuid cannot fail.
+        let me = unsafe { libc::getuid() };
+
+        mode(0o755);
+        assert_eq!(trusted(&link, &this, me), Ok(()));
+        for m in [0o775, 0o757] {
+            mode(m);
+            let why = trusted(&link, &this, me).unwrap_err();
+            assert_eq!(
+                why,
+                format!("{} is writable by group or other", bin.display())
+            );
+        }
+        mode(0o755);
+
+        // `bin/datum → ../versions/datum`, `versions` a link to a directory
+        // others may write: the hop through it, which is no link, is
+        // checked as it is resolved.
+        let shared = tmp.path().join("shared");
+        std::fs::create_dir(&shared).unwrap();
+        std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o775)).unwrap();
+        std::fs::write(shared.join("datum"), "").unwrap();
+        let file = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(shared.join("datum"), file).unwrap();
+        std::os::unix::fs::symlink(&shared, tmp.path().join("versions")).unwrap();
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink("../versions/datum", &link).unwrap();
+        let this = std::fs::canonicalize(&link).unwrap();
+        let why = trusted(&link, &this, me).unwrap_err();
+        let shared = std::fs::canonicalize(&shared).unwrap();
+        assert_eq!(
+            why,
+            format!("{} is writable by group or other", shared.display())
+        );
+
+        // Owned by another non-root user, last since as root it chowns
+        // `bin`: as root, chown it; otherwise this user's tree is another
+        // user's to a reader of another uid.
+        let reader = match me {
+            0 => {
+                std::os::unix::fs::chown(&bin, Some(65534), None).unwrap();
+                0
+            }
+            me => me + 1,
+        };
+        let why = trusted(&link, &this, reader).unwrap_err();
+        assert!(why.ends_with("belongs to another user"), "{why}");
     }
 }
