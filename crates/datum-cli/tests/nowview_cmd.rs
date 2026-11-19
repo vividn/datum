@@ -1343,6 +1343,10 @@ fn every_terminal_first_probe_is_on_a_live_path() {
         // `tail --watch`'s frame signature and repaint loop.
         format!("{tail}: (detect_cols(), detect_rows())"),
         format!("{tail}: Some(auto_fill_rows(detect_rows()))"),
+        // `readline`'s indicator, placed by the live terminal's width after
+        // each Enter (da-jt3k8).
+        "datum-cli/src/repl.rs: let cols = datum_commands::render::term_layout::detect_cols();"
+            .into(),
     ];
     allowed.sort();
     assert_eq!(found, allowed, "a terminal-first probe off a --watch path?");

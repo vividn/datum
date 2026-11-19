@@ -70,9 +70,9 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
 
 /// `datum readline <command> [args…]` (da-xloff): each line typed runs
 /// `<command> [args…] -- <line>` against one database, the line one word
-/// exactly as typed, an empty one included, stamped at its Enter. Nothing
-/// is echoed; a refusal prints and the loop goes on. Ctrl-D or Ctrl-C ends
-/// it, the half-typed line unsaved.
+/// exactly as typed, an empty one included, stamped at its Enter. Each line
+/// says what it wrote, or that it failed, and the loop goes on ([`indicate`]).
+/// Ctrl-D or Ctrl-C ends it, the half-typed line unsaved.
 pub fn readline(base: &[String], db_hint: Option<&str>) -> Result<()> {
     let (db, path) = open(db_hint)?;
     read_lines(base, &db, Some(&path))
@@ -111,12 +111,43 @@ fn read_lines(base: &[String], db: &Db, path: Option<&str>) -> Result<()> {
         if !base.iter().any(|w| w == "--") {
             argv.push("--".into());
         }
-        argv.push(line);
-        if let Err(e) = run_argv(argv, &named, db, path) {
-            eprintln!("error: {e:#}");
-        }
+        argv.push(line.clone());
+        let (result, said, printed) =
+            datum_commands::render::json_echo::tapped(|| run_argv(argv, &named, db, path));
         datum_commands::args::reset_duplicate_noop();
+        let said = match result {
+            Err(e) => format!("FAILED {e:#}"),
+            Ok(()) if said.is_empty() => continue,
+            Ok(()) => said.join(", "),
+        };
+        indicate(&line, &said, printed);
     }
+}
+
+/// Say what a `readline` line did (da-jt3k8): on a terminal after the text
+/// typed, on its line, when nothing was printed below it; otherwise on a
+/// line of its own, on stderr, the base's stdout left its own.
+fn indicate(line: &str, said: &str, printed: bool) {
+    use std::io::{IsTerminal, Write};
+    let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    if !tty || printed {
+        eprintln!("{said}");
+        return;
+    }
+    // The cursor is at the start of the row under the line's last: up one,
+    // past what of the line that row holds, and back down after. A line
+    // filling its last row exactly is followed by an empty row rustyline
+    // wraps to, so column 0 there overwrites nothing.
+    let cols = datum_commands::render::term_layout::detect_cols();
+    let col = datum_commands::render::visible_width(line) % cols;
+    let right = if col > 0 {
+        format!("\x1b[{col}C")
+    } else {
+        String::new()
+    };
+    let mut out = std::io::stdout().lock();
+    let _ = write!(out, "\x1b[A\r{right}  {said}\r\n");
+    let _ = out.flush();
 }
 
 /// A kit command's script (da-et0lm): each of its lines, filled, run in

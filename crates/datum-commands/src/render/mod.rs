@@ -782,11 +782,13 @@ pub fn undone_lines_at(
 }
 
 fn show_lines(entry: &Entry, args: &OutputArgs, lines: impl FnOnce(&DatumTime) -> ActionLines) {
-    if args.silent() {
-        return;
-    }
-    if args.show == Show::Format {
-        if let Some(fmt) = &args.format_string {
+    if args.silent() || args.show == Show::Format {
+        // `readline`'s indicator hears of it however quiet (da-jt3k8).
+        if self::json_echo::tapping() {
+            let printed = !args.silent() && args.format_string.is_some();
+            self::json_echo::tap(&lines(&self::action::now_local()), printed);
+        }
+        if let (Show::Format, Some(fmt)) = (args.show, &args.format_string) {
             println!("{}", interpolate(fmt, entry));
         }
         return;
@@ -796,6 +798,7 @@ fn show_lines(entry: &Entry, args: &OutputArgs, lines: impl FnOnce(&DatumTime) -
     // "today" from it and the header never reads `now`, so sourcing both
     // from the one builder changes nothing about what is printed.
     let lines = lines(&self::action::now_local());
+    self::json_echo::tap(&lines, true);
 
     // `--show json`: collect, print nothing. The outermost dispatch scope
     // emits the one document (da-yc9w). `Show::None` already returned above,

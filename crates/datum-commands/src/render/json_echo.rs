@@ -104,6 +104,39 @@ pub(super) fn push(lines: &ActionLines) {
     ECHO.with(|slot| slot.borrow_mut().1.push(document(lines)));
 }
 
+thread_local! {
+    /// While [`tapped`] runs: `ACTION time field` of each action echoed,
+    /// whatever the show, and whether any echo was printed.
+    static TAP: RefCell<Option<(Vec<String>, bool)>> = const { RefCell::new(None) };
+}
+
+/// Run `f`, also returning `ACTION time field` for each action it echoed,
+/// printed or not, and whether it printed one: `readline`'s indicator
+/// (da-jt3k8).
+pub fn tapped<T>(f: impl FnOnce() -> T) -> (T, Vec<String>, bool) {
+    let outer = TAP.replace(Some((Vec::new(), false)));
+    let result = f();
+    let (said, printed) = TAP.replace(outer).unwrap_or_default();
+    (result, said, printed)
+}
+
+/// Is a [`tapped`] listening?
+pub(super) fn tapping() -> bool {
+    TAP.with(|t| t.borrow().is_some())
+}
+
+/// Tell a [`tapped`] of `lines`, `printed` or not.
+pub(super) fn tap(lines: &ActionLines, printed: bool) {
+    TAP.with(|t| {
+        if let Some((said, any)) = t.borrow_mut().as_mut() {
+            let words = [lines.action.as_str(), &lines.info_time, &lines.field];
+            let words: Vec<&str> = words.into_iter().filter(|w| !w.is_empty()).collect();
+            said.push(words.join(" "));
+            *any |= printed;
+        }
+    });
+}
+
 /// Set `key` on the document recorded last: what one command alone says of
 /// an entry, as `get` its author.
 pub fn annotate_last(key: &str, value: JsonValue) {

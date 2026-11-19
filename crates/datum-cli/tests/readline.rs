@@ -34,6 +34,7 @@ impl Env {
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.home)
             .env("NO_COLOR", "1")
+            .env("TZ", "UTC")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         cmd
@@ -85,7 +86,11 @@ fn every_line_is_kept_as_typed_an_empty_one_too_and_ctrl_d_exits_0() {
             r#"{"line":""}"#,
         ]
     );
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "", "nothing echoed");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "",
+        "no receipt on stdout"
+    );
     let raw: String = Connection::open(&env.db)
         .unwrap()
         .query_row(
@@ -95,6 +100,28 @@ fn every_line_is_kept_as_typed_an_empty_one_too_and_ctrl_d_exits_0() {
         )
         .unwrap();
     assert!(!raw.contains("--show"), "the line as typed: {raw}");
+}
+
+/// Each Enter says what it wrote, ACTION time field, on a line of its own
+/// from a pipe (da-jt3k8): the time is the one the line was held to.
+#[test]
+fn each_line_says_what_it_wrote_an_empty_one_too() {
+    let env = Env::new();
+    let said = |at: &str, line: &str| {
+        let out = env.readline(&["occur", "nightly", "-SR", "line", "-t", at], &[line]);
+        assert!(out.status.success());
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    assert_eq!(
+        said("2026-01-05T23:41:07Z", "the lamp was on"),
+        "MOMENT 2026-01-05 23:41:07+0 nightly\n"
+    );
+    assert_eq!(
+        said("2026-01-05T23:42:00Z", ""),
+        "MOMENT 2026-01-05 23:42:00+0 nightly\n"
+    );
+    assert_eq!(env.data("nightly").len(), 2);
 }
 
 /// The base's own `--show` wins over the quiet, the outer parse leaving it.
@@ -120,7 +147,13 @@ fn a_refused_line_prints_and_the_loop_goes_on() {
     );
     assert!(out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("nowhere"), "the refusal is said: {err}");
+    let said: Vec<&str> = err.lines().collect();
+    assert_eq!(said.len(), 3, "a line each: {err}");
+    assert!(said[0].starts_with("CHANGE "), "{err}");
+    assert!(
+        said[1].starts_with("FAILED ") && said[1].contains("nowhere"),
+        "the refusal is said on its line: {err}"
+    );
     let conn = Connection::open(&env.db).unwrap();
     let states: Vec<String> = conn
         .prepare(
