@@ -258,9 +258,10 @@ fn trusted(
 /// Whether group `gid` can hold no one but `uid` (da-y30od), by `alone`
 /// over every account NSS enumerates and the group's members. It proves only
 /// that this user is enumerable: an account NSS does not list whose primary
-/// gid is this one (a misconfigured gid collision) is missed. One scan at a
-/// time: `getpwent` and `getgrgid` share state, and a daemon's threads each
-/// join grants.
+/// gid is this one (a misconfigured gid collision) is missed, and so is a
+/// group password in gshadow, which lets a non-member in by `newgrp`: no
+/// process but root's can read gshadow. One scan at a time: `getpwent` and
+/// `getgrent` share state, and a daemon's threads each join grants.
 fn private_group(gid: u32, uid: u32) -> bool {
     use std::ffi::CStr;
     static NSS: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -279,18 +280,34 @@ fn private_group(gid: u32, uid: u32) -> bool {
             accounts.push(((*p).pw_uid, (*p).pw_gid, name));
         }
         libc::endpwent();
-        let g = libc::getgrgid(gid);
-        if g.is_null() {
-            return false;
+        let mut groups = Vec::new();
+        libc::setgrent();
+        loop {
+            let g = libc::getgrent();
+            if g.is_null() {
+                break;
+            }
+            let (mut m, mut members) = ((*g).gr_mem, Vec::new());
+            while !(*m).is_null() {
+                members.push(CStr::from_ptr(*m).to_owned());
+                m = m.add(1);
+            }
+            groups.push(((*g).gr_gid, members));
         }
-        let (mut m, mut members) = ((*g).gr_mem, Vec::new());
-        while !(*m).is_null() {
-            members.push(CStr::from_ptr(*m).to_owned());
-            m = m.add(1);
-        }
-        members
+        libc::endgrent();
+        members_of(gid, groups)
     };
-    alone(gid, uid, &accounts, &members)
+    members.is_some_and(|members| alone(gid, uid, &accounts, &members))
+}
+
+/// The members of every one of `groups`' lines with `gid`, or none where no
+/// line has it: a second line with the gid (`groupadd -o`, an NSS source
+/// merging groups) can add a member `getgrgid`, which returns the first,
+/// never shows, and login gives them the gid all the same (da-txvrk).
+fn members_of(gid: u32, groups: Vec<(u32, Vec<CString>)>) -> Option<Vec<CString>> {
+    let mut lines = groups.into_iter().filter(|g| g.0 == gid).peekable();
+    lines.peek()?;
+    Some(lines.flat_map(|g| g.1).collect())
 }
 
 /// Whether `accounts` (uid, primary gid, name) and `members`, group `gid`'s
@@ -1026,5 +1043,22 @@ mod tests {
             !alone(&[(1001, 100, n("me"))], &[]),
             "another primary of mine"
         );
+    }
+
+    /// Every line with the gid gives its members, a second line's too, and
+    /// no line with it gives none (da-txvrk).
+    #[test]
+    fn a_groups_members_are_every_line_with_its_gid() {
+        let n = |s: &str| CString::new(s).unwrap();
+        let groups = || {
+            vec![
+                (1001, vec![n("me")]),
+                (1002, vec![n("third")]),
+                (1001, vec![n("other")]),
+            ]
+        };
+        assert_eq!(members_of(1001, groups()), Some(vec![n("me"), n("other")]));
+        assert_eq!(members_of(1003, groups()), None);
+        assert_eq!(members_of(1002, vec![(1002, vec![])]), Some(vec![]));
     }
 }
