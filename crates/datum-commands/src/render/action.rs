@@ -803,7 +803,7 @@ fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>
 }
 
 /// Compute the trail-state from an entry alone — the post-effect state
-/// for `Point` / `Ongoing` shapes. Block-shaped rows can't be answered
+/// for a `Point` shape. Block-shaped rows can't be answered
 /// from the entry alone; the caller queries `state_at(end_time)` for
 /// those and supplies the result via `RenderContext::trail_state`.
 pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {

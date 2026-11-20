@@ -71,9 +71,6 @@ pub enum DatumError {
     #[error("Migration is not reversible: {0}")]
     NotReversible(String),
 
-    #[error("Cryptographic error: {0}")]
-    Crypto(String),
-
     /// `_LAST_WITH_PROTECTION` resolved against a stale pointer. The
     /// caller can re-issue with `_LAST` to bypass the time guard, or
     /// touch a document first to refresh the pointer.

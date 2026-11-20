@@ -165,9 +165,6 @@ pub enum EntryShape {
     Point,
     /// `dur is set` (non-NULL, non-zero).
     Block,
-    /// Pre-pivot only. Never derived from a v=20 entry. Kept so legacy
-    /// match arms still type-check.
-    Ongoing,
 }
 
 impl EntryShape {
@@ -189,7 +186,6 @@ impl std::fmt::Display for EntryShape {
         match self {
             EntryShape::Point => write!(f, "point"),
             EntryShape::Block => write!(f, "block"),
-            EntryShape::Ongoing => write!(f, "ongoing"),
         }
     }
 }
@@ -200,7 +196,6 @@ impl std::str::FromStr for EntryShape {
         match s.to_lowercase().as_str() {
             "point" => Ok(EntryShape::Point),
             "block" => Ok(EntryShape::Block),
-            "ongoing" => Ok(EntryShape::Ongoing),
             _ => Err(format!("Unknown entry_shape: '{s}'")),
         }
     }
@@ -223,11 +218,6 @@ pub enum RenderShape {
     /// region from `[occur, next-switching-event]` ([`Verb::Switch`]).
     /// Renderers determine the bounds from the verb.
     Region,
-    /// Non-graphical fallback glyph — used by the action-line picker for
-    /// entries that can't be placed on a timeline (e.g., legacy timeless
-    /// `add` rows that still hit [`Verb::Point`] via [`EntryShape::Ongoing`]).
-    /// Currently unused by the timeline renderers.
-    Marker,
     /// No visual output. [`Verb::Switch`] with a null/false/IGNORED value
     /// terminates a state without opening a new region.
     Hidden,
@@ -259,10 +249,9 @@ pub fn render_shape(verb: Verb, entry_shape: EntryShape, value: &Option<JsonValu
         // Point-style switching verb: primary is a dot at occur.
         (Verb::PointSwitch, _) => RenderShape::Dot,
 
-        // Plain point: dot if it has timeline placement, marker otherwise.
+        // Plain point: a dot, or a region where it covers time.
         (Verb::Point, EntryShape::Point) => RenderShape::Dot,
         (Verb::Point, EntryShape::Block) => RenderShape::Region,
-        (Verb::Point, EntryShape::Ongoing) => RenderShape::Marker,
     }
 }
 
@@ -523,14 +512,6 @@ mod tests {
         assert_eq!(
             render_shape(Verb::Point, EntryShape::Block, &s(json!(2))),
             RenderShape::Region,
-        );
-    }
-
-    #[test]
-    fn point_with_ongoing_shape_is_marker() {
-        assert_eq!(
-            render_shape(Verb::Point, EntryShape::Ongoing, &None),
-            RenderShape::Marker,
         );
     }
 

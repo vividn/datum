@@ -703,7 +703,7 @@ fn render_field_visuals_terminal(
         // Same dispatch shape as the SVG path.
         let shape = render_shape(verb, entry.shape(), &entry.state);
         match shape {
-            RenderShape::Hidden | RenderShape::Marker => {}
+            RenderShape::Hidden => {}
             RenderShape::Region if is_block_verb(verb) => {
                 if is_hole_state(entry.state.as_ref()) {
                     if let Some(hole) = block_span(entry, occur_ms) {

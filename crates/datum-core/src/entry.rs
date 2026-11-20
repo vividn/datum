@@ -494,8 +494,7 @@ impl Entry {
     /// Coarse shape classifier derived from `dur`. Replaces the v=19
     /// `entry_shape` column-as-field: `Block` when `dur` carries a real
     /// span, `Point` otherwise (`None` / zero-span / `Moment` / `Unknown`).
-    /// `Ongoing` is never produced from a v=20 entry — open blocks are
-    /// expressed via `verb`, not shape.
+    /// An open block is expressed via `verb`, not shape.
     pub fn shape(&self) -> EntryShape {
         EntryShape::from_dur(self.dur.as_ref())
     }

@@ -243,7 +243,7 @@ pub(crate) fn render_field_visuals(
         // Adding a new verb requires updating the helpers, not this match.
         let shape = render_shape(verb, entry.shape(), &entry.state);
         match shape {
-            RenderShape::Hidden | RenderShape::Marker => {}
+            RenderShape::Hidden => {}
             RenderShape::Region if is_block_verb(verb) => {
                 if is_hole_state(entry.state.as_ref()) {
                     // da-6gvw: `end work 5` stores a Block with `state =
