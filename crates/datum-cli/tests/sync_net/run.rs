@@ -306,17 +306,29 @@ fn a_copy_that_refused_as_busy_comes_back_though_it_applied_nothing_new() {
 #[test]
 fn copies_that_refused_each_other_as_busy_do_not_both_wait_the_minute() {
     let (a, b) = paired();
-    let _a_runs = a.serve(&["sync", "run"]);
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let a_err = lines(a_runs.child.stderr.take().unwrap());
     let mut b_runs = b.serve(&["sync", "run"]);
+    let b_err = lines(b_runs.child.stderr.take().unwrap());
     b_runs.lines_until(" got ");
+    // Each run's own word that its push was refused, never a sleep: on a
+    // loaded box a's push could reach b after b's gate went (da-bd5in).
+    let refused = |err: &std::sync::mpsc::Receiver<String>, who: &str| loop {
+        let line = err
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap_or_else(|_| panic!("{who}'s run saying its push was refused as busy"));
+        if line.contains("is busy: next push") {
+            break;
+        }
+    };
 
     let b_gate = applying(&b);
     a.ok(&["occur", "walk"]);
-    std::thread::sleep(Duration::from_secs(2));
+    refused(&a_err, "a");
     // b, done, comes back, and a refuses it in turn.
     let a_gate = applying(&a);
     drop(b_gate);
-    std::thread::sleep(Duration::from_secs(2));
+    refused(&b_err, "b");
     assert!(!b.has("walk"));
     drop(a_gate);
     eventually("a's walk reaching b inside the minute", || b.has("walk"));
