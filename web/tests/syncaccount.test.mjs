@@ -66,8 +66,13 @@ const stored = (page) =>
 	});
 const PASSKEYS = 'datum.accountPasskeys';
 
-/** Make a passkey from the widget, which signs the tab in. */
+/**
+ * Make a passkey from the widget, which signs the tab in. Once the widget's grid has landed: it lands above
+ * the account row, moving the button 108 px down, and Playwright checks a click's target on the press alone,
+ * so a press before it and a release after it click nothing (da-843s9).
+ */
 async function newPasskey(page) {
+	await page.locator(`${WIDGET} section.grid`).waitFor();
 	await account(page).getByRole('button', { name: 'New passkey' }).click();
 	await page.locator('dialog.ask input').fill('my phone');
 	await page.locator('dialog.ask').getByRole('button', { name: 'make' }).click();
