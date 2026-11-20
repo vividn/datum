@@ -13,6 +13,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::Db;
 use datum_core::shape::{is_finished_state, is_hidden_state, is_status_state};
 use datum_core::timezone_field::{state_zone, TIMEZONE_FIELD};
+use datum_core::visible::visible;
 use serde_json::{json, Value as JsonValue};
 
 use crate::args::{FieldsArgs, ShowFlag};
@@ -40,7 +41,10 @@ pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&listing)?);
         return Ok(());
     }
-    print!("{}", format_listing(&listing, args.include_ignored));
+    print!(
+        "{}",
+        visible(&format_listing(&listing, args.include_ignored))
+    );
     Ok(())
 }
 

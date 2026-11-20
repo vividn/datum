@@ -205,6 +205,7 @@ mod update_cmd;
 mod update_refield_cmd;
 mod version;
 mod view_cmd;
+mod visible_controls;
 mod vocabulary;
 mod web_command_names;
 

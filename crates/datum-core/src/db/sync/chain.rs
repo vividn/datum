@@ -194,7 +194,7 @@ pub const MAX_LABEL: usize = 64;
 /// C0, DEL, C1) is refused — an escape there clears or retitles the screen —
 /// and so is a bidi control, which lets one label display as another's.
 pub fn label_problem(label: &str) -> Option<String> {
-    let bidi = |c: char| matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+    let bidi = crate::visible::is_bidi_control;
     if let Some(c) = label.chars().find(|c| c.is_control() || bidi(*c)) {
         let what = match c.is_control() {
             true => "a control character",

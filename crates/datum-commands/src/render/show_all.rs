@@ -19,7 +19,7 @@
 //!
 //! Used from [`super::show_action_with_context`] when `Show::All`.
 
-use datum_core::entry::Entry;
+use datum_core::{entry::Entry, visible::visible};
 use serde_json::Value as JsonValue;
 
 use super::{paint, DIM, GREY_FG};
@@ -161,7 +161,7 @@ fn render_column(col: &str, e: &Entry) -> String {
         "location" => render_str_opt(e.location.as_deref()),
         "create_time" => e.create_time.to_rfc3339(),
         "modify_time" => e.modify_time.to_rfc3339(),
-        "client_id" => e.client_id.clone(),
+        "client_id" => visible(&e.client_id).into_owned(),
         "deleted_at" => match e.deleted_at {
             Some(t) => t.to_rfc3339(),
             None => null_marker(),
@@ -188,7 +188,7 @@ fn null_marker() -> String {
 
 fn render_str_opt(s: Option<&str>) -> String {
     match s {
-        Some(v) if !v.is_empty() => v.to_string(),
+        Some(v) if !v.is_empty() => visible(v).into_owned(),
         _ => null_marker(),
     }
 }
@@ -201,9 +201,10 @@ fn render_json_opt(v: Option<&JsonValue>) -> String {
             // Structured values pretty-print; scalars stay inline so a
             // simple `"happy"` doesn't fan out to three lines.
             JsonValue::Object(_) | JsonValue::Array(_) => {
-                serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+                visible(&serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string()))
+                    .into_owned()
             }
-            JsonValue::String(s) => format!("\"{s}\""),
+            JsonValue::String(s) => format!("\"{}\"", visible(s)),
             other => other.to_string(),
         },
     }

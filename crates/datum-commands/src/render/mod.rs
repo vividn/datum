@@ -33,6 +33,7 @@ pub use self::ordinals::{attach_quick_ordinals, quick_ordinal_map};
 
 use datum_core::dur::Dur;
 use datum_core::entry::Verb;
+use datum_core::visible::visible;
 use datum_core::{entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
@@ -1393,7 +1394,7 @@ pub fn format_table_with(
         .iter()
         .enumerate()
         .map(|(i, col)| {
-            std::iter::once(col.len())
+            std::iter::once(visible(col).len())
                 .chain(rows.iter().map(|r| vw(&r.extras[i])))
                 .max()
                 .unwrap_or(0)
@@ -1464,7 +1465,7 @@ pub fn format_table_with(
             push_cell(&mut header, dur_header, dur_w, false);
         }
         for (i, col) in args.columns.iter().enumerate() {
-            push_cell(&mut header, col, extras_w[i], false);
+            push_cell(&mut header, &visible(col), extras_w[i], false);
         }
         out.push_str(&term_layout::clip(header.trim_end(), args.max_total_width));
         out.push('\n');
@@ -1738,19 +1739,20 @@ fn render_cell_value(v: &JsonValue) -> String {
 }
 
 fn extract_column(entry: &Entry, col: &str) -> String {
-    if let (LAST_STATE_COLUMN, Some(v)) = (col, &entry.user_asserted_last_state) {
-        return render_cell_value(v);
-    }
-    entry
-        .data
-        .as_ref()
-        .and_then(|v| v.get(col))
-        .map(|v| {
-            render_cell_value(&datum_core::doc_ref::shown(
-                datum_core::entry::shown_data_value(col, v),
-            ))
-        })
-        .unwrap_or_default()
+    let cell = match (col, &entry.user_asserted_last_state) {
+        (LAST_STATE_COLUMN, Some(v)) => render_cell_value(v),
+        _ => entry
+            .data
+            .as_ref()
+            .and_then(|v| v.get(col))
+            .map(|v| {
+                render_cell_value(&datum_core::doc_ref::shown(
+                    datum_core::entry::shown_data_value(col, v),
+                ))
+            })
+            .unwrap_or_default(),
+    };
+    visible(&cell).into_owned()
 }
 
 /// The column `-l`'s assertion shows in, ahead of a `last_state` data key.
@@ -1797,7 +1799,7 @@ pub fn interpolate(fmt: &str, entry: &Entry) -> String {
         }
         out.push_str(&resolve_template_key(&key, entry));
     }
-    out
+    visible(&out).into_owned()
 }
 
 fn resolve_template_key(key: &str, entry: &Entry) -> String {
@@ -1916,7 +1918,7 @@ fn render_now_state_scalar(
         JsonValue::Bool(_) => state_truncate::state_label(v),
         _ => text,
     };
-    format!("{ansi}{label}{RESET}")
+    format!("{ansi}{}{RESET}", visible(&label))
 }
 
 // da-adoi: `render_now_view` / `print_now_view` retired. Their last

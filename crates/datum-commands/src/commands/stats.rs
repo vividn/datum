@@ -28,6 +28,7 @@ use datum_core::db::{Db, GroupColumn, ListParams, TimeMetric};
 use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::state::{FieldStateRows, StateChange};
 use datum_core::time::DatumTime;
+use datum_core::visible::visible;
 use datum_parse::input::TimeArgs;
 use datum_parse::time::{resolve_timezone, Direction, TimeCtx, Zone, ZoneTimeline};
 use serde_json::Value as JsonValue;
@@ -660,11 +661,13 @@ fn label(v: Option<&JsonValue>) -> String {
 
 /// A label as the text prints it: `true` / `false` read `on` / `off`,
 /// as `tail` says them (da-tpktb, da-66c3l). `--json` keeps the label.
-fn shown(label: &str) -> &str {
+/// A state as the text draws it: a boolean as `on`/`off`, any other with
+/// its control and bidi characters drawn visibly (da-0z8cb).
+fn shown(label: &str) -> std::borrow::Cow<'_, str> {
     match label {
-        "true" => "on",
-        "false" => "off",
-        other => other,
+        "true" => "on".into(),
+        "false" => "off".into(),
+        other => visible(other),
     }
 }
 
@@ -1595,7 +1598,7 @@ fn render_text(r: &StatsResult) -> String {
             .map(|t| t.format("%Y-%m-%d").to_string())
             .unwrap_or_default();
         let (name, count) = match &r.selected_state {
-            Some(sel) => (format!("{}:{}", r.field, sel), r.states[0].count),
+            Some(sel) => (format!("{}:{}", r.field, visible(sel)), r.states[0].count),
             None => (r.field.clone(), r.total_count),
         };
         let rate = r.rate.map(|q| q.to_string()).unwrap_or_default();
@@ -1620,7 +1623,7 @@ fn render_text(r: &StatsResult) -> String {
         return format!(
             "{}:{}  ·  {}  {} of {}  ({}×){}\n{}",
             r.field,
-            sel,
+            visible(sel),
             format_dur(s.duration_seconds),
             percent(s.ratio),
             r.field,

@@ -24,6 +24,7 @@
 //! Unicode display width (emoji/CJK = 2 columns, zero-width = 0), so
 //! multi-byte keys and values align exactly rather than approximately.
 
+use datum_core::visible::visible;
 use datum_core::{entry::Entry, field_spec::FieldSpec};
 use serde_json::Value as JsonValue;
 
@@ -69,7 +70,7 @@ fn render_struct_block(
 ) -> String {
     let pairs: Vec<(String, String)> = obj
         .iter()
-        .map(|(k, v)| (format!(".{k}"), render_value_chip(k, v, spec)))
+        .map(|(k, v)| (format!(".{}", visible(k)), render_value_chip(k, v, spec)))
         .collect();
 
     let inline = render_struct_inline(&pairs);
@@ -182,9 +183,10 @@ fn render_value_chip(key: &str, value: &JsonValue, spec: Option<&FieldSpec>) -> 
 }
 
 /// Render a JSON value as a plain string per rule 11. Strings get quoted,
-/// numbers and booleans render bare.
+/// numbers and booleans render bare; a control or bidi character is drawn
+/// visibly ([`visible`]).
 fn render_value_body(value: &JsonValue) -> String {
-    match value {
+    let body = match value {
         JsonValue::String(s) => format!("\"{s}\""),
         JsonValue::Number(n) => n.to_string(),
         JsonValue::Bool(b) => b.to_string(),
@@ -192,7 +194,8 @@ fn render_value_body(value: &JsonValue) -> String {
         JsonValue::Object(_) | JsonValue::Array(_) => {
             serde_json::to_string(value).unwrap_or_default()
         }
-    }
+    };
+    visible(&body).into_owned()
 }
 
 // ─── User-data block ────────────────────────────────────────────────────────
@@ -209,7 +212,8 @@ pub(crate) fn data_pairs(entry: &Entry) -> Option<Vec<(String, String)>> {
         map.iter()
             .map(|(k, v)| {
                 let v = datum_core::entry::shown_data_value(k, v);
-                (k.clone(), render_value_body(&datum_core::doc_ref::shown(v)))
+                let k = visible(k).into_owned();
+                (k, render_value_body(&datum_core::doc_ref::shown(v)))
             })
             .collect(),
     )

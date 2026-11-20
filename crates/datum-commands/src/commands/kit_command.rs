@@ -28,6 +28,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use datum_core::db::{Db, InstalledKitCommand, ViewResult};
 use datum_core::kit_color_rule::{self, ColorRule, RowLookup};
+use datum_core::visible::visible;
 use datum_parse::input::{handle_data_args, DataArgs, Show};
 use datum_parse::spec_keys::parse_key_decl;
 use datum_parse::time::{format_human_duration, DatumTime, DurationPrecision};
@@ -626,8 +627,8 @@ fn render_pretty(
     let mut out = String::new();
     for (i, line) in lines.iter().enumerate() {
         match i.checked_sub(2).and_then(|r| colors[r]) {
-            Some(c) => out += &format!("{c}{line}{RESET}\n"),
-            None => out += &format!("{line}\n"),
+            Some(c) => out += &format!("{c}{}{RESET}\n", visible(line)),
+            None => out += &format!("{}\n", visible(line)),
         }
     }
     out += &format!(

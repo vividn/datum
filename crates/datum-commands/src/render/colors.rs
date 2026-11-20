@@ -12,6 +12,7 @@
 
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{is_hidden_state, is_off_state};
+use datum_core::visible::visible;
 use serde_json::Value as JsonValue;
 use std::cell::Cell;
 use std::io::IsTerminal;
@@ -360,8 +361,11 @@ fn env_truthy(var: &str) -> bool {
     std::env::var(var).is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false"))
 }
 
-/// Paint `body` with an ANSI sequence if color is enabled.
+/// Paint `body` with an ANSI sequence if color is enabled. A painter's body
+/// is a leaf of text, often a value, so each painter draws its control and
+/// bidi characters visibly ([`visible`], da-0z8cb).
 pub(crate) fn paint(code: &str, body: &str) -> String {
+    let body = visible(body);
     if !color_enabled() || code.is_empty() {
         body.to_string()
     } else {
@@ -371,6 +375,7 @@ pub(crate) fn paint(code: &str, body: &str) -> String {
 
 /// Paint with bg + contrast-derived fg. The "background is primary" style.
 pub(crate) fn paint_bg(bg: Rgb, body: &str) -> String {
+    let body = visible(body);
     if !color_enabled() {
         return body.to_string();
     }
@@ -382,6 +387,7 @@ pub(crate) fn paint_bg(bg: Rgb, body: &str) -> String {
 /// parallel slot's split columns, where fg and bg are both meaningful
 /// state colors.
 pub(crate) fn paint_bg_fg(bg: Rgb, fg: Rgb, body: &str) -> String {
+    let body = visible(body);
     if !color_enabled() {
         return body.to_string();
     }

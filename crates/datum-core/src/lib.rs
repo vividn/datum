@@ -21,6 +21,7 @@ pub mod timezone_field;
 pub mod track;
 pub mod undo_log;
 pub mod views;
+pub mod visible;
 
 pub use verb::derive_verb;
 

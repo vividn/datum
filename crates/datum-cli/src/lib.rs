@@ -467,8 +467,9 @@ pub fn exit_code(result: Result<()>) -> i32 {
             EXIT_UNANSWERED
         }
         Err(e) => {
-            // Mirror anyhow's default `main`: print the full error chain.
-            eprintln!("Error: {e:?}");
+            // Mirror anyhow's default `main`: print the full error chain,
+            // a value it quotes drawn visibly (da-0z8cb).
+            eprintln!("Error: {}", datum_core::visible::visible(&format!("{e:?}")));
             // A `Duplicate` (slug collision) gets the distinct, scriptable
             // code; everything else is a generic failure. The whole source
             // chain, so a wrapped (`.context()`'d) `Duplicate` still maps.

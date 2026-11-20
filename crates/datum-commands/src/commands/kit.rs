@@ -41,6 +41,7 @@ use datum_core::kit::{
     validate_layout_entry, validate_widget_entry, FieldEntry, IndexEntry, KitMeta, KitToml,
 };
 use datum_core::kit_color::resolve_color;
+use datum_core::visible::visible;
 
 use crate::args::{KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs};
 use crate::config::client_id;
@@ -787,7 +788,7 @@ fn list(db: &Db) -> Result<()> {
         })
         .collect();
     for line in grid(&heads, &give, &right, &rows, false) {
-        println!("{}", line.trim_end());
+        println!("{}", visible(line.trim_end()));
     }
     Ok(())
 }

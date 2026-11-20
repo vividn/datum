@@ -10,6 +10,7 @@ use datum_core::action::Action;
 use datum_core::db::Db;
 use datum_core::shape::is_status_state;
 use datum_core::time::Zone;
+use datum_core::visible::visible;
 use serde_json::{json, Value as JsonValue};
 
 use crate::args::{ShowFlag, StatesArgs};
@@ -33,7 +34,7 @@ pub fn states(args: StatesArgs, db: &Db) -> Result<()> {
                 let start = db
                     .load_spec(field)?
                     .is_some_and(|s| s.verb == Action::Start);
-                print!("{}", format_states(listing, start));
+                print!("{}", visible(&format_states(listing, start)));
             }
         }
     }

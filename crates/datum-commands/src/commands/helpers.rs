@@ -5,6 +5,7 @@
 //! pulling in the dispatch shell.
 
 use anyhow::Result;
+use datum_core::visible::visible;
 use datum_core::{
     db::Db,
     entry::Entry,
@@ -49,11 +50,15 @@ pub(crate) fn version_lines(
         true => format!("{}  ", v.device),
         false => String::new(),
     };
+    // The time is painted, so each value is drawn visibly on its own
+    // (da-0z8cb), never the line.
     let head = format!(
-        "  v{}  {}  {:<9} {who}{raw}",
+        "  v{}  {}  {:<9} {}{}",
         v.version,
         version_time(&v.time, now),
-        v.kind
+        v.kind,
+        visible(&who),
+        visible(raw)
     );
     let mut lines = vec![head.trim_end().to_string()];
     let (set, unset): (Vec<_>, Vec<_>) = v.changes().into_iter().partition(|(_, v)| v.is_some());
@@ -69,14 +74,14 @@ pub(crate) fn version_lines(
         changed.push(format!("unset {}", keys.join(" ")));
     }
     if !changed.is_empty() {
-        lines.push(format!("        {}", changed.join(", ")));
+        lines.push(format!("        {}", visible(&changed.join(", "))));
     }
     for (key, sides) in &v.fork {
         let sides = sides.as_array().into_iter().flatten().map(|s| {
             format!(
                 "{} ({}, {}, v{})",
-                s["value"],
-                s["device"].as_str().unwrap_or("?"),
+                visible(&s["value"].to_string()),
+                visible(s["device"].as_str().unwrap_or("?")),
                 version_time(
                     datum_core::db::chain::hlc_time(s["hlc"].as_str().unwrap_or("")),
                     now
@@ -85,7 +90,8 @@ pub(crate) fn version_lines(
             )
         });
         lines.push(format!(
-            "        fork {key}: {}",
+            "        fork {}: {}",
+            visible(key),
             sides.collect::<Vec<_>>().join(" | ")
         ));
     }
@@ -100,7 +106,8 @@ pub(crate) fn version_lines(
             true => "a value of its own".to_string(),
             false => took.join(" and "),
         };
-        lines.push(format!("        join {key}: {} ({whose})", join["value"]));
+        let line = format!("        join {key}: {} ({whose})", join["value"]);
+        lines.push(visible(&line).into_owned());
     }
     lines
 }

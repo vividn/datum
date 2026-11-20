@@ -3,7 +3,7 @@
 //! same trail, forks and joins included. `entry_history` is the undo journal.
 
 use anyhow::{Context, Result};
-use datum_core::{db::Db, entry::Entry};
+use datum_core::{db::Db, entry::Entry, visible::visible};
 use serde_json::Value as JsonValue;
 
 use crate::args::{HistoryArgs, ShowFlag};
@@ -105,9 +105,10 @@ fn history_of(
             Some(s) => format!("'{s}'"),
         };
         let mut lines = version_lines(&v, &now, &raw, devices);
-        lines.insert(1, format!("        origin: {}", origin(v.origin.as_ref())));
+        let origin = origin(v.origin.as_ref());
+        lines.insert(1, format!("        origin: {}", visible(&origin)));
         let author = v.author.as_deref().unwrap_or("not recorded");
-        lines.insert(2, format!("        author: {author}"));
+        lines.insert(2, format!("        author: {}", visible(author)));
         println!("{}", lines.join("\n"));
     }
     Ok(())
@@ -142,7 +143,7 @@ fn origin(o: Option<&JsonValue>) -> String {
 fn print_history_diff(a: u32, snap_a: &Entry, b: u32, snap_b: &Entry) {
     println!("--- v{a}\n+++ v{b}");
     for line in history_diff_lines(snap_a, snap_b) {
-        println!("{line}");
+        println!("{}", visible(&line));
     }
 }
 

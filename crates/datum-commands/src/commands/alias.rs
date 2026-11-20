@@ -13,6 +13,7 @@
 //! leaves `_LAST` on it, so `revert _LAST` steps it back like any doc.
 
 use anyhow::{bail, Result};
+use datum_core::visible::visible;
 use datum_core::{
     db::Db,
     field_spec::{alias_effect, user_alias_to_save, AliasEffect},
@@ -48,26 +49,26 @@ pub fn alias(sub: AliasCommand, db_name: Option<&str>, db: &Db) -> Result<()> {
         AliasEffect::Say(text) if matches!(sub, AliasCommand::List { .. }) => {
             print!(
                 "{}",
-                crate::render::term_layout::clip_lines(&format!("{text}\n"))
+                crate::render::term_layout::clip_lines(&format!("{}\n", visible(&text)))
             )
         }
-        AliasEffect::Say(text) => println!("{text}"),
+        AliasEffect::Say(text) => println!("{}", visible(&text)),
         AliasEffect::Save {
             alias,
             text,
             warning,
         } => {
             remember(db, save(db, &alias)?);
-            println!("{text}");
+            println!("{}", visible(&text));
             if let Some(w) = warning {
-                eprintln!("{w}");
+                eprintln!("{}", visible(&w));
             }
         }
         AliasEffect::Delete { name, text } => {
             if let Some(hid) = db.delete_alias(&name)? {
                 remember(db, hid);
             }
-            println!("{text}");
+            println!("{}", visible(&text));
         }
         AliasEffect::Refuse(message) => bail!(message),
         AliasEffect::Nothing => {}
@@ -268,7 +269,7 @@ fn save_user_alias(name: &str, expands_to: String, overwrite: bool, db: &Db) -> 
     let (alias, warning) = user_alias_to_save(name, expands_to).map_err(|e| anyhow::anyhow!(e))?;
     save(db, &alias)?;
     if let Some(w) = warning {
-        eprintln!("{w}");
+        eprintln!("{}", visible(&w));
     }
     Ok(())
 }

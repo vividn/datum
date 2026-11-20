@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 use datum_core::db::Db;
+use datum_core::visible::visible;
 
 use crate::args::WhyArgs;
 use crate::commands::helpers::{
@@ -23,16 +24,16 @@ fn why_of(args: &WhyArgs, id: &str, db: &Db) -> Result<()> {
     println!("hid: {}  slug: {}", current.hid, current.slug);
     let raw = current.raw_input.as_deref().filter(|s| !s.is_empty());
     if let Some(raw) = raw {
-        println!("  raw_input:   {raw}");
+        println!("  raw_input:   {}", visible(raw));
     }
     if let Some(chain) = &current.alias_chain {
-        println!("  alias_chain: {}", chain);
+        println!("  alias_chain: {}", visible(&chain.to_string()));
         // The assembled v2.1 wrapped expansion — every alias resolve
         // reads as `( body ,, own-trailing )`, so region scope is
         // visible right in the stream. Reconstructed best-effort from
         // raw_input + the stored chain (da-g5su).
         if let Some(expanded) = raw.and_then(|r| assembled_expansion(r, Some(chain))) {
-            println!("  expanded:    {expanded}");
+            println!("  expanded:    {}", visible(&expanded));
         }
     }
 
@@ -55,9 +56,9 @@ fn why_of(args: &WhyArgs, id: &str, db: &Db) -> Result<()> {
         let shown = raw.unwrap_or("<no raw_input captured>");
         println!("{}", version_lines(&v, &now, shown, devices).join("\n"));
         if let Some(chain) = &v.alias_chain {
-            println!("       alias_chain: {chain}");
+            println!("       alias_chain: {}", visible(&chain.to_string()));
             if let Some(expanded) = raw.and_then(|r| assembled_expansion(r, Some(chain))) {
-                println!("       expanded:    {expanded}");
+                println!("       expanded:    {}", visible(&expanded));
             }
         }
     }

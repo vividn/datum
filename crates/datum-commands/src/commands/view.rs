@@ -24,6 +24,7 @@ use std::io::IsTerminal;
 
 use anyhow::{Context, Result};
 use datum_core::db::{Db, ViewResult};
+use datum_core::visible::visible;
 use serde_json::Value as JsonValue;
 
 use crate::args::{ViewArgs, ViewFormat};
@@ -135,7 +136,7 @@ fn render_pretty(r: &ViewResult) {
         .collect();
     let heads: Vec<&str> = r.columns.iter().map(String::as_str).collect();
     for line in grid(&heads, &give, &numeric, &cells, true) {
-        println!("{line}");
+        println!("{}", visible(&line));
     }
     println!(
         "({} row{})",
