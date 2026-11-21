@@ -20,8 +20,8 @@ This crate exists to be that reference.
 | `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | skipped, with the reason |
 | `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `content_hash` preimage | `goldens/hash/content_hash.toml` (6 fixtures) | no |
-| Bug regressions (da-438y, etc.) | `tests/regressions.rs` (5 tests + lock) | no |
-| Algorithm fuzz (a seeded loop) | `tests/fuzz_color.rs` (10 props × 500 cases) | no |
+| Bug regressions (da-438y, etc.) | `tests/regressions.rs` (7 tests + lock) | no |
+| Algorithm fuzz (a seeded loop) | `tests/fuzz_color.rs` (9 props × 500 cases, 2 pinned cases) | no |
 
 ## Running
 
