@@ -742,6 +742,11 @@ impl Opts {
         let Some(value) = self.values.get("expires") else {
             return Ok(default);
         };
+        // `--expires=` is a flag with no value, as `--expires` alone is
+        // (da-vzx67).
+        if value.is_empty() {
+            return Err(ParseError::InvalidArg("--expires needs a value".into()));
+        }
         // Months of 30 days and years of 365, which no other duration
         // takes: `m` is a minute (da-4cw3v).
         let long = [("mo", 30 * DAY), ("y", 365 * DAY)]
@@ -754,9 +759,16 @@ impl Opts {
                 let n: f64 = n.parse().ok().filter(|_| plain)?;
                 Some((n * *secs as f64) as u64)
             });
-        let secs = long.or_else(|| {
-            let secs = crate::time::parse_duration(value).ok()?.num_seconds();
-            u64::try_from(secs).ok()
+        let secs = long.or_else(|| match crate::time::parse_duration(value) {
+            Ok(d) => u64::try_from(d.num_seconds()).ok(),
+            // Past what a Duration holds is longer than 100y, unless it
+            // is past it below zero (da-vzx67).
+            Err(ParseError::InvalidTime(m))
+                if m.starts_with(crate::time::dur::OUT_OF_RANGE) && !value.starts_with('-') =>
+            {
+                Some(u64::MAX)
+            }
+            Err(_) => None,
         });
         match secs.filter(|s| *s > 0) {
             Some(secs) if secs > MOST => Err(ParseError::InvalidArg(format!(
@@ -1521,6 +1533,47 @@ mod tests {
         assert!(parse_sync_cmd(&["chain", "invite", "--expires", "0s"]).is_err());
         assert!(parse_sync_cmd(&["pipe", "vector", "extra"]).is_err());
         assert!(parse_sync_cmd(&["status", "extra"]).is_err());
+    }
+
+    /// Each `--expires` refusal names its own cause (da-vzx67): a value
+    /// too long to hold is too long, and `--expires=` has no value.
+    #[test]
+    fn expires_refusals_name_their_cause() {
+        let said = |value: &str| {
+            let argv = [&["chain", "invite"][..], &[value]].concat();
+            match parse_sync_cmd(&argv) {
+                Err(ParseError::InvalidArg(m)) => m,
+                other => panic!("{value}: {other:?}"),
+            }
+        };
+        let flag = |v: &str| format!("--expires={v}");
+        for v in [
+            "9223372036854775s",
+            "9223372036854775807s",
+            "18446744073709551616s",
+        ] {
+            let longer = format!("--expires is at most 100y: {v} is longer");
+            assert!(said(&flag(v)).starts_with(&longer), "{v}");
+        }
+        assert!(said("--expires=60000000000d").starts_with("--expires is at most 100y"));
+        assert!(said("--expires=101y").starts_with("--expires is at most 100y"));
+        assert_eq!(said("--expires="), "--expires needs a value");
+        assert_eq!(said("--expires"), "--expires needs a value");
+        for v in ["0s", "-5d", "infy", "nany", "inf", "1e3d", "never"] {
+            let positive = format!("--expires must be a positive duration: {v}");
+            assert_eq!(said(&flag(v)), positive, "{v}");
+        }
+        for (v, secs) in [
+            ("100y", 100 * 365 * DAY),
+            ("1d12h", DAY * 3 / 2),
+            ("0.5d", DAY / 2),
+        ] {
+            let argv = ["chain", "invite", "--expires", v];
+            match p(&argv) {
+                SyncCommand::Invite { expires_secs, .. } => assert_eq!(expires_secs, secs, "{v}"),
+                c => panic!("{c:?}"),
+            }
+        }
     }
 
     /// `chain invite <DEVICE>` (da-n0uj1.4, da-p76eu): a member unless

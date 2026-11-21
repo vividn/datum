@@ -152,12 +152,16 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
     seconds(total_secs, s)
 }
 
+/// How [`seconds`]'s refusal starts, which `--expires` reads as too long
+/// (da-vzx67).
+pub(crate) const OUT_OF_RANGE: &str = "Duration out of range";
+
 /// `secs` as a Duration, refused where it is past chrono's range
 /// (about 292 million years) rather than panicking (da-20lte).
 fn seconds(secs: f64, s: &str) -> Result<Duration> {
     // `as` saturates, and a saturated i64 is past `Duration::MAX`.
     Duration::try_seconds(secs as i64)
-        .ok_or_else(|| ParseError::InvalidTime(format!("Duration out of range: '{s}'")))
+        .ok_or_else(|| ParseError::InvalidTime(format!("{OUT_OF_RANGE}: '{s}'")))
 }
 
 /// Uncertainty produced by `n` stacked `-q` flags. The offset scaling is
