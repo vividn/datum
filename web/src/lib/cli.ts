@@ -121,13 +121,14 @@ let databases: readonly string[] = DATABASES;
 
 /**
  * The databases renamed away (`db rename`, da-u2jjc), by any tab: each leaves
- * `<name>.moved` beside the others, the time it moved, written under the
- * files' lock. For `MOVED_MS` after, no worker makes the old name again, one
- * that never named it included, and a command on it is refused. Then it is a
- * name like any, which a tab that was on it still leaves (#lib/changes.ts).
+ * `<name>.moved` beside the others, the time it moved and the name it moved
+ * to, written under the files' lock. For `MOVED_MS` after, no worker makes
+ * the old name again, one that never named it included, and a command on it
+ * is refused, naming the new one. Then it is a name like any, which a tab
+ * that was on it still leaves (#lib/changes.ts).
  * `datum` and `_internal` never move: a command that names none runs on the default.
  */
-const gone = new Set<string>();
+const gone = new Map<string, string>();
 const MOVED_MS = 30_000;
 const movedFile = (db: string) => `${db}.moved`;
 
@@ -142,7 +143,7 @@ async function follow(moved: [string, string][], handles: Map<string, Handle>): 
 		if (!databases.includes(to)) databases = [...databases, to];
 		if (DATABASES.includes(from)) continue;
 		databases = databases.filter((db) => db !== from);
-		gone.add(from);
+		gone.set(from, to);
 		if (handles === memory) continue;
 		const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(OPFS_DIR);
 		for (const file of dbFiles([from])) {
@@ -153,7 +154,7 @@ async function follow(moved: [string, string][], handles: Map<string, Handle>): 
 		const file = await dir.getFileHandle(movedFile(from), { create: true });
 		const marker = await (file as unknown as { createSyncAccessHandle(): Promise<Handle> }).createSyncAccessHandle();
 		marker.truncate(0);
-		marker.write(new TextEncoder().encode(String(Date.now())), { at: 0 });
+		marker.write(new TextEncoder().encode(`${Date.now()} ${to}`), { at: 0 });
 		marker.close();
 		await dir.removeEntry(movedFile(to)).catch(() => {});
 	}
@@ -360,7 +361,9 @@ async function open(): Promise<Map<string, Handle>> {
 		if (here) continue;
 		const marker = await dir.getFileHandle(movedFile(db)).catch(() => null);
 		if (!marker) continue;
-		if (Date.now() - Number(await (await marker.getFile()).text()) < MOVED_MS) gone.add(db);
+		// The time, then the new name whole: a name may hold a space.
+		const [at, ...to] = (await (await marker.getFile()).text()).split(' ');
+		if (Date.now() - Number(at) < MOVED_MS) gone.set(db, to.join(' '));
 		else await dir.removeEntry(movedFile(db)).catch(() => {});
 	}
 	databases = databases.filter((db) => !gone.has(db));
@@ -782,7 +785,11 @@ export function runCli(
 			const named = dbNamed(argv, env);
 			if (named && gone.has(named)) {
 				const ms = { compile: t1 - t0, acquire: t2 - t1, instantiate: 0, run: 0, flush: 0, tries };
-				const stderr = `error: the database ${named} was renamed by another tab: nothing ran`;
+				// A marker from before da-octx2 holds the time alone.
+				const to = gone.get(named);
+				const stderr = to
+					? `error: the database ${named} is now ${to} (renamed): nothing ran; use --db ${to}`
+					: `error: the database ${named} was renamed: nothing ran`;
 				return { argv, code: 1, stdout: '', stderr, changed: [], storage: handles === memory ? 'memory' : 'opfs', ms };
 			}
 			const run = await exec(module, handles, argv, env, stdin, onStderr, stage, at);

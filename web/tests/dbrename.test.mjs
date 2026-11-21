@@ -144,7 +144,9 @@ test('a command asked of the old name before the rename, that runs after it, is 
 
 			const refused = await asked;
 			assert.notEqual(refused.code, 0);
-			assert.match(refused.stderr, /gone-2 was renamed by another tab/);
+			// It names the database both ways: the one asked for, and the one it became.
+			assert.match(refused.stderr, /\bgone-2\b/);
+			assert.match(refused.stderr, /\bgone\b(?!-)/);
 			await app.page.waitForURL((url) => url.searchParams.get('db') === 'gone');
 			await ready(app.page);
 			assert.equal(await countOf(app, 'mine'), 1);
