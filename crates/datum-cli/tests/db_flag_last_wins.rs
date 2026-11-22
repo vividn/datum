@@ -109,3 +109,25 @@ fn a_kit_command_runs_against_the_last() {
     assert!(out.contains("seen"), "{out}");
     assert!(!env.has_db("first"));
 }
+
+/// An empty `--db` names no database, and says so rather than a list's
+/// words, which `a,,b` keeps (da-cmqt6).
+#[test]
+fn an_empty_db_names_no_database_and_writes_nothing() {
+    for line in [&["--db=", "occur", "x"][..], &["--db", "", "occur", "x"]] {
+        let env = Env::new();
+        let out = env.run(line);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{line:?}");
+        assert!(err.contains("--db names no database"), "{line:?}: {err}");
+        assert!(!err.contains("commas"), "{line:?}: {err}");
+        let dbs = std::fs::read_dir(env.home()).map_or(0, |d| d.count());
+        assert_eq!(dbs, 0, "{line:?}");
+    }
+    let env = Env::new();
+    let err = String::from_utf8_lossy(&env.run(&["--db=a,,b", "occur", "x"]).stderr).into_owned();
+    assert!(
+        err.contains("a list names a database between every two commas"),
+        "{err}"
+    );
+}

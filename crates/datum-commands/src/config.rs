@@ -129,6 +129,10 @@ pub fn active_db_name(cli_db: Option<&str>) -> Option<String> {
 /// splits, so a path whose name holds one is named through `DATUM_DB`,
 /// which is never split. A value with no comma is the one database.
 pub fn db_list(cli_db: &str) -> Result<Vec<&str>> {
+    anyhow::ensure!(
+        !cli_db.is_empty(),
+        "--db names no database: give one, or leave --db out for the default"
+    );
     let names: Vec<&str> = cli_db.split(',').collect();
     anyhow::ensure!(
         names.iter().all(|n| !n.is_empty()),
