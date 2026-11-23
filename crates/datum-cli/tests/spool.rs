@@ -1022,3 +1022,46 @@ fn a_write_queued_with_its_stdout_closed_still_lands() {
     );
     env.check_sync_clean(1);
 }
+
+/// An `--atomic` script whose reader is gone still lands every line, as one
+/// write, with no lock held by anyone (da-rdgr1): its first receipt meets the
+/// closed stdout, the lines after it run with theirs unread, and it exits as a
+/// broken pipe does. A script of one line, and one cut at its first receipt.
+#[test]
+fn an_atomic_script_with_its_stdout_closed_lands_every_line() {
+    for lines in [&["aa"][..], &["aa", "bb"]] {
+        let env = Env::new();
+        let script = env.home.join("lines.datum");
+        let text: String = lines.iter().map(|f| format!("occur {f}\n")).collect();
+        std::fs::write(&script, text).unwrap();
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &env.db)
+            .env("DATUM_HOME", &env.home)
+            .env("DATUM_CONFIG_HOME", &env.home)
+            .env("NO_COLOR", "1")
+            .args(["script", "--atomic"])
+            .arg(&script)
+            .stdin(std::process::Stdio::null())
+            .stdout(writer)
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(141),
+            "{lines:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        env.ok(&["tail"]);
+        let fields: Vec<String> = env.rows().into_iter().map(|r| r.1).collect();
+        assert_eq!(fields, lines);
+        env.check_sync_clean(1);
+        env.ok(&["undo"]);
+        assert!(
+            env.rows().iter().all(|r| r.3),
+            "one undo takes the script back"
+        );
+    }
+}

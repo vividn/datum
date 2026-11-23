@@ -948,22 +948,31 @@ fn spooled(
     spool: datum_core::db::Spool,
     dispatch: impl FnOnce() -> Result<()>,
 ) -> Result<bool> {
+    let broke = broke_stdout(dispatch)?;
+    let signed = spool.append(snapshot)?;
+    if broke {
+        std::process::exit(EXIT_BROKEN_PIPE);
+    }
+    Ok(signed)
+}
+
+/// Run `run`, saying whether it stopped at a receipt printed to a closed
+/// stdout, which unwinds here rather than exiting. A write prints its
+/// receipt once it has committed, so what it wrote is kept. Any other panic
+/// goes on.
+pub(crate) fn broke_stdout(run: impl FnOnce() -> Result<()>) -> Result<bool> {
     SPOOLING.set(true);
-    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(dispatch));
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
     SPOOLING.set(false);
     match ran {
-        Ok(result) => {
-            result?;
-            Ok(spool.append(snapshot)?)
-        }
+        Ok(result) => result.map(|()| false),
         Err(panic) => {
             let message = panic
                 .downcast_ref::<String>()
                 .map(String::as_str)
                 .or_else(|| panic.downcast_ref::<&str>().copied());
             if message.is_some_and(broken_stdout) {
-                spool.append(snapshot)?;
-                std::process::exit(EXIT_BROKEN_PIPE);
+                return Ok(true);
             }
             std::panic::resume_unwind(panic)
         }

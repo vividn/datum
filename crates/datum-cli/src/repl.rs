@@ -253,6 +253,9 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
     let _dry = args.dry_run.then(datum_commands::render::Queued::dry_run);
 
     let (mut failed, mut count) = (Vec::new(), 0);
+    // A closed stdout stops no line of an atomic script: each goes on with
+    // its receipts unread, and every line lands (da-rdgr1).
+    let mut broke = false;
     for (n, line) in input.lines().enumerate() {
         let line = line?;
         let line = line.trim();
@@ -264,7 +267,9 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
         }
         count += 1;
         let result = if args.atomic {
-            lands_whole(line, &db).and_then(|()| run_line(line, &db, on_file))
+            lands_whole(line, &db)
+                .and_then(|()| crate::broke_stdout(|| run_line(line, &db, on_file)))
+                .map(|b| broke |= b)
         } else {
             run_line(line, &db, on_file)
         };
@@ -305,6 +310,9 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
         if db.spool_waiting() {
             eprintln!("note: another holds the write lock: the script is queued, and lands at the next command");
         }
+    }
+    if broke {
+        std::process::exit(crate::EXIT_BROKEN_PIPE);
     }
     Ok(())
 }
