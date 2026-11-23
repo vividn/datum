@@ -221,3 +221,66 @@ fn stdin_and_a_file_agree() {
     assert_eq!(words(&a), words(&b));
     assert_eq!(piped.fields(), filed.fields());
 }
+
+/// Ctrl-C partway through a long script, once its lines have echoed some
+/// entries: the process dies of the SIGINT, and says what it wrote.
+#[cfg(unix)]
+fn interrupted(env: &Env, flags: &[&str]) -> (Output, Option<i32>) {
+    use std::io::BufRead;
+    use std::os::unix::process::ExitStatusExt;
+    let lines: Vec<String> = (0..3000).map(|i| format!("moment imp i={i}")).collect();
+    let file = env.tmp.path().join("long.txt");
+    std::fs::write(&file, lines.join("\n")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
+        .args([&["script", file.to_str().unwrap()][..], flags].concat())
+        .env("DATUM_DB", &env.db)
+        .env("DATUM_HOME", &env.home)
+        .env("DATUM_CONFIG_HOME", &env.home)
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut echoed = String::new();
+    while echoed.matches("MOMENT").count() < 20 {
+        assert_ne!(stdout.read_line(&mut echoed).unwrap(), 0, "{echoed}");
+    }
+    // Twice, as `timeout -s INT` sends it (the child, then its group) and a
+    // person may press it: a second landing on another thread while the
+    // first is being said must not end the process first.
+    // SAFETY: signals to the child this test spawned and has not reaped.
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+    }
+    std::io::copy(&mut stdout, &mut std::io::sink()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    let signal = out.status.signal();
+    (out, signal)
+}
+
+/// da-ykeor: an atomic script's echoes were never written, so its Ctrl-C
+/// says so, as a failing line does; a plain script's were, and says nothing.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_during_an_atomic_script_says_nothing_was_written() {
+    let env = Env::new();
+    let (out, signal) = interrupted(&env, &["--atomic"]);
+    assert_eq!(signal, Some(libc::SIGINT), "{}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("Error: stopped at line "), "{err}");
+    assert!(err.contains(": interrupted, nothing was written"), "{err}");
+    assert_eq!(env.fields(), Vec::<String>::new());
+
+    let env = Env::new();
+    let (out, signal) = interrupted(&env, &[]);
+    assert_eq!(signal, Some(libc::SIGINT), "{}", stderr(&out));
+    assert!(
+        !stderr(&out).contains("nothing was written"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(env.fields().len() >= 20, "{:?}", env.fields().len());
+}

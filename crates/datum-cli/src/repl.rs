@@ -252,6 +252,11 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
         (false, false) => (db, None),
     };
     let _queued = queues.then(datum_commands::render::Queued::hold);
+    // Its lines echo entries the snapshot alone holds until it lands.
+    #[cfg(unix)]
+    let interrupt = spool
+        .as_ref()
+        .map(|_| datum_commands::interrupt::Said::install());
     // A copy's lines run on it alone: a lock or a question never reaches
     // the file.
     let on_file = (!args.dry_run && !args.atomic).then_some(path.as_str());
@@ -263,6 +268,8 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
     let mut broke = false;
     for (n, line) in input.lines().enumerate() {
         let line = line?;
+        #[cfg(unix)]
+        datum_commands::interrupt::LINE.store(n + 1, std::sync::atomic::Ordering::Relaxed);
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
@@ -306,6 +313,9 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
         eprintln!("[dry-run] nothing written");
     }
     if let Some(spool) = spool {
+        // From here a Ctrl-C ends it as it would any command.
+        #[cfg(unix)]
+        drop(interrupt);
         spool.append(&db)?;
         drop(db);
         let db = Db::open(&path)?;

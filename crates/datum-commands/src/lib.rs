@@ -18,6 +18,8 @@ pub mod args;
 pub mod cmd;
 pub mod commands;
 pub mod config;
+#[cfg(unix)]
+pub mod interrupt;
 pub mod progress;
 pub mod render;
 
