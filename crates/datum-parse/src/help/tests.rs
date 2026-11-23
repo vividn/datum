@@ -1734,3 +1734,22 @@ fn view_help_defaults_are_the_args_defaults() {
     assert_eq!(said("nowview", "--time-axis-height"), now.time_axis_height);
     assert_eq!(said("nowview", "--margin"), now.margin);
 }
+
+#[test]
+fn check_help_names_every_known_checker() {
+    // Help's list is written by hand; `--list` prints KNOWN_CHECKERS. `spool`
+    // was missing from help for a month (da-uy86p).
+    let help = command_help("check");
+    let list = help
+        .split_once("Known names:\n")
+        .and_then(|(_, rest)| rest.split_once("\nOPTIONS:"))
+        .expect("check --help has a Known names list")
+        .0;
+    let named: Vec<&str> = list
+        .lines()
+        .filter_map(|l| l.strip_prefix(&" ".repeat(19)))
+        .filter(|l| !l.starts_with(' '))
+        .filter_map(|l| l.split_whitespace().next())
+        .collect();
+    assert_eq!(named, crate::cli::KNOWN_CHECKERS);
+}
