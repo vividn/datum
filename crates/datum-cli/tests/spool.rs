@@ -1065,3 +1065,53 @@ fn an_atomic_script_with_its_stdout_closed_lands_every_line() {
         );
     }
 }
+
+/// A change to `_LAST` under a held lock runs on a snapshot from the start, as
+/// any that may ask does, and its receipt says QUEUED as a log's does: not
+/// UPDATE for a write that has not happened (da-zwvok). Unheld, it says UPDATE.
+#[test]
+fn an_update_of_last_under_a_held_lock_says_queued() {
+    let env = Env::new();
+    env.ok(&["occur", "cof"]);
+    let holder = env.hold();
+    let out = env.queued(&["update", "size=large"]);
+    assert!(!out.contains("UPDATE"), "{out}");
+    drop(holder);
+    env.ok(&["tail"]);
+    assert_eq!(env.rows()[0].4.as_deref(), Some(r#"{"size":"large"}"#));
+
+    let out = env.ok(&["update", "size=small"]);
+    assert!(out.contains("UPDATE") && !out.contains("QUEUED"), "{out}");
+}
+
+/// An `--atomic` script under a held lock says QUEUED for each line, as each
+/// line alone would (da-zwvok), and lands whole at the next command, one undo
+/// taking it back. Unheld, each line says what it wrote.
+#[test]
+fn an_atomic_script_under_a_held_lock_says_queued() {
+    let env = Env::new();
+    let script = env.home.join("lines.datum");
+    std::fs::write(&script, "occur aa\noccur bb\n").unwrap();
+    let script = script.to_str().unwrap();
+    env.ok(&["occur", "first"]);
+
+    let holder = env.hold();
+    let out = env.queued(&["script", "--atomic", script]);
+    assert_eq!(out.matches("QUEUED").count(), 2, "{out}");
+    assert!(!out.contains("MOMENT"), "{out}");
+    drop(holder);
+    env.ok(&["tail"]);
+    let fields: Vec<String> = env.rows().into_iter().map(|r| r.1).collect();
+    assert_eq!(fields, ["first", "aa", "bb"]);
+    env.ok(&["undo"]);
+    let deleted: Vec<bool> = env.rows().into_iter().map(|r| r.3).collect();
+    assert_eq!(
+        deleted,
+        [false, true, true],
+        "one undo takes the script back"
+    );
+
+    let out = env.ok(&["script", "--atomic", script]);
+    assert_eq!(out.matches("MOMENT").count(), 2, "{out}");
+    assert!(!out.contains("QUEUED"), "{out}");
+}

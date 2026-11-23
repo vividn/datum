@@ -749,13 +749,22 @@ fn asks(command: &Command) -> bool {
 /// drain, so a change made meanwhile to the same entry by another copy is
 /// a sync conflict (da-9q3fr). A snapshot costs ~1 ms per MB copied, which a
 /// command waiting on a person can spend and a log cannot.
+///
+/// Its receipt says QUEUED when a log's would (da-zwvok): the lock held past
+/// [`SPOOL_AFTER`], or changes queued ahead of it, checked before it runs, as
+/// it prints before it lands. A lock let go meanwhile reads QUEUED for a
+/// change that lands at once, the side that claims no write before it is made.
 fn ask_first(path: &str, cli: Cli) -> Result<()> {
+    let db = datum_core::db::Db::open(path);
+    let queues = db
+        .as_ref()
+        .map_or(true, |db| ready_to_write(db, path, true).is_err());
+    let _queued = queues.then(output::Queued::hold);
     let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
     snapshot_notes(path, &spool);
     if !spooled(&snapshot, spool, || cmd::dispatch(cli, &snapshot))? {
         return Ok(());
     }
-    let db = datum_core::db::Db::open(path);
     if db
         .as_ref()
         .map_or(true, |db| db.drain_spool().is_err() || db.spool_waiting())
@@ -802,7 +811,7 @@ fn open_to_write(path: &str, spools: bool, opened: Option<Db>) -> Result<Db> {
 
 /// Land what is spooled beside `db`, at `path`, and say [`Locked`] when
 /// `spools` and a write now would not land.
-fn ready_to_write(db: &datum_core::db::Db, path: &str, spools: bool) -> Result<()> {
+pub(crate) fn ready_to_write(db: &datum_core::db::Db, path: &str, spools: bool) -> Result<()> {
     #[cfg(not(target_family = "wasm"))]
     {
         let stuck = match db.drain_spool() {

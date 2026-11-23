@@ -237,16 +237,21 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
         Some(_) if args.dry_run => (Db::open_in_memory()?, String::new()),
         _ => open(db_hint)?,
     };
+    // An atomic script says QUEUED when a log would, checked before its
+    // lines run, as each prints before the script lands (da-zwvok).
+    let mut queues = false;
     let (db, spool) = match (args.dry_run, args.atomic) {
         (true, _) if path.is_empty() => (db, None),
         (true, _) => (db.copy_in_memory()?, None),
         (false, true) => {
+            queues = crate::ready_to_write(&db, &path, true).is_err();
             drop(db);
             let (snapshot, spool) = Db::spool_open(&path)?;
             (snapshot, Some(spool))
         }
         (false, false) => (db, None),
     };
+    let _queued = queues.then(datum_commands::render::Queued::hold);
     // A copy's lines run on it alone: a lock or a question never reaches
     // the file.
     let on_file = (!args.dry_run && !args.atomic).then_some(path.as_str());
