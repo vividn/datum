@@ -5,9 +5,12 @@ fn main() {
     // is still an error, and every other panic keeps its report.
     let report = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        if info.payload_as_str().is_some_and(|m| {
-            m.starts_with("failed printing to stdout") && m.contains("Broken pipe")
-        }) {
+        if info.payload_as_str().is_some_and(datum_cli::broken_stdout) {
+            // A queued command's line is still to be spooled: unwind to it,
+            // which spools and then exits so (da-su4rl).
+            if datum_cli::spooling() {
+                return;
+            }
             std::process::exit(datum_cli::EXIT_BROKEN_PIPE);
         }
         report(info)

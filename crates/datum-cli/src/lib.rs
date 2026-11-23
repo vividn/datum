@@ -752,8 +752,7 @@ fn asks(command: &Command) -> bool {
 fn ask_first(path: &str, cli: Cli) -> Result<()> {
     let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
     snapshot_notes(path, &spool);
-    cmd::dispatch(cli, &snapshot)?;
-    if !spool.append(&snapshot)? {
+    if !spooled(&snapshot, spool, || cmd::dispatch(cli, &snapshot))? {
         return Ok(());
     }
     let db = datum_core::db::Db::open(path);
@@ -916,12 +915,59 @@ fn locked_out(
 pub(crate) fn queue(path: &str, invocation: Invocation) -> Result<()> {
     let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
     snapshot_notes(path, &spool);
-    {
-        let _queued = output::Queued::hold();
-        cmd::dispatch_invocation(invocation, &snapshot)?;
-    }
-    spool.append(&snapshot)?;
+    let _queued = output::Queued::hold();
+    spooled(&snapshot, spool, || {
+        cmd::dispatch_invocation(invocation, &snapshot)
+    })?;
     Ok(())
+}
+
+thread_local! {
+    static SPOOLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Is this thread running a command whose line is not yet spooled? Then a
+/// broken stdout unwinds to [`spooled`] instead of exiting (da-su4rl).
+pub fn spooling() -> bool {
+    SPOOLING.get()
+}
+
+/// Is `message` a panic's for printing to a stdout whose reader is gone?
+pub fn broken_stdout(message: &str) -> bool {
+    message.starts_with("failed printing to stdout") && message.contains("Broken pipe")
+}
+
+/// Run `dispatch` on `snapshot` and append what it signed to `spool`,
+/// saying whether there was any. A receipt printed to a closed stdout
+/// panics, which would exit before the line is written (da-su4rl): the
+/// panic unwinds here instead, the line is written, and then the process
+/// exits as a broken pipe does. Only what the snapshot committed is signed,
+/// so the spool holds what a direct write would have kept.
+fn spooled(
+    snapshot: &datum_core::db::Db,
+    spool: datum_core::db::Spool,
+    dispatch: impl FnOnce() -> Result<()>,
+) -> Result<bool> {
+    SPOOLING.set(true);
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(dispatch));
+    SPOOLING.set(false);
+    match ran {
+        Ok(result) => {
+            result?;
+            Ok(spool.append(snapshot)?)
+        }
+        Err(panic) => {
+            let message = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied());
+            if message.is_some_and(broken_stdout) {
+                spool.append(snapshot)?;
+                std::process::exit(EXIT_BROKEN_PIPE);
+            }
+            std::panic::resume_unwind(panic)
+        }
+    }
 }
 
 fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {

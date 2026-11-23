@@ -979,3 +979,46 @@ fn a_purge_counts_the_lines_that_do_not_read_and_sets_none_aside() {
     assert!(out.contains("removed: 3 queued change(s)"), "{out}");
     assert!(!env.beside(".rejected").exists() && !env.beside(".torn").exists());
 }
+
+/// A queued write whose reader is gone before it prints still spools: its
+/// receipt dies on the broken pipe (exit 141, as with no lock), and the
+/// change lands at the next command (da-su4rl). A log queues after its
+/// dispatch, an update of `_LAST` on a snapshot from the start.
+#[test]
+fn a_write_queued_with_its_stdout_closed_still_lands() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    for args in [&["occur", "tea"][..], &["update", "size=large"]] {
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &env.db)
+            .env("DATUM_HOME", &env.home)
+            .env("DATUM_CONFIG_HOME", &env.home)
+            .env("NO_COLOR", "1")
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(writer)
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(141),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    assert!(env.spool().exists(), "nothing was spooled");
+    drop(holder);
+
+    env.ok(&["tail"]);
+    let rows = env.rows();
+    let fields: Vec<&str> = rows.iter().map(|r| r.1.as_str()).collect();
+    assert_eq!(fields, ["coffee", "tea"]);
+    assert!(
+        rows[1].4.as_deref().is_some_and(|d| d.contains("large")),
+        "{rows:?}"
+    );
+    env.check_sync_clean(1);
+}
