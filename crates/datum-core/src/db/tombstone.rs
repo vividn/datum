@@ -297,12 +297,14 @@ pub fn soft_delete_in_tx(
     }
     let (when, hash) = (now.to_rfc3339(), dead.expected_content_hash());
     let data = dead.data.as_ref().map(|v| v.to_string());
+    // Cached: preparing an UPDATE of `entries` compiles every trigger on
+    // it, and a step deleting 20,000 rows paid that 20,000 times (da-q9z2e).
     super::past_kit_indexes(conn, || {
-        conn.execute(
+        conn.prepare_cached(
             "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3, data = ?4
              WHERE hid = ?2",
-            params![when, pre.hid, hash, data],
-        )
+        )?
+        .execute(params![when, pre.hid, hash, data])
     })?;
     super::sync::emit(conn, Some(&pre), &pre.hid, kind)?;
     Ok(dead)
