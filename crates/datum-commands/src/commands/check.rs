@@ -169,7 +169,8 @@ fn report(args: &CheckArgs, db: &Db) -> Result<(Report, Vec<FixReport>)> {
     }
     if run("integrity") {
         let (found, repeats) = integrity_pending(db, &plan)?;
-        let mut issues = integrity_issues(db, found)?;
+        let mut issues: Vec<Issue> = integrity::quick_check(db).into_iter().collect();
+        issues.extend(integrity_issues(db, found)?);
         issues.extend(integrity::after_finished(db, &plan)?);
         plan.keep(db, "integrity", repeats);
         checks.push(Check::of("integrity", issues));
@@ -418,6 +419,8 @@ pub enum Severity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Domain {
+    /// The database file itself, as SQLite reads its pages (da-6dv66).
+    File,
     /// Changes queued beside the database, not in it yet (da-3j6g7).
     Spool,
     Entries,

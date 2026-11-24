@@ -1,5 +1,6 @@
-//! The `integrity` checker: the pending stored warnings, the live repeated
-//! states (da-acft) and the contested keys sync left (da-05rkv).
+//! The `integrity` checker: SQLite's own check of the file (da-6dv66), the
+//! pending stored warnings, the live repeated states (da-acft) and the
+//! contested keys sync left (da-05rkv).
 
 use std::collections::BTreeSet;
 
@@ -12,9 +13,36 @@ use serde_json::Value as JsonValue;
 
 use super::kept::Plan;
 use super::{
-    render_flagged_block, render_state_for_flag, rows_with, Domain, FlaggedEntry, Issue,
+    lines, render_flagged_block, render_state_for_flag, rows_with, Domain, FlaggedEntry, Issue,
     IssueExample, Severity, Source,
 };
+
+/// SQLite's `PRAGMA quick_check` (da-6dv66): it reads every page, so a bad
+/// one in a table no checker reads is found too, which nothing else here
+/// would. Anything but `ok`, its error included, is the file malformed.
+pub(super) fn quick_check(db: &Db) -> Option<Issue> {
+    let mut said = Vec::new();
+    let read = (db.conn().prepare("PRAGMA quick_check")).and_then(|mut stmt| {
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            said.push(row.get::<_, String>(0)?);
+        }
+        Ok(())
+    });
+    said.extend(read.err().map(|e| e.to_string()));
+    (said != ["ok"]).then(|| Issue {
+        domain: Domain::File,
+        severity: Severity::Error,
+        category: "quick_check",
+        message: "SQLite's quick_check finds the database file itself malformed, not \
+                  datum's data inconsistent; it says:"
+            .to_string(),
+        count: said.len(),
+        example: None,
+        entries: Vec::new(),
+        rendered_block: lines(said),
+    })
+}
 
 /// Surface pending rows from `integrity_warnings` (`resolution IS NULL`)
 /// plus the live `repeated_state` computation. These are local

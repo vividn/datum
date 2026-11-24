@@ -170,6 +170,21 @@ fn plant(category: &str) -> Plant {
                 }
             })
         }),
+        // Two tables no checker reads, each root page overwritten.
+        "quick_check" => Two(|db| {
+            let roots = two(|table| {
+                let sql = format!("CREATE TABLE {table} (x); INSERT INTO {table} VALUES (1);");
+                db.conn().execute_batch(&sql).unwrap();
+            })
+            .map(|table| {
+                let sql = "SELECT rootpage FROM sqlite_schema WHERE name = ?1";
+                db.conn()
+                    .query_row(sql, [table], |r| r.get::<_, u64>(0))
+                    .unwrap()
+            });
+            spoil(db, &roots);
+            roots.map(|root| format!("Tree {root} page {root}:"))
+        }),
         "integrity_warning_unreadable" => {
             Two(|db| two(|id| warn(db, id, &log("x", "x"), "not json", "double_open")))
         }
@@ -401,6 +416,27 @@ fn refer(db: &Db, state: &str, data: Option<serde_json::Value>) -> [String; 2] {
         db.insert_entry(&e).unwrap();
         super::short(e.hid.as_str())
     })
+}
+
+/// Each of `pages` of `db`'s file overwritten with 0xff, under the
+/// connection, whose cache is then dropped so it reads them.
+fn spoil(db: &Db, pages: &[u64]) {
+    use std::io::{Seek, SeekFrom, Write};
+    let conn = db.conn();
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+        .unwrap();
+    let size: u64 = conn
+        .query_row("PRAGMA page_size", [], |r| r.get(0))
+        .unwrap();
+    let mut file = (std::fs::OpenOptions::new().write(true))
+        .open(db.path().unwrap())
+        .unwrap();
+    for page in pages {
+        file.seek(SeekFrom::Start((page - 1) * size)).unwrap();
+        file.write_all(&vec![0xff; size as usize]).unwrap();
+    }
+    file.sync_all().unwrap();
+    conn.execute_batch("PRAGMA shrink_memory").unwrap();
 }
 
 /// A stored integrity warning of `kind` on `e`, its `local_entry` as given.

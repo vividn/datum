@@ -34,6 +34,7 @@ pub const CATEGORIES: &[(&str, &[&str])] = &[
     (
         "integrity",
         &[
+            "quick_check",
             "integrity_warning_unreadable",
             "integrity_double_open",
             "integrity_orphan_end",
