@@ -175,3 +175,16 @@ fn a_script_file_still_refuses_readline() {
     );
     assert!(env.rows("tea").is_empty());
 }
+
+/// `datum help kit` names a level-3 command and that only the CLI runs it
+/// (da-u29fe): nothing else in datum's help shows one.
+#[test]
+fn help_kit_names_a_script_command_and_its_limit() {
+    let out = Env::new().datum(&["help", "kit"], "");
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        help.contains("level-3") && help.contains("script = "),
+        "{help}"
+    );
+    assert!(help.contains("Only the datum CLI runs one"), "{help}");
+}
