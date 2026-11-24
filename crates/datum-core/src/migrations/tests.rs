@@ -3,6 +3,7 @@
 //! Per-step round-trip coverage lives in `tests/migration_roundtrip.rs`;
 //! the whole-chain walk lives in `tests/migration_chain.rs`.
 
+use super::engine::{claim_backup_path, fill_snapshot, is_claimed};
 use super::*;
 use crate::db::Db;
 use crate::error::DatumError;
@@ -1203,11 +1204,33 @@ fn a_link_planted_at_the_snapshot_name_is_never_written_through() {
     assert_eq!(rows, 1);
 }
 
-/// da-xcmum: `VACUUM INTO` that fails partway, here on a corrupt page, has
-/// already created its target. The refusal removes it, so failing opens
-/// leave no empty snapshot each beside the database.
+/// da-xcmum: a fill that fails has already created the snapshot's file. The
+/// refusal removes it, so failing opens leave no empty snapshot each beside
+/// the database. Here the database is another's to write, locked whole.
 #[test]
-fn a_backup_that_fails_on_a_corrupt_page_leaves_no_snapshot() {
+fn a_backup_that_fails_leaves_no_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("datum.db");
+    legacy_file_db(&path, 30);
+    let holder = Connection::open(&path).unwrap();
+    holder
+        .execute_batch("PRAGMA journal_mode = DELETE; BEGIN EXCLUSIVE")
+        .unwrap();
+    let conn = Connection::open(&path).unwrap();
+    conn.busy_timeout(std::time::Duration::ZERO).unwrap();
+
+    for _ in 0..2 {
+        let e = backup_before_migration(&conn, &path, 30, CURRENT_SCHEMA_VERSION).unwrap_err();
+        assert!(e.to_string().contains("refusing to migrate"), "{e}");
+    }
+    assert_eq!(backups_beside(&path), Vec::<std::path::PathBuf>::new());
+}
+
+/// da-tkgov: the snapshot copies the pages as they are, so a page that does
+/// not read is kept as it was, and no longer refuses the migration it did
+/// not stop (da-xcmum's `VACUUM INTO` read every row, and refused).
+#[test]
+fn a_corrupt_page_is_kept_in_the_snapshot_as_it_was() {
     use std::io::{Seek, Write};
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("datum.db");
@@ -1217,7 +1240,8 @@ fn a_backup_that_fails_on_a_corrupt_page_leaves_no_snapshot() {
         raw.execute_batch(
             "CREATE TABLE filler (x);
              WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 200)
-             INSERT INTO filler SELECT randomblob(500) FROM n;",
+             INSERT INTO filler SELECT randomblob(500) FROM n;
+             PRAGMA wal_checkpoint(TRUNCATE);",
         )
         .unwrap();
         let root = raw
@@ -1230,21 +1254,74 @@ fn a_backup_that_fails_on_a_corrupt_page_leaves_no_snapshot() {
         let size = raw.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap();
         (root, size)
     };
+    let at = (root - 1) * page_size;
     let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
-    file.seek(std::io::SeekFrom::Start((root - 1) * page_size))
-        .unwrap();
+    file.seek(std::io::SeekFrom::Start(at)).unwrap();
     file.write_all(&vec![0xff; page_size as usize]).unwrap();
     drop(file);
 
-    for _ in 0..2 {
-        let msg = match Db::open(path.to_str().unwrap()) {
-            Err(e) => e.to_string(),
-            Ok(_) => panic!("open must fail when the snapshot cannot be written"),
-        };
-        assert!(msg.contains("refusing to migrate"), "{msg}");
-        assert!(msg.contains("malformed"), "{msg}");
+    let db = Db::open(path.to_str().unwrap()).unwrap();
+    let backup = db.last_migration().unwrap().backup_path.clone().unwrap();
+    let bytes = std::fs::read(&backup).unwrap();
+    let page = &bytes[at as usize..(at + page_size) as usize];
+    assert!(page.iter().all(|b| *b == 0xff));
+    assert_eq!(version_of(&backup), 30);
+}
+
+/// da-tkgov: a snapshot is a whole copy of the database, so it is as
+/// private as the database is: SQLite created it 0644 whatever the
+/// database's own mode, readable by anyone under a loose umask.
+#[cfg(unix)]
+#[test]
+fn the_snapshot_takes_the_databases_own_permission_bits() {
+    use std::os::unix::fs::PermissionsExt;
+    for mode in [0o600, 0o644] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("datum.db");
+        legacy_file_db(&path, 30);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+        let db = Db::open(path.to_str().unwrap()).unwrap();
+        let backup = db.last_migration().unwrap().backup_path.clone().unwrap();
+        let got = std::fs::metadata(&backup).unwrap().permissions().mode() & 0o777;
+        assert_eq!(got, mode, "{mode:o}");
     }
-    assert_eq!(backups_beside(&path), Vec::<std::path::PathBuf>::new());
+}
+
+/// da-tkgov: SQLite opens the claimed snapshot again by its name, and in a
+/// directory others may write one of them can put something else there
+/// between the claim and the fill. A link there is refused, and nothing is
+/// created where it points; a file renamed in is refused once written.
+/// Neither is removed: it is not ours.
+#[cfg(unix)]
+#[test]
+fn what_is_put_at_the_claimed_name_before_the_fill_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let path = dir.path().join("datum.db");
+    legacy_file_db(&path, 30);
+    let conn = Connection::open(&path).unwrap();
+    let target = elsewhere.path().join("copy");
+
+    let (dest, claimed) = claim_backup_path(&path, 30, CURRENT_SCHEMA_VERSION).unwrap();
+    std::fs::remove_file(&dest).unwrap();
+    std::os::unix::fs::symlink(&target, &dest).unwrap();
+    assert!(fill_snapshot(&conn, &path, &dest, &claimed).is_err());
+    assert!(!is_claimed(&dest, &claimed));
+    assert_eq!(std::fs::read_dir(elsewhere.path()).unwrap().count(), 0);
+    assert!(std::fs::symlink_metadata(&dest)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    let (dest, claimed) = claim_backup_path(&path, 30, CURRENT_SCHEMA_VERSION).unwrap();
+    std::fs::rename(&dest, dir.path().join("aside")).unwrap();
+    std::fs::File::create(&target).unwrap();
+    std::fs::rename(&target, &dest).unwrap();
+    let e = fill_snapshot(&conn, &path, &dest, &claimed).unwrap_err();
+    assert!(e.contains("something else was put at its name"), "{e}");
+    // Each of the two checks sees it on its own.
+    assert!(!is_claimed(&dest, &claimed));
+    assert_eq!(claimed.metadata().unwrap().len(), 0);
 }
 
 /// da-wd5ip: a migration that fails leaves the file as it was, and every

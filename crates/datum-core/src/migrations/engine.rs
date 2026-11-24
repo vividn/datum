@@ -364,12 +364,14 @@ pub const MAX_PRE_MIGRATION_BACKUPS: usize = if cfg!(target_os = "wasi") { 2 } e
 /// Snapshot the database file before migrating it. Returns the snapshot's
 /// path: the one written, or an identical one already beside the file.
 ///
-/// `VACUUM INTO`, not a filesystem copy: connections run in WAL mode, so
-/// the `.db` file on its own is not the whole database, and a copy taken
-/// without the `-wal` sidecar can be stale. `VACUUM INTO` writes one
-/// self-contained file holding exactly the committed contents, and — the
-/// point of the exercise — it goes through SQLite, not through datum's
-/// serialisation code, which is the code the migration is changing.
+/// SQLite's backup API, not a filesystem copy: connections run in WAL mode,
+/// so the `.db` file on its own is not the whole database, and a copy taken
+/// without the `-wal` sidecar can be stale. The backup reads through this
+/// connection, `-wal` included, into one self-contained file holding
+/// exactly the committed pages, and — the point of the exercise — it goes
+/// through SQLite, not through datum's serialisation code, which is the
+/// code the migration is changing. See [`fill_snapshot`] for why not
+/// `VACUUM INTO`.
 ///
 /// The caller must treat a failure here as fatal: a migration that runs
 /// after a failed backup is worse than no backup policy at all, because
@@ -387,14 +389,16 @@ pub fn backup_before_migration(
             dest.display()
         ))
     };
-    let dest = claim_backup_path(db_path, from, to).map_err(|(dest, e)| refuse(&dest, &e))?;
-    // `VACUUM INTO` fills the empty file just claimed, and refuses one that
-    // holds anything. The file is ours, so a failure removes it.
-    conn.execute("VACUUM INTO ?1", params![dest.to_string_lossy()])
-        .map_err(|e| {
+    let (dest, claimed) =
+        claim_backup_path(db_path, from, to).map_err(|(dest, e)| refuse(&dest, &e))?;
+    // A failure removes the file claimed, and only while the name is still
+    // it: anything else there is not ours to remove.
+    fill_snapshot(conn, db_path, &dest, &claimed).map_err(|e| {
+        if is_claimed(&dest, &claimed) {
             let _ = std::fs::remove_file(&dest);
-            refuse(&dest, &e)
-        })?;
+        }
+        refuse(&dest, &e)
+    })?;
     // A migration that fails leaves the file as it was, so the next open
     // snapshots the same bytes again, and retention never runs (da-wd5ip).
     // Keep the newest snapshot of this `from` when it holds exactly these
@@ -427,11 +431,14 @@ pub fn backup_before_migration(
 /// create is `O_CREAT | O_EXCL` (and `O_NOFOLLOW`), which never follows a
 /// link, so the snapshot is never written through one planted at its name
 /// before or after a check (da-jj9a6). Any other failure is the caller's.
-fn claim_backup_path(
+/// It is created 0600, and [`fill_snapshot`] gives it the database's own
+/// permission bits once it is written (da-tkgov).
+pub(super) fn claim_backup_path(
     db_path: &std::path::Path,
     from: u32,
     to: u32,
-) -> std::result::Result<std::path::PathBuf, (std::path::PathBuf, std::io::Error)> {
+) -> std::result::Result<(std::path::PathBuf, std::fs::File), (std::path::PathBuf, std::io::Error)>
+{
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
     let base = format!(
         "{}.pre-v{from}-to-v{to}-{stamp}",
@@ -440,11 +447,10 @@ fn claim_backup_path(
     let dir = db_path.parent().unwrap_or(std::path::Path::new("."));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-    // 0644 as SQLite's own create of it was, before the umask.
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW).mode(0o644);
+        options.custom_flags(libc::O_NOFOLLOW).mode(0o600);
     }
     for n in 1.. {
         let candidate = match n {
@@ -452,12 +458,98 @@ fn claim_backup_path(
             n => dir.join(format!("{base}-{n}.bak")),
         };
         match options.open(&candidate) {
-            Ok(_) => return Ok(candidate),
+            Ok(file) => return Ok((candidate, file)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err((candidate, e)),
         }
     }
     unreachable!("an unbounded range ends")
+}
+
+/// Fill the empty file [`claim_backup_path`] made at `dest` with the
+/// database (da-tkgov). SQLite opens a file only by name, and the name lies
+/// in a directory others may be able to write: there, in the moment between
+/// the claim and SQLite's open, one of them can put a link at it, and
+/// `VACUUM INTO` created a whole copy wherever it pointed. So the copy is
+/// SQLite's backup API, into a connection opened on the name with
+/// `SQLITE_OPEN_NOFOLLOW` and without `SQLITE_OPEN_CREATE`: a symbolic link
+/// there is refused and creates nothing, and once open SQLite writes to the
+/// file it opened, whatever the name becomes. Anything else at the name (a
+/// hard link, a file renamed in) is refused once the copy is written, which
+/// the descriptor held since the claim tells: the copy is not in the file
+/// claimed, or the name no longer names it. That copy has gone to the file
+/// put there, the one case left, and the refusal says so.
+///
+/// The backup copies the pages as they are, so a page that does not read
+/// is kept as it was rather than refusing the migration, and its header
+/// says WAL as the database's does. It is set back to rollback through the
+/// descriptor, as `VACUUM INTO` wrote it: a snapshot opened makes no `-wal`
+/// beside it. Nothing more goes through the connection once the copy is
+/// in, since it would read that header and open a `-wal` by name.
+///
+/// Last, the file takes the database's own permission bits, as SQLite gives
+/// its `-wal` and `-shm`: a private database's snapshot is as private, where
+/// the 0644 SQLite created it with was anyone's to read under a loose umask.
+pub(super) fn fill_snapshot(
+    conn: &Connection,
+    db_path: &std::path::Path,
+    dest: &std::path::Path,
+    claimed: &std::fs::File,
+) -> std::result::Result<(), String> {
+    use rusqlite::OpenFlags;
+    use std::io::{Seek, SeekFrom, Write};
+    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
+        | OpenFlags::SQLITE_OPEN_NO_MUTEX
+        | OpenFlags::SQLITE_OPEN_NOFOLLOW;
+    let mut into = Connection::open_with_flags(dest, flags).map_err(|e| e.to_string())?;
+    into.pragma_update(None, "journal_mode", "OFF")
+        .map_err(|e| e.to_string())?;
+    let done = rusqlite::backup::Backup::new(conn, &mut into)
+        .and_then(|b| b.step(-1))
+        .map_err(|e| e.to_string())?;
+    drop(into);
+    if !matches!(done, rusqlite::backup::StepResult::Done) {
+        return Err(format!("the copy did not finish: {done:?}"));
+    }
+    // The file claimed was empty, and only SQLite writes it, into the file
+    // it opened: a copy that went to another leaves it empty, whatever the
+    // name names by now.
+    let landed = claimed.metadata().is_ok_and(|m| m.len() > 0);
+    if !landed || !is_claimed(dest, claimed) {
+        return Err("something else was put at its name as it was written".into());
+    }
+    let mut file = claimed;
+    file.seek(SeekFrom::Start(18))
+        .and_then(|_| file.write_all(&[1, 1]))
+        .map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(db_path).map_err(|e| e.to_string())?;
+        let mode = std::fs::Permissions::from_mode(mode.permissions().mode() & 0o777);
+        claimed.set_permissions(mode).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(unix))]
+    let _ = db_path;
+    Ok(())
+}
+
+/// Whether `path` still names the file `claimed` holds open. Only a unix
+/// says: datum.day's filesystem is one process's.
+pub(super) fn is_claimed(path: &std::path::Path, claimed: &std::fs::File) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match (std::fs::symlink_metadata(path), claimed.metadata()) {
+            (Ok(a), Ok(b)) => (a.dev(), a.ino()) == (b.dev(), b.ino()),
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, claimed);
+        true
+    }
 }
 
 /// The snapshots in `dir` whose names start with `prefix`, each with its
