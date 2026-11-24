@@ -380,18 +380,20 @@ pub fn backup_before_migration(
     from: u32,
     to: u32,
 ) -> Result<std::path::PathBuf> {
-    let dest = free_backup_path(db_path, from, to);
-    // `VACUUM INTO` refuses to overwrite, so an existing file is an error
-    // rather than silent data loss — exactly what we want. A failed one has
-    // often created the file already; the name was free, so it is ours.
+    let refuse = |dest: &std::path::Path, e: &dyn std::fmt::Display| {
+        DatumError::Other(format!(
+            "refusing to migrate schema v{from}→v{to}: could not write the \
+             pre-migration backup to {}: {e}",
+            dest.display()
+        ))
+    };
+    let dest = claim_backup_path(db_path, from, to).map_err(|(dest, e)| refuse(&dest, &e))?;
+    // `VACUUM INTO` fills the empty file just claimed, and refuses one that
+    // holds anything. The file is ours, so a failure removes it.
     conn.execute("VACUUM INTO ?1", params![dest.to_string_lossy()])
         .map_err(|e| {
             let _ = std::fs::remove_file(&dest);
-            DatumError::Other(format!(
-                "refusing to migrate schema v{from}→v{to}: could not write the \
-                 pre-migration backup to {}: {e}",
-                dest.display()
-            ))
+            refuse(&dest, &e)
         })?;
     // A migration that fails leaves the file as it was, so the next open
     // snapshots the same bytes again, and retention never runs (da-wd5ip).
@@ -419,31 +421,56 @@ pub fn backup_before_migration(
 }
 
 /// `<db file name>.pre-v<from>-to-v<to>-<UTC timestamp>.bak`, next to the
-/// database, with a `-<n>` disambiguator if that name is somehow taken.
-fn free_backup_path(db_path: &std::path::Path, from: u32, to: u32) -> std::path::PathBuf {
+/// database, with a `-<n>` disambiguator if that name is taken, created
+/// here as a new empty file. The name is predictable to the second, so
+/// anything already at it, a dangling link included, makes it taken: the
+/// create is `O_CREAT | O_EXCL` (and `O_NOFOLLOW`), which never follows a
+/// link, so the snapshot is never written through one planted at its name
+/// before or after a check (da-jj9a6). Any other failure is the caller's.
+fn claim_backup_path(
+    db_path: &std::path::Path,
+    from: u32,
+    to: u32,
+) -> std::result::Result<std::path::PathBuf, (std::path::PathBuf, std::io::Error)> {
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
     let base = format!(
         "{}.pre-v{from}-to-v{to}-{stamp}",
         db_path.file_name().unwrap_or_default().to_string_lossy()
     );
     let dir = db_path.parent().unwrap_or(std::path::Path::new("."));
-    let mut candidate = dir.join(format!("{base}.bak"));
-    let mut n = 2;
-    while candidate.exists() {
-        candidate = dir.join(format!("{base}-{n}.bak"));
-        n += 1;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    // 0644 as SQLite's own create of it was, before the umask.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW).mode(0o644);
     }
-    candidate
+    for n in 1.. {
+        let candidate = match n {
+            1 => dir.join(format!("{base}.bak")),
+            n => dir.join(format!("{base}-{n}.bak")),
+        };
+        match options.open(&candidate) {
+            Ok(_) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err((candidate, e)),
+        }
+    }
+    unreachable!("an unbounded range ends")
 }
 
 /// The snapshots in `dir` whose names start with `prefix`, each with its
-/// place in time as its own name gives it: the UTC stamp [`free_backup_path`]
+/// place in time as its own name gives it: the UTC stamp [`claim_backup_path`]
 /// writes (`%Y%m%dT%H%M%SZ`, which sorts as it reads) and its `-<n>`.
 /// Not `modified()`: datum.day's filesystem dates every file at the epoch,
 /// so the newest snapshot tied with the oldest and could be the one pruned
 /// (da-hse93). A name not of that form — a `to` that is not a number, a
 /// stamp that is not a real UTC time, an `-n` that is not a number, anything
-/// after it — is left out: never ranked, never removed.
+/// after it — is left out: never ranked, never removed. So is a link,
+/// which datum never writes: one planted at a snapshot's name, dated ahead,
+/// would otherwise rank newest and have retention prune the real ones
+/// (da-jj9a6).
 fn backups_by_stamp(
     dir: &std::path::Path,
     prefix: &str,
@@ -464,6 +491,7 @@ fn backups_by_stamp(
         .into_iter()
         .flatten()
         .flatten()
+        .filter(|e| !e.file_type().is_ok_and(|t| t.is_symlink()))
         .filter_map(|e| Some((stamp(&e.file_name().to_string_lossy())?, e.path())))
         .collect()
 }

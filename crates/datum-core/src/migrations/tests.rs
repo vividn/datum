@@ -1151,6 +1151,58 @@ fn a_failed_backup_aborts_the_migration() {
     assert!(backups_beside(&path).is_empty());
 }
 
+/// da-jj9a6: the snapshot's name is predictable to the second, so whoever
+/// can write beside a database could plant a dangling link at it, and
+/// `VACUUM INTO` created the link's target: a whole copy of the database
+/// wherever they chose. A link at the name makes the name taken; the
+/// snapshot goes to the next one, a regular file of its own holding the
+/// pre-migration rows, and nothing is created where the links point.
+#[cfg(unix)]
+#[test]
+fn a_link_planted_at_the_snapshot_name_is_never_written_through() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let path = dir.path().join("datum.db");
+    legacy_file_db(&path, 30);
+    let now = chrono::Utc::now();
+    let mut planted = Vec::new();
+    for s in 0..30 {
+        let stamp = (now + chrono::Duration::seconds(s)).format("%Y%m%dT%H%M%SZ");
+        let link = dir.path().join(format!(
+            "datum.db.pre-v30-to-v{CURRENT_SCHEMA_VERSION}-{stamp}.bak"
+        ));
+        std::os::unix::fs::symlink(elsewhere.path().join(format!("copy-{s}")), &link).unwrap();
+        planted.push(link);
+    }
+
+    let db = Db::open(path.to_str().unwrap()).unwrap();
+    let backup = db.last_migration().unwrap().backup_path.clone().unwrap();
+
+    assert_eq!(
+        std::fs::read_dir(elsewhere.path()).unwrap().count(),
+        0,
+        "nothing is created where a planted link points"
+    );
+    for link in &planted {
+        assert!(std::fs::symlink_metadata(link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+    assert!(!planted.contains(&backup), "{backup:?}");
+    assert!(backup.to_string_lossy().ends_with("-2.bak"), "{backup:?}");
+    assert!(std::fs::symlink_metadata(&backup)
+        .unwrap()
+        .file_type()
+        .is_file());
+    assert_eq!(version_of(&backup), 30);
+    let rows: i64 = Connection::open(&backup)
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 1);
+}
+
 /// da-xcmum: `VACUUM INTO` that fails partway, here on a corrupt page, has
 /// already created its target. The refusal removes it, so failing opens
 /// leave no empty snapshot each beside the database.
