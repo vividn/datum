@@ -82,7 +82,7 @@ mod record;
 mod rename;
 mod rename_state;
 mod row_mapper;
-mod sidecar;
+pub mod sidecar;
 pub(crate) mod spec;
 mod spec_alias_index;
 mod symbol_keys;

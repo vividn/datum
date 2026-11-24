@@ -614,3 +614,111 @@ fn a_revert_preview_names_its_span_on_the_readers_clock() {
     );
     assert!(said.contains(&span), "{span} in {said}");
 }
+
+/// The purge backup's name is predictable to the second (da-6vc3e): whoever
+/// can write beside a database could plant a link at it, and the backup was
+/// written through it, over whatever it named, with none beside the database.
+/// A link at the name makes it taken: the backup goes to the next free name,
+/// a regular file of its own, and nothing is written where a link points.
+#[cfg(unix)]
+#[test]
+fn a_purge_backup_is_never_written_through_a_link_planted_at_its_name() {
+    let (a, b) = chained();
+    a.ok(&["occur", "tea"]);
+    assert!(a.send(&b).0);
+    let elsewhere = tempfile::tempdir().unwrap();
+    let existing = elsewhere.path().join("existing");
+    std::fs::write(&existing, "not a backup").unwrap();
+    let now = chrono::Utc::now();
+    let mut planted = Vec::new();
+    for s in 0..60 {
+        let stamp = (now + chrono::Duration::seconds(s)).format("%Y%m%dT%H%M%SZ");
+        let link = a.tmp.path().join(format!("data.db.purge-{stamp}.jsonl.gz"));
+        let to = match s % 2 {
+            0 => elsewhere.path().join(format!("dangling-{s}")),
+            _ => existing.clone(),
+        };
+        std::os::unix::fs::symlink(to, &link).unwrap();
+        planted.push(link);
+    }
+
+    let done = a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
+    assert_eq!(data_of(&a), EMPTY, "{done}");
+
+    assert_eq!(std::fs::read(&existing).unwrap(), b"not a backup");
+    let there: Vec<_> = std::fs::read_dir(elsewhere.path())
+        .unwrap()
+        .map(|f| f.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        there,
+        ["existing"],
+        "nothing is created where a link points"
+    );
+    for link in &planted {
+        let meta = std::fs::symlink_metadata(link).unwrap();
+        assert!(meta.file_type().is_symlink(), "{link:?}");
+    }
+    let backup = std::path::PathBuf::from(done.rsplit("backup: ").next().unwrap().trim());
+    assert!(!planted.contains(&backup), "{backup:?}");
+    assert!(
+        backup.to_string_lossy().ends_with("-2.jsonl.gz"),
+        "{backup:?}"
+    );
+    assert_eq!(backup.parent(), Some(a.tmp.path()));
+    let meta = std::fs::symlink_metadata(&backup).unwrap();
+    assert!(meta.file_type().is_file());
+    let fresh = Copy::new();
+    fresh.ok(&["db", "restore", backup.to_str().unwrap(), "--yes"]);
+    assert!(fresh.has("tea"));
+}
+
+/// The backup a copy keeps of what it held as a wipe reaches it,
+/// `<db>.wiped-<hlc>.jsonl`, is never written through a link at its name
+/// (da-6vc3e): the wipe is refused naming it, the file the link names is
+/// unchanged, and the copy keeps what it holds until the link is gone.
+#[cfg(unix)]
+#[test]
+fn a_wiped_backup_is_never_written_through_a_link_planted_at_its_name() {
+    let (a, b) = chained();
+    a.ok(&["occur", "tea"]);
+    assert!(a.send(&b).0);
+    a.ok(&["sync", "chain", "purge", "--data", "--yes"]);
+    let hlc = a.query(
+        "SELECT hlc FROM ops WHERE hid = '~chain' \
+         AND json_extract(body, '$.effect.type') = 'wipe'",
+    );
+    let name = format!(
+        "data.db.wiped-{}.jsonl",
+        hlc.replace(['-', ':'], "").replace('/', "-")
+    );
+    let elsewhere = tempfile::tempdir().unwrap();
+    let existing = elsewhere.path().join("existing");
+    std::fs::write(&existing, "not a backup").unwrap();
+    let link = b.tmp.path().join(&name);
+    std::os::unix::fs::symlink(&existing, &link).unwrap();
+
+    let (ok, text) = a.send(&b);
+    assert!(!ok, "{text}");
+    assert!(
+        text.contains(&format!("{} is a symbolic link", link.display())),
+        "{text}"
+    );
+    assert_eq!(std::fs::read(&existing).unwrap(), b"not a backup");
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(b.has("tea"));
+
+    std::fs::remove_file(&link).unwrap();
+    let (ok, text) = a.send(&b);
+    assert!(ok, "{text}");
+    assert_eq!(data_of(&b), EMPTY);
+    assert_eq!(kept(&b), std::slice::from_ref(&link));
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_file());
+    assert!(std::fs::read_to_string(&link).unwrap().contains("\"tea\""));
+}

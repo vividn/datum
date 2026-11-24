@@ -5,7 +5,9 @@
 //! whatever it named: a write through a link at `.writing` overwrote another
 //! database, and a drain through one at `.spool` copied it out into
 //! `.spool.rejected`. No setup of datum's puts a link there, so one is
-//! refused, naming the file.
+//! refused, naming the file. So is one at any other file datum writes by a
+//! name it chose: a backup, its staging file, the account kept aside
+//! (da-6vc3e).
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
@@ -19,8 +21,7 @@ pub(crate) fn is_link(path: &Path) -> bool {
 /// The refusal of a link at `path`.
 pub(crate) fn linked(path: &Path) -> io::Error {
     io::Error::other(format!(
-        "{} is a symbolic link, and datum follows none at the files it keeps beside a \
-         database: remove it",
+        "{} is a symbolic link, and datum writes through none at a file it keeps: remove it",
         path.display()
     ))
 }
@@ -29,7 +30,7 @@ pub(crate) fn linked(path: &Path) -> io::Error {
 /// `O_NOFOLLOW`, so the refusal is the open's own and a link swapped in after
 /// a look is never followed; elsewhere (wasi, where nothing spools) a look
 /// first.
-pub(crate) fn open(path: &Path, opts: &mut OpenOptions) -> io::Result<File> {
+pub fn open(path: &Path, opts: &mut OpenOptions) -> io::Result<File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -58,7 +59,7 @@ pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> {
 }
 
 /// `path` created, or emptied, to write, refusing a link at it.
-pub(crate) fn create(path: &Path) -> io::Result<File> {
+pub fn create(path: &Path) -> io::Result<File> {
     open(
         path,
         OpenOptions::new().write(true).create(true).truncate(true),

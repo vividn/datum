@@ -206,23 +206,15 @@ impl Drop for TempFileGuard {
 
 /// Create+truncate a file owned read/write by the current user only (0600).
 /// Used for the backup staging file, which transiently holds the full
-/// plaintext dataset in a shared temp dir (da-903m). On non-Unix we fall
-/// back to a plain create — those platforms don't share `/tmp` the same way.
+/// plaintext dataset in a shared temp dir (da-903m). On non-Unix the mode is
+/// left — those platforms don't share `/tmp` the same way. A link at `path`
+/// is refused, never written through (da-6vc3e).
 pub(crate) fn create_private_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::File::create(path)
-    }
+    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+    datum_core::db::sidecar::open(path, &mut opts)
 }
 
 fn backup_targz(out_file: std::fs::File, db: &Db, header: &BackupHeader) -> Result<usize> {
@@ -1068,6 +1060,25 @@ fn edited_since_backup(db: &Db, entry: &Entry) -> Result<bool> {
 mod tests {
     use super::*;
     use datum_core::{entry::Verb, time::DatumTime};
+
+    /// A link at the staging file's path is refused, never written through
+    /// (da-6vc3e): the file it names is unchanged.
+    #[cfg(unix)]
+    #[test]
+    fn create_private_file_refuses_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("existing");
+        std::fs::write(&existing, "not a backup").unwrap();
+        let link = dir.path().join("staged.tmp");
+        std::os::unix::fs::symlink(&existing, &link).unwrap();
+        let err = create_private_file(&link).unwrap_err();
+        assert!(err.to_string().contains("is a symbolic link"), "{err}");
+        assert_eq!(std::fs::read(&existing).unwrap(), b"not a backup");
+        let dangling = dir.path().join("dangling.tmp");
+        std::os::unix::fs::symlink(dir.path().join("nowhere"), &dangling).unwrap();
+        assert!(create_private_file(&dangling).is_err());
+        assert!(!dir.path().join("nowhere").exists());
+    }
 
     fn make_entry(
         field: &str,

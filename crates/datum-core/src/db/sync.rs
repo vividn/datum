@@ -2287,14 +2287,15 @@ fn keep_what_was_here(conn: &Connection, chain: &Chain, w: &chain::Wipe) -> Resu
         return Ok(());
     }
     // Named by the wipe, which is carried out once: a retry of one that
-    // failed writes the same file again, and no two wipes share a name.
+    // failed writes the same file again, and no two wipes share a name. A
+    // link at it is refused, never written through (da-6vc3e).
     let to = format!(
         "{path}.wiped-{}.jsonl",
         w.hlc.replace(['-', ':'], "").replace('/', "-")
     );
+    let io = |e: std::io::Error| DatumError::Other(format!("{to}: {e}"));
+    let file = super::sidecar::create(std::path::Path::new(&to)).map_err(io)?;
     let write = || -> Result<()> {
-        let io = |e: std::io::Error| DatumError::Other(format!("{to}: {e}"));
-        let file = std::fs::File::create(&to).map_err(io)?;
         let mut out = std::io::BufWriter::new(&file);
         let header = json!({
             "type": "daydumb_backup", "schema_version": CURRENT_SCHEMA_VERSION,

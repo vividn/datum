@@ -424,13 +424,16 @@ pub fn keep_account(prf: &str) -> Result<PathBuf> {
     let path = account_path()?;
     // Its own per process, so two logins at once never write one aside.
     let aside = path.with_extension(format!("new-{}", std::process::id()));
-    // Made afresh, so its mode is this one whatever a crash left there.
+    // Made afresh, so its mode is this one whatever a crash left there, and
+    // as a new file, so a link planted at it once removed is refused, never
+    // written through (da-6vc3e).
     let _ = std::fs::remove_file(&aside);
     let mut f = std::fs::OpenOptions::new();
-    f.write(true).create(true).truncate(true);
+    f.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut f, 0o600);
-    std::io::Write::write_all(&mut f.open(&aside)?, prf.as_bytes())
+    f.open(&aside)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, prf.as_bytes()))
         .with_context(|| format!("Writing the account to {aside:?}"))?;
     std::fs::rename(&aside, &path).with_context(|| format!("Writing the account to {path:?}"))?;
     Ok(path)

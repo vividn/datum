@@ -1900,13 +1900,35 @@ fn wipe_backup(db: &Db) -> Result<Option<std::path::PathBuf>> {
     };
     // Beside the database, its name as the file system has it.
     let now = chrono::Utc::now();
-    let mut to = path.as_os_str().to_owned();
-    to.push(format!(".purge-{}.jsonl.gz", now.format("%Y%m%dT%H%M%SZ")));
-    let to = std::path::PathBuf::from(to);
     let header = super::backup_restore::BackupHeader::new(db, path.display().to_string(), now)?;
-    let file = std::fs::File::create(&to).with_context(|| format!("creating {}", to.display()))?;
-    super::backup_restore::write_jsonl_gz(file, db, &header)?;
+    let (to, file) = claim_beside(path, &format!(".purge-{}", now.format("%Y%m%dT%H%M%SZ")))?;
+    if let Err(e) = super::backup_restore::write_jsonl_gz(file, db, &header) {
+        let _ = std::fs::remove_file(&to);
+        return Err(e);
+    }
     Ok(Some(to))
+}
+
+/// `<db><stem>.jsonl.gz`, or `<db><stem>-<n>.jsonl.gz` for the first `n`
+/// free, created here as a new file. The name is predictable to the second,
+/// so anything already at it, a link included, makes it taken: the create
+/// is `O_CREAT | O_EXCL`, which never follows a link (da-6vc3e).
+fn claim_beside(db: &std::path::Path, stem: &str) -> Result<(std::path::PathBuf, std::fs::File)> {
+    for n in 1.. {
+        let mut to = db.as_os_str().to_owned();
+        to.push(match n {
+            1 => format!("{stem}.jsonl.gz"),
+            n => format!("{stem}-{n}.jsonl.gz"),
+        });
+        let to = std::path::PathBuf::from(to);
+        let mut new = std::fs::OpenOptions::new();
+        match datum_core::db::sidecar::open(&to, new.write(true).create_new(true)) {
+            Ok(file) => return Ok((to, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e).with_context(|| format!("creating {}", to.display())),
+        }
+    }
+    unreachable!("an unbounded range ends")
 }
 
 fn backup_words(backup: Option<std::path::PathBuf>) -> String {
