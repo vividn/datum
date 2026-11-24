@@ -74,7 +74,10 @@ impl Watch {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
         let line = format!("{} {} {}", std::process::id(), since.as_millis(), command());
-        let _ = std::fs::write(&self.record, line);
+        // Never through a link (da-bv58i): one planted since the open is
+        // refused there, and here only leaves the record unwritten.
+        let _ = super::sidecar::create(&self.record)
+            .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
         *held = Some((Instant::now(), Vec::new()));
     }
 
@@ -133,12 +136,17 @@ unsafe extern "C" fn profiled(
 /// Watch `conn`'s holds of the write lock on the file at `db_path`. The
 /// connection must close before the returned `Watch` drops: it holds a
 /// pointer to it.
-pub(crate) fn watch(conn: &mut Connection, db_path: &Path) -> Option<Arc<Watch>> {
+/// A link at the record refuses the open, naming it (da-bv58i).
+pub(crate) fn watch(conn: &mut Connection, db_path: &Path) -> std::io::Result<Option<Arc<Watch>>> {
     if cfg!(target_family = "wasm") {
-        return None;
+        return Ok(None);
+    }
+    let record = record(db_path);
+    if super::sidecar::is_link(&record) {
+        return Err(super::sidecar::linked(&record));
     }
     let watch = Arc::new(Watch {
-        record: record(db_path),
+        record,
         held: Mutex::new(None),
         long: Mutex::new(None),
     });
@@ -166,7 +174,7 @@ pub(crate) fn watch(conn: &mut Connection, db_path: &Path) -> Option<Arc<Watch>>
     }));
     let w = watch.clone();
     let _ = conn.rollback_hook(Some(move || w.end()));
-    Some(watch)
+    Ok(Some(watch))
 }
 
 /// Who holds the write lock on the database at `db_path`, as a datum
@@ -176,7 +184,7 @@ pub(crate) fn watch(conn: &mut Connection, db_path: &Path) -> Option<Arc<Watch>>
 /// mid-transaction leaves its record until the next datum transaction on the
 /// database replaces and removes it, and its «for» says how old it is.
 pub fn lock_holder(db_path: &Path) -> Option<String> {
-    let line = std::fs::read_to_string(record(db_path)).ok()?;
+    let line = String::from_utf8(super::sidecar::read(&record(db_path)).ok()?).ok()?;
     let mut parts = line.splitn(3, ' ');
     let pid: u32 = parts.next()?.parse().ok()?;
     let since: u64 = parts.next()?.parse().ok()?;

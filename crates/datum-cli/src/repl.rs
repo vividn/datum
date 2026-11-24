@@ -319,7 +319,7 @@ pub fn script(args: &ScriptArgs, db_hint: Option<&str>) -> Result<()> {
         spool.append(&db)?;
         drop(db);
         let db = Db::open(&path)?;
-        if let Some(e) = db.drain_spool()?.stuck {
+        if let Some(e) = db.drain_spool().map_or_else(Some, |d| d.stuck) {
             anyhow::bail!("the script is queued in {path}.spool, and did not land: {e}");
         }
         if db.spool_waiting() {

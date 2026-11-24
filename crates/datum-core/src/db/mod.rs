@@ -82,6 +82,7 @@ mod record;
 mod rename;
 mod rename_state;
 mod row_mapper;
+mod sidecar;
 pub(crate) mod spec;
 mod spec_alias_index;
 mod symbol_keys;
@@ -222,6 +223,24 @@ impl Drop for Db {
     }
 }
 
+/// The flag an open of the database at `path` adds: with `DATUM_DB_NOFOLLOW=1`
+/// (da-bv58i) a database at a symbolic link is refused, naming it, and SQLite
+/// opens it with `SQLITE_OPEN_NOFOLLOW`, so a link swapped in after the look
+/// is refused too. Only the path's last component: a linked directory above
+/// it is followed, as SQLite's flag does. Unset, a link is followed: a
+/// database kept elsewhere and linked in is supported.
+pub(crate) fn nofollow(path: &str) -> Result<rusqlite::OpenFlags> {
+    if std::env::var_os("DATUM_DB_NOFOLLOW").is_none_or(|v| v != "1") {
+        return Ok(rusqlite::OpenFlags::empty());
+    }
+    if sidecar::is_link(std::path::Path::new(path)) {
+        return Err(DatumError::Other(format!(
+            "{path} is a symbolic link, and DATUM_DB_NOFOLLOW=1 opens a database at none"
+        )));
+    }
+    Ok(rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW)
+}
+
 /// How long [`Db::open_read_only`] waits for a `-wal` or `-shm` alone to be
 /// joined or gone. Measured under a `sync status` loop (da-tmahu): 0.07 ms at
 /// the median, 25 ms at most, with 48 busy loops on 24 cores.
@@ -349,6 +368,7 @@ impl Db {
     /// Open (or create) the database at the given path: on the connection
     /// kept for it, where one is ([`keep_open`]), migrated as a new one is.
     pub fn open(path: &str) -> Result<Self> {
+        let nofollow = nofollow(path)?;
         Self::choose_vfs();
         let created = !std::path::Path::new(path).exists();
         let (kept, keep) = kept::take(path);
@@ -357,11 +377,11 @@ impl Db {
         // it closes, and the open makes the file anew, as a process's did.
         let mut conn = match kept.filter(|_| !created) {
             Some(conn) => conn,
-            None => Connection::open(path)?,
+            None => Connection::open_with_flags(path, rusqlite::OpenFlags::default() | nofollow)?,
         };
         Self::configure_connection(&mut conn)?;
         let mut db = Db {
-            holds: holder::watch(&mut conn, std::path::Path::new(path)),
+            holds: holder::watch(&mut conn, std::path::Path::new(path))?,
             conn: std::mem::ManuallyDrop::new(conn),
             keep,
             spec_alias_cache: RefCell::new(None),
@@ -385,11 +405,13 @@ impl Db {
     /// which is in the file's header: a reader that must not rewrite what
     /// it reads takes [`Db::open_read_only`].
     pub fn open_unmigrated(path: &str) -> Result<Self> {
+        let nofollow = nofollow(path)?;
         Self::choose_vfs();
-        let mut conn = Connection::open(path)?;
+        let mut conn =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::default() | nofollow)?;
         Self::configure_connection(&mut conn)?;
         Ok(Db {
-            holds: holder::watch(&mut conn, std::path::Path::new(path)),
+            holds: holder::watch(&mut conn, std::path::Path::new(path))?,
             conn: std::mem::ManuallyDrop::new(conn),
             keep: false,
             spec_alias_cache: RefCell::new(None),
@@ -422,6 +444,7 @@ impl Db {
     /// back: an error, never a cut write.
     pub fn open_read_only(path: &str) -> Result<Self> {
         use rusqlite::OpenFlags;
+        let nofollow = nofollow(path)?;
         // Looked at, never opened (da-fgx1e): a process drops every POSIX
         // lock it holds on a file as it closes any descriptor of it, so a
         // look that opened the `-shm` of a database this process has open
@@ -487,7 +510,8 @@ impl Db {
             uri,
             OpenFlags::SQLITE_OPEN_READ_ONLY
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX
-                | OpenFlags::SQLITE_OPEN_URI,
+                | OpenFlags::SQLITE_OPEN_URI
+                | nofollow,
         )?;
         Ok(Db {
             conn: std::mem::ManuallyDrop::new(conn),

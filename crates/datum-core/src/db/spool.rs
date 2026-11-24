@@ -46,7 +46,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 
-use super::{sync, Db};
+use super::{sidecar, sync, Db};
 use crate::error::{DatumError, Result};
 
 /// How long a drain waits for the write lock before leaving the lines for
@@ -81,11 +81,10 @@ fn beside(db: &Path, ext: &str) -> PathBuf {
 /// The lock every spooler and drainer of `db` takes: a file of its own,
 /// since the spool itself is replaced whole.
 fn lock(db: &Path, wait: bool) -> Result<Option<File>> {
-    let f = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(beside(db, ".spool.lock"))?;
+    let f = sidecar::open(
+        &beside(db, ".spool.lock"),
+        OpenOptions::new().create(true).truncate(false).write(true),
+    )?;
     match wait {
         true => f.lock().map(|_| Some(f)).map_err(Into::into),
         false => match f.try_lock() {
@@ -103,7 +102,7 @@ type Line = (String, Value);
 /// each line that did not read was set aside: the spool is written again
 /// without them. Taken under the spool's lock.
 fn lines(spool: &Path) -> Result<(Vec<Line>, Vec<PathBuf>)> {
-    let bytes = match std::fs::read(spool) {
+    let bytes = match sidecar::read(spool) {
         Ok(b) => b,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Default::default()),
         Err(e) => return Err(e.into()),
@@ -153,11 +152,10 @@ fn pieces(bytes: &[u8]) -> impl Iterator<Item = (&[u8], Option<Line>, bool)> {
 /// writing after it.
 pub(crate) fn append_line(path: &Path, line: &[u8]) -> Result<()> {
     let created = !path.exists();
-    let mut f = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .append(true)
-        .open(path)?;
+    let mut f = sidecar::open(
+        path,
+        OpenOptions::new().create(true).read(true).append(true),
+    )?;
     let mut end = *b"\n";
     if f.metadata()?.len() > 0 {
         f.seek(SeekFrom::End(-1))?;
@@ -192,7 +190,7 @@ fn pending(conn: &Connection, all: Vec<(String, Value)>) -> Result<Vec<(String, 
 /// when that mark will not, and each that does not read, as a purge meets a
 /// damaged file. Reads only, so it needs no lock.
 fn queued(conn: &Connection, spool: &Path) -> usize {
-    let bytes = std::fs::read(spool).unwrap_or_default();
+    let bytes = sidecar::read(spool).unwrap_or_default();
     let mut unread = 0;
     let read: Vec<Line> = pieces(&bytes)
         .filter_map(|(_, line, _)| {
@@ -302,7 +300,7 @@ fn replace(path: &Path, text: impl AsRef<[u8]>) -> Result<()> {
         };
     }
     let tmp = beside(path, ".tmp");
-    let mut f = File::create(&tmp)?;
+    let mut f = sidecar::create(&tmp)?;
     f.write_all(text)?;
     f.sync_all()?;
     std::fs::rename(&tmp, path)?;
@@ -360,11 +358,14 @@ impl Db {
     /// stops short of it, and the command still queues its own line.
     pub fn spool_open(path: &str) -> Result<(Db, Spool)> {
         let file = Path::new(path);
+        let nofollow = super::nofollow(path)?;
         let _held = lock(file, true)?.expect("a waiting lock is taken");
         Self::choose_vfs();
         let from = Connection::open_with_flags(
             path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | nofollow,
         )?;
         // A WAL reader rarely waits (a checkpoint restarting the log, its
         // index being rebuilt), but a backup answered BUSY is a lost write.
@@ -482,7 +483,7 @@ impl Db {
         let Some(path) = &self.path else {
             return false;
         };
-        let bytes = std::fs::read(beside(path, ".spool")).unwrap_or_default();
+        let bytes = sidecar::read(&beside(path, ".spool")).unwrap_or_default();
         let read = pieces(&bytes).filter_map(|(_, line, _)| line).collect();
         pending(&self.conn, read).is_ok_and(|p| {
             p.first()
@@ -560,7 +561,7 @@ impl Db {
         let read = match &held {
             Some(_) => lines(&spool)?.0,
             None => {
-                let bytes = match std::fs::read(&spool) {
+                let bytes = match sidecar::read(&spool) {
                     Err(e) if e.kind() == ErrorKind::NotFound => Vec::new(),
                     read => read.map_err(|e| {
                         DatumError::Other(format!("cannot read {}: {e}", spool.display()))

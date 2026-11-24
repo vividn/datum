@@ -2074,6 +2074,11 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
         summary:
             "Set to `1` so a first `sync chain invite`/`join` does not install the sync daemon.",
     },
+    EnvVarSpec {
+        name: "DATUM_DB_NOFOLLOW",
+        key: "",
+        summary: "Set to `1` to refuse a database whose own path is a symbolic link (by default one is followed; a linked directory above it still is). The files datum keeps beside a database (`.writing`, `.spool`, …) are never followed.",
+    },
 ];
 
 /// Worked alias examples, each one run against the binary before it was

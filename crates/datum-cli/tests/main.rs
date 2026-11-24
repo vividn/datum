@@ -154,6 +154,7 @@ mod setup_echo_json;
 mod show_env;
 mod show_flag_family;
 mod show_json;
+mod sidecar_links;
 mod spec_cmd;
 mod spec_doc_keys;
 mod spec_entries;
