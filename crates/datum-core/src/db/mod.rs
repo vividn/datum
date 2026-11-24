@@ -368,7 +368,24 @@ impl Db {
     /// Open (or create) the database at the given path: on the connection
     /// kept for it, where one is ([`keep_open`]), migrated as a new one is.
     pub fn open(path: &str) -> Result<Self> {
-        let nofollow = nofollow(path)?;
+        Self::open_with(path, nofollow(path)?)
+    }
+
+    /// [`Db::open`] of a database datum makes beside another and moves in
+    /// (`.reentering`, da-j18ms): never through a link, opt-in or not, so
+    /// one planted after datum removed the path is refused, naming it.
+    pub(crate) fn open_own(path: &str) -> Result<Self> {
+        Self::open_with(path, rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW).map_err(|e| match e {
+            DatumError::Db(rusqlite::Error::SqliteFailure(f, _))
+                if f.extended_code == rusqlite::ffi::SQLITE_CANTOPEN_SYMLINK =>
+            {
+                DatumError::Other(sidecar::linked(std::path::Path::new(path)).to_string())
+            }
+            e => e,
+        })
+    }
+
+    fn open_with(path: &str, nofollow: rusqlite::OpenFlags) -> Result<Self> {
         Self::choose_vfs();
         let created = !std::path::Path::new(path).exists();
         let (kept, keep) = kept::take(path);

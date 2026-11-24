@@ -173,3 +173,81 @@ fn a_reentry_with_nothing_to_replay_writes_once_its_chain_is_back() {
     eventually("a holds run", || a.has("run"));
     b.ok(&["check", "sync"]);
 }
+
+/// Without `DATUM_DB_NOFOLLOW` a database at a link re-enters as one at its
+/// own path (da-j18ms): the fresh copy is opened no-follow, an ATTACH takes
+/// its connection's flags, so the old file is attached by the path the link
+/// resolves to, and not refused as a link.
+#[test]
+fn a_copy_at_a_link_reenters_without_the_opt_in() {
+    let (a, mut b) = paired();
+    let _a_runs = a.serve(&["sync", "run"]);
+    b.ok(&["occur", "coffee"]);
+    b.ok(&["sync"]);
+    b.ok(&["occur", "walk"]);
+    super::purge::migrate_under(&b);
+    std::os::unix::fs::symlink(b.db(), b.tmp.path().join("linked.db")).unwrap();
+    b.file = "linked.db";
+
+    let out = b.ok(&["sync", "chain", "reenter"]);
+    assert!(out.contains("verify ok"), "{out}");
+    assert!(b.has("coffee") && b.has("walk"), "{out}");
+    eventually("a holds walk", || a.has("walk"));
+}
+
+/// The file a reenter keeps whole has a name predictable to the second, so
+/// one planted there is never written through (da-j18ms, vremya's review):
+/// dangling links at each name for the next minute point into another
+/// directory, nothing lands there, the links stay, and the backup is a
+/// regular file beside the database, at the next free name, holding its rows.
+#[test]
+fn a_link_planted_at_the_reentered_backup_name_is_never_written_through() {
+    let (a, b) = paired();
+    let _a_runs = a.serve(&["sync", "run"]);
+    b.ok(&["occur", "coffee"]);
+    b.ok(&["sync"]);
+    super::purge::migrate_under(&b);
+    let schema = b.query("SELECT value FROM _meta WHERE key = 'schema_version'");
+    let elsewhere = tempfile::tempdir().unwrap();
+    let now = chrono::Utc::now();
+    let mut links = Vec::new();
+    for s in 0..60 {
+        let stamp = (now + chrono::Duration::seconds(s)).format("%Y%m%dT%H%M%SZ");
+        let name = format!("{}.reentered-from-v{schema}-{stamp}.bak", b.db().display());
+        std::os::unix::fs::symlink(elsewhere.path().join(format!("copy-{s}.db")), &name).unwrap();
+        links.push(name);
+    }
+
+    b.ok(&["sync", "chain", "reenter"]);
+    assert_eq!(
+        std::fs::read_dir(elsewhere.path()).unwrap().count(),
+        0,
+        "nothing lands where a link points"
+    );
+    assert!(links.iter().all(|l| std::fs::symlink_metadata(l)
+        .unwrap()
+        .file_type()
+        .is_symlink()));
+    let kept: Vec<_> = std::fs::read_dir(b.tmp.path())
+        .unwrap()
+        .flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .contains(".reentered-from-v")
+        })
+        .filter(|e| e.file_type().unwrap().is_file())
+        .map(|e| e.path())
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert!(kept[0].to_string_lossy().ends_with("-2.bak"), "{kept:?}");
+    let coffee: i64 = rusqlite::Connection::open(&kept[0])
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE field = 'coffee'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(coffee, 1);
+}

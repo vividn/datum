@@ -241,6 +241,37 @@ fn inexpressible(op: &Op) -> Option<String> {
         .map(|e| format!("a value this datum does not read: {e}"))
 }
 
+/// `path` kept whole at `<base>.bak`, or the first `<base>-<n>.bak` free:
+/// hard-linked, or copied where a link cannot be made. Its name is
+/// predictable to the second, so it is claimed and never written through a
+/// link (da-j18ms): anything at a name, a dangling link included, takes the
+/// next, as a migration's snapshot does (da-jj9a6).
+fn keep_whole(path: &Path, base: &str) -> Result<PathBuf> {
+    for n in 1.. {
+        let backup = PathBuf::from(match n {
+            1 => format!("{base}.bak"),
+            n => format!("{base}-{n}.bak"),
+        });
+        let made = std::fs::hard_link(path, &backup).or_else(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => Err(e),
+            _ => {
+                let mut to = crate::db::sidecar::open(
+                    &backup,
+                    std::fs::OpenOptions::new().write(true).create_new(true),
+                )?;
+                std::io::copy(&mut std::fs::File::open(path)?, &mut to)?;
+                to.set_permissions(path.metadata()?.permissions())
+            }
+        });
+        match made {
+            Ok(()) => return Ok(backup),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    unreachable!("an unbounded range ends")
+}
+
 impl Db {
     /// `datum sync chain reenter` (da-vcu8a): the file at `path`, which a
     /// newer datum migrated past this one, made a copy of its chain at this
@@ -255,7 +286,8 @@ impl Db {
         let refuse = |why: String| Err(DatumError::Other(why));
         let shown = path.display();
         let beside = |ext: &str| PathBuf::from(format!("{shown}{ext}"));
-        let old = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let follow = crate::db::nofollow(&path.to_string_lossy())?;
+        let old = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | follow)?;
         let schema = read_schema_version(&old)?.unwrap_or(0);
         if schema <= CURRENT_SCHEMA_VERSION {
             return refuse(format!(
@@ -356,9 +388,17 @@ impl Db {
             let _ = std::fs::remove_file(format!("{}{ext}", fresh.display()));
         }
         {
-            let db = Db::open(&fresh.to_string_lossy())?;
+            let db = Db::open_own(&fresh.to_string_lossy())?;
+            // An ATTACH takes its connection's flags, the fresh one's
+            // no-follow too: under the opt-in the old file is refused at a
+            // link as its open was; otherwise a link to it is followed here,
+            // as there.
+            let old_at = match follow.is_empty() {
+                true => std::fs::canonicalize(path)?,
+                false => path.to_path_buf(),
+            };
             db.conn
-                .execute("ATTACH DATABASE ?1 AS old", [path.to_string_lossy()])?;
+                .execute("ATTACH DATABASE ?1 AS old", [old_at.to_string_lossy()])?;
             let at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             crate::db::write::whole(&db.conn, |tx| {
                 for t in KEPT {
@@ -392,13 +432,12 @@ impl Db {
             db.conn.execute("DETACH DATABASE old", [])?;
         }
         let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-        let backup = beside(&format!(".reentered-from-v{schema}-{stamp}.bak"));
         for ext in ["-wal", "-shm"] {
             let _ = std::fs::remove_file(beside(ext));
         }
         // The file stays at its path until the fresh one replaces it in one
         // rename: a copy killed before that is the file as it was.
-        std::fs::hard_link(path, &backup).or_else(|_| std::fs::copy(path, &backup).map(|_| ()))?;
+        let backup = keep_whole(path, &format!("{shown}.reentered-from-v{schema}-{stamp}"))?;
         std::fs::rename(&fresh, path)?;
 
         // One line a command: its ops are consecutive, of one line, at one
@@ -440,6 +479,32 @@ impl Db {
 mod tests {
     use crate::db::Db;
     use crate::error::DatumError;
+
+    /// The open `sync_reenter` makes `.reentering` with refuses a link there
+    /// (da-j18ms), naming it, and writes nothing through it: one planted
+    /// between the remove and the open, which no test can time, meets this
+    /// open. The plain open follows the same link, so the refusal is the
+    /// flag's.
+    #[cfg(unix)]
+    #[test]
+    fn the_reentering_open_refuses_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other.db");
+        drop(Db::open(&other.to_string_lossy()).unwrap());
+        let before = std::fs::read(&other).unwrap();
+        let link = dir.path().join("j.db.reentering");
+        std::os::unix::fs::symlink(&other, &link).unwrap();
+        let link = link.to_string_lossy();
+
+        let err = Db::open_own(&link).err().expect("a link is refused");
+        assert!(
+            err.to_string()
+                .contains(&format!("{link} is a symbolic link")),
+            "{err}"
+        );
+        assert!(std::fs::read(&other).unwrap() == before, "other.db changed");
+        Db::open(&link).expect("the plain open follows it");
+    }
 
     /// The kept rows go back in the purge's own transaction (da-qjxfx): one
     /// that fails there, as one killed there would, leaves the file as it

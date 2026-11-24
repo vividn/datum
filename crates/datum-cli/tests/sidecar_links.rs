@@ -157,3 +157,34 @@ fn the_opt_in_refuses_a_linked_database() {
         String::from_utf8_lossy(&tail.stdout)
     );
 }
+
+/// `sync chain reenter` opens the database it re-enters as every other open
+/// does (da-j18ms): under `DATUM_DB_NOFOLLOW=1` a link is refused, naming it,
+/// and the file it names is left byte for byte. Without the opt-in the link is
+/// followed to the file, which, at this datum's schema, has nothing to
+/// re-enter.
+#[test]
+fn the_opt_in_refuses_a_linked_database_to_reenter() {
+    let env = Env::new();
+    let j = env.db("j");
+    let link = env.tmp.path().join("linked.db");
+    std::os::unix::fs::symlink(&j, &link).unwrap();
+    let before = std::fs::read(&j).unwrap();
+    let reenter = ["sync", "chain", "reenter"];
+
+    let out = env.run(&link, &reenter, &[("DATUM_DB_NOFOLLOW", "1")], "");
+    let err = stderr(&out);
+    assert!(!out.status.success(), "{err}");
+    assert!(
+        err.contains(&format!("{} is a symbolic link", link.display())),
+        "{err}"
+    );
+    assert!(std::fs::read(&j).unwrap() == before, "j.db changed");
+
+    let out = env.run(&link, &reenter, &[], "");
+    assert!(
+        stderr(&out).contains("nothing to re-enter"),
+        "{}",
+        stderr(&out)
+    );
+}
