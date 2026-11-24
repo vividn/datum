@@ -139,23 +139,37 @@ pub fn cmd_backup(args: BackupArgs, cli_db: Option<&str>, db: &Db) -> Result<()>
         write_jsonl(std::io::stdout().lock(), db, &header)?;
         return Ok(());
     }
-    match detect_backup_format(&args.path) {
-        BackupFormat::TarGz => backup_targz(out_path, db, &header),
-        BackupFormat::Jsonl => backup_jsonl(out_path, db, &header, false),
-        BackupFormat::JsonlGz => backup_jsonl(out_path, db, &header, true),
-    }
+    let count = write_whole(out_path, |file| match detect_backup_format(&args.path) {
+        BackupFormat::TarGz => backup_targz(file, db, &header),
+        BackupFormat::Jsonl => {
+            let count = write_jsonl(&file, db, &header)?;
+            file.sync_all()?;
+            Ok(count)
+        }
+        BackupFormat::JsonlGz => write_jsonl_gz(file, db, &header),
+    })?;
+    println!("✓ Backup: {} entries → {}", count, out_path.display());
+    Ok(())
 }
 
-fn backup_jsonl(path: &std::path::Path, db: &Db, header: &BackupHeader, gz: bool) -> Result<()> {
-    let file = std::fs::File::create(path)
-        .with_context(|| format!("Creating backup file: {}", path.display()))?;
-    let count = if gz {
-        write_jsonl_gz(file, db, header)?
-    } else {
-        write_jsonl(file, db, header)?
-    };
-    println!("✓ Backup: {} entries → {}", count, path.display());
-    Ok(())
+/// Write `path` whole or not at all (da-sovul): `write` fills a file beside
+/// it, synced to the disk, which is renamed onto `path` only once it is
+/// complete. A backup killed or failing partway leaves `path` as it was —
+/// absent, or the previous backup — and never a cut file a restore reads as
+/// the whole database.
+fn write_whole(
+    path: &std::path::Path,
+    write: impl FnOnce(std::fs::File) -> Result<usize>,
+) -> Result<usize> {
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let part = path.with_file_name(format!(".{name}.{}.part", new_hid()));
+    let guard = TempFileGuard(part);
+    let file = std::fs::File::create(&guard.0)
+        .with_context(|| format!("Creating backup file: {}", guard.0.display()))?;
+    let count = write(file)?;
+    std::fs::rename(&guard.0, path)
+        .with_context(|| format!("Moving the backup to {}", path.display()))?;
+    Ok(count)
 }
 
 /// The header line, then one entry per line. Returns how many entries.
@@ -211,7 +225,7 @@ pub(crate) fn create_private_file(path: &std::path::Path) -> std::io::Result<std
     }
 }
 
-fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Result<()> {
+fn backup_targz(out_file: std::fs::File, db: &Db, header: &BackupHeader) -> Result<usize> {
     use std::io::Write;
 
     // Stage entries.jsonl to a temp file so we know its size for the tar
@@ -249,8 +263,6 @@ fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Resul
     });
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
 
-    let out_file = std::fs::File::create(path)
-        .with_context(|| format!("Creating output file: {}", path.display()))?;
     let gz = flate2::write::GzEncoder::new(
         std::io::BufWriter::new(out_file),
         flate2::Compression::default(),
@@ -280,10 +292,9 @@ fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Resul
         .context("Writing entries.jsonl to tar")?;
 
     let gz = builder.into_inner().context("Finalizing tar")?;
-    gz.finish().context("Finalizing gzip")?;
-
-    println!("✓ Backup: {} entries → {}", count, path.display());
-    Ok(())
+    let out = gz.finish().context("Finalizing gzip")?;
+    out.into_inner()?.sync_all()?;
+    Ok(count)
 }
 
 /// Result of a restore for inspection by tests and the CLI printer. The
@@ -1541,6 +1552,43 @@ mod tests {
         .unwrap();
 
         std::fs::remove_file(&path).ok();
+    }
+
+    /// A write failing partway leaves the path as it was: absent, or the
+    /// previous backup byte for byte, and nothing beside it (da-sovul).
+    #[test]
+    fn a_backup_failing_partway_leaves_its_path_as_it_was() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("b.jsonl");
+        let cut = |mut f: std::fs::File| -> Result<usize> {
+            writeln!(f, "{{\"entry_count\":3}}")?;
+            anyhow::bail!("cut partway")
+        };
+
+        assert!(write_whole(&path, cut).is_err());
+        assert!(!path.exists(), "no file at the path");
+
+        std::fs::write(&path, "the previous backup\n").unwrap();
+        assert!(write_whole(&path, cut).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "the previous backup\n"
+        );
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["b.jsonl"], "nothing left beside it");
+
+        // A whole write lands.
+        let n = write_whole(&path, |mut f| {
+            writeln!(f, "whole")?;
+            Ok(1)
+        })
+        .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "whole\n");
     }
 
     // ─── S7: header + schema-version gate + auto-migrate on restore ───────
