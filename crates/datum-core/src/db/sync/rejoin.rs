@@ -284,9 +284,20 @@ impl Db {
     /// newer file is written but its log, checkpointed into it.
     pub fn sync_reenter(path: &Path) -> Result<Reentry> {
         let refuse = |why: String| Err(DatumError::Other(why));
+        // Its spool is beside the path datum is given, a link's too.
+        let named = path.display().to_string();
+        let spool = PathBuf::from(format!("{named}.spool"));
+        let follow = crate::db::nofollow(&path.to_string_lossy())?;
+        // Without the opt-in a link is followed once, here (da-r0jda): the
+        // file it names is re-entered, kept whole and replaced beside
+        // itself, so the link names the fresh copy. With it, the open
+        // refuses a link.
+        let path = &match follow.is_empty() {
+            true => std::fs::canonicalize(path)?,
+            false => path.to_path_buf(),
+        };
         let shown = path.display();
         let beside = |ext: &str| PathBuf::from(format!("{shown}{ext}"));
-        let follow = crate::db::nofollow(&path.to_string_lossy())?;
         let old = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | follow)?;
         let schema = read_schema_version(&old)?.unwrap_or(0);
         if schema <= CURRENT_SCHEMA_VERSION {
@@ -295,9 +306,9 @@ impl Db {
                  opens: nothing to re-enter (`datum db purge --rejoin` refetches a copy)"
             ));
         }
-        if beside(".spool").exists() {
+        if spool.exists() {
             return refuse(format!(
-                "changes the newer datum queued wait in {shown}.spool: open {shown} with it \
+                "changes the newer datum queued wait in {named}.spool: open {named} with it \
                  once to land them, then re-enter; or move that file aside, the changes \
                  staying in it alone"
             ));
@@ -390,15 +401,9 @@ impl Db {
         {
             let db = Db::open_own(&fresh.to_string_lossy())?;
             // An ATTACH takes its connection's flags, the fresh one's
-            // no-follow too: under the opt-in the old file is refused at a
-            // link as its open was; otherwise a link to it is followed here,
-            // as there.
-            let old_at = match follow.is_empty() {
-                true => std::fs::canonicalize(path)?,
-                false => path.to_path_buf(),
-            };
+            // no-follow too: `path` is no link by now.
             db.conn
-                .execute("ATTACH DATABASE ?1 AS old", [old_at.to_string_lossy()])?;
+                .execute("ATTACH DATABASE ?1 AS old", [path.to_string_lossy()])?;
             let at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             crate::db::write::whole(&db.conn, |tx| {
                 for t in KEPT {
@@ -442,7 +447,6 @@ impl Db {
 
         // One line a command: its ops are consecutive, of one line, at one
         // millisecond.
-        let spool = beside(".spool");
         let command = |op: &Value| {
             (
                 op["raw"].clone(),

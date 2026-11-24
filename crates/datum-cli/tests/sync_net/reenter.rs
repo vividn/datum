@@ -174,10 +174,11 @@ fn a_reentry_with_nothing_to_replay_writes_once_its_chain_is_back() {
     b.ok(&["check", "sync"]);
 }
 
-/// Without `DATUM_DB_NOFOLLOW` a database at a link re-enters as one at its
-/// own path (da-j18ms): the fresh copy is opened no-follow, an ATTACH takes
-/// its connection's flags, so the old file is attached by the path the link
-/// resolves to, and not refused as a link.
+/// Without `DATUM_DB_NOFOLLOW` a database at a link re-enters the file the
+/// link names (da-j18ms, da-r0jda): that file is kept whole and replaced
+/// beside itself, so the link, in another directory, still names it, now at
+/// this datum's schema, and the unsent change waits beside the link, where
+/// datum opening it reads its spool.
 #[test]
 fn a_copy_at_a_link_reenters_without_the_opt_in() {
     let (a, mut b) = paired();
@@ -186,13 +187,38 @@ fn a_copy_at_a_link_reenters_without_the_opt_in() {
     b.ok(&["sync"]);
     b.ok(&["occur", "walk"]);
     super::purge::migrate_under(&b);
-    std::os::unix::fs::symlink(b.db(), b.tmp.path().join("linked.db")).unwrap();
-    b.file = "linked.db";
+    let file = b.db();
+    let link = b.tmp.path().join("links/linked.db");
+    std::fs::create_dir(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    b.file = "links/linked.db";
 
     let out = b.ok(&["sync", "chain", "reenter"]);
     assert!(out.contains("verify ok"), "{out}");
     assert!(b.has("coffee") && b.has("walk"), "{out}");
     eventually("a holds walk", || a.has("walk"));
+    assert_eq!(std::fs::read_link(&link).unwrap(), file, "the link stays");
+    assert_eq!(
+        b.query("SELECT value FROM _meta WHERE key = 'schema_version'"),
+        datum_core::migrations::CURRENT_SCHEMA_VERSION.to_string()
+    );
+    let names = |dir: &std::path::Path| -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+    let beside_file = names(b.tmp.path());
+    assert!(
+        beside_file.iter().any(|n| n.contains(".reentered-from-v")),
+        "{beside_file:?}"
+    );
+    let beside_link = names(link.parent().unwrap());
+    assert!(
+        !beside_link.iter().any(|n| n.contains(".reenter")),
+        "{beside_link:?}"
+    );
 }
 
 /// The file a reenter keeps whole has a name predictable to the second, so
