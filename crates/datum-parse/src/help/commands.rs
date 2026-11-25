@@ -2265,7 +2265,7 @@ not another's.
   1h30m   60.0%  1×  study
      1h   40.0%  1×  work
 
-    30m       —      study & work
+    30m       —      work & study
      2h       —  2×  any of these  (2h30m summed)
 
 -t is where the slice STARTS, as --since is; -d names one whole day, as
