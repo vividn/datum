@@ -79,6 +79,7 @@ impl Home {
             .env("NO_COLOR", "1")
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port))
             .env("USER", "tester")
+            .env_remove("DATUM_DB_NOFOLLOW")
             .env_remove("DATUM_SYNC_NO_DAEMON");
         c
     }
@@ -166,6 +167,26 @@ impl Versions {
         std::os::unix::fs::symlink(self.dir.path().join("v2/datum"), &self.link).unwrap();
         std::fs::remove_dir_all(self.dir.path().join("v1")).unwrap();
     }
+}
+
+/// A unit carries `DATUM_DB_NOFOLLOW` from the shell that installed it, and
+/// only when it was set (da-7t61y): a service inherits no shell.
+#[test]
+fn the_unit_carries_nofollow_only_when_set() {
+    let h = Home::new();
+    h.ok(&["sync", "daemon", "install"]);
+    let service = std::fs::read_to_string(h.service()).unwrap();
+    assert!(!service.contains("DATUM_DB_NOFOLLOW"), "{service}");
+    let out = h.datum(
+        &["sync", "daemon", "install"],
+        &[("DATUM_DB_NOFOLLOW", "1")],
+    );
+    assert!(out.status.success(), "{out:?}");
+    let service = std::fs::read_to_string(h.service()).unwrap();
+    assert!(
+        service.contains("\nEnvironment=\"DATUM_DB_NOFOLLOW=1\"\n"),
+        "{service}"
+    );
 }
 
 #[test]

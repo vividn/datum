@@ -27,13 +27,15 @@ use crate::config;
 const NO_DAEMON: &str = "DATUM_SYNC_NO_DAEMON";
 const UNIT: &str = "datum-sync.service";
 const LABEL: &str = "day.datum.sync";
-/// Where datum keeps its files, handed from the installing shell to the
-/// service, which does not inherit it.
-pub(super) const ENV: [&str; 4] = [
+/// Where datum keeps its files, and whether an open follows a link at a
+/// database's path (da-7t61y), handed from the installing shell to the
+/// service, which does not inherit it. Each only where set and not empty.
+pub(super) const ENV: [&str; 5] = [
     "DATUM_HOME",
     "DATUM_CONFIG_HOME",
     "XDG_DATA_HOME",
     "XDG_CONFIG_HOME",
+    "DATUM_DB_NOFOLLOW",
 ];
 /// How often `run` looks for a database newly in a chain.
 const LOOK: Duration = Duration::from_secs(60);

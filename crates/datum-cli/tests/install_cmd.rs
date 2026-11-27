@@ -137,6 +137,7 @@ impl Home {
             .env("DATUM_SYNC_NO_DAEMON", "1")
             .env("NO_COLOR", "1")
             .env_remove("DATUM_CONFIG")
+            .env_remove("DATUM_DB_NOFOLLOW")
             .env_remove("ZDOTDIR")
             .envs(env.iter().copied());
         cmd
@@ -910,6 +911,16 @@ fn upgrade_auto_installs_a_daily_timer_and_no_auto_removes_it() {
         )),
         "{service}"
     );
+    // DATUM_DB_NOFOLLOW only when the installing shell set it (da-7t61y).
+    assert!(!service.contains("DATUM_DB_NOFOLLOW"), "{service}");
+    h.ok_with(&["upgrade", "--auto"], &[("DATUM_DB_NOFOLLOW", "1")]);
+    let nofollow = std::fs::read_to_string(h.auto("service")).unwrap();
+    assert!(
+        nofollow.contains("\nEnvironment=\"DATUM_DB_NOFOLLOW=1\"\n"),
+        "{nofollow}"
+    );
+    h.ok(&["upgrade", "--auto"]);
+    assert_eq!(std::fs::read_to_string(h.auto("service")).unwrap(), service);
     let timer = std::fs::read_to_string(h.auto("timer")).unwrap();
     assert!(timer.contains("\nOnCalendar=daily\n"), "{timer}");
     assert!(

@@ -115,7 +115,8 @@ impl Home {
             .env("DATUM_CONFIG_HOME", self.path("conf"))
             .env("DATUM_DB", self.path("data/data.db"))
             .env("NO_COLOR", "1")
-            .env("USER", "tester");
+            .env("USER", "tester")
+            .env_remove("DATUM_DB_NOFOLLOW");
         command
     }
 
@@ -191,6 +192,30 @@ fn install_writes_the_command_and_its_period() {
     let log = std::fs::read_to_string(h.path("ctl.log")).unwrap();
     assert!(log.contains(&format!("enable {unit}.timer")), "{log}");
     assert!(log.contains(&format!("restart {unit}.timer")), "{log}");
+}
+
+/// A backup unit carries `DATUM_DB_NOFOLLOW` from the shell that installed
+/// it, and only when it was set (da-7t61y): a timer inherits no shell.
+#[test]
+fn the_unit_carries_nofollow_only_when_set() {
+    let h = Home::new();
+    let bk = h.dir("bk");
+    h.install(&["--to", &bk, "--every", "15m"]);
+    let (_, service, _) = h.unit_into(&bk);
+    assert!(!service.contains("DATUM_DB_NOFOLLOW"), "{service}");
+    let out = (h.command(env!("CARGO_BIN_EXE_datum")))
+        .args([
+            "db", "backup", "daemon", "install", "--to", &bk, "--every", "15m",
+        ])
+        .env("DATUM_DB_NOFOLLOW", "1")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let (_, service, _) = h.unit_into(&bk);
+    assert!(
+        service.contains("\nEnvironment=\"DATUM_DB_NOFOLLOW=1\"\n"),
+        "{service}"
+    );
 }
 
 /// With no --to, the data directory's backups/ (vividn, 2026-11-02: «yeah,
