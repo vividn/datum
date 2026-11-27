@@ -260,3 +260,219 @@ fn pty() -> (std::fs::File, std::fs::File) {
         )
     }
 }
+
+/// `datum <args>` on a terminal 80 wide: each step's keys go in once the
+/// editor reads raw and the screen so far holds the step's text; returns
+/// what was drawn, and how it ended.
+#[cfg(unix)]
+fn on_terminal(env: &Env, args: &[&str], steps: &[(&str, &str)]) -> (String, Output) {
+    use std::io::Read;
+    use std::os::fd::AsRawFd;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    let (master, slave) = pty();
+    let size = libc::winsize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: TIOCSWINSZ reads one winsize from a live pointer.
+    unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ, &size) };
+    let child = env
+        .datum(args)
+        .stdin(slave.try_clone().unwrap())
+        .stdout(slave)
+        .spawn()
+        .unwrap();
+    let screen = Arc::new(Mutex::new(Vec::new()));
+    let mut reader = master.try_clone().unwrap();
+    let drawn = screen.clone();
+    std::thread::spawn(move || {
+        let mut buf = [0; 4096];
+        while let Ok(n) = reader.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            drawn.lock().unwrap().extend_from_slice(&buf[..n]);
+        }
+    });
+    let text = || String::from_utf8_lossy(&screen.lock().unwrap()).into_owned();
+    let mut master = master;
+    let mut seen = 0;
+    for (wait_for, keys) in steps {
+        let since = Instant::now();
+        loop {
+            // SAFETY: a zeroed termios is filled by tcgetattr on an open fd.
+            let mut t: libc::termios = unsafe { std::mem::zeroed() };
+            unsafe { libc::tcgetattr(master.as_raw_fd(), &mut t) };
+            let raw = t.c_lflag & libc::ICANON == 0;
+            let now = text();
+            if raw && now[seen..].contains(wait_for) {
+                seen = now.len();
+                break;
+            }
+            assert!(
+                since.elapsed() < Duration::from_secs(30),
+                "never drew «{wait_for}»: {now:?}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        master.write_all(keys.as_bytes()).unwrap();
+    }
+    let out = child.wait_with_output().unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    (text(), out)
+}
+
+/// On a terminal (da-1lnm4): a clock prompt; Enter gives the line's row
+/// to the entry as datum prints it; Tab draws it again compact, `time |
+/// text`, running nothing; Ctrl-D ends it.
+#[cfg(unix)]
+#[test]
+fn on_a_terminal_the_line_becomes_its_entry_and_tab_turns_the_view() {
+    let env = Env::new();
+    let (screen, out) = on_terminal(
+        &env,
+        &["readline", "occur", "nightly", "-SR", "line"],
+        &[
+            (" | ", "hello there\r"),
+            ("line: \"hello there\"", "\t"),
+            (" | hello there\r\n", "\x04"),
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        env.data("nightly"),
+        [r#"{"line":"hello there"}"#],
+        "Tab ran nothing"
+    );
+    // The prompt: the clock.
+    let prompt = screen.find("\r\x1b[K").expect(&screen) + 4;
+    assert!(is_clock(&screen[prompt..prompt + 11]), "{screen:?}");
+    // Enter: up the line's one row, cleared, and the full echo there.
+    assert!(screen.contains("\x1b[1A\r\x1b[JMOMENT "), "{screen:?}");
+    // Tab: up the echo's three rows and the prompt's, and the compact line.
+    let tab = screen.find("\x1b[4A\r\x1b[J").expect(&screen) + 8;
+    assert!(is_clock(&screen[tab..tab + 11]), "{screen:?}");
+    assert!(
+        screen[tab + 11..].starts_with("hello there\r\n"),
+        "{screen:?}"
+    );
+}
+
+/// `HH:MM:SS | `.
+fn is_clock(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 11
+        && s.ends_with(" | ")
+        && (0..8).all(|i| match i {
+            2 | 5 => b[i] == b':',
+            _ => b[i].is_ascii_digit(),
+        })
+}
+
+/// `--compact` starts compact; Tab draws the sitting's line full and keeps a
+/// half-typed one, cursor and all.
+#[cfg(unix)]
+#[test]
+fn compact_starts_compact_and_tab_keeps_a_half_typed_line() {
+    let env = Env::new();
+    let (screen, out) = on_terminal(
+        &env,
+        &["readline", "--compact", "occur", "nightly", "-SR", "line"],
+        &[
+            (" | ", "first\r"),
+            (" | first\r\n", "hal"),
+            ("hal", "\t"),
+            ("line: \"first\"", "f\r"),
+            ("line: \"half\"", "\x04"),
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Enter: the compact line in the typed one's row.
+    let first = screen.find("\x1b[1A\r\x1b[J").expect(&screen) + 8;
+    assert!(is_clock(&screen[first..first + 11]), "{screen:?}");
+    assert!(screen[first + 11..].starts_with("first\r\n"), "{screen:?}");
+    // Tab: up the compact row and the prompt's, and the full echo.
+    assert!(screen.contains("\x1b[2A\r\x1b[JMOMENT "), "{screen:?}");
+    assert_eq!(
+        env.data("nightly"),
+        [r#"{"line":"first"}"#, r#"{"line":"half"}"#],
+        "{screen:?}"
+    );
+}
+
+/// A line that fails stays on screen as typed, its error under it.
+#[cfg(unix)]
+#[test]
+fn on_a_terminal_a_failed_line_stays_as_typed() {
+    let env = Env::new();
+    let (screen, out) = on_terminal(
+        &env,
+        &["readline", "switch", "timezone", "-I"],
+        &[(" | ", "nowhere\r"), (" | ", "\x04")],
+    );
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).starts_with("FAILED "));
+    let typed = screen.find("nowhere").unwrap();
+    assert!(
+        !screen[typed..].contains("\x1b[J"),
+        "nothing erased: {screen:?}"
+    );
+}
+
+/// The full view is what the command prints unquiet, row for row: here a
+/// format string, which stands in for the data block (da-1lnm4).
+#[cfg(unix)]
+#[test]
+fn the_full_view_is_what_the_command_prints() {
+    let env = Env::new();
+    let base = ["occur", "nightly", "-SR", "line", "-o", "said %line%"];
+    let (screen, out) = on_terminal(
+        &env,
+        &[&["readline"], &base[..]].concat(),
+        &[(" | ", "hello\r"), ("said hello", "\x04")],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let from = screen.find("\x1b[1A\r\x1b[J").expect(&screen) + 8;
+    let to = from + screen[from..].find("\x1b[?2004h").expect(&screen);
+    let drawn: Vec<&str> = screen[from..to]
+        .split("\r\n")
+        .filter(|l| !l.is_empty())
+        .collect();
+    // On a database of its own, so it too is the field's first entry.
+    let printed = Env::new()
+        .datum(&[&base[..], &["--", "hello"]].concat())
+        .output()
+        .unwrap();
+    let printed = String::from_utf8_lossy(&printed.stdout).into_owned();
+    // Its hid and its times are its own.
+    let mask = |l: &&str| {
+        let l = match l.strip_prefix("MOMENT ") {
+            Some(rest) => format!("MOMENT xxxxx{}", &rest[5..]),
+            None => l.to_string(),
+        };
+        l.replace(|c: char| c.is_ascii_digit(), "0")
+    };
+    let printed: Vec<&str> = printed.lines().collect();
+    assert_eq!(
+        drawn.iter().map(mask).collect::<Vec<_>>(),
+        printed.iter().map(mask).collect::<Vec<_>>(),
+        "{screen:?}"
+    );
+    assert_eq!(drawn.len(), 3, "header, info, the format string: {drawn:?}");
+}

@@ -1000,7 +1000,7 @@ fn dispatch_single(cli: Cli, opened: Option<Db>) -> Result<()> {
         #[cfg(feature = "native")]
         return match cli.command {
             Command::Script(args) => repl::script(&args, cli.db.as_deref()),
-            Command::Readline(base) => repl::readline(&base, cli.db.as_deref()),
+            Command::Readline(args) => repl::readline(&args, cli.db.as_deref()),
             // `datum < FILE` is `datum script -` (da-ygfeh).
             _ if !std::io::IsTerminal::is_terminal(&std::io::stdin()) => {
                 repl::script(&Default::default(), cli.db.as_deref())

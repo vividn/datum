@@ -255,7 +255,12 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     // `readline`'s words are its base command's, its `--show` among them,
     // read again with each line it runs (da-xloff).
     if sub == "readline" {
-        let base = &tail[sub_idx + 1..];
+        // Its own flags come before the base's command (da-1lnm4).
+        let mut base = &tail[sub_idx + 1..];
+        let mut compact = false;
+        while let Some((&"--compact", rest)) = base.split_first() {
+            (compact, base) = (true, rest);
+        }
         if base.is_empty() {
             return Err(ParseError::InvalidArg(
                 "readline takes a command: datum readline <command> [args…]".into(),
@@ -266,7 +271,10 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             color,
             width: None,
             iso_times: false,
-            command: Command::Readline(base.iter().map(|w| w.to_string()).collect()),
+            command: Command::Readline(ReadlineArgs {
+                base: base.iter().map(|w| w.to_string()).collect(),
+                compact,
+            }),
         });
     }
     let (before, _) = input::take_show(&tail[..sub_idx])?;

@@ -30,7 +30,7 @@ pub(super) const READLINE: CommandSpec = CommandSpec {
     summary: "run a command on each line typed, the line as its last word",
     intro: "",
     long_description: None,
-    usage: &["datum readline <COMMAND> [ARGS]..."],
+    usage: &["datum readline [--compact] <COMMAND> [ARGS]..."],
     args: &[],
     flags: &[],
     shared_flags: None,
@@ -41,4 +41,4 @@ pub(super) const READLINE: CommandSpec = CommandSpec {
     subcommands: &[],
 };
 
-const READLINE_BODY: &str = "USAGE:\n  datum readline <COMMAND> [ARGS]...\n\nReads lines from the terminal, and each Enter runs `datum <COMMAND> [ARGS]...\n-- <line>` in the same database, at that Enter: the line is one word, kept\nexactly as typed, so a comma or an `=` in it is text, and an empty line is an\nempty value. After each Enter, the line says what it wrote, action, time and\nfield (`MOMENT 23:41:07+0 nightly`), or FAILED and why, and the next goes on;\nfrom a pipe, that is a line of its own on stderr. Ctrl-D or Ctrl-C ends it, a half-typed line unsaved.\n\n  datum readline occur coffee -SR note\n";
+const READLINE_BODY: &str = "USAGE:\n  datum readline [--compact] <COMMAND> [ARGS]...\n\nReads lines from the terminal, and each Enter runs `datum <COMMAND> [ARGS]...\n-- <line>` in the same database, at that Enter: the line is one word, kept\nexactly as typed, so a comma or an `=` in it is text, and an empty line is an\nempty value. The prompt is the time it was drawn. On Enter the line gives its\nplace to the entry it wrote, as datum prints one, or compact, its time, its\nkeys and the -R key's value last (`12:10:06 | hello there`); Tab turns the\nlines on screen from one view to the other. A line that fails stays as typed,\nFAILED and why under it, and the next goes on. From a pipe, each line says what\nit wrote, action, time and field (`MOMENT 23:41:07+0 nightly`), or FAILED and\nwhy, a line of its own on stderr. Ctrl-D or Ctrl-C ends it, a half-typed line unsaved.\n\n  --compact  start in the compact view\n\n  datum readline occur coffee -SR note\n";

@@ -104,16 +104,27 @@ pub(super) fn push(lines: &ActionLines) {
     ECHO.with(|slot| slot.borrow_mut().1.push(document(lines)));
 }
 
-thread_local! {
-    /// While [`tapped`] runs: `ACTION time field` of each action echoed,
-    /// whatever the show, and whether any echo was printed.
-    static TAP: RefCell<Option<(Vec<String>, bool)>> = const { RefCell::new(None) };
+/// One action a [`tapped`] heard of (da-jt3k8, da-1lnm4).
+pub struct Said {
+    /// `ACTION time field`.
+    pub said: String,
+    /// What its echo prints at the default show, each a `println!`, a
+    /// format string's included.
+    pub rows: Vec<String>,
+    /// The entry it echoed.
+    pub entry: datum_core::entry::Entry,
 }
 
-/// Run `f`, also returning `ACTION time field` for each action it echoed,
-/// printed or not, and whether it printed one: `readline`'s indicator
-/// (da-jt3k8).
-pub fn tapped<T>(f: impl FnOnce() -> T) -> (T, Vec<String>, bool) {
+thread_local! {
+    /// While [`tapped`] runs: each action echoed, whatever the show, and
+    /// whether any echo was printed.
+    static TAP: RefCell<Option<(Vec<Said>, bool)>> = const { RefCell::new(None) };
+}
+
+/// Run `f`, also returning each action it echoed, printed or not, and
+/// whether it printed one: `readline`'s indicator and views (da-jt3k8,
+/// da-1lnm4).
+pub fn tapped<T>(f: impl FnOnce() -> T) -> (T, Vec<Said>, bool) {
     let outer = TAP.replace(Some((Vec::new(), false)));
     let result = f();
     let (said, printed) = TAP.replace(outer).unwrap_or_default();
@@ -125,13 +136,23 @@ pub(super) fn tapping() -> bool {
     TAP.with(|t| t.borrow().is_some())
 }
 
-/// Tell a [`tapped`] of `lines`, `printed` or not.
-pub(super) fn tap(lines: &ActionLines, printed: bool) {
+/// Tell a [`tapped`] of `lines`, `entry`'s, which print `rows`, `printed`
+/// or not.
+pub(super) fn tap(
+    lines: &ActionLines,
+    entry: &datum_core::entry::Entry,
+    rows: Vec<String>,
+    printed: bool,
+) {
     TAP.with(|t| {
         if let Some((said, any)) = t.borrow_mut().as_mut() {
             let words = [lines.action.as_str(), &lines.info_time, &lines.field];
             let words: Vec<&str> = words.into_iter().filter(|w| !w.is_empty()).collect();
-            said.push(words.join(" "));
+            said.push(Said {
+                said: words.join(" "),
+                rows,
+                entry: entry.clone(),
+            });
             *any |= printed;
         }
     });

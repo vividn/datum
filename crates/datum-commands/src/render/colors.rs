@@ -373,6 +373,11 @@ pub(crate) fn paint(code: &str, body: &str) -> String {
     }
 }
 
+/// `body` dim, where color is on: `readline`'s clock (da-1lnm4).
+pub fn dim(body: &str) -> String {
+    paint("\x1b[2m", body)
+}
+
 /// Paint with bg + contrast-derived fg. The "background is primary" style.
 pub(crate) fn paint_bg(bg: Rgb, body: &str) -> String {
     let body = visible(body);

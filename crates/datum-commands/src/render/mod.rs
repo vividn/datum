@@ -520,6 +520,53 @@ pub struct ActionLines {
     pub created: bool,
 }
 
+impl ActionLines {
+    /// The header line, an undo's note after it.
+    fn header_line(&self) -> String {
+        match &self.undid {
+            Some(undid) => format!("{}   {}", self.header, paint(GREY_FG, &undid.note)),
+            None => self.header.clone(),
+        }
+    }
+}
+
+/// What the echo of `entry` prints under `show`, `format` the `-o` string,
+/// each item a `println!`: the one copy [`show_lines`] prints and
+/// `readline`'s full view draws, at the default show (da-1lnm4).
+fn echo_rows(lines: &ActionLines, entry: &Entry, show: Show, format: Option<&str>) -> Vec<String> {
+    let mut rows = vec![lines.header_line()];
+    if show == Show::Minimal {
+        return rows;
+    }
+    if !lines.info.is_empty() {
+        rows.push(lines.info.clone());
+    }
+    // The detailed data view (structured-state doc line + columnar data
+    // block). Per datumv2's `showSingle` (da-jose): a supplied format
+    // string *replaces* this view at the default show — the header + info
+    // lines still print, then the format string stands in for the data
+    // block. `Standard` keeps the data even alongside a format string;
+    // `All` keeps its full doc dump regardless.
+    let show_data_view = match show {
+        Show::Standard | Show::All => true,
+        Show::Default => format.is_none(),
+        _ => false,
+    };
+    if show_data_view {
+        rows.extend(lines.data.iter().cloned());
+    }
+    if show == Show::All {
+        // da-l41v: schema-grouped engineering view — one section per
+        // schema.sql comment divider, every column visible (NULL when
+        // unset) so the output doubles as a column-by-column reference.
+        rows.push(self::show_all::format_show_all(entry));
+    }
+    if let Some(fmt) = format {
+        rows.push(interpolate(fmt, entry));
+    }
+    rows
+}
+
 /// The change an `undo` or `revert` took back: the action it was and when it was made.
 pub struct Undid {
     /// `UPDATE`, `CREATE` or `DELETE`.
@@ -787,7 +834,9 @@ fn show_lines(entry: &Entry, args: &OutputArgs, lines: impl FnOnce(&DatumTime) -
         // `readline`'s indicator hears of it however quiet (da-jt3k8).
         if self::json_echo::tapping() {
             let printed = !args.silent() && args.format_string.is_some();
-            self::json_echo::tap(&lines(&self::action::now_local()), printed);
+            let lines = lines(&self::action::now_local());
+            let rows = echo_rows(&lines, entry, Show::Default, args.format_string.as_deref());
+            self::json_echo::tap(&lines, entry, rows, printed);
         }
         if let (Show::Format, Some(fmt)) = (args.show, &args.format_string) {
             println!("{}", interpolate(fmt, entry));
@@ -799,58 +848,24 @@ fn show_lines(entry: &Entry, args: &OutputArgs, lines: impl FnOnce(&DatumTime) -
     // "today" from it and the header never reads `now`, so sourcing both
     // from the one builder changes nothing about what is printed.
     let lines = lines(&self::action::now_local());
-    self::json_echo::tap(&lines, true);
 
     // `--show json`: collect, print nothing. The outermost dispatch scope
     // emits the one document (da-yc9w). `Show::None` already returned above,
     // so silence still wins over the echo.
     if args.show == Show::Json {
+        if self::json_echo::tapping() {
+            let rows = echo_rows(&lines, entry, Show::Default, args.format_string.as_deref());
+            self::json_echo::tap(&lines, entry, rows, true);
+        }
         self::json_echo::push(&lines);
         return;
     }
 
-    match &lines.undid {
-        Some(undid) => println!("{}   {}", lines.header, paint(GREY_FG, &undid.note)),
-        None => println!("{}", lines.header),
+    let rows = echo_rows(&lines, entry, args.show, args.format_string.as_deref());
+    for row in &rows {
+        println!("{row}");
     }
-
-    if args.show == Show::Minimal {
-        return;
-    }
-
-    if !lines.info.is_empty() {
-        println!("{}", lines.info);
-    }
-
-    // The detailed data view (structured-state doc line + columnar data
-    // block). Per datumv2's `showSingle` (da-jose): a supplied format
-    // string *replaces* this view at the default show — the header + info
-    // lines still print, then the format string stands in for the data
-    // block. `Standard` keeps the data even alongside a format string;
-    // `All` keeps its full doc dump regardless.
-    let show_data_view = match args.show {
-        Show::Standard | Show::All => true,
-        Show::Default => args.format_string.is_none(),
-        _ => false,
-    };
-
-    if show_data_view {
-        for line in &lines.data {
-            println!("{line}");
-        }
-    }
-    if args.show == Show::All {
-        // da-l41v: schema-grouped engineering view — one section per
-        // schema.sql comment divider, every column visible (NULL when
-        // unset) so the output doubles as a column-by-column reference.
-        println!("{}", self::show_all::format_show_all(entry));
-    }
-
-    if let Some(fmt) = &args.format_string {
-        if args.show != Show::Format {
-            println!("{}", interpolate(fmt, entry));
-        }
-    }
+    self::json_echo::tap(&lines, entry, rows, true);
 }
 
 pub fn show_create(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {

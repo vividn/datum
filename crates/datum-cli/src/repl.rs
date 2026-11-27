@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use datum_commands::args::{Cli, Command, Invocation};
 use datum_commands::config;
 use datum_core::db::Db;
-use datum_parse::cli::ScriptArgs;
+use datum_parse::cli::{ReadlineArgs, ScriptArgs};
 use datum_parse::{shell_split, ParseError};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -71,16 +71,19 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
 /// `datum readline <command> [args…]` (da-xloff): each line typed runs
 /// `<command> [args…] -- <line>` against one database, the line one word
 /// exactly as typed, an empty one included, stamped at its Enter. Each line
-/// says what it wrote, or that it failed, and the loop goes on ([`indicate`]).
-/// Ctrl-D or Ctrl-C ends it, the half-typed line unsaved.
-pub fn readline(base: &[String], db_hint: Option<&str>) -> Result<()> {
+/// says what it wrote, or that it failed, and the loop goes on: on a
+/// terminal the entry takes the line's place ([`Sitting`]), from a pipe a
+/// line on stderr says it ([`say`]). Ctrl-D or Ctrl-C ends it, the
+/// half-typed line unsaved.
+pub fn readline(args: &ReadlineArgs, db_hint: Option<&str>) -> Result<()> {
     let (db, path) = open(db_hint)?;
-    read_lines(base, &db, Some(&path))
+    read_lines(args, &db, Some(&path))
 }
 
 /// [`readline`]'s loop on `db`, the file at `path` (a copy with none).
-fn read_lines(base: &[String], db: &Db, path: Option<&str>) -> Result<()> {
-    let mut rl = DefaultEditor::new()?;
+fn read_lines(args: &ReadlineArgs, db: &Db, path: Option<&str>) -> Result<()> {
+    use std::io::IsTerminal;
+    let base = &args.base;
     // Quiet: `DATUM_SHOW` keeps each line's `raw_input` as typed, and a
     // `--show` of the base's own, or the caller's `DATUM_SHOW`, wins. Put
     // back as it ends, for a kit script's next line.
@@ -99,55 +102,321 @@ fn read_lines(base: &[String], db: &Db, path: Option<&str>) -> Result<()> {
     // A parse error's hint is about the command, which the base is: the
     // line after `--` is never read as one.
     let named = base.join(" ");
-    loop {
-        let line = match rl.readline("") {
-            Ok(line) => line,
-            Err(ReadlineError::Eof | ReadlineError::Interrupted) => return Ok(()),
-            Err(e) => return Err(e.into()),
-        };
+    let argv = |line: &str| {
         let mut argv = vec!["datum".to_string()];
         argv.extend_from_slice(base);
         // A `--` of the base's own already ends its flags.
         if !base.iter().any(|w| w == "--") {
             argv.push("--".into());
         }
-        argv.push(line.clone());
-        let (result, said, printed) =
-            datum_commands::render::json_echo::tapped(|| run_argv(argv, &named, db, path));
-        datum_commands::args::reset_duplicate_noop();
-        let said = match result {
-            Err(e) => format!("FAILED {e:#}"),
-            Ok(()) if said.is_empty() => continue,
-            Ok(()) => said.join(", "),
+        argv.push(line.to_string());
+        argv
+    };
+    let mut rl = rustyline::Editor::<Dim, rustyline::history::DefaultHistory>::new()?;
+    let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    let mut sitting = tty.then(|| {
+        // The base's `-R` key, read from the command it parses to.
+        let remainder = match datum_commands::args::parse_invocation_with_db(argv(""), db) {
+            Ok(Invocation::Single(cli)) => cli.command.log_args().and_then(|a| a.remainder.clone()),
+            _ => None,
         };
-        indicate(&line, &said, printed);
+        Sitting {
+            compact: args.compact,
+            remainder,
+            shown: Vec::new(),
+        }
+    });
+    // Tab ends the edit for a redraw, keeping where the cursor was.
+    let tab = std::sync::Arc::new(std::sync::Mutex::new(None));
+    if tty {
+        rl.set_helper(Some(Dim));
+        rl.bind_sequence(
+            rustyline::KeyEvent(rustyline::KeyCode::Tab, rustyline::Modifiers::NONE),
+            rustyline::EventHandler::Conditional(Box::new(Toggle(tab.clone()))),
+        );
+    }
+    let mut prompt = String::new();
+    let mut held: Option<(String, usize)> = None;
+    loop {
+        // The clock is the time the line's prompt was drawn, once a line.
+        if tty && held.is_none() {
+            let now = datum_parse::DatumTime::now().local_time();
+            prompt = format!("{} | ", now.format("%H:%M:%S"));
+        }
+        let initial = held.as_ref().map_or(("", ""), |(l, at)| l.split_at(*at));
+        let line = match rl.readline_with_initial(prompt.as_str(), initial) {
+            Ok(line) => line,
+            Err(ReadlineError::Eof | ReadlineError::Interrupted) => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        held = None;
+        if let Some(at) = tab.lock().unwrap().take() {
+            if let Some(sitting) = sitting.as_mut() {
+                sitting.toggle(&prompt, &line);
+            }
+            held = Some((line, at));
+            continue;
+        }
+        let (result, said, printed) =
+            datum_commands::render::json_echo::tapped(|| run_argv(argv(&line), &named, db, path));
+        datum_commands::args::reset_duplicate_noop();
+        match sitting.as_mut() {
+            Some(sitting) if !printed => sitting.enter(&prompt, line, result, said),
+            // Under what the base printed itself nothing can be redrawn.
+            Some(sitting) => {
+                sitting.shown.clear();
+                say(result, &said);
+            }
+            None => say(result, &said),
+        }
     }
 }
 
-/// Say what a `readline` line did (da-jt3k8): on a terminal after the text
-/// typed, on its line, when nothing was printed below it; otherwise on a
-/// line of its own, on stderr, the base's stdout left its own.
-fn indicate(line: &str, said: &str, printed: bool) {
-    use std::io::{IsTerminal, Write};
-    let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
-    if !tty || printed {
-        eprintln!("{said}");
-        return;
+/// Say on stderr what a `readline` line did (da-jt3k8), a line of its own:
+/// what it wrote, `ACTION time field`, or FAILED and why.
+fn say(result: Result<()>, said: &[datum_commands::render::json_echo::Said]) {
+    match result {
+        Err(e) => eprintln!("FAILED {e:#}"),
+        Ok(()) if said.is_empty() => {}
+        Ok(()) => {
+            let said: Vec<&str> = said.iter().map(|s| s.said.as_str()).collect();
+            eprintln!("{}", said.join(", "));
+        }
     }
-    // The cursor is at the start of the row under the line's last: up one,
-    // past what of the line that row holds, and back down after. A line
-    // filling its last row exactly is followed by an empty row rustyline
-    // wraps to, so column 0 there overwrites nothing.
-    let cols = datum_commands::render::term_layout::detect_cols();
-    let col = datum_commands::render::visible_width(line) % cols;
-    let right = if col > 0 {
-        format!("\x1b[{col}C")
-    } else {
-        String::new()
+}
+
+/// `readline` on a terminal (da-1lnm4): each line typed, on Enter, gives
+/// its place to the entry it wrote, in the full view (what a command prints)
+/// or the compact one ([`compact`]), and Tab turns the view over, the lines
+/// on screen with it. A line that failed, or wrote nothing, stays as typed.
+struct Sitting {
+    compact: bool,
+    /// The base's `-R` key, the compact view's one unlabeled value.
+    remainder: Option<String>,
+    shown: Vec<Shown>,
+}
+
+/// A line of the sitting, as it is on screen.
+struct Shown {
+    prompt: String,
+    line: String,
+    said: Vec<datum_commands::render::json_echo::Said>,
+    error: Option<String>,
+    /// The rows it fills now.
+    rows: usize,
+}
+
+impl Shown {
+    /// Its lines in a view: the line as typed, its error under it, where it
+    /// failed or wrote nothing.
+    fn lines(&self, compact: bool, remainder: Option<&str>) -> Vec<String> {
+        use datum_commands::render::colors::dim;
+        if self.error.is_some() || self.said.is_empty() {
+            let typed = format!("{}{}", dim(&self.prompt), self.line);
+            let error = self
+                .error
+                .iter()
+                .flat_map(|e| e.lines().map(str::to_string));
+            return std::iter::once(typed).chain(error).collect();
+        }
+        match compact {
+            true => self
+                .said
+                .iter()
+                .map(|s| compact_line(&stamp(&s.entry), &pairs(&s.entry), remainder))
+                .collect(),
+            false => self.said.iter().flat_map(|s| s.rows.clone()).collect(),
+        }
+    }
+}
+
+impl Sitting {
+    /// The line typed at `prompt` ran: give its rows to what it wrote, or
+    /// leave it, its error under it.
+    fn enter(
+        &mut self,
+        prompt: &str,
+        line: String,
+        result: Result<()>,
+        said: Vec<datum_commands::render::json_echo::Said>,
+    ) {
+        let (cols, _) = screen();
+        let typed = rows(&format!("{prompt}{line}"), cols, true);
+        let mut shown = Shown {
+            prompt: prompt.to_string(),
+            line,
+            said,
+            error: result.err().map(|e| format!("FAILED {e:#}")),
+            rows: typed,
+        };
+        if let Some(error) = &shown.error {
+            eprintln!("{error}");
+            shown.rows += error.lines().map(|l| rows(l, cols, false)).sum::<usize>();
+        } else if !shown.said.is_empty() {
+            up(typed);
+            shown.rows = self.draw(&shown);
+        }
+        self.shown.push(shown);
+    }
+
+    /// Tab, with `line` typed at `prompt`: the other view, and the lines
+    /// wholly on screen drawn again in it. Which those are is counted by the
+    /// rows each filled when drawn: a terminal resized since may have
+    /// reflowed them, which nothing here can read.
+    fn toggle(&mut self, prompt: &str, line: &str) {
+        let (cols, height) = screen();
+        let typed = rows(&format!("{prompt}{line}"), cols, true);
+        let room = height.saturating_sub(1 + typed);
+        let (mut from, mut above) = (self.shown.len(), 0);
+        while from > 0 && above + self.shown[from - 1].rows <= room {
+            from -= 1;
+            above += self.shown[from].rows;
+        }
+        self.compact = !self.compact;
+        up(above + typed);
+        for i in from..self.shown.len() {
+            self.shown[i].rows = self.draw(&self.shown[i]);
+        }
+    }
+
+    /// Print `shown` in the view, returning the rows it fills.
+    fn draw(&self, shown: &Shown) -> usize {
+        use std::io::Write;
+        let (cols, _) = screen();
+        let lines = shown.lines(self.compact, self.remainder.as_deref());
+        let mut out = std::io::stdout().lock();
+        for line in &lines {
+            let _ = writeln!(out, "{line}");
+        }
+        let _ = out.flush();
+        // An item may hold several lines (a format string's newline).
+        let each = lines.iter().flat_map(|l| l.split('\n'));
+        each.map(|l| rows(l, cols, false)).sum()
+    }
+}
+
+/// The terminal's width and height now: a sitting is live, and a resize
+/// between its lines counts.
+fn screen() -> (usize, usize) {
+    use datum_commands::render::term_layout::{detect_cols, detect_rows};
+    (detect_cols(), detect_rows())
+}
+
+/// Move the cursor up `n` rows to their start, and clear from there down.
+fn up(n: usize) {
+    use std::io::Write;
+    if n > 0 {
+        let mut out = std::io::stdout().lock();
+        let _ = write!(out, "\x1b[{n}A\r\x1b[J");
+        let _ = out.flush();
+    }
+}
+
+/// The rows `text` fills on a terminal `cols` wide, its escapes no width,
+/// a wide character that does not fit a row's end going to the next, as
+/// rustyline lays a line out. `edited`: rustyline drew it, and a line that
+/// fills its last row exactly is followed by the empty row it wraps to;
+/// printed and ended by a newline, it is not.
+fn rows(text: &str, cols: usize, edited: bool) -> usize {
+    let cols = cols.max(1);
+    let (mut row, mut col) = (0, 0);
+    let mut buf = [0; 4];
+    for c in datum_commands::render::strip_ansi(text).chars() {
+        let width = datum_commands::render::visible_width(c.encode_utf8(&mut buf));
+        col += width;
+        if col > cols {
+            row += 1;
+            col = width;
+        }
+    }
+    if edited && col == cols {
+        row += 1;
+    }
+    row + 1
+}
+
+/// `HH:MM:SS` of the entry, in its own zone; a timeless one's of when it
+/// was made, in this host's.
+fn stamp(entry: &datum_core::entry::Entry) -> String {
+    match &entry.at {
+        Some(at) => at.local_time().format("%H:%M:%S").to_string(),
+        None => {
+            let here = datum_parse::DatumTime::now().local_time();
+            let made = entry.create_time.with_timezone(here.offset());
+            made.format("%H:%M:%S").to_string()
+        }
+    }
+}
+
+/// The entry's data, each key and its value as text, in the data's order.
+fn pairs(entry: &datum_core::entry::Entry) -> Vec<(String, String)> {
+    let data = entry.data.as_ref().and_then(|d| d.as_object());
+    let pair = |(key, value): (&String, _)| {
+        let value = datum_core::entry::shown_data_value(key, value);
+        let text = value
+            .as_str()
+            .map_or_else(|| value.to_string(), str::to_string);
+        (key.clone(), text)
     };
-    let mut out = std::io::stdout().lock();
-    let _ = write!(out, "\x1b[A\r{right}  {said}\r\n");
-    let _ = out.flush();
+    data.into_iter().flatten().map(pair).collect()
+}
+
+/// The compact view of an entry (da-1lnm4): `HH:MM:SS | ` dim, then
+/// `key: value` for each key, `|` between, the `remainder` key's value last
+/// and unlabeled.
+fn compact_line(stamp: &str, pairs: &[(String, String)], remainder: Option<&str>) -> String {
+    let is_remainder = |key: &str| Some(key) == remainder;
+    let labeled = pairs
+        .iter()
+        .filter(|(k, _)| !is_remainder(k))
+        .map(|(k, v)| format!("{k}: {v}"));
+    let last = pairs
+        .iter()
+        .filter(|(k, _)| is_remainder(k))
+        .map(|(_, v)| v.clone());
+    let parts: Vec<String> = labeled.chain(last).collect();
+    let clock = datum_commands::render::colors::dim(&format!("{stamp} | "));
+    format!("{clock}{}", parts.join(" | "))
+}
+
+/// `readline`'s line editor helper: the prompt, its clock, dim. Its width
+/// is the plain prompt's, so a wrapped line's rows count true.
+struct Dim;
+
+impl rustyline::Helper for Dim {}
+impl rustyline::completion::Completer for Dim {
+    type Candidate = String;
+}
+impl rustyline::hint::Hinter for Dim {
+    type Hint = String;
+}
+impl rustyline::validate::Validator for Dim {}
+impl rustyline::highlight::Highlighter for Dim {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        _default: bool,
+    ) -> std::borrow::Cow<'b, str> {
+        std::borrow::Cow::Owned(datum_commands::render::colors::dim(prompt))
+    }
+}
+
+/// Tab at `readline`'s prompt: neither a tab nor a completion, but the end
+/// of the edit, with where the cursor was, for [`Sitting::toggle`].
+struct Toggle(std::sync::Arc<std::sync::Mutex<Option<usize>>>);
+
+impl rustyline::ConditionalEventHandler for Toggle {
+    fn handle(
+        &self,
+        _: &rustyline::Event,
+        _: rustyline::RepeatCount,
+        _: bool,
+        ctx: &rustyline::EventContext,
+    ) -> Option<rustyline::Cmd> {
+        // A byte offset into the line, as `str::split_at` takes it.
+        *self.0.lock().unwrap() = Some(ctx.pos());
+        Some(rustyline::Cmd::AcceptLine)
+    }
 }
 
 /// A kit command's script (da-et0lm): each of its lines, filled, run in
@@ -167,9 +436,9 @@ pub fn kit_script(
         // still refuses one.
         let result = match datum_commands::args::parse_invocation_with_db(argv.clone(), db) {
             Ok(Invocation::Single(Cli {
-                command: Command::Readline(base),
+                command: Command::Readline(args),
                 ..
-            })) => read_lines(&base, db, Some(path)),
+            })) => read_lines(&args, db, Some(path)),
             _ => run_argv(argv, &line, db, Some(path)),
         };
         datum_commands::args::reset_duplicate_noop();
@@ -434,5 +703,92 @@ fn run_argv(argv: Vec<String>, line: &str, db: &Db, path: Option<&str>) -> Resul
             }
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compact_line, rows};
+
+    fn pairs(kv: &[(&str, &str)]) -> Vec<(String, String)> {
+        kv.iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// Compact with its escapes gone, whatever the test's color.
+    fn compact(kv: &[(&str, &str)], remainder: Option<&str>) -> String {
+        datum_commands::render::strip_ansi(&compact_line("12:10:06", &pairs(kv), remainder))
+    }
+
+    #[test]
+    fn compact_puts_the_remainder_last_and_unlabeled() {
+        let kv = [("line", "hello there"), ("mood", "calm")];
+        assert_eq!(
+            compact(&kv, Some("line")),
+            "12:10:06 | mood: calm | hello there"
+        );
+    }
+
+    #[test]
+    fn compact_labels_several_keys_in_order() {
+        let kv = [("a", "1"), ("b", "two"), ("line", "x"), ("c", "[1,2]")];
+        assert_eq!(
+            compact(&kv, Some("line")),
+            "12:10:06 | a: 1 | b: two | c: [1,2] | x"
+        );
+    }
+
+    #[test]
+    fn compact_of_the_remainder_alone_is_the_journal_line() {
+        assert_eq!(
+            compact(&[("line", "hello there")], Some("line")),
+            "12:10:06 | hello there"
+        );
+    }
+
+    #[test]
+    fn compact_of_an_empty_line_is_its_clock() {
+        assert_eq!(compact(&[("line", "")], Some("line")), "12:10:06 | ");
+    }
+
+    #[test]
+    fn compact_with_no_remainder_key_labels_every_key() {
+        let kv = [("line", "hello"), ("mood", "calm")];
+        assert_eq!(compact(&kv, None), "12:10:06 | line: hello | mood: calm");
+    }
+
+    #[test]
+    fn rows_of_a_short_line_is_one() {
+        assert_eq!(rows("12:10:06 | hello", 80, true), 1);
+        assert_eq!(rows("", 80, true), 1);
+        assert_eq!(rows("", 80, false), 1);
+    }
+
+    #[test]
+    fn rows_of_an_exact_fill_counts_the_row_rustyline_wraps_to() {
+        let full = "x".repeat(80);
+        assert_eq!(rows(&full, 80, true), 2, "typed: the cursor wrapped below");
+        assert_eq!(
+            rows(&full, 80, false),
+            1,
+            "printed: the newline takes the wrap"
+        );
+    }
+
+    #[test]
+    fn rows_of_a_wrapped_line() {
+        assert_eq!(rows(&"x".repeat(81), 80, true), 2);
+        assert_eq!(rows(&"x".repeat(161), 80, false), 3);
+    }
+
+    #[test]
+    fn rows_count_wide_characters_twice_and_escapes_not_at_all() {
+        // Forty wide characters fill a row of 80; 39 and a half do not.
+        assert_eq!(rows(&"界".repeat(40), 80, false), 1);
+        assert_eq!(rows(&"界".repeat(41), 80, false), 2);
+        // One column left at a row's end: the wide character goes on to the next.
+        assert_eq!(rows(&format!("{}界", "x".repeat(79)), 80, false), 2);
+        assert_eq!(rows("\x1b[2m12:10:06 | \x1b[0mhi", 14, false), 1);
     }
 }

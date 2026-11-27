@@ -38,9 +38,9 @@ pub enum Command {
     /// `datum script [FILE]`, and `datum < FILE`: a script of command lines
     /// (da-ygfeh).
     Script(ScriptArgs),
-    /// `datum readline <command> [args…]`: each line typed runs
+    /// `datum readline [--compact] <command> [args…]`: each line typed runs
     /// `<command> [args…] -- <line>` (da-xloff).
-    Readline(Vec<String>),
+    Readline(ReadlineArgs),
     /// `datum import [FILE|-]`: JSONL rows, one entry a line (da-jouhm).
     Import(ImportArgs),
     /// `datum export --jsonl [FIELD…]`: the rows `import` reads (da-jouhm).
@@ -760,6 +760,15 @@ pub struct ImportArgs {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ExportArgs {
     pub fields: Vec<String>,
+}
+
+/// `datum readline`'s words: its own flags, then its base command's.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ReadlineArgs {
+    /// The base command and its args, run with each line after `--`.
+    pub base: Vec<String>,
+    /// `--compact`: a terminal starts in the compact view (da-1lnm4).
+    pub compact: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
